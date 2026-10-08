@@ -1,7 +1,7 @@
 import { type Context, Service } from '@agnes/cordis'
 import {
-  assertChildAgentAllowed,
   bindChildAgentSession,
+  CoreError,
   childAgentAllowlist,
   IN_PROCESS_CHILD_PROVIDER_ID,
   inProcessChildAgentProvider,
@@ -21,6 +21,7 @@ import type {
 } from '@agnes/extension-api'
 import { defineProviderKind, ProviderError } from '@agnes/extension-api'
 import { normalizePluginExport, type RowOriginLookup } from '@agnes/plugin-runtime/host'
+import { resolveSessionCapabilities } from '../profile/session-capabilities.js'
 import type { PackageModule } from './packages.js'
 import { installProviderRegistry, type ProviderRegistry, providerSource } from './provider-registry.js'
 
@@ -186,10 +187,11 @@ export class ChildAgentRegistry extends Service implements ChildAgentService {
         'child agent start requires a session and a signal',
       )
     options.signal.throwIfAborted()
-    assertChildAgentAllowed(options.sessionKey, {
-      providerId,
-      ...(options.model ? { model: options.model } : {}),
-    })
+    const refusal = resolveSessionCapabilities({
+      ...(this.allowlist(options.sessionKey) ? { childAllowlist: this.allowlist(options.sessionKey)! } : {}),
+      childRequest: { providerId, ...(options.model ? { model: options.model } : {}) },
+    }).childRefusal
+    if (refusal) throw new CoreError(refusal.code, refusal.message, refusal.detail)
     refuseMissingCapability(record.provider, options)
     if (recovering && (!provider.adopt || !options.invocationId))
       throw childProviderError(

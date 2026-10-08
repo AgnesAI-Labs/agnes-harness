@@ -3,12 +3,18 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
-import { mcpLocalToolPrefix, skillResourceIdAt } from '@agnes/base'
+import {
+  bindMcpResourceServer,
+  type McpConnection,
+  mcpLocalToolPrefix,
+  mcpPublicToolName,
+  skillResourceIdAt,
+} from '@agnes/base'
 import { ToolRegistry } from '@agnes/core'
 import { defineTool } from '@agnes/extension-api'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
-import { RuntimeSecurityStatus, validateAgainst } from '@agnes/protocol'
+import { RuntimeSecurityStatus, SessionCapabilitySet, validateAgainst } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { expect, it, vi } from 'vitest'
 import { assertHostPublication } from '../../src/host-facade.js'
@@ -320,6 +326,18 @@ it('runs preset compositions side by side, filters tools and retains the generat
     const resumed = await host.createSession({ key: 'reader-session', cwd: root })
     expect(resumed.pluginGenerationId).toBe(generation)
     expect(resumed.currentTools().resolve('write')).toBeUndefined()
+    expect(
+      host
+        .sessionCapabilities?.(resumed.key)
+        .tools.filter((tool) => tool.enabled)
+        .map((tool) => tool.id),
+    ).toEqual(
+      resumed
+        .currentTools()
+        .list()
+        .map((tool) => tool.name),
+    )
+    expect(host.sessionCapabilities?.(resumed.key).codePin.generationId).toBe(generation)
     await resumed.close()
     const migration = await host.migrateSessionGeneration?.(resumed.key)
     expect(migration?.changed).toBe(true)
@@ -409,35 +427,38 @@ it('filters registered MCP identities without confusing slug collisions or long 
   const registry = new ToolRegistry()
   const ids = ['a.b', 'a_b', 'My.Server--2', '...', 'long-'.repeat(30)]
   for (const id of ids)
-    registry.add(
-      defineTool({
-        name: mcpLocalToolPrefix(id) + 'read',
-        description: 'Read the selected server',
-        parameters: Type.Object({}),
-        meta: {
-          isReadOnly: true,
-          isDestructive: false,
-          isConcurrencySafe: true,
-          isOpenWorld: false,
-          replay: 'safe',
-          requiresApproval: 'never',
-          costHint: {},
-          deferLoading: false,
-        },
-        execute: async () => ({ content: [] }),
-      }),
-      { source: 'fixture', trust: 'builtin' },
-    )
+    for (const name of [mcpLocalToolPrefix(id) + 'read', mcpPublicToolName(id, 'read')])
+      registry.add(
+        defineTool({
+          name,
+          description: 'Read the selected server',
+          parameters: Type.Object({}),
+          meta: {
+            isReadOnly: true,
+            isDestructive: false,
+            isConcurrencySafe: true,
+            isOpenWorld: false,
+            replay: 'safe',
+            requiresApproval: 'never',
+            costHint: {},
+            deferLoading: false,
+          },
+          execute: async () => ({ content: [] }),
+        }),
+        { source: 'fixture', trust: 'builtin' },
+      )
   for (const id of ids) {
     const tools = compositionTools(registry, { mcp: ['mcp/' + id] })
     const name = mcpLocalToolPrefix(id) + 'read'
-    expect(tools.list().map((tool) => tool.name)).toEqual([name])
-    expect(tools.size).toBe(1)
+    const names = [name, mcpPublicToolName(id, 'read')]
+    expect(tools.list().map((tool) => tool.name)).toEqual(names)
+    expect(tools.size).toBe(2)
+    expect(tools.resolve(names[1]!)).toBeDefined()
     expect(tools.resolve(name)).toBeDefined()
-    expect(tools.snapshot(0).defs.map((tool) => tool.name)).toEqual([name])
+    expect(tools.snapshot(0).defs.map((tool) => tool.name)).toEqual([...names].sort())
     expect(tools.resolve(mcpLocalToolPrefix(ids.find((other) => other !== id)!) + 'read')).toBeUndefined()
   }
-  expect(registry.size).toBe(ids.length)
+  expect(registry.size).toBe(ids.length * 2)
 })
 
 it('retains a legacy session deployment when bundles are configured after its first boot', async () => {
@@ -471,6 +492,9 @@ it('retains a legacy session deployment when bundles are configured after its fi
     expect(resumed.pluginGenerationId).toBe(generation)
     expect(resumed.loop).toEqual(loop)
     expect(resumed.currentTools().resolve('write')).toBeDefined()
+    expect(host.sessionCapabilities?.(resumed.key).tools.find((tool) => tool.id === 'write')?.enabled).toBe(
+      true,
+    )
     await resumed.close()
     await host.releaseSessionGeneration?.(resumed.key)
     expect(new CompositionSessionStore(join(root, 'profiles', 'local-dev')).read(resumed.key)).toBeUndefined()
@@ -639,6 +663,77 @@ it('opens a new composition from the published code after retiring a boot snapsh
     expect(reopened.currentTools().resolve('code_version')?.description).toBe('1.0.0')
   } finally {
     await host?.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('uses one MCP server decision for discovery and shared resource invocation', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-capability-mcp-'))
+  const requested: string[] = []
+  const unbind = ['allowed', 'denied'].map((id) =>
+    bindMcpResourceServer(
+      id,
+      {
+        id,
+        supportsResources: true,
+        listResources: async () => {
+          requested.push(id)
+          return { resources: [{ name: id, uri: 'fixture://' + id }] }
+        },
+      } as McpConnection,
+      { id, transport: 'stdio', cmd: ['fixture'], defer: false },
+    ),
+  )
+  const { host } = await createTestHost({
+    dataDir: root,
+    disableSessionTitle: true,
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../../base', import.meta.url)) },
+    profileInputs: {
+      user: { name: 'local-dev', composition: { mcp: ['mcp/allowed'], toolPolicy: { readOnly: true } } },
+    },
+    script: [
+      ...['denied', 'allowed'].map((server) => [
+        {
+          type: 'toolcall_end' as const,
+          via: 'native' as const,
+          call: { toolUseId: '', name: 'list_mcp_resources', args: { server }, ordinal: 0 },
+        },
+        { type: 'done' as const, reason: 'toolUse' as const },
+      ]),
+      [{ type: 'text_delta', delta: 'done' }],
+    ],
+  })
+  try {
+    for (const id of ['allowed', 'denied'])
+      host.kernel.resources.register(
+        { id: 'mcp/' + id, kind: 'mcp', name: id, description: 'fixture' },
+        { source: 'agnes/fixture', trust: 'builtin' },
+      )
+    const session = await host.createSession({ key: 'mcp-capabilities', cwd: root })
+    const capabilities = host.sessionCapabilities!(session.key)
+    expect(validateAgainst(SessionCapabilitySet, capabilities).ok).toBe(true)
+    expect(capabilities.mcp.filter((item) => item.enabled).map((item) => item.id)).toEqual(['mcp/allowed'])
+    expect(
+      session
+        .toolCatalog()
+        .resources.filter((item) => item.kind === 'mcp')
+        .map((item) => item.id),
+    ).toEqual(['mcp/allowed'])
+    await session.enqueue('next-turn', {
+      actor: session.d.actor,
+      content: [{ type: 'text', text: 'read resources' }],
+    })
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    const results = JSON.stringify(
+      (await session.scan({ type: 'tool/result', toSeq: session.lastSeq })).map((row) => row.data),
+    )
+    expect(results).toContain('Tool denied by the selected composition policy.')
+    expect(results).toContain('fixture://allowed')
+    expect(requested).toEqual(['allowed'])
+    await session.close()
+  } finally {
+    for (const dispose of unbind) dispose()
+    await host.close()
     rmSync(root, { recursive: true, force: true })
   }
 })

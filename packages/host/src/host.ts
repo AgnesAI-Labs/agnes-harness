@@ -30,6 +30,7 @@ import type { LiveCompositionSession } from './profile/composition-state.js'
 import { trackHostComposition } from './profile/composition-tracking.js'
 import { withAssemblyIsolation } from './profile/isolation.js'
 import { modelProfileDeployment } from './profile/model-compatibility.js'
+import { resolveSessionCapabilities } from './profile/session-capabilities.js'
 import type { ResolvedProfile } from './profile/types.js'
 import type { SkillRuntimeInput } from './resources/skills.js'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from './runtime-generation-host.js'
@@ -321,6 +322,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
         workspaceRuntimes,
       ),
     presets: a.presets,
+    sessionCapabilities: (key) => a.sessionCapabilities(key),
     resolveActor: (credential, surface) => a.seams.principals.resolve(credential, surface),
     acceptWorkspaceBinding: (envelope, expectedSessionKey) =>
       workspaceBindings.accept(envelope, expectedSessionKey),
@@ -353,7 +355,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             o.loop ? { loop: o.loop } : adminLoop ? { loop: adminLoop } : undefined,
           )
           assertCompositionCompatible(a.compositionForPreset(), selection)
-          if (selection.selection.loop) o = { ...o, loop: selection.selection.loop }
+          o = { ...o, loop: resolveSessionCapabilities({ composition: selection }).loop.value }
         }
         // A caller-supplied fitted seam may customize behavior, but it cannot replace workspace
         // authority. Every root session still gets a Host-minted binding and invocation owner.

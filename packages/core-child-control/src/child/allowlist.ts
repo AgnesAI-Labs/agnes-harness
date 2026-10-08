@@ -49,29 +49,38 @@ export function assertChildAgentAllowed(
   sessionKey: string,
   request: { providerId?: string; model?: string },
 ): void {
-  const allowlist = childAgentAllowlist(sessionKey)
-  if (!allowlist) return
+  const refusal = childAgentRefusal(childAgentAllowlist(sessionKey), request)
+  if (refusal) throw new CoreError(refusal.code, refusal.message, refusal.detail)
+}
+
+/** Pure authorization rule, also used by Host capability resolution. */
+export function childAgentRefusal(
+  allowlist: ChildAgentAllowlist | undefined,
+  request: { providerId?: string; model?: string },
+):
+  | { code: 'E_UNSUPPORTED' | 'E_MODEL_UNKNOWN'; message: string; detail?: Record<string, unknown> }
+  | undefined {
   if (
     request.providerId !== undefined &&
-    allowlist.providers &&
+    allowlist?.providers &&
     !allowlist.providers.includes(request.providerId)
   )
-    throw new CoreError(
-      'E_UNSUPPORTED',
-      `child provider ${request.providerId} is not allowed for this session`,
-      {
-        providerId: request.providerId,
-      },
-    )
-  if (allowlist.models) {
+    return {
+      code: 'E_UNSUPPORTED',
+      message: `child provider ${request.providerId} is not allowed for this session`,
+      detail: { providerId: request.providerId },
+    }
+  if (allowlist?.models) {
     if (!request.model)
-      throw new CoreError(
-        'E_MODEL_UNKNOWN',
-        'child model must be named when a session model allowlist is set',
-      )
+      return {
+        code: 'E_MODEL_UNKNOWN',
+        message: 'child model must be named when a session model allowlist is set',
+      }
     if (!allowlist.models.includes(request.model))
-      throw new CoreError('E_MODEL_UNKNOWN', `child model ${request.model} is not allowed for this session`, {
-        model: request.model,
-      })
+      return {
+        code: 'E_MODEL_UNKNOWN',
+        message: `child model ${request.model} is not allowed for this session`,
+        detail: { model: request.model },
+      }
   }
 }

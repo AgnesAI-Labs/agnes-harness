@@ -1,4 +1,4 @@
-import type { Host, HostSession } from '@agnes/host'
+import { type Host, type HostSession, resolveSessionCapabilities } from '@agnes/host'
 import { describe, expect, it, vi } from 'vitest'
 import { handleCommand, handleServiceCommand } from '../src/commands.js'
 
@@ -62,4 +62,20 @@ it('exposes publication status and migration only through an assembled Host', as
   await expect(
     handleServiceCommand({} as Host, frame('pluginGenerations.publicationStatus'), new Map()),
   ).resolves.toEqual({ publication: null })
+})
+
+it('returns the Host capability set with the tool catalog and accepts older Hosts', async () => {
+  const catalog = { sessionId: 'inspect', tools: [], resources: [] }
+  const session = { key: 'inspect', toolCatalog: () => catalog } as unknown as HostSession
+  const frame = { kind: 'command' as const, requestId: 'inspect', method: 'toolCatalog' as const, params: {} }
+  const capabilities = resolveSessionCapabilities({})
+  await expect(
+    handleCommand(session, frame, {
+      aborts: new Map(),
+      host: { sessionCapabilities: () => capabilities } as unknown as Host,
+    }),
+  ).resolves.toEqual({ ...catalog, capabilities })
+  await expect(handleCommand(session, frame, { aborts: new Map(), host: {} as Host })).resolves.toEqual(
+    catalog,
+  )
 })

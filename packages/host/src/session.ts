@@ -18,6 +18,7 @@ import { type CommandRule, checkCommandRule } from './command-policy.js'
 import { HostError } from './errors.js'
 import type { HostSession } from './host.js'
 import { type ResolvedPreset, resolvePreset } from './presets/resolve.js'
+import { resolveSessionCapabilities } from './profile/session-capabilities.js'
 import type { ResolvedProfile } from './profile/types.js'
 import { replaySwitchesOnOpen } from './session-switch.js'
 import type { SessionWorkspaceRuntime, SessionWorkspaceRuntimeTable } from './session-workspace-runtime.js'
@@ -318,7 +319,7 @@ export async function createSession(
   // refused if this preset's routing does not resolve against what this host assembled, so by this
   // point `materializeRoutes` is known to succeed and this is just fetching its answer back to pin
   // into the view core runs on.
-  const wanted = materializeRoutes(preset.view, profile)
+  const wanted = resolveSessionCapabilities({ profile, presetView: preset.view }).modelRoutes.value!
   const view = parentSession?.preset ?? pinPresetRoutes(preset.view, wanted)
 
   if (workspace && opts.seams?.sandbox)
@@ -376,7 +377,14 @@ export async function createSession(
   // nothing upstream mints it, so it is minted here when the caller did not bring one.
   const session = await a.kernel.session(key, {
     ...(opts.loop ? { loop: opts.loop } : {}),
-    defaultLoop: async () => (await a.sessionLoopDefault?.()) ?? profile.loop,
+    defaultLoop: async () => {
+      const loop = await a.sessionLoopDefault?.()
+      return resolveSessionCapabilities({
+        ...(profile.loop ? { selection: { loop: profile.loop } } : {}),
+        ...(loop ? { admin: { composition: { loop } } } : {}),
+        presetView: view,
+      }).loop.value
+    },
     actor,
     preset: view,
     resolvedProfileHash: profile.hash,

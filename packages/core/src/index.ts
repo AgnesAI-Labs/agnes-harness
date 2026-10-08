@@ -9,6 +9,7 @@ export {
   applyChildAgentConfig,
   assertChildAgentAllowed,
   childAgentAllowlist,
+  childAgentRefusal,
   normalizeChildAgentAllowlist,
   resetChildAgentAllowlists,
   setChildAgentAllowlist,
@@ -240,6 +241,7 @@ export { budgetPreflight, checkpointRoutine, contextTokens, contextWindowFor, st
 export type { EnqueueMsg } from './step/inbox.js'
 export { claimFrom, inboxEvent } from './step/inbox.js'
 export { estimateTokens } from './step/inference.js'
+export { modelAllowsTool } from './step/model-tools.js'
 export type {
   CheckpointPhase,
   OpStateMeta,

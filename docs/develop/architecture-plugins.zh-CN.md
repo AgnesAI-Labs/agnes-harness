@@ -126,8 +126,20 @@ Node SDK 提供 `client.packages.migrateSession({ profile, clientId, commandId, 
 
 plugin-runtime 提供所有 kind 的 defineX helper，extension-api/testkit 提供八种 kind 的 conformance runner，并由 plugin-runtime/testkit 重导出。使用隔离的真实 Host 注册端口和公开服务/会话 probe，检查准入拒绝、不可变目录、取消、卸载排空；loop/persistence 必须另验冷恢复。probe 的 ready 表示调用已进入 provider，无需依赖定时猜测。完整签名与使用边界见英文页和 [测试指南](../extend/testing.zh-CN.md)。
 
-## 会话能力读取合同
+## 会话能力解析
 
-`@agnes/protocol` 导出不可变的 `SessionCapabilitySet`、项目决策（`id`、`enabled`、`reasons`）和 `{ layer, name }` 来源。每个原因注明规则和来源。集合包含代码 pin、Loop、模型路由、权限/沙箱姿态、工具、MCP、Skills、子引擎及模型、UI 模块、入口、包和插件行，不包含凭据、工厂、包路径或插件配置。
+`resolveSessionCapabilities()` 是 Host 的纯能力决策边界，返回深度冻结的 `SessionCapabilitySet`。公开结果不含工厂、配置正文、凭据或路径。注册表继续拥有注册与生命周期；读取 facade、调用策略、MCP/Skill 视图、Loop/模型准入、child 准入和客户端模块检查消费 resolver，不再重复判断成员资格。
 
-SDK 的 `Session.capabilities()` 读取现有已认证 `_agnes/v1/session.tools` 结果中的可选 `capabilities`；旧服务返回 `undefined`。`PluginAdminApi.composition(preset?)` 沿用 composition 的 GET/POST 路由，返回有类型的 `CompositionCapabilitySnapshot`。发布过渡期允许 `sessions[].capabilities` 缺省。保留 `sessions[].toolGroups` 作为旧客户端兼容适配器；读取方须容忍缺省，不能根据其展示标签重新推导能力策略。
+| 顺序 | 输入与作用 |
+| --- | --- |
+| 1 | 内置默认值和已解析 profile（含继承的 profile bundles）建立基础与 package 上限。 |
+| 2 | 依次应用 preset bundles、preset composition，替换选中字段。 |
+| 3 | 依次应用 admin bundles、admin composition/默认 Loop，为新会话建立默认值。 |
+| 4 | 显式 session bundles、session 参数依次覆盖默认值。 |
+| 5 | 持久绑定使用已编译 composition 与所属代码 generation，不重新应用今天的默认值；legacy 绑定保留未经过 composition 过滤的工具/资源目录，并绕过 bundle ownership scope。 |
+| 6 | 所属 generation 的安装目录与当前 MCP/Skills/模型资源确定可用项；资源刷新不重新绑定代码。 |
+| 7 | 对 package/bundle 归属、插件启用、模型输入支持、tools 选择、只读/allow/deny 策略、MCP 归属、UI/surface 选择和 child allowlist 取交集；任一检查失败则排除该项。 |
+
+每项携带 `enabled` 和 `reasons[{source:{layer,name},rule}]`，被排除的项保留拒绝原因。单值选择携带来源，`codePin` 保留安全的 generation/package 身份。空 tools/MCP/Skills 列表沿用默认值；显式空 policy allowlist、surface 或 shell module/slot 列表禁止全部。MCP 的本地名与稳定公开工具名使用同一 server 选择；共享 MCP resource bridge 检查 `server` 参数。
+
+`Session.capabilities()` 读取现有鉴权 `_agnes/v1/session.tools` 结果中的可选 `capabilities`（旧服务返回 `undefined`），`agh tools --json` 输出同一结果。`PluginAdminApi.composition(preset?)` 经现有 composition GET/POST 路径读取 `CompositionCapabilitySnapshot`，`agh config dump` 也使用该结果。顶层能力集是静态 desired 检查：未传入目录时，依赖目录的列表保持空；`sessions[].capabilities` 记录实际运行会话事实。客户端切换前保留 `sessions[].toolGroups` 展示兼容 adapter，它不参与授权。

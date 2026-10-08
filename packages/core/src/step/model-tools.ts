@@ -39,10 +39,16 @@ export function supportsComputerUse(input: ModelInput): boolean {
   return input.includes('text') && input.includes('image')
 }
 
+export function modelAllowsTool(name: string, computerUseAllowed: boolean): boolean {
+  return name !== 'computer_use' || computerUseAllowed
+}
+
 /** Hide Computer Use from operation-owned tool renderers such as the code-mode SDK. */
 export function toolsForModel(snapshot: RegistrySnapshot, computerUseAllowed: boolean): RegistrySnapshot {
   if (computerUseAllowed || !snapshot.byName.has('computer_use')) return snapshot
-  const defs = Object.freeze(snapshot.defs.filter((definition) => definition.name !== 'computer_use'))
+  const defs = Object.freeze(
+    snapshot.defs.filter((definition) => modelAllowsTool(definition.name, computerUseAllowed)),
+  )
   const byName = new Map<string, RegisteredTool>()
   for (const definition of defs) {
     const registered = snapshot.byName.get(definition.name)
@@ -55,5 +61,5 @@ export function toolsForModel(snapshot: RegistrySnapshot, computerUseAllowed: bo
 }
 
 export function toolNamesForModel(names: readonly string[], computerUseAllowed: boolean): string[] {
-  return computerUseAllowed ? [...names] : names.filter((name) => name !== 'computer_use')
+  return computerUseAllowed ? [...names] : names.filter((name) => modelAllowsTool(name, computerUseAllowed))
 }

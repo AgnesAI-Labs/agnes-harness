@@ -982,7 +982,9 @@ export function registerAgnes(
   ep.register('_agnes/v1/session.tools', async (params, c) => {
     const { sessionId } = params as { sessionId: string }
     requireOwner('session.tools', sessionId, c)
-    return cx.registry.require(sessionId).session.toolCatalog()
+    const catalog = await cx.registry.require(sessionId).session.toolCatalog()
+    const capabilities = catalog.capabilities ?? cx.host.sessionCapabilities?.(sessionId)
+    return { ...catalog, ...(capabilities ? { capabilities } : {}) }
   })
   ep.register('_agnes/v1/session.readToolDetail', async (params, c) => {
     const p = params as SessionReadToolDetailParams

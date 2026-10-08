@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { realpathSync, statSync } from 'node:fs'
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { ExtensionManifest } from '@agnes/extension-api'
@@ -264,4 +265,21 @@ function canonicalFile(target: string, root: string): string | null {
   const rel = relative(root, canonical)
   if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null
   return canonical
+}
+
+/** Resolve row identity without using entry/style paths or declaration order. */
+export function clientModuleRowIdForContribution(
+  packageId: string,
+  _extensionId: string,
+  clientCount: number,
+  contributionId: string,
+): string {
+  if (clientCount === 1) return `web:${packageId}`
+  const readable = `web:${packageId}:${contributionId}`
+  // The browser protocol bounds a row id to 256 bytes while package/extension
+  // identifiers have independent maxima. Keep the readable form where it is
+  // valid, and use a deterministic full digest rather than truncating either
+  // identity (truncation could silently collide and join two lifecycle lanes).
+  if (readable.length <= 256) return readable
+  return `web:${createHash('sha256').update(`${packageId}\0${contributionId}`).digest('hex')}`
 }

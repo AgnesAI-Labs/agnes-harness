@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { InstalledInventory, InstalledPackage } from '@agnes/package-manager'
 import {
+  clientModuleRowIdForContribution,
   installedRuntimeSnapshotId,
   isRuntimePackageEligible,
   parseAgnesPluginEntries,
@@ -58,22 +59,7 @@ export function clientModuleRowId(packageId: string, extensionId: string, client
   return clientModuleRowIdForContribution(packageId, extensionId, clientCount, extensionId)
 }
 
-/** Resolve row identity without using entry/style paths or declaration order. */
-export function clientModuleRowIdForContribution(
-  packageId: string,
-  _extensionId: string,
-  clientCount: number,
-  contributionId: string,
-): string {
-  if (clientCount === 1) return `web:${packageId}`
-  const readable = `web:${packageId}:${contributionId}`
-  // The browser protocol bounds a row id to 256 bytes while package/extension
-  // identifiers have independent maxima. Keep the readable form where it is
-  // valid, and use a deterministic full digest rather than truncating either
-  // identity (truncation could silently collide and join two lifecycle lanes).
-  if (readable.length <= 256) return readable
-  return `web:${createHash('sha256').update(`${packageId}\0${contributionId}`).digest('hex')}`
-}
+export { clientModuleRowIdForContribution } from '@agnes/package-manager'
 
 function withDisabled(row: Readonly<PluginRow>, disabled: boolean): Readonly<PluginRow> {
   return Object.freeze({ ...row, disabled })

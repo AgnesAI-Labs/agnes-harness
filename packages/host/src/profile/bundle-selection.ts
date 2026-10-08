@@ -9,6 +9,7 @@ import { mergeValue } from '../presets/merge.js'
 import type { PresetDoc } from '../presets/types.js'
 import { compositionDump, expandBundles, resolveComposition } from './composition.js'
 import { readLiveCompositionSessions } from './composition-state.js'
+import { resolveSessionCapabilities } from './session-capabilities.js'
 import type { ResolvedProfile } from './types.js'
 
 export type BundleSelection = Readonly<{ revision: number; bundles: string[] }>
@@ -97,6 +98,7 @@ export function createCompositionAdmin(options: {
         status: sessions.length ? ('live' as const) : ('desired' as const),
         validation: 'static' as const,
         ...compositionDump(tree),
+        capabilities: resolveSessionCapabilities({ composition: tree, profile }),
         sessions,
       }
     },

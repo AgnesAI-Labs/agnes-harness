@@ -424,6 +424,7 @@ export {
   readConfigurationProfileInputs,
 } from './profile/inputs.js'
 export { expandHome, hashInput, mergePackages, resolveProfile } from './profile/resolve.js'
+export * from './profile/session-capabilities.js'
 export {
   assertNoReservedRouteName,
   BUILTIN_PACKAGES,

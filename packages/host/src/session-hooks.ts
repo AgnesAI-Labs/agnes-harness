@@ -9,7 +9,12 @@ import {
   type SessionImpl,
   type WorkspaceHookSandbox,
 } from '@agnes/core'
-import type { HookInvocationSnapshot, SessionRef, TelemetryConsent } from '@agnes/extension-api'
+import type {
+  HookInvocationSnapshot,
+  ResourceEntry,
+  SessionRef,
+  TelemetryConsent,
+} from '@agnes/extension-api'
 import { parse as parseYaml } from 'yaml'
 import { HostError } from './errors.js'
 import type { PresetDoc } from './presets/types.js'
@@ -93,6 +98,7 @@ export function createSessionHookPort(
   telemetryConsent: TelemetryConsent = 'DISABLED',
   hostSessionRef?: SessionRef,
   publication?: PublicationDispatch,
+  selectResources?: (entries: readonly ResourceEntry[]) => readonly ResourceEntry[],
 ): SessionHookPort {
   const invocationContexts = new AsyncLocalStorage<
     Readonly<{ snapshot: HookInvocationSnapshot; sandbox: WorkspaceHookSandbox }>
@@ -103,6 +109,7 @@ export function createSessionHookPort(
   const port = new SessionHookPort(engine, {
     discovery: {
       registered,
+      ...(selectResources ? { select: selectResources } : {}),
       actor: () => session.d.actor,
       cwd: () => session.d.cwd,
       principals: session.d.runtime,

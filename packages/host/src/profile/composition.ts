@@ -11,6 +11,7 @@ import { HostError } from '../errors.js'
 import { mergeValue } from '../presets/merge.js'
 import type { PresetDoc } from '../presets/types.js'
 import { canonicalJson, sha256hex } from './canonical.js'
+import { capabilityEnabled, resolveSessionCapabilities } from './session-capabilities.js'
 import type { PackageRef, ResolvedProfile, RuntimeProfileManifest } from './types.js'
 
 export type CompositionSource = Readonly<{
@@ -482,6 +483,10 @@ export function validateComposition(selection: CompositionPatch, catalog: Compos
 export function profileForComposition(profile: ResolvedProfile, tree: ResolvedComposition): ResolvedProfile {
   const patch = tree.selection
   const { hash: _hash, compaction: _compaction, ...rest } = profile
+  const capabilities = resolveSessionCapabilities({
+    composition: tree,
+    installed: { modelAdapters: [...new Set((profile.provider.routes ?? []).map((route) => route.api))] },
+  })
   const overrides = new Map((patch.packages ?? []).map((pkg) => [pkg.id, pkg]))
   const next = {
     ...rest,
@@ -495,7 +500,7 @@ export function profileForComposition(profile: ResolvedProfile, tree: ResolvedCo
           provider: {
             ...profile.provider,
             routes: (profile.provider.routes ?? []).filter((route) =>
-              patch.modelAdapters!.includes(route.api),
+              capabilityEnabled(capabilities.modelAdapters, route.api),
             ),
           },
         }
@@ -505,7 +510,7 @@ export function profileForComposition(profile: ResolvedProfile, tree: ResolvedCo
       return {
         ...pkg,
         ...(requested?.config ? { config: requested.config } : {}),
-        enabled: pkg.enabled && requested?.enabled !== false,
+        enabled: capabilityEnabled(capabilities.packages, pkg.id),
       }
     }),
     composition: patch,
@@ -551,12 +556,12 @@ export function compositionAllowsTool(
   name: string,
   isReadOnly: boolean,
 ): boolean {
-  const policy = selection.toolPolicy
-  return (
-    (!policy?.readOnly || isReadOnly) &&
-    (!selection.tools || selection.tools.length === 0 || selection.tools.includes(name)) &&
-    (!policy?.allow || policy.allow.includes(name)) &&
-    !policy?.deny?.includes(name)
+  return capabilityEnabled(
+    resolveSessionCapabilities({
+      selection,
+      installed: { tools: [{ name, readOnly: isReadOnly }] },
+    }).tools,
+    name,
   )
 }
 

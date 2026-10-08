@@ -7,6 +7,8 @@ import type { DispatchContext, HookEngine } from './engine.js'
 
 export type ResourceDiscoveryInputs = {
   registered(): readonly RegisteredResource[]
+  /** Host capability selection is intersected after principal authorization, including hook candidates. */
+  select?(entries: readonly ResourceEntry[]): readonly ResourceEntry[]
   actor(): Actor
   cwd(): string
   principals: Pick<SeamRuntime, 'authorize'>
@@ -54,5 +56,9 @@ export async function discoverResources(
     }
   }
   // A cancelled request cannot publish a partial disclosure or injected context.
-  return context.signal.aborted ? { resources: [], contributions: [] } : { resources, contributions }
+  if (context.signal.aborted) return { resources: [], contributions: [] }
+  const selected = input.select && new Set(input.select(structuredClone(resources)).map((entry) => entry.id))
+  return context.signal.aborted
+    ? { resources: [], contributions: [] }
+    : { resources: selected ? resources.filter((entry) => selected.has(entry.id)) : resources, contributions }
 }

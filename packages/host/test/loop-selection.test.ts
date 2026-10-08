@@ -21,6 +21,7 @@ import { scaffold } from '../../../templates/create-agh-plugin.mjs'
 import { readAdminLoopDefault } from '../src/assemble/loop-selection.js'
 import { createConfigurationService } from '../src/configuration.js'
 import { createLoader } from '../src/ext-host/loader.js'
+import { parsePackageBundles } from '../src/profile/composition.js'
 import { createTestHost } from '../testkit/index.js'
 
 const dirs: string[] = []
@@ -29,7 +30,12 @@ afterEach(() => {
 })
 const dag = { id: 'example.dag', version: '1.0.0' }
 
-async function fixture(profileLoop = true, template = false, childModule?: Record<string, unknown>) {
+async function fixture(
+  profileLoop = true,
+  template = false,
+  childModule?: Record<string, unknown>,
+  bundle = false,
+) {
   const dataDir = mkdtempSync(join(tmpdir(), 'agnes-loops-'))
   dirs.push(dataDir)
   const directory = join(dataDir, 'snapshot')
@@ -70,6 +76,7 @@ async function fixture(profileLoop = true, template = false, childModule?: Recor
     await import('node:fs/promises').then((fs) => fs.readFile(join(directory, 'package.json'), 'utf8')),
   )
   manifest.agnes.plugins[0].config = { plan: [] }
+  if (bundle) manifest.agnes.bundles = { selected: { profile: { loop: loopSelection } } }
   writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest))
   const source: RuntimePluginSnapshot = {
     snapshot: {
@@ -113,8 +120,16 @@ async function fixture(profileLoop = true, template = false, childModule?: Recor
       ),
     },
     profileInputs: {
+      ...(bundle
+        ? {
+            bundleCatalog: parsePackageBundles(source.snapshot.packageId, {
+              selected: { profile: { loop: loopSelection } },
+            }),
+          }
+        : {}),
       user: {
         name: 'local-dev',
+        ...(bundle ? { composition: {} } : {}),
         packages: [
           {
             id: source.snapshot.packageId,
@@ -456,5 +471,28 @@ it('binds a third-party loop to configured, parent-owned continuable children wi
     releaseStart()
     await f.host.close()
     resetChildAgentAllowlists()
+  }
+})
+
+it('lets explicit session bundles override the administrative Loop default', async () => {
+  const f = await fixture(false, false, undefined, true)
+  try {
+    await createConfigurationService({ home: f.dataDir, profile: 'local-dev' }).saveSessionDefaults({
+      revision: 0,
+      defaults: { loop: DEFAULT_LOOP },
+    })
+    const session = await f.host.createSession({
+      key: 'bundle-loop',
+      cwd: f.dataDir,
+      bundles: ['@agnes-example/dag-loop#selected'],
+    })
+    expect(session.loop).toEqual(dag)
+    expect(f.host.sessionCapabilities!(session.key)).toMatchObject({
+      loop: { value: dag },
+      bundles: ['@agnes-example/dag-loop#selected'],
+    })
+    await session.close()
+  } finally {
+    await f.host.close()
   }
 })

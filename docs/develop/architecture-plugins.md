@@ -128,8 +128,20 @@ Scopes are session (`loop`, `tool-runtime`, `child-agent`), generation (`model-a
 
 `@agnes/extension-api/testkit` publishes `runProviderConformance` and a named runner for each of the eight kinds, also re-exported by `@agnes/plugin-runtime/testkit`. Supply the registration port captured inside an isolated Host plugin and an `open` probe using the real Host service or session path. Each probe starts a controlled operation and reports when it reaches the provider, so the suite can check cancellation and unload without timing guesses. Loop and persistence probes must verify cold resume; other probes can opt in. The suites check rejection, immutable metadata, cancellation, idempotent draining unload and missing-provider refusal. They deliberately fail if a provider ignores cancellation or a facade returns before work drains.
 
-## Session capability inspection contract
+## Session capability resolution
 
-`@agnes/protocol` exports the immutable `SessionCapabilitySet`, item decisions (`id`, `enabled`, `reasons`) and `{ layer, name }` sources. Each reason names the rule and its source. The set carries the code pin, loop, model routes, permission/sandbox posture, tools, MCP, Skills, child engines and models, UI modules, surfaces, packages and plugin rows. It contains no credentials, factories, package paths or plugin configuration.
+`resolveSessionCapabilities()` is the pure Host decision boundary. It returns a deeply frozen `SessionCapabilitySet`; factories, configuration bodies, credentials and paths never enter the public result. Registries retain ownership and lifecycle duties. Their read facades, invocation policy, MCP/Skill views, Loop/model admission, child admission and client-module checks consume the resolver instead of repeating membership predicates.
 
-`Session.capabilities()` in the SDK reads the optional `capabilities` field of the existing authenticated `_agnes/v1/session.tools` result; `undefined` supports older servers. `PluginAdminApi.composition(preset?)` reads a typed `CompositionCapabilitySnapshot` through the existing composition GET/POST route. `sessions[].capabilities` is optional during rollout. `sessions[].toolGroups` remains the compatibility adapter for existing clients; readers must tolerate its absence and must not reconstruct capability policy from its display labels.
+| Order | Input and effect |
+| --- | --- |
+| 1 | Builtin defaults and the resolved profile, including inherited profile bundles, establish the base and package ceiling. |
+| 2 | Preset bundles, then preset composition, replace selected fields. |
+| 3 | Admin bundles, then admin composition/default Loop, establish defaults for new sessions. |
+| 4 | Explicit session bundles, then session parameters, override those defaults. |
+| 5 | A durable binding uses its compiled composition and owning code generation instead of recompiling today's defaults. Legacy bindings retain their unfiltered tool/resource catalogs and bypass bundle ownership scope. |
+| 6 | The owning generation's installed catalog and current MCP/Skills/model resources determine available items. Refresh changes resources without rebinding code. |
+| 7 | Package/bundle ownership, plugin enablement, model input support, tool selection, read-only/allow/deny policy, MCP ownership, UI/surface selection and child allowlists are intersected. Any failed check excludes the item. |
+
+Each item carries `enabled` and `reasons[{source:{layer,name},rule}]`; excluded items retain refusal reasons. Scalar selections carry their source, and `codePin` carries safe generation/package identities. Empty tools/MCP/Skills lists retain defaults; an explicit empty policy allowlist, surface list or shell module/slot list denies all. MCP local and stable public tool names use the same server selection; shared MCP resource bridges check their `server` argument.
+
+`Session.capabilities()` reads the optional `capabilities` field of the existing authenticated `_agnes/v1/session.tools` result (`undefined` for older servers); `agh tools --json` exposes that same result. `PluginAdminApi.composition(preset?)` reads `CompositionCapabilitySnapshot` through the existing composition GET/POST route, also used by `agh config dump`. Its top-level set is static desired inspection: catalog-dependent lists remain empty when no catalog is supplied. `sessions[].capabilities` records actual live session facts. `sessions[].toolGroups` remains a display compatibility adapter until clients switch; it is not an authorization input.

@@ -1,60 +1,55 @@
 import { createHash } from 'node:crypto'
-import type { ToolRegistry } from '@agnes/core'
+import { canonicalJson, sha256Hex, type ToolRegistry } from '@agnes/core'
 import type { RuntimePluginSnapshot } from '@agnes/package-manager'
 import type { SkillRuntimeInput } from '../resources/skills.js'
 import type { CompositionPatch, ResolvedComposition } from './composition.js'
-import { compositionAllowsTool } from './composition.js'
 import type { CompositionToolGroup } from './composition-state.js'
+import {
+  capabilityEnabled,
+  capabilityToolCatalog,
+  resolveSessionCapabilities,
+  type SessionCapabilitySet,
+} from './session-capabilities.js'
 
 /** A read facade; registration and leases stay owned by the generation's original registry. */
 export function compositionTools(
   tools: ToolRegistry,
   selection: CompositionPatch,
   scope?: ResolvedComposition['toolScope'],
+  resolve?: (tools: ToolRegistry) => SessionCapabilitySet,
 ): ToolRegistry {
-  // Decode the registered MCP name contract without loading its concrete provider package.
-  const mcpPrefixes = selection.mcp?.map((id) => {
-    const serverId = id.replace(/^mcp\//, '')
-    const slug =
-      serverId
-        .toLocaleLowerCase()
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '')
-        .slice(0, 40) || 'server'
-    const hash = createHash('sha256').update(serverId, 'utf8').digest('hex').slice(0, 8)
-    return ['mcp', slug, hash, ''].join('_')
-  })
-  const allowed = (name: string): boolean => {
-    const registered = tools.resolve(name)
-    return (
-      !!registered &&
-      (!scope?.bundlePackages.includes(registered.packageIdentity ?? '') ||
-        scope.activePackages.includes(registered.packageIdentity ?? '')) &&
-      !selection.packages?.some((pkg) => pkg.id === registered.packageIdentity && pkg.enabled === false) &&
-      compositionAllowsTool(selection, name, registered.meta.isReadOnly) &&
-      (!name.startsWith('mcp_') ||
-        !mcpPrefixes?.length ||
-        selection.mcp?.includes(registered.packageIdentity ?? '') ||
-        mcpPrefixes.some((prefix) => name.startsWith(prefix)))
-    )
+  const capabilities = () =>
+    resolve?.(tools) ??
+    resolveSessionCapabilities({
+      selection,
+      scope,
+      installed: { tools: capabilityToolCatalog(tools) },
+    })
+  const visible = () => {
+    const set = capabilities()
+    return tools.list().filter((tool) => capabilityEnabled(set.tools, tool.name))
   }
+  const allowed = (set: SessionCapabilitySet, name: string): boolean => capabilityEnabled(set.tools, name)
   return new Proxy(tools, {
     get(target, property) {
-      if (property === 'list') return () => target.list().filter((tool) => allowed(tool.name))
-      if (property === 'resolve') return (name: string) => (allowed(name) ? target.resolve(name) : undefined)
-      if (property === 'size') return target.list().filter((tool) => allowed(tool.name)).length
+      if (property === 'list') return () => visible()
+      if (property === 'resolve')
+        return (name: string) => (allowed(capabilities(), name) ? target.resolve(name) : undefined)
+      if (property === 'size') return visible().length
       if (property === 'snapshot')
         return (seq: Parameters<ToolRegistry['snapshot']>[0]) => {
           const original = target.snapshot(seq)
-          const defs = original.defs.filter((tool) => allowed(tool.name))
-          const byName = new Map([...original.byName].filter(([name]) => allowed(name)))
+          const set = capabilities()
+          const defs = original.defs.filter((tool) => allowed(set, tool.name))
+          if (defs.length === original.defs.length) return original
+          const byName = new Map([...original.byName].filter(([name]) => allowed(set, name)))
           return Object.freeze({
             ...original,
             defs,
             byName,
-            hash: createHash('sha256')
-              .update(original.hash + '\0' + JSON.stringify(defs.map((tool) => tool.name)))
-              .digest('hex'),
+            hash: sha256Hex(
+              canonicalJson(defs.map((tool) => ({ name: tool.name, parameters: tool.parameters }))),
+            ),
           })
         }
       const value = Reflect.get(target, property, target)
@@ -108,20 +103,21 @@ export function compositionSkills(
   owners: ReadonlyMap<string, string> = new Map(),
 ): SkillRuntimeInput | undefined {
   if (!input) return input
-  const denied = new Set(selection.packages?.filter((pkg) => pkg.enabled === false).map((pkg) => pkg.id))
-  if (!selection.skills?.length && !denied.size) return input
+  if (!selection.skills?.length && !selection.packages?.some((pkg) => pkg.enabled === false)) return input
   const visible = (id: string) =>
-    input
-      .list()
-      .some(
-        (skill) =>
-          skill.resourceId === id &&
-          !denied.has(owners.get(id) ?? '') &&
-          (!selection.skills?.length ||
-            selection.skills.includes(id) ||
-            selection.skills.includes(skill.name) ||
-            selection.skills.includes(owners.get(id) ?? '')),
-      )
+    capabilityEnabled(
+      resolveSessionCapabilities({
+        selection,
+        live: {
+          skills: input.list().map((skill) => ({
+            id: skill.resourceId,
+            name: skill.name,
+            packageId: owners.get(skill.resourceId),
+          })),
+        },
+      }).skills,
+      id,
+    )
   return Object.freeze({
     ...input,
     list: () => input.list().filter((skill) => visible(skill.resourceId)),
@@ -159,20 +155,18 @@ export function compositionSurfaceAllowed(
   selection: CompositionPatch | undefined,
   surface: 'web' | 'acp' | 'http',
 ): boolean {
-  return selection?.surfaces === undefined || selection.surfaces.includes(surface)
+  return capabilityEnabled(resolveSessionCapabilities({ selection }).surfaces, surface)
 }
 
 export function compositionModuleAllowed(
   selection: CompositionPatch | undefined,
   module: { id: string; aliases?: readonly string[]; slots?: readonly string[] },
 ): boolean {
-  const identities = [module.id, ...(module.aliases ?? [])]
-  return (
-    compositionSurfaceAllowed(selection, 'web') &&
-    (!selection?.uiModules?.length || identities.some((id) => selection.uiModules!.includes(id))) &&
-    (selection?.shell?.modules === undefined ||
-      identities.some((id) => selection.shell!.modules!.includes(id))) &&
-    (selection?.shell?.slots === undefined ||
-      (!!module.slots?.length && module.slots.every((slot) => selection.shell!.slots!.includes(slot))))
+  return capabilityEnabled(
+    resolveSessionCapabilities({
+      selection,
+      installed: { uiModules: [module] },
+    }).uiModules,
+    module.id,
   )
 }

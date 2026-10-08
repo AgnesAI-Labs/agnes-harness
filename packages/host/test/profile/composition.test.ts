@@ -1,7 +1,13 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { validatePreset, validateProfileManifest, validateResolvedProfile } from '@agnes/protocol'
+import {
+  SessionCapabilitySet,
+  validateAgainst,
+  validatePreset,
+  validateProfileManifest,
+  validateResolvedProfile,
+} from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
 import { createCompositionAdmin, readBundleSelection } from '../../src/profile/bundle-selection.js'
 import {
@@ -17,6 +23,7 @@ import {
   validateComposition,
 } from '../../src/profile/composition.js'
 import { resolveProfile } from '../../src/profile/resolve.js'
+import { capabilityEnabled, resolveSessionCapabilities } from '../../src/profile/session-capabilities.js'
 
 const env = {
   platform: { os: 'linux' as const, arch: 'x64', capabilities: {} },
@@ -49,6 +56,140 @@ const roots: string[] = []
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
+
+const capabilityCases: [
+  string,
+  { bundles?: string[] },
+  NonNullable<Parameters<typeof resolveComposition>[1]>,
+  string[],
+  string,
+][] = [
+  ['default', {}, {}, ['read', 'write'], 'default'],
+  ['bundle', { bundles: ['acme/cap#reader'] }, {}, ['read', 'owned'], 'profile'],
+  ['preset', {}, { preset: { name: 'standard', composition: { tools: ['write'] } } }, ['write'], 'preset'],
+  ['admin default', {}, { admin: { composition: { tools: ['write'] } } }, ['write'], 'admin'],
+  [
+    'explicit session',
+    {},
+    { admin: { composition: { tools: ['write'] } }, session: { tools: ['read'] } },
+    ['read'],
+    'session',
+  ],
+  [
+    'legacy session',
+    {},
+    { session: { tools: ['read'], toolPolicy: { readOnly: true } } },
+    ['read', 'write', 'owned'],
+    'session',
+  ],
+  ['cold resume', { bundles: ['acme/cap#reader'] }, {}, ['read', 'owned'], 'profile'],
+  ['hot reload', { bundles: ['acme/cap#reader'] }, {}, ['read', 'owned'], 'profile'],
+]
+it.each(capabilityCases)(
+  'resolves %s capabilities with immutable, safe provenance',
+  async (mode, user, layers, names, layer) => {
+    const bundles = parsePackageBundles('acme/cap', {
+      reader: {
+        profile: {
+          tools: ['read', 'owned'],
+          mcp: ['one'],
+          skills: ['reader'],
+          uiModules: ['panel'],
+          plugins: { 'tool:blocked': { enabled: false } },
+          toolPolicy: { readOnly: true },
+        },
+      },
+    })
+    const profile = await resolveProfile(
+      { builtin: 'local-dev', bundleCatalog: bundles, user: { name: 'local-dev', ...user } },
+      env,
+    )
+    const tree = resolveComposition(profile, layers)
+    const pinned = mode === 'cold resume' || mode === 'hot reload'
+    const result = resolveSessionCapabilities({
+      // A changed deployment must not replace a durable composition on resume/reload.
+      profile: pinned ? { ...profile, composition: { tools: ['write'] } } : profile,
+      composition: tree,
+      routes: { primary: { route: 'fixture', model: 'synthetic-model' } },
+      preset: { name: 'standard' },
+      pin: {
+        legacy: mode === 'legacy session',
+        ...(pinned ? { generationId: 'original', loop: { id: 'agnes.default', version: '1.0.0' } } : {}),
+      },
+      installed: {
+        plugins: [
+          { id: 'tool:blocked', enabled: true },
+          { id: 'tool:active', enabled: true },
+        ],
+        tools: [
+          { name: 'computer_use', readOnly: true },
+          { name: 'read', readOnly: true },
+          { name: 'write', readOnly: false },
+          { name: 'owned', readOnly: true, packageId: 'acme/cap' },
+        ],
+        childEngines: ['in-process', 'external'],
+        modelAdapters: ['scripted'],
+        uiModules: [{ id: 'panel', slots: ['sidebar'] }, { id: 'other' }],
+      },
+      computerUseAllowed: false,
+      childAllowlist: { providers: ['in-process'], models: ['child-model'] },
+      live: {
+        mcp: [{ id: 'one' }, { id: 'two' }],
+        skills:
+          mode === 'hot reload' ? [{ id: 'new', name: 'writer' }] : [{ id: 'skill/read', name: 'reader' }],
+      },
+    })
+    expect(result.tools.filter((item) => item.enabled).map((item) => item.id)).toEqual(names)
+    expect(result.tools.find((item) => item.id === names[0])?.reasons).toContainEqual({
+      rule: 'tool-selection',
+      source: mode === 'legacy session' ? { layer: 'session', name: 'legacy-binding' } : tree.sources.tools,
+    })
+    expect(tree.sources.tools?.layer).toBe(layer)
+    expect(result.tools.find((item) => item.id === 'owned')?.enabled).toBe(names.includes('owned'))
+    expect(result.tools.find((item) => item.id === 'computer_use')).toMatchObject({
+      enabled: false,
+      reasons: expect.arrayContaining([
+        { rule: 'model-input', source: { layer: 'session', name: 'primary-model' } },
+      ]),
+    })
+    expect(capabilityEnabled(result.plugins, 'tool:blocked')).toBe(!user.bundles)
+    expect(capabilityEnabled(result.plugins, 'tool:active')).toBe(true)
+    if (user.bundles)
+      expect(result.plugins.find((item) => item.id === 'tool:blocked')?.reasons).toEqual([
+        { rule: 'plugin-enabled', source: { layer: 'profile', name: 'acme/cap#reader' } },
+      ])
+    expect(capabilityEnabled(result.childEngines, 'external')).toBe(false)
+    expect(result.childEngines.find((item) => item.id === 'external')?.reasons[0]?.rule).toBe(
+      'child-provider-allowlist',
+    )
+    expect(result.sandbox).toMatchObject({ provider: 'local', onUnavailable: 'deny' })
+    expect(result.permissions).toMatchObject({
+      preset: 'standard',
+      policy: 'default',
+      toolRuntime: 'default',
+    })
+    expect(result.modelRoutes.value?.primary.route).toBeDefined()
+    expect(result.loop.value).toEqual({ id: 'agnes.default', version: '1.0.0' })
+    if (pinned) {
+      expect(result.codePin.generationId).toBe('original')
+      expect(result.loop.source).toEqual({ layer: 'session', name: 'code-pin' })
+    }
+    if (user.bundles) {
+      expect(result.mcp.filter((item) => item.enabled).map((item) => item.id)).toEqual(['one'])
+      expect(result.uiModules.filter((item) => item.enabled).map((item) => item.id)).toEqual(['panel'])
+    }
+    if (mode === 'hot reload')
+      expect(result.skills.find((item) => item.id === 'reader')).toMatchObject({
+        enabled: false,
+        reasons: [{ rule: 'resource-unavailable', source: { layer: 'session', name: 'live-resources' } }],
+      })
+    expect(validateAgainst(SessionCapabilitySet, result).ok).toBe(true)
+    expect(Object.isFrozen(result)).toBe(true)
+    expect(Object.isFrozen(result.tools[0]?.reasons[0]?.source)).toBe(true)
+    expect(Reflect.set(result.tools[0]!, 'enabled', false)).toBe(false)
+    expect(JSON.stringify(result)).not.toContain('synthetic-secret')
+  },
+)
 
 it('resolves inherited bundles, preset/admin/session precedence and safe dumps', async () => {
   const profile = await resolveProfile(

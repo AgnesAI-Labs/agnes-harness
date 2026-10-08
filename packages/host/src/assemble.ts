@@ -2,6 +2,7 @@ import { lstatSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import type { ToolRegistry } from '@agnes/core'
 import {
   type CurrentSessionRuntime,
   DEFAULT_LOOP,
@@ -17,8 +18,9 @@ import {
   type SandboxExecBackend,
   type SeamImplementations,
   type SeamName,
+  type SessionImpl,
 } from '@agnes/core'
-import { API_VERSION, type ExtensionManifest, type LeaseView } from '@agnes/extension-api'
+import { API_VERSION, type ExtensionManifest, type LeaseView, type ResourceEntry } from '@agnes/extension-api'
 import {
   developmentPluginRows,
   type RuntimePluginSnapshot,
@@ -189,7 +191,6 @@ import { createPrivateArtifactStore } from './private-artifact-store.js'
 import {
   assertCompositionCompatible,
   type CompositionPatch,
-  compositionAllowsTool,
   type ResolvedComposition,
   resolveComposition,
 } from './profile/composition.js'
@@ -199,6 +200,13 @@ import {
   compositionTools,
 } from './profile/composition-visibility.js'
 import { withAssemblyIsolation } from './profile/isolation.js'
+import {
+  capabilityClientCatalog,
+  capabilityEnabled,
+  capabilityToolCatalog,
+  resolveSessionCapabilities,
+  type SessionCapabilitySet,
+} from './profile/session-capabilities.js'
 import type { ResolvedProfile } from './profile/types.js'
 import {
   bindApprovalTicket,
@@ -332,6 +340,7 @@ export type Assembled = {
   /** Read-only metadata for installed child agent providers. */
   childAgentCatalog(): ReturnType<typeof childAgentCatalog>
   compositionForPreset(name?: string, session?: CompositionPatch): ResolvedComposition
+  sessionCapabilities(sessionKey: string, tools?: ToolRegistry): SessionCapabilitySet
   /** Reviewed bundled API-key routes fitted at assembly, eligible for runtime model switching. */
   preconfiguredRoutes: readonly string[]
   presets: Record<string, PresetDoc>
@@ -849,9 +858,11 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const runtimeMutationGate = new RuntimeMutationGate()
     const publicationDispatch = new PublicationDispatch(publicationGate, hotPolicy)
     let kernel!: Kernel
+    const discoveredResources = new WeakMap<SessionImpl, readonly ResourceEntry[]>()
     const skillOwners = compositionSkillOwners(
       deps.runtimePluginCatalogue ?? deps.runtimePluginSnapshots ?? [],
     )
+    let availableSkillResources = deps.skillResources
     let preloadSkills = compositionSkills(deps.skillResources, profile.composition ?? {}, skillOwners)
     let activeSkillResources = preloadSkills
     // Shared workers discover workspace Skills lazily inside a session invocation. Their global
@@ -884,7 +895,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       ? createSkillPromptPreloader(() => preloadSkills, workspaceInvocationFor, publicationDispatch)
       : undefined
     const generationViews = new Map<string, GenerationRegistries>()
-    const sessionRuntimeView = (
+    const rawSessionRuntime = (
       sessionKey: string,
       runtimeRegistryRevision?: string,
     ): CurrentSessionRuntime => {
@@ -900,12 +911,23 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         ...(kernel ? { seed: { tools: kernel.tools, resources: kernel.resources } } : {}),
         ...(runtimePromptPreloader ? { runtimePromptPreloader } : {}),
       })
-      return profile.composition
-        ? {
-            ...runtime,
-            tools: compositionTools(runtime.tools, profile.composition, profile.compositionToolScope),
-          }
-        : runtime
+      return runtime
+    }
+    const sessionRuntimeView = (
+      sessionKey: string,
+      runtimeRegistryRevision?: string,
+    ): CurrentSessionRuntime => {
+      const runtime = rawSessionRuntime(sessionKey, runtimeRegistryRevision)
+      if (!profile.composition) return runtime
+      return {
+        ...runtime,
+        tools: compositionTools(
+          runtime.tools,
+          profile.composition ?? {},
+          profile.compositionToolScope,
+          (tools) => sessionCapabilities(sessionKey, tools),
+        ),
+      }
     }
     const builtSeams = buildSeamRows({
       ...(deps.generationBuiltinRows ? { generationBuiltinRows: deps.generationBuiltinRows } : {}),
@@ -2027,10 +2049,21 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           createSessionHookPort(
             session,
             engine,
-            () => kernel.resources.snapshot(),
+            () => session.currentResources().snapshot(),
             sessionRef.telemetryConsent,
             sessionRef,
             publicationDispatch,
+            (resources) => {
+              discoveredResources.set(session, resources)
+              const capabilities = sessionCapabilities(session.key, undefined, { session, resources })
+              return resources.filter((entry) =>
+                entry.kind === 'mcp'
+                  ? capabilityEnabled(capabilities.mcp, entry.id)
+                  : entry.kind === 'skill'
+                    ? capabilityEnabled(capabilities.skills, entry.id)
+                    : true,
+              )
+            },
           ),
       ),
       ...(compaction ? { compaction } : {}),
@@ -2061,6 +2094,98 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           ],
         },
       })
+    const sessionCapabilities = (
+      sessionKey: string,
+      tools: ToolRegistry = rawSessionRuntime(sessionKey).tools,
+      call?: {
+        name?: string
+        readOnly?: boolean
+        mcpServer?: string
+        session?: SessionImpl
+        resources?: readonly ResourceEntry[]
+      },
+    ): ReturnType<typeof resolveSessionCapabilities> => {
+      const session = call?.session ?? kernel.get(sessionKey)
+      const registered = session?.currentResources().snapshot() ?? kernel.resources.snapshot()
+      const resources = [
+        ...new Map(
+          [
+            ...registered.map(({ entry }) => entry),
+            ...(call?.resources ?? (session ? discoveredResources.get(session) : undefined) ?? []),
+          ].map((entry) => [entry.id, entry]),
+        ).values(),
+      ]
+      return resolveSessionCapabilities({
+        profile,
+        composition:
+          deps.compositionPin ??
+          (profile.composition
+            ? compositionForPreset(session?.preset.name)
+            : resolveComposition(profile, {
+                preset: resolvePreset(session?.preset.name ?? profile.presets.default, presets, {
+                  limits: profile.limits,
+                }).doc,
+              })),
+        ...(session
+          ? {
+              presetView: session.preset,
+              routes: {
+                ...Object.fromEntries(
+                  Object.entries(session.preset.model.route).map(([slot, route]) => [
+                    slot,
+                    { route, model: session.preset.model.id[slot] ?? route },
+                  ]),
+                ),
+                primary: {
+                  route: session.preset.model.route.primary!,
+                  model: session.preset.model.id.primary ?? session.preset.model.route.primary!,
+                },
+              },
+              pin: {
+                legacy: !profile.composition,
+                loop: session.loop,
+                generationId: deps.sessionGeneration?.(sessionKey),
+              },
+            }
+          : { presetView: view }),
+        installed: {
+          plugins: extensionRows
+            .current()
+            .map((row) => ({ id: row.id, enabled: !row.disabled, packageId: compositionOwners.get(row.id) })),
+          tools: capabilityToolCatalog(tools).map((tool) =>
+            call?.name === tool.name ? { ...tool, readOnly: tool.readOnly && call.readOnly === true } : tool,
+          ),
+          modelAdapters: modelAdapterCatalog(pluginTree.root).map((entry) => entry.id),
+          childEngines: childAgentCatalog(pluginTree.root).map((entry) => entry.id),
+          uiModules: capabilityClientCatalog(activeRuntimeSources),
+        },
+        ...(session ? { computerUseAllowed: session.computerUseAllowed() } : {}),
+        ...(pluginTree.root.childAgents.allowlist(sessionKey)
+          ? { childAllowlist: pluginTree.root.childAgents.allowlist(sessionKey)! }
+          : {}),
+        ...(call?.mcpServer ? { resourceRequest: { kind: 'mcp', id: call.mcpServer } as const } : {}),
+        live: {
+          models: session?.d.provider.models() ?? [],
+          mcp: resources
+            .filter((entry) => entry.kind === 'mcp')
+            .map((entry) => ({ id: entry.id, name: entry.name })),
+          skills: [
+            ...new Map(
+              [
+                ...(availableSkillResources?.list() ?? []).map((skill) => ({
+                  id: skill.resourceId,
+                  name: skill.name,
+                  packageId: skillOwners.get(skill.resourceId),
+                })),
+                ...resources
+                  .filter((entry) => entry.kind === 'skill')
+                  .map((entry) => ({ id: entry.id, name: entry.name, packageId: skillOwners.get(entry.id) })),
+              ].map((entry) => [entry.id, entry]),
+            ).values(),
+          ],
+        },
+      })
+    }
     if (profile.composition) {
       assertCompositionCompatible(compositionForPreset(), compositionForPreset(profile.presets.default))
       const stopPolicy = kernel.hooks.on(
@@ -2068,10 +2193,23 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         (payload, context) => {
           const session = kernel.sessions.get(context.session.key)
           if (!session) return { allow: false, reason: 'Composition session is unavailable.' }
-          const tree = compositionForPreset(session.preset.name)
-          return compositionTools(session.currentTools(), tree.selection, tree.toolScope).resolve(
-            payload.name,
-          ) && compositionAllowsTool(tree.selection, payload.name, payload.meta.isReadOnly === true)
+          const args =
+            payload.args && typeof payload.args === 'object' && !Array.isArray(payload.args)
+              ? payload.args
+              : {}
+          const mcpServer =
+            ['list_mcp_resources', 'list_mcp_resource_templates', 'read_mcp_resource'].includes(
+              payload.name,
+            ) && typeof args.server === 'string'
+              ? args.server
+              : undefined
+          const capabilities = sessionCapabilities(session.key, undefined, {
+            name: payload.name,
+            readOnly: payload.meta.isReadOnly === true,
+            ...(mcpServer ? { mcpServer } : {}),
+          })
+          return capabilityEnabled(capabilities.tools, payload.name) &&
+            capabilities.resourceRequest?.enabled !== false
             ? { allow: true }
             : { allow: false, reason: 'Tool denied by the selected composition policy.' }
         },
@@ -2575,6 +2713,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     let skillRefreshTail: Promise<void> = Promise.resolve()
     let skillRetry = 0
     const refreshSkillRow = (fresh: SkillRuntimeInput | undefined): Promise<void> => {
+      availableSkillResources = fresh
       fresh = compositionSkills(fresh, profile.composition ?? {}, skillOwners)
       const task = skillRefreshTail.then(async () => {
         const previous = extensionRows.current().find((row) => row.id === SKILL_ROW_ID)
@@ -2713,6 +2852,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       compactionEngineCatalog: () => compactionEngineCatalog(pluginTree.root),
       childAgentCatalog: () => childAgentCatalog(pluginTree.root),
       compositionForPreset,
+      sessionCapabilities,
       applyModelProfile,
       presets,
       runtimes,

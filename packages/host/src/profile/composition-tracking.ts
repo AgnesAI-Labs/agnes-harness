@@ -7,7 +7,7 @@ import {
   createLiveCompositionWriter,
   type LiveCompositionSession,
 } from './composition-state.js'
-import { compositionToolGroups } from './composition-visibility.js'
+import { describeCapabilitySession } from './session-capability-view.js'
 import type { ResolvedProfile } from './types.js'
 
 /** Keep legacy Hosts' behavior unchanged while exposing the same safe live inspection surface. */
@@ -23,30 +23,7 @@ export async function trackHostComposition(
       const tree = resolveComposition(profile, {
         preset: resolvePreset(session.preset.name, host.presets, { limits: profile.limits }).doc,
       })
-      const { loop: _loop, modelAdapters: _adapters, compaction, persistence, sandbox } = tree.selection
-      const routes = new Set(Object.values(session.preset.model.route))
-      return {
-        sessionKey: session.key,
-        generationId: host.sessionGeneration?.(session.key) ?? '',
-        compositionHash: tree.hash,
-        preset: session.preset.name,
-        bundles: tree.bundles,
-        toolGroups: compositionToolGroups(session.currentTools(), tree, profile.bundleCatalog),
-        providers: {
-          loop: session.loop,
-          modelAdapters: [
-            ...new Set(
-              session.d.provider
-                .models()
-                .filter((model) => routes.has(model.route))
-                .map((model) => model.api),
-            ),
-          ],
-          ...(compaction === undefined ? {} : { compaction }),
-          ...(persistence ? { persistence } : {}),
-          ...(sandbox ? { sandbox } : {}),
-        },
-      }
+      return describeCapabilitySession(host, session, tree, profile.bundleCatalog)
     })
   const publish = () => {
     try {

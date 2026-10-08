@@ -20,8 +20,9 @@ import {
   CompositionSessionStore,
   createLiveCompositionWriter,
 } from './composition-state.js'
-import { compositionSkillOwners, compositionSkills, compositionToolGroups } from './composition-visibility.js'
 import { modelProfileDeployment } from './model-compatibility.js'
+import { capabilityEnabled, resolveSessionCapabilities } from './session-capabilities.js'
+import { describeCapabilitySession } from './session-capability-view.js'
 import type { ResolvedProfile } from './types.js'
 
 type Factory = (profile: ResolvedProfile, options: HostOptions) => Promise<Host>
@@ -46,9 +47,6 @@ export async function createCompositionHost(
   const opening = new Map<string, Promise<Container>>()
   const sessionOwners = new Map<string, Container>()
   const prepared = new Map<string, Parameters<Host['extensionRows']['prepare']>[0]>()
-  const skillOwners = compositionSkillOwners(
-    options.runtimePluginCatalogue ?? options.runtimePluginSnapshots ?? [],
-  )
   let currentSkills = options.skillResources
   let modelProfile = profile
   let lastPublication: HostPublicationReport | undefined
@@ -64,24 +62,28 @@ export async function createCompositionHost(
     tree: ResolvedComposition,
     host?: Host,
   ): T[] => {
-    const packages = new Map(tree.selection.packages?.map((pkg) => [pkg.id, pkg.enabled !== false]))
     const skill = host?.extensionRows.current().find((row) => row.id === SKILL_ROW_ID)
-    return rows.map((row) => {
-      // Skills are live resources. A container's filtered view owns its current importer identity.
-      if (skill && row.id === SKILL_ROW_ID) row = skill as T
-      const identity = pluginSnapshotIdentity(row.plugin)
-      const packageId =
-        identity?.packageId ??
-        (row.plugin.startsWith('builtin:')
-          ? row.plugin.slice('builtin:'.length, row.plugin.lastIndexOf('/'))
-          : undefined)
+    const candidates = rows.map((row) => (skill && row.id === SKILL_ROW_ID ? (skill as T) : row))
+    const plugins = resolveSessionCapabilities({
+      composition: tree,
+      installed: {
+        plugins: candidates.map((row) => ({
+          id: row.id,
+          enabled: !row.disabled,
+          packageId:
+            pluginSnapshotIdentity(row.plugin)?.packageId ??
+            (row.plugin.startsWith('builtin:')
+              ? row.plugin.slice('builtin:'.length, row.plugin.lastIndexOf('/'))
+              : undefined),
+        })),
+      },
+    }).plugins
+    return candidates.map((row) => {
       const override = tree.selection.plugins?.[row.id]
       return Object.freeze({
         ...row,
         ...(override?.config === undefined ? {} : { config: override.config }),
-        disabled:
-          (override?.enabled === undefined ? row.disabled : !override.enabled) ||
-          (!!packageId && packages.get(packageId) === false),
+        disabled: !capabilityEnabled(plugins, row.id),
       })
     })
   }
@@ -102,7 +104,7 @@ export async function createCompositionHost(
     if (pending) return pending
     const started = (async () => {
       const pinned = generations.session(binding.sessionKey)
-      const skills = compositionSkills(currentSkills, binding.tree.selection, skillOwners)
+      const skills = currentSkills
       // A newly opened composition must not import boot-time pins retired by a later update.
       // Existing sessions bootstrap from their own durable code snapshot instead.
       const sources = pinned
@@ -140,6 +142,7 @@ export async function createCompositionHost(
         binding.legacy ? deployment : profileForComposition(deployment, binding.tree),
         {
           ...options,
+          compositionPin: binding.tree,
           ...(sources
             ? {
                 runtimePluginSnapshots: sources,
@@ -219,33 +222,8 @@ export async function createCompositionHost(
   const live = () => {
     const sessions = new Map([...containers.values()].flatMap(({ host }) => [...host.kernel.sessions]))
     return [...sessions.values()].map((session) => {
-      const container = owner(session.key),
-        selection = container.tree.selection
-      const routes = new Set(Object.values(session.preset.model.route))
-      const adapters = [
-        ...new Set(
-          session.d.provider
-            .models()
-            .filter((model) => routes.has(model.route))
-            .map((model) => model.api),
-        ),
-      ]
-      const generationId = generations.session(session.key)?.generationId
-      return {
-        sessionKey: session.key,
-        ...(generationId ? { generationId } : {}),
-        compositionHash: container.tree.hash,
-        preset: session.preset.name,
-        bundles: container.tree.bundles,
-        toolGroups: compositionToolGroups(session.currentTools(), container.tree, profile.bundleCatalog),
-        providers: {
-          loop: session.loop,
-          modelAdapters: adapters.length ? adapters : (selection.modelAdapters ?? []),
-          ...(selection.compaction === undefined ? {} : { compaction: selection.compaction }),
-          ...(selection.persistence ? { persistence: selection.persistence } : {}),
-          ...(selection.sandbox ? { sandbox: selection.sandbox } : {}),
-        },
-      }
+      const container = owner(session.key)
+      return describeCapabilitySession(container.host, session, container.tree, profile.bundleCatalog)
     })
   }
   const publish = () => {
@@ -363,18 +341,18 @@ export async function createCompositionHost(
             ...profile,
             bundleCatalog: { ...profile.bundleCatalog, ...readRuntimeBundles(sources) },
           }
-          const loop =
-            input.loop ?? (parent ? undefined : (await configuration.sessionDefaults()).defaults.loop)
+          const adminLoop = parent ? undefined : (await configuration.sessionDefaults()).defaults.loop
           const tree =
             parent?.tree ??
             resolveComposition(admissionProfile, {
               preset: resolvePreset(input.preset ?? profile.presets.default, initial.host.presets, {
                 limits: profile.limits,
               }).doc,
-              ...(loop ? { session: { loop } } : {}),
+              ...(adminLoop ? { admin: { composition: { loop: adminLoop } } } : {}),
+              ...(input.loop ? { session: { loop: input.loop } } : {}),
               ...(input.bundles !== undefined ? { sessionBundles: input.bundles } : {}),
             })
-          const selectedLoop = tree.selection.loop
+          const selectedLoop = resolveSessionCapabilities({ composition: tree }).loop.value
           if (
             !parent &&
             selectedLoop &&
@@ -469,6 +447,7 @@ export async function createCompositionHost(
         ],
       }
     },
+    sessionCapabilities: (key) => owner(key).host.sessionCapabilities!(key),
     setSessionPreset: (key, name) =>
       enqueue(async () => {
         const result = await owner(key).host.setSessionPreset(key, name)
@@ -491,9 +470,7 @@ export async function createCompositionHost(
     refreshSkillRow: (fresh) =>
       enqueue(async () => {
         currentSkills = fresh
-        return broadcast('skills', (container) =>
-          container.host.refreshSkillRow(compositionSkills(fresh, container.tree.selection, skillOwners)),
-        )
+        return broadcast('skills', (container) => container.host.refreshSkillRow(fresh))
       }),
     reloadEcosystemExtension: async (id, input) => {
       if (id !== 'agnes/skills') return initial.host.reloadEcosystemExtension(id, input)

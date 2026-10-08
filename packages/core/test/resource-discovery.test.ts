@@ -24,60 +24,80 @@ const context = (): HookContext => ({
 })
 const engine = () => new HookEngine({ diag() {}, onFailure() {}, platform })
 
-it('passes accumulated candidates through real hooks and authorizes registered and returned entries', async () => {
-  const registry = new ResourceRegistry(),
-    e = engine(),
-    calls: unknown[] = []
-  registry.register(entry('registered'), meta)
-  e.on(
-    'resources_discover',
-    (p, c) => {
-      expect(p.registered.map((r) => r.id)).toEqual(['registered'])
-      expect(c.replayed).toBe(true)
-      return { resources: [entry('allowed'), entry('denied'), entry('approval')], additionalContext: 'note' }
-    },
-    meta,
-  )
-  e.on(
-    'resources_discover',
-    (p) => {
-      expect(p.registered.map((r) => r.id)).toEqual(['registered', 'allowed', 'denied', 'approval'])
-      return { resources: [entry('unavailable')] }
-    },
-    meta,
-  )
-  const runtime = new SeamRuntime(
-    fakeSeams({
-      principals: {
-        authorize: async (a, action, target) => {
-          calls.push({ actor: a, action, target })
-          if (target.id === 'unavailable') throw new Error('private detail')
-          return {
-            decisionId: target.id,
-            effect: target.id === 'denied' ? 'deny' : target.id === 'approval' ? 'require_approval' : 'allow',
-            reason: 'policy',
-          }
-        },
+it.each([false, true])(
+  'authorizes registered and hook candidates before Host selection (selected=%s)',
+  async (selected) => {
+    const registry = new ResourceRegistry(),
+      e = engine(),
+      calls: unknown[] = []
+    registry.register(entry('registered'), meta)
+    e.on(
+      'resources_discover',
+      (p, c) => {
+        expect(p.registered.map((r) => r.id)).toEqual(['registered'])
+        expect(c.replayed).toBe(true)
+        return {
+          resources: [entry('allowed'), entry('denied'), entry('approval')],
+          additionalContext: 'note',
+        }
       },
-    }),
-    presetDefaults(),
-    { clock: () => 0, onFailure() {} },
-  )
-  const result = await discoverResources(
-    e,
-    { registered: () => registry.snapshot(), actor: () => actor, cwd: () => '/w', principals: runtime },
-    { ...context(), replayed: true },
-  )
-  expect(result.resources.map((r) => r.id)).toEqual(['registered', 'allowed'])
-  expect(calls).toEqual(
-    ['registered', 'allowed', 'denied', 'approval', 'unavailable'].map((id) => ({
-      actor,
-      action: 'discover',
-      target: { kind: 'skill', id },
-    })),
-  )
-  expect(result.contributions).toEqual([{ ext: meta.source, result: { additionalContext: 'note' } }])
-})
+      meta,
+    )
+    e.on(
+      'resources_discover',
+      (p) => {
+        expect(p.registered.map((r) => r.id)).toEqual(['registered', 'allowed', 'denied', 'approval'])
+        return { resources: [entry('unavailable')] }
+      },
+      meta,
+    )
+    const runtime = new SeamRuntime(
+      fakeSeams({
+        principals: {
+          authorize: async (a, action, target) => {
+            calls.push({ actor: a, action, target })
+            if (target.id === 'unavailable') throw new Error('private detail')
+            return {
+              decisionId: target.id,
+              effect:
+                target.id === 'denied' ? 'deny' : target.id === 'approval' ? 'require_approval' : 'allow',
+              reason: 'policy',
+            }
+          },
+        },
+      }),
+      presetDefaults(),
+      { clock: () => 0, onFailure() {} },
+    )
+    const result = await discoverResources(
+      e,
+      {
+        registered: () => registry.snapshot(),
+        actor: () => actor,
+        cwd: () => '/w',
+        principals: runtime,
+        ...(selected
+          ? {
+              select: (entries: readonly ResourceEntry[]) => [
+                ...entries.filter((item) => item.id === 'allowed'),
+                entry('denied'),
+              ],
+            }
+          : {}),
+      },
+      { ...context(), replayed: true },
+    )
+    expect(result.resources.map((r) => r.id)).toEqual(selected ? ['allowed'] : ['registered', 'allowed'])
+    expect(calls).toEqual(
+      ['registered', 'allowed', 'denied', 'approval', 'unavailable'].map((id) => ({
+        actor,
+        action: 'discover',
+        target: { kind: 'skill', id },
+      })),
+    )
+    expect(result.contributions).toEqual([{ ext: meta.source, result: { additionalContext: 'note' } }])
+  },
+)
 
 it('does not admit malformed hook output and still runs later open-policy handlers', async () => {
   const e = engine()

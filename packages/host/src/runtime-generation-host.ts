@@ -886,6 +886,7 @@ export async function createRuntimeGenerationHost(
       if (!result) throw new Error('E_GENERATION_SKILLS: Skills row has no status')
       return result
     },
+    sessionCapabilities: (key) => owner(key).sessionCapabilities!(key),
     setSessionPreset: (key, preset) => owner(key).setSessionPreset(key, preset),
     validatePresetSwitch: (name, key) =>
       (key ? owner(key) : (current?.host ?? initial)).validatePresetSwitch(name),
