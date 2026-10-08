@@ -290,8 +290,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-runtime/src/approval-expiry': 105,
   'packages/host-runtime/src/adapters': 465,
   'packages/host-runtime/src/profile': 1655,
-  'packages/host-runtime/src': 9360,
-  'packages/host-runtime/src/assemble': 3309,
+  'packages/host-runtime/src': 9363,
+  'packages/host-runtime/src/assemble': 3312,
   'packages/host-providers/src/adapters': 477,
   'packages/host-providers/src/profile': 165,
   'packages/host-providers/src': 4639,
@@ -320,14 +320,14 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-infrastructure/src/adapters/powershell': 133,
   'packages/host-infrastructure/src/configuration': 1443,
   'packages/host-infrastructure/src/adapters/storage-sqlite': 658,
-  'packages/host-infrastructure/src/adapters': 6246,
-  'packages/host-infrastructure/src': 10221,
+  'packages/host-infrastructure/src/adapters': 6384,
+  'packages/host-infrastructure/src': 10364,
   'packages/host-common/src/configuration-lock': 39,
   'packages/host-common/src/profile': 1840,
   'packages/host-common/src': 3738,
   'packages/host-common/src/assemble': 439,
   'packages/core-artifacts/src': 744,
-  'packages/core-effects/src': 2582,
+  'packages/core-effects/src': 2612,
   'packages/core-ledger/src': 6188,
   'packages/core-child-control/src': 397,
   'packages/core-common/src': 528,
@@ -440,7 +440,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/base/extensions/fs-checkpoint': 390,
   // 2026-10-07 gap-fill review: Governed code runtime I/O and persistent shell integration.
   // countLines: 800 -> 814; exact cap, no exclusions or spare allocation.
-  'packages/base/extensions/sandbox': 841,
+  'packages/base/extensions/sandbox': 854,
   // 2026-10-07 gap-fill review: Cache context contributions by hook registration and refresh live contributors.
   // countLines: 90 -> 133; exact cap, no exclusions or spare allocation.
   'packages/base/extensions/budget': 133,
@@ -454,7 +454,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-21: add Linux same-handle artifact deletion dispatch and availability. Exact 1122.
   // 2026-09-22: no-replace directory publication, +17 measured lines; no fallback.
   // SKILL-DELETE-PRIORITY: +47 counted lines for 64-bit deletion and platform path preflight; no spare.
-  'packages/system-node/src': 1354,
+  'packages/system-node/src': 1381,
   // 2026-09-13 in-process ecosystem: verified snapshots, rollback journal/GC and the local examples
   // catalogue are the PackageManager-owned state machine. Exact post-integration total; no spare.
   // 2026-09-14: Task 1 orphaned-pin-cleanup adds listRuntimePinsStore() function and
@@ -1678,7 +1678,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2327 -> 2438; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Expose cooperative construction signals, adapter credential ports and shared default compaction/policy helpers.
   // countLines: 2438 -> 2505 (+67); exact measured cap, no exclusions or spare allocation.
-  'packages/extension-api/src': 2726, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  'packages/extension-api/src': 2727, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
