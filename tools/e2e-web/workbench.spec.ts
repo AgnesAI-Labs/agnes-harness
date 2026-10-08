@@ -5,6 +5,7 @@ import type { Page, TestInfo } from '@playwright/test'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, settled, translated } from './quality.js'
 import { toolResult } from './sdk.js'
+import { sandboxedSession } from './test/sandbox.js'
 import { chooseWorkspace, fresh, turn } from './ui.js'
 
 // Every gate validates the locale/theme/viewport matrix; the private report is an optional copy.
@@ -231,44 +232,40 @@ test('session terminal survives UI detachment, follows agent output and honors p
   }
   await mkdir(join(runtime.home, 'data/secrets'), { recursive: true })
   await mkdir(join(runtime.home, 'data/tmp'), { recursive: true })
-  const readOnly = await client.session.new({
-    cwd: runtime.workspace,
-    preset: 'read-only',
-    sessionKey: 'wb1-terminal-read-only',
-  })
-  await expect(readOnly.jobsControl({ operation: 'open' })).rejects.toMatchObject({
-    data: { code: 'CAPABILITY_DENIED' },
-  })
-  expect((await readOnly.jobsRead()).jobs).toHaveLength(0)
+  const readOnly = await sandboxedSession(client, runtime, 'read-only', info)
+  if (readOnly) {
+    await expect(readOnly.jobsControl({ operation: 'open' })).rejects.toMatchObject({
+      data: { code: 'CAPABILITY_DENIED' },
+    })
+    expect((await readOnly.jobsRead()).jobs).toHaveLength(0)
+  }
   expect((await session.jobsRead()).jobs.filter((job) => job.owner === 'human')).toHaveLength(2)
-  const sandboxed = await client.session.new({
-    cwd: runtime.workspace,
-    preset: 'workspace-write',
-    sessionKey: 'wb1-terminal-sandbox',
-  })
-  const workspace = await sandboxed.jobsControl({ operation: 'open' })
-  expect(workspace.output).toMatchObject({
-    owner: 'human',
-    ownerSessionId: sandboxed.id,
-    cwd: await realpath(runtime.workspace),
-    status: 'running',
-  })
-  if (!('id' in workspace.output)) throw new Error('workspace terminal required')
-  const workspaceJobId = workspace.output.id
-  const outside = join(dirname(await realpath(runtime.workspace)), 'terminal-outside-denied.txt')
-  await sandboxed.jobsControl({
-    operation: 'send',
-    jobId: workspace.output.id,
-    text: `printf DENIED > '${outside}'; ${protectedFiles.map((path) => `cat '${path}'; printf CHANGED > '${path}'`).join('; ')}; printf ALLOWED > wb1-terminal-inside.txt; printf 'WB1_BOUNDARY_DONE\\n'\n`,
-  })
-  await expect
-    .poll(async () => (await sandboxed.jobsRead(workspaceJobId)).job?.stdout, { timeout: 30_000 })
-    .toMatch(/\r?\nWB1_BOUNDARY_DONE\r?\n/)
-  expect(await readFile(join(runtime.workspace, 'wb1-terminal-inside.txt'), 'utf8')).toBe('ALLOWED')
-  await expect(access(outside)).rejects.toMatchObject({ code: 'ENOENT' })
-  expect((await sandboxed.jobsRead(workspaceJobId)).job?.stdout).not.toContain('WB1_PROTECTED_SYNTHETIC')
-  for (const path of protectedFiles) expect(await readFile(path, 'utf8')).toBe('WB1_PROTECTED_SYNTHETIC\n')
-  await sandboxed.jobsControl({ operation: 'kill', jobId: workspace.output.id })
+  const sandboxed = await sandboxedSession(client, runtime, 'workspace-write', info)
+  if (sandboxed) {
+    const workspace = await sandboxed.jobsControl({ operation: 'open' })
+    expect(workspace.output).toMatchObject({
+      owner: 'human',
+      ownerSessionId: sandboxed.id,
+      cwd: await realpath(runtime.workspace),
+      status: 'running',
+    })
+    if (!('id' in workspace.output)) throw new Error('workspace terminal required')
+    const workspaceJobId = workspace.output.id
+    const outside = join(dirname(await realpath(runtime.workspace)), 'terminal-outside-denied.txt')
+    await sandboxed.jobsControl({
+      operation: 'send',
+      jobId: workspace.output.id,
+      text: `printf DENIED > '${outside}'; ${protectedFiles.map((path) => `cat '${path}'; printf CHANGED > '${path}'`).join('; ')}; printf ALLOWED > wb1-terminal-inside.txt; printf 'WB1_BOUNDARY_DONE\\n'\n`,
+    })
+    await expect
+      .poll(async () => (await sandboxed.jobsRead(workspaceJobId)).job?.stdout, { timeout: 30_000 })
+      .toMatch(/\r?\nWB1_BOUNDARY_DONE\r?\n/)
+    expect(await readFile(join(runtime.workspace, 'wb1-terminal-inside.txt'), 'utf8')).toBe('ALLOWED')
+    await expect(access(outside)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect((await sandboxed.jobsRead(workspaceJobId)).job?.stdout).not.toContain('WB1_PROTECTED_SYNTHETIC')
+    for (const path of protectedFiles) expect(await readFile(path, 'utf8')).toBe('WB1_PROTECTED_SYNTHETIC\n')
+    await sandboxed.jobsControl({ operation: 'kill', jobId: workspace.output.id })
+  }
   await panel.getByTestId('terminal-tab-close').click()
   await expect
     .poll(async () => (await session.jobsRead(human.id)).job?.status, { timeout: 30_000 })

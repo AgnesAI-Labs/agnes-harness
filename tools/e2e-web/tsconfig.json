@@ -21,6 +21,7 @@
     "examples.spec.ts",
     "runtime.ts",
     "sdk.ts",
+    "test/sandbox.ts",
     "fixtures.ts",
     "quality.ts",
     "i18n.ts",
@@ -28,6 +29,12 @@
   ],
   "exclude": ["fixtures/**"],
   "references": [
+    {
+      "path": "../../packages/base"
+    },
+    {
+      "path": "../../packages/host"
+    },
     {
       "path": "../../packages/sdk"
     }

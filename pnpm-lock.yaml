@@ -1787,6 +1787,13 @@ importers:
       '@agnes/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
+    devDependencies:
+      '@agnes/base':
+        specifier: workspace:*
+        version: link:../../packages/base
+      '@agnes/host':
+        specifier: workspace:*
+        version: link:../../packages/host
 
   tools/guards: {}
 

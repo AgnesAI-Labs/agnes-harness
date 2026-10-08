@@ -30,6 +30,8 @@ worker 在会话 workspace invocation 内执行 list/read，使用与工具一�
 
 打开终端和输入经过当前会话工具策略，包括 read-only 与计划模式拒绝。已认证用户的明确操作提供人工批准，不能覆盖 preset 拒绝。打开操作使用与工具执行相同的会话 sandbox，不接受调用方选择 cwd，也没有 raw-spawn 回退。改变 sandbox 权限需要新建会话；Host 会拒绝改变现有 workspace sandbox 的 preset 切换。错误和状态来自后台；每个输出流上限为 64 Ki 个字符，溢出会明确提示。`@agnes/web-ui` 的 `terminalScreen` 与 `terminalKey` 复用设置页的纯文本 VT 渲染和键盘映射，终端字节不会变成 HTML。
 
+OS 后端无法落实 preset 时，`session/new` 与 `session/load` 返回 JSON-RPC `SEMANTIC_REJECTED`（-32011）、`data.code: SANDBOX_UNAVAILABLE` 和 `messageKey: appServer.errors.unavailable`。不返回异常原文、路径或后端输出。明确选择 full-access 的行为保持原样；未识别的失败仍然是错误。
+
 内置终端按会话和作业串行、合并发送键盘与粘贴输入，待发送缓冲最多 64 Ki 个字符。缓冲已满时拒绝新增输入并提示。发送失败会丢弃尚未发送的剩余内容，不重试状态不确定的字节。断开或切换标签／会话只丢弃未发送的界面输入；已接受的字节与进程仍归后端所有。
 
 ## 实时目标面板

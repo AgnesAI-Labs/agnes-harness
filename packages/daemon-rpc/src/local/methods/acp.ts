@@ -357,6 +357,8 @@ export function disposeFeeds(feeds: Map<string, Feed>): void {
  */
 export function throwSessionOpenRpcError(error: unknown): never {
   const e = error as { code?: unknown; reason?: unknown; detail?: { reason?: unknown } } | null
+  if (e?.code === 'E_SANDBOX_WORKSPACE' || e?.code === 'SANDBOX_UNAVAILABLE')
+    throw rpcError('SEMANTIC_REJECTED', { code: 'SANDBOX_UNAVAILABLE' })
   if (e?.code === 'E_SEAM_INIT') {
     const causes = {
       'provider-unknown': 'E_PROVIDER_UNKNOWN',

@@ -176,7 +176,7 @@
   "packages/daemon-admin/src/packages/operations": 416,
   "packages/daemon-admin/src/packages/permissions": 74,
   "packages/daemon-admin/src/packages/project": 43,
-  "packages/daemon-rpc/src": 7509,
+  "packages/daemon-rpc/src": 7511,
   "packages/daemon-rpc/src/local/auth": 341,
   "packages/daemon-rpc/src/local/methods/extensions": 199,
   "packages/daemon-supervisor/src": 10414,

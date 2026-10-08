@@ -91,4 +91,21 @@ describe('throwSessionOpenRpcError', () => {
       data: { code: 'WORKSPACE_INVALID', reason: 'not-found' },
     })
   })
+
+  it.each(['E_SANDBOX_WORKSPACE', 'SANDBOX_UNAVAILABLE'])(
+    'maps %s from the Host or worker to a fixed sandbox refusal without exception prose',
+    (code) => {
+      for (const error of [
+        Object.assign(new Error('private-path-and-token'), { code }),
+        { code, message: 'private-path-and-token', reason: 'private-reason', detail: { token: 'secret' } },
+      ])
+        expect(caught(error)).toEqual({
+          code: -32011,
+          message: 'SEMANTIC_REJECTED',
+          data: { code: 'SANDBOX_UNAVAILABLE' },
+        })
+      const unknown = { code: 'E_UNKNOWN', message: `${code}: unavailable` }
+      expect(caught(unknown)).toBe(unknown)
+    },
+  )
 })
