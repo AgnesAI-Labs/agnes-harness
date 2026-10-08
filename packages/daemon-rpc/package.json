@@ -44,7 +44,8 @@
     "@agnes/host": "workspace:*",
     "@agnes/protocol": "workspace:*",
     "@agnes/worker-runtime": "workspace:*",
-    "@agnes/observability": "workspace:*"
+    "@agnes/observability": "workspace:*",
+    "@agnes/extension-api": "workspace:*"
   },
   "license": "Apache-2.0",
   "devDependencies": {

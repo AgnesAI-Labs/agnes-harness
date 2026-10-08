@@ -13,6 +13,7 @@ import type {
   HookReturnMap,
 } from '@agnes/extension-api'
 import type { Billing, InferenceEvent, ThinkingLevel } from '@agnes/protocol'
+import { childReceiptNarrative } from '../../child/receipts.js'
 import { settleTreeSpend } from '../../child/runtime-budget.js'
 import { HookBlockedError } from '../../hooks/block.js'
 import { deriveRequest, sanitize, wrapUntrusted } from '../../request/derive.js'
@@ -252,7 +253,7 @@ async function primaryPrefix(s: SessionImpl): Promise<Prefix> {
   }
 }
 
-function summaryRequest(
+async function summaryRequest(
   s: SessionImpl,
   plan: CompactionPlan,
   segment: SummarySegment,
@@ -267,8 +268,10 @@ function summaryRequest(
     thinkingOverride ??
     s.preset.model.thinking.compaction ??
     (prefix.samplingParams?.thinking as ThinkingLevel | undefined)
+  const receipts = await childReceiptNarrative(s)
+  const system = [plan.prompts.system, receipts].filter(Boolean).join('\n\n')
   const instruction = segment.wide
-    ? `${SUMMARY_NO_TOOLS_PREAMBLE}\n\n${plan.prompts.system}\n\n${segment.instruction}`
+    ? `${SUMMARY_NO_TOOLS_PREAMBLE}\n\n${system}\n\n${segment.instruction}`
     : segment.instruction
   let derived = deriveRequest({
     kind: 'summary',
@@ -292,7 +295,7 @@ function summaryRequest(
     envelopeCache: s.envelopeCache,
     ...(segment.wide ? { mintedPrefix: prefix } : {}),
     summaryPlan: {
-      ...(segment.wide ? {} : { system: plan.prompts.system }),
+      ...(segment.wide ? {} : { system }),
       instruction,
       ...(segment.quote ? { quote: segment.quote } : {}),
     },
@@ -307,7 +310,7 @@ function summaryRequest(
   return { derived, wire }
 }
 
-function summaryInputTokens(wire: ReturnType<typeof summaryRequest>['wire']): number {
+function summaryInputTokens(wire: Awaited<ReturnType<typeof summaryRequest>>['wire']): number {
   return (
     boundWireInputTokens(wire) ??
     estimateTokens(canonicalJson({ system: wire.system, tools: wire.tools, messages: wire.messages }))
@@ -325,7 +328,7 @@ async function summarize(
   thinkingOverride?: ThinkingLevel,
   signal = s.ac.signal,
 ): Promise<SummaryResult> {
-  const { wire } = summaryRequest(s, plan, segment, calls, target, prefix, thinkingOverride)
+  const { wire } = await summaryRequest(s, plan, segment, calls, target, prefix, thinkingOverride)
   const inputTokens = summaryInputTokens(wire)
   const projected = await s.d.runtime.ledgerProjected({
     tokensEstimate: inputTokens + plan.maxTokens,
@@ -693,7 +696,7 @@ function engineModel(
         plan.maxTokens = Math.min(plan.maxTokens, record.maxTokens)
       const selectedCalls = calls.filter((call) => replace.seqs.includes(call.assistantSeq))
       const segment: SummarySegment = { nodes: replace.nodes, instruction: request.instruction, wide: false }
-      const { wire } = summaryRequest(s, plan, segment, selectedCalls, target, prefix)
+      const { wire } = await summaryRequest(s, plan, segment, selectedCalls, target, prefix)
       if (
         summaryInputTokens(wire) + plan.maxTokens >
         contextWindowFor(s, target.route, target.model, 'compaction')
@@ -1009,13 +1012,15 @@ export async function runCompaction(s: SessionImpl, signal = s.ac.signal): Promi
       : []),
   ]
   const segments: SummarySegment[] = []
+  const receipts = await childReceiptNarrative(s)
+  const system = [plan.prompts.system, receipts].filter(Boolean).join('\n\n')
   const fitsWindow = (segment: SummarySegment): boolean => {
     const prefixTokens = segment.wide
       ? prefix.sections.reduce((sum, section) => sum + estimateTokens(section.text), 0) +
         estimateTokens(canonicalJson(prefix.tools))
-      : estimateTokens(plan.prompts.system)
+      : estimateTokens(system)
     const instruction = segment.wide
-      ? `${SUMMARY_NO_TOOLS_PREAMBLE}\n\n${plan.prompts.system}\n\n${segment.instruction}`
+      ? `${SUMMARY_NO_TOOLS_PREAMBLE}\n\n${system}\n\n${segment.instruction}`
       : segment.instruction
     return (
       plan.maxTokens +

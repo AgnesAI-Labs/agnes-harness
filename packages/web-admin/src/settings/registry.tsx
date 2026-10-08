@@ -16,6 +16,7 @@ import { DoctorPanel } from './doctor.js'
 import { ExamplesPanel } from './examples.js'
 import { HistorySearchPanel } from './history.js'
 import { JobsPanel } from './jobs-panel.js'
+import { MemoryPanel } from './memory.js'
 import {
   GenerationsPanel,
   LocalPluginsPanel,
@@ -95,6 +96,7 @@ const definitions: readonly [
       </>
     ),
   ],
+  ['agent', 'memory', 14, (c) => <MemoryPanel canSave={c.canSave} />],
   ['agent', 'system-prompt', 13, (c) => <SystemPromptPanel canSave={c.canSave} />],
   ['agent', 'engines', 12, (c, t) => <ChildEnginesPanel api={c.api} canSave={c.canSave} t={t} />],
   [

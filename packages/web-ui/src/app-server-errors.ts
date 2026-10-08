@@ -1,5 +1,15 @@
 // Public message keys are safe identifiers, never server-provided prose or exception payloads.
 const messages: Record<string, readonly [string, string]> = {
+  memoryCap: [
+    'Consolidate memory within the file size and line limits. The previous file was kept.',
+    '请合并整理记忆，使其符合文件大小和行数上限。原文件已保留。',
+  ],
+  memorySecret: ['Secret-like content cannot be saved as memory.', '疑似密钥或凭据的内容不能保存到记忆中。'],
+  memoryDisabled: ['Memory is off: the agent cannot read or write it.', '记忆已关闭：Agent 不能读取或写入。'],
+  memoryPartial: [
+    'The file was saved, but writer metadata failed. Reload to inspect the saved file.',
+    '文件已保存，但写入来源记录失败。请重新载入检查已保存的文件。',
+  ],
   internal: [
     'The operation could not be confirmed. Use the diagnostic ID to inspect it.',
     '无法确认操作结果，请使用诊断 ID 检查。',

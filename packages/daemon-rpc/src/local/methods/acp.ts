@@ -375,6 +375,10 @@ export function throwSessionOpenRpcError(error: unknown): never {
       reason: cause ? reason : 'session-initialization-failed',
     })
   }
+  if (e?.code === 'E_SANDBOX_WORKSPACE')
+    throw rpcError('SEMANTIC_REJECTED', {
+      code: 'E_SANDBOX_WORKSPACE',
+    })
   if (e?.code === 'E_LOOP_MISSING')
     throw rpcError('SEMANTIC_REJECTED', {
       code: 'LOOP_MISSING',

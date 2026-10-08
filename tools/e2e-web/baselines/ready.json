@@ -172,10 +172,21 @@
     "settings-search-zh-CN-light",
     "mcp-form-zh-CN-light",
     "settings-search-zh-CN-dark",
-    "mcp-form-zh-CN-dark"
+    "mcp-form-zh-CN-dark",
+    "memory-en-light",
+    "memory-en-dark",
+    "memory-zh-CN-light",
+    "memory-zh-CN-dark",
+    "memory-editor-en-light",
+    "memory-editor-en-dark",
+    "memory-editor-zh-CN-light",
+    "memory-editor-zh-CN-dark"
   ],
   "pending": {},
-  "platforms": ["darwin", "linux"],
+  "platforms": [
+    "darwin",
+    "linux"
+  ],
   "linuxEnvironment": {
     "distribution": "Ubuntu 24.04",
     "browserDependencies": "Playwright install --with-deps chromium",

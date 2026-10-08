@@ -48,6 +48,7 @@ describe('repo', () => {
       '@agnes/host-runtime',
       '@agnes/loop-default',
       '@agnes/mcp-transport-health',
+      '@agnes/memory-file',
       '@agnes/model-adapters',
       '@agnes/observability',
       '@agnes/package-admin-client-node',

@@ -7,6 +7,7 @@ import { withTimeout } from '@agnes/core-effects/effects/wrap'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { BudgetState } from '@agnes/core-ledger/reduce/shapes'
 import type { InferenceEvent, JsonValue, ModelRecord, RequestBody as WireBody } from '@agnes/protocol'
+import { childReceiptNarrative } from '../../child/receipts.js'
 import {
   releaseTreeReservation,
   reserveTreeBudget,
@@ -299,6 +300,21 @@ export async function assembleRequestPrefix(
       .filter((o) => o.contribute)
       .map((o) => ({ op: o.name, ...(o.contribute as NonNullable<typeof o.contribute>)(ctx) })),
   ]
+  const memory = await s.d.memory?.snapshot(ctx.state?.meta.turn ?? 0)
+  if (memory) {
+    if (!(await s.d.log.scan({ type: 'x/core/memory-private', limit: 1 })).length)
+      await s.d.log.append([s.ev('x/core/memory-private', { files: 1 }, { ignorable: true })])
+    contribs.push({
+      op: 'memory',
+      promptSections: [{ id: 'memory:index', order: 131, source: 'memory', text: memory.content }],
+    })
+  }
+  const receipts = await childReceiptNarrative(s)
+  if (receipts)
+    contribs.push({
+      op: 'child-receipts',
+      promptSections: [{ id: 'core:child-receipts', order: 112, source: 'core', text: receipts }],
+    })
   const merged = mergeContributions(contribs, t.snapshot)
   for (const conflict of merged.conflicts) await s.diag('contribute-conflict', conflict)
   if (t.preload === undefined) t.preload = (await preloadRuntimeSection(s, triggerSeq)) ?? null

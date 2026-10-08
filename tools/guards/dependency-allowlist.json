@@ -73,7 +73,8 @@
     "@agnes/system-node",
     "@agnes/loop-default",
     "@agnes/history-index",
-    "@agnes/observability"
+    "@agnes/observability",
+    "@agnes/memory-file"
   ],
   "@agnes/mcp-transport-health": [],
   "@agnes/code": ["@agnes/protocol", "@agnes/extension-api", "@agnes/core", "@agnes/base"],
@@ -303,7 +304,8 @@
     "@agnes/host",
     "@agnes/protocol",
     "@agnes/worker-runtime",
-    "@agnes/observability"
+    "@agnes/observability",
+    "@agnes/extension-api"
   ],
   "@agnes/daemon-supervisor": [
     "@agnes/base",
@@ -346,5 +348,6 @@
     "@agnes/protocol",
     "@agnes/error-sanitization",
     "@agnes/system-node"
-  ]
+  ],
+  "@agnes/memory-file": ["@agnes/extension-api", "@agnes/system-node"]
 }

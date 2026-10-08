@@ -233,3 +233,71 @@ it('routes an unconfigured child compaction slot to the child model target', asy
     await kernel.close()
   }
 })
+
+it('counts only committed child creations after three proposals, compaction and ledger recovery', async () => {
+  const storage = new MemoryStorage()
+  const provider = fakeProvider([
+    textTurn('I propose three children.'),
+    textTurn('Earlier prose incorrectly claimed three were spawned.'),
+    textTurn('An unreliable summary says three children were spawned.'),
+    textTurn('Recovered answer'),
+  ])
+  provider.models = () => [model]
+  const create = () =>
+    Kernel.create({
+      loops: defaultLoops(),
+      storage,
+      seams: fakeSeams(),
+      provider,
+      contract: { contract_id: null, parser_version: '1' },
+      preset: { ...presetDefaults(), maxFanOut: 1, treeBudgetCredits: 100 },
+      fsOps: testFsOps(),
+      netFetch: async () => new Response(''),
+      logger,
+      timers: noTimers,
+      clock: () => 1_757_203_200_000,
+    })
+  let kernel = create()
+  try {
+    let parent = await kernel.session('receipt-parent', {
+      actor,
+      resolvedProfileHash: 'h1',
+      cwd: '/w',
+      writerRunId: 'before',
+    })
+    await prompt(parent, 'propose three children')
+    const created = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'first proposal' })
+    for (const input of ['second proposal', 'third proposal'])
+      await expect(parent.d.children.create({ parent: parent.key, cwd: '/w', input })).rejects.toMatchObject({
+        code: 'E_CHILD_LIMIT',
+      })
+    const receipts = await storage.listByParent(parent.key)
+    expect(receipts.filter((row) => row.creationPhase === 'committed').map((row) => row.childKey)).toEqual([
+      created.key,
+    ])
+    await prompt(parent, 'report the actual spawn count')
+    expect(JSON.stringify(provider.requests.at(-1)?.system)).toContain('Successfully created children: 1.')
+    parent.compaction = new CompactionRunner({ plan, onCompact: async () => undefined })
+    await parent.requestCompaction({ actor, admissionId: 'receipts-summary' })
+    expect((await parent.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+    const summary = provider.requests.findLast((request) => request.kind === 'summary')
+    expect(JSON.stringify(summary)).toContain('Successfully created children: 1.')
+    expect(parent.surface()[0]?.kind).toBe('summary')
+    await kernel.close()
+    kernel = create()
+    parent = await kernel.session('receipt-parent', {
+      actor,
+      resolvedProfileHash: 'h1',
+      cwd: '/w',
+      writerRunId: 'recovered',
+    })
+    await prompt(parent, 'resume after compaction')
+    const recovered = provider.requests.at(-1)
+    expect(JSON.stringify(recovered?.messages)).toContain('unreliable summary')
+    expect(JSON.stringify(recovered?.system)).toContain('Successfully created children: 1.')
+    expect(JSON.stringify(recovered?.system)).toContain('override prose and summaries')
+    expect(JSON.stringify(recovered?.system)).not.toContain('Successfully created children: 3.')
+  } finally {
+    await kernel.close()
+  }
+})

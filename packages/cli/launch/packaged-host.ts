@@ -77,6 +77,20 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         runtime: 'in-process',
         default: false,
       },
+      {
+        export: 'memoryPlugin',
+        id: 'memory:file',
+        inject: ['providers'],
+        runtime: 'in-process',
+        default: true,
+      },
+      {
+        export: 'rememberingPlugin',
+        id: 'skills:remembering',
+        inject: ['skills'],
+        runtime: 'in-process',
+        default: true,
+      },
     ] satisfies readonly Readonly<AgnesPluginManifestEntry>[]
   ).map((entry) => Object.freeze({ ...entry, apiRange: '^1.4.0' })),
 )

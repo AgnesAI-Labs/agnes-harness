@@ -116,6 +116,26 @@
         "runtime": "in-process",
         "default": false,
         "apiRange": "^1.4.0"
+      },
+      {
+        "id": "memory:file",
+        "export": "memoryPlugin",
+        "inject": [
+          "providers"
+        ],
+        "runtime": "in-process",
+        "default": true,
+        "apiRange": "^1.4.0"
+      },
+      {
+        "id": "skills:remembering",
+        "export": "rememberingPlugin",
+        "inject": [
+          "skills"
+        ],
+        "runtime": "in-process",
+        "default": true,
+        "apiRange": "^1.4.0"
       }
     ],
     "extensions": [
@@ -149,8 +169,8 @@
     "test": "vitest run",
     "typecheck": "tsc -b",
     "build:isolation-runner": "tsx tools/build-isolation-runner.ts",
-    "gen": "tsx tools/gen-schemas.ts --write",
-    "gen:check": "tsx tools/gen-schemas.ts"
+    "gen": "tsx tools/gen-schemas.ts --write && node tools/gen-memory-assets.mjs --write",
+    "gen:check": "tsx tools/gen-schemas.ts && node tools/gen-memory-assets.mjs"
   },
   "peerDependencies": {
     "@agnes/extension-api": "workspace:*"
@@ -175,7 +195,8 @@
     "jiti": "2.7.0",
     "sharp": "0.34.5",
     "turndown": "7.2.4",
-    "yaml": "2.9.0"
+    "yaml": "2.9.0",
+    "@agnes/memory-file": "workspace:*"
   },
   "devDependencies": {
     "@agnes/extension-api": "workspace:*",

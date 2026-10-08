@@ -343,6 +343,7 @@ export const defaultLoopPlugin = {
   },
 }
 
+export { fileMemoryRoots, memoryPlugin } from '@agnes/memory-file'
 export { observabilityPlugin } from '@agnes/observability'
 export {
   type ContextConfig,
@@ -353,3 +354,4 @@ export {
   readContextConfig,
   writeContextConfig,
 } from '../extensions/context-rules/src/index.js'
+export { rememberingPlugin } from './memory/index.js'

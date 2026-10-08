@@ -4,6 +4,12 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+`memoryKind` adds an optional, versioned session memory provider with per-turn snapshots,
+ordinary file ports and explicit human editing. `memoryPrivateEvent` exports structural event
+facts while omitting memory-derived payloads. Existing hosts without a provider keep their
+ordinary file behavior; the official file provider defaults to off. These are unpublished
+preview additions; release versioning follows the policy below.
+
 The Node-only `@agnes/extension-api/mcp-naming` subpath shares stable and legacy MCP naming
 helpers with Base and Host. Root runtime exports remain unchanged.
 

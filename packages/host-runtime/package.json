@@ -26,7 +26,8 @@
     "./session-hooks": "./src/session-hooks.ts",
     "./session-switch": "./src/session-switch.ts",
     "./session-title": "./src/session-title.ts",
-    "./session": "./src/session.ts"
+    "./session": "./src/session.ts",
+    "./memory-admin": "./src/memory-admin.ts"
   },
   "scripts": {
     "typecheck": "tsc -b"

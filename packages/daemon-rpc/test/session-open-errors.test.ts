@@ -1,4 +1,5 @@
 import { HostError, WorkspaceDirectoryError } from '@agnes/host'
+import { normalizeRpcError, type RpcError } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { throwSessionOpenRpcError } from '../src/local/methods/acp.js'
 
@@ -74,6 +75,17 @@ describe('throwSessionOpenRpcError', () => {
   it('leaves other preset refusals and workspace errors to their existing mapping', () => {
     const other = new HostError('E_PRESET_UNRESOLVED', 'model contract is not loaded')
     expect(caught(other)).toBe(other)
+    const sandbox = caught({ code: 'E_SANDBOX_WORKSPACE', message: 'private path or token' })
+    expect(sandbox).toEqual({
+      code: -32011,
+      message: 'SEMANTIC_REJECTED',
+      data: { code: 'E_SANDBOX_WORKSPACE' },
+    })
+    expect(normalizeRpcError(sandbox as RpcError).data).toMatchObject({
+      code: 'E_SANDBOX_WORKSPACE',
+      cause: { code: 'E_SANDBOX_WORKSPACE' },
+      messageKey: 'appServer.errors.unavailable',
+    })
     expect(caught(new WorkspaceDirectoryError('not-found'))).toMatchObject({
       code: -32011,
       data: { code: 'WORKSPACE_INVALID', reason: 'not-found' },

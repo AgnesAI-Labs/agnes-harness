@@ -24,6 +24,9 @@ import {
   API_VERSION,
   type ExtensionManifest,
   type LeaseView,
+  type MemorySession,
+  memoryKind,
+  memoryPrivateEvent,
   observabilityKind,
   ProviderError,
   type ResourceEntry,
@@ -166,6 +169,7 @@ import type { SessionWorkspaceFence } from '@agnes/host-infrastructure/adapters/
 import { persistenceProviderRegistry } from '@agnes/host-infrastructure/adapters/storage-provider'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import { RequestTraceStore } from '@agnes/host-infrastructure/request-traces'
+import { sandboxReadPaths } from '@agnes/host-infrastructure/sandbox-read-paths'
 import { SandboxReadinessManager } from '@agnes/host-infrastructure/sandbox-readiness-manager'
 import {
   createSessionWorkspaceRuntime,
@@ -348,6 +352,7 @@ export type Assembled = {
   callPreparedService: ReturnType<typeof serviceInvoker>['callPrepared']
   inspectPreparedService: ReturnType<typeof serviceInvoker>['inspectPrepared']
   kernel: Kernel
+  memory(workspaceRoot: string, sessionKey: string): MemorySession | undefined
   seams: SeamImplementations
   provider: Awaited<ReturnType<typeof buildProvider>>['provider']
   providerFingerprint: string | null
@@ -513,7 +518,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
   }
   let step: string = 'packages'
   try {
-    mkdirSync(dataDir, { recursive: true })
+    mkdirSync(join(dataDir, 'tmp'), { recursive: true, mode: 0o700 })
     // 2 packages
     const enabled = profile.packages.filter((p) => p.enabled)
     const runtimeModuleCache = new Map<string, Promise<LoadedRuntimePackage | undefined>>()
@@ -768,7 +773,14 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         required: plan.staticConfig.required,
         onUnavailable: plan.staticConfig.onUnavailable,
         shell: adapters.platform.shell(),
-        options: plan.backendOptions,
+        options: {
+          ...plan.backendOptions,
+          get readPaths() {
+            return adapters.platform.os === 'linux' && plan.staticConfig.access !== 'full-access'
+              ? sandboxReadPaths(plan.backendOptions.denyPaths)
+              : undefined
+          },
+        },
         probeExec: rawProbe.run,
         log: deps.log,
         signal: key.signal,
@@ -786,7 +798,18 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       preset: PresetDoc = defaultPreset.doc,
       invocation?: import('@agnes/core').WorkspaceInvocationPort,
     ): Promise<SessionWorkspaceRuntime> => {
-      const sandboxConfig = normalizeSandboxStaticConfig(preset)
+      const requiresFileIsolation = pluginTree.root.providers
+        .catalog()
+        .some((entry) => entry.kind === 'memory')
+      const requestedSandbox = normalizeSandboxStaticConfig(preset)
+      const sandboxConfig = requiresFileIsolation
+        ? {
+            ...requestedSandbox,
+            level: 'L1' as const,
+            onUnavailable:
+              requestedSandbox.level === 'L1' ? requestedSandbox.onUnavailable : ('allow' as const),
+          }
+        : requestedSandbox
       let fence: SessionWorkspaceFence | undefined
       let posture: Readonly<{ execBackend: SandboxExecBackend; enforcement: Enforcement }> | undefined
       return createSessionWorkspaceRuntime({
@@ -803,6 +826,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             canonicalRoot: sessionFence.root,
             dataDir,
             homeDir: deps.homeDir ?? homedir(),
+            protectedPaths: [join(dirname(dirname(deps.profileDir)), 'memory')],
             semantics: sessionFence.semantics,
             staticConfig: sandboxConfig,
             canonicalize: (path, options) => sessionFence.fs.canonicalize(path, options),
@@ -844,6 +868,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
                 backend: raw.execBackend,
                 onUnavailable: raw.execBackend === 'remote' ? 'deny' : plan.staticConfig.onUnavailable,
                 access: plan.staticConfig.access ?? 'workspace-write',
+                requiredFileIsolation: requiresFileIsolation,
               })
             },
           ),
@@ -871,6 +896,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             ...(shellCommand ? { shellCommand } : {}),
             execBackend: posture.execBackend,
             enforcement: posture.enforcement,
+            requiredFileIsolation: requiresFileIsolation,
             ...(providerId === LOCAL_SANDBOX_PROVIDER_ID ? {} : { providerId }),
             exec: fence.exec,
             openProcess: fence.openProcess,
@@ -1124,6 +1150,11 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
               import('@agnes/extension-api').ObservabilityProvider
             > = installProviderRegistry(root, observabilityKind, (owner, source, provider) =>
               observabilityRegistry.register(source, provider, owner, () => provider.dispose()),
+            )
+            const memoryRegistry: import('@agnes/host-common/assemble/provider-registry').ProviderRegistry<
+              import('@agnes/extension-api').MemoryProvider
+            > = installProviderRegistry(root, memoryKind, (owner, source, provider) =>
+              memoryRegistry.register(source, provider, owner),
             )
             installToolProviders(root, origins)
             installCompactionEngines(root, origins)
@@ -2054,6 +2085,19 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         .some((entry) => entry.kind === 'system-prompt' && entry.id === promptSelection.provider)
     )
       pluginTree.root.providers.select('system-prompt', promptSelection, 'preset')
+    const memory = (workspaceRoot: string, sessionKey: string): MemorySession | undefined => {
+      const selection = providerSelections.memory ?? { provider: 'file', version: '1.0.0' }
+      if (
+        !providerSelections.memory &&
+        !pluginTree.root.providers.catalog().some((entry) => entry.kind === 'memory')
+      )
+        return undefined
+      return pluginTree.root.providers.resolve(memoryKind, selection).open({
+        home: dirname(dirname(deps.profileDir)),
+        workspaceRoot,
+        sessionKey,
+      })
+    }
     kernel = Kernel.create({
       ...(systemPromptProvider
         ? {
@@ -2109,6 +2153,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       contractForModel: models.contractForModel,
       preset: view,
       fsOps: adapters.fs,
+      memoryFor: ({ key, cwd }) => memory(cwd, key),
       netFetch: deps.netFetch ?? createNetFetch(),
       publicFetch: deps.publicFetch ?? createPublicFetch(deps.env),
       approvalMode: profile.approvals.mode,
@@ -2299,7 +2344,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       const stop = session.onAppended((events) => {
         for (const event of events) {
           try {
-            observability.observe(key, event)
+            observability.observe(key, session.d.memory ? memoryPrivateEvent(event) : event)
           } catch {
             /* Passive observation. */
           }
@@ -2991,6 +3036,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       profileDir: deps.profileDir,
     })
     return {
+      memory,
       activationBarrier,
       approvalGrants: approvalGrantControl.management,
       callService: servicesInvocation.call,

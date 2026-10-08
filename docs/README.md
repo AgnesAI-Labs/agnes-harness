@@ -33,6 +33,7 @@ Still choosing? Try the [three examples](guide/demo.md), then use the [extension
 | --- | --- |
 | [CLI and TUI](guide/cli.md) | Run terminal tasks, hold interactive conversations, and handle approvals |
 | [Default context](guide/context.md) | Inspect live repository rules, time context and custom Skill roots |
+| [Learned memory](guide/memory.md) | Control learned file preferences, approvals and privacy |
 | [Official default tools](reference/default-tools.md) | Search, ask questions, present files, manage background jobs, and edit observed files |
 | [Web workbench](guide/web.md) | Create tasks, inspect history, and manage models and extensions |
 | [Programmatic tools and workflows](guide/code-workflows.md) | Run TypeScript cells and durable parallel child workflows |

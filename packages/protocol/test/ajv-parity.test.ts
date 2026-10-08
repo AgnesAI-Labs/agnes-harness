@@ -5838,6 +5838,78 @@ const AppSamples: Record<string, Sample> = {
     note: 'App Server boundary shape',
   },
   AdminSearchResult: { valid: {}, invalid: [null], note: 'App Server boundary shape' },
+  MemorySettings: {
+    valid: {
+      mode: 'off',
+      indexMaxBytes: 16384,
+      indexMaxLines: 200,
+      topicMaxBytes: 32768,
+      totalMaxBytes: 262144,
+      tokenBudget: 2048,
+      userTokenBudget: 512,
+      userEnabled: false,
+    },
+    invalid: [null],
+    note: 'File memory boundary shape',
+  },
+  MemorySettingsPatch: { valid: { mode: 'ask' }, invalid: [null], note: 'File memory boundary shape' },
+  MemorySource: {
+    valid: { sessionKey: 'synthetic-session', turn: 1 },
+    invalid: [null],
+    note: 'File memory boundary shape',
+  },
+  MemoryFileInfo: {
+    valid: { path: 'MEMORY.md', hash: 'a'.repeat(64), bytes: 0, lines: 0 },
+    invalid: [null],
+    note: 'File memory boundary shape',
+  },
+  MemoryFile: {
+    valid: { ...{ path: 'MEMORY.md', hash: 'a'.repeat(64), bytes: 0, lines: 0 }, content: '' },
+    invalid: [null],
+    note: 'File memory boundary shape',
+  },
+  MemoryInspection: {
+    valid: {
+      root: '/tmp/memory',
+      settings: {
+        mode: 'off',
+        indexMaxBytes: 16384,
+        indexMaxLines: 200,
+        topicMaxBytes: 32768,
+        totalMaxBytes: 262144,
+        tokenBudget: 2048,
+        userTokenBudget: 512,
+        userEnabled: false,
+      },
+      files: [],
+      bytes: 0,
+    },
+    invalid: [null],
+    note: 'File memory boundary shape',
+  },
+  AdminMemoryParams: { valid: { cwd: '/tmp' }, invalid: [null], note: 'File memory boundary shape' },
+  AdminMemoryResult: {
+    valid: {
+      workspaces: [],
+      inspection: {
+        root: '/tmp/memory',
+        settings: {
+          mode: 'off',
+          indexMaxBytes: 16384,
+          indexMaxLines: 200,
+          topicMaxBytes: 32768,
+          totalMaxBytes: 262144,
+          tokenBudget: 2048,
+          userTokenBudget: 512,
+          userEnabled: false,
+        },
+        files: [],
+        bytes: 0,
+      },
+    },
+    invalid: [null],
+    note: 'File memory boundary shape',
+  },
   AdminContextConfig: {
     valid: {
       rulesEnabled: true,
@@ -6326,6 +6398,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     fileId: 'https://agnes.ai/schema/app-server-v1',
     params: 'AdminSearchTest',
     result: 'AdminSearchResult',
+  },
+  '_agnes/v1/admin.memory': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminMemoryParams',
+    result: 'AdminMemoryResult',
   },
   '_agnes/v1/admin.context': {
     fileId: 'https://agnes.ai/schema/app-server-v1',
@@ -7121,6 +7198,11 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [null],
     note: 'App Server boundary shape',
   },
+  '_agnes/v1/admin.memory': {
+    valid: { cwd: '/tmp' },
+    invalid: [null, { cwd: '/tmp', settings: { mode: 'invalid' } }],
+    note: 'File memory parameters',
+  },
   '_agnes/v1/admin.context': {
     valid: {},
     invalid: [{ config: { maxBytes: 60001 } }],
@@ -7443,6 +7525,28 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/admin.search.get': { valid: {}, invalid: [null], note: 'App Server boundary shape' },
   '_agnes/v1/admin.search.save': { valid: {}, invalid: [null], note: 'App Server boundary shape' },
   '_agnes/v1/admin.search.test': { valid: {}, invalid: [null], note: 'App Server boundary shape' },
+  '_agnes/v1/admin.memory': {
+    valid: {
+      workspaces: [],
+      inspection: {
+        root: '/tmp/memory',
+        settings: {
+          mode: 'off',
+          indexMaxBytes: 16384,
+          indexMaxLines: 200,
+          topicMaxBytes: 32768,
+          totalMaxBytes: 262144,
+          tokenBudget: 2048,
+          userTokenBudget: 512,
+          userEnabled: false,
+        },
+        files: [],
+        bytes: 0,
+      },
+    },
+    invalid: [null],
+    note: 'File memory result',
+  },
   '_agnes/v1/admin.context': {
     valid: {
       config: {

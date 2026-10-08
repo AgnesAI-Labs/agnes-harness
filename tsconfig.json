@@ -303,6 +303,12 @@
     },
     {
       "path": "packages/observability/tsconfig.test.json"
+    },
+    {
+      "path": "packages/memory-file"
+    },
+    {
+      "path": "packages/memory-file/tsconfig.test.json"
     }
   ]
 }

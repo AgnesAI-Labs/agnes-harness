@@ -40,6 +40,7 @@ describe('LocalEndpoint', () => {
       ['EACCES', false],
       ['E_PROVIDER_UNKNOWN', true],
       ['E_SEAM_INIT', true],
+      ['E_SANDBOX_WORKSPACE', true],
       ['untrusted-secret-code', false],
     ] as const)
       for (const broken of [false, true]) {
@@ -54,7 +55,7 @@ describe('LocalEndpoint', () => {
         })
         ep.register('initialize', async () => {
           if (mapped)
-            throw rpcError('INTERNAL_ERROR', {
+            throw rpcError(errorCode === 'E_SANDBOX_WORKSPACE' ? 'SEMANTIC_REJECTED' : 'INTERNAL_ERROR', {
               code: errorCode,
               reason:
                 errorCode === 'E_PROVIDER_UNKNOWN' ? 'provider-unknown' : 'session-initialization-failed',
@@ -69,7 +70,7 @@ describe('LocalEndpoint', () => {
         })
         expect(result).toMatchObject({
           error: {
-            code: -32603,
+            code: errorCode === 'E_SANDBOX_WORKSPACE' ? -32011 : -32603,
             data: {
               code: mapped ? errorCode : 'INTERNAL',
               ...(broken ? { diagnosticUnavailable: true } : { diagnosticId: expect.any(String) }),

@@ -26,6 +26,9 @@
     },
     {
       "path": "../observability"
+    },
+    {
+      "path": "../memory-file"
     }
   ]
 }

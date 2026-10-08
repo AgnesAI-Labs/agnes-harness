@@ -1,4 +1,10 @@
-import { assertHostPublication, type Host, type HostSession, type ResolvedProfile } from '@agnes/host'
+import {
+  assertHostPublication,
+  type Host,
+  type HostSession,
+  manageMemory,
+  type ResolvedProfile,
+} from '@agnes/host'
 import type { LocalGate } from '@agnes/plugin-runtime/host'
 import {
   type Actor,
@@ -680,6 +686,11 @@ export async function handleServiceCommand(
   switch (cmd.method) {
     case 'ping':
       return { ok: true }
+    case 'memory.manage': {
+      if (!host) throw new Error('memory requires an assembled Host')
+      const input = p as import('@agnes/protocol/gen/app-server').AdminMemoryParams
+      return manageMemory(host.memory(input.cwd, 'human-editor'), input)
+    }
     case 'systemPrompt.defaults':
       if (!host) throw new Error('system prompt requires an assembled Host')
       return host.systemPromptPreview(p.config as import('@agnes/protocol').SystemPromptConfig)

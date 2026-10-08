@@ -351,6 +351,18 @@ describe('diagnostics.events', () => {
     })
     expect(last.result?.events.map((event) => event.seq)).toEqual([session.lastSeq])
     expect(last.result?.nextAfterSeq).toBeNull()
+    await session.append([
+      session.ev('x/core/memory-private', { files: 1 }, { ignorable: true }),
+      session.ev('user/message', text('MEMORY_PRIVATE_PREFERENCE_ECHO')),
+    ])
+    const privatePages = await readAll(ep, sessionId, 2, 1024 * 1024)
+    const privateEvents = privatePages.flatMap((page) => page.events)
+    expect(privateEvents.map((event) => event.seq)).toEqual(
+      (await session.scan({ fromSeq: 1, limit: 500 })).map((row) => row.seq),
+    )
+    for (const event of privateEvents) expect(event.data).toMatchObject({ memoryContentOmitted: true })
+    expect(JSON.stringify(privateEvents)).not.toContain('MEMORY_PRIVATE_PREFERENCE_ECHO')
+    expect(privateEvents.find((event) => event.type === 'user/message')?.data).not.toHaveProperty('content')
   })
 
   it('events maxBytes cuts pages by bytes, at least one row', async () => {

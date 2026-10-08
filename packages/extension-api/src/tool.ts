@@ -231,6 +231,8 @@ export interface ToolContext {
     write(path: string, data: Bytes | string): Promise<void>
     list(path: string): Promise<FsEntry[]>
     stat(path: string): Promise<FsStat>
+    /** Revision of a snapshot-backed read, when the filesystem supplies one. */
+    revision?(path: string): Promise<string | undefined>
   }
   readonly net: {
     fetch(url: string, init?: FetchInit): Promise<Response>

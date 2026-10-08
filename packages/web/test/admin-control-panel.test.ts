@@ -390,7 +390,8 @@ it('navigates runtime capabilities and never offers a disallowed security preset
     )
     if (page === 'providers') {
       expect(host.textContent).toContain('@acme/loop')
-      expect(host.querySelectorAll('[data-testid^="providers-"]')).toHaveLength(8)
+      expect(host.querySelectorAll('[data-testid^="providers-"]')).toHaveLength(9)
+      expect(host.querySelector('[data-testid=providers-memory]')).not.toBeNull()
       const adapters = host.querySelector('[data-testid=providers-model-adapter]')
       expect(
         [...(adapters?.querySelectorAll('.agnes-settings-actions .agnes-ui-badge') ?? [])].map(

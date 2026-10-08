@@ -1,0 +1,17 @@
+{
+  "name": "@agnes/memory-file",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/system-node": "workspace:*"
+  },
+  "license": "Apache-2.0"
+}

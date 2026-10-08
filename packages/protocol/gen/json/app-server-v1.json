@@ -114,6 +114,16 @@
         "$ref": "#/$defs/_agnes_v1_doctor_runResult"
       }
     },
+    "_agnes/v1/admin.memory": {
+      "kind": "request",
+      "direction": "c2s",
+      "params": {
+        "$ref": "#/$defs/_agnes_v1_admin_memoryParams"
+      },
+      "result": {
+        "$ref": "#/$defs/_agnes_v1_admin_memoryResult"
+      }
+    },
     "_agnes/v1/plugins.candidates.list": {
       "kind": "request",
       "direction": "c2s",
@@ -1896,10 +1906,10 @@
     }
   },
   "$defs": {
-    "D6729728f283b_AppServerErrorCause": {
-      "$ref": "#/$defs/R4dd6c2b74817"
+    "D7ec66be9089a_AppServerErrorCause": {
+      "$ref": "#/$defs/R1114124d86fb"
     },
-    "R4dd6c2b74817": {
+    "R1114124d86fb": {
       "additionalProperties": false,
       "type": "object",
       "properties": {
@@ -2070,6 +2080,22 @@
               "type": "string"
             },
             {
+              "const": "E_MCP_SANDBOX_UNAVAILABLE",
+              "type": "string"
+            },
+            {
+              "const": "E_PACKAGE_INTEGRITY",
+              "type": "string"
+            },
+            {
+              "const": "E_PACKAGE_PROVENANCE",
+              "type": "string"
+            },
+            {
+              "const": "E_PACKAGE_SOURCE_POLICY",
+              "type": "string"
+            },
+            {
               "const": "E_PROVIDER_DUPLICATE",
               "type": "string"
             },
@@ -2087,6 +2113,66 @@
             },
             {
               "const": "E_PROVIDER_UNKNOWN",
+              "type": "string"
+            },
+            {
+              "const": "E_SANDBOX_WORKSPACE",
+              "type": "string"
+            },
+            {
+              "const": "MEMORY_APPROVAL_REJECTED",
+              "type": "string"
+            },
+            {
+              "const": "MEMORY_BUSY",
+              "type": "string"
+            },
+            {
+              "const": "MEMORY_COMMITTED_METADATA_FAILED",
+              "type": "string"
+            },
+            {
+              "const": "MEMORY_CONFLICT",
+              "type": "string"
+            },
+            {
+              "const": "MEMORY_CONSOLIDATION_REQUIRED",
+              "type": "string"
+            },
+            {
+              "const": "MEMORY_DISABLED",
+              "type": "string"
+            },
+            {
+              "const": "MEMORY_INVALID_METADATA",
+              "type": "string"
+            },
+            {
+              "const": "MEMORY_INVALID_REQUEST",
+              "type": "string"
+            },
+            {
+              "const": "MEMORY_INVALID_SETTINGS",
+              "type": "string"
+            },
+            {
+              "const": "MEMORY_MISSING_TOPIC",
+              "type": "string"
+            },
+            {
+              "const": "MEMORY_POLICY_CHANGED",
+              "type": "string"
+            },
+            {
+              "const": "MEMORY_PROVIDER_UNAVAILABLE",
+              "type": "string"
+            },
+            {
+              "const": "MEMORY_SCOPE_DENIED",
+              "type": "string"
+            },
+            {
+              "const": "MEMORY_SECRET_LIKE_CONTENT",
               "type": "string"
             },
             {
@@ -2112,22 +2198,6 @@
             {
               "const": "SEARCH_TIMEOUT",
               "type": "string"
-            },
-            {
-              "const": "E_PACKAGE_PROVENANCE",
-              "type": "string"
-            },
-            {
-              "const": "E_PACKAGE_SOURCE_POLICY",
-              "type": "string"
-            },
-            {
-              "const": "E_MCP_SANDBOX_UNAVAILABLE",
-              "type": "string"
-            },
-            {
-              "const": "E_PACKAGE_INTEGRITY",
-              "type": "string"
             }
           ]
         }
@@ -2136,10 +2206,10 @@
         "code"
       ]
     },
-    "D6729728f283b_AppServerError": {
-      "$ref": "#/$defs/R66ef804e3461"
+    "D7ec66be9089a_AppServerError": {
+      "$ref": "#/$defs/Ra13ad79ec12b"
     },
-    "R66ef804e3461": {
+    "Ra13ad79ec12b": {
       "additionalProperties": false,
       "type": "object",
       "properties": {
@@ -2226,6 +2296,22 @@
                 {
                   "const": "appServer.errors.rejected",
                   "type": "string"
+                },
+                {
+                  "const": "appServer.errors.memoryCap",
+                  "type": "string"
+                },
+                {
+                  "const": "appServer.errors.memorySecret",
+                  "type": "string"
+                },
+                {
+                  "const": "appServer.errors.memoryDisabled",
+                  "type": "string"
+                },
+                {
+                  "const": "appServer.errors.memoryPartial",
+                  "type": "string"
                 }
               ]
             },
@@ -2234,7 +2320,7 @@
               "type": "string"
             },
             "cause": {
-              "$ref": "#/$defs/D6729728f283b_AppServerErrorCause"
+              "$ref": "#/$defs/D7ec66be9089a_AppServerErrorCause"
             }
           },
           "required": [
@@ -2250,7 +2336,7 @@
         "data"
       ]
     },
-    "D6729728f283b_AdminEmpty": {
+    "D7ec66be9089a_AdminEmpty": {
       "$ref": "#/$defs/R91fe060caa26"
     },
     "R91fe060caa26": {
@@ -2258,7 +2344,7 @@
       "type": "object",
       "properties": {}
     },
-    "D6729728f283b_AdminBundlesSave": {
+    "D7ec66be9089a_AdminBundlesSave": {
       "$ref": "#/$defs/Rb408c73d920d"
     },
     "Rb408c73d920d": {
@@ -2283,7 +2369,7 @@
         "bundles"
       ]
     },
-    "D6729728f283b_AdminBundlesResult": {
+    "D7ec66be9089a_AdminBundlesResult": {
       "$ref": "#/$defs/Re00e8d605acf"
     },
     "Re00e8d605acf": {
@@ -2335,7 +2421,7 @@
         "effect"
       ]
     },
-    "D6729728f283b_AdminCompositionParams": {
+    "D7ec66be9089a_AdminCompositionParams": {
       "$ref": "#/$defs/Re1b7c9538ab8"
     },
     "Re1b7c9538ab8": {
@@ -2348,7 +2434,7 @@
         }
       }
     },
-    "D6729728f283b_AdminCompositionResult": {
+    "D7ec66be9089a_AdminCompositionResult": {
       "$ref": "#/$defs/R41fbd0de4040"
     },
     "R41fbd0de4040": {
@@ -2498,7 +2584,7 @@
         }
       ]
     },
-    "D6729728f283b_AdminSearchSave": {
+    "D7ec66be9089a_AdminSearchSave": {
       "$ref": "#/$defs/R04e0722a900b"
     },
     "R04e0722a900b": {
@@ -2533,7 +2619,7 @@
         "provider"
       ]
     },
-    "D6729728f283b_AdminSearchTest": {
+    "D7ec66be9089a_AdminSearchTest": {
       "$ref": "#/$defs/R62f246babdb7"
     },
     "R62f246babdb7": {
@@ -2554,7 +2640,7 @@
         "query"
       ]
     },
-    "D6729728f283b_AdminSearchResult": {
+    "D7ec66be9089a_AdminSearchResult": {
       "$ref": "#/$defs/R58fc95d93535"
     },
     "R58fc95d93535": {
@@ -2565,7 +2651,7 @@
         }
       }
     },
-    "D6729728f283b_AdminContextConfig": {
+    "D7ec66be9089a_AdminContextConfig": {
       "$ref": "#/$defs/R21894b8f67d6"
     },
     "R21894b8f67d6": {
@@ -2634,7 +2720,7 @@
         "customSkillRoots"
       ]
     },
-    "D6729728f283b_AdminContextParams": {
+    "D7ec66be9089a_AdminContextParams": {
       "$ref": "#/$defs/R2bb94c6540c5"
     },
     "R2bb94c6540c5": {
@@ -2702,7 +2788,7 @@
         }
       }
     },
-    "D6729728f283b_AdminContextResult": {
+    "D7ec66be9089a_AdminContextResult": {
       "$ref": "#/$defs/Rdff469d08979"
     },
     "Rdff469d08979": {
@@ -2710,7 +2796,7 @@
       "type": "object",
       "properties": {
         "config": {
-          "$ref": "#/$defs/D6729728f283b_AdminContextConfig"
+          "$ref": "#/$defs/D7ec66be9089a_AdminContextConfig"
         },
         "workspaces": {
           "maxItems": 4096,
@@ -2807,7 +2893,7 @@
         "workspaces"
       ]
     },
-    "D6729728f283b_AdminHistoryParams": {
+    "D7ec66be9089a_AdminHistoryParams": {
       "$ref": "#/$defs/R7eec7d41924b"
     },
     "R7eec7d41924b": {
@@ -2837,7 +2923,7 @@
         "workspace"
       ]
     },
-    "D6729728f283b_AdminHistoryResult": {
+    "D7ec66be9089a_AdminHistoryResult": {
       "$ref": "#/$defs/R26245f75b96e"
     },
     "R26245f75b96e": {
@@ -2902,7 +2988,7 @@
         "truncated"
       ]
     },
-    "D6729728f283b_AdminPlanParams": {
+    "D7ec66be9089a_AdminPlanParams": {
       "$ref": "#/$defs/R41dcb196c5fd"
     },
     "R41dcb196c5fd": {
@@ -2924,7 +3010,7 @@
         "line"
       ]
     },
-    "D6729728f283b_AdminPlanResult": {
+    "D7ec66be9089a_AdminPlanResult": {
       "$ref": "#/$defs/R0e8b17dba52d"
     },
     "R0e8b17dba52d": {
@@ -2944,7 +3030,7 @@
         "text"
       ]
     },
-    "D6729728f283b_AdminMcpOAuthSave": {
+    "D7ec66be9089a_AdminMcpOAuthSave": {
       "$ref": "#/$defs/R546900150242"
     },
     "R546900150242": {
@@ -3005,7 +3091,7 @@
         "credential"
       ]
     },
-    "D6729728f283b_DoctorParams": {
+    "D7ec66be9089a_DoctorParams": {
       "$ref": "#/$defs/R7c9eacc877fc"
     },
     "R7c9eacc877fc": {
@@ -3017,7 +3103,7 @@
         }
       }
     },
-    "D6729728f283b_DoctorCheck": {
+    "D7ec66be9089a_DoctorCheck": {
       "$ref": "#/$defs/R40a46a573031"
     },
     "R40a46a573031": {
@@ -3158,7 +3244,7 @@
         "fixHintKey"
       ]
     },
-    "D6729728f283b_DoctorResult": {
+    "D7ec66be9089a_DoctorResult": {
       "$ref": "#/$defs/R3c0dc227323d"
     },
     "R3c0dc227323d": {
@@ -3169,7 +3255,7 @@
           "maxItems": 32,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/D6729728f283b_DoctorCheck"
+            "$ref": "#/$defs/D7ec66be9089a_DoctorCheck"
           }
         },
         "status": {
@@ -3198,71 +3284,407 @@
         "status"
       ]
     },
+    "D7ec66be9089a_MemorySettings": {
+      "$ref": "#/$defs/R9e1c4826d751"
+    },
+    "R9e1c4826d751": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "mode": {
+          "anyOf": [
+            {
+              "const": "off",
+              "type": "string"
+            },
+            {
+              "const": "ask",
+              "type": "string"
+            },
+            {
+              "const": "auto",
+              "type": "string"
+            }
+          ]
+        },
+        "indexMaxBytes": {
+          "minimum": 1,
+          "maximum": 1048576,
+          "type": "integer"
+        },
+        "indexMaxLines": {
+          "minimum": 1,
+          "maximum": 1048576,
+          "type": "integer"
+        },
+        "topicMaxBytes": {
+          "minimum": 1,
+          "maximum": 1048576,
+          "type": "integer"
+        },
+        "totalMaxBytes": {
+          "minimum": 1,
+          "maximum": 1048576,
+          "type": "integer"
+        },
+        "tokenBudget": {
+          "minimum": 128,
+          "maximum": 1048576,
+          "type": "integer"
+        },
+        "userTokenBudget": {
+          "minimum": 128,
+          "maximum": 1048576,
+          "type": "integer"
+        },
+        "userEnabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mode",
+        "indexMaxBytes",
+        "indexMaxLines",
+        "topicMaxBytes",
+        "totalMaxBytes",
+        "tokenBudget",
+        "userTokenBudget",
+        "userEnabled"
+      ]
+    },
+    "D7ec66be9089a_MemorySettingsPatch": {
+      "$ref": "#/$defs/Rb5599f16e0d9"
+    },
+    "Rb5599f16e0d9": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "mode": {
+          "anyOf": [
+            {
+              "const": "off",
+              "type": "string"
+            },
+            {
+              "const": "ask",
+              "type": "string"
+            },
+            {
+              "const": "auto",
+              "type": "string"
+            }
+          ]
+        },
+        "indexMaxBytes": {
+          "minimum": 1,
+          "maximum": 1048576,
+          "type": "integer"
+        },
+        "indexMaxLines": {
+          "minimum": 1,
+          "maximum": 1048576,
+          "type": "integer"
+        },
+        "topicMaxBytes": {
+          "minimum": 1,
+          "maximum": 1048576,
+          "type": "integer"
+        },
+        "totalMaxBytes": {
+          "minimum": 1,
+          "maximum": 1048576,
+          "type": "integer"
+        },
+        "tokenBudget": {
+          "minimum": 128,
+          "maximum": 1048576,
+          "type": "integer"
+        },
+        "userTokenBudget": {
+          "minimum": 128,
+          "maximum": 1048576,
+          "type": "integer"
+        },
+        "userEnabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "D7ec66be9089a_MemorySource": {
+      "$ref": "#/$defs/Re064708ffd3b"
+    },
+    "Re064708ffd3b": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "sessionKey": {
+          "minLength": 1,
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "turn": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "toolUseId": {
+          "minLength": 1,
+          "maxLength": 4096,
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionKey",
+        "turn"
+      ]
+    },
+    "D7ec66be9089a_MemoryFileInfo": {
+      "$ref": "#/$defs/R458b6f8d1a47"
+    },
+    "R458b6f8d1a47": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "path": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.md$",
+          "type": "string"
+        },
+        "hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "bytes": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "lines": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "hash",
+        "bytes",
+        "lines"
+      ]
+    },
+    "D7ec66be9089a_MemoryFile": {
+      "$ref": "#/$defs/Rf3b7224971d2"
+    },
+    "Rf3b7224971d2": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "path": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.md$",
+          "type": "string"
+        },
+        "hash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "bytes": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "lines": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "content": {
+          "maxLength": 1048576,
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "hash",
+        "bytes",
+        "lines",
+        "content"
+      ]
+    },
+    "D7ec66be9089a_MemoryInspection": {
+      "$ref": "#/$defs/Ra3f73dc2539d"
+    },
+    "Ra3f73dc2539d": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "root": {
+          "minLength": 1,
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/D7ec66be9089a_MemorySettings"
+        },
+        "files": {
+          "maxItems": 128,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/D7ec66be9089a_MemoryFileInfo"
+          }
+        },
+        "bytes": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "lastWriter": {
+          "$ref": "#/$defs/D7ec66be9089a_MemorySource"
+        }
+      },
+      "required": [
+        "root",
+        "settings",
+        "files",
+        "bytes"
+      ]
+    },
+    "D7ec66be9089a_AdminMemoryParams": {
+      "$ref": "#/$defs/R5bb1426342f0"
+    },
+    "R5bb1426342f0": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "cwd": {
+          "minLength": 1,
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/D7ec66be9089a_MemorySettingsPatch"
+        },
+        "file": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.md$",
+          "type": "string"
+        },
+        "content": {
+          "maxLength": 1048576,
+          "type": "string"
+        },
+        "baseHash": {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cwd"
+      ]
+    },
+    "D7ec66be9089a_AdminMemoryResult": {
+      "$ref": "#/$defs/R32e6cfb52318"
+    },
+    "R32e6cfb52318": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "workspaces": {
+          "maxItems": 4096,
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "properties": {
+              "path": {
+                "minLength": 1,
+                "maxLength": 4096,
+                "type": "string"
+              },
+              "available": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "path",
+              "available"
+            ]
+          }
+        },
+        "inspection": {
+          "$ref": "#/$defs/D7ec66be9089a_MemoryInspection"
+        },
+        "file": {
+          "$ref": "#/$defs/D7ec66be9089a_MemoryFile"
+        }
+      },
+      "required": [
+        "workspaces",
+        "inspection"
+      ]
+    },
     "_agnes_v1_admin_bundles_getParams": {
-      "$ref": "#/$defs/D6729728f283b_AdminEmpty"
+      "$ref": "#/$defs/D7ec66be9089a_AdminEmpty"
     },
     "_agnes_v1_admin_bundles_getResult": {
-      "$ref": "#/$defs/D6729728f283b_AdminBundlesResult"
+      "$ref": "#/$defs/D7ec66be9089a_AdminBundlesResult"
     },
     "_agnes_v1_admin_bundles_saveParams": {
-      "$ref": "#/$defs/D6729728f283b_AdminBundlesSave"
+      "$ref": "#/$defs/D7ec66be9089a_AdminBundlesSave"
     },
     "_agnes_v1_admin_bundles_saveResult": {
-      "$ref": "#/$defs/D6729728f283b_AdminBundlesResult"
+      "$ref": "#/$defs/D7ec66be9089a_AdminBundlesResult"
     },
     "_agnes_v1_admin_composition_getParams": {
-      "$ref": "#/$defs/D6729728f283b_AdminCompositionParams"
+      "$ref": "#/$defs/D7ec66be9089a_AdminCompositionParams"
     },
     "_agnes_v1_admin_composition_getResult": {
-      "$ref": "#/$defs/D6729728f283b_AdminCompositionResult"
+      "$ref": "#/$defs/D7ec66be9089a_AdminCompositionResult"
     },
     "_agnes_v1_admin_search_getParams": {
-      "$ref": "#/$defs/D6729728f283b_AdminEmpty"
+      "$ref": "#/$defs/D7ec66be9089a_AdminEmpty"
     },
     "_agnes_v1_admin_search_getResult": {
-      "$ref": "#/$defs/D6729728f283b_AdminSearchResult"
+      "$ref": "#/$defs/D7ec66be9089a_AdminSearchResult"
     },
     "_agnes_v1_admin_search_saveParams": {
-      "$ref": "#/$defs/D6729728f283b_AdminSearchSave"
+      "$ref": "#/$defs/D7ec66be9089a_AdminSearchSave"
     },
     "_agnes_v1_admin_search_saveResult": {
-      "$ref": "#/$defs/D6729728f283b_AdminSearchResult"
+      "$ref": "#/$defs/D7ec66be9089a_AdminSearchResult"
     },
     "_agnes_v1_admin_search_testParams": {
-      "$ref": "#/$defs/D6729728f283b_AdminSearchTest"
+      "$ref": "#/$defs/D7ec66be9089a_AdminSearchTest"
     },
     "_agnes_v1_admin_search_testResult": {
-      "$ref": "#/$defs/D6729728f283b_AdminSearchResult"
+      "$ref": "#/$defs/D7ec66be9089a_AdminSearchResult"
     },
     "_agnes_v1_admin_contextParams": {
-      "$ref": "#/$defs/D6729728f283b_AdminContextParams"
+      "$ref": "#/$defs/D7ec66be9089a_AdminContextParams"
     },
     "_agnes_v1_admin_contextResult": {
-      "$ref": "#/$defs/D6729728f283b_AdminContextResult"
+      "$ref": "#/$defs/D7ec66be9089a_AdminContextResult"
     },
     "_agnes_v1_admin_history_searchParams": {
-      "$ref": "#/$defs/D6729728f283b_AdminHistoryParams"
+      "$ref": "#/$defs/D7ec66be9089a_AdminHistoryParams"
     },
     "_agnes_v1_admin_history_searchResult": {
-      "$ref": "#/$defs/D6729728f283b_AdminHistoryResult"
+      "$ref": "#/$defs/D7ec66be9089a_AdminHistoryResult"
     },
     "_agnes_v1_admin_planParams": {
-      "$ref": "#/$defs/D6729728f283b_AdminPlanParams"
+      "$ref": "#/$defs/D7ec66be9089a_AdminPlanParams"
     },
     "_agnes_v1_admin_planResult": {
-      "$ref": "#/$defs/D6729728f283b_AdminPlanResult"
+      "$ref": "#/$defs/D7ec66be9089a_AdminPlanResult"
     },
     "_agnes_v1_admin_mcp_oauth_saveParams": {
-      "$ref": "#/$defs/D6729728f283b_AdminMcpOAuthSave"
+      "$ref": "#/$defs/D7ec66be9089a_AdminMcpOAuthSave"
     },
     "_agnes_v1_admin_mcp_oauth_saveResult": {
-      "$ref": "#/$defs/D6729728f283b_AdminEmpty"
+      "$ref": "#/$defs/D7ec66be9089a_AdminEmpty"
     },
     "_agnes_v1_doctor_runParams": {
-      "$ref": "#/$defs/D6729728f283b_DoctorParams"
+      "$ref": "#/$defs/D7ec66be9089a_DoctorParams"
     },
     "_agnes_v1_doctor_runResult": {
-      "$ref": "#/$defs/D6729728f283b_DoctorResult"
+      "$ref": "#/$defs/D7ec66be9089a_DoctorResult"
+    },
+    "_agnes_v1_admin_memoryParams": {
+      "$ref": "#/$defs/D7ec66be9089a_AdminMemoryParams"
+    },
+    "_agnes_v1_admin_memoryResult": {
+      "$ref": "#/$defs/D7ec66be9089a_AdminMemoryResult"
     },
     "Dc163e5f240c7_PluginPublicationReport": {
       "$ref": "#/$defs/R286e4c2a03d0"
@@ -31702,7 +32124,7 @@
       "$ref": "#/$defs/D118d2c52e53d_DaemonNotice"
     },
     "AppServerError": {
-      "$ref": "#/$defs/D6729728f283b_AppServerError"
+      "$ref": "#/$defs/D7ec66be9089a_AppServerError"
     }
   }
 }

@@ -434,6 +434,7 @@ export class LocalEndpoint implements RpcEndpoint {
           [
             'LEGACY_LEDGER_FORMAT',
             'E_SEAM_INIT',
+            'E_SANDBOX_WORKSPACE',
             'E_PROVIDER_UNKNOWN',
             'E_PROVIDER_INVALID',
             'E_PROVIDER_INCOMPATIBLE',

@@ -17,6 +17,7 @@ export function defineProvider<K extends keyof KindMap, P extends KindMap[NoInfe
   provider: P,
 ): P {
   const methods: Record<keyof KindMap, readonly string[]> = {
+    memory: ['open'],
     loop: ['create', 'resume'],
     'model-adapter': ['create'],
     compaction: ['create'],

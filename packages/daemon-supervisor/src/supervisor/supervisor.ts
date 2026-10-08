@@ -1898,6 +1898,13 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       profileDir: o.profileDir,
       resolveProfile: o.reloadProfile ?? (async () => o.profile),
       workspaces: () => workspaceCatalog.list(),
+      memory: async (input) => {
+        const link = await pool.acquireSharedWorker()
+        return (await link.command('memory.manage', input)) as Pick<
+          import('@agnes/protocol/gen/app-server').AdminMemoryResult,
+          'inspection' | 'file'
+        >
+      },
     })
     const endpoint = (transport: 'unix' | 'ws'): { ep: LocalEndpoint; onClose: () => void } => {
       // `local` is the Unix identity and only a pre-auth placeholder for WSS. The lifecycle bearer

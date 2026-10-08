@@ -498,6 +498,7 @@ export {
   hostInspectionSource,
 } from '@agnes/host-runtime/host-facade'
 export { closeHost, Rollback } from '@agnes/host-runtime/lifecycle'
+export { manageMemory } from '@agnes/host-runtime/memory-admin'
 export * from '@agnes/host-runtime/profile/bundle-selection'
 export {
   compositionAllowsTool,

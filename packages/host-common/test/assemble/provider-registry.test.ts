@@ -144,6 +144,11 @@ it('normalizes canonical selections and aliases, preserves profile precedence an
   expect(selections.loop).toEqual({ provider: 'pinned', version: '1.0.0' })
   expect(
     readProviderSelections({
+      packages: [{ enabled: true, config: { memory: { provider: 'enterprise', version: '2.0.0' } } }],
+    } as never).memory,
+  ).toEqual({ provider: 'enterprise', version: '2.0.0' })
+  expect(
+    readProviderSelections({
       composition: { compaction: null },
       packages: [{ enabled: true, config: { compaction: { provider: 'default' } } }],
     } as never).compaction,
@@ -151,14 +156,15 @@ it('normalizes canonical selections and aliases, preserves profile precedence an
   expect(applyProviderPreset({ name: 'standard', approval: { timeout_ms: 10 } }, selections)).toMatchObject({
     approval: { policy: 'read-only', timeout_ms: 10 },
   })
-  expect(() =>
-    readProviderSelections({
-      packages: [
-        { enabled: true, config: { sandbox: { provider: 'one' } } },
-        { enabled: true, config: { sandbox: { provider: 'two' } } },
-      ],
-    } as never),
-  ).toThrow('at most one')
+  for (const kind of ['sandbox', 'memory'])
+    expect(() =>
+      readProviderSelections({
+        packages: [
+          { enabled: true, config: { [kind]: { provider: 'one' } } },
+          { enabled: true, config: { [kind]: { provider: 'two' } } },
+        ],
+      } as never),
+    ).toThrow('at most one')
 })
 
 it.each(['loop', 'sandbox', 'persistence'] as const)(

@@ -30,6 +30,18 @@ describe('Skills row target', () => {
     expect(skillRowRevision(skill('one', 'workspace-a'))).not.toBe(
       skillRowRevision(skill('one', 'workspace-b')),
     )
+    const disk = skill('one')
+    const runtime = (id: string) => ({
+      ...disk.list()[0]!,
+      resourceId: `skill/runtime/runtime/${id}`,
+      sourceIdentity: { scope: 'runtime', rootKey: 'runtime', sourceId: id },
+    })
+    const withRuntime = (id: string) =>
+      ({ ...disk, list: () => [...disk.list(), runtime(id)] }) as SkillRuntimeInput
+    expect(skillRowRevision(withRuntime('shared-worker'))).toBe(
+      skillRowRevision(withRuntime('session-worker')),
+    )
+    expect(skillRowRevision(withRuntime('session-worker'))).toBe(skillRowRevision(disk))
     expect(skillRowRevision(undefined)).toBe(skillRowRevision(undefined))
     expect(skillRowRevision(undefined)).not.toBe(
       skillRowRevision({ list: () => [] } as unknown as SkillRuntimeInput),

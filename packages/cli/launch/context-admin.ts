@@ -14,10 +14,14 @@ export function contextAdmin(
   invoke: (
     input: AppServerParams<'_agnes/v1/admin.context'>,
   ) => Promise<AppServerResult<'_agnes/v1/admin.context'>>,
+  memory?: (
+    input: AppServerParams<'_agnes/v1/admin.memory'>,
+  ) => Promise<AppServerResult<'_agnes/v1/admin.memory'>>,
 ) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
     const url = new URL(request.url ?? '/', origin)
-    if (url.pathname !== '/api/context') return false
+    const isMemory = url.pathname === '/api/memory' && memory !== undefined
+    if (url.pathname !== '/api/context' && !isMemory) return false
     const reply = (status: number, data: unknown) => {
       response.writeHead(status, {
         'Content-Type': 'application/json',
@@ -44,14 +48,20 @@ export function contextAdmin(
       for await (const chunk of request) {
         const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
         size += bytes.length
-        if (size > 65536) throw new Error('request')
+        if (size > (isMemory ? 8 * 1024 * 1024 : 65536)) throw new Error('request')
         chunks.push(bytes)
       }
       const input: unknown = JSON.parse(
         new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)),
       )
-      if (!validateMethod('_agnes/v1/admin.context', 'params', input).ok) throw new Error('request')
-      reply(200, await invoke(input as AppServerParams<'_agnes/v1/admin.context'>))
+      const method = isMemory ? '_agnes/v1/admin.memory' : '_agnes/v1/admin.context'
+      if (!validateMethod(method, 'params', input).ok) throw new Error('request')
+      reply(
+        200,
+        isMemory
+          ? await memory!(input as AppServerParams<'_agnes/v1/admin.memory'>)
+          : await invoke(input as AppServerParams<'_agnes/v1/admin.context'>),
+      )
     } catch (error) {
       const rpc = (error as { rpc?: RpcError })?.rpc
       reply(rpc?.code === -32006 ? 403 : 400, {

@@ -292,6 +292,8 @@ export const readTool = defineTool({
     if (notes !== '') text = text.slice(0, Math.max(text.lastIndexOf('\n') + 1, 0)) || text
     // A file keeps its real line numbers, so a line too long for a page is cut and says so rather
     // than wrapped into extra numbers; a shell command reaches the rest of it.
+    const revision = await ctx.fs.revision?.(args.path)
+    if (revision) notes = `[Memory revision: ${revision}]\n${notes}`
     const lines = toLines(text).map(clipLine)
     return {
       content: [

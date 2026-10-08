@@ -5,9 +5,15 @@ import { AGNES_ERRORS, JSONRPC_ERRORS, type RpcError } from './errors.js'
 
 /** Pure classification for safe diagnostic records; does not create or persist an error. */
 export function errorMessageKey(code: string): AppServerError['data']['messageKey'] {
+  if (code === 'MEMORY_CONSOLIDATION_REQUIRED') return 'appServer.errors.memoryCap'
+  if (code === 'MEMORY_SECRET_LIKE_CONTENT') return 'appServer.errors.memorySecret'
+  if (code === 'MEMORY_DISABLED') return 'appServer.errors.memoryDisabled'
+  if (code === 'MEMORY_COMMITTED_METADATA_FAILED') return 'appServer.errors.memoryPartial'
+  if (code === 'MEMORY_CONFLICT' || code === 'MEMORY_POLICY_CHANGED') return 'appServer.errors.conflict'
   if (code === 'CONFIG_CREDENTIAL_REQUIRED') return 'appServer.errors.credentialRequired'
   if (code === 'CONFIG_CREDENTIAL_REJECTED') return 'appServer.errors.credentialRejected'
   if (code.startsWith('CONFIG_CREDENTIAL_')) return 'appServer.errors.credentialStore'
+  if (code === 'E_SANDBOX_WORKSPACE') return 'appServer.errors.unavailable'
   if (code.startsWith('E_PROVIDER_')) return 'appServer.errors.provider'
   if (code.startsWith('E_GENERATION_')) return 'appServer.errors.generation'
   if (code.includes('REVISION_CONFLICT') || code === 'GENERATION_STALE') return 'appServer.errors.conflict'

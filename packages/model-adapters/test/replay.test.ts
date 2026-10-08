@@ -175,6 +175,17 @@ it('derives demo tool arguments, refuses invalid examples and summarizes actual 
       },
     ],
   }
+  const memoryRequest: RequestBody = {
+    ...body,
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'show remembered preferences' }] }],
+    sections: [
+      { id: 'memory:index', text: 'Synthetic learned convention', source: 'memory:file', order: 131 },
+    ],
+  }
+  expect(JSON.stringify(await collect(adapter, memoryRequest))).toContain('Synthetic learned convention')
+  expect(JSON.stringify(await collect(adapter, { ...memoryRequest, sections: [] }))).not.toContain(
+    'Synthetic learned convention',
+  )
   const events = await collect(adapter, body)
   expect(events).toContainEqual(
     expect.objectContaining({

@@ -47,6 +47,7 @@ export type WorkerMethod =
   | 'configuration.apply'
   | 'session.catalog'
   | 'systemPrompt.defaults'
+  | 'memory.manage'
   | 'inspectService'
   | 'callService'
   | 'abortService'

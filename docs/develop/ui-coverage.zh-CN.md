@@ -2,7 +2,7 @@
 
 [English](ui-coverage.md) | 简体中文
 
-一个设置外壳管理导航、布局、键盘标签页和 `?settings=<section-id>` 深链；`/admin/plugins` 转到同一外壳。分组为：模型与账户、Agent、插件、技能、MCP、工具与搜索、自动化、安全、历史与归档、Computer Use、通用。Agent 包含 Agent Loop、组合包与预设、子代理；插件包含已安装与发现、插件实现、示例与 FDE。技能和 MCP 各出现一次，原账户及资源控制器通过注册桥接保留。参见[注册接口](ui-extension-registries.zh-CN.md)和[术语表](ui-glossary.zh-CN.md)。
+一个设置外壳管理导航、布局、键盘标签页和 `?settings=<section-id>` 深链；`/admin/plugins` 转到同一外壳。分组为：模型与账户、Agent、插件、技能、MCP、工具与搜索、自动化、安全、历史与归档、Computer Use、通用。Agent 包含 Agent Loop、组合包与预设、子代理及记忆；插件包含已安装与发现、插件实现、示例与 FDE。技能和 MCP 各出现一次，原账户及资源控制器通过注册桥接保留。参见[注册接口](ui-extension-registries.zh-CN.md)和[术语表](ui-glossary.zh-CN.md)。
 
 | 能力 | 界面 | 边界 |
 | --- | --- | --- |
@@ -69,3 +69,7 @@ AGH_WEB_URL=http://127.0.0.1:PORT AGH_CONVERSATION_FIXTURE_URL=http://127.0.0.1:
 `first-run.spec.ts` 从根目录 `agnes.mjs` 启动真实 daemon 与全新私有 home；八组语言、主题、窗口尺寸完成欢迎、原有账户对话框的本地 loopback 测试与保存、默认模型选择、注册的示例页、首个任务和重载。另验证目录检查失败、非阻塞提示、注册的运行诊断页、刷新及关闭。`first-run-guide` 提供 `data-step`；稳定 ID 包括 `first-run-add`、`first-run-account`、`first-run-model`、`first-run-next`、`first-run-skip`、`first-run-examples`、`doctor-notice`、`doctor-panel`、`doctor-refresh`、`doctor-probe-accounts`、`doctor-check-<id>`。新增截图仍使用分平台零容差基线、未解析键检查和 WCAG A/AA 检查。
 
 截图助手只归一化会变化的磁盘空间数值，保留本地化句子、控件与布局。
+
+## 文件记忆验收
+
+Agent → 记忆提供关闭/询问/自动模式、Markdown 编辑器、精确版本检查、上限与最后写入来源。`memory.spec.ts` 通过真实 daemon 与支持的 SDK 验证普通工具写入、新会话上下文、人工编辑、编辑器冲突、关闭后的 read/write/edit 拒绝及 shell/符号链接隔离。四组语言/主题使用两平台的概览和编辑器基线，并检查 axe 与未解析键。稳定 ID：`memory-panel`、`memory-workspace`、`memory-mode`、`memory-open`、`memory-content`、`memory-save`、`memory-reload`、`memory-error`、`memory-size`、`memory-writer`。审批与隐私边界见[文件记忆](../guide/memory.zh-CN.md)。

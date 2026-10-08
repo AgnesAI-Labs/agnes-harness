@@ -1,6 +1,7 @@
 import type { ChildAgentProvider } from './child-agent.js'
 import type { CompactionEngine } from './compaction-engine.js'
 import type { LoopFactory } from './loop.js'
+import type { MemoryProvider } from './memory.js'
 import type { ModelAdapter } from './model-adapter.js'
 import type { PersistenceProvider } from './persistence.js'
 import type { SandboxProvider } from './sandbox-provider.js'
@@ -9,6 +10,7 @@ import type { ToolRuntimeProvider } from './tool-runtime.js'
 
 /** Built-in names bind registration and resolution to the same contract. */
 export interface KindMap {
+  memory: MemoryProvider
   loop: LoopFactory
   'model-adapter': ModelAdapter
   compaction: CompactionEngine
@@ -20,6 +22,7 @@ export interface KindMap {
 }
 export type ProviderLifecycleScope = 'session' | 'generation' | 'workspace' | 'process'
 export const PROVIDER_LIFECYCLE_SCOPES = Object.freeze({
+  memory: 'session',
   loop: 'session',
   'model-adapter': 'generation',
   compaction: 'generation',

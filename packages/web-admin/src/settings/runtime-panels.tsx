@@ -23,6 +23,7 @@ export const PROVIDER_KINDS = [
   'tool-runtime',
   'tool-policy',
   'child-agent',
+  'memory',
 ] as const
 type Text = (key: string) => string
 export function ProvidersPanel({

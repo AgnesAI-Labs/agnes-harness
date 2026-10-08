@@ -54,6 +54,8 @@
     "isProviderError",
     "loopCheckpointCodec",
     "loopShouldStop",
+    "memoryKind",
+    "memoryPrivateEvent",
     "observabilityKind",
     "parseSemver",
     "persistenceRegisterKey",

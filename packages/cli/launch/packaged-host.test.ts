@@ -90,6 +90,8 @@ describe('packaged host wiring', () => {
       'child-agent:codex',
       'child-agent:claude-code',
       'child-agent:sdk',
+      'memory:file',
+      'skills:remembering',
     ])
     expect(module.plugins?.every(({ entry }) => typeof entry.prepared === 'object')).toBe(true)
   })

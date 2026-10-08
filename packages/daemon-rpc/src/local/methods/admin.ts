@@ -7,6 +7,7 @@ import type {
   AdminContextParams,
   AdminHistoryParams,
   AdminMcpOAuthSave,
+  AdminMemoryParams,
   AdminPlanParams,
 } from '@agnes/protocol/gen/app-server'
 
@@ -35,7 +36,10 @@ export function registerAppServerAdmin(
         if (error && typeof error === 'object' && 'data' in error && 'code' in error) throw error
         const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
         throw rpcError('SEMANTIC_REJECTED', {
-          reason: typeof code === 'string' && /^CONFIG_[A-Z_]{1,48}$/.test(code) ? code : 'CONFIG_FAILED',
+          reason:
+            typeof code === 'string' && /^(?:CONFIG|MEMORY)_[A-Z_]{1,48}$/.test(code)
+              ? code
+              : 'CONFIG_FAILED',
         })
       }
     })
@@ -53,5 +57,6 @@ export function registerAppServerAdmin(
     service.saveMcpOAuth(input as AdminMcpOAuthSave),
   )
   // Config writes are optional on context; conservatively require activate for this combined method.
+  register('_agnes/v1/admin.memory', true, (input) => service.memory(input as AdminMemoryParams))
   register('_agnes/v1/admin.context', true, (input) => service.context(input as AdminContextParams))
 }

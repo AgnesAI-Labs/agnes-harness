@@ -5,9 +5,12 @@ import { type JsonValue, jcs } from '@agnes/protocol'
 
 export const SKILL_ROW_ID = 'ext:agnes/skills'
 
-/** The effective Skills view, independent of an MCP-only resource snapshot revision. */
+// Runtime skills belong to plugin-row lifetimes; their ephemeral IDs differ across workers.
+// Only disk resources determine the reconstructible Skills facade's revision.
 export function skillRowRevision(input: SkillRuntimeInput | undefined): string {
-  const listed = [...(input?.list() ?? [])].sort((a, b) => a.resourceId.localeCompare(b.resourceId))
+  const listed = [...(input?.list() ?? [])]
+    .filter((entry) => entry.sourceIdentity.scope !== 'runtime')
+    .sort((a, b) => a.resourceId.localeCompare(b.resourceId))
   const canonical = jcs({ supplied: input !== undefined, listed } as unknown as JsonValue)
   return `skill-row:v1:${createHash('sha256').update(canonical).digest('hex')}`
 }

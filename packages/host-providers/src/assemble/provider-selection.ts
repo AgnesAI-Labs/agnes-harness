@@ -17,6 +17,7 @@ export const PROVIDER_KINDS = [
   'tool-runtime',
   'tool-policy',
   'child-agent',
+  'memory',
 ] as const
 export type ProviderKindName = (typeof PROVIDER_KINDS)[number]
 export type ProviderSelections = Partial<Record<ProviderKindName, ProviderSelection>>
@@ -133,6 +134,7 @@ export function providerConfigurationScopes(
     'tool-runtime': { provider: preset.tools.runtime ?? 'default' },
     'tool-policy': { provider: preset.approval.policy ?? 'default' },
     'child-agent': { provider: IN_PROCESS_CHILD_PROVIDER_ID },
+    memory: { provider: 'file', version: '1.0.0' },
   }
   const fallback = defaults[entry.kind as ProviderKindName]
   return fallback?.provider === entry.id &&

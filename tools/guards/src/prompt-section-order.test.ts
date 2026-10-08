@@ -52,6 +52,8 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   { id: 'persona', order: 100, owner: 'code' },
   { id: 'environment', order: 110, owner: 'code' },
   // Live repository guidance supplied by the official context-rules extension.
+  { id: 'core:child-receipts', order: 112, owner: 'core' },
+  { id: 'memory:index', order: 131, owner: 'core' },
   { id: 'agents-md', order: 120, owner: 'base' },
   { id: 'coding-doctrine', order: 130, owner: 'code' },
   { id: 'code-doctrine', order: 140, owner: 'code' },

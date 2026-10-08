@@ -23,6 +23,7 @@ export async function section(page: Page, id: string) {
     bundles: 'models',
     engines: 'models',
     'system-prompt': 'models',
+    memory: 'models',
     discover: 'plugins',
     providers: 'plugins',
     examples: 'plugins',

@@ -179,6 +179,19 @@ export function demoReply(request: RequestBody): ModelAdapterEvent[] {
   const user = request.messages[userIndex]
   const prompt = user?.content.flatMap((part) => (part.type === 'text' ? [part.text] : [])).join(' ') ?? ''
   const results = request.messages.slice(userIndex + 1).filter((message) => message.role === 'tool_result')
+  if (/^(show remembered preferences|显示记住的偏好)$/i.test(prompt.trim()) && !results.length) {
+    const memory = (request.sections ?? [])
+      .filter((section) => section.id === 'memory:index')
+      .map((section) => section.text)
+      .join('\n')
+    return finish(
+      text(
+        memory
+          ? 'Remembered preferences from this request:\n' + memory
+          : 'Memory is off or no memory provider contributed preferences.',
+      ),
+    )
+  }
   let selected: ToolSchema | undefined
   let args: JsonValue | undefined
   const authoring = /(?:create|write|build|make).*plugin|(?:创建|编写|写).*插件/i.test(prompt)

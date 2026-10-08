@@ -4,6 +4,7 @@ import { release } from 'node:os' // guards-allow-platform: diagnostics report
 import { join } from 'node:path'
 import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { Registry } from '@agnes/daemon-foundation/registry'
+import { memoryPrivateEvent } from '@agnes/extension-api'
 import { redactDetail } from '@agnes/host'
 import { observabilityHome, readDiagnosticJournal } from '@agnes/observability'
 import {
@@ -264,6 +265,7 @@ export function registerDiagnostics(
     // Snapshot first, as session.attach does: rows appended after this cut belong to a later export.
     const lastSeq = session.lastSeq
     const rows = (await session.scan({ fromSeq: afterSeq + 1, limit })) as readonly EventEnvelope[]
+    const memoryPrivate = (await session.scan({ type: 'x/core/memory-private', limit: 1 })).length > 0
     const events: EventEnvelope[] = []
     let cursor = afterSeq
     let bytes = 0
@@ -274,7 +276,9 @@ export function registerDiagnostics(
         more = false
         break
       }
-      const { _meta: _dropped, ...event } = sanitize(row) as EventEnvelope & { _meta?: unknown }
+      const { _meta: _dropped, ...event } = sanitize(
+        memoryPrivate ? memoryPrivateEvent(row) : row,
+      ) as EventEnvelope & { _meta?: unknown }
       const size = Buffer.byteLength(JSON.stringify(event))
       if (events.length > 0 && bytes + size > maxBytes) {
         more = true

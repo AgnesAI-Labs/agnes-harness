@@ -40,6 +40,8 @@ export type ExecGateState = {
   backend: 'none' | 'l1' | 'remote'
   onUnavailable: 'deny' | 'allow'
   access?: 'read-only' | 'workspace-write' | 'full-access'
+  /** Mediated private stores must never become accessible through degraded raw execution. */
+  requiredFileIsolation?: boolean
 }
 
 export type ExecAdapter = {
@@ -306,10 +308,14 @@ export function createPolicyOperation<T>(
     const externalProvider = request.provider !== undefined && request.provider !== 'local'
     if (state.backend === 'none' && state.onUnavailable !== 'allow' && !externalProvider)
       throw unavailable('no sandbox backend is available and the preset does not allow unconfined execution')
+    if (state.requiredFileIsolation && state.backend === 'none' && !externalProvider)
+      throw unavailable('protected memory requires file isolation; unconfined execution is refused')
     const policy = gate.policy?.()
     if (!policy) return invoke(argv, { ...opts, cwd })
     const denied = Object.freeze(
-      policy.rules.filter((rule) => rule.effect === 'deny').map((rule) => rule.path),
+      policy.rules
+        .filter((rule) => rule.effect === 'deny' && (state.access !== 'full-access' || rule.hard))
+        .map((rule) => rule.path),
     )
     const callPolicy: SandboxExecutionPolicy = Object.freeze({
       workspaceRoot: policy.workspaceRoot,
@@ -331,7 +337,7 @@ export function createPolicyOperation<T>(
         hosts: Object.freeze([...policy.networkAllow]),
       }),
       requiredEnforcement: Object.freeze(
-        state.backend === 'l1'
+        state.backend === 'l1' || state.requiredFileIsolation
           ? { level: 'full', scope: Object.freeze(['file', 'network', 'process'] as const) }
           : { level: 'none', scope: Object.freeze([]) },
       ),

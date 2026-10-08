@@ -77,21 +77,36 @@
             "E_GENERATION_SESSION_OPEN",
             "E_GENERATION_SKILLS",
             "E_GENERATION_TARGET_MISSING",
+            "E_MCP_SANDBOX_UNAVAILABLE",
+            "E_PACKAGE_INTEGRITY",
+            "E_PACKAGE_PROVENANCE",
+            "E_PACKAGE_SOURCE_POLICY",
             "E_PROVIDER_DUPLICATE",
             "E_PROVIDER_INCOMPATIBLE",
             "E_PROVIDER_INVALID",
             "E_PROVIDER_UNAVAILABLE",
             "E_PROVIDER_UNKNOWN",
+            "E_SANDBOX_WORKSPACE",
+            "MEMORY_APPROVAL_REJECTED",
+            "MEMORY_BUSY",
+            "MEMORY_COMMITTED_METADATA_FAILED",
+            "MEMORY_CONFLICT",
+            "MEMORY_CONSOLIDATION_REQUIRED",
+            "MEMORY_DISABLED",
+            "MEMORY_INVALID_METADATA",
+            "MEMORY_INVALID_REQUEST",
+            "MEMORY_INVALID_SETTINGS",
+            "MEMORY_MISSING_TOPIC",
+            "MEMORY_POLICY_CHANGED",
+            "MEMORY_PROVIDER_UNAVAILABLE",
+            "MEMORY_SCOPE_DENIED",
+            "MEMORY_SECRET_LIKE_CONTENT",
             "SEARCH_FAILED",
             "SEARCH_INVALID",
             "SEARCH_NOT_CONFIGURED",
             "SEARCH_RATE_LIMITED",
             "SEARCH_ROUTE",
-            "SEARCH_TIMEOUT",
-            "E_PACKAGE_PROVENANCE",
-            "E_PACKAGE_SOURCE_POLICY",
-            "E_MCP_SANDBOX_UNAVAILABLE",
-            "E_PACKAGE_INTEGRITY"
+            "SEARCH_TIMEOUT"
           ]
         }
       },
@@ -133,7 +148,11 @@
                 "appServer.errors.credentialStore",
                 "appServer.errors.provider",
                 "appServer.errors.generation",
-                "appServer.errors.rejected"
+                "appServer.errors.rejected",
+                "appServer.errors.memoryCap",
+                "appServer.errors.memorySecret",
+                "appServer.errors.memoryDisabled",
+                "appServer.errors.memoryPartial"
               ]
             },
             "diagnosticId": {
@@ -819,6 +838,260 @@
       },
       "required": ["checks", "status"],
       "additionalProperties": false
+    },
+    "MemorySettings": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": ["off", "ask", "auto"]
+        },
+        "indexMaxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "indexMaxLines": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "topicMaxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "totalMaxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "tokenBudget": {
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 1048576
+        },
+        "userTokenBudget": {
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 1048576
+        },
+        "userEnabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mode",
+        "indexMaxBytes",
+        "indexMaxLines",
+        "topicMaxBytes",
+        "totalMaxBytes",
+        "tokenBudget",
+        "userTokenBudget",
+        "userEnabled"
+      ],
+      "additionalProperties": false
+    },
+    "MemorySettingsPatch": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": ["off", "ask", "auto"]
+        },
+        "indexMaxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "indexMaxLines": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "topicMaxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "totalMaxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "tokenBudget": {
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 1048576
+        },
+        "userTokenBudget": {
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 1048576
+        },
+        "userEnabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "MemorySource": {
+      "type": "object",
+      "properties": {
+        "sessionKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "turn": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "toolUseId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": ["sessionKey", "turn"],
+      "additionalProperties": false
+    },
+    "MemoryFileInfo": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.md$"
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lines": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": ["path", "hash", "bytes", "lines"],
+      "additionalProperties": false
+    },
+    "MemoryFile": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.md$"
+        },
+        "hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lines": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 1048576
+        }
+      },
+      "required": ["path", "hash", "bytes", "lines", "content"],
+      "additionalProperties": false
+    },
+    "MemoryInspection": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "settings": {
+          "$ref": "#/$defs/MemorySettings"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MemoryFileInfo"
+          },
+          "maxItems": 128
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lastWriter": {
+          "$ref": "#/$defs/MemorySource"
+        }
+      },
+      "required": ["root", "settings", "files", "bytes"],
+      "additionalProperties": false
+    },
+    "AdminMemoryParams": {
+      "type": "object",
+      "properties": {
+        "cwd": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "settings": {
+          "$ref": "#/$defs/MemorySettingsPatch"
+        },
+        "file": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.md$"
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 1048576
+        },
+        "baseHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": ["cwd"],
+      "additionalProperties": false
+    },
+    "AdminMemoryResult": {
+      "type": "object",
+      "properties": {
+        "workspaces": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "available": {
+                "type": "boolean"
+              }
+            },
+            "required": ["path", "available"],
+            "additionalProperties": false
+          }
+        },
+        "inspection": {
+          "$ref": "#/$defs/MemoryInspection"
+        },
+        "file": {
+          "$ref": "#/$defs/MemoryFile"
+        }
+      },
+      "required": ["workspaces", "inspection"],
+      "additionalProperties": false
     }
   },
   "x-methods": {
@@ -865,6 +1138,10 @@
     "_agnes/v1/doctor.run": {
       "params": "DoctorParams",
       "result": "DoctorResult"
+    },
+    "_agnes/v1/admin.memory": {
+      "params": "AdminMemoryParams",
+      "result": "AdminMemoryResult"
     }
   }
 }

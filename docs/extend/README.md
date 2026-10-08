@@ -73,3 +73,5 @@ Drop a source plugin into the [local plugins folder](local-plugins.md), or [buil
 [Schema-driven configuration UI](configuration-ui.md) · Shared settings forms, validation and controlled actions.
 
 [Session workbench panels](workbench-panels.md) describes registered right/bottom dock contributions.
+
+[Memory providers](memory.md) · Single selected memory with multiple knowledge sources.

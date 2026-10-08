@@ -1,4 +1,4 @@
-# Explicit opt-in: ordinary tool approvals and OS command confinement are disabled.
+# Explicit opt-in: ordinary tool approvals are disabled; private providers can still require OS isolation.
 # Principal authorization and hard secret/integrity denials remain authoritative.
 name: full-access
 extends: standard

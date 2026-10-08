@@ -29,6 +29,8 @@ export type WorkspacePolicyPlan = Readonly<{
     allowPaths: readonly string[]
     denyPaths: readonly string[]
     networkAllow: readonly string[]
+    network?: 'deny' | 'allow'
+    fullAccess?: boolean
   }>
 }>
 
@@ -158,6 +160,8 @@ export async function compileWorkspacePolicy(
     canonicalRoot: string
     dataDir: string
     homeDir: string
+    /** Host-owned roots that only explicit mediated capabilities may access. */
+    protectedPaths?: readonly string[]
     semantics: WorkspacePathSemantics
     staticConfig: SandboxStaticConfig
     canonicalize(path: string, options?: { base?: string }): Promise<string>
@@ -233,6 +237,16 @@ export async function compileWorkspacePolicy(
         }),
       ),
     )),
+    ...(await Promise.all(
+      (input.protectedPaths ?? []).map(
+        async (path): Promise<FsRule> => ({
+          effect: 'deny',
+          path: await canonical(path, 'protected state path'),
+          source: 'host-integrity',
+          hard: true,
+        }),
+      ),
+    )),
     ...extraAllow.map((path): FsRule => ({ effect: 'allow', path, source: 'extra', hard: false })),
     ...configuredDeny.map((path): FsRule => ({ effect: 'deny', path, source: 'preset', hard: false })),
   ]
@@ -254,10 +268,19 @@ export async function compileWorkspacePolicy(
       allowPaths: Object.freeze(
         input.staticConfig.access === 'read-only'
           ? []
-          : rules.filter((rule) => rule.effect === 'allow').map((rule) => rule.path),
+          : input.staticConfig.access === 'full-access'
+            ? ['/']
+            : rules.filter((rule) => rule.effect === 'allow').map((rule) => rule.path),
       ),
-      denyPaths: Object.freeze(rules.filter((rule) => rule.effect === 'deny').map((rule) => rule.path)),
+      denyPaths: Object.freeze(
+        rules
+          .filter(
+            (rule) => rule.effect === 'deny' && (input.staticConfig.access !== 'full-access' || rule.hard),
+          )
+          .map((rule) => rule.path),
+      ),
       networkAllow,
+      ...(input.staticConfig.access === 'full-access' ? { network: 'allow' as const, fullAccess: true } : {}),
     }),
   })
 }

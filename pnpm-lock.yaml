@@ -138,6 +138,9 @@ importers:
       '@agnes/mcp-transport-health':
         specifier: workspace:*
         version: link:../mcp-transport-health
+      '@agnes/memory-file':
+        specifier: workspace:*
+        version: link:../memory-file
       '@agnes/observability':
         specifier: workspace:*
         version: link:../observability
@@ -632,6 +635,9 @@ importers:
       '@agnes/daemon-surfaces':
         specifier: workspace:*
         version: link:../daemon-surfaces
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
       '@agnes/host':
         specifier: workspace:*
         version: link:../host
@@ -1159,6 +1165,15 @@ importers:
         version: link:../extension-api
 
   packages/mcp-transport-health: {}
+
+  packages/memory-file:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/system-node':
+        specifier: workspace:*
+        version: link:../system-node
 
   packages/model-adapters:
     dependencies:

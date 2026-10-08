@@ -44,6 +44,14 @@ describe('closed-network backend compilers', () => {
       ]),
     )
     expect(confined.indexOf('--tmpfs')).toBeGreaterThan(confined.lastIndexOf('--bind'))
+    const full = bwrapConfine(['true'], { ...options, fullAccess: true, allowPaths: ['/'], network: 'allow' })
+    expect(full.slice(0, 4)).toEqual(['bwrap', '--bind', '/', '/'])
+    expect(full.indexOf('--dev')).toBeGreaterThan(full.indexOf('--bind'))
+    expect(full.indexOf('--tmpfs')).toBeGreaterThan(full.indexOf('--proc'))
+    expect(full).not.toContain('--unshare-net')
+    expect(() =>
+      bwrapConfine(['true'], { ...options, fullAccess: true, allowPaths: ['/'], denyPaths: [] }),
+    ).toThrow(/private deny floor/)
     expect(confined.slice(-3)).toEqual(['--hostile-looking-executable', '-c', 'literal $HOME; touch /x'])
   })
 

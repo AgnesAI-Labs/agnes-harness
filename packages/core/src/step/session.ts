@@ -382,6 +382,7 @@ export type TurnEndReason =
 export type TurnOutcome = { reason: TurnEndReason; lastSeq: Seq; error?: { code: string; message: string } }
 
 export type SessionDeps = {
+  memory?: import('@agnes/extension-api').MemorySession
   systemPrompt?: PinnedSystemPrompt
   bindLoopChildren?: (
     parent: import('@agnes/extension-api').ChildAgentParentScope,
@@ -2449,6 +2450,7 @@ export class SessionImpl {
       // An inactive ledger continuation remains resumable after releasing its writer.
       if (draining && this.op()) await attempt(() => finishAborted(this))
       await attempt(() => this.hooks.shutdown?.())
+      await attempt(() => this.d.memory?.close?.())
       await attempt(() => this.d.log.close())
       await this.d.workspaceLease?.close().catch((error: unknown) => failures.push(error))
       if (failures.length === 1) throw failures[0]

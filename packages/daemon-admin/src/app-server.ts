@@ -15,6 +15,7 @@ import type {
   AdminContextParams,
   AdminHistoryParams,
   AdminMcpOAuthSave,
+  AdminMemoryParams,
   AdminPlanParams,
 } from '@agnes/protocol/gen/app-server'
 import { credentialRefFor } from '@agnes/resource-control-runtime'
@@ -25,6 +26,9 @@ export function createAppServerAdmin(options: {
   dataDir: string
   profileDir: string
   resolveProfile(bundles?: readonly string[]): Promise<ResolvedProfile>
+  memory?(
+    input: AdminMemoryParams,
+  ): Promise<Pick<import('@agnes/protocol/gen/app-server').AdminMemoryResult, 'inspection' | 'file'>>
   workspaces(): Promise<{ items: { path: string; available: boolean }[] }>
 }) {
   const composition = createCompositionAdmin({
@@ -74,6 +78,13 @@ export function createAppServerAdmin(options: {
       if (!items.some((item) => item.available && item.path === input.cwd))
         throw rpcError('CAPABILITY_DENIED')
       return applyPlanCommand(await realpath(input.cwd), input.line)
+    },
+    async memory(input: AdminMemoryParams) {
+      const { items } = await options.workspaces()
+      if (!items.some((item) => item.available && item.path === input.cwd) || !options.memory)
+        throw rpcError('CAPABILITY_DENIED')
+      const value = await options.memory({ ...input, cwd: await realpath(input.cwd) })
+      return { workspaces: items.map(({ path, available }) => ({ path, available })), ...value }
     },
     async context(input: AdminContextParams) {
       const { items } = await options.workspaces()

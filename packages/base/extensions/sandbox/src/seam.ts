@@ -108,6 +108,8 @@ async function bindWorkspace(workspace: SeamWorkspace): Promise<SandboxSeam> {
       })
     },
     async confine(argv) {
+      if (workspace.execBackend === 'none' && workspace.requiredFileIsolation)
+        throw fault('SANDBOX_UNAVAILABLE', 'protected files require OS isolation; unconfined argv is refused')
       if (external)
         throw fault('SANDBOX_UNAVAILABLE', 'the selected sandbox provider does not rewrite host argv')
       return [...(await backend.confine({ argv, cwd: workspace.root }))]

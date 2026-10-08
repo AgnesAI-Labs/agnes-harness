@@ -336,7 +336,11 @@ export function localPackageAdmin(
     },
   })
   const handleDoctor = doctorAdmin(origin, (input) => client.request('_agnes/v1/doctor.run', input))
-  const handleContext = contextAdmin(origin, (input) => client.request('_agnes/v1/admin.context', input))
+  const handleContext = contextAdmin(
+    origin,
+    (input) => client.request('_agnes/v1/admin.context', input),
+    (input) => client.request('_agnes/v1/admin.memory', input),
+  )
   return {
     doctor: async () => {
       await initialize()

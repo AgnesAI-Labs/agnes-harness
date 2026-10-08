@@ -90,6 +90,11 @@ export type ToolContextDeps = {
   preset: PresetView
   children: ChildrenFactory
   fsOps: FsOps
+  /** Private preference files have their own approval/CAS owner, outside workspace rewind. */
+  memory?: {
+    session: import('@agnes/extension-api').MemorySession
+    approve(proposal: import('@agnes/extension-api').MemoryProposal): Promise<boolean>
+  }
   /** Capabilities from the one tool-level WorkspaceInvocationPort lease. */
   workspace?: Readonly<{
     sandbox: WorkspaceHookSandbox
@@ -141,6 +146,30 @@ export function buildToolContext(
 ): ToolContext {
   const stepId = `${d.turn}/${d.step}`
   const publicFetch = d.publicFetch
+  const workspaceFiles: FsOps = {
+    read: (path, opts) => d.fsOps.read(path, opts),
+    // A write is snapshotted before it happens, so a rewind has something to go back to. An
+    // unavailable checkpoint seam therefore stops the write rather than losing the old bytes.
+    // The file system is asked about the path first, so a snapshot is not taken of a file the
+    // write is about to be refused for - asked, not decided here, and a missing file is not a
+    // refusal because the path being written may not exist yet.
+    write: async (path, data) => {
+      await assertNotDenied(d.fsOps, path)
+      const snap = await d.runtime.checkpointSnapshot([path], stepId, d.workspace?.checkpoint)
+      if (!snap.ok) throw new CoreError('E_SEAM_MISSING', `checkpoint unavailable: ${snap.reason}`, { path })
+      return d.fsOps.write(path, data)
+    },
+    list: (path) => d.fsOps.list(path),
+    stat: (path) => d.fsOps.stat(path),
+  }
+  const files = d.memory
+    ? d.memory.session.files(
+        workspaceFiles,
+        { sessionKey: d.sessionKey, turn: d.turn, toolUseId: call.toolUseId },
+        call.signal,
+        d.memory.approve,
+      )
+    : workspaceFiles
   return {
     session: {
       key: d.sessionKey,
@@ -176,23 +205,7 @@ export function buildToolContext(
         ...(opts?.maxOutputBytes !== undefined ? { maxOutputBytes: opts.maxOutputBytes } : {}),
       })
     },
-    fs: {
-      read: (path, opts) => d.fsOps.read(path, opts),
-      // A write is snapshotted before it happens, so a rewind has something to go back to. An
-      // unavailable checkpoint seam therefore stops the write rather than losing the old bytes.
-      // The file system is asked about the path first, so a snapshot is not taken of a file the
-      // write is about to be refused for - asked, not decided here, and a missing file is not a
-      // refusal because the path being written may not exist yet.
-      write: async (path, data) => {
-        await assertNotDenied(d.fsOps, path)
-        const snap = await d.runtime.checkpointSnapshot([path], stepId, d.workspace?.checkpoint)
-        if (!snap.ok)
-          throw new CoreError('E_SEAM_MISSING', `checkpoint unavailable: ${snap.reason}`, { path })
-        return d.fsOps.write(path, data)
-      },
-      list: (path) => d.fsOps.list(path),
-      stat: (path) => d.fsOps.stat(path),
-    },
+    fs: files,
     net: {
       fetch: (url, init) => d.netFetch(url, init),
       ...(publicFetch

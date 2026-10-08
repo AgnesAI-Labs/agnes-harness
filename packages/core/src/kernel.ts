@@ -139,6 +139,11 @@ export type KernelOptions = {
   ids?: IdMinter
   timers?: Timers
   fsOps: FsOps
+  /** Host selects one session-pinned memory provider; omission preserves deployments without it. */
+  memoryFor?: (input: {
+    key: string
+    cwd: string
+  }) => import('@agnes/extension-api').MemorySession | undefined
   netFetch: ToolContextDeps['netFetch']
   publicFetch?: ToolContextDeps['publicFetch']
   /** Trusted resolved profile approval mode; only trusted profile resolution may set `off`. */
@@ -562,7 +567,9 @@ export class Kernel {
     let session!: SessionImpl
     const children = this.o.children ?? new KernelChildren(this, () => session)
     const toolFilter = so.toolFilter
+    const memory = this.o.memoryFor?.({ key, cwd: so.cwd })
     session = new SessionImpl({
+      ...(memory ? { memory } : {}),
       log,
       tracker,
       surface,

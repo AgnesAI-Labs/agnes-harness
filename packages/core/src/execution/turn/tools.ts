@@ -37,6 +37,7 @@ import type { ChainStep, SessionImpl, StepOutcome } from '../../step/session.js'
 import { summarizeCall } from '../../step/summarize-call.js'
 import { stepVerifyInput, toolVerifyInput } from '../../step/verify-input.js'
 import { resolveModel } from './inference.js'
+import { approveMemoryFile } from './memory-approval.js'
 import { approvalContinuation } from './parked.js'
 
 export type ExecOpts = {
@@ -1062,6 +1063,15 @@ export async function approveAndExecute(
           preset: s.preset,
           children: s.d.children,
           fsOps,
+          ...(s.d.memory && workspace
+            ? {
+                memory: {
+                  session: s.d.memory,
+                  approve: (proposal: import('@agnes/extension-api').MemoryProposal) =>
+                    approveMemoryFile(s, proposal, { name: call.name, meta: def.meta }, op.step, ac.signal),
+                },
+              }
+            : {}),
           ...(workspace ? { workspace } : {}),
           netFetch: s.d.netFetch,
           ...(s.d.publicFetch ? { publicFetch: s.d.publicFetch } : {}),

@@ -5,6 +5,7 @@ const output = resolve(process.env.AGH_WEB_TEST_OUTPUT ?? '.agnes-tmp/e2e-web')
 export default defineConfig({
   testDir: '.',
   testMatch: [
+    'memory.spec.ts',
     'diagnostics.spec.ts',
     'prompt-trace.spec.ts',
     'runtime.spec.ts',
