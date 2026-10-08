@@ -39,6 +39,22 @@ const resources = {
 }
 
 describe('Web command launch contract', () => {
+  it.each(['en', 'zh-CN'])('keeps startup refusal codes for localized CLI output in %s', async (locale) => {
+    for (const code of ['EADDRINUSE', 'EACCES', 'CONFIG_CREDENTIAL_STORE']) {
+      const failure = await runWebCommand([], {
+        resources,
+        env: { AGNES_LOCALE: locale },
+        ensureBackend: async () => {
+          throw Object.assign(new Error('PRIVATE UPSTREAM BODY'), { code })
+        },
+      }).catch((error: Error & { code: string }) => error)
+      expect(failure).toMatchObject({ code })
+      expect(failure).toBeInstanceOf(Error)
+      if (!(failure instanceof Error)) throw new Error('Expected a launch refusal')
+      expect(failure.message).not.toContain('PRIVATE UPSTREAM BODY')
+      expect(failure.message).toMatch(locale === 'zh-CN' ? /[\u4e00-\u9fff]/ : /[a-z]/)
+    }
+  })
   it('starts a headless composition without requesting or creating a Web listener', async () => {
     const signals = new EventEmitter()
     const createServer = vi.fn()

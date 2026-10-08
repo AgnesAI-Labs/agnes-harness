@@ -1,5 +1,8 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
-import { beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { type MainIO, main } from '../src/bin.js'
 import { bootDefault } from '../src/boot/default.js'
 import { bootLocal } from '../src/boot/local.js'
@@ -16,10 +19,16 @@ vi.mock('../src/commands/export.js', async (original) => ({
 }))
 
 beforeEach(() => vi.clearAllMocks())
+const homes: string[] = []
+afterEach(() => {
+  for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true })
+})
 
 function io(): MainIO {
+  const home = mkdtempSync(join(tmpdir(), 'agh-export-boot-'))
+  homes.push(home)
   return {
-    env: {},
+    env: { AGH_HOME: home },
     cwd: process.cwd(),
     agnesVersion: '0.0.0-test',
     stdin: Object.assign(Readable.from([]), { isTTY: false }),

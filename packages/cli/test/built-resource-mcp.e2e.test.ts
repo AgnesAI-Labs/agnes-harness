@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readDaemonDiscovery, resolveDaemonScope } from '@agnes/daemon'
+import { initializeHome } from '@agnes/host'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import { build } from 'esbuild'
@@ -205,6 +206,7 @@ describe('built CLI managed MCP lifecycle', () => {
     }
     if (windows) windowsEnsurePrivateDirectorySync(home)
     else await mkdir(home, { mode: 0o700 })
+    initializeHome(home)
     await mkdir(workspace)
     const server = await officialPagedServer(root)
     const managedExecutable = windows ? join(root, 'managed-node.exe') : nodePath

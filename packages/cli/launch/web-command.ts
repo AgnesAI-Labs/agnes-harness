@@ -272,7 +272,7 @@ export async function runWebCommand(
     await waitForSignal(io.signals ?? process)
   } catch (error) {
     const message = startupFailure(error, env)
-    if (message) throw new Error(message)
+    if (message) throw Object.assign(new Error(message), { code: (error as { code: string }).code })
     throw error
   } finally {
     await web?.close().catch(() => undefined)
