@@ -50,8 +50,7 @@ test('fresh first run, keyless demo, SDK account save and credential persistence
       ]),
     )
     expect(JSON.stringify(saved)).not.toContain(provider.apiKey)
-    expect(saved.effect).toBe('restart-required')
-    await runtime.restart()
+    expect(saved.effect).toBe('new-sessions')
     const configured = await runtime.connect()
     const real = await configured.session.new({
       sessionKey: randomUUID(),
@@ -118,55 +117,53 @@ test('folder capability review, explicit trust/enable, tool invocation and disab
   await info.attach('review.json', { body: JSON.stringify(preview), contentType: 'application/json' })
 })
 
-test(
-  'local hot reload preserves old/new session generations through daemon restart',
-  { tag: '@flaky' },
-  async ({ runtime }, info) => {
-    const client = await runtime.connect()
-    await runtime.localTool(1)
-    await client.call('_agnes/v1/sessionSelection.reloadLocal', {})
-    const loop = (await client.sessionSelection.loops()).find((loop) => loop.id === 'agnes.default')
-    if (!loop) throw new Error('The default Agent loop must be available')
-    const old = await client.session.new({
-      sessionKey: randomUUID(),
-      cwd: runtime.workspace,
-      preset: 'full-access',
-      loop,
-    })
-    await old.attach()
-    await prompt(old, 'call e2e_version {"text":"old"}')
-    expect((await toolResult(old, 'e2e_version'))?.structured).toMatchObject({ version: 1 })
-    await runtime.localTool(2)
-    await client.call('_agnes/v1/sessionSelection.reloadLocal', {})
-    const fresh = await client.session.new({
-      sessionKey: randomUUID(),
-      cwd: runtime.workspace,
-      preset: 'full-access',
-      loop,
-    })
-    expect(fresh.id).not.toBe(old.id)
-    await fresh.attach()
-    await prompt(fresh, 'call e2e_version {"text":"new"}')
-    expect((await toolResult(fresh, 'e2e_version'))?.structured).toMatchObject({ version: 2 })
-    await prompt(old, 'call e2e_version {"text":"still old"}')
-    expect((await toolResult(old, 'e2e_version'))?.structured).toMatchObject({ version: 1 })
-    await runtime.restart()
-    const restarted = await runtime.connect()
-    for (const [id, version] of [
-      [old.id, 1],
-      [fresh.id, 2],
-    ] as const) {
-      const restored = await restarted.session.load(id, { cwd: runtime.workspace })
-      await restored.attach()
-      await prompt(restored, 'call e2e_version {"text":"persisted"}')
-      expect((await toolResult(restored, 'e2e_version'))?.structured).toMatchObject({ version })
-    }
-    await info.attach('generations.json', {
-      body: JSON.stringify(await restarted.packages.generations({ profile: 'local-dev' })),
-      contentType: 'application/json',
-    })
-  },
-)
+test('local hot reload preserves old/new session generations through daemon restart', async ({
+  runtime,
+}, info) => {
+  const client = await runtime.connect()
+  await runtime.localTool(1)
+  await client.call('_agnes/v1/sessionSelection.reloadLocal', {})
+  const loop = (await client.sessionSelection.loops()).find((loop) => loop.id === 'agnes.default')
+  if (!loop) throw new Error('The default Agent loop must be available')
+  const old = await client.session.new({
+    sessionKey: randomUUID(),
+    cwd: runtime.workspace,
+    preset: 'full-access',
+    loop,
+  })
+  await old.attach()
+  await prompt(old, 'call e2e_version {"text":"old"}')
+  expect((await toolResult(old, 'e2e_version'))?.structured).toMatchObject({ version: 1 })
+  await runtime.localTool(2)
+  await client.call('_agnes/v1/sessionSelection.reloadLocal', {})
+  const fresh = await client.session.new({
+    sessionKey: randomUUID(),
+    cwd: runtime.workspace,
+    preset: 'full-access',
+    loop,
+  })
+  expect(fresh.id).not.toBe(old.id)
+  await fresh.attach()
+  await prompt(fresh, 'call e2e_version {"text":"new"}')
+  expect((await toolResult(fresh, 'e2e_version'))?.structured).toMatchObject({ version: 2 })
+  await prompt(old, 'call e2e_version {"text":"still old"}')
+  expect((await toolResult(old, 'e2e_version'))?.structured).toMatchObject({ version: 1 })
+  await runtime.restart()
+  const restarted = await runtime.connect()
+  for (const [id, version] of [
+    [old.id, 1],
+    [fresh.id, 2],
+  ] as const) {
+    const restored = await restarted.session.load(id, { cwd: runtime.workspace })
+    await restored.attach()
+    await prompt(restored, 'call e2e_version {"text":"persisted"}')
+    expect((await toolResult(restored, 'e2e_version'))?.structured).toMatchObject({ version })
+  }
+  await info.attach('generations.json', {
+    body: JSON.stringify(await restarted.packages.generations({ profile: 'local-dev' })),
+    contentType: 'application/json',
+  })
+})
 
 test('CLI MCP stdio fixture runs through the SDK and workspace skills are discovered', async ({
   runtime,

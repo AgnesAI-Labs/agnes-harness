@@ -436,7 +436,7 @@ describe('generation-bound discovery and Web credential', () => {
       const output: string[] = []
       expect(
         await runDaemonControl(
-          { command: 'status', home: scope.home, dataDir },
+          { command: 'status', home: scope.home, profile: 'local-dev', dataDir },
           {
             processIdentity,
             write: (text) => output.push(text),
@@ -445,7 +445,10 @@ describe('generation-bound discovery and Web credential', () => {
       ).toBe(0)
       expect(JSON.parse(output.join('')).running).toBe(true)
       await expect(
-        runDaemonControl({ command: 'stop', home: scope.home, dataDir }, { processIdentity }),
+        runDaemonControl(
+          { command: 'stop', home: scope.home, profile: 'local-dev', dataDir },
+          { processIdentity },
+        ),
       ).rejects.toThrow('identity is unavailable')
       probe.mockResolvedValue({ identity: { state: 'alive', startId: newId }, legacyStartId: oldId })
       expect(await readDaemonDiscovery(scope, { processIdentity })).toEqual(descriptor)

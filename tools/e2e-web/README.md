@@ -30,8 +30,8 @@ uses the first-run keyless demo model, synthetic workspace data, a loopback Open
 provider and a dependency-free stdio MCP fixture. Child environments allow only the required
 path/home/profile/origin values; real provider keys, proxy settings and user configuration are
 never inherited. Each SDK-created new session supplies a unique `sessionKey`;
-plugin lifecycle sessions explicitly select the installed default Agent loop. Account save follows
-the returned `restart-required` effect before exercising the new configuration. Specs use the CLI and public SDK, including the SDK package-admin methods;
+plugin lifecycle sessions explicitly select the installed default Agent loop. Account save asserts the documented
+`new-sessions` effect and exercises the credential immediately, then verifies it after restart. Specs use the CLI and public SDK, including the SDK package-admin methods;
 they never call raw admin HTTP endpoints. The SDK discovers the advertised WebSocket from the
 served root document and exercises browser WebSocket session operations; local administrative operations use the daemon's local transport.
 
@@ -68,12 +68,12 @@ temporary directory. Browser console errors, uncaught page errors and off-loopba
 Open reports/traces with `pnpm exec playwright show-report .agnes-tmp/e2e-web/report` and
 `pnpm exec playwright show-trace PATH_TO_TRACE.zip`.
 
-The hot-reload/restart spec remains tagged `@flaky` until the macOS process-identity fix is
-integrated. It stays enabled and any recurrence fails the gate. The observed failure came from
-using calendar-adjusted `kern.boottime` in the daemon start id: a live daemon could appear stale
-while retaining its mutation lock. The fix uses the immutable boot-session UUID and saved process
-start, with fail-closed migration of old records. Clear the tag only after that fix lands and
-`pnpm e2e:web --reuse-build --grep 'local hot reload' --repeat-each 8` passes with zero retries.
+The hot-reload/restart spec's `@flaky` tag was cleared after the macOS process-identity fix
+was integrated and eight consecutive runs on the integrated UI round 2 tip passed with zero
+retries. The observed failure came from using calendar-adjusted `kern.boottime` in the daemon
+start id: a live daemon could appear stale while retaining its mutation lock. The fix uses the
+immutable boot-session UUID and saved process start, with fail-closed migration of old records.
+Reproduce any recurrence with `--repeat-each 8`; do not add retries or time tolerance.
 Failure reports/traces remain separate from successful runs; process status and daemon audit
 are attached, and editor-style code updates are published atomically.
 
