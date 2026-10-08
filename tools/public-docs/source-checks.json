@@ -163,7 +163,7 @@
     "excludes": ["'agnes/mcp-client'"]
   },
   {
-    "path": "packages/daemon/src/supervisor/socket-paths.ts",
+    "path": "packages/daemon-supervisor/src/supervisor/socket-paths.ts",
     "includes": [
       "UNIX_SOCKET_PATH_BYTES = 103",
       "agnes-${uid}-${hash}",

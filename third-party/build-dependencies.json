@@ -8,7 +8,9 @@
       "source": "https://github.com/hyzyla/pdfium",
       "purpose": "Bundle PDF text extraction and rasterization into the document-reader plugin.",
       "rationale": "Ships a platform-independent WASM engine without Office or native Node addons.",
-      "consumers": ["packages/package-manager/bundled-plugins/document-reader"]
+      "consumers": [
+        "packages/package-manager/bundled-plugins/document-reader"
+      ]
     },
     {
       "name": "@tesseract.js-data/chi_sim",
@@ -17,7 +19,9 @@
       "source": "https://github.com/naptha/tessdata",
       "purpose": "Bundle a local Chinese/English OCR model in the document-reader plugin.",
       "rationale": "Allows offline scanned-document reading without sending documents to an OCR service.",
-      "consumers": ["packages/package-manager/bundled-plugins/document-reader"]
+      "consumers": [
+        "packages/package-manager/bundled-plugins/document-reader"
+      ]
     },
     {
       "name": "@tesseract.js-data/eng",
@@ -26,7 +30,9 @@
       "source": "https://github.com/naptha/tessdata",
       "purpose": "Bundle an optional local English OCR model in the document-reader plugin.",
       "rationale": "Provides language selection using the same offline worker and asset packaging.",
-      "consumers": ["packages/package-manager/bundled-plugins/document-reader"]
+      "consumers": [
+        "packages/package-manager/bundled-plugins/document-reader"
+      ]
     },
     {
       "name": "tesseract-wasm",
@@ -35,7 +41,9 @@
       "source": "https://github.com/robertknight/tesseract-wasm",
       "purpose": "Bundle SIMD and fallback OCR WASM engines in the document-reader plugin.",
       "rationale": "Runs OCR inside a cancellable Node worker with identical Windows and macOS code.",
-      "consumers": ["packages/package-manager/bundled-plugins/document-reader"]
+      "consumers": [
+        "packages/package-manager/bundled-plugins/document-reader"
+      ]
     },
     {
       "name": "word-extractor",
@@ -44,7 +52,9 @@
       "source": "https://github.com/morungos/node-word-extractor",
       "purpose": "Bundle DOC and DOCX plain-text extraction in the document-reader plugin.",
       "rationale": "Covers legacy Word files without invoking a platform-specific Office executable.",
-      "consumers": ["packages/package-manager/bundled-plugins/document-reader"]
+      "consumers": [
+        "packages/package-manager/bundled-plugins/document-reader"
+      ]
     },
     {
       "name": "yauzl",
@@ -53,7 +63,9 @@
       "source": "https://github.com/thejoshwolfe/yauzl",
       "purpose": "Bundle bounded ZIP metadata inspection and selected-entry reading in the document-reader plugin.",
       "rationale": "Reads archive bytes without extracting user-selected paths onto disk.",
-      "consumers": ["packages/package-manager/bundled-plugins/document-reader"]
+      "consumers": [
+        "packages/package-manager/bundled-plugins/document-reader"
+      ]
     },
     {
       "name": "@biomejs/biome",
@@ -62,7 +74,9 @@
       "source": "https://github.com/biomejs/biome",
       "purpose": "Repository formatting and static lint checks.",
       "rationale": "Provides one deterministic formatter and linter for the TypeScript workspace.",
-      "consumers": ["."]
+      "consumers": [
+        "."
+      ]
     },
     {
       "name": "@types/node",
@@ -71,7 +85,9 @@
       "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node",
       "purpose": "TypeScript declarations for the supported Node.js runtime.",
       "rationale": "Makes Node platform APIs type-checkable without maintaining local ambient declarations.",
-      "consumers": ["."]
+      "consumers": [
+        "."
+      ]
     },
     {
       "name": "@types/react",
@@ -95,7 +111,12 @@
       "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react-dom",
       "purpose": "Type declarations for react-dom 18 used by the web workbench and web-client.",
       "rationale": "Type-only companion of the pinned react-dom dependency; same version line.",
-      "consumers": ["packages/web", "packages/web-client", "packages/web-ui", "packages/web-units"]
+      "consumers": [
+        "packages/web",
+        "packages/web-client",
+        "packages/web-ui",
+        "packages/web-units"
+      ]
     },
     {
       "name": "@types/turndown",
@@ -104,7 +125,9 @@
       "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/turndown",
       "purpose": "Type declarations for the Turndown HTML-to-Markdown converter.",
       "rationale": "Keeps the public-page rendering integration checked against the installed Turndown API.",
-      "consumers": ["packages/base"]
+      "consumers": [
+        "packages/base"
+      ]
     },
     {
       "name": "@types/ws",
@@ -113,7 +136,12 @@
       "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/ws",
       "purpose": "TypeScript declarations for the ws transport library.",
       "rationale": "Keeps daemon tests and SDK transport code checked against the installed ws API.",
-      "consumers": ["packages/daemon", "packages/daemon-rpc", "packages/sdk"]
+      "consumers": [
+        "packages/daemon",
+        "packages/daemon-rpc",
+        "packages/sdk",
+        "packages/daemon-supervisor"
+      ]
     },
     {
       "name": "@xterm/headless",
@@ -122,7 +150,9 @@
       "source": "https://github.com/xtermjs/xterm.js",
       "purpose": "Headless terminal emulation for CLI and TUI tests.",
       "rationale": "Verifies terminal control sequences and screen output without an interactive terminal.",
-      "consumers": ["packages/cli"]
+      "consumers": [
+        "packages/cli"
+      ]
     },
     {
       "name": "react-dom",
@@ -131,7 +161,12 @@
       "source": "https://github.com/facebook/react/tree/main/packages/react-dom",
       "purpose": "DOM renderer for the web workbench and client module mount points; bundled into /vendor/* shared-singleton chunks.",
       "rationale": "Same pin line as react (WC5).",
-      "consumers": ["packages/web", "packages/web-client", "packages/web-ui", "packages/web-units"]
+      "consumers": [
+        "packages/web",
+        "packages/web-client",
+        "packages/web-ui",
+        "packages/web-units"
+      ]
     },
     {
       "name": "tsx",
@@ -140,7 +175,9 @@
       "source": "https://github.com/privatenumber/tsx",
       "purpose": "Executes TypeScript repository tools and generators.",
       "rationale": "Runs checked-in TypeScript tooling directly while preserving the workspace module model.",
-      "consumers": ["."]
+      "consumers": [
+        "."
+      ]
     },
     {
       "name": "typescript",
@@ -149,7 +186,9 @@
       "source": "https://github.com/microsoft/TypeScript",
       "purpose": "Workspace compiler and project-reference type checker.",
       "rationale": "Defines the language and type-checking implementation used by all packages.",
-      "consumers": ["."]
+      "consumers": [
+        "."
+      ]
     },
     {
       "name": "vitest",
@@ -158,7 +197,9 @@
       "source": "https://github.com/vitest-dev/vitest",
       "purpose": "Unit, integration, conformance and guard test runner.",
       "rationale": "Provides one test runtime compatible with the workspace's ESM TypeScript setup.",
-      "consumers": ["."]
+      "consumers": [
+        "."
+      ]
     },
     {
       "name": "postject",
@@ -167,7 +208,9 @@
       "source": "https://github.com/nodejs/postject",
       "purpose": "Inject the Node SEA resource into the CLI executable.",
       "rationale": "Upstream I8 CLI SEA packaging uses the Node project resource injector; build-time only.",
-      "consumers": ["packages/cli"]
+      "consumers": [
+        "packages/cli"
+      ]
     },
     {
       "name": "happy-dom",
@@ -176,7 +219,9 @@
       "source": "https://github.com/capricorn86/happy-dom",
       "purpose": "DOM-based Web Markdown and streaming interaction regression tests.",
       "rationale": "Runs isolated selection, focus, safe rendering and clipboard lifecycle tests without adding a browser runtime dependency to the product.",
-      "consumers": ["."]
+      "consumers": [
+        "."
+      ]
     },
     {
       "name": "@tailwindcss/cli",
@@ -185,7 +230,9 @@
       "source": "https://github.com/tailwindlabs/tailwindcss",
       "purpose": "Builds the shared web-ui conversation styles from Tailwind v4 source.",
       "rationale": "Provides the pinned Tailwind command line used by the web-ui stylesheet build.",
-      "consumers": ["packages/web-ui"]
+      "consumers": [
+        "packages/web-ui"
+      ]
     },
     {
       "name": "tailwindcss",
@@ -194,7 +241,9 @@
       "source": "https://github.com/tailwindlabs/tailwindcss",
       "purpose": "Tailwind v4 CSS framework used to build the shared web-ui conversation styles.",
       "rationale": "Provides the source directives and theme utilities consumed by the web-ui stylesheet build.",
-      "consumers": ["packages/web-ui"]
+      "consumers": [
+        "packages/web-ui"
+      ]
     },
     {
       "name": "@playwright/test",
@@ -203,7 +252,9 @@
       "source": "https://github.com/microsoft/playwright",
       "purpose": "Run the real daemon/Web end-to-end merge gate with cached Chromium and failure traces.",
       "rationale": "Provides stable browser assertions, visual comparison, lifecycle fixtures and CI reports.",
-      "consumers": ["."]
+      "consumers": [
+        "."
+      ]
     },
     {
       "name": "@axe-core/playwright",
@@ -212,7 +263,9 @@
       "source": "https://github.com/dequelabs/axe-core-npm",
       "purpose": "Scan main Web screens for WCAG A/AA accessibility violations in the merge gate.",
       "rationale": "Uses maintained axe rules in the same real browser as functional acceptance.",
-      "consumers": ["."]
+      "consumers": [
+        "."
+      ]
     }
   ]
 }

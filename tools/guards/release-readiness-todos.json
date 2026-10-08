@@ -68,7 +68,8 @@
         "@agnes/web-slots",
         "@agnes/web-ui",
         "@agnes/web-units",
-        "@agnes/worker-runtime"
+        "@agnes/worker-runtime",
+        "@agnes/daemon-supervisor"
       ]
     }
   ]

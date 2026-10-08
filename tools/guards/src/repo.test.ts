@@ -28,6 +28,7 @@ describe('repo', () => {
       '@agnes/daemon-admin',
       '@agnes/daemon-foundation',
       '@agnes/daemon-rpc',
+      '@agnes/daemon-supervisor',
       '@agnes/daemon-surfaces',
       '@agnes/e2e-web',
       '@agnes/error-sanitization',

@@ -63,6 +63,7 @@ function erroredChild(): FakeChild {
 describe('WorkerPool', () => {
   it('accepts a preview only from the link that carries the session channel', () => {
     const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
       config: {
         profileName: 'p',
         dataDir: '/unused',
@@ -91,6 +92,7 @@ describe('WorkerPool', () => {
   it('passes on a preview from the adopted link that hosts the session, never from another', async () => {
     const previews: Array<{ key: string; delta: string }> = []
     const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
       config: {
         profileName: 'p',
         dataDir: '/unused',
@@ -172,6 +174,7 @@ describe('WorkerPool', () => {
     const onUnhandled = (reason: unknown) => unhandled.push(reason)
     process.on('unhandledRejection', onUnhandled)
     const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
       config: {
         profileName: 'p',
         dataDir: '/unused',
@@ -221,6 +224,7 @@ describe('WorkerPool', () => {
 
   it('reserves @shared for the Host worker and refuses a mismatched live slot', async () => {
     const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
       config: {
         profileName: 'p',
         dataDir: '/unused',
@@ -258,6 +262,7 @@ describe('WorkerPool', () => {
     vi.stubEnv('AGNES_SUPERVISOR_START_ID', '1')
     vi.stubEnv('AGNES_WORKER_ROOT', '/inherited-first-workspace')
     const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
       config: {
         profileName: 'p',
         dataDir: '/unused',
@@ -304,6 +309,7 @@ describe('WorkerPool', () => {
     vi.stubEnv('AGH_HOME', '/environment-home')
     vi.stubEnv('AGNES_HOME', '/legacy-home')
     const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
       config: {
         profileName: 'p',
         dataDir: '/daemon-home/data',
@@ -382,6 +388,7 @@ describe('WorkerPool', () => {
       return child
     }) as typeof import('node:child_process').spawn
     const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
       config: {
         profileName: 'p',
         dataDir: dir,
@@ -428,6 +435,7 @@ describe('WorkerPool', () => {
       return child
     }) as unknown as typeof import('node:child_process').spawn
     const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
       config: {
         profileName: 'p',
         dataDir: dir,
@@ -1010,6 +1018,7 @@ describe('WorkerPool', () => {
     let now = 0
     const notices: string[] = []
     const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
       config: {
         profileName: 'p',
         dataDir: '/tmp/agnes-unused',
@@ -1062,6 +1071,7 @@ describe('WorkerPool', () => {
       }) as unknown as typeof import('node:child_process').spawn
 
       const pool = new WorkerPool({
+        workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
         config: {
           profileName: 'p',
           dataDir: '/unused',

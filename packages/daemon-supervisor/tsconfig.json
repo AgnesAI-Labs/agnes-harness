@@ -1,0 +1,58 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../base"
+    },
+    {
+      "path": "../daemon-admin"
+    },
+    {
+      "path": "../daemon-foundation"
+    },
+    {
+      "path": "../daemon-rpc"
+    },
+    {
+      "path": "../daemon-surfaces"
+    },
+    {
+      "path": "../host"
+    },
+    {
+      "path": "../package-manager"
+    },
+    {
+      "path": "../plugin-runtime"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../resource-control-daemon"
+    },
+    {
+      "path": "../resource-control-runtime"
+    },
+    {
+      "path": "../resource-control-store"
+    },
+    {
+      "path": "../resource-control-worker"
+    },
+    {
+      "path": "../system-node"
+    },
+    {
+      "path": "../worker-runtime"
+    }
+  ]
+}

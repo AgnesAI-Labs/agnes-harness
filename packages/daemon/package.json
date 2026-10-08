@@ -36,7 +36,8 @@
     "@agnes/daemon-foundation": "workspace:*",
     "@agnes/daemon-surfaces": "workspace:*",
     "@agnes/daemon-admin": "workspace:*",
-    "@agnes/daemon-rpc": "workspace:*"
+    "@agnes/daemon-rpc": "workspace:*",
+    "@agnes/daemon-supervisor": "workspace:*"
   },
   "devDependencies": {
     "@agnes/ai": "workspace:*",

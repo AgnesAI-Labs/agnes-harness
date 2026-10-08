@@ -157,7 +157,7 @@ const JOIN_DATA_CACHE_EXEMPTIONS: readonly JoinDataCacheExemption[] = [
       'directory name comes from AGH_DIR, not a second literal.',
   },
   {
-    path: 'packages/daemon/src/supervisor/scope.ts',
+    path: 'packages/daemon-supervisor/src/supervisor/scope.ts',
     line: "expandHome(inputs.user?.cacheDir ?? join(home, 'cache'), input.osHome),",
     reason:
       "join(home, 'cache') here computes byte-for-byte the value importing and calling cacheDir(home) " +
