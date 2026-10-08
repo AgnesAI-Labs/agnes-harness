@@ -98,12 +98,13 @@ job output, interactive terminal input/output, schedule creation/archive and the
 workflow through restart. Backend assertions use CLI or SDK, never raw admin HTTP from specs.
 Selectors use roles and stable test IDs; disclosures are checked before toggling.
 
-`baselines/ready.json` declares 53 reviewed screens on both macOS and Linux, with no pending
+`baselines/ready.json` declares the reviewed screens on both macOS and Linux, with no pending
 screens. The gate checks compact provider row spacing, one card per discovered package and
 selection through the shared version picker. The Discover search baseline filters to a
 single-version entry.
 Ready PNGs cover key screens in both locales and themes, including installed plugin cards,
-Skills empty state and tool rows. The additional installed-folder card screen is en/light.
+Skills empty state, tool rows and the agent-authored candidate review and file diff.
+The additional installed-folder card screen is en/light.
 
 Normal gate runs use `updateSnapshots: none`: unknown names, a missing manifest or a missing
 ready image fail. Only an explicit reviewed update writes baselines:
