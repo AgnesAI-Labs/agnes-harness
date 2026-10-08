@@ -1,5 +1,6 @@
 import { access, copyFile, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import type { Page, TestInfo } from '@playwright/test'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, settled, translated } from './quality.js'
@@ -105,6 +106,14 @@ test('session terminal survives UI detachment, follows agent output and honors p
   runtime,
 }, info) => {
   test.setTimeout(240_000)
+  // Real protected mount targets make the OS refusal observable. Bubblewrap cannot
+  // create a missing deny mount below a read-only parent; keep that refusal intact.
+  const protectedFiles = [
+    join(dirname(runtime.home), '.ssh', 'wb1-synthetic-key'),
+    join(runtime.home, 'data', 'wb1-synthetic-protected'),
+    join(runtime.workspace, '.git', 'wb1-synthetic-metadata'),
+    ...WORKSPACE_SECRET_DIRS.map((path) => join(runtime.workspace, path, 'wb1-synthetic-secret')),
+  ]
   await page.addInitScript(() => {
     if (location.protocol !== 'http:') return
     if (!localStorage.getItem('agnes-locale')) localStorage.setItem('agnes-locale', 'en')
@@ -216,6 +225,12 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await expect(session.setPreset('read-only')).rejects.toMatchObject({
     data: { code: 'PRESET_SWITCH_REJECTED' },
   })
+  for (const path of protectedFiles) {
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, 'WB1_PROTECTED_SYNTHETIC\n')
+  }
+  await mkdir(join(runtime.home, 'data/secrets'), { recursive: true })
+  await mkdir(join(runtime.home, 'data/tmp'), { recursive: true })
   const readOnly = await client.session.new({
     cwd: runtime.workspace,
     preset: 'read-only',
@@ -244,13 +259,15 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await sandboxed.jobsControl({
     operation: 'send',
     jobId: workspace.output.id,
-    text: `printf DENIED > '${outside}'; printf ALLOWED > wb1-terminal-inside.txt; printf 'WB1_BOUNDARY_DONE\\n'\n`,
+    text: `printf DENIED > '${outside}'; ${protectedFiles.map((path) => `cat '${path}'; printf CHANGED > '${path}'`).join('; ')}; printf ALLOWED > wb1-terminal-inside.txt; printf 'WB1_BOUNDARY_DONE\\n'\n`,
   })
   await expect
     .poll(async () => (await sandboxed.jobsRead(workspaceJobId)).job?.stdout, { timeout: 30_000 })
     .toMatch(/\r?\nWB1_BOUNDARY_DONE\r?\n/)
   expect(await readFile(join(runtime.workspace, 'wb1-terminal-inside.txt'), 'utf8')).toBe('ALLOWED')
   await expect(access(outside)).rejects.toMatchObject({ code: 'ENOENT' })
+  expect((await sandboxed.jobsRead(workspaceJobId)).job?.stdout).not.toContain('WB1_PROTECTED_SYNTHETIC')
+  for (const path of protectedFiles) expect(await readFile(path, 'utf8')).toBe('WB1_PROTECTED_SYNTHETIC\n')
   await sandboxed.jobsControl({ operation: 'kill', jobId: workspace.output.id })
   await panel.getByTestId('terminal-tab-close').click()
   await expect

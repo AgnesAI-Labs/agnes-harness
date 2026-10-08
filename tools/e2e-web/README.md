@@ -133,6 +133,10 @@ UUID are normalized to fixed-length values only for terminal screenshots; the
 receipt wording, command, bytes, state and process controls remain visible. The
 synthetic human shell sets a stable `PS1` and clears its initial version-dependent
 prompt through real terminal input. No user controls or diff content are masked.
+The terminal fixture provisions synthetic protected files at the preset's deny
+mount targets and verifies both read and write refusal. On Linux, bubblewrap's
+existing fail-closed initialization cannot create a missing deny mount under a
+read-only parent; fixture provisioning does not change that backend policy.
 
 Normal gate runs use `updateSnapshots: none`: unknown names, a missing manifest or a missing
 ready image fail. Only an explicit reviewed update writes baselines:
