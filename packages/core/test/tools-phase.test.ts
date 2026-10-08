@@ -311,7 +311,6 @@ describe('tools phase', () => {
     expect(types.slice(i + 3)).toEqual([
       'effect/intent',
       'tool/result',
-      'x/core/tool-response',
       'effect/settled',
       'verifier/signal',
       'verifier/signal',

@@ -316,6 +316,16 @@ export async function readDaemonDiscovery(
   // may survive until the new daemon publishes its ready record; it is stale, not a scope conflict.
   // Scope mismatches are refused only when the descriptor belongs to the current owner generation.
   if (!sameOwner(owner, parsed.owner)) return null
+  const found = await identity(
+    owner.pid,
+    async (pid) =>
+      resolveOwnerIdentity(scope.home, owner, await (options.processIdentity ?? defaultProcessIdentity)(pid)),
+    options.identityTimeoutMs ?? 1000,
+  )
+  if (found.state === 'dead') return null
+  if (found.state !== 'alive')
+    throw new DaemonDiscoveryError('daemon discovery owner identity is unavailable')
+  if (found.startId !== owner.processStartId) return null
   if (
     parsed.scopeID !== scope.scopeID ||
     parsed.profile !== scope.profile ||
@@ -330,16 +340,6 @@ export async function readDaemonDiscovery(
       'daemon discovery does not match the selected scope',
       'E_DAEMON_SCOPE_CONFLICT',
     )
-  const found = await identity(
-    owner.pid,
-    async (pid) =>
-      resolveOwnerIdentity(scope.home, owner, await (options.processIdentity ?? defaultProcessIdentity)(pid)),
-    options.identityTimeoutMs ?? 1000,
-  )
-  if (found.state === 'dead') return null
-  if (found.state !== 'alive')
-    throw new DaemonDiscoveryError('daemon discovery owner identity is unavailable')
-  if (found.startId !== owner.processStartId) return null
   return parsed
 }
 

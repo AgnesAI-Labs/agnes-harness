@@ -1306,6 +1306,17 @@ export async function approveAndExecute(
     const recordedResult =
       marker.present && !deferred ? errorResult('invalid or unregistered deferred job') : finalResult
     if (marker.present && !deferred) failed = true
+    const [loopEffect] = await s.d.log.scan({
+      type: 'x/core/loop-effect',
+      lane: s.lane,
+      fromSeq: call.argsSeq + 1,
+      toSeq: call.argsSeq + 1,
+      limit: 1,
+    })
+    const identifiedLoopCall =
+      loopEffect?.origin === 'system' &&
+      loopEffect.trust === 'trusted' &&
+      (loopEffect.data as { toolUseId?: string }).toolUseId === call.toolUseId
     const resultRows: EventInput[] = deferred
       ? [
           s.ev(
@@ -1342,11 +1353,15 @@ export async function approveAndExecute(
               sourceEventSeqs: [call.argsSeq],
             },
           ),
-          s.ev(
-            'x/core/tool-response',
-            { version: 1, toolUseId: call.toolUseId, result: recordedResult },
-            { ignorable: true, sourceEventSeqs: [call.argsSeq] },
-          ),
+          ...(identifiedLoopCall
+            ? [
+                s.ev(
+                  'x/core/tool-response',
+                  { version: 1, toolUseId: call.toolUseId, result: recordedResult },
+                  { ignorable: true, sourceEventSeqs: [call.argsSeq] },
+                ),
+              ]
+            : []),
         ]
     const verifierSignal = s.ev('verifier/signal', {
       scope: 'tool',
