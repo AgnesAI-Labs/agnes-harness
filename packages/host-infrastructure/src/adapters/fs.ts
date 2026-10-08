@@ -8,7 +8,7 @@ import { localFsIo } from './fs-io-local.js'
 /** The consumption contract the seam packages are written against. */
 export type HostFs = {
   realpath(p: string): Promise<string>
-  read(p: string, opts?: { offset?: number; limit?: number }): Promise<Uint8Array>
+  read(p: string, opts?: { unit?: 'lines' | 'bytes'; offset?: number; limit?: number }): Promise<Uint8Array>
   write(p: string, data: Uint8Array): Promise<void>
   stat(p: string): Promise<FsStat>
   list(p: string): Promise<FsEntry[]>
@@ -217,6 +217,19 @@ export function createFs(
       return resolveInside(p)
     },
     async read(p, opts = {}) {
+      if (opts.unit === 'bytes') {
+        const offset = opts.offset ?? 0
+        if (
+          !Number.isSafeInteger(offset) ||
+          offset < 0 ||
+          (opts.limit !== undefined && (!Number.isSafeInteger(opts.limit) || opts.limit < 0))
+        )
+          throw Object.assign(new Error('Invalid byte range'), { code: 'EINVAL' })
+        const { real } = await authorizeRead(p)
+        if (!io.readRange)
+          throw Object.assign(new Error('Bounded byte reads are unavailable'), { code: 'ENOTSUP' })
+        return io.readRange(real, { offset, ...(opts.limit === undefined ? {} : { limit: opts.limit }) })
+      }
       const buf = await io.readFile((await authorizeRead(p)).real)
       if (opts.offset === undefined && opts.limit === undefined) return new Uint8Array(buf)
       const lines = windowDecoder.decode(buf).split(/(?<=\n)/)

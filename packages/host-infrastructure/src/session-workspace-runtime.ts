@@ -414,7 +414,12 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
     return Object.freeze({
       root: runtime.root,
       fs: {
-        read: (path, opts) => withAccess(() => runtime.fs.read(path, opts)),
+        read: (path, opts) =>
+          withAccess(() =>
+            runtime.fencedFs
+              ? runtime.fencedFs.read(path, { ...opts, unit: 'bytes' })
+              : runtime.fs.read(path, opts),
+          ),
         write: (path, data) => withAccess(() => runtime.fs.write(path, data)),
         list: (path) => withAccess(() => runtime.fs.list(path)),
         stat: (path) => withAccess(() => runtime.fs.stat(path)),

@@ -48,7 +48,7 @@ export type TableHandle = {
  */
 export type HostFs = {
   realpath(p: string): Promise<string>
-  read(p: string, opts?: { offset?: number; limit?: number }): Promise<Uint8Array>
+  read(p: string, opts?: { unit?: 'lines' | 'bytes'; offset?: number; limit?: number }): Promise<Uint8Array>
   write(p: string, data: Uint8Array): Promise<void>
   stat(p: string): Promise<FsStat>
   list(p: string): Promise<FsEntry[]>

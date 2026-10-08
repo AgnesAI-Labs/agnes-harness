@@ -207,7 +207,39 @@ export function buildToolContext(
     },
     fs: files,
     net: {
-      fetch: (url, init) => d.netFetch(url, init),
+      async fetch(url, init) {
+        call.signal.throwIfAborted()
+        init?.signal?.throwIfAborted()
+        const timeoutMs = Math.floor(
+          Math.min(
+            call.timeoutMs,
+            d.lease.remainingMs(),
+            init?.timeoutMs ?? call.defaultTimeoutMs ?? call.timeoutMs,
+            2_147_483_647,
+          ),
+        )
+        if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
+          throw new CoreError('E_BUDGET', 'fetch requires a positive remaining call deadline')
+        const signal = AbortSignal.any([
+          call.signal,
+          ...(init?.signal ? [init.signal] : []),
+          AbortSignal.timeout(timeoutMs),
+        ])
+        signal.throwIfAborted()
+        const response = await d.netFetch(url, { ...init, signal, timeoutMs })
+        // Native fetch cancels locked readers through its signal. This backstop also releases an
+        // unread body returned by a provider; providers still own cancellation of locked readers.
+        const cancel = () => {
+          if (response.body && !response.body.locked)
+            void response.body.cancel(signal.reason).catch(() => undefined)
+        }
+        if (signal.aborted) {
+          cancel()
+          signal.throwIfAborted()
+        }
+        signal.addEventListener('abort', cancel, { once: true })
+        return response
+      },
       ...(publicFetch
         ? {
             fetchPublic: (url: string, options?: { responseType: 'zip' }) =>

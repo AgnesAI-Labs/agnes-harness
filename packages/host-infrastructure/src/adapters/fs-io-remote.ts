@@ -21,6 +21,30 @@ const STAT_SCRIPT = [
   'print(int(s.st_mtime * 1000))',
 ].join('\n')
 
+const READ_RANGE_SCRIPT = [
+  'import os, sys, stat, errno, base64',
+  'try:',
+  '    fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NONBLOCK)',
+  '    try:',
+  '        meta = os.fstat(fd)',
+  '        if not stat.S_ISREG(meta.st_mode): raise OSError(errno.EISDIR if stat.S_ISDIR(meta.st_mode) else errno.EINVAL, "regular file required")',
+  '        offset = int(sys.argv[2])',
+  '        limit = int(sys.argv[3]) if sys.argv[3] != "-" else meta.st_size',
+  '        remaining = max(0, min(limit, meta.st_size - offset))',
+  '        os.lseek(fd, offset, os.SEEK_SET)',
+  '        chunks = []',
+  '        while remaining:',
+  '            chunk = os.read(fd, min(remaining, 65536))',
+  '            if not chunk: break',
+  '            chunks.append(chunk)',
+  '            remaining -= len(chunk)',
+  '        print(base64.b64encode(b"".join(chunks)).decode("ascii"))',
+  '    finally: os.close(fd)',
+  'except OSError as error:',
+  '    print(errno.errorcode.get(error.errno, "EIO"), file=sys.stderr)',
+  '    sys.exit(1)',
+].join('\n')
+
 const READDIR_SCRIPT = [
   'import os, sys, stat as st',
   'd = sys.argv[1]',
@@ -97,6 +121,42 @@ export function createRemoteFsIo(transport: RemoteTransport): FsIo {
       const [got] = await transport.download([abs])
       if (got === undefined) throw new Error(`remote readFile returned nothing for ${abs}`)
       return got.content
+    },
+    async readRange(abs, opts) {
+      const result = await transport.exec(
+        [
+          'python3',
+          '-c',
+          READ_RANGE_SCRIPT,
+          abs,
+          String(opts.offset),
+          opts.limit === undefined ? '-' : String(opts.limit),
+        ],
+        {
+          cwd: '/',
+          ...(opts.limit === undefined ? {} : { maxOutputBytes: Math.ceil(opts.limit / 3) * 4 + 32 }),
+        },
+      )
+      if (result.truncated || result.timedOut)
+        throw Object.assign(new Error('Remote byte read did not complete'), {
+          code: result.truncated ? 'EFBIG' : 'ETIMEDOUT',
+        })
+      if (result.code !== 0)
+        throw Object.assign(new Error('Remote byte read failed'), {
+          code: /^E[A-Z0-9_]+$/.test(result.stderr.trim()) ? result.stderr.trim() : 'EIO',
+        })
+      const encoded = result.stdout.trim()
+      if (opts.limit !== undefined && encoded.length > Math.ceil(opts.limit / 3) * 4)
+        throw Object.assign(new Error('Remote byte read exceeded its limit'), { code: 'EFBIG' })
+      // Avoid a repeated-group regex: ordinary multi-MiB tool windows overflow its backtracking
+      // stack. Validate the alphabet and terminal padding with a linear scan instead.
+      const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0
+      if (encoded.length % 4 !== 0 || /[^A-Za-z0-9+/]/.test(encoded.slice(0, encoded.length - padding)))
+        throw Object.assign(new Error('Invalid remote byte read'), { code: 'EIO' })
+      const bytes = new Uint8Array(Buffer.from(encoded, 'base64'))
+      if (opts.limit !== undefined && bytes.length > opts.limit)
+        throw Object.assign(new Error('Remote byte read exceeded its limit'), { code: 'EFBIG' })
+      return bytes
     },
     async writeFile(abs, data) {
       // Forward the transport's structured error unchanged. B1 makes EISDIR/ENOTDIR/EACCES

@@ -131,6 +131,21 @@ describe.each(FIXTURES)('FsIo contract through the fence: %s', { timeout: 30_000
     expect(dec(await fs.read('a.txt', { offset: 2, limit: 1 }))).toBe('l2\n')
     expect(dec(await fs.read('a.txt', { offset: 9, limit: 2 }))).toBe('')
     expect(dec(await fs.read('a.txt'))).toBe('l1\nl2\nl3\n')
+    f.seed('single-line.txt', '0123456789'.repeat(1024))
+    const bounded = createFs(() => ({ policy: testFsPolicy(f.root), caseSensitive: true }), {
+      ...f.io,
+      readFile: async () => {
+        throw new Error('bounded reads must not load the whole file')
+      },
+    })
+    expect(dec(await bounded.read('single-line.txt', { unit: 'bytes', offset: 2, limit: 3 }))).toBe('234')
+    expect(await bounded.read('single-line.txt', { unit: 'bytes', offset: 20_000, limit: 3 })).toHaveLength(0)
+    const cap = 4 * 1024 * 1024
+    f.seed('cap-sized.txt', 'v'.repeat(cap + 1))
+    const capped = await bounded.read('cap-sized.txt', { unit: 'bytes', limit: cap })
+    expect(capped).toHaveLength(cap)
+    expect(capped[0]).toBe('v'.charCodeAt(0))
+    expect(capped.at(-1)).toBe('v'.charCodeAt(0))
   })
 
   it('keeps a leading BOM in a windowed read, the same bytes Buffer.toString used to keep', async () => {

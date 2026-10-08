@@ -10,8 +10,9 @@ export function createNetFetch(
   options: { signal?: AbortSignal; redirect?: 'error' } = {},
 ): (url: string, init?: FetchInit) => Promise<Response> {
   return (url, init) => {
-    const { timeoutMs, body, ...rest } = init ?? {}
+    const { timeoutMs, body, signal, ...rest } = init ?? {}
     const signals = [
+      ...(signal ? [signal] : []),
       ...(options.signal ? [options.signal] : []),
       ...(timeoutMs === undefined ? [] : [AbortSignal.timeout(timeoutMs)]),
     ]

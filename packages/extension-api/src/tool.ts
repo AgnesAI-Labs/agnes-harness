@@ -105,7 +105,10 @@ export type FetchInit = {
   method?: string
   headers?: Record<string, string>
   body?: string | Bytes
+  /** Narrows the call deadline; cannot extend the call or its writer lease. */
   timeoutMs?: number
+  /** Additional cancellation. Providers must bind both connection and body to this signal. */
+  signal?: AbortSignal
 }
 /** Bounded anonymous retrieval; response resources remain owned by the host. */
 export interface PublicFetchResult {
@@ -227,6 +230,7 @@ export interface ToolContext {
     },
   ): Promise<ExecResult>
   readonly fs: {
+    /** Zero-based byte offset; limit bounds bytes read from storage. */
     read(path: string, opts?: { offset?: number; limit?: number }): Promise<Bytes>
     write(path: string, data: Bytes | string): Promise<void>
     list(path: string): Promise<FsEntry[]>

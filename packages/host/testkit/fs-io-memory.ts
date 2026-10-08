@@ -101,6 +101,13 @@ export function memoryFsIo(): MemoryFsIo {
       if (node.kind !== 'file') throw fail('ENOENT', abs)
       return new Uint8Array(node.data)
     },
+    async readRange(abs, opts) {
+      const node = lookup(abs)
+      if (node === undefined) throw fail('ENOENT', abs)
+      if (node.kind === 'dir') throw fail('EISDIR', abs)
+      if (node.kind !== 'file') throw fail('ENOENT', abs)
+      return node.data.slice(opts.offset, opts.limit === undefined ? undefined : opts.offset + opts.limit)
+    },
     async writeFile(abs, data) {
       const at = parentOf(abs)
       if (!at) throw fail('ENOENT', abs)

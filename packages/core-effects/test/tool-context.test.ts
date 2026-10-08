@@ -11,6 +11,9 @@ function setup(
   over: {
     invoke?: Parameters<typeof buildToolContext>[0]['invoke']
     parentSignal?: AbortSignal
+    netFetch?: Parameters<typeof buildToolContext>[0]['netFetch']
+    remainingMs?: number
+    defaultTimeoutMs?: number
   } = {},
 ) {
   const created: unknown[] = []
@@ -52,7 +55,7 @@ function setup(
         list: async () => [],
         stat: async () => ({ kind: 'file', size: 0, mtimeMs: 0 }),
       },
-      netFetch: async () => new Response(''),
+      netFetch: over.netFetch ?? (async () => new Response('')),
       ...(publicFetch ? { publicFetch } : {}),
       log: { debug: () => undefined, info: () => undefined, warn: () => undefined, error: () => undefined },
       invoke: over.invoke ?? (async () => ({ content: [] })),
@@ -61,13 +64,14 @@ function setup(
       requestCompaction: () => undefined,
       progress: () => undefined,
       artifactJobEvent: async () => undefined,
-      lease: { remainingMs: () => 1_000 },
+      lease: { remainingMs: () => over.remainingMs ?? 1_000 },
     },
     {
       toolUseId: 'tool-1',
       name: 'fixture',
       signal: over.parentSignal ?? new AbortController().signal,
       timeoutMs: 1_000,
+      ...(over.defaultTimeoutMs === undefined ? {} : { defaultTimeoutMs: over.defaultTimeoutMs }),
       outputMaxBytes: 32768,
     },
   )
@@ -105,6 +109,57 @@ describe('ToolContext subagent options', () => {
     await context.net.fetchPublic?.('https://example.com')
     expect(fetch).toHaveBeenCalledWith('https://example.com', { signal: context.signal, timeoutMs: 1000 })
     expect(setup().context.net.fetchPublic).toBeUndefined()
+  })
+  it.each(['parent', 'caller', 'default'] as const)(
+    'bounds raw fetch by the lease/default deadline and cancels its body on %s cancellation',
+    async (source) => {
+      const parent = new AbortController(),
+        caller = new AbortController()
+      let input: Parameters<Parameters<typeof buildToolContext>[0]['netFetch']>[1]
+      let cancelled!: () => void
+      const bodyCancelled = new Promise<void>((resolve) => {
+        cancelled = resolve
+      })
+      const { context } = setup(fakeSeams(), undefined, {
+        parentSignal: parent.signal,
+        remainingMs: source === 'default' ? 1000 : 25,
+        ...(source === 'default' ? { defaultTimeoutMs: 10 } : {}),
+        netFetch: async (_url, init) => {
+          input = init
+          return new Response(
+            new ReadableStream({
+              cancel: () => {
+                cancelled()
+              },
+            }),
+          )
+        },
+      })
+      await context.net.fetch('https://example.com', {
+        ...(source === 'default' ? {} : { timeoutMs: 100_000 }),
+        signal: caller.signal,
+      })
+      expect(input?.timeoutMs).toBe(source === 'default' ? 10 : 25)
+      expect(input?.signal?.aborted).toBe(false)
+      if (source !== 'caller') parent.abort()
+      else caller.abort()
+      expect(input?.signal?.aborted).toBe(true)
+      await bodyCancelled
+      expect(parent.signal.aborted).toBe(source !== 'caller')
+      expect(caller.signal.aborted).toBe(source === 'caller')
+    },
+  )
+  it('refuses raw fetching with an expired lease before opening the provider', async () => {
+    let opened = false
+    const { context } = setup(fakeSeams(), undefined, {
+      remainingMs: 0,
+      netFetch: async () => {
+        opened = true
+        return new Response('')
+      },
+    })
+    await expect(context.net.fetch('https://example.com')).rejects.toThrow()
+    expect(opened).toBe(false)
   })
   it('passes fork model to the child factory and retains one-shot cleanup', async () => {
     const { context, created, run, close } = setup()

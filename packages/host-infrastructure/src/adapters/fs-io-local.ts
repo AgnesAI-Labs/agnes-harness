@@ -23,6 +23,27 @@ const primitives: FsIo = {
   },
   readlink: (abs) => fsp.readlink(abs),
   readFile: (abs) => fsp.readFile(abs),
+  async readRange(abs, opts) {
+    const file = await fsp.open(abs, 'r')
+    try {
+      const meta = await file.stat()
+      if (!meta.isFile())
+        throw Object.assign(new Error('Regular file required'), {
+          code: meta.isDirectory() ? 'EISDIR' : 'EINVAL',
+        })
+      const length = Math.max(0, Math.min(opts.limit ?? meta.size, meta.size - opts.offset))
+      const bytes = new Uint8Array(length)
+      let read = 0
+      while (read < length) {
+        const result = await file.read(bytes, read, length - read, opts.offset + read)
+        if (!result.bytesRead) break
+        read += result.bytesRead
+      }
+      return bytes.subarray(0, read)
+    } finally {
+      await file.close()
+    }
+  },
   writeFile: (abs, data) => fsp.writeFile(abs, data),
   async mkdir(abs) {
     await fsp.mkdir(abs, { recursive: true })

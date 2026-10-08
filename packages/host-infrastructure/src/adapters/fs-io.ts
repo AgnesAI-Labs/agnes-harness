@@ -11,6 +11,8 @@ export type FsIo = Readonly<{
   lstat(abs: string): Promise<FsIoStat | undefined>
   readlink(abs: string): Promise<string>
   readFile(abs: string): Promise<Uint8Array>
+  /** Zero-based byte window. A finite limit bounds underlying I/O, not just returned bytes. */
+  readRange?(abs: string, opts: { offset: number; limit?: number }): Promise<Uint8Array>
   writeFile(abs: string, data: Uint8Array): Promise<void>
   /** Recursive. */
   mkdir(abs: string): Promise<void>

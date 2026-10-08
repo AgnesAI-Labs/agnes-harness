@@ -96,3 +96,5 @@ Node SDK 与服务端提供以下管理接口；调用者必须持有对应控�
 `_agnes/v1/apis.list` 的 `profile.models` 条目包含 `input` 和可选的 `inputLimits`，客户端按已解析的模型能力判断。旧服务端可能不返回这两个字段，客户端不能根据模型名称猜测图片支持。
 
 `ToolContext.session.readImages` 是 Core 提供的可选能力，由内置 `read` 工具使用。输入为 `{ path, offset?, limit? }`，返回 `ToolResult`。`session-image://list` 分页列出当前会话、当前 lane 的原图；`session-image://<消息序号>/<图片序号>` 读取一张，逗号分隔的引用可整批读取。分页偏移和图片序号从 1 开始；列表默认每页 20 项，最多 100 项。读取不能指定其他会话或 lane、看到读取开始后的记录，也不能绕过模型和运行环境的图片限制；工具取消会取消读图。旧运行环境不提供此能力，`read` 会明确返回不可用。
+
+`ToolContext.fs.read` 使用从零开始的字节偏移，最大字节数由底层读取执行。Host 旧的行窗口适配器仍从第一行开始，只有选择 `unit: 'bytes'` 才使用字节窗口；不支持有界读取的 provider 会拒绝该模式，而不是读取全文。`ToolContext.net.fetch` 合并调用取消、可选的调用方 signal 和受调用期限及剩余 writer lease 约束的期限。省略 timeout 时使用调用的默认期限；显式 timeout 不能延长调用或 lease。调用已到期时，在建立连接前拒绝。Fetch provider 必须让连接和响应体（包括已锁定的 reader）遵守传入 signal；默认 provider 已实现。调用结束时也会取消尚未读取的响应体。

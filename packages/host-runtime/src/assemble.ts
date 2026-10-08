@@ -2152,7 +2152,10 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       contract: { contract_id: null, parser_version: '1' },
       contractForModel: models.contractForModel,
       preset: view,
-      fsOps: adapters.fs,
+      fsOps: {
+        ...adapters.fs,
+        read: (path, opts) => adapters.fs.read(path, { ...opts, unit: 'bytes' }),
+      },
       memoryFor: ({ key, cwd }) => memory(cwd, key),
       netFetch: deps.netFetch ?? createNetFetch(),
       publicFetch: deps.publicFetch ?? createPublicFetch(deps.env),
