@@ -89,11 +89,10 @@ job output, interactive terminal input/output, schedule creation/archive and the
 workflow through restart. Backend assertions use CLI or SDK, never raw admin HTTP from specs.
 Selectors use roles and stable test IDs; disclosures are checked before toggling.
 
-`baselines/ready.json` keeps eight plugin-kinds and grouped-version screenshots pending
-until the maintainer confirms visual promotion. Those screens still undergo translation,
-accessibility and browser-error checks and save screenshots. The gate also checks compact
-provider row spacing and grouped version selection. The Discover search baseline filters
-to a single-version entry.
+`baselines/ready.json` declares 53 reviewed screens on both macOS and Linux, with no pending
+screens. The gate checks compact provider row spacing, one card per discovered package and
+selection through the shared version picker. The Discover search baseline filters to a
+single-version entry.
 Ready PNGs cover key screens in both locales and themes, including installed plugin cards,
 Skills empty state and tool rows. The additional installed-folder card screen is en/light.
 

@@ -48,8 +48,8 @@ the repository root with a fresh home, and runs the SDK and role/test-ID UI suit
 cached Chromium. The UI matrix covers every settings section in en/zh-CN and light/dark; mutation
 flows verify persisted results through public SDK/CLI. Translation keys, axe violations, console
 errors and page errors fail. Reviewed screenshot comparisons use the declared ready manifest,
-0.2% pixel tolerance and no automatic baseline blessing. Only plugin-kinds row spacing and
-Discover duplicate-version grouping remain explicitly pending. See the [gate instructions](../../tools/e2e-web/README.md)
+0.2% pixel tolerance and no automatic baseline blessing. All 53 declared screens, including
+plugin-kind rows and grouped version selection, have reviewed macOS and Linux baselines. See the [gate instructions](../../tools/e2e-web/README.md)
 for coverage, artifact paths, the required CI check and local baseline review.
 
 ## Admin glue

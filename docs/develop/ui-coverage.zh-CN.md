@@ -21,7 +21,7 @@
 
 ## 维护中的合并门禁
 
-`pnpm e2e:web` 构建或校验可复用的本地构建，从仓库根目录启动真实 daemon/Web launcher，使用全新隔离 home 和缓存 Chromium 离线运行 SDK 与基于角色/test ID 的 UI 规格。UI 矩阵覆盖 en/zh-CN、浅色/深色及所有设置分区；变更流程通过公开 SDK/CLI 核验持久化结果。未解析翻译键、axe 违规、console error 和 pageerror 均使门禁失败。视觉比较只使用清单中已审核的基线，像素差异容忍度为 0.2%，正常运行不会自动生成缺失基线。仅插件类型行间距及 Discover 重复版本分组保留明确待定状态。覆盖范围、产物路径、CI 必需状态与本地基线审核步骤见[门禁说明](../../tools/e2e-web/README.md)。
+`pnpm e2e:web` 构建或校验可复用的本地构建，从仓库根目录启动真实 daemon/Web launcher，使用全新隔离 home 和缓存 Chromium 离线运行 SDK 与基于角色/test ID 的 UI 规格。UI 矩阵覆盖 en/zh-CN、浅色/深色及所有设置分区；变更流程通过公开 SDK/CLI 核验持久化结果。未解析翻译键、axe 违规、console error 和 pageerror 均使门禁失败。视觉比较只使用清单中已审核的基线，像素差异容忍度为 0.2%，正常运行不会自动生成缺失基线。53 个声明屏幕均已有审核过的 macOS 与 Linux 基线，包括插件类型行间距及 Discover 分组版本选择。覆盖范围、产物路径、CI 必需状态与本地基线审核步骤见[门禁说明](../../tools/e2e-web/README.md)。
 
 ## 浏览器验收
 

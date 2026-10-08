@@ -71,10 +71,7 @@
     "discover-version-picker-zh-CN-dark"
   ],
   "pending": {},
-  "platforms": [
-    "darwin",
-    "linux"
-  ],
+  "platforms": ["darwin", "linux"],
   "linuxEnvironment": {
     "distribution": "Ubuntu 24.04",
     "browserDependencies": "Playwright install --with-deps chromium",
