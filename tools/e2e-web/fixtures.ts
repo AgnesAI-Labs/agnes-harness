@@ -13,6 +13,11 @@ export const test = base.extend<{ runtime: Runtime; browserHealth: undefined }>(
       await use(runtime)
     } finally {
       try {
+        await info.attach('final-screen.png', {
+          body: await page.screenshot({ animations: 'disabled' }),
+          contentType: 'image/png',
+        })
+        await page.close()
         await info.attach('daemon-audit.jsonl', {
           body: await runtime.diagnostics(),
           contentType: 'text/plain',

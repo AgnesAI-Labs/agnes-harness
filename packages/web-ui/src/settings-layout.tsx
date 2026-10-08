@@ -137,10 +137,12 @@ export function SettingsDetails({
   title,
   children,
   ...props
-}: Omit<HTMLAttributes<HTMLDetailsElement>, 'title'> & { title: ReactNode }) {
+}: Omit<HTMLAttributes<HTMLDetailsElement>, 'title'> & { title: ReactNode; 'data-testid'?: string }) {
   return (
     <details {...props} className={['agnes-settings-details', props.className].filter(Boolean).join(' ')}>
-      <summary>{title}</summary>
+      <summary data-testid={props['data-testid'] ? `${props['data-testid']}-toggle` : undefined}>
+        {title}
+      </summary>
       <div>{children}</div>
     </details>
   )

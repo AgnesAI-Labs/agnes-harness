@@ -208,6 +208,7 @@ export function LoopPicker() {
             mode="multiple"
             aria-label={state.bundlesLabel}
             data-testid="new-session-bundles"
+            virtual={false}
             disabled={state.disabled}
             value={[...(state.selectedBundles ?? [])]}
             placeholder={tr('composer.agent.noBundles')}
@@ -233,6 +234,7 @@ export function LoopPicker() {
             <Select<string>
               aria-label={tr('composer.agent.preset')}
               data-testid="new-session-preset"
+              virtual={false}
               disabled={state.disabled}
               value={state.preset ?? ''}
               className="agent-picker-select"

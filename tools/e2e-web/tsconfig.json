@@ -8,6 +8,9 @@
   },
   "include": [
     "runtime.spec.ts",
+    "ui-gate.spec.ts",
+    "ui-flows.spec.ts",
+    "ui.ts",
     "navigation.spec.ts",
     "conversation.spec.ts",
     "ui-quality.spec.ts",

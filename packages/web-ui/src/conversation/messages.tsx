@@ -820,6 +820,7 @@ function Turn({
   return (
     <section
       className="conversation-turn"
+      data-testid="conversation-turn"
       data-turn-id={turn.id}
       data-status={turn.status}
       data-inherited={String(turn.inherited)}
