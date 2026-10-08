@@ -20,6 +20,7 @@ describe('repo', () => {
       '@agnes/core',
       '@agnes/core-child-control',
       '@agnes/core-common',
+      '@agnes/core-ledger',
       '@agnes/cosmokit',
       '@agnes/daemon',
       '@agnes/error-sanitization',

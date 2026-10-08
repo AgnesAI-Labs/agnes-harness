@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../core-child-control"
+    },
+    {
+      "path": "../core-common"
+    },
+    {
+      "path": "../extension-api"
+    },
+    {
+      "path": "../protocol"
+    }
+  ]
+}

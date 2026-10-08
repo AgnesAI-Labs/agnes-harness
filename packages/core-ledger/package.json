@@ -1,0 +1,53 @@
+{
+  "name": "@agnes/core-ledger",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./invariants/core-checks": "./src/invariants/core-checks.ts",
+    "./invariants/registry": "./src/invariants/registry.ts",
+    "./log/fork-seed": "./src/log/fork-seed.ts",
+    "./log/integrity": "./src/log/integrity.ts",
+    "./log/memory-storage": "./src/log/memory-storage.ts",
+    "./log/relations": "./src/log/relations.ts",
+    "./log/scan-pages": "./src/log/scan-pages.ts",
+    "./log/session-log": "./src/log/session-log.ts",
+    "./log/storage": "./src/log/storage.ts",
+    "./log/validate": "./src/log/validate.ts",
+    "./project/cache-health": "./src/project/cache-health.ts",
+    "./project/child-trace-cache": "./src/project/child-trace-cache.ts",
+    "./project/clip": "./src/project/clip.ts",
+    "./project/named": "./src/project/named.ts",
+    "./project/rlaf": "./src/project/rlaf.ts",
+    "./project/surface": "./src/project/surface.ts",
+    "./project/trace": "./src/project/trace.ts",
+    "./project/turns": "./src/project/turns.ts",
+    "./project/ui-inline-slots": "./src/project/ui-inline-slots.ts",
+    "./project/ui-live-slots": "./src/project/ui-live-slots.ts",
+    "./project/ui": "./src/project/ui.ts",
+    "./project/usage": "./src/project/usage.ts",
+    "./reduce/anchor": "./src/reduce/anchor.ts",
+    "./reduce/chunked-map": "./src/reduce/chunked-map.ts",
+    "./reduce/op-check": "./src/reduce/op-check.ts",
+    "./reduce/reducer": "./src/reduce/reducer.ts",
+    "./reduce/shapes": "./src/reduce/shapes.ts",
+    "./reduce/state": "./src/reduce/state.ts",
+    "./reduce/tracker": "./src/reduce/tracker.ts",
+    "./registry/owner-batch": "./src/registry/owner-batch.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "pnpm --dir ../.. exec vitest run packages/core-ledger/test --maxWorkers=1"
+  },
+  "dependencies": {
+    "@agnes/core-child-control": "workspace:*",
+    "@agnes/core-common": "workspace:*",
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/protocol": "workspace:*"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@agnes/core": "workspace:*"
+  }
+}

@@ -7,7 +7,7 @@
   "packages/web-slots/src": 605,
   "packages/web-ui/src": 6681,
   "packages/web-units/src": 6222,
-  "packages/core/src": 29256,
+  "packages/core/src": 23176,
   "packages/ai/src": 4137,
   "packages/host/src/assemble": 6603,
   "packages/protocol/src": 2981,
@@ -150,5 +150,6 @@
   "packages/history-index/src": 1117,
   "packages/loop-default/src": 78,
   "packages/core-common/src": 520,
-  "packages/core-child-control/src": 390
+  "packages/core-child-control/src": 390,
+  "packages/core-ledger/src": 6153
 }

@@ -195,6 +195,12 @@
     },
     {
       "path": "packages/core-child-control/tsconfig.test.json"
+    },
+    {
+      "path": "packages/core-ledger"
+    },
+    {
+      "path": "packages/core-ledger/tsconfig.test.json"
     }
   ]
 }

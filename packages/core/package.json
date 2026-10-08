@@ -18,7 +18,8 @@
     "@agnes/extension-api": "workspace:*",
     "@sinclair/typebox": "0.34.33",
     "@agnes/core-common": "workspace:*",
-    "@agnes/core-child-control": "workspace:*"
+    "@agnes/core-child-control": "workspace:*",
+    "@agnes/core-ledger": "workspace:*"
   },
   "license": "Apache-2.0",
   "devDependencies": {

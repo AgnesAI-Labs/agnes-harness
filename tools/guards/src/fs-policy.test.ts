@@ -17,7 +17,9 @@ const root = repoRoot()
  * declaration site and the probe builder may even name it. A second comparison in the kernel has
  * to name it, and naming it here is what goes red.
  */
-const CORE_SRC = join(root, 'packages/core/src')
+const CORE_FILES = ['core', 'core-common', 'core-child-control', 'core-ledger'].flatMap((name) =>
+  listSourceFiles(join(root, 'packages', name, 'src'), { excludeDirs: LITERAL_SCAN_EXCLUDE_DIRS }),
+)
 // seams.ts is where the contract is declared; fs-guard.ts is where the decision and the probe are
 // declared; index.ts only re-exports the names, which is how consumers reach them without a second
 // declaration.
@@ -29,12 +31,12 @@ const CORE_ALLOWED = [
 
 describe('the file policy decision lives in one place', () => {
   it('scans a non-trivial number of core source files', () => {
-    expect(listSourceFiles(CORE_SRC, { excludeDirs: LITERAL_SCAN_EXCLUDE_DIRS }).length).toBeGreaterThan(20)
+    expect(CORE_FILES.length).toBeGreaterThan(20)
   })
 
-  it('packages/core/src names the policy rule list only where the contract and the probe are declared', () => {
+  it('Core implementation sources name the policy rule list only where the contract and the probe are declared', () => {
     const offenders: string[] = []
-    for (const file of listSourceFiles(CORE_SRC, { excludeDirs: LITERAL_SCAN_EXCLUDE_DIRS })) {
+    for (const file of CORE_FILES) {
       if (isTestFile(file)) continue
       const rel = relative(root, file).split(sep).join('/')
       if (CORE_ALLOWED.includes(rel)) continue
