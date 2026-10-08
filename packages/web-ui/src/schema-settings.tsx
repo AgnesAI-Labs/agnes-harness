@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { appServerErrorMessage } from './app-server-errors.js'
 import { SchemaConfigForm } from './config-form.js'
 import type { ConfigSchema } from './config-schema.js'
 import { CONFIG_FORM_NAMESPACE, configFormCatalog } from './locales/config-form.js'
@@ -27,12 +28,12 @@ export type SchemaSettingsDefinition = Readonly<{
 /** Declare once, then register this component in settingsSections. No new shell or backend grants. */
 export function createSchemaSettingsComponent(definition: SchemaSettingsDefinition) {
   return function SchemaSettingsComponent({ context }: { context: ConfigSettingsContext }) {
-    const { t } = useUiText(CONFIG_FORM_NAMESPACE, configFormCatalog)
+    const { t, locale } = useUiText(CONFIG_FORM_NAMESPACE, configFormCatalog)
     const scope = definition.scope?.(context) ?? definition.testId
     const [document, setDocument] = useState<ConfigDocument>()
     const [loadedScope, setLoadedScope] = useState<string>()
     const [loading, setLoading] = useState(true)
-    const [failed, setFailed] = useState(false)
+    const [failed, setFailed] = useState<unknown>(false)
     const [retry, setRetry] = useState(0)
     // biome-ignore lint/correctness/useExhaustiveDependencies: scope is the declaration's explicit resource identity. Locale/context changes retain the current draft.
     useEffect(() => {
@@ -53,8 +54,8 @@ export function createSchemaSettingsComponent(definition: SchemaSettingsDefiniti
             setDocument(value)
             setLoadedScope(scope)
           },
-          () => {
-            if (!abort.signal.aborted) setFailed(true)
+          (error) => {
+            if (!abort.signal.aborted) setFailed(error || true)
           },
         )
         .finally(() => {
@@ -65,9 +66,11 @@ export function createSchemaSettingsComponent(definition: SchemaSettingsDefiniti
     return (
       <SettingsCard data-testid={definition.testId} aria-busy={loading}>
         {loading && <SettingsState tone="loading">{t('loading')}</SettingsState>}
-        {failed && (
+        {!!failed && (
           <>
-            <SettingsState tone="error">{t('unavailable')}</SettingsState>
+            <SettingsState tone="error">
+              {appServerErrorMessage(failed, locale) ?? t('unavailable')}
+            </SettingsState>
             <Button onClick={() => setRetry((value) => value + 1)}>{t('retry')}</Button>
           </>
         )}

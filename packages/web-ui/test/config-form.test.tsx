@@ -8,8 +8,10 @@ import {
   type ConfigSchema,
   configIssues,
   configSchemaSupported,
+  createDocumentLocaleSource,
   providerConfigSchemas,
   SchemaConfigForm,
+  UiLocaleProvider,
 } from '../src/index.js'
 
 const schema: ConfigSchema = {
@@ -96,6 +98,8 @@ describe('schema form actions and control semantics', () => {
     const host = document.createElement('div')
     document.body.append(host)
     const root = createRoot(host)
+    document.documentElement.lang = 'en'
+    const locale = createDocumentLocaleSource({})
     const save = vi.fn().mockRejectedValue(new Error('raw backend secret'))
     const probe = vi.fn().mockResolvedValue(undefined)
     function Harness() {
@@ -112,7 +116,9 @@ describe('schema form actions and control semantics', () => {
           ] ?? key,
       })
     }
-    await act(async () => root.render(createElement(Harness)))
+    await act(async () =>
+      root.render(createElement(UiLocaleProvider, { source: locale.source }, createElement(Harness))),
+    )
     await act(async () =>
       host.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
     )
@@ -150,6 +156,23 @@ describe('schema form actions and control semantics', () => {
     expect(credential.value).toBe(valid.credential)
     expect(host.textContent).not.toContain('raw backend secret')
     expect(host.textContent).toContain('Your changes have been kept')
+    save.mockRejectedValue({ message: 'private conflict', data: { messageKey: 'appServer.errors.conflict' } })
+    await act(async () =>
+      host.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
+    )
+    expect(host.textContent).toContain('Settings changed. Reload before retrying.')
+    await act(async () => {
+      document.documentElement.lang = 'zh-CN'
+      window.dispatchEvent(new Event('agnes:locale-changed'))
+    })
+    expect(host.textContent).toContain('设置已变更，请刷新后重试。')
+    expect(host.textContent).not.toContain('private conflict')
+    expect(credential.value).toBe(valid.credential)
+    probe.mockRejectedValue({ data: { messageKey: 'appServer.errors.forbidden' } })
+    await act(async () => host.querySelector<HTMLButtonElement>('button[type="button"]')?.click())
+    expect(host.textContent).toContain('你没有执行此操作的权限。')
+    locale.dispose()
+    document.documentElement.lang = 'en'
     await act(async () => root.unmount())
     host.remove()
   })
@@ -250,6 +273,7 @@ it('blocks missing field translations and safely retries unavailable configurati
   const load = vi
     .fn()
     .mockRejectedValueOnce(new Error('private backend detail'))
+    .mockRejectedValueOnce({ data: { messageKey: 'appServer.errors.unavailable' } })
     .mockResolvedValue({ values: valid })
   const Component = createSchemaSettingsComponent({
     schema,
@@ -261,6 +285,8 @@ it('blocks missing field translations and safely retries unavailable configurati
   await act(async () => root.render(createElement(Component, { context: { t: (key) => key.toUpperCase() } })))
   expect(host.textContent).not.toContain('private backend detail')
   expect(host.textContent).toContain('unavailable')
+  await act(async () => host.querySelector<HTMLButtonElement>('button')?.click())
+  expect(host.textContent).toContain('The required backend is unavailable. Check its configuration.')
   await act(async () => host.querySelector<HTMLButtonElement>('button')?.click())
   expect(host.querySelector<HTMLInputElement>('#credential')?.disabled).toBe(true)
   expect(save).not.toHaveBeenCalled()

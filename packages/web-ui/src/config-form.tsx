@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { appServerErrorMessage } from './app-server-errors.js'
 import {
   type ConfigIssue,
   type ConfigSchema,
@@ -272,9 +273,10 @@ export function SchemaConfigForm({
   readOnly?: boolean
   testId?: string | undefined
 }) {
-  const { t: text } = useUiText(CONFIG_FORM_NAMESPACE, configFormCatalog)
+  const { t: text, locale } = useUiText(CONFIG_FORM_NAMESPACE, configFormCatalog)
   const [issues, setIssues] = useState<readonly ConfigIssue[]>([])
   const [status, setStatus] = useState<'saved' | 'tested' | 'error.action'>()
+  const [failure, setFailure] = useState<unknown>()
   const [busy, setBusy] = useState(false)
   const pending = useRef<AbortController>()
   useEffect(
@@ -296,6 +298,7 @@ export function SchemaConfigForm({
     const errors = configIssues(schema, value)
     setIssues(errors)
     setStatus(undefined)
+    setFailure(undefined)
     if (errors.length) return
     const abort = new AbortController()
     pending.current = abort
@@ -303,8 +306,11 @@ export function SchemaConfigForm({
     try {
       await action(structuredClone(value), { signal: abort.signal })
       if (!abort.signal.aborted) setStatus(success)
-    } catch {
-      if (!abort.signal.aborted) setStatus('error.action')
+    } catch (error) {
+      if (!abort.signal.aborted) {
+        setFailure(error)
+        setStatus('error.action')
+      }
     } finally {
       if (pending.current === abort) pending.current = undefined
       if (!abort.signal.aborted) setBusy(false)
@@ -357,7 +363,11 @@ export function SchemaConfigForm({
         </SettingsToolbar>
       )}
       {status && (
-        <SettingsState tone={status === 'error.action' ? 'error' : 'success'}>{text(status)}</SettingsState>
+        <SettingsState tone={status === 'error.action' ? 'error' : 'success'}>
+          {status === 'error.action'
+            ? (appServerErrorMessage(failure, locale) ?? text(status))
+            : text(status)}
+        </SettingsState>
       )}
     </form>
   )
