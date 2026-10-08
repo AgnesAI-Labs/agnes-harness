@@ -1,5 +1,7 @@
-import { expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { linuxProcessIdentity } from '../src/adapters/process-identity-linux.js'
+
+afterEach(() => vi.restoreAllMocks())
 
 const boot = '11111111-2222-3333-4444-555555555555'
 const record = (ticks = '12345', pid = 42) =>
@@ -11,6 +13,14 @@ it('binds PID, boot identity and the unsigned 64-bit start time despite parenthe
     state: 'alive',
     startId: `linux:${boot}:42:18446744073709551615`,
   })
+  const before = await linuxProcessIdentity(42, { readText: reader(record()) })
+  vi.spyOn(Date, 'now').mockReturnValue(1)
+  expect(await linuxProcessIdentity(42, { readText: reader(record()) })).toEqual(before)
+  expect(
+    await linuxProcessIdentity(42, {
+      readText: async (path) => (path.endsWith('boot_id') ? boot.replace('11111111', 'aaaaaaaa') : record()),
+    }),
+  ).not.toEqual(before)
   expect(await linuxProcessIdentity(42, { readText: reader(record('12346')) })).not.toEqual(
     await linuxProcessIdentity(42, { readText: reader(record()) }),
   )
@@ -83,4 +93,14 @@ it('uses the default reader on the current operating system without fabricating 
   } else {
     expect(result.state).toBe('unknown')
   }
+})
+
+it.each(['Z', 'X', 'x'])('recognizes a terminated kernel task %s without a PID-only probe', async (state) => {
+  expect(
+    await linuxProcessIdentity(42, { readText: reader(record().replace(') S ', `) ${state} `)) }),
+  ).toEqual({ state: 'dead' })
+  expect(
+    (await linuxProcessIdentity(42, { readText: reader(record('invalid').replace(') S ', `) ${state} `)) }))
+      .state,
+  ).toBe('unknown')
 })

@@ -52,7 +52,7 @@ Maintainers must select that status in the target branch's required checks/rules
 workflow alone does not change GitHub branch protection. The workflow runs on pull requests,
 merge groups, integration/main pushes and manual dispatch, without path-based skips.
 
-The suite has one worker, zero retries, an eight-minute test deadline and a ten-minute CI gate
+The suite has two workers, zero retries, an eight-minute test deadline and a ten-minute CI gate
 step. `test.only` and retry overrides are refused. A flaky spec remains a gate failure; do not
 quarantine it with retries or `test.skip`. To investigate, run the named spec several times:
 
@@ -89,10 +89,11 @@ job output, interactive terminal input/output, schedule creation/archive and the
 workflow through restart. Backend assertions use CLI or SDK, never raw admin HTTP from specs.
 Selectors use roles and stable test IDs; disclosures are checked before toggling.
 
-`baselines/ready.json` declares every reviewed screen, including compact plugin-kinds rows
-and Discover package cards with grouped versions in both locales and themes. The gate checks
-row padding and version selection in addition to translation, accessibility and browser errors.
-The separate Discover search baseline filters to a single-version entry.
+`baselines/ready.json` keeps eight plugin-kinds and grouped-version screenshots pending
+until the maintainer confirms visual promotion. Those screens still undergo translation,
+accessibility and browser-error checks and save screenshots. The gate also checks compact
+provider row spacing and grouped version selection. The Discover search baseline filters
+to a single-version entry.
 Ready PNGs cover key screens in both locales and themes, including installed plugin cards,
 Skills empty state and tool rows. The additional installed-folder card screen is en/light.
 
@@ -103,7 +104,11 @@ ready image fail. Only an explicit reviewed update writes baselines:
 AGH_UPDATE_VISUALS=1 pnpm e2e:web --reuse-build
 ```
 
-Review PNG changes and the manifest together on macOS with the pinned Chromium. Tolerance is
+Review PNG changes and the manifest together with the pinned Chromium on the target platform.
+Linux uses Ubuntu 24.04 with Playwright-installed system libraries; PNGs live in
+`baselines/linux/`, separately from `baselines/darwin/`. The Linux CI job also runs
+production/fixture typechecks, fast tests, guards and kernel identity integration.
+Each failed check remains a failed job even when later steps collect Web evidence. Tolerance is
 0.2% changed pixels with a per-pixel threshold of 0.2; do not enlarge it to hide a regression.
 Only the repository workspace text (checkout name/absolute path) and elapsed turn timing are
 hidden; the metadata clock is normalized to 12:00 while its model label stays visible.
@@ -135,3 +140,5 @@ Stable IDs and APIs: [registry APIs](../../docs/develop/ui-extension-registries.
 Set `AGH_UI_AXE=1` for WCAG A/AA checks on every 1440-pixel screen in the UI matrix, including dialogs and conversation cards. `AGH_UI_DELIVERABLE` must be an absolute path to a synthetic file inside `AGH_UI_WORKSPACE`.
 
 Set `AGH_UI_ISOLATED=1` to run each matrix case with its own disposable real daemon, workspace and synthetic deliverable.
+
+The three spec files may run in parallel with two workers; each test owns a fresh home, workspace, daemon, port and SDK clients. Tests within a file remain serial. This bounds hosted-runner duration without retries or relaxed assertions. Credential and visual tool flows explicitly choose full-access; L1 refusal is covered separately by sandbox integration tests.

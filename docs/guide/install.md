@@ -77,6 +77,37 @@ Output is written to `packages/cli/dist/local/`, including `agnes.mjs`, daemon, 
 
 On Linux, install bubblewrap through your system package manager, for example `apt install bubblewrap` on Debian/Ubuntu. If user namespaces are disabled, the default sandbox refuses command tools; see [troubleshooting](troubleshooting.md).
 
+<a id="linux-build"></a>
+
+## Build and verify on Linux
+
+Use Node with its matching `include/node/node_api.h` headers, a C/C++ toolchain, Python 3 and Git. On Debian/Ubuntu:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y build-essential libssl-dev python3 git bubblewrap
+pnpm install --frozen-lockfile
+pnpm --filter @agnes/host build:native
+pnpm --filter @agnes/system-node build:native
+pnpm --filter @agnes/cli build:local
+node packages/cli/dist/local/agnes.mjs doctor
+```
+
+The PTY relay links `libutil`; the system helper uses Linux kernel interfaces and system OpenSSL 3 `libcrypto` for same-handle artifact hashing. Install OpenSSL development headers when building and keep the matching shared library installed when moving a runtime. Rebuild helpers after changing Node or architecture. An npm dependency install is not a substitute for these builds.
+
+Linux L1 command isolation uses bubblewrap with a verified filesystem, process and network boundary. A version check or an available Landlock ABI does not prove that boundary: Landlock is currently diagnostic only, not an AGH command backend. Restricted user namespaces (including container seccomp or distribution security policies) may prevent bubblewrap from working. The default refuses commands when L1 is unavailable. Choosing **full-access** explicitly runs commands without OS confinement. Do not bypass locks or change system security policy merely to suppress a diagnostic.
+
+Credentials use private owned directories (`0700`) and files (`0600`); a desktop secret-service is not required. Computer Use is currently unsupported on Linux because the pinned driver has no admitted Linux platform evidence; a graphical session alone cannot enable it. PTY and the Web workbench do not require a desktop.
+
+For the local Web gate, provision the pinned browser and libraries once, then run the offline fixture suite:
+
+```sh
+pnpm exec playwright install --with-deps chromium
+pnpm e2e:web
+```
+
+Provisioning uses the network; the gate uses cached Chromium, a fresh isolated home and local synthetic services. Reviewed Linux baselines are separate from macOS baselines. See the [maintained gate](../../tools/e2e-web/README.md).
+
 <a id="windows-构建"></a>
 
 ## Build on Windows

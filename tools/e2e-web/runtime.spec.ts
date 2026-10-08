@@ -72,7 +72,16 @@ test('fresh first run, keyless demo, SDK account save and credential persistence
     await resumed.attach()
     await prompt(resumed, 'Confirm the credential still works after restart')
     expect(JSON.stringify(await resumed.projectUI())).toContain('E2E_SAVED_CREDENTIAL_OK')
-    const cli = await runtime.cli(['-p', '--cwd', runtime.workspace, 'Confirm CLI uses the saved account'])
+    // Match the SDK sessions above: this credential test explicitly uses full-access.
+    // A restricted Linux container must not need a working L1 command sandbox to save an account.
+    const cli = await runtime.cli([
+      '-p',
+      '--preset',
+      'full-access',
+      '--cwd',
+      runtime.workspace,
+      'Confirm CLI uses the saved account',
+    ])
     expect(cli).toContain('E2E_SAVED_CREDENTIAL_OK')
     await info.attach('first-run-projection.json', {
       body: JSON.stringify(await resumed.projectUI()),

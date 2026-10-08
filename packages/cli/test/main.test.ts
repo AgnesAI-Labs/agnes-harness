@@ -557,18 +557,29 @@ describe('main', () => {
    */
   it('resumes a session a dead process left mid-inference and carries the conversation on', async () => {
     const dir = scratch()
-    // The process that dies. Its host is torn down with the model call still outstanding, so what
-    // stays on disk is a step nothing closed.
+    // Seal the exact damaged ledger before cancellation. An ignored abort would only exercise
+    // Host's forced-close deadline, leaving test resources live rather than simulating a crash.
+    const dying = await createTestHost({ dataDir: dir, provider: stalledProvider() })
+    let kernelSession: Awaited<ReturnType<typeof dying.host.createSession>> | undefined
     const dead = await bootLocal(
       parseArgs([]),
       testDeps(dir, {
-        createHostImpl: async () =>
-          (await createTestHost({ dataDir: dir, provider: stalledProvider() })).host,
+        createHostImpl: async () => ({
+          ...dying.host,
+          createSession: async (options) => {
+            kernelSession = await dying.host.createSession(options)
+            return kernelSession
+          },
+        }),
       }),
     )
     const killed = await dead.client.session.new({ cwd: dir })
     void killed.prompt([{ type: 'text', text: 'what is the launch code' }]).catch(() => undefined)
-    await new Promise((r) => setTimeout(r, 25))
+    await vi.waitFor(async () => {
+      expect(await kernelSession?.scan({ type: 'request/sent', limit: 1 })).toHaveLength(1)
+    })
+    if (!kernelSession) throw new Error('crash fixture did not create a session')
+    await kernelSession.d.log.close()
     const sessionId = killed.id
     await dead.close()
 

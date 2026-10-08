@@ -2,7 +2,7 @@ name: Web E2E
 on:
   pull_request:
   push:
-    branches: [main, feat/agh-plugin-core, feat/agh-e2e-gate, feat/agh-e2e-ui-gate]
+    branches: [main, feat/agh-plugin-core, feat/agh-e2e-gate, feat/agh-e2e-ui-gate, fix/agh-linux]
   merge_group:
   workflow_dispatch:
 permissions: { contents: read }
@@ -38,6 +38,66 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: web-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .agnes-tmp/e2e-web
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+  e2e-web-linux:
+    name: Linux Web E2E gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 24.20.0, cache: pnpm }
+      - name: Native toolchain and bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev python3 bubblewrap
+      - run: pnpm install --frozen-lockfile
+        id: install
+      - name: Native helpers
+        id: native
+        run: |
+          pnpm --filter @agnes/host build:native
+          pnpm --filter @agnes/system-node build:native
+      - name: Typecheck production and fixtures
+        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
+        run: pnpm typecheck
+      - name: Fast tests
+        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
+        run: pnpm test
+      - name: Repository guards
+        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
+        run: pnpm exec vitest run tools/guards/src --maxWorkers=1
+      - name: Linux kernel identity regression
+        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
+        run: pnpm exec vitest run packages/host-infrastructure/test/process-identity-linux.e2e.test.ts packages/base/extensions/sandbox/test/backend-linux.e2e.test.ts packages/package-manager/test/local-watcher.slow.test.ts packages/host-infrastructure/test/adapters/storage-lock.e2e.test.ts --maxWorkers=1
+      - name: Restore Chromium cache
+        id: browser-cache
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: chromium-${{ runner.os }}-${{ runner.arch }}-playwright-1.63.0
+      - name: Provision pinned Chromium and system libraries
+        id: chromium
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Build local runtime
+        id: build
+        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
+        run: |
+          pnpm --filter @agnes/cli build:local
+          node --input-type=module -e 'import { sourceHash, recordBuild } from "./tools/e2e-web/build-cache.mjs"; await recordBuild(await sourceHash())'
+      - name: Real daemon and Web gate (zero retries)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.chromium.outcome == 'success' }}
+        timeout-minutes: 10
+        run: pnpm e2e:web --reuse-build
+      - name: Upload report, screenshots, traces and process evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: web-e2e-linux-${{ github.run_id }}-${{ github.run_attempt }}
           path: .agnes-tmp/e2e-web
           include-hidden-files: true
           if-no-files-found: error

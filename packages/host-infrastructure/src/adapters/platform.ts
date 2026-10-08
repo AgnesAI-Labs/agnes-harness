@@ -2,6 +2,7 @@ import { HostError } from '@agnes/host-common/errors'
 import { createPosixPlatform, type PlatformBackend } from './platform-posix.js'
 import { createWin32Platform } from './platform-win32.js'
 
+export { probeLinuxSandboxSupport } from './linux-sandbox-diagnostics.js'
 export {
   CAPABILITY_IDS,
   type CapabilityId,

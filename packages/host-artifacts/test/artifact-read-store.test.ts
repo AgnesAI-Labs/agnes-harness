@@ -66,7 +66,7 @@ describe('local production artifact read store', () => {
     const item = await fixture('x'.repeat(4 * 1024 * 1024 + 1))
     const store = createLocalArtifactReadStore({ dataDir: item.dataDir, maxArtifactBytes: 32 * 1024 * 1024 })
     const read = await store.get(item.ref, new AbortController().signal)
-    expect(read).toEqual(item.bytes)
+    expect(Buffer.compare(read, item.bytes)).toBe(0)
     await expect(
       createLocalArtifactReadStore({
         dataDir: item.dataDir,
@@ -74,7 +74,7 @@ describe('local production artifact read store', () => {
       }).get(item.ref, new AbortController().signal),
     ).rejects.toThrow('artifact bytes unavailable')
     read[0] = 0
-    expect(await store.get(item.ref, new AbortController().signal)).toEqual(item.bytes)
+    expect(Buffer.compare(await store.get(item.ref, new AbortController().signal), item.bytes)).toBe(0)
   })
 
   it('fails closed for malformed identities without evaluating accessors', async () => {

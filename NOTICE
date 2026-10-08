@@ -39,6 +39,10 @@ following material retains its original notices and license terms:
   Source: https://github.com/lucide-icons/lucide; retrieved through Iconify.
   See packages/web-units/LUCIDE-LICENSE.
 
+- Linux system helper dynamically links the operating system's OpenSSL 3 libcrypto.
+  OpenSSL Project, Apache License 2.0. No OpenSSL source or shared library is vendored.
+  See third-party/native-system-dependencies.md for provenance and runtime requirements.
+
 This NOTICE is informational and does not modify any license. It records known
 source-tree attributions; a separately distributed binary or package must also
 be checked against its actual bundled dependencies and assets.

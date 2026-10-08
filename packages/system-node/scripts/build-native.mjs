@@ -67,6 +67,7 @@ if (process.platform === 'linux') {
       join(root, 'native', 'linux.c'),
       '-o',
       join(output, 'agnes-system.node'),
+      '-lcrypto',
     ],
     { cwd: output, stdio: 'inherit' },
   )

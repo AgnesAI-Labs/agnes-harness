@@ -59,13 +59,13 @@ export async function chooseWorkspace(page: Page, runtime: Runtime, locale = 'en
   await expect(workspace).toBeHidden()
 }
 
-export async function fresh(page: Page) {
-  await page.getByRole('button', { name: 'New session', exact: true }).click()
+export async function fresh(page: Page, locale = 'en') {
+  await page.getByRole('button', { name: locale === 'en' ? 'New session' : '新会话', exact: true }).click()
   await expect(page.getByTestId('composer-agent')).toBeEnabled()
   await page.getByTestId('composer-agent').click()
   const permission = page.getByTestId('new-session-preset')
   await permission.click()
-  await page.getByRole('option', { name: /^Full access\b/ }).click()
+  await page.getByRole('option', { name: locale === 'en' ? /^Full access\b/ : /^完全权限/ }).click()
   await page.getByTestId('composer-agent').click()
   await expect(page.getByTestId('composer-agent')).toHaveAttribute('aria-expanded', 'false')
   await expect(page.getByTestId('agent-options')).toBeHidden()

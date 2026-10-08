@@ -5,7 +5,7 @@ const output = resolve(process.env.AGH_WEB_TEST_OUTPUT ?? '.agnes-tmp/e2e-web')
 export default defineConfig({
   testDir: '.',
   testMatch: ['runtime.spec.ts', 'ui-gate.spec.ts', 'ui-flows.spec.ts'],
-  workers: 1,
+  workers: 2,
   fullyParallel: false,
   forbidOnly: true,
   retries: 0,

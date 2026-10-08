@@ -11,13 +11,15 @@ import { createTestHost, startTurn } from '../testkit/index.js'
 /**
  * A model that announces the request and then never answers. The ledger gets its `step/start`, its
  * `effect/intent` and its header, and the host is torn down with the call still outstanding - which
- * is the tail a SIGKILLed process leaves behind.
+ * is the tail a SIGKILLed process leaves behind. The caller seals the ledger before abort so
+ * this provider can honor cancellation during cleanup without repairing that damaged tail.
  */
 const neverAnswers: Provider = {
   models: () => [],
-  async *infer(req): AsyncIterable<InferenceEvent> {
+  async *infer(req, { signal }): AsyncIterable<InferenceEvent> {
     yield { type: 'sent', stamp: stampFor(req) }
-    await new Promise<void>(() => undefined)
+    if (!signal.aborted)
+      await new Promise<void>((done) => signal.addEventListener('abort', () => done(), { once: true }))
   },
 }
 

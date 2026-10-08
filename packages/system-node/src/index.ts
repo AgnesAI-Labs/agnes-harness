@@ -25,6 +25,7 @@ const windows = process.platform === 'win32' // guards-allow-platform: shared sy
 const darwin = process.platform === 'darwin' // guards-allow-platform: shared system leaf, independent of Host.
 const linux = process.platform === 'linux' // guards-allow-platform: shared system leaf, independent of Host.
 type Native = {
+  landlockAbi?(): number
   deleteSkillEntry?(
     path: string,
     dev: bigint,
@@ -55,6 +56,16 @@ type Native = {
   appendPrivateFile(path: string, bytes: Buffer, flush: boolean): void
   protectPrivateDirectory(path: string): void
   protectPrivateFile?(path: string): void
+}
+
+/** Read-only kernel availability query; this does not establish a command boundary. */
+export function linuxLandlockAbiSync(): number {
+  const implementation = linux ? native().landlockAbi : undefined
+  if (typeof implementation !== 'function')
+    throw Object.assign(new Error('Linux Landlock diagnostic is unavailable; rebuild the native artifact'), {
+      code: 'E_SYSTEM_NATIVE_UNAVAILABLE',
+    })
+  return implementation()
 }
 
 /** Refuse stale identities and link traversal; never fall back to path-based recursive deletion. */

@@ -669,6 +669,9 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
         mkdirSync(tablesDir, { recursive: true })
         odb = new DatabaseSync(join(tablesDir, `${ownerFile(owner)}.db`))
         try {
+          // Jobs/schedules are shared by daemon and worker, just like the ledger.
+          // Bound lock acquisition before installing the authorizer that refuses PRAGMA.
+          odb.exec('PRAGMA busy_timeout = 5000')
           odb.exec('PRAGMA journal_mode = WAL')
           syncCheckpointsToMedium(odb)
           for (const row of odb.prepare('SELECT name FROM sqlite_master WHERE type = ?').all('table') as {

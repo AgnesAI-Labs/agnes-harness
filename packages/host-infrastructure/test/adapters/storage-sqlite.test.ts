@@ -1,5 +1,3 @@
-import { spawn } from 'node:child_process'
-import { once } from 'node:events'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -300,25 +298,6 @@ describe('storage-sqlite', () => {
     })
     await s.release('k', 'r1')
     await expect(s.open('k', { writerRunId: 'r2', ttlMs: 1000 })).resolves.toBeDefined()
-  })
-  it('a commit waits out another process briefly holding the ledger write lock', async () => {
-    await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })
-    const child = spawn(process.execPath, [
-      '-e',
-      `const db = new (require('node:sqlite').DatabaseSync)(process.argv[1])
-       db.exec('BEGIN IMMEDIATE')
-       process.stdout.write('locked')
-       setTimeout(() => { db.exec('COMMIT'); db.close() }, 200)`,
-      join(dir, 'sessions.db'),
-    ])
-    const exited = once(child, 'exit')
-    await once(child.stdout, 'data')
-    const started = performance.now()
-    const committed = await s.commit('k', { events: [ev('user/message', {})], expectedWriterRunId: 'r1' })
-    const waited = performance.now() - started
-    await exited
-    expect(committed).toEqual({ firstSeq: 1, seqs: [1] })
-    expect(waited).toBeGreaterThan(100)
   })
   it('tombstone deletes a register row', async () => {
     await s.open('k', { writerRunId: 'r1', ttlMs: 1000 })

@@ -96,18 +96,19 @@ export function slowProvider(
 /**
  * A provider that announces the request and then never answers, for staging the ledger a process
  * killed mid-inference leaves behind: the `step/start`, the `effect/intent` and the header are on
- * disk and nothing ever settles them. The abort is deliberately ignored - a process that is killed
- * does not get to write an `aborted` on its way out.
+ * disk and nothing settles them until cancelled. The crash fixture must seal its ledger before
+ * cancellation, preserving the damaged tail while allowing orderly test-resource cleanup.
  */
 export function stalledProvider(): NonNullable<TestHostOptions['provider']> {
   return {
     models: () => [],
-    async *infer(req: RequestBody) {
+    async *infer(req: RequestBody, { signal }: { signal: AbortSignal }) {
       yield {
         type: 'sent',
         stamp: stampFor(req),
       }
-      await new Promise<void>(() => undefined)
+      if (!signal.aborted)
+        await new Promise<void>((done) => signal.addEventListener('abort', () => done(), { once: true }))
     },
   }
 }

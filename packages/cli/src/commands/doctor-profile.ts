@@ -3,6 +3,7 @@ import {
   createConfigurationService,
   createPlatform,
   type LockState,
+  probeLinuxSandboxSupport,
   type ResolvedProfile,
   resolveConfiguredPowerShell,
   resolveProfile,
@@ -35,6 +36,15 @@ export async function doctorPlatform(d: BootDeps): Promise<Section> {
           ],
         }
       }
+    }
+    if (platform.os === 'linux' && platform.matches()) {
+      const support = await probeLinuxSandboxSupport()
+      shellDetail.push(
+        `bubblewrap=${support.bubblewrap}; install bubblewrap and enable user namespaces for L1. Presence alone does not verify the boundary.`,
+        `Landlock ABI=${support.landlockAbi}; diagnostic only, AGH currently uses bubblewrap for Linux command isolation.`,
+        'Unavailable L1 refuses commands by default. Explicit full-access runs without OS confinement.',
+        'Computer Use is unsupported by the current pinned Linux driver admission; a graphical session alone cannot enable it.',
+      )
     }
     return {
       name: 'platform',

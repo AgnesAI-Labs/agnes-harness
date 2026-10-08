@@ -19,3 +19,5 @@ upgrading a direct dependency requires updating the relevant provenance record i
 
 This inventory is evidence of dependency origin, not a vulnerability audit, legal advice, a
 project-license decision or approval to redistribute a package.
+
+[Native system dependencies](native-system-dependencies.md) records libraries supplied by the operating system rather than pnpm. They are not included in the lockfile inventory.

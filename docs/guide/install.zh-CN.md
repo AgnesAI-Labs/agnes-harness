@@ -71,6 +71,37 @@ node packages/cli/dist/local/agnes.mjs --help
 
 Linux 可由系统包管理器安装 bubblewrap（例如 Debian/Ubuntu 的 `apt install bubblewrap`）；若运行环境禁用 user namespace，默认沙箱会拒绝命令工具，见[排错](troubleshooting.zh-CN.md)。
 
+<a id="linux-build"></a>
+
+## 在 Linux 构建与验证
+
+准备 Node 及其对应的 `include/node/node_api.h` 头文件、C/C++ 工具链、Python 3 和 Git。Debian/Ubuntu 示例：
+
+```sh
+sudo apt-get update
+sudo apt-get install -y build-essential libssl-dev python3 git bubblewrap
+pnpm install --frozen-lockfile
+pnpm --filter @agnes/host build:native
+pnpm --filter @agnes/system-node build:native
+pnpm --filter @agnes/cli build:local
+node packages/cli/dist/local/agnes.mjs doctor
+```
+
+PTY relay 链接 `libutil`，system helper 使用 Linux 内核接口与系统 OpenSSL 3 `libcrypto`，从同一已打开文件句柄计算 artifact 摘要。构建时安装 OpenSSL 开发头文件，搬运运行目录时仍须安装匹配的共享库。更换 Node 或架构后须重建 helper，安装 npm 依赖不能替代原生构建。
+
+Linux L1 命令隔离使用 bubblewrap，并验证文件、进程与网络的完整边界。版本检查或可用的 Landlock ABI 不能证明隔离有效：目前 Landlock 仅用于诊断，并非 AGH 命令后端。用户命名空间限制（包括容器 seccomp 或发行版安全策略）可能阻止 bubblewrap 运行。默认在 L1 不可用时拒绝命令；明确选择 **full-access** 后，命令不受操作系统隔离。不要为消除诊断而绕过锁或修改系统安全策略。
+
+凭据使用归当前用户所有的私有目录（`0700`）与文件（`0600`），无需桌面 secret-service。当前 Computer Use 不支持 Linux：固定驱动尚无通过准入的 Linux 平台证据，仅安装图形桌面不能启用。PTY 与 Web 工作台不依赖桌面。
+
+本地 Web gate 首次使用前安装固定版本浏览器及系统库，再运行离线 fixture 套件：
+
+```sh
+pnpm exec playwright install --with-deps chromium
+pnpm e2e:web
+```
+
+准备依赖时使用网络；gate 使用缓存 Chromium、全新隔离 home 和本地模拟服务。已评审 Linux 基线与 macOS 基线分别保存，详见[维护中的 gate](../../tools/e2e-web/README.md)。
+
 ## Windows 构建
 
 先安装依赖，在同一个 PowerShell 会话中运行：

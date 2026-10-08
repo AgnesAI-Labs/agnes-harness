@@ -57,3 +57,13 @@ The local launcher includes a child's startup refusal (such as `daemon or packag
 Unexpected daemon errors may include a `diagnosticId`. Match it against `audit/daemon.jsonl` under the selected dataDir. Failed audit writes may instead return `diagnosticUnavailable`; this does not prove there was no error. Records should contain safe method/code/time fields, but still review them for private context before sharing.
 
 There is no command that automatically repairs every home migration. Do not delete owner records, locks, SQLite databases, or rollback snapshots to hide errors. Before switching versions, finish tasks, stop the relevant daemon, back up your data, and start a complete new distribution using the [installation guide](install.md).
+
+<a id="linux-diagnostics"></a>
+
+## Linux diagnostics
+
+`doctor` distinguishes bubblewrap installation from a verified L1 boundary, and reports the Landlock ABI (zero means unavailable/disabled, `unknown` means it could not be established). Landlock availability alone grants no isolation. Check the actual sandbox refusal rather than assuming that `bwrap --version` proves usability. In a restricted container, command refusal is expected unless the complete boundary works; explicit full-access remains unconfined.
+
+Linux daemon identity binds `/proc/sys/kernel/random/boot_id`, PID and `/proc/<pid>/stat` start ticks. Clock adjustments cannot change that identity. PID reuse and reboot change it; unreadable or malformed records remain unknown. Zombies/dead tasks retain a PID but cannot run a daemon and are reported dead. Never repair an unknown identity by matching only PID or by deleting locks.
+
+Missing native helpers require a rebuild with matching Node headers and a C toolchain. For a browser launch failure, provision Chromium with `playwright install --with-deps chromium` before the gate; do not download a browser during tests. Computer Use currently refuses Linux platform admission; installing a desktop alone does not establish driver evidence. Do not inject fake desktop capabilities.

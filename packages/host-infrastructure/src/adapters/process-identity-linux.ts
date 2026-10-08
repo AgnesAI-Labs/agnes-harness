@@ -51,6 +51,8 @@ export async function linuxProcessIdentity(
       return unknown()
     const start = BigInt(ticks)
     if (start > 18_446_744_073_709_551_615n) return unknown()
+    // Zombies and dead tasks retain a PID but cannot own a running daemon.
+    if (/^[ZXx]$/.test(fields[0])) return { state: 'dead' }
     return { state: 'alive', startId: `linux:${boot}:${pid}:${start}` }
   } catch {
     return unknown()

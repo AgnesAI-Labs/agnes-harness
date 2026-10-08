@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
-import { chooseWorkspace, closeSettings, preferences, section, settings } from './ui.js'
+import { chooseWorkspace, closeSettings, fresh, preferences, section, settings } from './ui.js'
 
 const pages = [
   'model',
@@ -134,6 +134,8 @@ for (const locale of ['en', 'zh-CN'])
         await quality(`settings-${id}`, id === 'general' || ['plugins', 'discover', 'skills'].includes(id))
       }
       await closeSettings(page, locale)
+      // This visual read flow uses the same explicit preset as the offline runtime flows.
+      await fresh(page, locale)
       const composer = page.getByRole('textbox', {
         name: locale === 'en' ? 'Task content' : '任务内容',
         exact: true,

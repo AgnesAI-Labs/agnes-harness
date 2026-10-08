@@ -76,6 +76,7 @@ describe('ledger storage connections', () => {
         for (const db of [ledger, tables]) {
           expect(pragma(db, 'checkpoint_fullfsync')).toBe(expected)
           expect(pragma(db, 'fullfsync')).toBe(0)
+          expect(pragma(db, 'busy_timeout')).toBe(5000)
         }
         // Commits stay unsynced: the ledger keeps synchronous = NORMAL.
         expect(pragma(ledger, 'synchronous')).toBe(1)

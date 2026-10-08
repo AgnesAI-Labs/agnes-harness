@@ -1,11 +1,7 @@
 #!/usr/bin/env node
-// Compiles the macOS libproc process-identity helper (see
-// packages/host-infrastructure/native/macos-process-identity.c) at build time. This is the package's one
-// native-toolchain dependency: macOS exposes no readable /proc equivalent, so identifying a
-// live PID's start time and boot instance requires libproc + sysctl, which only a C binary can
-// call. No-op on every platform other than macOS — Linux's process-identity backend is pure JS
-// reading /proc, and no other platform is wired up yet — so this script is safe to run
-// unconditionally in any install/build pipeline regardless of host OS.
+// Builds the POSIX PTY relay (Linux links libutil), plus the macOS libproc identity helper.
+// Linux identity reads /proc without a native helper. Windows uses its separate system module.
+// Safe to invoke unconditionally: unsupported platforms are a no-op.
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
