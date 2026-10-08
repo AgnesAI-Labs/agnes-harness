@@ -69,6 +69,10 @@ export class RemoteSession {
     this.latestCache.set(`${e.register}/${dataKey}`, e.data)
   }
 
+  workspaceFiles(operation: 'list' | 'read', path: string): Promise<unknown> {
+    return this.link.command('workspaceFiles', { operation, path })
+  }
+
   enqueue(target: 'next-turn' | 'next-step', msg: unknown): Promise<number> {
     return this.link.command('enqueue', { target, msg }) as Promise<number>
   }

@@ -71,3 +71,5 @@ Drop a source plugin into the [local plugins folder](local-plugins.md), or [buil
 [Developing plugins with hot reload](hot-reload.md) covers manual reload, session pins and restart requirements.
 
 [Schema-driven configuration UI](configuration-ui.md) · Shared settings forms, validation and controlled actions.
+
+[Session workbench panels](workbench-panels.md) describes registered right/bottom dock contributions.

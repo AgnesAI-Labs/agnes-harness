@@ -62,3 +62,7 @@ Wait for each result before using its returned identity. Then send `session/prom
 ## Runtime diagnostics
 
 `_agnes/v1/doctor.run({probeAccounts?: boolean})` is a generated, local-owner-only method. Browser HTTP uses `POST /admin/api/doctor` through the exact-origin BFF; callers cannot select a home or profile. It returns `DoctorResult`: aggregate `status`, ordered `checks` with `id`, `status`, `fixHintKey` and optional non-sensitive counts/disk bytes/`probed`, plus an optional opaque `homeId` for browser preference scoping. Default checks never contact model services; `probeAccounts: true` explicitly tests enabled accounts. Cancellation propagates to model probes. Fix keys are rendered by the client locale catalog. No credential values, account labels, URLs or exception bodies are returned. See [first run](../guide/getting-started.md).
+
+## Session workspace files
+
+`_agnes/v1/session.workspace.list` accepts `{ sessionId, path? }` and returns `{ path, truncated, entries }` (at most 500 entries, optional git badges). `_agnes/v1/session.workspace.read` accepts `{ sessionId, path }` and returns `{ path, size, binary, truncated, text? }`. Both require session ownership and workspace-relative paths, refuse symlinks and the installation home, and confine canonical paths to the admitted workspace. Text previews are capped at 1 MiB; binary or oversized files omit text. These are read-only session methods, available through `Session.workspaceList`/`workspaceRead`, not administrative APIs.

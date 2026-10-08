@@ -11,3 +11,5 @@ export * from './service-authority.js'
 export * from './shared-session-channel.js'
 export * from './tail.js'
 export * from './tool-detail.js'
+
+export * from './workspace-files.js'

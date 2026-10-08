@@ -113,8 +113,15 @@ export { SLOT_TABLE } from './slots.js'
 export type {
   ConversationCard,
   ConversationCardInput,
+  FileViewerAction,
   SettingsSection,
   UiExtensionContext,
   WorkbenchPanel,
 } from './ui-registries.js'
-export { conversationCards, settingsSections, UiExtensionRegistry, workbenchPanels } from './ui-registries.js'
+export {
+  conversationCards,
+  fileViewerActions,
+  settingsSections,
+  UiExtensionRegistry,
+  workbenchPanels,
+} from './ui-registries.js'

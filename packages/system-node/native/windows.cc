@@ -867,12 +867,77 @@ static napi_value environmentNamesEqual(napi_env env, napi_callback_info info) {
   return result;
 }
 
+// Hold every directory without FILE_SHARE_DELETE while resolving children. Reparse points are refused.
+static bool canonicalDirectories(napi_env env, const std::wstring& path, bool leafDirectory,
+                                 std::vector<std::unique_ptr<Handle>>& held) {
+  if (path.size() < 7 || path.compare(0, 4, L"\\\\?\\") != 0 || path[5] != L':' || path[6] != L'\\') {
+    failure(env, "canonical local drive path required", ERROR_ACCESS_DENIED); return false;
+  }
+  size_t limit = leafDirectory ? path.size() : path.find_last_of(L'\\');
+  for (size_t end = 7; end <= limit;) {
+    std::wstring prefix = path.substr(0, end);
+    auto handle = std::make_unique<Handle>(CreateFileW(prefix.c_str(), FILE_READ_ATTRIBUTES,
+      FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+      FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+    BY_HANDLE_FILE_INFORMATION information{};
+    if (handle->value == INVALID_HANDLE_VALUE || !GetFileInformationByHandle(handle->value, &information)) {
+      failure(env, "open canonical directory", GetLastError()); return false;
+    }
+    if (!(information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ||
+        information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+      failure(env, "real directory required", ERROR_ACCESS_DENIED); return false;
+    }
+    held.push_back(std::move(handle));
+    if (end == limit) break;
+    size_t next = path.find(L'\\', end + 1);
+    end = next == std::wstring::npos || next > limit ? limit : next;
+  }
+  return true;
+}
+static napi_value openCanonicalFile(napi_env env, napi_callback_info info) {
+  napi_value args[1]; std::wstring path;
+  if (!arguments(env, info, 1, args) || !stringArgument(env, args[0], path)) return nullptr;
+  std::vector<std::unique_ptr<Handle>> held;
+  if (!canonicalDirectories(env, path, false, held)) return nullptr;
+  Handle file(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+    OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+  BY_HANDLE_FILE_INFORMATION information{};
+  if (file.value == INVALID_HANDLE_VALUE || !GetFileInformationByHandle(file.value, &information))
+    return failure(env, "open canonical file", GetLastError());
+  if (information.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT))
+    return failure(env, "real regular file required", ERROR_ACCESS_DENIED);
+  return adoptFile(env, file);
+}
+static napi_value listCanonicalDirectory(napi_env env, napi_callback_info info) {
+  napi_value args[1], result; std::wstring path;
+  if (!arguments(env, info, 1, args) || !stringArgument(env, args[0], path)) return nullptr;
+  std::vector<std::unique_ptr<Handle>> held;
+  if (!canonicalDirectories(env, path, true, held)) return nullptr;
+  WIN32_FIND_DATAW entry{};
+  HANDLE search = FindFirstFileW((path + L"\\*").c_str(), &entry);
+  if (search == INVALID_HANDLE_VALUE) return failure(env, "list canonical directory", GetLastError());
+  napi_create_array(env, &result);
+  uint32_t index = 0;
+  do {
+    if (wcscmp(entry.cFileName, L".") == 0 || wcscmp(entry.cFileName, L"..") == 0) continue;
+    napi_value name;
+    napi_create_string_utf16(env, reinterpret_cast<const char16_t*>(entry.cFileName), NAPI_AUTO_LENGTH, &name);
+    napi_set_element(env, result, index++, name);
+  } while (index < 5001 && FindNextFileW(search, &entry));
+  DWORD error = GetLastError(); FindClose(search);
+  if (index < 5001 && error != ERROR_NO_MORE_FILES)
+    return failure(env, "read canonical directory", error);
+  return result;
+}
+
 static napi_value initialize(napi_env env, napi_value exports) {
   if (uv_version() != UV_VERSION_HEX) {
     napi_throw_error(env, "E_SYSTEM_NATIVE_UNAVAILABLE", "Rebuild Windows native artifact for the current Node.js/libuv runtime");
     return nullptr;
   }
   napi_property_descriptor functions[] = {
+    {"openCanonicalFile", nullptr, guarded<openCanonicalFile>, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"listCanonicalDirectory", nullptr, guarded<listCanonicalDirectory>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"spawnDetached", nullptr, guarded<spawnDetached>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"connectVerifiedPipe", nullptr, guarded<connectVerifiedPipe>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"reservePipeName", nullptr, guarded<reservePipeName>, nullptr, nullptr, nullptr, napi_default, nullptr},

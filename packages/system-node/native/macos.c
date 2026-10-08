@@ -242,10 +242,16 @@ static napi_value delete_private_artifact(napi_env env, napi_callback_info info)
 #include "rename-directory.h"
 #include "skill-delete-posix.h"
 
+#include "canonical-read-posix.h"
+
 static napi_value initialize(napi_env env, napi_value exports) {
   napi_value abi, function;
   napi_create_uint32(env, 1, &abi);
   napi_set_named_property(env, exports, "abiVersion", abi);
+  napi_create_function(env, "openCanonicalFile", NAPI_AUTO_LENGTH, open_canonical_file, NULL, &function);
+  napi_set_named_property(env, exports, "openCanonicalFile", function);
+  napi_create_function(env, "listCanonicalDirectory", NAPI_AUTO_LENGTH, list_canonical_directory, NULL, &function);
+  napi_set_named_property(env, exports, "listCanonicalDirectory", function);
   napi_create_function(env, "deleteSkillEntry", NAPI_AUTO_LENGTH, delete_skill_entry, NULL, &function);
   napi_set_named_property(env, exports, "deleteSkillEntry", function);
   napi_create_function(env, "deletePrivateArtifact", NAPI_AUTO_LENGTH,

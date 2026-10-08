@@ -60,6 +60,7 @@ import {
   type Translate,
   workspaceErrorNotice,
 } from '@agnes/web-conversation/presentation'
+import { type WorkbenchContext, workbenchLocaleCatalog } from '@agnes/web-conversation/workbench'
 import { bindAppearance, bindSkinGroup } from '@agnes/web-foundation/appearance'
 import { installBrowserLogCapture } from '@agnes/web-foundation/browser-log'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
@@ -108,6 +109,7 @@ import {
   type WebView,
   webView,
 } from './view.js'
+import { renderWorkbench, unmountWorkbench } from './workbench/dock.js'
 import { requestWorkspacePicker, workspacePickerAvailable } from './workspace-picker.js'
 
 installBrowserLogCapture()
@@ -282,7 +284,7 @@ const clientModules = await startClientModules({
           : '',
       }),
     ),
-  panelContainer: document.getElementById('main-content') ?? undefined,
+  panelContainer: document.getElementById('workbench-plugin-panels') ?? undefined,
   sidebarContainer: document.querySelector<HTMLElement>('aside.sidebar') ?? undefined,
   sidebar: {
     actions: {
@@ -380,6 +382,7 @@ bindSlotCardContext({ registry: clientModules.registry, claim: claimSlotCard, lo
 // 渲染时取词：t 只在渲染/组装瞬间调用；语言切换后由订阅重跑渲染函数，命令式区域整体重建。
 const t: Translate = (key, vars) => clientModules.locale.t(key, vars)
 setLocaleTranslator(t)
+clientModules.locale.register('@agnes/web-workbench', workbenchLocaleCatalog)
 clientModules.locale.subscribe(() => renderControls())
 
 // A daemon notice is only an invalidation hint. Every read goes back through the SDK roster
@@ -723,7 +726,29 @@ function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'clo
   settings.setConnected(connected)
   renderControls()
 }
+const dockControlsHost = document.getElementById('workbench-controls')
 function renderControls(): void {
+  const workbench: WorkbenchContext = {
+    session: draftingNew || sessionPending ? undefined : current,
+    timeline: draftingNew || sessionPending ? undefined : projection,
+    disabled: !connected || sessionPending || sending || stopping,
+    mention: (path) => {
+      const reference = JSON.stringify(path)
+      const draft = composerRuntime.getDraft()
+      composerRuntime.setDraft(`${draft}${draft ? '\n' : ''}${reference}`)
+      composerRuntime.focus()
+    },
+    command: (command) => {
+      composerRuntime.setDraft(command)
+      submitComposer()
+    },
+  }
+  const dockHost = dockControlsHost
+  if (dockHost) {
+    dockHost.hidden = !workbench.session
+    if (workbench.session) renderWorkbench(dockHost, { t, data: workbench })
+    else unmountWorkbench(dockHost)
+  }
   renderGoalCard(
     goalHost,
     draftingNew ? undefined : projection,
@@ -2562,6 +2587,8 @@ const modelRefreshTimer = setInterval(() => {
 }, 2000)
 window.addEventListener('pagehide', () => {
   firstRun.dispose()
+  const dockHost = dockControlsHost
+  if (dockHost) unmountWorkbench(dockHost)
   clearInterval(modelRefreshTimer)
   intentionalClose = true
   reconnect.cancel()

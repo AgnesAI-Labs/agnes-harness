@@ -46,6 +46,7 @@
       <p id="notice" role="alert"></p>
       <div class="workbench-split">
       <div class="session-tabs-bar">
+      <div id="workbench-controls"></div>
       <div class="session-tabs" role="tablist" aria-label="Session views" data-i18n-aria="index-shell.tabsView">
         <button type="button" id="view-chat" role="tab" aria-selected="true" aria-controls="conversation-shell" tabindex="0" data-i18n="index-shell.tabChat">Conversation</button>
         <button type="button" id="view-trace" role="tab" aria-selected="false" aria-controls="trace-panel" tabindex="-1" data-i18n="index-shell.tabTrace">Trace</button>
@@ -55,6 +56,8 @@
       <div id="conversation-shell" class="conversation-shell" role="tabpanel" aria-labelledby="view-chat" data-agnes-region="conversation">
       </div>
       <aside id="trace-panel" role="tabpanel" aria-labelledby="view-trace" data-agnes-region="trace" hidden aria-label="Run trace" data-i18n-aria="index-shell.tracePanel"></aside>
+      <aside id="workbench-right" data-agnes-region="workbench-right" hidden><div id="workbench-right-content"></div><div id="workbench-plugin-panels"></div></aside>
+      <aside id="workbench-bottom" data-agnes-region="workbench-bottom" hidden><div id="workbench-bottom-content"></div></aside>
       <aside id="rightbar-panel" data-agnes-region="rightbar" hidden aria-label="Extension panels" data-i18n-aria="index-shell.rightbarPanel"></aside>
       </div>
 

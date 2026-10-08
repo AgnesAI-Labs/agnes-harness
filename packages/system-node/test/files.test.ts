@@ -2,10 +2,13 @@ import {
   closeSync,
   existsSync,
   fsyncSync,
+  mkdirSync,
   mkdtempSync,
   openSync,
   readFileSync,
+  realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -16,6 +19,8 @@ import {
   createPrivateDirectorySync,
   createPrivateFileSync,
   hasPrivateDaclSync,
+  listCanonicalDirectorySync,
+  openCanonicalFileSync,
   renameWriteThroughSync,
   syncDirectorySync,
   syncFileSync,
@@ -147,3 +152,24 @@ it.runIf(process.platform === 'win32')('native entry points reject missing or ma
     expect(() => native[name](42, root)).toThrow(expect.objectContaining({ code: 'EINVAL' }))
   }
 })
+
+it.runIf(process.platform !== 'win32')(
+  'opens canonical file descriptors and refuses links at every component',
+  () => {
+    const canonical = realpathSync(root)
+    mkdirSync(join(canonical, 'dir'))
+    writeFileSync(join(canonical, 'dir', 'name\n中文.txt'), 'bounded source')
+    symlinkSync(join(canonical, 'dir'), join(canonical, 'alias'))
+    symlinkSync(join(canonical, 'dir', 'name\n中文.txt'), join(canonical, 'leaf'))
+    const fd = openCanonicalFileSync(join(canonical, 'dir', 'name\n中文.txt'))
+    try {
+      expect(readFileSync(fd, 'utf8')).toBe('bounded source')
+    } finally {
+      closeSync(fd)
+    }
+    expect(listCanonicalDirectorySync(join(canonical, 'dir'))).toEqual(['name\n中文.txt'])
+    expect(() => openCanonicalFileSync(join(canonical, 'alias', 'name\n中文.txt'))).toThrow()
+    expect(() => openCanonicalFileSync(join(canonical, 'leaf'))).toThrow()
+    expect(() => listCanonicalDirectorySync(join(canonical, 'alias'))).toThrow()
+  },
+)

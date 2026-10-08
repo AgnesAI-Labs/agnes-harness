@@ -561,8 +561,11 @@
     "SessionWorkspaceListResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "truncated", "entries"],
+      "required": ["gitStatus", "revision", "observedAt", "path", "truncated", "entries"],
       "properties": {
+        "gitStatus": { "enum": ["available", "unavailable", "not-repository"] },
+        "revision": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "observedAt": { "type": "string", "format": "date-time" },
         "path": { "type": "string", "maxLength": 4096 },
         "truncated": { "type": "boolean" },
         "entries": {
@@ -584,8 +587,10 @@
     "SessionWorkspaceReadResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "size", "binary", "truncated"],
+      "required": ["revision", "observedAt", "path", "size", "binary", "truncated"],
       "properties": {
+        "revision": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "observedAt": { "type": "string", "format": "date-time" },
         "path": { "type": "string", "maxLength": 4096 },
         "size": { "type": "integer", "minimum": 0 },
         "binary": { "type": "boolean" },

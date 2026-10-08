@@ -25,6 +25,8 @@ const windows = process.platform === 'win32' // guards-allow-platform: shared sy
 const darwin = process.platform === 'darwin' // guards-allow-platform: shared system leaf, independent of Host.
 const linux = process.platform === 'linux' // guards-allow-platform: shared system leaf, independent of Host.
 type Native = {
+  openCanonicalFile?(path: string): number
+  listCanonicalDirectory?(path: string): string[]
   landlockAbi?(): number
   deleteSkillEntry?(
     path: string,
@@ -671,4 +673,19 @@ export function renameDirectoryNoReplaceSync(from: string, to: string): void {
   implementation(source, target)
   if (windows) return
   for (const directory of new Set([dirname(source), dirname(target)])) syncDirectorySync(directory)
+}
+
+/** Every component must be real. Refuse when the native boundary is unavailable; never fall back. */
+export function openCanonicalFileSync(path: string): number {
+  const implementation = native().openCanonicalFile
+  if (!implementation)
+    throw Object.assign(new Error('Safe canonical open is unavailable'), { code: 'ENOSYS' })
+  return implementation(filePath(path))
+}
+/** Bounded directory enumeration through a no-follow descriptor, capped at 5,001 names. */
+export function listCanonicalDirectorySync(path: string): string[] {
+  const implementation = native().listCanonicalDirectory
+  if (!implementation)
+    throw Object.assign(new Error('Safe canonical list is unavailable'), { code: 'ENOSYS' })
+  return implementation(filePath(path))
 }

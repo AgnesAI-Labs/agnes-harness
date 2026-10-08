@@ -43,9 +43,11 @@ export class UiExtensionRegistry<Entry extends { readonly id: string; readonly o
   #entries = new Map<string, Entry>()
   #listeners = new Set<() => void>()
   #version = 0
+  constructor(private readonly validate?: (entry: Entry) => void) {}
   register(entry: Entry): () => void {
     if (!/^[a-z][a-z0-9.-]*$/.test(entry.id) || !Number.isFinite(entry.order))
       throw new Error('Invalid UI extension registration')
+    this.validate?.(entry)
     if (this.#entries.has(entry.id)) throw new Error(`UI extension already registered: ${entry.id}`)
     const stored = Object.freeze({ ...entry }) as Entry
     this.#entries.set(entry.id, stored)
@@ -78,4 +80,14 @@ export class UiExtensionRegistry<Entry extends { readonly id: string; readonly o
 /** Shared through the host's @agnes/web-client platform singleton, including installed modules. */
 export const settingsSections = new UiExtensionRegistry<SettingsSection>()
 export const conversationCards = new UiExtensionRegistry<ConversationCard>()
-export const workbenchPanels = new UiExtensionRegistry<WorkbenchPanel>()
+export const workbenchPanels = new UiExtensionRegistry<WorkbenchPanel>((entry) => {
+  if (entry.edge !== 'right' && entry.edge !== 'bottom') throw new Error('Invalid workbench panel edge')
+})
+
+/** A file viewer contribution, independent of the panel supplying its review destination. */
+export type FileViewerAction = Readonly<{
+  id: string
+  order: number
+  component: ComponentType<{ context: UiExtensionContext; path: string; revision: string }>
+}>
+export const fileViewerActions = new UiExtensionRegistry<FileViewerAction>()

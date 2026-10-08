@@ -23,6 +23,7 @@ export type SessionMethod =
   | 'projectUIHistory'
   | 'toolCatalog'
   | 'readToolDetail'
+  | 'workspaceFiles'
   | 'append'
   | 'setPreset'
   | 'setModel'

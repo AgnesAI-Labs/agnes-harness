@@ -25,6 +25,8 @@ const EXPECTED: Record<string, Record<string, readonly [string, number]>> = {
     conversation: ['div', 1],
     trace: ['aside', 1],
     rightbar: ['aside', 1],
+    'workbench-right': ['aside', 1],
+    'workbench-bottom': ['aside', 1],
     transcript: ['section', 1],
     'empty-state': ['section', 1],
     approval: ['section', 1],

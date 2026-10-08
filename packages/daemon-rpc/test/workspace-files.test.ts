@@ -1,8 +1,10 @@
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { AGH_DIR } from '@agnes/protocol'
+import { readWorkspace } from '@agnes/worker-runtime'
+import { describe, expect, it, vi } from 'vitest'
 import { openTestHost } from '../../daemon/test/host.js'
 import {
   compileIgnore,
@@ -43,11 +45,11 @@ describe('workspace ignore rules and git status records', () => {
   })
 
   it('parses porcelain records, including a rename', () => {
-    const bytes = Buffer.from('?? new.txt\0A  added.txt\0R  renamed.txt\0old.txt\0', 'utf8')
+    const bytes = Buffer.from('?? new\nname.txt\0A  added.txt\0R  renamed\nname.txt\0old.txt\0', 'utf8')
     expect(Object.fromEntries(parseGitPorcelain(bytes))).toEqual({
-      'new.txt': 'untracked',
+      'new\nname.txt': 'untracked',
       'added.txt': 'added',
-      'renamed.txt': 'renamed',
+      'renamed\nname.txt': 'renamed',
     })
   })
 
@@ -87,6 +89,12 @@ describe('session workspace files', () => {
       writeFileSync(join(workspace, 'big.txt'), Buffer.alloc(MAX_READ_BYTES + 1, 0x61))
       symlinkSync(join(outside, 'secret.txt'), join(workspace, 'escape'))
       symlinkSync(outside, join(workspace, 'escape-dir'))
+      const home = join(workspace, AGH_DIR)
+      mkdirSync(join(home, 'secrets'), { recursive: true })
+      mkdirSync(join(home, 'memory'))
+      writeFileSync(join(home, 'secrets', 'key'), 'PRIVATE_KEY_SENTINEL')
+      writeFileSync(join(home, 'memory', 'note'), 'PRIVATE_MEMORY_SENTINEL')
+      vi.stubEnv('AGH_HOME', home)
       const git = spawnSync('git', ['init'], { cwd: workspace, encoding: 'utf8' })
       expect(git.status, git.stderr).toBe(0)
       expect(spawnSync('git', ['add', 'report.md'], { cwd: workspace }).status).toBe(0)
@@ -114,7 +122,14 @@ describe('session workspace files', () => {
       expect(names).toContain('.gitignore')
       expect(names).not.toContain('notes.log')
       expect(names).not.toContain('secret.txt')
-      expect(listed.result.entries.find((entry) => entry.name === 'report.md')?.git).toBe('added')
+      expect(names).not.toContain(AGH_DIR)
+      // The tool workspace authority hard-denies Git internals; optional badges must not bypass it.
+      expect(listed.result).toMatchObject({
+        gitStatus: 'unavailable',
+        revision: expect.any(String),
+        observedAt: expect.any(String),
+      })
+      expect(listed.result.entries.find((entry) => entry.name === 'report.md')?.git).toBeUndefined()
       expect(listed.result.entries.find((entry) => entry.name === 'escape')?.kind).toBe('other')
       expect(listed.result.entries.find((entry) => entry.name === 'escape-dir')?.kind).toBe('other')
       expect(JSON.stringify(listed)).not.toContain('OUTSIDE_SECRET_SENTINEL')
@@ -124,12 +139,18 @@ describe('session workspace files', () => {
       }
       expect(nested.result).toMatchObject({ path: 'src', entries: [{ name: 'main.ts', kind: 'file' }] })
 
-      const read = (await call(5, '_agnes/v1/session.workspace.read', { sessionId, path: 'src/main.ts' })) as {
+      const read = (await call(5, '_agnes/v1/session.workspace.read', {
+        sessionId,
+        path: 'src/main.ts',
+      })) as {
         result: { text?: string; binary: boolean; truncated: boolean }
       }
       expect(read.result).toMatchObject({ binary: false, truncated: false, text: 'export const value = 1\n' })
 
-      const binary = (await call(6, '_agnes/v1/session.workspace.read', { sessionId, path: 'picture.bin' })) as {
+      const binary = (await call(6, '_agnes/v1/session.workspace.read', {
+        sessionId,
+        path: 'picture.bin',
+      })) as {
         result: { binary: boolean; text?: string }
       }
       expect(binary.result.binary).toBe(true)
@@ -142,12 +163,24 @@ describe('session workspace files', () => {
       expect(large.result.size).toBe(MAX_READ_BYTES + 1)
       expect(large.result.text).toBeUndefined()
 
-      const hidden = (await call(8, '_agnes/v1/session.workspace.read', { sessionId, path: 'notes.log' })) as {
+      const hidden = (await call(8, '_agnes/v1/session.workspace.read', {
+        sessionId,
+        path: 'notes.log',
+      })) as {
         result: { text?: string }
       }
       expect(hidden.result.text).toBe('hidden log')
 
-      for (const path of ['../secret', '/etc/passwd', 'foo/../../etc', 'escape', 'escape-dir']) {
+      for (const path of [
+        '../secret',
+        '/etc/passwd',
+        'foo/../../etc',
+        'escape',
+        'escape-dir',
+        '.git/config',
+        `${AGH_DIR}/secrets/key`,
+        `${AGH_DIR}/memory/note`,
+      ]) {
         const denied = await call(9, '_agnes/v1/session.workspace.read', { sessionId, path })
         expect(denied, path).toMatchObject({
           error: {
@@ -161,10 +194,13 @@ describe('session workspace files', () => {
       expect(escapedList).toMatchObject({
         error: { data: { code: 'WORKSPACE_PATH_DENIED', messageKey: 'appServer.errors.forbidden' } },
       })
-      expect(await call(11, '_agnes/v1/session.workspace.read', { sessionId: 'missing', path: 'report.md' })).toMatchObject({
+      expect(
+        await call(11, '_agnes/v1/session.workspace.read', { sessionId: 'missing', path: 'report.md' }),
+      ).toMatchObject({
         error: { code: -32003 },
       })
     } finally {
+      vi.unstubAllEnvs()
       ep.close()
       await draining
       await h.close()
@@ -172,4 +208,30 @@ describe('session workspace files', () => {
       rmSync(outside, { recursive: true, force: true })
     }
   })
+})
+
+it('refuses an intermediate path swapped to a symlink after authority validation', async () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'agh-race-'))
+  const outside = mkdtempSync(join(tmpdir(), 'agh-out-race-'))
+  try {
+    mkdirSync(join(workspace, 'dir'))
+    writeFileSync(join(workspace, 'dir', 'file'), 'inside')
+    writeFileSync(join(outside, 'file'), 'OUTSIDE_RACE_SENTINEL')
+    let swapped = false
+    const authority = {
+      stat: async () => {
+        if (!swapped) {
+          swapped = true
+          renameSync(join(workspace, 'dir'), join(workspace, 'old'))
+          symlinkSync(outside, join(workspace, 'dir'))
+        }
+      },
+    }
+    await expect(readWorkspace(realpathSync(workspace), 'dir/file', authority)).rejects.toMatchObject({
+      data: { code: 'WORKSPACE_PATH_DENIED' },
+    })
+  } finally {
+    rmSync(workspace, { recursive: true, force: true })
+    rmSync(outside, { recursive: true, force: true })
+  }
 })

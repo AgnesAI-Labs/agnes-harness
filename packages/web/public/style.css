@@ -6960,3 +6960,206 @@ body.admin-page {
 .runtime-settings .agnes-settings-row > .agnes-settings-details > summary {
   padding-block: 0.25rem;
 }
+
+[data-agnes-region="workbench-right"] {
+  background: var(--agnes-bg-surface);
+  border-left: 1px solid var(--agnes-line-primary);
+}
+[data-agnes-region="workbench-bottom"] {
+  background: var(--agnes-bg-surface);
+  border-top: 1px solid var(--agnes-line-primary);
+}
+
+/* Session dock chrome and registered panel surfaces share the conversation theme. */
+.workbench-split {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.workbench-split.workbench-right-open {
+  grid-template-columns: minmax(0, 1fr) var(--workbench-width, 320px);
+}
+.workbench-split > .session-tabs-bar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+.workbench-split > .conversation-shell,
+.workbench-split > #trace-panel {
+  grid-column: 1;
+  grid-row: 2;
+}
+#workbench-controls {
+  margin-left: 0.5rem;
+}
+.workbench-controls {
+  display: flex;
+  gap: 0.25rem;
+}
+#workbench-right {
+  grid-column: 2;
+  grid-row: 2 / 4;
+}
+#workbench-bottom {
+  grid-column: 1;
+  grid-row: 3;
+  height: var(--workbench-height, 220px);
+}
+#workbench-right,
+#workbench-bottom {
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+}
+#workbench-right-content,
+#workbench-bottom-content {
+  height: 100%;
+  min-height: 0;
+}
+.workbench-dock-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.workbench-dock-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--agnes-line-primary);
+  padding: 0.4rem 0.6rem;
+}
+.workbench-panel-tabs {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+}
+.workbench-panel-tabs [aria-selected="true"] {
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-bg-hover);
+}
+.workbench-panel-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.workbench-resize {
+  border: 0;
+  margin: 0;
+  position: absolute;
+  z-index: 2;
+}
+#workbench-right .workbench-resize {
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+}
+#workbench-bottom .workbench-resize {
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  cursor: row-resize;
+}
+.workbench-resize:focus-visible {
+  outline: 2px solid var(--agnes-text-emphasis);
+}
+.workbench-files {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.workbench-panel-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.6rem;
+  flex-wrap: wrap;
+}
+.workbench-tree-scroll {
+  flex: 1;
+  min-height: 80px;
+  overflow: auto;
+}
+.workbench-file-tree {
+  list-style: none;
+  padding: 0 0 0 0.6rem;
+  margin: 0;
+}
+.workbench-file-entry {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  gap: 0.35rem;
+  justify-content: flex-start;
+}
+.workbench-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  white-space: nowrap;
+}
+.workbench-git-mark {
+  margin-left: auto;
+  font-size: var(--font-size-xs);
+  color: var(--agnes-text-secondary);
+}
+.workbench-file-preview {
+  flex: 1;
+  min-height: 100px;
+  border-top: 1px solid var(--agnes-line-primary);
+  overflow: auto;
+}
+.workbench-file-preview pre {
+  margin: 0;
+  padding: 0.75rem;
+  overflow: auto;
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  tab-size: 2;
+}
+.workbench-code-keyword {
+  color: var(--agnes-text-emphasis);
+  font-weight: 600;
+}
+.workbench-code-string {
+  color: var(--agnes-status-success-text);
+}
+.workbench-code-number {
+  color: var(--agnes-status-warning-text);
+}
+.workbench-code-comment {
+  color: var(--agnes-text-tertiary);
+}
+@media (max-width: 1279px) {
+  .workbench-split.workbench-right-open {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  :where(#workbench-right) {
+    position: absolute;
+    z-index: 15;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: min(var(--workbench-width, 320px), calc(100vw - 16px));
+    box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+  }
+  #workbench-bottom {
+    max-height: 40vh;
+  }
+}
+@media (max-width: 767px) {
+  #workbench-right,
+  #workbench-bottom {
+    position: fixed;
+    z-index: 30;
+    inset: 0;
+    width: 100%;
+    height: 100dvh;
+    max-height: none;
+  }
+  .workbench-resize {
+    display: none;
+  }
+}

@@ -79,6 +79,8 @@ Key rules:
 | `conversation` | Conversation wrapper | Workbench |
 | `trace` | Execution trace `aside` | Workbench |
 | `rightbar` | Right extension panel `aside` | Workbench |
+| `workbench-right` | Right session dock `aside` | Workbench |
+| `workbench-bottom` | Bottom session dock `aside` | Workbench |
 | `transcript` | Conversation list container | Workbench |
 | `empty-state` | Empty state | Workbench |
 | `approval` | Approval area | Workbench |

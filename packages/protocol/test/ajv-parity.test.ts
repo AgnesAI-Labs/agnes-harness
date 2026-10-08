@@ -2591,7 +2591,14 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'one directory entry; git is optional and closed',
   },
   SessionWorkspaceListResult: {
-    valid: { path: '', truncated: false, entries: [{ name: 'a.ts', kind: 'file' }] },
+    valid: {
+      revision: 'synthetic-revision',
+      observedAt: '2026-10-08T00:00:00Z',
+      gitStatus: 'available',
+      path: '',
+      truncated: false,
+      entries: [{ name: 'a.ts', kind: 'file' }],
+    },
     invalid: [
       { path: '', truncated: false },
       { path: rep(4097), truncated: false, entries: [] },
@@ -2610,7 +2617,15 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'read requires one relative path',
   },
   SessionWorkspaceReadResult: {
-    valid: { path: 'a.ts', size: 1, binary: false, truncated: false, text: 'a' },
+    valid: {
+      revision: 'synthetic-revision',
+      observedAt: '2026-10-08T00:00:00Z',
+      path: 'a.ts',
+      size: 1,
+      binary: false,
+      truncated: false,
+      text: 'a',
+    },
     invalid: [
       { path: 'a.ts', size: 0, binary: false },
       { path: 'a.ts', size: -1, binary: false, truncated: false },

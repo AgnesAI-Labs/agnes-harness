@@ -16,10 +16,10 @@ import {
   type WorkerResourceBootstrapInput,
   type WorkerResourceState,
 } from '@agnes/resource-control-worker'
-
 import type { SessionCommandFrame, WorkerCommandFrame } from './frames.js'
 import type { McpRowRuntime } from './mcp-row-runtime.js'
 import { readToolDetailPage } from './tool-detail.js'
+import { sessionWorkspaceFiles } from './workspace-files.js'
 
 /** Direct unit-level invocation shape. Wire frames are the stricter SessionCommandFrame union. */
 type SessionCommandInvocation = Omit<SessionCommandFrame, 'sessionKey' | 'method'> & {
@@ -277,6 +277,9 @@ export async function handleCommand(
 ): Promise<unknown> {
   const p = cmd.params
   switch (cmd.method) {
+    case 'workspaceFiles':
+      if (p.operation !== 'list' && p.operation !== 'read') throw new Error('Invalid workspace operation')
+      return sessionWorkspaceFiles(session, p.operation, String(p.path ?? ''))
     case 'ping':
       return {
         ok: true,

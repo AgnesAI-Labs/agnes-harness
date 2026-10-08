@@ -38,3 +38,5 @@ register 返回幂等且绑定该注册项身份的卸载函数，须绑定到�
 配置页面声明与 shared forms 见 [schema 配置 UI](../extend/configuration-ui.zh-CN.md)。设置 context 的翻译器可解析已注册的扩展目录键。
 
 设置项可声明 `runtimeCatalog: false`，由自身服务提供刷新、加载和错误状态，不读取插件目录；标题与导航仍由统一 shell 管理。
+
+[会话工作台面板](../extend/workbench-panels.zh-CN.md)介绍右侧和底部停靠面板的注册方式。

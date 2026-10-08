@@ -10,6 +10,7 @@ export async function localeKeys(
     'packages/resource-control-web/src/locales',
     'packages/web-ui/src',
     'packages/web-client/src',
+    'packages/web-conversation/src/workbench',
   ],
 ) {
   const result = new Set<string>()

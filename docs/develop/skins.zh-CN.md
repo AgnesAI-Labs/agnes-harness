@@ -76,6 +76,8 @@ Agnes 可以随时重命名它们；钩子则是版本化契约，改名会让�
 | `conversation` | 会话区外框 | 工作台 |
 | `trace` | 运行轨迹面板 `aside` | 工作台 |
 | `rightbar` | 右侧扩展面板 `aside` | 工作台 |
+| `workbench-right` | 右侧会话停靠区 `aside` | 工作台 |
+| `workbench-bottom` | 底部会话停靠区 `aside` | 工作台 |
 | `transcript` | 对话列表容器 | 工作台 |
 | `empty-state` | 空状态 | 工作台 |
 | `approval` | 审批区 | 工作台 |

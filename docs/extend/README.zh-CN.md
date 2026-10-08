@@ -55,3 +55,5 @@ Host 必须提供对应注册服务，循环或适配器插件才能加载。安
 [热重载开发指南](hot-reload.zh-CN.md)说明手动重载、会话固定与重启要求。
 
 [Schema 驱动配置界面](configuration-ui.zh-CN.md) · 共享设置表单、校验与受控操作。
+
+[会话工作台面板](workbench-panels.zh-CN.md)介绍右侧和底部停靠面板的注册方式。

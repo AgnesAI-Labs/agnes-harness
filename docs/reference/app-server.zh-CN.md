@@ -62,3 +62,7 @@ ACP 初始化版本仍为 1，AGH 扩展仍使用 `_agnes/v1`。v1 客户端应�
 ## 运行诊断
 
 `_agnes/v1/doctor.run({probeAccounts?: boolean})` 是生成合同中的本地所有者专用方法。浏览器通过精确同源 BFF 的 `POST /admin/api/doctor` 调用，不能指定 home 或配置档。返回 `DoctorResult`：汇总 `status`、顺序固定的 `checks`（`id`、`status`、`fixHintKey`，以及可选计数、磁盘字节数、`probed`），可选不透明 `homeId` 用于隔离浏览器偏好。默认不连接模型服务，只有 `probeAccounts: true` 主动测试已启用账户；取消会传递到模型探测。提示键由客户端语言目录翻译，不返回密钥、账户名称、URL 或异常正文。见[首次运行](../guide/getting-started.zh-CN.md)。
+
+## 会话工作区文件
+
+`_agnes/v1/session.workspace.list` 接收 `{ sessionId, path? }`，返回 `{ path, truncated, entries }`（最多 500 个条目，可选 git 标记）。`_agnes/v1/session.workspace.read` 接收 `{ sessionId, path }`，返回 `{ path, size, binary, truncated, text? }`。两者均要求会话所有权与工作区相对路径，拒绝符号链接及安装目录，规范路径限于已准入工作区。文本预览上限为 1 MiB；二进制或超大文件省略正文。这是通过 `Session.workspaceList`/`workspaceRead` 使用的只读会话方法，不是管理 API。

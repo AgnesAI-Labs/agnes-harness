@@ -7,7 +7,6 @@ import { sessionLocaleCatalog } from './locales/session.js'
 import { settingsLocaleCatalog } from './locales/settings.js'
 import { timelineLocaleCatalog } from './locales/timeline.js'
 import { toolCardsLocaleCatalog } from './locales/tool-cards.js'
-import { workbenchLocaleCatalog } from './locales/workbench.js'
 
 /** 宿主内置文案的命名空间。第一期只覆盖语言开关自身。 */
 export const WEB_LOCALE_NAMESPACE = '@agnes/web'
@@ -22,7 +21,6 @@ const WEB_DICTS = [
   settingsLocaleCatalog,
   timelineLocaleCatalog,
   toolCardsLocaleCatalog,
-  workbenchLocaleCatalog,
 ] as const
 
 const mergeLocale = (locale: 'en' | 'zh-CN'): Record<string, string> =>
