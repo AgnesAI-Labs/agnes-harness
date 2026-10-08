@@ -1,8 +1,29 @@
-import type { LocaleCatalog } from '@agnes/web-client'
+import type { LocaleCatalog } from '@agnes/web-ui'
 
 /** 输入框、会话编排提示与工作区/会话错误说明。宿主组装 view 时渲染取词。 */
 export const composerLocaleCatalog: LocaleCatalog = {
   en: {
+    'choice.agnes.default': 'Official default Agent',
+    'choice.standard': 'Standard permissions',
+    'choice.read-only': 'Read only',
+    'choice.workspace-write': 'Workspace changes',
+    'choice.full-access': 'Full access',
+    'choice.minimal': 'Minimal tools',
+    'choice.ptc': 'Programmatic tools',
+    'composer.agent.title': 'Agent: Loop, bundles and permission preset',
+    'composer.agent.chip': 'Agent',
+    'composer.agent.default': 'Default',
+    'composer.agent.unresolved': 'Default unavailable',
+    'composer.agent.source.admin': 'Source: admin default',
+    'composer.agent.source.builtin': 'Source: built-in default',
+    'composer.agent.source.profile': 'Source: profile composition',
+    'composer.agent.source.unknown': 'Default source unavailable',
+    'composer.agent.bundles': 'Bundles',
+    'composer.agent.bundlesHint': 'Applied to new sessions in selection order.',
+    'composer.agent.noBundles': 'No bundles selected',
+    'composer.agent.preset': 'Permission preset',
+    'composer.agent.presetSource': 'Source: admin default or profile preset',
+
     'composer.loop.select': 'Agent Loop for the new session',
     'composer.loop.inherited': 'Configured Loop default',
     'composer.loop.unavailable': 'This Loop is unavailable; choose another',
@@ -56,6 +77,27 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'topbar.preparing': 'Preparing session',
   },
   'zh-CN': {
+    'choice.agnes.default': '官方默认 Agent',
+    'choice.standard': '标准权限',
+    'choice.read-only': '只读',
+    'choice.workspace-write': '工作区内修改',
+    'choice.full-access': '完全权限',
+    'choice.minimal': '最小工具集',
+    'choice.ptc': '编程工具集',
+    'composer.agent.title': 'Agent：Agent Loop、组合包与权限预设',
+    'composer.agent.chip': 'Agent',
+    'composer.agent.default': '默认',
+    'composer.agent.unresolved': '无法解析默认值',
+    'composer.agent.source.admin': '来源：管理设置默认值',
+    'composer.agent.source.builtin': '来源：内置默认值',
+    'composer.agent.source.profile': '来源：配置组合',
+    'composer.agent.source.unknown': '默认来源暂不可用',
+    'composer.agent.bundles': '组合包',
+    'composer.agent.bundlesHint': '按选择顺序应用于新会话。',
+    'composer.agent.noBundles': '未选择组合包',
+    'composer.agent.preset': '权限预设',
+    'composer.agent.presetSource': '来源：管理设置默认值或配置预设',
+
     'composer.loop.select': '新会话的 Agent Loop',
     'composer.loop.inherited': '使用已配置的 Loop 默认值',
     'composer.loop.unavailable': '此 Loop 已不可用，请重新选择',

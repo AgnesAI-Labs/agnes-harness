@@ -13,7 +13,13 @@ export function createAntdRoot(container: Element | DocumentFragment): AntdRoot 
   const csp = nonce ? { nonce } : undefined
   return {
     render(children: ReactNode) {
-      root.render(createElement(ConfigProvider, csp ? { csp } : {}, children))
+      root.render(
+        createElement(
+          ConfigProvider,
+          { ...(csp ? { csp } : {}), button: { autoInsertSpace: false } },
+          children,
+        ),
+      )
     },
     unmount() {
       root.unmount()

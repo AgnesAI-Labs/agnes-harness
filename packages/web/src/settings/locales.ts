@@ -3,6 +3,16 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 export const SETTINGS_NAMESPACE = '@agnes/web/runtime-settings'
 export const settingsCatalog: LocaleCatalog = {
   en: {
+    choiceSource: 'Default source:',
+    choiceSourceUnknown: 'Default source unavailable',
+    'choice.agnes.default': 'Official default Agent',
+    'choice.standard': 'Standard permissions',
+    'choice.read-only': 'Read only',
+    'choice.workspace-write': 'Workspace changes',
+    'choice.full-access': 'Full access',
+    'choice.minimal': 'Minimal tools',
+    'choice.ptc': 'Programmatic tools',
+
     context: 'Context',
     contextHelp:
       'Repository rules refresh before every model request. Settings are owned by this installation.',
@@ -282,6 +292,16 @@ export const settingsCatalog: LocaleCatalog = {
     'cap.toolFilter': 'Tool filter',
   },
   'zh-CN': {
+    choiceSource: '默认来源：',
+    choiceSourceUnknown: '默认来源暂不可用',
+    'choice.agnes.default': '官方默认 Agent',
+    'choice.standard': '标准权限',
+    'choice.read-only': '只读',
+    'choice.workspace-write': '工作区内修改',
+    'choice.full-access': '完全权限',
+    'choice.minimal': '最小工具集',
+    'choice.ptc': '编程工具集',
+
     context: '上下文',
     contextHelp: '每次模型请求前刷新仓库规则。设置由当前安装维护。',
     contextFailed: '无法加载或保存上下文，请检查工作区与配置。',

@@ -54,6 +54,7 @@ export { Badge } from './ui/badge.js'
 export { Button, type ButtonProps } from './ui/button.js'
 export { Dialog, type DialogProps } from './ui/dialog.js'
 export { Field, type FieldProps } from './ui/field.js'
+export { Popover } from './ui/popover.js'
 export { Select, type SelectProps } from './ui/select.js'
 export {
   type StateLight,

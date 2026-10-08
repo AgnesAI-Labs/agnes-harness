@@ -6,11 +6,15 @@ import {
   isSessionDefaultsSnapshot,
   type SessionDefaultsSnapshot,
 } from '@agnes/protocol'
-import { Select } from '@agnes/web-ui'
-import { useSyncExternalStore } from 'react'
+import { Button, Field, Popover, Select, useUiText } from '@agnes/web-ui'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { tr as hostText } from './locale-bridge.js'
+import { composerLocaleCatalog } from './locales/composer.js'
+import { ChoiceLabel, choiceName, type ResolvedComposition, readComposition } from './settings/choices.js'
 
 export type LoopSelection = { id: string; version: string }
 export type NewSessionCatalog = SessionDefaultsSnapshot & {
+  composition?: ResolvedComposition
   loops: readonly AdminLoop[]
   modelAdapters: readonly AdminModelAdapter[]
 }
@@ -44,11 +48,25 @@ export async function loadNewSessionCatalog(fetcher: typeof fetch = fetch): Prom
     !adapters.modelAdapters.every(isAdminModelAdapter)
   )
     throw new Error('invalid adapter catalog')
-  return { ...snapshot, loops: value.loops, modelAdapters: adapters.modelAdapters }
+  let composition: ResolvedComposition | undefined
+  try {
+    const result = await fetcher('/admin/api/composition', { credentials: 'same-origin', cache: 'no-store' })
+    if (result.ok) composition = readComposition(await result.json())
+  } catch {
+    /* Catalogs remain usable when provenance is unavailable. */
+  }
+  return {
+    ...snapshot,
+    loops: value.loops,
+    modelAdapters: adapters.modelAdapters,
+    ...(composition ? { composition } : {}),
+  }
 }
 
 export interface LoopPickerView {
   visible: boolean
+  resolvedLoop?: LoopSelection | undefined
+  loopSource?: { layer: string; name: string } | undefined
   disabled: boolean
   loops: readonly AdminLoop[]
   selected?: LoopSelection
@@ -88,82 +106,154 @@ const subscribe = (listener: () => void) => {
   }
 }
 
-/** The host places this in the existing composer left slot beside its model picker. */
+/** One composer chip; the popover keeps composition controls out of the writing surface. */
 export function LoopPicker() {
+  const { t: fallback } = useUiText('@agnes/web/composer', composerLocaleCatalog)
+  const tr = (key: string) => {
+    const value = hostText(key)
+    return value === key ? fallback(key) : value
+  }
   const state = useSyncExternalStore(subscribe, () => view)
+  const [open, setOpen] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!state.visible || state.disabled) setOpen(false)
+  }, [state.visible, state.disabled])
+  useEffect(() => {
+    if (!open) return
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false)
+        trigger.current?.focus()
+      }
+    }
+    document.addEventListener('keydown', onEscape)
+    return () => document.removeEventListener('keydown', onEscape)
+  }, [open])
   if (!state.visible) return null
   const selected = state.selected ? loopIdentity(state.selected) : ''
   const stale = !!state.selected && !state.loops.some((entry) => loopIdentity(entry) === selected)
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-        gap: '0.375rem',
-        maxWidth: '100%',
-      }}
+  const resolved = state.resolvedLoop ?? state.loops[0]
+  const inheritedLoop =
+    state.loops.find((entry) => resolved && loopIdentity(entry) === loopIdentity(resolved)) ?? resolved
+  const active = state.loops.find((entry) => loopIdentity(entry) === selected) ?? inheritedLoop
+  const sourceKey =
+    state.loopSource?.layer === 'admin'
+      ? 'admin'
+      : state.loopSource?.layer === 'default'
+        ? 'builtin'
+        : state.loopSource
+          ? 'profile'
+          : 'unknown'
+  const origin = `${tr(`composer.agent.source.${sourceKey}`)}${state.loopSource && sourceKey === 'profile' ? ` · ${state.loopSource.layer}: ${state.loopSource.name}` : ''}`
+  const defaultText = inheritedLoop
+    ? `${tr('composer.agent.default')} (${choiceName(inheritedLoop, tr)} · ${inheritedLoop.id} ${inheritedLoop.version})`
+    : tr('composer.agent.unresolved')
+  const content = (
+    <section
+      className="agent-picker-panel"
+      data-testid="agent-options"
+      aria-label={tr('composer.agent.title')}
     >
-      {state.bundles && state.bundles.length > 0 && (
-        <Select<string[]>
-          mode="multiple"
-          aria-label={state.bundlesLabel}
-          data-testid="new-session-bundles"
-          disabled={state.disabled}
-          value={[...(state.selectedBundles ?? [])]}
-          placeholder={state.bundlesLabel}
-          style={{ minWidth: 190, maxWidth: 280 }}
-          options={state.bundles.map(({ id, sourcePackage }) => ({
-            value: id,
-            label: id,
-            title: sourcePackage,
-          }))}
-          onChange={(bundles) => state.onBundles?.(bundles)}
-        />
-      )}
+      <Field label={state.label} hint={origin}>
+        {state.loops.length === 1 && !stale ? (
+          <div data-testid="new-session-loop-readonly" title={`${defaultText} · ${origin}`}>
+            <ChoiceLabel entry={active ?? { id: '', version: '' }} t={tr} />
+          </div>
+        ) : (
+          <Select<string>
+            data-testid="new-session-loop"
+            aria-label={state.label}
+            aria-invalid={stale || !!state.error}
+            disabled={state.disabled}
+            value={selected}
+            className="agent-picker-select"
+            options={[
+              { value: '', label: defaultText, title: origin },
+              ...state.loops.map((entry) => ({
+                value: loopIdentity(entry),
+                label: <ChoiceLabel entry={entry} t={tr} />,
+              })),
+              ...(stale && state.selected
+                ? [{ value: selected, label: <ChoiceLabel entry={state.selected} t={tr} />, disabled: true }]
+                : []),
+            ]}
+            onChange={(value) => state.onSelect(state.loops.find((entry) => loopIdentity(entry) === value))}
+          />
+        )}
+      </Field>
+      <Field
+        label={state.bundlesLabel ?? tr('composer.agent.bundles')}
+        hint={tr('composer.agent.bundlesHint')}
+      >
+        {state.bundles?.length ? (
+          <Select<string[]>
+            mode="multiple"
+            aria-label={state.bundlesLabel}
+            data-testid="new-session-bundles"
+            disabled={state.disabled}
+            value={[...(state.selectedBundles ?? [])]}
+            placeholder={tr('composer.agent.noBundles')}
+            className="agent-picker-select"
+            options={state.bundles.map((entry) => ({
+              value: entry.id,
+              label: choiceName(entry, tr),
+              title: entry.sourcePackage,
+            }))}
+            onChange={(bundles) => state.onBundles?.(bundles)}
+          />
+        ) : (
+          <p className="field-hint">{tr('composer.agent.noBundles')}</p>
+        )}
+      </Field>
       {state.presets && (
-        <Select<string>
-          aria-label={state.presetLabel}
-          data-testid="new-session-preset"
-          disabled={state.disabled}
-          value={state.preset ?? ''}
-          style={{ minWidth: 150, maxWidth: 240 }}
-          options={[
-            {
-              value: '',
-              label: state.inheritedPreset
-                ? `${state.inherited} · ${state.inheritedPreset}`
-                : state.inherited,
-            },
-            ...state.presets.map(({ id }) => ({ value: id, label: id })),
-          ]}
-          onChange={(preset) => state.onPreset?.(preset || undefined)}
-        />
+        <Field label={tr('composer.agent.preset')}>
+          <Select<string>
+            aria-label={tr('composer.agent.preset')}
+            data-testid="new-session-preset"
+            disabled={state.disabled}
+            value={state.preset ?? ''}
+            className="agent-picker-select"
+            options={[
+              {
+                value: '',
+                label: `${tr('composer.agent.default')} (${state.inheritedPreset ? choiceName({ id: state.inheritedPreset }, tr) : tr('composer.agent.unresolved')})`,
+                title: tr('composer.agent.presetSource'),
+              },
+              ...state.presets.map((entry) => ({
+                value: entry.id,
+                label: <ChoiceLabel entry={entry} t={tr} />,
+              })),
+            ]}
+            onChange={(preset) => state.onPreset?.(preset || undefined)}
+          />
+        </Field>
       )}
-      <Select<string>
-        aria-label={state.label}
-        aria-invalid={stale || !!state.error}
-        aria-describedby={state.error || stale ? 'new-session-loop-error' : undefined}
-        disabled={state.disabled}
-        value={selected}
-        style={{ minWidth: 170, maxWidth: 280 }}
-        options={[
-          { value: '', label: state.inherited },
-          ...state.loops.map((entry) => ({
-            value: loopIdentity(entry),
-            label: `${entry.label ?? entry.id} · ${entry.version}`,
-          })),
-          ...(stale && state.selected
-            ? [{ value: selected, label: `${state.selected.id} · ${state.selected.version}`, disabled: true }]
-            : []),
-        ]}
-        onChange={(value) => state.onSelect(state.loops.find((entry) => loopIdentity(entry) === value))}
-      />
-      {state.error || stale ? (
-        <span id="new-session-loop-error" role="status" style={{ color: 'var(--agnes-status-danger-text)' }}>
+      {(state.error || stale) && (
+        <p id="new-session-loop-error" role="status" className="resource-safe-error">
           {state.error ?? state.unavailable}
+        </p>
+      )}
+    </section>
+  )
+  return (
+    <Popover open={open} onOpenChange={setOpen} trigger="click" placement="topLeft" content={content}>
+      <Button
+        ref={trigger}
+        type="text"
+        className="composer-agent"
+        data-testid="composer-agent"
+        disabled={state.disabled}
+        aria-expanded={open}
+        aria-label={tr('composer.agent.title')}
+        aria-describedby={stale || state.error ? 'new-session-loop-error' : undefined}
+      >
+        <span>{tr('composer.agent.chip')}</span>
+        <span className="agent-chip-value">
+          {active ? choiceName(active, tr) : tr('composer.agent.unresolved')}
         </span>
-      ) : null}
-    </span>
+        <span aria-hidden="true">⌄</span>
+      </Button>
+    </Popover>
   )
 }

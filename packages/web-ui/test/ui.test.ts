@@ -3,7 +3,11 @@ import { createElement, type ReactElement } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 
 type UiModule = {
-  Button: (props: { children?: ReactElement | string; type?: string }) => ReactElement
+  Button: (props: {
+    children?: ReactElement | string
+    type?: string
+    ref?: { current: HTMLButtonElement | null }
+  }) => ReactElement
   Field: (props: { label: string; children: ReactElement }) => ReactElement
   mountRegion(host: HTMLElement, element: ReactElement): () => void
   unmountRegion(host: HTMLElement): void
@@ -48,7 +52,12 @@ describe('web-ui public component layer', () => {
   it('exports host primitives without exposing antd to consumers', async () => {
     const ui = (await import('../src/index.js')) as unknown as UiModule
 
-    expect(ui.Button).toBeTypeOf('function')
+    const reference = { current: null as HTMLButtonElement | null }
+    const host = document.createElement('div')
+    const dispose = ui.mountRegion(host, createElement(ui.Button, { ref: reference }, '插件'))
+    expect(host.querySelector('button')?.textContent).toBe('插件')
+    expect(reference.current).toBe(host.querySelector('button'))
+    dispose()
     expect(ui.Field).toBeTypeOf('function')
   })
 })

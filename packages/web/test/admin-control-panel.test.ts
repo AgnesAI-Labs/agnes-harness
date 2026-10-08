@@ -154,6 +154,12 @@ it('loads catalog choices and saves their exact identities and revision', async 
         ...snapshot,
       })
     if (String(url).endsWith('/model-adapters')) return Response.json({ modelAdapters: [adapter] })
+    if (String(url).endsWith('/composition'))
+      return Response.json({
+        selection: { loop },
+        sources: { loop: { layer: 'profile', name: 'test' } },
+        preset: 'workspace-write',
+      })
     expect(init?.method).toBe('PUT')
     return Response.json({ ...snapshot, revision: 5 })
   })
@@ -168,7 +174,8 @@ it('loads catalog choices and saves their exact identities and revision', async 
   )
   const host = await mount(createElement(SessionDefaultsPanel, { api, canSave: true, t }))
   expect(host.textContent).toContain('Defaults for new sessions')
-  expect(host.querySelectorAll('[role="combobox"]')).toHaveLength(4)
+  expect(host.querySelectorAll('[role="combobox"]')).toHaveLength(3)
+  expect(host.querySelector('[data-testid="admin-default-loop-readonly"]')?.textContent).toContain('workflow')
   expect(host.querySelector('[aria-label="Permission preset"]')).not.toBeNull()
   expect(host.textContent).toContain('read-only')
   await act(async () =>
@@ -367,11 +374,11 @@ it('places ordered bundle and preset choices beside the loop only for a new sess
     }),
   )
   const host = await mount(createElement(LoopPicker))
-  expect(host.querySelectorAll('[role="combobox"]')).toHaveLength(3)
-  expect(host.querySelector('[data-testid="new-session-preset"]')?.textContent).toContain(
-    'Inherit · read-only',
-  )
-  expect(host.querySelector('[data-testid="new-session-bundles"]')?.textContent).toContain('acme#report')
+  expect(host.querySelectorAll('[role="combobox"]')).toHaveLength(0)
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="composer-agent"]')?.click())
+  expect(document.querySelectorAll('[role="combobox"]')).toHaveLength(3)
+  expect(document.querySelector('[data-testid="new-session-preset"]')?.textContent).toContain('Read only')
+  expect(document.querySelector('[data-testid="new-session-bundles"]')?.textContent).toContain('acme#report')
   await act(async () =>
     updateLoopPicker({
       visible: false,

@@ -42,10 +42,14 @@ it('loads exact new-session defaults and renders the selected/stale Loop accessi
       updateLoopPicker(view)
       root.render(createElement(LoopPicker))
     })
-    expect(host.textContent).toContain('workflow · 1.2.0')
-    expect(host.querySelector('[role="combobox"]')?.getAttribute('aria-label')).toBe(view.label)
+    expect(host.textContent).toContain('workflow')
+    expect(host.querySelector('[role="combobox"]')).toBeNull()
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="composer-agent"]')?.click())
+    expect(document.querySelector('[data-testid="new-session-loop-readonly"]')?.textContent).toContain(
+      'workflow',
+    )
     await act(async () => updateLoopPicker({ ...view, loops: [] }))
-    expect(host.querySelector('[role="status"]')?.textContent).toBe(view.unavailable)
+    expect(document.querySelector('[role="status"]')?.textContent).toBe(view.unavailable)
     await expect(
       loadNewSessionCatalog(
         vi.fn(async () => Response.json({ loops: [{ id: 'bad' }], revision: 0, defaults: {} })),

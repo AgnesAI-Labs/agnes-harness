@@ -10,6 +10,7 @@ import { pluginFailureHelp } from '@agnes/protocol'
 import { Badge, Button, Field, Select, type StateTone, useUiText } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
+import { ChoiceLabel, choiceName, type ResolvedComposition, readComposition } from '../../settings/choices.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from '../../settings/locales.js'
 import { SessionToolsPanel } from '../../settings/session-tools.js'
 import type { PluginAdminApi } from './api.js'
@@ -122,6 +123,8 @@ export function SessionDefaultsPanel({
   canSave: boolean
   t: Text
 }) {
+  const { t: choiceText } = useUiText(SETTINGS_NAMESPACE, settingsCatalog)
+  const [composition, setComposition] = useState<ResolvedComposition>()
   const [catalog, setCatalog] = useState<{
     loops: readonly AdminLoop[]
     presets: readonly string[]
@@ -147,8 +150,9 @@ export function SessionDefaultsPanel({
         current = false
       }
     setBusy(true)
-    Promise.all([api.loops(), api.modelAdapters()])
-      .then(([loops, adapters]) => {
+    Promise.all([api.loops(), api.modelAdapters(), api.composition().catch(() => undefined)])
+      .then(([loops, adapters, resolved]) => {
+        if (current) setComposition(readComposition(resolved))
         if (!current) return
         setCatalog({
           presets: loops.presets ?? [],
@@ -244,7 +248,10 @@ export function SessionDefaultsPanel({
                 disabled={busy || !canSave}
                 onChange={setPreset}
                 options={[
-                  { value: '', label: t('defaults.configured') },
+                  {
+                    value: '',
+                    label: `${t('defaults.configured')} (${composition?.preset ? choiceName({ id: composition.preset }, choiceText) : choiceText('choiceSourceUnknown')})`,
+                  },
                   ...(preset && !catalog.presets.includes(preset)
                     ? [
                         {
@@ -254,32 +261,59 @@ export function SessionDefaultsPanel({
                         },
                       ]
                     : []),
-                  ...catalog.presets.map((value) => ({ value, label: value })),
+                  ...catalog.presets.map((value) => ({
+                    value,
+                    label: <ChoiceLabel entry={{ id: value }} t={choiceText} />,
+                  })),
                 ]}
               />
             </Field>
           )}
-          <Field label={t('defaults.loop')} style={{ display: 'grid', gap: '0.375rem' }}>
-            <Select<string>
-              aria-label={t('defaults.loop')}
-              value={loop}
-              disabled={busy || !canSave}
-              style={{ width: '100%', maxWidth: 480 }}
-              onChange={setLoop}
-              options={[
-                { value: '', label: t('defaults.configured') },
-                ...(loop && !selectedLoop && catalog.snapshot.defaults.loop
-                  ? [
-                      {
-                        value: loop,
-                        label: `${label(catalog.snapshot.defaults.loop)} · ${t('defaults.unavailable-choice')}`,
-                        disabled: true,
-                      },
-                    ]
-                  : []),
-                ...catalog.loops.map((entry) => ({ value: identity(entry), label: label(entry) })),
-              ]}
-            />
+          <Field
+            label={t('defaults.loop')}
+            hint={
+              composition
+                ? `${choiceText('choiceSource')} ${composition.source.layer} · ${composition.source.name}`
+                : choiceText('choiceSourceUnknown')
+            }
+          >
+            {catalog.loops.length === 1 && !stale ? (
+              <div data-testid="admin-default-loop-readonly">
+                <ChoiceLabel entry={catalog.loops[0] ?? { id: '', version: '' }} t={choiceText} />
+              </div>
+            ) : (
+              <Select<string>
+                aria-label={t('defaults.loop')}
+                value={loop}
+                disabled={busy || !canSave}
+                className="agent-picker-select"
+                onChange={setLoop}
+                options={[
+                  {
+                    value: '',
+                    label: composition
+                      ? `${t('defaults.configured')} (${choiceName(catalog.loops.find((entry) => identity(entry) === identity(composition.loop)) ?? composition.loop, choiceText)} · ${composition.loop.id} ${composition.loop.version})`
+                      : t('defaults.configured'),
+                    title: composition
+                      ? `${composition.source.layer} · ${composition.source.name}`
+                      : choiceText('choiceSourceUnknown'),
+                  },
+                  ...(loop && !selectedLoop && catalog.snapshot.defaults.loop
+                    ? [
+                        {
+                          value: loop,
+                          label: `${label(catalog.snapshot.defaults.loop)} · ${t('defaults.unavailable-choice')}`,
+                          disabled: true,
+                        },
+                      ]
+                    : []),
+                  ...catalog.loops.map((entry) => ({
+                    value: identity(entry),
+                    label: <ChoiceLabel entry={entry} t={choiceText} />,
+                  })),
+                ]}
+              />
+            )}
           </Field>
           {selectedLoop && (
             <p>
@@ -543,7 +577,10 @@ export function BundlesPanel({
           onChange={(value) => setDumpPreset(value || undefined)}
           options={[
             { value: '', label: t('defaults.configured') },
-            ...presets.map(({ id }) => ({ value: id, label: id })),
+            ...presets.map((entry) => ({
+              value: entry.id,
+              label: <ChoiceLabel entry={entry} t={settingsText} />,
+            })),
           ]}
         />
       </Field>

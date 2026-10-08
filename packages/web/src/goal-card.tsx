@@ -1,6 +1,6 @@
 import type { UITimeline } from '@agnes/protocol'
 import type { GoalSnapshot, StatusLinePayload } from '@agnes/protocol/gen/slots'
-import { renderRegion } from '@agnes/web-ui'
+import { Button, Field, renderRegion } from '@agnes/web-ui'
 import { useState } from 'react'
 import { tr } from './locale-bridge.js'
 
@@ -31,7 +31,7 @@ export function GoalCard({
   const action = (op: string) => onCommand(`/goal ${op}`)
   return (
     <section className="goal-card" data-testid="goal-bar" aria-label={tr('goal.title')}>
-      <button type="button" data-testid="goal-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <Button htmlType="button" data-testid="goal-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
         {goal
           ? tr(`goal.state.${goal.phase}`) +
             ' · ' +
@@ -41,7 +41,7 @@ export function GoalCard({
             ' · ' +
             goal.objective
           : tr('goal.create')}
-      </button>
+      </Button>
       {goal?.reason && (
         <p role="status" data-testid="goal-reason">
           {goal.reason}
@@ -65,8 +65,7 @@ export function GoalCard({
               )
             }}
           >
-            <label>
-              {tr('goal.objective')}
+            <Field label={tr('goal.objective')}>
               <textarea
                 data-testid="goal-objective"
                 value={objective}
@@ -75,9 +74,8 @@ export function GoalCard({
                 disabled={disabled}
                 onChange={(event) => setObjective(event.target.value)}
               />
-            </label>
-            <label>
-              {tr('goal.rounds')}
+            </Field>
+            <Field label={tr('goal.rounds')}>
               <input
                 data-testid="goal-max-rounds"
                 type="number"
@@ -88,9 +86,8 @@ export function GoalCard({
                 value={rounds}
                 onChange={(event) => setRounds(Number(event.target.value))}
               />
-            </label>
-            <label>
-              {tr('goal.budget')}
+            </Field>
+            <Field label={tr('goal.budget')}>
               <input
                 data-testid="goal-budget"
                 type="number"
@@ -100,51 +97,51 @@ export function GoalCard({
                 value={budget}
                 onChange={(event) => setBudget(event.target.value)}
               />
-            </label>
-            <button type="submit" disabled={disabled} data-testid="goal-save">
+            </Field>
+            <Button htmlType="submit" type="primary" disabled={disabled} data-testid="goal-save">
               {tr(goal ? 'goal.edit' : 'goal.create')}
-            </button>
+            </Button>
           </form>
           {goal && (
             <div className="goal-actions">
               {goal.phase === 'active' && (
-                <button
-                  type="button"
+                <Button
+                  htmlType="button"
                   disabled={disabled}
                   data-testid="goal-pause"
                   onClick={() => action('pause')}
                 >
                   {tr('goal.pause')}
-                </button>
+                </Button>
               )}
               {(goal.phase === 'paused' || goal.phase === 'blocked') && (
-                <button
-                  type="button"
+                <Button
+                  htmlType="button"
                   disabled={disabled}
                   data-testid="goal-resume"
                   onClick={() => action('resume')}
                 >
                   {tr('goal.resume')}
-                </button>
+                </Button>
               )}
               {goal.phase !== 'complete' && (
-                <button
-                  type="button"
+                <Button
+                  htmlType="button"
                   disabled={disabled}
                   data-testid="goal-complete"
                   onClick={() => action('complete')}
                 >
                   {tr('goal.complete')}
-                </button>
+                </Button>
               )}
-              <button
-                type="button"
+              <Button
+                htmlType="button"
                 disabled={disabled}
                 data-testid="goal-clear"
                 onClick={() => action('clear')}
               >
                 {tr('goal.clear')}
-              </button>
+              </Button>
             </div>
           )}
           {goal && (
@@ -165,6 +162,11 @@ export function renderGoalCard(
   disabled: boolean,
   onCommand: (command: string) => void,
 ) {
+  host.hidden = !timeline?.sessionId
+  if (!timeline?.sessionId) {
+    renderRegion(host, null)
+    return
+  }
   const slot = goalSlot(timeline)
   renderRegion(
     host,

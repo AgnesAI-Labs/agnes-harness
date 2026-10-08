@@ -6744,7 +6744,9 @@ body.admin-page {
   text-overflow: ellipsis;
 }
 /* One rail owns settings navigation in the workbench. */
-.settings-rail .settings-nav-label { display: block; }
+.settings-rail .settings-nav-label {
+  display: block;
+}
 .settings-rail {
   overflow-y: auto;
   scrollbar-width: thin;
@@ -6787,6 +6789,79 @@ body.admin-page {
   margin-bottom: 1rem;
 }
 @media (max-width: 640px) {
-  .runtime-settings:has(> nav) { flex-direction: column; gap: 1rem; }
-  .runtime-settings > nav { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .runtime-settings:has(> nav) {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .runtime-settings > nav {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Agent picker matches the existing workspace, permissions and model chips. */
+.composer-agent.agnes-ui-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 2rem;
+  padding: 0 0.5rem;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+  box-shadow: none;
+}
+.agent-chip-value {
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-picker-panel {
+  width: min(22rem, calc(100vw - 3rem));
+  display: grid;
+  gap: 1rem;
+}
+.agent-picker-panel .agnes-ui-field {
+  display: grid;
+  gap: 0.375rem;
+}
+.agent-picker-select {
+  width: 100%;
+}
+.agent-choice {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  align-items: baseline;
+}
+.agent-choice small {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+.session-goal-host {
+  width: min(100%, var(--chat-content-width, 48rem));
+  margin-inline: auto;
+}
+.goal-card {
+  margin: 0.5rem 1rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-card);
+  background: var(--agnes-bg-surface);
+}
+.goal-card > .agnes-ui-button {
+  width: auto;
+  max-width: 100%;
+}
+.goal-card form {
+  display: grid;
+  gap: 0.75rem;
+  padding-block: 0.75rem;
+}
+.goal-card .agnes-ui-field {
+  display: grid;
+  gap: 0.375rem;
 }

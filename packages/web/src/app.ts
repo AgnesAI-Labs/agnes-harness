@@ -116,6 +116,7 @@ const savedComposerDraft = sessionStorage.getItem(composerDraftKey)
 const notice = element('notice', 'p')
 const conversation = element('conversation-shell', 'div')
 const goalHost = document.createElement('div')
+goalHost.className = 'session-goal-host'
 conversation.before(goalHost)
 const newSessionDialog = element('new-session', 'dialog')
 const newSessionError = element('new-session-error', 'p')
@@ -862,6 +863,10 @@ function renderControls(): void {
     visible: draftingNew,
     disabled: !connected || sending || sessionPending || loopCatalogPending,
     loops: newSessionCatalog?.loops ?? [],
+    resolvedLoop: newSessionCatalog?.defaults.loop ?? newSessionCatalog?.composition?.loop,
+    loopSource: newSessionCatalog?.defaults.loop
+      ? { layer: 'admin', name: 'session-defaults' }
+      : newSessionCatalog?.composition?.source,
     ...(draftLoop ? { selected: draftLoop } : {}),
     ...(loopCatalogError ? { error: t('composer.loop.loadFailed') } : {}),
     label: t('composer.loop.select'),
