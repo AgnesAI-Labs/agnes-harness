@@ -40,11 +40,14 @@ it('loads directories lazily, previews text and mentions a relative path without
   })
   const mention = vi.fn()
   const host = document.createElement('div')
-  document.body.append(host)
+  const header = document.createElement('div')
+  header.id = 'test-header'
+  document.body.append(header, host)
   try {
     renderRegion(
       host,
       <FilesPanel
+        headerId="test-header"
         context={{
           t: createCatalogTranslator(workbenchLocaleCatalog, 'en'),
           data: { session, disabled: false, mention },
@@ -63,9 +66,15 @@ it('loads directories lazily, previews text and mentions a relative path without
     flushSync(removeAction)
     expect(host.querySelector('output')).toBeNull()
     expect(host.querySelector('textarea')).toBeNull()
+    expect(header.querySelector('button')?.getAttribute('aria-label')).toBe('Refresh workspace files')
+    expect(header.querySelector('button')?.textContent).toBe('')
+    expect(host.querySelector('.workbench-files-footer summary')?.textContent).toBe('File visibility rules')
+    expect(host.querySelector('.workbench-file-preview summary')?.textContent).not.toContain('2026-10-08T')
+    expect(host.querySelector('time')?.dateTime).toBe('2026-10-08T00:00:00Z')
   } finally {
     removeAction()
     unmountRegion(host)
     host.remove()
+    header.remove()
   }
 })

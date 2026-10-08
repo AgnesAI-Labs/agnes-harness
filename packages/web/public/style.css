@@ -7084,15 +7084,66 @@ body.admin-page {
 }
 .workbench-file-tree {
   list-style: none;
-  padding: 0 0 0 0.6rem;
+  padding: 0;
   margin: 0;
 }
-.workbench-file-entry {
+.workbench-file-tree .workbench-file-tree {
+  padding-left: 1rem;
+}
+.workbench-tree-scroll > .workbench-file-tree {
+  padding: 0.4rem;
+}
+.workbench-file-entry.agnes-ui-button {
   width: 100%;
   text-align: left;
   display: flex;
   gap: 0.35rem;
   justify-content: flex-start;
+  padding-inline: 0.3rem;
+}
+.workbench-file-chevron {
+  width: 0.65rem;
+  flex: 0 0 0.65rem;
+}
+.workbench-file-icon {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+}
+.workbench-header-actions {
+  display: flex;
+  margin-left: auto;
+}
+.workbench-files-previewing .workbench-tree-scroll {
+  flex: 0 1 28%;
+}
+.workbench-files-previewing .workbench-file-preview {
+  flex: 1 1 65%;
+}
+.workbench-files-footer {
+  flex: 0 0 auto;
+  padding: 0.5rem 0.75rem;
+  border-top: 1px solid var(--agnes-line-primary);
+  font-size: var(--font-size-xs);
+  color: var(--agnes-text-secondary);
+}
+.workbench-files-footer p {
+  margin: 0.4rem 0 0;
+}
+.workbench-file-preview > details {
+  margin: 0 0.75rem 0.5rem;
+  font-size: var(--font-size-xs);
+  color: var(--agnes-text-secondary);
+  overflow-wrap: anywhere;
+}
+@media (min-width: 1280px) {
+  main:has(.workbench-right-open) > #composer-mount,
+  main:has(.workbench-right-open) > #approval {
+    width: calc(100% - var(--workbench-width, 320px));
+  }
 }
 .workbench-file-name {
   overflow: hidden;

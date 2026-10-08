@@ -12,7 +12,7 @@ const dispose = workbenchPanels.register({
 })
 ```
 
-The component receives `{ context }`: a translator, optional session/resources and host-specific `data`. Bind the identity-bound disposer to the module lifetime. IDs must be unique and order finite. `edge` is `right` or `bottom`. The shell owns tabs, keyboard navigation, collapse and size memory. Removing the selected registration falls back to the first remaining panel. Use `@agnes/web-ui` primitives and both English and Chinese catalogs.
+The component receives `{ context, headerId? }`. The optional `headerId` identifies a presentation-only dock header action host; panels may portal their icon buttons there. `context` supplies a translator, optional session/resources and host-specific `data`. Bind the identity-bound disposer to the module lifetime. IDs must be unique and order finite. `edge` is `right` or `bottom`. The shell owns tabs, keyboard navigation, collapse and size memory. Removing the selected registration falls back to the first remaining panel. Use `@agnes/web-ui` primitives and both English and Chinese catalogs.
 
 Registration grants no filesystem, process or goal permissions. Use supported session APIs on the authenticated host client. The built-in file panel uses `Session.workspaceList(path?)` and `Session.workspaceRead(path)`; paths are workspace-relative. Listing is lazy and honors `.gitignore`/`.aghignore` (wildcards, directory rules and negation). Preview is read-only, capped at 1 MiB and refuses binary files, symlinks and the installation home. Git status badges are best effort. Mention adds a quoted relative path to the composer without submitting it.
 

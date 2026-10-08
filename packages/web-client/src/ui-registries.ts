@@ -35,7 +35,8 @@ export type WorkbenchPanel = Readonly<{
   order: number
   edge: 'right' | 'bottom'
   titleKey: string
-  component: ComponentType<{ context: UiExtensionContext }>
+  /** Optional presentation-only destination for panel header actions. */
+  component: ComponentType<{ context: UiExtensionContext; headerId?: string }>
 }>
 
 /** Registration returns an identity-bound disposer suitable for a client module's effect scope. */

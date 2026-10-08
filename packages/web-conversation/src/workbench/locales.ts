@@ -48,7 +48,7 @@ export const workbenchLocaleCatalog: LocaleCatalog = {
     'workbench.files.scope': '文件可见性规则',
     'workbench.files.ignore':
       '查看器支持父目录 .gitignore 与 .aghignore 的注释、*、?、**、目录规则和按顺序生效的 ! 规则。不支持转义、字符组或 Git 全局排除规则。已隐藏的父目录无法重新包含。',
-    'workbench.files.freshness': '读取时间：{time}',
+    'workbench.files.freshness': '读取于 {time}',
     'workbench.git.unavailable': 'Git 状态暂不可用，文件可能已更改。',
     'workbench.git.modified': '已修改',
     'workbench.git.added': '已添加',

@@ -58,6 +58,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     split.classList.toggle('workbench-right-open', layout.rightOpen)
     split.classList.toggle('workbench-bottom-open', layout.bottomOpen)
     split.style.setProperty('--workbench-width', `${layout.rightWidth}px`)
+    split.parentElement?.style.setProperty('--workbench-width', `${layout.rightWidth}px`)
     split.style.setProperty('--workbench-height', `${layout.bottomHeight}px`)
     for (const edge of edges) {
       const host = surfaces[edge]
@@ -226,6 +227,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                         </Button>
                       ))}
                     </div>
+                    <div id={`workbench-header-actions-${edge}`} className="workbench-header-actions" />
                     <Button
                       type="text"
                       size="small"
@@ -241,7 +243,13 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                     aria-labelledby={active ? `workbench-tab-${active.id}` : undefined}
                     className="workbench-panel-content"
                   >
-                    {Component && open && <Component key={active.id} context={context} />}
+                    {Component && open && (
+                      <Component
+                        key={active.id}
+                        context={context}
+                        headerId={`workbench-header-actions-${edge}`}
+                      />
+                    )}
                   </div>
                 </div>,
                 host,

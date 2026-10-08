@@ -12,7 +12,7 @@ const dispose = workbenchPanels.register({
 })
 ```
 
-组件收到 `{ context }`：翻译函数、可选会话/资源服务以及宿主专用 `data`。将身份绑定的注销函数纳入模块生命周期。ID 必须唯一，排序值必须有限。`edge` 可为 `right` 或 `bottom`。壳负责页签、键盘导航、折叠和尺寸记忆。所选注册被移除时回退到剩余的首个面板。使用 `@agnes/web-ui` 原语并提供完整的中英文文案。
+组件收到 `{ context, headerId? }`。可选 `headerId` 指向仅用于展示的停靠面板标题栏操作容器，面板可把图标按钮通过 portal 放入其中。`context` 提供翻译函数、可选会话/资源服务以及宿主专用 `data`。将身份绑定的注销函数纳入模块生命周期。ID 必须唯一，排序值必须有限。`edge` 可为 `right` 或 `bottom`。壳负责页签、键盘导航、折叠和尺寸记忆。所选注册被移除时回退到剩余的首个面板。使用 `@agnes/web-ui` 原语并提供完整的中英文文案。
 
 注册面板不会授予文件、进程或目标权限。通过已认证宿主客户端的受支持会话 API 操作。内置文件面板使用 `Session.workspaceList(path?)` 和 `Session.workspaceRead(path)`，路径均相对工作区。目录懒加载并遵守 `.gitignore`/`.aghignore`（通配符、目录规则与否定规则）。预览只读，上限为 1 MiB，拒绝二进制文件、符号链接和安装目录。Git 状态标记按可用情况显示。引用只向输入框添加带引号的相对路径，不提交提示词。
 

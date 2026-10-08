@@ -55,6 +55,33 @@ test('workspace dock previews and mentions a file that the agent reads', async (
           await page.getByTestId('workspace-file').filter({ hasText: 'report.md' }).click()
           await expect(page.getByTestId('file-preview')).toContainText('Synthetic delivery')
           await settled(page)
+          const geometry = await page.evaluate(() => {
+            const rect = (selector: string) => {
+              const element = document.querySelector(selector)
+              if (!element) throw new Error(`Missing layout surface: ${selector}`)
+              return element.getBoundingClientRect().toJSON() as {
+                left: number
+                right: number
+                height: number
+              }
+            }
+            return {
+              dock: rect('#workbench-right'),
+              composer: rect('#composer'),
+              conversation: rect('#conversation-shell'),
+              tree: rect('.workbench-tree-scroll'),
+              preview: rect('.workbench-file-preview'),
+              entry: rect('[data-path="report.md"]'),
+              name: rect('[data-path="report.md"] .workbench-file-name'),
+            }
+          })
+          expect(geometry.composer.right).toBeLessThanOrEqual(geometry.dock.left)
+          expect(geometry.conversation.right).toBeLessThanOrEqual(geometry.dock.left)
+          expect(geometry.name.left - geometry.entry.left).toBeLessThan(50)
+          expect(geometry.preview.height).toBeGreaterThan(geometry.tree.height)
+          await expect(page.locator('.workbench-dock-heading button[aria-busy]')).toBeVisible()
+          await expect(page.locator('.workbench-files-footer details')).toBeVisible()
+          await expect(page.locator('.workbench-file-preview summary')).not.toContainText(/T\d{2}:/)
           await page.screenshot({ path: join(folder, `p1-${locale}-${theme}-${width}-after.png`) })
           await page.getByTestId('workbench-right-toggle').click()
           await page.screenshot({ path: join(folder, `p1-${locale}-${theme}-${width}-before.png`) })
