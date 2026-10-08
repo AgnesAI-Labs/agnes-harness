@@ -368,7 +368,10 @@ describe('settings controller', () => {
     expect((reported as Error).message).toBe('provider rejected [redacted]')
   })
 
-  it('translates known configuration reasons into an actionable settings error', async () => {
+  it.each([
+    ['CONFIG_REVISION_CONFLICT', '配置已被其他客户端修改，请重新打开设置后再试。'],
+    ['CONFIG_CREDENTIAL_REJECTED', 'Provider 拒绝了 API key 或其访问权限。请检查密钥与账号权限后重试。'],
+  ])('translates %s into an actionable settings error', async (reason, message) => {
     installDom()
     const onError = vi.fn()
     const settings = createSettingsController({
@@ -376,7 +379,7 @@ describe('settings controller', () => {
         test: async () => {
           throw {
             code: -32011,
-            data: { code: 'SEMANTIC_REJECTED', reason: 'CONFIG_REVISION_CONFLICT' },
+            data: { code: 'SEMANTIC_REJECTED', reason },
           }
         },
       }),
@@ -387,10 +390,10 @@ describe('settings controller', () => {
     node('config-test').dispatch('click')
     await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce())
 
-    expect(node('config-error').textContent).toBe('配置已被其他客户端修改，请重新打开设置后再试。')
+    expect(node('config-error').textContent).toBe(message)
     const reported = onError.mock.calls[0]?.[0]
     expect(reported).toBeInstanceOf(Error)
-    expect((reported as Error).message).toBe('配置已被其他客户端修改，请重新打开设置后再试。')
+    expect((reported as Error).message).toBe(message)
   })
 
   it('submits the provider default explicitly when replacing a saved custom endpoint', async () => {

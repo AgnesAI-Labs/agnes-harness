@@ -12,6 +12,8 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'settings.config.endpointUnsupported':
       'This provider does not support a custom base URL; restore the default address.',
     'settings.config.credentialRequired': 'An API key is required. Enter the key and retry.',
+    'settings.config.credentialRejected':
+      'The provider rejected the API key or its access. Check the key and account permissions, then retry.',
     'settings.config.credentialStore':
       'The local credential store is unavailable. Check this machine’s configuration.',
     'settings.config.providerUnavailable':
@@ -154,6 +156,8 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'settings.config.unknownProvider': '所选 Provider 不可用，请重新选择。',
     'settings.config.endpointUnsupported': '该 Provider 不支持自定义 Base URL，请恢复默认地址。',
     'settings.config.credentialRequired': '需要 API key，请输入密钥后重试。',
+    'settings.config.credentialRejected':
+      'Provider 拒绝了 API key 或其访问权限。请检查密钥与账号权限后重试。',
     'settings.config.credentialStore': '本地凭据存储不可用，请检查本机配置。',
     'settings.config.providerUnavailable': 'Provider 模型目录不可用，请检查网络或 Base URL。',
     'settings.config.testFailed': 'Provider 连接测试未通过，请检查地址和密钥。',

@@ -4,6 +4,7 @@ import { chmod, lstat, mkdir, open, readFile, unlink } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import {
   API_KEY_PROVIDER_REGISTRY,
+  ApiKeyProviderError,
   type ApiKeyProviderRegistryEntry,
   CODEX_ID,
   type CodexCredentialStore,
@@ -73,6 +74,7 @@ export type ConfigurationErrorCode =
   | 'CONFIG_UNKNOWN_PROVIDER'
   | 'CONFIG_ENDPOINT_OVERRIDE_UNSUPPORTED'
   | 'CONFIG_CREDENTIAL_REQUIRED'
+  | 'CONFIG_CREDENTIAL_REJECTED'
   | 'CONFIG_CREDENTIAL_STORE'
   | 'CONFIG_PROVIDER_UNAVAILABLE'
   | 'CONFIG_TEST_FAILED'
@@ -90,29 +92,31 @@ export type ConfigurationErrorCode =
 export class ConfigurationError extends Error {
   constructor(readonly code: ConfigurationErrorCode) {
     super(
-      code.startsWith('CONFIG_SUBSCRIPTION_')
-        ? 'Subscription model test failed.'
-        : code === 'CONFIG_INVALID_INPUT'
-          ? 'Configuration input is invalid.'
-          : code === 'CONFIG_UNKNOWN_PROVIDER'
-            ? 'The selected provider is unavailable.'
-            : code === 'CONFIG_ENDPOINT_OVERRIDE_UNSUPPORTED'
-              ? 'This provider does not support endpoint overrides.'
-              : code === 'CONFIG_CREDENTIAL_REQUIRED'
-                ? 'An API key is required.'
-                : code === 'CONFIG_CREDENTIAL_STORE'
-                  ? 'The credential store is unavailable.'
-                  : code === 'CONFIG_PROVIDER_UNAVAILABLE'
-                    ? 'The provider catalogue is unavailable.'
-                    : code === 'CONFIG_TEST_FAILED'
-                      ? 'The provider connection test failed.'
-                      : code === 'CONFIG_MODEL_UNAVAILABLE'
-                        ? 'The selected model is unavailable.'
-                        : code === 'CONFIG_REVISION_CONFLICT'
-                          ? 'Configuration changed; reload and try again.'
-                          : code === 'CONFIG_PERSIST_FAILED'
-                            ? 'Configuration could not be saved.'
-                            : 'The saved configuration is invalid.',
+      code === 'CONFIG_CREDENTIAL_REJECTED'
+        ? 'The provider rejected the API key or its access. Check the key and account permissions.'
+        : code.startsWith('CONFIG_SUBSCRIPTION_')
+          ? 'Subscription model test failed.'
+          : code === 'CONFIG_INVALID_INPUT'
+            ? 'Configuration input is invalid.'
+            : code === 'CONFIG_UNKNOWN_PROVIDER'
+              ? 'The selected provider is unavailable.'
+              : code === 'CONFIG_ENDPOINT_OVERRIDE_UNSUPPORTED'
+                ? 'This provider does not support endpoint overrides.'
+                : code === 'CONFIG_CREDENTIAL_REQUIRED'
+                  ? 'An API key is required.'
+                  : code === 'CONFIG_CREDENTIAL_STORE'
+                    ? 'The credential store is unavailable.'
+                    : code === 'CONFIG_PROVIDER_UNAVAILABLE'
+                      ? 'The provider catalogue is unavailable.'
+                      : code === 'CONFIG_TEST_FAILED'
+                        ? 'The provider connection test failed.'
+                        : code === 'CONFIG_MODEL_UNAVAILABLE'
+                          ? 'The selected model is unavailable.'
+                          : code === 'CONFIG_REVISION_CONFLICT'
+                            ? 'Configuration changed; reload and try again.'
+                            : code === 'CONFIG_PERSIST_FAILED'
+                              ? 'Configuration could not be saved.'
+                              : 'The saved configuration is invalid.',
     )
     this.name = 'ConfigurationError'
   }
@@ -942,6 +946,10 @@ export function createConfigurationService(
       baseUrl,
       credential: key,
       request,
+    }).catch((error: unknown) => {
+      if (error instanceof ApiKeyProviderError && (error.status === 401 || error.status === 403))
+        throw new ConfigurationError('CONFIG_CREDENTIAL_REJECTED')
+      throw error
     })
     if (!probed) return { models, verified: false }
     const offered = new Set(probed.ids)

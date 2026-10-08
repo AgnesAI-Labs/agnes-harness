@@ -269,22 +269,28 @@ it('keeps the saved configuration when replacement fails and allows a retry', as
   })
 })
 
-it('keeps the prior revision after a failed probe and rejects non-compatible endpoint overrides', async () => {
-  const entry = getApiKeyProvider('openai')
-  if (!entry) throw new Error('openai registry entry missing')
-  const model = (await entry.createAdapter()).models(entry.route)[0]?.id
-  if (!model) throw new Error('openai catalogue is empty')
-  const server = await fixture(model, 401)
-  const root = await home()
-  const service = createConfigurationService({ home: root, profile: 'local-dev' })
-  await expect(
-    service.save({ providerId: 'openai', baseUrl: server.baseUrl, apiKey: 'sk-test-value', model }),
-  ).rejects.toMatchObject({ code: 'CONFIG_TEST_FAILED' })
-  await expect(service.get()).resolves.toMatchObject({ revision: 0, configured: false, provider: null })
-  await expect(
-    service.test({ providerId: 'anthropic', baseUrl: 'http://127.0.0.1:1', apiKey: 'sk-test-value' }),
-  ).rejects.toMatchObject({ code: 'CONFIG_ENDPOINT_OVERRIDE_UNSUPPORTED' })
-})
+it.each([401, 403])(
+  'keeps the prior revision after an HTTP %i probe and rejects non-compatible endpoint overrides',
+  async (status) => {
+    const entry = getApiKeyProvider('openai')
+    if (!entry) throw new Error('openai registry entry missing')
+    const model = (await entry.createAdapter()).models(entry.route)[0]?.id
+    if (!model) throw new Error('openai catalogue is empty')
+    const server = await fixture(model, status)
+    const root = await home()
+    const service = createConfigurationService({ home: root, profile: 'local-dev' })
+    await expect(
+      service.save({ providerId: 'openai', baseUrl: server.baseUrl, apiKey: 'sk-test-value', model }),
+    ).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_REJECTED' })
+    await expect(
+      service.test({ providerId: 'openai', baseUrl: server.baseUrl, apiKey: 'sk-test-value' }),
+    ).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_REJECTED' })
+    await expect(service.get()).resolves.toMatchObject({ revision: 0, configured: false, provider: null })
+    await expect(
+      service.test({ providerId: 'anthropic', baseUrl: 'http://127.0.0.1:1', apiKey: 'sk-test-value' }),
+    ).rejects.toMatchObject({ code: 'CONFIG_ENDPOINT_OVERRIDE_UNSUPPORTED' })
+  },
+)
 
 it('probes the provider default after replacing a saved custom endpoint', async () => {
   const entry = getApiKeyProvider('openai')

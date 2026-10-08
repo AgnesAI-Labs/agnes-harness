@@ -1,4 +1,5 @@
 import type { ProbeReport, RouteDecl } from '@agnes/protocol'
+import { ApiKeyProviderError } from './api-key-providers.js'
 
 const MAX_CATALOG_BYTES = 1024 * 1024
 const MAX_MODELS = 4096
@@ -50,6 +51,7 @@ async function boundedJson(response: Response): Promise<unknown | undefined> {
  * Performs the provider-owned part of configuration testing. It authenticates a bounded model
  * catalogue request and returns IDs only; Host intersects them with the installed, reviewed
  * catalogue before exposing models or building a runtime route.
+ * Authentication/access refusals throw a fixed-message ApiKeyProviderError carrying only HTTP status.
  */
 export async function fetchProviderModels(options: {
   api: string
@@ -104,6 +106,8 @@ export async function fetchProviderModels(options: {
   }
   if (!response.ok || !/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')) {
     await response.body?.cancel().catch(() => undefined)
+    if (response.status === 401 || response.status === 403)
+      throw new ApiKeyProviderError('CATALOG_UNAVAILABLE', response.status)
     return undefined
   }
   const body = await boundedJson(response)
