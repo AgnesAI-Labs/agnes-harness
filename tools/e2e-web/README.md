@@ -120,6 +120,20 @@ Ready PNGs cover key screens in both locales and themes, including installed plu
 Skills empty state, tool rows and the agent-authored candidate review and file diff.
 The additional installed-folder card screen is en/light.
 
+`workbench.spec.ts` always checks Files, Terminal, Goal and Changes in en/zh-CN,
+light/dark and 1440/1280 widths, with the dock both open and closed: 64 ready
+screens per platform. The real session flows also assert process detachment,
+permission/sandbox refusals, durable goal controls, read-only historical diffs,
+freshness and ledger navigation. `AGH_WORKBENCH_REPORT` optionally copies those
+same screenshots to a private report directory; it does not enable or disable
+visual assertions. File read clocks are normalized to 12:00 while their localized
+labels remain visible. Job/session IDs and exact revisions stay in collapsed
+technical details. The demo model's echoed untrusted-receipt ID and background-job
+UUID are normalized to fixed-length values only for terminal screenshots; the
+receipt wording, command, bytes, state and process controls remain visible. The
+synthetic human shell sets a stable `PS1` and clears its initial version-dependent
+prompt through real terminal input. No user controls or diff content are masked.
+
 Normal gate runs use `updateSnapshots: none`: unknown names, a missing manifest or a missing
 ready image fail. Only an explicit reviewed update writes baselines:
 
