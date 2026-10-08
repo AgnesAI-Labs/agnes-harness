@@ -169,8 +169,8 @@ profile is persisted before trust/enable. Its live tool and Skill assertions als
 hosts where MCP confinement is unavailable. Strict confinement and refusal are covered by
 the sandbox backend and resource-control-worker integration tests.
 
-CI sets `AGH_RATCHET_REPORT=1` for fast tests and repository guards while the owner
-remeasures the merged line budgets. Every exceeded scope is listed as `RATCHET_DEBT`
-and appended to the job summary; budgets are unchanged. Only the line ceiling is
-report-only: structural, dependency, counting-regression and functional assertions
-remain hard gates. Local guard runs enforce the original ceilings by default.
+CI and local guards enforce the reviewed line budgets in `tools/guards/ratchet.json`.
+Any new excess fails the check and is also appended to the job summary. Re-measurement
+uses the guard's `countLines` and exact source-path matching; no report-only switch or
+spare allocation bypasses the ceiling. Structural, dependency, counting-regression
+and functional assertions remain hard gates.

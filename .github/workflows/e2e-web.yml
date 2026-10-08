@@ -118,9 +118,8 @@ jobs:
       - name: Typecheck production and fixtures
         if: ${{ !cancelled() && steps.native.outcome == 'success' }}
         run: pnpm typecheck
-      # Reviewed structural checks remain hard gates; unremeasured line budgets are reported debt.
-      - name: Repository guards (line-budget debt report-only)
-        env: { AGH_RATCHET_REPORT: '1' }
+      # Reviewed line budgets and structural checks are hard gates; excess is also summarized.
+      - name: Repository guards
         if: ${{ !cancelled() && steps.native.outcome == 'success' }}
         run: pnpm exec vitest run tools/guards/src --maxWorkers=1
       - name: Linux kernel identity regression
@@ -154,7 +153,6 @@ jobs:
         run: pnpm typecheck
       # Same complete fast tier and one worker as pnpm test, partitioned by Vitest.
       - name: Fast tests (zero retries)
-        env: { AGH_RATCHET_REPORT: '1' }
         if: ${{ !cancelled() && steps.native.outcome == 'success' }}
         run: pnpm test --shard=${{ matrix.shard }}/3
   web-e2e-gate:

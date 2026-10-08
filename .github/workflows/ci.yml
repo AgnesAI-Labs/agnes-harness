@@ -40,9 +40,8 @@ jobs:
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm lint
       - run: node tools/public-docs/verify.mjs
-      # Budget debt is visible in the summary until the owner remeasures; structural checks fail.
+      # Reviewed line budgets and structural checks are hard gates; excess is also summarized.
       - name: documentation examples and repository policy
-        env: { AGH_RATCHET_REPORT: '1' }
         run: >-
           pnpm exec vitest run tools/ci tools/public-docs/examples.test.ts
           tools/guards/src --maxWorkers=1
@@ -93,7 +92,7 @@ jobs:
       - name: test fast tier (includes Protocol conformance)
         id: suite
         # Files run alone below on Windows are held out here.
-        env: { AGNES_TEST_EXCLUDE: '${{ matrix.testExclude }}', AGH_RATCHET_REPORT: '1' }
+        env: { AGNES_TEST_EXCLUDE: '${{ matrix.testExclude }}' }
         run: pnpm exec vitest run --project fast ${{ matrix.testArgs }}
       # The Skill install flow polls for completion with a three-second bound; run this
       # disk-backed integration file without other Vitest files competing on Windows.

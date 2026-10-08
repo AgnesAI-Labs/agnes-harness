@@ -34,7 +34,7 @@ export function listPackages(root: string): Package[] {
 // at once (the line-count ratchet, the single-construction-site check, and the platform scan): a source
 // file written as `.mts` could violate any of those three constraints and none of them would see it.
 // Widened to a set of source extensions.
-const SOURCE_EXTENSIONS = ['.ts', '.mts', '.cts', '.tsx']
+export const SOURCE_EXTENSIONS = ['.ts', '.mts', '.cts', '.tsx']
 
 // An older comment here claimed the four excludeDirs lists were aligned; in reality there were three
 // different lists (this default, plus 'test' added by the ratchet, plus 'fixtures' added by the
