@@ -152,7 +152,11 @@
     "candidate-list-en-light",
     "candidate-list-en-dark",
     "candidate-list-zh-CN-light",
-    "candidate-list-zh-CN-dark"
+    "candidate-list-zh-CN-dark",
+    "plugin-old-version-en-light",
+    "plugin-old-version-en-dark",
+    "plugin-old-version-zh-CN-light",
+    "plugin-old-version-zh-CN-dark"
   ],
   "pending": {},
   "platforms": ["darwin", "linux"],

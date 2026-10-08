@@ -2,6 +2,7 @@ import type { AuthoringCandidate, AuthoringCandidateSummary } from '@agnes/proto
 import { Badge, Button, SettingsToolbar } from '@agnes/web-ui'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import type { PluginAdminApi } from './api.js'
+import { CandidateListFacts, candidateIdentity } from './candidate-list.js'
 import {
   addedPermissions,
   CandidateDelta,
@@ -9,6 +10,12 @@ import {
   CandidateTechnical,
   type CandidateText,
 } from './candidate-review.js'
+
+type ListFacts = {
+  candidateHash: string
+  identity: ReturnType<typeof candidateIdentity>
+  startedAt?: string | undefined
+}
 
 type Confirmation = {
   title: string
@@ -26,6 +33,7 @@ export function CandidateInbox({
   confirm,
   onPublished,
   sessionTitle,
+  sessionTurnTime,
 }: {
   api: PluginAdminApi | undefined
   canReview: boolean
@@ -34,12 +42,14 @@ export function CandidateInbox({
   confirm: (input: Confirmation) => void
   onPublished: () => Promise<void>
   sessionTitle?: ((key: string) => Promise<string | undefined>) | undefined
+  sessionTurnTime?: ((key: string, turn: number) => Promise<string | undefined>) | undefined
 }) {
   const [items, setItems] = useState<AuthoringCandidateSummary[]>([]),
     [selected, setSelected] = useState<AuthoringCandidate>(),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [originTitle, setOriginTitle] = useState<string>()
+  const [facts, setFacts] = useState<Record<string, ListFacts>>({})
   const review = useRef<HTMLElement>(null)
   const originKey = selected?.origin.sessionKey
   useEffect(() => {
@@ -73,11 +83,48 @@ export function CandidateInbox({
   useEffect(() => {
     if (!api) return
     let alive = true
+    const cache = new Map<string, ListFacts>()
     const refresh = async () => {
       try {
         const value = await api.candidatesList()
+        if (alive) setItems(value.candidates)
+        const entries: [string, ListFacts | undefined][] = []
+        // Hydrate only presentation facts, with bounded I/O and without retaining every file tree.
+        for (let offset = 0; offset < value.candidates.length && alive; offset += 4) {
+          entries.push(
+            ...(await Promise.all(
+              value.candidates.slice(offset, offset + 4).map(async (item) => {
+                const key = `${item.candidateId}:${item.candidateHash}:${item.state}`
+                let detail = cache.get(key)
+                if (!detail) {
+                  try {
+                    const candidate = await api.candidatesShow(item.candidateId)
+                    const startedAt = await sessionTurnTime?.(
+                      candidate.origin.sessionKey,
+                      candidate.origin.turn,
+                    ).catch(() => undefined)
+                    detail = {
+                      candidateHash: candidate.candidateHash,
+                      identity: candidateIdentity(candidate),
+                      startedAt,
+                    }
+                    cache.set(key, detail)
+                  } catch {
+                    /* A missing candidate remains visible and can be refreshed. */
+                  }
+                }
+                return [item.candidateId, detail] as [string, ListFacts | undefined]
+              }),
+            )),
+          )
+        }
+        const liveKeys = new Set(
+          value.candidates.map((item) => `${item.candidateId}:${item.candidateHash}:${item.state}`),
+        )
+        for (const key of cache.keys()) if (!liveKeys.has(key)) cache.delete(key)
         if (alive) {
           setItems(value.candidates)
+          setFacts(Object.fromEntries(entries.flatMap(([id, detail]) => (detail ? [[id, detail]] : []))))
         }
       } catch {
         if (alive) setError(t('candidates.unavailable'))
@@ -89,7 +136,7 @@ export function CandidateInbox({
       alive = false
       clearInterval(timer)
     }
-  }, [api, t])
+  }, [api, t, sessionTurnTime])
   const refresh = async () => {
     if (api) setItems((await api.candidatesList()).candidates)
   }
@@ -119,6 +166,14 @@ export function CandidateInbox({
       run: () => act(() => api.candidatesDecide(value.candidateId, value.candidateHash, reviewHash, approve)),
     })
   }
+  const ordered = [...items].sort(
+    (a, b) =>
+      Number(b.state === 'review') - Number(a.state === 'review') ||
+      (Date.parse(facts[b.candidateId]?.startedAt ?? '') || 0) -
+        (Date.parse(facts[a.candidateId]?.startedAt ?? '') || 0) ||
+      a.packageId.localeCompare(b.packageId) ||
+      a.state.localeCompare(b.state),
+  )
   const title = originTitle || t('candidates.untitledSession')
   const permissions = selected ? addedPermissions(selected) : undefined
   const tone = (state: string) =>
@@ -163,7 +218,7 @@ export function CandidateInbox({
             <p>{t('candidates.empty')}</p>
           ) : (
             <ul className="candidate-list" data-testid="candidate-list">
-              {items.map((value) => (
+              {ordered.map((value) => (
                 <li key={value.candidateId}>
                   <Button
                     data-testid="candidate-open"
@@ -176,7 +231,19 @@ export function CandidateInbox({
                           .catch(() => setError(t('candidates.unavailable')))
                     }}
                   >
-                    <span>{value.packageId}</span>
+                    <span>
+                      <strong>{value.packageId}</strong>
+                      {facts[value.candidateId] &&
+                      facts[value.candidateId]!.candidateHash === value.candidateHash ? (
+                        <CandidateListFacts
+                          identity={facts[value.candidateId]!.identity}
+                          startedAt={facts[value.candidateId]!.startedAt}
+                          t={t}
+                        />
+                      ) : (
+                        <span className="candidate-list-facts">{t('candidates.metadataUnavailable')}</span>
+                      )}
+                    </span>
                     <Badge tone={tone(value.state)}>{t('candidates.state.' + value.state)}</Badge>
                   </Button>
                 </li>

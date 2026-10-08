@@ -330,7 +330,7 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
   page,
   runtime,
 }, info) => {
-  test.setTimeout(120_000)
+  test.setTimeout(180_000)
   await open(page, runtime)
   await settings(page)
   await section(page, 'plugins')
@@ -410,6 +410,57 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
   const resumed = await current(page, runtime)
   expect(resumed.id).toBe(old.id)
   expect((await toolResult(resumed, 'demo_text_stats'))?.structured).toMatchObject({ words: 4 })
+  // Inspect the real pinned old version in both languages/themes before creating another session.
+  for (const [locale, theme] of [
+    ['en', 'light'],
+    ['en', 'dark'],
+    ['zh-CN', 'light'],
+    ['zh-CN', 'dark'],
+  ] as const) {
+    await preferences(page, locale, theme)
+    await page.goto(new URL(`/?session=${encodeURIComponent(old.id)}`, runtime.url).href)
+    await expect(page.getByTestId('conversation-turn')).toHaveCount(2)
+    await settings(page, locale)
+    await section(page, 'plugins')
+    await page
+      .getByRole('searchbox', { name: locale === 'en' ? 'Search plugins' : '搜索插件', exact: true })
+      .fill('hot-tool-plugin')
+    const summary = page.getByTestId('plugin-drain-summary')
+    await expect(summary).toHaveCount(1)
+    await expect(summary).toContainText(
+      locale === 'en'
+        ? /versions of \d+ plugins? are still used by 1 session/
+        : /有 \d+ 个插件的旧版本仍被 1 个会话使用/,
+    )
+    await expect(summary).not.toContainText('@agnes/')
+    const details = page.getByTestId('plugin-drain-details')
+    await expect(details).not.toHaveAttribute('open')
+    const chip = page.getByRole('note', {
+      name: new RegExp(locale === 'en' ? '^Older version in use' : '^旧版本使用中'),
+    })
+    await chip.focus()
+    await expect(
+      page
+        .locator('.agnes-ui-popover')
+        .filter({ hasText: locale === 'en' ? 'Existing sessions still use' : '已有会话仍使用旧版本' }),
+    ).toBeVisible()
+    await page
+      .getByRole('searchbox', { name: locale === 'en' ? 'Search plugins' : '搜索插件', exact: true })
+      .focus()
+    await page.mouse.move(0, 0)
+    await quality(page, info, `plugin-old-version-${locale}-${theme}`)
+    await screen(page, info, `plugin-old-version-${locale}-${theme}`)
+    await details.locator('summary').click()
+    await expect(details).toContainText('hot-tool-plugin')
+    await expect(details).toContainText(locale === 'en' ? 'Plugin assistant' : '插件助手')
+    expect(
+      (await details.locator('code').allTextContents()).some((text) =>
+        /^@agnes\/(ai|base|code) ·/.test(text),
+      ),
+    ).toBe(false)
+    await details.locator('summary').click()
+    await closeSettings(page, locale)
+  }
 })
 
 test('UI local rescan preserves old/new code through a daemon restart', async ({ page, runtime }, info) => {
@@ -803,7 +854,41 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page, locale)
     await section(page, 'plugins')
     await expect(page.getByTestId('candidate-list').getByTestId('candidate-open')).toHaveCount(3)
+    const rows = page.getByTestId('candidate-list').getByTestId('candidate-open')
+    await expect(
+      rows
+        .filter({ hasText: draft.packageId })
+        .filter({ hasText: locale === 'en' ? 'New plugin' : '新插件' }),
+    ).toHaveCount(1)
+    await expect(
+      rows.filter({ hasText: draft.packageId }).filter({ hasText: locale === 'en' ? 'Update' : '更新' }),
+    ).toHaveCount(1)
+    await expect(rows.filter({ hasText: skill.packageId })).toContainText(
+      locale === 'en' ? 'Skill · New skill' : '技能 · 新技能',
+    )
+    await expect(rows.getByTestId('candidate-origin-time')).toHaveCount(3)
+    await expect(rows.first()).toContainText(locale === 'en' ? 'Plugin · Update' : '插件 · 更新')
+    await expect(rows.getByTestId('candidate-list-facts').first()).toContainText('0.1.0')
+    await expect(page.getByTestId('plugin-drain-summary')).toHaveCount(1)
+    await expect(page.getByTestId('plugin-drain-summary')).not.toContainText('@agnes/')
+    // Assert real timestamps above; normalize only elapsed text for stable screenshots.
+    const times = rows.getByTestId('candidate-origin-time')
+    const originals = await times.allTextContents()
+    await times.evaluateAll(
+      (nodes, text) =>
+        nodes.forEach((node) => {
+          node.textContent = text
+        }),
+      locale === 'en' ? 'Session turn: 2 min ago' : '来源轮次：2 分钟前',
+    )
     await screen(page, info, `candidate-list-${locale}-${theme}`)
+    await times.evaluateAll(
+      (nodes, labels) =>
+        nodes.forEach((node, index) => {
+          node.textContent = labels[index] ?? ''
+        }),
+      originals,
+    )
     await page
       .getByTestId('candidate-open')
       .filter({ hasText: update.packageId })

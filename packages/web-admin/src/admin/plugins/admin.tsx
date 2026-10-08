@@ -104,6 +104,7 @@ type PluginAdminOptions = Readonly<{
   runtime?: PluginRuntimeSource
   schedules?: SchedulesApi
   candidateSessionTitle?: (key: string) => Promise<string | undefined>
+  candidateSessionTurnTime?: (key: string, turn: number) => Promise<string | undefined>
 }>
 
 const pluginAdminCatalogs = {
@@ -215,6 +216,7 @@ class PluginAdminPage {
   readonly #runtime: PluginRuntimeSource | undefined
   readonly #schedules: SchedulesApi | undefined
   readonly #candidateSessionTitle: PluginAdminOptions['candidateSessionTitle']
+  readonly #candidateSessionTurnTime: PluginAdminOptions['candidateSessionTurnTime']
   #runtimeStop: (() => void) | undefined
   readonly #locale: UiLocaleSource
   readonly #localeStop: () => void
@@ -230,6 +232,7 @@ class PluginAdminPage {
     this.#runtime = options.runtime
     this.#schedules = options.schedules
     this.#candidateSessionTitle = options.candidateSessionTitle
+    this.#candidateSessionTurnTime = options.candidateSessionTurnTime
     if (options.locale) {
       this.#locale = options.locale
       this.#localeStop = options.locale.subscribe(() => this.render())
@@ -1144,6 +1147,7 @@ class PluginAdminPage {
         >
           <CandidateInbox
             sessionTitle={this.#candidateSessionTitle}
+            sessionTurnTime={this.#candidateSessionTurnTime}
             api={this.#api}
             canReview={
               this.canEffect('packages.trust') &&
@@ -1156,6 +1160,13 @@ class PluginAdminPage {
             onPublished={() => this.refresh()}
           />
           <GenerationDrainSummary
+            nameOf={(id) => {
+              const key = `example.name.${id.split('/').at(-1)}`
+              const name = this.settingsText(key)
+              return /^@(agnes-example|agnes-fde|community)\//.test(id) && name !== key
+                ? name
+                : id.split('/').at(-1)!
+            }}
             status={this.#state.generations}
             installed={this.#state.installed}
             t={this.#t}

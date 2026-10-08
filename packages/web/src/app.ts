@@ -2144,6 +2144,13 @@ async function openAdminPane(pane: AdminPaneName, tab: ResourceTab = 'skills'): 
         const { mountPluginAdmin } = await import('@agnes/web-admin/admin/plugins/admin')
         mountedAdminPanes.set(pane, {
           ...mountPluginAdmin({
+            candidateSessionTurnTime: async (id, turn) =>
+              (
+                await client.call<UITimeline>('_agnes/v1/session.projectUI', {
+                  sessionId: id,
+                  surface: 'web',
+                })
+              ).turns.find((row) => row.turn === turn)?.startedAt,
             candidateSessionTitle: async (id) =>
               sessionTitles.get(id) ??
               (await client.session.list({ q: { prefix: id }, limit: 100 })).items.find(

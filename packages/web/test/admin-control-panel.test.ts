@@ -22,7 +22,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { LoopPicker, updateLoopPicker } from '../src/loop-picker.js'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-const t = (key: string) => pluginAdminLocaleCatalog.en[key] ?? key
+const t = (key: string, params?: Record<string, string | number>) =>
+  (pluginAdminLocaleCatalog.en[key] ?? key).replace(/\{(\w+)\}/g, (_, name) => String(params?.[name] ?? name))
 const roots: Root[] = []
 afterEach(async () => {
   vi.unstubAllGlobals()
@@ -167,19 +168,54 @@ it('shows declared kinds and observable states without guessing draining or rest
   const draining = await mount(
     createElement(PluginBadges, { item: { ...item, draining: true, drainingSessions: 3 }, t }),
   )
-  expect(draining.textContent).toContain('Draining (3)')
+  expect(draining.textContent).toContain('Older version in use')
+  expect(draining.textContent).not.toContain('(3)')
   const removed = await mount(
     createElement(GenerationDrainSummary, {
-      installed: [],
+      installed: [item, { ...item, id: '@acme/removed' }],
+      nameOf: () => 'Friendly plugin',
       status: {
-        generations: [],
-        plugins: [{ id: item.id, state: 'draining', boundSessions: 3, drainingSessions: 3 }],
+        currentGenerationId: 'current',
+        generations: [
+          {
+            id: 'old',
+            state: 'draining',
+            boundSessions: 3,
+            packages: [
+              { id: item.id, version: '0.9.0' },
+              { id: '@acme/removed', version: '1.0.0' },
+              { id: '@agnes/base', version: '1.0.0' },
+            ],
+          },
+        ],
+        plugins: [
+          { id: item.id, state: 'active', boundSessions: 3, drainingSessions: 3 },
+          { id: '@acme/removed', state: 'draining', boundSessions: 3, drainingSessions: 3 },
+          { id: '@agnes/base', state: 'draining', boundSessions: 3, drainingSessions: 3 },
+        ],
       },
       t,
     }),
   )
-  expect(removed.textContent).toContain(item.id)
-  expect(removed.textContent).toContain('Draining (3)')
+  expect(removed.querySelector('[data-testid=plugin-drain-summary]')?.textContent).toBe(
+    'Older versions of 2 plugins are still used by 3 sessions and will be released automatically when those sessions end.',
+  )
+  expect(removed.querySelector('details')?.open).toBe(false)
+  expect(removed.textContent).toContain('Friendly plugin')
+  expect(removed.textContent).toContain('0.9.0')
+  expect(removed.textContent).toContain('old')
+  expect(removed.textContent).not.toContain('@agnes/base')
+  const builtins = await mount(
+    createElement(GenerationDrainSummary, {
+      installed: [],
+      t,
+      status: {
+        generations: [],
+        plugins: [{ id: '@agnes/ai', state: 'draining', boundSessions: 1, drainingSessions: 1 }],
+      },
+    }),
+  )
+  expect(builtins.textContent).toBe('')
   const filter = await mount(createElement(KindFilter, { value: '', onChange: vi.fn(), t }))
   expect(filter.querySelector('[role="combobox"]')?.getAttribute('aria-label')).toBe('Filter by kind')
   expect(sessionLoopSelection({})).toBeUndefined()

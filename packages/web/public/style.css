@@ -7250,6 +7250,24 @@ body.admin-page {
   overflow-wrap: anywhere;
   white-space: normal;
 }
+.plugin-candidates .candidate-list-facts {
+  display: grid;
+  gap: var(--s4);
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+}
+.plugin-drain-notice {
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.plugin-drain-notice p {
+  margin-block: var(--s8);
+}
+.plugin-drain-notice summary {
+  cursor: pointer;
+}
 .plugin-candidates .candidate-list .agnes-ui-badge {
   flex-shrink: 0;
 }

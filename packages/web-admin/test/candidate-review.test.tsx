@@ -3,6 +3,7 @@ import type { AuthoringCandidate, PackagePreview } from '@agnes/protocol'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
 import { candidateDiff } from '../src/admin/plugins/candidate-diff.js'
+import { CandidateListFacts, candidateIdentity } from '../src/admin/plugins/candidate-list.js'
 import { addedPermissions, CandidateDelta, capabilityLabel } from '../src/admin/plugins/candidate-review.js'
 import { pluginAdminLocaleCatalog } from '../src/admin/plugins/locales/admin.js'
 
@@ -71,4 +72,48 @@ it('keeps permission changes distinct from tool registration and exposes service
   }
   expect(addedPermissions(onlyTools)).toBe(0)
   expect(renderToStaticMarkup(<CandidateDelta value={onlyTools} t={t} />)).toContain('新增权限：无')
+})
+
+it('distinguishes same-name candidate versions, skills and source-turn time in both languages', () => {
+  const startedAt = '2026-10-09T00:00:00Z',
+    now = Date.parse(startedAt) + 120_000
+  for (const locale of ['en', 'zh-CN'] as const) {
+    const text = (key: string, params?: Record<string, string | number>) =>
+      (pluginAdminLocaleCatalog[locale][key] ?? key).replace(/\{(\w+)\}/g, (_, name) =>
+        String(params?.[name] ?? name),
+      )
+    const newPlugin = {
+      ...candidate,
+      baseHash: null,
+      preview: { ...preview, kinds: ['tool'] as ['tool'], version: '0.1.0' },
+    }
+    const update = {
+      ...newPlugin,
+      baseHash: 'sha256-' + 'a'.repeat(64),
+      preview: { ...newPlugin.preview, version: '0.2.0' },
+    }
+    const skill = {
+      ...newPlugin,
+      preview: null,
+      sourceFiles: [
+        { path: 'package.json', content: JSON.stringify({ version: '1.0.0', agnes: { kinds: ['skills'] } }) },
+      ],
+    }
+    const html = (value: AuthoringCandidate) =>
+      renderToStaticMarkup(
+        <CandidateListFacts identity={candidateIdentity(value)} startedAt={startedAt} now={now} t={text} />,
+      )
+    expect(html(newPlugin)).toContain(text('candidates.new.plugin'))
+    expect(html(newPlugin)).toContain('0.1.0')
+    expect(html(update)).toContain(text('candidates.update'))
+    expect(html(update)).toContain('0.2.0')
+    expect(html(skill)).toContain(text('candidates.type.skill'))
+    expect(html(skill)).toContain(text('candidates.new.skill'))
+    expect(html(skill)).toContain(text('candidates.minutesAgo', { count: 2 }))
+    expect(html(skill)).toContain('dateTime="' + startedAt + '"')
+    expect(html(skill)).not.toContain('candidateHash')
+    expect(
+      renderToStaticMarkup(<CandidateListFacts identity={candidateIdentity(skill)} now={now} t={text} />),
+    ).toContain(text('candidates.timeUnavailable'))
+  }
 })
