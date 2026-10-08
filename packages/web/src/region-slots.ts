@@ -1103,6 +1103,9 @@ export function mountTraceRegion(
     isOpen() {
       return handle.current?.isOpen() ?? false
     },
+    selectTool(sessionId, callSeq, resultSeq) {
+      return handle.current?.selectTool?.(sessionId, callSeq, resultSeq) ?? false
+    },
     dispose() {
       if (disposed) return
       disposed = true

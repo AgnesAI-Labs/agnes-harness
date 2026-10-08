@@ -948,6 +948,261 @@
         "text": { "type": "string", "maxLength": 1048576 }
       }
     },
+    "SessionWorkspaceChangesParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "scope": {
+          "enum": ["session", "turn"]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "expectedRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "SessionWorkspaceChangeEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "callSeq",
+        "resultSeq",
+        "receiptSeq",
+        "toolUseId",
+        "tool",
+        "turn",
+        "observedAt",
+        "decisionId",
+        "enforcement"
+      ],
+      "properties": {
+        "callSeq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "resultSeq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "receiptSeq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "toolUseId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "tool": {
+          "enum": ["write", "edit"]
+        },
+        "turn": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "decisionId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "enforcement": {
+          "enum": ["full", "partial", "none"]
+        }
+      }
+    },
+    "SessionWorkspaceChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "kind",
+        "basis",
+        "diffStatus",
+        "freshness",
+        "afterRevision",
+        "currentRevision",
+        "effects"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "kind": {
+          "enum": ["added", "modified"]
+        },
+        "basis": {
+          "enum": ["session", "turn", "latest-effect"]
+        },
+        "added": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "diffStatus": {
+          "enum": ["available", "binary", "too-large", "diff-limit"]
+        },
+        "freshness": {
+          "enum": ["current", "changed", "unavailable"]
+        },
+        "afterRevision": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "currentRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "effects": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/SessionWorkspaceChangeEvidence"
+          }
+        }
+      }
+    },
+    "SessionWorkspaceChangesSelected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "kind",
+        "basis",
+        "diffStatus",
+        "freshness",
+        "afterRevision",
+        "currentRevision",
+        "effects",
+        "beforeRevision"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "kind": {
+          "enum": ["added", "modified"]
+        },
+        "basis": {
+          "enum": ["session", "turn", "latest-effect"]
+        },
+        "added": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "removed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "diffStatus": {
+          "enum": ["available", "binary", "too-large", "diff-limit"]
+        },
+        "freshness": {
+          "enum": ["current", "changed", "unavailable"]
+        },
+        "afterRevision": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "currentRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "effects": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/SessionWorkspaceChangeEvidence"
+          }
+        },
+        "beforeRevision": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "diff": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "viewerChanged": {
+          "type": "boolean"
+        }
+      }
+    },
+    "SessionWorkspaceChangesResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "revision",
+        "observedAt",
+        "fromSeq",
+        "toSeq",
+        "turn",
+        "truncated",
+        "unrecorded",
+        "files"
+      ],
+      "properties": {
+        "scope": {
+          "enum": ["session", "turn"]
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "fromSeq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "toSeq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "turn": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "unrecorded": {
+          "type": "boolean"
+        },
+        "files": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "#/$defs/SessionWorkspaceChange"
+          }
+        },
+        "selected": {
+          "$ref": "#/$defs/SessionWorkspaceChangesSelected"
+        }
+      }
+    },
     "ApprovalGrantListParams": {
       "type": "object",
       "additionalProperties": false,

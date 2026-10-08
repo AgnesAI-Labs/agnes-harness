@@ -1,11 +1,12 @@
 import { checkToolDef, type ToolResult } from '@agnes/extension-api'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { type FakeToolContextOpts, fakeToolContext } from '../../../testkit/tool-context.js'
+import { fileChangeReceipt } from '../src/file-change.js'
 import { withFileLock } from '../src/guards/mutation-queue.js'
 import { MAX_OBSERVED_ENTRIES } from '../src/guards/observed.js'
-import { editTool } from '../src/tools/edit.js'
+import { createEditTool, editTool } from '../src/tools/edit.js'
 import { MAX_READ_BYTES, readTool } from '../src/tools/read.js'
-import { writeTool } from '../src/tools/write.js'
+import { createWriteTool, writeTool } from '../src/tools/write.js'
 
 // What a session has seen of a file is kept per session key for the life of the process, so every
 // context a test builds is a session of its own unless the test says otherwise. Contexts built
@@ -611,5 +612,80 @@ describe('a file longer than read returns in full', () => {
     ctx.fs.stat = async () => ({ kind: 'symlink', size: 9, mtimeMs: 2 })
     ctx.mem.files.set(A, big('b'))
     expect((await overwrite(ctx, 'b'.repeat(MAX_READ_BYTES))).isError).toBeUndefined()
+  })
+})
+
+describe('successful file review receipts', () => {
+  it('records confirmed write/edit bytes and keeps completed writes successful if recording fails', async () => {
+    const ctx = await observedCtxOf()
+    const receipts: unknown[] = []
+    const record: Parameters<typeof createWriteTool>[0] = async (input, context) => {
+      receipts.push(fileChangeReceipt(input, context))
+    }
+    const path = 'new\nfile.ts'
+    expect((await createWriteTool(record).execute({ path, content: 'one\n' }, ctx)).isError).not.toBe(true)
+    expect(
+      (await createEditTool(record).execute({ path, edits: [{ oldText: 'one', newText: 'two' }] }, ctx))
+        .isError,
+    ).not.toBe(true)
+    expect(receipts).toMatchObject([
+      {
+        path,
+        operation: 'write',
+        existed: false,
+        before: '',
+        after: 'one\n',
+        turn: 1,
+        toolUseId: ctx.session.toolUseId,
+      },
+      { path, operation: 'edit', existed: true, before: 'one\n', after: 'two\n' },
+    ])
+    const failedRecord = async () => {
+      throw new Error('Event quota exceeded')
+    }
+    const result = await createWriteTool(failedRecord).execute(
+      { path: 'another', content: 'confirmed write' },
+      ctx,
+    )
+    expect(result.isError).not.toBe(true)
+    expect(dec.decode(ctx.mem.files.get('/work/proj/another'))).toBe('confirmed write')
+  })
+  it('does not record refusal and caps binary, oversized or escaped JSON content', async () => {
+    const recorder = vi.fn(async () => {})
+    const ctx = await observedCtxOf({
+      files: { locked: 'one\n' },
+      writeErrors: { locked: { code: 'E_FS_DENIED', message: 'denied' } },
+    })
+    expect((await createWriteTool(recorder).execute({ path: 'locked', content: 'two\n' }, ctx)).isError).toBe(
+      true,
+    )
+    expect(
+      (
+        await createEditTool(recorder).execute(
+          { path: 'locked', edits: [{ oldText: 'one', newText: 'two' }] },
+          ctx,
+        )
+      ).isError,
+    ).toBe(true)
+    expect(recorder).not.toHaveBeenCalled()
+    const input = {
+      path: 'a',
+      operation: 'write' as const,
+      existed: false,
+      before: new Uint8Array(),
+      after: new TextEncoder().encode('text'),
+    }
+    expect(fileChangeReceipt({ ...input, path: '../outside' }, ctx)).toBeUndefined()
+    for (const [text, status] of [
+      ['\0', 'binary'],
+      ['x'.repeat(16385), 'too-large'],
+      ['\x01'.repeat(16000), 'too-large'],
+    ]) {
+      const value = fileChangeReceipt({ ...input, after: new TextEncoder().encode(text) }, ctx)
+      expect(value).toMatchObject({ status })
+      expect(value).not.toHaveProperty('after')
+      expect(value).not.toHaveProperty('before')
+      expect(Buffer.byteLength(JSON.stringify(value))).toBeLessThan(60000)
+    }
   })
 })

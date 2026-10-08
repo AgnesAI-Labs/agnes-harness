@@ -24,6 +24,7 @@ export type SessionMethod =
   | 'toolCatalog'
   | 'readToolDetail'
   | 'workspaceFiles'
+  | 'workspaceChanges'
   | 'append'
   | 'setPreset'
   | 'setModel'

@@ -35,6 +35,33 @@ describe('trace region layout', () => {
     expect(content?.parentElement?.parentElement?.getAttribute('data-slot')).toBe('ui:trace')
     expect(content?.parentElement?.parentElement?.parentElement).toBe(region)
     expect(content?.querySelector('.trace-body > .trace-list')).toBeTruthy()
+    const trace = runtime.trace
+    if (!trace) throw new Error('Missing trace region')
+    trace.render(
+      [
+        {
+          kind: 'tool',
+          id: 'actual-tool',
+          seq: 4,
+          resultSeq: 7,
+          toolUseId: 'actual-use',
+          name: 'write',
+          status: 'completed',
+          summary: 'confirmed write',
+        },
+      ],
+      [],
+      { sessionId: 'owned-session', hasEarlier: false },
+    )
+    expect(trace.selectTool?.('foreign-session', 4, 7)).toBe(false)
+    expect(trace.isOpen()).toBe(false)
+    expect(trace.selectTool?.('owned-session', 4, 7)).toBe(true)
+    expect(trace.isOpen()).toBe(true)
+    expect(content?.querySelector('[aria-current="true"]')?.getAttribute('data-trace-row-id')).toBe(
+      'actual-tool',
+    )
+    expect(content?.querySelector('.trace-inspector')?.textContent).toContain('write')
+    expect(trace.selectTool?.('owned-session', 100)).toBe(false)
   })
 
   it('neutralizes the wrappers so the list keeps its region grid row', () => {

@@ -25,6 +25,7 @@ import {
 import type { SessionCommandFrame, WorkerCommandFrame } from './frames.js'
 import type { McpRowRuntime } from './mcp-row-runtime.js'
 import { readToolDetailPage } from './tool-detail.js'
+import { sessionWorkspaceChanges } from './workspace-changes.js'
 import { sessionWorkspaceFiles } from './workspace-files.js'
 
 /** Direct unit-level invocation shape. Wire frames are the stricter SessionCommandFrame union. */
@@ -283,6 +284,8 @@ export async function handleCommand(
 ): Promise<unknown> {
   const p = cmd.params
   switch (cmd.method) {
+    case 'workspaceChanges':
+      return sessionWorkspaceChanges(session, p as Parameters<typeof sessionWorkspaceChanges>[1])
     case 'workspaceFiles':
       if (p.operation !== 'list' && p.operation !== 'read') throw new Error('Invalid workspace operation')
       return sessionWorkspaceFiles(session, p.operation, String(p.path ?? ''))

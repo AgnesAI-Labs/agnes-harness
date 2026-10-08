@@ -171,6 +171,21 @@ describe('session workspace files', () => {
       }
       expect(hidden.result.text).toBe('hidden log')
 
+      expect(await call(40, '_agnes/v1/session.workspace.changes', { sessionId })).toMatchObject({
+        result: { files: [] },
+      })
+      for (const path of [
+        '../secret',
+        'escape',
+        'escape-dir/secret.txt',
+        '.git/config',
+        `${AGH_DIR}/secrets/key`,
+        `${AGH_DIR}/memory/note`,
+      ]) {
+        expect(await call(41, '_agnes/v1/session.workspace.changes', { sessionId, path })).toMatchObject({
+          error: { data: { code: 'WORKSPACE_PATH_DENIED' } },
+        })
+      }
       for (const path of [
         '../secret',
         '/etc/passwd',

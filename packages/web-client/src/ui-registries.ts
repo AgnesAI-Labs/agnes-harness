@@ -7,6 +7,11 @@ export type UiExtensionContext = {
   session?: SessionService | undefined
   resources?: ClientResourceService | undefined
   data?: unknown
+  /** Presentation navigation only; payloads never confer backend authority. */
+  selection?: unknown
+  openPanel?(id: string, selection?: unknown): void
+  /** Open an actual session tool record through the existing execution view. */
+  openRecord?(sessionId: string, callSeq: number, resultSeq?: number): boolean
 }
 export type SettingsSection = Readonly<{
   /** False for sections whose own service supplies loading, refresh and error states. */

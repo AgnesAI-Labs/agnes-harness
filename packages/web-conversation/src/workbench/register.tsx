@@ -1,5 +1,6 @@
-import { workbenchPanels } from '@agnes/web-client'
+import { fileViewerActions, workbenchPanels } from '@agnes/web-client'
 import { FactChainPanel } from './fact-chain-panel.js'
+import { ChangesPanel, ReviewFileAction } from './changes-panel.js'
 import { FilesPanel } from './files-panel.js'
 import { GoalPanel } from './goal-panel.js'
 import { TerminalPanel } from './terminal-panel.js'
@@ -42,3 +43,14 @@ if (!workbenchPanels.get('goal'))
     titleKey: 'workbench.goal.title',
     component: GoalPanel,
   })
+
+if (!workbenchPanels.get('changed-files'))
+  workbenchPanels.register({
+    id: 'changed-files',
+    order: 30,
+    edge: 'right',
+    titleKey: 'workbench.changes.title',
+    component: ChangesPanel,
+  })
+if (!fileViewerActions.get('review'))
+  fileViewerActions.register({ id: 'review', order: 10, component: ReviewFileAction })

@@ -777,7 +777,18 @@ function renderControls(): void {
   const dockHost = dockControlsHost
   if (dockHost) {
     dockHost.hidden = !workbench.session
-    if (workbench.session) renderWorkbench(dockHost, { t, data: workbench })
+    if (workbench.session)
+      renderWorkbench(dockHost, {
+        t,
+        data: workbench,
+        openRecord: (sessionId, callSeq, resultSeq) => {
+          if (current?.id !== sessionId) return false
+          tracePanel.setOpen(true)
+          const selected = tracePanel.selectTool?.(sessionId, callSeq, resultSeq) ?? false
+          document.getElementById('view-trace')?.focus()
+          return selected
+        },
+      })
     else unmountWorkbench(dockHost)
   }
   renderGoalCard(

@@ -110,6 +110,7 @@ export type MethodName =
   | '_agnes/v1/session.jobs.control'
   | '_agnes/v1/session.workspace.list'
   | '_agnes/v1/session.workspace.read'
+  | '_agnes/v1/session.workspace.changes'
   | '_agnes/v1/session.readToolDetail'
   | '_agnes/v1/session.followUp'
   | '_agnes/v1/session.fork'
@@ -275,6 +276,10 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/session.workspace.read': clientRequest(
     A.SessionWorkspaceReadParams,
     A.SessionWorkspaceReadResult,
+  ),
+  '_agnes/v1/session.workspace.changes': clientRequest(
+    A.SessionWorkspaceChangesParams,
+    A.SessionWorkspaceChangesResult,
   ),
   '_agnes/v1/session.readToolDetail': clientRequest(
     A.SessionReadToolDetailParams,

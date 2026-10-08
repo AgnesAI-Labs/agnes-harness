@@ -15,14 +15,25 @@ it('restores focus on Escape, resizes with keys, retires registrations and detac
     order: 1,
     edge: 'right',
     titleKey: 'First',
-    component: () => <p>First panel</p>,
+    component: ({ context }) => (
+      <>
+        <p>First panel</p>
+        <button
+          type="button"
+          data-testid="navigate-review"
+          onClick={() => context.openPanel?.('test.second', { path: 'actual.txt' })}
+        >
+          Review
+        </button>
+      </>
+    ),
   })
   const second = workbenchPanels.register({
     id: 'test.second',
     order: 2,
     edge: 'right',
     titleKey: 'Second',
-    component: () => <p>Second panel</p>,
+    component: ({ context }) => <p>Second panel {(context.selection as { path?: string })?.path}</p>,
   })
   let replacement: (() => void) | undefined
   try {
@@ -31,6 +42,9 @@ it('restores focus on Escape, resizes with keys, retires registrations and detac
     flushSync(() => toggle.click())
     const dock = document.getElementById('workbench-right') as HTMLElement
     expect(dock.hidden).toBe(false)
+    flushSync(() => (dock.querySelector('[data-testid="navigate-review"]') as HTMLButtonElement).click())
+    expect(dock.textContent).toContain('Second panel actual.txt')
+    flushSync(() => (dock.querySelector('[role="tab"]') as HTMLButtonElement).click())
     const resize = dock.querySelector('hr') as HTMLElement
     flushSync(() => resize.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
     expect(

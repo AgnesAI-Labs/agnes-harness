@@ -7669,3 +7669,107 @@ body.admin-page {
   color: var(--agnes-status-success-text);
   background: var(--agnes-status-success-bg);
 }
+
+.workbench-changes {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.workbench-changes-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.workbench-changes-list {
+  min-height: 0;
+  overflow: auto;
+  flex: 1;
+  padding: var(--s8);
+}
+.workbench-changes-split.has-selection .workbench-changes-list {
+  flex: 0 1 28%;
+  border-bottom: 1px solid var(--agnes-line-primary);
+}
+.workbench-changes-file.ant-btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  width: 100%;
+  height: auto;
+  text-align: left;
+  gap: var(--s8);
+  white-space: normal;
+}
+.workbench-changes-file > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font: var(--font-size-xs) / 1.6 var(--font-mono);
+}
+.workbench-changes-file[aria-pressed="true"] {
+  background: var(--agnes-bg-hover);
+}
+.workbench-change-counts {
+  display: inline-flex;
+  gap: var(--s4);
+  white-space: nowrap;
+  font-size: var(--font-size-xs);
+}
+.workbench-change-preview {
+  flex: 1 1 65%;
+  min-height: 0;
+  overflow: auto;
+}
+.workbench-change-preview .workbench-panel-toolbar > code {
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-xs);
+}
+.workbench-change-preview p {
+  padding-inline: var(--s12);
+  font-size: var(--font-size-sm);
+}
+.workbench-change-preview [data-testid="changes-diff"] {
+  overflow: auto;
+}
+.workbench-change-preview pre {
+  margin: 0;
+  overflow: auto;
+  font: var(--font-size-xs) / 1.6 var(--font-mono);
+}
+.workbench-diff-line {
+  display: block;
+  min-width: max-content;
+  padding-inline: var(--s12);
+}
+.workbench-diff-added {
+  color: var(--agnes-status-success-text);
+  background: var(--agnes-status-success-bg);
+}
+.workbench-diff-removed {
+  color: var(--agnes-status-danger-text);
+  background: var(--agnes-status-danger-bg);
+}
+.workbench-change-evidence,
+.workbench-changes-footer {
+  padding: var(--s8) var(--s12);
+  font-size: var(--font-size-xs);
+  color: var(--agnes-text-secondary);
+  overflow-wrap: anywhere;
+}
+.workbench-changes-footer {
+  flex: 0 0 auto;
+  max-height: 28%;
+  overflow: auto;
+  border-top: 1px solid var(--agnes-line-primary);
+}
+.workbench-change-evidence dl,
+.workbench-changes-footer dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--s4) var(--s8);
+}
+.workbench-change-evidence dd,
+.workbench-changes-footer dd {
+  margin: 0;
+}

@@ -7,6 +7,7 @@ import { fileViewerActions } from '@agnes/web-client'
 import { createCatalogTranslator, renderRegion, unmountRegion } from '@agnes/web-ui'
 import { flushSync } from 'react-dom'
 import { expect, it, vi } from 'vitest'
+import { ChangesPanel, ReviewFileAction } from '../src/workbench/changes-panel.js'
 import { FilesPanel } from '../src/workbench/files-panel.js'
 import { workbenchLocaleCatalog } from '../src/workbench/locales.js'
 import { TerminalPanel } from '../src/workbench/terminal-panel.js'
@@ -286,5 +287,117 @@ it('renders kill receipts immediately and keeps a running tab until close is con
     unmountRegion(host)
     host.remove()
     localStorage.clear()
+  }
+})
+
+it('navigates from file review, renders a read-only diff and ignores results detached by session switching', async () => {
+  const revision = 'a'.repeat(64),
+    mention = vi.fn(),
+    openPanel = vi.fn(),
+    openRecord = vi.fn(() => false)
+  const file = {
+    path: 'a.ts',
+    kind: 'added',
+    basis: 'session',
+    added: 1,
+    removed: 0,
+    diffStatus: 'available',
+    freshness: 'changed',
+    afterRevision: revision,
+    currentRevision: 'b'.repeat(64),
+    effects: [
+      {
+        callSeq: 4,
+        resultSeq: 7,
+        receiptSeq: 6,
+        toolUseId: 'actual-use',
+        tool: 'write',
+        turn: 1,
+        observedAt: '2026-10-09T00:00:00Z',
+        decisionId: 'actual-decision',
+        enforcement: 'full',
+      },
+    ],
+  }
+  const result = {
+    scope: 'session',
+    revision,
+    observedAt: '2026-10-09T00:00:00Z',
+    fromSeq: 1,
+    toSeq: 7,
+    turn: 1,
+    truncated: false,
+    unrecorded: false,
+    files: [file, { ...file, path: 'b.ts' }],
+    selected: {
+      ...file,
+      beforeRevision: revision,
+      diff: '--- a\n+++ b\n+<script>plain text</script>\n',
+      viewerChanged: true,
+    },
+  }
+  let finishOld: ((value: unknown) => void) | undefined
+  const read = vi.fn(async (input: { path?: string }) =>
+    input.path === 'b.ts'
+      ? new Promise((resolve) => {
+          finishOld = resolve
+        })
+      : result,
+  )
+  const session = { id: 's', workspaceChanges: read } as unknown as Session
+  const context = {
+    t: createCatalogTranslator(workbenchLocaleCatalog, 'en'),
+    openPanel,
+    openRecord,
+    selection: { sessionId: 's', path: 'a.ts', revision },
+    data: {
+      session,
+      disabled: false,
+      mention,
+      command: () => {
+        throw new Error('Review must never submit')
+      },
+    },
+  }
+  const host = document.createElement('div'),
+    action = document.createElement('div')
+  document.body.append(host, action)
+  try {
+    renderRegion(action, <ReviewFileAction context={context} path="a.ts" revision={revision} />)
+    flushSync(() => (action.querySelector('button') as HTMLButtonElement).click())
+    expect(openPanel).toHaveBeenCalledWith('changed-files', { sessionId: 's', path: 'a.ts', revision })
+    renderRegion(host, <ChangesPanel context={context} />)
+    await vi.waitFor(() =>
+      expect(host.querySelector('pre')?.textContent).toContain('+<script>plain text</script>'),
+    )
+    expect(read).toHaveBeenCalledWith({ scope: 'session', path: 'a.ts', expectedRevision: revision })
+    expect(host.querySelector('script')).toBeNull()
+    expect(host.textContent).toContain('changed after the recorded agent edit')
+    expect(host.textContent).toContain('changed since the preview was read')
+    flushSync(() => (host.querySelector('[data-testid=changes-mention]') as HTMLButtonElement).click())
+    expect(mention).toHaveBeenCalledWith('a.ts')
+    flushSync(() => (host.querySelector('[data-testid=changes-provenance]') as HTMLButtonElement).click())
+    expect(openRecord).toHaveBeenCalledWith('s', 4, 7)
+    expect(host.textContent).toContain('outside the loaded history')
+    flushSync(() => (host.querySelector('[data-path="b.ts"]') as HTMLButtonElement).click())
+    await vi.waitFor(() => expect(finishOld).toBeDefined())
+    const next = {
+      id: 'next',
+      workspaceChanges: async () => ({
+        ...result,
+        selected: undefined,
+        files: [{ ...file, path: 'owned-next.ts' }],
+      }),
+    } as unknown as Session
+    renderRegion(host, <ChangesPanel context={{ ...context, data: { ...context.data, session: next } }} />)
+    await vi.waitFor(() => expect(host.textContent).toContain('owned-next.ts'))
+    finishOld?.({ ...result, selected: { ...result.selected, diff: 'STALE_OLD_SESSION' } })
+    await vi.waitFor(() => expect(host.textContent).not.toContain('STALE_OLD_SESSION'))
+    expect(host.querySelector('textarea')).toBeNull()
+  } finally {
+    unmountRegion(host)
+    unmountRegion(action)
+    host.remove()
+    action.remove()
   }
 })

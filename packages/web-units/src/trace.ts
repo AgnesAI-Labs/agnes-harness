@@ -68,6 +68,7 @@ export type TraceHandle = {
   render(nodes: readonly UINode[], turns?: readonly UITurn[], meta?: TraceMeta): void
   setOpen(open: boolean): void
   isOpen(): boolean
+  selectTool?(sessionId: string, callSeq: number, resultSeq?: number): boolean
 }
 
 export type TracePanel = TraceHandle
@@ -655,6 +656,9 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
   const [snapshot, setSnapshot] = useState<Snapshot>({ nodes: [], turns: [] })
   // While the panel is closed, render() only remembers the newest snapshot; opening shows it.
   const latest = useRef<Snapshot | undefined>(undefined)
+  const currentSnapshot = useRef(snapshot)
+  currentSnapshot.current = snapshot
+  const selectRowRef = useRef<((id: string) => void) | undefined>(undefined)
   const [query, setQuery] = useState('')
   const [kindFilter, setKindFilter] = useState('all')
   const [selected, setSelected] = useState<string | undefined>(undefined)
@@ -880,6 +884,28 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
       setOpen(next) {
         applyOpenRef.current(next, true)
       },
+      selectTool(sessionId, callSeq, resultSeq) {
+        const value = latest.current ?? currentSnapshot.current
+        if (value.meta?.sessionId !== sessionId) return false
+        const node = value.nodes.find(
+          (node) =>
+            node.kind === 'tool' &&
+            node.seq === callSeq &&
+            (resultSeq === undefined || node.resultSeq === resultSeq),
+        )
+        applyOpenRef.current(true, true)
+        if (!node) return false
+        flushSync(() => {
+          setQuery('')
+          setTimelineRange(null)
+          setTimelineViewport(null)
+          setCollapsedTurns(new Set())
+          setCollapsedTools(new Set())
+          setLightbox(null)
+        })
+        selectRowRef.current?.(node.id)
+        return true
+      },
       isOpen() {
         return open.current
       },
@@ -1092,6 +1118,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
     conversation.addEventListener('agnes:trace-turn', jump)
     return () => conversation.removeEventListener('agnes:trace-turn', jump)
   }, [options.conversation, options.toggle, snapshot, selectRow])
+  selectRowRef.current = selectRow
   const closeInspector = (): void =>
     flushSync(() => {
       setSelected(undefined)
