@@ -1,6 +1,7 @@
 import { workbenchPanels } from '@agnes/web-client'
 import { FactChainPanel } from './fact-chain-panel.js'
 import { FilesPanel } from './files-panel.js'
+import { TerminalPanel } from './terminal-panel.js'
 
 if (!workbenchPanels.get('files'))
   workbenchPanels.register({
@@ -22,3 +23,12 @@ if (!workbenchPanels.get('facts'))
 
 export type { WorkbenchContext } from './context.js'
 export { workbenchLocaleCatalog } from './locales.js'
+
+if (!workbenchPanels.get('terminal'))
+  workbenchPanels.register({
+    id: 'terminal',
+    order: 10,
+    edge: 'bottom',
+    titleKey: 'workbench.terminal.title',
+    component: TerminalPanel,
+  })

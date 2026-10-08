@@ -40,7 +40,21 @@ export function createWorkerServiceAuthority(): ServiceAuthority {
         record.source === 'client-web' &&
         subjectKind === 'local' &&
         Object.keys(subject as Record<string, unknown>).length === 1
-      if (subjectKind !== 'jwt' && subjectKind !== 'sso' && !localWebSubject)
+      const localWorkbenchSubject =
+        record.source === 'session-workbench' &&
+        subjectKind === 'local' &&
+        Object.keys(subject as Record<string, unknown>).length === 1 &&
+        Array.isArray(record.grants) &&
+        record.grants.length === 1 &&
+        record.grants.every(
+          (grant) =>
+            grant &&
+            typeof grant === 'object' &&
+            grant.extension === 'agnes/jobs-web' &&
+            ['jobs.read', 'jobs.control'].includes(grant.name) &&
+            grant.range === '*',
+        )
+      if (subjectKind !== 'jwt' && subjectKind !== 'sso' && !localWebSubject && !localWorkbenchSubject)
         throw new Error('invalid service authority')
       if (!Array.isArray(record.grants) || record.grants.length > 64)
         throw new Error('invalid service authority')

@@ -17,6 +17,10 @@ export function serviceContext(deps: {
   seams: SeamImplementations
   networkAllow: readonly string[]
   log: Logger
+  authorizeProcess?: (
+    identity: Pick<ServiceContext, 'actor' | 'session' | 'requestId' | 'signal'>,
+    cwd: string,
+  ) => Promise<void>
 }): ServiceInvocationDeps['context'] {
   return (entry, identity, alive, workspace) => {
     const refuse = (): never => {
@@ -74,11 +78,14 @@ export function serviceContext(deps: {
       ...(entry.capability.kind === 'effect' && workspace.hookSandbox().openProcess
         ? {
             sandbox: Object.freeze({
-              openProcess: (
+              openProcess: async (
                 request: Parameters<
                   NonNullable<import('@agnes/extension-api').ToolContext['sandbox']['openProcess']>
                 >[0],
               ) => {
+                alive()
+                if (!deps.authorizeProcess) refuse()
+                await deps.authorizeProcess!(identity, request.cwd ?? workspace.root)
                 alive()
                 return workspace.hookSandbox().openProcess!(request)
               },

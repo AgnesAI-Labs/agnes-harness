@@ -295,6 +295,7 @@ import {
   resolveSessionCapabilities,
   type SessionCapabilitySet,
 } from './profile/session-capabilities.js'
+import { authorizeServiceProcess } from './service-process-policy.js'
 import {
   applyTelemetryConsent,
   createSessionHookPort,
@@ -3022,12 +3023,40 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     // 10 ready
     say('host.ready', { hash: profile.hash, extensions: extensionStatus().length })
     const servicesInvocation = serviceInvoker({
+      authorize: async (entry, params, actor, workspace, signal) => {
+        if (
+          entry.owner === 'agnes/jobs-web' &&
+          entry.capability.name === 'jobs.control' &&
+          params.input &&
+          typeof params.input === 'object' &&
+          !Array.isArray(params.input) &&
+          ['open', 'send'].includes(String(params.input.operation))
+        )
+          await authorizeServiceProcess(
+            kernel.get(params.sessionId),
+            {
+              actor,
+              session: {
+                key: params.sessionId,
+                lane: 'main',
+                workspaceRoot: workspace.root,
+                turn: 0,
+                step: 0,
+              },
+              requestId: params.commandId ?? 'inspection',
+              signal,
+            },
+            workspace.root,
+          )
+      },
       registry: services,
       ...(deps.serviceAuthority ? { authority: deps.serviceAuthority } : {}),
       principals: seams.principals,
       audit: deps.audit,
       signal: ac.signal,
       context: serviceContext({
+        authorizeProcess: (identity, cwd) =>
+          authorizeServiceProcess(kernel.get(identity.session?.key ?? ''), identity, cwd),
         seams,
         networkAllow: Object.freeze([...adapters.fs.fence().networkAllow]),
         log: deps.log,

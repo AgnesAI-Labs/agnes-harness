@@ -76,6 +76,7 @@ export {
   type SettingsSelectOption,
   setSettingsSelectOptions,
 } from './settings-option-select.js'
+export { terminalKey, terminalScreen } from './terminal-screen.js'
 export { Badge } from './ui/badge.js'
 export { Button, type ButtonProps } from './ui/button.js'
 export { Dialog, type DialogProps } from './ui/dialog.js'

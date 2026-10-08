@@ -68,6 +68,7 @@ import {
 import { commandAdmissionId, commandBinding } from '../command-binding.js'
 import { runQueued } from '../command-queue.js'
 import { createBlockedComputerUseControlPlane } from '../computer-use-control.js'
+import { registerSessionJobs, type SessionJobServices } from '../session-jobs.js'
 import { registerWorkspaceFiles } from '../workspace-files.js'
 import { type Feed, type LocalContext, legacyLedgerRpcError } from './acp.js'
 
@@ -76,6 +77,7 @@ export type CredentialKind = 'local' | 'jwt' | 'portal-identity' | 'sso' | 'chan
 
 export type AgnesContext = LocalContext & {
   configuration?: boolean
+  sessionServices?: SessionJobServices
   profileHashForSession?: (key: string) => Promise<string | null>
   limits: Limits
   journal: CommandJournal
@@ -435,6 +437,8 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.projectUIOpening',
       'session.projectUIHistory',
       'session.tools',
+      'session.jobs.read',
+      'session.jobs.control',
       'session.workspace.list',
       'session.workspace.read',
       'session.readToolDetail',
@@ -616,6 +620,7 @@ export function registerAgnes(
 ): void {
   const requireOwner = requireSessionOwner(cx)
   registerWorkspaceFiles(ep, cx, requireOwner)
+  registerSessionJobs(ep, cx.sessionServices, requireOwner)
   const computerUseControl = createBlockedComputerUseControlPlane(cx.lockedPackageMutations, cx.computerUse)
   type GrantBindingParams = {
     sessionId: string

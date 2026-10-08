@@ -1927,6 +1927,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       const attached = new Map<string, AttachedFeed>()
       const artifactReadConfigured = artifactRead !== undefined
       const cx: AgnesContext = {
+        sessionServices: { activationBarrier, journal, commandQueue, callService, inspectService },
         host,
         registry: supervisorRegistry,
         prompter,

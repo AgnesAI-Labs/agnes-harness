@@ -37,6 +37,14 @@ export type ServiceInvocationDeps = {
   principals: SeamImplementations['principals']
   audit: AuditSink
   signal: AbortSignal
+  /** Trusted pre-dispatch policy checks also run during effect inspection. */
+  authorize?: (
+    entry: ServiceRegistration,
+    params: ExtensionCallParams,
+    actor: ServiceContext['actor'],
+    workspace: WorkspaceInvocationView,
+    signal: AbortSignal,
+  ) => Promise<void>
   context(
     entry: ServiceRegistration,
     identity: Pick<ServiceContext, 'actor' | 'source' | 'requestId' | 'signal' | 'timeoutMs' | 'session'>,
@@ -150,6 +158,12 @@ export function serviceInvoker(deps: ServiceInvocationDeps) {
       if (decision.effect !== 'allow') throw fail('CAPABILITY_DENIED')
       const input = inspectJsonData(params.input, 1048576)
       if (!input.ok || !entry.input(input.value)) throw fail('INVALID_PARAMS')
+      try {
+        await deps.authorize?.(entry, params, actor, workspace, combined)
+      } catch {
+        throw fail('CAPABILITY_DENIED')
+      }
+      alive()
       if (mode.kind === 'inspect') return { kind: cap.kind }
       if (cap.kind === 'effect') {
         if (!params.commandId) throw fail('INVALID_PARAMS')

@@ -10,7 +10,10 @@ import { ServiceRegistry } from '../../src/ext-host/services.js'
 afterEach(() => vi.unstubAllGlobals())
 // `platform` overrides the fake platform seam (default facts/capability otherwise), so a test can
 // make the seam's answer change between two context-builder invocations.
-function fixture(platform?: Partial<SeamImplementations['platform']>) {
+function fixture(
+  platform?: Partial<SeamImplementations['platform']>,
+  authorizeProcess?: Parameters<typeof serviceContext>[0]['authorizeProcess'],
+) {
   const def = serviceFixture(),
     { handler: _, ...cap } = def
   const manifest: ExtensionManifest = {
@@ -57,7 +60,12 @@ function fixture(platform?: Partial<SeamImplementations['platform']>) {
   // (`context: serviceContext({...})`) and service-invocation.ts's `run()` calls it once per
   // service invocation (`deps.context(entry, {...}, alive)`). Exposing it lets a test call it
   // more than once, the same way production does across two separate calls.
-  const build = serviceContext({ seams, networkAllow: ['allowed.test', 'only-policy.test'], log })
+  const build = serviceContext({
+    seams,
+    networkAllow: ['allowed.test', 'only-policy.test'],
+    log,
+    ...(authorizeProcess ? { authorizeProcess } : {}),
+  })
   const ctx = build(entry, identity, alive, workspace)
   return { ctx, ac, seams, build, entry, identity, alive, workspace }
 }
@@ -196,6 +204,26 @@ it('binds process launch and child cancellation only to journaled effects and Ho
     boundWorkspace,
   )
   await expect(effect.sandbox!.openProcess!({ argv: ['bash'], cwd: workspace.root })).rejects.toThrow(
+    'service operation unavailable',
+  )
+  const approved = fixture(undefined, async () => {}).build(
+    { ...entry, capability: { ...entry.capability, kind: 'effect' } },
+    { ...identity, session },
+    alive,
+    boundWorkspace,
+  )
+  await expect(approved.sandbox!.openProcess!({ argv: ['bash'], cwd: workspace.root })).rejects.toThrow(
     'process backend reached',
+  )
+  const denied = fixture(undefined, async () => {
+    throw new Error('preset denied')
+  }).build(
+    { ...entry, capability: { ...entry.capability, kind: 'effect' } },
+    { ...identity, session },
+    alive,
+    boundWorkspace,
+  )
+  await expect(denied.sandbox!.openProcess!({ argv: ['bash'], cwd: workspace.root })).rejects.toThrow(
+    'preset denied',
   )
 })

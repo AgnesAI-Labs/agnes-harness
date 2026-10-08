@@ -108,7 +108,19 @@ describe('S5 service worker boundary', () => {
       subjectCredential: { kind: 'local' },
       grants: [grant],
     })
+    const workbench = {
+      ...localWeb,
+      source: 'session-workbench',
+      grants: [{ extension: 'agnes/jobs-web', name: 'jobs.control', range: '*' }],
+    }
+    await expect(authority.resolve(workbench)).resolves.toMatchObject({
+      source: 'session-workbench',
+      grants: workbench.grants,
+    })
     for (const invalid of [
+      { ...workbench, grants: [grant] },
+      { ...workbench, grants: [{ ...workbench.grants[0], name: '*' }] },
+      { ...workbench, grants: [...workbench.grants, ...workbench.grants] },
       { ...credential, source: '../reports' },
       { ...credential, kind: 'source-auth' },
       { ...credential, subjectCredential: { kind: 'local' } },
