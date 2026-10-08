@@ -26,6 +26,8 @@ const darwin = process.platform === 'darwin' // guards-allow-platform: shared sy
 const linux = process.platform === 'linux' // guards-allow-platform: shared system leaf, independent of Host.
 type Native = {
   openCanonicalFile?(path: string): number
+  openCanonicalWritableFile?(path: string): number
+  canonicalFs?(operation: string, path: string, recursive: boolean, mode: number): Promise<unknown>
   listCanonicalDirectory?(path: string): string[]
   landlockAbi?(): number
   deleteSkillEntry?(
@@ -688,4 +690,32 @@ export function listCanonicalDirectorySync(path: string): string[] {
   if (!implementation)
     throw Object.assign(new Error('Safe canonical list is unavailable'), { code: 'ENOSYS' })
   return implementation(filePath(path))
+}
+
+/** Open without truncating; callers write and close this descriptor, never reopen the path. */
+export function openCanonicalWritableFileSync(path: string): number {
+  const implementation = native().openCanonicalWritableFile
+  if (!implementation)
+    throw Object.assign(new Error('Safe canonical write is unavailable'), { code: 'ENOSYS' })
+  return implementation(filePath(path))
+}
+export type CanonicalFsStat = {
+  kind: 'file' | 'dir' | 'symlink' | 'other'
+  size: number
+  mtimeMs: number
+  linkTarget?: string
+}
+export function canonicalFs(operation: 'stat', path: string): Promise<CanonicalFsStat>
+export function canonicalFs(
+  operation: 'list',
+  path: string,
+): Promise<{ name: string; kind: CanonicalFsStat['kind'] }[]>
+export function canonicalFs(operation: 'readlink' | 'finalPath', path: string): Promise<string>
+export function canonicalFs(operation: 'mkdir' | 'rm', path: string, recursive?: boolean): Promise<void>
+/** Async no-follow operations anchored to real directory handles; unavailable natives fail closed. */
+export function canonicalFs(operation: string, path: string, recursive = false): Promise<unknown> {
+  const implementation = native().canonicalFs
+  if (!implementation)
+    throw Object.assign(new Error('Safe canonical filesystem is unavailable'), { code: 'ENOSYS' })
+  return implementation(operation, filePath(path), recursive, 0o777)
 }

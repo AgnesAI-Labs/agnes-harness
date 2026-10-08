@@ -1,78 +1,76 @@
-import { type Dirent, promises as fsp, realpathSync, type Stats } from 'node:fs'
-import type { FsIo, FsIoKind } from './fs-io.js'
+import { close, fstat, ftruncate, read, readFile, realpathSync, writeFile } from 'node:fs'
+import { promisify } from 'node:util'
+import { canonicalFs, openCanonicalFileSync, openCanonicalWritableFileSync } from '@agnes/system-node'
+import type { FsIo } from './fs-io.js'
 import { createWin32Platform } from './platform.js'
 
 const onWindows = createWin32Platform().matches()
-
-const kindOf = (e: Dirent | Stats): FsIoKind =>
-  e.isSymbolicLink() ? 'symlink' : e.isDirectory() ? 'dir' : e.isFile() ? 'file' : 'other'
+const closeFd = promisify(close)
+const statFd = promisify(fstat)
+const truncateFd = promisify(ftruncate)
+const readFd = promisify(read)
+const readAllFd = promisify(readFile)
+const writeFd = promisify(writeFile)
 
 const primitives: FsIo = {
   async lstat(abs) {
     try {
-      const st = await fsp.lstat(abs)
-      return { kind: kindOf(st), size: st.size, mtimeMs: st.mtimeMs }
+      return await canonicalFs('stat', abs)
     } catch (error) {
-      // ENOTDIR joins ENOENT: a path through a plain file resolves no further, and the fence decides
-      // on the deepest real prefix plus the unresolved remainder - fail-closed, and correct on a
-      // worktree, where `.git` is a file, not a directory.
       const code = (error as NodeJS.ErrnoException).code
       if (code === 'ENOENT' || code === 'ENOTDIR') return undefined
       throw error
     }
   },
-  readlink: (abs) => fsp.readlink(abs),
-  readFile: (abs) => fsp.readFile(abs),
-  async readRange(abs, opts) {
-    const file = await fsp.open(abs, 'r')
+  readlink: (abs) => canonicalFs('readlink', abs),
+  async readFile(abs) {
+    const fd = openCanonicalFileSync(abs)
     try {
-      const meta = await file.stat()
-      if (!meta.isFile())
-        throw Object.assign(new Error('Regular file required'), {
-          code: meta.isDirectory() ? 'EISDIR' : 'EINVAL',
-        })
-      const length = Math.max(0, Math.min(opts.limit ?? meta.size, meta.size - opts.offset))
-      const bytes = new Uint8Array(length)
-      let read = 0
-      while (read < length) {
-        const result = await file.read(bytes, read, length - read, opts.offset + read)
-        if (!result.bytesRead) break
-        read += result.bytesRead
-      }
-      return bytes.subarray(0, read)
+      return await readAllFd(fd)
     } finally {
-      await file.close()
+      await closeFd(fd)
     }
   },
-  writeFile: (abs, data) => fsp.writeFile(abs, data),
-  async mkdir(abs) {
-    await fsp.mkdir(abs, { recursive: true })
+  async readRange(abs, opts) {
+    const fd = openCanonicalFileSync(abs)
+    try {
+      const meta = await statFd(fd)
+      const length = Math.max(0, Math.min(opts.limit ?? meta.size, meta.size - opts.offset))
+      const bytes = new Uint8Array(length)
+      let count = 0
+      while (count < length) {
+        const result = await readFd(fd, bytes, count, length - count, opts.offset + count)
+        if (!result.bytesRead) break
+        count += result.bytesRead
+      }
+      return bytes.subarray(0, count)
+    } finally {
+      await closeFd(fd)
+    }
   },
-  async readdir(abs) {
-    const ents = await fsp.readdir(abs, { withFileTypes: true })
-    return ents.map((e) => ({ name: e.name, kind: kindOf(e) }))
+  async writeFile(abs, data) {
+    const fd = openCanonicalWritableFileSync(abs)
+    try {
+      await truncateFd(fd, 0)
+      await writeFd(fd, data)
+    } finally {
+      await closeFd(fd)
+    }
   },
-  rm: (abs, opts) => fsp.rm(abs, { recursive: opts.recursive, force: false }),
+  mkdir: (abs) => canonicalFs('mkdir', abs, true),
+  readdir: (abs) => canonicalFs('list', abs),
+  rm: (abs, opts) => canonicalFs('rm', abs, opts.recursive),
 }
 
-/**
- * node:fs, one call per primitive. The two "missing" codes become undefined; anything else throws.
- * On Windows `finalPath` is the native resolver, which expands 8.3 short names; the portable one
- * keeps whatever spelling it was given.
- */
+/** Every operation holds real no-follow parents. No path-based fallback is permitted. */
 export function createLocalFsIo(windows: boolean = onWindows): FsIo {
   return Object.freeze({
     ...primitives,
-    ...(windows ? { finalPath: (abs: string) => fsp.realpath(abs) } : {}),
+    ...(windows ? { finalPath: (abs: string) => canonicalFs('finalPath', abs) } : {}),
   })
 }
-
 export const localFsIo: FsIo = createLocalFsIo()
-
-/**
- * The synchronous counterpart of a canonicalization through the local io: native on Windows, so a
- * root resolved here is spelled as the fence and the daemon spell it.
- */
+/** Initialization canonicalization only; never used to reopen an authorized operation. */
 export function localRealpathSync(path: string): string {
   return onWindows ? realpathSync.native(path) : realpathSync(path)
 }

@@ -24,6 +24,8 @@ static napi_value fail(napi_env env, const char* operation, int error) {
     case ENOTSUP: code = "ENOTSUP"; break;
     case ENOENT: code = "ENOENT"; break;
     case ENOTDIR: code = "ENOTDIR"; break;
+    case ENOTEMPTY: code = "ENOTEMPTY"; break;
+    case ENOMEM: code = "ENOMEM"; break;
   }
   char message[192];
   snprintf(message, sizeof(message), "%s failed", operation);
@@ -95,7 +97,7 @@ static bool normalize_system_root_alias(const char* path, char* output, size_t c
  * allow an attacker to replace an intermediate directory with a symlink before open(). */
 static int open_absolute_directory(const char* path) {
   size_t length = strlen(path);
-  if (length < 2 || path[0] != '/' || path[length - 1] == '/') {
+  if (length < 1 || path[0] != '/' || (length > 1 && path[length - 1] == '/')) {
     errno = EINVAL;
     return -1;
   }
@@ -243,11 +245,16 @@ static napi_value delete_private_artifact(napi_env env, napi_callback_info info)
 #include "skill-delete-posix.h"
 
 #include "canonical-read-posix.h"
+#include "canonical-fs-posix.h"
 
 static napi_value initialize(napi_env env, napi_value exports) {
   napi_value abi, function;
   napi_create_uint32(env, 1, &abi);
   napi_set_named_property(env, exports, "abiVersion", abi);
+  napi_create_function(env, "openCanonicalWritableFile", NAPI_AUTO_LENGTH, open_canonical_writable_file, NULL, &function);
+  napi_set_named_property(env, exports, "openCanonicalWritableFile", function);
+  napi_create_function(env, "canonicalFs", NAPI_AUTO_LENGTH, canonical_fs, NULL, &function);
+  napi_set_named_property(env, exports, "canonicalFs", function);
   napi_create_function(env, "openCanonicalFile", NAPI_AUTO_LENGTH, open_canonical_file, NULL, &function);
   napi_set_named_property(env, exports, "openCanonicalFile", function);
   napi_create_function(env, "listCanonicalDirectory", NAPI_AUTO_LENGTH, list_canonical_directory, NULL, &function);

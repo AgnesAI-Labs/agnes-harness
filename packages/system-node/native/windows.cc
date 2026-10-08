@@ -867,31 +867,13 @@ static napi_value environmentNamesEqual(napi_env env, napi_callback_info info) {
   return result;
 }
 
+#include "canonical-fs-windows.h"
+
 // Hold every directory without FILE_SHARE_DELETE while resolving children. Reparse points are refused.
 static bool canonicalDirectories(napi_env env, const std::wstring& path, bool leafDirectory,
                                  std::vector<std::unique_ptr<Handle>>& held) {
-  if (path.size() < 7 || path.compare(0, 4, L"\\\\?\\") != 0 || path[5] != L':' || path[6] != L'\\') {
-    failure(env, "canonical local drive path required", ERROR_ACCESS_DENIED); return false;
-  }
-  size_t limit = leafDirectory ? path.size() : path.find_last_of(L'\\');
-  for (size_t end = 7; end <= limit;) {
-    std::wstring prefix = path.substr(0, end);
-    auto handle = std::make_unique<Handle>(CreateFileW(prefix.c_str(), FILE_READ_ATTRIBUTES,
-      FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
-      FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
-    BY_HANDLE_FILE_INFORMATION information{};
-    if (handle->value == INVALID_HANDLE_VALUE || !GetFileInformationByHandle(handle->value, &information)) {
-      failure(env, "open canonical directory", GetLastError()); return false;
-    }
-    if (!(information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ||
-        information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-      failure(env, "real directory required", ERROR_ACCESS_DENIED); return false;
-    }
-    held.push_back(std::move(handle));
-    if (end == limit) break;
-    size_t next = path.find(L'\\', end + 1);
-    end = next == std::wstring::npos || next > limit ? limit : next;
-  }
+  DWORD error = canonicalHold(path, leafDirectory, false, held);
+  if (error) { failure(env, "open canonical directory", error); return false; }
   return true;
 }
 static napi_value openCanonicalFile(napi_env env, napi_callback_info info) {
@@ -936,6 +918,8 @@ static napi_value initialize(napi_env env, napi_value exports) {
     return nullptr;
   }
   napi_property_descriptor functions[] = {
+    {"openCanonicalWritableFile", nullptr, guarded<openCanonicalWritableFile>, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"canonicalFs", nullptr, guarded<canonicalFs>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"openCanonicalFile", nullptr, guarded<openCanonicalFile>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"listCanonicalDirectory", nullptr, guarded<listCanonicalDirectory>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"spawnDetached", nullptr, guarded<spawnDetached>, nullptr, nullptr, nullptr, napi_default, nullptr},

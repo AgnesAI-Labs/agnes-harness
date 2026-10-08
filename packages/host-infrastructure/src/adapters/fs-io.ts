@@ -1,5 +1,5 @@
 export type FsIoKind = 'file' | 'dir' | 'symlink' | 'other'
-export type FsIoStat = Readonly<{ kind: FsIoKind; size: number; mtimeMs: number }>
+export type FsIoStat = Readonly<{ kind: FsIoKind; size: number; mtimeMs: number; linkTarget?: string }>
 
 /**
  * The raw storage under the fence. Every path is absolute and already lexically resolved; the

@@ -2,24 +2,26 @@
 #include <dirent.h>
 #include <stdlib.h>
 
-static int canonical_file(const char* path) {
-  char parent[4096];
-  size_t length = strlen(path);
+static int canonical_parent(const char* path, char* leaf, size_t capacity) {
+  char parent[4096]; size_t length = strlen(path);
   if (length >= sizeof(parent) || length < 2 || path[0] != '/') { errno = EINVAL; return -1; }
   memcpy(parent, path, length + 1);
   char* slash = strrchr(parent, '/');
-  if (!slash || slash == parent || !slash[1] || strcmp(slash + 1, ".") == 0 || strcmp(slash + 1, "..") == 0) {
-    errno = EINVAL; return -1;
-  }
-  *slash = '\0';
-  int directory = open_absolute_directory(parent);
+  if (!slash || !slash[1] || strcmp(slash + 1, ".") == 0 || strcmp(slash + 1, "..") == 0 ||
+      strlen(slash + 1) >= capacity) { errno = EINVAL; return -1; }
+  strcpy(leaf, slash + 1);
+  if (slash == parent) parent[1] = '\0'; else *slash = '\0';
+  return open_absolute_directory(parent);
+}
+static int canonical_file_flags(const char* path, int flags) {
+  char leaf[NAME_MAX + 1];
+  int directory = canonical_parent(path, leaf, sizeof(leaf));
   if (directory < 0) return -1;
-  int fd = openat(directory, slash + 1, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
-  int saved = errno;
-  close(directory);
-  errno = saved;
+  int fd = openat(directory, leaf, flags | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK, 0666);
+  int saved = errno; close(directory); errno = saved;
   return fd;
 }
+static int canonical_file(const char* path) { return canonical_file_flags(path, O_RDONLY); }
 static napi_value open_canonical_file(napi_env env, napi_callback_info info) {
   napi_value args[1], result; size_t count = 1; char path[4096];
   if (napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 1 ||
@@ -27,8 +29,10 @@ static napi_value open_canonical_file(napi_env env, napi_callback_info info) {
   int fd = canonical_file(path);
   if (fd < 0) return fail(env, "open canonical file", errno);
   struct stat st;
-  if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) {
-    close(fd); return fail(env, "regular file required", EACCES);
+  if (fstat(fd, &st) != 0) { int error = errno; close(fd); return fail(env, "stat canonical file", error); }
+  if (!S_ISREG(st.st_mode)) {
+    int error = S_ISDIR(st.st_mode) ? EISDIR : EACCES;
+    close(fd); return fail(env, "regular file required", error);
   }
   if (napi_create_int32(env, fd, &result) != napi_ok) { close(fd); return NULL; }
   return result;

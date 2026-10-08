@@ -1,4 +1,4 @@
-import { basename, dirname, isAbsolute, join, parse, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, parse, resolve, sep } from 'node:path'
 import { decideFsPath, FS_DENIED, type FsPolicy } from '@agnes/core'
 import type { FsEntry, FsStat } from '@agnes/extension-api'
 import { sessionHasFullFileAccess } from '@agnes/host-common/session-file-access'
@@ -55,45 +55,54 @@ const windowDecoder = new TextDecoder('utf-8', { ignoreBOM: true })
  * observable; its target is then resolved even when the target does not exist yet.
  *
  * This is called at operation time, never cached: a directory traded for a symlink after the
- * policy was compiled resolves to where it points now, not where it pointed then. L0 makes no
- * RESOLVE_BENEATH promise about a hostile process racing the check - that is what the L1 OS
- * backend is for.
+ * policy was compiled resolves to where it points now, not where it pointed then. The production I/O opens every component without following links and holds the resulting
+ * handles for the operation. A changed component is refused rather than reopened through a link.
  *
  * Where the io reports final paths, the link-free prefix the walk reached is respelled by it, so a
  * short-name alias of a directory decides exactly as its long name does, and a root pinned in one
  * spelling still contains a path asked for in the other.
  */
-async function canonicalize(io: FsIo, abs: string, requested: string = abs): Promise<string> {
+async function canonicalNames(
+  io: FsIo,
+  abs: string,
+  requested: string = abs,
+): Promise<{ real: string; named: string }> {
   const seen = new Set<string>()
-  const settle = async (prefix: string, rest: readonly string[]): Promise<string> => {
-    const real = io.finalPath ? await io.finalPath(prefix) : prefix
-    return rest.length === 0 ? real : resolve(real, ...rest)
+  const settle = async (prefix: string, rest: readonly string[], named?: string) => {
+    const prefixName = io.finalPath ? await io.finalPath(prefix) : prefix
+    const real = rest.length === 0 ? prefixName : resolve(prefixName, ...rest)
+    return { real, named: named ?? real }
   }
-  const walk = async (candidate: string): Promise<string> => {
+  const walk = async (candidate: string, named?: string): Promise<{ real: string; named: string }> => {
     const normalized = resolve(candidate)
+    if (seen.has(normalized) || seen.size >= 40) refuse(requested, 'contains a symlink cycle')
+    seen.add(normalized)
     const volumeRoot = parse(normalized).root
     const parts = normalized.slice(volumeRoot.length).split(sep).filter(Boolean)
     let current = volumeRoot
     for (let index = 0; index < parts.length; index++) {
-      const part = parts[index] as string
-      const next = join(current, part)
-      // The io answers undefined for both ENOENT and ENOTDIR: the policy then decides on the
-      // deepest real prefix plus the unresolved remainder.
+      const next = join(current, parts[index] as string)
       const stat = await io.lstat(next)
-      if (stat === undefined) return settle(current, parts.slice(index))
+      if (stat === undefined) return settle(current, parts.slice(index), named)
       if (stat.kind !== 'symlink') {
         current = next
         continue
       }
-      if (seen.has(next)) refuse(requested, 'contains a symlink cycle')
-      seen.add(next)
-      const target = await io.readlink(next)
+      const target = stat.linkTarget ?? (await io.readlink(next))
       const targetPath = isAbsolute(target) ? target : resolve(dirname(next), target)
-      return walk(resolve(targetPath, ...parts.slice(index + 1)))
+      // Preserve the final link's name from this same walk. Rewalking its parent after the policy
+      // decision could authorize one directory and stat a different directory after replacement.
+      return walk(
+        resolve(targetPath, ...parts.slice(index + 1)),
+        named ?? (index === parts.length - 1 ? next : undefined),
+      )
     }
-    return settle(current, [])
+    return settle(current, [], named)
   }
   return walk(abs)
+}
+async function canonicalize(io: FsIo, abs: string, requested: string = abs): Promise<string> {
+  return (await canonicalNames(io, abs, requested)).real
 }
 
 /** A one-rule policy, so segment matching and case folding stay the one rule decideFsPath states. */
@@ -135,12 +144,12 @@ export function createFs(
   async function authorize(
     p: string,
     mode: 'read' | 'write' | 'remove' = 'read',
-  ): Promise<{ real: string; abs: string }> {
+  ): Promise<{ real: string; named: string }> {
     const { policy, caseSensitive, readOnly } = binding()
     if (readOnly && mode !== 'read') refuse(p, 'workspace is read-only')
     usable(p)
     const abs = isAbsolute(p) ? p : resolve(policy.workspaceRoot, p)
-    const real = await canonicalize(io, abs, p)
+    const { real, named } = await canonicalNames(io, abs, p)
     const decision = decideFsPath(policy, real, { caseSensitive })
     // Full session access widens unmatched paths; matching denies remain authoritative.
     if (decision.effect !== 'allow' && !(decision.reason === 'no-match' && sessionHasFullFileAccess(fs)))
@@ -167,12 +176,12 @@ export function createFs(
       if (roots.some((root) => inside(root, real) || (mode === 'remove' && inside(real, root))))
         refuse(p, 'is denied by policy')
     }
-    return { real, abs }
+    return { real, named }
   }
 
   // A read that matched no rule may still land inside a Skill directory. A root that is the
   // workspace or above it is ignored: it would turn the overlay into a way around the policy.
-  async function authorizeRead(p: string): Promise<{ real: string; abs: string }> {
+  async function authorizeRead(p: string): Promise<{ real: string; named: string }> {
     if (!readRoots) return authorize(p)
     usable(p)
     try {
@@ -180,7 +189,7 @@ export function createFs(
     } catch (err) {
       const { policy, caseSensitive } = binding()
       const abs = isAbsolute(p) ? p : resolve(policy.workspaceRoot, p)
-      const real = await canonicalize(io, abs, p)
+      const { real, named } = await canonicalNames(io, abs, p)
       if (decideFsPath(policy, real, { caseSensitive }).reason !== 'no-match') throw err
       const inside = (outer: string, inner: string): boolean =>
         decideFsPath(overlay(outer), inner, { caseSensitive }).effect === 'allow'
@@ -193,7 +202,7 @@ export function createFs(
         (root) => root !== undefined && !inside(root, policy.workspaceRoot) && inside(root, real),
       )
       if (!open) throw err
-      return { real, abs }
+      return { real, named }
     }
   }
 
@@ -254,8 +263,7 @@ export function createFs(
     // root is refused here exactly as it is on the read path; only the final component is then
     // stat'ed unresolved.
     async stat(p) {
-      const { abs } = await authorizeRead(p)
-      const named = join(await canonicalize(io, dirname(abs), p), basename(abs))
+      const { named } = await authorizeRead(p)
       const st = await io.lstat(named)
       if (st === undefined) throw missing(p)
       return { kind: st.kind, size: st.size, mtimeMs: st.mtimeMs }
@@ -269,6 +277,13 @@ export function createFs(
       // policy that allows a leaf but not its directory is not a licence to unlink there.
       const { real } = await authorize(p, 'remove')
       const { policy, caseSensitive } = binding()
+      if (
+        opts.recursive &&
+        policy.rules.some(
+          (rule) => rule.hard && decideFsPath(overlay(real), rule.path, { caseSensitive }).effect === 'allow',
+        )
+      )
+        refuse(p, 'contains a hard-denied descendant')
       const parent = decideFsPath(policy, dirname(real), { caseSensitive })
       if (parent.effect !== 'allow' && !(parent.reason === 'no-match' && sessionHasFullFileAccess(fs)))
         refuse(p, 'is denied by policy at its parent')

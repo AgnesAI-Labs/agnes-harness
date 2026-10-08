@@ -1,208 +1,193 @@
 import type { FsIo, FsIoKind, FsIoStat } from './fs-io.js'
 import type { RemoteTransport } from './remote-transport.js'
 
-// One server-side script per structured answer: parsing `ls -l` output is a portability trap, while
-// a script that prints exactly the fields wanted, one per line, is not. Every script below reports
-// failures by Python's `errno.errorcode` name, which is the same vocabulary Node's `node:fs` uses
-// for `.code` (both are POSIX errno names), so a caller can pattern-match the remote io's errors
-// exactly as it does the local one's.
+// The remote process opens each directory relative to a held no-follow descriptor. File contents
+// use that same descriptor, including bounded byte windows. Transport upload/download methods
+// cannot supply this guarantee and are deliberately not used by the fenced adapter.
+const SCRIPT = String.raw`
+import os, sys, stat, errno, base64, json
+flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 
-const STAT_SCRIPT = [
-  'import os, sys, stat as st',
-  'p = sys.argv[1]',
-  'try:',
-  '    s = os.lstat(p)',
-  'except (FileNotFoundError, NotADirectoryError):',
-  '    print("none")',
-  '    sys.exit(0)',
-  'kind = "symlink" if st.S_ISLNK(s.st_mode) else "dir" if st.S_ISDIR(s.st_mode) else "file" if st.S_ISREG(s.st_mode) else "other"',
-  'print(kind)',
-  'print(s.st_size)',
-  'print(int(s.st_mtime * 1000))',
-].join('\n')
+def directory(path, create=False):
+    if not path.startswith('/') or '\x00' in path: raise OSError(errno.EINVAL, 'absolute path required')
+    fd = os.open('/', flags)
+    parts = path.split('/')[1:]
+    if parts == ['']: return fd
+    try:
+        for index, part in enumerate(parts):
+            if not part or part in ('.', '..'): raise OSError(errno.EINVAL, 'canonical component required')
+            if create:
+                try: os.mkdir(part, dir_fd=fd)
+                except FileExistsError: pass
+            try: child = os.open(part, flags, dir_fd=fd)
+            except OSError as error:
+                if create and index == len(parts)-1 and error.errno in (errno.ENOTDIR, errno.ELOOP):
+                    raise OSError(errno.EEXIST, 'directory collision')
+                raise
+            os.close(fd)
+            fd = child
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
 
-const READ_RANGE_SCRIPT = [
-  'import os, sys, stat, errno, base64',
-  'try:',
-  '    fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NONBLOCK)',
-  '    try:',
-  '        meta = os.fstat(fd)',
-  '        if not stat.S_ISREG(meta.st_mode): raise OSError(errno.EISDIR if stat.S_ISDIR(meta.st_mode) else errno.EINVAL, "regular file required")',
-  '        offset = int(sys.argv[2])',
-  '        limit = int(sys.argv[3]) if sys.argv[3] != "-" else meta.st_size',
-  '        remaining = max(0, min(limit, meta.st_size - offset))',
-  '        os.lseek(fd, offset, os.SEEK_SET)',
-  '        chunks = []',
-  '        while remaining:',
-  '            chunk = os.read(fd, min(remaining, 65536))',
-  '            if not chunk: break',
-  '            chunks.append(chunk)',
-  '            remaining -= len(chunk)',
-  '        print(base64.b64encode(b"".join(chunks)).decode("ascii"))',
-  '    finally: os.close(fd)',
-  'except OSError as error:',
-  '    print(errno.errorcode.get(error.errno, "EIO"), file=sys.stderr)',
-  '    sys.exit(1)',
-].join('\n')
+def parent(path):
+    outer, leaf = os.path.split(path)
+    if not leaf or leaf in ('.', '..'): raise OSError(errno.EINVAL, 'canonical leaf required')
+    return directory(outer), leaf
 
-const READDIR_SCRIPT = [
-  'import os, sys, stat as st',
-  'd = sys.argv[1]',
-  'for n in os.listdir(d):',
-  '    s = os.lstat(os.path.join(d, n))',
-  '    kind = "symlink" if st.S_ISLNK(s.st_mode) else "dir" if st.S_ISDIR(s.st_mode) else "file" if st.S_ISREG(s.st_mode) else "other"',
-  '    print(kind + "\\t" + n)',
-].join('\n')
+def kind(mode):
+    return 'symlink' if stat.S_ISLNK(mode) else 'dir' if stat.S_ISDIR(mode) else 'file' if stat.S_ISREG(mode) else 'other'
 
-const MKDIR_SCRIPT = [
-  'import os, sys, errno',
-  'p = sys.argv[1]',
-  'try:',
-  '    os.makedirs(p, exist_ok=True)',
-  'except OSError as e:',
-  '    print(errno.errorcode.get(e.errno, "UNKNOWN"))',
-  '    sys.exit(1)',
-  'print("ok")',
-].join('\n')
+def metadata(fd, leaf):
+    meta = os.stat(leaf, dir_fd=fd, follow_symlinks=False)
+    result = {'kind': kind(meta.st_mode), 'size': meta.st_size, 'mtimeMs': meta.st_mtime_ns / 1000000}
+    if stat.S_ISLNK(meta.st_mode): result['linkTarget'] = os.readlink(leaf, dir_fd=fd)
+    return result
 
-const RM_SCRIPT = [
-  'import os, sys, shutil, errno',
-  'p = sys.argv[1]',
-  'recursive = sys.argv[2] == "1"',
-  'try:',
-  '    if recursive:',
-  '        if os.path.isdir(p) and not os.path.islink(p):',
-  '            shutil.rmtree(p)',
-  '        else:',
-  '            os.remove(p)',
-  '    else:',
-  '        os.remove(p)',
-  'except OSError as e:',
-  '    print(errno.errorcode.get(e.errno, "UNKNOWN"))',
-  '    sys.exit(1)',
-  'print("ok")',
-].join('\n')
+def remove(fd, leaf, recursive, depth=0):
+    if depth >= 256: raise OSError(errno.ELOOP, 'directory depth exceeded')
+    observed = os.stat(leaf, dir_fd=fd, follow_symlinks=False)
+    if not stat.S_ISDIR(observed.st_mode):
+        os.unlink(leaf, dir_fd=fd)
+        return
+    if not recursive: raise OSError(errno.EISDIR, 'recursive flag required')
+    child = os.open(leaf, flags, dir_fd=fd)
+    try:
+        opened = os.fstat(child)
+        if (opened.st_dev, opened.st_ino) != (observed.st_dev, observed.st_ino): raise OSError(errno.EACCES, 'directory changed')
+        for name in os.listdir(child):
+            try: remove(child, name, True, depth+1)
+            except FileNotFoundError: pass
+        current = os.stat(leaf, dir_fd=fd, follow_symlinks=False)
+        if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino):
+            raise OSError(errno.EACCES, 'directory changed')
+        os.rmdir(leaf, dir_fd=fd)
+    finally: os.close(child)
 
-/**
- * An `FsIo` derived purely from a `RemoteTransport`: `exec()` for every structured read (lstat,
- * readdir), plain commands for the rest, and `upload`/`download` for file content - routing bytes
- * through a shell's stdout would corrupt binaries and hit argument-length limits on anything large.
- *
- * Errors carry a POSIX `.code` (EEXIST, ENOENT, ENOTDIR, ...) wherever the contract's callers match
- * on it, mirroring what `fs-io-local.ts` gets for free from `node:fs`. `rm`'s non-recursive-on-a-
- * directory case is special: Node's `fs.rm` reports that with its own `ERR_FS_EISDIR` code, not a
- * raw errno, so it is checked here before the remote command ever runs, rather than reverse-
- * engineered from a shell failure.
- */
+operation, path = sys.argv[1:3]
+try:
+    if operation == 'mkdir':
+        fd = directory(path, True)
+        os.close(fd)
+    elif operation == 'list':
+        fd = directory(path)
+        try:
+            result = []
+            for name in os.listdir(fd):
+                try: meta = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                except FileNotFoundError: continue
+                result.append({'name': name, 'kind': kind(meta.st_mode)})
+            print(json.dumps(result))
+        finally: os.close(fd)
+    elif operation == 'stat' and path == '/':
+        fd = directory('/')
+        try:
+            meta = os.fstat(fd)
+            print(json.dumps({'kind': 'dir', 'size': meta.st_size, 'mtimeMs': meta.st_mtime_ns/1000000}))
+        finally: os.close(fd)
+    else:
+        fd, leaf = parent(path)
+        try:
+            if operation == 'stat': print(json.dumps(metadata(fd, leaf)))
+            elif operation == 'readlink': print(json.dumps(os.readlink(leaf, dir_fd=fd)))
+            elif operation == 'rm': remove(fd, leaf, sys.argv[3] == '1')
+            elif operation in ('read', 'write'):
+                mode = os.O_WRONLY | os.O_CREAT if operation == 'write' else os.O_RDONLY
+                child = os.open(leaf, mode | os.O_NOFOLLOW | os.O_NONBLOCK, 0o666, dir_fd=fd)
+                try:
+                    meta = os.fstat(child)
+                    if not stat.S_ISREG(meta.st_mode): raise OSError(errno.EISDIR if stat.S_ISDIR(meta.st_mode) else errno.EACCES, 'regular file required')
+                    if operation == 'write':
+                        data = base64.b64decode(sys.stdin.buffer.read(), validate=True)
+                        os.ftruncate(child, 0)
+                        view = memoryview(data)
+                        while view:
+                            written = os.write(child, view)
+                            if written <= 0: raise OSError(errno.EIO, 'incomplete write')
+                            view = view[written:]
+                    else:
+                        offset = int(sys.argv[3])
+                        limit = int(sys.argv[4]) if sys.argv[4] != '-' else meta.st_size
+                        remaining = max(0, min(limit, meta.st_size-offset))
+                        os.lseek(child, offset, os.SEEK_SET)
+                        chunks = []
+                        while remaining:
+                            chunk = os.read(child, min(remaining, 65536))
+                            if not chunk: break
+                            chunks.append(chunk)
+                            remaining -= len(chunk)
+                        print(base64.b64encode(b''.join(chunks)).decode('ascii'))
+                finally: os.close(child)
+            else: raise OSError(errno.EINVAL, 'unknown operation')
+        finally: os.close(fd)
+except OSError as error:
+    if operation == 'stat' and error.errno in (errno.ENOENT, errno.ENOTDIR):
+        print('null')
+    else:
+        code = 'ERR_FS_EISDIR' if operation == 'rm' and error.errno == errno.EISDIR else errno.errorcode.get(error.errno, 'EIO')
+        print(code, file=sys.stderr)
+        sys.exit(1)
+`
+
 export function createRemoteFsIo(transport: RemoteTransport): FsIo {
-  const run = async (cmd: string[]): Promise<{ code: number; stdout: string; stderr: string }> =>
-    await transport.exec(cmd, { cwd: '/' })
-
-  const lstat = async (abs: string): Promise<FsIoStat | undefined> => {
-    const r = await run(['python3', '-c', STAT_SCRIPT, abs])
-    if (r.code !== 0) throw new Error(`remote lstat failed for ${abs}: ${r.stderr}`)
-    const [kind, size, mtime] = r.stdout.trim().split('\n')
-    if (kind === 'none') return undefined
-    return { kind: kind as FsIoKind, size: Number(size), mtimeMs: Number(mtime) }
+  const run = async (
+    operation: string,
+    abs: string,
+    args: string[] = [],
+    options: { stdin?: string; maxOutputBytes?: number } = {},
+  ) => {
+    const result = await transport.exec(['python3', '-c', SCRIPT, operation, abs, ...args], {
+      cwd: '/',
+      ...options,
+    })
+    if (result.truncated || result.timedOut)
+      throw Object.assign(new Error('Remote filesystem operation did not complete'), {
+        code: result.truncated ? 'EFBIG' : 'ETIMEDOUT',
+      })
+    if (result.code !== 0)
+      throw Object.assign(new Error('Remote filesystem operation failed'), {
+        code: /^(?:E[A-Z0-9_]+|ERR_FS_EISDIR)$/.test(result.stderr.trim()) ? result.stderr.trim() : 'EIO',
+      })
+    return result.stdout.trim()
   }
-
+  const bytes = async (abs: string, offset: number, limit?: number) => {
+    const encoded = await run(
+      'read',
+      abs,
+      [String(offset), limit === undefined ? '-' : String(limit)],
+      limit === undefined ? {} : { maxOutputBytes: Math.ceil(limit / 3) * 4 + 32 },
+    )
+    if (limit !== undefined && encoded.length > Math.ceil(limit / 3) * 4)
+      throw Object.assign(new Error('Remote byte read exceeded its limit'), { code: 'EFBIG' })
+    const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0
+    if (encoded.length % 4 !== 0 || /[^A-Za-z0-9+/]/.test(encoded.slice(0, encoded.length - padding)))
+      throw Object.assign(new Error('Invalid remote byte read'), { code: 'EIO' })
+    const data = new Uint8Array(Buffer.from(encoded, 'base64'))
+    if (limit !== undefined && data.length > limit)
+      throw Object.assign(new Error('Remote byte read exceeded its limit'), { code: 'EFBIG' })
+    return data
+  }
   return Object.freeze({
-    lstat,
-    async readlink(abs) {
-      const r = await run(['readlink', abs])
-      if (r.code !== 0) throw new Error(`remote readlink failed for ${abs}: ${r.stderr}`)
-      return r.stdout.replace(/\n$/, '')
+    async lstat(abs: string) {
+      return (JSON.parse(await run('stat', abs)) as FsIoStat | null) ?? undefined
     },
-    async readFile(abs) {
-      // A missing file must arrive as a rejection carrying `.code === 'ENOENT'`, not as an empty
-      // result - see "Error semantics" on the `RemoteTransport` interface. The guard below is the
-      // last resort for a transport that ignores that: it reports a failure rather than handing
-      // back zero bytes as if the file were empty, but it cannot invent the errno.
-      const [got] = await transport.download([abs])
-      if (got === undefined) throw new Error(`remote readFile returned nothing for ${abs}`)
-      return got.content
+    async readlink(abs: string) {
+      return JSON.parse(await run('readlink', abs)) as string
     },
-    async readRange(abs, opts) {
-      const result = await transport.exec(
-        [
-          'python3',
-          '-c',
-          READ_RANGE_SCRIPT,
-          abs,
-          String(opts.offset),
-          opts.limit === undefined ? '-' : String(opts.limit),
-        ],
-        {
-          cwd: '/',
-          ...(opts.limit === undefined ? {} : { maxOutputBytes: Math.ceil(opts.limit / 3) * 4 + 32 }),
-        },
-      )
-      if (result.truncated || result.timedOut)
-        throw Object.assign(new Error('Remote byte read did not complete'), {
-          code: result.truncated ? 'EFBIG' : 'ETIMEDOUT',
-        })
-      if (result.code !== 0)
-        throw Object.assign(new Error('Remote byte read failed'), {
-          code: /^E[A-Z0-9_]+$/.test(result.stderr.trim()) ? result.stderr.trim() : 'EIO',
-        })
-      const encoded = result.stdout.trim()
-      if (opts.limit !== undefined && encoded.length > Math.ceil(opts.limit / 3) * 4)
-        throw Object.assign(new Error('Remote byte read exceeded its limit'), { code: 'EFBIG' })
-      // Avoid a repeated-group regex: ordinary multi-MiB tool windows overflow its backtracking
-      // stack. Validate the alphabet and terminal padding with a linear scan instead.
-      const padding = encoded.endsWith('==') ? 2 : encoded.endsWith('=') ? 1 : 0
-      if (encoded.length % 4 !== 0 || /[^A-Za-z0-9+/]/.test(encoded.slice(0, encoded.length - padding)))
-        throw Object.assign(new Error('Invalid remote byte read'), { code: 'EIO' })
-      const bytes = new Uint8Array(Buffer.from(encoded, 'base64'))
-      if (opts.limit !== undefined && bytes.length > opts.limit)
-        throw Object.assign(new Error('Remote byte read exceeded its limit'), { code: 'EFBIG' })
-      return bytes
+    readFile: (abs: string) => bytes(abs, 0),
+    readRange: (abs: string, opts: { offset: number; limit?: number }) => bytes(abs, opts.offset, opts.limit),
+    async writeFile(abs: string, data: Uint8Array) {
+      await run('write', abs, [], { stdin: Buffer.from(data).toString('base64') })
     },
-    async writeFile(abs, data) {
-      // Forward the transport's structured error unchanged. B1 makes EISDIR/ENOTDIR/EACCES
-      // best-effort under the errno tiers declared in core/remote-transport. The
-      // loopback still gets precise node:fs errors; the retained Python metadata path is unchanged.
-      await transport.upload([{ path: abs, content: data }])
+    async mkdir(abs: string) {
+      await run('mkdir', abs)
     },
-    async mkdir(abs) {
-      const r = await run(['python3', '-c', MKDIR_SCRIPT, abs])
-      if (r.code !== 0) {
-        const code = r.stdout.trim() || undefined
-        throw Object.assign(
-          new Error(`remote mkdir failed for ${abs}: ${code ?? r.stderr}`),
-          code ? { code } : {},
-        )
-      }
+    async readdir(abs: string) {
+      return JSON.parse(await run('list', abs)) as { name: string; kind: FsIoKind }[]
     },
-    async readdir(abs) {
-      const r = await run(['python3', '-c', READDIR_SCRIPT, abs])
-      if (r.code !== 0) throw new Error(`remote readdir failed for ${abs}: ${r.stderr}`)
-      return r.stdout
-        .split('\n')
-        .filter((l) => l.length > 0)
-        .map((l) => {
-          const tab = l.indexOf('\t')
-          return { kind: l.slice(0, tab) as FsIoKind, name: l.slice(tab + 1) }
-        })
-    },
-    async rm(abs, opts) {
-      if (!opts.recursive) {
-        const st = await lstat(abs)
-        if (st?.kind === 'dir') {
-          throw Object.assign(
-            new Error(`ERR_FS_EISDIR: Path is a directory: rm returned EISDIR (is a directory) ${abs}`),
-            { code: 'ERR_FS_EISDIR' },
-          )
-        }
-      }
-      const r = await run(['python3', '-c', RM_SCRIPT, abs, opts.recursive ? '1' : '0'])
-      if (r.code !== 0) {
-        const code = r.stdout.trim() || undefined
-        throw Object.assign(
-          new Error(`remote rm failed for ${abs}: ${code ?? r.stderr}`),
-          code ? { code } : {},
-        )
-      }
+    async rm(abs: string, opts: { recursive: boolean }) {
+      await run('rm', abs, [opts.recursive ? '1' : '0'])
     },
   })
 }

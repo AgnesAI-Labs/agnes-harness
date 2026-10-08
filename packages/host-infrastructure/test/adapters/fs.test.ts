@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -14,6 +15,9 @@ import { testFsPolicy } from '@agnes/core/testkit'
 import { withSessionFileAccess } from '@agnes/host-common/session-file-access'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createFs, type FsBinding } from '../../src/adapters/fs.js'
+import { localFsIo } from '../../src/adapters/fs-io-local.js'
+import { createRemoteFsIo } from '../../src/adapters/fs-io-remote.js'
+import { createLoopbackTransport } from '../../src/adapters/remote-transport.js'
 
 const directoryLink = process.platform === 'win32' ? 'junction' : 'dir' // guards-allow-platform: actual directory-link fixtures.
 
@@ -152,6 +156,15 @@ describe('fs adapter', () => {
     await expect(f.read('link')).rejects.toThrow(/E_FS_DENIED/)
     await expect(f.write('.git/config', new Uint8Array())).rejects.toThrow(/E_FS_DENIED/)
     await expect(f.list('.git')).rejects.toThrow(/E_FS_DENIED/)
+    writeFileSync(join(root, '.git', 'synthetic-state'), 'keep')
+    await withSessionFileAccess(
+      f,
+      () => true,
+      async () => {
+        await expect(f.rm('.', { recursive: true })).rejects.toMatchObject({ code: 'E_FS_DENIED' })
+      },
+    )
+    expect(readFileSync(join(root, '.git', 'synthetic-state'), 'utf8')).toBe('keep')
   })
   it('says which of the two rules refused, and refuses every one of the eight methods', async () => {
     const f = fs()
@@ -225,6 +238,52 @@ describe('fs adapter', () => {
     await expect(f.write('late/new', new Uint8Array([1]))).rejects.toThrow(/E_FS_DENIED/)
     expect(existsSync(join(outside, 'late-target', 'new'))).toBe(false)
   })
+  it.each(
+    ['read', 'write', 'stat', 'list', 'mkdir', 'rm'].flatMap((operation) =>
+      (process.platform === 'win32' ? ['local'] : ['local', 'remote']).map((backend) => ({
+        operation: operation as 'read' | 'write' | 'stat' | 'list' | 'mkdir' | 'rm',
+        backend,
+      })),
+    ),
+  )(
+    'refuses $backend $operation after an authorized parent changes identity without accessing the outside tree',
+    async ({ operation, backend }) => {
+      const canonicalRoot = realpathSync.native(root)
+      const checked = join(canonicalRoot, 'checked')
+      const destination = join(realpathSync.native(outside), 'protected')
+      mkdirSync(checked)
+      mkdirSync(destination)
+      writeFileSync(join(checked, 'value'), 'authorized')
+      writeFileSync(join(destination, 'value'), 'outside synthetic sentinel')
+      const path = operation === 'list' ? checked : join(checked, operation === 'mkdir' ? 'new' : 'value')
+      let changed = false
+      const io =
+        backend === 'local' ? localFsIo : createRemoteFsIo(createLoopbackTransport({ root: canonicalRoot }))
+      const fenced = createFs(() => bindingFor(canonicalRoot), {
+        ...io,
+        async lstat(requested) {
+          const result = await io.lstat(requested)
+          if (!changed && requested === path) {
+            changed = true
+            renameSync(checked, join(canonicalRoot, 'checked-before-change'))
+            symlinkSync(destination, checked, directoryLink)
+          }
+          return result
+        },
+      })
+      const run = () =>
+        operation === 'write'
+          ? fenced.write(path, new TextEncoder().encode('replacement'))
+          : operation === 'rm'
+            ? fenced.rm(path, { recursive: true })
+            : fenced[operation](path)
+      await expect(run()).rejects.toThrow()
+      expect(changed).toBe(true)
+      expect(readFileSync(join(destination, 'value'), 'utf8')).toBe('outside synthetic sentinel')
+      expect(existsSync(join(destination, 'new'))).toBe(false)
+      expect(readFileSync(join(canonicalRoot, 'checked-before-change', 'value'), 'utf8')).toBe('authorized')
+    },
+  )
   it('allows a symlink that stays inside the workspace', async () => {
     const f = fs()
     await f.mkdir('real')
