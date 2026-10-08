@@ -52,7 +52,7 @@ export const textStatsTool = {
 
 ```sh
 node tools/public-docs/verify.mjs
-pnpm exec vitest run tools/public-docs/examples.test.ts packages/host/test/ext-host/row-extension-host.test.ts --maxWorkers=1
+pnpm exec vitest run tools/public-docs/examples.test.ts packages/host-extensions/test/ext-host/row-extension-host.test.ts --maxWorkers=1
 ```
 
 样例测试直接加载现有后端模块，捕获注册定义并核对 Schema、参数和返回值；前端样例使用真实 Cordis Context 验证挂载与卸载。另列的 Host 专项覆盖行 API、过期租约、保留工具名及受限 API。此验证不代表恶意进程内代码被 OS 隔离，也不代表真实模型会正确选工具。

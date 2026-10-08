@@ -20,7 +20,7 @@
     "includes": ["configuration.json", "defaultAccountId"]
   },
   {
-    "path": "packages/host/src/ext-host/row-services.ts",
+    "path": "packages/host-extensions/src/ext-host/row-services.ts",
     "includes": ["registerRow(def", "ctx.services.register(${def.name})"]
   },
   {

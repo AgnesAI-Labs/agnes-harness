@@ -234,6 +234,17 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // preset composition and inline projection repairs. Only exceeded scopes and missing bundled
 // extension keys change; scanning, source exclusions and the default extension ceiling stay fixed.
 const INITIAL_CEILING: Record<string, number> = {
+  'packages/host-extensions/src/ext-host/extension-runner-runtime': 187,
+  'packages/host-extensions/src/ext-host/extension-seatbelt': 28,
+  'packages/host-extensions/src/ext-host/extension-isolation-selector': 160,
+  'packages/host-extensions/src/ext-host/hooks-isolation-assembly': 100,
+  'packages/host-extensions/src/ext-host/generic-hooks-runner': 90,
+  'packages/host-extensions/src/ext-host/runner-transport': 465,
+  'packages/host-extensions/src/ext-host/hooks-isolation-client': 232,
+  'packages/host-extensions/src/ext-host/tool-context-capabilities': 130,
+  'packages/host-extensions/src/ext-host/service-invocation': 254,
+  'packages/host-extensions/src': 8066,
+  'packages/host-extensions/src/assemble': 1259,
   'packages/host-artifacts/src': 2243,
   'packages/host-computer-use/src': 10586,
   'packages/host-infrastructure/src/adapters/public-fetch': 380,
@@ -1401,7 +1412,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 6460 -> 6577; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Unify provider errors, own late loop/child results and transfer accepted process-store ownership.
   // countLines: 6577 -> 6603 (+26); exact measured cap, no exclusions or spare allocation.
-  'packages/host/src/assemble': 6300,
+  'packages/host/src/assemble': 4927,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -2867,27 +2878,27 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 46355 -> 46484 (+129); exact measured cap, no exclusions or spare allocation.
   // Acceptance review: Restore immutable generation sources and publish child-engine configuration with explicit engine admission.
   // countLines: 46484 -> 46566; exact cap, no exclusions or spare allocation.
-  'packages/host/src': 22061,
+  'packages/host/src': 14133,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
-  'packages/host/src/ext-host/service-invocation': 254,
+  'packages/host/src/ext-host/service-invocation': 1,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
   // 2026-09-15: project resume onto the capability fence. Measured 90.
   // WEBFETCH-01: +8 counted lines for approved public retrieval; excludes concurrent work.
   // Acceptance review: Project validated child-engine settings into tool execution capabilities.
   // countLines: 98 -> 130; exact cap, no exclusions or spare allocation.
-  'packages/host/src/ext-host/tool-context-capabilities': 130,
+  'packages/host/src/ext-host/tool-context-capabilities': 1,
   // T6.3 adds child-failure notification, startup/cancel deadlines and invocation-bound capability
   // attribution. Exact 390.
   // R1 extracts transport, narrows the fixed wrapper, and adds generic entry/lease codecs.
-  'packages/host/src/ext-host/hooks-isolation-client': 390,
+  'packages/host/src/ext-host/hooks-isolation-client': 1,
   // CORDIS-C1b Task 6 drains isolated descendants before releasing workspace capabilities.
-  'packages/host/src/ext-host/runner-transport': 465,
+  'packages/host/src/ext-host/runner-transport': 1,
   // 2026-09-15 (EXTAPI-01): Task 4 threads platform: PlatformFacts through the generic child-process
   // bootstrap path so an isolated hook runner receives the same platform facts an in-process one does.
   // Measured 90; exact cap, no spare.
-  'packages/host/src/ext-host/generic-hooks-runner': 90,
+  'packages/host/src/ext-host/generic-hooks-runner': 1,
   // 2026-09-15 (EXTAPI-01): Task 4 threads platform: PlatformFacts into the fixed-adapter child-process
   // bootstrap and its reconstructed HookContext, mirroring the generic runner above. Measured 144;
   // exact cap, no spare.
@@ -2896,14 +2907,14 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/base/src/runner-extension': 154,
   'packages/base/src/runner-context': 18,
   // Release-owned runtime probe/spawn and opt-in policy selection remain separate bounded subjects.
-  'packages/host/src/ext-host/hooks-isolation-assembly': 102,
+  'packages/host/src/ext-host/hooks-isolation-assembly': 1,
   // R1 selects verified generic Hook packages in addition to the fixed adapter.
   // 2026-09-22 (hooks-runner review fix): thread a per-load token through to the crash-report
   // closure so a stale evicted generation's crash cannot be attributed to its live successor.
   // Re-measured with countLines(): 160, exact cap, no spare.
-  'packages/host/src/ext-host/extension-isolation-selector': 160,
-  'packages/host/src/ext-host/extension-seatbelt': 31,
-  'packages/host/src/ext-host/extension-runner-runtime': 187,
+  'packages/host/src/ext-host/extension-isolation-selector': 1,
+  'packages/host/src/ext-host/extension-seatbelt': 1,
+  'packages/host/src/ext-host/extension-runner-runtime': 1,
   // The trusted fixed child entry lives outside the author extension's universal 800-line budget.
   // It reuses hooks-runner's prepared implementation and has no general extension loading surface.
   // R1 adds generic preparation, lease/surface codecs and awaited shutdown.
@@ -3059,7 +3070,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 6061 -> 6781; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Track sandbox/store operations, reject aborted construction and retain process stores through registry teardown.
   // countLines: 6781 -> 6884 (+103); exact measured cap, no exclusions or spare allocation.
-  'packages/host/src/adapters': 987,
+  'packages/host/src/adapters': 965,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.

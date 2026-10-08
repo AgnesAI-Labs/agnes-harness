@@ -28,6 +28,7 @@ const LICENSE_EXCEPTIONS: Readonly<Record<string, string>> = Object.freeze({
   '@agnes/cosmokit': 'MIT',
   '@agnes/base': 'Apache-2.0 AND MIT',
   '@agnes/host': 'Apache-2.0 AND MIT',
+  '@agnes/host-extensions': 'Apache-2.0 AND MIT',
   '@agnes/host-artifacts': 'Apache-2.0 AND MIT',
   '@agnes/host-computer-use': 'Apache-2.0 AND MIT',
   '@agnes/host-infrastructure': 'Apache-2.0 AND MIT',

@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/test",
+    "tsBuildInfoFile": "dist/tsconfig.test.tsbuildinfo"
+  },
+  "include": ["test/**/*.ts"],
+  "references": [
+    {
+      "path": "."
+    },
+    {
+      "path": "../host/tsconfig.test.json"
+    },
+    {
+      "path": "../host/tsconfig.testkit.json"
+    },
+    {
+      "path": "../core/tsconfig.testkit.json"
+    },
+    {
+      "path": "../base"
+    }
+  ]
+}

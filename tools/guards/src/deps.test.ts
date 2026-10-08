@@ -119,6 +119,7 @@ const LAYER: Record<string, number> = {
   '@agnes/host-infrastructure': 6.02,
   '@agnes/host-computer-use': 6.03,
   '@agnes/host-artifacts': 6.04,
+  '@agnes/host-extensions': 6.05,
   '@agnes/host': 7,
   '@agnes/sdk': 3,
   '@agnes/daemon': 9,

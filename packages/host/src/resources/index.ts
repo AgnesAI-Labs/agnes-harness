@@ -1,1 +1,1 @@
-export * from '@agnes/resource-control-runtime'
+export * from '@agnes/host-extensions/resources/index'

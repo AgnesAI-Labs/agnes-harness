@@ -139,7 +139,7 @@ Host 普通树与 Web 页面分别创建 Context。`web:` 是平台合成的客�
 
 下一步：[后端工具](backend.zh-CN.md) · [前端面板](frontend.zh-CN.md) · [联动](fullstack.zh-CN.md) · [安装与更新](../guide/packages.zh-CN.md)。
 
-事实源：[作者类型](../../packages/plugin-runtime/src/author.ts)、[manifest 解析](../../packages/package-manager/src/plugin-manifest.ts)、[PluginExtensionAPI](../../packages/extension-api/src/plugin-extension.ts)、[行 API](../../packages/host/src/ext-host/row-extension-api.ts)、[ClientContext](../../packages/web-client/src/client-module.ts)。
+事实源：[作者类型](../../packages/plugin-runtime/src/author.ts)、[manifest 解析](../../packages/package-manager/src/plugin-manifest.ts)、[PluginExtensionAPI](../../packages/extension-api/src/plugin-extension.ts)、[行 API](../../packages/host-extensions/src/ext-host/row-extension-api.ts)、[ClientContext](../../packages/web-client/src/client-module.ts)。
 
 ## 编写 Agent Loop
 

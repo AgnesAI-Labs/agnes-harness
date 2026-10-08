@@ -107,6 +107,6 @@ ctx.skills.register({
 
 随分发提供的 Skill Helper 插件有自己的安装请求流程；工具可申请，不意味着能绕过用户确认、来源审核和写入边界。子 agent 不能借此申请 Skill 安装。
 
-实现依据：[发现根](../../packages/base/extensions/skills/src/discover.ts)、[候选注册表](../../packages/resource-control-runtime/src/skills.ts)、[Cordis service](../../packages/resource-control-runtime/src/skills-cordis.ts)、[会话预加载](../../packages/host/src/resources/skill-preload.ts)、[Skill Helper](../../packages/package-manager/bundled-plugins/skill-helper/README.md)。
+实现依据：[发现根](../../packages/base/extensions/skills/src/discover.ts)、[候选注册表](../../packages/resource-control-runtime/src/skills.ts)、[Cordis service](../../packages/resource-control-runtime/src/skills-cordis.ts)、[会话预加载](../../packages/host-extensions/src/resources/skill-preload.ts)、[Skill Helper](../../packages/package-manager/bundled-plugins/skill-helper/README.md)。
 
 在 Web 或 TUI 中使用 `/skill invoke NAME ARGUMENTS` 调用允许用户调用的 Skill；上下文页面也提供调用表单。Host 只加载唯一、可信且启用的胜出项；未知、停用或禁止用户调用的 Skill 会被拒绝。参数保留在用户消息中。

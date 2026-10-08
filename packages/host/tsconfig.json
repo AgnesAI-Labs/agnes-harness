@@ -48,6 +48,9 @@
     },
     {
       "path": "../host-artifacts"
+    },
+    {
+      "path": "../host-extensions"
     }
   ]
 }

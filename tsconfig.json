@@ -234,6 +234,12 @@
     },
     {
       "path": "packages/host-artifacts/tsconfig.test.json"
+    },
+    {
+      "path": "packages/host-extensions"
+    },
+    {
+      "path": "packages/host-extensions/tsconfig.test.json"
     }
   ]
 }

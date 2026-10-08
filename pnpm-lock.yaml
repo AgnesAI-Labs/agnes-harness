@@ -511,6 +511,9 @@ importers:
       '@agnes/host-computer-use':
         specifier: workspace:*
         version: link:../host-computer-use
+      '@agnes/host-extensions':
+        specifier: workspace:*
+        version: link:../host-extensions
       '@agnes/host-infrastructure':
         specifier: workspace:*
         version: link:../host-infrastructure
@@ -656,6 +659,61 @@ importers:
       '@agnes/host':
         specifier: workspace:*
         version: link:../host
+
+  packages/host-extensions:
+    dependencies:
+      '@agnes/cordis':
+        specifier: workspace:*
+        version: link:../cordis
+      '@agnes/core':
+        specifier: workspace:*
+        version: link:../core
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/host-artifacts':
+        specifier: workspace:*
+        version: link:../host-artifacts
+      '@agnes/host-common':
+        specifier: workspace:*
+        version: link:../host-common
+      '@agnes/host-computer-use':
+        specifier: workspace:*
+        version: link:../host-computer-use
+      '@agnes/host-infrastructure':
+        specifier: workspace:*
+        version: link:../host-infrastructure
+      '@agnes/package-manager':
+        specifier: workspace:*
+        version: link:../package-manager
+      '@agnes/plugin-runtime':
+        specifier: workspace:*
+        version: link:../plugin-runtime
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@agnes/resource-control-runtime':
+        specifier: workspace:*
+        version: link:../resource-control-runtime
+      '@agnes/system-node':
+        specifier: workspace:*
+        version: link:../system-node
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
+      jiti:
+        specifier: 2.7.0
+        version: 2.7.0(patch_hash=77f93f7110d63c7b4551ac2eab9c87a64c2ba97de0b71047e25171d3fac05fd2)
+    devDependencies:
+      '@agnes/base':
+        specifier: workspace:*
+        version: link:../base
+      '@agnes/host':
+        specifier: workspace:*
+        version: link:../host
+      '@sinclair/typebox':
+        specifier: 0.34.33
+        version: 0.34.33
 
   packages/host-infrastructure:
     dependencies:

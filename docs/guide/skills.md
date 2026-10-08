@@ -121,6 +121,6 @@ Runtime contributions do not enter the disk trust/desired workflow; their trust 
 
 The bundled Skill Helper has its own installation request flow. A tool may request installation, but cannot bypass user confirmation, source review, or write boundaries. Subagents cannot request Skill installation through it.
 
-Implementation: [discovery roots](../../packages/base/extensions/skills/src/discover.ts), [candidate registry](../../packages/resource-control-runtime/src/skills.ts), [Cordis service](../../packages/resource-control-runtime/src/skills-cordis.ts), [session preloading](../../packages/host/src/resources/skill-preload.ts), [Skill Helper](../../packages/package-manager/bundled-plugins/skill-helper/README.md).
+Implementation: [discovery roots](../../packages/base/extensions/skills/src/discover.ts), [candidate registry](../../packages/resource-control-runtime/src/skills.ts), [Cordis service](../../packages/resource-control-runtime/src/skills-cordis.ts), [session preloading](../../packages/host-extensions/src/resources/skill-preload.ts), [Skill Helper](../../packages/package-manager/bundled-plugins/skill-helper/README.md).
 
 Invoke a user-invocable Skill in Web or TUI with `/skill invoke NAME ARGUMENTS`. The Context page also offers an invocation form. The Host loads only a unique trusted, enabled winner; unknown, disabled or user-hidden Skills are refused. Arguments remain in the user message.

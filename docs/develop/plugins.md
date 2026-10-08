@@ -155,7 +155,7 @@ Third-party runtime sources require trusted immutable snapshots. An arbitrary fi
 
 Next: [Backend tools](backend.md) · [Frontend panels](frontend.md) · [Full-stack integration](fullstack.md) · [Installation and updates](../guide/packages.md).
 
-Source: [author types](../../packages/plugin-runtime/src/author.ts), [manifest parsing](../../packages/package-manager/src/plugin-manifest.ts), [PluginExtensionAPI](../../packages/extension-api/src/plugin-extension.ts), [row API](../../packages/host/src/ext-host/row-extension-api.ts), [ClientContext](../../packages/web-client/src/client-module.ts).
+Source: [author types](../../packages/plugin-runtime/src/author.ts), [manifest parsing](../../packages/package-manager/src/plugin-manifest.ts), [PluginExtensionAPI](../../packages/extension-api/src/plugin-extension.ts), [row API](../../packages/host-extensions/src/ext-host/row-extension-api.ts), [ClientContext](../../packages/web-client/src/client-module.ts).
 
 ## Writing an Agent Loop
 

@@ -35,7 +35,8 @@
     "@agnes/host-common": "workspace:*",
     "@agnes/host-infrastructure": "workspace:*",
     "@agnes/host-computer-use": "workspace:*",
-    "@agnes/host-artifacts": "workspace:*"
+    "@agnes/host-artifacts": "workspace:*",
+    "@agnes/host-extensions": "workspace:*"
   },
   "devDependencies": {
     "@agnes/base": "workspace:*",

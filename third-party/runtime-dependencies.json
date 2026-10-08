@@ -119,6 +119,7 @@
         "packages/extension-api",
         "packages/host",
         "packages/host-computer-use",
+        "packages/host-extensions",
         "packages/model-adapters",
         "packages/plugin-runtime",
         "packages/protocol",
@@ -187,7 +188,7 @@
       "source": "https://github.com/unjs/jiti",
       "purpose": "Loads TypeScript and modern JavaScript extension modules in Host and the confined Base runner.",
       "rationale": "Supports the extension authoring formats accepted by the Host loader without a separate compile step.",
-      "consumers": ["packages/base", "packages/host"]
+      "consumers": ["packages/base", "packages/host", "packages/host-extensions"]
     },
     {
       "name": "marked",
@@ -249,7 +250,13 @@
       "source": "https://github.com/ajv-validator/ajv",
       "purpose": "Compile Extension and MCP tool schemas at runtime and independently verify protocol conformance.",
       "rationale": "Reuse the established schema implementation; reject invalid or external references before callbacks run.",
-      "consumers": ["packages/base", "packages/host", "packages/host-computer-use", "packages/protocol"]
+      "consumers": [
+        "packages/base",
+        "packages/host",
+        "packages/host-computer-use",
+        "packages/host-extensions",
+        "packages/protocol"
+      ]
     },
     {
       "name": "@vscode/ripgrep",

@@ -60,7 +60,7 @@ The expected structure is `{"characters":11,"words":2}`. Whether a real model se
 
 ```sh
 node tools/public-docs/verify.mjs
-pnpm exec vitest run tools/public-docs/examples.test.ts packages/host/test/ext-host/row-extension-host.test.ts --maxWorkers=1
+pnpm exec vitest run tools/public-docs/examples.test.ts packages/host-extensions/test/ext-host/row-extension-host.test.ts --maxWorkers=1
 ```
 
 Example tests load the actual backend module, capture its registered definition, and check schema, arguments, and results. Frontend examples use a real Cordis Context to test mounting and unloading. The additional Host tests cover row APIs, expired leases, reserved tool names, and restricted APIs. These checks do not establish OS isolation of malicious in-process code or correct tool selection by a real model.
