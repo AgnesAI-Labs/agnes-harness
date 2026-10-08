@@ -58,7 +58,7 @@ watch the returned run with `gh run watch RUN_ID --exit-status`. Dispatch checks
 specs and baselines. Every ready screen needs both platform PNGs captured with the pinned
 Chromium and CI fonts; dispatch does not generate or approve missing baselines.
 
-The local command shares two workers with per-test scheduling. CI runs four complete, disjoint
+The local command shares two workers with per-test scheduling. CI runs six complete, disjoint
 shards per platform with one worker per runner, so concurrent daemon/worker/Chromium trees do not
 compete on the same small runner. Linux fast tests, typechecks, structural guards and kernel
 regressions run in their own hard-gated job instead of consuming the Web job's execution budget.
