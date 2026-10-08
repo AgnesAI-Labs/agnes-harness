@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { createShellTool } from '../../tools-core/src/tools/shell.js'
 import { createJobTools } from '../src/index.js'
+import { legacyProcess } from '../src/legacy-process.js'
 import { ShellJobs } from '../src/registry.js'
 
 const context = (sessionKey = 'jobs') => {
@@ -14,6 +15,20 @@ describe.skipIf(process.platform === 'win32')('session shell jobs', () => {
   it('keeps the same job beyond the foreground timeout, isolates ownership, reads output and kills it', async () => {
     const jobs = new ShellJobs()
     const ctx = context()
+    // The foreground deadline may elapse before the child gets scheduled. Observe actual output
+    // before asserting its contents, while keeping the same real process and short deadline.
+    let ready!: () => void
+    const outputReady = new Promise<void>((resolve) => {
+      ready = resolve
+    })
+    let stopObserving: (() => void) | undefined
+    ctx.sandbox.openProcess = async ({ argv, cwd }) => {
+      const handle = await legacyProcess(ctx, [...argv], cwd ?? ctx.cwd)
+      stopObserving = handle.onOutput((chunk) => {
+        if (chunk.stream === 'stdout' && chunk.text.includes('ready')) ready()
+      })
+      return handle
+    }
     try {
       const result = await createShellTool(jobs).execute(
         { command: 'echo ready; sleep 30', timeoutMs: 10 },
@@ -24,6 +39,7 @@ describe.skipIf(process.platform === 'win32')('session shell jobs', () => {
       const id = jobs.list(ctx)[0]!.id
       const [list, output, kill] = createJobTools(jobs)
       expect(JSON.stringify(await list!.execute({}, ctx))).toContain(id)
+      await outputReady
       expect(JSON.stringify(await output!.execute({ jobId: id }, ctx))).toContain('ready')
       expect((await output!.execute({ jobId: id }, context('other'))).isError).toBe(true)
       await kill!.execute({ jobId: id }, ctx)
@@ -31,6 +47,7 @@ describe.skipIf(process.platform === 'win32')('session shell jobs', () => {
       await jobs.closeSession(ctx.session.key, ctx.session.lane)
       expect(jobs.list(ctx)).toEqual([])
     } finally {
+      stopObserving?.()
       await jobs.dispose()
     }
   })
