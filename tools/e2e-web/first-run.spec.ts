@@ -98,6 +98,9 @@ for (const locale of ['en', 'zh-CN'])
           try {
             await page.goto(runtime.url)
             await expect(page.getByTestId('doctor-notice')).toBeVisible()
+            // The notice precedes session restoration; capture the usable workspace, not that interim frame.
+            await expect(composer).toBeEnabled()
+            await expect(page.getByTestId('workbench-right-toggle')).toBeVisible()
             await quality('doctor-notice')
             await page
               .getByRole('button', { name: en ? 'View diagnostics' : '查看运行诊断', exact: true })
