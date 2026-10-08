@@ -57,7 +57,8 @@
     "@agnes/core-common",
     "@agnes/core-child-control",
     "@agnes/core-ledger",
-    "@agnes/core-effects"
+    "@agnes/core-effects",
+    "@agnes/core-artifacts"
   ],
   "@agnes/ai": ["@agnes/protocol", "@agnes/core", "@agnes/extension-api"],
   "@agnes/base": [
@@ -167,5 +168,6 @@
     "@agnes/core-ledger",
     "@agnes/extension-api",
     "@agnes/protocol"
-  ]
+  ],
+  "@agnes/core-artifacts": []
 }

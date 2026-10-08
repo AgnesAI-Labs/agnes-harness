@@ -1,0 +1,21 @@
+{
+  "name": "@agnes/core-artifacts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./artifacts/gc-execution-prerequisite": "./src/artifacts/gc-execution-prerequisite.ts",
+    "./artifacts/gc-executor": "./src/artifacts/gc-executor.ts",
+    "./artifacts/gc-scheduler": "./src/artifacts/gc-scheduler.ts",
+    "./artifacts/gc-snapshot": "./src/artifacts/gc-snapshot.ts",
+    "./artifacts/index": "./src/artifacts/index.ts",
+    "./artifacts/reachability": "./src/artifacts/reachability.ts",
+    "./artifacts/retention-selector": "./src/artifacts/retention-selector.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {},
+  "license": "Apache-2.0"
+}

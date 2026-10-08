@@ -18,6 +18,7 @@ describe('repo', () => {
       '@agnes/cordis',
       '@agnes/cordis-loader',
       '@agnes/core',
+      '@agnes/core-artifacts',
       '@agnes/core-child-control',
       '@agnes/core-common',
       '@agnes/core-effects',

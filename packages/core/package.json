@@ -20,7 +20,8 @@
     "@agnes/core-common": "workspace:*",
     "@agnes/core-child-control": "workspace:*",
     "@agnes/core-ledger": "workspace:*",
-    "@agnes/core-effects": "workspace:*"
+    "@agnes/core-effects": "workspace:*",
+    "@agnes/core-artifacts": "workspace:*"
   },
   "license": "Apache-2.0",
   "devDependencies": {

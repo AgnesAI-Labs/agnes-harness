@@ -207,6 +207,9 @@
     },
     {
       "path": "packages/core-effects/tsconfig.test.json"
+    },
+    {
+      "path": "packages/core-artifacts"
     }
   ]
 }

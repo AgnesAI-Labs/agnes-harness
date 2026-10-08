@@ -315,6 +315,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@agnes/core-artifacts':
+        specifier: workspace:*
+        version: link:../core-artifacts
       '@agnes/core-child-control':
         specifier: workspace:*
         version: link:../core-child-control
@@ -343,6 +346,8 @@ importers:
       '@agnes/loop-default':
         specifier: workspace:*
         version: link:../loop-default
+
+  packages/core-artifacts: {}
 
   packages/core-child-control:
     dependencies:
