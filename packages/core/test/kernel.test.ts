@@ -103,8 +103,27 @@ describe('Kernel (I1 assembly)', () => {
     // One storage instance across two kernels: SessionLogImpl does not expose the adapter it holds,
     // so a test that wants the same ledger back has to keep hold of the storage itself.
     const storage = new MemoryStorage()
-    const k = base({ storage })
+    let config = { personaPrefix: 'first persona' }
+    const promptProvider = {
+      id: 'test.prompt',
+      version: '1.0.0',
+      defaults: () => [],
+      compose: (
+        cfg: import('@agnes/protocol').SystemPromptConfig,
+        sections: readonly import('@agnes/protocol').SystemPromptSection[],
+      ) => [
+        { id: 'profile:prefix', order: 1, source: 'profile:system-prompt', text: cfg.personaPrefix ?? '' },
+        ...(cfg.personaPrefix === 'duplicate'
+          ? [{ id: 'profile:prefix', order: 2, source: 'profile:system-prompt', text: 'conflict' }]
+          : []),
+        ...sections,
+      ],
+    }
+    const systemPrompt = { config: async () => config, resolve: () => promptProvider }
+    const k = base({ storage, systemPrompt })
     const s = await k.session('k1', sessionOpts)
+    config.personaPrefix = 'changed in place'
+    expect((await s.systemPromptPreview()).config.personaPrefix).toBe('first persona')
     expect(await k.session('k1', sessionOpts)).toBe(s)
     expect(k.get('k1')).toBe(s)
     expect(k.get('nope')).toBeUndefined()
@@ -118,11 +137,25 @@ describe('Kernel (I1 assembly)', () => {
     await expect(
       s.enqueue('next-turn', { content: [{ type: 'text', text: 'late' }], actor }),
     ).rejects.toThrow('E_CLOSED')
-    const k2 = base({ storage })
+    config = { personaPrefix: 'new persona' }
+    const k2 = base({ storage, systemPrompt })
     const again = await k2.session('k1', { ...sessionOpts, writerRunId: 'r2' })
     expect((await again.scan({ fromSeq: 1, limit: 5 })).map((e) => e.type)).toEqual(['session/start'])
     expect(again.lastSeq).toBe(1)
+    const pinned = await again.systemPromptPreview()
+    expect(pinned.config.personaPrefix).toBe('first persona')
+    expect((await again.scan({ fromSeq: 1, limit: 1 }))[0]?.data).toMatchObject({
+      systemPrompt: { hash: pinned.hash, provider: { id: 'test.prompt', version: '1.0.0' } },
+    })
+    config = { personaPrefix: 'duplicate' }
+    await expect(k2.session('refused', sessionOpts)).rejects.toThrow('invalid sections')
+    config = { personaPrefix: 'new persona' }
+    const fresh = await k2.session('new', sessionOpts)
+    expect((await fresh.systemPromptPreview()).config.personaPrefix).toBe('new persona')
     await k2.close()
+    const missing = base({ storage })
+    await expect(missing.session('k1', sessionOpts)).rejects.toThrow('pinned system prompt')
+    await missing.close()
   })
 
   it('two keys get two ledgers, and the tool registry is shared across them', async () => {

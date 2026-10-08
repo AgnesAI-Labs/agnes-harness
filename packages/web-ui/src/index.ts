@@ -55,6 +55,8 @@ export {
 export { createSettingsIcon } from './settings-icon.js'
 export {
   SettingsCard,
+  SettingsCheckbox,
+  SettingsCode,
   SettingsDetails,
   SettingsInput,
   SettingsList,

@@ -7,8 +7,10 @@ function sessionSchema() {
   const doc = JSON.parse(readFileSync(new URL('../schema/session-v1.json', import.meta.url), 'utf8'))
   const model = JSON.parse(readFileSync(new URL('../schema/model.json', import.meta.url), 'utf8'))
   for (const name of ['ModelSettings', 'ThinkingLevel']) doc.$defs[name] = model.$defs[name]
+  const agnes = JSON.parse(readFileSync(new URL('../schema/agnes-v1.json', import.meta.url), 'utf8'))
+  doc.$defs.SystemPromptConfig = agnes.$defs.SystemPromptConfig
   // gen.ts resolves the declared sibling imports before invoking the local-reference generator.
-  return JSON.parse(JSON.stringify(doc).replaceAll('model.json#/', '#/'))
+  return JSON.parse(JSON.stringify(doc).replaceAll('model.json#/', '#/').replaceAll('agnes-v1.json#/', '#/'))
 }
 
 const mini = {

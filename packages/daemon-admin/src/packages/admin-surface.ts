@@ -20,7 +20,13 @@ import {
   validatePackageAdminCall,
   validatePackageAdminData,
 } from '@agnes/protocol'
-import { DiagnosticsExportParams, DiagnosticsExportResult } from '@agnes/protocol/gen/agnes-v1'
+import {
+  DiagnosticsExportParams,
+  DiagnosticsExportResult,
+  SystemPromptGetParams,
+  SystemPromptSaveParams,
+  SystemPromptSnapshot,
+} from '@agnes/protocol/gen/agnes-v1'
 
 const PREFIX = '/admin/plugins/api/'
 // Exported so tests can assert this stays in lockstep with the Web BFF client's own hand-maintained
@@ -112,6 +118,14 @@ export type AdminSurfaceOptions = {
       input: import('@agnes/protocol').DiagnosticsExportParams,
     ): Promise<import('@agnes/protocol').DiagnosticsExportResult>
     doctor?: () => Promise<unknown>
+  }
+  systemPrompt?: {
+    get(
+      input?: import('@agnes/protocol').SystemPromptGetParams,
+    ): Promise<import('@agnes/protocol').SystemPromptSnapshot>
+    save(
+      input: import('@agnes/protocol').SystemPromptSaveParams,
+    ): Promise<import('@agnes/protocol').SystemPromptSnapshot>
   }
   clock?: () => number
 }
@@ -215,6 +229,56 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
       }
       if (selectionRoute) {
         const route = url.pathname.slice('/admin/api/'.length)
+        if (route === 'system-prompt' || route === 'system-prompt/session') {
+          const sessionPreview = route === 'system-prompt/session'
+          const write = !sessionPreview && request.method === 'POST'
+          if (request.method !== (sessionPreview || write ? 'POST' : 'GET')) {
+            error(response, 404, 'E_ADMIN_ROUTE', '')
+            return true
+          }
+          if (!configuredPermissions.includes(write ? 'packages.activate' : 'packages.read')) {
+            error(response, 403, 'E_ADMIN_FORBIDDEN', '')
+            return true
+          }
+          if (write && readOnly) {
+            error(response, 409, 'E_ADMIN_READ_ONLY', '')
+            return true
+          }
+          if (!options.systemPrompt) {
+            error(response, 503, 'E_ADMIN_CATALOG_UNAVAILABLE', '')
+            return true
+          }
+          try {
+            const input = write || sessionPreview ? await readBody(request) : undefined
+            if (write && !validateAgainst(SystemPromptSaveParams, input).ok) {
+              error(response, 400, 'CONFIG_INVALID_INPUT', '')
+              return true
+            }
+            if (
+              sessionPreview &&
+              (!validateAgainst(SystemPromptGetParams, input).ok ||
+                !record(input) ||
+                typeof input.sessionId !== 'string')
+            ) {
+              error(response, 400, 'E_ADMIN_REQUEST', '')
+              return true
+            }
+            const result = write
+              ? await options.systemPrompt.save(input as import('@agnes/protocol').SystemPromptSaveParams)
+              : await options.systemPrompt.get(
+                  sessionPreview ? (input as import('@agnes/protocol').SystemPromptGetParams) : undefined,
+                )
+            if (!validateAgainst(SystemPromptSnapshot, result).ok) throw new Error('Invalid prompt snapshot')
+            reply(response, 200, result)
+          } catch (failure) {
+            const envelope =
+              record(failure) && typeof failure.code === 'number' && record(failure.data)
+                ? normalizeRpcError(failure as unknown as RpcError)
+                : httpRpcError(502, 'E_ADMIN_BACKEND')
+            reply(response, envelope.data?.code === 'CONFIG_INVALID_INPUT' ? 400 : 502, { error: envelope })
+          }
+          return true
+        }
         if (route === 'diagnostics' || route === 'diagnostics/doctor') {
           const doctor = route === 'diagnostics/doctor'
           if (!configuredPermissions.includes('packages.read')) {

@@ -46,7 +46,10 @@ const TARGETS: Array<{
     schema: 'schema/session-v1.json',
     out: 'gen/ts/session-v1.ts',
     module: 'SessionV1',
-    imports: [{ from: 'schema/model.json', defs: ['ModelSettings', 'ThinkingLevel'] }],
+    imports: [
+      { from: 'schema/model.json', defs: ['ModelSettings', 'ThinkingLevel'] },
+      { from: 'schema/agnes-v1.json', defs: ['SystemPromptConfig'] },
+    ],
   },
   {
     schema: 'schema/agnes-v1.json',
@@ -194,6 +197,7 @@ const TARGETS: Array<{
     out: 'gen/ts/model.ts',
     module: 'ModelV1',
     imports: [
+      { from: 'schema/agnes-v1.json', defs: ['SystemPromptSection'] },
       {
         from: 'schema/session-v1.json',
         defs: [
@@ -240,6 +244,7 @@ const TARGETS: Array<{
     out: 'gen/ts/preset.ts',
     module: 'PresetSchema',
     imports: [
+      { from: 'schema/agnes-v1.json', defs: ['SystemPromptConfig'] },
       { from: 'schema/session-v1.json', defs: ['JsonValue'] },
       { from: 'schema/profile.json', defs: ['CompositionPatch', 'PackageRef'] },
       { from: 'schema/model.json', defs: ['RouteTable', 'RouteTarget', 'ThinkingLevel'] },

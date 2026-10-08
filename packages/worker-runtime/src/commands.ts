@@ -290,6 +290,8 @@ export async function handleCommand(
     case 'resource.stale':
       if (o.resources) o.resources.staleMarks++
       return { ok: true }
+    case 'systemPrompt.preview':
+      return session.systemPromptPreview()
     case 'enqueue':
       return session.enqueue(p.target as 'next-turn' | 'next-step', p.msg as never)
     case 'sendQueuedNow':
@@ -678,6 +680,9 @@ export async function handleServiceCommand(
   switch (cmd.method) {
     case 'ping':
       return { ok: true }
+    case 'systemPrompt.defaults':
+      if (!host) throw new Error('system prompt requires an assembled Host')
+      return host.systemPromptPreview(p.config as import('@agnes/protocol').SystemPromptConfig)
     case 'session.catalog': {
       if (!host) throw new Error('session catalog requires an assembled Host')
       const models = host.provider.models()

@@ -165,6 +165,13 @@ export class RemoteSession {
     return (await this.status()).preset
   }
 
+  async systemPromptPreview(): Promise<import('@agnes/protocol').SystemPromptSnapshot> {
+    return (await this.link.command(
+      'systemPrompt.preview',
+      {},
+    )) as import('@agnes/protocol').SystemPromptSnapshot
+  }
+
   async scan(q: unknown): Promise<unknown[]> {
     const query = q as Record<string, unknown>
     try {

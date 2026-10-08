@@ -72,7 +72,12 @@ describe('the prompt operation', () => {
     const table = new Map(PROMPT_SECTIONS.map((s) => [s.id, s.order]))
     expect(sections.map((s) => s.order)).toEqual(sections.map((s) => table.get(s.id)))
     expect(sections.map((s) => s.order)).toEqual([...sections.map((s) => s.order)].sort((a, b) => a - b))
-    for (const s of sections) expect(s.source).toBe('@agnes/code')
+    for (const s of sections)
+      expect(s.source).toBe(
+        ['persona', 'coding-doctrine', 'code-doctrine', 'channel-style'].includes(s.id)
+          ? `@agnes/code/prompts/${s.id}.md`
+          : '@agnes/code',
+      )
   })
 
   it('states stable platform and transcript guidance in prompt text; volatile facts in the tail runtime context', () => {

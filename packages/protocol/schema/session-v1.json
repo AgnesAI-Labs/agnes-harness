@@ -258,6 +258,35 @@
             "rootTaskId": { "type": "string", "minLength": 1, "maxLength": 512 },
             "generationDepth": { "type": "integer", "minimum": 0 }
           }
+        },
+        "systemPrompt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["config", "provider", "hash"],
+          "properties": {
+            "config": {
+              "$ref": "agnes-v1.json#/$defs/SystemPromptConfig"
+            },
+            "provider": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "version"],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                "version": {
+                  "type": "string",
+                  "maxLength": 64
+                }
+              }
+            },
+            "hash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
         }
       }
     },
@@ -578,6 +607,10 @@
               "ext": { "type": "string", "maxLength": 128 }
             }
           }
+        },
+        "requestTraceId": {
+          "type": "string",
+          "pattern": "^[a-f0-9-]{36}$"
         }
       }
     },

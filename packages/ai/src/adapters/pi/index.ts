@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+import type { ModelAdapterAttemptObservation } from '@agnes/extension-api'
 import type { ModelRecord, RequestBody, ResponseMeta, RouteDecl } from '@agnes/protocol'
 import { modelImageInputError } from '@agnes/protocol'
 import { createDeploymentFetch, ensureDeploymentProxy } from '@agnes/system-node/deployment-network'
@@ -211,6 +213,7 @@ export function toPiModel(
  * is reported, not retried.
  */
 export class PiAdapter extends WireAdapter {
+  override readonly version = '0.0.0'
   readonly id: string
   private readonly streamImpl: PiStream
   private readonly providerId: string | undefined
@@ -446,12 +449,21 @@ export class PiAdapter extends WireAdapter {
     // `wire` belongs to one attempt: an abandoned attempt's late response must not overwrite the
     // metadata of the attempt that replaced it.
     const fetchBody =
-      (wire: ResponseMeta): typeof globalThis.fetch =>
+      (wire: ResponseMeta, observed: ModelAdapterAttemptObservation): typeof globalThis.fetch =>
       async (input, init) => {
         const request = new Request(input, init)
         const bytes = new Uint8Array(await request.clone().arrayBuffer())
         checkPayloadBytes(bytes.byteLength)
         opts.reportSent?.({ sentHash: sha256Hex(bytes), transforms })
+        if (opts.reportRequest) {
+          try {
+            await opts.reportRequest(JSON.parse(new TextDecoder().decode(bytes)), observed.attemptId)
+          } catch {
+            /* JSON capture is passive and never includes transport headers. */
+          }
+        }
+        observed.adapter.endpoint = `${new URL(request.url).origin}${new URL(request.url).pathname}`
+        observed.status = 'sent'
         const response = await network.fetch(request)
         Object.assign(wire, responseMeta(response))
         return response
@@ -503,12 +515,35 @@ export class PiAdapter extends WireAdapter {
         const nextOrdinal = () => ordinal++
         let emitted = false
         const wire: ResponseMeta = {}
+        let endpoint: string | null = null
+        try {
+          const url = new URL(decl.baseUrl)
+          endpoint = `${url.origin}${url.pathname}`
+        } catch {
+          /* Non-HTTP identifier. */
+        }
+        const observed: ModelAdapterAttemptObservation = {
+          attemptId: randomUUID(),
+          index: attempt,
+          adapter: { id: this.id, version: this.version, api: decl.api, endpoint },
+          status: 'not-sent',
+        }
+        const reportAttempt = async () => {
+          try {
+            await opts.reportAttempt?.(observed)
+          } catch {
+            /* Passive capture. */
+          }
+        }
+        if (opts.reportAttempt) await reportAttempt()
         let retryAfter: number | undefined
         let requestAuth: ModelAuth | undefined
         if (this.resolveCredential) {
           try {
             const result = await Promise.race([this.resolveCredential(route, inner.signal), stopped])
             if (result === ABORTED || inner.signal.aborted) {
+              observed.status = opts.signal.aborted ? 'cancelled' : 'failed'
+              if (opts.reportAttempt) await reportAttempt()
               yield {
                 type: 'error',
                 reason: opts.signal.aborted ? 'aborted' : 'error',
@@ -525,6 +560,8 @@ export class PiAdapter extends WireAdapter {
             )
               throw new Error('empty')
           } catch {
+            observed.status = opts.signal.aborted ? 'cancelled' : 'failed'
+            if (opts.reportAttempt) await reportAttempt()
             yield {
               type: 'error',
               reason: opts.signal.aborted ? 'aborted' : 'error',
@@ -571,7 +608,7 @@ export class PiAdapter extends WireAdapter {
             // constructs a client. Model headers alone cannot authenticate Kimi OAuth.
             ...(requestAuth?.headers === undefined ? {} : { headers: requestAuth.headers }),
             ...(decl.api === 'openai-codex-responses' ? { transport: 'sse' as const } : {}),
-            ...(observable.has(decl.api) ? { fetch: fetchBody(wire) } : {}),
+            ...(observable.has(decl.api) ? { fetch: fetchBody(wire, observed) } : {}),
             timeoutMs: networkTimeouts?.requestMs ?? 300_000,
             connectTimeoutMs: networkTimeouts?.connectMs ?? 10_000,
             streamIdleTimeoutMs: networkTimeouts?.streamIdleMs ?? 60_000,
@@ -595,6 +632,13 @@ export class PiAdapter extends WireAdapter {
             }
             if (next === ABORTED || next.done) break
             for (const w of translateEvent(next.value, requestModel, nextOrdinal, wire)) {
+              if (
+                w.type === 'usage' &&
+                Object.values(w.tokens).some((value) => typeof value === 'number' && value > 0)
+              )
+                observed.providerActualTokens = w.tokens
+              if (w.type === 'done') observed.status = 'completed'
+              if (w.type === 'error') observed.status = w.reason === 'aborted' ? 'cancelled' : 'failed'
               // HTTP headers and pi's start markers contain no model output.
               if (!firstSeen && w.type !== 'error' && (!('delta' in w) || w.delta.length > 0)) {
                 firstSeen = true
@@ -653,6 +697,10 @@ export class PiAdapter extends WireAdapter {
           // Abandoning an iterator without closing it leaves the previous attempt's request running
           // beside the retry. The result is not awaited: a hung generator's `return` settles only
           // when the thing it is hung on does, which is the case this exists for.
+          if (inner.signal.aborted) observed.status = opts.signal.aborted ? 'cancelled' : 'failed'
+          else if (observed.status === 'sent') observed.status = 'failed'
+          observed.response = { ...wire }
+          if (opts.reportAttempt) await reportAttempt()
           void it.return?.(undefined)?.then(undefined, () => {})
         }
         if (inner.signal.aborted) {

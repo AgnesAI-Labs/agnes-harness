@@ -35,7 +35,15 @@ const SANDBOX = 'sandbox.l1'
 
 /** Orders come from the frozen table, so a section this package invented has no order and throws. */
 function section(id: string, text: string): PromptSection {
-  return { id, order: sectionOrder(id), text, source: SOURCE }
+  return {
+    id,
+    order: sectionOrder(id),
+    text,
+    source:
+      id === 'persona' || id.endsWith('doctrine') || id === 'channel-style'
+        ? `${SOURCE}/prompts/${id}.md`
+        : SOURCE,
+  }
 }
 
 export function environmentFacts(ctx: OpContext, deps: PromptDeps): EnvironmentFacts {

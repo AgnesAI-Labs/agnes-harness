@@ -17,6 +17,7 @@ import { harnessSections, type Merged, type PromptSection } from './contribute.j
 import type { EnvelopeCache } from './envelope-cache.js'
 import { type InlineImagePolicy, selectInlineImages } from './inline-images.js'
 import { type LedgerRequest, mintFrom, type RequestBody, type RequestMessage } from './mint.js'
+import { composeSystemPrompt, type PinnedSystemPrompt } from './system-prompt.js'
 
 export type ContractRef = { contract_id: string | null; parser_version: string }
 /**
@@ -26,6 +27,7 @@ export type ContractRef = { contract_id: string | null; parser_version: string }
  */
 export type RequestHeaderData = RequestHeader
 export type DeriveInput = {
+  systemPrompt?: PinnedSystemPrompt
   kind: 'turn' | 'summary'
   /** Core's current model snapshot governs inline history; originals stay on the ledger. */
   inlineImages?: InlineImagePolicy
@@ -739,14 +741,16 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   // its own example. Prepending it is also the order clamp — see UNTRUSTED_RULE_SECTION.
   const sections = [
     UNTRUSTED_RULE_SECTION,
-    ...[...input.merged.sections, ...harnessSections(input.harnessEntries)]
-      .sort((a, b) => a.order - b.order)
-      .map((s) => ({
-        id: sanitize(s.id),
-        order: s.order,
-        text: sanitize(s.text),
-        source: sanitize(s.source),
-      })),
+    ...composeSystemPrompt(
+      input.systemPrompt,
+      input.merged.sections,
+      harnessSections(input.harnessEntries),
+    ).map((s) => ({
+      id: sanitize(s.id),
+      order: s.order,
+      text: sanitize(s.text),
+      source: sanitize(s.source),
+    })),
   ]
   // A summary renders as an assistant message, and a replace may now end just before an assistant, so
   // a fixed user line keeps two assistant messages from meeting. Written by core, never from input.

@@ -81,6 +81,17 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
   ).map((entry) => Object.freeze({ ...entry, apiRange: '^1.4.0' })),
 )
 
+export const AGNES_CODE_PLUGIN_DECLARATIONS = Object.freeze([
+  Object.freeze({
+    id: 'system-prompt:default',
+    export: 'systemPromptPlugin',
+    apiRange: '^1.4.0',
+    inject: ['providers'],
+    runtime: 'in-process',
+    default: true,
+  } satisfies AgnesPluginManifestEntry),
+])
+
 export function readPackagedBuiltinExports(
   id: string,
   entryFile: string,
@@ -90,7 +101,11 @@ export function readPackagedBuiltinExports(
     id,
     entryFile,
     module,
-    id === '@agnes/base' ? AGNES_BASE_PLUGIN_DECLARATIONS : undefined,
+    id === '@agnes/base'
+      ? AGNES_BASE_PLUGIN_DECLARATIONS
+      : id === '@agnes/code'
+        ? AGNES_CODE_PLUGIN_DECLARATIONS
+        : undefined,
   )
 }
 

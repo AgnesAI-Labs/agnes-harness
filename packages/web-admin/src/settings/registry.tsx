@@ -26,6 +26,7 @@ import {
 } from './runtime-panels.js'
 import { type SchedulesApi, SchedulesPage } from './schedules.js'
 import { SearchPanel } from './search.js'
+import { SystemPromptPanel } from './system-prompt.js'
 
 export type RuntimeSettingsContext = {
   api: PluginAdminApi | undefined
@@ -94,6 +95,7 @@ const definitions: readonly [
       </>
     ),
   ],
+  ['agent', 'system-prompt', 13, (c) => <SystemPromptPanel canSave={c.canSave} />],
   ['agent', 'engines', 12, (c, t) => <ChildEnginesPanel api={c.api} canSave={c.canSave} t={t} />],
   [
     'plugins',

@@ -64,6 +64,7 @@
     "resolveToolCallPolicy",
     "sandboxUnavailable",
     "satisfiesApiRange",
+    "systemPromptKind",
     "unavailableProjections"
   ]
 }

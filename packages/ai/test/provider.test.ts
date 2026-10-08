@@ -1,3 +1,4 @@
+import type { ModelRequestTrace } from '@agnes/extension-api'
 import type { InferenceEvent, RequestBody, RouteTable } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import type { ContractStore, Registry } from '../src/index.js'
@@ -41,7 +42,11 @@ const table: RouteTable = { primary: { route: 'gw', model: 'flash' } }
 
 function mk(
   script?: ConstructorParameters<typeof FakeAdapter>[0]['script'],
-  over: { routes?: RouteTable; models?: Record<string, ReturnType<typeof fakeModel>[]> } = {},
+  over: {
+    routes?: RouteTable
+    models?: Record<string, ReturnType<typeof fakeModel>[]>
+    trace?: ModelRequestTrace
+  } = {},
 ) {
   const adapter = new FakeAdapter({
     id: 'fake',
@@ -55,6 +60,7 @@ function mk(
     contract: new NullContractStore(),
     secrets: () => 'sk',
     clock: () => 1000,
+    ...(over.trace ? { trace: over.trace } : {}),
   })
   return { adapter, provider }
 }
@@ -62,19 +68,43 @@ function mk(
 const run = () => ({ signal: new AbortController().signal, toolNames: [] })
 
 describe('createProvider', () => {
-  it('emits sent first with a stamp, then adapter events, and ends with done', async () => {
-    const { provider, adapter } = mk()
-    const events = await collect(provider.infer(body(), run()))
-    expect(events.map((e) => e.type)).toEqual(['sent', 'text_delta', 'usage', 'done'])
-    const sent = events[0] as Extract<InferenceEvent, { type: 'sent' }>
-    expect(sent.stamp.model).toEqual({ route: 'gw', id: 'flash' })
-    expect(sent.stamp.derived_hash).toBe('a'.repeat(64))
-    expect(sent.stamp.prompt_prefix_hash).toBeNull()
-    expect(sent.stamp.tool_schema_hash).toMatch(/^[0-9a-f]{64}$/)
-    expect(sent.stamp.contract_id).toBeNull()
-    expect(sent.stamp.transforms).toEqual([{ event: 'sent_hash', ext: 'unreported' }])
-    expect(adapter.calls[0]?.route).toBe('gw')
-  })
+  it.each(['none', 'begin', 'event', 'finish'] as const)(
+    'emits a complete stream even when passive capture fails at %s',
+    async (failure) => {
+      const fail = () => {
+        throw new Error('capture unavailable')
+      }
+      const { provider, adapter } = mk(undefined, {
+        ...(failure === 'none'
+          ? {}
+          : {
+              trace: {
+                begin: async () => {
+                  if (failure === 'begin') fail()
+                  return {
+                    id: '00000000-0000-4000-8000-000000000001',
+                    wire: async () => undefined,
+                    event: failure === 'event' ? fail : () => undefined,
+                    finish: async () => {
+                      if (failure === 'finish') fail()
+                    },
+                  }
+                },
+              },
+            }),
+      })
+      const events = await collect(provider.infer(body(), run()))
+      expect(events.map((e) => e.type)).toEqual(['sent', 'text_delta', 'usage', 'done'])
+      const sent = events[0] as Extract<InferenceEvent, { type: 'sent' }>
+      expect(sent.stamp.model).toEqual({ route: 'gw', id: 'flash' })
+      expect(sent.stamp.derived_hash).toBe('a'.repeat(64))
+      expect(sent.stamp.prompt_prefix_hash).toBeNull()
+      expect(sent.stamp.tool_schema_hash).toMatch(/^[0-9a-f]{64}$/)
+      expect(sent.stamp.contract_id).toBeNull()
+      expect(sent.stamp.transforms).toEqual([{ event: 'sent_hash', ext: 'unreported' }])
+      expect(adapter.calls[0]?.route).toBe('gw')
+    },
+  )
 
   // Every failure this facade can hit reaches the caller as an event, because the caller is a
   // kernel step that has to write a turn either way: a throw out of the iterator would leave the

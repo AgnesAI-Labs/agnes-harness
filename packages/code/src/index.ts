@@ -100,3 +100,4 @@ export const runtimes = {
   typescript: async () => processRuntime(undefined, 'typescript'),
   python: async () => processRuntime(undefined, 'python'),
 }
+export { defaultSystemPrompt, systemPromptPlugin } from './prompts/system-prompt.js'

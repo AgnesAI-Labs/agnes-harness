@@ -1,3 +1,4 @@
+import type { ModelRequestTrace, ModelRequestTraceHandle } from '@agnes/extension-api'
 import type { CountResult, InferenceEvent, Provider, RequestBody, RouteTable } from '@agnes/protocol'
 import type { WireAdapter } from './adapter.js'
 import type { ContractStore } from './contract-store.js'
@@ -17,6 +18,7 @@ import { estimateBilling, estimateCredits } from './usage.js'
 const DEFAULT_TIMEOUT = { firstToken: 120_000, total: 600_000 }
 
 export type InferenceDeps = {
+  trace?: ModelRequestTrace
   registry: Registry
   routes: RouteTable
   contract: ContractStore
@@ -94,11 +96,52 @@ export async function* runInference(
     }
     return
   }
+  if (wireReq.sections && req.contractId !== null)
+    wireReq.sections = [
+      {
+        id: 'model:contract',
+        order: -1000,
+        source: `model-contract:${req.contractId}`,
+        text: wireReq.system.slice(0, wireReq.system.length - req.system.length - 1),
+      },
+      ...wireReq.sections,
+    ]
+  let trace: ModelRequestTraceHandle | undefined
+  try {
+    let endpoint: string | null = null
+    try {
+      const url = new URL(hit.decl.baseUrl)
+      endpoint = `${url.origin}${url.pathname}`
+    } catch {
+      /* Non-HTTP adapters have no endpoint identifier. */
+    }
+    trace = await deps.trace?.begin(wireReq, {
+      id: hit.adapter.id,
+      version: hit.adapter.version ?? null,
+      api: hit.decl.api,
+      endpoint,
+    })
+  } catch {
+    /* Passive local capture cannot interrupt a request. */
+  }
+  const recordEvent = (event: unknown) => {
+    try {
+      trace?.event(event)
+    } catch {
+      /* Passive capture failure cannot alter the public inference stream. */
+    }
+  }
   let sentReport: SentReport | undefined
   let sentEmitted = false
   const emitSent = (): InferenceEvent => {
     sentEmitted = true
-    return { type: 'sent', stamp: buildStamp(req, deps.contract, deps.parserVersion, sentReport) }
+    return {
+      type: 'sent',
+      stamp: {
+        ...buildStamp(req, deps.contract, deps.parserVersion, sentReport),
+        ...(trace ? { requestTraceId: trace.id } : {}),
+      },
+    }
   }
   // The clock starts where the turn does. Both figures on the timing block are measured from here,
   // so they describe the same interval a caller timing this call from outside would have measured.
@@ -110,6 +153,20 @@ export async function* runInference(
   const streamOpts = {
     reportSent: (report: SentReport) => {
       if (!sentEmitted) sentReport = structuredClone(report)
+    },
+    reportAttempt: async (event: import('@agnes/extension-api').ModelAdapterAttemptObservation) => {
+      try {
+        await trace?.attempt?.(event)
+      } catch {
+        /* Passive attempt observation. */
+      }
+    },
+    reportRequest: async (body: unknown, attemptId?: string) => {
+      try {
+        await trace?.wire(body, attemptId)
+      } catch {
+        /* A failed capture never changes transport. */
+      }
     },
     signal: opts.signal,
     toolNames: opts.toolNames,
@@ -134,6 +191,7 @@ export async function* runInference(
     for await (const ev of hit.adapter.stream(resolved.route, wireReq, streamOpts)) {
       if (!sentEmitted) yield emitSent()
       if (terminal) break
+      recordEvent(ev)
       if (ev.type === 'text_delta' || ev.type === 'thinking_delta') {
         const r = step(
           dstate,
@@ -204,6 +262,7 @@ export async function* runInference(
     if (!sentEmitted) yield emitSent()
     if (!terminal) {
       for (const e of flush()) yield e
+      recordEvent({ type: 'error', reason: 'error', code: 'TRANSPORT' })
       yield {
         type: 'error',
         reason: 'error',
@@ -216,7 +275,12 @@ export async function* runInference(
     if (!sentEmitted) yield emitSent()
     // The thrown value's own text is not forwarded: it is written by the wire library and can quote
     // request material. What the caller needs is the class of failure and whether to retry.
-    if (!terminal)
+    if (!terminal) {
+      recordEvent({
+        type: 'error',
+        reason: opts.signal.aborted ? 'aborted' : 'error',
+        code: opts.signal.aborted ? 'ABORTED' : 'TRANSPORT',
+      })
       yield {
         type: 'error',
         reason: opts.signal.aborted ? 'aborted' : 'error',
@@ -224,6 +288,13 @@ export async function* runInference(
         message: e instanceof Error ? e.name : 'adapter failed',
         retryable: !opts.signal.aborted,
       }
+    }
+  } finally {
+    try {
+      await trace?.finish()
+    } catch {
+      /* Local storage failure is isolated from inference. */
+    }
   }
 }
 
@@ -237,6 +308,7 @@ export async function* runInference(
  * here counts" (fall back to an estimate once) from "this route does not" (answered per request).
  */
 export function createProvider(opts: {
+  trace?: ModelRequestTrace
   adapters: WireAdapter[]
   routes: RouteTable
   contract: ContractStore
@@ -266,6 +338,7 @@ export function createProvider(opts: {
   if (opts.pricing?.creditsPerUsd === undefined)
     opts.log?.warn('no pricing.creditsPerUsd: cost ledger credits will be denominated in USD')
   const deps: InferenceDeps = {
+    ...(opts.trace ? { trace: opts.trace } : {}),
     registry,
     routes: opts.routes,
     contract: opts.contract,

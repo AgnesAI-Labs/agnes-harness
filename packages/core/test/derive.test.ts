@@ -624,7 +624,7 @@ describe('deriveRequest', () => {
 
   it('puts the harness sections in with the contributed ones, ordered', () => {
     seq = 0
-    const out = deriveRequest({
+    const input: DeriveInput = {
       ...base(),
       surface: [],
       merged: {
@@ -646,13 +646,39 @@ describe('deriveRequest', () => {
           source: 'x',
         },
       ],
-    })
+    }
+    const out = deriveRequest(input)
     expect(out.request.sections.map((s) => s.id)).toEqual([
       'core:untrusted-envelope',
       'persona',
       'harness:memory',
       'late',
     ])
+    const replacement = deriveRequest({
+      ...input,
+      systemPrompt: {
+        config: { fullOverride: 'deployment replacement' },
+        provider: {
+          id: 'replacement',
+          version: '1.0.0',
+          defaults: () => [],
+          compose: (config) => [
+            {
+              id: 'deployment:full-override',
+              order: 100,
+              source: 'profile:system-prompt',
+              text: config.fullOverride!,
+            },
+          ],
+        },
+      },
+    })
+    expect(replacement.request.sections.map((section) => section.id)).toEqual([
+      'core:untrusted-envelope',
+      'deployment:full-override',
+      'harness:memory',
+    ])
+    expect(replacement.request.sections.at(-1)?.text).toContain('remember')
     expect(out.header.prompt_prefix_hash).not.toBe(
       deriveRequest({ ...base(), surface: [], ...NO_RC }).header.prompt_prefix_hash,
     )

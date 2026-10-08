@@ -45,7 +45,9 @@
     "./workspace-invocation-resolver": "./src/workspace-invocation-resolver.ts",
     "./workspace-seam-contexts": "./src/workspace-seam-contexts.ts",
     "./workspace": "./src/workspace.ts",
-    "./doctor": "./src/doctor.ts"
+    "./doctor": "./src/doctor.ts",
+    "./system-prompt-settings": "./src/system-prompt-settings.ts",
+    "./request-traces": "./src/request-traces.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

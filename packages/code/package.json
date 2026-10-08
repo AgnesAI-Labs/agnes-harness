@@ -12,6 +12,18 @@
   "agnes": {
     "extensions": [
       "./src/extensions/code-mode"
+    ],
+    "plugins": [
+      {
+        "id": "system-prompt:default",
+        "export": "systemPromptPlugin",
+        "apiRange": "^1.4.0",
+        "inject": [
+          "providers"
+        ],
+        "runtime": "in-process",
+        "default": true
+      }
     ]
   },
   "scripts": {

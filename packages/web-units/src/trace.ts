@@ -5,6 +5,7 @@ import {
   forwardRef,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
@@ -16,6 +17,7 @@ import {
 import { flushSync } from 'react-dom'
 import { buildTraceToolHierarchy, isTraceRowHiddenByTool, traceToolAncestors } from './trace-hierarchy.js'
 import { type TraceMessageKey, traceLocale, traceText } from './trace-locale.js'
+import { RequestTraceView } from './trace-request.js'
 import {
   buildTraceRequestMetrics,
   type TraceMetric,
@@ -76,6 +78,13 @@ export type TracePanelOptions = {
   chatToggle?: HTMLButtonElement
   conversation?: HTMLElement
   store?: Pick<Storage, 'getItem' | 'setItem'>
+  clearModelRequest?: (
+    params: import('@agnes/protocol').ModelRequestClearParams,
+  ) => Promise<import('@agnes/protocol').ModelRequestClearResult>
+  readModelRequest?: (
+    params: import('@agnes/protocol').ModelRequestParams,
+    signal?: AbortSignal,
+  ) => Promise<import('@agnes/protocol').ModelRequestResult>
   readToolDetail?: (
     sessionId: string,
     callSeq: number,
@@ -85,6 +94,7 @@ export type TracePanelOptions = {
 }
 
 export type TraceRow = {
+  requestTraceId?: string | undefined
   id: string
   seq: number
   turn?: number | undefined
@@ -345,7 +355,8 @@ export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[
       cached.row.ttftMs === span?.ttftMs &&
       cached.row.errorCode === errorCode &&
       cached.row.usage === usage &&
-      cached.row.callUsage === callUsage
+      cached.row.callUsage === callUsage &&
+      cached.row.requestTraceId === span?.requestTraceId
     ) {
       rows.push(cached.row)
       continue
@@ -371,6 +382,7 @@ export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[
       errorCode,
       usage,
       callUsage,
+      requestTraceId: span?.requestTraceId,
     }
     rowCache.set(node, { locale, turn, span, row })
     rows.push(row)
@@ -643,6 +655,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
   // While the panel is closed, render() only remembers the newest snapshot; opening shows it.
   const latest = useRef<Snapshot | undefined>(undefined)
   const [query, setQuery] = useState('')
+  const [kindFilter, setKindFilter] = useState('all')
   const [selected, setSelected] = useState<string | undefined>(undefined)
   const [pane, setPane] = useState<InspectorPane>('overview')
   const [toolDetail, setToolDetail] = useState<ToolDetailState | undefined>(undefined)
@@ -911,6 +924,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
   const visibleRows = useMemo(
     () =>
       rows.filter((row) => {
+        if (kindFilter !== 'all' && row.kind !== kindFilter) return false
         if (rangeIds && !rangeIds.has(row.id)) return false
         if (!query && !timelineRange && isTraceRowHiddenByTool(toolHierarchy, row.id, collapsedTools))
           return false
@@ -919,7 +933,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
           `${row.badge} ${row.step ?? ''} ${row.preview} ${row.raw} ${row.source} ${row.errorCode ?? ''}`.toLowerCase()
         return hay.includes(query)
       }),
-    [rows, rangeIds, query, timelineRange, toolHierarchy, collapsedTools],
+    [rows, rangeIds, query, timelineRange, toolHierarchy, collapsedTools, kindFilter],
   )
   const groups = useMemo(() => {
     const result: Array<{ turn: number | undefined; rows: TraceRow[] }> = []
@@ -930,7 +944,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
     }
     return result
   }, [visibleRows])
-  const focusActive = Boolean(query || timelineRange)
+  const focusActive = Boolean(query || timelineRange || kindFilter !== 'all')
   const listItems = useMemo(() => {
     const items: TraceListItem[] = []
     if (snapshot.meta?.hasEarlier && snapshot.meta.loadEarlier)
@@ -995,51 +1009,88 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
   // biome-ignore lint/correctness/useExhaustiveDependencies: locale changes the omitted-step text
   const omitted = useMemo(() => truncations(snapshot.turns), [snapshot.turns, locale])
   const meta = snapshot.meta
-  const selectRow = (id: string): void => {
-    const bar = timelineViewport ? bars.find((item) => item.targetId === id) : undefined
-    const revealBar = bar && (bar.domainStart > viewportEnd || bar.domainEnd < viewportStart)
-    flushSync(() => {
-      if (!visibleRows.some((row) => row.id === id)) {
-        setQuery('')
-        setTimelineRange(null)
-      }
-      const turn = rows.find((row) => row.id === id)?.turn
-      if (turn !== undefined && collapsedTurns.has(turn)) {
-        setCollapsedTurns((current) => new Set([...current].filter((value) => value !== turn)))
-      }
-      const ancestors = traceToolAncestors(toolHierarchy, id)
-      if (ancestors.some((ancestor) => collapsedTools.has(ancestor)))
-        setCollapsedTools((current) => new Set([...current].filter((value) => !ancestors.includes(value))))
-      setSelected(id)
-      if (revealBar) {
-        const start = Math.max(
-          timelineModel.start,
-          Math.min(timelineModel.end - viewportWidth, bar.domainStart - viewportWidth / 2),
+  const selectRow = useCallback(
+    (id: string): void => {
+      const bar = timelineViewport ? bars.find((item) => item.targetId === id) : undefined
+      const revealBar = bar && (bar.domainStart > viewportEnd || bar.domainEnd < viewportStart)
+      flushSync(() => {
+        if (!visibleRows.some((row) => row.id === id)) {
+          setQuery('')
+          setKindFilter('all')
+          setTimelineRange(null)
+        }
+        const turn = rows.find((row) => row.id === id)?.turn
+        if (turn !== undefined && collapsedTurns.has(turn)) {
+          setCollapsedTurns((current) => new Set([...current].filter((value) => value !== turn)))
+        }
+        const ancestors = traceToolAncestors(toolHierarchy, id)
+        if (ancestors.some((ancestor) => collapsedTools.has(ancestor)))
+          setCollapsedTools((current) => new Set([...current].filter((value) => !ancestors.includes(value))))
+        setSelected(id)
+        if (revealBar) {
+          const start = Math.max(
+            timelineModel.start,
+            Math.min(timelineModel.end - viewportWidth, bar.domainStart - viewportWidth / 2),
+          )
+          setTimelineViewport({ start, end: start + viewportWidth })
+        }
+        setLightbox(null)
+        setPane('overview')
+      })
+      const list = listRef.current
+      const layout = layoutRef.current
+      if (list && layout && layout.entries.length > TRACE_VIRTUAL_THRESHOLD) {
+        const position = getTraceVirtualScrollTopForKey(
+          layout,
+          `row:${id}`,
+          list.scrollTop,
+          list.clientHeight || listViewportHeight,
         )
-        setTimelineViewport({ start, end: start + viewportWidth })
+        if (position !== undefined) {
+          list.scrollTop = position
+          flushSync(() => setListScrollTop(position))
+        }
       }
-      setLightbox(null)
-      setPane('overview')
-    })
-    const list = listRef.current
-    const layout = layoutRef.current
-    if (list && layout && layout.entries.length > TRACE_VIRTUAL_THRESHOLD) {
-      const position = getTraceVirtualScrollTopForKey(
-        layout,
-        `row:${id}`,
-        list.scrollTop,
-        list.clientHeight || listViewportHeight,
+      const target = [...root.querySelectorAll<HTMLButtonElement>('.trace-row')].find(
+        (row) => row.dataset.traceRowId === id,
       )
-      if (position !== undefined) {
-        list.scrollTop = position
-        flushSync(() => setListScrollTop(position))
-      }
+      target?.scrollIntoView?.({ block: 'nearest' })
+    },
+    [
+      timelineViewport,
+      bars,
+      viewportEnd,
+      viewportStart,
+      visibleRows,
+      rows,
+      collapsedTurns,
+      toolHierarchy,
+      collapsedTools,
+      timelineModel.start,
+      timelineModel.end,
+      viewportWidth,
+      root,
+      listViewportHeight,
+    ],
+  )
+  useEffect(() => {
+    const conversation = options.conversation
+    if (!conversation) return
+    const jump = (event: Event) => {
+      const turnId = (event as CustomEvent<{ turnId?: string }>).detail?.turnId
+      const active = latest.current ?? snapshot
+      const turn = active.turns.find((item) => item.id === turnId)
+      if (!turn) return
+      const target = buildTraceRows(active.nodes, active.turns)
+        .filter((row) => row.turn === turn.turn)
+        .findLast((row) => row.kind === 'assistant')
+      if (!target) return
+      options.toggle.click()
+      selectRow(target.id)
     }
-    const target = [...root.querySelectorAll<HTMLButtonElement>('.trace-row')].find(
-      (row) => row.dataset.traceRowId === id,
-    )
-    target?.scrollIntoView?.({ block: 'nearest' })
-  }
+    conversation.addEventListener('agnes:trace-turn', jump)
+    return () => conversation.removeEventListener('agnes:trace-turn', jump)
+  }, [options.conversation, options.toggle, snapshot, selectRow])
   const closeInspector = (): void =>
     flushSync(() => {
       setSelected(undefined)
@@ -1283,6 +1334,25 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
               .filter(Boolean)
               .join(' · '),
           ),
+          options.chatToggle && selectedRow.turn !== undefined
+            ? createElement(
+                'button',
+                {
+                  type: 'button',
+                  className: 'trace-detail-copy',
+                  'data-testid': 'trace-view-chat',
+                  onClick: () => {
+                    const turn = snapshot.turns.find((item) => item.turn === selectedRow.turn)
+                    options.chatToggle?.click()
+                    const target = [
+                      ...(options.conversation?.querySelectorAll<HTMLElement>('[data-turn-id]') ?? []),
+                    ].find((item) => item.dataset.turnId === turn?.id)
+                    target?.scrollIntoView?.({ block: 'center' })
+                  },
+                },
+                traceText('trace.jump.chat'),
+              )
+            : null,
           createElement(
             'button',
             {
@@ -1294,6 +1364,16 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
             '×',
           ),
         ),
+        selectedRow.requestTraceId && snapshot.meta?.sessionId && options.readModelRequest
+          ? createElement(RequestTraceView, {
+              key: `${snapshot.meta.sessionId}:${selectedRow.requestTraceId}`,
+              sessionId: snapshot.meta.sessionId,
+              callId: selectedRow.requestTraceId,
+              read: options.readModelRequest,
+              ...(options.clearModelRequest ? { clear: options.clearModelRequest } : {}),
+              locale: traceLocale(),
+            })
+          : null,
         createElement(
           'div',
           { className: 'trace-inspector-tabs' },
@@ -1305,7 +1385,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
                 className: 'trace-tab',
                 type: 'button',
                 'data-pane': id,
-                'aria-selected': pane === id ? 'true' : 'false',
+                'aria-pressed': pane === id ? 'true' : 'false',
                 onClick: () => selectPane(id),
               },
               traceText(PANE_KEY[id]),
@@ -1567,6 +1647,20 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
         },
         allTurnsCollapsed ? traceText('trace.expandTurns') : traceText('trace.collapseTurns'),
       ),
+      createElement(
+        'select',
+        {
+          className: 'trace-type-filter',
+          'aria-label': traceText('trace.filter.label'),
+          value: kindFilter,
+          onChange: (event: import('react').ChangeEvent<HTMLSelectElement>) =>
+            setKindFilter(event.currentTarget.value),
+        },
+        createElement('option', { value: 'all' }, traceText('trace.filter.all')),
+        ...['user', 'assistant', 'tool', 'context', 'approval', 'compaction'].map((kind) =>
+          createElement('option', { key: kind, value: kind }, traceText(BADGE_KEY[kind]!)),
+        ),
+      ),
       createElement('input', {
         className: 'trace-search',
         type: 'search',
@@ -1637,7 +1731,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
               className: 'trace-gantt-track',
               ref: lane === 'input' ? timelineTrackRef : undefined,
               tabIndex: lane === 'input' ? 0 : -1,
-              role: 'presentation',
+              role: 'group',
               onPointerDown: timelinePointerDown,
               onPointerMove: timelinePointerMove,
               onPointerUp: timelinePointerUp,

@@ -337,6 +337,15 @@ const clientModules = await startClientModules({
     toggle: button('view-trace'),
     chatToggle: button('view-chat'),
     conversation,
+    clearModelRequest: async (params) => {
+      if (!current || current.id !== params.sessionId) throw new Error(t('app.trace.sessionSwitched'))
+      return client.requestTrace.clear(params)
+    },
+    readModelRequest: async (params, signal) => {
+      if (!current || current.id !== params.sessionId) throw new Error(t('app.trace.sessionSwitched'))
+      if (signal?.aborted) throw new Error(t('app.trace.sessionSwitched'))
+      return client.requestTrace.get(params)
+    },
     readToolDetail: async (sessionId, callSeq, resultSeq, signal) => {
       const session = current
       if (!session) throw new Error(t('app.trace.noSession'))

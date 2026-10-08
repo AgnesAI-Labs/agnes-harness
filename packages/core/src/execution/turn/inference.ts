@@ -611,6 +611,7 @@ export async function prepareInferenceRequest(
   }
   await s.ensureEnvelopeEpochs()
   let out = deriveRequest({
+    ...(s.d.systemPrompt ? { systemPrompt: s.d.systemPrompt } : {}),
     kind: 'turn',
     inlineImages: {
       model: inlineImageModel,
@@ -678,7 +679,14 @@ export async function admitInferenceRequest(
   let out: DeriveOutput = initial
   const slot = out.request.model.slot
   const target = { route: out.request.model.route, model: out.request.model.model }
-  let wire = toProviderRequest(out.request, { sessionKey: s.key, derivedHash: out.header.derived_hash })
+  let wire = toProviderRequest(out.request, {
+    sessionKey: s.key,
+    derivedHash: out.header.derived_hash,
+    compactionBoundary: s.d.surface
+      .nodes()
+      .findLast((node) => node.masked && out.request.messages.some((message) => message.seq === node.seq))
+      ?.masked?.end,
+  })
   const contextError = contextBudgetError(s, slot, { system: wire.system, tools: wire.tools })
   if (contextError) {
     await s.endTurn('budget', { error: contextError })
@@ -751,7 +759,15 @@ export async function admitInferenceRequest(
       )
       out = { ...out, request, header: { ...out.header, derived_hash: derivedHash } }
       wire = await releaseTreeReservationOnError(s, () =>
-        toProviderRequest(out.request, { sessionKey: s.key, derivedHash: out.header.derived_hash }),
+        toProviderRequest(out.request, {
+          sessionKey: s.key,
+          derivedHash: out.header.derived_hash,
+          compactionBoundary: s.d.surface
+            .nodes()
+            .findLast(
+              (node) => node.masked && out.request.messages.some((message) => message.seq === node.seq),
+            )?.masked?.end,
+        }),
       )
       if (imageCount > 0 && previousDerivedHash !== derivedHash) {
         earlyCount = { kind: 'unavailable', reason: 'failed' }

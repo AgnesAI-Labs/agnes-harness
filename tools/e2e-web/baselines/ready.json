@@ -156,7 +156,15 @@
     "plugin-old-version-en-light",
     "plugin-old-version-en-dark",
     "plugin-old-version-zh-CN-light",
-    "plugin-old-version-zh-CN-dark"
+    "plugin-old-version-zh-CN-dark",
+    "system-prompt-en-light",
+    "system-prompt-en-dark",
+    "system-prompt-zh-CN-light",
+    "system-prompt-zh-CN-dark",
+    "request-trace-en-light",
+    "request-trace-en-dark",
+    "request-trace-zh-CN-light",
+    "request-trace-zh-CN-dark"
   ],
   "pending": {},
   "platforms": ["darwin", "linux"],

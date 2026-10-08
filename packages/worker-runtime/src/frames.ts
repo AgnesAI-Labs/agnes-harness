@@ -35,6 +35,7 @@ export type SessionMethod =
   | 'resume'
   | 'ping'
   | 'previewSnapshot'
+  | 'systemPrompt.preview'
 
 /** Process-wide methods available before C2 runtime-target delivery exists. */
 export type WorkerMethod =
@@ -45,6 +46,7 @@ export type WorkerMethod =
   | 'pluginGenerations.collect'
   | 'configuration.apply'
   | 'session.catalog'
+  | 'systemPrompt.defaults'
   | 'inspectService'
   | 'callService'
   | 'abortService'

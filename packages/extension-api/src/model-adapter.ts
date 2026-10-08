@@ -20,6 +20,9 @@ export type ModelAdapterStreamOptions = {
   retry?: false
   sessionKey: string
   timeoutMs: { firstToken: number; total: number }
+  /** Optional final serialized JSON; omit authentication and transport options. */
+  reportRequest?: (body: unknown, attemptId?: string) => Promise<void>
+  reportAttempt?: (event: import('./system-prompt.js').ModelAdapterAttemptObservation) => Promise<void>
   reportSent?: (report: { sentHash: string; transforms: ContractStamp['transforms'] }) => void
 }
 

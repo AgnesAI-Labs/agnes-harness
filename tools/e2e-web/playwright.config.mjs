@@ -6,6 +6,7 @@ export default defineConfig({
   testDir: '.',
   testMatch: [
     'diagnostics.spec.ts',
+    'prompt-trace.spec.ts',
     'runtime.spec.ts',
     'ui-gate.spec.ts',
     'ui-flows.spec.ts',

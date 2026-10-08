@@ -20,6 +20,7 @@ import type {
   SessionWorkspaceRuntime,
   SessionWorkspaceRuntimeTable,
 } from '@agnes/host-infrastructure/session-workspace-runtime'
+import { SystemPromptSettingsStore } from '@agnes/host-infrastructure/system-prompt-settings'
 import { materializeRoutes, pinPresetRoutes } from '@agnes/host-providers/assemble/routes'
 import type { Actor, LoopSelection, SessionStart } from '@agnes/protocol'
 import type { Assembled } from './assemble.js'
@@ -379,6 +380,17 @@ export async function createSession(
   // 5 open: core takes the writer lease and writes session/start. `writerRunId` is required and
   // nothing upstream mints it, so it is minted here when the caller did not bring one.
   const session = await a.kernel.session(key, {
+    ...(a.systemPromptProvider
+      ? {
+          systemPrompt: {
+            config: async () => ({
+              ...view.model.systemPrompt,
+              ...(await new SystemPromptSettingsStore(profile.dataDir, profile.name).read()),
+            }),
+            resolve: (selection?: { id: string; version: string }) => a.systemPromptProvider!(selection),
+          },
+        }
+      : {}),
     ...(opts.loop ? { loop: opts.loop } : {}),
     defaultLoop: async () => {
       const loop = await a.sessionLoopDefault?.()

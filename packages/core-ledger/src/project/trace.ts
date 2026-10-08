@@ -229,6 +229,13 @@ function applyTraceEventInner(state: TraceFoldState, event: EventEnvelope): void
       }
       return
     }
+    case 'request/sent': {
+      const id = state.activeInference && state.effectToSpan.get(state.activeInference)
+      const span = id ? state.spans.get(id) : undefined
+      if (span && typeof data.requestTraceId === 'string' && /^[a-f0-9-]{36}$/.test(data.requestTraceId))
+        span.requestTraceId = data.requestTraceId
+      return
+    }
     case 'request/header': {
       const model = typeof data.model === 'string' ? data.model : undefined
       if (!model || !state.activeInference) return

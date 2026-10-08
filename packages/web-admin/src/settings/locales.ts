@@ -12,6 +12,7 @@ export const settingsCatalog: LocaleCatalog = {
     'securityScope.network': 'Network',
 
     diagnostics: 'Diagnostics',
+    'system-prompt': 'System prompt',
     technicalDetails: 'Technical details',
     providerName: 'Name',
     providerKind: 'Plugin kind',
@@ -473,6 +474,7 @@ export const settingsCatalog: LocaleCatalog = {
     'securityScope.network': '网络',
 
     diagnostics: '诊断',
+    'system-prompt': '系统提示词',
     technicalDetails: '技术详情',
     providerName: '名称',
     providerKind: '插件类型',

@@ -152,6 +152,42 @@
             "firstToken": { "type": "integer", "minimum": 1000 },
             "total": { "type": "integer", "minimum": 1000 }
           }
+        },
+        "sections": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "agnes-v1.json#/$defs/SystemPromptSection"
+          }
+        },
+        "traceContext": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [],
+          "properties": {
+            "memoryRevision": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "compactionBoundary": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
         }
       }
     },
@@ -276,6 +312,10 @@
               "ext": { "type": "string", "maxLength": 128 }
             }
           }
+        },
+        "requestTraceId": {
+          "type": "string",
+          "pattern": "^[a-f0-9-]{36}$"
         }
       }
     },

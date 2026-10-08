@@ -41,6 +41,13 @@ export * from './search-provider.js'
 export * from './services.js'
 export * from './skill-install.js'
 export * from './slots.js'
+export {
+  type ModelAdapterAttemptObservation,
+  type ModelRequestTrace,
+  type ModelRequestTraceHandle,
+  type SystemPromptProvider,
+  systemPromptKind,
+} from './system-prompt.js'
 export * from './tool.js'
 export * from './tool-policy.js'
 export * from './tool-runtime.js'

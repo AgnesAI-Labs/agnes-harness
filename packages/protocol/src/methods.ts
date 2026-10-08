@@ -71,6 +71,10 @@ export type MethodName =
   | '_agnes/v1/sessionSelection.defaults.save'
   | '_agnes/v1/config.childEngines.get'
   | '_agnes/v1/config.childEngines.save'
+  | '_agnes/v1/systemPrompt.get'
+  | '_agnes/v1/systemPrompt.save'
+  | '_agnes/v1/trace.request'
+  | '_agnes/v1/trace.clear'
   | '_agnes/v1/config.get'
   | '_agnes/v1/config.oauth'
   | '_agnes/v1/config.providers'
@@ -158,6 +162,10 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   ),
   '_agnes/v1/sessionSelection.defaults.get': clientRequest(A.ConfigEmptyParams, A.SessionDefaultsState),
   '_agnes/v1/sessionSelection.defaults.save': clientRequest(A.SessionDefaultsState, A.SessionDefaultsState),
+  '_agnes/v1/systemPrompt.get': clientRequest(A.SystemPromptGetParams, A.SystemPromptSnapshot),
+  '_agnes/v1/systemPrompt.save': clientRequest(A.SystemPromptSaveParams, A.SystemPromptSnapshot),
+  '_agnes/v1/trace.clear': clientRequest(A.ModelRequestClearParams, A.ModelRequestClearResult),
+  '_agnes/v1/trace.request': clientRequest(A.ModelRequestParams, A.ModelRequestResult),
   '_agnes/v1/config.get': clientRequest(A.ConfigEmptyParams, A.ConfigSnapshot),
   '_agnes/v1/config.oauth': clientRequest(A.ConfigOAuthInput, A.ConfigOAuthResult),
   '_agnes/v1/config.providers': clientRequest(A.ConfigEmptyParams, A.ConfigProvidersResult),

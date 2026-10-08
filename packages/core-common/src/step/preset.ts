@@ -12,6 +12,7 @@ export type PresetView = {
   model: {
     /** Omitted retains package defaults; an explicit empty list disables package prompt sections. */
     promptSections?: readonly string[]
+    systemPrompt?: import('@agnes/protocol').SystemPromptConfig
     route: Record<string, string>
     thinking: Partial<Record<string, ThinkingLevel>>
     /** Durable per-session windows, keyed by model slot. */
@@ -144,6 +145,13 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
         }),
     disclosure: pick(raw, 'disclosure', d.disclosure),
     model: {
+      ...(get(raw, 'model.system_prompt') === undefined
+        ? {}
+        : {
+            systemPrompt: structuredClone(
+              pick<import('@agnes/protocol').SystemPromptConfig>(raw, 'model.system_prompt', {}),
+            ),
+          }),
       ...(get(raw, 'model.prompt_sections') === undefined
         ? {}
         : { promptSections: [...pick<string[]>(raw, 'model.prompt_sections', [])] }),

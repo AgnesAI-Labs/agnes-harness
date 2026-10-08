@@ -22,6 +22,7 @@ export async function section(page: Page, id: string) {
   const first: Record<string, string> = {
     bundles: 'models',
     engines: 'models',
+    'system-prompt': 'models',
     discover: 'plugins',
     providers: 'plugins',
     examples: 'plugins',

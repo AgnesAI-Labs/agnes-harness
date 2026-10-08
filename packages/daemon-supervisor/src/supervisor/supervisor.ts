@@ -117,6 +117,7 @@ import { type PublishChildEngines, registerConfiguration } from '@agnes/daemon-r
 import { registerDiagnostics } from '@agnes/daemon-rpc/local/methods/diagnostics'
 import { registerDoctor } from '@agnes/daemon-rpc/local/methods/doctor'
 import { executeJournaledEffect, registerExtensions } from '@agnes/daemon-rpc/local/methods/extensions'
+import { registerPromptTrace } from '@agnes/daemon-rpc/local/methods/prompt-trace'
 import { registerSessionPreferences } from '@agnes/daemon-rpc/local/methods/session-preferences'
 import {
   registerSessionSelection,
@@ -2025,6 +2026,20 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         dataDir: o.config.dataDir,
         ...(o.configuration ? { configuration: o.configuration } : {}),
         connection: async () => true,
+      })
+      registerPromptTrace(ep, {
+        dataDir: o.config.dataDir,
+        profile: o.profile.name,
+        registry: cx.registry,
+        requireSessionOwner: requireSessionOwner(cx),
+        preview: async (config) => {
+          const link = await pool.acquireSharedWorker()
+          return (await link.command(
+            'systemPrompt.defaults',
+            { config },
+            { timeoutMs: 31_000 },
+          )) as import('@agnes/protocol').SystemPromptSnapshot
+        },
       })
       registerDiagnostics(ep, {
         requireSessionOwner: requireSessionOwner(cx),

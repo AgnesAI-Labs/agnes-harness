@@ -1543,6 +1543,9 @@ button.trace-gantt-bar:focus-visible {
   font-size: var(--font-size-xs);
 }
 .trace-turn-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   height: 33px;
   padding: 0 1rem;
   border-bottom: 1px solid var(--agnes-line-primary);
@@ -1701,7 +1704,7 @@ button.trace-gantt-bar:focus-visible {
   background: transparent;
   font-size: var(--font-size-sm);
 }
-.trace-tab[aria-selected="true"] {
+.trace-tab[aria-pressed="true"] {
   border-bottom-color: var(--agnes-text-emphasis);
   color: var(--agnes-text-emphasis);
 }
@@ -7419,4 +7422,48 @@ body.admin-page {
   #config-form:has(.candidate-review-panel) .settings-rail {
     max-height: min(12rem, 25dvh);
   }
+}
+.system-prompt-section,
+.request-trace-json {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 32rem;
+  overflow: auto;
+  font: 12px / 1.65 var(--font-mono);
+}
+.request-trace {
+  padding: 12px;
+  border-block-end: 1px solid var(--agnes-line-primary);
+}
+.request-trace-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.request-trace-json ins {
+  background: color-mix(in srgb, var(--agnes-status-success-text) 18%, transparent);
+  text-decoration: none;
+}
+.request-trace-json del {
+  background: color-mix(in srgb, var(--agnes-status-danger-text) 18%, transparent);
+}
+.trace-type-filter {
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-surface);
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: 6px;
+  padding: 5px;
+}
+
+.trace-type-filter {
+  width: auto;
+  min-width: 6rem;
+  max-width: 11rem;
+}
+.request-trace-controls {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding-block: 8px;
+  background: var(--agnes-bg-surface);
 }

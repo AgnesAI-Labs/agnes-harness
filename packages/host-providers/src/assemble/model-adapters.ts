@@ -39,6 +39,7 @@ class CommunityWireAdapter extends WireAdapter {
   complete?: NonNullable<ModelAdapterInstance['complete']>
   constructor(
     private readonly instance: ModelAdapterInstance,
+    override readonly version: string,
     private readonly lifecycle: ProviderLifetime,
     private readonly registration: AbortSignal,
   ) {
@@ -278,7 +279,10 @@ export class ModelAdapterRegistry extends Service implements ModelAdapterRegistr
         )
       }
       this.registrations.select(`adapter:${id}`, id)
-      return { adapter: new CommunityWireAdapter(instance, lifecycle, record.lifetime.signal), dispose }
+      return {
+        adapter: new CommunityWireAdapter(instance, record.version, lifecycle, record.lifetime.signal),
+        dispose,
+      }
     }, creationSignal)
   }
 }

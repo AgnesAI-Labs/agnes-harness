@@ -21,6 +21,8 @@ export type WireEvent =
 export type AdapterStreamOptions = {
   /** Called before network I/O with the actual serialized body digest, never credentials. */
   reportSent?: (report: SentReport) => void
+  reportRequest?: (body: unknown, attemptId?: string) => Promise<void>
+  reportAttempt?: (event: import('@agnes/extension-api').ModelAdapterAttemptObservation) => Promise<void>
   signal: AbortSignal
   toolNames: string[]
   /** A caller can disable this call's retries, but cannot increase the adapter's retry budget. */
@@ -35,6 +37,7 @@ export type AdapterStreamOptions = {
  * job, so the same recovery rules apply to every adapter rather than being reimplemented per vendor.
  */
 export abstract class WireAdapter {
+  declare readonly version?: string
   abstract readonly id: string
   abstract routes(): RouteDecl[]
   abstract models(route: string): ModelRecord[]

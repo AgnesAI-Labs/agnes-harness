@@ -145,7 +145,7 @@ export function SettingsDetails({
   children,
   compact = false,
   ...props
-}: Omit<HTMLAttributes<HTMLDetailsElement>, 'title'> & {
+}: Omit<import('react').DetailsHTMLAttributes<HTMLDetailsElement>, 'title'> & {
   title: ReactNode
   compact?: boolean
   'data-testid'?: string
@@ -165,4 +165,26 @@ export function SettingsDetails({
 }
 export function SettingsToolbar(props: HTMLAttributes<HTMLDivElement>) {
   return <div {...props} className={['agnes-settings-toolbar', props.className].filter(Boolean).join(' ')} />
+}
+
+/** Native checkbox with a shared compact label and field sizing. */
+export function SettingsCheckbox({
+  label,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement> & { label: ReactNode }) {
+  return (
+    <label className="agnes-settings-checkbox">
+      <input {...props} type="checkbox" /> <span>{label}</span>
+    </label>
+  )
+}
+
+/** Read-only code region remains keyboard scrollable when its content overflows. */
+export function SettingsCode({ label, ...props }: HTMLAttributes<HTMLPreElement> & { label: string }) {
+  return (
+    <section aria-label={label}>
+      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users need to scroll long prompt and JSON blocks. */}
+      <pre {...props} tabIndex={0} />
+    </section>
+  )
 }

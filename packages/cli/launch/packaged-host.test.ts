@@ -25,6 +25,7 @@ vi.mock('@agnes/host', async () => {
 
 import {
   AGNES_BASE_PLUGIN_DECLARATIONS,
+  AGNES_CODE_PLUGIN_DECLARATIONS,
   createPackagedHost,
   type packagedPackages,
   readPackagedBuiltinExports,
@@ -93,13 +94,13 @@ describe('packaged host wiring', () => {
     expect(module.plugins?.every(({ entry }) => typeof entry.prepared === 'object')).toBe(true)
   })
 
-  it('does not synthesize plugin declarations for packaged ai or code modules', async () => {
+  it('keeps ai undeclared and code limited to its shipped prompt plugin', async () => {
     const [aiExports, codeExports] = await Promise.all([import('@agnes/ai'), import('@agnes/code')])
     const ai = readPackagedBuiltinExports('@agnes/ai', 'worker.mjs', aiExports)
     const code = readPackagedBuiltinExports('@agnes/code', 'worker.mjs', codeExports)
 
     expect(ai.plugins).toBeUndefined()
-    expect(code.plugins).toBeUndefined()
+    expect(code.plugins?.map((row) => row.declaration.id)).toEqual(['system-prompt:default'])
   })
 
   it('forwards the bootstrapped Skill runtime to createHost without recreating it', async () => {
@@ -220,4 +221,11 @@ describe('packaged host wiring', () => {
     expect(source).not.toContain('process.env.AGNES_HOME')
     expect(source).not.toContain('process.env.AGH_HOME')
   })
+})
+
+it('discovers the replaceable prompt composer in a packaged worker using the source declaration', async () => {
+  const pkg = JSON.parse(readFileSync(new URL('../../code/package.json', import.meta.url), 'utf8'))
+  expect(AGNES_CODE_PLUGIN_DECLARATIONS).toEqual(parseAgnesPluginEntries('@agnes/code', pkg.agnes.plugins))
+  const module = readPackagedBuiltinExports('@agnes/code', 'worker.mjs', await import('@agnes/code'))
+  expect(module.plugins?.map((row) => row.declaration.id)).toContain('system-prompt:default')
 })

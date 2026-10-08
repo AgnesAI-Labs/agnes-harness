@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
+  defaultSystemPrompt,
   loadPrompt,
   PROMPT_SECTIONS,
   renderEnvironment,
@@ -299,4 +300,21 @@ describe('prompt rendering', () => {
     for (const s of PROMPT_SECTIONS)
       if (s.source === 'file') expect(loadPrompt(s.id), s.id).toBe(loadPrompt(s.id).trimEnd())
   })
+})
+
+it('composes deployment persona around plugin sections and makes full replacement explicit', () => {
+  expect(() =>
+    defaultSystemPrompt.compose({ fullOverride: 'replacement', personaPrefix: 'ambiguous' }, []),
+  ).toThrow('conflicts')
+  const defaults = defaultSystemPrompt.defaults()
+  expect(defaults.find((section) => section.id === 'persona')?.source).toBe('@agnes/code/prompts/persona.md')
+  const customized = defaultSystemPrompt.compose(
+    { personaPrefix: 'opening', personaSuffix: 'closing', replyStyle: 'concise' },
+    defaults,
+  )
+  expect(customized[0]?.text).toBe('opening')
+  expect(customized.slice(-2).map((section) => section.text)).toEqual(['closing', 'concise'])
+  expect(defaultSystemPrompt.compose({ fullOverride: 'business persona' }, defaults)).toEqual([
+    { id: 'deployment:full-override', order: 100, source: 'profile:system-prompt', text: 'business persona' },
+  ])
 })

@@ -429,8 +429,10 @@ export {
   type SessionDefaultsConfigurationService,
 } from '@agnes/host-infrastructure/configuration'
 export { type DoctorOptions, type DoctorProbe, runDoctor } from '@agnes/host-infrastructure/doctor'
+export { RequestTraceStore } from '@agnes/host-infrastructure/request-traces'
 export * from '@agnes/host-infrastructure/sandbox-readiness-manager'
 export * from '@agnes/host-infrastructure/session-workspace-runtime'
+export { SystemPromptSettingsStore } from '@agnes/host-infrastructure/system-prompt-settings'
 export {
   resolveWorkspaceDirectory,
   type WorkspaceDirectory,

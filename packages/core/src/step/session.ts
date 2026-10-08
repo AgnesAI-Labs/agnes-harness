@@ -1,5 +1,6 @@
 import { hasChildControl } from '@agnes/core-child-control/child/store'
 import { LEGACY_LOOP } from '@agnes/core-common/loop/registry'
+import { sha256Hex } from '@agnes/core-common/request/hash'
 import { newOpState, type OpStateObj, opMark, withPhase } from '@agnes/core-common/step/op-state'
 import type { PresetView } from '@agnes/core-common/step/preset'
 import {
@@ -129,10 +130,13 @@ import type {
 import { ResourceRegistry } from '../registry/resources.js'
 import type { RegistrySnapshot, ToolRegistry, ToolSource } from '../registry/tools.js'
 import type { PromptSection } from '../request/contribute.js'
+import { harnessSections, mergeContributions } from '../request/contribute.js'
 import type { ContractRef, DeriveOutput, RequestHeaderData } from '../request/derive.js'
+import { sanitize, UNTRUSTED_RULE_SECTION } from '../request/derive.js'
 import { createEnvelopeCache, type EnvelopeCache } from '../request/envelope-cache.js'
 import { type EnvelopeEpochs, nonceFor, recordHeader } from '../request/envelope-epochs.js'
 import type { RequestBody as MintedRequestBody } from '../request/mint.js'
+import { composeSystemPrompt, type PinnedSystemPrompt } from '../request/system-prompt.js'
 import { validateUserMessageImages } from '../request/user-message-images.js'
 import type {
   CurrentRuntimeLookup,
@@ -378,6 +382,7 @@ export type TurnEndReason =
 export type TurnOutcome = { reason: TurnEndReason; lastSeq: Seq; error?: { code: string; message: string } }
 
 export type SessionDeps = {
+  systemPrompt?: PinnedSystemPrompt
   bindLoopChildren?: (
     parent: import('@agnes/extension-api').ChildAgentParentScope,
   ) => import('@agnes/extension-api').ChildAgentSessionService
@@ -825,6 +830,40 @@ export class SessionImpl {
     }
   }
 
+  /** Assembly from pinned configuration for owner previews; captures retain actual request content. */
+  async systemPromptPreview(): Promise<import('@agnes/protocol').SystemPromptSnapshot> {
+    const ctx = this.operationContext()
+    const merged = mergeContributions(
+      this.d.operations
+        .filter((op) => op.contribute)
+        .map((op) => ({
+          op: op.name,
+          ...op.contribute!(ctx),
+        })),
+      ctx.snapshot,
+    )
+    const sections = [
+      UNTRUSTED_RULE_SECTION,
+      ...composeSystemPrompt(
+        this.d.systemPrompt,
+        merged.sections,
+        harnessSections([...this.state.registers.harnessEntries.values()].map((cell) => cell.value)),
+      ).map((section) => ({
+        ...section,
+        text: sanitize(section.text),
+        id: sanitize(section.id),
+        source: sanitize(section.source),
+      })),
+    ]
+    return {
+      config: structuredClone(this.d.systemPrompt?.config ?? {}),
+      effect: 'new-sessions',
+      sections,
+      hash: sha256Hex(sections.map((section) => section.text).join('\n\n')),
+      preview: 'session-assembled',
+    }
+  }
+
   /** Idempotent: a reopened ledger already carries its session/start and must not gain a second. */
   async start(): Promise<void> {
     if (this.state.session) {
@@ -870,6 +909,18 @@ export class SessionImpl {
         actor: this.d.actor,
         data: {
           key: this.key,
+          ...(this.d.systemPrompt
+            ? {
+                systemPrompt: {
+                  config: structuredClone(this.d.systemPrompt.config),
+                  provider: {
+                    id: this.d.systemPrompt.provider.id,
+                    version: this.d.systemPrompt.provider.version,
+                  },
+                  hash: (await this.systemPromptPreview()).hash,
+                },
+              }
+            : {}),
           loop: { ...this.loop },
           resolvedProfileHash: this.d.resolvedProfileHash,
           preset: this.preset.name,

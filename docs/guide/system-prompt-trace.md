@@ -1,0 +1,35 @@
+# System prompts and model request traces
+
+English | [简体中文](system-prompt-trace.zh-CN.md)
+
+## Customize a persona
+
+Open **Settings → Agent → System prompt**. Add opening instructions, closing instructions, or a reply style, then select **Save for new sessions**. Defaults belong to the current profile. A bundle can supply `preset.model.system_prompt`; profile fields override matching bundle fields. Reset restores bundle defaults.
+
+Each custom field accepts 8,192 characters. Advanced full replacement accepts 65,536 characters and requires confirmation. It replaces plugin and repository instruction sections, while Core memory facts and runtime context remain live. It conflicts with opening, closing and reply-style fields: clear them before saving. Duplicate section identifiers returned by a composer are refused. Core retains its untrusted-input boundary; authorization, tool schemas and the ledger remain authoritative. Removing workflow instructions can reduce reliability.
+
+New sessions persist their configuration, prompt provider identity/version and initial assembled prompt hash. Resume uses that pin after a daemon restart; a missing provider fails rather than substituting another. Sessions predating prompt pins retain default configuration. Runtime context, repository rules, memory and Skills can still change between turns; the persona pin does not freeze their content.
+
+**Current config preview** shows shipped sections and their sources. **This session’s actual version** shows its latest retained logical request prompt, including runtime sections; when no capture is retained, it labels an assembled preview using that session’s pinned configuration and current dynamic sections. These previews are distinct from the final provider body. The independently replaceable `system-prompt:default` plugin in `@agnes/code` uses the public `systemPromptKind` contract.
+
+## Inspect a model call
+
+Open **Trace**, filter assistant entries, and select a call. Six tabs show **System prompt**, **Tools**, **Messages**, **Parameters**, **Tokens**, and **Raw JSON**. The first four show the logical request after Core derivation and compaction. Sources distinguish pinned instructions from dynamic sections. The call selector lists task, title and compaction calls separately. Existing turn/step grouping, folded streams, filtering and chat jumps remain available.
+
+**Final transport JSON** is the redacted JSON body observed in the adapter’s final HTTP fetch, after SDK serialization and compatibility transforms. It excludes authentication headers and is not a network packet capture. **Logical request** means no final-body tap was available. Raw JSON then reports typed unavailability and cannot copy a logical object in its place. Pi’s HTTP fetch paths are supported (including Codex, which uses SSE); Community WebSockets, Google/Bedrock SDK transports and adapters without a tap may be unavailable. Binary or depth-limited content is omitted and marks the capture incomplete. No response body is stored.
+
+Each observed adapter attempt has an `attemptId`, a logical `parentCallId`, an index and a not-sent, sent, failed, cancelled or completed state. An untapped adapter’s sending state is explicitly unknown. Supported HTTP retries retain their own final bodies; unsupported transports cannot expose their internal wire retries. Token views separate provider-reported counts, UTF-8-bytes/4 estimates and missing usage. Estimates are not a bill; zero or absent provider counts remain missing. Compaction usage belongs to its own call, never the main request.
+
+Capture details include adapter/version/API, endpoint without credentials or query, generation ID, prompt/tool hashes, message and per-source hashes, memory revision/hash and the visible compaction boundary. Content hashes describe redacted content; the session’s initial prompt pin describes the original assembled instructions. Memory revision is `null` when its producer provides no revision; a memory section hash can still be available. Retries use the same logical request snapshot.
+
+Comparison uses the previous retained request. For comparison across sessions, select **Use this request as comparison** in the older request, then open the new request. Both owners are checked. The selection lasts only while the page is open. **Copy** is an explicit clipboard action: review content before copying.
+
+## Privacy and retention
+
+Request bodies stay in private local storage under `AGH_HOME`, separated by profile and session. Credentials are excluded at the transport tap; values are redacted and validated before persistence. Secret detection is heuristic and cannot guarantee that all sensitive text is identified. Request and memory contents never enter telemetry or diagnostic exports; ordinary projections carry IDs, hashes and sizes.
+
+Content-addressed blobs deduplicate system text, section metadata, tool schemas and final bodies. Limits are 2 MiB per call, 64 MiB and 256 calls per profile, 16 MiB and 128 calls per session, and seven days. Oversized logical captures are skipped; incomplete wire capture is labelled. Admission can refuse new content while recent unreferenced blobs still occupy the cap.
+
+The worker collects on startup, after writes and every five minutes; closing the host stops the collector. Automatic GC deletes a blob only when no retained call references it **and** its retention has expired. In capture details, confirm **Delete this call’s local body and metadata**, then select **Clear this capture** to remove that record and unshared content immediately. Shared blobs survive while another call references them. An evicted or cleared in-flight call cannot be resurrected by its response.
+
+Generated App Server methods are `_agnes/v1/systemPrompt.get`, `_agnes/v1/systemPrompt.save`, `_agnes/v1/trace.request` and `_agnes/v1/trace.clear`. The SDK exposes `client.systemPrompt.get/save` and `client.requestTrace.get/list/clear`. Configuration access requires local configuration authority. Session previews, capture reads, comparisons and clearing check durable session ownership. The admin bridge uses fixed routes, same-origin checks and administrative write permissions.

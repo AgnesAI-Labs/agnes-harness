@@ -79,6 +79,10 @@ describe('methods (I1 set)', () => {
   it('lists the I1 methods with kind and direction', () => {
     expect(Object.keys(METHODS).sort()).toEqual(
       [
+        '_agnes/v1/systemPrompt.get',
+        '_agnes/v1/systemPrompt.save',
+        '_agnes/v1/trace.request',
+        '_agnes/v1/trace.clear',
         '_agnes/v1/admin.bundles.get',
         '_agnes/v1/admin.bundles.save',
         '_agnes/v1/admin.composition.get',
@@ -237,7 +241,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(155)
+    expect(Object.keys(METHODS)).toHaveLength(159)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })

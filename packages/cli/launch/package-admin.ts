@@ -225,6 +225,16 @@ export function localPackageAdmin(
     }
   }
   const surface = createAdminSurface({
+    systemPrompt: {
+      async get(input) {
+        await initialize()
+        return client.systemPrompt.get(input)
+      },
+      async save(input) {
+        await initialize()
+        return client.systemPrompt.save(input)
+      },
+    },
     diagnostics: {
       async export(input) {
         await initialize()

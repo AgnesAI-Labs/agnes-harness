@@ -96,6 +96,7 @@ export const CORE_DIAG_NAMES = [
 export type CoreDiagName = (typeof CORE_DIAG_NAMES)[number]
 
 export type KernelOptions = {
+  systemPrompt?: SessionOptions['systemPrompt']
   /** Host binds public child providers to Core-minted parent facts. */
   loopChildren?: (parent: ChildAgentParentScope) => ChildAgentSessionService
   toolRuntimes?: ToolRuntimeRegistryPort
@@ -158,6 +159,10 @@ export type KernelOptions = {
 }
 export type { RuntimePromptPreload } from './runtime/current.js'
 export type SessionOptions = {
+  systemPrompt?: {
+    config: () => Promise<import('@agnes/protocol').SystemPromptConfig>
+    resolve(selection?: { id: string; version: string }): import('@agnes/extension-api').SystemPromptProvider
+  }
   toolFilter?: import('@agnes/extension-api').ChildAgentToolFilter
   loop?: LoopSelection
   /** Host defaults affect new sessions only; reopening uses the ledger identity. */
@@ -501,8 +506,27 @@ export class Kernel {
       throw error
     }
     const { log, tracker, surface, ui, registersRebuilt } = tracked
+    let systemPrompt: import('./request/system-prompt.js').PinnedSystemPrompt | undefined
     let loopFactory: LoopFactory
     try {
+      const promptPort = so.systemPrompt ?? this.o.systemPrompt
+      const persistedPrompt = tracker.state.session?.systemPrompt
+      if (persistedPrompt && !promptPort)
+        throw new CoreError('E_ENVELOPE', 'pinned system prompt provider is unavailable')
+      if (promptPort) {
+        const parentPrompt = so.parent ? this.sessions.get(so.parent.key)?.d.systemPrompt : undefined
+        const config: import('@agnes/protocol').SystemPromptConfig = tracker.state.session
+          ? structuredClone(persistedPrompt?.config ?? {})
+          : parentPrompt
+            ? structuredClone(parentPrompt.config)
+            : await promptPort.config()
+        const identity =
+          persistedPrompt?.provider ??
+          (parentPrompt
+            ? { id: parentPrompt.provider.id, version: parentPrompt.provider.version }
+            : config.provider)
+        systemPrompt = { config: structuredClone(config), provider: promptPort.resolve(identity) }
+      }
       const selection = tracker.state.session
         ? (tracker.state.session.loop ?? LEGACY_LOOP)
         : await requestedLoop()
@@ -578,6 +602,7 @@ export class Kernel {
           }
         : {}),
       ...(this.o.sessionOverlay ? { sessionOverlay: this.o.sessionOverlay } : {}),
+      ...(systemPrompt ? { systemPrompt } : {}),
       operations: this.o.operations ?? [],
       preset,
       contract: this.o.contract,

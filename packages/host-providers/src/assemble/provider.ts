@@ -13,7 +13,7 @@ import {
 import { Context } from '@agnes/cordis'
 // Provider is protocol-owned and reaches this file through core's re-export.
 import type { Provider } from '@agnes/core'
-import type { Logger, ModelAdapterConfig } from '@agnes/extension-api'
+import type { Logger, ModelAdapterConfig, ModelRequestTrace } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { subscriptionCredentials } from '@agnes/host-infrastructure/adapters/codex-credentials'
@@ -91,6 +91,7 @@ export async function buildProvider(
     log: Logger
     providerFactory?: (p: ResolvedProfile, opts: ProviderBuildOptions) => Provider
     creditsSnapshot?: () => unknown
+    trace?: ModelRequestTrace
     modelAdapters?: ModelAdapterRegistry
   },
 ): Promise<{
@@ -262,6 +263,7 @@ export async function buildProvider(
       instances.push(await modelAdapters.create(id, config))
     }
     const provider = createProvider({
+      ...(deps.trace ? { trace: deps.trace } : {}),
       adapters: instances.map((instance) => instance.adapter),
       routes,
       secrets: deps.secrets,

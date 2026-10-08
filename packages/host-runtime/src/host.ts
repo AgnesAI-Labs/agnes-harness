@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import {
   hasChildControl,
@@ -76,6 +77,9 @@ export type HostOptions = Omit<AssembleDeps, 'audit' | 'loader'> & {
 }
 
 export interface Host {
+  systemPromptPreview(
+    config: import('@agnes/protocol').SystemPromptConfig,
+  ): import('@agnes/protocol').SystemPromptSnapshot
   /** Description-only admin port; reads measured facts without probing or execution. */
   securityStatus?(): import('@agnes/protocol').RuntimeSecurityStatus
   compositionSessions?(): readonly LiveCompositionSession[]
@@ -332,6 +336,31 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
         a.kernel.sessions.values(),
         workspaceRuntimes,
       ),
+    systemPromptPreview(config) {
+      if (!a.systemPromptProvider)
+        throw new HostError('E_PRESET_UNSUPPORTED', 'system prompt provider is unavailable')
+      const preset = resolvePreset(profile.presets.default, a.presets, a.sessionPresetLimits()).view
+      const effective = { ...preset.model.systemPrompt, ...config }
+      const provider = a.systemPromptProvider(effective.provider)
+      const defaults = provider
+        .defaults()
+        .filter((section) =>
+          preset.model.promptSections
+            ? preset.model.promptSections.includes(section.id)
+            : section.id !== 'channel-style' &&
+              (preset.disclosure !== 'code' || section.id !== 'coding-doctrine'),
+        )
+      const sections = [...provider.compose(effective, defaults)]
+      return {
+        config: effective,
+        effect: 'new-sessions',
+        sections,
+        hash: createHash('sha256')
+          .update(sections.map((section) => section.text).join('\n\n'))
+          .digest('hex'),
+        preview: 'default-sections',
+      }
+    },
     presets: a.presets,
     sessionCapabilities: (key) => a.sessionCapabilities(key),
     resolveActor: (credential, surface) => a.seams.principals.resolve(credential, surface),

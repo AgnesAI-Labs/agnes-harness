@@ -27,6 +27,8 @@ import {
   observabilityKind,
   ProviderError,
   type ResourceEntry,
+  type SystemPromptProvider,
+  systemPromptKind,
 } from '@agnes/extension-api'
 import {
   type ComputerUseArtifactGcRuntime,
@@ -163,12 +165,14 @@ import {
 import type { SessionWorkspaceFence } from '@agnes/host-infrastructure/adapters/session-workspace'
 import { persistenceProviderRegistry } from '@agnes/host-infrastructure/adapters/storage-provider'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
+import { RequestTraceStore } from '@agnes/host-infrastructure/request-traces'
 import { SandboxReadinessManager } from '@agnes/host-infrastructure/sandbox-readiness-manager'
 import {
   createSessionWorkspaceRuntime,
   type SessionWorkspaceRuntime,
   type WorkspaceRuntimeFence,
 } from '@agnes/host-infrastructure/session-workspace-runtime'
+import { SystemPromptSettingsStore } from '@agnes/host-infrastructure/system-prompt-settings'
 import { WorkspaceHookLoader } from '@agnes/host-infrastructure/workspace-hook-loader'
 import type { WorkspaceInvocationResolver } from '@agnes/host-infrastructure/workspace-invocation-resolver'
 import {
@@ -420,6 +424,7 @@ export type Assembled = {
   runtimeTargetSnapshot(): RuntimeTarget
   bindRuntimeSession(sessionKey: string, preset: string): Promise<void>
   unbindRuntimeSession(sessionKey: string): Promise<void>
+  systemPromptProvider?: (selection?: { id: string; version: string }) => SystemPromptProvider
   sessionPresetLimits(): { limits?: Record<string, number>; park?: unknown }
 }
 
@@ -1111,6 +1116,10 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             rowServices.installRoot(root, origins)
             installModelAdapters(root, origins)
             installLoops(root, origins)
+            const promptRegistry: import('@agnes/host-common/assemble/provider-registry').ProviderRegistry<SystemPromptProvider> =
+              installProviderRegistry(root, systemPromptKind, (owner, source, provider) =>
+                promptRegistry.register(source, provider, owner),
+              )
             const observabilityRegistry: import('@agnes/host-common/assemble/provider-registry').ProviderRegistry<
               import('@agnes/extension-api').ObservabilityProvider
             > = installProviderRegistry(root, observabilityKind, (owner, source, provider) =>
@@ -1837,6 +1846,14 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     }
     const swept = sweepAwsDestination(env, profile)
     say('provider.env_swept', { removed: swept.removed, set: Object.keys(swept.set) })
+    const requestTraces = new RequestTraceStore(
+      profile.dataDir,
+      profile.name,
+      undefined,
+      Date.now,
+      (sessionKey) => ({ generationId: deps.sessionGeneration?.(sessionKey) ?? null }),
+    )
+    rollback.push('request-traces', requestTraces.start())
     const factory = deps.providerFactory ? { providerFactory: deps.providerFactory } : {}
     let {
       provider,
@@ -1848,6 +1865,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           secrets,
           clock,
           log: deps.log,
+          trace: requestTraces,
           modelAdapters: pluginTree.root.modelAdapters,
           creditsSnapshot: () => businessLimit(hotPolicy, 'cost.credits_per_usd'),
           ...factory,
@@ -1895,6 +1913,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             secrets: (ref) => nextSecrets.resolve(ref),
             clock,
             log: deps.log,
+            trace: requestTraces,
             modelAdapters: pluginTree.root.modelAdapters,
             creditsSnapshot: () => businessLimit(hotPolicy, 'cost.credits_per_usd'),
             ...factory,
@@ -2016,7 +2035,37 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       pluginTree.root.toolPolicies.catalog().some((entry) => entry.id === 'default')
     )
       pluginTree.root.providers.select('tool-policy', view.approval.policy ?? 'default', 'preset')
+    const promptSelection = view.model.systemPrompt?.provider
+      ? { provider: view.model.systemPrompt.provider.id, version: view.model.systemPrompt.provider.version }
+      : { provider: 'agnes.system-prompt', version: '1.0.0' }
+    const systemPromptProvider = pluginTree.root.providers
+      .catalog()
+      .some((entry) => entry.kind === 'system-prompt')
+      ? (selection?: { id: string; version: string }) =>
+          pluginTree.root.providers.resolve(
+            systemPromptKind,
+            selection ? { provider: selection.id, version: selection.version } : promptSelection,
+          )
+      : undefined
+    if (
+      systemPromptProvider &&
+      pluginTree.root.providers
+        .catalog()
+        .some((entry) => entry.kind === 'system-prompt' && entry.id === promptSelection.provider)
+    )
+      pluginTree.root.providers.select('system-prompt', promptSelection, 'preset')
     kernel = Kernel.create({
+      ...(systemPromptProvider
+        ? {
+            systemPrompt: {
+              config: async () => ({
+                ...view.model.systemPrompt,
+                ...(await new SystemPromptSettingsStore(profile.dataDir, profile.name).read()),
+              }),
+              resolve: systemPromptProvider,
+            },
+          }
+        : {}),
       loopChildren: (parent) => {
         const generation = deps.sessionGeneration?.(parent.sessionKey)
         return pluginTree.root.childAgents.forSession({
@@ -3010,6 +3059,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       },
       bindRuntimeSession,
       unbindRuntimeSession,
+      ...(systemPromptProvider ? { systemPromptProvider } : {}),
       sessionPresetLimits: () => ({
         limits: profile.limits,
         park: businessLimit(hotPolicy, 'approval.park'),

@@ -314,6 +314,21 @@ export function ConversationTurnActions({
       >
         <Icon paths={['M6 3v5a4 4 0 0 0 4 4h8', 'm14 8 4 4-4 4', 'M6 21v-5a4 4 0 0 1 4-4']} />
       </button>
+      <button
+        type="button"
+        className="turn-action"
+        data-testid="turn-view-trace"
+        aria-label={t('turnactions.trace')}
+        title={t('turnactions.trace')}
+        hidden={!settled}
+        onClick={() =>
+          footer.current?.dispatchEvent(
+            new CustomEvent('agnes:trace-turn', { bubbles: true, detail: { turnId: turn.id } }),
+          )
+        }
+      >
+        <Icon paths={['M4 4h16v16H4Z', 'M8 8h8M8 12h8M8 16h5']} />
+      </button>
       <details
         ref={details}
         className="turn-usage"

@@ -286,6 +286,30 @@ export class Client {
       this.call('_agnes/v1/sessionSelection.defaults.save', input),
   }
 
+  /** Local profile defaults and owner-checked pinned session previews. */
+  readonly systemPrompt = {
+    get: (
+      input: import('@agnes/protocol').SystemPromptGetParams = {},
+    ): Promise<import('@agnes/protocol').SystemPromptSnapshot> =>
+      this.call('_agnes/v1/systemPrompt.get', input),
+    save: (
+      input: import('@agnes/protocol').SystemPromptSaveParams,
+    ): Promise<import('@agnes/protocol').SystemPromptSnapshot> =>
+      this.call('_agnes/v1/systemPrompt.save', input),
+  }
+  readonly requestTrace = {
+    clear: (
+      input: import('@agnes/protocol').ModelRequestClearParams,
+    ): Promise<import('@agnes/protocol').ModelRequestClearResult> =>
+      this.call('_agnes/v1/trace.clear', input),
+    list: (sessionId: string): Promise<import('@agnes/protocol').ModelRequestResult> =>
+      this.call('_agnes/v1/trace.request', { sessionId }),
+    get: (
+      input: import('@agnes/protocol').ModelRequestParams,
+      options: CallOptions = {},
+    ): Promise<import('@agnes/protocol').ModelRequestResult> =>
+      this.call('_agnes/v1/trace.request', input, options),
+  }
   /** Shared deployment configuration. Secrets are submitted only, never returned or journaled. */
   readonly config = {
     oauth: (input: ConfigOAuthInput): Promise<ConfigOAuthResult> =>

@@ -26,6 +26,7 @@ async function server(
     composition?: NonNullable<AdminSurfaceOptions['composition']>
     sessionTools?: NonNullable<AdminSurfaceOptions['sessionTools']>
     diagnostics?: NonNullable<AdminSurfaceOptions['diagnostics']>
+    systemPrompt?: NonNullable<AdminSurfaceOptions['systemPrompt']>
     runtimeAdmin?: NonNullable<AdminSurfaceOptions['runtimeAdmin']>
   } = {},
 ) {
@@ -555,4 +556,59 @@ it('gates migration through admin activation permission and reports a safe refus
   await denied.request('context')
   expect((await denied.request('sessions/migrate', params)).status).toBe(403)
   expect((await s.request('sessions/migrate', { ...params, principalId: 'spoof' })).status).toBe(400)
+})
+
+it('guards fixed prompt reads and writes by origin, permission, schema and recovery mode', async () => {
+  const snapshot: import('@agnes/protocol').SystemPromptSnapshot = {
+    config: {},
+    sections: [],
+    hash: 'a'.repeat(64),
+    effect: 'new-sessions',
+    preview: 'default-sections',
+  }
+  const bridge = {
+    get: async () => snapshot,
+    save: async (input: import('@agnes/protocol').SystemPromptSaveParams) => ({
+      ...snapshot,
+      config: input.config,
+    }),
+  }
+  const writable = await server(undefined, undefined, { systemPrompt: bridge })
+  expect((await writable.selectionRequest('system-prompt')).status).toBe(200)
+  expect(
+    (await writable.selectionRequest('system-prompt/session', 'POST', { sessionId: 'owned' })).status,
+  ).toBe(200)
+  expect(
+    (
+      await writable.selectionRequest('system-prompt/session', 'POST', {
+        sessionId: 'owned',
+        principalId: 'spoof',
+      })
+    ).status,
+  ).toBe(400)
+  expect((await writable.selectionRequest('system-prompt', 'POST', { config: {} })).status).toBe(409)
+  await writable.login()
+  await writable.request('context')
+  expect(
+    (await writable.selectionRequest('system-prompt', 'POST', { config: { personaPrefix: 'hello' } })).status,
+  ).toBe(200)
+  expect(
+    (
+      await writable.selectionRequest('system-prompt', 'POST', {
+        config: { personaPrefix: 'x'.repeat(8193) },
+      })
+    ).status,
+  ).toBe(400)
+  expect(
+    (
+      await writable.selectionRequest(
+        'system-prompt',
+        'POST',
+        { config: {} },
+        { Origin: 'http://evil.invalid' },
+      )
+    ).status,
+  ).toBe(403)
+  const reader = await server(undefined, undefined, { systemPrompt: bridge, permissions: ['packages.read'] })
+  expect((await reader.selectionRequest('system-prompt', 'POST', { config: {} })).status).toBe(403)
 })
