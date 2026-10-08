@@ -54,7 +54,7 @@ macOS daemon identity 使用内核 boot-session UUID、PID 和进程保存的启
 
 意外 daemon 错误可能附 `diagnosticId`；用它匹配所选 dataDir 下 `audit/daemon.jsonl` 的记录。审计写入失败时可能返回 `diagnosticUnavailable`，不能因此声称不存在错误。记录应只含安全的 method/code/时间等，分享前仍检查私有上下文。
 
-没有自动修复所有 home 迁移的命令。不要删除 owner、锁、SQLite 或回滚快照来让错误消失。要做版本切换，先结束任务、停止对应后台并备份自有数据，再按[安装指南](install.zh-CN.md)启动完整新分发。
+布局不受支持时，请通过 AGH_HOME 选择新的私有空目录。已有文件不会被修改。
 
 <a id="linux-diagnostics"></a>
 
@@ -65,3 +65,7 @@ macOS daemon identity 使用内核 boot-session UUID、PID 和进程保存的启
 Linux daemon 身份绑定 `/proc/sys/kernel/random/boot_id`、PID 与 `/proc/<pid>/stat` 启动 tick，日历时钟调整不影响身份，PID 复用或重启会改变身份。不可读或格式异常的记录保持 unknown。僵尸或死亡任务保留 PID，但不能运行 daemon，因此报告为 dead。不得仅匹配 PID 或删除锁来修复 unknown 身份。
 
 缺少原生 helper 时，使用匹配 Node 的头文件与 C 工具链重建。浏览器启动失败时，在 gate 之前运行 `playwright install --with-deps chromium` 准备依赖，不要在测试中下载浏览器。当前 Computer Use 会拒绝 Linux 平台准入；仅安装桌面不能建立驱动证据，不应注入虚假的桌面能力。
+
+## 首次运行检查
+
+详见[首次运行指南](getting-started.zh-CN.md)：`agh home info` 只读检查唯一支持的布局；`agh doctor --json` 不连接模型，`--probe` 才主动测试。

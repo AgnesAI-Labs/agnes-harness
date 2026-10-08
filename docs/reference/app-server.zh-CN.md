@@ -58,3 +58,7 @@ ACP 初始化版本仍为 1，AGH 扩展仍使用 `_agnes/v1`。v1 客户端应�
 ```
 
 按顺序等待结果，然后使用返回的 session id 发送带文本内容的 `session/prompt`。[stdio 示例](../../examples/app-server/stdio.mjs) 执行此流程、在 stderr 打印事件、拒绝审批，并在轮次完成后关闭 stdin。`agh acp` 与 `--mode acp` 使用同一本地 bridge；embedded/ephemeral ACP 被拒绝；ACP `--connect` 保留通过 SDK 认证连接远程 daemon 的能力。
+
+## 运行诊断
+
+`_agnes/v1/doctor.run({probeAccounts?: boolean})` 是生成合同中的本地所有者专用方法。浏览器通过精确同源 BFF 的 `POST /admin/api/doctor` 调用，不能指定 home 或配置档。返回 `DoctorResult`：汇总 `status`、顺序固定的 `checks`（`id`、`status`、`fixHintKey`，以及可选计数、磁盘字节数、`probed`），可选不透明 `homeId` 用于隔离浏览器偏好。默认不连接模型服务，只有 `probeAccounts: true` 主动测试已启用账户；取消会传递到模型探测。提示键由客户端语言目录翻译，不返回密钥、账户名称、URL 或异常正文。见[首次运行](../guide/getting-started.zh-CN.md)。

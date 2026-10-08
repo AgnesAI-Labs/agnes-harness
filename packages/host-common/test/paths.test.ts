@@ -1,8 +1,20 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { isHostError } from '../src/errors.js'
+import { initializeHome } from '../src/home-initialize.js'
+import { homeLayout, inspectHome } from '../src/home-layout.js'
 import {
   agnesHome,
   cacheDir,
@@ -205,4 +217,50 @@ describe('ownStateRoots', () => {
       join(odd, 'p'),
     ])
   })
+})
+
+describe('versioned home layout', () => {
+  it('inspects a fresh home without writes and initializes private paths with a stable marker', () => {
+    const home = join(scratch(), 'fresh')
+    expect(inspectHome(home)).toMatchObject({ state: 'fresh', version: null })
+    expect(existsSync(home)).toBe(false)
+    const info = initializeHome(home)
+    expect(info).toMatchObject({ state: 'current', version: 1, paths: homeLayout(home) })
+    expect(initializeHome(home).instanceId).toBe(info.instanceId)
+    expect(info.instanceId).toMatch(/^[a-f0-9-]{36}$/)
+    expect(initializeHome(home + '/').instanceId).toBe(info.instanceId)
+    if (process.platform !== 'win32') {
+      expect(lstatSync(home).mode & 0o777).toBe(0o700)
+      expect(lstatSync(join(home, 'home-layout.json')).mode & 0o777).toBe(0o600)
+    }
+  })
+  it('refuses an occupied unversioned home without changing its files', () => {
+    const home = scratch()
+    writeFileSync(join(home, 'unknown.txt'), 'synthetic data')
+    expect(inspectHome(home)).toMatchObject({ state: 'unsupported', version: null })
+    expect(() => initializeHome(home)).toThrow('E_HOME_VERSION')
+    expect(readdirSync(home)).toEqual(['unknown.txt'])
+    expect(readFileSync(join(home, 'unknown.txt'), 'utf8')).toBe('synthetic data')
+  })
+  it.skipIf(process.platform === 'win32')(
+    'refuses links and future versions without changing the source',
+    () => {
+      const home = scratch(),
+        outside = scratch()
+      mkdirSync(join(outside, 'profile'))
+      symlinkSync(outside, join(home, 'profiles'))
+      expect(() => initializeHome(home)).toThrow('E_HOME_UNSAFE')
+      expect(readdirSync(outside)).toEqual(['profile'])
+      for (const version of [0, 99]) {
+        const unsupported = scratch()
+        writeFileSync(join(unsupported, 'home-layout.json'), JSON.stringify({ version }))
+        expect(() => initializeHome(unsupported)).toThrow('E_HOME_VERSION')
+        expect(readFileSync(join(unsupported, 'home-layout.json'), 'utf8')).toBe(JSON.stringify({ version }))
+      }
+      const linkedData = scratch()
+      symlinkSync(outside, join(linkedData, 'data'))
+      expect(() => inspectHome(linkedData)).toThrow('E_HOME_UNSAFE')
+      expect(() => initializeHome(linkedData)).toThrow('E_HOME_UNSAFE')
+    },
+  )
 })

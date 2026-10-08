@@ -40,7 +40,8 @@
     "./settings/security-status": "./src/settings/security-status.tsx",
     "./settings/session-choice": "./src/settings/session-choice.ts",
     "./settings/session-tools": "./src/settings/session-tools.tsx",
-    "./settings/terminal-screen": "./src/settings/terminal-screen.ts"
+    "./settings/terminal-screen": "./src/settings/terminal-screen.ts",
+    "./first-run": "./src/first-run.ts"
   },
   "scripts": {
     "test": "pnpm --dir ../.. exec vitest run packages/web-admin/test --maxWorkers=1",

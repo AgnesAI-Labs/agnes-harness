@@ -63,3 +63,9 @@ AGH_WEB_URL=http://127.0.0.1:PORT AGH_CONVERSATION_FIXTURE_URL=http://127.0.0.1:
 参见 [schema 配置 UI](../extend/configuration-ui.zh-CN.md)。搜索和子代理控件保留原有 ID、操作和保存接口；MCP 管理表单复用共享的引用校验。沙箱、压缩和持久化表单声明取自公开生成 schema，接受调用方提供的权威值与适配器；目录不公开私有配置。配置页面声明负责加载、重试、修订号保留和资源切换取消。
 
 稳定 ID：`<declaration.testId>`、`<declaration.testId>-form`、`search-edit-provider`、`search-endpoint`、`search-max-results`、`search-timeout`、`search-rate`、`child-engine-<engine>-<field>`、`provider-<kind>-config`。发现页每包一张卡片；`plugin-other-versions` 和 `plugin-version-picker` 按 `.plugin-row[data-plugin-id]` 定位。版本切换改变正常审查安装时使用的来源；已安装版本仍独立展示。
+
+## 首次运行验收
+
+`first-run.spec.ts` 从根目录 `agnes.mjs` 启动真实 daemon 与全新私有 home；八组语言、主题、窗口尺寸完成欢迎、原有账户对话框的本地 loopback 测试与保存、默认模型选择、注册的示例页、首个任务和重载。另验证目录检查失败、非阻塞提示、注册的运行诊断页、刷新及关闭。`first-run-guide` 提供 `data-step`；稳定 ID 包括 `first-run-add`、`first-run-account`、`first-run-model`、`first-run-next`、`first-run-skip`、`first-run-examples`、`doctor-notice`、`doctor-panel`、`doctor-refresh`、`doctor-probe-accounts`、`doctor-check-<id>`。新增截图仍使用分平台零容差基线、未解析键检查和 WCAG A/AA 检查。
+
+截图助手只归一化会变化的磁盘空间数值，保留本地化句子、控件与布局。

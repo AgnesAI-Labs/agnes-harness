@@ -5,11 +5,13 @@ import {
   compositionPreset,
   compositionSurfaceAllowed,
   HostError,
+  initializeHome,
   resolveComposition,
 } from '@agnes/host'
 import { createWebServer, DEFAULT_WEB_PORT, type WebServer } from '@agnes/web/server'
 import { parseArgs } from '../src/args.js'
 import { resolveDoctorProfile } from '../src/commands/doctor-profile.js'
+import { firstRunText, startupFailure } from '../src/commands/first-run-locales.js'
 import { ensureLocalBackend, type LocalBackend } from './backend.js'
 import { localOAuthAdmin } from './oauth-admin.js'
 import { localPackageAdmin } from './package-admin.js'
@@ -158,6 +160,8 @@ export async function runWebCommand(
   const ensure = io.ensureBackend ?? ensureLocalBackend
   const makeServer = io.createServer ?? createWebServer
   const env = io.env ?? process.env
+  const home = parsed.home ?? agnesHome(env)
+  if (!io.ensureBackend) initializeHome(home, parsed.profile ?? 'local-dev')
   const composition =
     io.composition ??
     (!io.ensureBackend
@@ -261,8 +265,15 @@ export async function runWebCommand(
       mountProxy: mounts.proxy,
     })
     io.onWebServerReady?.(web)
-    ;(io.write ?? ((text: string) => process.stdout.write(text)))(`${web.url}/\n`)
+    const report = io.ensureBackend ? { status: 'ok' as const } : await adminHandler.doctor()
+    ;(io.write ?? ((text: string) => process.stdout.write(text)))(
+      `${web.url}/\n${firstRunText(env, 'home')}: ${backend.scope.home}\n${firstRunText(env, 'profile')}: ${backend.scope.profile}\n${firstRunText(env, 'doctor')}: ${firstRunText(env, report.status)} — agh doctor\n`,
+    )
     await waitForSignal(io.signals ?? process)
+  } catch (error) {
+    const message = startupFailure(error, env)
+    if (message) throw new Error(message)
+    throw error
   } finally {
     await web?.close().catch(() => undefined)
     await admin?.close().catch(() => undefined)

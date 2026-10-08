@@ -58,3 +58,7 @@ Write one JSON object per UTF-8 line; ids, notifications and server requests pas
 ```
 
 Wait for each result before using its returned identity. Then send `session/prompt` with that session id and a text prompt. The [stdio example](../../examples/app-server/stdio.mjs) performs this sequence, prints events on stderr, declines approvals, and closes stdin after the turn. `agh acp` and `--mode acp` use the same local bridge; embedded/ephemeral ACP is refused. ACP `--connect` retains its SDK transport for authenticated remote daemon connections.
+
+## Runtime diagnostics
+
+`_agnes/v1/doctor.run({probeAccounts?: boolean})` is a generated, local-owner-only method. Browser HTTP uses `POST /admin/api/doctor` through the exact-origin BFF; callers cannot select a home or profile. It returns `DoctorResult`: aggregate `status`, ordered `checks` with `id`, `status`, `fixHintKey` and optional non-sensitive counts/disk bytes/`probed`, plus an optional opaque `homeId` for browser preference scoping. Default checks never contact model services; `probeAccounts: true` explicitly tests enabled accounts. Cancellation propagates to model probes. Fix keys are rendered by the client locale catalog. No credential values, account labels, URLs or exception bodies are returned. See [first run](../guide/getting-started.md).

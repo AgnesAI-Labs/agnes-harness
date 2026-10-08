@@ -82,6 +82,18 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
   const root = basename(process.cwd()).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const checkout = page.getByRole('button', { name: new RegExp(`^${root}(?: |$)`), includeHidden: true })
   const metadata = page.getByTestId('turn-metadata')
+  const disk = page.getByTestId('doctor-space')
+  // Runtime free space changes independently of UI. Preserve its localized sentence and geometry.
+  await disk.evaluateAll((rows) => {
+    for (const row of rows) {
+      row.setAttribute('data-e2e-disk-original', row.textContent ?? '')
+      let index = 0
+      const number = new Intl.NumberFormat(document.documentElement.lang, { maximumFractionDigits: 1 })
+      row.textContent = (row.textContent ?? '').replace(/\d[\d,.]*/g, () =>
+        number.format(index++ === 0 ? 100 : 1000),
+      )
+    }
+  })
   await metadata.evaluateAll((summaries) => {
     for (const summary of summaries) {
       const original = summary.textContent ?? ''
@@ -121,6 +133,12 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
       for (const summary of summaries) {
         summary.textContent = summary.getAttribute('data-e2e-clock-original')
         summary.removeAttribute('data-e2e-clock-original')
+      }
+    })
+    await disk.evaluateAll((rows) => {
+      for (const row of rows) {
+        row.textContent = row.getAttribute('data-e2e-disk-original')
+        row.removeAttribute('data-e2e-disk-original')
       }
     })
     await checkout.evaluateAll((buttons) => {

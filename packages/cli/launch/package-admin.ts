@@ -42,6 +42,7 @@ import type { PluginRebuiltEvent } from '@agnes/web/server'
 import { localPipeFactories } from '../src/boot/pipe-factory.js'
 import type { LocalBackend } from './backend.js'
 import { contextAdmin } from './context-admin.js'
+import { doctorAdmin } from './doctor-admin.js'
 
 const CLIENT_SERVICE_PATH = '/api/client-modules/service'
 const CLIENT_EFFECT_PATH = '/api/client-modules/effect'
@@ -283,14 +284,21 @@ export function localPackageAdmin(
       }))
     },
   })
+  const handleDoctor = doctorAdmin(origin, (input) => client.request('_agnes/v1/doctor.run', input))
   const handleContext = contextAdmin(origin, (input) => client.request('_agnes/v1/admin.context', input))
   return {
+    doctor: async () => {
+      await initialize()
+      return client.request('_agnes/v1/doctor.run', {})
+    },
     historySearch: (input: import('@agnes/protocol').AppServerParams<'_agnes/v1/admin.history.search'>) =>
       client.request('_agnes/v1/admin.history.search', input),
     planCommand: (input: import('@agnes/protocol').AppServerParams<'_agnes/v1/admin.plan'>) =>
       client.request('_agnes/v1/admin.plan', input),
     handle: async (request: IncomingMessage, response: ServerResponse) =>
-      (await handleContext(request, response)) || (await surface.handle(request, response)),
+      (await handleDoctor(request, response)) ||
+      (await handleContext(request, response)) ||
+      (await surface.handle(request, response)),
     /**
      * Bytes for one `/skins/...` path, for the Web launcher's same-origin asset route.
      *

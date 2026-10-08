@@ -115,6 +115,7 @@ import {
 import { type ArtifactReadRpcOptions, registerArtifactRead } from '@agnes/daemon-rpc/local/methods/artifacts'
 import { type PublishChildEngines, registerConfiguration } from '@agnes/daemon-rpc/local/methods/config'
 import { registerDiagnostics } from '@agnes/daemon-rpc/local/methods/diagnostics'
+import { registerDoctor } from '@agnes/daemon-rpc/local/methods/doctor'
 import { executeJournaledEffect, registerExtensions } from '@agnes/daemon-rpc/local/methods/extensions'
 import { registerSessionPreferences } from '@agnes/daemon-rpc/local/methods/session-preferences'
 import {
@@ -148,6 +149,7 @@ import {
   HostError,
   type HostSession,
   type TableStore as HostTableStore,
+  initializeHome,
   overlayChildEngineTarget,
   type PresetDoc,
   type ProcessIdentity,
@@ -2017,6 +2019,13 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       registerWorkspaces(ep, workspaceCatalog)
       registerAcp(ep, cx, feeds, attached)
       registerAgnes(ep, cx, feeds, attached)
+      registerDoctor(ep, {
+        home: o.config.home ?? dirname(dirname(o.profileDir)),
+        profile: o.profile.name,
+        dataDir: o.config.dataDir,
+        ...(o.configuration ? { configuration: o.configuration } : {}),
+        connection: async () => true,
+      })
       registerDiagnostics(ep, {
         requireSessionOwner: requireSessionOwner(cx),
         registry: cx.registry,
@@ -2484,6 +2493,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
     ...(args.workspace !== undefined ? { workspace: args.workspace } : {}),
     ...(args.dataDir !== undefined ? { dataDir: args.dataDir } : {}),
   })
+  if (!deps.resolveScope) initializeHome(scope.home, scope.profile)
   const resolver = deps.resolveProfile ?? resolveDaemonProfile
   const loadProfile = async (
     options: Parameters<typeof resolveDaemonProfile>[1] = {},

@@ -11,6 +11,7 @@ export interface AppServerMethods {
   "_agnes/v1/admin.history.search": { params: Static<typeof import("./app-server.js").AdminHistoryParams>; result: Static<typeof import("./app-server.js").AdminHistoryResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.plan": { params: Static<typeof import("./app-server.js").AdminPlanParams>; result: Static<typeof import("./app-server.js").AdminPlanResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.mcp.oauth.save": { params: Static<typeof import("./app-server.js").AdminMcpOAuthSave>; result: Static<typeof import("./app-server.js").AdminEmpty>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/doctor.run": { params: Static<typeof import("./app-server.js").DoctorParams>; result: Static<typeof import("./app-server.js").DoctorResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/packages.catalog.list": { params: Static<typeof import("./package-admin.js").PackageCatalogListParams>; result: Static<typeof import("./package-admin.js").PackageCatalogPage>; direction: "c2s"; kind: "request" }
   "_agnes/v1/packages.catalog.get": { params: Static<typeof import("./package-admin.js").PackageCatalogGetParams>; result: Static<typeof import("./package-admin.js").PackageCatalogDescriptor>; direction: "c2s"; kind: "request" }
   "_agnes/v1/packages.provenance": { params: Static<typeof import("./package-admin.js").PackageProvenanceParams>; result: Static<typeof import("./package-admin.js").PackageProvenance>; direction: "c2s"; kind: "request" }

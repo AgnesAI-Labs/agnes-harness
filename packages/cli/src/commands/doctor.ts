@@ -1,4 +1,4 @@
-import { daemonDoctor, daemonStatus } from '@agnes/daemon'
+import { daemonDoctor, daemonStatus, runtimeDoctor } from '@agnes/daemon'
 import { createPrompterBridge } from '@agnes/daemon/local'
 import {
   createConfigurationService,
@@ -16,6 +16,7 @@ import { doctorBinary, doctorStorage, type Section } from './doctor-local.js'
 import { doctorPlatform, doctorResolvedProfile, resolveDoctorProfile } from './doctor-profile.js'
 import { doctorProvider } from './doctor-provider.js'
 import { doctorSubagents } from './doctor-subagents.js'
+import { doctorText } from './first-run-locales.js'
 
 export type { Section } from './doctor-local.js'
 export type DoctorCommandDeps = LocalBootDeps
@@ -72,7 +73,7 @@ export function renderSections(sections: Section[]): string {
   return sections
     .map(
       (section) =>
-        `${mark[section.status]} ${section.name}\n${section.detail.map((line) => `    ${line}`).join('\n')}`,
+        `${mark[section.status]} ${section.title ?? section.name}\n${section.detail.map((line) => `    ${line}`).join('\n')}`,
     )
     .join('\n')
 }
@@ -90,6 +91,28 @@ export async function doctorCommand(
   if (parsed.positional[0] === 'subagents') {
     const result = await doctorSubagents(deps, { repair: parsed.repair, json: parsed.json })
     return { text: result.text, json: [result.section], exitCode: result.exitCode }
+  }
+  if (parsed.positional.length === 0) {
+    const report = await runtimeDoctor({
+      home: deps.home,
+      profile: profileNameFrom(parsed, deps.env),
+      probeAccounts: parsed.probe,
+      ...(deps.configuration ? { configuration: deps.configuration } : {}),
+      ...(deps.signal ? { signal: deps.signal } : {}),
+      connection: async () => (await daemonStatus(hostDataDir(deps.home))).socketReachable === true,
+    })
+    const sections = report.checks.map((check) => ({
+      name: check.id,
+      title: doctorText(deps.env, `doctor.check.${check.id}`),
+      status: check.status,
+      fixHintKey: check.fixHintKey,
+      detail: check.status === 'ok' ? [] : [doctorText(deps.env, check.fixHintKey)],
+    }))
+    return {
+      text: parsed.json ? JSON.stringify(sections, null, 2) : renderSections(sections),
+      json: sections,
+      exitCode: report.status === 'fail' ? 1 : 0,
+    }
   }
   const selected = selectSections(parsed.positional)
   if (selected === undefined) return { text: 'unknown or extra doctor section', json: [], exitCode: 2 }

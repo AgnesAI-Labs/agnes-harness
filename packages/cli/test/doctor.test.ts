@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -44,9 +44,10 @@ describe('doctor command aggregation', () => {
 
   it('requires an explicit provider probe flag and keeps the ordinary doctor grammar closed', async () => {
     expect(parseArgs(['doctor', 'provider', '--probe']).probe).toBe(true)
+    expect(parseArgs(['doctor', '--probe']).probe).toBe(true)
     expect(parseArgs(['doctor', 'storage']).probe).toBe(false)
     expect(() => parseArgs(['doctor', 'storage', '--probe'])).toThrow(
-      '--probe is supported only by doctor provider',
+      '--probe is supported only by doctor or doctor provider',
     )
   })
 
@@ -204,21 +205,23 @@ describe('doctor command aggregation', () => {
     expect(result.text).not.toContain('sk-do-not-print')
   })
 
-  it('lists all nine sections and rejects unknown or extra section arguments', async () => {
+  it('lists shared first-run checks and rejects unknown or extra section arguments', async () => {
     const d = deps()
     const result = await doctorCommand(parseArgs(['doctor']), d)
     expect(result.json.map((section) => section.name)).toEqual([
-      'platform',
-      'network',
-      'provider',
-      'storage',
-      'profile',
-      'extensions',
-      'daemon',
-      'binary',
-      'code-runtime',
+      'node',
+      'native',
+      'home',
+      'permissions',
+      'credentials',
+      'sandbox',
+      'connection',
+      'disk',
+      'accounts',
+      'plugins',
+      'mcp',
     ])
-    expect(result.exitCode).toBe(1)
+    expect(result.json.every((section) => section.fixHintKey?.startsWith('doctor.fix.'))).toBe(true)
     expect(usage()).toContain(
       'doctor [platform|network|provider|storage|profile|extensions|daemon|binary|code-runtime]',
     )
@@ -242,5 +245,52 @@ describe('doctor command aggregation', () => {
         { name: 'broken', status: 'fail', detail: ['offline'] },
       ]),
     ).toBe('✓ healthy\n    ready\n! degraded\n    partial\n✗ broken\n    offline')
+  })
+})
+
+describe('home inspection and startup guidance', () => {
+  it('keeps home inspection read-only and explains an unsupported layout', async () => {
+    const { homeCommand } = await import('../src/commands/home.js')
+    const { main } = await import('../src/bin.js')
+    const parent = deps().home
+    const home = join(parent, 'fresh')
+    let output = '',
+      error = ''
+    const io = {
+      env: { AGH_HOME: home, AGNES_LOCALE: 'zh-CN' },
+      cwd: parent,
+      stdout: {
+        write(value: string) {
+          output += value
+        },
+      },
+      stderr: {
+        write(value: string) {
+          error += value
+        },
+      },
+    } as unknown as Parameters<typeof main>[1]
+    expect(await main(['home', 'info'], io)).toBe(0)
+    expect(JSON.parse(output)).toMatchObject({ state: 'fresh', version: null })
+    expect(existsSync(home)).toBe(false)
+    mkdirSync(home)
+    writeFileSync(join(home, 'unknown.txt'), 'synthetic')
+    expect(await homeCommand(['info'], io)).toBe(1)
+    expect(error).toContain('布局不受支持')
+    expect(error).toContain('AGH_HOME')
+    expect(readFileSync(join(home, 'unknown.txt'), 'utf8')).toBe('synthetic')
+  })
+  it('maps common startup codes to actionable text without exposing exception messages', async () => {
+    const { startupFailure } = await import('../src/commands/first-run-locales.js')
+    for (const code of ['EADDRINUSE', 'EACCES', 'CONFIG_CREDENTIAL_STORE', 'E_HOME_VERSION']) {
+      const error = Object.assign(new Error('PRIVATE UPSTREAM BODY'), { code })
+      const en = startupFailure(error, {})
+      const zh = startupFailure(error, { AGNES_LOCALE: 'zh-CN' })
+      expect(en).toBeTruthy()
+      expect(zh).toBeTruthy()
+      expect(en).not.toBe(zh)
+      expect(en + String(zh)).not.toContain('PRIVATE UPSTREAM BODY')
+    }
+    expect(startupFailure(new Error('unmapped'), {})).toBeUndefined()
   })
 })

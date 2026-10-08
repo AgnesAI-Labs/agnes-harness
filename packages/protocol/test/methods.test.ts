@@ -102,6 +102,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/clientModules.list',
         '_agnes/v1/clientModules.read',
         '_agnes/v1/computerUse.doctor',
+        '_agnes/v1/doctor.run',
         '_agnes/v1/computerUse.operation.cancel',
         '_agnes/v1/computerUse.operation.start',
         '_agnes/v1/computerUse.operation.status',
@@ -226,7 +227,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(144)
+    expect(Object.keys(METHODS)).toHaveLength(145)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })

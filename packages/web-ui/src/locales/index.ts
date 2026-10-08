@@ -17,6 +17,7 @@ export const fallbackT: Translate = (key, vars) => {
 }
 
 import { conversationLocaleCatalog } from './conversation.js'
+import { firstRunCatalog } from './first-run.js'
 import { modelSettingsLocaleCatalog } from './model-settings.js'
 
 const primitiveCatalog: LocaleCatalog = {
@@ -33,7 +34,12 @@ const primitiveCatalog: LocaleCatalog = {
     'settings.selectPicker.ariaJoin': '{label}：{value}',
   },
 }
-const DICTS = [conversationLocaleCatalog, modelSettingsLocaleCatalog, primitiveCatalog] as const
+const DICTS = [
+  firstRunCatalog,
+  conversationLocaleCatalog,
+  modelSettingsLocaleCatalog,
+  primitiveCatalog,
+] as const
 
 export const webUiLocaleCatalog: LocaleCatalog = {
   en: Object.fromEntries(DICTS.flatMap((dict) => Object.entries(dict.en))),

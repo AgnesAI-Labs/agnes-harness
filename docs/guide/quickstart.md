@@ -13,12 +13,12 @@ Configure a model, run a small task, and find the Web session from the CLI. Comp
 ## Open Web for the first time
 
 ```sh
-node packages/cli/dist/local/agnes.mjs serve
+node agnes.mjs serve
 ```
 
 The default address is `http://127.0.0.1:4177`; use the actual URL printed by your terminal. Local mode opens a normal URL. You do not need to copy a connection token from the address bar or paste daemon credentials into the page.
 
-If no model is available, AGH opens Provider settings. Choose an account/provider, check the Base URL, enter the API key in the password field, test the connection, select a model from the returned catalog, and save. The page displays configuration status without reading saved plaintext keys back to the browser. Connection tests and conversations may contact the provider and incur charges. Use the [local demo](demo.md) if you do not have a model account.
+With no saved model account or previous session, AGH opens the [first-run guide](getting-started.md). You can skip it at any step. Account setup uses the existing model settings. Choose an account/provider, check the Base URL, enter the API key in the password field, test the connection, select a model from the returned catalog, and save. The page displays configuration status without reading saved plaintext keys back to the browser. Connection tests and conversations may contact the provider and incur charges. Use the [local demo](demo.md) if you do not have a model account.
 
 You can choose Agnes AI, Kimi, Kimi Coding Plan, GLM, Qwen, DeepSeek, OpenAI, Anthropic, Google, OpenRouter, MiniMax, or xAI. Web lists Agnes AI first. Available models, routes, and capabilities come from the current catalog and account configuration; a provider's name alone does not establish tool, vision, or reasoning support. Test custom endpoints through the configuration service and select their models without disguising incompatible endpoints as a known model.
 

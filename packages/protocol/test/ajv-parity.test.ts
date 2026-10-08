@@ -5507,6 +5507,27 @@ function resourceControlSamples(): Record<ResourceControlSampleName, Sample> {
 
 const ResourceControlSamples = resourceControlSamples()
 const AppSamples: Record<string, Sample> = {
+  DoctorParams: {
+    valid: {},
+    invalid: [{ probeAccounts: 'yes' }, { home: '/untrusted' }],
+    note: 'model probing is explicit',
+  },
+  DoctorCheck: {
+    valid: { id: 'accounts', status: 'warn', fixHintKey: 'doctor.fix.accounts', count: 0, probed: false },
+    invalid: [
+      { id: 'secret', status: 'ok', fixHintKey: 'raw.key' },
+      { id: 'node', status: 'ready', fixHintKey: 'doctor.fix.node' },
+    ],
+    note: 'closed non-sensitive check shape',
+  },
+  DoctorResult: {
+    valid: { checks: [], status: 'ok' },
+    invalid: [
+      { checks: [], status: 'ready' },
+      { checks: [], status: 'ok', secret: 'forbidden' },
+    ],
+    note: 'safe aggregate with no paths or secrets',
+  },
   AdminMcpOAuthSave: {
     valid: {
       serverId: 'github',
@@ -5970,6 +5991,11 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/doctor.run': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'DoctorParams',
+    result: 'DoctorResult',
+  },
   '_agnes/v1/packages.provenance': {
     fileId: 'https://agnes.ai/schema/package-admin.json',
     params: 'PackageProvenanceParams',
@@ -6559,6 +6585,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/doctor.run': {
+    valid: {},
+    invalid: [{ probeAccounts: 'yes' }, { home: '/untrusted' }],
+    note: 'explicit probe only; caller cannot choose home',
+  },
   '_agnes/v1/packages.provenance': {
     valid: { profile: 'local-dev', id: 'fixture' },
     invalid: [{ profile: 'local-dev' }],
@@ -6884,6 +6915,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/doctor.run': AppSamples.DoctorResult!,
   '_agnes/v1/packages.provenance': PackageAdminSamples.PackageProvenance as Sample,
   '_agnes/v1/packages.sourcePolicy': PackageAdminSamples.PackageSourcePolicy as Sample,
   '_agnes/v1/admin.mcp.oauth.save': {

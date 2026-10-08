@@ -11,6 +11,7 @@ export * from './config-schema.js'
 export * from './confirm.js'
 export { ConversationCardLayout } from './conversation/card-layout.js'
 export * from './diagnostics-dialog.js'
+export * from './first-run.js'
 export { ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog } from './locales/admin.js'
 export {
   ADMIN_CONFIRMATION_LOCALE_NAMESPACE,
@@ -20,6 +21,7 @@ export { ADMIN_DETAIL_LOCALE_NAMESPACE, adminDetailLocaleCatalog } from './local
 export { ADMIN_DIALOGS_LOCALE_NAMESPACE, adminDialogsLocaleCatalog } from './locales/admin-dialogs.js'
 export { ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog } from './locales/admin-list.js'
 export { CONFIG_FORM_NAMESPACE, configFormCatalog } from './locales/config-form.js'
+export { FIRST_RUN_NAMESPACE, firstRunCatalog } from './locales/first-run.js'
 export type { LocaleCatalog, LocaleDictionary, Translate } from './locales/index.js'
 export { WEB_UI_LOCALE_NAMESPACE, webUiLocaleCatalog } from './locales/index.js'
 export {

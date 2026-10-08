@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { initializeHome } from '@agnes/host'
 import {
   activeRuntimePinId,
   createPackageManager,
@@ -233,6 +234,7 @@ beforeEach(() => {
   temporaryRoot = mkdtempSync(join(tmpdir(), 'agnes-package-admin-'))
   root = join(temporaryRoot, 'home')
   createPrivateDirectorySync(root)
+  initializeHome(root)
   profileDir = createProfile(profile)
   createProfile(secondProfile)
   cpSync(join(fixtures, 'pkg-a'), join(root, 'candidate'), { recursive: true })

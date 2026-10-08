@@ -42,7 +42,9 @@
     "./session-file-access": "./src/session-file-access.ts",
     "./session-tree-schema": "./src/session-tree-schema.ts",
     "./workspace-authority": "./src/workspace-authority.ts",
-    "./workspace-policy": "./src/workspace-policy.ts"
+    "./workspace-policy": "./src/workspace-policy.ts",
+    "./home-layout": "./src/home-layout.ts",
+    "./home-initialize": "./src/home-initialize.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

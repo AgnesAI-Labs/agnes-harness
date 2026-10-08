@@ -9,6 +9,8 @@ export type UiExtensionContext = {
   data?: unknown
 }
 export type SettingsSection = Readonly<{
+  /** False for sections whose own service supplies loading, refresh and error states. */
+  runtimeCatalog?: boolean
   group: string
   id: string
   titleKey: string

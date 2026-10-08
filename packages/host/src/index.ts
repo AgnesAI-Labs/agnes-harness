@@ -31,6 +31,12 @@ export {
 } from '@agnes/host-common/assemble/provider-registry'
 export * from '@agnes/host-common/command-policy'
 export * from '@agnes/host-common/errors'
+export { initializeHome } from '@agnes/host-common/home-initialize'
+export {
+  HOME_LAYOUT_VERSION,
+  homeLayout,
+  inspectHome,
+} from '@agnes/host-common/home-layout'
 export {
   defaultVerifyIntegrity,
   type LockAudit,
@@ -422,6 +428,7 @@ export {
   createConfigurationService,
   type SessionDefaultsConfigurationService,
 } from '@agnes/host-infrastructure/configuration'
+export { type DoctorOptions, type DoctorProbe, runDoctor } from '@agnes/host-infrastructure/doctor'
 export * from '@agnes/host-infrastructure/sandbox-readiness-manager'
 export * from '@agnes/host-infrastructure/session-workspace-runtime'
 export {

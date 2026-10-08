@@ -4,7 +4,7 @@ English | [简体中文](ui-extension-registries.zh-CN.md)
 
 `@agnes/web-client` exports the platform singletons `settingsSections` and `conversationCards`, plus `UiExtensionRegistry` for isolated hosts/tests. These are presentation APIs. They do not select session tools, change configuration or grant capabilities. Use the host platform import rather than bundling another copy of web-client.
 
-Register a settings section with `{ group, id, titleKey, groupTitleKey, icon, order, component }`. IDs use lowercase letters, digits, dots and hyphens, starting with a letter. IDs must be unique and order must be finite. Register locale keys in the existing host locale service before rendering. `icon` identifies the shared settings icon. `component` receives `{ context }`, with locale text, optional session/resources and host-specific opaque `data`.
+Register a settings section with `{ group, id, titleKey, groupTitleKey, icon, order, component }`. `runtimeCatalog: false` lets a section use its own service, refresh and loading states without fetching the plugin catalog; the shell still owns its title and navigation. IDs use lowercase letters, digits, dots and hyphens, starting with a letter. IDs must be unique and order must be finite. Register locale keys in the existing host locale service before rendering. `icon` identifies the shared settings icon. `component` receives `{ context }`, with locale text, optional session/resources and host-specific opaque `data`.
 
 ```tsx
 import { settingsSections } from '@agnes/web-client'

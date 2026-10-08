@@ -238,3 +238,42 @@ for (const outcome of ['success', 'failure'] as const) {
     }
   })
 }
+
+it('loads registered diagnostics independently of the plugin catalog with one translated heading', async () => {
+  const host = document.createElement('div')
+  const form = document.createElement('div')
+  form.id = 'config-form'
+  form.dataset.runtimePage = 'doctor'
+  document.body.append(form, host)
+  const root = createRoot(host)
+  const runtime = vi.fn(async () => {
+    throw new Error('unavailable catalog')
+  })
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(JSON.stringify({ checks: [], status: 'ok' }), { status: 200 })),
+  )
+  try {
+    flushSync(() =>
+      root.render(
+        createElement(SettingsHub, {
+          api: { runtime } as unknown as PluginAdminApi,
+          canSave: false,
+          pluginText: (key: string) => key,
+          installed: [],
+          generations: undefined,
+          onPage() {},
+          async onRefresh() {},
+          onReview() {},
+        }),
+      ),
+    )
+    await vi.waitFor(() => expect(host.querySelector('[data-testid="doctor-checks"]')).not.toBeNull())
+    expect(runtime).not.toHaveBeenCalled()
+    expect([...host.querySelectorAll('h2')].map((h) => h.textContent)).toEqual(['Runtime diagnostics'])
+    expect(host.querySelector('[data-testid="settings-refresh"]')).toBeNull()
+  } finally {
+    flushSync(() => root.unmount())
+    vi.unstubAllGlobals()
+  }
+})

@@ -1,4 +1,5 @@
 import { adaptResourceAdmin } from '@agnes/web-admin/admin/resources/admin'
+import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
 import '@agnes/web-admin/settings/registry'
 import {
   type ConfigSnapshot,
@@ -564,6 +565,38 @@ async function stopWithTimeout(stop: (() => Promise<void>) | undefined): Promise
 }
 const settings = createSettingsController({ client, onSaved: savedConfiguration, onError: showError })
 clientModules.locale.subscribe(() => settings.refreshLocale())
+const firstRun = createFirstRunController({
+  host: element('first-run-root', 'div'),
+  banner: element('doctor-notice-root', 'div'),
+  client,
+  storage: safeThemeStorage(),
+  openAccount: async () => {
+    settingsRegion.open('model')
+    await settings.open()
+    document.getElementById('config-add-account')?.click()
+  },
+  closeSettings: () => settings.close(),
+  examples: async () => {
+    settingsRegion.open('model')
+    await settings.open()
+    document
+      .getElementById('config-form')
+      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'examples', bubbles: true }))
+  },
+  details: async () => {
+    settingsRegion.open('model')
+    await settings.open()
+    document
+      .getElementById('config-form')
+      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'doctor', bubbles: true }))
+  },
+  start: async () => {
+    settings.close()
+    await beginNewDraft(true)
+  },
+  saved: savedConfiguration,
+})
+clientModules.locale.subscribe(() => firstRun.refreshLocale())
 const sessionActions = createSessionActions({
   client,
   changed: () => list(),
@@ -1864,6 +1897,7 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
   }
 }
 async function savedConfiguration(saved: ConfigSnapshot): Promise<void> {
+  firstRun.updated(saved)
   notice.dataset.kind = ''
   accountProvider = saved.provider
   accountLabels = new Map(
@@ -2527,6 +2561,7 @@ const modelRefreshTimer = setInterval(() => {
     })
 }, 2000)
 window.addEventListener('pagehide', () => {
+  firstRun.dispose()
   clearInterval(modelRefreshTimer)
   intentionalClose = true
   reconnect.cancel()
@@ -2560,7 +2595,7 @@ run(async () => {
     (snapshot.accounts ?? []).map((row) => [row.route, `${row.label} · ${row.providerId}`]),
   )
   await refreshModels()
-  if (!configured) {
+  if (!configured && snapshot.accounts?.length) {
     renderControls()
     notice.textContent = t('app.firstRun.configure')
     await settings.open()
@@ -2571,6 +2606,11 @@ run(async () => {
     showError(new Error(t('app.workspaceList.unreadable'), { cause: error }))
   }
   const page = await list()
+  const guided =
+    !startupRequest.get('settings') &&
+    !startupRequest.get('session') &&
+    needsFirstRun(snapshot) &&
+    page.items.length === 0
   // A user selection made while startup was loading owns the current view.
   if (selection !== startupSelection) return
   const selected = new URL(location.href).searchParams.get('session')
@@ -2599,6 +2639,7 @@ run(async () => {
     }
     if (requestedPrompt) composerRuntime.setDraft(requestedPrompt)
     renderControls()
+    await firstRun.initialize(snapshot, true)
     return
   }
   const startupSection = settingsSections.get(startupRequest.get('settings') ?? '')
@@ -2614,8 +2655,10 @@ run(async () => {
   } else {
     const first = page.items.find((item) => !item.archived)
     if (first) await open(first.sessionId)
-    else await beginNewDraft(configured && !startupSection)
+    else await beginNewDraft(configured && !startupSection && !guided)
   }
+  const shown = await firstRun.initialize(snapshot, page.items.length > 0 || Boolean(startupSection))
+  if (guided && !shown) await beginNewDraft(true)
   if (settingsSections.get(startupRequest.get('settings') ?? '')) {
     settingsRegion.open('model')
     await settings.open()

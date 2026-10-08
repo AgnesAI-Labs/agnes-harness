@@ -141,7 +141,7 @@ export interface ConfigurationService {
   oauth?(input: ConfigOAuthInput, owner: object, signal: AbortSignal): Promise<ConfigOAuthResult>
   get(): Promise<ConfigSnapshot>
   providers(): Promise<ConfigProvidersResult>
-  test(input: ConfigTestInput): Promise<ConfigTestResult>
+  test(input: ConfigTestInput, signal?: AbortSignal): Promise<ConfigTestResult>
   save(input: ConfigSaveInput): Promise<ConfigSnapshot>
   account(input: ConfigAccountInput): Promise<ConfigSnapshot>
   profileInput(): Promise<Partial<RuntimeProfileManifest>>
@@ -947,7 +947,8 @@ export function createConfigurationService(
     ],
   })
 
-  const test = async (input: ConfigTestInput): Promise<ConfigTestResult> => {
+  const test = async (input: ConfigTestInput, callerSignal?: AbortSignal): Promise<ConfigTestResult> => {
+    callerSignal?.throwIfAborted()
     const parsed = parseTestInput(input)
     const state = await loadState()
     const row = selectedAccount(state, input)
@@ -967,7 +968,8 @@ export function createConfigurationService(
       const provider = getSubscriptionProvider(row.id)
       if (!provider || !isSubscriptionCredential(storedCredential, row.id)) return { models, verified: false }
       try {
-        const signal = AbortSignal.timeout(45_000)
+        const timeout = AbortSignal.timeout(45_000)
+        const signal = callerSignal ? AbortSignal.any([callerSignal, timeout]) : timeout
         const store = subscriptionCredentials(home, row.credentialRef, provider.id)
         const runtime = subscriptionAuth(provider.id, store)
         const auth = await runtime.resolve(signal)
@@ -1002,6 +1004,7 @@ export function createConfigurationService(
       baseUrl,
       credential: key,
       request,
+      ...(callerSignal ? { signal: callerSignal } : {}),
     }).catch((error: unknown) => {
       if (error instanceof ApiKeyProviderError && (error.status === 401 || error.status === 403))
         throw new ConfigurationError('CONFIG_CREDENTIAL_REJECTED')

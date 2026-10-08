@@ -44,7 +44,8 @@
     "./workspace-hook-loader": "./src/workspace-hook-loader.ts",
     "./workspace-invocation-resolver": "./src/workspace-invocation-resolver.ts",
     "./workspace-seam-contexts": "./src/workspace-seam-contexts.ts",
-    "./workspace": "./src/workspace.ts"
+    "./workspace": "./src/workspace.ts",
+    "./doctor": "./src/doctor.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

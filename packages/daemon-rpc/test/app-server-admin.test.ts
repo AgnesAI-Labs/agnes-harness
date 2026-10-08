@@ -101,3 +101,40 @@ it('owns settings and plan writes behind local admin and registered-workspace au
     await rm(home, { recursive: true, force: true })
   }
 })
+
+it('keeps doctor local-only and refuses caller-supplied homes and implicit model probes', async () => {
+  const { registerDoctor } = await import('../src/local/methods/doctor.js')
+  const endpoint = new LocalEndpoint({ clock: Date.now, principalId: 'local' })
+  endpoint.conn.initialized = true
+  const safe = async () => ({ status: 'ok' as const })
+  registerDoctor(endpoint, {
+    home: '/synthetic-unused',
+    profile: 'local-dev',
+    probes: {
+      node: safe,
+      native: safe,
+      home: safe,
+      permissions: safe,
+      credentials: safe,
+      sandbox: safe,
+      connection: safe,
+      disk: safe,
+      accounts: safe,
+      plugins: safe,
+      mcp: safe,
+    },
+  })
+  const call = (params: unknown) =>
+    endpoint.handle({ jsonrpc: '2.0', id: 1, method: '_agnes/v1/doctor.run', params })
+  expect(await call({})).toMatchObject({ error: { data: { messageKey: 'appServer.errors.forbidden' } } })
+  endpoint.conn.authKind = 'local'
+  endpoint.conn.credentialKind = 'local'
+  expect(await call({ home: '/caller-selected' })).toMatchObject({ error: { code: -32602 } })
+  expect(await call({ probeAccounts: 'yes' })).toMatchObject({ error: { code: -32602 } })
+  expect(await call({})).toMatchObject({
+    result: {
+      status: 'ok',
+      checks: expect.arrayContaining([expect.objectContaining({ id: 'credentials', status: 'ok' })]),
+    },
+  })
+})

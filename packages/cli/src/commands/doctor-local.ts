@@ -5,7 +5,13 @@ import { DatabaseSync } from 'node:sqlite'
 import { dataDir, cacheDir as defaultCacheDir, hasLegacySessionsDb, legacySessionsDbPath } from '@agnes/host'
 import type { BootDeps } from '../types.js'
 
-export type Section = { name: string; status: 'ok' | 'warn' | 'fail'; detail: string[] }
+export type Section = {
+  name: string
+  status: 'ok' | 'warn' | 'fail'
+  detail: string[]
+  fixHintKey?: string
+  title?: string
+}
 const failure = (name: string): Section => ({ name, status: 'fail', detail: [`${name} local probe failed`] })
 
 /** Uses a private disposable database, never an existing session or diagnostic database. */

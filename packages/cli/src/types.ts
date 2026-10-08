@@ -17,6 +17,7 @@ export type Command =
   | 'sessions'
   | 'export'
   | 'import'
+  | 'home'
   | 'doctor'
   | 'diagnostics'
   | 'computer-use'

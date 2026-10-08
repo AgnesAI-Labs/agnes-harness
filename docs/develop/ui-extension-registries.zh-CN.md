@@ -36,3 +36,5 @@ register 返回幂等且绑定该注册项身份的卸载函数，须绑定到�
 会话工具组和 session-info 数据结构属于后台。SessionToolsPanel 独立渲染 SessionCapabilitySet 的启用状态和 source/rule 来源说明，并兼容可选的旧 toolGroups；注册表不规范化、扩展或保存此数据。配置页面可通过下方链接的 schema UI API 声明后注册；保存和测试适配器不改变后台权限。
 
 配置页面声明与 shared forms 见 [schema 配置 UI](../extend/configuration-ui.zh-CN.md)。设置 context 的翻译器可解析已注册的扩展目录键。
+
+设置项可声明 `runtimeCatalog: false`，由自身服务提供刷新、加载和错误状态，不读取插件目录；标题与导航仍由统一 shell 管理。

@@ -36,6 +36,8 @@ for (const locale of ['en', 'zh-CN'])
       await rm(join(runtime.workspace, AGH_DIR, 'skills'), { recursive: true })
       await preferences(page, locale, theme)
       await page.goto(runtime.url)
+      await expect(page.getByTestId('first-run-skip')).toBeVisible()
+      await page.getByTestId('first-run-skip').click()
       await expect(
         page.getByRole('dialog', {
           name: locale === 'en' ? 'Choose a workspace' : '选择工作区',

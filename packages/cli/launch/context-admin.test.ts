@@ -86,3 +86,41 @@ it('requires same-origin administration, validates parameters and delegates work
     rmSync(home, { recursive: true, force: true })
   }
 })
+
+it('validates diagnostic probes behind the same-origin boundary and keeps upstream bodies private', async () => {
+  const { doctorAdmin } = await import('./doctor-admin.js')
+  const forwarded: unknown[] = []
+  const handler = doctorAdmin('http://127.0.0.1:4177', async (params) => {
+    forwarded.push(params)
+    if (params.probeAccounts) throw { rpc: rpcError('SEMANTIC_REJECTED') }
+    return { checks: [], status: 'ok' }
+  })
+  const send = async (body: unknown, origin = 'http://127.0.0.1:4177') => {
+    const input = Readable.from([JSON.stringify(body)]) as IncomingMessage
+    Object.assign(input, {
+      method: 'POST',
+      url: '/admin/api/doctor',
+      headers: { host: '127.0.0.1:4177', origin, 'content-type': 'application/json' },
+    })
+    let status = 0,
+      result = ''
+    const response = {
+      writeHead(code: number) {
+        status = code
+      },
+      end(value: string) {
+        result = value
+      },
+    } as unknown as ServerResponse
+    expect(await handler(input, response)).toBe(true)
+    return { status, body: JSON.parse(result) }
+  }
+  expect(await send({}, 'http://untrusted.invalid')).toMatchObject({ status: 403 })
+  expect(await send({ home: '/caller-selected' })).toMatchObject({ status: 400 })
+  expect(forwarded).toEqual([])
+  expect(await send({})).toEqual({ status: 200, body: { checks: [], status: 'ok' } })
+  expect(await send({ probeAccounts: true })).toMatchObject({
+    status: 400,
+    body: { error: { data: { messageKey: 'appServer.errors.rejected' } } },
+  })
+})

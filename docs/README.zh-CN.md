@@ -14,7 +14,7 @@
 
 | 你想做什么 | 推荐路径 | 完成后你会得到 |
 | --- | --- | --- |
-| **体验 AGH** | [安装](guide/install.zh-CN.md) → [首次运行](guide/quickstart.zh-CN.md) → [继续会话](guide/sessions.zh-CN.md) | 跑通一个任务，并在 Web 与 CLI 中找到记录 |
+| **体验 AGH** | [安装](guide/install.zh-CN.md) → [首次运行](guide/getting-started.zh-CN.md) → [继续会话](guide/sessions.zh-CN.md) | 跑通一个任务，并在 Web 与 CLI 中找到记录 |
 | **把业务能力交给 Agent** | [后端插件](develop/backend.zh-CN.md) · [MCP](guide/mcp.zh-CN.md) · [Skills](guide/skills.zh-CN.md) · [支持范围](guide/mcp-skills-support.zh-CN.md) | 接入工具、外部服务或团队任务方法 |
 | **做一个业务工作台** | [前端面板](develop/frontend.zh-CN.md) → [前后端联动](develop/fullstack.zh-CN.md) | 为工作台增加界面，读取后端服务结果 |
 | **研究与扩展运行时** | [架构](develop/architecture.zh-CN.md) → [源码地图](develop/source-map.zh-CN.md) → [API](reference/api.zh-CN.md) | 看清请求、扩展与持久状态的实现路径 |

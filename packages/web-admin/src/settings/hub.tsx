@@ -54,6 +54,7 @@ export function SettingsHub({
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const [revision, setRevision] = useState(0)
+  const needsRuntimeCatalog = settingsSections.get(page)?.runtimeCatalog !== false
   // biome-ignore lint/correctness/useExhaustiveDependencies: registryVersion invalidates a disposed selection.
   useEffect(() => {
     if (!settingsSections.get(page)) setPage('plugins')
@@ -79,7 +80,8 @@ export function SettingsHub({
     let current = true
     setSnapshot(undefined)
     setFailed(false)
-    if (!api) return
+    setBusy(false)
+    if (!api || !needsRuntimeCatalog) return
     setBusy(true)
     void api
       .runtime()
@@ -95,7 +97,7 @@ export function SettingsHub({
     return () => {
       current = false
     }
-  }, [api, revision])
+  }, [api, revision, needsRuntimeCatalog])
   return (
     <div className="runtime-settings">
       {!embedded && (
@@ -120,7 +122,7 @@ export function SettingsHub({
         <SettingsPageLayout
           title={sectionTitle(page)}
           actions={
-            page !== 'diagnostics' && (
+            needsRuntimeCatalog ? (
               <Button
                 data-testid="settings-refresh"
                 disabled={!api || busy}
@@ -129,7 +131,7 @@ export function SettingsHub({
               >
                 {t('retry')}
               </Button>
-            )
+            ) : undefined
           }
         >
           {busy && <SettingsState tone="loading">{t('loading')}</SettingsState>}

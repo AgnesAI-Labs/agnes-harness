@@ -13,7 +13,7 @@ import {
 } from '@agnes/sdk'
 
 const entry = resolve('packages/cli/dist/local/agnes.mjs')
-export async function isolatedRuntime() {
+export async function isolatedRuntime(launcher: 'root' | 'installed' = 'root') {
   // Short paths avoid macOS Unix socket limits. Never inherit the user's profile or credentials.
   const root = await mkdtemp('/tmp/agh-e2e-')
   const home = join(root, 'h')
@@ -126,7 +126,14 @@ export async function isolatedRuntime() {
     if (failures.length) throw new AggregateError(failures, 'SDK cleanup failed after stopping the runtime')
   }
   const start = async () => {
-    web = spawn(process.execPath, [entry, 'serve', '--port', String(address.port)], {
+    const command = launcher === 'installed' ? resolve('packages/cli/bin/agh') : process.execPath
+    const args = [
+      ...(launcher === 'root' ? [resolve('agnes.mjs')] : []),
+      'serve',
+      '--port',
+      String(address.port),
+    ]
+    web = spawn(command, args, {
       cwd: process.cwd(),
       env,
       stdio: ['ignore', 'pipe', 'pipe'],

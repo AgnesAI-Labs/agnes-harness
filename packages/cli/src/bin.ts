@@ -402,7 +402,34 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
   let ladderInstalled = false
   const eph = p.ephemeral ? ephemeralHome(io, () => ladderInstalled) : undefined
   const home = eph?.home ?? resolveHome(io.env)
-  const stopDiagnostics = Object.keys(boot).length === 0 ? installDiagnosticJournal(home) : undefined
+  if (p.command === 'home') {
+    const { homeCommand } = await import('./commands/home.js')
+    return await homeCommand(p.rest, io)
+  }
+  const production = Object.keys(boot).length === 0
+  let diagnosticHome = home
+  if (production && p.command !== 'doctor') {
+    const { initializeHome } = await import('@agnes/host')
+    const { startupFailure } = await import('./commands/first-run-locales.js')
+    try {
+      let profile = p.profile ?? 'local-dev'
+      if (p.command === 'serve' || p.command === 'web' || p.command === 'start') {
+        const { parseWebCommand } = await import('../launch/web-command.js')
+        const web = parseWebCommand(p.rest, io.env)
+        diagnosticHome = web.home ?? home
+        profile = web.profile ?? profile
+      }
+      // Publish the layout before the diagnostic journal becomes the first home writer.
+      initializeHome(diagnosticHome, profile)
+    } catch (error) {
+      const message = startupFailure(error, io.env)
+      if (!message) throw error
+      io.stderr.write(`${message}\n`)
+      return ExitCode.ERROR
+    }
+  }
+  const stopDiagnostics =
+    production && p.command !== 'doctor' ? installDiagnosticJournal(diagnosticHome) : undefined
   // Progress goes to a terminal or nowhere. A redirected stderr belongs to whatever the operator
   // pointed it at, and filling it with spinner text is how a log becomes unreadable.
   const log = (s: string): void => {
@@ -453,12 +480,20 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     }
     if (p.command === 'serve' || p.command === 'web' || p.command === 'start') {
       const { runWebCommand } = await import('../launch/web-command.js')
-      await runWebCommand(p.rest, {
-        env: io.env,
-        cwd: io.cwd,
-        write: (text) => io.stdout.write(text),
-        ...(io.signals ? { signals: io.signals } : {}),
-      })
+      const { startupFailure } = await import('./commands/first-run-locales.js')
+      try {
+        await runWebCommand(p.rest, {
+          env: io.env,
+          cwd: io.cwd,
+          write: (text) => io.stdout.write(text),
+          ...(io.signals ? { signals: io.signals } : {}),
+        })
+      } catch (error) {
+        const message = startupFailure(error, io.env)
+        if (!message) throw error
+        io.stderr.write(message + '\n')
+        return ExitCode.ERROR
+      }
       return ExitCode.OK
     }
     if (p.command === 'daemon') {

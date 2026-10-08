@@ -9,12 +9,12 @@
 ## 第一次打开 Web
 
 ```sh
-node packages/cli/dist/local/agnes.mjs serve
+node agnes.mjs serve
 ```
 
 默认地址为 `http://127.0.0.1:4177`，以终端实际输出为准。当前本地模式直接打开普通 URL，不需要从地址栏复制连接 token，也不需要把 daemon 凭据粘贴进页面。
 
-没有可用模型时会进入 Provider 设置。选择账号/Provider，核对 Base URL，在密码输入框输入 API key，执行“测试连接”，选择返回目录中的模型，再保存。页面只显示已配置状态，不会读回已保存的明文密钥。测试连接和后续对话可能访问提供方并产生费用；无模型账号时请用[本地演示](demo.zh-CN.md)。
+没有已保存的模型账户和历史会话时，会进入[首次运行引导](getting-started.zh-CN.md)，每一步都可以跳过。账户配置复用已有模型设置。选择账号/Provider，核对 Base URL，在密码输入框输入 API key，执行“测试连接”，选择返回目录中的模型，再保存。页面只显示已配置状态，不会读回已保存的明文密钥。测试连接和后续对话可能访问提供方并产生费用；无模型账号时请用[本地演示](demo.zh-CN.md)。
 
 你可以使用 Agnes AI，也可以选择 Kimi、Kimi Coding Plan、GLM、Qwen、DeepSeek、OpenAI、Anthropic、Google、OpenRouter、MiniMax 或 xAI。Web 将 Agnes AI 优先展示；实际模型、路由及能力来自当前目录与账号配置，不能用品牌名称推定工具、视觉或思考能力。自定义端点也应走配置服务的测试和模型选择流程，不用把不兼容端点伪装成某个已知模型。
 

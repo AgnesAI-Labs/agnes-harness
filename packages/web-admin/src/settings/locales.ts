@@ -3,6 +3,7 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 export const SETTINGS_NAMESPACE = '@agnes/web/runtime-settings'
 export const settingsCatalog: LocaleCatalog = {
   en: {
+    doctor: 'Runtime diagnostics',
     'platform.darwin': 'macOS',
     'platform.linux': 'Linux',
     'platform.win32': 'Windows',
@@ -463,6 +464,7 @@ export const settingsCatalog: LocaleCatalog = {
     'cap.toolFilter': 'Tool filter',
   },
   'zh-CN': {
+    doctor: '运行诊断',
     'platform.darwin': 'macOS',
     'platform.linux': 'Linux',
     'platform.win32': 'Windows',

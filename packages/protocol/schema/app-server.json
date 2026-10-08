@@ -733,6 +733,92 @@
       },
       "required": ["serverId", "credential"],
       "additionalProperties": false
+    },
+    "DoctorParams": {
+      "type": "object",
+      "properties": {
+        "probeAccounts": {
+          "type": "boolean"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "DoctorCheck": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "enum": [
+            "node",
+            "native",
+            "home",
+            "permissions",
+            "credentials",
+            "sandbox",
+            "connection",
+            "disk",
+            "accounts",
+            "plugins",
+            "mcp"
+          ]
+        },
+        "status": {
+          "enum": ["ok", "warn", "fail"]
+        },
+        "fixHintKey": {
+          "enum": [
+            "doctor.fix.node",
+            "doctor.fix.native",
+            "doctor.fix.home",
+            "doctor.fix.permissions",
+            "doctor.fix.credentials",
+            "doctor.fix.sandbox",
+            "doctor.fix.connection",
+            "doctor.fix.disk",
+            "doctor.fix.accounts",
+            "doctor.fix.plugins",
+            "doctor.fix.mcp"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "availableBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "probed": {
+          "type": "boolean"
+        }
+      },
+      "required": ["id", "status", "fixHintKey"],
+      "additionalProperties": false
+    },
+    "DoctorResult": {
+      "type": "object",
+      "properties": {
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DoctorCheck"
+          },
+          "maxItems": 32
+        },
+        "status": {
+          "enum": ["ok", "warn", "fail"]
+        },
+        "homeId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+        }
+      },
+      "required": ["checks", "status"],
+      "additionalProperties": false
     }
   },
   "x-methods": {
@@ -775,6 +861,10 @@
     "_agnes/v1/admin.mcp.oauth.save": {
       "params": "AdminMcpOAuthSave",
       "result": "AdminEmpty"
+    },
+    "_agnes/v1/doctor.run": {
+      "params": "DoctorParams",
+      "result": "DoctorResult"
     }
   }
 }

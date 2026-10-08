@@ -56,7 +56,7 @@ The local launcher includes a child's startup refusal (such as `daemon or packag
 
 Unexpected daemon errors may include a `diagnosticId`. Match it against `audit/daemon.jsonl` under the selected dataDir. Failed audit writes may instead return `diagnosticUnavailable`; this does not prove there was no error. Records should contain safe method/code/time fields, but still review them for private context before sharing.
 
-There is no command that automatically repairs every home migration. Do not delete owner records, locks, SQLite databases, or rollback snapshots to hide errors. Before switching versions, finish tasks, stop the relevant daemon, back up your data, and start a complete new distribution using the [installation guide](install.md).
+The supported home layout is described in [first run](getting-started.md). If AGH reports an unsupported layout, choose a new empty private directory with AGH_HOME; existing files remain untouched. `agh doctor --json` performs local checks; `agh doctor --probe` additionally contacts configured model services only when requested.
 
 <a id="linux-diagnostics"></a>
 

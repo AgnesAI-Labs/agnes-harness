@@ -37,3 +37,5 @@
 | `createSchemaSettingsComponent` | A | 设置页 registry 桥接 | 插件声明 schema / 权限 / load-save-test，工厂处理读取、失败重试、草稿和 revision；仍由唯一设置壳挂载 / Declarative schema-backed settings section with caller-controlled permissions and revision-aware adapters |
 
 StateSwitch also renders Boolean schema/settings fields; optional id/testId and validation ARIA attributes preserve labels and selectors. Controlled state, keyboard button behavior and plugin-row propagation rules are shared.
+
+| `FirstRunGuide` / `DoctorNotice` / `DoctorChecks` | A | 既有 Dialog / Field / Select / SettingsList / StateLights | 可跳过引导、非阻断诊断提示与只读检查行；数据和操作由 Host 控制器提供 / Skippable setup and local diagnostics, with caller-owned state and actions |

@@ -3,7 +3,9 @@ import { isolatedRuntime, type Runtime } from './runtime.js'
 
 export const test = base.extend<{ runtime: Runtime; browserHealth: undefined }>({
   runtime: async ({ page }, use, info) => {
-    const runtime = await isolatedRuntime()
+    const runtime = await isolatedRuntime(
+      info.title.startsWith('guided first run zh-CN') ? 'installed' : 'root',
+    )
     try {
       await runtime.start()
       // UI specs own their navigation and screen assertions; SDK flows do not boot a second client.

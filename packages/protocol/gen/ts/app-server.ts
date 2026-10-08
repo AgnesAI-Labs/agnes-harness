@@ -23,6 +23,9 @@ export const AppServerV1 = Type.Module({
   "AdminPlanParams": Type.Object({ "cwd": Type.String({ maxLength: 4096 }), "line": Type.String({ maxLength: 8192, pattern: "^\\s*/plan(?:\\s|$)" }) }, { additionalProperties: false }),
   "AdminPlanResult": Type.Object({ "active": Type.Boolean(), "text": Type.String({ maxLength: 8192 }) }, { additionalProperties: false }),
   "AdminMcpOAuthSave": Type.Object({ "serverId": Type.String({ minLength: 1, maxLength: 128, pattern: "^[a-z][a-z0-9._-]{0,127}$" }), "credential": Type.Object({ "provider": Type.String({ maxLength: 4096 }), "accessToken": Type.String({ maxLength: 65536 }), "refreshToken": Type.String({ maxLength: 65536 }), "expiresAt": Type.Number({ minimum: 0 }), "scope": Type.Array(Type.String({ maxLength: 1024 }), { maxItems: 128 }), "grantId": Type.String({ maxLength: 512 }) }, { additionalProperties: false }) }, { additionalProperties: false }),
+  "DoctorParams": Type.Object({ "probeAccounts": Type.Optional(Type.Boolean()) }, { additionalProperties: false }),
+  "DoctorCheck": Type.Object({ "id": Type.Union([Type.Literal('node'), Type.Literal('native'), Type.Literal('home'), Type.Literal('permissions'), Type.Literal('credentials'), Type.Literal('sandbox'), Type.Literal('connection'), Type.Literal('disk'), Type.Literal('accounts'), Type.Literal('plugins'), Type.Literal('mcp')]), "status": Type.Union([Type.Literal('ok'), Type.Literal('warn'), Type.Literal('fail')]), "fixHintKey": Type.Union([Type.Literal('doctor.fix.node'), Type.Literal('doctor.fix.native'), Type.Literal('doctor.fix.home'), Type.Literal('doctor.fix.permissions'), Type.Literal('doctor.fix.credentials'), Type.Literal('doctor.fix.sandbox'), Type.Literal('doctor.fix.connection'), Type.Literal('doctor.fix.disk'), Type.Literal('doctor.fix.accounts'), Type.Literal('doctor.fix.plugins'), Type.Literal('doctor.fix.mcp')]), "count": Type.Optional(Type.Integer({ minimum: 0 })), "availableBytes": Type.Optional(Type.Integer({ minimum: 0 })), "totalBytes": Type.Optional(Type.Integer({ minimum: 0 })), "probed": Type.Optional(Type.Boolean()) }, { additionalProperties: false }),
+  "DoctorResult": Type.Object({ "checks": Type.Array(Type.Ref('DoctorCheck'), { maxItems: 32 }), "status": Type.Union([Type.Literal('ok'), Type.Literal('warn'), Type.Literal('fail')]), "homeId": Type.Optional(Type.String({ pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$" })) }, { additionalProperties: false }),
 })
 
 export const AppServerErrorCause = AppServerV1.Import('AppServerErrorCause')
@@ -61,6 +64,12 @@ export const AdminPlanResult = AppServerV1.Import('AdminPlanResult')
 export type AdminPlanResult = Static<typeof AdminPlanResult>
 export const AdminMcpOAuthSave = AppServerV1.Import('AdminMcpOAuthSave')
 export type AdminMcpOAuthSave = Static<typeof AdminMcpOAuthSave>
+export const DoctorParams = AppServerV1.Import('DoctorParams')
+export type DoctorParams = Static<typeof DoctorParams>
+export const DoctorCheck = AppServerV1.Import('DoctorCheck')
+export type DoctorCheck = Static<typeof DoctorCheck>
+export const DoctorResult = AppServerV1.Import('DoctorResult')
+export type DoctorResult = Static<typeof DoctorResult>
 
 export const ADMIN_METHODS = {
   "_agnes/v1/admin.bundles.get": {kind:'request',direction:'c2s',params:AdminEmpty,result:AdminBundlesResult},
@@ -73,4 +82,5 @@ export const ADMIN_METHODS = {
   "_agnes/v1/admin.history.search": {kind:'request',direction:'c2s',params:AdminHistoryParams,result:AdminHistoryResult},
   "_agnes/v1/admin.plan": {kind:'request',direction:'c2s',params:AdminPlanParams,result:AdminPlanResult},
   "_agnes/v1/admin.mcp.oauth.save": {kind:'request',direction:'c2s',params:AdminMcpOAuthSave,result:AdminEmpty},
+  "_agnes/v1/doctor.run": {kind:'request',direction:'c2s',params:DoctorParams,result:DoctorResult},
 } as const

@@ -28,7 +28,8 @@
     "./local/prompter": "./src/local/prompter.ts",
     "./local/session-admission": "./src/local/session-admission.ts",
     "./local/sessions": "./src/local/sessions.ts",
-    "./local/methods/admin": "./src/local/methods/admin.ts"
+    "./local/methods/admin": "./src/local/methods/admin.ts",
+    "./local/methods/doctor": "./src/local/methods/doctor.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

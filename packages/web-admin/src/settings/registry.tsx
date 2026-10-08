@@ -12,6 +12,7 @@ import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-pan
 import { ChildEnginesPanel } from './child-engines.js'
 import { ContextPanel } from './context.js'
 import { DiagnosticsPanel } from './diagnostics.js'
+import { DoctorPanel } from './doctor.js'
 import { ExamplesPanel } from './examples.js'
 import { HistorySearchPanel } from './history.js'
 import { JobsPanel } from './jobs-panel.js'
@@ -147,6 +148,7 @@ const definitions: readonly [
   ['automation', 'terminal', 62, () => <JobsPanel terminal />],
   ['security', 'security', 70, (c, t) => c.snapshot && <SecurityPanel snapshot={c.snapshot} t={t} />],
   ['diagnostics', 'diagnostics', 75, () => <DiagnosticsPanel />],
+  ['general', 'doctor', 101, () => <DoctorPanel />],
   ['history', 'history', 80, (_, t) => <HistorySearchPanel t={t} />],
 ]
 for (const [group, id, order, render] of definitions) {
@@ -156,15 +158,22 @@ for (const [group, id, order, render] of definitions) {
     order,
     icon: group,
     titleKey:
-      id === 'plugins'
-        ? 'settings-shell.page.installed'
-        : id === 'providers'
-          ? 'settings.pluginKinds.title'
-          : `settings-shell.page.${id}`,
+      id === 'doctor'
+        ? 'doctor.title'
+        : id === 'plugins'
+          ? 'settings-shell.page.installed'
+          : id === 'providers'
+            ? 'settings.pluginKinds.title'
+            : `settings-shell.page.${id}`,
     groupTitleKey:
-      group === 'diagnostics' ? 'settings-shell.page.diagnostics' : `settings-shell.group.${group}`,
+      group === 'general'
+        ? 'settings-shell.appearanceNav'
+        : group === 'diagnostics'
+          ? 'settings-shell.page.diagnostics'
+          : `settings-shell.group.${group}`,
     navigationId: id === 'plugins' ? 'plugin-management' : `runtime-settings-${id}`,
     component: ({ context }) => render(context.data as RuntimeSettingsContext, context.t),
+    ...(['doctor', 'diagnostics'].includes(id) ? { runtimeCatalog: false } : {}),
   }
   if (!settingsSections.get(id)) settingsSections.register(entry)
 }

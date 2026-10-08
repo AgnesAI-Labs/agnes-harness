@@ -5,6 +5,7 @@ import type { Command, ModelSel, ParsedArgs } from './types.js'
 export type { Command, ModelSel, ParsedArgs } from './types.js'
 
 const COMMANDS = new Set<string>([
+  'home',
   'app-server',
   'run',
   'tools',
@@ -39,6 +40,7 @@ const COMMANDS = new Set<string>([
 
 /** These hand their tail on to another program or another grammar; we do not read it. */
 const FORWARDED = new Set<string>([
+  'home',
   'app-server',
   'run',
   'daemon',
@@ -221,8 +223,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
     throw new UsageError('--continue and --resume are mutually exclusive')
   if (p.dataDir !== undefined && !(p.command === 'computer-use' && p.positional[0] === 'rescue'))
     throw new UsageError('--data-dir is supported only by computer-use rescue')
-  if (p.probe && !(p.command === 'doctor' && p.positional[0] === 'provider' && p.positional.length === 1))
-    throw new UsageError('--probe is supported only by doctor provider')
+  if (
+    p.probe &&
+    !(
+      p.command === 'doctor' &&
+      (p.positional.length === 0 || (p.positional[0] === 'provider' && p.positional.length === 1))
+    )
+  )
+    throw new UsageError('--probe is supported only by doctor or doctor provider')
   return p
 }
 

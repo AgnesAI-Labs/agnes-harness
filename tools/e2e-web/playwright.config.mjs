@@ -4,7 +4,13 @@ import { defineConfig } from '@playwright/test'
 const output = resolve(process.env.AGH_WEB_TEST_OUTPUT ?? '.agnes-tmp/e2e-web')
 export default defineConfig({
   testDir: '.',
-  testMatch: ['diagnostics.spec.ts', 'runtime.spec.ts', 'ui-gate.spec.ts', 'ui-flows.spec.ts'],
+  testMatch: [
+    'diagnostics.spec.ts',
+    'runtime.spec.ts',
+    'ui-gate.spec.ts',
+    'ui-flows.spec.ts',
+    'first-run.spec.ts',
+  ],
   workers: 2,
   // Every spec owns a fresh home and daemon; spread long flows across both workers.
   fullyParallel: true,
@@ -12,7 +18,7 @@ export default defineConfig({
   retries: 0,
   failOnFlakyTests: true,
   timeout: 60_000,
-  globalTimeout: 8 * 60_000,
+  globalTimeout: 12 * 60_000,
   expect: { timeout: 10_000, toHaveScreenshot: { maxDiffPixelRatio: 0.002, threshold: 0.2 } },
   outputDir: resolve(output, 'results'),
   snapshotPathTemplate: '{testDir}/baselines/{platform}/{arg}{ext}',

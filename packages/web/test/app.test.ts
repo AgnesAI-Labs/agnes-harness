@@ -1438,7 +1438,7 @@ describe('web session selection', () => {
       approval: { decide: vi.fn(async () => undefined) },
       close: vi.fn(async () => undefined),
       config: {
-        get: vi.fn(async () => ({ configured: true })),
+        get: vi.fn(async () => ({ configured: true, accounts: [] })),
         providers: vi.fn(async () => ({ providers: [] })),
         save: vi.fn(async () => ({ configured: true })),
         test: vi.fn(async () => ({ verified: true, models: [] })),
@@ -1470,6 +1470,10 @@ describe('web session selection', () => {
     const newSessionCancel = document.getElementById('new-session-cancel') as HTMLButtonElement
     const newSessionCreate = document.getElementById('new-session-create') as HTMLButtonElement
 
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="first-run-guide"]')).not.toBeNull())
+    expect(newSession.open).toBe(false)
+    expect(create).not.toHaveBeenCalled()
+    document.querySelector<HTMLButtonElement>('[data-testid="first-run-skip"]')?.click()
     await vi.waitFor(() => expect(newSession.open).toBe(true))
     expect(create).not.toHaveBeenCalled()
     newSessionCwd.value = '/workspace/not-present'
@@ -1497,6 +1501,8 @@ describe('web session selection', () => {
       releasePicker = resolve
     })
     const fetcher = vi.fn<typeof fetch>(async (_input, init) => {
+      if (_input === '/admin/api/doctor')
+        return new Response(JSON.stringify({ checks: [], status: 'ok' }), { status: 200 })
       if ((init?.method ?? 'GET') === 'GET') {
         await pickerReady
         return new Response(JSON.stringify({ available: true }), { status: 200 })

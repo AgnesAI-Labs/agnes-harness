@@ -170,7 +170,9 @@ describe('Web command launch contract', () => {
     })
     // The home rides in env; the backend resolves it, so no separate `home` is lifted out of it.
     expect(received).not.toHaveProperty('home')
-    expect(output).toBe('http://127.0.0.1:4181/\n')
+    expect(output).toBe(
+      'http://127.0.0.1:4181/\nHome: /tmp/agnes-launch-fixture\nProfile: local-dev\nDoctor: ready — agh doctor\n',
+    )
     expect(output).not.toContain('#')
     expect(output).not.toContain('test-token-with-enough-entropy')
     expect(webClosed).toBe(true)
