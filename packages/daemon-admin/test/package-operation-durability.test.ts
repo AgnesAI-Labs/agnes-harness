@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -29,7 +30,10 @@ it.each(['before', 'after'] as const)(
   async (phase) => {
     const root = await mkdtemp(join(tmpdir(), 'agnes-operation-durability-'))
     roots.push(root)
-    const store = new FilePackageOperationStore(root)
+    const directory = join(root, 'operations')
+    const store = new FilePackageOperationStore(directory)
+    expect(await store.pending()).toEqual([])
+    expect(existsSync(directory)).toBe(false)
     await store.admitCancel(cancel('first'))
     const replace = systemNode.renameWriteThrough
     const fault = vi.spyOn(systemNode, 'renameWriteThrough').mockImplementation(async (...args) => {
@@ -43,10 +47,10 @@ it.each(['before', 'after'] as const)(
     fault.mockRestore()
     expect((await store.admitCancel(cancel('second'))).state).toBe(phase === 'after' ? 'existing' : 'new')
     await store.admitCancel(cancel('third'))
-    const reopened = new FilePackageOperationStore(root)
+    const reopened = new FilePackageOperationStore(directory)
     for (const id of ['first', 'second', 'third'])
       expect((await reopened.admitCancel(cancel(id))).state).toBe('existing')
-    const saved = JSON.parse(await readFile(join(root, 'operations.json'), 'utf8'))
+    const saved = JSON.parse(await readFile(join(directory, 'operations.json'), 'utf8'))
     expect(saved.cancels.map((row: { identity: { commandId: string } }) => row.identity.commandId)).toEqual([
       'first',
       'second',

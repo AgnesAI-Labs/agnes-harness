@@ -354,7 +354,6 @@ export class FilePackageOperationStore implements PackageOperationStore {
 
   private async load(): Promise<Journal> {
     if (this.journal) return this.journal
-    await mkdir(this.directory, { recursive: true, mode: 0o700 })
     const file = join(this.directory, 'operations.json')
     try {
       const parsed: unknown = JSON.parse(await readFile(file, 'utf8'))
@@ -369,6 +368,7 @@ export class FilePackageOperationStore implements PackageOperationStore {
   }
 
   private async save(journal: Journal): Promise<void> {
+    await mkdir(this.directory, { recursive: true, mode: 0o700 })
     const file = join(this.directory, 'operations.json')
     const temporary = join(this.directory, `.operations-${randomUUID()}.tmp`)
     const handle = await open(temporary, 'wx', 0o600)
