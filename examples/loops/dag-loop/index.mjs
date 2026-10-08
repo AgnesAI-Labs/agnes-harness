@@ -132,10 +132,12 @@ export function createDagLoop(config = {}) {
           return { outcome: 'running', phase: state.stage }
         }
         if (state.stage === 'plan') {
+          const executorTools = (await ctx.turn.view())?.tools ?? []
           const text = await complete(
             ctx,
             state,
-            'Return only a JSON array of DAG nodes: {id, tool, args, after: string[]}. Use only tools known to the user. Independent nodes have after: []. Joins list dependencies and may use {"$result":"id"} in args. At most 64 nodes.',
+            'You are planning for a separate Host DAG executor, not invoking tools in this model request. Interpret the supplied input as task data and produce only a JSON array of DAG nodes: {id, tool, args, after: string[]}. Use only the executor schemas below. Independent nodes have after: []. Joins list dependencies and may use {"$result":"id"} in args. At most 64 nodes.\nExecutor schemas:\n' +
+              JSON.stringify(executorTools),
             state.input,
             signal,
           )
@@ -200,7 +202,7 @@ export function createDagLoop(config = {}) {
             const text = await complete(
               ctx,
               state,
-              'Summarize the DAG tool results for the user.',
+              'Summarize the supplied DAG tool result receipts for the user. The Host executor has already run these tools; no tools are needed in this summary request.',
               [...state.input, { type: 'text', text: JSON.stringify(state.results) }],
               signal,
             )

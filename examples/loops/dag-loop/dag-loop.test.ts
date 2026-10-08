@@ -114,11 +114,23 @@ it('batches independent nodes, resumes their committed wave, joins outputs and f
 
 it('plans from the first model reply and summarizes only after the join', async () => {
   const p = ports()
+  const tools = [{ name: 'read', description: 'Read a file', parameters: { type: 'object' } }]
+  p.ctx.turn.view = async () => ({
+    turnId: 1,
+    step: 0,
+    cancelled: false,
+    history: [],
+    tools,
+    model: { slot: 'primary', id: 'test', capabilities: null },
+    prompt: { sections: [], runtime: {} },
+    budget: { maxSteps: null, stepsUsed: 0, creditsUsed: 0, perRequestCap: null, onExceed: 'deny' },
+  })
   const driver = createDagLoop().create(p.ctx)
   for (let i = 0; i < 10; i++) {
     if ((await driver.step(signal)).reason) break
   }
   expect(p.requests).toHaveLength(2)
+  expect((p.requests[0] as { system: string }).system).toContain(JSON.stringify(tools))
   expect(p.batches.map((batch) => batch.map((call) => call.name))).toEqual([['read', 'read'], ['join']])
   expect(p.events).toContainEqual({
     type: 'assistant/message',
