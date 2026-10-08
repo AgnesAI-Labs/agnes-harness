@@ -193,6 +193,7 @@ it('a conversation approves registration and calls the real stdio server on its 
   rows = createMcpRowRuntime({
     host: h.host,
     opener: createWorkerMcpServerOpener({
+      agnesHomeDir: root,
       env: {
         AGNES_RESOURCE_SNAPSHOT: store.snapshotPath('local-dev'),
         AGNES_RESOURCE_MCP_POLICY: JSON.stringify({
