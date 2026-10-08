@@ -100,7 +100,10 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
   }
   const root = basename(process.cwd()).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const checkout = page.getByRole('button', { name: new RegExp(`^${root}(?: |$)`), includeHidden: true })
-  const metadata = page.getByTestId('turn-metadata')
+  // File read clocks vary by runtime; keep the localized label and normalize only its time.
+  const metadata = name.startsWith('workbench-')
+    ? page.locator('[data-testid="turn-metadata"], .workbench-file-preview > details > summary')
+    : page.getByTestId('turn-metadata')
   const disk = page.getByTestId('doctor-space')
   // Runtime free space changes independently of UI. Preserve its localized sentence and geometry.
   await disk.evaluateAll((rows) => {
@@ -140,6 +143,41 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     },
     readFileSync('tools/e2e-web/baselines/screenshot.css', 'utf8'),
   )
+  // The demo model echoes two runtime-only IDs in its background-job receipt. Normalize
+  // only those marked identifiers; keep the receipt wording, bytes, command and state.
+  const jobReceipts = page.locator('#conversation-shell p')
+  if (name.startsWith('workbench-p2-'))
+    await jobReceipts.evaluateAll((rows) => {
+      for (const row of rows) {
+        if (row.childElementCount) continue
+        const original = row.textContent ?? ''
+        const normalized = original
+          .replace(
+            /(untrusted id=")[a-f0-9]{32}(-\d+-\d+")/g,
+            (_match, prefix: string, suffix: string) => `${prefix}${'0'.repeat(32)}${suffix}`,
+          )
+          .replace(
+            /(background job )[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/g,
+            (_match, prefix: string) => `${prefix}00000000-0000-0000-0000-000000000000`,
+          )
+        if (normalized !== original) {
+          row.setAttribute('data-e2e-job-receipt-original', original)
+          row.textContent = normalized
+        }
+      }
+    })
+  if (name.startsWith('workbench-')) {
+    // Frame the latest completed conversation consistently after dock/viewport reflow.
+    await page.getByRole('region', { name: /^(Conversation|对话)$/, exact: true }).evaluate((viewport) => {
+      const behavior = viewport.style.scrollBehavior
+      viewport.style.scrollBehavior = 'auto'
+      viewport.scrollTop = viewport.scrollHeight
+      viewport.style.scrollBehavior = behavior
+    })
+    const latest = page.getByRole('button', { name: /^(New content|有新内容)$/, exact: true })
+    await expect(latest).toBeHidden()
+    await page.mouse.move(0, 0)
+  }
   const options = { animations: 'disabled' as const, fullPage: true, mask }
   try {
     await page.screenshot({ ...options, path: info.outputPath(`${name}.png`) })
@@ -151,6 +189,14 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     await expect(page).toHaveScreenshot(`${name}.png`, options)
   } finally {
     await page.evaluate(() => document.getElementById('e2e-visual-style')?.remove())
+    await jobReceipts.evaluateAll((rows) => {
+      for (const row of rows) {
+        const original = row.getAttribute('data-e2e-job-receipt-original')
+        if (original === null) continue
+        row.textContent = original
+        row.removeAttribute('data-e2e-job-receipt-original')
+      }
+    })
     await metadata.evaluateAll((summaries) => {
       for (const summary of summaries) {
         summary.textContent = summary.getAttribute('data-e2e-clock-original')

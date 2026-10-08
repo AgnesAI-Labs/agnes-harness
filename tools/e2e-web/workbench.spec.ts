@@ -1,9 +1,16 @@
-import { access, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { access, copyFile, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import type { Page, TestInfo } from '@playwright/test'
 import { expect, test } from './fixtures.js'
-import { accessible, settled, translated } from './quality.js'
+import { accessible, screen, settled, translated } from './quality.js'
 import { toolResult } from './sdk.js'
 import { chooseWorkspace, fresh, turn } from './ui.js'
+
+// Every gate validates the locale/theme/viewport matrix; the private report is an optional copy.
+async function workbenchScreen(page: Page, info: TestInfo, name: string, folder?: string) {
+  await screen(page, info, `workbench-${name}`)
+  if (folder) await copyFile(info.outputPath(`workbench-${name}.png`), join(folder, `${name}.png`))
+}
 
 test('workspace dock previews and mentions a file that the agent reads', async ({ page, runtime }, info) => {
   test.setTimeout(120_000)
@@ -37,57 +44,55 @@ test('workspace dock previews and mentions a file that the agent reads', async (
   await translated(page)
   await accessible(page, info, 'workspace-files')
   const folder = process.env.AGH_WORKBENCH_REPORT
-  if (folder) {
-    await mkdir(folder, { recursive: true })
-    for (const locale of ['en', 'zh-CN'])
-      for (const theme of ['light', 'dark'])
-        for (const width of [1440, 1280]) {
-          await page.setViewportSize({ width, height: 900 })
-          await page.evaluate(
-            ({ locale, theme }) => {
-              localStorage.setItem('agnes-locale', locale)
-              localStorage.setItem('agnes-theme', theme)
-            },
-            { locale, theme },
-          )
-          await page.reload()
-          await expect(page.getByTestId('files-panel')).toBeVisible()
-          await page.getByTestId('workspace-file').filter({ hasText: 'report.md' }).click()
-          await expect(page.getByTestId('file-preview')).toContainText('Synthetic delivery')
-          await settled(page)
-          const geometry = await page.evaluate(() => {
-            const rect = (selector: string) => {
-              const element = document.querySelector(selector)
-              if (!element) throw new Error(`Missing layout surface: ${selector}`)
-              return element.getBoundingClientRect().toJSON() as {
-                left: number
-                right: number
-                height: number
-              }
+  if (folder) await mkdir(folder, { recursive: true })
+  for (const locale of ['en', 'zh-CN'])
+    for (const theme of ['light', 'dark'])
+      for (const width of [1440, 1280]) {
+        await page.setViewportSize({ width, height: 900 })
+        await page.evaluate(
+          ({ locale, theme }) => {
+            localStorage.setItem('agnes-locale', locale)
+            localStorage.setItem('agnes-theme', theme)
+          },
+          { locale, theme },
+        )
+        await page.reload()
+        await expect(page.getByTestId('files-panel')).toBeVisible()
+        await page.getByTestId('workspace-file').filter({ hasText: 'report.md' }).click()
+        await expect(page.getByTestId('file-preview')).toContainText('Synthetic delivery')
+        await settled(page)
+        const geometry = await page.evaluate(() => {
+          const rect = (selector: string) => {
+            const element = document.querySelector(selector)
+            if (!element) throw new Error(`Missing layout surface: ${selector}`)
+            return element.getBoundingClientRect().toJSON() as {
+              left: number
+              right: number
+              height: number
             }
-            return {
-              dock: rect('#workbench-right'),
-              composer: rect('#composer'),
-              conversation: rect('#conversation-shell'),
-              tree: rect('.workbench-tree-scroll'),
-              preview: rect('.workbench-file-preview'),
-              entry: rect('[data-path="report.md"]'),
-              name: rect('[data-path="report.md"] .workbench-file-name'),
-            }
-          })
-          expect(geometry.composer.right).toBeLessThanOrEqual(geometry.dock.left)
-          expect(geometry.conversation.right).toBeLessThanOrEqual(geometry.dock.left)
-          expect(geometry.name.left - geometry.entry.left).toBeLessThan(50)
-          expect(geometry.preview.height).toBeGreaterThan(geometry.tree.height)
-          await expect(page.locator('.workbench-dock-heading button[aria-busy]')).toBeVisible()
-          await expect(page.locator('.workbench-files-footer details')).toBeVisible()
-          await expect(page.locator('.workbench-file-preview summary')).not.toContainText(/T\d{2}:/)
-          await page.screenshot({ path: join(folder, `p1-${locale}-${theme}-${width}-after.png`) })
-          await page.getByTestId('workbench-right-toggle').click()
-          await page.screenshot({ path: join(folder, `p1-${locale}-${theme}-${width}-before.png`) })
-          await page.getByTestId('workbench-right-toggle').click()
-        }
-  }
+          }
+          return {
+            dock: rect('#workbench-right'),
+            composer: rect('#composer'),
+            conversation: rect('#conversation-shell'),
+            tree: rect('.workbench-tree-scroll'),
+            preview: rect('.workbench-file-preview'),
+            entry: rect('[data-path="report.md"]'),
+            name: rect('[data-path="report.md"] .workbench-file-name'),
+          }
+        })
+        expect(geometry.composer.right).toBeLessThanOrEqual(geometry.dock.left)
+        expect(geometry.conversation.right).toBeLessThanOrEqual(geometry.dock.left)
+        expect(geometry.name.left - geometry.entry.left).toBeLessThan(50)
+        expect(geometry.preview.height).toBeGreaterThan(geometry.tree.height)
+        await expect(page.locator('.workbench-dock-heading button[aria-busy]')).toBeVisible()
+        await expect(page.locator('.workbench-files-footer details')).toBeVisible()
+        await expect(page.locator('.workbench-file-preview summary')).not.toContainText(/T\d{2}:/)
+        await workbenchScreen(page, info, `p1-${locale}-${theme}-${width}-after`, folder)
+        await page.getByTestId('workbench-right-toggle').click()
+        await workbenchScreen(page, info, `p1-${locale}-${theme}-${width}-before`, folder)
+        await page.getByTestId('workbench-right-toggle').click()
+      }
   await page.setViewportSize({ width: 375, height: 812 })
   await expect(files).toBeVisible()
   await page.getByTestId('workbench-tab-files').press('Escape')
@@ -141,7 +146,7 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await expect(output).toBeVisible()
   const human = (await session.jobsRead()).jobs.find((job) => job.owner === 'human')
   if (!human) throw new Error('human terminal required')
-  await output.pressSequentially("printf 'WB1_TERMINAL_OK\\n'")
+  await output.pressSequentially("PS1='wb1$ '; printf '\\033[2J\\033[H'; printf 'WB1_TERMINAL_OK\\n'")
   await output.press('Enter')
   await expect(output).toHaveValue(/WB1_TERMINAL_OK\r?\n/)
   await panel.getByTestId('terminal-new').click()
@@ -165,35 +170,33 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await translated(page)
   await accessible(page, info, 'workbench-terminal')
   const folder = process.env.AGH_WORKBENCH_REPORT
-  if (folder) {
-    await mkdir(folder, { recursive: true })
-    for (const locale of ['en', 'zh-CN'])
-      for (const theme of ['light', 'dark'])
-        for (const width of [1440, 1280]) {
-          await page.setViewportSize({ width, height: 900 })
-          await page.evaluate(
-            ({ locale, theme }) => {
-              localStorage.setItem('agnes-locale', locale)
-              localStorage.setItem('agnes-theme', theme)
-            },
-            { locale, theme },
-          )
-          await page.reload()
-          await expect(panel.getByRole('tab')).toHaveCount(2)
-          await expect(output).toHaveValue(/WB1_AFTER_INTERRUPT/)
-          await settled(page)
-          await page.screenshot({ path: join(folder, `p2-${locale}-${theme}-${width}-after.png`) })
-          await page.getByTestId('workbench-bottom-toggle').click()
-          await page.screenshot({ path: join(folder, `p2-${locale}-${theme}-${width}-before.png`) })
-          await page.getByTestId('workbench-bottom-toggle').click()
-        }
-    await page.evaluate(() => {
-      localStorage.setItem('agnes-locale', 'en')
-      localStorage.setItem('agnes-theme', 'light')
-    })
-    await page.reload()
-    await expect(output).toHaveValue(/WB1_AFTER_INTERRUPT/)
-  }
+  if (folder) await mkdir(folder, { recursive: true })
+  for (const locale of ['en', 'zh-CN'])
+    for (const theme of ['light', 'dark'])
+      for (const width of [1440, 1280]) {
+        await page.setViewportSize({ width, height: 900 })
+        await page.evaluate(
+          ({ locale, theme }) => {
+            localStorage.setItem('agnes-locale', locale)
+            localStorage.setItem('agnes-theme', theme)
+          },
+          { locale, theme },
+        )
+        await page.reload()
+        await expect(panel.getByRole('tab')).toHaveCount(2)
+        await expect(output).toHaveValue(/WB1_AFTER_INTERRUPT/)
+        await settled(page)
+        await workbenchScreen(page, info, `p2-${locale}-${theme}-${width}-after`, folder)
+        await page.getByTestId('workbench-bottom-toggle').click()
+        await workbenchScreen(page, info, `p2-${locale}-${theme}-${width}-before`, folder)
+        await page.getByTestId('workbench-bottom-toggle').click()
+      }
+  await page.evaluate(() => {
+    localStorage.setItem('agnes-locale', 'en')
+    localStorage.setItem('agnes-theme', 'light')
+  })
+  await page.reload()
+  await expect(output).toHaveValue(/WB1_AFTER_INTERRUPT/)
   const second = await client.session.new({
     cwd: runtime.workspace,
     preset: 'full-access',
@@ -315,36 +318,34 @@ test('goal panel follows durable progress and shares authorized human controls',
   await translated(page)
   await accessible(page, info, 'goal-panel')
   const folder = process.env.AGH_WORKBENCH_REPORT
-  if (folder) {
-    await mkdir(folder, { recursive: true })
-    for (const locale of ['en', 'zh-CN'])
-      for (const theme of ['light', 'dark'])
-        for (const width of [1440, 1280]) {
-          await page.setViewportSize({ width, height: 900 })
-          await page.evaluate(
-            ({ locale, theme }) => {
-              localStorage.setItem('agnes-locale', locale)
-              localStorage.setItem('agnes-theme', theme)
-            },
-            { locale, theme },
-          )
-          await page.reload()
-          await page.getByTestId('workbench-tab-goal').click()
-          await expect(panel.getByTestId('goal-panel-objective')).toHaveText('Review the synthetic delivery')
-          await translated(page)
-          await settled(page)
-          await page.screenshot({ path: join(folder, `p3-${locale}-${theme}-${width}-after.png`) })
-          await page.getByTestId('workbench-right-toggle').click()
-          await page.screenshot({ path: join(folder, `p3-${locale}-${theme}-${width}-before.png`) })
-          await page.getByTestId('workbench-right-toggle').click()
-        }
-    await page.evaluate(() => {
-      localStorage.setItem('agnes-locale', 'en')
-      localStorage.setItem('agnes-theme', 'light')
-    })
-    await page.reload()
-    await page.getByTestId('workbench-tab-goal').click()
-  }
+  if (folder) await mkdir(folder, { recursive: true })
+  for (const locale of ['en', 'zh-CN'])
+    for (const theme of ['light', 'dark'])
+      for (const width of [1440, 1280]) {
+        await page.setViewportSize({ width, height: 900 })
+        await page.evaluate(
+          ({ locale, theme }) => {
+            localStorage.setItem('agnes-locale', locale)
+            localStorage.setItem('agnes-theme', theme)
+          },
+          { locale, theme },
+        )
+        await page.reload()
+        await page.getByTestId('workbench-tab-goal').click()
+        await expect(panel.getByTestId('goal-panel-objective')).toHaveText('Review the synthetic delivery')
+        await translated(page)
+        await settled(page)
+        await workbenchScreen(page, info, `p3-${locale}-${theme}-${width}-after`, folder)
+        await page.getByTestId('workbench-right-toggle').click()
+        await workbenchScreen(page, info, `p3-${locale}-${theme}-${width}-before`, folder)
+        await page.getByTestId('workbench-right-toggle').click()
+      }
+  await page.evaluate(() => {
+    localStorage.setItem('agnes-locale', 'en')
+    localStorage.setItem('agnes-theme', 'light')
+  })
+  await page.reload()
+  await page.getByTestId('workbench-tab-goal').click()
   await panel.getByTestId('goal-panel-complete').click()
   await expect(panel.getByTestId('goal-panel-phase')).toHaveText('Completed goal')
   expect(await snapshot()).toMatchObject({ id: initial?.id, phase: 'complete' })
@@ -416,39 +417,37 @@ test('changed files review follows confirmed agent effects and preserves current
   await translated(page)
   await accessible(page, info, 'changed-files-review')
   const folder = process.env.AGH_WORKBENCH_REPORT
-  if (folder) {
-    await mkdir(folder, { recursive: true })
-    for (const locale of ['en', 'zh-CN'])
-      for (const theme of ['light', 'dark'])
-        for (const width of [1440, 1280]) {
-          await page.setViewportSize({ width, height: 900 })
-          await page.evaluate(
-            ({ locale, theme }) => {
-              localStorage.setItem('agnes-locale', locale)
-              localStorage.setItem('agnes-theme', theme)
-            },
-            { locale, theme },
-          )
-          await page.reload()
-          await page.getByTestId('workbench-tab-changed-files').click()
-          await panel.getByTestId('changed-file').filter({ hasText: 'review.ts' }).click()
-          await expect(panel.getByTestId('changes-diff')).toContainText('+export const answer = 2')
-          await translated(page)
-          await page.screenshot({ path: join(folder, `p4-${locale}-${theme}-${width}-after.png`) })
-          await page.getByTestId('workbench-right-toggle').click()
-          await page.screenshot({ path: join(folder, `p4-${locale}-${theme}-${width}-before.png`) })
-          await page.getByTestId('workbench-right-toggle').click()
-        }
-    await page.evaluate(() => {
-      localStorage.setItem('agnes-locale', 'en')
-      localStorage.setItem('agnes-theme', 'light')
-    })
-    await page.reload()
-    await page.getByTestId('workbench-tab-files').click()
-    await page.getByTestId('files-panel').locator('[data-path="review.ts"]').click()
-    await page.getByTestId('file-review').click()
-    await expect(panel.getByTestId('changes-diff')).toContainText('+export const answer = 2')
-  }
+  if (folder) await mkdir(folder, { recursive: true })
+  for (const locale of ['en', 'zh-CN'])
+    for (const theme of ['light', 'dark'])
+      for (const width of [1440, 1280]) {
+        await page.setViewportSize({ width, height: 900 })
+        await page.evaluate(
+          ({ locale, theme }) => {
+            localStorage.setItem('agnes-locale', locale)
+            localStorage.setItem('agnes-theme', theme)
+          },
+          { locale, theme },
+        )
+        await page.reload()
+        await page.getByTestId('workbench-tab-changed-files').click()
+        await panel.getByTestId('changed-file').filter({ hasText: 'review.ts' }).click()
+        await expect(panel.getByTestId('changes-diff')).toContainText('+export const answer = 2')
+        await translated(page)
+        await workbenchScreen(page, info, `p4-${locale}-${theme}-${width}-after`, folder)
+        await page.getByTestId('workbench-right-toggle').click()
+        await workbenchScreen(page, info, `p4-${locale}-${theme}-${width}-before`, folder)
+        await page.getByTestId('workbench-right-toggle').click()
+      }
+  await page.evaluate(() => {
+    localStorage.setItem('agnes-locale', 'en')
+    localStorage.setItem('agnes-theme', 'light')
+  })
+  await page.reload()
+  await page.getByTestId('workbench-tab-files').click()
+  await page.getByTestId('files-panel').locator('[data-path="review.ts"]').click()
+  await page.getByTestId('file-review').click()
+  await expect(panel.getByTestId('changes-diff')).toContainText('+export const answer = 2')
   // An external human change is never rolled into the agent's historical diff.
   await writeFile(join(runtime.workspace, 'review.ts'), 'export const answer = 99\n')
   await page.getByTestId('changes-refresh').click()
