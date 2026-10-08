@@ -36,7 +36,7 @@ persistence/storage provider、sandbox 及其他进程基础后端仍标记 `res
 
 稳定 invocation identity 为不确定发送设置栅栏并恢复已有回执，不保证外部副作用的 exactly-once，也不与外部工具组成原子事务。模型已发送但缺少持久完整回执时仍属不确定，必须先协调结果再重放。checkpoint 关联不是外部副作用提交。原子 ledger 提交也不代表每种后端或文件系统都保证断电持久性；这需要后端 fsync 和平台专项验收。详见[合同](../develop/contracts-v0.1.zh-CN.md)。
 
-Core 将 version-1 `x/core/tool-response` 与 `tool/result` 放在同一次 ledger 提交中，保留作者响应的 content（含 artifact 引用）以及可选的 `isError`、`structured`、`details`、`terminate`。驱动回执缺失时优先恢复该表示。旧行只能恢复已持久化的 ledger content、`isError` 和 `structured`，无法重建缺失的作者元数据。Loop invocation 回执必须来自受信 Core 并匹配固定 loop id/version；缺少此绑定的旧回执以 `E_RELATION` 拒绝协调，不会重新发送不确定操作。
+对于具有 Core 绑定 Loop invocation 身份的工具调用，Core 将 version-1 `x/core/tool-response` 与 `tool/result` 放在同一次 ledger 提交中，保留作者响应的 content（含 artifact 引用）以及可选的 `isError`、`structured`、`details`、`terminate`。驱动回执缺失时优先恢复该表示。旧行只能恢复已持久化的 ledger content、`isError` 和 `structured`，无法重建缺失的作者元数据。Loop invocation 回执必须来自受信 Core 并匹配固定 loop id/version；缺少此绑定的旧回执以 `E_RELATION` 拒绝协调，不会重新发送不确定操作。
 
 Loop `events.emit` 仅接受非保留的 `x/*` 事件，并记录不受信插件来源。助手消息与控制操作应使用 `events.assistant(message, checkpoint)` 等专用端口；直接发射 ledger/control 类型或 `x/core/*` 会被拒绝。
 

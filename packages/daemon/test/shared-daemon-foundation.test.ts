@@ -492,6 +492,15 @@ describe('generation-bound discovery and Web credential', () => {
     await expect(
       readDaemonDiscovery(scope, { processIdentity: async () => ({ state: 'dead' as const }) }),
     ).resolves.toBeNull()
+    const changed = await resolveDaemonScope({
+      home: dataDir,
+      profile: 'enterprise',
+      dataDir: join(dataDir, 'new-data'),
+    })
+    await expect(
+      readDaemonDiscovery(changed, { processIdentity: async () => ({ state: 'dead' as const }) }),
+    ).resolves.toBeNull()
+
     await expect(
       readDaemonDiscovery(scope, {
         processIdentity: async () => ({ state: 'unknown' as const, reason: 'EPERM' }),

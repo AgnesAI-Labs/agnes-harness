@@ -419,7 +419,7 @@ describe('stopDaemon', () => {
 })
 
 describe('runDaemonControl', () => {
-  it('routes status and stop to the requested data directory with stable output and exit codes', async () => {
+  it('routes status and stop to the canonical home and validates data configuration with stable output and exit codes', async () => {
     const output: string[] = []
     const status = vi.fn(async () => ({ running: false }))
     expect(
@@ -434,11 +434,11 @@ describe('runDaemonControl', () => {
     const stop = vi.fn(async () => 'stopped' as const)
     expect(
       await runDaemonControl(
-        { command: 'stop', profile: 'default', dataDir: '/explicit' },
+        { command: 'stop', profile: 'default', dataDir: '/explicit', home: '/test-home' },
         { stop, write: (text) => output.push(text) },
       ),
     ).toBe(0)
-    expect(stop).toHaveBeenCalledWith(resolve('/explicit'))
+    expect(stop).toHaveBeenCalledWith(resolve('/test-home'))
     expect(output.at(-1)).toBe('stopped\n')
   })
 })
