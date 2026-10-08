@@ -141,11 +141,11 @@ for (const locale of ['en', 'zh-CN'])
             .getByRole('button', { name: locale === 'en' ? 'Edit' : '编辑', exact: true })
             .click()
           await expect(page.locator('#mcp-dialog')).toBeVisible()
+          await page.mouse.move(0, 0)
           for (const control of ['mcp-name', 'mcp-executable', 'mcp-args', 'mcp-secret', 'mcp-tools']) {
             await expect(page.locator(`#${control}`)).toHaveCSS('background-color', fieldSurface)
           }
           await expect(page.locator('#mcp-sandbox-trigger')).toHaveCSS('background-color', fieldSurface)
-          await page.mouse.move(0, 0)
           await quality('mcp-form', true)
           await page.locator('#mcp-cancel').click()
           await page.keyboard.press('Escape')
