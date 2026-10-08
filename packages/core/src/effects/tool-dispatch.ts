@@ -57,7 +57,7 @@ function isJsonValue(value: unknown, seen = new Set<object>()): boolean {
   seen.add(value)
   const valid = Array.isArray(value)
     ? value.every((item) => isJsonValue(item, seen))
-    : Object.getPrototypeOf(value) === Object.prototype &&
+    : (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null) &&
       Object.values(value as Record<string, unknown>).every((item) => isJsonValue(item, seen))
   seen.delete(value)
   return valid

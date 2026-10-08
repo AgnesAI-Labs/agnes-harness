@@ -15,7 +15,18 @@ import { actor, noTimers, openSession, testFsOps } from './helpers/open-session.
 const result = { content: [{ type: 'text' as const, text: 'ok' }] }
 
 describe('tool dispatch attestation', () => {
-  it('bypasses the Host port for workspace tools', async () => {
+  it.each([
+    ['ordinary result', result],
+    [
+      'projection-backed answer',
+      {
+        ...result,
+        details: Object.assign(Object.create(null), {
+          answers: Object.assign(Object.create(null), { format: 'Markdown' }),
+        }),
+      },
+    ],
+  ])('bypasses the Host port for workspace tools with %s', async (_name, result) => {
     const hostPort: HostToolDispatchPort = { dispatch: vi.fn() }
     const invoke = vi.fn(async () => result)
 
@@ -48,14 +59,21 @@ describe('tool dispatch attestation', () => {
     expect(observation.phase).toBe('may_have_sent')
   })
 
-  it('rejects non-wire-safe structured results at runtime', async () => {
+  it.each([
+    { callback: () => undefined },
+    Object.assign(Object.create(null), { callback: () => undefined }),
+    new Date(),
+    new (class Payload {
+      value = 'not a JSON dictionary'
+    })(),
+  ])('rejects non-wire-safe structured results at runtime (%#)', async (structured) => {
     const observation = await dispatchTool({
       name: 'read',
       args: {},
       context: {} as never,
       attempt: 1,
       executionDomain: 'workspace',
-      invoke: async () => ({ ...result, structured: { callback: () => undefined } }),
+      invoke: async () => ({ ...result, structured }),
     })
 
     expect(observation.phase).toBe('may_have_sent')
