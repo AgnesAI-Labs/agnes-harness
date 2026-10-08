@@ -81,4 +81,4 @@ pnpm exec vitest run tools/public-docs/examples.test.ts packages/host/test/assem
 
 该组合覆盖示例模块、Host 装配撤权和 daemon 浏览器调用边界；完整 browser → BFF → daemon → worker → Host 的可选验收程序为 [web-workbench.mjs](../../tools/acceptance/web-workbench.mjs)，实际运行版本与覆盖范围单列于[验证记录](../maintainers/verification.zh-CN.md)。
 
-事实源：[Host 动态 client 扩展](../../packages/host/src/assemble.ts)、[动态装配测试](../../packages/host/test/assemble/dynamic-client-extension.test.ts)、[ClientContext 的服务门控](../../packages/web-client/src/client-module.ts)。
+事实源：[Host 动态 client 扩展](../../packages/host-runtime/src/assemble.ts)、[动态装配测试](../../packages/host/test/assemble/dynamic-client-extension.test.ts)、[ClientContext 的服务门控](../../packages/web-client/src/client-module.ts)。

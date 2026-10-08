@@ -86,4 +86,4 @@ API 客户端可通过 `_agnes/v1/session.setModel` 传入可选的 `thinking`�
 
 普通插件默认配置来自 `agnes.plugins[].config`，由导出的 `Config` 校验。部署/用户/工作区普通行覆盖由装配接口处理；不要猜一个未被当前解析器接受的顶层 `plugins:` 就会生效。包入口、配置与 inject/provide 的精确形状见[插件教程](../develop/plugins.zh-CN.md)。
 
-源码依据：[输入合并](../../packages/host/src/profile/inputs.ts)、[解析](../../packages/host-common/src/profile/resolve.ts)、[配置存储](../../packages/host-infrastructure/src/configuration.ts)、[后台身份](../../packages/daemon/src/supervisor/scope.ts)、[daemon limits](../../packages/daemon/src/config.ts)。
+源码依据：[输入合并](../../packages/host-runtime/src/profile/inputs.ts)、[解析](../../packages/host-common/src/profile/resolve.ts)、[配置存储](../../packages/host-infrastructure/src/configuration.ts)、[后台身份](../../packages/daemon/src/supervisor/scope.ts)、[daemon limits](../../packages/daemon/src/config.ts)。

@@ -1,0 +1,58 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../cordis"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../extension-api"
+    },
+    {
+      "path": "../host-artifacts"
+    },
+    {
+      "path": "../host-common"
+    },
+    {
+      "path": "../host-computer-use"
+    },
+    {
+      "path": "../host-extensions"
+    },
+    {
+      "path": "../host-infrastructure"
+    },
+    {
+      "path": "../host-providers"
+    },
+    {
+      "path": "../package-manager"
+    },
+    {
+      "path": "../plugin-runtime"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../resource-control-runtime"
+    },
+    {
+      "path": "../sandbox-remote"
+    },
+    {
+      "path": "../system-node"
+    }
+  ]
+}

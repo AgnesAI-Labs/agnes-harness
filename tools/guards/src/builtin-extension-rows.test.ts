@@ -46,7 +46,7 @@ describe('builtin ext: row id list', () => {
     // Read as text, not imported: tools/guards may not depend on any @agnes package. The narrow
     // literal is the GRANT condition that EXTENSION_ROW_GRANTS replaces; the Computer Use SUPPLY
     // gates elsewhere in the same file legitimately still compare the extension id.
-    expect(read('packages/host/src/assemble.ts')).not.toContain(
+    expect(read('packages/host-runtime/src/assemble.ts')).not.toContain(
       "owner === '@agnes/base' && extensionId === 'agnes/computer-use'",
     )
   })

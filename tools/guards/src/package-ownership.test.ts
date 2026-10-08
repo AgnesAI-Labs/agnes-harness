@@ -13,6 +13,7 @@ const hosts = [
   'host-artifacts',
   'host-extensions',
   'host-providers',
+  'host-runtime',
 ].map((name) => join(root, 'packages', name, 'src'))
 
 /** Compatibility files may delegate, but may never regain filesystem or source ownership. */

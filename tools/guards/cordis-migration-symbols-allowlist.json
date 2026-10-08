@@ -10,11 +10,11 @@
       "packages/plugin-runtime/src/runtime-target.ts": 2
     },
     "c2_runtime_target": {
-      "packages/host/src/assemble.ts": 5,
-      "packages/host/src/assembly-deps.ts": 1,
-      "packages/host/src/host.ts": 3,
-      "packages/host/src/profile/composition-runtime.ts": 5,
-      "packages/host/src/runtime-generation-host.ts": 7,
+      "packages/host-runtime/src/assemble.ts": 5,
+      "packages/host-runtime/src/assembly-deps.ts": 1,
+      "packages/host-runtime/src/host.ts": 3,
+      "packages/host-runtime/src/profile/composition-runtime.ts": 5,
+      "packages/host-runtime/src/runtime-generation-host.ts": 7,
       "packages/host-providers/src/runtime-hot-policy.ts": 3,
       "packages/host-providers/src/runtime-plugin-catalogue.ts": 3,
       "packages/host-providers/src/runtime-target-assembler.ts": 7,

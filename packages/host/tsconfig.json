@@ -54,6 +54,9 @@
     },
     {
       "path": "../host-providers"
+    },
+    {
+      "path": "../host-runtime"
     }
   ]
 }

@@ -32,7 +32,7 @@ import { buildCompleteRuntimeTarget } from '../../src/runtime-target-builder.js'
 import { createTestHost } from '../../testkit/index.js'
 import { pluginHost, pluginRow, pluginSourceWith, targetOf } from '../assemble/plugin-extension-fixture.js'
 
-vi.mock('../../src/adapters/process-identity-default.js', () => ({
+vi.mock('@agnes/host-infrastructure/adapters/process-identity-default', () => ({
   defaultProcessIdentity: async () => ({ state: 'alive', startId: 'composition-test-worker' }),
 }))
 

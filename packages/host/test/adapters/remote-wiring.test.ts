@@ -1,10 +1,13 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import {
+  createLoopbackTransport,
+  type RemoteTransport,
+} from '@agnes/host-infrastructure/adapters/remote-transport'
 import { remoteSandboxSeam } from '@agnes/sandbox-remote'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { openAdapters, sandboxHostServices, toSeamAdapters } from '../../src/adapters/index.js'
-import { createLoopbackTransport, type RemoteTransport } from '../../src/adapters/remote-transport.js'
 import { resolveProfile } from '../../src/profile/resolve.js'
 import type { LockState, ResolveEnv } from '../../src/profile/types.js'
 import { WorkspaceBindingAuthority } from '../../src/workspace-authority.js'
@@ -19,14 +22,14 @@ const created: RemoteTransport[] = []
 // The input every session workspace factory was built from, so a test can see what openAdapters
 // hands it without having to reach the roots through a live fence.
 const factoryInputs: Parameters<
-  typeof import('../../src/adapters/session-workspace.js').createSessionWorkspaceAdapterFactory
+  typeof import('@agnes/host-infrastructure/adapters/session-workspace').createSessionWorkspaceAdapterFactory
 >[0][] = []
 // guards-allow-platform: the loopback spawns remote POSIX commands on this machine.
 const posixIt = process.platform === 'win32' ? it.skip : it
 
 // Inject failures through the test vendor factory while retaining real loopback operations.
-vi.mock('../../src/adapters/remote-transport.js', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../../src/adapters/remote-transport.js')>()
+vi.mock('@agnes/host-infrastructure/adapters/remote-transport', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@agnes/host-infrastructure/adapters/remote-transport')>()
   return {
     ...real,
     createLoopbackTransport: (opts: { root: string }) => {
@@ -45,8 +48,8 @@ vi.mock('../../src/adapters/remote-transport.js', async (importOriginal) => {
   }
 })
 
-vi.mock('../../src/adapters/session-workspace.js', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../../src/adapters/session-workspace.js')>()
+vi.mock('@agnes/host-infrastructure/adapters/session-workspace', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@agnes/host-infrastructure/adapters/session-workspace')>()
   return {
     ...real,
     createSessionWorkspaceAdapterFactory: (

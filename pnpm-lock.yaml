@@ -520,6 +520,9 @@ importers:
       '@agnes/host-providers':
         specifier: workspace:*
         version: link:../host-providers
+      '@agnes/host-runtime':
+        specifier: workspace:*
+        version: link:../host-runtime
       '@agnes/model-adapters':
         specifier: workspace:*
         version: link:../model-adapters
@@ -806,6 +809,57 @@ importers:
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33
+
+  packages/host-runtime:
+    dependencies:
+      '@agnes/cordis':
+        specifier: workspace:*
+        version: link:../cordis
+      '@agnes/core':
+        specifier: workspace:*
+        version: link:../core
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/host-artifacts':
+        specifier: workspace:*
+        version: link:../host-artifacts
+      '@agnes/host-common':
+        specifier: workspace:*
+        version: link:../host-common
+      '@agnes/host-computer-use':
+        specifier: workspace:*
+        version: link:../host-computer-use
+      '@agnes/host-extensions':
+        specifier: workspace:*
+        version: link:../host-extensions
+      '@agnes/host-infrastructure':
+        specifier: workspace:*
+        version: link:../host-infrastructure
+      '@agnes/host-providers':
+        specifier: workspace:*
+        version: link:../host-providers
+      '@agnes/package-manager':
+        specifier: workspace:*
+        version: link:../package-manager
+      '@agnes/plugin-runtime':
+        specifier: workspace:*
+        version: link:../plugin-runtime
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@agnes/resource-control-runtime':
+        specifier: workspace:*
+        version: link:../resource-control-runtime
+      '@agnes/sandbox-remote':
+        specifier: workspace:*
+        version: link:../sandbox-remote
+      '@agnes/system-node':
+        specifier: workspace:*
+        version: link:../system-node
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
 
   packages/loop-default:
     dependencies:

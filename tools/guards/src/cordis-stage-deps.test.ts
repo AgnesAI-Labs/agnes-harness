@@ -161,6 +161,7 @@ export function auditStageGraph(packages: PackageShape[], imports: ImportSite[])
     if (
       site.specifier === `${RUNTIME}/host` &&
       site.packageName !== HOST &&
+      site.packageName !== '@agnes/host-runtime' &&
       site.packageName !== '@agnes/host-providers' &&
       site.packageName !== '@agnes/host-extensions' &&
       site.packageName !== '@agnes/host-common' &&

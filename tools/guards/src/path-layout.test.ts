@@ -28,7 +28,7 @@ const root = repoRoot()
 
 // The one place in the repo allowed to contain either banned shape, because it *is* the shape: this
 // module's whole job is to be the layout. Matched the same way kernel-create.test.ts blesses
-// packages/host/src/assemble -- by path-boundary, not by name -- so a future split into a paths/
+// packages/host-runtime/src/assemble -- by path-boundary, not by name -- so a future split into a paths/
 // directory (as assemble.ts was later split) stays exempt without editing this file.
 const PATHS_MODULE_ABS = join(root, 'packages/host-common/src/paths')
 // Rule B's one owner. The directory name lives in @agnes/protocol rather than paths.ts because it is

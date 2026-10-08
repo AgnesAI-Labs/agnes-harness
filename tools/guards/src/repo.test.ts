@@ -37,6 +37,7 @@ describe('repo', () => {
       '@agnes/host-extensions',
       '@agnes/host-infrastructure',
       '@agnes/host-providers',
+      '@agnes/host-runtime',
       '@agnes/loop-default',
       '@agnes/mcp-transport-health',
       '@agnes/model-adapters',

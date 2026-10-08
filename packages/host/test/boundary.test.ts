@@ -12,7 +12,24 @@ const walk = (d: string): void => {
     else if (e.endsWith('.ts')) files.push(p)
   }
 }
-walk(src)
+const ownerSrc = (owner: string): string => fileURLToPath(new URL(`../../${owner}/src/`, import.meta.url))
+const owners = [
+  'host-common',
+  'host-infrastructure',
+  'host-computer-use',
+  'host-artifacts',
+  'host-extensions',
+  'host-providers',
+  'host-runtime',
+]
+const roots = [src, ...owners.map(ownerSrc)]
+const modulePath = (file: string): string => {
+  const root = roots.find((root) => file.startsWith(root))!
+  const owner = root === src ? 'host' : owners[roots.indexOf(root) - 1]
+  return `${owner}/${file.slice(root.length).replaceAll('\\', '/')}`
+}
+for (const root of roots) walk(root)
+files.sort((a, b) => modulePath(a).localeCompare(modulePath(b)))
 const read = (f: string): string => readFileSync(f, 'utf8')
 // This existing function normalizes Skill names and user prose, never filesystem paths.
 // Only its exact reviewed body is exempt; other calls in the same file remain forbidden.
@@ -21,7 +38,9 @@ const skillNormalizer = String.raw`function normalized(value: string): string {
 }`
 const pathGuardInput = (file: string, text: string): string => {
   const source = text.replaceAll('\r\n', '\n')
-  return file === join(src, 'resources', 'skill-preload.ts') ? source.replace(skillNormalizer, '') : source
+  return file === join(ownerSrc('host-extensions'), 'resources', 'skill-preload.ts')
+    ? source.replace(skillNormalizer, '')
+    : source
 }
 
 describe('host boundaries', () => {
@@ -50,13 +69,14 @@ describe('host boundaries', () => {
             '@agnes/resource-control-runtime',
             '@agnes/sandbox-remote',
             '@agnes/system-node',
+            ...owners.map((owner) => `@agnes/${owner}`),
           ],
           `${f}: ${pkg}`,
         ).toContain(pkg)
   })
   it('Kernel.create appears only in assemble.ts', () => {
     const callers = files.filter((f) => /\bKernel\s*\.\s*create\s*\(/.test(read(f)))
-    expect(callers.map((f) => f.slice(src.length))).toEqual(['assemble.ts'])
+    expect(callers.map((f) => modulePath(f))).toEqual(['host-runtime/assemble.ts'])
   })
   // The writer lease setting belongs to the kernel; extension leases are bound to their row and
   // must not start reading it again. Comments are stripped so prose naming the key does not count.
@@ -66,21 +86,21 @@ describe('host boundaries', () => {
     const occurrences = (pattern: RegExp) =>
       Object.fromEntries(
         files
-          .map((f) => [
-            f.slice(src.length).replaceAll('\\', '/'),
-            uncommented(read(f)).match(pattern)?.length ?? 0,
-          ])
+          .map((f) => [modulePath(f), uncommented(read(f)).match(pattern)?.length ?? 0])
           .filter(([, count]) => count !== 0),
       )
-    expect(occurrences(/['"]lease\.ttl_ms['"]/g)).toEqual({ 'assemble.ts': 2, 'profile-policy.ts': 1 })
-    expect(occurrences(/\bleaseTtlMs\b/g)).toEqual({ 'assemble.ts': 1 })
-    const wiring = uncommented(read(join(src, 'assemble.ts')))
+    expect(occurrences(/['"]lease\.ttl_ms['"]/g)).toEqual({
+      'host-runtime/assemble.ts': 2,
+      'host-common/profile-policy.ts': 1,
+    })
+    expect(occurrences(/\bleaseTtlMs\b/g)).toEqual({ 'host-runtime/assemble.ts': 1 })
+    const wiring = uncommented(read(join(ownerSrc('host-runtime'), 'assemble.ts')))
       .split('\n')
       .filter((line) => /['"]lease\.ttl_ms['"]/.test(line))
     expect(wiring).toHaveLength(1)
     expect(wiring[0]).toContain("leaseTtlMs: profile.limits['lease.ttl_ms']")
     // A comment that names the key is not a read of it.
-    const provider = read(join(src, 'assemble', 'provider.ts'))
+    const provider = read(join(ownerSrc('host-providers'), 'assemble', 'provider.ts'))
     expect(provider).toContain('lease.ttl_ms')
     expect(uncommented(provider)).not.toContain('lease.ttl_ms')
   })
@@ -89,23 +109,41 @@ describe('host boundaries', () => {
   it('no path-handling module normalises or decodes a path before matching it', () => {
     const normalizations = files.flatMap((f) =>
       [...read(f).matchAll(/\.normalize\(\s*['"]NFK?[CD]['"]\)/g)].map((match) => ({
-        file: f.slice(src.length).replaceAll('\\', '/'),
+        file: modulePath(f),
         expression: match[0],
       })),
     )
     expect(normalizations).toEqual([
-      { file: 'computer-use/locked-package-mutation-runtime.ts', expression: ".normalize('NFC')" },
-      { file: 'computer-use/locked-package-mutation-runtime.ts', expression: ".normalize('NFC')" },
-      { file: 'computer-use/locked-package-mutation-runtime.ts', expression: ".normalize('NFC')" },
-      { file: 'computer-use/locked-package-receipts-sqlite.ts', expression: ".normalize('NFC')" },
-      { file: 'computer-use/locked-package-receipts-sqlite.ts', expression: ".normalize('NFC')" },
-      { file: 'computer-use/locked-package-receipts-sqlite.ts', expression: ".normalize('NFC')" },
-      { file: 'resources/skill-preload.ts', expression: ".normalize('NFKC')" },
+      {
+        file: 'host-computer-use/computer-use/locked-package-mutation-runtime.ts',
+        expression: ".normalize('NFC')",
+      },
+      {
+        file: 'host-computer-use/computer-use/locked-package-mutation-runtime.ts',
+        expression: ".normalize('NFC')",
+      },
+      {
+        file: 'host-computer-use/computer-use/locked-package-mutation-runtime.ts',
+        expression: ".normalize('NFC')",
+      },
+      {
+        file: 'host-computer-use/computer-use/locked-package-receipts-sqlite.ts',
+        expression: ".normalize('NFC')",
+      },
+      {
+        file: 'host-computer-use/computer-use/locked-package-receipts-sqlite.ts',
+        expression: ".normalize('NFC')",
+      },
+      {
+        file: 'host-computer-use/computer-use/locked-package-receipts-sqlite.ts',
+        expression: ".normalize('NFC')",
+      },
+      { file: 'host-extensions/resources/skill-preload.ts', expression: ".normalize('NFKC')" },
     ])
     for (const f of files) expect(read(f), f).not.toMatch(/\bdecodeURI(?:Component)?\s*\(/)
   })
   it('limits the lexical exception to the reviewed function and its name/prose callers', () => {
-    const file = join(src, 'resources', 'skill-preload.ts')
+    const file = join(ownerSrc('host-extensions'), 'resources', 'skill-preload.ts')
     const source = read(file).replaceAll('\r\n', '\n')
     expect(source).toContain(skillNormalizer)
     expect(source.match(/\bnormalized\([^)]*\)/g)).toEqual([

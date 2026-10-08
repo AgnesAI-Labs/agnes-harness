@@ -246,6 +246,9 @@
     },
     {
       "path": "packages/host-providers/tsconfig.test.json"
+    },
+    {
+      "path": "packages/host-runtime"
     }
   ]
 }

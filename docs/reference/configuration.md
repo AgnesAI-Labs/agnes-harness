@@ -98,4 +98,4 @@ Saving compares content `expectedRevision` and current `expectedPriority`, witho
 
 Ordinary plugin defaults come from `agnes.plugins[].config` and are validated by the exported `Config`. Assembly interfaces handle deployment/user/workspace row overrides. Do not invent a top-level `plugins:` key that the parser does not support. See the [plugin tutorial](../develop/plugins.md) for package entry points, configuration, and inject/provide shapes.
 
-Source: [input merging](../../packages/host/src/profile/inputs.ts), [resolution](../../packages/host-common/src/profile/resolve.ts), [configuration store](../../packages/host-infrastructure/src/configuration.ts), [daemon identity](../../packages/daemon/src/supervisor/scope.ts), [daemon limits](../../packages/daemon/src/config.ts).
+Source: [input merging](../../packages/host-runtime/src/profile/inputs.ts), [resolution](../../packages/host-common/src/profile/resolve.ts), [configuration store](../../packages/host-infrastructure/src/configuration.ts), [daemon identity](../../packages/daemon/src/supervisor/scope.ts), [daemon limits](../../packages/daemon/src/config.ts).

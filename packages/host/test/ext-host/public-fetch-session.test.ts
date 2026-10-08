@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
+import * as network from '@agnes/host-infrastructure/adapters/public-fetch/network'
 import { expect, it, vi } from 'vitest'
-import * as network from '../../src/adapters/public-fetch/network.js'
 import { createTestHost } from '../../testkit/index.js'
 
 it.each([false, true])(
