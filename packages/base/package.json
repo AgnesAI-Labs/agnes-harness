@@ -11,7 +11,8 @@
     "./privacy": "./extensions/privacy/src/redact.ts",
     "./child-engines": "./extensions/subagent-sdk/src/document.ts",
     "./testkit": "./testkit/index.ts",
-    "./presets/*": "./presets/*"
+    "./presets/*": "./presets/*",
+    "./plan-mode": "./extensions/plan-mode/src/state.ts"
   },
   "agnes": {
     "plugins": [

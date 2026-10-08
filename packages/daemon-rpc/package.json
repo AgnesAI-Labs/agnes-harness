@@ -27,7 +27,8 @@
     "./local/project": "./src/local/project.ts",
     "./local/prompter": "./src/local/prompter.ts",
     "./local/session-admission": "./src/local/session-admission.ts",
-    "./local/sessions": "./src/local/sessions.ts"
+    "./local/sessions": "./src/local/sessions.ts",
+    "./local/methods/admin": "./src/local/methods/admin.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",
@@ -40,7 +41,9 @@
     "@agnes/daemon-surfaces": "workspace:*",
     "@agnes/host": "workspace:*",
     "@agnes/protocol": "workspace:*",
-    "@agnes/worker-runtime": "workspace:*"
+    "@agnes/worker-runtime": "workspace:*",
+    "@agnes/history-index": "workspace:*",
+    "@agnes/resource-control-runtime": "workspace:*"
   },
   "license": "Apache-2.0",
   "devDependencies": {

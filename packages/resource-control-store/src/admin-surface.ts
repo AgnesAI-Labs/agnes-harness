@@ -1,7 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
+  httpRpcError,
+  normalizeRpcError,
   RESOURCE_CONTROL_METHODS,
   type ResourceControlMethodName,
+  type RpcError,
   validateResourceControlCall,
 } from '@agnes/protocol'
 import { RESOURCE_ALL_PERMISSIONS } from './permissions.js'
@@ -78,8 +81,8 @@ function reply(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' })
   response.end(JSON.stringify(body))
 }
-function error(response: ServerResponse, status: number, code: string, message: string): void {
-  reply(response, status, { error: { code, message } })
+function error(response: ServerResponse, status: number, code: string, _message: string): void {
+  reply(response, status, { error: httpRpcError(status, code) })
 }
 function unavailable(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false
@@ -215,6 +218,13 @@ export function createResourceAdminSurface(options: ResourceAdminSurfaceOptions)
         }
         reply(response, 200, result)
       } catch (cause) {
+        const rpc = (cause as { rpc?: RpcError })?.rpc
+        if (rpc) {
+          reply(response, rpc.code === -32006 ? 403 : rpc.code === -32011 ? 409 : 502, {
+            error: normalizeRpcError(rpc),
+          })
+          return true
+        }
         if (cause instanceof ResourceAdminRequestError) {
           if (cause.reason === 'body-too-large')
             error(

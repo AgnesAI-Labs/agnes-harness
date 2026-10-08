@@ -1,12 +1,19 @@
-import { realpath } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { loadContextRules, readContextConfig, writeContextConfig } from '@agnes/base'
+import {
+  type AppServerParams,
+  type AppServerResult,
+  httpRpcError,
+  normalizeRpcError,
+  type RpcError,
+  validateMethod,
+} from '@agnes/protocol'
 
-/** Local administration of live resources; workspace authority comes from the daemon catalog. */
+/** Exact-origin HTTP compatibility adapter; daemon owns context config and workspace authority. */
 export function contextAdmin(
   origin: string,
-  workspaces: () => Promise<{ path: string; available: boolean }[]>,
-  home: string,
+  invoke: (
+    input: AppServerParams<'_agnes/v1/admin.context'>,
+  ) => Promise<AppServerResult<'_agnes/v1/admin.context'>>,
 ) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
     const url = new URL(request.url ?? '/', origin)
@@ -27,41 +34,29 @@ export function contextAdmin(
       (request.headers['sec-fetch-site'] && request.headers['sec-fetch-site'] !== 'same-origin')
     ) {
       request.resume()
-      reply(403, { error: 'forbidden' })
+      reply(403, { error: httpRpcError(403, 'E_ADMIN_ORIGIN') })
       return true
     }
     try {
-      if (request.headers['content-type']?.split(';')[0] !== 'application/json')
-        throw new Error('invalid content type')
+      if (request.headers['content-type']?.split(';')[0] !== 'application/json') throw new Error('request')
       const chunks: Buffer[] = []
       let size = 0
       for await (const chunk of request) {
         const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
         size += bytes.length
-        if (size > 65536) throw new Error('request too large')
+        if (size > 65536) throw new Error('request')
         chunks.push(bytes)
       }
-      const input = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { cwd?: string; config?: unknown }
-      if (
-        !input ||
-        typeof input !== 'object' ||
-        Array.isArray(input) ||
-        Object.keys(input).some((key) => key !== 'cwd' && key !== 'config')
+      const input: unknown = JSON.parse(
+        new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)),
       )
-        throw new Error('invalid input')
-      const items = await workspaces()
-      let cwd: string | undefined
-      if (input.cwd !== undefined) {
-        if (typeof input.cwd !== 'string' || !items.some((item) => item.available && item.path === input.cwd))
-          throw new Error('workspace unavailable')
-        cwd = await realpath(input.cwd)
-      }
-      const config =
-        input.config === undefined ? readContextConfig(home) : writeContextConfig(input.config, home)
-      const rules = cwd ? await loadContextRules(cwd, [], config, home) : undefined
-      reply(200, { config, workspaces: items, ...(rules ? { rules } : {}) })
-    } catch {
-      reply(400, { error: 'context request refused' })
+      if (!validateMethod('_agnes/v1/admin.context', 'params', input).ok) throw new Error('request')
+      reply(200, await invoke(input as AppServerParams<'_agnes/v1/admin.context'>))
+    } catch (error) {
+      const rpc = (error as { rpc?: RpcError })?.rpc
+      reply(rpc?.code === -32006 ? 403 : 400, {
+        error: rpc ? normalizeRpcError(rpc) : httpRpcError(400, 'E_ADMIN_REQUEST'),
+      })
     }
     return true
   }

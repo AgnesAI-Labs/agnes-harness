@@ -323,10 +323,21 @@ it('fits production catalog/defaults relays without an injected provider', async
     const update = { revision: 0, defaults: { loop: { id: 'default', version: '1.0.0' } } }
     expect(await provider.saveDefaults(update)).toEqual(update)
     expect(mocks.sessionSelection.saveDefaults).toHaveBeenCalledWith(update)
-    mocks.sessionSelection.saveDefaults.mockRejectedValueOnce({
-      data: { reason: 'CONFIG_REVISION_CONFLICT' },
-    })
-    await expect(provider.saveDefaults(update)).rejects.toMatchObject({ code: 'CONFIG_REVISION_CONFLICT' })
+    const failure = {
+      rpc: {
+        code: -32011,
+        message: 'SEMANTIC_REJECTED',
+        data: {
+          code: 'SEMANTIC_REJECTED',
+          reason: 'CONFIG_REVISION_CONFLICT',
+          messageKey: 'appServer.errors.conflict',
+          cause: { code: 'CONFIG_REVISION_CONFLICT' },
+          diagnosticId: '00000000-0000-0000-0000-000000000001',
+        },
+      },
+    }
+    mocks.sessionSelection.saveDefaults.mockRejectedValueOnce(failure)
+    await expect(provider.saveDefaults(update)).rejects.toBe(failure)
   } finally {
     await admin.close()
   }

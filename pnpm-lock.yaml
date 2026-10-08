@@ -593,12 +593,18 @@ importers:
       '@agnes/daemon-surfaces':
         specifier: workspace:*
         version: link:../daemon-surfaces
+      '@agnes/history-index':
+        specifier: workspace:*
+        version: link:../history-index
       '@agnes/host':
         specifier: workspace:*
         version: link:../host
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@agnes/resource-control-runtime':
+        specifier: workspace:*
+        version: link:../resource-control-runtime
       '@agnes/worker-runtime':
         specifier: workspace:*
         version: link:../worker-runtime

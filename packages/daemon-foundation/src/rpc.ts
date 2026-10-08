@@ -1,4 +1,4 @@
-import type { RpcError } from '@agnes/protocol'
+import { normalizeRpcError, type RpcError } from '@agnes/protocol'
 
 export type JsonRpcId = string | number
 export type JsonRpcRequest = { jsonrpc: '2.0'; id: JsonRpcId; method: string; params?: unknown }
@@ -29,7 +29,7 @@ export function ok(id: JsonRpcId, result: unknown): JsonRpcResponse {
   return { jsonrpc: '2.0', id, result }
 }
 export function fail(id: JsonRpcId, error: RpcError): JsonRpcResponse {
-  return { jsonrpc: '2.0', id, error }
+  return { jsonrpc: '2.0', id, error: normalizeRpcError(error) }
 }
 export function notify(method: string, params: unknown): JsonRpcNotification {
   return { jsonrpc: '2.0', method, params }

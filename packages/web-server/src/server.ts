@@ -2,8 +2,14 @@ import { createHash, randomBytes } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { extname, isAbsolute, join, posix } from 'node:path'
+import {
+  type AppServerParams,
+  type AppServerResult,
+  httpRpcError,
+  normalizeRpcError,
+  type RpcError,
+} from '@agnes/protocol'
 import { HISTORY_SEARCH_PATH, handleHistorySearch } from './history-route.js'
-import { applyPlanCommand } from './plan-mode.js'
 import { VENDOR_ENTRY_NAMES } from './vendor-assets.js'
 
 export const DEFAULT_WEB_PORT = 4177
@@ -154,6 +160,12 @@ export type WebServerOptions = {
    * home data directory. A profile with a custom dataDir must pass this; the route does not guess.
    */
   historyDataDir?: string
+  historySearch?: (
+    input: AppServerParams<'_agnes/v1/admin.history.search'>,
+  ) => Promise<AppServerResult<'_agnes/v1/admin.history.search'>>
+  planCommand?: (
+    input: AppServerParams<'_agnes/v1/admin.plan'>,
+  ) => Promise<AppServerResult<'_agnes/v1/admin.plan'>>
 }
 
 export type WorkspacePickerResult =
@@ -286,6 +298,17 @@ function readLimitedBody(request: IncomingMessage, limit: number): Promise<strin
 }
 
 function json(response: ServerResponse, status: number, body: unknown): void {
+  // Compatibility refusals also use the App Server envelope, never exception prose.
+  if (body && typeof body === 'object' && 'error' in body) {
+    const error = body.error
+    if (
+      typeof error === 'string' ||
+      (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string')
+    ) {
+      const code = typeof error === 'string' ? 'INVALID_REQUEST' : (error.code as string)
+      body = { ...body, error: httpRpcError(status, code) }
+    }
+  }
   response.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
@@ -429,13 +452,13 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
       }
       const requestUrl = new URL(request.url ?? '/', expectedOrigin)
       if (requestUrl.pathname === HISTORY_SEARCH_PATH) {
-        const result = handleHistorySearch({
+        const result = await handleHistorySearch({
           method: request.method,
           search: requestUrl.search,
           origin: typeof request.headers.origin === 'string' ? request.headers.origin : undefined,
           site: request.headers['sec-fetch-site'],
           expectedOrigin: expectedOrigin.origin,
-          ...(options.historyDataDir === undefined ? {} : { dataDir: options.historyDataDir }),
+          ...(options.historySearch ? { searchHistory: options.historySearch } : {}),
         })
         json(response, result.status, result.body)
         return
@@ -564,12 +587,18 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
           json(response, 400, { error: { code: 'INVALID_REQUEST' } })
           return
         }
-        const result = applyPlanCommand(parsed.cwd, parsed.line)
-        if (!result.ok) {
-          json(response, 400, { error: { code: result.code } })
+        if (!options.planCommand) {
+          json(response, 503, { error: httpRpcError(503, 'UNAVAILABLE') })
           return
         }
-        json(response, 200, { active: result.active, text: result.text })
+        try {
+          json(response, 200, await options.planCommand({ cwd: parsed.cwd, line: parsed.line }))
+        } catch (error) {
+          const rpc = (error as { rpc?: RpcError })?.rpc
+          json(response, rpc?.code === -32006 ? 403 : 400, {
+            error: rpc ? normalizeRpcError(rpc) : httpRpcError(400, 'INVALID_REQUEST'),
+          })
+        }
         return
       }
       if (request.url === '/__agnes/dev/reload.js') {

@@ -29,6 +29,12 @@
     },
     {
       "path": "../worker-runtime"
+    },
+    {
+      "path": "../history-index"
+    },
+    {
+      "path": "../resource-control-runtime"
     }
   ]
 }

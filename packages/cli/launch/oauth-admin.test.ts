@@ -15,6 +15,7 @@ import type { LocalBackend } from './backend.js'
  */
 const mocks = vi.hoisted(() => {
   const close = vi.fn(async () => undefined)
+  const request = vi.fn(async () => ({}))
   const mcpServersGet = vi.fn(async () => ({
     definition: {
       serverId: 'srv-1',
@@ -28,7 +29,7 @@ const mocks = vi.hoisted(() => {
       startAuthorization: vi.fn(async () => ({ authorizeUrl: 'https://example.test/' })),
     }),
   )
-  return { close, mcpServersGet, oauthStatusSet, createOAuthHttpHandler }
+  return { close, request, mcpServersGet, oauthStatusSet, createOAuthHttpHandler }
 })
 
 vi.mock('@agnes/sdk', () => ({
@@ -36,13 +37,12 @@ vi.mock('@agnes/sdk', () => ({
   createClient: vi.fn(() => ({
     initialize: vi.fn(async () => ({})),
     close: mocks.close,
+    request: mocks.request,
     mcp: { servers: { get: mocks.mcpServersGet, oauth: { statusSet: mocks.oauthStatusSet } } },
   })),
 }))
 
 vi.mock('@agnes/resource-control-runtime', () => ({ createOAuthHttpHandler: mocks.createOAuthHttpHandler }))
-
-vi.mock('@agnes/host', () => ({ createCredentialStore: vi.fn(() => ({ putOAuth: vi.fn() })) }))
 
 import { localOAuthAdmin } from './oauth-admin.js'
 
@@ -60,16 +60,35 @@ function fakeBackend(): LocalBackend {
   } as unknown as LocalBackend
 }
 
-it('wires onAuthorizationStatus to the daemon oauth.status.set RPC method, closing the Task 4 gap', async () => {
+it('forwards authorization status and scoped credential writes through the daemon', async () => {
   const backend = fakeBackend()
   localOAuthAdmin(backend, new URL('http://127.0.0.1:4177'))
 
   const opts = mocks.createOAuthHttpHandler.mock.calls[0]?.[0] as
-    | { onAuthorizationStatus?(serverId: string, status: string): Promise<void> }
+    | {
+        onAuthorizationStatus?(serverId: string, status: string): Promise<void>
+        credentialStore: { putOAuth(ref: string, credential: unknown): Promise<void> }
+      }
     | undefined
   expect(opts?.onAuthorizationStatus).toBeTypeOf('function')
 
   await opts?.onAuthorizationStatus?.('srv-1', 'authorized')
+  const credential = {
+    provider: 'mcp-oauth',
+    accessToken: 'synthetic-access',
+    expiresAt: 2000000000000,
+    refreshToken: 'synthetic-refresh',
+    scope: ['read'],
+    grantId: 'synthetic-grant',
+  }
+  await opts?.credentialStore.putOAuth('secret://mcp-oauth/srv-1', credential)
+  expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/admin.mcp.oauth.save', {
+    serverId: 'srv-1',
+    credential,
+  })
+  await expect(opts?.credentialStore.putOAuth('secret://other/srv-1', credential)).rejects.toThrow(
+    'OAuth reference is invalid',
+  )
 
   expect(mocks.oauthStatusSet).toHaveBeenCalledWith({
     profile: 'local-dev',

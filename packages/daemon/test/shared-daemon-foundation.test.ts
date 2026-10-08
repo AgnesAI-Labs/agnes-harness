@@ -133,6 +133,15 @@ describe('shared daemon scope', () => {
     const workspace = await root('agnes-secrets-pin-work-')
     const localScope = await resolveDaemonScope({ home, workspace, profile: 'local-dev' })
     const local = await resolveDaemonProfile(localScope)
+    await mkdir(localScope.profileDir, { recursive: true })
+    await writeFile(
+      join(localScope.profileDir, 'bundle-selection.json'),
+      JSON.stringify({ revision: 1, bundles: ['@agnes/missing#main'] }),
+    )
+    await expect(resolveDaemonProfile(localScope)).rejects.toThrow()
+    expect((await resolveDaemonProfile(localScope, { adminBundles: [] })).profile.hash).toBe(
+      local.profile.hash,
+    )
     expect(local.profile.adapters.secrets).toEqual({
       kind: 'file',
       path: fileSecretsDir(localScope.home),

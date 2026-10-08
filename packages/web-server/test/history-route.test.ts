@@ -2,6 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { HistoryIndexError, searchHistoryDirectory } from '@agnes/history-index'
+import { rpcError } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { handleHistorySearch } from '../src/history-route.js'
 
@@ -51,26 +53,40 @@ function call(dir: string, search: string, extra: { method?: string; origin?: st
     origin: extra.origin === undefined ? origin : extra.origin,
     site: extra.site ?? 'same-origin',
     expectedOrigin: origin,
-    dataDir: dir,
+    searchHistory: async (params) => {
+      try {
+        const page = searchHistoryDirectory(dir, params)
+        return { items: page.items, truncated: page.truncated, ...(page.next ? { next: page.next } : {}) }
+      } catch (error) {
+        throw {
+          rpc: rpcError(
+            error instanceof HistoryIndexError && error.code === 'MULTIPLE_OWNERS'
+              ? 'CAPABILITY_DENIED'
+              : 'INVALID_PARAMS',
+            { reason: error instanceof HistoryIndexError ? error.code : 'UNAVAILABLE' },
+          ),
+        }
+      }
+    },
   })
 }
 
 describe('history search route', () => {
-  it('searches the ledger for the sole owner and pages the list', () => {
+  it('searches the ledger for the sole owner and pages the list', async () => {
     const dir = seed()
-    const found = call(dir, '?q=alpha+bridge&title=Bridge&workspace=/work/a')
+    const found = await call(dir, '?q=alpha+bridge&title=Bridge&workspace=/work/a')
     expect(found.status).toBe(200)
     expect(found.body).toMatchObject({ items: [{ sessionId: 'mine', title: 'Bridge notes' }] })
-    const page = call(dir, '?workspace=/work/a')
+    const page = await call(dir, '?workspace=/work/a')
     expect(page.status).toBe(200)
     const body = page.body as { items: unknown[]; next?: string }
     expect(body.items.length).toBeGreaterThan(0)
   })
 
-  it('rejects a cross-site request, a non-GET, and a second owner', () => {
+  it('rejects a cross-site request, a non-GET, and a second owner', async () => {
     const dir = seed()
-    expect(call(dir, '?q=alpha', { site: 'cross-site' }).status).toBe(403)
-    expect(call(dir, '?q=alpha', { method: 'POST' }).status).toBe(405)
+    expect((await call(dir, '?q=alpha', { site: 'cross-site' })).status).toBe(403)
+    expect((await call(dir, '?q=alpha', { method: 'POST' })).status).toBe(405)
     const side = new DatabaseSync(join(dir, 'tables', 'other.db'))
     side.exec(`CREATE TABLE session_workspaces (session_key TEXT PRIMARY KEY, cwd TEXT NOT NULL)`)
     side.exec(
@@ -83,6 +99,16 @@ describe('history search route', () => {
       )
       .run()
     side.close()
-    expect(call(dir, '').body).toEqual({ error: { code: 'MULTIPLE_OWNERS' } })
+    expect((await call(dir, '')).body).toMatchObject({
+      error: {
+        code: -32006,
+        data: {
+          code: 'CAPABILITY_DENIED',
+          reason: 'MULTIPLE_OWNERS',
+          messageKey: 'appServer.errors.forbidden',
+          diagnosticId: expect.any(String),
+        },
+      },
+    })
   })
 })

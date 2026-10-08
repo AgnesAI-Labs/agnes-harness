@@ -25,6 +25,7 @@ export type DaemonScopeOptions = {
   profile?: string
   workspace?: string
   dataDir?: string
+  adminBundles?: readonly string[]
   configuration?: ConfigurationService
   agnesVersion?: string
   now?: string
@@ -122,7 +123,7 @@ function makeScope(paths: {
 async function profileForScope(
   input: Pick<
     DaemonScopeOptions,
-    'home' | 'profile' | 'workspace' | 'dataDir' | 'configuration' | 'ignorePackageLock'
+    'home' | 'profile' | 'workspace' | 'dataDir' | 'configuration' | 'ignorePackageLock' | 'adminBundles'
   > & {
     env?: Readonly<Record<string, string | undefined>>
     osHome: string
@@ -139,7 +140,7 @@ async function profileForScope(
   const profile = profileName(input.profile as string)
   const workspace = await canonicalPath(input.workspace as string)
   const configuration = input.configuration ?? createConfigurationService({ home, profile })
-  const inputs = await readConfigurationProfileInputs({
+  const baseInputs = await readConfigurationProfileInputs({
     home,
     cwd: workspace,
     profile,
@@ -148,6 +149,11 @@ async function profileForScope(
     configuration: await configuration.profileInput(),
     ...(input.ignorePackageLock ? { lock: { packages: {} } } : {}),
   })
+
+  const inputs = {
+    ...baseInputs,
+    ...(input.adminBundles !== undefined ? { adminBundles: input.adminBundles } : {}),
+  }
 
   // The daemon scope is the first owner of the data path. Resolve the profile with the selected
   // path inserted into the user layer so the resulting profile hash attests to the same canonical
@@ -243,6 +249,7 @@ export async function resolveDaemonScope(options: DaemonScopeOptions = {}): Prom
       profile,
       workspace,
       osHome,
+      ...(options.adminBundles !== undefined ? { adminBundles: options.adminBundles } : {}),
       ...(options.configuration ? { configuration: options.configuration } : {}),
       agnesVersion: options.agnesVersion ?? '0.0.0',
       now: options.now ?? new Date().toISOString(),
@@ -274,7 +281,7 @@ export async function resolveDaemonProfile(
   scope: DaemonScope,
   options: Pick<
     DaemonScopeOptions,
-    'configuration' | 'agnesVersion' | 'now' | 'env' | 'ignorePackageLock'
+    'configuration' | 'agnesVersion' | 'now' | 'env' | 'ignorePackageLock' | 'adminBundles'
   > = {},
 ): Promise<{ profile: ResolvedProfile; configuration: ConfigurationService }> {
   const resolved = await profileForScope({
@@ -286,6 +293,7 @@ export async function resolveDaemonProfile(
     ...(options.env ? { env: options.env } : {}),
     ...(options.configuration ? { configuration: options.configuration } : {}),
     ...(options.ignorePackageLock ? { ignorePackageLock: true } : {}),
+    ...(options.adminBundles !== undefined ? { adminBundles: options.adminBundles } : {}),
     agnesVersion: options.agnesVersion ?? '0.0.0',
     now: options.now ?? new Date().toISOString(),
   })

@@ -228,6 +228,8 @@ export async function runWebCommand(
     mounts = await fetchSurfaceMountProxy(backend)
     web = await makeServer({
       root: resources.webRoot,
+      historySearch: adminHandler.historySearch,
+      planCommand: adminHandler.planCommand,
       wsUrl: backend.web.url,
       port,
       origin,

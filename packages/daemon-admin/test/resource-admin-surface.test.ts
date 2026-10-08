@@ -105,8 +105,13 @@ describe('local resource admin surface trust boundary', () => {
     expect(session.status).toBe(413)
     expect(await session.json()).toEqual({
       error: {
-        code: 'E_RESOURCE_ADMIN_BODY_TOO_LARGE',
-        message: 'The resource admin request body is too large.',
+        code: -32602,
+        message: 'INVALID_PARAMS',
+        data: {
+          code: 'E_RESOURCE_ADMIN_BODY_TOO_LARGE',
+          messageKey: 'appServer.errors.invalidParams',
+          diagnosticId: expect.any(String),
+        },
       },
     })
     await s.request('context')
@@ -118,8 +123,13 @@ describe('local resource admin surface trust boundary', () => {
     expect(action.status).toBe(413)
     expect(await action.json()).toEqual({
       error: {
-        code: 'E_RESOURCE_ADMIN_BODY_TOO_LARGE',
-        message: 'The resource admin request body is too large.',
+        code: -32602,
+        message: 'INVALID_PARAMS',
+        data: {
+          code: 'E_RESOURCE_ADMIN_BODY_TOO_LARGE',
+          messageKey: 'appServer.errors.invalidParams',
+          diagnosticId: expect.any(String),
+        },
       },
     })
     expect(s.invoke).not.toHaveBeenCalled()
@@ -134,7 +144,15 @@ describe('local resource admin surface trust boundary', () => {
     })
     expect(malformed.status).toBe(400)
     expect(await malformed.json()).toEqual({
-      error: { code: 'E_RESOURCE_ADMIN_REQUEST', message: 'The resource admin request is not valid JSON.' },
+      error: {
+        code: -32602,
+        message: 'INVALID_PARAMS',
+        data: {
+          code: 'E_RESOURCE_ADMIN_REQUEST',
+          messageKey: 'appServer.errors.invalidParams',
+          diagnosticId: expect.any(String),
+        },
+      },
     })
   })
 
@@ -153,8 +171,13 @@ describe('local resource admin surface trust boundary', () => {
     s.invoke.mockRejectedValueOnce(new Error(`/private/home/token=${rejectedValue}`))
     expect(await (await s.request('skills/list', { profile: 'local-dev', kind: 'skill' })).json()).toEqual({
       error: {
-        code: 'E_RESOURCE_ADMIN_BACKEND',
-        message: 'The operation was not confirmed. Check its status or reconnect to the backend.',
+        code: -32603,
+        message: 'INTERNAL_ERROR',
+        data: {
+          code: 'E_RESOURCE_ADMIN_BACKEND',
+          messageKey: 'appServer.errors.internal',
+          diagnosticId: expect.any(String),
+        },
       },
     })
   })
@@ -172,8 +195,13 @@ describe('local resource admin surface trust boundary', () => {
     expect(response.status).toBe(501)
     expect(await response.json()).toEqual({
       error: {
-        code: 'E_RESOURCE_UNSUPPORTED',
-        message: 'This backend version does not support that resource admin capability.',
+        code: -32603,
+        message: 'INTERNAL_ERROR',
+        data: {
+          code: 'E_RESOURCE_UNSUPPORTED',
+          messageKey: 'appServer.errors.unavailable',
+          diagnosticId: expect.any(String),
+        },
       },
     })
   })
@@ -197,8 +225,13 @@ describe('local resource admin surface trust boundary', () => {
     expect(conflict.status).toBe(409)
     expect(await conflict.json()).toEqual({
       error: {
-        code: 'REVISION_CONFLICT',
-        message: 'Another operation updated this resource. Refresh and check the latest version.',
+        code: -32011,
+        message: 'SEMANTIC_REJECTED',
+        data: {
+          code: 'REVISION_CONFLICT',
+          messageKey: 'appServer.errors.conflict',
+          diagnosticId: expect.any(String),
+        },
       },
     })
     s.invoke.mockResolvedValueOnce({ operationId: 'resource-op-1', state: 'received' })

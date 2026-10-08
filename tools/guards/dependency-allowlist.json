@@ -291,7 +291,9 @@
     "@agnes/daemon-surfaces",
     "@agnes/host",
     "@agnes/protocol",
-    "@agnes/worker-runtime"
+    "@agnes/worker-runtime",
+    "@agnes/history-index",
+    "@agnes/resource-control-runtime"
   ],
   "@agnes/daemon-supervisor": [
     "@agnes/base",

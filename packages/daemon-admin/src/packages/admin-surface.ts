@@ -4,14 +4,17 @@ import {
   type AdminSessionSelection,
   ChildEnginesSaveParams,
   ChildEnginesState,
+  httpRpcError,
   isAdminLoop,
   isAdminModelAdapter,
   isSessionDefaultsSnapshot,
+  normalizeRpcError,
   PACKAGE_ADMIN_METHODS,
   PACKAGE_ADMIN_PERMISSIONS,
   type PackageAdminContext,
   type PackageAdminMethodName,
   type PackageAdminPermission,
+  type RpcError,
   RuntimeAdminSnapshot,
   validateAgainst,
   validatePackageAdminCall,
@@ -136,8 +139,8 @@ function reply(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' })
   response.end(JSON.stringify(body))
 }
-const error = (response: ServerResponse, status: number, code: string, message: string): void =>
-  reply(response, status, { error: { code, message } })
+const error = (response: ServerResponse, status: number, code: string, _message: string): void =>
+  reply(response, status, { error: httpRpcError(status, code) })
 
 /** No arbitrary method forwarding; ordinary chat credentials never grant raw PackageAdmin access. */
 export function createAdminSurface(options: AdminSurfaceOptions) {
@@ -312,6 +315,13 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
             } else result = await options.composition.bundles()
             reply(response, 200, result)
           } catch (cause) {
+            const rpc = (cause as { rpc?: RpcError })?.rpc
+            if (rpc) {
+              reply(response, rpc.code === -32006 ? 403 : rpc.code === -32011 ? 409 : 502, {
+                error: normalizeRpcError(rpc),
+              })
+              return true
+            }
             const code = (cause as { code?: string }).code
             const conflict = code === 'CONFIG_REVISION_CONFLICT'
             error(
@@ -358,7 +368,12 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
             const result = await options.searchAdmin.handle(method, route, body)
             if (result.status < 200 || result.status > 599) throw new Error('status')
             reply(response, result.status, result.body)
-          } catch {
+          } catch (cause) {
+            const rpc = (cause as { rpc?: RpcError })?.rpc
+            if (rpc) {
+              reply(response, 409, { error: normalizeRpcError(rpc) })
+              return true
+            }
             error(response, 502, 'E_ADMIN_SEARCH', 'Search settings could not be confirmed.')
           }
           return true
@@ -400,6 +415,13 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
             if (!validateAgainst(ChildEnginesState, result).ok) throw new Error('invalid child engines')
             reply(response, 200, result)
           } catch (cause) {
+            const rpc = (cause as { rpc?: RpcError })?.rpc
+            if (rpc) {
+              reply(response, rpc.code === -32006 ? 403 : rpc.code === -32011 ? 409 : 502, {
+                error: normalizeRpcError(rpc),
+              })
+              return true
+            }
             const code = record(cause) && typeof cause.code === 'string' ? cause.code : undefined
             const conflict = code === 'CONFIG_REVISION_CONFLICT'
             const invalid = code === 'CONFIG_INVALID_INPUT'
@@ -474,6 +496,13 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
           if (!isSessionDefaultsSnapshot(result)) throw new Error('invalid defaults')
           reply(response, 200, result)
         } catch (cause) {
+          const rpc = (cause as { rpc?: RpcError })?.rpc
+          if (rpc) {
+            reply(response, rpc.code === -32006 ? 403 : rpc.code === -32011 ? 409 : 502, {
+              error: normalizeRpcError(rpc),
+            })
+            return true
+          }
           const code = record(cause) ? cause.code : undefined
           const conflict = code === 'CONFIG_REVISION_CONFLICT'
           const invalid = code === 'CONFIG_INVALID_INPUT' || code === 'CONFIG_MODEL_UNAVAILABLE'
@@ -564,6 +593,13 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
         }
         reply(response, 200, result)
       } catch (cause) {
+        const rpc = (cause as { rpc?: RpcError })?.rpc
+        if (rpc) {
+          reply(response, rpc.code === -32006 ? 403 : rpc.code === -32011 ? 409 : 502, {
+            error: normalizeRpcError(rpc),
+          })
+          return true
+        }
         const reason = record(cause) && record(cause.data) ? cause.data.reason : undefined
         if (name === 'sessions/migrate' && reason === 'session owner unavailable') {
           error(response, 403, 'E_ADMIN_PERMISSION', 'The session is unavailable to this administrator.')

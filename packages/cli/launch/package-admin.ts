@@ -1,7 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { createSearchAdmin } from '@agnes/base/search'
 import { type AdminSurfaceAction, createAdminSurface } from '@agnes/daemon/packages'
-import { agnesHome, createCredentialStore, resolveFileSecretsDirectory } from '@agnes/host'
 import type {
   AdminSessionSelection,
   ChildEnginesSaveParams,
@@ -28,16 +26,14 @@ import type {
   PluginTreeRollbackParams,
   SessionGenerationMigrationParams,
 } from '@agnes/protocol'
-import { validatePackageAdminCall } from '@agnes/protocol'
+import { httpRpcError, normalizeRpcError, type RpcError, validatePackageAdminCall } from '@agnes/protocol'
 import type {
   ClientModuleEffectCallResult,
   ClientModuleServiceCallResult,
 } from '@agnes/protocol/gen/package-admin'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import type { PluginRebuiltEvent } from '@agnes/web/server'
-import { parseArgs } from '../src/args.js'
 import { localPipeFactories } from '../src/boot/pipe-factory.js'
-import { compositionAdminFor } from '../src/commands/config-dump.js'
 import type { LocalBackend } from './backend.js'
 import { contextAdmin } from './context-admin.js'
 
@@ -173,29 +169,23 @@ export function localPackageAdmin(
         return client.packages.tree.rollback(params as PluginTreeRollbackParams)
     }
   }
-  // The settings process and the session worker share `<home>/secrets`. Move a store that the
-  // old data-directory fallback left behind before either side reads it. A fixture scope with no
-  // data directory has nothing to move.
-  if (backend.scope.dataDir)
-    resolveFileSecretsDirectory({ dataDir: backend.scope.dataDir, home: backend.scope.home })
-  const credentials = createCredentialStore({ root: backend.scope.home })
-  const searchAdmin = createSearchAdmin({
-    dataDir: backend.scope.dataDir,
-    credentials: {
-      async read(ref) {
-        const stored = await credentials.read(ref)
-        return stored?.kind === 'api-key' ? stored.value : undefined
-      },
-      write(ref, value) {
-        return credentials.putApiKey(ref, value)
-      },
-      remove(ref) {
-        return credentials.remove(ref)
+  const surface = createAdminSurface({
+    searchAdmin: {
+      async handle(method, path, body) {
+        await initialize()
+        return {
+          status: 200,
+          body: await client.call(
+            path === 'search/test'
+              ? '_agnes/v1/admin.search.test'
+              : method === 'PUT'
+                ? '_agnes/v1/admin.search.save'
+                : '_agnes/v1/admin.search.get',
+            body ?? {},
+          ),
+        }
       },
     },
-  })
-  const surface = createAdminSurface({
-    searchAdmin,
     runtimeAdmin: {
       async snapshot() {
         await initialize()
@@ -209,13 +199,11 @@ export function localPackageAdmin(
         await client.call('_agnes/v1/sessionSelection.reloadLocal', {})
       },
     },
-    composition: compositionAdminFor(parseArgs(['config', 'dump', '--profile', backend.scope.profile]), {
-      home: backend.scope.home,
-      cwd: process.cwd(),
-      env: process.env,
-      agnesVersion: '0.0.0',
-      log: () => undefined,
-    }),
+    composition: {
+      bundles: () => client.request('_agnes/v1/admin.bundles.get', {}),
+      dump: (preset) => client.request('_agnes/v1/admin.composition.get', preset ? { preset } : {}),
+      saveBundles: (input) => client.request('_agnes/v1/admin.bundles.save', input),
+    },
     sessionTools: async (sessionId) => {
       await initialize()
       return (await client.session.load(sessionId)).tools()
@@ -235,14 +223,7 @@ export function localPackageAdmin(
       },
       saveDefaults: async (input) => {
         await initialize()
-        try {
-          return await client.sessionSelection.saveDefaults(input)
-        } catch (error) {
-          const reason = (error as { data?: { reason?: unknown } }).data?.reason
-          if (typeof reason === 'string' && /^CONFIG_[A-Z_]{1,48}$/.test(reason))
-            throw Object.assign(new Error(reason), { code: reason })
-          throw error
-        }
+        return await client.sessionSelection.saveDefaults(input)
       },
     },
     childEngines: {
@@ -252,14 +233,7 @@ export function localPackageAdmin(
       },
       save: async (input) => {
         await initialize()
-        try {
-          return await client.config.childEngines.save(input as ChildEnginesSaveParams)
-        } catch (error) {
-          const reason = (error as { data?: { reason?: unknown } }).data?.reason
-          if (typeof reason === 'string' && /^CONFIG_[A-Z_]{1,48}$/.test(reason))
-            throw Object.assign(new Error(reason), { code: reason })
-          throw error
-        }
+        return await client.config.childEngines.save(input as ChildEnginesSaveParams)
       },
     },
     origin,
@@ -282,15 +256,12 @@ export function localPackageAdmin(
       }))
     },
   })
-  const handleContext = contextAdmin(
-    origin,
-    async () => {
-      await initialize()
-      return (await client.workspace.list()).items
-    },
-    agnesHome(process.env),
-  )
+  const handleContext = contextAdmin(origin, (input) => client.request('_agnes/v1/admin.context', input))
   return {
+    historySearch: (input: import('@agnes/protocol').AppServerParams<'_agnes/v1/admin.history.search'>) =>
+      client.request('_agnes/v1/admin.history.search', input),
+    planCommand: (input: import('@agnes/protocol').AppServerParams<'_agnes/v1/admin.plan'>) =>
+      client.request('_agnes/v1/admin.plan', input),
     handle: async (request: IncomingMessage, response: ServerResponse) =>
       (await handleContext(request, response)) || (await surface.handle(request, response)),
     /**
@@ -372,7 +343,7 @@ export function localPackageAdmin(
         request.headers.origin !== origin
       ) {
         request.resume()
-        serviceReply(response, 403, { error: 'forbidden' })
+        serviceReply(response, 403, { error: httpRpcError(403, 'CAPABILITY_DENIED') })
         return true
       }
       const body = await jsonBody(request)
@@ -386,16 +357,20 @@ export function localPackageAdmin(
           }
         : undefined
       if (!params || !validatePackageAdminCall('_agnes/v1/clientModules.callService', 'params', params).ok) {
-        serviceReply(response, 400, { error: 'invalid request' })
+        serviceReply(response, 400, { error: httpRpcError(400, 'INVALID_REQUEST') })
         return true
       }
       try {
         const result = await client.clientModules.callService(params as ClientModuleServiceCallParams)
         serviceReply(response, 200, result)
-      } catch {
+      } catch (error) {
         // No host/worker exception crosses this boundary. A stale/untrusted row and a transient
         // backend failure deliberately look alike to the page.
-        serviceReply(response, 503, { error: 'service unavailable' })
+        serviceReply(response, 503, {
+          error: (error as { rpc?: RpcError })?.rpc
+            ? normalizeRpcError((error as { rpc: RpcError }).rpc)
+            : httpRpcError(503, 'UNAVAILABLE'),
+        })
       }
       return true
     },
@@ -409,7 +384,7 @@ export function localPackageAdmin(
         request.headers.origin !== origin
       ) {
         request.resume()
-        serviceReply(response, 403, { error: 'forbidden' })
+        serviceReply(response, 403, { error: httpRpcError(403, 'CAPABILITY_DENIED') })
         return true
       }
       const body = await jsonBody(request)
@@ -424,14 +399,18 @@ export function localPackageAdmin(
           }
         : undefined
       if (!params || !validatePackageAdminCall('_agnes/v1/clientModules.callEffect', 'params', params).ok) {
-        serviceReply(response, 400, { error: 'invalid request' })
+        serviceReply(response, 400, { error: httpRpcError(400, 'INVALID_REQUEST') })
         return true
       }
       try {
         const result = await client.clientModules.callEffect(params as ClientModuleEffectCallParams)
         serviceReply(response, 200, result)
-      } catch {
-        serviceReply(response, 503, { error: 'effect unavailable or outcome unknown' })
+      } catch (error) {
+        serviceReply(response, 503, {
+          error: (error as { rpc?: RpcError })?.rpc
+            ? normalizeRpcError((error as { rpc: RpcError }).rpc)
+            : httpRpcError(503, 'OUTCOME_UNKNOWN'),
+        })
       }
       return true
     },

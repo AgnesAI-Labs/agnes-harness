@@ -104,6 +104,7 @@ import type { AuthConfig } from '@agnes/daemon-rpc/local/auth'
 import { CommandQueue } from '@agnes/daemon-rpc/local/command-queue'
 import type { LockedPackageMutationStatusSource } from '@agnes/daemon-rpc/local/computer-use-control'
 import { disposeFeeds, type Feed, registerAcp } from '@agnes/daemon-rpc/local/methods/acp'
+import { createAppServerAdmin, registerAppServerAdmin } from '@agnes/daemon-rpc/local/methods/admin'
 import {
   type AgnesContext,
   indexApprovalTicket,
@@ -670,7 +671,7 @@ export type StartSupervisorOptions = {
   workspaceRoot?: string
   /** Optional local configuration authority; activation updates only future worker defaults. */
   configuration?: ConfigurationService
-  reloadProfile?: () => Promise<ResolvedProfile>
+  reloadProfile?: (adminBundles?: readonly string[]) => Promise<ResolvedProfile>
   clock?: () => number
   workerExecPath?: string
   workerExecArgv?: string[]
@@ -1872,6 +1873,13 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
               reason: 'new session actor authority unavailable',
             })
           }
+    const appServerAdmin = createAppServerAdmin({
+      home: o.config.home ?? dirname(dirname(o.profileDir)),
+      dataDir: o.config.dataDir,
+      profileDir: o.profileDir,
+      resolveProfile: o.reloadProfile ?? (async () => o.profile),
+      workspaces: () => workspaceCatalog.list(),
+    })
     const endpoint = (transport: 'unix' | 'ws'): { ep: LocalEndpoint; onClose: () => void } => {
       // `local` is the Unix identity and only a pre-auth placeholder for WSS. The lifecycle bearer
       // admits an HTTP upgrade but establishes no application principal; authGate replaces this value
@@ -1991,6 +1999,13 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         profileApplication?.apply,
         profileApplication?.present,
         publishChildEngines,
+      )
+      registerAppServerAdmin(
+        ep,
+        appServerAdmin,
+        transport === 'unix'
+          ? (effectivePackageAdmin?.unixAuthority ?? localPackageAdminAuthority())
+          : denyPackageAdminAuthority,
       )
       registerSessionPreferences(ep, lister, preferences)
       registerWorkspaces(ep, workspaceCatalog)
@@ -2421,8 +2436,9 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
   const loaded = await loadProfile()
   const { profile, configuration } = loaded
   const platform = createPlatform().snapshot()
-  const reloadProfile = async (): Promise<ResolvedProfile> => {
-    return (await loadProfile({ configuration })).profile
+  const reloadProfile = async (adminBundles?: readonly string[]): Promise<ResolvedProfile> => {
+    return (await loadProfile({ configuration, ...(adminBundles !== undefined ? { adminBundles } : {}) }))
+      .profile
   }
   // `buildConfig`'s own doc comment: the OS/transport shape comes from the caller, which already went
   // through host's platform adapter above - never a raw runtime OS check of this package's own.

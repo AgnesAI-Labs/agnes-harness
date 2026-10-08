@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { AGNES_ERRORS, type Credential, JSONRPC_ERRORS } from '@agnes/protocol'
+import {
+  AGNES_ERRORS,
+  type Credential,
+  httpRpcError,
+  JSONRPC_ERRORS,
+  normalizeRpcError,
+} from '@agnes/protocol'
 import type { Client } from './client.js'
 import { JsonRpcError } from './errors.js'
 import { jcs } from './jcs.js'
@@ -195,7 +201,7 @@ function writeJson(res: ServerResponse, status: number, body: unknown): void {
     payload = JSON.stringify(body) ?? 'null'
   } catch {
     status = 500
-    payload = '{"error":"internal"}'
+    payload = JSON.stringify({ error: httpRpcError(500, 'INTERNAL_ERROR') })
   }
   try {
     res.writeHead(status, {
@@ -324,13 +330,13 @@ export function createRelay(client: Client, allowlist: RelayRoute[], opts: Relay
       )
       if (!route) {
         drainRequest(req)
-        return writeJson(res, 404, { error: 'not found' })
+        return writeJson(res, 404, { error: httpRpcError(404, 'METHOD_NOT_FOUND') })
       }
 
       const principal = await opts.principal(req)
       if (!principal) {
         drainRequest(req)
-        return writeJson(res, 401, { error: 'unauthenticated' })
+        return writeJson(res, 401, { error: httpRpcError(401, 'AUTH_INVALID') })
       }
 
       const body = stripIdentity(await readBody(req, maxBodyBytes))
@@ -458,11 +464,12 @@ export function createRelay(client: Client, allowlist: RelayRoute[], opts: Relay
         return
       }
       drainRequest(req)
-      if (error instanceof RelayHttpError) return writeJson(res, error.status, { error: error.message })
+      if (error instanceof RelayHttpError)
+        return writeJson(res, error.status, { error: httpRpcError(error.status, 'INVALID_REQUEST') })
       if (error instanceof JsonRpcError) {
-        return writeJson(res, statusForRpcError(error.code), { error: error.data.code, data: error.data })
+        return writeJson(res, statusForRpcError(error.code), { error: normalizeRpcError(error.rpc) })
       }
-      writeJson(res, 500, { error: 'internal' })
+      writeJson(res, 500, { error: httpRpcError(500, 'INTERNAL_ERROR') })
     }
   }
 }

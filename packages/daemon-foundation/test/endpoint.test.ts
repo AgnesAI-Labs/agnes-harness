@@ -76,7 +76,7 @@ describe('LocalEndpoint', () => {
             },
           },
         })
-        if (broken) expect(JSON.stringify(result)).not.toContain('diagnosticId')
+        if (broken) expect(result).toHaveProperty('error.data.diagnosticId', expect.any(String))
         expect(records).toEqual([
           {
             kind: 'daemon.request_failed',
@@ -274,7 +274,11 @@ describe('LocalEndpoint', () => {
     expect(r).toEqual({
       jsonrpc: '2.0',
       id: 1,
-      error: { code: -32603, message: 'INTERNAL_ERROR', data: { code: 'INTERNAL' } },
+      error: {
+        code: -32603,
+        message: 'INTERNAL_ERROR',
+        data: { code: 'INTERNAL', messageKey: 'appServer.errors.internal', diagnosticId: expect.any(String) },
+      },
     })
     expect(JSON.stringify(r)).not.toContain('PRIVATE-CREDENTIAL')
     await ep.close()

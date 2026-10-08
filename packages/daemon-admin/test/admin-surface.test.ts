@@ -207,8 +207,13 @@ describe('local package admin surface trust boundary', () => {
     const failed = await s.request('list', { profile: 'local-dev' })
     expect(await failed.json()).toEqual({
       error: {
-        code: 'E_ADMIN_BACKEND',
-        message: 'The operation was not confirmed. Check its status or reconnect to the backend.',
+        code: -32603,
+        message: 'INTERNAL_ERROR',
+        data: {
+          code: 'E_ADMIN_BACKEND',
+          messageKey: 'appServer.errors.internal',
+          diagnosticId: expect.any(String),
+        },
       },
     })
   })
@@ -461,7 +466,16 @@ it('gates migration through admin activation permission and reports a safe refus
   const refused = await s.request('sessions/migrate', params)
   expect(refused.status).toBe(409)
   expect(await refused.json()).toEqual({
-    error: { code: 'E_GENERATION_SESSION_OPEN', message: 'Close the session before migrating its plugins.' },
+    error: {
+      code: -32011,
+      message: 'SEMANTIC_REJECTED',
+      data: {
+        code: 'E_GENERATION_SESSION_OPEN',
+        messageKey: 'appServer.errors.generation',
+        diagnosticId: expect.any(String),
+        cause: { code: 'E_GENERATION_SESSION_OPEN' },
+      },
+    },
   })
   s.invoke.mockRejectedValue(
     Object.assign(new Error('denied'), { data: { reason: 'session owner unavailable' } }),
