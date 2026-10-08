@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { bootstrapWorkerResources } from '../src/runtime-bootstrap.js'
 
@@ -16,6 +16,26 @@ const barrier = {
 }
 
 describe('worker stdio MCP bootstrap', () => {
+  it('requires the trusted actual home before preparing a confined stdio process', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agnes-mcp-missing-home-'))
+    roots.push(root)
+    const { sandboxMcpConfig } = await import('../src/mcp-sandbox.js')
+    await expect(
+      sandboxMcpConfig(
+        {
+          id: 'fixture',
+          transport: 'stdio',
+          cmd: [process.execPath],
+          sandboxProfile: 'strict',
+          defer: false,
+        },
+        { dataDir: root },
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ code: 'E_MCP_SANDBOX_UNAVAILABLE' })
+    expect(existsSync(join(root, 'mcp'))).toBe(false)
+  })
+
   it('connects a none-bound stdio MCP through initialize and paginated tools/list without a secret resolver', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agnes-resource-stdio-'))
     roots.push(root)
@@ -64,6 +84,7 @@ describe('worker stdio MCP bootstrap', () => {
         }),
       },
       cwd: root,
+      agnesHomeDir: join(root, 'home'),
       // The production resolved profile has adapters; retaining this minimal legacy shape proves a
       // no-secret definition does not touch the resolver before the transport handshake.
       profile: { name: 'local-dev', dataDir: root } as never,
@@ -229,6 +250,33 @@ describe('community stdio sandbox profiles', () => {
       const privateFile = join(syntheticHome, '.ssh', 'fixture-key'),
         outside = join(root, 'outside.txt')
       await writeFile(privateFile, 'SYNTHETIC-KEY-NO-REAL-CREDENTIAL')
+      const home = join(workspace, 'installation')
+      const homeAlias = join(workspace, 'installation-alias')
+      const secretsDir = join(workspace, 'configured-secrets')
+      const protectedFiles = [
+        join(workspace, '.agh/secrets/fixture'),
+        join(workspace, '.agnes/secrets/fixture'),
+        join(home, 'secrets/fixture'),
+        join(home, 'auth/fixture'),
+        join(home, 'daemon/web-credential.json'),
+        join(home, 'profiles/local-dev/fixture'),
+        join(dataDir, 'secrets/fixture'),
+        join(dataDir, 'daemon/web-credential.json'),
+        join(secretsDir, 'fixture'),
+      ]
+      for (const file of protectedFiles) {
+        await mkdir(dirname(file), { recursive: true })
+        await writeFile(file, 'SYNTHETIC-PROTECTED-STATE')
+      }
+      await symlink(home, homeAlias, process.platform === 'win32' ? 'junction' : 'dir')
+      const workspaceAlias = join(root, 'workspace-alias')
+      await symlink(workspace, workspaceAlias, process.platform === 'win32' ? 'junction' : 'dir')
+      protectedFiles.push(
+        join(homeAlias, 'secrets/fixture'),
+        join(workspaceAlias, '.agh/secrets/fixture'),
+        join(workspaceAlias, '.agnes/secrets/fixture'),
+        join(workspaceAlias, 'installation/secrets/fixture'),
+      )
       const listener = createServer((socket) => socket.end())
       await new Promise<void>((resolve) => listener.listen(0, '127.0.0.1', resolve))
       const address = listener.address()
@@ -236,17 +284,17 @@ describe('community stdio sandbox profiles', () => {
       const server = join(workspace, 'server.mjs')
       await writeFile(
         server,
-        `import readline from 'node:readline'; import {readFile,writeFile,stat} from 'node:fs/promises'; import {connect} from 'node:net';
+        `import readline from 'node:readline'; import {readFile,writeFile,stat,rename} from 'node:fs/promises'; import {connect} from 'node:net';
 const reply=(id,result)=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',id,result})+'\\n');
 const attempt=async(fn)=>{try{await fn();return true}catch{return false}};
-readline.createInterface({input:process.stdin}).on('line',async(line)=>{const r=JSON.parse(line);if(r.method==='initialize')reply(r.id,{protocolVersion:'2025-03-26',capabilities:{tools:{}},serverInfo:{name:'sandbox-fixture',version:'1'}});else if(r.method==='tools/list')reply(r.id,{tools:[{name:'probe',description:'Synthetic boundary probe',inputSchema:{type:'object',properties:{},additionalProperties:false}}]});else if(r.method==='tools/call'){const p=r.params.arguments; const result={privateRead:await attempt(()=>readFile(p.privateFile)),privateStat:await attempt(()=>stat(p.privateFile)),outsideWrite:await attempt(()=>writeFile(p.outside,'outside')),workspaceWrite:await attempt(()=>writeFile(p.workspaceFile,'workspace')),dataWrite:await attempt(()=>writeFile(process.env.HOME+'/own-data','data')),network:await attempt(()=>new Promise((resolve,reject)=>{const socket=connect({host:'localhost',family:4,port:p.port});socket.setTimeout(1000,()=>{socket.destroy();reject(Error('timeout'))});socket.once('connect',()=>{socket.destroy();resolve()});socket.once('error',reject)}))};reply(r.id,{content:[{type:'text',text:JSON.stringify(result)}]})}else if(r.id!==undefined)reply(r.id,{})})`,
+readline.createInterface({input:process.stdin}).on('line',async(line)=>{const r=JSON.parse(line);if(r.method==='initialize')reply(r.id,{protocolVersion:'2025-03-26',capabilities:{tools:{}},serverInfo:{name:'sandbox-fixture',version:'1'}});else if(r.method==='tools/list')reply(r.id,{tools:[{name:'probe',description:'Synthetic boundary probe',inputSchema:{type:'object',properties:{},additionalProperties:false}}]});else if(r.method==='tools/call'){const p=r.params.arguments; const protectedRead=await Promise.all(p.protectedFiles.map(file=>attempt(()=>readFile(file)))); const renamed=await attempt(()=>rename(p.home,p.renamedHome)); const protectedAfterParentChange=await Promise.all(p.homeLeaves.map(leaf=>attempt(()=>readFile((renamed?p.renamedHome:p.home)+'/'+leaf)))); const result={protectedRead,protectedAfterParentChange,privateRead:await attempt(()=>readFile(p.privateFile)),privateStat:await attempt(()=>stat(p.privateFile)),outsideWrite:await attempt(()=>writeFile(p.outside,'outside')),workspaceWrite:await attempt(()=>writeFile(p.workspaceFile,'workspace')),dataWrite:await attempt(()=>writeFile(process.env.HOME+'/own-data','data')),network:await attempt(()=>new Promise((resolve,reject)=>{const socket=connect({host:'localhost',family:4,port:p.port});socket.setTimeout(1000,()=>{socket.destroy();reject(Error('timeout'))});socket.once('connect',()=>{socket.destroy();resolve()});socket.once('error',reject)}))};reply(r.id,{content:[{type:'text',text:JSON.stringify(result)}]})}else if(r.id!==undefined)reply(r.id,{})})`,
       )
       const opener = createMcpServerOpener({
         resolver: async () => '',
         baseEnv: { HOME: syntheticHome },
         stdioPolicy: { allowedExecutables: [process.execPath] },
         httpPolicy: {},
-        sandbox: { dataDir },
+        sandbox: { dataDir, home: homeAlias, secretsDir, profileDir: join(homeAlias, 'profiles', 'local-dev') },
       })
       let connection: Awaited<ReturnType<typeof opener.connect>> | undefined
       try {
@@ -255,7 +303,7 @@ readline.createInterface({input:process.stdin}).on('line',async(line)=>{const r=
             serverId: 'fixture',
             displayName: 'Fixture',
             sandboxProfile,
-            workspacePath: workspace,
+            workspacePath: workspaceAlias,
             transport: { kind: 'stdio', executable: process.execPath, args: [server] },
             secretBinding: { kind: 'none' },
           },
@@ -269,12 +317,23 @@ readline.createInterface({input:process.stdin}).on('line',async(line)=>{const r=
         expect((await connection.listTools()).map((tool) => tool.name)).toEqual(['probe'])
         const response = await connection.callTool(
           'probe',
-          { privateFile, outside, workspaceFile: join(workspace, 'result.txt'), port: address.port },
+          {
+            privateFile,
+            protectedFiles,
+            home,
+            renamedHome: join(workspace, 'installation-renamed'),
+            homeLeaves: ['secrets/fixture', 'auth/fixture', 'profiles/local-dev/fixture'],
+            outside,
+            workspaceFile: join(workspace, 'result.txt'),
+            port: address.port,
+          },
           { signal: new AbortController().signal },
         )
         const text = response.content.find((item) => item.type === 'text')
         if (!text || text.type !== 'text') throw Error('probe result missing')
         expect(JSON.parse(text.text)).toEqual({
+          protectedRead: protectedFiles.map(() => sandboxProfile === 'off-with-warning'),
+          protectedAfterParentChange: [0, 1, 2].map(() => sandboxProfile === 'off-with-warning'),
           privateRead: sandboxProfile === 'off-with-warning',
           privateStat: sandboxProfile === 'off-with-warning',
           outsideWrite: sandboxProfile === 'off-with-warning',
@@ -282,6 +341,7 @@ readline.createInterface({input:process.stdin}).on('line',async(line)=>{const r=
           dataWrite: true,
           network: sandboxProfile === 'network' || sandboxProfile === 'off-with-warning',
         })
+        expect(existsSync(home)).toBe(sandboxProfile !== 'off-with-warning')
         expect(await readFile(privateFile, 'utf8')).toBe('SYNTHETIC-KEY-NO-REAL-CREDENTIAL')
       } finally {
         await connection?.close()

@@ -203,6 +203,8 @@ export function createWorkerMcpServerOpener(
         }
       : {}),
     sandbox: {
+      ...(input.agnesHomeDir ? { home: input.agnesHomeDir } : {}),
+      ...(input.profile.adapters?.secrets.path ? { secretsDir: input.profile.adapters.secrets.path } : {}),
       ...(input.agnesHomeDir ? { profileDir: join(input.agnesHomeDir, 'profiles', input.profile.name) } : {}),
       dataDir: input.profile.dataDir,
       ...(input.cwd ? { workspace: input.cwd } : {}),

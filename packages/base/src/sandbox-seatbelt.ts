@@ -46,6 +46,16 @@ export function seatbeltDenyNetworkArgv(
       : ['(allow file-read*)']),
     ...policy.allowPaths.map((path) => `(allow file-write* (subpath ${quote(path)}))`),
     ...policy.denyPaths.map((path) => `(deny file-read* file-write* (subpath ${quote(path)}))`),
+    // A protected subtree must not become readable by renaming one of its writable ancestors.
+    ...[
+      ...new Set(
+        policy.denyPaths.flatMap((path) => {
+          quote(path)
+          const parts = path.split('/')
+          return parts.slice(1).map((_, index) => parts.slice(0, index + 1).join('/') || '/')
+        }),
+      ),
+    ].map((path) => `(deny file-write-unlink (literal ${quote(path)}))`),
     policy.network === 'allow' ? '(allow network*)' : '(deny network*)',
   ].join('\n')
   return ['/usr/bin/sandbox-exec', '-p', profile, ...argv]

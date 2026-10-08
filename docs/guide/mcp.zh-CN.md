@@ -130,4 +130,6 @@ session worker 启动及资源变化后的轮次边界调用 `createMcpRowRuntim
 
 受限子进程可读取工作区、自身数据目录及必要的只读可执行程序和系统文件。`HOME` 和 `TMPDIR` 指向 `<profile-data>/mcp/<server-id>`；不能读取用户家目录中的私密文件或任意写入外部路径。运行依赖放在工作区，或将入口打包为自包含文件。可在服务器设置中声明可选绝对路径 `workspacePath`（CLI：`--sandbox-workspace /workspace/project`，并配置 `--sandbox-profile strict`）。该目录属于审阅过的定义，修改会撤销之前的信任决定。未声明工作区的共享 worker 只授予服务器数据目录；连接不会悄悄采用另一个会话的工作区。
 
-连接管理复用已有 command sandbox 的探测和编译入口（macOS Seatbelt 或实际可用的 Linux bubblewrap）。隔离不可用时以 `E_MCP_SANDBOX_UNAVAILABLE` 拒绝连接，并在 MCP 诊断中显示；不会静默裸启动。Windows 当前需要显式批准 `off-with-warning`。该配置允许子进程访问完整主机，请先审阅可执行程序再确认。HTTP/SSE 是远程服务器，继续使用已有 URL、凭据及工具策略。
+连接管理复用已有 command sandbox 的探测和编译入口（macOS Seatbelt 或实际可用的 Linux bubblewrap）。Host 提供实际安装 home 和配置的文件凭据目录。所有受限配置都排除工作区的 `.agh/secrets`、`.agnes/secrets`、旧数据凭据目录，以及安装 home 的凭据、认证和 profile 配置目录，覆盖 canonical 路径和绑定别名。工作区可写授权不能覆盖这些排除。若只读挂载需要已有挂载点，Host 会在隔离前以 `0700` 模式预留空的受保护目录；准备失败就拒绝连接。更改受保护目录的祖先名称不能使内容暴露。
+
+缺少实际 home 信息或隔离不可用时，以 `E_MCP_SANDBOX_UNAVAILABLE` 拒绝连接，并在 MCP 诊断中显示；不会静默裸启动。Windows 当前需要显式批准 `off-with-warning`。该配置允许子进程访问完整主机，请先审阅可执行程序再确认。HTTP/SSE 是远程服务器，继续使用已有 URL、凭据及工具策略。

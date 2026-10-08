@@ -9,6 +9,18 @@ import { validateArgv, validateClosedNetworkOptions } from './shared.js'
 export function bwrapConfine(argv: readonly string[], options: ClosedNetworkConfineOptions): string[] {
   const command = validateArgv(argv)
   const policy = validateClosedNetworkOptions(options)
+  const writableAncestors = [
+    ...new Set(
+      policy.denyPaths.flatMap((path) => {
+        const parts = path.split('/')
+        return parts.slice(1).map((_, index) => parts.slice(0, index + 1).join('/') || '/')
+      }),
+    ),
+  ]
+    .filter((path) =>
+      policy.allowPaths.some((root) => path !== root && path.startsWith(root === '/' ? '/' : `${root}/`)),
+    )
+    .sort((left, right) => left.split('/').length - right.split('/').length)
   return [
     'bwrap',
     ...(policy.readPaths
@@ -24,6 +36,9 @@ export function bwrapConfine(argv: readonly string[], options: ClosedNetworkConf
     ...(policy.network === 'allow' ? [] : ['--unshare-net']),
     '--die-with-parent',
     ...policy.allowPaths.filter((path) => path !== '/').flatMap((path) => ['--bind', path, path]),
+    // A mountpoint cannot be renamed or unlinked. Anchor writable ancestors as well as the
+    // masked leaf, so a child cannot relocate Host's private installation directories.
+    ...writableAncestors.flatMap((path) => ['--bind', path, path]),
     // These mounts occur after writable binds, so a deny below an allow remains masked.
     ...policy.denyPaths
       .filter((path) =>

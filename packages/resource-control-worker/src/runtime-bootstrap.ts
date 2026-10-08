@@ -213,6 +213,10 @@ export async function bootstrapWorkerResources(
           config,
           {
             dataDir: input.profile.dataDir,
+            ...(input.agnesHomeDir ? { home: input.agnesHomeDir } : {}),
+            ...(input.profile.adapters?.secrets.path
+              ? { secretsDir: input.profile.adapters.secrets.path }
+              : {}),
             ...(input.cwd ? { workspace: input.cwd } : {}),
             ...(input.env.PATH ? { path: input.env.PATH } : {}),
           },
