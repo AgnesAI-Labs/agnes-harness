@@ -335,6 +335,8 @@ export function resolveComposition(
     session?: CompositionPatch
     rows?: readonly CompositionRow[]
     catalog?: CompositionCatalog
+    /** Published package availability; does not change the profile's default selection. */
+    packageCatalog?: readonly { id: string; enabled: boolean }[]
   } = {},
 ): ResolvedComposition {
   const preset = options.preset?.name ?? profile.presets.default
@@ -395,12 +397,14 @@ export function resolveComposition(
   if (profile.sessionComposition?.loop)
     apply({ loop: profile.sessionComposition.loop }, { layer: 'session', name: 'request' })
   if (options.session) apply(options.session, { layer: 'session', name: 'request' })
-  const packageIds = new Set(profile.packages.map((pkg) => pkg.id))
-  for (const pkg of selection.packages ?? []) if (!packageIds.has(pkg.id)) fail(`unknown package ${pkg.id}`)
+  const packages = new Map(
+    [...profile.packages, ...(options.packageCatalog ?? [])].map((pkg) => [pkg.id, pkg]),
+  )
+  for (const pkg of selection.packages ?? []) if (!packages.has(pkg.id)) fail(`unknown package ${pkg.id}`)
   selection.packages =
     selection.packages?.map((pkg) => ({
       ...pkg,
-      enabled: profile.packages.find((item) => item.id === pkg.id)!.enabled && pkg.enabled !== false,
+      enabled: packages.get(pkg.id)!.enabled && pkg.enabled !== false,
     })) ?? []
   const rows = (options.rows ?? []).map((row) => ({
     ...row,

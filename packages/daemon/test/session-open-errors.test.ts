@@ -44,6 +44,33 @@ describe('throwSessionOpenRpcError', () => {
     expect(caught(error)).toBe(error)
   })
 
+  it.each(['unknown', 'invalid', 'incompatible', 'unavailable', 'duplicate'] as const)(
+    'keeps the %s provider cause across in-process and worker session initialization failures',
+    (cause) => {
+      const reason = `provider-${cause}`
+      for (const error of [
+        new HostError('E_SEAM_INIT', 'private-message-and-token', { detail: { reason, extra: 'drop-me' } }),
+        { code: 'E_SEAM_INIT', message: 'private-message-and-token', reason },
+      ]) {
+        expect(caught(error)).toEqual({
+          code: -32603,
+          message: 'INTERNAL_ERROR',
+          data: { code: `E_PROVIDER_${cause.toUpperCase()}`, reason },
+        })
+      }
+    },
+  )
+
+  it('returns a fixed initialization error without trusting arbitrary reasons or message text', () => {
+    expect(
+      caught({ code: 'E_SEAM_INIT', message: 'E_PROVIDER_UNKNOWN sk-secret', reason: 'sk-secret' }),
+    ).toEqual({
+      code: -32603,
+      message: 'INTERNAL_ERROR',
+      data: { code: 'E_SEAM_INIT', reason: 'session-initialization-failed' },
+    })
+  })
+
   it('leaves other preset refusals and workspace errors to their existing mapping', () => {
     const other = new HostError('E_PRESET_UNRESOLVED', 'model contract is not loaded')
     expect(caught(other)).toBe(other)

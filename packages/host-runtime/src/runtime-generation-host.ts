@@ -222,7 +222,14 @@ export async function createRuntimeGenerationHost(
     const generationSkills = createGenerationSkills(skills)
     const pinnedSkillRow = targetRows(target).find((row) => row.id === SKILL_ROW_ID)
     const hasSkills = !!skills
-    const packages = profile.packages.filter((pkg) => pkg.trust === 'builtin')
+    // A disabled row has no selected snapshot, but its package remains part of the composition
+    // vocabulary. Keep inactive metadata without importing it; old sessions retain their code pin.
+    const packages = profile.packages
+      .filter(
+        (pkg) =>
+          pkg.trust === 'builtin' || !snapshot.sources.some((source) => source.snapshot.packageId === pkg.id),
+      )
+      .map((pkg) => (pkg.trust === 'builtin' ? pkg : { ...pkg, enabled: false }))
     const packageDirs = new Map(options.packageDirs)
     for (const source of snapshot.sources) {
       const previous = profile.packages.find((pkg) => pkg.id === source.snapshot.packageId)

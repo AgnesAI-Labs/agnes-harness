@@ -220,9 +220,12 @@ test('FDE bundle installs and runs its source-backed local workflow', async ({ r
     cwd: runtime.workspace,
     preset: 'full-access',
     bundles: ['@agnes-fde/knowledge-qa#knowledge-qa'],
-    loop: { id: 'fde.knowledge-qa', version: '3.0.0' },
   })
   await session.attach()
+  expect(await session.capabilities()).toMatchObject({
+    loop: { value: { id: 'fde.knowledge-qa', version: '3.0.0' } },
+    bundles: ['@agnes-fde/knowledge-qa#knowledge-qa'],
+  })
   await prompt(session, 'What is the refund window and who reviews refund requests?')
   const present = await toolResult(session, 'present')
   expect(JSON.stringify(present)).toContain('report.md')
@@ -238,4 +241,15 @@ test('FDE bundle installs and runs its source-backed local workflow', async ({ r
     throw new Error('FDE write must have a persisted output path')
   expect(await readFile(join(runtime.workspace, args.path), 'utf8')).toContain('Source-backed answer')
   await info.attach('fde-projection.json', { body: JSON.stringify(output), contentType: 'application/json' })
+  await runtime.restart()
+  const restarted = await runtime.connect()
+  const restored = await restarted.session.load(session.id, { cwd: runtime.workspace })
+  await restored.attach()
+  expect(await restored.capabilities()).toMatchObject({
+    loop: { value: { id: 'fde.knowledge-qa', version: '3.0.0' } },
+    bundles: ['@agnes-fde/knowledge-qa#knowledge-qa'],
+  })
+  await prompt(restored, 'Who reviews refund requests?')
+  expect(JSON.stringify(await toolResult(restored, 'present'))).toContain('report.md')
+  expect(JSON.stringify(await restored.projectUI(undefined, { surface: 'web' }))).toContain('knowledge-qa')
 })

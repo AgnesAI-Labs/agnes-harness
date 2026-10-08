@@ -14,11 +14,12 @@ import {
   loopCheckpointCodec,
   registerLoopPlugin,
 } from '@agnes/extension-api'
+import { buildCompleteRuntimeTarget } from '@agnes/host'
 import { parsePackageBundles } from '@agnes/host-common/profile/composition'
 import { createLoader } from '@agnes/host-extensions/ext-host/loader'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import { readAdminLoopDefault } from '@agnes/host-providers/assemble/loop-selection'
-import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
+import { developmentPluginRows, hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import { afterEach, expect, it } from 'vitest'
 import * as dagModule from '../../../examples/loops/dag-loop/index.mjs'
 import { scaffold } from '../../../templates/create-agh-plugin.mjs'
@@ -35,6 +36,7 @@ async function fixture(
   template = false,
   childModule?: Record<string, unknown>,
   bundle = false,
+  installedAfterBoot = false,
 ) {
   const dataDir = mkdtempSync(join(tmpdir(), 'agnes-loops-'))
   dirs.push(dataDir)
@@ -76,6 +78,7 @@ async function fixture(
     await import('node:fs/promises').then((fs) => fs.readFile(join(directory, 'package.json'), 'utf8')),
   )
   manifest.agnes.plugins[0].config = { plan: [] }
+  if (installedAfterBoot) manifest.agnes.plugins[0].default = false
   if (bundle) manifest.agnes.bundles = { selected: { profile: { loop: loopSelection } } }
   writeFileSync(join(directory, 'package.json'), JSON.stringify(manifest))
   const source: RuntimePluginSnapshot = {
@@ -95,7 +98,7 @@ async function fixture(
   }
   const { host, profile } = await createTestHost({
     dataDir,
-    packageDirs: { [source.snapshot.packageId]: directory },
+    packageDirs: installedAfterBoot ? {} : { [source.snapshot.packageId]: directory },
     script: template
       ? [
           [
@@ -108,7 +111,12 @@ async function fixture(
     ...(childModule ? { treeBudgetCredits: 2 } : {}),
     lock: {
       packages: Object.fromEntries(
-        ['@agnes/ai', '@agnes/base', '@agnes/code', source.snapshot.packageId].map((id) => [
+        [
+          '@agnes/ai',
+          '@agnes/base',
+          '@agnes/code',
+          ...(installedAfterBoot ? [] : [source.snapshot.packageId]),
+        ].map((id) => [
           id,
           {
             version: '1.0.0',
@@ -120,7 +128,7 @@ async function fixture(
       ),
     },
     profileInputs: {
-      ...(bundle
+      ...(bundle && !installedAfterBoot
         ? {
             bundleCatalog: parsePackageBundles(source.snapshot.packageId, {
               selected: { profile: { loop: loopSelection } },
@@ -130,18 +138,20 @@ async function fixture(
       user: {
         name: 'local-dev',
         ...(bundle ? { composition: {} } : {}),
-        packages: [
-          {
-            id: source.snapshot.packageId,
-            source: `file:${directory}`,
-            ...(childModule ? { config: { 'child-agent': { provider: 'public-fixture' } } } : {}),
-          },
-        ],
+        packages: installedAfterBoot
+          ? []
+          : [
+              {
+                id: source.snapshot.packageId,
+                source: `file:${directory}`,
+                ...(childModule ? { config: { 'child-agent': { provider: 'public-fixture' } } } : {}),
+              },
+            ],
         ...(profileLoop ? { loop: loopSelection } : {}),
       },
     },
-    runtimePluginSnapshots: [source],
-    runtimePluginCatalogue: [source],
+    runtimePluginSnapshots: installedAfterBoot ? [] : [source],
+    runtimePluginCatalogue: installedAfterBoot ? [] : [source],
     runtimePluginSources: async () => [source],
     extensionLoader: template
       ? createLoader({ cacheDir: join(dataDir, 'cache'), hostRoot: dataDir, agnesVersion: '0.0.0' })
@@ -152,6 +162,18 @@ async function fixture(
           },
         },
   })
+  if (installedAfterBoot) {
+    const current = host.runtimeTargetSnapshot!()
+    await host.applyRuntimeTarget(
+      buildCompleteRuntimeTarget({
+        rows: [
+          ...current.tree.rows.filter((row) => !row.plugin.startsWith('builtin:')),
+          ...developmentPluginRows(source, []).map((row) => Object.freeze({ ...row, disabled: false })),
+        ],
+        resources: current.resource.resources,
+      }).target,
+    )
+  }
   const profileDir = join(dataDir, 'profiles', 'local-dev')
   const defaults = (loop: typeof dag) => {
     mkdirSync(profileDir, { recursive: true })
@@ -225,6 +247,13 @@ it('uses the built-in loop without a default and refuses an invalid persisted de
   const f = await fixture(false)
   try {
     expect((await f.host.createSession({ key: 'builtin', cwd: f.dataDir })).loop).toEqual(DEFAULT_LOOP)
+    await expect(
+      createTestHost({
+        dataDir: join(f.dataDir, 'missing-provider'),
+        script: [],
+        profileInputs: { user: { name: 'local-dev', loop: { id: 'missing', version: '1.0.0' } } },
+      }),
+    ).rejects.toMatchObject({ code: 'E_SEAM_INIT', detail: { reason: 'provider-unknown' } })
     f.defaults({ id: '', version: '1' })
     await expect(f.host.createSession({ key: 'invalid-default', cwd: f.dataDir })).rejects.toMatchObject({
       code: 'CONFIG_INVALID_STATE',
@@ -474,25 +503,28 @@ it('binds a third-party loop to configured, parent-owned continuable children wi
   }
 })
 
-it('lets explicit session bundles override the administrative Loop default', async () => {
-  const f = await fixture(false, false, undefined, true)
-  try {
-    await createConfigurationService({ home: f.dataDir, profile: 'local-dev' }).saveSessionDefaults({
-      revision: 0,
-      defaults: { loop: DEFAULT_LOOP },
-    })
-    const session = await f.host.createSession({
-      key: 'bundle-loop',
-      cwd: f.dataDir,
-      bundles: ['@agnes-example/dag-loop#selected'],
-    })
-    expect(session.loop).toEqual(dag)
-    expect(f.host.sessionCapabilities!(session.key)).toMatchObject({
-      loop: { value: dag },
-      bundles: ['@agnes-example/dag-loop#selected'],
-    })
-    await session.close()
-  } finally {
-    await f.host.close()
-  }
-})
+it.each([false, true])(
+  'lets explicit session bundles override the administrative Loop default (installed after boot: %s)',
+  async (installedAfterBoot) => {
+    const f = await fixture(false, false, undefined, true, installedAfterBoot)
+    try {
+      await createConfigurationService({ home: f.dataDir, profile: 'local-dev' }).saveSessionDefaults({
+        revision: 0,
+        defaults: { loop: DEFAULT_LOOP },
+      })
+      const session = await f.host.createSession({
+        key: 'bundle-loop',
+        cwd: f.dataDir,
+        bundles: ['@agnes-example/dag-loop#selected'],
+      })
+      expect(session.loop).toEqual(dag)
+      expect(f.host.sessionCapabilities!(session.key)).toMatchObject({
+        loop: { value: dag },
+        bundles: ['@agnes-example/dag-loop#selected'],
+      })
+      await session.close()
+    } finally {
+      await f.host.close()
+    }
+  },
+)

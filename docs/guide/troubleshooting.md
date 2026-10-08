@@ -48,6 +48,8 @@ node packages/cli/dist/local/agnes.mjs doctor provider --json
 | Browser disconnected / task still running after stopping a client | Closing a client and canceling/stopping backend work are different actions; inspect backend history for the final state |
 | Import failure | Preserve input and error and reproduce with a redacted minimal fixture; do not directly edit the database |
 
+`E_SEAM_INIT` session initialization failures return `INTERNAL_ERROR` with a stable `data.code`: `E_SEAM_INIT`, or the specific `E_PROVIDER_*` cause when a provider fails to register or initialize. The daemon audit records that code without exception messages or request parameters. For a missing loop, check that its exact id/version is installed, enabled, and selected by the session bundle.
+
 Unexpected daemon errors may include a `diagnosticId`. Match it against `audit/daemon.jsonl` under the selected dataDir. Failed audit writes may instead return `diagnosticUnavailable`; this does not prove there was no error. Records should contain safe method/code/time fields, but still review them for private context before sharing.
 
 There is no command that automatically repairs every home migration. Do not delete owner records, locks, SQLite databases, or rollback snapshots to hide errors. Before switching versions, finish tasks, stop the relevant daemon, back up your data, and start a complete new distribution using the [installation guide](install.md).

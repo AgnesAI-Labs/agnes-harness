@@ -125,6 +125,15 @@ it('isolates bundle tools from default and other bundles while retaining general
     } finally {
       writeFileSync(manifestFile, manifestBytes)
     }
+    const disabled = targetOf(
+      ids.map((vendor) => pluginRow('ext:' + vendor, 'plugin', vendor === 'acme/general', { vendor })),
+    )
+    const report = await fixture.host.applyRuntimeTarget(disabled)
+    expect(report.ok, JSON.stringify(report)).toBe(true)
+    expect(normal.currentTools().resolve('fixture_2')).toBeDefined()
+    const fresh = await fixture.host.createSession({ key: 'after-disable', cwd: dataDir })
+    expect(fresh.currentTools().resolve('fixture_2')).toBeUndefined()
+    await fresh.close()
     const pin = a.pluginGenerationId
     await normal.close()
     await a.close()

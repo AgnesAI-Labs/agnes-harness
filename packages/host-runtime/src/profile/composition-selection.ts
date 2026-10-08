@@ -35,7 +35,7 @@ export function profileForComposition(profile: ResolvedProfile, tree: ResolvedCo
       return {
         ...pkg,
         ...(requested?.config ? { config: requested.config } : {}),
-        enabled: capabilityEnabled(capabilities.packages, pkg.id),
+        enabled: pkg.enabled && (!requested || capabilityEnabled(capabilities.packages, pkg.id)),
       }
     }),
     composition: patch,

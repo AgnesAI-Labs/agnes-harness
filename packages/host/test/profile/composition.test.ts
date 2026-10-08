@@ -313,6 +313,28 @@ it('compiles a separate preset Host and refuses changes to a running provider tr
     env,
   )
   const baseline = resolveComposition(profile)
+  const packageCatalog = [{ id: 'acme/published', enabled: true }]
+  expect(resolveComposition(profile, { packageCatalog })).toEqual(baseline)
+  const published = resolveComposition(profile, {
+    packageCatalog,
+    session: { packages: [{ id: 'acme/published', source: 'runtime-snapshot', enabled: true }] },
+  })
+  expect(published.selection.packages).toContainEqual({
+    id: 'acme/published',
+    source: 'runtime-snapshot',
+    enabled: true,
+  })
+  expect(
+    resolveComposition(profile, {
+      packageCatalog: [{ id: 'acme/published', enabled: false }],
+      session: { packages: [{ id: 'acme/published', source: 'runtime-snapshot', enabled: true }] },
+    }).selection.packages,
+  ).toContainEqual({ id: 'acme/published', source: 'runtime-snapshot', enabled: false })
+  expect(() =>
+    resolveComposition(profile, {
+      session: { packages: [{ id: 'acme/unknown', source: 'runtime-snapshot', enabled: true }] },
+    }),
+  ).toThrow('unknown package acme/unknown')
   const next = resolveComposition(profile, {
     preset: { name: 'research', composition: { compaction: { engine: 'sliding-window' } } },
   })

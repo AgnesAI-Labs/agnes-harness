@@ -36,45 +36,61 @@ async function initialized(): Promise<LocalEndpoint> {
 
 describe('LocalEndpoint', () => {
   it('correlates unexpected failures without exposing secrets and tolerates a failed audit sink', async () => {
-    for (const broken of [false, true]) {
-      const records: unknown[] = []
-      const ep = new LocalEndpoint({
-        clock: () => 0,
-        principalId: 'local',
-        audit: (record) => {
-          records.push(record)
-          if (broken) throw new Error('audit unavailable')
-        },
-      })
-      ep.register('initialize', async () => {
-        throw Object.assign(new Error('private-message-and-token'), { code: 'EACCES' })
-      })
-      const result = await ep.handle({
-        jsonrpc: '2.0',
-        id: 'user-secret-id',
-        method: 'initialize',
-        params: INIT_PARAMS,
-      })
-      expect(result).toMatchObject({
-        error: {
-          code: -32603,
-          data: {
-            code: 'INTERNAL',
-            ...(broken ? { diagnosticUnavailable: true } : { diagnosticId: expect.any(String) }),
+    for (const [errorCode, mapped] of [
+      ['EACCES', false],
+      ['E_PROVIDER_UNKNOWN', true],
+      ['E_SEAM_INIT', true],
+      ['untrusted-secret-code', false],
+    ] as const)
+      for (const broken of [false, true]) {
+        const records: unknown[] = []
+        const ep = new LocalEndpoint({
+          clock: () => 0,
+          principalId: 'local',
+          audit: (record) => {
+            records.push(record)
+            if (broken) throw new Error('audit unavailable')
           },
-        },
-      })
-      if (broken) expect(JSON.stringify(result)).not.toContain('diagnosticId')
-      expect(records).toEqual([
-        {
-          kind: 'daemon.request_failed',
-          detail: { method: 'initialize', errorCode: 'EACCES', diagnosticId: expect.any(String) },
-        },
-      ])
-      expect(JSON.stringify(records)).not.toContain('private-message-and-token')
-      expect(JSON.stringify(records)).not.toContain('user-secret-id')
-      await ep.close()
-    }
+        })
+        ep.register('initialize', async () => {
+          if (mapped)
+            throw rpcError('INTERNAL_ERROR', {
+              code: errorCode,
+              reason:
+                errorCode === 'E_PROVIDER_UNKNOWN' ? 'provider-unknown' : 'session-initialization-failed',
+            })
+          throw Object.assign(new Error('private-message-and-token'), { code: errorCode })
+        })
+        const result = await ep.handle({
+          jsonrpc: '2.0',
+          id: 'user-secret-id',
+          method: 'initialize',
+          params: INIT_PARAMS,
+        })
+        expect(result).toMatchObject({
+          error: {
+            code: -32603,
+            data: {
+              code: mapped ? errorCode : 'INTERNAL',
+              ...(broken ? { diagnosticUnavailable: true } : { diagnosticId: expect.any(String) }),
+            },
+          },
+        })
+        if (broken) expect(JSON.stringify(result)).not.toContain('diagnosticId')
+        expect(records).toEqual([
+          {
+            kind: 'daemon.request_failed',
+            detail: {
+              method: 'initialize',
+              errorCode: errorCode === 'untrusted-secret-code' ? 'UNKNOWN' : errorCode,
+              diagnosticId: expect.any(String),
+            },
+          },
+        ])
+        expect(JSON.stringify(records)).not.toContain('private-message-and-token')
+        expect(JSON.stringify(records)).not.toContain('user-secret-id')
+        await ep.close()
+      }
   })
   it('refuses new calls after intake stops while preserving outbound shutdown notices', async () => {
     const ep = new LocalEndpoint({ clock: () => 0, principalId: 'local' })

@@ -347,10 +347,29 @@ export function disposeFeeds(feeds: Map<string, Feed>): void {
  * How a failure to open a session reaches the wire. A profile with no provider route at all - a home
  * nobody has run `agh config` in - refuses with E_PRESET_UNRESOLVED/no-routes; that is the caller's
  * configuration, not a daemon fault, so it is answered as SEMANTIC_REJECTED/PROVIDER_UNCONFIGURED
- * instead of INTERNAL. The worker may drop `detail` but keeps a whitelist `reason` identifier.
+ * instead of INTERNAL. Initialization failures retain fixed provider causes for diagnosis without
+ * returning exception prose. The worker may drop `detail` but keeps a whitelist `reason` identifier.
  */
 export function throwSessionOpenRpcError(error: unknown): never {
   const e = error as { code?: unknown; reason?: unknown; detail?: { reason?: unknown } } | null
+  if (e?.code === 'E_SEAM_INIT') {
+    const causes = {
+      'provider-unknown': 'E_PROVIDER_UNKNOWN',
+      'provider-invalid': 'E_PROVIDER_INVALID',
+      'provider-incompatible': 'E_PROVIDER_INCOMPATIBLE',
+      'provider-unavailable': 'E_PROVIDER_UNAVAILABLE',
+      'provider-duplicate': 'E_PROVIDER_DUPLICATE',
+    } as const
+    const reason = e.reason ?? e.detail?.reason
+    const cause =
+      typeof reason === 'string' && Object.hasOwn(causes, reason)
+        ? causes[reason as keyof typeof causes]
+        : undefined
+    throw rpcError('INTERNAL_ERROR', {
+      code: cause ?? 'E_SEAM_INIT',
+      reason: cause ? reason : 'session-initialization-failed',
+    })
+  }
   if (e?.code === 'E_LOOP_MISSING')
     throw rpcError('SEMANTIC_REJECTED', {
       code: 'LOOP_MISSING',

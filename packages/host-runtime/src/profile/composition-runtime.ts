@@ -147,6 +147,27 @@ export async function createCompositionHost(
         {
           ...options,
           compositionPin: binding.tree,
+          ...(latestTarget && !pinned
+            ? {
+                ordinaryPluginLayers: {
+                  ...options.ordinaryPluginLayers,
+                  workspace: {
+                    ...options.ordinaryPluginLayers?.workspace,
+                    ...Object.fromEntries(
+                      projectRows(latestTarget.tree.rows, binding.tree)
+                        .filter((row) => pluginSnapshotIdentity(row.plugin))
+                        .map((row) => [
+                          row.id,
+                          {
+                            enabled: !row.disabled,
+                            ...(row.config === undefined ? {} : { config: row.config }),
+                          },
+                        ]),
+                    ),
+                  },
+                },
+              }
+            : {}),
           ...(sources
             ? {
                 runtimePluginSnapshots: sources,
@@ -343,19 +364,41 @@ export async function createCompositionHost(
               : []
           const admissionProfile = {
             ...profile,
+            // Admission uses the published code catalog, including packages installed after boot.
+            // Persist it with the composition so cold opens can mount its loop before Kernel creation.
+            packages: [
+              ...profile.packages.filter(
+                (pkg) => !sources.some((source) => source.snapshot.packageId === pkg.id),
+              ),
+              ...sources.map(({ snapshot, trusted }) => ({
+                ...profile.packages.find((pkg) => pkg.id === snapshot.packageId),
+                id: snapshot.packageId,
+                version: snapshot.version,
+                integrity: snapshot.integrity,
+                source:
+                  profile.packages.find((pkg) => pkg.id === snapshot.packageId)?.source ?? 'runtime-snapshot',
+                trust: 'trusted' as const,
+                enabled:
+                  trusted && (profile.packages.find((pkg) => pkg.id === snapshot.packageId)?.enabled ?? true),
+              })),
+            ],
             bundleCatalog: { ...profile.bundleCatalog, ...readRuntimeBundles(sources) },
           }
           const adminLoop = parent ? undefined : (await configuration.sessionDefaults()).defaults.loop
           const tree =
             parent?.tree ??
-            resolveComposition(admissionProfile, {
-              preset: resolvePreset(input.preset ?? profile.presets.default, initial.host.presets, {
-                limits: profile.limits,
-              }).doc,
-              ...(adminLoop ? { admin: { composition: { loop: adminLoop } } } : {}),
-              ...(input.loop ? { session: { loop: input.loop } } : {}),
-              ...(input.bundles !== undefined ? { sessionBundles: input.bundles } : {}),
-            })
+            resolveComposition(
+              { ...profile, bundleCatalog: admissionProfile.bundleCatalog },
+              {
+                packageCatalog: admissionProfile.packages,
+                preset: resolvePreset(input.preset ?? profile.presets.default, initial.host.presets, {
+                  limits: profile.limits,
+                }).doc,
+                ...(adminLoop ? { admin: { composition: { loop: adminLoop } } } : {}),
+                ...(input.loop ? { session: { loop: input.loop } } : {}),
+                ...(input.bundles !== undefined ? { sessionBundles: input.bundles } : {}),
+              },
+            )
           const selectedLoop = resolveSessionCapabilities({ composition: tree }).loop.value
           if (
             !parent &&

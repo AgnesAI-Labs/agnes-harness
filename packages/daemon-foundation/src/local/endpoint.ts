@@ -430,17 +430,35 @@ export class LocalEndpoint implements RpcEndpoint {
       if (id === undefined) return undefined
       if (isRpcError(e)) {
         // A refusal the caller can act on that an operator still has to be able to find.
-        if (e.data.code === 'LEGACY_LEDGER_FORMAT') {
+        if (
+          [
+            'LEGACY_LEDGER_FORMAT',
+            'E_SEAM_INIT',
+            'E_PROVIDER_UNKNOWN',
+            'E_PROVIDER_INVALID',
+            'E_PROVIDER_INCOMPATIBLE',
+            'E_PROVIDER_UNAVAILABLE',
+            'E_PROVIDER_DUPLICATE',
+          ].includes(e.data.code as string)
+        ) {
           const diagnosticId = randomUUID()
+          let persisted = false
           try {
             this.o.audit?.({
               kind: 'daemon.request_failed',
               detail: { diagnosticId, method: call.method, errorCode: e.data.code },
             })
+            persisted = this.o.audit !== undefined
           } catch {
             /* Diagnostic failures must not replace the refusal. */
           }
-          return fail(id, { ...e, data: { ...e.data, ...(this.o.audit ? { diagnosticId } : {}) } })
+          return fail(id, {
+            ...e,
+            data: {
+              ...e.data,
+              ...(persisted ? { diagnosticId } : this.o.audit ? { diagnosticUnavailable: true } : {}),
+            },
+          })
         }
         return fail(id, e)
       }

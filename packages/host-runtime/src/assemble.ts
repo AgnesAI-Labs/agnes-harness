@@ -20,7 +20,13 @@ import {
   type SeamName,
   type SessionImpl,
 } from '@agnes/core'
-import { API_VERSION, type ExtensionManifest, type LeaseView, type ResourceEntry } from '@agnes/extension-api'
+import {
+  API_VERSION,
+  type ExtensionManifest,
+  type LeaseView,
+  ProviderError,
+  type ResourceEntry,
+} from '@agnes/extension-api'
 import {
   type ComputerUseArtifactGcRuntime,
   createComputerUseArtifactGcRuntime,
@@ -482,7 +488,17 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
   const fail = async (s: string, e: unknown): Promise<never> => {
     const failed = await rollback.unwind()
     const msg = e instanceof Error ? e.message : String(e)
-    const err = e instanceof HostError ? e : new HostError('E_SEAM_INIT', msg, { detail: { step: s } })
+    const err =
+      e instanceof HostError
+        ? e
+        : new HostError('E_SEAM_INIT', msg, {
+            detail: {
+              step: s,
+              ...(e instanceof ProviderError
+                ? { reason: e.code.slice(2).toLowerCase().replaceAll('_', '-') }
+                : {}),
+            },
+          })
     say('startup.failed', { step: s, code: err.code, message: err.message, rollbackFailed: failed })
     throw err
   }
