@@ -1,4 +1,13 @@
-import { Button, Field, useUiText } from '@agnes/web-ui'
+import {
+  Button,
+  Field,
+  SettingsCard,
+  SettingsInput,
+  SettingsSelect,
+  SettingsState,
+  SettingsTextArea,
+  useUiText,
+} from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { type JobsSnapshot, sessionJobsApi } from './jobs-api.js'
 import { JOBS_NAMESPACE, jobsCatalog } from './jobs-locales.js'
@@ -106,10 +115,10 @@ export function JobsPanel({
       })
   }
   return (
-    <section className="runtime-card" data-testid={terminal ? 'terminal-panel' : 'jobs-panel'}>
+    <SettingsCard className="runtime-card" data-testid={terminal ? 'terminal-panel' : 'jobs-panel'}>
       <p>{t(terminal ? 'terminalHelp' : 'jobsHelp')}</p>
       <Field label={t('session')} htmlFor="jobs-session">
-        <input
+        <SettingsInput
           id="jobs-session"
           data-testid="jobs-session"
           value={sessionId}
@@ -122,17 +131,21 @@ export function JobsPanel({
         />
       </Field>
       {error && (
-        <p role="alert" data-testid="jobs-error">
+        <SettingsState tone="error" data-testid="jobs-error">
           {t('unavailable')}
-        </p>
+        </SettingsState>
       )}
-      <Button data-testid="jobs-refresh" onClick={() => setRevision((value) => value + 1)}>
+      <Button
+        disabled={busy || !sessionId.trim()}
+        data-testid="jobs-refresh"
+        onClick={() => setRevision((value) => value + 1)}
+      >
         {t('refresh')}
       </Button>
       {terminal && (
         <>
           <Field label={t('shell')} htmlFor="terminal-shell">
-            <select
+            <SettingsSelect
               id="terminal-shell"
               data-testid="terminal-shell"
               value={shell}
@@ -142,10 +155,10 @@ export function JobsPanel({
                 if (value === 'bash' || value === 'zsh' || value === 'pwsh') setShell(value)
               }}
             >
-              <option value="bash">Bash</option>
-              <option value="zsh">Zsh</option>
-              <option value="pwsh">PowerShell</option>
-            </select>
+              <option value="bash">{t('shell.bash')}</option>
+              <option value="zsh">{t('shell.zsh')}</option>
+              <option value="pwsh">{t('shell.pwsh')}</option>
+            </SettingsSelect>
           </Field>
           <Button
             data-testid="terminal-open"
@@ -168,7 +181,7 @@ export function JobsPanel({
           >
             {t('close')}
           </Button>
-          <textarea
+          <SettingsTextArea
             readOnly
             rows={30}
             value={terminalScreen((snapshot?.job?.stdout ?? '') + (snapshot?.job?.stderr ?? ''))}
@@ -196,39 +209,46 @@ export function JobsPanel({
           <p>{t('keyboard')}</p>
         </>
       )}
-      <table data-testid="session-jobs-table">
-        <caption>{t('jobs')}</caption>
-        <thead>
-          <tr>
-            <th scope="col">{t('kind')}</th>
-            <th scope="col">{t('command')}</th>
-            <th scope="col">{t('status')}</th>
-            <th scope="col">{t('actions')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {snapshot?.jobs.map((job) => (
-            <tr key={job.id} data-testid={'session-job-' + job.id}>
-              <td>{job.kind}</td>
-              <td>
-                <code>{job.command}</code>
-              </td>
-              <td>{t(job.status)}</td>
-              <td>
-                <Button disabled={busy || (terminal && job.kind !== 'pty')} onClick={() => setJobId(job.id)}>
-                  {t('output')}
-                </Button>{' '}
-                <Button
-                  disabled={busy || job.status !== 'running'}
-                  onClick={() => void control({ operation: 'kill', jobId: job.id })}
-                >
-                  {t('kill')}
-                </Button>
-              </td>
+      {!sessionId.trim() && <SettingsState>{t('chooseSession')}</SettingsState>}
+      {sessionId.trim() && snapshot && !snapshot.jobs.length && <SettingsState>{t('empty')}</SettingsState>}
+      <div className="agnes-settings-table">
+        <table data-testid="session-jobs-table">
+          <caption>{t('jobs')}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{t('kind')}</th>
+              <th scope="col">{t('command')}</th>
+              <th scope="col">{t('status')}</th>
+              <th scope="col">{t('actions')}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {snapshot?.jobs.map((job) => (
+              <tr key={job.id} data-testid={'session-job-' + job.id}>
+                <td>{t(`jobKind.${job.kind}`)}</td>
+                <td>
+                  <code>{job.command}</code>
+                </td>
+                <td>{t(job.status)}</td>
+                <td>
+                  <Button
+                    disabled={busy || (terminal && job.kind !== 'pty')}
+                    onClick={() => setJobId(job.id)}
+                  >
+                    {t('output')}
+                  </Button>{' '}
+                  <Button
+                    disabled={busy || job.status !== 'running'}
+                    onClick={() => void control({ operation: 'kill', jobId: job.id })}
+                  >
+                    {t('kill')}
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {!terminal && snapshot?.job && (
         <pre data-testid="job-output">
           {snapshot.job.stdout}
@@ -242,6 +262,6 @@ export function JobsPanel({
           </p>
         ))}
       </div>
-    </section>
+    </SettingsCard>
   )
 }

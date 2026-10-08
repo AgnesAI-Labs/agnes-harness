@@ -525,7 +525,7 @@ export type BundleSnapshot = {
   revision: number
   bundles: string[]
   effect: 'restart-required'
-  catalog: { id: string; sourcePackage: string }[]
+  catalog: { id: string; sourcePackage: string; label?: string; displayName?: string; version?: string }[]
 }
 function isBundleSnapshot(value: unknown): value is BundleSnapshot {
   if (!value || typeof value !== 'object') return false

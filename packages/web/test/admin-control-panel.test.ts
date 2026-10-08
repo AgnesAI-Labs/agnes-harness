@@ -83,6 +83,65 @@ it('shows actual session tool groups and their activation reasons in both langua
     expect(host.textContent).toContain('acme/demo#demo')
     expect(host.textContent).toContain('demo_read')
     expect(host.textContent).not.toContain('ignored')
+    const source = { layer: 'session', name: 'review-work' }
+    const current = await mount(
+      createElement(SessionToolsPanel, {
+        t: text,
+        value: {
+          sessions: [
+            {
+              sessionKey: 'current-session',
+              preset: 'standard',
+              toolGroups: [
+                { packageId: 'stale', reason: 'enabled-plugin', bundles: [], tools: ['stale_tool'] },
+              ],
+              capabilities: {
+                preset: 'standard',
+                bundles: ['review'],
+                codePin: { legacy: false, generationId: 'generation-current', packages: [] },
+                loop: { value: { id: 'agnes.default', version: '1.0.0' }, source },
+                modelRoutes: { value: null, source },
+                permissions: {
+                  preset: 'standard',
+                  policy: 'default',
+                  toolRuntime: 'default',
+                  readOnly: false,
+                  source,
+                },
+                sandbox: { provider: 'native', onUnavailable: 'deny', source },
+                compaction: { engine: null, source },
+                persistence: { provider: 'ledger', source },
+                tools: [
+                  { id: 'review_read', enabled: true, reasons: [{ source, rule: 'bundle:review' }] },
+                  {
+                    id: 'denied_write',
+                    enabled: false,
+                    reasons: [{ source: { layer: 'preset', name: 'read-only' }, rule: 'deny' }],
+                  },
+                ],
+                mcp: [],
+                skills: [],
+                modelAdapters: [],
+                childEngines: [],
+                childModels: [],
+                uiModules: [],
+                surfaces: [],
+                packages: [],
+                plugins: [],
+                selectedModelAdapters: [],
+              },
+            },
+          ],
+        },
+      }),
+    )
+    expect(current.querySelector('[data-testid=session-capabilities]')).not.toBeNull()
+    expect(current.textContent).toContain(text('capabilityWhy'))
+    expect(current.textContent).toContain(text('capabilitySource.session'))
+    expect(current.textContent).toContain('bundle:review')
+    expect(current.textContent).toContain('review_read')
+    expect(current.textContent).toContain(text('capabilityDisabled'))
+    expect(current.textContent).not.toContain('stale_tool')
   }
 })
 
@@ -376,8 +435,10 @@ it('places ordered bundle and preset choices beside the loop only for a new sess
   const host = await mount(createElement(LoopPicker))
   expect(host.querySelectorAll('[role="combobox"]')).toHaveLength(0)
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="composer-agent"]')?.click())
-  expect(document.querySelectorAll('[role="combobox"]')).toHaveLength(3)
-  expect(document.querySelector('[data-testid="new-session-preset"]')?.textContent).toContain('Read only')
+  expect(document.querySelectorAll('[role="combobox"]')).toHaveLength(2)
+  expect(document.querySelector('[data-testid="new-session-preset-readonly"]')?.textContent).toContain(
+    'Read only',
+  )
   expect(document.querySelector('[data-testid="new-session-bundles"]')?.textContent).toContain('acme#report')
   await act(async () =>
     updateLoopPicker({

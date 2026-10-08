@@ -45,7 +45,7 @@ const reminder = {
   sessionKey: 's1',
   title: 'Standup',
   prompt: 'Check mail',
-  selector: { daily: { time: '09:00', timeZone: 'UTC' } },
+  selector: { weekly: { time: '14:30', timeZone: 'Asia/Shanghai', weekdays: [2, 4] } },
   status: 'active',
   nextRunAt: Date.parse('2026-09-07T09:00:00Z'),
   revision: 1,
@@ -70,7 +70,9 @@ it('shows an empty list and a failed list', async () => {
   expect(host.querySelector('[data-testid="schedules-empty"]')).not.toBeNull()
   const failed: SchedulesApi = { ...empty, list: async () => Promise.reject(new Error('offline')) }
   const errorHost = await mount(createElement(SchedulesPage, { api: failed, t }))
-  expect(errorHost.querySelector('[data-testid="schedules-error"]')?.textContent).toContain('offline')
+  expect(errorHost.querySelector('[data-testid="schedules-error"]')?.textContent).toContain(
+    t('schedulesError'),
+  )
 })
 
 it('creates a reminder and archives it after confirmation', async () => {
@@ -106,17 +108,23 @@ it('creates a reminder and archives it after confirmation', async () => {
   })
   await vi.waitFor(() => expect(host.querySelector('[data-testid="schedules-row"]')).not.toBeNull())
   expect(host.querySelector('[data-testid="schedules-next"]')?.textContent).toContain(
-    '2026-09-07T09:00:00.000Z',
+    new Date(reminder.nextRunAt).toLocaleString(document.documentElement.lang || 'en'),
   )
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="schedules-row"] button')?.click(),
+  )
+  expect(host.querySelector<HTMLSelectElement>('[data-testid="schedules-kind"]')?.value).toBe('weekly')
+  expect(host.querySelector<HTMLInputElement>('[data-testid="schedules-when"]')?.value).toBe('14:30')
+  expect(host.querySelector<HTMLInputElement>('[data-testid="schedules-zone"]')?.value).toBe('Asia/Shanghai')
   expect(host.querySelector('[data-testid="schedules-history"]')).not.toBeNull()
   expect(host.querySelector('[data-testid="schedules-notice"]')?.getAttribute('role')).toBe('status')
   await act(async () =>
     must(host.querySelector<HTMLButtonElement>('[data-testid="schedules-archive"]'), 'archive').click(),
   )
-  expect(host.querySelector('[role="dialog"]')).not.toBeNull()
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull()
   await act(async () =>
     must(
-      host.querySelector<HTMLButtonElement>('[data-testid="schedules-archive-confirm"]'),
+      document.querySelector<HTMLButtonElement>('[data-testid="schedules-archive-confirm"]'),
       'confirm',
     ).click(),
   )

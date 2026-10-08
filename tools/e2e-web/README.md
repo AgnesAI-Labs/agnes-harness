@@ -95,3 +95,19 @@ activated baseline; they never bless missing images automatically. Until the man
 regression coverage. Tolerance is 0.2% changed pixels with a per-pixel threshold of 0.2. Baseline
 updates require image review, not tolerance growth. Automated axe checks complement, and do not
 replace, manual accessibility review.
+
+## UI smoke acceptance
+
+Use the separate UI smoke configuration against an isolated running daemon:
+
+```sh
+AGH_WEB_URL=http://127.0.0.1:PORT pnpm exec playwright test --config tools/e2e-web/playwright.ui.config.mjs
+```
+
+The navigation skeleton verifies both locales, every settings destination, all provider kinds, local-plugin controls and uncaught browser errors. Extend it for the final integrated mutation/session acceptance described in [UI coverage](../../docs/develop/ui-coverage.md). Do not point mutation acceptance at a real user home.
+
+`ui-quality.spec.ts` runs eight locale/theme/viewport combinations on a real daemon. Set `AGH_UI_WORKSPACE` to its synthetic workspace, optional `AGH_UI_DELIVERABLE` to a file there, and `AGH_UI_REPORT` for screenshots. It checks unresolved locale keys, overflow and errors.
+
+`examples.spec.ts` requires `AGH_INSTALL_EXAMPLES=1` against a disposable home for review, install, trust/enable, dialog language switching and new-session Loop selection.
+
+Stable IDs and APIs: [registry APIs](../../docs/develop/ui-extension-registries.md). Conversation fixtures use production components with synthetic ports.

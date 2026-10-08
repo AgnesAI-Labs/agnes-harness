@@ -4,60 +4,27 @@ import type {
   PluginGenerationStatus,
   RuntimeAdminSnapshot,
 } from '@agnes/protocol'
-import { Button, Tabs, useUiText } from '@agnes/web-ui'
-import { type ReactNode, useEffect, useState } from 'react'
+import { settingsSections } from '@agnes/web-client'
+import { Button, SettingsPage as SettingsPageLayout, SettingsState, useUiText } from '@agnes/web-ui'
+import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
-import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
-import { ChildEnginesPanel } from './child-engines.js'
-import { ContextPanel } from './context.js'
-import { ExamplesPanel } from './examples.js'
-import { HistorySearchPanel } from './history.js'
-import { JobsPanel } from './jobs-panel.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from './locales.js'
-import {
-  GenerationsPanel,
-  LocalPluginsPanel,
-  PresetsPanel,
-  ProvidersPanel,
-  PublicationPanel,
-  SecurityPanel,
-  sessionStartUrl,
-} from './runtime-panels.js'
-import { type SchedulesApi, SchedulesPage } from './schedules.js'
-import { SearchPanel } from './search.js'
-
-export const SETTINGS_PAGES = [
-  'plugins',
-  'providers',
-  'search',
-  'engines',
-  'models',
-  'bundles',
-  'security',
-  'context',
-  'examples',
-  'history',
-  'terminal',
-  'jobs',
-  'schedules',
-] as const
-export const SETTINGS_GROUPS = [
-  ['models', 'bundles', 'engines'],
-  ['plugins', 'providers', 'examples'],
-  ['search', 'context'],
-  ['jobs', 'schedules', 'terminal'],
-  ['security'],
-  ['history'],
-] as const
-export type SettingsPage = (typeof SETTINGS_PAGES)[number]
+import type { SchedulesApi } from './schedules.js'
+import './registry.js'
+export const SETTINGS_PAGES = settingsSections
+  .entries()
+  .filter((entry) => !entry.nativePane)
+  .map((entry) => entry.id)
+export type SettingsPage = string
 function initialPage(): SettingsPage {
   const value = new URLSearchParams(location.search).get('settings')
   const embedded = document.querySelector<HTMLElement>('#config-form')?.dataset.runtimePage
-  return SETTINGS_PAGES.find((page) => page === (embedded ?? value)) ?? 'plugins'
+  return settingsSections.get(embedded ?? value ?? '')?.id ?? 'plugins'
 }
 export function SettingsHub({
   api,
   canSave,
+  canInstall = false,
   pluginText,
   installed,
   generations,
@@ -69,6 +36,7 @@ export function SettingsHub({
 }: {
   api: PluginAdminApi | undefined
   canSave: boolean
+  canInstall?: boolean
   pluginText(key: string): string
   installed: readonly PackageInstalledDescriptor[]
   generations: PluginGenerationStatus | undefined
@@ -78,17 +46,22 @@ export function SettingsHub({
   onReview(item: PackageCatalogDescriptor): void
   schedules?: SchedulesApi
 }) {
-  const { t } = useUiText(SETTINGS_NAMESPACE, settingsCatalog)
+  const registryVersion = useSyncExternalStore(settingsSections.subscribe, settingsSections.getSnapshot)
+  const { t, hostT } = useUiText(SETTINGS_NAMESPACE, settingsCatalog)
   const embedded = !!document.getElementById('config-form')
   const [page, setPage] = useState<SettingsPage>(initialPage)
   const [snapshot, setSnapshot] = useState<RuntimeAdminSnapshot>()
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const [revision, setRevision] = useState(0)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: registryVersion invalidates a disposed selection.
+  useEffect(() => {
+    if (!settingsSections.get(page)) setPage('plugins')
+  }, [page, registryVersion])
   useEffect(() => {
     const listener = (event: Event) => {
       const value = (event as CustomEvent<SettingsPage>).detail
-      if (SETTINGS_PAGES.includes(value)) setPage(value)
+      if (settingsSections.get(value)) setPage(value)
     }
     document.addEventListener('agnes:settings-page', listener)
     return () => document.removeEventListener('agnes:settings-page', listener)
@@ -96,6 +69,11 @@ export function SettingsHub({
   useEffect(() => {
     onPage(page)
   }, [page, onPage])
+  const sectionTitle = (id: string) => {
+    const key = settingsSections.get(id)?.titleKey ?? id
+    const value = hostT(key)
+    return value === key ? t(id) : value
+  }
   // biome-ignore lint/correctness/useExhaustiveDependencies: revision is an explicit refresh.
   useEffect(() => {
     let current = true
@@ -122,94 +100,65 @@ export function SettingsHub({
     <div className="runtime-settings">
       {!embedded && (
         <nav aria-label={t('navigation')} data-testid="settings-navigation">
-          {SETTINGS_PAGES.map((id) => (
-            <Button
-              key={id}
-              data-testid={`settings-nav-${id}`}
-              aria-current={page === id ? 'page' : undefined}
-              type={page === id ? 'primary' : 'default'}
-              onClick={() => setPage(id)}
-            >
-              {t(id)}
-            </Button>
-          ))}
+          {settingsSections
+            .entries()
+            .filter((entry) => !entry.nativePane)
+            .map(({ id }) => (
+              <Button
+                key={id}
+                data-testid={`settings-nav-${id}`}
+                aria-current={page === id ? 'page' : undefined}
+                type={page === id ? 'primary' : 'default'}
+                onClick={() => setPage(id)}
+              >
+                {sectionTitle(id)}
+              </Button>
+            ))}
         </nav>
       )}
-      <section data-testid={`settings-page-${page}`} aria-label={t(page)}>
-        {embedded &&
-          SETTINGS_GROUPS.filter((group) => group.some((id) => id === page) && group.length > 1).map(
-            (group) => (
-              <Tabs
-                key={group[0]}
-                activeKey={page}
-                onChange={(id) => setPage(id as SettingsPage)}
-                items={group.map((id) => ({
-                  key: id,
-                  label: <span data-testid={`settings-nav-${id}-tab`}>{t(id)}</span>,
-                }))}
-              />
-            ),
-          )}
-        <h2>{t(page)}</h2>
-        {busy && <p role="status">{t('loading')}</p>}
-        {failed && <p role="alert">{t('unavailable')}</p>}
-        <Button
-          data-testid="settings-refresh"
-          disabled={!api || busy}
-          onClick={() => setRevision((value) => value + 1)}
-        >
-          {t('retry')}
-        </Button>
-        {page === 'plugins' && (
-          <>
-            <GenerationsPanel status={generations} api={api} canSave={canSave} t={t} onRefresh={onRefresh} />
-            {snapshot && <PublicationPanel snapshot={snapshot} t={t} />}
-            {api && snapshot && (
-              <LocalPluginsPanel
-                api={api}
-                snapshot={snapshot}
-                canSave={canSave}
-                t={t}
-                onRefresh={onRefresh}
-              />
-            )}
-            <p>{t('creatorHelp')}</p>
-            <Button data-testid="plugin-creator" href={sessionStartUrl(undefined, t('creatorPrompt'))}>
-              {t('creator')}
+      <section data-testid={`settings-page-${page}`} aria-label={sectionTitle(page)}>
+        <SettingsPageLayout
+          title={sectionTitle(page)}
+          actions={
+            <Button
+              data-testid="settings-refresh"
+              disabled={!api || busy}
+              onClick={() => setRevision((value) => value + 1)}
+            >
+              {t('retry')}
             </Button>
-            {children}
-          </>
-        )}
-        {page === 'providers' && snapshot && <ProvidersPanel snapshot={snapshot} t={t} />}
-        {page === 'search' && <SearchPanel t={t} canSave={canSave} />}
-        {page === 'engines' && <ChildEnginesPanel api={api} canSave={canSave} t={t} />}
-        {page === 'models' && (
-          <>
-            <p>{t('modelsHelp')}</p>
-            <SessionDefaultsPanel api={api} canSave={canSave} t={pluginText} />
-            {!embedded && <Button href="/?settings=model">{t('accounts')}</Button>}
-          </>
-        )}
-        {page === 'bundles' && (
-          <>
-            <BundlesPanel api={api} canSave={canSave} t={pluginText} presets={snapshot?.presets ?? []} />
-            {snapshot && <PresetsPanel snapshot={snapshot} t={t} />}
-          </>
-        )}
-        {page === 'security' && snapshot && <SecurityPanel snapshot={snapshot} t={t} />}
-        {(page === 'terminal' || page === 'jobs') && <JobsPanel key={page} terminal={page === 'terminal'} />}
-        {page === 'context' && <ContextPanel canSave={canSave} />}
-        {page === 'examples' && (
-          <ExamplesPanel
-            api={api}
-            installed={installed}
-            t={t}
-            onReview={onReview}
-            onBundles={() => setPage('bundles')}
-          />
-        )}
-        {page === 'history' && <HistorySearchPanel t={t} />}
-        {page === 'schedules' && <SchedulesPage t={t} {...(schedules ? { api: schedules } : {})} />}
+          }
+        >
+          {busy && <SettingsState tone="loading">{t('loading')}</SettingsState>}
+          {failed && <SettingsState tone="error">{t('unavailable')}</SettingsState>}
+          {(() => {
+            const Component = settingsSections.get(page)?.component
+            return Component ? (
+              <Component
+                key={`${page}:${revision}`}
+                context={{
+                  t,
+                  data: {
+                    api,
+                    canSave,
+                    canInstall,
+                    pluginText,
+                    installed,
+                    generations,
+                    children,
+                    onRefresh,
+                    onReview,
+                    schedules,
+                    snapshot,
+                    navigate: setPage,
+                  },
+                }}
+              />
+            ) : (
+              <SettingsState>{t('unavailable')}</SettingsState>
+            )
+          })()}
+        </SettingsPageLayout>
       </section>
     </div>
   )

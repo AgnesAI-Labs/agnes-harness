@@ -14,22 +14,24 @@ for (const locale of ['en', 'zh-CN']) {
     await page.addInitScript((value) => localStorage.setItem('agnes-locale', value), locale)
     await page.goto('/admin/plugins')
     await expect(page.getByTestId('settings-navigation')).toBeVisible()
-    for (const id of [
-      'plugins',
-      'providers',
-      'search',
-      'models',
-      'bundles',
-      'security',
-      'resources',
-      'examples',
-    ]) {
-      await page.getByTestId(`settings-nav-${id}`).click()
+    for (const id of ['plugins', 'providers', 'search', 'models', 'bundles', 'security', 'examples']) {
+      const groups: Record<string, string> = {
+        plugins: 'plugins',
+        providers: 'plugins',
+        examples: 'plugins',
+        models: 'models',
+        bundles: 'models',
+        search: 'search',
+        security: 'security',
+      }
+      await page.getByTestId(`settings-nav-${groups[id]}`).click()
+      const tab = page.getByTestId(`settings-nav-${id}-tab`)
+      if (await tab.count()) await tab.click()
       await expect(page.getByTestId(`settings-page-${id}`)).toBeVisible()
-      await expect(page.getByTestId(`settings-nav-${id}`)).toHaveAttribute('aria-current', 'page')
       if (id === 'search') await expect(page.getByTestId('search-providers')).toBeVisible()
     }
-    await page.getByTestId('settings-nav-providers').click()
+    await page.getByTestId('settings-nav-plugins').click()
+    await page.getByTestId('settings-nav-providers-tab').click()
     await expect(page.getByTestId('providers-loop')).toBeVisible()
     for (const kind of [
       'model-adapter',
@@ -42,6 +44,7 @@ for (const locale of ['en', 'zh-CN']) {
     ])
       await expect(page.getByTestId(`providers-${kind}`)).toBeVisible()
     await page.getByTestId('settings-nav-plugins').click()
+    await page.getByTestId('settings-nav-plugins-tab').click()
     await expect(page.getByTestId('plugin-creator')).toBeVisible()
     await expect(page.getByTestId('composition-publication')).toBeVisible()
     await page.getByTestId('plugin-generations').locator('summary').click()

@@ -6,7 +6,7 @@ import {
   isSessionDefaultsSnapshot,
   type SessionDefaultsSnapshot,
 } from '@agnes/protocol'
-import { Button, Field, Popover, Select, useUiText } from '@agnes/web-ui'
+import { Button, Field, Popover, Select, SettingsInput, useUiText } from '@agnes/web-ui'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { tr as hostText } from './locale-bridge.js'
 import { composerLocaleCatalog } from './locales/composer.js'
@@ -79,7 +79,13 @@ export interface LoopPickerView {
   preset?: string | undefined
   inheritedPreset?: string | undefined
   presetLabel?: string
-  bundles?: readonly { id: string; sourcePackage: string }[]
+  bundles?: readonly {
+    id: string
+    sourcePackage: string
+    label?: string
+    displayName?: string
+    version?: string
+  }[]
   selectedBundles?: readonly string[]
   bundlesLabel?: string
   onBundles?(bundles: string[]): void
@@ -186,7 +192,18 @@ export function LoopPicker() {
         label={state.bundlesLabel ?? tr('composer.agent.bundles')}
         hint={tr('composer.agent.bundlesHint')}
       >
-        {state.bundles?.length ? (
+        {state.bundles?.length === 1 ? (
+          <label className="agnes-settings-checkbox" htmlFor="agent-single-bundle">
+            <SettingsInput
+              id="agent-single-bundle"
+              type="checkbox"
+              disabled={state.disabled}
+              checked={state.selectedBundles?.includes(state.bundles[0]!.id) ?? false}
+              onChange={(event) => state.onBundles?.(event.target.checked ? [state.bundles![0]!.id] : [])}
+            />
+            <ChoiceLabel entry={state.bundles[0]!} t={tr} />
+          </label>
+        ) : state.bundles?.length ? (
           <Select<string[]>
             mode="multiple"
             aria-label={state.bundlesLabel}
@@ -197,7 +214,7 @@ export function LoopPicker() {
             className="agent-picker-select"
             options={state.bundles.map((entry) => ({
               value: entry.id,
-              label: choiceName(entry, tr),
+              label: <ChoiceLabel entry={entry} t={tr} />,
               title: entry.sourcePackage,
             }))}
             onChange={(bundles) => state.onBundles?.(bundles)}
@@ -208,25 +225,31 @@ export function LoopPicker() {
       </Field>
       {state.presets && (
         <Field label={tr('composer.agent.preset')}>
-          <Select<string>
-            aria-label={tr('composer.agent.preset')}
-            data-testid="new-session-preset"
-            disabled={state.disabled}
-            value={state.preset ?? ''}
-            className="agent-picker-select"
-            options={[
-              {
-                value: '',
-                label: `${tr('composer.agent.default')} (${state.inheritedPreset ? choiceName({ id: state.inheritedPreset }, tr) : tr('composer.agent.unresolved')})`,
-                title: tr('composer.agent.presetSource'),
-              },
-              ...state.presets.map((entry) => ({
-                value: entry.id,
-                label: <ChoiceLabel entry={entry} t={tr} />,
-              })),
-            ]}
-            onChange={(preset) => state.onPreset?.(preset || undefined)}
-          />
+          {state.presets.length === 1 ? (
+            <div data-testid="new-session-preset-readonly" title={tr('composer.agent.presetSource')}>
+              <ChoiceLabel entry={state.presets[0]!} t={tr} />
+            </div>
+          ) : (
+            <Select<string>
+              aria-label={tr('composer.agent.preset')}
+              data-testid="new-session-preset"
+              disabled={state.disabled}
+              value={state.preset ?? ''}
+              className="agent-picker-select"
+              options={[
+                {
+                  value: '',
+                  label: `${tr('composer.agent.default')} (${state.inheritedPreset ? choiceName({ id: state.inheritedPreset }, tr) : tr('composer.agent.unresolved')})`,
+                  title: tr('composer.agent.presetSource'),
+                },
+                ...state.presets.map((entry) => ({
+                  value: entry.id,
+                  label: <ChoiceLabel entry={entry} t={tr} />,
+                })),
+              ]}
+              onChange={(preset) => state.onPreset?.(preset || undefined)}
+            />
+          )}
         </Field>
       )}
       {(state.error || stale) && (

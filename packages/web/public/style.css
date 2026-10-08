@@ -4341,7 +4341,7 @@ body {
 }
 #config {
   position: relative;
-  width: 800px;
+  width: 1100px;
   max-width: calc(100vw - 48px);
   height: min(800px, calc(100dvh - 48px));
   max-height: calc(100dvh - 48px);
@@ -5532,6 +5532,9 @@ body.admin-page {
   border-radius: 28px;
   color: var(--agnes-text-primary);
 }
+#config-form:has(#settings-section-tabs[hidden]) .agnes-settings-page-header {
+  padding-inline-end: 2rem;
+}
 #config-close .icon {
   width: 0.875rem;
   height: 0.875rem;
@@ -5590,7 +5593,7 @@ body.admin-page {
   overflow: hidden;
   background: transparent;
 }
-#config-form .config-heading {
+#config-form .config-heading:not(.agnes-settings-page-heading) {
   min-height: 3.375rem;
   display: flex;
   align-items: flex-start;
@@ -6320,7 +6323,7 @@ body.admin-page {
   .settings-content {
     overflow-y: auto;
   }
-  #config-form .config-heading {
+  #config-form .config-heading:not(.agnes-settings-page-heading) {
     min-height: auto;
     align-items: flex-start;
     padding: 1.25rem 1rem;
@@ -6360,7 +6363,7 @@ body.admin-page {
     flex: 1 1 50%;
     justify-content: center;
   }
-  #config-form .config-heading {
+  #config-form .config-heading:not(.agnes-settings-page-heading) {
     padding-block: 1rem;
   }
   .config-accounts-heading,
@@ -6610,6 +6613,8 @@ body.admin-page {
 
 .runtime-table-scroll {
   overflow-x: auto;
+  min-width: 0;
+  max-width: 100%;
 }
 .runtime-table-scroll table {
   min-width: 48rem;
@@ -6864,4 +6869,51 @@ body.admin-page {
 .goal-card .agnes-ui-field {
   display: grid;
   gap: 0.375rem;
+}
+
+.runtime-settings [data-testid="settings-refresh"] {
+  margin: 0;
+}
+.runtime-settings .runtime-card {
+  margin: 0;
+}
+.runtime-settings > section > .agnes-ui-tabs {
+  margin-bottom: 1rem;
+}
+.runtime-settings .config-heading {
+  padding: 0;
+}
+.runtime-settings .config-heading h2 {
+  margin-bottom: 0;
+}
+.runtime-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+}
+.session-goal-host {
+  width: min(100%, 52rem);
+  margin-inline: auto;
+  padding: 0.5rem 1.5rem 0;
+}
+
+#plugin-settings-pane:has(.runtime-settings) > .config-heading {
+  display: none;
+}
+#plugin-settings-pane .admin-pane-body {
+  padding-top: 1rem;
+}
+
+#config-form[data-runtime-page]:not([data-runtime-page="plugins"]) #plugin-settings-pane .plugin-toolbar {
+  display: none;
+}
+#plugin-settings-pane:has(.runtime-settings) .plugin-layout {
+  margin-top: 0;
+}
+
+/* The shared card stack owns spacing; legacy runtime margins must not accumulate. */
+.runtime-settings .agnes-settings-card details {
+  margin-block: 0;
+}
+#plugin-settings-pane:has(.runtime-settings) #admin-notice:empty,
+#plugin-settings-pane:has(.runtime-settings) #plugin-tree-status:empty {
+  display: none;
 }

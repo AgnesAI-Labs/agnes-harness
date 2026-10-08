@@ -2,6 +2,7 @@ import type { LocaleCatalog } from '@agnes/web-client'
 
 export const toolCardsLocaleCatalog = {
   en: {
+    'slot.notReady': 'Plugin for this card is not ready',
     'cards.workflow.title': 'Workflow run',
     'cards.workflow.open': 'Open child session',
     'cards.workflow.interrupted': 'Interrupted',
@@ -28,6 +29,7 @@ export const toolCardsLocaleCatalog = {
     'cards.child.output': 'Child engine output',
   },
   'zh-CN': {
+    'slot.notReady': '此卡片的插件尚未就绪',
     'cards.workflow.title': '工作流运行',
     'cards.workflow.open': '打开子会话',
     'cards.workflow.interrupted': '已中断',

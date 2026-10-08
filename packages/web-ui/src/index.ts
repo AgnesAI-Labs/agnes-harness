@@ -6,6 +6,7 @@ export * from './admin-text.js'
 export type { AntdRoot } from './antd-root.js'
 export { createAntdRoot } from './antd-root.js'
 export * from './confirm.js'
+export { ConversationCardLayout } from './conversation/card-layout.js'
 export * from './diagnostics-dialog.js'
 export { ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog } from './locales/admin.js'
 export {
@@ -42,6 +43,15 @@ export {
   type SettingsComputerUseActions,
   type SettingsComputerUseView,
 } from './settings-computer-use.js'
+export { createSettingsIcon } from './settings-icon.js'
+export {
+  SettingsCard,
+  SettingsInput,
+  SettingsPage,
+  SettingsSelect,
+  SettingsState,
+  SettingsTextArea,
+} from './settings-layout.js'
 export { SettingsModelPane } from './settings-model-pane.js'
 export {
   mountSettingsSelectOptions,

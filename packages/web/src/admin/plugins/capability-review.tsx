@@ -1,8 +1,11 @@
 import { type PluginCapabilities, pluginFailureHelp } from '@agnes/protocol'
+import { useUiText } from '@agnes/web-ui'
+import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from './locales/admin.js'
 
 type Text = (key: string) => string
 
 export function CapabilityReview({ value, t }: { value: PluginCapabilities | undefined; t: Text }) {
+  useUiText(PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog)
   const requests = value
     ? [
         ...(['network', 'exec', 'secrets', 'credentials'] as const).flatMap((key) =>
@@ -37,7 +40,7 @@ export function FailureHelp({ reason, t }: { reason: string; t: Text }) {
   const advice = pluginFailureHelp(reason)
   return (
     <p className="resource-safe-error">
-      {advice.fixHint}{' '}
+      {t('failure.repair')}{' '}
       <a href={advice.docsUrl} target="_blank" rel="noreferrer">
         {t('capability.docs')}
       </a>

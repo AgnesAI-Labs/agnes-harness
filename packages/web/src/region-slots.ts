@@ -349,6 +349,8 @@ function SidebarDshFrame({
 }
 
 export interface SettingsRegionOptions {
+  sections?: import('@agnes/web-client').UiExtensionRegistry<import('@agnes/web-client').SettingsSection>
+
   computerUse?: ReactNode
   onChange?: (change: SettingsPaneChange) => void
   onClose?: () => void

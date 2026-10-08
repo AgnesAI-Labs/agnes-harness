@@ -7,6 +7,7 @@ import type {
   RuntimePinDescriptor,
   RuntimePinReleaseResult,
 } from '@agnes/protocol'
+import { settingsSections } from '@agnes/web-client'
 import {
   ADMIN_CONFIRMATION_LOCALE_NAMESPACE,
   ADMIN_DETAIL_LOCALE_NAMESPACE,
@@ -45,7 +46,7 @@ import {
 } from '@agnes/web-ui'
 import type { ReactNode } from 'react'
 import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
-import { SETTINGS_GROUPS, SettingsHub, type SettingsPage } from '../../settings/hub.js'
+import { SettingsHub, type SettingsPage } from '../../settings/hub.js'
 import type { SchedulesApi } from '../../settings/schedules.js'
 import { AdminApiError, PluginAdminApi } from './api.js'
 import { CapabilityReview, FailureHelp } from './capability-review.js'
@@ -302,12 +303,11 @@ class PluginAdminPage {
     const shell = document.getElementById('config-form')
     if (shell) {
       shell.dataset.runtimePage = page
+      shell.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: page, bubbles: true }))
       for (const item of shell.querySelectorAll<HTMLElement>('[data-runtime-page]')) {
         const active =
           item.dataset.runtimePage === page ||
-          SETTINGS_GROUPS.some(
-            (group) => group[0] === item.dataset.runtimePage && group.some((id) => id === page),
-          )
+          settingsSections.get(item.dataset.runtimePage ?? '')?.group === settingsSections.get(page)?.group
         item.classList.toggle('active', active)
         if (active) item.setAttribute('aria-current', 'page')
         else item.removeAttribute('aria-current')
@@ -318,9 +318,19 @@ class PluginAdminPage {
         ?.setAttribute('hidden', '')
     }
   }
+  #exampleInstallId: string | undefined
+  #exampleFlowId: string | undefined
   readonly #reviewExample = (item: PackageCatalogDescriptor): void => {
-    this.#tab = 'discover'
-    this.selectItem(item)
+    this.#exampleFlowId = item.id
+    const installed = this.#state.installed.find((candidate) => candidate.id === item.id)
+    if (installed) {
+      void this.confirmEnable(installed)
+      return
+    }
+    if (!this.can('packages.install')) return
+    this.#exampleInstallId = item.id
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : this.#listHost
+    void this.inspect(item.source, 'install', trigger, item.id)
   }
   readonly #refreshSettings = (): Promise<void> => this.refresh()
   readonly #detail = element('plugin-detail', 'dialog')
@@ -582,7 +592,18 @@ class PluginAdminPage {
               : undefined,
           ),
     )
-    this.track(receipt.operationId, { packageId: preview.id })
+    const continueExample = mode === 'install' && this.#exampleInstallId === preview.id
+    this.#exampleInstallId = undefined
+    this.track(
+      receipt.operationId,
+      { packageId: preview.id },
+      continueExample
+        ? async () => {
+            const installed = this.#state.installed.find((item) => item.id === preview.id)
+            if (installed) await this.confirmEnable(installed)
+          }
+        : undefined,
+    )
     this.#state = {
       ...this.#state,
       preview: undefined,
@@ -741,6 +762,17 @@ class PluginAdminPage {
         installed === undefined || hasClientContribution(installed),
       )
     }
+    if (
+      operation.state === 'completed' &&
+      operation.operation === 'enable' &&
+      packageId === this.#exampleFlowId
+    ) {
+      this.#exampleFlowId = undefined
+      this.#detailDismissed = true
+      this.#state = { ...this.#state, selectedId: undefined, selectedCatalog: undefined }
+      setDialog(this.#detail, false)
+      this.render()
+    }
     if (operation.state === 'completed' && completion) {
       try {
         await completion(operation)
@@ -800,6 +832,7 @@ class PluginAdminPage {
   }
 
   closeConfirm(): void {
+    this.#exampleInstallId = undefined
     this.#pendingConfirm = undefined
     this.renderConfirm()
     setDialog(this.#confirmDialog, false)
@@ -932,7 +965,7 @@ class PluginAdminPage {
       E_PACKAGE_STATE: 'error.state-changed',
     }
     const key = keyByCode[error.code]
-    return key ? this.#t(key) : error.message
+    return this.#t(key ?? 'error.operation-failed')
   }
 
   track(
@@ -1134,6 +1167,7 @@ class PluginAdminPage {
       <UiLocaleProvider source={this.#locale}>
         <SettingsHub
           api={this.#api}
+          canInstall={this.canEffect('packages.install')}
           canSave={this.canEffect('packages.activate')}
           pluginText={this.#t}
           installed={this.#state.installed}
@@ -1157,7 +1191,7 @@ class PluginAdminPage {
             }}
           />
           <PluginList
-            formatFailure={(message) => pluginFailureMessage(message, this.#t)}
+            formatFailure={(message, code) => pluginFailureMessage(message, this.#t, code)}
             metadataOf={(item) => (
               <PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.#t} />
             )}
@@ -1271,7 +1305,11 @@ class PluginAdminPage {
       const runtime = this.runtimeState(item.id)
       const failureReason =
         runtime?.error?.message ?? (item.actual === 'running' ? undefined : item.actualReason)
-      if (failureReason) facts.push([this.#t('fact.failure'), pluginFailureMessage(failureReason, this.#t)])
+      if (failureReason)
+        facts.push([
+          this.#t('fact.failure'),
+          pluginFailureMessage(failureReason, this.#t, runtime?.error?.code),
+        ])
       facts.push([
         this.#t('fact.cleanup'),
         item.cleanupPending ? this.#t('fact.cleanup-pending') : this.#t('fact.cleanup-none'),
@@ -1309,7 +1347,11 @@ class PluginAdminPage {
           }
           intro=""
           version={this.#t('version', { version: item.version })}
-          stateText={'trusted' in item ? undefined : this.#t('compatibility', { value: item.compatibility })}
+          stateText={
+            'trusted' in item
+              ? undefined
+              : this.#t('compatibility', { value: this.#t(`compatibility.${item.compatibility}`) })
+          }
           facts={facts}
           blockerSections={[
             {

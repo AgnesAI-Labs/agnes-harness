@@ -62,7 +62,7 @@ export const resourceListLocaleCatalog: LocaleCatalog = {
     'root.empty-count': '未发现技能 {count}',
     'root.failed-count': '失败 {count}',
     'row.open-aria': '查看 {name} 的详情',
-    'row.skill-no-description': '该 Skill 未提供说明。',
+    'row.skill-no-description': '该 技能 未提供说明。',
     'row.priority': '优先级 {priority}',
     'row.winner': '当前 winner',
     'row.not-winner': '非 winner',

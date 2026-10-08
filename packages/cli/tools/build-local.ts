@@ -260,6 +260,8 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   await buildWithMetadata({
     entryPoints: {
       antd: join(repoPackages, 'web', 'tools', 'vendor', 'antd-entry.js'),
+      'antd-en-us': join(repoPackages, 'web-ui', 'tools', 'antd-en-us.ts'),
+      'antd-zh-cn': join(repoPackages, 'web-ui', 'tools', 'antd-zh-cn.ts'),
       'assistant-ui': join(repoPackages, 'web', 'tools', 'vendor', 'assistant-ui-entry.js'),
       cordis: join(repoPackages, 'web', 'tools', 'vendor', 'cordis-entry.js'),
       'web-client': join(repoPackages, 'web', 'tools', 'vendor', 'web-client-entry.js'),

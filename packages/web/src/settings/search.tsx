@@ -1,4 +1,4 @@
-import { Button, Field } from '@agnes/web-ui'
+import { Button, Field, SettingsCard, SettingsInput, SettingsSelect, SettingsState } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 
 const PROVIDER_IDS = ['brave', 'tavily', 'exa', 'perplexity', 'searxng'] as const
@@ -137,12 +137,12 @@ export function SearchPanel({
 
   async function save(event: { preventDefault(): void }) {
     event.preventDefault()
-    if (!status || !canSave) return
+    if (!status || !canSave || busy) return
     const results = integer(maxResults, 1, 10)
     const timeout = integer(timeoutMs, 1000, 60_000)
     const ratePerMinute = integer(rate, 1, 600)
     if (results === undefined || timeout === undefined || ratePerMinute === undefined) {
-      setError(t('searchFailed'))
+      setError('searchFailed')
       return
     }
     const savedDefault = status.providers.find((row) => row.isDefault)?.id ?? null
@@ -174,18 +174,19 @@ export function SearchPanel({
       setStatus(value)
       setApiKey('')
       setClearKey(false)
-      setNotice(t('searchSaved'))
+      setNotice('searchSaved')
     } catch {
-      setError(t('searchFailed'))
+      setError('searchFailed')
     } finally {
       setBusy(false)
     }
   }
 
   async function testProvider() {
+    if (!canSave || busy) return
     const probe = query.trim()
     if (!probe) {
-      setError(t('searchTestEmpty'))
+      setError('searchTestEmpty')
       return
     }
     setBusy(true)
@@ -204,38 +205,36 @@ export function SearchPanel({
         results?: SearchHit[]
       }
       if (!response.ok || !value.ok) {
-        setError(typeof value.message === 'string' ? value.message : t('searchFailed'))
+        setError('searchFailed')
         return
       }
       setHits(Array.isArray(value.results) ? value.results : [])
-      setNotice(t('searchSaved'))
+      setNotice('searchSaved')
     } catch {
-      setError(t('searchFailed'))
+      setError('searchFailed')
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <div data-testid="search-providers" aria-busy={busy}>
+    <SettingsCard data-testid="search-providers" aria-busy={busy}>
       <p>{t('searchHelp')}</p>
       {busy && (
-        <p role="status" data-testid="search-loading">
+        <SettingsState tone="loading" data-testid="search-loading">
           {t('loading')}
-        </p>
+        </SettingsState>
       )}
       {failed && (
-        <p role="alert" data-testid="search-error">
+        <SettingsState tone="error" data-testid="search-error">
           {t('searchUnavailable')}
-        </p>
+        </SettingsState>
       )}
       {status && !status.configured && (
-        <p data-testid="search-empty" role="status">
-          {t('searchEmpty')}
-        </p>
+        <SettingsState data-testid="search-empty">{t('searchEmpty')}</SettingsState>
       )}
-      {status?.invalid && <p role="alert">{t('searchInvalid')}</p>}
-      {status?.configured && <p role="status">{t('searchConfigured')}</p>}
+      {status?.invalid && <SettingsState tone="error">{t('searchInvalid')}</SettingsState>}
+      {status?.configured && <SettingsState tone="success">{t('searchConfigured')}</SettingsState>}
       {!canSave && <p>{t('searchReadOnly')}</p>}
       {status && (
         <ul>
@@ -251,7 +250,7 @@ export function SearchPanel({
       <form onSubmit={(event) => void save(event)}>
         <fieldset disabled={!canSave || busy || !status}>
           <Field label={t('searchProvider')} htmlFor="search-edit-provider">
-            <select
+            <SettingsSelect
               id="search-edit-provider"
               data-testid="search-edit-provider"
               value={providerId}
@@ -264,10 +263,10 @@ export function SearchPanel({
                   {status?.providers.find((row) => row.id === id)?.label ?? id}
                 </option>
               ))}
-            </select>
+            </SettingsSelect>
           </Field>
           <Field label={t('searchEndpoint')} htmlFor="search-endpoint" hint={t('searchEndpointHint')}>
-            <input
+            <SettingsInput
               id="search-endpoint"
               data-testid="search-endpoint"
               value={endpoint}
@@ -276,7 +275,7 @@ export function SearchPanel({
             />
           </Field>
           <Field label={t('searchApiKey')} htmlFor="search-api-key" hint={t('searchApiKeyHint')}>
-            <input
+            <SettingsInput
               id="search-api-key"
               data-testid="search-api-key"
               type="password"
@@ -288,7 +287,7 @@ export function SearchPanel({
           </Field>
           {selected?.secretConfigured && <p>{t('searchApiKeyStored')}</p>}
           <Field label={t('searchClearKey')} htmlFor="search-clear-key">
-            <input
+            <SettingsInput
               id="search-clear-key"
               data-testid="search-clear-key"
               type="checkbox"
@@ -297,7 +296,7 @@ export function SearchPanel({
             />
           </Field>
           <Field label={t('searchMaxResults')} htmlFor="search-max-results">
-            <input
+            <SettingsInput
               id="search-max-results"
               data-testid="search-max-results"
               inputMode="numeric"
@@ -306,7 +305,7 @@ export function SearchPanel({
             />
           </Field>
           <Field label={t('searchTimeout')} htmlFor="search-timeout">
-            <input
+            <SettingsInput
               id="search-timeout"
               data-testid="search-timeout"
               inputMode="numeric"
@@ -315,7 +314,7 @@ export function SearchPanel({
             />
           </Field>
           <Field label={t('searchRate')} htmlFor="search-rate">
-            <input
+            <SettingsInput
               id="search-rate"
               data-testid="search-rate"
               inputMode="numeric"
@@ -324,7 +323,7 @@ export function SearchPanel({
             />
           </Field>
           <Field label={t('searchEnabled')} htmlFor="search-enabled">
-            <input
+            <SettingsInput
               id="search-enabled"
               data-testid="search-enabled"
               type="checkbox"
@@ -333,7 +332,7 @@ export function SearchPanel({
             />
           </Field>
           <Field label={t('searchMakeDefault')} htmlFor="search-make-default">
-            <input
+            <SettingsInput
               id="search-make-default"
               data-testid="search-make-default"
               type="checkbox"
@@ -347,7 +346,7 @@ export function SearchPanel({
         </fieldset>
       </form>
       <Field label={t('searchTestQuery')} htmlFor="search-test-query">
-        <input
+        <SettingsInput
           id="search-test-query"
           data-testid="search-test-query"
           value={query}
@@ -363,14 +362,14 @@ export function SearchPanel({
         {t('searchTest')}
       </Button>
       {notice && (
-        <p role="status" data-testid="search-notice">
-          {notice}
-        </p>
+        <SettingsState tone="success" data-testid="search-notice">
+          {t(notice)}
+        </SettingsState>
       )}
       {error && (
-        <p role="alert" data-testid="search-error">
-          {error}
-        </p>
+        <SettingsState tone="error" data-testid="search-error">
+          {t(error)}
+        </SettingsState>
       )}
       <ul data-testid="search-test-result" aria-live="polite">
         {hits.map((hit) => (
@@ -380,6 +379,6 @@ export function SearchPanel({
           </li>
         ))}
       </ul>
-    </div>
+    </SettingsCard>
   )
 }

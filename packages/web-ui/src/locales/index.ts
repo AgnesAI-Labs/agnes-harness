@@ -9,13 +9,27 @@ export type LocaleCatalog = { en: LocaleDictionary; 'zh-CN': LocaleDictionary }
 
 export const WEB_UI_LOCALE_NAMESPACE = '@agnes/web-ui'
 
-/** 组件未拿到宿主注入时的兜底：显示 key 本身，让漏接线在界面上可见。 */
-export const fallbackT: Translate = (key) => key
+/** Standalone primitives resolve their shared catalog using the current document locale. */
+export const fallbackT: Translate = (key, vars) => {
+  const locale = typeof document !== 'undefined' && document.documentElement.lang === 'zh-CN' ? 'zh-CN' : 'en'
+  const value = webUiLocaleCatalog[locale][key] ?? webUiLocaleCatalog.en[key] ?? key
+  return value.replace(/\{([^}]+)\}/g, (match, name: string) => String(vars?.[name] ?? match))
+}
 
 import { conversationLocaleCatalog } from './conversation.js'
 import { modelSettingsLocaleCatalog } from './model-settings.js'
 
-const DICTS = [conversationLocaleCatalog, modelSettingsLocaleCatalog] as const
+const primitiveCatalog: LocaleCatalog = {
+  en: {
+    'settings.selectPicker.fallback': 'Choose {label}',
+    'settings.selectPicker.ariaJoin': '{label}: {value}',
+  },
+  'zh-CN': {
+    'settings.selectPicker.fallback': '选择{label}',
+    'settings.selectPicker.ariaJoin': '{label}：{value}',
+  },
+}
+const DICTS = [conversationLocaleCatalog, modelSettingsLocaleCatalog, primitiveCatalog] as const
 
 export const webUiLocaleCatalog: LocaleCatalog = {
   en: Object.fromEntries(DICTS.flatMap((dict) => Object.entries(dict.en))),

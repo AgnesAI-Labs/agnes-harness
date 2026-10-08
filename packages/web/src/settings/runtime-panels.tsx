@@ -1,5 +1,5 @@
 import type { PluginGenerationStatus, RuntimeAdminSnapshot } from '@agnes/protocol'
-import { Badge, Button, Field } from '@agnes/web-ui'
+import { Badge, Button, Field, SettingsCard, SettingsInput, SettingsState } from '@agnes/web-ui'
 import { useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { SecurityStatusPanel } from './security-status.js'
@@ -28,14 +28,22 @@ export function ProvidersPanel({
     <>
       <p>{t('providerHelp')}</p>
       {kinds.map((kind) => (
-        <section key={kind} aria-label={kind} data-testid={`providers-${kind}`} className="runtime-card">
-          <h3>{kind}</h3>
+        <section
+          key={kind}
+          aria-label={t(`provider.${kind}`)}
+          data-testid={`providers-${kind}`}
+          className="runtime-card"
+        >
+          <h3>{t(`provider.${kind}`)}</h3>
+          <small>
+            <code>{kind}</code>
+          </small>
           {kind === 'persistence' && <p data-testid="persistence-provider-help">{t('persistenceHelp')}</p>}
           {!snapshot.providers.some((entry) => entry.kind === kind) && <p>{t('empty')}</p>}
           {snapshot.providers
             .filter((entry) => entry.kind === kind)
             .map((entry) => (
-              <article key={`${entry.id}@${entry.version}`}>
+              <SettingsCard key={`${entry.id}@${entry.version}`}>
                 <h4>
                   {entry.id} · {entry.version}{' '}
                   <Badge tone={entry.active ? 'ok' : 'off'}>{t(entry.active ? 'active' : 'inactive')}</Badge>{' '}
@@ -55,7 +63,7 @@ export function ProvidersPanel({
                     </>
                   )}
                 </dl>
-              </article>
+              </SettingsCard>
             ))}
         </section>
       ))}
@@ -113,9 +121,9 @@ export function GenerationsPanel({
         </p>
       )}
       {status?.generations.map((generation) => (
-        <article className="runtime-card" key={generation.id}>
+        <SettingsCard className="runtime-card" key={generation.id}>
           <p>
-            <code>{generation.id}</code> <Badge>{generation.state}</Badge>
+            <code>{generation.id}</code> <Badge>{t(`generationState.${generation.state}`)}</Badge>
           </p>
           <p>
             {t('bound')}: {generation.boundSessions}
@@ -127,15 +135,15 @@ export function GenerationsPanel({
               </li>
             ))}
           </ul>
-          {generation.error && <p role="alert">{generation.error}</p>}
-        </article>
+          {generation.error && <SettingsState tone="error">{t('generationFailure')}</SettingsState>}
+        </SettingsCard>
       ))}
       <section data-testid="session-generation-migration" aria-busy={busy}>
         <h3>{t('migrate')}</h3>
         <p>{t('migrationHelp')}</p>
         {!supported && <p>{t('migrationUnavailable')}</p>}
         <Field label={t('sessionKey')} htmlFor="migration-session-key">
-          <input
+          <SettingsInput
             id="migration-session-key"
             data-testid="migration-session-key"
             type="text"
@@ -196,7 +204,7 @@ export function PublicationPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapsh
       ) : (
         <>
           <p>{report.operation}</p>
-          {!report.ok && <p role="alert">{t('publicationRetry')}</p>}
+          {!report.ok && <SettingsState tone="error">{t('publicationRetry')}</SettingsState>}
           <ul>
             {report.containers.map((container) => (
               <li key={container.compositionHash}>
@@ -270,9 +278,15 @@ export function LocalPluginsPanel({
     </details>
   )
 }
-export const sessionStartUrl = (preset?: string, prompt?: string, bundles: readonly string[] = []) => {
+export const sessionStartUrl = (
+  preset?: string,
+  prompt?: string,
+  bundles: readonly string[] = [],
+  loop?: { id: string; version: string },
+) => {
   const query = new URLSearchParams({ new: '1' })
   if (preset) query.set('preset', preset)
+  if (loop) query.set('loop', `${loop.id}@${loop.version}`)
   if (prompt) query.set('prompt', prompt)
   for (const bundle of bundles) query.append('bundle', bundle)
   return `/?${query}`
@@ -304,7 +318,7 @@ export function SecurityPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapshot;
       <p>{t('securityHelp')}</p>
       <div className="runtime-grid">
         {(['read-only', 'workspace-write', 'full-access'] as const).map((id, index) => (
-          <article key={id} className="runtime-card" data-testid={`security-${id}`}>
+          <SettingsCard key={id} className="runtime-card" data-testid={`security-${id}`}>
             <h3>{t(['readOnly', 'workspaceWrite', 'fullAccess'][index] ?? id)}</h3>
             <code>{id}</code>
             <p>
@@ -314,7 +328,7 @@ export function SecurityPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapshot;
                 t('notAllowed')
               )}
             </p>
-          </article>
+          </SettingsCard>
         ))}
       </div>
       <SecurityStatusPanel status={snapshot.security} t={t} />

@@ -18,6 +18,7 @@ import {
 import { type ReactNode, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { conversationToolCardKind, keepConversationCardVisible } from './conversation-card-layout.js'
+import { RegisteredConversationCard } from './conversation-registry.js'
 import { DefaultToolCards } from './default-tool-cards.js'
 import { toolIconReact } from './tool-icon.js'
 
@@ -186,46 +187,59 @@ export function WebConversationMessages({
       />
     ),
     renderTool: (node) => (
-      <div
-        className="conversation-tool-surface"
-        data-testid={
-          conversationToolCardKind(node) ? `${conversationToolCardKind(node)}-card` : 'conversation-tool-card'
-        }
-        data-tool-name={node.name}
-      >
-        <DefaultToolCards
-          node={node}
-          answered={answered}
-          {...(locale ? { t: (key: string) => locale.t(key) } : {})}
-          {...(session ? { session } : {})}
-          {...(resources ? { resources } : {})}
-        />
-        {conversationToolCardKind(node) === 'child-agent' && node.resultPreview && (
-          <div
-            role="log"
-            data-testid="child-engine-output"
-            aria-live="polite"
-            aria-relevant="additions"
-            aria-label={locale?.t('cards.child.output') ?? 'cards.child.output'}
-          >
-            {node.resultPreview}
-          </div>
-        )}
-        <ConversationToolCard
-          key={node.id}
-          node={node}
-          icon={toolIconReact(node.name)}
-          t={(key, vars) => locale?.t(key, vars) ?? key}
-        />
-      </div>
+      <RegisteredConversationCard
+        card={{
+          kind: conversationToolCardKind(node) ?? 'tool',
+          data: node,
+        }}
+        context={{
+          t: (key, vars) => locale?.t(key, vars) ?? key,
+          data: (
+            <>
+              <DefaultToolCards
+                node={node}
+                answered={answered}
+                {...(locale ? { t: (key: string) => locale.t(key) } : {})}
+                {...(session ? { session } : {})}
+                {...(resources ? { resources } : {})}
+              />
+              {conversationToolCardKind(node) === 'child-agent' && node.resultPreview && (
+                <div
+                  role="log"
+                  data-testid="child-engine-output"
+                  aria-live="polite"
+                  aria-relevant="additions"
+                  aria-label={locale?.t('cards.child.output') ?? 'cards.child.output'}
+                >
+                  {node.resultPreview}
+                </div>
+              )}
+              <ConversationToolCard
+                key={node.id}
+                node={node}
+                icon={toolIconReact(node.name)}
+                t={(key, vars) => locale?.t(key, vars) ?? key}
+              />
+            </>
+          ),
+        }}
+      />
     ),
     renderSlot: (node) => (
-      <SlotLeaf
-        key={node.id}
-        node={node}
-        registry={registry}
-        claim={claim}
-        t={(key) => locale?.t(key) ?? key}
+      <RegisteredConversationCard
+        card={{ kind: 'plugin', data: node }}
+        context={{
+          t: (key) => locale?.t(key) ?? key,
+          data: (
+            <SlotLeaf
+              key={node.id}
+              node={node}
+              registry={registry}
+              claim={claim}
+              t={(key) => locale?.t(key) ?? key}
+            />
+          ),
+        }}
       />
     ),
     renderNode: (node, native) =>

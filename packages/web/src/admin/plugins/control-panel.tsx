@@ -6,8 +6,16 @@ import type {
   PluginGenerationStatus,
   SessionDefaultsSnapshot,
 } from '@agnes/protocol'
-import { pluginFailureHelp } from '@agnes/protocol'
-import { Badge, Button, Field, Select, type StateTone, useUiText } from '@agnes/web-ui'
+import {
+  Badge,
+  Button,
+  Field,
+  Select,
+  SettingsCard,
+  SettingsInput,
+  type StateTone,
+  useUiText,
+} from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
 import { ChoiceLabel, choiceName, type ResolvedComposition, readComposition } from '../../settings/choices.js'
@@ -44,7 +52,7 @@ export function PluginBadges({
   t: Text
 }) {
   return (
-    <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap', marginBlock: '0.375rem' }}>
+    <div className="agnes-settings-actions">
       {(item.kinds ?? []).map((kind) => (
         <Badge key={`kind:${kind}`}>{t(`kind.${kind}`)}</Badge>
       ))}
@@ -96,12 +104,11 @@ export function KindFilter({
   t: Text
 }) {
   return (
-    <Field label={t('kind.filter')} style={{ display: 'grid', gap: '0.375rem', marginBlock: '0.75rem' }}>
+    <Field label={t('kind.filter')}>
       <Select<PluginKind | ''>
         aria-label={t('kind.filter')}
         value={value}
         onChange={onChange}
-        style={{ minWidth: 180 }}
         options={[
           { value: '', label: t('kind.all') },
           ...PLUGIN_KINDS.map((kind) => ({ value: kind, label: t(`kind.${kind}`) })),
@@ -211,19 +218,8 @@ export function SessionDefaultsPanel({
     (!!adapter && !selectedAdapter) ||
     (!!model && !selectedAdapter?.models.some((entry) => entry.id === model))
   return (
-    <section
-      className="plugin-session-defaults"
-      style={{
-        padding: '0.75rem',
-        marginBottom: '1rem',
-        border: '1px solid var(--agnes-line-primary)',
-        borderRadius: 'var(--radius-card)',
-        background: 'var(--agnes-bg-surface)',
-      }}
-      aria-label={t('defaults.title')}
-      aria-busy={busy}
-    >
-      <h2>{t('defaults.title')}</h2>
+    <SettingsCard className="plugin-session-defaults" aria-label={t('defaults.title')} aria-busy={busy}>
+      <h3>{t('defaults.title')}</h3>
       <p>{t('defaults.description')}</p>
       {error && (
         <p className="resource-safe-error" role="alert">
@@ -234,46 +230,51 @@ export function SessionDefaultsPanel({
       {stale && <p role="alert">{t('defaults.stale')}</p>}
       {catalog && (
         <form
-          style={{ display: 'grid', gap: '0.75rem' }}
           onSubmit={(event) => {
             event.preventDefault()
             void save()
           }}
         >
           {(catalog.presets.length > 0 || preset) && (
-            <Field label={t('defaults.preset')} style={{ display: 'grid', gap: '0.375rem' }}>
-              <Select<string>
-                aria-label={t('defaults.preset')}
-                value={preset}
-                disabled={busy || !canSave}
-                onChange={setPreset}
-                options={[
-                  {
-                    value: '',
-                    label: `${t('defaults.configured')} (${composition?.preset ? choiceName({ id: composition.preset }, choiceText) : choiceText('choiceSourceUnknown')})`,
-                  },
-                  ...(preset && !catalog.presets.includes(preset)
-                    ? [
-                        {
-                          value: preset,
-                          label: `${preset} · ${t('defaults.unavailable-choice')}`,
-                          disabled: true,
-                        },
-                      ]
-                    : []),
-                  ...catalog.presets.map((value) => ({
-                    value,
-                    label: <ChoiceLabel entry={{ id: value }} t={choiceText} />,
-                  })),
-                ]}
-              />
+            <Field label={t('defaults.preset')}>
+              {catalog.presets.length === 1 && (!preset || preset === catalog.presets[0]) ? (
+                <div data-testid="admin-default-preset-readonly">
+                  <ChoiceLabel entry={{ id: catalog.presets[0]! }} t={choiceText} />
+                </div>
+              ) : (
+                <Select<string>
+                  aria-label={t('defaults.preset')}
+                  value={preset}
+                  disabled={busy || !canSave}
+                  onChange={setPreset}
+                  options={[
+                    {
+                      value: '',
+                      label: `${t('defaults.configured')} (${composition?.preset ? choiceName({ id: composition.preset }, choiceText) : choiceText('choiceSourceUnknown')})`,
+                    },
+                    ...(preset && !catalog.presets.includes(preset)
+                      ? [
+                          {
+                            value: preset,
+                            label: `${preset} · ${t('defaults.unavailable-choice')}`,
+                            disabled: true,
+                          },
+                        ]
+                      : []),
+                    ...catalog.presets.map((value) => ({
+                      value,
+                      label: <ChoiceLabel entry={{ id: value }} t={choiceText} />,
+                    })),
+                  ]}
+                />
+              )}
             </Field>
           )}
           <Field
             label={t('defaults.loop')}
             hint={
               composition
-                ? `${choiceText('choiceSource')} ${composition.source.layer} · ${composition.source.name}`
+                ? `${choiceText('choiceSource')} ${choiceText(composition.source.layer === 'admin' ? 'choiceSourceAdmin' : composition.source.layer === 'default' ? 'choiceSourceBuiltin' : 'choiceSourceProfile')} · ${composition.source.name}`
                 : choiceText('choiceSourceUnknown')
             }
           >
@@ -295,7 +296,7 @@ export function SessionDefaultsPanel({
                       ? `${t('defaults.configured')} (${choiceName(catalog.loops.find((entry) => identity(entry) === identity(composition.loop)) ?? composition.loop, choiceText)} · ${composition.loop.id} ${composition.loop.version})`
                       : t('defaults.configured'),
                     title: composition
-                      ? `${composition.source.layer} · ${composition.source.name}`
+                      ? `${choiceText(composition.source.layer === 'admin' ? 'choiceSourceAdmin' : composition.source.layer === 'default' ? 'choiceSourceBuiltin' : 'choiceSourceProfile')} · ${composition.source.name}`
                       : choiceText('choiceSourceUnknown'),
                   },
                   ...(loop && !selectedLoop && catalog.snapshot.defaults.loop
@@ -320,12 +321,11 @@ export function SessionDefaultsPanel({
               {selectedLoop.sourcePackage} · {selectedLoop.capabilities.join(', ')}
             </p>
           )}
-          <Field label={t('defaults.adapter')} style={{ display: 'grid', gap: '0.375rem' }}>
+          <Field label={t('defaults.adapter')}>
             <Select<string>
               aria-label={t('defaults.adapter')}
               value={adapter}
               disabled={busy || !canSave}
-              style={{ width: '100%', maxWidth: 480 }}
               onChange={(value) => {
                 setAdapter(value)
                 setModel('')
@@ -349,12 +349,11 @@ export function SessionDefaultsPanel({
             />
           </Field>
           {selectedAdapter && (
-            <Field label={t('defaults.model')} style={{ display: 'grid', gap: '0.375rem' }}>
+            <Field label={t('defaults.model')}>
               <Select<string>
                 aria-label={t('defaults.model')}
                 value={model || null}
                 disabled={busy || !canSave}
-                style={{ width: '100%', maxWidth: 480 }}
                 onChange={setModel}
                 options={selectedAdapter.models.map((entry) => ({
                   value: entry.id,
@@ -371,11 +370,11 @@ export function SessionDefaultsPanel({
       <Button onClick={() => setReload((value) => value + 1)} disabled={!api || busy}>
         {t('defaults.reload')}
       </Button>
-    </section>
+    </SettingsCard>
   )
 }
 
-export function pluginFailureMessage(message: string, t: Text): string {
+export function pluginFailureMessage(message: string, t: Text, code?: string): string {
   const keys: Record<string, string> = {
     'Plugin export is missing.': 'failure.missing-export',
     'Plugin API range is incompatible.': 'failure.api-range',
@@ -385,8 +384,10 @@ export function pluginFailureMessage(message: string, t: Text): string {
     'Plugin capability policy blocked activation.': 'failure.capability',
     'Runtime activation failed.': 'failure.activation',
   }
-  const reason = keys[message] ? t(keys[message]) : message
-  return reason + ' ' + pluginFailureHelp(message).fixHint
+  const reason = t(
+    code?.startsWith('CLIENT_MODULE_') ? 'failure.frontend' : (keys[message] ?? 'failure.activation'),
+  )
+  return `${reason} ${t('failure.repair')}`
 }
 
 export function BundlesPanel({
@@ -495,7 +496,7 @@ export function BundlesPanel({
     }
   }
   return (
-    <section aria-label={t('bundles.title')} style={{ marginBlock: '1rem' }}>
+    <SettingsCard aria-label={t('bundles.title')}>
       <h2>{t('bundles.title')}</h2>
       <p>{t('bundles.description')}</p>
       <SessionToolsPanel value={sessionInfo} t={settingsText} />
@@ -528,30 +529,39 @@ export function BundlesPanel({
               </li>
             ))}
           </ol>
-          {snapshot.catalog.map(({ id, sourcePackage }) => (
-            <label key={id} style={{ display: 'block' }}>
-              <input
-                type="checkbox"
-                checked={selected.includes(id)}
-                disabled={busy || !canSave}
-                onChange={(event) =>
-                  setSelected((prior) =>
-                    event.target.checked ? [...prior, id] : prior.filter((entry) => entry !== id),
-                  )
-                }
-              />{' '}
-              {selected.includes(id) ? String(selected.indexOf(id) + 1) + '. ' : ''}
-              {id}
-              {' · '}
-              {sourcePackage}
-            </label>
-          ))}
+          {snapshot.catalog.map((entry) => {
+            const { id, sourcePackage } = entry
+            return (
+              <label
+                key={id}
+                className="agnes-settings-checkbox"
+                htmlFor={`bundle-default-${encodeURIComponent(id)}`}
+              >
+                <SettingsInput
+                  id={`bundle-default-${encodeURIComponent(id)}`}
+                  type="checkbox"
+                  checked={selected.includes(id)}
+                  disabled={busy || !canSave}
+                  onChange={(event) =>
+                    setSelected((prior) =>
+                      event.target.checked ? [...prior, id] : prior.filter((entry) => entry !== id),
+                    )
+                  }
+                />{' '}
+                {selected.includes(id) ? String(selected.indexOf(id) + 1) + '. ' : ''}
+                <ChoiceLabel entry={entry} t={settingsText} />
+                {' · '}
+                {sourcePackage}
+              </label>
+            )
+          })}
           {selected
             .filter((id) => !snapshot.catalog.some((entry) => entry.id === id))
             .map((id) => (
               <p key={id}>
-                <label>
-                  <input
+                <label htmlFor={`bundle-missing-${encodeURIComponent(id)}`}>
+                  <SettingsInput
+                    id={`bundle-missing-${encodeURIComponent(id)}`}
                     type="checkbox"
                     checked
                     disabled={busy || !canSave}
@@ -610,11 +620,9 @@ export function BundlesPanel({
             </tbody>
           </table>
           {/* biome-ignore lint/a11y/noNoninteractiveTabindex: focus enables keyboard scrolling of the dump. */}
-          <pre tabIndex={0} style={{ maxHeight: '24rem', overflow: 'auto' }}>
-            {dump}
-          </pre>
+          <pre tabIndex={0}>{dump}</pre>
         </>
       )}
-    </section>
+    </SettingsCard>
   )
 }

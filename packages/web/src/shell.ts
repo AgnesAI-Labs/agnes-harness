@@ -69,6 +69,7 @@ export function bindSidebar(narrow: MediaQueryList): { close(): void; dismiss():
   closeButton.addEventListener('click', onDismiss)
   backdrop.addEventListener('click', onDismiss)
   document.addEventListener('keydown', onKeydown)
+  window.addEventListener('agnes:locale-changed', sync)
   sync()
   return {
     close,
@@ -79,6 +80,7 @@ export function bindSidebar(narrow: MediaQueryList): { close(): void; dismiss():
       closeButton.removeEventListener('click', onDismiss)
       backdrop.removeEventListener('click', onDismiss)
       document.removeEventListener('keydown', onKeydown)
+      window.removeEventListener('agnes:locale-changed', sync)
     },
   }
 }

@@ -236,7 +236,7 @@ export function PluginList({
   onOpen(item: PackageInstalledDescriptor | PackageCatalogDescriptor): void
   onToggleDesired(item: PackageInstalledDescriptor, next: boolean): void
   onLoadMore(): void
-  formatFailure?(message: string): string
+  formatFailure?(message: string, code?: string): string
   metadataOf?(item: PackageInstalledDescriptor | PackageCatalogDescriptor): ReactNode
 }): JSX.Element {
   const { t } = useUiText(ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog)
@@ -316,7 +316,9 @@ export function PluginList({
                 <SurfaceLinks links={surfaceLinksOf(item.id)} packageId={item.id} t={t} />
               )}
               {failureReason && (
-                <p className="resource-safe-error">{formatFailure?.(failureReason) ?? failureReason}</p>
+                <p className="resource-safe-error">
+                  {formatFailure?.(failureReason, runtime?.error?.code) ?? t('list.failure')}
+                </p>
               )}
             </div>
             {tab === 'discover' && <CatalogCompatibility item={item as PackageCatalogDescriptor} />}

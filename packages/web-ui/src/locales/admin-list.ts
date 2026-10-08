@@ -4,6 +4,7 @@ export const ADMIN_LIST_LOCALE_NAMESPACE = '@agnes/web-ui/admin-list'
 
 export const adminListLocaleCatalog: LocaleCatalog = {
   en: {
+    'list.failure': 'The plugin could not load. Review its details and retry.',
     'surface.open-aria': 'Open the {surfaceId} page for {packageId} at {mount}',
     'surface.open-page': 'Open page · {mount}',
     'orphan.title': 'Orphan runtime pins have not been released',
@@ -29,6 +30,7 @@ export const adminListLocaleCatalog: LocaleCatalog = {
     'load-more': 'Load more catalog entries',
   },
   'zh-CN': {
+    'list.failure': '未能加载插件。请检查详情后重试。',
     'surface.open-aria': '打开 {packageId} 的 {surfaceId} 页面 {mount}',
     'surface.open-page': '打开页面 · {mount}',
     'orphan.title': '存在未释放的孤儿运行时 pin',

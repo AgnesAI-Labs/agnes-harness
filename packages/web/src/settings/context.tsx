@@ -1,4 +1,13 @@
-import { Button, Field, useUiText } from '@agnes/web-ui'
+import {
+  Button,
+  Field,
+  SettingsCard,
+  SettingsInput,
+  SettingsSelect,
+  SettingsState,
+  SettingsTextArea,
+  useUiText,
+} from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { SETTINGS_NAMESPACE, settingsCatalog } from './locales.js'
 import { sessionStartUrl } from './runtime-panels.js'
@@ -147,15 +156,16 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
     }
   }
   return (
-    <section data-testid="context-panel" aria-busy={busy}>
+    <SettingsCard data-testid="context-panel" aria-busy={busy}>
       <p>{t('contextHelp')}</p>
-      {error && <p role="alert">{t('contextFailed')}</p>}
-      {saved && <p role="status">{t('contextSaved')}</p>}
+      {error && <SettingsState tone="error">{t('contextFailed')}</SettingsState>}
+      {saved && <SettingsState tone="success">{t('contextSaved')}</SettingsState>}
       {config && (
         <fieldset disabled={!canSave || busy}>
           <legend>{t('contextDefaults')}</legend>
-          <label>
-            <input
+          <label className="agnes-settings-checkbox" htmlFor="context-rules-enabled">
+            <SettingsInput
+              id="context-rules-enabled"
               data-testid="context-rules-enabled"
               type="checkbox"
               checked={config.rulesEnabled}
@@ -163,8 +173,9 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
             />
             {t('contextRules')}
           </label>
-          <label>
-            <input
+          <label className="agnes-settings-checkbox" htmlFor="context-time-enabled">
+            <SettingsInput
+              id="context-time-enabled"
               data-testid="context-time-enabled"
               type="checkbox"
               checked={config.timeEnabled}
@@ -173,7 +184,7 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
             {t('contextTime')}
           </label>
           <Field label={t('contextZone')} htmlFor="context-zone">
-            <input
+            <SettingsInput
               id="context-zone"
               data-testid="context-zone"
               value={config.timeZone}
@@ -181,7 +192,7 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
             />
           </Field>
           <Field label={t('contextInterval')} htmlFor="context-interval">
-            <input
+            <SettingsInput
               id="context-interval"
               type="number"
               min={0}
@@ -191,7 +202,7 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
             />
           </Field>
           <Field label={t('contextRoots')} htmlFor="context-roots">
-            <textarea
+            <SettingsTextArea
               id="context-roots"
               data-testid="context-skill-roots"
               value={roots}
@@ -204,7 +215,7 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
         </fieldset>
       )}
       <Field label={t('workspace')} htmlFor="context-workspace">
-        <select
+        <SettingsSelect
           id="context-workspace"
           data-testid="context-workspace"
           disabled={busy}
@@ -219,7 +230,7 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
                 {w.path}
               </option>
             ))}
-        </select>
+        </SettingsSelect>
       </Field>
       <Button data-testid="context-refresh" disabled={busy} onClick={() => void refresh()}>
         {t('contextRefresh')}
@@ -237,15 +248,15 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
             </details>
           ))}
           {snapshot.rules.skipped.length > 0 && (
-            <p role="status">
+            <SettingsState tone="success">
               {t('contextSkipped')}: {snapshot.rules.skipped.join(', ')}
-            </p>
+            </SettingsState>
           )}
         </div>
       )}
       <h3>{t('contextSkillInvoke')}</h3>
       <Field label={t('contextSkillName')} htmlFor="context-skill">
-        <input
+        <SettingsInput
           id="context-skill"
           data-testid="context-skill-name"
           value={skill}
@@ -253,7 +264,7 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
         />
       </Field>
       <Field label={t('contextSkillArgs')} htmlFor="context-skill-args">
-        <input id="context-skill-args" value={args} onChange={(e) => setArgs(e.target.value)} />
+        <SettingsInput id="context-skill-args" value={args} onChange={(e) => setArgs(e.target.value)} />
       </Field>
       <Button
         data-testid="context-skill-invoke"
@@ -263,6 +274,6 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
         {t('contextSkillInvoke')}
       </Button>
       <p>{t('contextQuestionHelp')}</p>
-    </section>
+    </SettingsCard>
   )
 }

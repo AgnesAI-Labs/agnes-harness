@@ -46,6 +46,7 @@ export {
 } from './dsh-slot-catalog.js'
 export type { ExternalSpecifier } from './externals.js'
 export { BUILDER_VERSION, externals } from './externals.js'
+export { slotLocaleCatalog } from './locales.js'
 export type { SlotOutletProps } from './outlet.js'
 export { SlotOutlet, SlotsProvider } from './outlet.js'
 export type { RegisterOptions } from './registry.js'
@@ -109,3 +110,10 @@ export type {
   WorkbenchPanelProps,
 } from './slots.js'
 export { SLOT_TABLE } from './slots.js'
+export type {
+  ConversationCard,
+  ConversationCardInput,
+  SettingsSection,
+  UiExtensionContext,
+} from './ui-registries.js'
+export { conversationCards, settingsSections, UiExtensionRegistry } from './ui-registries.js'

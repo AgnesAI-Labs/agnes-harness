@@ -1,3 +1,13 @@
+import {
+  Button,
+  Dialog,
+  Field,
+  SettingsCard,
+  SettingsInput,
+  SettingsSelect,
+  SettingsState,
+  SettingsTextArea,
+} from '@agnes/web-ui'
 import { useCallback, useEffect, useState } from 'react'
 
 export type SchedulesApi = {
@@ -49,13 +59,14 @@ function selectorOf(
   return zone ? { cron: { expr: cron, timeZone: zone } } : { cron: { expr: cron } }
 }
 
-export function SchedulesPage({ api, t }: { api?: SchedulesApi; t(key: string): string }) {
+export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(key: string): string }) {
   const [scope, setScope] = useState<'session' | 'all'>('session')
   const [includeArchived, setIncludeArchived] = useState(false)
   const [rows, setRows] = useState<ScheduleRow[]>([])
   const [error, setError] = useState<unknown>()
   const [notice, setNotice] = useState<string>()
   const [pending, setPending] = useState<string>()
+  const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState<string>()
   const [title, setTitle] = useState('')
   const [prompt, setPrompt] = useState('')
@@ -88,13 +99,14 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi; t(key: string): 
     void refresh()
   }, [refresh])
   const save = async (id?: string) => {
-    if (!api) return
+    if (!api || busy) return
     const key = sessionKey
     if (!key) {
-      setError(t('schedulesOpenSession'))
+      setError('schedulesOpenSession')
       return
     }
     setError(undefined)
+    setBusy(true)
     try {
       const result = (await api.upsert({
         sessionKey: key,
@@ -104,45 +116,50 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi; t(key: string): 
         selector: selectorOf(kind, when, zone, weekdays, cron),
       })) as { id?: string; code?: string; updated?: boolean }
       if (result.code || result.updated === false) {
-        setError(result.code ?? t('schedulesError'))
+        setError('schedulesError')
         return
       }
-      setNotice(id ? t('schedulesSaved') : t('schedulesCreated'))
+      setNotice(id ? 'schedulesSaved' : 'schedulesCreated')
       setEditing(undefined)
       await refresh()
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : t('schedulesError'))
+    } catch {
+      setError('schedulesError')
+    } finally {
+      setBusy(false)
     }
   }
   return (
-    <div data-testid="schedules-page">
+    <SettingsCard data-testid="schedules-page">
       <p>{t('schedulesHelp')}</p>
       {!api && (
-        <p role="alert" data-testid="schedules-error">
+        <SettingsState tone="error" data-testid="schedules-error">
           {t('schedulesUnavailable')}
-        </p>
+        </SettingsState>
       )}
-      <fieldset data-testid="schedules-scope" aria-label={t('schedulesScope')}>
-        <button
-          type="button"
+      <fieldset className="agnes-settings-actions" data-testid="schedules-scope" aria-label={t('schedulesScope')}>
+        <Button
+          htmlType="button"
           data-testid="schedules-scope-session"
           aria-pressed={scope === 'session'}
+          type={scope === 'session' ? 'primary' : 'default'}
           onClick={() => setScope('session')}
         >
           {t('schedulesSession')}
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          htmlType="button"
           data-testid="schedules-scope-all"
           aria-pressed={scope === 'all'}
+          type={scope === 'all' ? 'primary' : 'default'}
           onClick={() => setScope('all')}
         >
           {t('schedulesAll')}
-        </button>
+        </Button>
       </fieldset>
-      <label>
-        <input
+      <label className="agnes-settings-checkbox" htmlFor="schedules-include-archived">
+        <SettingsInput
           type="checkbox"
+          id="schedules-include-archived"
           checked={includeArchived}
           onChange={(event) => setIncludeArchived(event.target.checked)}
         />
@@ -156,30 +173,32 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi; t(key: string): 
         </p>
       )}
       <form
+        aria-busy={busy}
         onSubmit={(event) => {
           event.preventDefault()
-          void save(editing)
+          if (!busy && api && sessionKey) void save(editing)
         }}
       >
-        <label>
-          {t('schedulesTitle')}
-          <input
+        <Field label={t('schedulesTitle')}>
+          <SettingsInput
+            disabled={!api || !sessionKey || busy}
+            required
             data-testid="schedules-title"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
           />
-        </label>
-        <label>
-          {t('schedulesPrompt')}
-          <textarea
+        </Field>
+        <Field label={t('schedulesPrompt')}>
+          <SettingsTextArea
+            disabled={!api || !sessionKey || busy}
+            required
             data-testid="schedules-prompt"
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
           />
-        </label>
-        <label>
-          {t('schedulesKind')}
-          <select
+        </Field>
+        <Field label={t('schedulesKind')}>
+          <SettingsSelect
             data-testid="schedules-kind"
             value={kind}
             onChange={(event) => setKind(event.target.value as Kind)}
@@ -189,35 +208,34 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi; t(key: string): 
                 {t(`schedulesKind.${item}`)}
               </option>
             ))}
-          </select>
-        </label>
+          </SettingsSelect>
+        </Field>
         {kind !== 'cron' && (
-          <label>
-            {t('schedulesWhen')}
-            <input
+          <Field label={t('schedulesWhen')}>
+            <SettingsInput
               data-testid="schedules-when"
               value={when}
               onChange={(event) => setWhen(event.target.value)}
             />
-          </label>
+          </Field>
         )}
         {(kind === 'daily' || kind === 'weekly' || kind === 'cron') && (
-          <label>
-            {t('schedulesZone')}
-            <input
+          <Field label={t('schedulesZone')}>
+            <SettingsInput
               data-testid="schedules-zone"
               value={zone}
               onChange={(event) => setZone(event.target.value)}
             />
-          </label>
+          </Field>
         )}
         {kind === 'weekly' && (
           <fieldset data-testid="schedules-weekdays">
             <legend>{t('schedulesWeekdays')}</legend>
             {[0, 1, 2, 3, 4, 5, 6].map((day) => (
-              <label key={day}>
-                <input
+              <label key={day} htmlFor={`schedule-weekday-${day}`}>
+                <SettingsInput
                   type="checkbox"
+                  id={`schedule-weekday-${day}`}
                   checked={weekdays.includes(day)}
                   onChange={(event) =>
                     setWeekdays((current) =>
@@ -233,74 +251,97 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi; t(key: string): 
           </fieldset>
         )}
         {kind === 'cron' && (
-          <label>
-            {t('schedulesCron')}
-            <input
+          <Field label={t('schedulesCron')}>
+            <SettingsInput
               data-testid="schedules-cron"
               value={cron}
               onChange={(event) => setCron(event.target.value)}
             />
-          </label>
+          </Field>
         )}
-        <button type="submit" data-testid={editing ? 'schedules-save' : 'schedules-create'}>
+        <Button
+          htmlType="submit"
+          disabled={!api || !sessionKey || busy || !title.trim() || !prompt.trim()}
+          loading={busy}
+          data-testid={editing ? 'schedules-save' : 'schedules-create'}
+        >
           {editing ? t('schedulesSave') : t('schedulesCreate')}
-        </button>
+        </Button>
       </form>
       {notice && (
-        <p role="status" data-testid="schedules-notice">
-          {notice}
-        </p>
+        <SettingsState tone="success" data-testid="schedules-notice">
+          {t(notice)}
+        </SettingsState>
       )}
       {error !== undefined && api && (
-        <p role="alert" data-testid="schedules-error">
-          {error instanceof Error ? error.message : typeof error === 'string' ? error : t('schedulesError')}
-        </p>
+        <SettingsState tone="error" data-testid="schedules-error">
+          {t(typeof error === 'string' && error === 'schedulesOpenSession' ? error : 'schedulesError')}
+        </SettingsState>
       )}
       {api && rows.length === 0 && !error && <p data-testid="schedules-empty">{t('schedulesEmpty')}</p>}
-      <ul>
+      <ul className="agnes-settings-list">
         {rows.map((row) => (
           <li key={row.id} data-testid="schedules-row">
-            <button
-              type="button"
+            <Button
+              htmlType="button"
               onClick={() => {
                 setEditing(row.id)
                 setTitle(row.title)
                 setPrompt(row.prompt)
+                const selected = KINDS.find((item) => item in row.selector)
+                if (selected) {
+                  setKind(selected)
+                  const value = row.selector[selected]
+                  if (value && typeof value === 'object') {
+                    const fields = value as {
+                      time?: string
+                      timeZone?: string
+                      weekdays?: number[]
+                      expr?: string
+                    }
+                    setWhen(fields.time ?? '09:00')
+                    setZone(fields.timeZone ?? 'UTC')
+                    setWeekdays(fields.weekdays ?? [1])
+                    setCron(fields.expr ?? '0 9 * * 1-5')
+                  } else setWhen(String(value ?? ''))
+                }
               }}
             >
               {row.title}
-            </button>
+            </Button>
             <span data-testid="schedules-next">
               {t('schedulesNext')}:{' '}
-              {row.nextRunAt === null ? t('schedulesNone') : new Date(row.nextRunAt).toISOString()}
+              {row.nextRunAt === null
+                ? t('schedulesNone')
+                : new Date(row.nextRunAt).toLocaleString(document.documentElement.lang || 'en')}
             </span>
             <span>
-              {t('schedulesStatus')}: {row.status}
+              {t('schedulesStatus')}: {t(`schedulesStatus.${row.status}`)}
             </span>
             <details data-testid="schedules-history">
               <summary>{t('schedulesHistory')}</summary>
               <ul>
                 {row.deliveries.map((delivery) => (
                   <li key={`${delivery.at}:${delivery.seq ?? ''}`}>
-                    {new Date(delivery.at).toISOString()}
-                    {delivery.reason ? ` ${delivery.reason}` : ''}
+                    {new Date(delivery.at).toLocaleString(document.documentElement.lang || 'en')}
+                    {delivery.reason ? ` · ${t('schedulesDeliveryIssue')}` : ''}
                   </li>
                 ))}
               </ul>
             </details>
             {row.status === 'active' && (
-              <button type="button" data-testid="schedules-archive" onClick={() => setPending(row.id)}>
+              <Button htmlType="button" data-testid="schedules-archive" onClick={() => setPending(row.id)}>
                 {t('schedulesArchive')}
-              </button>
+              </Button>
             )}
           </li>
         ))}
       </ul>
       {pending && (
-        <div role="dialog" aria-modal="true" aria-label={t('schedulesConfirm')}>
+        <Dialog open title={t('schedulesConfirm')} footer={null} onCancel={() => setPending(undefined)}>
           <p>{t('schedulesConfirmBody')}</p>
-          <button
-            type="button"
+          <Button
+            htmlType="button"
             data-testid="schedules-archive-confirm"
             onClick={() => {
               const id = pending
@@ -309,21 +350,23 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi; t(key: string): 
               void api
                 .archive({ id })
                 .then(() => {
-                  setNotice(t('schedulesArchived'))
+                  setNotice('schedulesArchived')
                   return refresh()
                 })
-                .catch((reason: unknown) =>
-                  setError(reason instanceof Error ? reason.message : t('schedulesError')),
-                )
+                .catch(() => setError('schedulesError'))
             }}
           >
             {t('schedulesConfirm')}
-          </button>
-          <button type="button" data-testid="schedules-archive-cancel" onClick={() => setPending(undefined)}>
+          </Button>
+          <Button
+            htmlType="button"
+            data-testid="schedules-archive-cancel"
+            onClick={() => setPending(undefined)}
+          >
             {t('schedulesCancel')}
-          </button>
-        </div>
+          </Button>
+        </Dialog>
       )}
-    </div>
+    </SettingsCard>
   )
 }

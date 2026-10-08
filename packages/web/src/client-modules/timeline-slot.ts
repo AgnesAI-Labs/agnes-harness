@@ -18,6 +18,7 @@ import {
 import type { AntdRoot } from '@agnes/web-ui'
 import { createAntdRoot } from '@agnes/web-ui'
 import { createElement, type ReactElement } from 'react'
+import { toolCardsLocaleCatalog } from '../locales/tool-cards.js'
 import type { ClaimResolver } from './boot.js'
 
 /** 与 protocol `kind:'slot'` 节点同形的最小切片。 */
@@ -71,7 +72,9 @@ export function mountSlotCard(options: {
   const context = options.context
   if (!context) {
     element.setAttribute('data-slot-state', 'empty')
-    element.textContent = cardContext?.locale?.t('slot.notReady') ?? 'Plugin for this card is not ready'
+    element.textContent =
+      cardContext?.locale?.t('slot.notReady') ??
+      toolCardsLocaleCatalog[document.documentElement.lang === 'zh-CN' ? 'zh-CN' : 'en']['slot.notReady']
     return {
       element,
       update(next: SlotNodeView) {

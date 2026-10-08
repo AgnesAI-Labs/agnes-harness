@@ -37,9 +37,13 @@ export function readComposition(value: unknown): ResolvedComposition | undefined
     selection?: { loop?: { id?: unknown; version?: unknown } }
     sources?: { loop?: { layer?: unknown; name?: unknown } }
     preset?: unknown
+    capabilities?: {
+      loop?: { value?: { id?: unknown; version?: unknown }; source?: { layer?: unknown; name?: unknown } }
+      preset?: unknown
+    }
   }
-  const loop = row.selection?.loop,
-    source = row.sources?.loop
+  const loop = row.capabilities?.loop?.value ?? row.selection?.loop,
+    source = row.capabilities?.loop?.source ?? row.sources?.loop
   if (
     typeof loop?.id !== 'string' ||
     typeof loop.version !== 'string' ||

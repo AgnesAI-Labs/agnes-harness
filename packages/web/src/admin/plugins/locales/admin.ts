@@ -5,6 +5,11 @@ export const PLUGIN_ADMIN_LOCALE_NAMESPACE = '@agnes/web/plugin-admin'
 
 export const pluginAdminLocaleCatalog: LocaleCatalog = {
   en: {
+    'failure.repair': 'Review the plugin details, resolve the reported issue and retry activation.',
+    'compatibility.supported': 'Supported',
+    'compatibility.unsupported': 'Unsupported',
+    'compatibility.unknown': 'Not yet checked',
+    'error.operation-failed': 'The plugin operation could not complete. Refresh the details and retry.',
     'bundles.up': 'Move up',
     'bundles.down': 'Move down',
     'kind.bundle': 'Bundle',
@@ -204,6 +209,11 @@ export const pluginAdminLocaleCatalog: LocaleCatalog = {
     'source.validation.prefix': 'This source reference must start with “{prefix}”, for example {example}.',
   },
   'zh-CN': {
+    'failure.repair': '检查插件详情，解决已报告的问题后重试启用。',
+    'compatibility.supported': '兼容',
+    'compatibility.unsupported': '不兼容',
+    'compatibility.unknown': '尚未检查',
+    'error.operation-failed': '未能完成插件操作。请刷新详情后重试。',
     'bundles.up': '上移',
     'bundles.down': '下移',
     'kind.bundle': '组合包',
@@ -363,7 +373,7 @@ export const pluginAdminLocaleCatalog: LocaleCatalog = {
       '停用后插件 UI 贡献将移除，Agnes 原界面保持可用；后台会在安全边界完成排干与撤销。',
     'confirm.disable.action': '请求停用',
     'confirm.remove.title': '卸载 {id}',
-    'confirm.remove.description': '卸载会由后台检查依赖、运行代际和部署引用。出现阻断项时不会绕过检查。',
+    'confirm.remove.description': '卸载会由后台检查依赖、插件代际和部署引用。出现阻断项时不会绕过检查。',
     'confirm.remove.action': '确认卸载',
     'confirm.rollback.title': '回滚 {id} 到 {version}',
     'confirm.rollback.description': '后台会重新核验目标摘要，并原子执行回滚与安全激活。',

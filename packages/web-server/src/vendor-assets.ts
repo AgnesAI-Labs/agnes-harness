@@ -5,6 +5,8 @@ export const VENDOR_ENTRY_NAMES = new Set([
   'react-dom',
   'react-dom-client',
   'antd',
+  'antd-en-us',
+  'antd-zh-cn',
   'assistant-ui',
   'cordis',
   'web-client',

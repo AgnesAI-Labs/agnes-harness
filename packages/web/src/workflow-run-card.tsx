@@ -1,4 +1,5 @@
 import type { ToolCardInlinePayload } from '@agnes/protocol/gen/slots'
+import { ConversationCardLayout } from '@agnes/web-ui'
 
 /** The workflow extension publishes ordinary public table data; execution stays in the backend. */
 export function WorkflowRunCard({
@@ -16,7 +17,7 @@ export function WorkflowRunCard({
     groups.set(name, members)
   }
   return (
-    <article
+    <ConversationCardLayout
       className="conversation-native-card"
       data-testid="workflow-run-card"
       aria-label={t('cards.workflow.title')}
@@ -50,6 +51,6 @@ export function WorkflowRunCard({
           </ul>
         </details>
       ))}
-    </article>
+    </ConversationCardLayout>
   )
 }

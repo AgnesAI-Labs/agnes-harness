@@ -5,7 +5,8 @@ type ToolNode = Extract<UINode, { kind: 'tool' }>
 /** Identifies existing presentation surfaces; does not infer job or child lifecycle state. */
 export function conversationToolCardKind(
   node: ToolNode,
-): 'background-job' | 'child-agent' | 'workflow-run' | undefined {
+): 'background-job' | 'child-agent' | 'workflow-run' | 'plan' | undefined {
+  if (node.name === 'update_plan') return 'plan'
   if (['job_list', 'job_output', 'job_kill'].includes(node.name)) return 'background-job'
   if (node.name === 'shell' && node.resultPreview?.startsWith('background job ')) return 'background-job'
   if (node.name === 'workflow' || node.name === 'workflow_status') return 'workflow-run'

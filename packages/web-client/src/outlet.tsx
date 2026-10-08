@@ -9,6 +9,7 @@ import {
   useRef,
   useSyncExternalStore,
 } from 'react'
+import { slotLocaleCatalog } from './locales.js'
 import type { SlotRegistry } from './registry.js'
 import type { ClientResourceService, LocaleService, SessionService } from './services.js'
 import type { ChainRenderOpts, SlotEntry, SlotName, SlotProps } from './slots.js'
@@ -127,7 +128,10 @@ export function SlotOutlet<N extends SlotName>(outletProps: SlotOutletProps<N>):
     createElement(
       'div',
       { 'data-slot-placeholder': '1' },
-      runtime.locale?.t('slot.notReady') ?? 'Plugin for this slot is not ready',
+      runtime.locale?.t('slot.notReady') ??
+        slotLocaleCatalog[
+          typeof document !== 'undefined' && document.documentElement.lang === 'zh-CN' ? 'zh-CN' : 'en'
+        ]['slot.notReady'],
     )
 
   if (spec?.kind === 'chain') {

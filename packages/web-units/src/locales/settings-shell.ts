@@ -3,12 +3,15 @@ import type { LocaleCatalog } from './index.js'
 /** 设置壳模板（S1）：首帧由宿主 applyLocaleText 回填，切换语言走 boot 的全文档回填。 */
 export const settingsShellLocaleCatalog: LocaleCatalog = {
   en: {
+    'settings-shell.mcpNav': 'MCP',
+    'settings-shell.computerUseNav': 'Computer Use',
+
     'settings-shell.group.agent': 'Agent',
     'settings-shell.group.plugins': 'Plugins',
     'settings-shell.group.tools': 'Tools & search',
     'settings-shell.group.automation': 'Automation',
     'settings-shell.group.security': 'Security',
-    'settings-shell.group.history': 'History',
+    'settings-shell.group.history': 'History & archive',
     'settings-shell.page.models': 'Loop & adapters',
     'settings-shell.page.bundles': 'Bundles & presets',
     'settings-shell.page.engines': 'Child engines',
@@ -91,17 +94,20 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'settings-shell.saveAccount': 'Save account',
   },
   'zh-CN': {
+    'settings-shell.mcpNav': 'MCP',
+    'settings-shell.computerUseNav': 'Computer Use',
+
     'settings-shell.group.agent': 'Agent',
     'settings-shell.group.plugins': '插件',
     'settings-shell.group.tools': '工具与搜索',
     'settings-shell.group.automation': '自动化',
     'settings-shell.group.security': '安全',
     'settings-shell.group.history': '历史与归档',
-    'settings-shell.page.models': 'Loop 与适配器',
+    'settings-shell.page.models': 'Agent Loop 与适配器',
     'settings-shell.page.bundles': '组合包与预设',
     'settings-shell.page.engines': '子代理引擎',
     'settings-shell.page.plugins': '已安装与发现',
-    'settings-shell.page.providers': '提供器',
+    'settings-shell.page.providers': '插件类型',
     'settings-shell.page.examples': '示例与 FDE',
     'settings-shell.page.search': '网页搜索',
     'settings-shell.page.context': '上下文',

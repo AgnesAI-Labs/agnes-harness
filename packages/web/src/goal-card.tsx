@@ -1,7 +1,17 @@
 import type { UITimeline } from '@agnes/protocol'
 import type { GoalSnapshot, StatusLinePayload } from '@agnes/protocol/gen/slots'
-import { Button, Field, renderRegion } from '@agnes/web-ui'
+import { conversationCards } from '@agnes/web-client'
+import {
+  Button,
+  ConversationCardLayout,
+  Field,
+  renderRegion,
+  SettingsInput,
+  SettingsTextArea,
+} from '@agnes/web-ui'
+import type { ComponentProps } from 'react'
 import { useState } from 'react'
+import { RegisteredConversationCard } from './conversation-registry.js'
 import { tr } from './locale-bridge.js'
 
 export function goalSlot(timeline?: UITimeline): StatusLinePayload | undefined {
@@ -30,7 +40,12 @@ export function GoalCard({
   const [budget, setBudget] = useState(goal?.budgetCredits?.toString() ?? '')
   const action = (op: string) => onCommand(`/goal ${op}`)
   return (
-    <section className="goal-card" data-testid="goal-bar" aria-label={tr('goal.title')}>
+    <ConversationCardLayout
+      as="section"
+      className="goal-card"
+      data-testid="goal-bar"
+      aria-label={tr('goal.title')}
+    >
       <Button htmlType="button" data-testid="goal-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
         {goal
           ? tr(`goal.state.${goal.phase}`) +
@@ -66,7 +81,7 @@ export function GoalCard({
             }}
           >
             <Field label={tr('goal.objective')}>
-              <textarea
+              <SettingsTextArea
                 data-testid="goal-objective"
                 value={objective}
                 maxLength={8192}
@@ -76,7 +91,7 @@ export function GoalCard({
               />
             </Field>
             <Field label={tr('goal.rounds')}>
-              <input
+              <SettingsInput
                 data-testid="goal-max-rounds"
                 type="number"
                 min={1}
@@ -88,7 +103,7 @@ export function GoalCard({
               />
             </Field>
             <Field label={tr('goal.budget')}>
-              <input
+              <SettingsInput
                 data-testid="goal-budget"
                 type="number"
                 min={0.000001}
@@ -146,15 +161,27 @@ export function GoalCard({
           )}
           {goal && (
             <p>
-              {tr('goal.spent')} {goal.creditsUsed.toFixed(2)}
+              {tr('goal.spent')}{' '}
+              {goal.creditsUsed.toLocaleString(document.documentElement.lang || 'en', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
               {goal.budgetCredits === undefined ? '' : ` / ${goal.budgetCredits}`}
             </p>
           )}
         </div>
       )}
-    </section>
+    </ConversationCardLayout>
   )
 }
+
+if (!conversationCards.get('goal'))
+  conversationCards.register({
+    id: 'goal',
+    order: 0,
+    matches: (card) => card.kind === 'goal',
+    component: ({ card }) => <GoalCard {...(card.data as ComponentProps<typeof GoalCard>)} />,
+  })
 
 export function renderGoalCard(
   host: HTMLElement,
@@ -170,12 +197,18 @@ export function renderGoalCard(
   const slot = goalSlot(timeline)
   renderRegion(
     host,
-    <GoalCard
-      key={`${timeline?.sessionId ?? 'draft'}:${slot?.goal?.id ?? 'new'}`}
-      goal={slot?.goal}
-      error={slot?.level === 'warn' && !slot.goal?.reason ? slot.text : undefined}
-      disabled={disabled}
-      onCommand={onCommand}
+    <RegisteredConversationCard
+      key={`${timeline.sessionId}:${slot?.goal?.id ?? 'new'}`}
+      card={{
+        kind: 'goal',
+        data: {
+          goal: slot?.goal,
+          error: slot?.level === 'warn' && !slot.goal?.reason ? slot.text : undefined,
+          disabled,
+          onCommand,
+        },
+      }}
+      context={{ t: tr }}
     />,
   )
 }

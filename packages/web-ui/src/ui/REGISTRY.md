@@ -17,3 +17,9 @@
 | `StateSwitch` | C | 不采用 antd（Switch） | `role="switch"` 行内动作语义 + `.switch` 皮肤 + stopPropagation 保真；antd Switch 的 DOM/样式/事件模型与列表行交互契约不符 |
 
 | `Popover` | A | `Popover` | Anchored picker surface; theme token bridge and caller-owned open state |
+
+| `SettingsPage` / `SettingsCard` | A | 模型与账户布局 | 标题、说明、操作区和卡片栈；共享主题间距 |
+| `SettingsState` | A | 共享状态 | 空白、加载、错误和成功；live region |
+| `SettingsInput` / `SettingsTextArea` / `SettingsSelect` | A | 账户表单原生控件 | 表单语义、ref 与主题 token；不暴露外部 UI 库 |
+| `ConversationCardLayout` | A | 会话卡片布局 | 标题、操作、ready/loading/empty/error/disabled；保留调用方稳定 test id 与语义角色 |
+| `createSettingsIcon` | A | 原生设置导航图标 | 分类图标共用 `icon` 皮肤钩子和主题尺寸；装饰性图标不进入无障碍名称 |

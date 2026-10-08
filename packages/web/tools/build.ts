@@ -95,6 +95,8 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
       absWorkingDir: root,
       entryPoints: {
         antd: join(root, 'tools', 'vendor', 'antd-entry.js'),
+        'antd-en-us': join(root, '..', 'web-ui', 'tools', 'antd-en-us.ts'),
+        'antd-zh-cn': join(root, '..', 'web-ui', 'tools', 'antd-zh-cn.ts'),
         'assistant-ui': join(root, 'tools', 'vendor', 'assistant-ui-entry.js'),
         cordis: join(root, 'tools', 'vendor', 'cordis-entry.js'),
         'web-client': join(root, 'tools', 'vendor', 'web-client-entry.js'),

@@ -1,17 +1,20 @@
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
-import { Badge, Button } from '@agnes/web-ui'
+import { Badge, Button, SettingsCard, SettingsState } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
+import { sessionStartUrl } from './runtime-panels.js'
 
 /** Use the daemon's discoverable example inventory, not browser filesystem paths. */
 export function ExamplesPanel({
   api,
+  canInstall = false,
   installed,
   t,
   onReview,
   onBundles,
 }: {
   api: PluginAdminApi | undefined
+  canInstall?: boolean
   installed: readonly PackageInstalledDescriptor[]
   t(key: string): string
   onReview(item: PackageCatalogDescriptor): void
@@ -37,7 +40,10 @@ export function ExamplesPanel({
         pages += 1
         const page = await catalogApi.catalog(undefined, cursor)
         result.push(
-          ...page.items.filter((row) => row.source.ref.includes('/fde/') && row.kinds?.includes('bundle')),
+          ...page.items.filter(
+            (row) =>
+              row.sourceId === 'official-examples' || row.source.ref.startsWith('file:./bundled-examples/'),
+          ),
         )
         cursor = page.nextCursor ?? undefined
       } while (cursor && current && result.length < 256 && pages < 32)
@@ -55,36 +61,83 @@ export function ExamplesPanel({
     }
   }, [api, revision])
   return (
-    <section aria-busy={busy}>
+    <SettingsCard aria-busy={busy}>
       <p>{t('examplesHelp')}</p>
-      {busy && <p role="status">{t('loading')}</p>}
-      {failed && <p role="alert">{t('unavailable')}</p>}
+      {busy && <SettingsState tone="loading">{t('loading')}</SettingsState>}
+      {failed && <SettingsState tone="error">{t('unavailable')}</SettingsState>}
       {!busy && !failed && !rows.length && <p>{t('noExamples')}</p>}
       <Button disabled={!api || busy} onClick={() => setRevision((value) => value + 1)}>
         {t('retry')}
       </Button>
       <div className="runtime-grid">
-        {rows.map((row) => (
-          <article
-            key={`${row.id}@${row.version}`}
-            className="runtime-card"
-            data-testid={`example-${row.id}`}
-          >
-            <h3>{row.id}</h3>
-            <p>
-              {row.version} · {row.license}
-            </p>
-            <p>{row.source.ref}</p>
-            {installed.some((pkg) => pkg.id === row.id && pkg.desired === 'enabled') && (
+        {rows.map((row) => {
+          const name = row.id.split('/').at(-1) ?? row.id
+          const labelKey = `example.name.${name}`
+          const label = t(labelKey)
+          const current = installed.find((pkg) => pkg.id === row.id)
+          const enabled = current?.desired === 'enabled'
+          const available = enabled && current?.actual === 'active'
+          const loop =
+            row.id === '@agnes-example/dag-loop'
+              ? { id: 'example.dag', version: '1.0.0' }
+              : row.id === '@agnes-example/react-loop'
+                ? { id: 'example.react', version: '1.0.0' }
+                : row.id === '@community/dag-loop-adapter'
+                  ? { id: 'community.dag', version: '1.0.0' }
+                  : undefined
+          return (
+            <SettingsCard
+              key={`${row.id}@${row.version}`}
+              className="runtime-card"
+              data-testid={`example-${row.id}`}
+            >
+              <h3>{label === labelKey ? row.id : label}</h3>
+              <small>
+                {row.id} · {row.version}
+              </small>
+              <p>{t(row.id.startsWith('@agnes-fde/') ? 'example.summary.fde' : `example.summary.${name}`)}</p>
+              <section className="agnes-settings-actions" aria-label={t('exampleSummary')}>
+                {row.kinds?.map((kind) => (
+                  <Badge key={kind}>{t(`kind.${kind}`)}</Badge>
+                ))}
+              </section>
               <p>
-                <Badge tone="ok">{t('exampleReady')}</Badge>
+                {row.version} · {row.license}
               </p>
-            )}
-            <Button onClick={() => onReview(row)}>{t('review')}</Button>
-          </article>
-        ))}
+
+              {enabled && (
+                <p>
+                  <Badge tone={available ? 'ok' : 'warn'}>{t('exampleReady')}</Badge>{' '}
+                  {t(available ? 'exampleHint' : 'examplePending')}
+                </p>
+              )}
+              <Button
+                data-testid={`example-install-${name}`}
+                disabled={!api || !canInstall || busy || enabled}
+                type={enabled ? 'default' : 'primary'}
+                onClick={() => onReview(row)}
+              >
+                {t(enabled ? 'exampleReady' : current ? 'exampleEnable' : 'exampleInstall')}
+              </Button>
+              {enabled && (
+                <Button
+                  data-testid={`example-start-${name}`}
+                  disabled={!available}
+                  href={sessionStartUrl(
+                    undefined,
+                    undefined,
+                    row.kinds?.includes('bundle') ? [name] : [],
+                    loop,
+                  )}
+                >
+                  {t('exampleStart')}
+                </Button>
+              )}
+            </SettingsCard>
+          )
+        })}
       </div>
       <Button onClick={onBundles}>{t('chooseBundle')}</Button>
-    </section>
+    </SettingsCard>
   )
 }

@@ -1,13 +1,13 @@
 import type { RuntimeSecurityStatus } from '@agnes/protocol'
-import { Badge } from '@agnes/web-ui'
+import { Badge, SettingsCard, SettingsState } from '@agnes/web-ui'
 
 type Text = (key: string) => string
 export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStatus | undefined; t: Text }) {
   if (!status)
     return (
-      <p role="status" data-testid="sandbox-status-unavailable">
+      <SettingsState tone="empty" data-testid="sandbox-status-unavailable">
         {t('securityUnavailable')}
-      </p>
+      </SettingsState>
     )
   return (
     <section data-testid="sandbox-security-status">
@@ -19,7 +19,7 @@ export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStat
         </Badge>{' '}
         {status.platform.l1.scope.join(', ') || '—'}
       </p>
-      {status.platform.l1.reason && <p>{status.platform.l1.reason}</p>}
+      {status.platform.l1.reason && <p>{t('securityProbeIssue')}</p>}
       <p>{t('probeHelp')}</p>
       <h3>{t('permissionRequirements')}</h3>
       <section
@@ -60,7 +60,11 @@ export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStat
         <p>{t('noWorkspacePosture')}</p>
       ) : (
         status.workspaces.map((workspace) => (
-          <article key={workspace.sessionId} className="runtime-card" data-testid="workspace-sandbox-status">
+          <SettingsCard
+            key={workspace.sessionId}
+            className="runtime-card"
+            data-testid="workspace-sandbox-status"
+          >
             <h4>
               <code>{workspace.sessionId}</code>
             </h4>
@@ -91,7 +95,7 @@ export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStat
                 <code>{workspace.policyDigest ?? '—'}</code>
               </dd>
             </dl>
-          </article>
+          </SettingsCard>
         ))
       )}
     </section>

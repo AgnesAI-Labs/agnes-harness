@@ -10,6 +10,7 @@ import type {
   RuntimePinDescriptor,
 } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
+import { pluginAdminLocaleCatalog } from '../src/admin/plugins/locales/admin.js'
 import { ADMIN_FEATURES } from '../src/admin/plugins/types.js'
 import type { PluginRuntimeState } from '../src/client-modules/runtime-status.js'
 
@@ -609,7 +610,8 @@ it.each(['failed', 'unavailable'] as const)(
     const toggle = row?.querySelector<HTMLButtonElement>('.switch')
     expect(toggle?.getAttribute('aria-checked')).toBe('false')
     expect(row?.querySelector('.state-light')).toBeNull()
-    expect(row?.textContent).toContain(installed.actualReason)
+    expect(row?.textContent).toContain(pluginAdminLocaleCatalog.en['failure.activation'])
+    expect(row?.textContent).not.toContain(installed.actualReason)
     toggle?.click()
     expect(document.getElementById('admin-notice')?.textContent).toContain(
       'The actual runtime summary has not been confirmed',
@@ -691,7 +693,10 @@ it('keeps backend actual and browser UI runtime failure visible as separate stat
   await mountAdmin({ runtime: runtimeSource })
   await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(1))
   expect(document.querySelector('#plugin-list .state-light')).toBeNull()
-  expect(document.getElementById('plugin-list')?.textContent).toContain('插件 UI 入口加载失败，可重试')
+  expect(document.getElementById('plugin-list')?.textContent).toContain(
+    pluginAdminLocaleCatalog.en['failure.frontend'],
+  )
+  expect(document.getElementById('plugin-list')?.textContent).not.toContain('插件 UI 入口加载失败，可重试')
   expect(document.querySelector('#plugin-list button[role="switch"]')?.getAttribute('aria-checked')).toBe(
     'true',
   )

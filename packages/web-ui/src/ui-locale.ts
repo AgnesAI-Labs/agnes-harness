@@ -117,7 +117,7 @@ export function UiLocaleProvider({
 export function useUiText(
   namespace: string,
   fallback: LocaleCatalog,
-): Readonly<{ locale: UiLocale; t: LocaleTranslator }> {
+): Readonly<{ locale: UiLocale; t: LocaleTranslator; hostT: LocaleTranslator }> {
   const source = useContext(LocaleSourceContext)
   const subscribe = source?.subscribe ?? noSubscribe
   const getVersion = source?.getVersion ?? zeroVersion
@@ -127,7 +127,7 @@ export function useUiText(
     () => createUiTranslator(source, namespace, fallback, locale),
     [fallback, locale, namespace, source],
   )
-  return { locale, t }
+  return { locale, t, hostT: source?.t ?? t }
 }
 
 export function createUiTranslator(

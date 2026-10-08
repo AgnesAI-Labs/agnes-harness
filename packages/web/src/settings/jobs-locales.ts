@@ -2,6 +2,17 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 export const JOBS_NAMESPACE = '@agnes/web/jobs'
 export const jobsCatalog: LocaleCatalog = {
   en: {
+    'jobKind.shell-session': 'Persistent shell',
+    'jobKind.child': 'Child agent',
+    empty: 'No jobs in this session.',
+    chooseSession: 'Enter a session key to view its jobs.',
+    'shell.bash': 'Bash',
+    'shell.zsh': 'Zsh',
+    'shell.pwsh': 'PowerShell',
+    'jobKind.shell': 'Shell',
+    'jobKind.pty': 'Interactive terminal',
+    'jobKind.child-agent': 'Child agent',
+
     terminalHelp:
       'Open an interactive terminal under this session’s sandbox preset. Refresh reconnects; Close kills the terminal and its processes.',
     jobsHelp:
@@ -30,6 +41,17 @@ export const jobsCatalog: LocaleCatalog = {
     completedNotice: 'Job finished',
   },
   'zh-CN': {
+    'jobKind.shell-session': '持久 Shell',
+    'jobKind.child': '子代理',
+    empty: '此会话暂无作业。',
+    chooseSession: '输入会话标识以查看其作业。',
+    'shell.bash': 'Bash',
+    'shell.zsh': 'Zsh',
+    'shell.pwsh': 'PowerShell',
+    'jobKind.shell': 'Shell',
+    'jobKind.pty': '交互终端',
+    'jobKind.child-agent': '子代理',
+
     terminalHelp: '在此会话的沙箱预设下打开交互终端。刷新会重新连接；关闭会终止终端及其进程。',
     jobsHelp:
       '查看属于此会话的 shell、持久 shell、PTY 和子代理作业。作业可跨轮次保留，守护进程重启后不会恢复。',

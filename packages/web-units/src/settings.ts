@@ -1,4 +1,9 @@
-import { mountSettingsSelectOptions, SettingsAccountDialog, SettingsModelPane } from '@agnes/web-ui'
+import {
+  createSettingsIcon,
+  mountSettingsSelectOptions,
+  SettingsAccountDialog,
+  SettingsModelPane,
+} from '@agnes/web-ui'
 import {
   createElement,
   forwardRef,
@@ -13,7 +18,19 @@ export type SettingsPane = 'model' | 'plugin' | 'resources' | 'archived' | 'comp
 export type SettingsResourceTab = 'skills' | 'mcp'
 export type SettingsPaneChange = { pane: SettingsPane; tab?: SettingsResourceTab }
 
+export type SettingsNavigationEntry = {
+  id: string
+  group: string
+  titleKey: string
+  groupTitleKey: string
+  icon: string
+  order: number
+  nativePane?: string
+  navigationId?: string
+}
 export interface SettingsRegionOptions {
+  sections?: { entries(): readonly SettingsNavigationEntry[]; subscribe(listener: () => void): () => void }
+
   onChange?: (change: SettingsPaneChange) => void
   onClose?: () => void
   /** Locale-bound translate for the static shell template; backfilled after mount. */
@@ -87,7 +104,7 @@ const RUNTIME_NAV = [
   ['history', ['history']],
 ] as const
 
-function templateFromSettingsMarkup(): HTMLTemplateElement {
+function templateFromSettingsMarkup(entries?: readonly SettingsNavigationEntry[]): HTMLTemplateElement {
   const template = document.createElement('template')
   template.innerHTML = SETTINGS_MARKUP
   const rail = template.content.querySelector('.settings-nav-group')
@@ -112,6 +129,41 @@ function templateFromSettingsMarkup(): HTMLTemplateElement {
       }
     }
     plugin.remove()
+  }
+  if (entries?.length && rail) {
+    const existing = new Map(
+      [...rail.querySelectorAll<HTMLButtonElement>('button')].map((button) => [button.id, button]),
+    )
+    for (const child of [...rail.children])
+      if (!child.classList.contains('settings-nav-label')) child.remove()
+    const reserve = document.createElement('div')
+    reserve.id = 'settings-navigation-reserve'
+    reserve.hidden = true
+    const groups = new Set<string>()
+    for (const entry of entries) {
+      const button = existing.get(entry.navigationId ?? '') ?? document.createElement('button')
+      button.id = entry.navigationId ?? `runtime-settings-${entry.id}`
+      button.type = 'button'
+      button.className = 'settings-nav-item'
+      button.dataset.settingsSection = entry.id
+      button.dataset.testid = `settings-nav-${entry.id}`
+      button.dataset.settingsIcon = entry.icon
+      if (!entry.nativePane) button.dataset.runtimePage = entry.id
+      const label = button.querySelector('span') ?? button.appendChild(document.createElement('span'))
+      label.dataset.i18n = groups.has(entry.group) ? entry.titleKey : entry.groupTitleKey
+      if (!groups.has(entry.group)) {
+        groups.add(entry.group)
+        if (!button.querySelector('svg')) button.prepend(createSettingsIcon(document, entry.icon))
+        rail.appendChild(button)
+      } else reserve.appendChild(button)
+    }
+    rail.appendChild(reserve)
+    const tabs = document.createElement('div')
+    tabs.id = 'settings-section-tabs'
+    tabs.className = 'agnes-settings-section-tabs'
+    tabs.setAttribute('role', 'tablist')
+    tabs.hidden = true
+    template.content.querySelector('#config-form')?.appendChild(tabs)
   }
   return template
 }
@@ -150,8 +202,11 @@ function createSettingsDshSlotHost(name: SettingsDshSlotName): HTMLDivElement {
  * The shell owns only the form, rail and pane mount points.  Content is deliberately removed
  * before React mounts so each pane can be registered by its own `web:` row below.
  */
-function settingsShellMarkup(translate?: (key: string) => string): string {
-  const template = templateFromSettingsMarkup()
+function settingsShellMarkup(
+  translate?: (key: string) => string,
+  entries?: readonly SettingsNavigationEntry[],
+): string {
+  const template = templateFromSettingsMarkup(entries)
   const form = template.content.querySelector<HTMLFormElement>('#config-form')
   if (!form) throw new Error('settings markup is missing #config-form')
   // This modal is an overlay owned by the settings shell, rather than a child of the replaceable
@@ -304,26 +359,194 @@ function SettingsBuiltinImpl(
         listeners.push(() => button.removeEventListener('keydown', onKeydown))
       }
     }
-    bind('model-settings', { pane: 'model' })
-    for (const button of root.querySelectorAll<HTMLButtonElement>('[data-runtime-page]')) {
-      const listener = () => {
-        root.dataset.runtimePage = button.dataset.runtimePage
-        const shell = root.querySelector<HTMLElement>('#config-form')
-        if (shell) shell.dataset.runtimePage = button.dataset.runtimePage
-        open('plugin')
-        options.onChange?.({ pane: 'plugin' })
-        root.dispatchEvent(
-          new CustomEvent('agnes:settings-page', { detail: button.dataset.runtimePage, bubbles: true }),
-        )
+    if (options.sections) {
+      const tabs = root.querySelector<HTMLElement>('#settings-section-tabs')
+      const content = root.querySelector<HTMLElement>('#settings-content-slots')
+      if (tabs && content) content.prepend(tabs)
+      const navigate = (id: string, notify = true) => {
+        const entries = options.sections?.entries() ?? []
+        const selected = entries.find((entry) => entry.id === id)
+        if (!selected) return
+        const pane = (selected.nativePane ?? 'plugin') as SettingsPane
+        root.dataset.settingsSection = id
+        const shell = form()
+        if (shell) shell.dataset.settingsSection = id
+        if (!selected.nativePane) {
+          root.dataset.runtimePage = id
+          if (shell) shell.dataset.runtimePage = id
+        }
+        open(pane)
+        const group = entries.filter((entry) => entry.group === selected.group)
+        const panel = root.querySelector(`#${PANE_IDS[pane]}`)
+        if (group.length > 1) {
+          panel?.setAttribute('role', 'tabpanel')
+          panel?.setAttribute(
+            'aria-labelledby',
+            selected.nativePane
+              ? (selected.navigationId ?? `settings-tab-${id}`)
+              : `settings-section-tab-${id}`,
+          )
+        } else {
+          panel?.removeAttribute('role')
+          panel?.removeAttribute('aria-labelledby')
+        }
+        for (const button of root.querySelectorAll<HTMLElement>(
+          '.settings-nav-group > [data-settings-section]',
+        )) {
+          const active =
+            entries.find((entry) => entry.id === button.dataset.settingsSection)?.group === selected.group
+          button.classList.toggle('active', active)
+          if (active) button.setAttribute('aria-current', 'page')
+          else button.removeAttribute('aria-current')
+        }
+        if (tabs) {
+          const reserve = root.querySelector('#settings-navigation-reserve')
+          for (const tab of [...tabs.children])
+            if (
+              entries.some(
+                (entry) => entry.nativePane && entry.id === (tab as HTMLElement).dataset.settingsSection,
+              )
+            )
+              reserve?.appendChild(tab)
+          tabs.replaceChildren()
+          tabs.hidden = group.length < 2
+          tabs.setAttribute(
+            'aria-label',
+            options.translate?.(selected.groupTitleKey) ?? selected.groupTitleKey,
+          )
+          tabs.dataset.i18nAria = selected.groupTitleKey
+          for (const entry of group.length > 1 ? group : []) {
+            const button = document.createElement('button')
+            button.type = 'button'
+            button.id = entry.nativePane
+              ? (entry.navigationId ?? `settings-tab-${entry.id}`)
+              : `settings-section-tab-${entry.id}`
+            // Move a native tab out of the hidden reserve, keeping exactly one stable ID.
+            const native = entry.nativePane ? root.querySelector<HTMLButtonElement>(`#${button.id}`) : null
+            const tab = native ?? button
+            tab.dataset.settingsSection = entry.id
+            tab.dataset.testid = `settings-nav-${entry.id}-tab`
+            tab.setAttribute('role', 'tab')
+            tab.setAttribute('aria-controls', PANE_IDS[(entry.nativePane ?? 'plugin') as SettingsPane])
+            tab.setAttribute('aria-selected', String(entry.id === id))
+            tab.tabIndex = entry.id === id ? 0 : -1
+            tab.dataset.i18n = entry.titleKey
+            tab.textContent = options.translate?.(entry.titleKey) ?? entry.titleKey
+            tabs.appendChild(tab)
+          }
+        }
+        if (pane === 'resources') {
+          for (const tab of ['skills', 'mcp'])
+            root.querySelector(`#${tab}-tab`)?.setAttribute('aria-selected', String(tab === id))
+          root.querySelector('#resource-list')?.setAttribute('aria-labelledby', `${id}-tab`)
+        }
+        if (notify) {
+          options.onChange?.({ pane, ...(pane === 'resources' ? { tab: id as SettingsResourceTab } : {}) })
+          if (!selected.nativePane)
+            root.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: id, bubbles: true }))
+        }
+        if (notify) {
+          const url = new URL(location.href)
+          url.searchParams.set('settings', id)
+          history.replaceState(history.state, '', url)
+        }
       }
-      button.addEventListener('click', listener)
-      listeners.push(() => button.removeEventListener('click', listener))
+      const onClick = (event: Event) => {
+        const target = (event.target as Element | null)?.closest<HTMLElement>('button[data-settings-section]')
+        if (target?.dataset.settingsSection) navigate(target.dataset.settingsSection)
+      }
+      const onRoute = (event: Event) => {
+        const id = String((event as CustomEvent).detail)
+        if (id !== root.dataset.settingsSection) navigate(id)
+      }
+      const onKeys = (event: KeyboardEvent) => {
+        const target = event.target as HTMLElement
+        if (target.getAttribute('role') !== 'tab' || !tabs?.contains(target)) return
+        const choices = [...tabs.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+        const index = choices.indexOf(target as HTMLButtonElement)
+        const next =
+          event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? choices.length - 1
+              : ['ArrowRight', 'ArrowDown'].includes(event.key)
+                ? (index + 1) % choices.length
+                : ['ArrowLeft', 'ArrowUp'].includes(event.key)
+                  ? (index - 1 + choices.length) % choices.length
+                  : -1
+        if (next < 0) return
+        event.preventDefault()
+        const id = choices[next]?.dataset.settingsSection
+        if (id) {
+          navigate(id)
+          tabs.querySelector<HTMLButtonElement>('[aria-selected="true"]')?.focus()
+        }
+      }
+      root.addEventListener('click', onClick)
+      root.addEventListener('agnes:settings-route', onRoute)
+      root.addEventListener('keydown', onKeys)
+      listeners.push(() => {
+        root.removeEventListener('click', onClick)
+        root.removeEventListener('agnes:settings-route', onRoute)
+        root.removeEventListener('keydown', onKeys)
+      })
+      const syncEntries = () => {
+        const rail = root.querySelector('.settings-nav-group')
+        const reserve = root.querySelector('#settings-navigation-reserve')
+        if (!rail || !reserve) return
+        const entries = options.sections?.entries() ?? []
+        const groups = new Set<string>()
+        for (const entry of entries) {
+          const button =
+            root.querySelector<HTMLButtonElement>(`button[data-settings-section="${entry.id}"]`) ??
+            document.createElement('button')
+          button.type = 'button'
+          button.id = entry.navigationId ?? `runtime-settings-${entry.id}`
+          button.className = 'settings-nav-item'
+          button.dataset.settingsSection = entry.id
+          button.dataset.testid = `settings-nav-${entry.id}`
+          const key = groups.has(entry.group) ? entry.titleKey : entry.groupTitleKey
+          const label = document.createElement('span')
+          label.dataset.i18n = key
+          label.textContent = options.translate?.(key) ?? key
+          button.replaceChildren(createSettingsIcon(document, entry.icon), label)
+          if (!entry.nativePane) button.dataset.runtimePage = entry.id
+          if (groups.has(entry.group)) reserve.appendChild(button)
+          else {
+            groups.add(entry.group)
+            rail.insertBefore(button, reserve)
+          }
+        }
+        for (const button of root.querySelectorAll<HTMLElement>('button[data-settings-section]'))
+          if (!entries.some((entry) => entry.id === button.dataset.settingsSection)) button.remove()
+        const selected = root.dataset.settingsSection ?? 'model'
+        const present = entries.some((entry) => entry.id === selected)
+        navigate(present ? selected : (entries[0]?.id ?? 'model'), !present)
+      }
+      listeners.push(options.sections.subscribe(syncEntries))
+      navigate('model', false)
+    } else {
+      bind('model-settings', { pane: 'model' })
+      for (const button of root.querySelectorAll<HTMLButtonElement>('[data-runtime-page]')) {
+        const listener = () => {
+          root.dataset.runtimePage = button.dataset.runtimePage
+          const shell = root.querySelector<HTMLElement>('#config-form')
+          if (shell) shell.dataset.runtimePage = button.dataset.runtimePage
+          open('plugin')
+          options.onChange?.({ pane: 'plugin' })
+          root.dispatchEvent(
+            new CustomEvent('agnes:settings-page', { detail: button.dataset.runtimePage, bubbles: true }),
+          )
+        }
+        button.addEventListener('click', listener)
+        listeners.push(() => button.removeEventListener('click', listener))
+      }
+      bind('skills-tab', { pane: 'resources', tab: 'skills' })
+      bind('mcp-tab', { pane: 'resources', tab: 'mcp' })
+      bind('archived-settings', { pane: 'archived' })
+      bind('computer-use-management', { pane: 'computer-use' })
+      bind('appearance-settings', { pane: 'appearance' })
     }
-    bind('skills-tab', { pane: 'resources', tab: 'skills' })
-    bind('mcp-tab', { pane: 'resources', tab: 'mcp' })
-    bind('archived-settings', { pane: 'archived' })
-    bind('computer-use-management', { pane: 'computer-use' })
-    bind('appearance-settings', { pane: 'appearance' })
     const close = root.querySelector<HTMLButtonElement>('#config-close')
     if (close) {
       const listener = () => options.onClose?.()
@@ -333,13 +556,15 @@ function SettingsBuiltinImpl(
     return () => {
       for (const dispose of listeners) dispose()
     }
-  }, [open, options])
+  }, [form, open, options])
   return createElement(
     'div',
     { ref: host },
     createElement('div', {
       // biome-ignore lint/security/noDangerouslySetInnerHtml: this is the fixed in-module template that creates row mount points.
-      dangerouslySetInnerHTML: { __html: settingsShellMarkup(options.translate) },
+      dangerouslySetInnerHTML: {
+        __html: settingsShellMarkup(options.translate, options.sections?.entries()),
+      },
     }),
     createElement(SettingsAccountDialog, options.translate ? { t: options.translate } : {}),
   )

@@ -1,8 +1,9 @@
 import { answerPrefix, parseAnswer, type UINode } from '@agnes/protocol'
 import type { ToolCardInlinePayload } from '@agnes/protocol/gen/slots'
-import type { ClientResourceService, SessionService } from '@agnes/web-client'
-import { Button } from '@agnes/web-ui'
+import { type ClientResourceService, conversationCards, type SessionService } from '@agnes/web-client'
+import { Button, ConversationCardLayout, SettingsInput, SettingsTextArea } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
+import { RegisteredConversationCard } from './conversation-registry.js'
 import { toolCardsLocaleCatalog } from './locales/tool-cards.js'
 import { WorkflowRunCard } from './workflow-run-card.js'
 
@@ -44,8 +45,9 @@ function QuestionCard({
   const update = (id: string, value: string | string[]) =>
     setAnswers((previous) => ({ ...previous, [id]: value }))
   return (
-    <form
-      className="conversation-native-card question-card"
+    <ConversationCardLayout
+      as="form"
+      className="question-card"
       data-testid="question-card"
       data-question-id={question.id}
       aria-label={t('cards.question.title')}
@@ -85,9 +87,10 @@ function QuestionCard({
         >
           <legend>{q.question}</legend>
           {q.options?.map((option) => (
-            <label key={option}>
-              <input
+            <label key={option} htmlFor={`question-${question.id}-${q.id}-${encodeURIComponent(option)}`}>
+              <SettingsInput
                 data-testid="question-option"
+                id={`question-${question.id}-${q.id}-${encodeURIComponent(option)}`}
                 type={q.multiple ? 'checkbox' : 'radio'}
                 name={q.id}
                 value={option}
@@ -113,10 +116,11 @@ function QuestionCard({
             </label>
           ))}
           {(!q.options || q.allowFreeText) && (
-            <label>
+            <label htmlFor={`question-free-${question.id}-${q.id}`}>
               {t('cards.question.freeText')}
-              <textarea
+              <SettingsTextArea
                 data-testid="question-free-text"
+                id={`question-free-${question.id}-${q.id}`}
                 aria-label={`${q.question}: ${t('cards.question.freeText')}`}
                 maxLength={8192}
                 value={freeText[q.id] ?? ''}
@@ -140,7 +144,7 @@ function QuestionCard({
         )}
       </Button>
       {error && <p role="alert">{t(error)}</p>}
-    </form>
+    </ConversationCardLayout>
   )
 }
 
@@ -182,7 +186,7 @@ function DeliverableCard({
     }
   }, [resources, lane, sha256, size, mime])
   return (
-    <article
+    <ConversationCardLayout
       className="conversation-native-card deliverable-card"
       data-testid="deliverable-card"
       data-artifact-sha256={sha256}
@@ -203,11 +207,104 @@ function DeliverableCard({
       ) : (
         <p role={error ? 'alert' : 'status'}>{t(error ?? 'cards.file.loading')}</p>
       )}
-    </article>
+    </ConversationCardLayout>
   )
 }
 
-/** Native cards use the same public inline payload as installed client modules. */
+type InlineCardData = {
+  payload: ToolCardInlinePayload
+  extId: string
+  node: Extract<UINode, { kind: 'tool' }>
+  answered: ReadonlySet<string>
+}
+const dataOf = (data: unknown) => data as InlineCardData
+for (const entry of [
+  {
+    id: 'workflow',
+    order: 0,
+    matches: (data: InlineCardData) => data.extId === 'agnes/workflow' && !!data.payload.table,
+    render: (data: InlineCardData, context: import('@agnes/web-client').UiExtensionContext) => (
+      <WorkflowRunCard payload={data.payload} t={context.t} />
+    ),
+  },
+  {
+    id: 'question',
+    order: 10,
+    matches: (data: InlineCardData) => !!data.payload.question,
+    render: (data: InlineCardData, context: import('@agnes/web-client').UiExtensionContext) =>
+      data.payload.question && (
+        <QuestionCard
+          question={data.payload.question}
+          t={context.t}
+          session={context.session}
+          answered={data.answered.has(data.payload.question.id)}
+          running={data.node.status === 'running'}
+        />
+      ),
+  },
+  {
+    id: 'deliverable',
+    order: 20,
+    matches: (data: InlineCardData) => !!data.payload.deliverables?.length,
+    render: (data: InlineCardData, context: import('@agnes/web-client').UiExtensionContext) =>
+      data.payload.deliverables?.map((file) => (
+        <DeliverableCard
+          key={`${file.ref.sha256}:${file.name}`}
+          file={file}
+          t={context.t}
+          resources={context.resources}
+        />
+      )),
+  },
+  {
+    id: 'schedule',
+    order: 30,
+    matches: (data: InlineCardData) => !!data.payload.table,
+    render: (data: InlineCardData, context: import('@agnes/web-client').UiExtensionContext) => {
+      const payload = data.payload
+      if (!payload.table) return null
+      return (
+        <ConversationCardLayout
+          className="conversation-native-card"
+          data-testid="reminder-card"
+          aria-label={payload.title}
+        >
+          <strong>{payload.title}</strong>
+          <table>
+            <thead>
+              <tr>
+                {payload.table.columns.map((column) => (
+                  <th key={column} scope="col">
+                    {column}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {payload.table.rows.map((row) => (
+                <tr key={row.join('\u001f')}>
+                  {row.map((cell) => (
+                    <td key={cell}>{cell}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </ConversationCardLayout>
+      )
+    },
+  },
+]) {
+  if (!conversationCards.get(entry.id))
+    conversationCards.register({
+      id: entry.id,
+      order: entry.order,
+      matches: (card) => card.kind === 'tool-inline' && entry.matches(dataOf(card.data)),
+      component: ({ card, context }) => <>{entry.render(dataOf(card.data), context)}</>,
+    })
+}
+
+/** Native and installed cards resolve through the same registry, without altering protocol data. */
 export function DefaultToolCards({
   node,
   session,
@@ -223,64 +320,15 @@ export function DefaultToolCards({
 }) {
   return (
     <>
-      {node.slots?.map((fill) => {
-        if (fill.slot !== 'tool.card.inline') return null
-        const payload = fill.payload as ToolCardInlinePayload
-        if (fill.extId === 'agnes/workflow' && payload.table)
-          return <WorkflowRunCard key={fill.extId} payload={payload} t={t} />
-        if (payload.question)
-          return (
-            <QuestionCard
-              key={`question:${payload.question.id}`}
-              question={payload.question}
-              t={t}
-              {...(session ? { session } : {})}
-              answered={answered.has(payload.question.id)}
-              running={node.status === 'running'}
-            />
-          )
-        if (payload.deliverables)
-          return payload.deliverables.map((file) => (
-            <DeliverableCard
-              key={`${fill.extId}:${file.ref.sha256}:${file.name}`}
-              file={file}
-              t={t}
-              {...(resources ? { resources } : {})}
-            />
-          ))
-        if (payload.table)
-          return (
-            <article
-              key={`${fill.extId}:reminder`}
-              className="conversation-native-card"
-              data-testid="reminder-card"
-              aria-label={payload.title}
-            >
-              <strong>{payload.title}</strong>
-              <table>
-                <thead>
-                  <tr>
-                    {payload.table.columns.map((column) => (
-                      <th key={column} scope="col">
-                        {column}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {payload.table.rows.map((row) => (
-                    <tr key={row.join('\u001f')}>
-                      {row.map((cell) => (
-                        <td key={cell}>{cell}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </article>
-          )
-        return null
-      })}
+      {node.slots?.map((fill) =>
+        fill.slot === 'tool.card.inline' ? (
+          <RegisteredConversationCard
+            key={`${fill.extId}:${(fill.payload as ToolCardInlinePayload).question?.id ?? (fill.payload as ToolCardInlinePayload).deliverables?.map((file) => file.ref.sha256).join(',') ?? (fill.payload as ToolCardInlinePayload).title ?? 'inline'}`}
+            card={{ kind: 'tool-inline', data: { node, payload: fill.payload, extId: fill.extId, answered } }}
+            context={{ t, session, resources }}
+          />
+        ) : null,
+      )}
     </>
   )
 }

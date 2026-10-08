@@ -4,7 +4,7 @@ import {
   childEngineSettingsError,
   DISABLED_CHILD_ENGINES,
 } from '@agnes/base/child-engines'
-import { Button } from '@agnes/web-ui'
+import { Button, Field, SettingsCard, SettingsInput, SettingsSelect, SettingsTextArea } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 
 type Text = (key: string) => string
@@ -58,6 +58,7 @@ export function ChildEnginesPanel({
   const [ready, setReady] = useState(false)
   const [status, setStatus] = useState('')
   const [saved, setSaved] = useState('')
+  const [busy, setBusy] = useState(false)
   useEffect(() => {
     let cancelled = false
     if (!api) {
@@ -94,76 +95,73 @@ export function ChildEnginesPanel({
     else update({ ...draft, sdk: { ...draft.sdk, ...patch } })
   }
   return (
-    <div data-testid="child-engines">
+    <SettingsCard data-testid="child-engines">
       <p>{t('enginesHelp')}</p>
       {ENGINES.map((id) => {
         const current = engine(id)
         const protocol = id === 'sdk' ? draft.sdk.protocol : 'sdk'
         const capability = flags(id, protocol)
         return (
-          <article
+          <SettingsCard
             key={id}
             className="runtime-card"
             data-testid={`child-engine-${id}`}
             aria-labelledby={`child-engine-${id}-title`}
           >
             <h3 id={`child-engine-${id}-title`}>{t(`engine.${id}`)}</h3>
-            <label>
-              <input
+            <label className="agnes-settings-checkbox" htmlFor={`child-engine-${id}-enabled`}>
+              <SettingsInput
                 type="checkbox"
+                id={`child-engine-${id}-enabled`}
                 data-testid={`child-engine-${id}-enabled`}
                 checked={current.enabled}
-                disabled={!canSave}
+                disabled={!canSave || !ready || busy}
                 onChange={(event) => replace(id, { enabled: event.target.checked })}
               />{' '}
               {t('engine.enabled')}
             </label>
-            <label>
-              {t('engine.command')}
-              <input
+            <Field label={t('engine.command')}>
+              <SettingsInput
                 data-testid={`child-engine-${id}-command`}
                 aria-label={`${t(`engine.${id}`)} ${t('engine.command')}`}
                 value={current.command}
-                disabled={!canSave}
+                disabled={!canSave || !ready || busy}
                 onChange={(event) => replace(id, { command: event.target.value })}
               />
-            </label>
-            <label>
-              {t('engine.args')}
-              <textarea
+            </Field>
+            <Field label={t('engine.args')}>
+              <SettingsTextArea
                 data-testid={`child-engine-${id}-args`}
                 aria-label={`${t(`engine.${id}`)} ${t('engine.args')}`}
                 value={current.args.join('\n')}
-                disabled={!canSave}
+                disabled={!canSave || !ready || busy}
                 onChange={(event) => replace(id, { args: lines(event.target.value) })}
               />
-            </label>
-            <label>
-              {t('engine.allow')}
-              <textarea
+            </Field>
+            <Field label={t('engine.allow')}>
+              <SettingsTextArea
                 data-testid={`child-engine-${id}-allow`}
                 aria-label={`${t(`engine.${id}`)} ${t('engine.allow')}`}
                 value={current.allow.join('\n')}
-                disabled={!canSave}
+                disabled={!canSave || !ready || busy}
                 onChange={(event) => replace(id, { allow: lines(event.target.value) })}
               />
-            </label>
+            </Field>
             {id === 'sdk' && (
-              <label>
-                {t('engine.protocol')}
-                <select
+              <Field label={t('engine.protocol')}>
+                <SettingsSelect
                   data-testid="child-engine-sdk-protocol"
                   aria-label={t('engine.protocol')}
                   value={draft.sdk.protocol}
-                  disabled={!canSave}
+                  disabled={!canSave || !ready || busy}
                   onChange={(event) =>
                     replace('sdk', { protocol: event.target.value === 'acp' ? 'acp' : 'sdk' })
                   }
                 >
-                  <option value="sdk">SDK</option>
-                  <option value="acp">ACP</option>
-                </select>
-              </label>
+                  <option value="sdk">{t('engine.sdkProtocol')}</option>
+                  <option value="acp">{t('engine.acpProtocol')}</option>
+                </SettingsSelect>
+              </Field>
             )}
             <h4>{t('engine.capabilities')}</h4>
             <ul data-testid={`child-engine-${id}-capabilities`}>
@@ -173,7 +171,7 @@ export function ChildEnginesPanel({
                 </li>
               ))}
             </ul>
-          </article>
+          </SettingsCard>
         )
       })}
       <p>{t('engine.restart')}</p>
@@ -192,8 +190,10 @@ export function ChildEnginesPanel({
       )}
       <Button
         data-testid="child-engine-save"
-        disabled={!canSave || !ready}
+        disabled={!canSave || !ready || busy}
+        loading={busy}
         onClick={() => {
+          if (busy || !ready) return
           const error = childEngineSettingsError(draft)
           if (error) {
             setStatus(error === 'allow' ? 'engine.allowRequired' : 'engine.commandRequired')
@@ -203,14 +203,17 @@ export function ChildEnginesPanel({
             setStatus('engine.unavailable')
             return
           }
+          setBusy(true)
           void api.saveChildEngines({ revision, engines: draft }).then(
             (state) => {
+              setBusy(false)
               setRevision(state.revision)
               setDraft(state.engines)
               setSaved(JSON.stringify(state.engines))
               setStatus(state.effect === 'restart-required' ? 'engine.savedRestart' : 'engine.saved')
             },
             (error: unknown) => {
+              setBusy(false)
               setStatus(
                 failureCode(error) === 'CONFIG_REVISION_CONFLICT' ? 'engine.conflict' : 'engine.unavailable',
               )
@@ -220,6 +223,6 @@ export function ChildEnginesPanel({
       >
         {t('engine.save')}
       </Button>
-    </div>
+    </SettingsCard>
   )
 }

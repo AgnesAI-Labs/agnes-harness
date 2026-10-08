@@ -84,3 +84,340 @@
      这里只显式接走 antd 深色专用变量（浅色区未出现的名字）。 */
   --ant-color-bg-spotlight: var(--agnes-brand-primary);
 }
+
+/* Settings share the account pane's surfaces, controls and text hierarchy. */
+.agnes-settings-page {
+  min-width: 0;
+}
+.agnes-settings-stack {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+.agnes-settings-page .config-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.agnes-settings-page .config-heading h2 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+.agnes-settings-page .config-heading p,
+.agnes-settings-card p {
+  color: var(--agnes-text-secondary);
+  line-height: 1.6;
+}
+.agnes-settings-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.agnes-settings-card {
+  padding: 1rem;
+  display: grid;
+  gap: 0.875rem;
+  box-shadow: none;
+  min-width: 0;
+}
+.agnes-settings-card > h3,
+.agnes-settings-card > p,
+.agnes-settings-card .config-accounts-heading h3,
+.agnes-settings-card .config-accounts-heading p {
+  margin: 0;
+}
+.agnes-settings-card .config-accounts-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+.agnes-ui-field {
+  display: grid;
+  gap: 0.375rem;
+  min-width: 0;
+  margin: 0;
+}
+.agnes-ui-field-label {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--agnes-text-primary);
+}
+.agnes-ui-field-hint {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+.agnes-ui-field-error {
+  color: var(--agnes-status-error-text);
+  font-size: var(--font-size-sm);
+}
+.agnes-settings-input {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-md);
+  background: var(--agnes-bg-page);
+  color: var(--agnes-text-primary);
+  font: inherit;
+}
+textarea.agnes-settings-input {
+  min-height: 5rem;
+  resize: vertical;
+}
+.agnes-settings-input:hover:not(:disabled) {
+  border-color: var(--agnes-text-tertiary);
+}
+.agnes-settings-input:focus-visible {
+  outline: 2px solid var(--agnes-text-emphasis);
+  outline-offset: 2px;
+}
+.agnes-settings-input:disabled {
+  color: var(--agnes-text-disabled);
+  background: var(--agnes-bg-card);
+  cursor: not-allowed;
+}
+.agnes-settings-input[type="checkbox"],
+.agnes-settings-checkbox input {
+  width: 1rem;
+  height: 1rem;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--agnes-text-emphasis);
+}
+.agnes-settings-checkbox,
+.agnes-ui-field:has(> input[type="checkbox"]) {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: var(--font-size-sm);
+}
+.agnes-settings-card fieldset,
+.agnes-settings-card form {
+  display: grid;
+  gap: 0.875rem;
+  min-width: 0;
+}
+.agnes-settings-card fieldset.agnes-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+}
+.agnes-settings-card fieldset {
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-md);
+}
+.agnes-settings-card legend {
+  padding-inline: 0.375rem;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+}
+.agnes-settings-state {
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius-md);
+  background: var(--agnes-bg-card);
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.agnes-settings-state[data-tone="error"] {
+  color: var(--agnes-status-error-text);
+  background: var(--agnes-status-error-bg);
+}
+.agnes-settings-state[data-tone="success"] {
+  color: var(--agnes-status-success-text);
+  background: var(--agnes-status-success-bg);
+}
+.agnes-settings-card dl {
+  display: grid;
+  grid-template-columns: minmax(6rem, auto) minmax(0, 1fr);
+  gap: 0.5rem 1rem;
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.agnes-settings-card dt {
+  color: var(--agnes-text-tertiary);
+}
+.agnes-settings-card dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.agnes-settings-card code,
+.agnes-settings-card pre {
+  overflow-wrap: anywhere;
+}
+.agnes-settings-card pre {
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  padding: 0.75rem;
+  border-radius: var(--radius-md);
+  background: var(--agnes-bg-code);
+}
+.agnes-settings-card .session-terminal {
+  min-height: 16rem;
+  height: 20rem;
+  max-height: 40vh;
+  font-family: var(--font-family-mono, monospace);
+}
+.agnes-settings-card .agnes-ui-button {
+  justify-self: start;
+  max-width: 100%;
+}
+.agnes-settings-card table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+.agnes-settings-card th,
+.agnes-settings-card td {
+  text-align: start;
+  padding: 0.625rem;
+  border-bottom: 1px solid var(--agnes-line-primary);
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+.agnes-settings-card th {
+  color: var(--agnes-text-secondary);
+  font-weight: 500;
+}
+.agnes-settings-card details {
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+  min-width: 0;
+}
+.agnes-settings-card summary {
+  cursor: pointer;
+  color: var(--agnes-text-primary);
+  overflow-wrap: anywhere;
+}
+.agnes-settings-card summary:focus-visible {
+  outline: 2px solid var(--agnes-text-emphasis);
+  outline-offset: 2px;
+}
+.agnes-settings-list {
+  display: grid;
+  gap: 0.875rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.agnes-settings-list > li {
+  display: grid;
+  gap: 0.5rem;
+  padding-block: 0.75rem;
+  border-bottom: 1px solid var(--agnes-line-primary);
+  overflow-wrap: anywhere;
+}
+.agnes-settings-list > li > span {
+  color: var(--agnes-text-secondary);
+}
+.agnes-settings-table {
+  overflow: auto;
+}
+.agnes-settings-table:focus-visible {
+  outline: 2px solid var(--agnes-text-emphasis);
+}
+@media (max-width: 640px) {
+  .agnes-settings-card {
+    padding: 0.875rem;
+  }
+  .agnes-settings-page .config-heading {
+    flex-wrap: wrap;
+  }
+  .agnes-settings-card dl {
+    grid-template-columns: 1fr;
+  }
+}
+.agnes-settings-section-tabs {
+  display: flex;
+  gap: 1rem;
+  flex: 0 0 auto;
+  padding: 0.75rem 1.5rem 0;
+  border-bottom: 1px solid var(--agnes-line-primary);
+  overflow-x: auto;
+}
+.agnes-settings-section-tabs[hidden] {
+  display: none;
+}
+.agnes-settings-section-tabs button {
+  width: auto;
+  flex: 0 0 auto;
+  padding: 0.625rem 0.125rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--agnes-text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+.agnes-settings-section-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--agnes-text-emphasis);
+  color: var(--agnes-text-emphasis);
+}
+.agnes-settings-section-tabs button:focus-visible {
+  outline: 2px solid var(--agnes-text-emphasis);
+  outline-offset: -2px;
+}
+.agnes-conversation-card {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  background: var(--agnes-bg-surface);
+  color: var(--agnes-text-primary);
+  overflow-wrap: anywhere;
+}
+.agnes-conversation-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.agnes-conversation-card-heading h3 {
+  margin: 0;
+  font-size: var(--font-size-body);
+}
+.agnes-conversation-card[data-card-state="disabled"] {
+  color: var(--agnes-text-secondary);
+}
+.agnes-conversation-card table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+.agnes-conversation-card th,
+.agnes-conversation-card td {
+  text-align: start;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--agnes-line-primary);
+}
+.agnes-conversation-card .agnes-settings-state {
+  margin-top: 0.5rem;
+}
+.agnes-settings-card h3 {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+}
+.agnes-settings-card small {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.agnes-conversation-card[data-card-variant="plain"] {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}

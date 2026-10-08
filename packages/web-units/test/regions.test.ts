@@ -16,6 +16,7 @@ import {
   Transcript,
   type TranscriptHandle,
 } from '../src/index.js'
+import type { SettingsNavigationEntry } from '../src/settings.js'
 
 const roots: Root[] = []
 const englishText: Record<string, string> = {
@@ -60,6 +61,66 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector('#config-provider')).toBeInstanceOf(HTMLSelectElement)
     expect(host.querySelector('#config-save')).toBeInstanceOf(HTMLButtonElement)
     expect(host.querySelector('#config-save')?.getAttribute('form')).toBe('config-form')
+  })
+
+  it('keeps one rail entry per registry group, routes tabs by keyboard and removes disposed sections', () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    roots.push(root)
+    let entries: SettingsNavigationEntry[] = [
+      {
+        id: 'model',
+        group: 'accounts',
+        titleKey: 'account',
+        groupTitleKey: 'accounts',
+        icon: 'accounts',
+        order: 0,
+        nativePane: 'model',
+        navigationId: 'model-settings',
+      },
+      { id: 'first', group: 'agent', titleKey: 'first', groupTitleKey: 'agent', icon: 'agent', order: 10 },
+      { id: 'second', group: 'agent', titleKey: 'second', groupTitleKey: 'agent', icon: 'agent', order: 11 },
+    ]
+    const changed = new Set<() => void>()
+    flushSync(() =>
+      root.render(
+        createElement(SettingsBuiltin, {
+          options: {
+            translate: (key) => key,
+            sections: {
+              entries: () => entries,
+              subscribe: (listener) => {
+                changed.add(listener)
+                return () => {
+                  changed.delete(listener)
+                }
+              },
+            },
+          },
+        }),
+      ),
+    )
+    const nav = () => host.querySelectorAll('.settings-nav-group > [data-settings-section]')
+    expect(nav()).toHaveLength(2)
+    host.querySelector<HTMLButtonElement>('[data-settings-section="first"]')?.click()
+    host
+      .querySelector<HTMLButtonElement>('[role="tab"][data-settings-section="first"]')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    expect(document.activeElement?.getAttribute('data-settings-section')).toBe('second')
+    expect(host.querySelector('#config-form')?.getAttribute('data-settings-section')).toBe('second')
+    expect(new URL(location.href).searchParams.get('settings')).toBe('second')
+    entries = [
+      ...entries,
+      { id: 'third', group: 'agent', titleKey: 'third', groupTitleKey: 'agent', icon: 'agent', order: 12 },
+    ]
+    for (const listener of changed) listener()
+    expect(nav()).toHaveLength(2)
+    expect(host.querySelectorAll('#settings-section-tabs [role="tab"]')).toHaveLength(3)
+    entries = entries.filter((entry) => entry.id !== 'second')
+    for (const listener of changed) listener()
+    expect(host.querySelector('[data-settings-section="second"]')).toBeNull()
+    expect(host.querySelector('#config-form')?.getAttribute('data-settings-section')).toBe('model')
   })
 
   it('renders the appearance controls in English', () => {

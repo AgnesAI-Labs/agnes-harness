@@ -2,90 +2,50 @@
 
 [English](ui-coverage.md) | 简体中文
 
-本清单覆盖集成基线 `df4f28a4` 的插件架构、共享工作台以及本次设置实现。区分界面入口、后台支持与浏览器验收，产品仍为开发者预览。参阅[架构](architecture.zh-CN.md)、[提供器架构](architecture-plugins.zh-CN.md)、[源码地图](source-map.zh-CN.md)与 [Web 指南](../guide/web.zh-CN.md)。
+一个设置外壳管理导航、布局、键盘标签页和 `?settings=<section-id>` 深链；`/admin/plugins` 转到同一外壳。分组为：模型与账户、Agent、插件、技能、MCP、工具与搜索、自动化、安全、历史与归档、Computer Use、通用。Agent 包含 Agent Loop、组合包与预设、子代理；插件包含已安装与发现、插件实现、示例与 FDE。技能和 MCP 各出现一次，原账户及资源控制器通过注册桥接保留。参见[注册接口](ui-extension-registries.zh-CN.md)和[术语表](ui-glossary.zh-CN.md)。
 
-从工作台设置中的**插件**或 `/admin/plugins` 进入。运行时导航包含**插件**、**提供器**、**Agent Loop 与模型**、**组合包与预设**、**安全**、**MCP 与技能**、**示例**。独立页和内嵌页共用渲染器；模型账户与资源管理继续复用现有控制器。
-
-| 架构能力 | 界面入口与操作 | 限制及仍需验收的证据 |
+| 能力 | 界面 | 边界 |
 | --- | --- | --- |
-| 插件种类：工具、Loop、模型适配器、MCP、技能、UI、组合包 | 插件：种类徽标与过滤、已安装/发现搜索、详情 | 种类来自包声明；八种运行时提供器另见提供器目录。 |
-| 真实状态：已安装、已启用、运行中、排空、需要重启、失败 | 插件：后台状态徽标、排空会话数、失败原因与修复提示；浏览器模块状态单独呈现 | 不乐观宣告激活成功，由操作轮询与对账确认。 |
-| 安装前审查 | 来源检查及目录审查展示来源、完整性摘要、许可、能力哈希、权限声明、警告与阻碍 | 安装与信任/启用分别确认。后台插件运行受信任代码。 |
-| npm、路径/文件夹、tgz/归档、Git、HTTPS 归档、工作区扩展安装 | 插件：从来源安装；文件夹用 `path`，归档用 `file`，Git 用 `git` | 支持的引用格式由后台校验。来源不得包含凭据；本地扫描引用由 owner 生成。 |
-| 信任/撤销、启用/停用、更新、回滚、移除 | 复用插件详情操作及确认 | 所有操作保留管理权限与恢复模式检查。 |
-| 代码代际与会话占用 | 插件：代码代际展示 ID、真实状态、包和绑定会话数；排空汇总与孤儿 pin 释放 | 关闭/恢复后继续固定代码；新默认值不会暗中替换旧绑定。 |
-| 各容器发布状态 | 插件：显示发布操作、每个组合哈希的已应用/失败状态，以及重试相同输入的恢复提示 | 读取 Host 的脱敏发布事实，不展示容器异常原文或凭据。 |
-| 显式迁移会话 | 插件 / 代码代际：输入会话标识并确认迁移，显示迁移前后代际；后台拒绝时保留绑定 | 已接入 W7 的 `PluginAdminApi.migrateSession(sessionId)`（`POST /admin/plugins/api/sessions/migrate`）；会话忙碌、代际兼容性、幂等操作收据及拒绝保留由后台判断。 |
-| 本地插件目录与热重载 | 插件：本地插件展示真实用户/工作区目录；重新扫描按钮调用现有监视器 | 扫描完成不等于激活成功，需查看插件状态。自动重载及历史会话共存需集成验收。 |
-| 插件创建入口 | 插件：请智能体创建插件，打开带可审查草稿的新任务 | 不自动发送。通过智能体生成脚手架需在配置档启用创建工具。 |
-| 八种提供器：loop、model-adapter、compaction、persistence、sandbox、tool-runtime、tool-policy、child-agent | 提供器：每类均有区域与空状态；展示身份/版本、来源、能力、选择作用域、生命周期及重启要求 | 读取真实 Host 组合目录。已选择不等于运行会话数；启动级选择通过配置档/组合包合同配置。 |
-| Agent Loop 管理默认值 | Agent Loop 与模型：选择明确 ID/版本或继承配置档，带修订号保存 | 缺失/歧义版本由后台拒绝。 |
-| 每个新会话的 Loop 与现有会话信息 | 输入栏新会话 Loop 选择器；会话信息展示持久绑定 | Loop 身份不可变；恢复保留绑定版本，旧数据缺失不代入今日默认值。 |
-| 模型适配器默认值、模型目录、账户/路由选择 | Agent Loop 与模型设置默认适配器/模型；账户配置进入原设置；输入栏选择会话模型、思考强度与上下文 | wire API 与凭据仍归模型配置后台所有；遵循后台生效/重启状态。 |
-| 组合包编排与顺序 | 组合包与预设：目录与来源包、顺序复选框、上移/下移、带修订号保存 | 当前后台报告需要重启，界面不宣称运行 Host 已改变。 |
-| 每个新会话的预设 | 组合包与预设：放行预设与开始会话；输入栏增加会话预设选择器 | 仅展示 Host 放行项；启用组合包并完成后台组装后可选择其预设。 |
-| 每个新会话独立组合包 | 输入栏在 Loop 旁选择组合包（按选择顺序）和预设；组合包页面也可直接创建带包选择的新任务 | `session.new({bundles})` 在部署、预设、管理层之后应用会话组合包，显式 Loop 优先；后台验证并固定组合，恢复不重新解释当前默认值。 |
-| 配置导出与来源解释 | 组合包与预设：选择预设、解释期望组合、配置项/层级/来源表、安全 JSON 与实时会话绑定 | 明确区分静态期望配置与实时会话；不暴露秘密或任意配置快照。 |
-| 权限预设：只读/工作区写入/完全访问 | 安全：Host 可用性、开始会话；管理默认值可选权限预设；新会话先继承管理默认值，再回退配置档默认值，输入栏显示实际继承项 | 未提供只读预设时拒绝选择，不仅抑制审批。未提供新命名预设的配置档继续兼容原工作区/完全访问审批模式。权限执行归后台所有。 |
-| 沙箱选择与状态 | 安全：平台最近的 L1 探测、权限预设要求，以及各打开会话的规范工作区路径、提供器、就绪状态、实测隔离与策略摘要 | `Host.securityStatus()` 仅读取已有探测/绑定事实；刷新不执行探测命令。关闭或未测量状态不会被显示为已隔离。 |
-| MCP 创建/安装、编辑、启停、状态、认证、工具与移除 | MCP 与技能内嵌原管理页并提供独立链接；工作台资源设置保留所选工作区 | 实时定义下轮生效，按会话组合过滤；工作区范围操作继续使用原资源页。 |
-| 技能目录、安装/复制、信任、启停、刷新、移除、扫描根诊断 | MCP 与技能及工作台的原技能管理 | 实时资源行为归后台所有，与固定插件代码区分。 |
-| FDE 示例：数据报告、客服分诊、CRM 助手、合同审查、运维手册、设备巡检 | 示例读取后台发现的 FDE 组合包；审查并安装沿用能力/信任流程；组合已安装的包通往预设与会话入口 | 空状态说明从源码发现。演示夹具不证明真实业务/设备集成。安装→启用→组合→重启→会话轮次仍需最终验收。 |
-| 共享会话、持久历史、流式输出、附件、取消、追加/排队输入 | 原对话工作台与工作区选择器 | 本设置变更保留。 |
-| 审批、Trace、恢复、诊断、会话搜索/归档/分叉/导出 | 原工作台操作、Trace 与诊断 | 后台维护授权、效果回执及会话事实。 |
-| 前端插件面板、公开槽位、皮肤、主题/语言、Computer Use 管理 | 原客户端模块对账、设置与工作台区域 | 保留 `@agnes/web-ui` 原语、token、CSP 与皮肤钩子。 |
-| ask_user_question 卡片 | 原生英/中文问题表单在轮次结束与过程折叠后仍可见；选项、自由输入与提交有稳定标识 | 通过真实对话适配器和合成会话端口验证多选提交及已回答状态；真实会话仍需最终验收。 |
-| 交付物卡片 | 经授权的文件链接不随过程折叠隐藏；打开/下载标识及 artifact hash | 浏览器下载与卡片资源释放已验证；真实文件授权仍归后台验收。 |
-| 后台任务卡片 | 现有 `job_list`、`job_output`、`job_kill` 工具结果卡片和后台 shell 收据保持可见，带卡片/详情稳定标识 | 工具调用状态与详情中的后台任务状态/输出分开；布局不生成轮询、终止或生命周期事实。 |
-| 计划模式卡片 | E2 `/plan` 输入命令与共享实时审批区；计划预览及后台提供的批准/拒绝选项有稳定标识 | 待审批内容位于折叠过程之外。浏览器夹具验证批准/拒绝呈现；真实写入/执行限制仍由后台维护。 |
-| 子智能体卡片 | 现有 `subagent_*` 工具结果卡片保持可见并提供详情稳定标识；提供器元数据保留 | 子智能体身份/状态来自后台结果文本，工具完成不代表子智能体完成；真实继续、打断、取消仍需最终验收。 |
-| Headless、JSONL、replay、批处理 | 明确不要求 Web 入口 | 参阅 [headless 指南](../guide/headless.zh-CN.md)。 |
-
-## 管理端接线
-
-固定 HTTP 路由由启动器的私有 Node SDK 连接提供，保留准确 Origin/Host 检查、服务端权限与禁止缓存响应：
-
-- `GET /admin/api/runtime → RuntimeAdminSnapshot`：仅提供器描述、放行 `presets`、`localPluginFolders`；不含工厂、预设配置、源码或凭据。
-- `POST /admin/api/reload-local {}`：检查激活权限及恢复状态，调用 owner 配置的现有监视器。响应确认扫描请求完成，激活结果仍以插件状态为准。
-- 私有守护进程方法：`_agnes/v1/sessionSelection.runtime({})`、`_agnes/v1/sessionSelection.reloadLocal({})`。浏览器 SDK 的控制面阻断与守护进程授权检查覆盖现有 `sessionSelection` 方法族。
-- 复用已有 Loop/模型默认值、组合包选择、指定预设配置导出、插件生命周期及资源端点，不新增 Core/Host 提供器实现。
-
-运行目录目前需要配置了本地插件根目录的生产 supervisor。未接入此管理端口的嵌入者得到不可用状态，不生成虚假目录。
+| 插件生命周期 | 来源检查、能力审阅、安装、信任并启用、更新、回滚、移除 | 保留权限与确认；操作完成和实际状态分别展示 |
+| 插件实现与类型 | 类型筛选、能力、版本、来源、作用域、重启要求 | 真实目录的描述，不授予执行权限 |
+| 插件代际、发布、迁移 | 绑定、发布状态、孤立绑定释放、迁移确认 | 后端决定兼容性及拒绝；不伪造成功 |
+| 默认 Agent Loop、模型、组合包及预设 | 修订检查保存，继承结果和来源，友好名称与次级版本 | 新会话采用默认值，旧会话保持绑定；单项不重复下拉 |
+| 输入区 | 一个 Agent 芯片包含 Agent Loop、有序组合包及权限预设 | 保留模型、工作区和权限行为 |
+| 会话能力 | SessionToolsPanel 展示 SessionCapabilitySet 有效选择、启用/禁用项和 source/rule 来源 | A4 拥有数据形状；兼容旧 toolGroups，不改变授权 |
+| 技能、MCP | 独立设置区，原控制器及工作区作用域 | 信任、认证、启用和移除仍由后端处理 |
+| 官方示例 | 仓库外也列出 2 个官方 Loop、12 个 FDE 组合包和 3 个社区示例；直接安装入口 | 固定打包白名单，正常审阅、安装、信任启用；不代表业务系统已接通 |
+| 工具、上下文、自动化 | 搜索、上下文、作业、日程、终端使用共享卡片、字段及状态 | 服务缺失、失败、加载和只读状态明确 |
+| 安全、历史、Computer Use | 沙箱事实、权限预设、历史和归档，原 Computer Use 控制器 | 不增加权限和探测，宽表内部滚动 |
+| 对话卡片 | 问题、计划、交付物、作业、子代理、工作流、目标、日程、插件通过注册 API 渲染 | 保留槽位生命周期、文件授权及审批身份 |
+| 主题与语言 | en/zh 目录、令牌、弹窗联动、区域化日期和安全失败提示 | 机器 ID 与诊断数据不翻译 |
 
 ## 浏览器验收
-
-独立 smoke 层不进入 Vitest：
 
 ```sh
 AGH_WEB_URL=http://127.0.0.1:PORT pnpm test:web-smoke
 pnpm test:web-smoke --list
 ```
 
-使用已安装/缓存的 Playwright 与缓存 Chromium，不下载浏览器。`AGH_PLAYWRIGHT_PACKAGE` 可指定包目录，`AGH_CHROMIUM_PATH` 可指定现有 Chromium 可执行文件。结果默认放临时目录，可用 `AGH_WEB_TEST_OUTPUT` 覆盖。变更验收使用隔离、合成的 home/server。
+运行器使用已安装或缓存的 Playwright/Chromium，不下载浏览器。`AGH_PLAYWRIGHT_PACKAGE` 指定包目录，`AGH_CHROMIUM_PATH` 指定浏览器，`AGH_WEB_TEST_OUTPUT` 指定跟踪目录。变更性用例仅用于隔离合成 home/server。
 
-`tools/e2e-web/navigation.spec.ts` 覆盖英/中文七个页面、八类提供器、本地插件按钮、创建入口、安全状态及 375px 无页面横向溢出。设置 `AGH_MIGRATION_SESSION` 可对隔离 home 的空闲会话执行输入→确认→迁移结果检查；未设置则跳过该变更用例。检查未捕获页面错误。稳定标识包括 `settings-nav-*`、`settings-page-*`、`providers-*`、`security-*`、`plugin-generations`、`composition-publication`、`migration-session-key`、`migrate-session`、`confirm-session-migration`、`session-migration-result`、`sandbox-security-status`、`sandbox-status-unavailable`、`permission-preset-status`、`workspace-sandbox-status`、`local-plugins`、`reload-local-plugins`、`new-session-preset`、`new-session-bundles`、`bundle-order`、`config-dump`、`config-choice-sources`，同时保留可访问名称。
+- `navigation.spec.ts`：双语导航、插件实现目录、旧路由、375px 和宽表键盘滚动。可选 `AGH_MIGRATION_SESSION` 启用迁移确认。
+- `ui-quality.spec.ts`：1440×900、1280×800，浅色/深色，en/zh 共 8 个组合；覆盖空首页、真实 demo 会话及卡片、全部设置目的地、账户及来源安装弹窗。每屏检查未解析键、溢出和异常。
+- `examples.spec.ts`：显式 `AGH_INSTALL_EXAMPLES=1` 才运行审阅、安装、信任启用、打开弹窗时切换语言、新会话 Loop 选择。
+- `locale-catalogs.test.ts`：递归检查四个前端包的 en/zh 键一致、文案非空。
 
-完整验收仍须在集成运行时完成：插件安装/信任/启停/更新/回滚、默认值与会话选择、组合/预设来源、真实沙箱拒绝路径、MCP/技能变更、所有对话卡片及 FDE 组合包会话轮次。导航 smoke 不单独证明可用于真实交付。
+`AGH_UI_REPORT` 保存截图；`AGH_UI_WORKSPACE` 指向合成工作区；可选 `AGH_UI_DELIVERABLE` 指定合成文件。报告记录实际命令与结果；截图不能替代沙箱拒绝、更新/回滚、资源变更和业务集成验收。
 
-适配器目录兼容可选的 `wireApi` 字段（旧 DTO 回退到 `api`），并使用已注册的 wire API 匹配配置模型。运行时目录还提供可选的脱敏 `publication` 报告。
-
-创建会话 SDK 新增 `bundles?: readonly string[]`，通过 ACP 的 `ai.agnes.harness` 元数据传递已存在的组合包 ID。限 64 个唯一标识，未知包由 Host 拒绝；不传包配置或安装来源。目录新增可选 `bundles: {id,sourcePackage}[]`。
-
-安全状态通过现有运行时管理目录的可选 `security: RuntimeSecurityStatus` 提供，聚合组合容器和代码代际。包含最近平台探测、已放行预设的规范沙箱/审批/网络要求及工作区隔离快照；不暴露 seam、工厂、执行权限或配置/凭据。
-
-当前验证：之前设置变更的安全/组合/会话选择与协议 AJV 检查通过。E1/E2 集成后，相关包 `tsc -b` 及 29 个卡片/审批/对话/计划直接测试通过；缓存 Chromium 的英/中文 × 1280px/375px 共 4 个用例覆盖过程折叠、多选提交、文件下载、任务/子智能体详情、计划批准与拒绝。使用真实生产组件、完整构建样式及合成会话/资源端口，不证明真实守护进程执行或后台授权。
+设置 ID 和角色见[注册接口](ui-extension-registries.zh-CN.md)。输入区保留 `composer-agent`、`agent-options`、`new-session-loop` / `new-session-loop-readonly`、`new-session-bundles`、`new-session-preset` / `new-session-preset-readonly`。其他 ID 包括 `providers-*`、`security-*`、`plugin-generations`、`composition-publication`、`bundle-order`、`config-dump`、`config-choice-sources`。
 
 ## 对话布局验收
-
-构建 Web 资源后启动隔离的组件夹具：
 
 ```sh
 pnpm --filter @agnes/web build
 node tools/e2e-web/serve-conversation-fixture.mjs
-# 将输出的回环 URL 同时填入两个变量：
+# 使用打印的回环地址
 AGH_WEB_URL=http://127.0.0.1:PORT AGH_CONVERSATION_FIXTURE_URL=http://127.0.0.1:PORT pnpm test:web-smoke conversation.spec.ts
 ```
 
-稳定标识：`question-card`、`question-field`、`question-option`、`question-free-text`、`question-submit`、`deliverable-card`、`deliverable-open`、`deliverable-download`、`background-job-card`、`child-agent-card`、`tool-detail-toggle`、`tool-detail-text`、`turn-process-toggle`、`plan-approval-card`、`approval-card`、`approval-preview`、`approval-action`。重复标识按 `[data-node-id]`、`[data-question-id]`、`[data-artifact-sha256]` 或 `[data-tool-name]` 限定范围；审批动作保留后台身份 `data-approval-action`，不要按位置选择。任务/子智能体沿用现有工具结果，不新增管理协议。
+夹具使用生产组件及样式、合成 session/resource 端口，验证问题提交、下载、作业/子代理详情、过程折叠和计划允许/拒绝。真实 daemon demo 回合另外覆盖问题、交付物及作业卡片。组件夹具不能证明后端授权。
 
-共享呈现合同仅增加可选项：`ConversationMessagesProps.keepNodeVisible?: (node: UINode) => boolean` 与 `ApprovalView.kind?: 'plan'`。已有调用方保留默认过程折叠行为，不修改协议、提供器或授权 API。
+稳定 ID：`question-card`、`question-field`、`question-option`、`question-free-text`、`question-submit`、`deliverable-card`、`deliverable-open`、`deliverable-download`、`background-job-card`、`child-agent-card`、`tool-detail-toggle`、`tool-detail-text`、`turn-process-toggle`、`plan-approval-card`、`approval-card`、`approval-preview`、`approval-action`。重复 ID 用 `[data-node-id]`、`[data-question-id]`、`[data-artifact-sha256]` 或 `[data-tool-name]` 限定。审批保留 `data-approval-action`，不按位置选择。

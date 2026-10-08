@@ -15,7 +15,7 @@ export type RuntimeStateView = Readonly<{
   packageId: string
   revision: string | undefined
   phase: 'idle' | 'loading' | 'active' | 'stopping' | 'failed'
-  error?: Readonly<{ message: string }>
+  error?: Readonly<{ message: string; code?: string }>
 }>
 
 export type { LocaleTranslator as AdminTranslator }

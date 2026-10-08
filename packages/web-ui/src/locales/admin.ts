@@ -136,7 +136,7 @@ export const adminLocaleCatalog: LocaleCatalog = {
     'operation.label': '{operation}：{state}',
     'blocker.dependency': '依赖关系',
     'blocker.profile': 'Profile 配置',
-    'blocker.generation': '运行代际',
+    'blocker.generation': '插件代际',
     'blocker.deployment': '部署引用',
     'blocker.policy': '安全策略',
     'blocker.incompatible': '兼容性',

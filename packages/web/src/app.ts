@@ -1,3 +1,4 @@
+import './settings/registry.js'
 import {
   type ConfigSnapshot,
   type ContentBlock,
@@ -24,6 +25,7 @@ import {
   type Session,
 } from '@agnes/sdk/browser'
 import { bindDismissibleDialog } from '@agnes/web-admin-frame'
+import { settingsSections } from '@agnes/web-client'
 import { createCatalogTranslator } from '@agnes/web-ui'
 import { sessionLoopSelection } from './admin/plugins/session-loop.js'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
@@ -337,6 +339,7 @@ const clientModules = await startClientModules({
   rightbarContainer: document.getElementById('rightbar-panel') ?? undefined,
   settingsPaneContainer: document.getElementById('config') ?? undefined,
   settings: {
+    sections: settingsSections,
     computerUse: computerUseStatus.render(),
     onChange: ({ pane, tab }) => {
       if (pane === 'model') void settings.open()
@@ -437,6 +440,7 @@ let draftPreset: string | undefined
 let draftBundles: string[] = []
 let runtimeCatalog: import('@agnes/protocol').RuntimeAdminSnapshot | undefined
 const startupRequest = new URLSearchParams(location.search)
+const requestedLoop = startupRequest.get('loop') ?? undefined
 const requestedPreset = startupRequest.get('preset') ?? undefined
 const requestedBundles = startupRequest.getAll('bundle')
 const requestedPrompt = startupRequest.get('prompt') ?? undefined
@@ -2544,6 +2548,12 @@ run(async () => {
   const selected = new URL(location.href).searchParams.get('session')
   if (startupRequest.get('new') === '1') {
     await beginNewDraft(configured)
+    if (requestedLoop) {
+      const match = newSessionCatalog?.loops.find((entry) => `${entry.id}@${entry.version}` === requestedLoop)
+      if (!match) throw new Error(settingsText('notAllowed'))
+      draftLoop = { id: match.id, version: match.version }
+      draftLoopEdited = true
+    }
     if (requestedPreset) {
       if (!runtimeCatalog?.presets.some((entry) => entry.id === requestedPreset))
         throw new Error(settingsText('notAllowed'))
@@ -2563,10 +2573,7 @@ run(async () => {
     renderControls()
     return
   }
-  if (startupRequest.get('settings') === 'model') {
-    settingsRegion.open('model')
-    await settings.open()
-  }
+  const startupSection = settingsSections.get(startupRequest.get('settings') ?? '')
   if (selected) {
     const candidates = page.items.some((item) => item.sessionId === selected)
       ? page
@@ -2579,6 +2586,15 @@ run(async () => {
   } else {
     const first = page.items.find((item) => !item.archived)
     if (first) await open(first.sessionId)
-    else await beginNewDraft(configured)
+    else await beginNewDraft(configured && !startupSection)
+  }
+  if (settingsSections.get(startupRequest.get('settings') ?? '')) {
+    settingsRegion.open('model')
+    await settings.open()
+    document
+      .getElementById('config-form')
+      ?.dispatchEvent(
+        new CustomEvent('agnes:settings-route', { detail: startupRequest.get('settings'), bubbles: true }),
+      )
   }
 })
