@@ -216,6 +216,8 @@ class PluginAdminPage {
   private readonly actualSlots: ((packageId: string) => readonly string[]) | undefined
 
   constructor(options: PluginAdminOptions = {}) {
+    // Keep the scrollable tab panel keyboard reachable during empty/loading states.
+    this.#listHost.tabIndex = 0
     this.actualSlots = options.actualSlots
     this.#runtime = options.runtime
     this.#schedules = options.schedules

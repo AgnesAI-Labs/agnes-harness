@@ -20,6 +20,7 @@ function LocalizedProvider({ children, nonce }: { children: ReactNode; nonce: st
       ...(nonce ? { csp: { nonce } } : {}),
       locale: language === 'zh-CN' ? zhCN : enUS,
       button: { autoInsertSpace: false },
+      theme: { zeroRuntime: true, hashed: false, cssVar: { key: 'agnes-theme' } },
     },
     children,
   )

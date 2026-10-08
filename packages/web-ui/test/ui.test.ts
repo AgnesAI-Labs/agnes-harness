@@ -32,6 +32,9 @@ describe('web-ui public component layer', () => {
     const styles = [...document.head.querySelectorAll<HTMLStyleElement>('style[data-css-hash]')]
     expect(styles.length).toBeGreaterThan(0)
     expect(styles.every((style) => style.nonce === meta.content)).toBe(true)
+    // Component regions share the skin bridge instead of injecting default light style rules.
+    expect(host.querySelector('button')?.classList.contains('agnes-theme')).toBe(true)
+    expect(styles.some((style) => style.textContent?.includes('.ant-btn:hover'))).toBe(false)
     dispose()
     meta.remove()
   })

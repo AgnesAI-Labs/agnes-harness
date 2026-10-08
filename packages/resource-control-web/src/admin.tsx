@@ -324,7 +324,7 @@ class ResourceAdminPage {
     if (!targetId) return
     for (const row of list.querySelectorAll<HTMLElement>('.resource-row')) {
       if (row.dataset.resourceId !== targetId) continue
-      row.focus({ preventScroll: true })
+      row.querySelector<HTMLButtonElement>('.plugin-details-button')?.focus({ preventScroll: true })
       return
     }
   }

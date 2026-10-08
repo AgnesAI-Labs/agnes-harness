@@ -51,3 +51,5 @@ AGH_WEB_URL=http://127.0.0.1:PORT AGH_CONVERSATION_FIXTURE_URL=http://127.0.0.1:
 稳定 ID：`question-card`、`question-field`、`question-option`、`question-free-text`、`question-submit`、`deliverable-card`、`deliverable-open`、`deliverable-download`、`background-job-card`、`child-agent-card`、`tool-detail-toggle`、`tool-detail-text`、`turn-process-toggle`、`plan-approval-card`、`approval-card`、`approval-preview`、`approval-action`。重复 ID 用 `[data-node-id]`、`[data-question-id]`、`[data-artifact-sha256]` 或 `[data-tool-name]` 限定。审批保留 `data-approval-action`，不按位置选择。
 
 设置 `AGH_UI_AXE=1` 后，截图矩阵会检查中英文、浅深色的每个 1440 像素页面及弹窗的 WCAG A/AA 问题。递归语言键集检查还覆盖资源设置包。测试使用仓库锁定的 Playwright 和本机已安装的 Chromium。
+
+设置 `AGH_UI_ISOLATED=1` 后，每个矩阵用例会启动独立的真实 daemon 和合成工作区，并自动创建用于交付物卡片的文件。

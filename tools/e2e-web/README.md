@@ -113,3 +113,5 @@ The navigation skeleton verifies both locales, every settings destination, all p
 Stable IDs and APIs: [registry APIs](../../docs/develop/ui-extension-registries.md). Conversation fixtures use production components with synthetic ports.
 
 Set `AGH_UI_AXE=1` for WCAG A/AA checks on every 1440-pixel screen in the UI matrix, including dialogs and conversation cards. `AGH_UI_DELIVERABLE` must be an absolute path to a synthetic file inside `AGH_UI_WORKSPACE`.
+
+Set `AGH_UI_ISOLATED=1` to run each matrix case with its own disposable real daemon, workspace and synthetic deliverable.

@@ -205,31 +205,30 @@ export function ResourceRow({
   const { t } = useUiText(RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog)
   const enabled = resourceDesiredEnabled(item)
   return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: The heading button owns the keyboard action; the row pointer hit area does not nest interactive roles.
     <article
       className="plugin-row resource-row"
       data-resource-id={item.resourceId}
-      tabIndex={0}
-      role="button"
       data-selected={String(selected)}
-      aria-pressed={selected}
-      aria-label={t('row.open-aria', { name: itemName })}
       onClick={(event) => {
         // 行内 Switch 自己处理点击（并已 stopPropagation）；这里再挡一次，
         // 因为置灰的按钮在部分浏览器里不发 click，事件会落到行上。
-        if (event.target instanceof Element && event.target.closest('.switch')) return
+        if (event.target instanceof Element && event.target.closest('.switch, button, a')) return
         onOpen(item)
-      }}
-      onKeyDown={(event) => {
-        // 行内控件的按键会冒泡到行：焦点在 Switch 上按空格是拨开关，不是打开详情。
-        if (event.target !== event.currentTarget) return
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault()
-          onOpen(item)
-        }
       }}
     >
       <div className="plugin-row-content">
-        <h2 title={itemName}>{itemName}</h2>
+        <h2 title={itemName}>
+          <button
+            type="button"
+            className="plugin-details-button"
+            aria-pressed={selected}
+            aria-label={t('row.open-aria', { name: itemName })}
+            onClick={() => onOpen(item)}
+          >
+            {itemName}
+          </button>
+        </h2>
         {item.kind === 'skill' ? (
           <>
             <p>{item.description ?? t('row.skill-no-description')}</p>

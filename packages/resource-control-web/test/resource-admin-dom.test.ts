@@ -544,8 +544,8 @@ it('returns focus to the row it was opened from when the detail modal closes', a
   expect(byId<HTMLDialogElement>('resource-detail').open).toBe(false)
   const restored = byId('resource-list').querySelector<HTMLElement>('.resource-row')
   expect(restored).not.toBeNull()
-  // React 键控行复用 DOM（不再整表重建），所以断言焦点落在正确的行上，而不是落在 body。
-  expect(document.activeElement).toBe(restored)
+  // Restore the current row’s keyboard action after a keyed re-render.
+  expect(document.activeElement).toBe(restored?.querySelector('.plugin-details-button'))
 })
 
 it('hides trust controls and binds enable and disable to the displayed revision', async () => {

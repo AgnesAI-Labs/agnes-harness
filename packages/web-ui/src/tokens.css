@@ -13,10 +13,11 @@
    - prefixCls 保持默认 ant-，本文件不与 CSS 重新编译绑定。
 
    桥接当前使用的 Button/Modal/Select/Switch/Tabs 的全局语义变量；组件私有
-   --ant-*-* 变量继续由 zeroRuntime CSS 自身定义，不在这里覆盖。
+   --ant-*-* 的颜色默认值同样映射到语义 token，避免静态组件带入浅色值。
    ═══════════════════════════════════════════════════════════════════════ */
 
-:root {
+:root,
+:root .agnes-theme {
   /* Brand / 链接 */
   --ant-color-primary: var(--agnes-brand-primary);
   --ant-color-primary-hover: var(--agnes-brand-primary);
@@ -77,6 +78,45 @@
   --ant-control-height: var(--control-height);
   --ant-control-height-sm: calc(var(--control-height) - 8px);
   --ant-control-height-lg: var(--control-height-form);
+
+  /* Component defaults also contain light colors in Ant Design's static CSS. */
+  --ant-button-default-color: var(--agnes-text-primary);
+  --ant-button-default-bg: var(--agnes-bg-app-content);
+  --ant-button-default-border-color: var(--agnes-line-primary);
+  --ant-button-default-hover-bg: var(--agnes-bg-hover);
+  --ant-button-default-hover-color: var(--agnes-text-primary);
+  --ant-button-default-hover-border-color: var(--agnes-brand-primary);
+  --ant-button-default-active-bg: var(--agnes-bg-selected);
+  --ant-button-default-active-color: var(--agnes-text-primary);
+  --ant-button-default-active-border-color: var(--agnes-brand-primary);
+  --ant-button-default-bg-disabled: var(--agnes-bg-card);
+  --ant-button-default-border-color-disabled: var(--agnes-line-primary);
+  --ant-button-border-color-disabled: var(--agnes-line-primary);
+  --ant-button-text-text-color: var(--agnes-text-primary);
+  --ant-button-text-text-hover-color: var(--agnes-text-primary);
+  --ant-button-text-text-active-color: var(--agnes-text-primary);
+  --ant-button-text-hover-bg: var(--agnes-bg-hover);
+  --ant-button-primary-color: var(--agnes-text-inverse);
+  --ant-button-solid-text-color: var(--agnes-text-inverse);
+  --ant-modal-content-bg: var(--agnes-bg-popover);
+  --ant-modal-title-color: var(--agnes-text-primary);
+  --ant-select-selector-bg: var(--agnes-bg-app-content);
+  --ant-select-clear-bg: var(--agnes-bg-app-content);
+  --ant-select-option-selected-color: var(--agnes-text-primary);
+  --ant-select-option-selected-bg: var(--agnes-bg-selected);
+  --ant-select-option-active-bg: var(--agnes-bg-hover);
+  --ant-select-multiple-item-bg: var(--agnes-bg-hover);
+  --ant-select-multiple-selector-bg-disabled: var(--agnes-bg-card);
+  --ant-select-multiple-item-color-disabled: var(--agnes-text-disabled);
+  --ant-select-hover-border-color: var(--agnes-brand-primary);
+  --ant-select-active-border-color: var(--agnes-brand-primary);
+  --ant-select-active-outline-color: var(--agnes-brand-focus-ring);
+  --ant-tabs-card-bg: var(--agnes-bg-card);
+  --ant-tabs-ink-bar-color: var(--agnes-brand-primary);
+  --ant-tabs-item-color: var(--agnes-text-primary);
+  --ant-tabs-item-selected-color: var(--agnes-text-primary);
+  --ant-tabs-item-hover-color: var(--agnes-text-primary);
+  --ant-tabs-item-active-color: var(--agnes-text-primary);
 }
 
 .dark {
@@ -153,7 +193,7 @@
   line-height: 1.5;
 }
 .agnes-ui-field-error {
-  color: var(--agnes-status-error-text);
+  color: var(--agnes-status-danger-text);
   font-size: var(--font-size-sm);
 }
 .agnes-settings-input {
@@ -229,8 +269,8 @@ textarea.agnes-settings-input {
   overflow-wrap: anywhere;
 }
 .agnes-settings-state[data-tone="error"] {
-  color: var(--agnes-status-error-text);
-  background: var(--agnes-status-error-bg);
+  color: var(--agnes-status-danger-text);
+  background: var(--agnes-status-danger-bg);
 }
 .agnes-settings-state[data-tone="success"] {
   color: var(--agnes-status-success-text);
@@ -266,7 +306,7 @@ textarea.agnes-settings-input {
   min-height: 16rem;
   height: 20rem;
   max-height: 40vh;
-  font-family: var(--font-family-mono, monospace);
+  font-family: var(--font-mono, monospace);
 }
 .agnes-settings-card .agnes-ui-button {
   justify-self: start;

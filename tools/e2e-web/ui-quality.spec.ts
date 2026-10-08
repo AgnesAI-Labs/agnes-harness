@@ -1,11 +1,28 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test } from '@playwright/test'
+import { test as base, expect } from '@playwright/test'
 import { localeKeys, unresolvedLabels } from './i18n.js'
+import { isolatedRuntime, type Runtime } from './runtime.js'
 
 const root = process.env.AGH_UI_REPORT
-const workspace = process.env.AGH_UI_WORKSPACE
+const test = base.extend<{ uiServer: Runtime | undefined }>({
+  uiServer: async ({ browserName }, use, info) => {
+    if (browserName !== 'chromium') throw new Error('UI acceptance requires Chromium')
+    if (process.env.AGH_UI_ISOLATED !== '1') {
+      await use(undefined)
+      return
+    }
+    const server = await isolatedRuntime()
+    try {
+      await server.start()
+      await use(server)
+    } finally {
+      await info.attach('serve.log', { body: server.logs(), contentType: 'text/plain' })
+      await server.dispose()
+    }
+  },
+})
 // This test always renders the main screens in both locales. Optional artifacts cover the
 // full visual matrix; use a real daemon with an isolated home and the built-in demo model.
 for (const locale of ['zh-CN', 'en'])
@@ -14,8 +31,12 @@ for (const locale of ['zh-CN', 'en'])
       [1440, 900],
       [1280, 800],
     ] as const) {
-      test(`UI quality ${locale}/${theme}/${width}x${height}`, async ({ page }) => {
+      test(`UI quality ${locale}/${theme}/${width}x${height}`, async ({ page, uiServer }) => {
         test.setTimeout(process.env.AGH_UI_AXE === '1' ? 240_000 : 120_000)
+        const workspace = uiServer?.workspace ?? process.env.AGH_UI_WORKSPACE
+        const deliverable = uiServer ? join(uiServer.workspace, 'report.md') : process.env.AGH_UI_DELIVERABLE
+        const visit = (path: string) =>
+          page.goto(new URL(path, uiServer?.url ?? process.env.AGH_WEB_URL).toString())
         const knownKeys = await localeKeys()
         const errors: string[] = []
         page.on('pageerror', (error: Error) => errors.push(error.message))
@@ -60,7 +81,7 @@ for (const locale of ['zh-CN', 'en'])
             ).toEqual([])
           }
         }
-        await page.goto('/?new=1')
+        await visit('/?new=1')
         await expect(page.locator('#settings')).toBeVisible()
         await page.waitForTimeout(1000)
         if (await page.locator('#new-session[open]').count()) {
@@ -139,7 +160,7 @@ for (const locale of ['zh-CN', 'en'])
           const tab = page.getByTestId(`settings-nav-${id}-tab`)
           if (await tab.count()) await tab.click()
           await expect(page.getByTestId(`settings-page-${id}`)).toBeVisible()
-          if (id === 'plugins') await expect(page.locator('#install-source')).toBeEnabled()
+          if (id === 'plugins') await expect(page.locator('#install-source')).toBeEnabled({ timeout: 30_000 })
           await screen(`runtime-${id}`)
           if (id === 'bundles' && (await page.getByTestId('session-tool-groups').count())) {
             await page.getByTestId('session-tool-groups').first().locator('summary').first().click()
@@ -165,19 +186,22 @@ for (const locale of ['zh-CN', 'en'])
         await screen('plugin-install')
         await page.locator('#source-cancel').click()
         await page.locator('#config-close').click()
-        await page.locator('#prompt').fill('UI quality demo')
-        await page.locator('#send').click()
-        await expect(page.locator('#prompt')).toBeEnabled()
-        await page.waitForTimeout(750)
-        await page.locator('#prompt').fill('call ls {"path":"."}')
-        await page.locator('#send').click()
-        await page.waitForTimeout(1000)
+        async function submitTurn(input: string) {
+          await expect(page.locator('#cancel')).toBeHidden({ timeout: 30_000 })
+          const turns = page.locator('.conversation-turn')
+          const before = await turns.count()
+          await page.locator('#prompt').fill(input)
+          await page.locator('#send').click()
+          await expect(turns).toHaveCount(before + 1, { timeout: 30_000 })
+          await expect(turns.last()).toHaveAttribute('data-status', 'completed', { timeout: 30_000 })
+          await expect(page.locator('#prompt')).toBeEnabled()
+        }
+        await submitTurn('UI quality demo')
+        await submitTurn('call ls {"path":"."}')
         await screen('active-session')
         const calls = [
           'call job_list {}',
-          ...(process.env.AGH_UI_DELIVERABLE
-            ? ['call present ' + JSON.stringify({ files: [{ path: process.env.AGH_UI_DELIVERABLE }] })]
-            : []),
+          ...(deliverable ? ['call present ' + JSON.stringify({ files: [{ path: deliverable }] })] : []),
           'call ask_user_question ' +
             JSON.stringify({
               questions: [
@@ -191,14 +215,12 @@ for (const locale of ['zh-CN', 'en'])
             }),
         ]
         for (const call of calls) {
-          await page.locator('#prompt').fill(call)
-          await page.locator('#send').click()
-          await page.waitForTimeout(900)
+          await submitTurn(call)
         }
         await expect(page.getByTestId('question-card')).toBeVisible()
         await page.getByTestId('question-card').scrollIntoViewIfNeeded()
         await screen('active-session-cards')
-        if (process.env.AGH_UI_DELIVERABLE) {
+        if (deliverable) {
           await expect(page.getByTestId('deliverable-card')).toBeVisible()
           await page.getByTestId('deliverable-card').scrollIntoViewIfNeeded()
           await screen('deliverable-card')
@@ -208,7 +230,7 @@ for (const locale of ['zh-CN', 'en'])
         await page.locator('#view-trace').click()
         await screen('trace')
         await page.locator('#view-chat').click()
-        await page.goto('/?settings=bundles')
+        await visit('/?settings=bundles')
         await expect(page.getByTestId('settings-page-bundles')).toBeVisible()
         await expect(page.locator('#new-session')).toBeHidden()
         await screen('deep-link-bundles')
