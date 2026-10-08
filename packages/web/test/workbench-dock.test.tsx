@@ -1,0 +1,85 @@
+/** @vitest-environment happy-dom */
+import { workbenchPanels } from '@agnes/web-client'
+import { renderRegion, unmountRegion } from '@agnes/web-ui'
+import { flushSync } from 'react-dom'
+import { expect, it } from 'vitest'
+import { Dock } from '../src/workbench/dock.js'
+
+it('restores focus on Escape, resizes with keys, retires registrations and detaches on unmount', () => {
+  localStorage.clear()
+  document.body.innerHTML =
+    '<div class="workbench-split"><div id="controls"></div><aside id="workbench-right" hidden><div id="workbench-right-content"></div></aside><aside id="workbench-bottom" hidden><div id="workbench-bottom-content"></div></aside></div>'
+  const host = document.getElementById('controls') as HTMLElement
+  const first = workbenchPanels.register({
+    id: 'test.first',
+    order: 1,
+    edge: 'right',
+    titleKey: 'First',
+    component: () => <p>First panel</p>,
+  })
+  const second = workbenchPanels.register({
+    id: 'test.second',
+    order: 2,
+    edge: 'right',
+    titleKey: 'Second',
+    component: () => <p>Second panel</p>,
+  })
+  let replacement: (() => void) | undefined
+  try {
+    renderRegion(host, <Dock context={{ t: (key) => key }} />)
+    const toggle = host.querySelector('[data-edge="right"]') as HTMLButtonElement
+    flushSync(() => toggle.click())
+    const dock = document.getElementById('workbench-right') as HTMLElement
+    expect(dock.hidden).toBe(false)
+    const resize = dock.querySelector('hr') as HTMLElement
+    flushSync(() => resize.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })))
+    expect(
+      document.querySelector<HTMLElement>('.workbench-split')?.style.getPropertyValue('--workbench-width'),
+    ).toBe('304px')
+    const selected = dock.querySelector('[aria-selected="true"]') as HTMLButtonElement
+    selected.focus()
+    flushSync(() =>
+      selected.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })),
+    )
+    expect(dock.textContent).toContain('Second panel')
+    flushSync(second)
+    expect(dock.textContent).toContain('First panel')
+    expect(() =>
+      workbenchPanels.register({
+        id: 'test.first',
+        order: 1,
+        edge: 'right',
+        titleKey: 'Duplicate',
+        component: () => null,
+      }),
+    ).toThrow('already registered')
+    flushSync(first)
+    flushSync(() => {
+      replacement = workbenchPanels.register({
+        id: 'test.first',
+        order: 1,
+        edge: 'right',
+        titleKey: 'Replacement',
+        component: () => <p>Replacement panel</p>,
+      })
+    })
+    flushSync(first)
+    expect(dock.textContent).toContain('Replacement panel')
+    flushSync(() => dock.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+    expect(dock.hidden).toBe(true)
+    expect(document.activeElement).toBe(toggle)
+    flushSync(() => toggle.click())
+    expect(dock.hidden).toBe(false)
+    unmountRegion(host)
+    expect(dock.hidden).toBe(true)
+    expect(dock.querySelector('[role="tabpanel"]')).toBeNull()
+    expect(document.querySelector('.workbench-split')?.classList.contains('workbench-right-open')).toBe(false)
+  } finally {
+    unmountRegion(host)
+    first()
+    second()
+    replacement?.()
+    document.body.replaceChildren()
+    localStorage.clear()
+  }
+})

@@ -66,9 +66,9 @@ import {
   type ToolDetailReadResult,
 } from '@agnes/worker-runtime'
 import { commandAdmissionId, commandBinding } from '../command-binding.js'
-import { registerWorkspaceFiles } from '../workspace-files.js'
 import { runQueued } from '../command-queue.js'
 import { createBlockedComputerUseControlPlane } from '../computer-use-control.js'
+import { registerWorkspaceFiles } from '../workspace-files.js'
 import { type Feed, type LocalContext, legacyLedgerRpcError } from './acp.js'
 
 export type AuthKind = 'local' | 'jwt' | 'source-auth' | 'portal-identity' | 'surface'

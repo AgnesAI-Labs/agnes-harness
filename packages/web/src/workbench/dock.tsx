@@ -40,6 +40,13 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   )
   const controls = useRef<HTMLDivElement>(null)
   const { t } = context
+  useEffect(
+    () => () => {
+      surfaces.split?.classList.remove('workbench-right-open', 'workbench-bottom-open')
+      for (const edge of edges) if (surfaces[edge]) surfaces[edge].hidden = true
+    },
+    [surfaces],
+  )
   useEffect(() => {
     try {
       localStorage.setItem(key, JSON.stringify(layout))
