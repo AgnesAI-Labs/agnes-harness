@@ -1,6 +1,11 @@
 export const goalLocaleCatalog = {
   en: {
     'goal.title': 'Persistent goal',
+    'goal.error': 'The goal could not be updated. Check its state and try again.',
+    'goal.reason.usageUnavailable': 'Credit usage is unavailable.',
+    'goal.reason.budgetExhausted': 'The credit budget is exhausted.',
+    'goal.reason.roundLimit': 'The maximum automatic rounds have been reached.',
+    'goal.reason.continuationUnavailable': 'Automatic continuation is unavailable on this host.',
     'goal.create': 'Create goal',
     'goal.edit': 'Save goal',
     'goal.objective': 'Objective',
@@ -18,6 +23,11 @@ export const goalLocaleCatalog = {
   },
   'zh-CN': {
     'goal.title': '持久目标',
+    'goal.error': '目标更新失败。请检查当前状态后重试。',
+    'goal.reason.usageUnavailable': '无法获取额度使用情况。',
+    'goal.reason.budgetExhausted': '额度预算已用完。',
+    'goal.reason.roundLimit': '已达到自动续轮上限。',
+    'goal.reason.continuationUnavailable': '当前宿主不支持自动续轮。',
     'goal.create': '创建目标',
     'goal.edit': '保存目标',
     'goal.objective': '目标内容',

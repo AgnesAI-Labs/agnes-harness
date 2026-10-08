@@ -99,4 +99,31 @@ it('shows a localized durable goal and forwards human controls through slash inp
   const toggle = host.querySelector('[data-testid=goal-toggle]') as HTMLButtonElement
   if (toggle.getAttribute('aria-expanded') === 'false') flushSync(() => toggle.click())
   expect(host.querySelector('textarea')?.value).toBe('Ship a second patch')
+  renderGoalCard(
+    host,
+    {
+      ...live,
+      slots: live.slots.map((fill) => ({
+        ...fill,
+        payload: { ...fill.payload, goal: { ...goal, reason: 'Credit budget exhausted' } },
+      })),
+    },
+    false,
+    onCommand,
+  )
+  expect(host.querySelector('[data-testid=goal-reason]')?.textContent).toBe('额度预算已用完。')
+  renderGoalCard(
+    host,
+    {
+      ...live,
+      slots: live.slots.map((fill) => ({
+        ...fill,
+        payload: { ...fill.payload, goal: undefined, text: 'Internal failure' },
+      })),
+    },
+    false,
+    onCommand,
+  )
+  expect(host.textContent).toContain('目标更新失败。')
+  expect(host.textContent).not.toContain('Internal failure')
 })

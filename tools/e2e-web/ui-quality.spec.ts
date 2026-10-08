@@ -1,11 +1,8 @@
 import { mkdir } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 import { join } from 'node:path'
+import { expect, test } from '@playwright/test'
+import { localeKeys, unresolvedLabels } from './i18n.js'
 
-const require = createRequire(import.meta.url)
-const playwrightPackage = process.env.AGH_PLAYWRIGHT_PACKAGE
-if (!playwrightPackage) throw new Error('Run this spec through the web smoke runner')
-const { test, expect } = require(join(playwrightPackage, 'test.js'))
 const root = process.env.AGH_UI_REPORT
 const workspace = process.env.AGH_UI_WORKSPACE
 // This test always renders the main screens in both locales. Optional artifacts cover the
@@ -15,9 +12,10 @@ for (const locale of ['zh-CN', 'en'])
     for (const [width, height] of [
       [1440, 900],
       [1280, 800],
-    ]) {
+    ] as const) {
       test(`UI quality ${locale}/${theme}/${width}x${height}`, async ({ page }) => {
         test.setTimeout(120_000)
+        const knownKeys = await localeKeys()
         const errors: string[] = []
         page.on('pageerror', (error: Error) => errors.push(error.message))
         await page.setViewportSize({ width, height })
@@ -32,19 +30,7 @@ for (const locale of ['zh-CN', 'en'])
         if (folder) await mkdir(folder, { recursive: true })
         async function screen(name: string) {
           await page.waitForTimeout(250)
-          const unresolved = await page.evaluate(() => {
-            const pattern =
-              /^(?:settings|settings-shell|shell|cards|goal|composer|session|timeline|defaults|error|kind|provider|capabilitySource|capabilityCategory|schedulesStatus|jobKind)\.[\w.-]+$/
-            const values: string[] = []
-            for (const element of document.querySelectorAll<HTMLElement>('body *')) {
-              if (!element.getClientRects().length || element.closest('code, pre, script, style')) continue
-              for (const child of element.childNodes)
-                if (child.nodeType === Node.TEXT_NODE) values.push(child.textContent?.trim() ?? '')
-              for (const attribute of ['aria-label', 'placeholder', 'title'])
-                values.push(element.getAttribute(attribute) ?? '')
-            }
-            return values.filter((value) => pattern.test(value))
-          })
+          const unresolved = await page.evaluate(unresolvedLabels, knownKeys)
           expect(unresolved, `${name}: unresolved locale keys`).toEqual([])
           expect(
             await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
@@ -67,6 +53,7 @@ for (const locale of ['zh-CN', 'en'])
           await page.locator('#new').click()
           await page.waitForTimeout(350)
           if (await page.locator('#new-session[open]').count()) {
+            if (!workspace) throw new Error('Set AGH_UI_WORKSPACE for workspace selection')
             await page.locator('#workspace-manual').evaluate((element: HTMLDetailsElement) => {
               element.open = true
             })

@@ -12,13 +12,14 @@ afterEach(() => {
 it('finds catalog keys in visible labels, accessible names and placeholders, including unknown namespaced keys', () => {
   document.body.innerHTML = `<button aria-label="catalog.custom">Settings</button>
     <input placeholder="settings.futureLabel"><textarea placeholder="composer.futureLabel">Literal draft</textarea><span>shell.collapseNav</span>
-    <span>shell.collapseNav</span><span data-i18n="custom.future">custom.future</span>`
+    <span>shell.collapseNav</span><span data-i18n="custom.future">custom.future</span><button title="settings.selectPicker.ariaJoin">Open</button>`
   expect(unresolvedLabels(['catalog.custom'])).toEqual([
     'catalog.custom',
     'settings.futureLabel',
     'composer.futureLabel',
     'shell.collapseNav',
     'custom.future',
+    'settings.selectPicker.ariaJoin',
   ])
 })
 

@@ -8,6 +8,10 @@
   },
   "include": [
     "runtime.spec.ts",
+    "navigation.spec.ts",
+    "conversation.spec.ts",
+    "ui-quality.spec.ts",
+    "examples.spec.ts",
     "runtime.ts",
     "sdk.ts",
     "fixtures.ts",

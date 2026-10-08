@@ -9,6 +9,7 @@ export async function localeKeys(
     'packages/web-units/src',
     'packages/resource-control-web/src/locales',
     'packages/web-ui/src',
+    'packages/web-client/src',
   ],
 ) {
   const result = new Set<string>()
@@ -33,7 +34,11 @@ export function unresolvedLabels(known: string[]) {
   const result: string[] = []
   for (const element of document.querySelectorAll<HTMLElement>('body *')) {
     if (!element.checkVisibility() || element.closest('pre, code, script, style')) continue
-    const values = [element.getAttribute('aria-label'), element.getAttribute('placeholder')]
+    const values = [
+      element.getAttribute('aria-label'),
+      element.getAttribute('placeholder'),
+      element.getAttribute('title'),
+    ]
     if (!element.children.length && element.tagName !== 'TEXTAREA') values.push(element.textContent)
     for (const value of values) {
       const text = value?.trim()

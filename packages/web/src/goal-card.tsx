@@ -39,6 +39,12 @@ export function GoalCard({
   const [rounds, setRounds] = useState(goal?.maxRounds ?? 10)
   const [budget, setBudget] = useState(goal?.budgetCredits?.toString() ?? '')
   const action = (op: string) => onCommand(`/goal ${op}`)
+  const reasonKeys: Record<string, string> = {
+    'Credit usage unavailable': 'goal.reason.usageUnavailable',
+    'Credit budget exhausted': 'goal.reason.budgetExhausted',
+    'Maximum automatic rounds reached': 'goal.reason.roundLimit',
+    'Automatic continuation unavailable on this host': 'goal.reason.continuationUnavailable',
+  }
   return (
     <ConversationCardLayout
       as="section"
@@ -59,10 +65,10 @@ export function GoalCard({
       </Button>
       {goal?.reason && (
         <p role="status" data-testid="goal-reason">
-          {goal.reason}
+          {reasonKeys[goal.reason] ? tr(reasonKeys[goal.reason] ?? '') : goal.reason}
         </p>
       )}
-      {error && <p role="status">{error}</p>}
+      {error && <p role="status">{tr('goal.error')}</p>}
       {open && (
         <div data-testid="goal-card">
           <form
@@ -166,7 +172,9 @@ export function GoalCard({
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })}
-              {goal.budgetCredits === undefined ? '' : ` / ${goal.budgetCredits}`}
+              {goal.budgetCredits === undefined
+                ? ''
+                : ` / ${goal.budgetCredits.toLocaleString(document.documentElement.lang || 'en')}`}
             </p>
           )}
         </div>

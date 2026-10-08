@@ -76,7 +76,7 @@ export function ExamplesPanel({
           const label = t(labelKey)
           const current = installed.find((pkg) => pkg.id === row.id)
           const enabled = current?.desired === 'enabled'
-          const available = enabled && current?.actual === 'active'
+          const available = enabled && current?.actual === 'running'
           const loop =
             row.id === '@agnes-example/dag-loop'
               ? { id: 'example.dag', version: '1.0.0' }

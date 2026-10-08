@@ -136,7 +136,11 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
           {t('schedulesUnavailable')}
         </SettingsState>
       )}
-      <fieldset className="agnes-settings-actions" data-testid="schedules-scope" aria-label={t('schedulesScope')}>
+      <fieldset
+        className="agnes-settings-actions"
+        data-testid="schedules-scope"
+        aria-label={t('schedulesScope')}
+      >
         <Button
           htmlType="button"
           data-testid="schedules-scope-session"
@@ -330,7 +334,15 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
               </ul>
             </details>
             {row.status === 'active' && (
-              <Button htmlType="button" data-testid="schedules-archive" onClick={() => setPending(row.id)}>
+              <Button
+                htmlType="button"
+                disabled={busy}
+                data-testid="schedules-archive"
+                onClick={() => {
+                  setError(undefined)
+                  setPending(row.id)
+                }}
+              >
                 {t('schedulesArchive')}
               </Button>
             )}
@@ -338,22 +350,35 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
         ))}
       </ul>
       {pending && (
-        <Dialog open title={t('schedulesConfirm')} footer={null} onCancel={() => setPending(undefined)}>
+        <Dialog
+          open
+          title={t('schedulesConfirm')}
+          footer={null}
+          onCancel={() => {
+            if (!busy) setPending(undefined)
+          }}
+        >
           <p>{t('schedulesConfirmBody')}</p>
+          {error && <SettingsState tone="error">{t(error)}</SettingsState>}
           <Button
             htmlType="button"
             data-testid="schedules-archive-confirm"
+            disabled={busy}
+            loading={busy}
             onClick={() => {
               const id = pending
-              setPending(undefined)
-              if (!api) return
+              if (!api || busy) return
+              setError(undefined)
+              setBusy(true)
               void api
                 .archive({ id })
                 .then(() => {
                   setNotice('schedulesArchived')
+                  setPending(undefined)
                   return refresh()
                 })
                 .catch(() => setError('schedulesError'))
+                .finally(() => setBusy(false))
             }}
           >
             {t('schedulesConfirm')}
@@ -361,6 +386,7 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
           <Button
             htmlType="button"
             data-testid="schedules-archive-cancel"
+            disabled={busy}
             onClick={() => setPending(undefined)}
           >
             {t('schedulesCancel')}

@@ -1,16 +1,12 @@
 import { mkdir } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 import { join } from 'node:path'
+import { expect, test } from '@playwright/test'
 
-const require = createRequire(import.meta.url)
-const packagePath = process.env.AGH_PLAYWRIGHT_PACKAGE
-if (!packagePath) throw new Error('Run through the web smoke runner')
-const { test, expect } = require(join(packagePath, 'test.js'))
 // Explicit mutation opt-in: only point this flow at a disposable real daemon home.
 for (const [locale, example, loop] of [
   ['zh-CN', 'dag-loop', 'example.dag'],
   ['en', 'react-loop', 'example.react'],
-]) {
+] as const) {
   test(`review, trust and enable an official example (${locale})`, async ({ page }) => {
     test.skip(process.env.AGH_INSTALL_EXAMPLES !== '1', 'Set AGH_INSTALL_EXAMPLES=1 for an isolated home.')
     test.setTimeout(90_000)

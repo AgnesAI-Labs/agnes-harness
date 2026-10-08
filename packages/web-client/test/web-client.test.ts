@@ -19,6 +19,7 @@ import {
   SlotOutlet,
   SlotRegistry,
   SlotsProvider,
+  slotLocaleCatalog,
   ThemeService,
 } from '../src/index.js'
 
@@ -788,7 +789,7 @@ describe('SlotOutlet', () => {
       createElement(SlotsProvider, { registry }, createElement(SlotOutlet, { name: 'workbench.panel' })),
     )
     await vi.waitFor(() => {
-      expect(el.textContent).toContain('Plugin for this slot is not ready')
+      expect(el.textContent).toContain(slotLocaleCatalog.en['slot.notReady'])
     }, committed)
     ctx.plugin(clientModule(mod), { packageId: 'p', revision: 'r1' })
     await vi.waitFor(() => {
@@ -829,7 +830,7 @@ describe('SlotOutlet', () => {
     let host: Element | null = null
     await vi.waitFor(() => {
       host = el.querySelector('[data-slot="tool.card.inline"]')
-      expect(host?.textContent).toContain('Plugin for this slot is not ready')
+      expect(host?.textContent).toContain(slotLocaleCatalog.en['slot.notReady'])
     }, committed)
 
     const off = registry.register('tool.card.inline', () => createElement('div', {}, 'inline-card'))

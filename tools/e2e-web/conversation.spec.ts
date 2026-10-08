@@ -1,10 +1,5 @@
-import { createRequire } from 'node:module'
-import { join } from 'node:path'
+import { expect, test } from '@playwright/test'
 
-const require = createRequire(import.meta.url)
-const packagePath = process.env.AGH_PLAYWRIGHT_PACKAGE
-if (!packagePath) throw new Error('Run through pnpm test:web-smoke')
-const { test, expect } = require(join(packagePath, 'test.js'))
 const fixtureUrl = process.env.AGH_CONVERSATION_FIXTURE_URL
 // The fixture mounts current production components with synthetic session/resource ports.
 for (const locale of ['en', 'zh-CN'])

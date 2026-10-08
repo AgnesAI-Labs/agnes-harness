@@ -1,10 +1,4 @@
-import { createRequire } from 'node:module'
-import { join } from 'node:path'
-
-const require = createRequire(import.meta.url)
-const playwrightPackage = process.env.AGH_PLAYWRIGHT_PACKAGE
-if (!playwrightPackage) throw new Error('Run this spec through pnpm test:web-smoke')
-const { test, expect } = require(join(playwrightPackage, 'test.js'))
+import { expect, test } from '@playwright/test'
 
 // Explicit Playwright tier. Run against an isolated demo home after all streams are integrated.
 for (const locale of ['en', 'zh-CN']) {
