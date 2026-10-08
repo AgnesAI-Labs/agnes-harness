@@ -166,8 +166,11 @@ it(
       })
       clients.push(web, cli)
       expect(await web.config.get()).toMatchObject({ configured: false, revision: 0 })
-      expect(await web.config.test({ providerId: 'deepseek', baseUrl, apiKey: 'wrong-key' })).toMatchObject({
-        verified: false,
+      await expect(
+        web.config.test({ providerId: 'deepseek', baseUrl, apiKey: 'wrong-key' }),
+      ).rejects.toMatchObject({
+        code: -32011,
+        data: { code: 'SEMANTIC_REJECTED', reason: 'CONFIG_CREDENTIAL_REJECTED' },
       })
       expect(await cli.config.get()).toMatchObject({ configured: false, revision: 0 })
       expect(await web.config.test({ providerId: 'deepseek', baseUrl, apiKey: 'fixture-key' })).toMatchObject(

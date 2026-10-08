@@ -667,7 +667,9 @@ export async function handleServiceCommand(
     if (!host || !cmd.params.profile || typeof cmd.params.profile !== 'object')
       throw new TypeError('invalid model configuration')
     assertHostPublication(await host.applyModelProfile(cmd.params.profile as ResolvedProfile))
-    return { profileHash: host.profile.hash }
+    // Composition Hosts project a different hash per container. A successful publication
+    // acknowledges the deployment input, rather than that container's derived profile hash.
+    return { profileHash: (cmd.params.profile as ResolvedProfile).hash }
   }
   const p = cmd.params
   switch (cmd.method) {

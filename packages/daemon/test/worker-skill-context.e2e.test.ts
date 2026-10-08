@@ -18,7 +18,8 @@ const roots: string[] = []
 // Pin the complete model-visible schema, including official interaction, delivery, jobs,
 // MCP resources, plugin authoring, workflows, PTYs, history, reminders, goals, child-model
 // discovery and bounded questions.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = 'c587e834b7f7de9d6cc17dd3d4563f62c32b289bd426bbb49376fa785c3df915'
+// Includes the reviewed workspace-file read description from 6bb197be; tool names/parameters unchanged.
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '5803456a8f2c4097a4f3fcadf5f9b0b1044bc9556e13ce4929e117781221dfb4'
 const expectedToolNames = [
   'ask_user_question',
   'compact',

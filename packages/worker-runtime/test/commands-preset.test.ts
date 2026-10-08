@@ -79,3 +79,31 @@ it('returns the Host capability set with the tool catalog and accepts older Host
     catalog,
   )
 })
+
+it.each([true, false])(
+  'acknowledges model deployment input only after publication succeeds: %s',
+  async (ok) => {
+    const profile = { hash: 'deployment-profile' }
+    const host = {
+      profile: { hash: 'derived-composition-profile' },
+      applyModelProfile: async () => ({
+        operation: 'models',
+        ok,
+        recovery: 'retry-same-input',
+        containers: [{ compositionHash: 'reader', status: ok ? 'applied' : 'failed' }],
+      }),
+    } as unknown as Host
+    const application = handleServiceCommand(
+      host,
+      {
+        kind: 'command',
+        requestId: 'models',
+        method: 'configuration.apply',
+        params: { profile },
+      },
+      new Map(),
+    )
+    if (ok) await expect(application).resolves.toEqual({ profileHash: 'deployment-profile' })
+    else await expect(application).rejects.toThrow('applied to 0/1 containers')
+  },
+)
