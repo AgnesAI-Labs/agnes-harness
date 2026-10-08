@@ -80,6 +80,12 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     await page.getByTestId('diagnostics-runtime').evaluate((card) => {
       card.scrollIntoView({ block: 'end', behavior: 'instant' })
     })
+  // Candidate navigation can retain the plugin pane's browser scroll anchor. The review
+  // baseline frames its heading and actions from the top, independent of the previous list.
+  if (name.startsWith('candidate-review-'))
+    await page.getByTestId('candidate-review').evaluate((review) => {
+      for (let parent = review.parentElement; parent; parent = parent.parentElement) parent.scrollTop = 0
+    })
   const manifest = JSON.parse(readFileSync('tools/e2e-web/baselines/ready.json', 'utf8')) as {
     ready: string[]
     pending: Record<string, string>
