@@ -349,50 +349,48 @@ export function SchedulesPage({ api, t }: { api?: SchedulesApi | undefined; t(ke
           </li>
         ))}
       </ul>
-      {pending && (
-        <Dialog
-          open
-          title={t('schedulesConfirm')}
-          footer={null}
-          onCancel={() => {
-            if (!busy) setPending(undefined)
+      <Dialog
+        open={!!pending}
+        title={t('schedulesConfirm')}
+        footer={null}
+        onCancel={() => {
+          if (!busy) setPending(undefined)
+        }}
+      >
+        <p>{t('schedulesConfirmBody')}</p>
+        {typeof error === 'string' && <SettingsState tone="error">{t(error)}</SettingsState>}
+        <Button
+          htmlType="button"
+          data-testid="schedules-archive-confirm"
+          disabled={busy}
+          loading={busy}
+          onClick={() => {
+            const id = pending
+            if (!api || !id || busy) return
+            setError(undefined)
+            setBusy(true)
+            void api
+              .archive({ id })
+              .then(() => {
+                setNotice('schedulesArchived')
+                setPending(undefined)
+                return refresh()
+              })
+              .catch(() => setError('schedulesError'))
+              .finally(() => setBusy(false))
           }}
         >
-          <p>{t('schedulesConfirmBody')}</p>
-          {typeof error === 'string' && <SettingsState tone="error">{t(error)}</SettingsState>}
-          <Button
-            htmlType="button"
-            data-testid="schedules-archive-confirm"
-            disabled={busy}
-            loading={busy}
-            onClick={() => {
-              const id = pending
-              if (!api || busy) return
-              setError(undefined)
-              setBusy(true)
-              void api
-                .archive({ id })
-                .then(() => {
-                  setNotice('schedulesArchived')
-                  setPending(undefined)
-                  return refresh()
-                })
-                .catch(() => setError('schedulesError'))
-                .finally(() => setBusy(false))
-            }}
-          >
-            {t('schedulesConfirm')}
-          </Button>
-          <Button
-            htmlType="button"
-            data-testid="schedules-archive-cancel"
-            disabled={busy}
-            onClick={() => setPending(undefined)}
-          >
-            {t('schedulesCancel')}
-          </Button>
-        </Dialog>
-      )}
+          {t('schedulesConfirm')}
+        </Button>
+        <Button
+          htmlType="button"
+          data-testid="schedules-archive-cancel"
+          disabled={busy}
+          onClick={() => setPending(undefined)}
+        >
+          {t('schedulesCancel')}
+        </Button>
+      </Dialog>
     </SettingsCard>
   )
 }

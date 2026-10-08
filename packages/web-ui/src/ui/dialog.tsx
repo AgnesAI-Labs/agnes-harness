@@ -4,5 +4,16 @@ export type DialogProps = AntModalProps
 
 export function Dialog({ className, ...props }: DialogProps) {
   const classes = ['agnes-ui-dialog', className].filter(Boolean).join(' ')
-  return <AntModal {...props} className={classes} />
+  // Keep confirmations inside the caller's native dialog top layer.
+  return (
+    <AntModal
+      getContainer={false}
+      {...props}
+      className={classes}
+      onCancel={(event) => {
+        event.preventDefault()
+        props.onCancel?.(event)
+      }}
+    />
+  )
 }
