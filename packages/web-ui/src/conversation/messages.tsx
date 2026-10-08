@@ -17,6 +17,7 @@ import {
 import { createPortal, flushSync } from 'react-dom'
 import type { Translate } from '../locales/index.js'
 import { ConversationCost } from './cost.js'
+import { interactionToolPresentation } from './interaction-result.js'
 import { useInteractionSnapshot } from './markdown-snapshot.js'
 import type { ConversationMessage } from './runtime.js'
 
@@ -466,11 +467,13 @@ export function ConversationToolCard({
   node,
   icon,
   onExpandedChange,
+  presentation,
   t = fallbackT,
 }: {
   node: ToolNode
   icon?: ReactNode
   onExpandedChange?: (expanded: boolean) => void
+  presentation?: { name: string; summary: string } | undefined
   t?: Translate
 }) {
   const [expanded, setExpanded] = useState(false)
@@ -481,7 +484,8 @@ export function ConversationToolCard({
     if (article && (expanded || article.dataset.expanded !== undefined))
       article.dataset.expanded = String(expanded)
   }, [expanded])
-  const summary = node.summary.trim()
+  const interaction = presentation ?? interactionToolPresentation(node, t)
+  const summary = interaction?.summary ?? node.summary.trim()
   const remainder = summary.startsWith(node.name) ? summary.slice(node.name.length).trim() : summary
   const meaningful =
     summary && summary !== node.name && remainder && !remainder.startsWith('{') && !remainder.startsWith('[')
@@ -503,7 +507,7 @@ export function ConversationToolCard({
       <div className="tool-head">
         <div className="tool-meta">
           {icon}
-          <span className="tool-name">{node.name}</span>
+          <span className="tool-name">{interaction?.name ?? node.name}</span>
           <span className="tool-status">{outcome.label}</span>
         </div>
         <button

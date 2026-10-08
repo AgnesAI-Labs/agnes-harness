@@ -1,4 +1,5 @@
 /** @vitest-environment happy-dom */
+import type { SkillRootStatus } from '@agnes/protocol'
 import { createElement, type ReactElement } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 
@@ -85,5 +86,54 @@ describe('web-ui public component layer', () => {
     expect(reference.current).toBe(host.querySelector('button'))
     dispose()
     expect(ui.Field).toBeTypeOf('function')
+    const { SettingsModelPane } = await import('../src/index.js')
+    for (const [locale, empty, loading] of [
+      ['en', 'No saved model accounts yet.', 'Loading configuration…'],
+      ['zh-CN', '还没有已保存的模型账户。', '正在读取配置…'],
+    ]) {
+      document.documentElement.lang = locale!
+      const unmount = ui.mountRegion(
+        host,
+        createElement(SettingsModelPane, { beforeAccounts: null, afterAccounts: null }),
+      )
+      expect(host.querySelector('#config-accounts')?.getAttribute('data-empty-text')).toBe(empty)
+      expect(host.querySelector('#config-accounts')?.getAttribute('data-loading-text')).toBe(loading)
+      unmount()
+    }
+    document.documentElement.lang = 'en'
   })
+})
+
+it('lists only reported skill roots and explains optional user-agent imports', async () => {
+  const ui = await import('../src/index.js')
+  const host = document.createElement('div')
+  document.body.append(host)
+  const dispose = ui.mountRegion(
+    host,
+    createElement(ui.ResourceListContent, {
+      tab: 'skills',
+      loadState: 'empty',
+      items: [],
+      skillRoots: [{ scope: 'workspace', rootKey: 'workspace-agnes', state: 'empty' }] as SkillRootStatus[],
+      selectedId: undefined,
+      nextCursor: undefined,
+      loadingMore: false,
+      emptyTitle: 'Legacy title',
+      emptyDescription: 'Legacy hints',
+      emptyHints: ['~/.claude/skills', '~/.codex/skills', '~/.agents/skills'],
+      switchDisabled: false,
+      itemNameOf: () => '',
+      onOpen: () => {},
+      onToggleDesired: () => {},
+      onLoadMore: () => {},
+      onRetry: () => {},
+    }),
+  )
+  expect([...host.querySelectorAll('.admin-empty-state-hints li')].map((item) => item.textContent)).toEqual([
+    'Workspace: .agh/skills, .agents/skills, .claude/skills',
+  ])
+  expect(host.querySelector('.resource-empty h2')?.textContent).toBe('No Skills found')
+  expect(host.textContent).toContain('AGNES_SKILLS_IMPORT_USER=1')
+  expect(host.textContent).not.toContain('Legacy')
+  dispose()
 })

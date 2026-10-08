@@ -22,7 +22,7 @@ afterEach(() => {
   if (host) unmountRegion(host)
   document.body.replaceChildren()
 })
-it('shows a localized durable goal and forwards human controls through slash input', () => {
+it('shows a localized durable goal and forwards human controls through slash input', async () => {
   setLocaleTranslator((key) => webLocaleCatalog['zh-CN']?.[key] ?? key)
   const timeline = {
     sessionId: 'session-a',
@@ -55,14 +55,19 @@ it('shows a localized durable goal and forwards human controls through slash inp
   const onCommand = vi.fn()
   renderGoalCard(host, undefined, false, onCommand)
   expect(host.hidden).toBe(true)
-  expect(host.querySelector('[data-testid="goal-bar"]')).toBeNull()
+  expect(document.querySelector('[data-testid="goal-bar"]')).toBeNull()
   renderGoalCard(host, live, false, onCommand)
   expect(host.hidden).toBe(false)
   expect(host.textContent).toContain('受阻的目标')
-  expect(host.querySelector('[data-testid=goal-reason]')?.textContent).toBe('Need access')
-  flushSync(() => (host.querySelector('[data-testid=goal-toggle]') as HTMLButtonElement).click())
-  expect(host.querySelector('textarea')?.value).toBe('Ship a patch')
-  flushSync(() => (host.querySelector('[data-testid=goal-resume]') as HTMLButtonElement).click())
+  expect(document.querySelector('[data-testid=goal-card]')).toBeNull()
+  flushSync(() => (document.querySelector('[data-testid=goal-toggle]') as HTMLButtonElement).click())
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-testid=goal-reason]')?.textContent).toBe(
+      '自动续轮已暂停。请检查目标状态后恢复。',
+    ),
+  )
+  expect(document.querySelector('textarea')?.value).toBe('Ship a patch')
+  flushSync(() => (document.querySelector('[data-testid=goal-resume]') as HTMLButtonElement).click())
   expect(onCommand).toHaveBeenCalledWith('/goal resume')
   renderGoalCard(
     host,
@@ -76,13 +81,13 @@ it('shows a localized durable goal and forwards human controls through slash inp
     false,
     onCommand,
   )
-  expect(host.querySelector('[data-testid=goal-toggle]')?.getAttribute('aria-expanded')).toBe('true')
-  flushSync(() => (host.querySelector('[data-testid=goal-pause]') as HTMLButtonElement).click())
+  expect(document.querySelector('[data-testid=goal-toggle]')?.getAttribute('aria-expanded')).toBe('true')
+  flushSync(() => (document.querySelector('[data-testid=goal-pause]') as HTMLButtonElement).click())
   expect(onCommand).toHaveBeenCalledWith('/goal pause')
-  flushSync(() => (host.querySelector('[data-testid=goal-clear]') as HTMLButtonElement).click())
+  flushSync(() => (document.querySelector('[data-testid=goal-clear]') as HTMLButtonElement).click())
   expect(onCommand).toHaveBeenCalledWith('/goal clear')
   renderGoalCard(host, live, true, onCommand)
-  expect((host.querySelector('[data-testid=goal-resume]') as HTMLButtonElement).disabled).toBe(true)
+  expect((document.querySelector('[data-testid=goal-resume]') as HTMLButtonElement).disabled).toBe(true)
   renderGoalCard(
     host,
     {
@@ -96,9 +101,9 @@ it('shows a localized durable goal and forwards human controls through slash inp
     false,
     onCommand,
   )
-  const toggle = host.querySelector('[data-testid=goal-toggle]') as HTMLButtonElement
+  const toggle = document.querySelector('[data-testid=goal-toggle]') as HTMLButtonElement
   if (toggle.getAttribute('aria-expanded') === 'false') flushSync(() => toggle.click())
-  expect(host.querySelector('textarea')?.value).toBe('Ship a second patch')
+  await vi.waitFor(() => expect(document.querySelector('textarea')?.value).toBe('Ship a second patch'))
   renderGoalCard(
     host,
     {
@@ -111,7 +116,10 @@ it('shows a localized durable goal and forwards human controls through slash inp
     false,
     onCommand,
   )
-  expect(host.querySelector('[data-testid=goal-reason]')?.textContent).toBe('额度预算已用完。')
+  flushSync(() => (document.querySelector('[data-testid=goal-toggle]') as HTMLButtonElement).click())
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-testid=goal-reason]')?.textContent).toBe('额度预算已用完。'),
+  )
   renderGoalCard(
     host,
     {
@@ -124,6 +132,7 @@ it('shows a localized durable goal and forwards human controls through slash inp
     false,
     onCommand,
   )
-  expect(host.textContent).toContain('目标更新失败。')
+  flushSync(() => (document.querySelector('[data-testid=goal-toggle]') as HTMLButtonElement).click())
+  await vi.waitFor(() => expect(document.body.textContent).toContain('目标更新失败。'))
   expect(host.textContent).not.toContain('Internal failure')
 })

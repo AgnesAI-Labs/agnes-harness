@@ -275,7 +275,9 @@ export function LoopPicker() {
         <span className="agent-chip-value">
           {active ? choiceName(active, tr) : tr('composer.agent.unresolved')}
         </span>
-        <span aria-hidden="true">⌄</span>
+        <svg className="icon model-chevron" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
       </Button>
     </Popover>
   )

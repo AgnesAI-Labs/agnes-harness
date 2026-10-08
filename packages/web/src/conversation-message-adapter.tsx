@@ -9,11 +9,13 @@ import {
   SlotsProvider,
 } from '@agnes/web-client'
 import {
+  ConversationInteractionResult,
   ConversationMarkdown,
   ConversationMessages,
   type ConversationMessagesProps,
   ConversationToolCard,
   ConversationTurnActions,
+  interactionToolPresentation,
 } from '@agnes/web-ui/assistant-ui'
 import { type ReactNode, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
@@ -145,6 +147,9 @@ export function WebConversationMessages({
     () => registry?.sessionId,
   )
   const answered = new Set<string>()
+  const answerLabels = new Map<string, string>()
+  const answerMessages = new Map<string, string>()
+  const answerValues = new Map<string, Record<string, string | string[]>>()
   for (const tool of nodes ?? []) {
     if (tool.kind !== 'tool') continue
     for (const fill of tool.slots ?? []) {
@@ -156,8 +161,17 @@ export function WebConversationMessages({
           .filter((b) => b.type === 'text')
           .map((b) => b.text)
           .join('\n')
-        if (parseAnswer(payload.question.id, payload.question.questions, text))
+        const values = parseAnswer(payload.question.id, payload.question.questions, text)
+        if (values) {
           answered.add(payload.question.id)
+          answerValues.set(payload.question.id, values)
+          const label = new Intl.ListFormat(locale?.locale ?? 'en', {
+            style: 'long',
+            type: 'conjunction',
+          }).format(Object.values(values).flat())
+          answerLabels.set(tool.id, label)
+          answerMessages.set(node.id, label)
+        }
       }
     }
   }
@@ -177,15 +191,54 @@ export function WebConversationMessages({
         {...(onFork ? { onFork } : {})}
       />
     ),
-    renderMarkdown: (text, part, state) => (
-      <ConversationMarkdown
-        key={`${state?.nodeId ?? ''}:${part}`}
-        source={text}
-        part={part}
-        streaming={state?.streaming ?? false}
-        t={(key, vars) => locale?.t(key, vars) ?? key}
-      />
-    ),
+    renderMarkdown: (text, part, state) => {
+      const markdown = (
+        <ConversationMarkdown
+          key={`${state?.nodeId ?? ''}:${part}`}
+          source={text}
+          part={part}
+          streaming={state?.streaming ?? false}
+          t={(key, vars) => locale?.t(key, vars) ?? key}
+        />
+      )
+      // A deterministic demo reply may echo a tool result verbatim. Only that exact echo (or
+      // exact raw result) is condensed; arbitrary model prose is never rewritten.
+      const echo =
+        part === 'body' &&
+        nodes?.find(
+          (node) =>
+            node.kind === 'tool' &&
+            node.resultPreview &&
+            (text.trim() === node.resultPreview.trim() ||
+              text
+                .replace(/\s+/g, ' ')
+                .trim()
+                .endsWith(`Tool result: ${node.resultPreview.replace(/\s+/g, ' ').trim()}`)) &&
+            interactionToolPresentation(node, (key, vars) => locale?.t(key, vars) ?? key),
+        )
+      if (
+        echo &&
+        echo.kind === 'tool' &&
+        (text.trim() === echo.resultPreview?.trim() ||
+          text.startsWith('[Demo model — local, deterministic, no API key]'))
+      ) {
+        const presentation = interactionToolPresentation(
+          echo,
+          (key, vars) => locale?.t(key, vars) ?? key,
+          answerLabels.get(echo.id),
+        )
+        if (presentation)
+          return (
+            <ConversationInteractionResult
+              summary={keepConversationCardVisible(echo) ? undefined : presentation.summary}
+              t={(key, vars) => locale?.t(key, vars) ?? key}
+            >
+              {markdown}
+            </ConversationInteractionResult>
+          )
+      }
+      return markdown
+    },
     renderTool: (node) => (
       <RegisteredConversationCard
         card={{
@@ -199,6 +252,7 @@ export function WebConversationMessages({
               <DefaultToolCards
                 node={node}
                 answered={answered}
+                answerValues={answerValues}
                 {...(locale ? { t: (key: string) => locale.t(key) } : {})}
                 {...(session ? { session } : {})}
                 {...(resources ? { resources } : {})}
@@ -218,6 +272,11 @@ export function WebConversationMessages({
                 key={node.id}
                 node={node}
                 icon={toolIconReact(node.name)}
+                presentation={interactionToolPresentation(
+                  node,
+                  (key, vars) => locale?.t(key, vars) ?? key,
+                  answerLabels.get(node.id),
+                )}
                 t={(key, vars) => locale?.t(key, vars) ?? key}
               />
             </>
@@ -242,8 +301,24 @@ export function WebConversationMessages({
         }}
       />
     ),
-    renderNode: (node, native) =>
-      registry ? <DshNodeLeaf key={node.id} node={node} native={native} registry={registry} /> : native,
+    renderNode: (node, native) => {
+      const answer = answerMessages.get(node.id)
+      const content = answer ? (
+        <ConversationInteractionResult
+          summary={locale?.t('tool.interaction.answered', { answer }) ?? answer}
+          t={(key, vars) => locale?.t(key, vars) ?? key}
+        >
+          {native}
+        </ConversationInteractionResult>
+      ) : (
+        native
+      )
+      return registry ? (
+        <DshNodeLeaf key={node.id} node={node} native={content} registry={registry} />
+      ) : (
+        content
+      )
+    },
   }
   const messages = <ConversationMessages key={sessionScope ?? ''} {...props} />
   return registry ? (

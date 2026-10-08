@@ -65,6 +65,7 @@ function Harness({ store }: { store: ReturnType<typeof createConversationProject
       registry,
       claim: (entry, extId) => entry.owner === extId,
       locale: zhLocaleService(),
+      nodes: store.getSnapshot().nodes,
     }),
   )
 }
@@ -538,9 +539,9 @@ it('keeps questions, deliverables, jobs and children visible when settled proces
       { runtime },
       createElement(WebConversationMessages, {
         registry,
-        nodes: cardNodes,
         turns: [turn],
         locale: zhLocaleService(),
+        nodes: store.getSnapshot().nodes,
       }),
     )
   }
@@ -571,4 +572,56 @@ it('keeps questions, deliverables, jobs and children visible when settled proces
   )
   await act(async () => host.querySelector<HTMLElement>('[data-testid="turn-process-toggle"]')?.click())
   expect(item('question')?.parentElement?.hidden).toBe(false)
+})
+
+it('summarizes interaction protocol and exact demo echoes while preserving raw details and arbitrary prose', async () => {
+  const protocol = 'Question remains open.\nSubmit [question-answer q] followed by a JSON object.'
+  const question: Extract<UINode, { kind: 'tool' }> = {
+    ...tool('completed'),
+    name: 'ask_user_question',
+    summary: protocol,
+    resultPreview: protocol,
+    slots: [
+      {
+        extId: 'agnes/interaction',
+        slot: 'tool.card.inline',
+        payload: {
+          question: { id: 'q', questions: [{ id: 'choice', question: 'Choose', options: ['One', 'Two'] }] },
+        },
+      },
+    ],
+  }
+  const echo: UINode = {
+    kind: 'assistant',
+    id: 'echo',
+    seq: 3,
+    text: `[Demo model — local, deterministic, no API key] Tool result: ${protocol.replace('\n', ' ')}`,
+  }
+  const prose: UINode = { kind: 'assistant', id: 'prose', seq: 4, text: `My own explanation: ${protocol}` }
+  const store = createConversationProjectionStore({ sessionId: 'session', nodes: [question, echo, prose] })
+  await mount(store)
+  expect(item('tool')?.querySelector('.tool-name')?.textContent).toBe('提问')
+  expect(item('tool')?.querySelector('.tool-summary')?.textContent).toBe('问题已发送，等待你的回答。')
+  const details = item('echo')?.querySelector<HTMLDetailsElement>('[data-testid=interaction-result-details]')
+  expect(details?.open).toBe(false)
+  expect(details?.textContent).toContain(protocol.replace('\n', ' '))
+  expect(item('echo')?.querySelector('[data-testid=interaction-result-summary] > p')).toBeNull()
+  expect(item('prose')?.querySelector('[data-testid=interaction-result-summary]')).toBeNull()
+  expect(item('prose')?.textContent).toContain(`My own explanation: ${protocol}`)
+  const answer: UINode = {
+    kind: 'user',
+    id: 'answer',
+    seq: 5,
+    content: [{ type: 'text', text: '[question-answer q] {"choice":"Two"}' }],
+  }
+  await update(store, [question, echo, prose, answer])
+  expect(item('tool')?.querySelector('.tool-summary')?.textContent).toBe('已回答问题：Two')
+  expect(item('tool')?.querySelector<HTMLInputElement>('input[value="Two"]')?.checked).toBe(true)
+  expect(item('answer')?.querySelector('[data-testid=interaction-result-summary] > p')?.textContent).toBe(
+    '已回答问题：Two',
+  )
+  expect(
+    item('answer')?.querySelector<HTMLDetailsElement>('[data-testid=interaction-result-details]')?.open,
+  ).toBe(false)
+  expect(item('echo')?.querySelector('[data-testid=interaction-result-summary] > p')).toBeNull()
 })

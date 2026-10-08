@@ -21,7 +21,6 @@ export function ResourceListContent({
   loadingMore,
   emptyTitle,
   emptyDescription,
-  emptyHints,
   switchDisabled,
   itemNameOf,
   onOpen,
@@ -66,9 +65,20 @@ export function ResourceListContent({
       {!items.length && (
         <ResourceEmpty
           tab={tab}
-          title={emptyTitle}
-          description={emptyDescription}
-          hints={tab === 'skills' ? emptyHints : undefined}
+          title={tab === 'skills' ? t('empty.skills.title') : emptyTitle}
+          description={tab === 'skills' ? t('empty.skills.description') : emptyDescription}
+          hints={tab === 'skills' ? skillRoots.map((root) => t(`root.location.${root.rootKey}`)) : undefined}
+          footer={
+            tab === 'skills'
+              ? t(
+                  skillRoots.some((root) =>
+                    ['user-agents', 'user-claude', 'user-codex'].includes(root.rootKey),
+                  )
+                    ? 'empty.skills.importEnabled'
+                    : 'empty.skills.import',
+                )
+              : undefined
+          }
         />
       )}
       {items.map((item) => (
@@ -150,7 +160,7 @@ export function ResourceRoots({ roots }: { roots: readonly SkillRootStatus[] }):
       <ul>
         {roots.map((root) => (
           <li key={`${root.scope}:${root.rootKey}`}>
-            {`${root.scope} · ${root.rootKey}: ${labels[root.state]}${
+            {`${t(`root.scope.${root.scope}`)} · ${t(`root.location.${root.rootKey}`)}: ${labels[root.state]}${
               root.diagnostic ? ` (${t(ROOT_FAILURE_KEYS[root.diagnostic.code])})` : ''
             }`}
           </li>
@@ -165,11 +175,13 @@ export function ResourceEmpty({
   title,
   description,
   hints,
+  footer,
 }: {
   tab: ResourceTab
   title: string
   description: string
   hints?: readonly string[] | undefined
+  footer?: string | undefined
 }): JSX.Element {
   return (
     <div className="admin-empty-state resource-empty">
@@ -183,6 +195,7 @@ export function ResourceEmpty({
           ))}
         </ul>
       ) : null}
+      {footer && <p>{footer}</p>}
     </div>
   )
 }

@@ -1,3 +1,4 @@
+import { adaptResourceAdmin } from './admin/resources/admin.js'
 import './settings/registry.js'
 import {
   type ConfigSnapshot,
@@ -119,7 +120,7 @@ const notice = element('notice', 'p')
 const conversation = element('conversation-shell', 'div')
 const goalHost = document.createElement('div')
 goalHost.className = 'session-goal-host'
-conversation.before(goalHost)
+button('report-problem').before(goalHost)
 const newSessionDialog = element('new-session', 'dialog')
 const newSessionError = element('new-session-error', 'p')
 const newSessionForm = element('new-session-form', 'form')
@@ -2085,11 +2086,12 @@ async function openAdminPane(pane: AdminPaneName, tab: ResourceTab = 'skills'): 
       } else {
         const { mountResourceAdmin } = await import('@agnes/resource-control-web/admin')
         const workspaceId = paneWorkspaceId()
-        const mountedResource = mountResourceAdmin({
+        const options = {
           ...(workspaceId ? { workspaceId } : {}),
           tab,
           embedded: true,
-        })
+        }
+        const mountedResource = adaptResourceAdmin(mountResourceAdmin(options), options)
         mountedAdminPanes.set(pane, mountedResource)
         await mountedResource.ready
         resourceReady = true

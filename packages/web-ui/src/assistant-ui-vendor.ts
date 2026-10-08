@@ -9,6 +9,10 @@ export {
   type DocumentPreviewProps,
 } from './conversation/document-preview.js'
 export { documentResourceUrl, sanitizeDocumentHtml } from './conversation/document-preview-policy.js'
+export {
+  ConversationInteractionResult,
+  interactionToolPresentation,
+} from './conversation/interaction-result.js'
 export { ConversationMarkdown, type ConversationMarkdownProps } from './conversation/markdown.js'
 export {
   type ConversationMarkdownState,

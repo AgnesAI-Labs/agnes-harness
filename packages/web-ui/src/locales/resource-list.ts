@@ -4,6 +4,26 @@ export const RESOURCE_LIST_LOCALE_NAMESPACE = '@agnes/web-ui/resource-list'
 
 export const resourceListLocaleCatalog: LocaleCatalog = {
   en: {
+    'empty.skills.importEnabled':
+      'User-agent skill imports are enabled for this installation. The scanned locations are listed above.',
+    'root.location.workspace-agnes': 'Workspace: .agh/skills, .agents/skills, .claude/skills',
+    'root.location.user-agnes': 'Agnes home: $AGH_HOME/skills',
+    'root.location.user-agents': '~/.agents/skills',
+    'root.location.user-claude': '~/.claude/skills',
+    'root.location.user-codex': '~/.codex/skills',
+    'root.location.package': 'Skills contributed by installed plugins',
+    'root.location.runtime': 'Runtime skill sources',
+    'root.scope.workspace': 'Workspace',
+    'root.scope.user': 'User',
+    'root.scope.package': 'Plugin',
+    'root.scope.runtime': 'Runtime',
+
+    'empty.skills.title': 'No Skills found',
+    'empty.skills.description':
+      'Add a SKILL.md folder to a scanned location below. Only locations reported by this installation are listed.',
+    'empty.skills.import':
+      'Importing skills from other agents is off by default. To enable it, start the daemon with AGNES_SKILLS_IMPORT_USER=1; ~/.claude/skills, ~/.codex/skills and ~/.agents/skills will then be scanned.',
+
     ...resourceFailureCatalog.en,
     loading: 'Reading the local resource catalog…',
     error: 'Could not read the resource catalog.',
@@ -40,6 +60,25 @@ export const resourceListLocaleCatalog: LocaleCatalog = {
     'row.enable': 'Request to enable {name}',
   },
   'zh-CN': {
+    'empty.skills.importEnabled': '当前安装已启用其他 Agent 的用户技能导入，实际扫描的来源已列在上方。',
+    'root.location.workspace-agnes': '工作区：.agh/skills、.agents/skills、.claude/skills',
+    'root.location.user-agnes': 'Agnes 主目录：$AGH_HOME/skills',
+    'root.location.user-agents': '~/.agents/skills',
+    'root.location.user-claude': '~/.claude/skills',
+    'root.location.user-codex': '~/.codex/skills',
+    'root.location.package': '已安装插件提供的技能',
+    'root.location.runtime': '运行时技能来源',
+    'root.scope.workspace': '工作区',
+    'root.scope.user': '用户',
+    'root.scope.package': '插件',
+    'root.scope.runtime': '运行时',
+
+    'empty.skills.title': '还没有发现技能',
+    'empty.skills.description':
+      '可在下面已扫描的目录中添加包含 SKILL.md 的技能文件夹。这里只列出当前安装实际报告的扫描目录。',
+    'empty.skills.import':
+      '默认不导入其他 Agent 的用户技能。启动守护进程时设置 AGNES_SKILLS_IMPORT_USER=1 可启用导入，届时会扫描 ~/.claude/skills、~/.codex/skills 和 ~/.agents/skills。',
+
     ...resourceFailureCatalog['zh-CN'],
     loading: '正在读取本地资源目录…',
     error: '资源目录读取失败。',
@@ -64,10 +103,10 @@ export const resourceListLocaleCatalog: LocaleCatalog = {
     'root.empty-count': '未发现技能 {count}',
     'root.failed-count': '失败 {count}',
     'row.open-aria': '查看 {name} 的详情',
-    'row.skill-no-description': '该 技能 未提供说明。',
+    'row.skill-no-description': '该技能未提供说明。',
     'row.priority': '优先级 {priority}',
-    'row.winner': '当前 winner',
-    'row.not-winner': '非 winner',
+    'row.winner': '当前使用',
+    'row.not-winner': '未选用',
     'row.secret': '凭据 {kind}',
     'row.tools-allowed': '允许 {count} 个工具',
     'row.tools-unrestricted': '未限制工具',

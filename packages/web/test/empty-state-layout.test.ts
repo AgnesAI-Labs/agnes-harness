@@ -38,7 +38,7 @@ describe('empty session layout', () => {
 
   it('scrolls the whole middle column and keeps the content column on the inner node', () => {
     // 限宽留在 #transcript 上时，两侧留白属于不可滚动的祖先，鼠标停在上面滚轮无效。
-    expect(rule('.workbench-split')).toMatch(/grid-template-rows: auto auto minmax\(0, 1fr\)/)
+    expect(rule('.workbench-split')).toMatch(/grid-template-rows: auto minmax\(0, 1fr\)/)
     expect(rule('#transcript')).toMatch(/width: 100%/)
     expect(rule('#transcript')).toMatch(/overflow-y: auto/)
     expect(rule('#transcript')).not.toMatch(/padding/)

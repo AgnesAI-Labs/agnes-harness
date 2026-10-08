@@ -1,5 +1,8 @@
 export const goalLocaleCatalog = {
   en: {
+    'goal.progress': 'Automatic rounds: {rounds} of {maxRounds}',
+    'goal.reason.other': 'Automatic continuation is paused. Review the goal status before resuming.',
+
     'goal.title': 'Persistent goal',
     'goal.error': 'The goal could not be updated. Check its state and try again.',
     'goal.reason.usageUnavailable': 'Credit usage is unavailable.',
@@ -22,6 +25,9 @@ export const goalLocaleCatalog = {
     'goal.state.complete': 'Completed goal',
   },
   'zh-CN': {
+    'goal.progress': '自动续轮：已完成 {rounds} 轮，上限 {maxRounds} 轮。',
+    'goal.reason.other': '自动续轮已暂停。请检查目标状态后恢复。',
+
     'goal.title': '持久目标',
     'goal.error': '目标更新失败。请检查当前状态后重试。',
     'goal.reason.usageUnavailable': '无法获取额度使用情况。',

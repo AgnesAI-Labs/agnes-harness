@@ -18,6 +18,7 @@ function QuestionCard({
   question,
   session,
   answered,
+  answerValues,
   running,
   t,
 }: {
@@ -25,9 +26,13 @@ function QuestionCard({
   question: Question
   session?: SessionService | undefined
   answered: boolean
+  answerValues?: Record<string, string | string[]> | undefined
   running: boolean
 }) {
-  const [answers, setAnswers] = useState<Record<string, string | string[]>>({})
+  const [answers, setAnswers] = useState<Record<string, string | string[]>>(answerValues ?? {})
+  useEffect(() => {
+    if (answerValues) setAnswers(answerValues)
+  }, [answerValues])
   const [freeText, setFreeText] = useState<Record<string, string>>({})
   const values = { ...answers }
   for (const q of question.questions) {
@@ -216,6 +221,7 @@ type InlineCardData = {
   extId: string
   node: Extract<UINode, { kind: 'tool' }>
   answered: ReadonlySet<string>
+  answerValues?: ReadonlyMap<string, Record<string, string | string[]>> | undefined
 }
 const dataOf = (data: unknown) => data as InlineCardData
 for (const entry of [
@@ -238,6 +244,7 @@ for (const entry of [
           t={context.t}
           session={context.session}
           answered={data.answered.has(data.payload.question.id)}
+          answerValues={data.answerValues?.get(data.payload.question.id)}
           running={data.node.status === 'running'}
         />
       ),
@@ -310,6 +317,7 @@ export function DefaultToolCards({
   session,
   resources,
   answered,
+  answerValues,
   t = english,
 }: {
   t?: Text
@@ -317,6 +325,7 @@ export function DefaultToolCards({
   session?: SessionService | undefined
   resources?: ClientResourceService | undefined
   answered: ReadonlySet<string>
+  answerValues?: ReadonlyMap<string, Record<string, string | string[]>> | undefined
 }) {
   return (
     <>
@@ -324,7 +333,10 @@ export function DefaultToolCards({
         fill.slot === 'tool.card.inline' ? (
           <RegisteredConversationCard
             key={`${fill.extId}:${(fill.payload as ToolCardInlinePayload).question?.id ?? (fill.payload as ToolCardInlinePayload).deliverables?.map((file) => file.ref.sha256).join(',') ?? (fill.payload as ToolCardInlinePayload).title ?? 'inline'}`}
-            card={{ kind: 'tool-inline', data: { node, payload: fill.payload, extId: fill.extId, answered } }}
+            card={{
+              kind: 'tool-inline',
+              data: { node, payload: fill.payload, extId: fill.extId, answered, answerValues },
+            }}
             context={{ t, session, resources }}
           />
         ) : null,
