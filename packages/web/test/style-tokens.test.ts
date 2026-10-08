@@ -221,6 +221,8 @@ const MASK_PROPERTIES = new Set(['mask', '-webkit-mask'])
  */
 const DYNAMIC_CUSTOM_PROPERTIES = new Set([
   '--usage-pct', // packages/web/src/usage.ts 的用量环，var() 自带 0% 回退
+  '--workbench-width', // packages/web/src/workbench/dock.tsx 写入，var() 自带 320px 回退
+  '--workbench-height', // packages/web/src/workbench/dock.tsx 写入，var() 自带 220px 回退
 ])
 
 beforeAll(async () => {

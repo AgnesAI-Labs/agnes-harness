@@ -7197,7 +7197,7 @@ body.admin-page {
     top: 0;
     bottom: 0;
     width: min(var(--workbench-width, 320px), calc(100vw - 16px));
-    box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
+    box-shadow: var(--shadow-elevation-prominent);
   }
   #workbench-bottom {
     max-height: 40vh;
