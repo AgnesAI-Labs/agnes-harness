@@ -81,7 +81,7 @@ export function createSchemaSettingsComponent(definition: SchemaSettingsDefiniti
               const value = context.t(key, vars)
               return value === key ? t(key, vars) : value
             }}
-            readOnly={!definition.canConfigure(context)}
+            readOnly={!definition.canConfigure(context) || (!definition.save && !definition.test)}
             testId={`${definition.testId}-form`}
             {...(definition.save
               ? {
