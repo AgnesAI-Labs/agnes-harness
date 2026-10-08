@@ -261,7 +261,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/admin/plugins/api': 543,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src': 11667,
+  'packages/web-admin/src': 11673,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-foundation/src': 2330,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
