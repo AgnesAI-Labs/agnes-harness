@@ -86,4 +86,4 @@ Keeping the trial home lets you return to sessions later. It may contain convers
 
 Add a [Skill](skills.md) to bring your team's methods into a task, start [plugin development](../develop/plugins.md) to connect business systems, or read [sessions and recovery](sessions.md) to continue existing work.
 
-Implementation: [configuration controller](../../packages/host/src/configuration.ts), [provider registry](../../packages/cli/src/onboarding/provider-registry.ts), [Web model settings](../../packages/web/src/settings.ts), [CLI arguments](../../packages/cli/src/args.ts).
+Implementation: [configuration controller](../../packages/host-infrastructure/src/configuration.ts), [provider registry](../../packages/cli/src/onboarding/provider-registry.ts), [Web model settings](../../packages/web/src/settings.ts), [CLI arguments](../../packages/cli/src/args.ts).

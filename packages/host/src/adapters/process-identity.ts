@@ -1,4 +1,1 @@
-export type ProcessIdentity =
-  | { state: 'alive'; startId: string }
-  | { state: 'dead' }
-  | { state: 'unknown'; reason: string }
+export * from '@agnes/host-infrastructure/adapters/process-identity'

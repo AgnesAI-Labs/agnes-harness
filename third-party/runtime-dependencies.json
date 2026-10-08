@@ -177,7 +177,7 @@
       "source": "https://github.com/whitequark/ipaddr.js",
       "purpose": "Parses and classifies resolved IPv4 and IPv6 addresses for bounded public retrieval.",
       "rationale": "Provides well-tested address parsing for the public-network deny rules, including IPv4-mapped IPv6 forms.",
-      "consumers": ["packages/host"]
+      "consumers": ["packages/host-infrastructure"]
     },
     {
       "name": "jiti",
@@ -213,7 +213,7 @@
       "source": "https://github.com/nodejs/undici",
       "purpose": "Provides the explicit HTTP dispatcher used by bounded public retrieval.",
       "rationale": "Allows connection policy and redirect handling to stay under Host control instead of relying on ambient global fetch state.",
-      "consumers": ["packages/host"]
+      "consumers": ["packages/host", "packages/host-infrastructure"]
     },
     {
       "name": "ws",

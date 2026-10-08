@@ -80,11 +80,11 @@
       "id": "windows.runtime-enforcement",
       "evidence": [
         {
-          "path": "packages/host/src/adapters/platform-win32.ts",
+          "path": "packages/host-infrastructure/src/adapters/platform-win32.ts",
           "marker": "not implemented"
         },
         {
-          "path": "packages/host/src/adapters/credential-files.ts",
+          "path": "packages/host-infrastructure/src/adapters/credential-files.ts",
           "marker": "private credential ACL enforcement is unavailable"
         }
       ]

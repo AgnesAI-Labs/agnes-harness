@@ -216,6 +216,12 @@
     },
     {
       "path": "packages/host-common/tsconfig.test.json"
+    },
+    {
+      "path": "packages/host-infrastructure"
+    },
+    {
+      "path": "packages/host-infrastructure/tsconfig.test.json"
     }
   ]
 }

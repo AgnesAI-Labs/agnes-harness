@@ -8,7 +8,7 @@ following material retains its original notices and license terms:
   Copyright (c) 2021-present Shigma. MIT License. The corresponding LICENSE
   and VENDORED.md files are retained in each package.
 - Portions of packages/base/extensions/tools-web and
-  packages/host/src/adapters/public-fetch:
+  packages/host-infrastructure/src/adapters/public-fetch:
   Copyright (c) 2026 DeepSeek. MIT License. See the local
   DEEPSEEK-LICENSE.txt files and source-file notices.
 - Computer Use adaptation in packages/base/extensions/computer-use:

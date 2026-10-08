@@ -32,6 +32,7 @@ describe('repo', () => {
       '@agnes/history-index',
       '@agnes/host',
       '@agnes/host-common',
+      '@agnes/host-infrastructure',
       '@agnes/loop-default',
       '@agnes/mcp-transport-health',
       '@agnes/model-adapters',

@@ -89,7 +89,8 @@
     "@agnes/sandbox-remote",
     "@agnes/system-node",
     "@agnes/model-adapters",
-    "@agnes/host-common"
+    "@agnes/host-common",
+    "@agnes/host-infrastructure"
   ],
   "@agnes/sdk": [
     "@agnes/protocol",
@@ -178,5 +179,15 @@
     "@agnes/package-manager",
     "@agnes/plugin-runtime",
     "@agnes/protocol"
+  ],
+  "@agnes/host-infrastructure": [
+    "@agnes/ai",
+    "@agnes/cordis",
+    "@agnes/core",
+    "@agnes/extension-api",
+    "@agnes/host-common",
+    "@agnes/protocol",
+    "@agnes/sandbox-remote",
+    "@agnes/system-node"
   ]
 }

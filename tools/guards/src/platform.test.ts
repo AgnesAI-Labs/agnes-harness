@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { isTestFile, LITERAL_SCAN_EXCLUDE_DIRS, listSourceFiles, repoRoot } from './repo.js'
 
 const root = repoRoot()
-const ALLOWED = /^packages\/host\/src\/adapters\/platform-[a-z0-9-]+\.ts$/
+const ALLOWED = /^packages\/host-infrastructure\/src\/adapters\/platform-[a-z0-9-]+\.ts$/
 
 // The original regexes recognised only three literals (process.platform / os.platform() / os.type())
 // and were evaded by entirely ordinary spellings: importing `{ platform } from 'node:os'` and calling

@@ -18,7 +18,7 @@ Relevant licenses and notices are available in the repository:
 
 - [Cordis LICENSE](../../packages/cordis/LICENSE) and [Cosmokit LICENSE](../../packages/cosmokit/LICENSE).
 - [tools-web third-party license](../../packages/base/extensions/tools-web/DEEPSEEK-LICENSE.txt).
-- [public-fetch third-party license](../../packages/host/src/adapters/public-fetch/DEEPSEEK-LICENSE.txt).
+- [public-fetch third-party license](../../packages/host-infrastructure/src/adapters/public-fetch/DEEPSEEK-LICENSE.txt).
 - [Computer Use NOTICE](../../packages/base/extensions/computer-use/NOTICE).
 - [Skill Helper LICENSE](../../packages/package-manager/bundled-plugins/skill-helper/LICENSE).
 - [ACP schema provenance and license](../../packages/protocol/schema/acp/UPSTREAM.md).

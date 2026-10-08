@@ -116,6 +116,7 @@ const LAYER: Record<string, number> = {
   '@agnes/runtime-python': 6,
   '@agnes/package-manager': 2,
   '@agnes/host-common': 6.01,
+  '@agnes/host-infrastructure': 6.02,
   '@agnes/host': 7,
   '@agnes/sdk': 3,
   '@agnes/daemon': 9,

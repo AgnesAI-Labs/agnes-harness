@@ -505,6 +505,9 @@ importers:
       '@agnes/host-common':
         specifier: workspace:*
         version: link:../host-common
+      '@agnes/host-infrastructure':
+        specifier: workspace:*
+        version: link:../host-infrastructure
       '@agnes/model-adapters':
         specifier: workspace:*
         version: link:../model-adapters
@@ -535,9 +538,6 @@ importers:
       ajv:
         specifier: 8.20.0
         version: 8.20.0
-      ipaddr.js:
-        specifier: 2.5.0
-        version: 2.5.0
       jiti:
         specifier: 2.7.0
         version: 2.7.0(patch_hash=77f93f7110d63c7b4551ac2eab9c87a64c2ba97de0b71047e25171d3fac05fd2)
@@ -585,6 +585,46 @@ importers:
       '@agnes/code':
         specifier: workspace:*
         version: link:../code
+      '@agnes/host':
+        specifier: workspace:*
+        version: link:../host
+
+  packages/host-infrastructure:
+    dependencies:
+      '@agnes/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@agnes/cordis':
+        specifier: workspace:*
+        version: link:../cordis
+      '@agnes/core':
+        specifier: workspace:*
+        version: link:../core
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/host-common':
+        specifier: workspace:*
+        version: link:../host-common
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@agnes/sandbox-remote':
+        specifier: workspace:*
+        version: link:../sandbox-remote
+      '@agnes/system-node':
+        specifier: workspace:*
+        version: link:../system-node
+      ipaddr.js:
+        specifier: 2.5.0
+        version: 2.5.0
+      undici:
+        specifier: 8.10.2
+        version: 8.10.2
+    devDependencies:
+      '@agnes/base':
+        specifier: workspace:*
+        version: link:../base
       '@agnes/host':
         specifier: workspace:*
         version: link:../host

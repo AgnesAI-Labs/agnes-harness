@@ -16,7 +16,7 @@
     "includes": ["case 'rollback'", "case 'trust'"]
   },
   {
-    "path": "packages/host/src/configuration.ts",
+    "path": "packages/host-infrastructure/src/configuration.ts",
     "includes": ["configuration.json", "defaultAccountId"]
   },
   {
@@ -236,7 +236,7 @@
     "includes": ["ordinary plugin requires apiRange", "'bundle'"]
   },
   {
-    "path": "packages/host/src/adapters/storage-provider.ts",
+    "path": "packages/host-infrastructure/src/adapters/storage-provider.ts",
     "includes": [
       "HOST_PERSISTENCE_REQUIREMENTS",
       "'ledger'",

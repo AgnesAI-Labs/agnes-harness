@@ -234,6 +234,19 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // preset composition and inline projection repairs. Only exceeded scopes and missing bundled
 // extension keys change; scanning, source exclusions and the default extension ceiling stay fixed.
 const INITIAL_CEILING: Record<string, number> = {
+  'packages/host-infrastructure/src/adapters/public-fetch': 380,
+  'packages/host-infrastructure/src/adapters/secrets-win32': 20,
+  'packages/host-infrastructure/src/adapters/exec-output': 32,
+  'packages/host-infrastructure/src/adapters/exec-win32': 86,
+  'packages/host-infrastructure/src/adapters/process-identity-win32': 18,
+  'packages/host-infrastructure/src/adapters/powershell-temporary': 43,
+  'packages/host-infrastructure/src/adapters/powershell-file': 47,
+  'packages/host-infrastructure/src/adapters/powershell-command': 31,
+  'packages/host-infrastructure/src/adapters/powershell': 133,
+  'packages/host-infrastructure/src/configuration': 1401,
+  'packages/host-infrastructure/src/adapters/storage-sqlite': 641,
+  'packages/host-infrastructure/src/adapters': 5952,
+  'packages/host-infrastructure/src': 8993,
   'packages/host-common/src/configuration-lock': 39,
   'packages/host-common/src/profile': 1837,
   'packages/host-common/src': 3597,
@@ -337,7 +350,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/base/extensions/tools-search': 400,
   // WEBFETCH-01: new component, exact measured allocation.
   // SKILL-GITHUB-RATE-LIMIT: explicit ZIP byte response; measured 380, no spare.
-  'packages/host/src/adapters/public-fetch': 380,
+  'packages/host/src/adapters/public-fetch': 5,
   // WEBFETCH-01: new component, exact measured allocation.
   // WEBFETCH review fixes: table-local header tracking and conservative optional-end/comment handling.
   // Measured with countLines: 243 (+15); no unrelated budgets changed.
@@ -358,16 +371,16 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 90 -> 133; exact cap, no exclusions or spare allocation.
   'packages/base/extensions/budget': 133,
   'packages/base/extensions/loop-hygiene': 100,
-  'packages/host/src/adapters/powershell': 133,
-  'packages/host/src/adapters/powershell-command': 31,
-  'packages/host/src/adapters/powershell-file': 47,
-  'packages/host/src/adapters/powershell-temporary': 43,
-  'packages/host/src/adapters/process-identity-win32': 18,
+  'packages/host/src/adapters/powershell': 1,
+  'packages/host/src/adapters/powershell-command': 1,
+  'packages/host/src/adapters/powershell-file': 1,
+  'packages/host/src/adapters/powershell-temporary': 1,
+  'packages/host/src/adapters/process-identity-win32': 1,
   // 2026-10-07 gap-fill review: Pass persistent shell execution options through the Windows adapter.
   // countLines: 84 -> 86; exact cap, no exclusions or spare allocation.
-  'packages/host/src/adapters/exec-win32': 86,
-  'packages/host/src/adapters/exec-output': 32,
-  'packages/host/src/adapters/secrets-win32': 25,
+  'packages/host/src/adapters/exec-win32': 1,
+  'packages/host/src/adapters/exec-output': 1,
+  'packages/host/src/adapters/secrets-win32': 1,
   // WIN-TITLE-REPAIR: +3 for peer-only rejection backoff; no counting exclusions changed.
   // 2026-09-20 GC attestation keeps Node hashing/path/proxy primitives outside Core, while Windows
   // mapped-image identity remains native-bound. Measured 1080; exact cap.
@@ -769,7 +782,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 1230 -> 1286 (+56); exact cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Persist child-engine settings and validated context/search configuration.
   // countLines: 1286 -> 1349; exact cap, no exclusions or spare allocation.
-  'packages/host/src/configuration': 1349,
+  'packages/host/src/configuration': 1,
   'packages/host/src/configuration-lock': 1,
   'packages/daemon/src/supervisor/configuration': 45,
   // S5 service workers reload the profile hash and its immutable snapshot path as one value.
@@ -2852,7 +2865,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 46355 -> 46484 (+129); exact measured cap, no exclusions or spare allocation.
   // Acceptance review: Restore immutable generation sources and publish child-engine configuration with explicit engine admission.
   // countLines: 46484 -> 46566; exact cap, no exclusions or spare allocation.
-  'packages/host/src': 43765,
+  'packages/host/src': 34831,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
   'packages/host/src/ext-host/service-invocation': 254,
@@ -3044,7 +3057,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 6061 -> 6781; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Track sandbox/store operations, reject aborted construction and retain process stores through registry teardown.
   // countLines: 6781 -> 6884 (+103); exact measured cap, no exclusions or spare allocation.
-  'packages/host/src/adapters': 6892,
+  'packages/host/src/adapters': 987,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
@@ -3067,7 +3080,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // sync helper. Measured 635, exact, no spare (+3).
   // 2026-10-07 integration review: Optional persistence ports over the existing SQLite owner.
   // countLines: 635 -> 641; exact measured cap, no exclusions or spare allocation.
-  'packages/host/src/adapters/storage-sqlite': 641,
+  'packages/host/src/adapters/storage-sqlite': 1,
   // 2026-09-11: Base Task 19 adds the after-core queue drain, T0 gate integration, verifier and
   // compact triggers, human gate, and production tool/operation sharing. Measured: 394; cap at 400.
   // 2026-10-07 gap-fill review: Pause inherited goals until explicit resume and retain governed continuation input.

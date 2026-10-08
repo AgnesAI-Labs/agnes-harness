@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { repoRoot } from './repo.js'
 
 const HOST_NATIVE_DIR = 'packages/host/native'
+const NATIVE_DIRS = [HOST_NATIVE_DIR, 'packages/host-infrastructure/native']
 
 /**
  * Return true for executable formats, not for a filename or execute bit. The source directory
@@ -48,7 +49,7 @@ export function isNativeExecutable(contents: Uint8Array): boolean {
 
 /** Read the index, rather than disk or status: this catches `git add --force` for ignored files. */
 export function trackedNativeArtifacts(root: string): string[] {
-  const paths = execFileSync('git', ['ls-files', '-z', '--', HOST_NATIVE_DIR], {
+  const paths = execFileSync('git', ['ls-files', '-z', '--', ...NATIVE_DIRS], {
     cwd: root,
     encoding: 'utf8',
   })
@@ -96,11 +97,11 @@ describe('native artifact index guard', () => {
     expect(trackedNativeArtifacts(root)).toEqual([])
   })
 
-  it('rejects an ignored Mach-O helper force-added to the index', () => {
+  it.each(NATIVE_DIRS)('rejects an ignored Mach-O helper force-added in %s', (nativeDir) => {
     const root = temporaryRepo()
-    const relative = `${HOST_NATIVE_DIR}/macos-process-identity`
+    const relative = `${nativeDir}/macos-process-identity`
     writeFileSync(join(root, '.gitignore'), `${relative}\n`)
-    mkdirSync(join(root, HOST_NATIVE_DIR), { recursive: true })
+    mkdirSync(join(root, nativeDir), { recursive: true })
     writeFileSync(join(root, relative), Buffer.from([0xcf, 0xfa, 0xed, 0xfe, 0, 0, 0, 0]))
     stage(root, relative, true)
     expect(trackedNativeArtifacts(root)).toEqual([relative])

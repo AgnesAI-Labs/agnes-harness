@@ -18,7 +18,7 @@
 | `cli.onboarding.account` | 首次运行时登录 Agnes 账号 | stub | API key 路径已端到端接通；账号路径依赖平台的 PKCE、token、刷新和订阅目录契约，当前构建不包含这些能力。选择器会展示该选项并明确拒绝，避免打开无法完成的流程。 | 需要账号集成 | `packages/cli/src/onboarding/tui.ts`、`packages/cli-tui/src/locale-extended.ts` |
 | `profile.additional-layers` | Workspace、local、flags 与 managed 配置层 | partial | 已验证的 workspace 覆盖层，以及仅包含隔离设置的 local/flags/managed 覆盖层可解析；这些层的其他字段仍会被拒绝，确保 profile hash 如实反映配置。 | 扩展配置层支持 | `packages/host-common/src/profile/isolation.ts` |
 | `sandbox.host-filtered-network` | 主机白名单网络约束 | partial | 完全禁网可用；非空主机白名单依赖尚未实现的过滤代理。 | 需要网络过滤能力 | `packages/base/extensions/sandbox/src/seam.ts`<br>`packages/base/extensions/sandbox/src/backends/shared.ts` |
-| `windows.runtime-enforcement` | Windows 沙箱与凭据保护 | partial | 原生私有凭据 ACL 约束已实现；原生能力不可用时会拒绝执行。受限令牌沙箱与网络隔离仍不可用，强制隔离请求必须被拒绝。完整 Windows 验收尚未完成。 | 完成 Windows 兼容性验收；当前范围不包含 OS 沙箱 | `packages/host/src/adapters/platform-win32.ts`<br>`packages/host/src/adapters/credential-files.ts` |
+| `windows.runtime-enforcement` | Windows 沙箱与凭据保护 | partial | 原生私有凭据 ACL 约束已实现；原生能力不可用时会拒绝执行。受限令牌沙箱与网络隔离仍不可用，强制隔离请求必须被拒绝。完整 Windows 验收尚未完成。 | 完成 Windows 兼容性验收；当前范围不包含 OS 沙箱 | `packages/host-infrastructure/src/adapters/platform-win32.ts`<br>`packages/host-infrastructure/src/adapters/credential-files.ts` |
 | `cli.remote-and-extra-modes` | CLI 远程传输与额外模式 | partial | 本地 print/TUI 与 ACP 可用；显式 `--connect` 使用共享 daemon。其余管理命令仍遵循文档规定的本地或拒绝执行范围。 | 按模式补充实现 | `packages/cli/src/bin.ts` |
 | `sdk.optional-build-capabilities` | SDK 可选传输与认证构造 | wired | 入口未包含可选传输或认证实现时，`Unsupported` 是预期的类型化边界。 | 已完成；保留缺失能力时拒绝执行的行为 | `packages/sdk/src/errors.ts` |
 | `sandbox.bwrap-runtime-selection` | Bubblewrap 选择 | wired | 编译器叶子实现有意不作为默认 seam 直接使用，由运行时后端选择器探测并选择。 | 已完成；保留间接接入方式 | `packages/base/extensions/sandbox/src/backends/bwrap.ts` |

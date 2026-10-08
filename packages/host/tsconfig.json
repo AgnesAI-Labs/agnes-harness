@@ -39,6 +39,9 @@
     },
     {
       "path": "../host-common"
+    },
+    {
+      "path": "../host-infrastructure"
     }
   ]
 }

@@ -76,4 +76,4 @@ node "$AGH_ENTRY" daemon stop
 
 想让 Agent 采用团队的方法，添加一个[Skill](skills.zh-CN.md)；想接入业务系统，从[插件开发](../develop/plugins.zh-CN.md)开始；想继续已有任务，阅读[会话与恢复](sessions.zh-CN.md)。
 
-实现依据：[配置控制器](../../packages/host/src/configuration.ts)、[Provider 入口](../../packages/cli/src/onboarding/provider-registry.ts)、[Web 模型配置](../../packages/web/src/settings.ts)、[CLI 参数](../../packages/cli/src/args.ts)。
+实现依据：[配置控制器](../../packages/host-infrastructure/src/configuration.ts)、[Provider 入口](../../packages/cli/src/onboarding/provider-registry.ts)、[Web 模型配置](../../packages/web/src/settings.ts)、[CLI 参数](../../packages/cli/src/args.ts)。
