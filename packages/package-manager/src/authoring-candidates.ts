@@ -339,7 +339,8 @@ export class AuthoringCandidates {
     try {
       await publish({ type: 'file', ref: 'file:' + record.snapshot }, record.value)
       record.value.state = 'published'
-      record.value.message = 'Published; session code stays pinned, approved resources refresh live'
+      record.value.message =
+        'Published. Executable tools and plugin code are available in new sessions; existing sessions keep their pins. Approved live resources refresh at turn boundaries.'
     } catch (error) {
       record.value.state = 'failed'
       record.value.message = 'Publication failed; inspect actual package state'

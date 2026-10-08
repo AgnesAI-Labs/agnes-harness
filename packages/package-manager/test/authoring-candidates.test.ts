@@ -222,6 +222,30 @@ it('publishes the reviewed snapshot through normal installation, preserves agent
   expect(reopened.show(s.profile, r.candidateId, 'owner').state).toBe('interrupted')
   expect(publish).toHaveBeenCalledOnce()
 })
+it('reports that published executable tools are available in new sessions and preserves that guidance after reopening', async () => {
+  const s = setup()
+  const r = await review(s)
+  const published = await s.candidates.decide(
+    s.profile,
+    r.candidateId,
+    'owner',
+    r.candidateHash,
+    r.reviewHash!,
+    true,
+    async (source, value) => {
+      await s.manager.install(s.profile, source, {
+        expectedIntegrity: value.candidateHash,
+        installer: 'agent',
+      })
+    },
+  )
+  expect(published.state).toBe('published')
+  expect(published.message).toContain('new sessions')
+  expect(published.message).toContain('existing sessions keep their pins')
+  expect(new AuthoringCandidates(s.manager, s.runner).show(s.profile, r.candidateId, 'owner').message).toBe(
+    published.message,
+  )
+})
 it('detects installed baseline changes and damaged immutable snapshots before any publication', async () => {
   const s = setup()
   const r = await review(s),
