@@ -21,6 +21,7 @@ import type {
 import {
   ChildEnginesSaveParams,
   ChildEnginesState,
+  CompositionCapabilitySnapshot,
   isAdminLoop,
   isAdminModelAdapter,
   isSessionDefaultsSnapshot,
@@ -211,8 +212,10 @@ export class PluginAdminApi {
       throw invalidSelection()
   }
 
-  async composition(preset?: string): Promise<unknown> {
-    return this.#selection('composition', preset ? { preset } : undefined)
+  async composition(preset?: string): Promise<import('@agnes/protocol').CompositionCapabilitySnapshot> {
+    const body = await this.#selection('composition', preset ? { preset } : undefined)
+    if (!validateAgainst(CompositionCapabilitySnapshot, body).ok) throw invalidSelection()
+    return body as import('@agnes/protocol').CompositionCapabilitySnapshot
   }
 
   async runtime(): Promise<import('@agnes/protocol').RuntimeAdminSnapshot> {

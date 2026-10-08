@@ -570,6 +570,11 @@ export class Session {
     return this.client.call('_agnes/v1/session.tools', { sessionId: this.id })
   }
 
+  /** Same authenticated read as tools(); undefined means an older server without this snapshot. */
+  async capabilities(): Promise<import('@agnes/protocol').SessionCapabilitySet | undefined> {
+    return (await this.tools()).capabilities
+  }
+
   /** Reads one durable tool call and its optional result without changing the live attach cursor. */
   async readToolDetail(
     callSeq: number,

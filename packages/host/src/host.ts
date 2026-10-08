@@ -74,6 +74,7 @@ export interface Host {
   /** Description-only admin port; reads measured facts without probing or execution. */
   securityStatus?(): import('@agnes/protocol').RuntimeSecurityStatus
   compositionSessions?(): readonly LiveCompositionSession[]
+  sessionCapabilities?(sessionKey: string): import('@agnes/protocol').SessionCapabilitySet
   pluginGenerationStatus?(): PluginGenerationStatus
   sessionGeneration?(sessionKey: string): string | undefined
   releaseSessionGeneration?(sessionKey: string): Promise<void>

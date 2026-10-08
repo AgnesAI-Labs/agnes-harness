@@ -19,6 +19,7 @@ export type LiveCompositionSession = Readonly<{
   compositionHash: string
   preset: string
   bundles: readonly string[]
+  capabilities?: import('@agnes/protocol').SessionCapabilitySet | undefined
   toolGroups?: readonly CompositionToolGroup[]
   providers: Pick<
     ResolvedComposition['selection'],

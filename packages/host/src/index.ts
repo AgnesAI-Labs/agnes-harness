@@ -8,6 +8,7 @@ export {
   scanAll,
   scanPages,
 } from '@agnes/core'
+export type { CapabilityReason, SessionCapability, SessionCapabilitySet } from '@agnes/protocol'
 export {
   type CredentialFileEnforcement,
   type CredentialKind,

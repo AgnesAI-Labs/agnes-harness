@@ -1,5 +1,6 @@
 import { type Static, Type } from '@sinclair/typebox'
 import { JsonValue } from '../gen/ts/session-v1.js'
+import { SessionCapabilitySet } from './session-capabilities.js'
 
 export const SessionToolsParams = Type.Object(
   { sessionId: Type.String({ minLength: 1, maxLength: 1024 }) },
@@ -8,6 +9,7 @@ export const SessionToolsParams = Type.Object(
 export const SessionToolsResult = Type.Object(
   {
     sessionId: Type.String(),
+    capabilities: Type.Optional(SessionCapabilitySet),
     tools: Type.Array(
       Type.Object(
         {
@@ -35,4 +37,6 @@ export const SessionToolsResult = Type.Object(
   },
   { additionalProperties: false },
 )
-export type SessionToolsResult = Static<typeof SessionToolsResult>
+export type SessionToolsResult = Omit<Static<typeof SessionToolsResult>, 'capabilities'> & {
+  capabilities?: import('./session-capabilities.js').SessionCapabilitySet
+}

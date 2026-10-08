@@ -11,6 +11,28 @@ const context = {
   features: ['packages.composite-activation.v1'],
 }
 
+it('reads typed composition information through the existing route and retains legacy tool groups', async () => {
+  const snapshot = {
+    status: 'live',
+    validation: 'static',
+    sessions: [
+      {
+        sessionKey: 'fixture',
+        compositionHash: 'hash',
+        preset: 'standard',
+        bundles: [],
+        toolGroups: [{ packageId: 'fixture', reason: 'enabled-plugin', bundles: [], tools: ['read'] }],
+      },
+    ],
+  }
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify(snapshot)))
+  const api = new PluginAdminApi(context, fetcher)
+  expect(await api.composition()).toEqual(snapshot)
+  expect(fetcher.mock.calls[0]?.[0]).toBe('/admin/api/composition')
+  fetcher.mockResolvedValue(new Response(JSON.stringify({ ...snapshot, capabilities: { tools: [] } })))
+  await expect(api.composition()).rejects.toThrow()
+})
+
 it('sends the generated install DTO through the fixed BFF route', async () => {
   const fetcher = vi
     .fn<typeof fetch>()

@@ -32,6 +32,26 @@ describe('toContentBlocks', () => {
 })
 
 describe('Session', () => {
+  it('reads capabilities through the authenticated tool catalog and supports older servers', async () => {
+    let params: unknown
+    const f = fakeEndpoint({
+      initialize: init,
+      'session/new': () => ({ sessionId: 'fixture' }),
+      '_agnes/v1/session.tools': (input) => {
+        params = input
+        return { sessionId: 'fixture', tools: [], resources: [] }
+      },
+    })
+    const client = createClient({
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    const session = await client.session.new({ cwd: '/synthetic' })
+    expect(await session.capabilities()).toBeUndefined()
+    expect(params).toMatchObject({ sessionId: 'fixture' })
+    await client.close()
+  })
   it('session.new sends cwd, empty mcpServers, preset + sessionKey in _meta', async () => {
     let got: unknown
     const f = fakeEndpoint({
