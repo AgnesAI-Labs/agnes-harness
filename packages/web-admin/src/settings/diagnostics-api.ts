@@ -1,4 +1,4 @@
-import { type DiagnosticsExportParams, validateAgainst } from '@agnes/protocol'
+import { type DiagnosticsExportParams, validateAgainst, validateMethod } from '@agnes/protocol'
 import { DiagnosticsExportResult } from '@agnes/protocol/gen/agnes-v1'
 
 export class DiagnosticsRequestError extends Error {
@@ -43,11 +43,11 @@ export function diagnosticsApi(fetcher: typeof fetch = fetch) {
     async export(input: DiagnosticsExportParams = {}, signal?: AbortSignal) {
       return bundle(await call('diagnostics', input, signal))
     },
-    async doctor(signal?: AbortSignal) {
-      const value = await call('diagnostics/doctor', {}, signal)
-      if (!value || typeof value !== 'object' || !('sections' in value) || !Array.isArray(value.sections))
+    async doctor(signal?: AbortSignal, probeAccounts = false) {
+      const value = await call('doctor', { probeAccounts }, signal)
+      if (!validateMethod('_agnes/v1/doctor.run', 'result', value).ok)
         throw new DiagnosticsRequestError(undefined)
-      return value.sections as Array<{ name: string; status: string }>
+      return value as import('@agnes/protocol/gen/app-server').DoctorResult
     },
   }
 }

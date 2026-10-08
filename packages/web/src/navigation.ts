@@ -56,6 +56,11 @@ export function resetCollapsedGroups(): void {
   collapsedGroups.clear()
 }
 
+/** Missing names still identify the selected folder, on POSIX and Windows hosts. */
+function workspaceLabel(workspace: WorkspaceEntry): string {
+  return workspace.name.trim() || workspace.path.split(/[\\/]/).filter(Boolean).at(-1) || workspace.path
+}
+
 export function renderWorkspaceOptions(
   container: HTMLElement,
   workspaces: readonly WorkspaceEntry[],
@@ -72,7 +77,7 @@ export function renderWorkspaceOptions(
       copy.className = 'workspace-option-copy'
       const name = document.createElement('span')
       name.className = 'workspace-option-name'
-      name.textContent = workspace.name
+      name.textContent = workspaceLabel(workspace)
       const path = document.createElement('span')
       path.className = 'workspace-option-path'
       path.textContent = workspace.path
@@ -125,7 +130,7 @@ export function renderSessionNavigation(
     heading.title = workspace?.path ?? t('nav.noWorkspaceTitle')
     const name = document.createElement('span')
     name.className = 'workspace-name'
-    name.textContent = workspace?.name ?? t('session.uncategorized')
+    name.textContent = workspace ? workspaceLabel(workspace) : t('session.uncategorized')
     heading.append(...folderPair(), name)
     const headingRow = document.createElement('div')
     headingRow.className = 'workspace-heading-row'
@@ -136,8 +141,8 @@ export function renderSessionNavigation(
       create.className = 'icon-button workspace-new-session'
       create.dataset.workspaceNewSession = workspace.path
       create.disabled = (options.newDisabled ?? false) || !workspace.available
-      create.setAttribute('aria-label', t('nav.newSessionInWorkspace', { name: workspace.name }))
-      create.title = t('nav.newSessionInWorkspace', { name: workspace.name })
+      create.setAttribute('aria-label', t('nav.newSessionInWorkspace', { name: workspaceLabel(workspace) }))
+      create.title = t('nav.newSessionInWorkspace', { name: workspaceLabel(workspace) })
       create.append(plusSvg())
       create.addEventListener('click', () => options.newSession(workspace))
       if (workspace.path === options.activeWorkspace && !create.disabled)

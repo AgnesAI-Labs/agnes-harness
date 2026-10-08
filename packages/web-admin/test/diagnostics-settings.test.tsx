@@ -45,7 +45,10 @@ it.each([false, true])(
   async (doctorAvailable) => {
     const fetcher = vi.fn<typeof fetch>(async (url, init) => {
       if (String(url).endsWith('/doctor'))
-        return Response.json({ sections: [{ name: 'worker', status: 'ok' }] })
+        return Response.json({
+          checks: [{ id: 'node', status: 'ok', fixHintKey: 'doctor.fix.node' }],
+          status: 'ok',
+        })
       return Response.json(init?.method ? bundle : { bundle, doctorAvailable })
     })
     const download = vi.fn()
@@ -79,7 +82,29 @@ it.each([false, true])(
       await act(async () =>
         host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-doctor-run"]')?.click(),
       )
-      expect(host.querySelector('[data-testid="diagnostics-doctor"]')?.textContent).toContain('Healthy')
+      const selfCheck = host.querySelector('[data-testid="diagnostics-doctor"]')
+      if (!selfCheck) throw new Error('Missing self-check block')
+      expect(host.querySelector('.agnes-settings-card')).toBe(selfCheck)
+      expect(selfCheck.querySelector('[data-testid="doctor-check-node"]')?.textContent).toBe(
+        'Node.js runtimeReady',
+      )
+      expect(JSON.parse(String(fetcher.mock.calls.at(-1)?.[1]?.body))).toEqual({ probeAccounts: false })
+      await act(async () =>
+        selfCheck.querySelector<HTMLButtonElement>('[data-testid="doctor-probe-accounts"]')?.click(),
+      )
+      expect(JSON.parse(String(fetcher.mock.calls.at(-1)?.[1]?.body))).toEqual({ probeAccounts: true })
+      fetcher.mockResolvedValueOnce(
+        Response.json(
+          { error: { data: { messageKey: 'appServer.errors.forbidden' }, message: 'private error' } },
+          { status: 403 },
+        ),
+      )
+      await act(async () =>
+        selfCheck.querySelector<HTMLButtonElement>('[data-testid="diagnostics-doctor-run"]')?.click(),
+      )
+      expect(selfCheck.querySelector('[role="alert"]')?.textContent).toBe(
+        'You do not have permission for this operation.',
+      )
     }
   },
 )

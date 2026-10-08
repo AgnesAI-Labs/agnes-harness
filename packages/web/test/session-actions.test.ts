@@ -2,7 +2,7 @@
 import type { PageSessionMeta } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import { afterEach, expect, it, vi } from 'vitest'
-import { renderSessionNavigation } from '../src/navigation.js'
+import { renderSessionNavigation, renderWorkspaceOptions } from '../src/navigation.js'
 import { createSessionActions, forkTitle } from '../src/session-actions.js'
 import { zhT } from './helpers/locale.js'
 
@@ -89,6 +89,24 @@ it('keeps the row menu out of the session button and hides archived rows', () =>
   expect(trigger.getAttribute('aria-expanded')).toBe('false')
   expect(rowElement.hasAttribute('data-menu-open')).toBe(false)
 })
+
+it.each(['/projects/my-folder/', 'C:\\projects\\my-folder\\'])(
+  'uses the folder basename when workspace names are empty (%s)',
+  (path) => {
+    const workspace = { path, name: '   ', available: true, lastUsedAt: null, sessionCount: 0 }
+    const nav = document.createElement('nav'),
+      picker = document.createElement('div')
+    document.body.append(nav, picker)
+    renderSessionNavigation(
+      { nav, workspaces: [workspace], sessions: [], labels: new Map(), newSession() {}, open() {} },
+      zhT,
+    )
+    renderWorkspaceOptions(picker, [workspace], () => {})
+    expect(nav.querySelector('.workspace-name')?.textContent).toBe('my-folder')
+    expect(nav.querySelector('.workspace-new-session')?.getAttribute('aria-label')).toContain('my-folder')
+    expect(picker.querySelector('.workspace-option-name')?.textContent).toBe('my-folder')
+  },
+)
 
 it('marks the current session on the row so the highlight also covers the row actions', () => {
   const nav = document.createElement('nav')

@@ -66,9 +66,11 @@ AGH_WEB_URL=http://127.0.0.1:PORT AGH_CONVERSATION_FIXTURE_URL=http://127.0.0.1:
 
 ## 首次运行验收
 
-`first-run.spec.ts` 从根目录 `agnes.mjs` 启动真实 daemon 与全新私有 home；八组语言、主题、窗口尺寸完成欢迎、原有账户对话框的本地 loopback 测试与保存、默认模型选择、注册的示例页、首个任务和重载。另验证目录检查失败、非阻塞提示、注册的运行诊断页、刷新及关闭。`first-run-guide` 提供 `data-step`；稳定 ID 包括 `first-run-add`、`first-run-account`、`first-run-model`、`first-run-next`、`first-run-skip`、`first-run-examples`、`doctor-notice`、`doctor-panel`、`doctor-refresh`、`doctor-probe-accounts`、`doctor-check-<id>`。新增截图仍使用分平台零容差基线、未解析键检查和 WCAG A/AA 检查。
+`first-run.spec.ts` 从根目录 `agnes.mjs` 启动真实 daemon 与全新私有 home；八组语言、主题、窗口尺寸完成欢迎、原有账户对话框的本地 loopback 测试与保存、默认模型选择、注册的示例页、首个任务和重载。另验证目录检查失败、非阻塞提示、诊断页首部的自检区块、刷新及关闭。`first-run-guide` 提供 `data-step`；稳定 ID 包括 `first-run-add`、`first-run-account`、`first-run-model`、`first-run-next`、`first-run-skip`、`first-run-examples`、`doctor-notice`、`doctor-panel`、`diagnostics-doctor-run`、`doctor-probe-accounts`、`doctor-check-<id>`。新增截图仍使用既有分平台截图容差和零重试门禁、未解析键检查和 WCAG A/AA 检查。
 
-截图助手只归一化会变化的磁盘空间数值，保留本地化句子、控件与布局。
+截图助手归一化会变化的磁盘空间数值和 checkout 名称，保留本地化句子、可见文件夹标签、控件与布局。
+
+运行自检统一位于“诊断”页首部，通用页没有重复子页。首次引导使用暗化模糊遮罩，保存提示位于引导内。截图归一化保留可见工作区名称。
 
 ## 文件记忆验收
 

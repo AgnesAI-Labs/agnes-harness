@@ -2,11 +2,11 @@ import type { ConfigSnapshot } from '@agnes/protocol'
 import type { DoctorResult } from '@agnes/protocol/gen/app-server'
 import type { Translate } from './locales/index.js'
 import { SettingsList, SettingsRow, SettingsState } from './settings-layout.js'
+import { Badge } from './ui/badge.js'
 import { Button } from './ui/button.js'
 import { Dialog } from './ui/dialog.js'
 import { Field } from './ui/field.js'
 import { Select } from './ui/select.js'
-import { StateLights } from './ui/state-lights.js'
 
 const steps = ['welcome', 'account', 'model', 'examples', 'ready'] as const
 export function FirstRunGuide({
@@ -56,6 +56,8 @@ export function FirstRunGuide({
       onCancel={onSkip}
       closable={false}
       className="agnes-first-run"
+      rootClassName="agnes-first-run-layer"
+      mask={{ blur: true, closable: false }}
     >
       <section data-testid="first-run-guide" data-step={key} aria-label={t(`firstRun.${key}`)}>
         <p className="field-hint">{t('firstRun.step', { step: step + 1, total: steps.length })}</p>
@@ -77,6 +79,11 @@ export function FirstRunGuide({
           <Button data-testid="first-run-add" onClick={onAdd} disabled={busy}>
             {t('firstRun.add')}
           </Button>
+        )}
+        {step === 2 && (
+          <SettingsState tone="success" data-testid="first-run-saved">
+            {t('firstRun.saved')}
+          </SettingsState>
         )}
         {step === 2 && (
           <div className="agnes-first-run-fields">
@@ -165,15 +172,9 @@ export function DoctorChecks({ report, t, locale }: { report: DoctorResult; t: T
           data-testid={`doctor-check-${check.id}`}
           description={check.status === 'ok' ? undefined : t(check.fixHintKey)}
           actions={
-            <StateLights
-              states={[
-                {
-                  label: t(`doctor.check.${check.id}`),
-                  value: t(`doctor.status.${check.status}`),
-                  tone: check.status === 'fail' ? 'bad' : check.status,
-                },
-              ]}
-            />
+            <Badge tone={check.status === 'fail' ? 'bad' : check.status}>
+              {t(`doctor.status.${check.status}`)}
+            </Badge>
           }
         >
           {check.count !== undefined && (

@@ -38,6 +38,6 @@
 
 StateSwitch also renders Boolean schema/settings fields; optional id/testId and validation ARIA attributes preserve labels and selectors. Controlled state, keyboard button behavior and plugin-row propagation rules are shared.
 
-| `FirstRunGuide` / `DoctorNotice` / `DoctorChecks` | A | 既有 Dialog / Field / Select / SettingsList / StateLights | 可跳过引导、非阻断诊断提示与只读检查行；数据和操作由 Host 控制器提供 / Skippable setup and local diagnostics, with caller-owned state and actions |
+| `FirstRunGuide` / `DoctorNotice` / `DoctorChecks` | A | 既有 Dialog / Field / Select / SettingsList / Badge | 可跳过引导、非阻断诊断提示与只读检查行；数据和操作由 Host 控制器提供 / Skippable setup and local diagnostics, with caller-owned state and actions |
 | `SettingsCheckbox` | A | 原生 checkbox | 紧凑标签与共享字段尺寸；避免全局输入框样式撑大 |
 | `SettingsCode` | A | 原生 pre | 只读代码区域；可用键盘滚动，来源名称由调用方提供 |

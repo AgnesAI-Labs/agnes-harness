@@ -10,9 +10,9 @@ import {
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
-import { loadDoctor } from '../first-run.js'
+import { DiagnosticsRequestError } from './diagnostics-api.js'
 
-export function DoctorPanel() {
+export function DoctorPanel({ load }: { load(probe: boolean, signal: AbortSignal): Promise<DoctorResult> }) {
   const { t, locale } = useUiText(FIRST_RUN_NAMESPACE, firstRunCatalog)
   const [report, setReport] = useState<DoctorResult>(),
     [busy, setBusy] = useState(false),
@@ -23,7 +23,7 @@ export function DoctorPanel() {
     let current = true
     setBusy(true)
     setError(undefined)
-    void loadDoctor(request.probe, cancel.signal)
+    void load(request.probe, cancel.signal)
       .then((value) => {
         if (current) setReport(value)
       })
@@ -37,13 +37,13 @@ export function DoctorPanel() {
       current = false
       cancel.abort()
     }
-  }, [request])
+  }, [request, load])
   return (
     <section aria-label={t('doctor.title')} data-testid="doctor-panel">
       <p>{t('doctor.intro')}</p>
       <SettingsToolbar>
         <Button
-          data-testid="doctor-refresh"
+          data-testid="diagnostics-doctor-run"
           loading={busy}
           onClick={() => setRequest({ revision: request.revision + 1, probe: false })}
         >
@@ -60,7 +60,8 @@ export function DoctorPanel() {
       {busy && <SettingsState tone="loading">{t('doctor.loading')}</SettingsState>}
       {error !== undefined && (
         <SettingsState tone="error">
-          {appServerErrorMessage(error, locale) ?? t('doctor.failed')}
+          {appServerErrorMessage(error instanceof DiagnosticsRequestError ? error.envelope : error, locale) ??
+            t('doctor.failed')}
         </SettingsState>
       )}
       {report && <DoctorChecks report={report} t={t} locale={locale} />}

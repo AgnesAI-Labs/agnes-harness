@@ -776,3 +776,9 @@ button {
   padding: 0;
   margin: 0;
 }
+
+/* The setup guide owns a dimmed, blurred backdrop; other dialogs keep their skin. */
+.agnes-first-run-layer .ant-modal-mask {
+  background: color-mix(in srgb, var(--agnes-bg-lightbox) 65%, transparent);
+  backdrop-filter: blur(4px);
+}

@@ -83,7 +83,7 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     })
     await page.mouse.move(0, 0)
   }
-  // Optional self-check content follows this card; keep the existing status frame at its lower edge.
+  // Frame runtime status at its lower edge independently of the self-check block.
   if (name.startsWith('diagnostics-status-'))
     await page.getByTestId('diagnostics-runtime').evaluate((card) => {
       card.scrollIntoView({ block: 'end', behavior: 'instant' })
@@ -123,7 +123,10 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
   await checkout.evaluateAll((buttons) => {
     for (const button of buttons)
       for (const child of Array.from(button.children))
-        if (child.tagName === 'SPAN') child.setAttribute('data-e2e-environment', 'checkout')
+        if (child.classList.contains('workspace-name')) {
+          child.setAttribute('data-e2e-workspace-original', child.textContent ?? '')
+          child.textContent = 'agnes-harness'
+        } else if (child.tagName === 'SPAN') child.setAttribute('data-e2e-environment', 'checkout')
   })
   await page.evaluate(
     (css) => {
@@ -160,9 +163,14 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
         row.removeAttribute('data-e2e-disk-original')
       }
     })
-    await checkout.evaluateAll((buttons) => {
-      for (const button of buttons)
-        for (const child of Array.from(button.children)) child.removeAttribute('data-e2e-environment')
+    await page.locator('[data-e2e-environment="checkout"]').evaluateAll((nodes) => {
+      for (const node of nodes) node.removeAttribute('data-e2e-environment')
+    })
+    await page.locator('[data-e2e-workspace-original]').evaluateAll((nodes) => {
+      for (const node of nodes) {
+        node.textContent = node.getAttribute('data-e2e-workspace-original')
+        node.removeAttribute('data-e2e-workspace-original')
+      }
     })
   }
 }

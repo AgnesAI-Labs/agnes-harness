@@ -50,6 +50,6 @@ agh doctor --probe --json
 
 默认诊断不会连接模型服务。`--probe` 明确测试已启用账户，共享 45 秒超时并支持取消，可能产生费用。原有 `doctor provider --probe` 最小推理和具名诊断仍可用。Linux 的 bubblewrap / Landlock 细节见 `doctor platform`，安装二进制不等于隔离可用。MCP 准备状态不证明某个服务的信任、配置档或连接成功。
 
-Web 将失败项显示为可关闭提示，详情在**设置 → 通用 → 运行诊断**。“重新检查”读取本地状态；“测试模型账户”才连接提供方。诊断失败不阻止跳过引导。遇到 socket、端口、目录或凭据问题，继续看[排错](troubleshooting.zh-CN.md)。
+Web 将失败项显示为可关闭提示，详情在**设置 → 诊断 → 自检**。“重新检查”读取本地状态；“测试模型账户”才连接提供方。诊断失败不阻止跳过引导。遇到 socket、端口、目录或凭据问题，继续看[排错](troubleshooting.zh-CN.md)。
 
 合同：[App Server](../reference/app-server.zh-CN.md)；实现：[目录布局](../../packages/host-common/src/home-layout.ts)、[运行诊断](../../packages/host-infrastructure/src/doctor.ts)。

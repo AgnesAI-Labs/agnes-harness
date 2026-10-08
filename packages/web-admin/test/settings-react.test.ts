@@ -18,6 +18,12 @@ import type { PluginAdminApi } from '../src/admin/plugins/api.js'
 import { SettingsHub } from '../src/settings/hub.js'
 import { createSettingsController } from '../src/settings.js'
 
+const diagnosticsFetch = vi.hoisted(() => {
+  const fetcher = vi.fn<typeof fetch>()
+  vi.stubGlobal('fetch', fetcher)
+  return fetcher
+})
+
 // i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
 setLocaleTranslator(zhT)
 
@@ -243,15 +249,39 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
   const host = document.createElement('div')
   const form = document.createElement('div')
   form.id = 'config-form'
-  form.dataset.runtimePage = 'doctor'
+  form.dataset.runtimePage = 'diagnostics'
   document.body.append(form, host)
   const root = createRoot(host)
   const runtime = vi.fn(async () => {
     throw new Error('unavailable catalog')
   })
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async () => new Response(JSON.stringify({ checks: [], status: 'ok' }), { status: 200 })),
+  diagnosticsFetch.mockImplementation(async (url) =>
+    Response.json(
+      String(url).endsWith('/doctor')
+        ? { checks: [], status: 'ok' }
+        : {
+            doctorAvailable: true,
+            bundle: {
+              schemaVersion: 1,
+              collectedAt: '2026-10-08T00:00:00Z',
+              agh: { version: 'test' },
+              runtime: {
+                platform: 'test',
+                arch: 'test',
+                osRelease: 'test',
+                node: '24',
+                pid: 1,
+                uptimeMs: 0,
+              },
+              profile: { hash: 'a'.repeat(64) },
+              generations: { available: false, current: null, items: [] },
+              doctor: [],
+              errors: [],
+              audit: [],
+              limits: { audit: 100, errors: 4096 },
+            },
+          },
+    ),
   )
   try {
     flushSync(() =>
@@ -270,8 +300,10 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
     )
     await vi.waitFor(() => expect(host.querySelector('[data-testid="doctor-checks"]')).not.toBeNull())
     expect(runtime).not.toHaveBeenCalled()
-    expect([...host.querySelectorAll('h2')].map((h) => h.textContent)).toEqual(['Runtime diagnostics'])
+    expect([...host.querySelectorAll('h2')].map((h) => h.textContent)).toEqual(['Diagnostics'])
     expect(host.querySelector('[data-testid="settings-refresh"]')).toBeNull()
+    expect(settingsSections.get('doctor')).toBeUndefined()
+    expect(host.querySelector('.agnes-settings-card')?.getAttribute('data-testid')).toBe('diagnostics-doctor')
   } finally {
     flushSync(() => root.unmount())
     vi.unstubAllGlobals()

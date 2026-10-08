@@ -30,6 +30,7 @@ export const firstRunCatalog: LocaleCatalog = {
     'firstRun.start': 'Start first session',
     'firstRun.failed': 'Setup could not be saved. Try again, or skip for now.',
     'firstRun.loading': 'Saving your choice…',
+    'firstRun.saved': 'Model configuration saved. You can review the defaults below.',
     'doctor.title': 'Runtime diagnostics',
     'doctor.intro':
       'Check this local installation. Model services are contacted only when you explicitly test them.',
@@ -103,6 +104,7 @@ export const firstRunCatalog: LocaleCatalog = {
     'firstRun.review': '浏览官方示例',
     'firstRun.start': '开始第一个会话',
     'firstRun.failed': '配置未能保存，请重试或暂时跳过。',
+    'firstRun.saved': '模型配置已保存，可在此确认默认选择。',
     'firstRun.loading': '正在保存选择…',
     'doctor.title': '运行诊断',
     'doctor.intro': '检查本地安装状态。只有你主动测试账户时，才会连接模型服务。',

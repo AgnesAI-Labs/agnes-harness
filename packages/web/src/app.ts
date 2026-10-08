@@ -600,7 +600,7 @@ const firstRun = createFirstRunController({
     await settings.open()
     document
       .getElementById('config-form')
-      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'doctor', bubbles: true }))
+      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'diagnostics', bubbles: true }))
   },
   start: async () => {
     settings.close()
@@ -1950,7 +1950,7 @@ async function savedConfiguration(saved: ConfigSnapshot): Promise<void> {
     notice.textContent = t('app.model.savedNotEffective')
     return
   }
-  notice.textContent = t('app.model.savedNotice')
+  notice.textContent = firstRun.active ? '' : t('app.model.savedNotice')
 }
 newSessionForm.addEventListener('submit', (event) => {
   event.preventDefault()

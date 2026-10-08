@@ -12,7 +12,7 @@ import {
   SettingsState,
   useUiText,
 } from '@agnes/web-ui'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   type DiagnosticsApi,
   DiagnosticsRequestError,
@@ -20,6 +20,7 @@ import {
   downloadDiagnostics,
 } from './diagnostics-api.js'
 import { DIAGNOSTICS_NAMESPACE, diagnosticsCatalog } from './diagnostics-locale.js'
+import { DoctorPanel } from './doctor.js'
 
 const browserApi = diagnosticsApi()
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
@@ -33,7 +34,7 @@ export function DiagnosticsPanel({
   const { t } = useUiText(DIAGNOSTICS_NAMESPACE, diagnosticsCatalog)
   const [bundle, setBundle] = useState<DiagnosticsExportResult>()
   const [doctorAvailable, setDoctorAvailable] = useState(false)
-  const [checks, setChecks] = useState<Array<{ name: string; status: string }>>()
+  const loadChecks = useCallback((probe: boolean, signal: AbortSignal) => api.doctor(signal, probe), [api])
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState('')
   const [busy, setBusy] = useState(true)
@@ -113,6 +114,11 @@ export function DiagnosticsPanel({
   return (
     <>
       <p>{t('help')}</p>
+      {doctorAvailable && (
+        <SettingsCard title={t('doctor')} data-testid="diagnostics-doctor">
+          <DoctorPanel load={loadChecks} />
+        </SettingsCard>
+      )}
       {busy && <SettingsState tone="loading">{t('loading')}</SettingsState>}
       {error && (
         <SettingsState tone="error" data-testid="diagnostics-failure">
@@ -305,31 +311,6 @@ export function DiagnosticsPanel({
           ))}
         </SettingsDetails>
       </SettingsCard>
-      {doctorAvailable && (
-        <SettingsCard title={t('doctor')} data-testid="diagnostics-doctor">
-          <p>{t('doctorHelp')}</p>
-          <Button
-            data-testid="diagnostics-doctor-run"
-            disabled={busy}
-            onClick={() =>
-              void run(async () => {
-                const value = await api.doctor(controller.current?.signal)
-                if (alive.current) setChecks(value)
-              })
-            }
-          >
-            {t('runDoctor')}
-          </Button>
-          {checks?.map((row) => (
-            <SettingsRow
-              key={row.name}
-              title={diagnosticsCatalog.en[`check.${row.name}`] ? t(`check.${row.name}`) : t('otherCheck')}
-            >
-              <Badge>{t(`state.${row.status}`)}</Badge>
-            </SettingsRow>
-          ))}
-        </SettingsCard>
-      )}
     </>
   )
 }

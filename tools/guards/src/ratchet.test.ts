@@ -241,6 +241,7 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // Reviewed merged features are remeasured with countLines at their current owner paths.
 // Every live scope has an exact ceiling with no spare allocation; retired keys are removed.
 // Historical allocation comments below remain context, rather than the current measurements.
+// First-run polish: measured Web/UI +3 each for names/modal feedback; admin/settings -22 for one doctor entry. No headroom.
 const INITIAL_CEILING: Record<string, number> = {
   'packages/base/src/memory': 14,
   'packages/memory-file/src': 509,
@@ -255,7 +256,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-conversation/src': 2922,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src/settings': 6445,
+  'packages/web-admin/src/settings': 6423,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/permission-picker': 248,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
@@ -263,7 +264,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/admin/plugins/api': 543,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src': 11967,
+  'packages/web-admin/src': 11945,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-foundation/src': 2330,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
@@ -386,7 +387,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Approval reasons: the approval card label reads the decision reason (+22). Measured 6651, exact cap.
   // 2026-10-07 reviewed growth: plugin state badges and session default controls.
   // countLines: 6640 -> 6681 (+41); exact cap, no exclusions or spare allocation.
-  'packages/web-ui/src': 8811,
+  'packages/web-ui/src': 8814,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
@@ -634,7 +635,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-17 SESSION-MENU: 会话行菜单从 navigation.ts 抽到 session-menu.ts（面板改挂 body、
   // 补 Escape/外部指针/滚动重算），navigation 只留调用点。实测 125，收紧到精确值。
   // 2026-09-17 SESSION-ROW-BG: 行上加 `data-active`（选中底色改由行承载）新增 1 行，实测 126。
-  'packages/web/src/navigation': 183,
+  'packages/web/src/navigation': 186,
   // 2026-09-17 SESSION-MENU: 新建 session-menu.ts —— 触发按钮、三项菜单、portal 到 body 的
   // 生命周期与关闭路径，外加行状态（`data-menu-open`，替代不可靠的 `:has()` 重算）。
   // 实测 115，精确值无富余。
@@ -2410,7 +2411,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 19657 -> 22109; exact cap, no exclusions or spare allocation.
   // Acceptance review: Retain published composition details and stable expanded goal state during admin refresh.
   // countLines: 22109 -> 22110; exact cap, no exclusions or spare allocation.
-  'packages/web/src': 10244,
+  'packages/web/src': 10247,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

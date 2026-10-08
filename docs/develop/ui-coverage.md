@@ -113,9 +113,11 @@ Stable IDs: `<declaration.testId>`, `<declaration.testId>-form`, `search-edit-pr
 
 ## First-run acceptance
 
-`first-run.spec.ts` starts the real daemon through the root `agnes.mjs` launcher with a fresh private home. Eight locale/theme/viewport cases complete welcome, native account test/save against a loopback provider, default-model selection, the registered examples page, a first task and a reload. It also verifies a failed home check, non-blocking banner, registry diagnostics, refresh and dismissal. `first-run-guide` exposes `data-step`; stable IDs include `first-run-add`, `first-run-account`, `first-run-model`, `first-run-next`, `first-run-skip`, `first-run-examples`, `doctor-notice`, `doctor-panel`, `doctor-refresh`, `doctor-probe-accounts` and `doctor-check-<id>`. New screenshots retain the existing platform-specific tolerance and zero-retry baseline gate, unresolved-key scan and WCAG A/AA checks.
+`first-run.spec.ts` starts the real daemon through the root `agnes.mjs` launcher with a fresh private home. Eight locale/theme/viewport cases complete welcome, native account test/save against a loopback provider, default-model selection, the registered examples page, a first task and a reload. It also verifies a failed home check, non-blocking banner, registry diagnostics, refresh and dismissal. `first-run-guide` exposes `data-step`; stable IDs include `first-run-add`, `first-run-account`, `first-run-model`, `first-run-next`, `first-run-skip`, `first-run-examples`, `doctor-notice`, `doctor-panel`, `diagnostics-doctor-run`, `doctor-probe-accounts` and `doctor-check-<id>`. New screenshots retain the existing platform-specific tolerance and zero-retry baseline gate, unresolved-key scan and WCAG A/AA checks.
 
-The screenshot helper normalizes only changing disk-space numbers, retaining their localized sentence, controls and layout.
+The screenshot helper normalizes changing disk-space numbers and checkout names, retaining localized sentences, visible folder labels, controls and layout.
+
+Runtime self-checks are the first block of Diagnostics, with no General sub-tab. The first-run modal owns a dimmed, blurred backdrop and contains its save notice. Visual normalization preserves a visible workspace folder label.
 
 ## File memory acceptance
 
