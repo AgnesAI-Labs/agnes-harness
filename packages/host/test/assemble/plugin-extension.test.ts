@@ -1,6 +1,6 @@
 import { fakeProvider, textTurn, toolTurn } from '@agnes/core/testkit'
+import { pluginRowSource } from '@agnes/host-extensions/ext-host/row-extension-host'
 import { describe, expect, it } from 'vitest'
-import { pluginRowSource } from '../../src/ext-host/row-extension-host.js'
 import {
   auditKinds,
   type PluginHost,

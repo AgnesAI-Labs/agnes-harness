@@ -1,5 +1,5 @@
 // Ledger state as plain data, so tests and shared cases compare two states by content.
-import type { LedgerState } from '../src/reduce/state.js'
+import type { LedgerState } from '@agnes/core-ledger/reduce/state'
 
 export type EncodedLedgerState = Omit<
   LedgerState,

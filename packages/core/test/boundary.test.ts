@@ -1,8 +1,8 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { Provider } from '@agnes/core'
 import { describe, expect, it } from 'vitest'
-import type { Provider } from '../src/index.js'
 
 const src = fileURLToPath(new URL('../src/', import.meta.url))
 const files: string[] = []
@@ -13,7 +13,12 @@ const walk = (d: string) => {
     else if (e.endsWith('.ts')) files.push(p)
   }
 }
-walk(src)
+const ownerSrc = (owner: string): string => fileURLToPath(new URL(`../../${owner}/src/`, import.meta.url))
+const roots = [
+  src,
+  ...['core-common', 'core-child-control', 'core-ledger', 'core-effects', 'core-artifacts'].map(ownerSrc),
+]
+for (const root of roots) walk(root)
 
 // Value imports are limited to tool-contract helpers, event names, provider errors and public default algorithms.
 // Hook registration reuses that builder for source attribution instead of copying its identifier gate.
@@ -97,14 +102,14 @@ describe('core src boundary', () => {
   })
 
   it('keeps the minting function and the unbranded body off the root export', async () => {
-    const surface = await import('../src/index.js')
+    const surface = await import('@agnes/core')
     expect(Object.keys(surface)).not.toContain('mintFrom')
     expect(Object.keys(surface)).not.toContain('sanitizeJson')
     expect(Object.keys(surface)).toContain('isLedgerRequest')
   })
 
   it('keeps the one function that spells a register cache key off the root export', async () => {
-    const surface = await import('../src/index.js')
+    const surface = await import('@agnes/core')
     expect(Object.keys(surface)).not.toContain('cacheKey')
     // The cell store itself is reachable inside the package but is not part of what core promises.
     expect(Object.keys(surface)).not.toContain('RegisterMap')
@@ -114,12 +119,17 @@ describe('core src boundary', () => {
     const owners = (pattern: RegExp) =>
       files
         .filter((file) => pattern.test(readFileSync(file, 'utf8')))
-        .map((file) => file.slice(src.length).split(sep).join('/'))
+        .map((file) =>
+          file
+            .slice(fileURLToPath(new URL('../../', import.meta.url)).length)
+            .split(sep)
+            .join('/'),
+        )
         .sort()
 
-    expect(owners(/\.ev\(\s*['"]harness\/refine['"]/)).toEqual(['refine/apply.ts'])
+    expect(owners(/\.ev\(\s*['"]harness\/refine['"]/)).toEqual(['core/src/refine/apply.ts'])
     expect(owners(/Kernel\.create\(/)).toEqual([])
-    expect(owners(/globalThis\.crypto/)).toEqual(['ids.ts'])
+    expect(owners(/globalThis\.crypto/)).toEqual(['core-common/src/ids.ts'])
     expect(owners(/process\.env/)).toEqual([])
   })
 })

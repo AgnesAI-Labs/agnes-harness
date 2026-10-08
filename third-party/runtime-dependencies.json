@@ -189,7 +189,7 @@
       "source": "https://github.com/unjs/jiti",
       "purpose": "Loads TypeScript and modern JavaScript extension modules in Host and the confined Base runner.",
       "rationale": "Supports the extension authoring formats accepted by the Host loader without a separate compile step.",
-      "consumers": ["packages/base", "packages/host", "packages/host-extensions"]
+      "consumers": ["packages/base", "packages/host-extensions"]
     },
     {
       "name": "marked",

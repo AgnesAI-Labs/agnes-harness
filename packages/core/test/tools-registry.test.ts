@@ -1,7 +1,7 @@
+import { CoreError } from '@agnes/core-common/types'
 import type { ToolDef } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { CoreError } from '../src/types.js'
 
 const meta = {
   isReadOnly: true,

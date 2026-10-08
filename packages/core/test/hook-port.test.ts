@@ -1,7 +1,7 @@
+import { platformFacts } from '@agnes/core-effects/effects/platform-facts'
 import type { HookContext, HookHandler } from '@agnes/extension-api'
 import { unavailableProjections } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
-import { platformFacts } from '../src/effects/platform-facts.js'
 import { HOOK_UNHANDLED, HookEngine } from '../src/hooks/engine.js'
 import { type SessionHookInputs, SessionHookPort } from '../src/hooks/port.js'
 import { deriveRequest } from '../src/request/derive.js'

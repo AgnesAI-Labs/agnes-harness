@@ -1,3 +1,5 @@
+import { assertChildAgentAllowed } from '@agnes/core-child-control/child/allowlist'
+import { createChildEventQueue } from '@agnes/core-child-control/child/events'
 import type {
   ChildAgentCapabilities,
   ChildAgentEvent,
@@ -9,8 +11,6 @@ import type {
   ChildAgentStatus,
   ChildAgentToolFilter,
 } from '@agnes/extension-api'
-import { assertChildAgentAllowed } from './allowlist.js'
-import { createChildEventQueue } from './events.js'
 import { childBackend } from './sessions.js'
 
 export const IN_PROCESS_CHILD_PROVIDER_ID = 'in-process'

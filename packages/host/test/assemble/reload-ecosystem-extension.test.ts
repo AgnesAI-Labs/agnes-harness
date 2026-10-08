@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import type { ExtensionManifest } from '@agnes/extension-api'
+import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import type { InferenceEvent } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { SkillRuntimeInput } from '../../src/resources/skills.js'
 import { createTestHost } from '../../testkit/index.js'
 
 // The package directory, not an import: this is a real assemble()-based integration test - the host

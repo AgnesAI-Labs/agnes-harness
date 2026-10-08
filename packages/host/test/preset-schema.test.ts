@@ -1,10 +1,10 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { runtimes } from '@agnes/code'
+import { resolvePreset } from '@agnes/host-common/presets/resolve'
+import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { validatePreset } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
-import { resolvePreset } from '../src/presets/resolve.js'
-import type { PresetDoc } from '../src/presets/types.js'
 
 const dirs = ['../../base/presets/', '../../code/presets/'].map((p) => new URL(p, import.meta.url))
 const docs = Object.fromEntries(

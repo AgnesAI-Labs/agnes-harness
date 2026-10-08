@@ -13,16 +13,16 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { fakeSeams } from '@agnes/core/testkit'
 import type { HookEvent, HookReturnMap } from '@agnes/extension-api'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import { WorkspaceBindingAuthority } from '@agnes/host-common/workspace-authority'
+import { readNamedExports } from '@agnes/host-extensions/assemble/packages'
+import { type AuditEvent, type AuditSink, createMemoryAudit } from '@agnes/host-infrastructure/audit'
+import { SessionWorkspaceRuntimeTable } from '@agnes/host-infrastructure/session-workspace-runtime'
+import { type AssembleDeps, assemble } from '@agnes/host-runtime/assemble'
+import { createSession } from '@agnes/host-runtime/session'
 import { parseAgnesPluginEntries } from '@agnes/package-manager'
 import type { RouteDecl } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
-import { readNamedExports } from '../../src/assemble/packages.js'
-import { type AssembleDeps, assemble } from '../../src/assemble.js'
-import { type AuditEvent, type AuditSink, createMemoryAudit } from '../../src/audit.js'
-import { resolveProfile } from '../../src/profile/resolve.js'
-import { createSession } from '../../src/session.js'
-import { SessionWorkspaceRuntimeTable } from '../../src/session-workspace-runtime.js'
-import { WorkspaceBindingAuthority } from '../../src/workspace-authority.js'
 
 const roots: string[] = []
 const packagedIsolation = it.runIf(Boolean(process.env.AGNES_TEST_RUNTIME_DIRECTORY))
@@ -481,8 +481,8 @@ it('a disabled seam provider is refused even when its directory is supplied', as
 })
 it('consumes resolved required policy despite a weaker legacy constructor option', async () => {
   const x = await setup()
-  const { withAssemblyIsolation } = await import('../../src/profile/isolation.js')
-  const { createHost } = await import('../../src/host.js')
+  const { withAssemblyIsolation } = await import('@agnes/host-common/profile/isolation')
+  const { createHost } = await import('@agnes/host-runtime/host')
   const profile = withAssemblyIsolation(x.profile, { extensions: { 'agnes/hooks-runner': 'required' } })
   x.deps.extensionIsolation = { extensions: { 'agnes/hooks-runner': 'off' } }
   const prepareRuntime = vi.fn(() => {

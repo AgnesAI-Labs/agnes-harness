@@ -3,6 +3,9 @@
 // Tests use it only as a reference for equivalence and benchmarks; it is never selectable at
 // runtime.
 import { types as utilTypes } from 'node:util'
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import type { Event } from '@agnes/core-common/types'
+import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
 import { decodeSafeImageBytes, SafeImageError } from '@agnes/protocol-validation'
 import {
   isPreparedRequestMedia,
@@ -11,9 +14,6 @@ import {
   type RequestMediaCandidate,
   type RequestMediaLimits,
 } from '../../src/orchestrator/request-media.js'
-import type { SurfaceNode } from '../../src/project/surface.js'
-import { canonicalJson, sha256Hex } from '../../src/request/hash.js'
-import type { Event } from '../../src/types.js'
 
 const ARTIFACT_URI = /^artifact:\/\/([0-9a-f]{64})$/
 const TOOL_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/

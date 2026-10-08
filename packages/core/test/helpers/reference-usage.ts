@@ -1,10 +1,11 @@
 // The usage bookkeeping the UI cell kept before it stopped copying per row, updated for fresh
 // spawned conversations: cache-health's seen-effect set copied on every
 // inference cost row, and the surface rebuilt as a new array for every node.
+
+import type { Event, Seq } from '@agnes/core-common/types'
+import type { CacheHealthState, CacheInvalidationRecord } from '@agnes/core-ledger/project/cache-health'
+import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
 import type { CostLedger, RequestHeader, SessionStart } from '@agnes/protocol'
-import type { CacheHealthState, CacheInvalidationRecord } from '../../src/project/cache-health.js'
-import type { SurfaceNode } from '../../src/project/surface.js'
-import type { Event, Seq } from '../../src/types.js'
 
 export type ReferenceCacheHealthState = Omit<CacheHealthState, 'seenEffectIds'> & {
   seenEffectIds: ReadonlySet<string>

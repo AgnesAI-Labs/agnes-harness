@@ -2,9 +2,9 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ProjectionRegistry } from '@agnes/core'
+import { createExtensionActivationBarrier } from '@agnes/host-extensions/ext-host/activation-barrier'
+import { ExtensionInvocation } from '@agnes/host-extensions/ext-host/invocation'
 import { afterEach, expect, it } from 'vitest'
-import { createExtensionActivationBarrier } from '../../src/ext-host/activation-barrier.js'
-import { ExtensionInvocation } from '../../src/ext-host/invocation.js'
 import { createTestHost, type TestHost } from '../../testkit/index.js'
 
 const held: Array<{ dir: string; testHost: TestHost }> = []

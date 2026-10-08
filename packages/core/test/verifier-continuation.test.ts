@@ -1,5 +1,5 @@
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import { describe, expect, it } from 'vitest'
-import { MemoryStorage } from '../src/log/memory-storage.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession } from './helpers/open-session.js'

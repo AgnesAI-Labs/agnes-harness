@@ -1,8 +1,8 @@
+import { CoreError } from '@agnes/core-common/types'
+import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
 import type { RequestBody } from '@agnes/protocol'
-import type { SurfaceNode } from '../project/surface.js'
 import { validateUserMessageImages } from '../request/user-message-images.js'
 import type { SessionImpl } from '../step/session.js'
-import { CoreError } from '../types.js'
 
 /** Custom history still enters Core derivation, validation and untrusted envelopes. */
 export function loopRequestSurface(s: SessionImpl, messages: RequestBody['messages']): SurfaceNode[] {

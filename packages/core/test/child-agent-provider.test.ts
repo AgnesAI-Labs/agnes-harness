@@ -1,12 +1,12 @@
-import { type ChildAgentResult, defineTool } from '@agnes/extension-api'
-import { Type } from '@sinclair/typebox'
-import { expect, it } from 'vitest'
 import {
   assertChildAgentAllowed,
   resetChildAgentAllowlists,
   setChildAgentAllowlist,
-} from '../src/child/allowlist.js'
-import { externalChildren, trackExternalChild } from '../src/child/directory.js'
+} from '@agnes/core-child-control/child/allowlist'
+import { externalChildren, trackExternalChild } from '@agnes/core-child-control/child/directory'
+import { type ChildAgentResult, defineTool } from '@agnes/extension-api'
+import { Type } from '@sinclair/typebox'
+import { expect, it } from 'vitest'
 import { type InProcessChildBackend, inProcessChildAgentProvider } from '../src/child/provider.js'
 import { ChildToolRegistry } from '../src/child/tool-filter.js'
 import { Kernel } from '../src/kernel.js'

@@ -15,9 +15,9 @@ import {
   textTurn,
   toolTurn,
 } from '@agnes/core/testkit'
+import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 import { Type } from '@sinclair/typebox'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createSqliteStorage } from '../src/adapters/storage-sqlite.js'
 import { createTestHost } from '../testkit/index.js'
 
 const baseDir = fileURLToPath(new URL('../../base', import.meta.url))

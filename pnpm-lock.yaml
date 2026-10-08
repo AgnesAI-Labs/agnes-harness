@@ -13,6 +13,27 @@ importers:
 
   .:
     devDependencies:
+      '@agnes/core':
+        specifier: workspace:*
+        version: link:packages/core
+      '@agnes/core-common':
+        specifier: workspace:*
+        version: link:packages/core-common
+      '@agnes/core-effects':
+        specifier: workspace:*
+        version: link:packages/core-effects
+      '@agnes/core-ledger':
+        specifier: workspace:*
+        version: link:packages/core-ledger
+      '@agnes/host':
+        specifier: workspace:*
+        version: link:packages/host
+      '@agnes/host-artifacts':
+        specifier: workspace:*
+        version: link:packages/host-artifacts
+      '@agnes/host-infrastructure':
+        specifier: workspace:*
+        version: link:packages/host-infrastructure
       '@axe-core/playwright':
         specifier: 4.11.0
         version: 4.11.0(playwright-core@1.63.0)
@@ -178,6 +199,10 @@ importers:
       yaml:
         specifier: 2.9.0
         version: 2.9.0
+    devDependencies:
+      '@agnes/host-infrastructure':
+        specifier: workspace:*
+        version: link:../host-infrastructure
     optionalDependencies:
       dingtalk-stream:
         specifier: 2.1.6-beta.1
@@ -243,6 +268,9 @@ importers:
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
+      '@agnes/host-infrastructure':
+        specifier: workspace:*
+        version: link:../host-infrastructure
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33
@@ -294,6 +322,9 @@ importers:
       '@agnes/host':
         specifier: workspace:*
         version: link:../host
+      '@agnes/host-infrastructure':
+        specifier: workspace:*
+        version: link:../host-infrastructure
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -550,9 +581,6 @@ importers:
       ajv:
         specifier: 8.20.0
         version: 8.20.0
-      jiti:
-        specifier: 2.7.0
-        version: 2.7.0(patch_hash=77f93f7110d63c7b4551ac2eab9c87a64c2ba97de0b71047e25171d3fac05fd2)
       yaml:
         specifier: 2.9.0
         version: 2.9.0
@@ -625,6 +653,12 @@ importers:
       '@agnes/host':
         specifier: workspace:*
         version: link:../host
+      '@agnes/host-infrastructure':
+        specifier: workspace:*
+        version: link:../host-infrastructure
+      '@agnes/host-providers':
+        specifier: workspace:*
+        version: link:../host-providers
 
   packages/host-computer-use:
     dependencies:
@@ -1323,6 +1357,10 @@ importers:
       '@agnes/system-node':
         specifier: workspace:*
         version: link:../system-node
+    devDependencies:
+      '@agnes/host-infrastructure':
+        specifier: workspace:*
+        version: link:../host-infrastructure
 
   tools/e2e-web:
     dependencies:

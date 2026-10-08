@@ -1,3 +1,9 @@
+import { defaultIds } from '@agnes/core-common/ids'
+import { registerLoopPlugin } from '@agnes/core-common/loop/registry'
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { ToolRuntimeRegistry } from '@agnes/core-effects/effects/tool-providers'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { openTracked } from '@agnes/core-ledger/reduce/tracker'
 import {
   DEFAULT_LOOP,
   type LoopContext,
@@ -7,15 +13,9 @@ import {
   type ToolRuntime,
 } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
-import { ToolRuntimeRegistry } from '../src/effects/tool-providers.js'
-import { defaultIds } from '../src/ids.js'
 import { Kernel } from '../src/kernel.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
 import { LoopEventRegistry } from '../src/loop/events.js'
-import { registerLoopPlugin } from '../src/loop/registry.js'
-import { openTracked } from '../src/reduce/tracker.js'
 import { applyBeforeRequestPatches } from '../src/request/transforms.js'
-import { presetDefaults } from '../src/step/preset.js'
 import { noopHooks } from '../src/step/session.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'

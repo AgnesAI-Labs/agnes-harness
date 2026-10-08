@@ -1,10 +1,10 @@
+import type { Event } from '@agnes/core-common/types'
+import { traceFold } from '@agnes/core-ledger/project/trace'
+import { projectUI } from '@agnes/core-ledger/project/ui'
 import type { UISpan } from '@agnes/protocol'
 import { validateAgainst } from '@agnes/protocol'
 import { UITurn as UITurnSchema } from '@agnes/protocol/gen/agnes-v1'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { traceFold } from '../src/project/trace.js'
-import { projectUI } from '../src/project/ui.js'
-import type { Event } from '../src/types.js'
 import { actor } from './helpers/open-session.js'
 
 const tokens = { input: 10, output: 2, cacheRead: 1, cacheWrite: 0, reasoning: 3 }

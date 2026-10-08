@@ -9,7 +9,7 @@ import {
   testFsPolicy,
   textTurn,
 } from '@agnes/core/testkit'
-import { createSqliteStorage } from '../../src/adapters/storage-sqlite.js'
+import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 
 const dbFile = process.argv[2]
 const readyFile = process.argv[3]

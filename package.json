@@ -31,7 +31,14 @@
     "happy-dom": "20.14.3",
     "tsx": "4.23.13",
     "typescript": "7.0.2",
-    "vitest": "5.0.0"
+    "vitest": "5.0.0",
+    "@agnes/host-infrastructure": "workspace:*",
+    "@agnes/host": "workspace:*",
+    "@agnes/host-artifacts": "workspace:*",
+    "@agnes/core": "workspace:*",
+    "@agnes/core-common": "workspace:*",
+    "@agnes/core-effects": "workspace:*",
+    "@agnes/core-ledger": "workspace:*"
   },
   "license": "Apache-2.0"
 }

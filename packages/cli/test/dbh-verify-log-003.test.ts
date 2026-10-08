@@ -6,7 +6,7 @@ import { formatCallUsage } from '../src/tui/usage-details.js'
 // DBH LOG-003 verification. Differential oracle: packages/cli-tui/src/usage-details.ts:5-8
 // (`formatCallUsage`) is an independent renderer of the same `cost` node that prefers
 // `node.billing` and only falls back to `credits`. packages/protocol/gen/ts/agnes-v1.ts:64 makes
-// both `credits` and `billing` optional on the cost variant, and packages/core/src/project/ui.ts
+// both `credits` and `billing` optional on the cost variant, and packages/core-ledger/src/project/ui.ts
 // fills them from two independent conditionals, so a billing-only cost node is legal.
 const costNode: Extract<UINode, { kind: 'cost' }> = {
   kind: 'cost',

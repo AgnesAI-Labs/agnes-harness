@@ -1,3 +1,4 @@
+import { assertChildAgentAllowed } from '@agnes/core-child-control/child/allowlist'
 import type {
   ChildAgentHandle,
   ChildAgentParentScope,
@@ -6,7 +7,6 @@ import type {
 } from '@agnes/extension-api'
 import type { JsonValue } from '@agnes/protocol'
 import type { SessionImpl } from '../step/session.js'
-import { assertChildAgentAllowed } from './allowlist.js'
 import { narrowChildToolFilter } from './tool-filter.js'
 
 const IN_PROCESS = 'in-process'

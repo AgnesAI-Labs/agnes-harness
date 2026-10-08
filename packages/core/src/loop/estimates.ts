@@ -1,5 +1,5 @@
+import { canonicalJson } from '@agnes/core-common/request/hash'
 import type { LoopRequest, LoopRequestEstimate } from '@agnes/extension-api'
-import { canonicalJson } from '../request/hash.js'
 import { compactionSettingsFor, contextWindowFor, fixedPrefixTokens } from '../step/gate.js'
 import { estimateTokens } from '../step/inference.js'
 import type { SessionImpl } from '../step/session.js'

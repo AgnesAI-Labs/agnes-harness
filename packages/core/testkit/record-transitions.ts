@@ -5,16 +5,16 @@
 // `expectedFromGolden` says what the current format must commit in their place.
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { type OpStateObj, opMarkData } from '@agnes/core-common/step/op-state'
+import type { Event, IdMinter } from '@agnes/core-common/types'
+import { scanAll } from '@agnes/core-ledger/log/scan-pages'
+import type { SessionLogImpl } from '@agnes/core-ledger/log/session-log'
+import type { CommitTx, OpWrite, StorageAdapter } from '@agnes/core-ledger/log/storage'
+import type { UIProjectionCell } from '@agnes/core-ledger/project/ui'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
-import { scanAll } from '../src/log/scan-pages.js'
-import type { SessionLogImpl } from '../src/log/session-log.js'
-import type { CommitTx, OpWrite, StorageAdapter } from '../src/log/storage.js'
-import type { UIProjectionCell } from '../src/project/ui.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { type OpStateObj, opMarkData } from '../src/step/op-state.js'
 import type { CompactionPort } from '../src/step/session.js'
-import type { Event, IdMinter } from '../src/types.js'
 import {
   fakeProvider,
   type Script,

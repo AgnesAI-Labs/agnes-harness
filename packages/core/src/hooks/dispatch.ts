@@ -1,7 +1,7 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { withTimeout } from '@agnes/core-effects/effects/wrap'
+import type { Timers } from '@agnes/core-ledger/log/session-log'
 import { HOOK_TABLE, type HookEvent } from '@agnes/protocol'
-import { withTimeout } from '../effects/wrap.js'
-import type { Timers } from '../log/session-log.js'
-import { presetDefaults } from '../step/preset.js'
 import { HookBlockedError } from './block.js'
 
 export type DispatchFailure = { event: HookEvent; source: string; message: string }

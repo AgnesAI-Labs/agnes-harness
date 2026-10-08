@@ -2,8 +2,8 @@ import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { createCredentialStore } from '@agnes/host'
 import { expect, it } from 'vitest'
-import { createCredentialStore } from '../../packages/host/src/index.js'
 
 const entry = process.env.AGNES_LOCAL_CLI
 const sourceHome = process.env.AGNES_ACCEPTANCE_PROVIDER_HOME

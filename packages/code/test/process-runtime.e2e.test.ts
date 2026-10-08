@@ -1,8 +1,8 @@
 import { sandboxWorkspaceProbe } from '@agnes/base'
 import type { ToolContext } from '@agnes/extension-api'
+import { createExec } from '@agnes/host-infrastructure/adapters/exec'
+import { createLocalSandboxProvider } from '@agnes/host-infrastructure/adapters/sandbox-local'
 import { expect, it } from 'vitest'
-import { createExec } from '../../host/src/adapters/exec.js'
-import { createLocalSandboxProvider } from '../../host/src/adapters/sandbox-local.js'
 import { createBridge } from '../src/extensions/code-mode/bridge.js'
 import { processRuntime } from '../src/runtime/process.js'
 

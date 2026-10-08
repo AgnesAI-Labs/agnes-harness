@@ -1,9 +1,9 @@
 import { defaultLoopPlugin, toolPolicyPlugin } from '@agnes/base'
+import type { PackageModule } from '@agnes/host-extensions/assemble/packages'
+import type {} from '@agnes/host-providers/assemble/loops'
+import type {} from '@agnes/host-providers/assemble/tool-providers'
 import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { DYNAMIC_SEAM_NAMES, normalizePluginExport } from '@agnes/plugin-runtime/host'
-import type {} from '../src/assemble/loops.js'
-import type { PackageModule } from '../src/assemble/packages.js'
-import type {} from '../src/assemble/tool-providers.js'
 
 const TEST_PRESET_CONFIG = Object.freeze({
   '~standard': Object.freeze({

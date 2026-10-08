@@ -1,4 +1,4 @@
-import type { FsIo, FsIoStat } from '../src/adapters/fs-io.js'
+import type { FsIo, FsIoStat } from '@agnes/host-infrastructure/adapters/fs-io'
 
 /**
  * A posix, case-sensitive tree in memory: the second FsIo behind the fence's contract suite, and

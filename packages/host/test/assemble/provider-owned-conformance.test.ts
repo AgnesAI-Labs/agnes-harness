@@ -19,9 +19,9 @@ import {
   persistenceConformance,
   sandboxConformance,
 } from '@agnes/extension-api/testkit'
+import { sqlitePersistenceProvider } from '@agnes/host-runtime/adapters/index'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { expect, it } from 'vitest'
-import { sqlitePersistenceProvider } from '../../src/adapters/index.js'
 import { createTestHost } from '../../testkit/index.js'
 
 function deferred<T = void>() {

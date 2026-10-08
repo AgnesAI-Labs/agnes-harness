@@ -1,14 +1,14 @@
+import { withPhase } from '@agnes/core-common/step/op-state'
+import { CoreError } from '@agnes/core-common/types'
+import { CORE_CHECKS } from '@agnes/core-ledger/invariants/core-checks'
+import { InvariantRegistry } from '@agnes/core-ledger/invariants/registry'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { foldEvents } from '@agnes/core-ledger/reduce/reducer'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
-import { CORE_CHECKS } from '../src/invariants/core-checks.js'
-import { InvariantRegistry } from '../src/invariants/registry.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import { foldEvents } from '../src/reduce/reducer.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { withPhase } from '../src/step/op-state.js'
 import { type HookPort, noopHooks } from '../src/step/session.js'
-import { CoreError } from '../src/types.js'
 import {
   fakeProvider,
   type Script,

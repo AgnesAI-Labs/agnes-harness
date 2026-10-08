@@ -1,5 +1,5 @@
 import type { Conflict } from '@agnes/core-common/context-diagnostics'
-import type { HarnessEntry } from '../reduce/shapes.js'
+import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
 import type { RegistrySnapshot } from '../registry/tools.js'
 
 // Owned here: the author-facing package does not publish this name, and every core module that

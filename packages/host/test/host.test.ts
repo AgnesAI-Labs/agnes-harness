@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ecosystem as baseEcosystem } from '@agnes/base'
 import { WORKSPACE_HOOK_SANDBOX, type WorkspaceHookSandbox } from '@agnes/core'
+import { createHost } from '@agnes/host-runtime/host'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createHost } from '../src/host.js'
 import { createTestHost } from '../testkit/index.js'
 
 const baseDir = fileURLToPath(new URL('../../base', import.meta.url))

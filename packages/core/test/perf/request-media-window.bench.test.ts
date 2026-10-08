@@ -1,10 +1,10 @@
 import { writeFileSync } from 'node:fs'
 import { crc32, deflateSync } from 'node:zlib'
+import { sha256Hex } from '@agnes/core-common/request/hash'
+import type { Event } from '@agnes/core-common/types'
+import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
 import { describe, expect, it } from 'vitest'
 import { prepareRequestMediaFromSurface } from '../../src/orchestrator/request-media-surface.js'
-import type { SurfaceNode } from '../../src/project/surface.js'
-import { sha256Hex } from '../../src/request/hash.js'
-import type { Event } from '../../src/types.js'
 import { toolCallLookup } from '../helpers/request-media-lookup.js'
 import { legacyPrepareRequestMediaFromSurface } from '../helpers/request-media-surface-legacy.js'
 

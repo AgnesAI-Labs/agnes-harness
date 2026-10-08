@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { toolPolicyPlugin } from '@agnes/base'
 import { Context } from '@agnes/cordis'
+import { installToolProviders } from '@agnes/host-providers/assemble/tool-providers'
 import { expect, it } from 'vitest'
 import { policy } from '../../../../examples/policies/read-only/index.mjs'
-import { installToolProviders } from '../../src/assemble/tool-providers.js'
 import { createTestHost } from '../../testkit/index.js'
 
 it('assembles the bundled default policy row before opening a real Host session', async () => {

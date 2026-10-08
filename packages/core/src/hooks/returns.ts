@@ -1,9 +1,9 @@
+import { CoreError } from '@agnes/core-common/types'
 import type { HookEvent, HookReturnMap } from '@agnes/extension-api'
 import { HOOK_TABLE, inspectJsonData, validateAgainst, validateHook } from '@agnes/protocol'
 import type { ContextReturn } from '@agnes/protocol/gen/hooks'
 import { ArtifactRef, JsonValue } from '@agnes/protocol/gen/session-v1'
 import { Type } from '@sinclair/typebox'
-import { CoreError } from '../types.js'
 
 // Only author/wire differences live here. All matching returns use the generated protocol schema.
 const closed = { additionalProperties: false } as const

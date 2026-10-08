@@ -12,23 +12,26 @@ import {
 } from '@agnes/base'
 import { ToolRegistry } from '@agnes/core'
 import { defineTool } from '@agnes/extension-api'
-import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
-import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
-import { RuntimeSecurityStatus, SessionCapabilitySet, validateAgainst } from '@agnes/protocol'
-import { Type } from '@sinclair/typebox'
-import { expect, it, vi } from 'vitest'
-import { assertHostPublication } from '../../src/host-facade.js'
-import { parsePackageBundles } from '../../src/profile/composition.js'
-import { CompositionSessionStore, readLiveCompositionSessions } from '../../src/profile/composition-state.js'
+import { parsePackageBundles } from '@agnes/host-common/profile/composition'
+import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
+import {
+  CompositionSessionStore,
+  readLiveCompositionSessions,
+} from '@agnes/host-providers/profile/composition-state'
+import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
+import { assertHostPublication } from '@agnes/host-runtime/host-facade'
 import {
   compositionModuleAllowed,
   compositionSkillOwners,
   compositionSkills,
   compositionSurfaceAllowed,
   compositionTools,
-} from '../../src/profile/composition-visibility.js'
-import type { SkillRuntimeInput } from '../../src/resources/skills.js'
-import { buildCompleteRuntimeTarget } from '../../src/runtime-target-builder.js'
+} from '@agnes/host-runtime/profile/composition-visibility'
+import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
+import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
+import { RuntimeSecurityStatus, SessionCapabilitySet, validateAgainst } from '@agnes/protocol'
+import { Type } from '@sinclair/typebox'
+import { expect, it, vi } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
 import { pluginHost, pluginRow, pluginSourceWith, targetOf } from '../assemble/plugin-extension-fixture.js'
 
@@ -145,7 +148,7 @@ it('runs preset compositions side by side, filters tools and retains the generat
     dataDir: root,
     script: [],
     disableSessionTitle: true,
-    provider: (profile: import('../../src/profile/types.js').ResolvedProfile) => {
+    provider: (profile: import('@agnes/host-common/profile/types').ResolvedProfile) => {
       if (refuseWriter && profile.compaction?.engine === 'fixture')
         throw new Error('writer model candidate refused')
       return new ScriptedProvider({

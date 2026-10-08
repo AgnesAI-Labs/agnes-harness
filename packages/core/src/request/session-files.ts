@@ -1,7 +1,7 @@
+import { scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { ToolContext } from '@agnes/extension-api'
 import type { ContentBlock } from '@agnes/protocol'
 import { decodeAttachmentData, USER_MESSAGE_ATTACHMENT_LIMITS } from '@agnes/protocol-validation'
-import { scanPages } from '../log/scan-pages.js'
 import type { SessionImpl } from '../step/session.js'
 
 type UserFile = Extract<ContentBlock, { type: 'file' }>

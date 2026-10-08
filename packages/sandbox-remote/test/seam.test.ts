@@ -11,7 +11,7 @@ const fakeTransport = {
 
 type ExecCall = { cmd: string[]; opts: Record<string, unknown> }
 
-// Minimal SeamInitContext double: the real shape follows packages/host/src/assemble/packages.ts.
+// Minimal SeamInitContext double: the real shape follows packages/host-extensions/src/assemble/packages.ts.
 // Reconciled with it, then filled in with the required fields. `adapters.exec` stands in for the
 // host's policy-bound exec (createPolicyExec's result, which under a remote deployment already has
 // a transport-backed `inner`); the recorder below is how these tests pin that the seam goes through

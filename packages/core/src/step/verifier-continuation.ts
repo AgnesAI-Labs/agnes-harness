@@ -1,5 +1,5 @@
-import { CoreError, type Seq } from '../types.js'
-import { newOpState } from './op-state.js'
+import { newOpState } from '@agnes/core-common/step/op-state'
+import { CoreError, type Seq } from '@agnes/core-common/types'
 import type { SessionImpl } from './session.js'
 
 /** A verifier pause asks permission to continue, not whether a side effect happened. */

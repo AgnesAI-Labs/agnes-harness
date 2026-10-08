@@ -1,9 +1,9 @@
 import { performance } from 'node:perf_hooks'
+import type { Event } from '@agnes/core-common/types'
+import { UIProjectionCell } from '@agnes/core-ledger/project/ui'
+import { foldEvents, reduce } from '@agnes/core-ledger/reduce/reducer'
+import type { LedgerState } from '@agnes/core-ledger/reduce/state'
 import { describe, expect, it } from 'vitest'
-import { UIProjectionCell } from '../src/project/ui.js'
-import { foldEvents, reduce } from '../src/reduce/reducer.js'
-import type { LedgerState } from '../src/reduce/state.js'
-import type { Event } from '../src/types.js'
 import { toolHeavyLedger } from '../testkit/tool-heavy-ledger.js'
 
 // Timing guards. The copy budget is what gates a merge; these back it up with wall-clock evidence

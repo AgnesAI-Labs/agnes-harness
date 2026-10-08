@@ -1,7 +1,7 @@
+import type { EventInput, StorageAdapter } from '@agnes/core'
 import { defaultIds } from '@agnes/core-common/ids'
 import { canonicalJson } from '@agnes/core-common/request/hash'
 import { describe, expect, it } from 'vitest'
-import type { EventInput, StorageAdapter } from '../../core/src/index.js'
 import { encodeLedgerState } from '../../core/testkit/encode-ledger-state.js'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { initialState } from '../src/reduce/reducer.js'

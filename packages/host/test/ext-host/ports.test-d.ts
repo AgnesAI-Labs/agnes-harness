@@ -1,8 +1,8 @@
 import type { HookEngine, HookRegistry, ResourceRegistry, ToolRegistry, ToolSource } from '@agnes/core'
 import type { ExtensionAPI, HookHandler, SlotFill } from '@agnes/extension-api'
+import type { ToolPort } from '@agnes/host-extensions/ext-host/api'
+import type { KernelPorts, RegMeta } from '@agnes/host-extensions/ext-host/ports'
 import { expectTypeOf } from 'vitest'
-import type { ToolPort } from '../../src/ext-host/api.js'
-import type { KernelPorts, RegMeta } from '../../src/ext-host/ports.js'
 
 expectTypeOf<ToolPort>().toEqualTypeOf<KernelPorts['tools']>()
 expectTypeOf<RegMeta>().toEqualTypeOf<ToolSource>()

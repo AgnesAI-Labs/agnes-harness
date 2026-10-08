@@ -3,15 +3,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { presetDefaults, SeamRuntime } from '@agnes/core'
 import { fakeSeams } from '@agnes/core/testkit'
-import type { ApprovalGrant } from '@agnes/protocol'
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSqliteStorage } from '../src/adapters/storage-sqlite.js'
+import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 import {
   type ApprovalGrantBinding,
   bindApprovalGrantStore,
   createApprovalGrantControlPlane,
   createApprovalGrantStore,
-} from '../src/approval-grants.js'
+} from '@agnes/host-runtime/approval-grants'
+import type { ApprovalGrant } from '@agnes/protocol'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTestHost } from '../testkit/index.js'
 
 const roots: string[] = []
@@ -66,7 +66,7 @@ async function activate(opened: ReturnType<typeof open>, value: ApprovalGrant): 
 
 describe('Host approval grant store', () => {
   it('keeps the Core activation control plane off the public Host barrel', async () => {
-    const publicHost = await import('../src/index.js')
+    const publicHost = await import('@agnes/host')
     expect(publicHost).not.toHaveProperty('createApprovalGrantControlPlane')
     expect(publicHost).toHaveProperty('createApprovalGrantStore')
   })

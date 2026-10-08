@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
-import { extractArtifactRefs } from '../../src/artifact-ledger-refs.js'
+import { extractArtifactRefs } from '@agnes/host-artifacts/artifact-ledger-refs'
 
 export type OracleRef = Readonly<{
   sha256: string

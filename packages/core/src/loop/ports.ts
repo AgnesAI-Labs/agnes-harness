@@ -1,3 +1,6 @@
+import { withPhase } from '@agnes/core-common/step/op-state'
+import { CoreError } from '@agnes/core-common/types'
+import type { Inbox } from '@agnes/core-ledger/reduce/shapes'
 import type {
   LoopCheckpoint,
   LoopContext,
@@ -10,7 +13,6 @@ import type { ContentBlock, InferenceEvent, RequestBody } from '@agnes/protocol'
 import { releaseTreeReservation, settleTreeSpend } from '../child/runtime-budget.js'
 import { approvalContinuation, continueParked } from '../execution/turn/parked.js'
 import { approveAndExecute } from '../execution/turn/tools.js'
-import type { Inbox } from '../reduce/shapes.js'
 import { hasCompleteToolPolicyEnvelope } from '../registry/tool-policy.js'
 import type { DeriveOutput } from '../request/derive.js'
 import { toProviderRequest } from '../request/to-provider.js'
@@ -19,9 +21,7 @@ import { finishAborted } from '../step/control.js'
 import { builtinBudgetPreflight, checkpointRoutine } from '../step/gate.js'
 import { claimFrom, inboxEvent } from '../step/inbox.js'
 import { admitInferenceRequest, prepareInferenceRequest } from '../step/inference.js'
-import { withPhase } from '../step/op-state.js'
 import type { SessionImpl } from '../step/session.js'
-import { CoreError } from '../types.js'
 import { loopChildStarts } from './child-starts.js'
 import { estimateLoopRequest } from './estimates.js'
 import { dispatchLoopEvent } from './events.js'
@@ -267,13 +267,17 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       await s.transition([], withPhase(op, { kind: 'tools', batch: { assistantSeq, calls: [] } }))
     }
   }
-  async function closeParked(events: import('../types.js').EventInput[]) {
+  async function closeParked(events: import('@agnes/core-common/types').EventInput[]) {
     const step = s.state.openStep.get(s.lane)
     await s.endTurn('parked', {
       events: [...events, ...(step ? [s.ev('step/end', { turn: step.turn, step: step.step })] : [])],
     })
   }
-  function invoke(call: LoopToolCall, signal: AbortSignal, parked: import('../types.js').EventInput[]) {
+  function invoke(
+    call: LoopToolCall,
+    signal: AbortSignal,
+    parked: import('@agnes/core-common/types').EventInput[],
+  ) {
     return s.invokeTool(call.name, call.args, {
       signal,
       ...(call.invocationId ? { invocationId: call.invocationId } : {}),
@@ -286,7 +290,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
   async function executeOwned(call: LoopToolCall, signal: AbortSignal) {
     signal = AbortSignal.any([signal, s.ac.signal])
     await prepareTools(signal)
-    const parked: import('../types.js').EventInput[] = []
+    const parked: import('@agnes/core-common/types').EventInput[] = []
     try {
       return await invoke(call, signal, parked)
     } catch (error) {
@@ -507,7 +511,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
           signal = AbortSignal.any([signal, s.ac.signal])
           // Open one step before launching siblings; nested execution still enforces tool policy.
           await prepareTools(signal)
-          const parked: import('../types.js').EventInput[] = []
+          const parked: import('@agnes/core-common/types').EventInput[] = []
           const runtime = await s.toolRuntime()
           let failed = false
           let failure: unknown

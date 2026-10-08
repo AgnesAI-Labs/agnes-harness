@@ -1,8 +1,8 @@
+import { type OpStateObj, opMarkData, type ToolCallState, withPhase } from '@agnes/core-common/step/op-state'
+import type { IdMinter } from '@agnes/core-common/types'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { type OpStateObj, opMarkData, type ToolCallState, withPhase } from '../src/step/op-state.js'
 import type { SessionImpl } from '../src/step/session.js'
-import type { IdMinter } from '../src/types.js'
 import { fakeProvider, toolTurn } from './helpers/fake-provider.js'
 import { actor, openSession, openWorldTool, readTool } from './helpers/open-session.js'
 

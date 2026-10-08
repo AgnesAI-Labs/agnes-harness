@@ -134,7 +134,7 @@ describe('Task20 validates actual host profile assets and resolver output', () =
   it('accepts the real default local-dev resolved profile without repairing its shape', async () => {
     // Runtime import keeps this protocol-only schema project from acquiring a production dependency
     // on its consumer. Integration checks still call the actual host implementation in this repo.
-    const moduleUrl = new URL('../../host/src/profile/resolve.ts', import.meta.url).href
+    const moduleUrl = new URL('../../host-common/src/profile/resolve.ts', import.meta.url).href
     const { resolveProfile } = (await import(moduleUrl)) as {
       resolveProfile(inputs: unknown, env: unknown): Promise<unknown>
     }

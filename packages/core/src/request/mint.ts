@@ -1,4 +1,4 @@
-import type { Seq } from '../types.js'
+import type { Seq } from '@agnes/core-common/types'
 import type { PromptSection } from './contribute.js'
 
 // The assembled shape core derives and hands to the model layer. It is deliberately not protocol's

@@ -23,7 +23,7 @@ import { credentialRefFor, withTimeout } from './oauth-http-handler.js'
  * comment, which now also names this file) - never the SDK's own unguarded default `fetch`.
  */
 
-/** Structural subset of `packages/host/src/adapters/credential-store.ts`'s `CredentialStore`
+/** Structural subset of `packages/host-infrastructure/src/adapters/credential-store.ts`'s `CredentialStore`
  * (`read`/`putOAuth` only). Deliberately NOT importing that type from `@agnes/host` - same
  * decoupling reasoning as `oauth-http-handler.ts`'s own `OAuthCredentialStoreWriter`/
  * `OAuthStoredCredential` types (this package has no dependency on `@agnes/host` today). `read()`'s

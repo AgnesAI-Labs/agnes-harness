@@ -1,9 +1,9 @@
+import { defaultIds } from '@agnes/core-common/ids'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import type { RegisterRow } from '@agnes/core-ledger/log/storage'
+import { openTracked, registerRows, verifyRegisters } from '@agnes/core-ledger/reduce/tracker'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { defaultIds } from '../src/ids.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import type { RegisterRow } from '../src/log/storage.js'
-import { openTracked, registerRows, verifyRegisters } from '../src/reduce/tracker.js'
 import { sentFor } from './helpers/fake-provider.js'
 import { actor, openSession } from './helpers/open-session.js'
 

@@ -27,7 +27,8 @@
     "@agnes/base": "workspace:*",
     "@agnes/extension-api": "workspace:*",
     "@agnes/host": "workspace:*",
-    "@agnes/protocol": "workspace:*"
+    "@agnes/protocol": "workspace:*",
+    "@agnes/host-infrastructure": "workspace:*"
   },
   "dependencies": {
     "@sinclair/typebox": "0.34.33",

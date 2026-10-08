@@ -9,9 +9,9 @@ import {
   ToolRegistry,
 } from '@agnes/core'
 import { openSession, readTool } from '@agnes/core/testkit'
+import { createSqliteStorage, type SqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 import type { RequestBody } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
-import { createSqliteStorage, type SqliteStorage } from '../../src/adapters/storage-sqlite.js'
 
 const T0 = 1_757_203_200_000
 

@@ -1,10 +1,10 @@
+import { canonicalJson, sha256Hex, utf8 } from '@agnes/core-common/request/hash'
+import { CoreError } from '@agnes/core-common/types'
 import { inspectJsonData, validateAgainst } from '@agnes/protocol'
 import { BeforeRequestReturn, ContextReturn } from '@agnes/protocol/gen/hooks'
 import { isLedgerPreparedRequestMedia } from '../orchestrator/request-media-surface.js'
-import { CoreError } from '../types.js'
 import type { PromptSection } from './contribute.js'
 import { type DeriveOutput, remintAfterBeforeRequest, sanitize, sanitizeJson } from './derive.js'
-import { canonicalJson, sha256Hex, utf8 } from './hash.js'
 import { isLedgerRequest, type RequestBody } from './mint.js'
 
 export type ContextResult = ContextReturn

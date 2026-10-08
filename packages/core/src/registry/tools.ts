@@ -1,8 +1,8 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import { CoreError, type Disposer, type Seq } from '@agnes/core-common/types'
+import { OwnedRegistryTable } from '@agnes/core-ledger/registry/owner-batch'
 import { checkToolDef, TOOL_DESCRIPTION_MAX_LENGTH, type ToolDef, type ToolMeta } from '@agnes/extension-api'
 import { sanitize } from '../request/derive.js'
-import { canonicalJson, sha256Hex } from '../request/hash.js'
-import { CoreError, type Disposer, type Seq } from '../types.js'
-import { OwnedRegistryTable } from './owner-batch.js'
 
 export type TrustTier = 'builtin' | 'trusted'
 export type ExecutionDomain = 'workspace' | 'host-computer-use'

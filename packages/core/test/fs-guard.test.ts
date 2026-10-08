@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { CoreError } from '@agnes/core-common/types'
 import {
   assertFsEnforces,
   decideFsPath,
@@ -7,12 +8,11 @@ import {
   type FsRule,
   isDenial,
   validateFsPolicy,
-} from '../src/effects/fs-guard.js'
-import type { FsOps } from '../src/effects/tool-context.js'
+} from '@agnes/core-effects/effects/fs-guard'
+import type { FsOps } from '@agnes/core-effects/effects/tool-context'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { describe, expect, it } from 'vitest'
 import { Kernel } from '../src/kernel.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import { presetDefaults } from '../src/step/preset.js'
-import { CoreError } from '../src/types.js'
 import { fencedFs, testFsPolicy } from '../testkit/fenced-fs.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider } from './helpers/fake-provider.js'

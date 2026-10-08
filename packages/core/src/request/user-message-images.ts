@@ -1,3 +1,4 @@
+import { CoreError } from '@agnes/core-common/types'
 import type { ContentBlock } from '@agnes/protocol'
 import {
   decodeSafeImages,
@@ -5,7 +6,6 @@ import {
   USER_MESSAGE_IMAGE_LIMITS,
   validateUserAttachments,
 } from '@agnes/protocol-validation'
-import { CoreError } from '../types.js'
 
 type UserImage = Extract<ContentBlock, { type: 'image' }>
 

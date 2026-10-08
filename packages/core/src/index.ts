@@ -2,9 +2,6 @@
 // re-exported here so a caller assembling a session against core does not have to reach past core
 // for the single interface its step machine calls every step.
 
-export { DEFAULT_LOOP } from '@agnes/extension-api'
-export type { Provider } from '@agnes/protocol'
-export { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 export {
   applyChildAgentConfig,
   assertChildAgentAllowed,
@@ -13,26 +10,22 @@ export {
   normalizeChildAgentAllowlist,
   resetChildAgentAllowlists,
   setChildAgentAllowlist,
-} from './child/allowlist.js'
-export { capToMicrocredits, chargeToMicrocredits, conservativeModelCredits } from './child/credits.js'
-export type { ExternalChildControls } from './child/directory.js'
+} from '@agnes/core-child-control/child/allowlist'
+export {
+  capToMicrocredits,
+  chargeToMicrocredits,
+  conservativeModelCredits,
+} from '@agnes/core-child-control/child/credits'
+export type { ExternalChildControls } from '@agnes/core-child-control/child/directory'
 export {
   externalChild,
   externalChildren,
   trackExternalChild,
   updateExternalChild,
-} from './child/directory.js'
-export { createChildEventQueue } from './child/events.js'
-export { bindChildAgentSession, runLoopChild } from './child/loop-port.js'
-export type { InProcessChildBackend, ResidentStart, ResidentTurn } from './child/provider.js'
-export {
-  IN_PROCESS_CHILD_CAPABILITIES,
-  IN_PROCESS_CHILD_PROVIDER_ID,
-  inProcessChildAgentProvider,
-} from './child/provider.js'
-export { bindChildFactory, childBackend, unbindChildFactory } from './child/sessions.js'
-export type { ChildControlStore } from './child/store.js'
-export { hasChildControl, recoverCreatingChildAttempts } from './child/store.js'
+} from '@agnes/core-child-control/child/directory'
+export { createChildEventQueue } from '@agnes/core-child-control/child/events'
+export type { ChildControlStore } from '@agnes/core-child-control/child/store'
+export { hasChildControl, recoverCreatingChildAttempts } from '@agnes/core-child-control/child/store'
 export type {
   BeginChildAttemptInput,
   CancelCreatingChildInput,
@@ -49,8 +42,28 @@ export type {
   ReserveResult,
   SettleRequest,
   TreeUsage,
-} from './child/types.js'
-export { canTransitionChildState, isTerminalChildState } from './child/types.js'
+} from '@agnes/core-child-control/child/types'
+export { canTransitionChildState, isTerminalChildState } from '@agnes/core-child-control/child/types'
+export { defaultIds } from '@agnes/core-common/ids'
+export {
+  type LoopPluginContext,
+  LoopRegistry,
+  loopKey,
+  registerLoopPlugin,
+} from '@agnes/core-common/loop/registry'
+export { canonicalJson, sha256Hex, utf8 } from '@agnes/core-common/request/hash'
+export type {
+  CheckpointPhase,
+  OpStateMeta,
+  OpStateObj,
+  OpStatePhase,
+  ToolCallState,
+  ToolsPhase,
+} from '@agnes/core-common/step/op-state'
+export { newOpState, withPhase } from '@agnes/core-common/step/op-state'
+export type { PresetView } from '@agnes/core-common/step/preset'
+export { presetDefaults, readPreset } from '@agnes/core-common/step/preset'
+export * from '@agnes/core-common/types'
 export {
   assertFsEnforces,
   assertNotDenied,
@@ -63,43 +76,60 @@ export {
   type FsRuleSource,
   isDenial,
   validateFsPolicy,
-} from './effects/fs-guard.js'
-export { platformFacts, platformView } from './effects/platform-facts.js'
-export { type RemoteTransport, RemoteTransportClosed } from './effects/remote-transport.js'
-export { argvHash } from './effects/runtime.js'
+} from '@agnes/core-effects/effects/fs-guard'
+export { platformFacts, platformView } from '@agnes/core-effects/effects/platform-facts'
+export { type RemoteTransport, RemoteTransportClosed } from '@agnes/core-effects/effects/remote-transport'
+export { argvHash } from '@agnes/core-effects/effects/runtime'
 // The model seam itself is re-exported from protocol at the top of this file rather than restated
 // here: protocol publishes the interface, and a second declaration would be the one both sides
 // disagree with.
-export type { BatchCall } from './effects/scheduler.js'
-export { scheduleBatch } from './effects/scheduler.js'
-export * from './effects/seams.js'
+export type { BatchCall } from '@agnes/core-effects/effects/scheduler'
+export { scheduleBatch } from '@agnes/core-effects/effects/scheduler'
+export * from '@agnes/core-effects/effects/seams'
 export type {
   ChildHandle,
   ChildrenFactory,
   ChildStatus,
   FsOps,
   ToolContextDeps,
-} from './effects/tool-context.js'
-export { buildToolContext } from './effects/tool-context.js'
+} from '@agnes/core-effects/effects/tool-context'
+export { buildToolContext } from '@agnes/core-effects/effects/tool-context'
 export type {
   HostDispatchObservation,
   HostToolDispatchInput,
   HostToolDispatchPort,
-} from './effects/tool-dispatch.js'
-export { defaultToolPolicy, ToolPolicyRegistry, ToolRuntimeRegistry } from './effects/tool-providers.js'
-export { defaultToolRuntimeProvider } from './effects/tool-runtime.js'
-export type { SeamFailure } from './effects/wrap.js'
-export { SeamRuntime, withTimeout } from './effects/wrap.js'
-export { HookBlockedError } from './hooks/block.js'
-export { type DispatchContext, HOOK_UNHANDLED, HookEngine, WORKSPACE_HOOK_SANDBOX } from './hooks/engine.js'
-export { type SessionHookInputs, SessionHookPort } from './hooks/port.js'
-export { defaultIds } from './ids.js'
-export { CORE_CHECKS } from './invariants/core-checks.js'
-export type { InvariantCheck, Violation } from './invariants/registry.js'
-export { InvariantRegistry } from './invariants/registry.js'
-export type { CoreDiagName, KernelOptions, SessionOptions } from './kernel.js'
-export { CORE_DIAG_NAMES, Kernel, KernelChildren } from './kernel.js'
-export type { IntegrityState } from './log/integrity.js'
+} from '@agnes/core-effects/effects/tool-dispatch'
+export {
+  defaultToolPolicy,
+  ToolPolicyRegistry,
+  ToolRuntimeRegistry,
+} from '@agnes/core-effects/effects/tool-providers'
+export { defaultToolRuntimeProvider } from '@agnes/core-effects/effects/tool-runtime'
+export type { SeamFailure } from '@agnes/core-effects/effects/wrap'
+export { SeamRuntime, withTimeout } from '@agnes/core-effects/effects/wrap'
+export type {
+  ApprovalWorkspaceContext,
+  CanonicalWorkspaceId,
+  CheckpointWorkspaceContext,
+  ChildWorkspaceLifecycle,
+  ChildWorkspaceRuntimePort,
+  OpaqueSandboxConfine,
+  RevocableFsOps,
+  SessionWorkspaceLifecycle,
+  SessionWorkspaceRuntime,
+  WorkspaceHookSandbox,
+  WorkspaceInvocationLease,
+  WorkspaceInvocationPort,
+  WorkspaceInvocationSource,
+  WorkspaceInvocationToken,
+  WorkspaceInvocationView,
+  WorkspacePublicationDispatch,
+} from '@agnes/core-effects/workspace/runtime'
+export { createWorkspaceInvocationPort } from '@agnes/core-effects/workspace/runtime'
+export { CORE_CHECKS } from '@agnes/core-ledger/invariants/core-checks'
+export type { InvariantCheck, Violation } from '@agnes/core-ledger/invariants/registry'
+export { InvariantRegistry } from '@agnes/core-ledger/invariants/registry'
+export type { IntegrityState } from '@agnes/core-ledger/log/integrity'
 export {
   INTEGRITY_PAGE_SIZE,
   LEDGER_INTEGRITY_ALGORITHM,
@@ -107,12 +137,12 @@ export {
   prepareIntegrity,
   verifyIntegrityRows,
   verifyLedger,
-} from './log/integrity.js'
-export { MemoryStorage } from './log/memory-storage.js'
-export { checkRelations, makeRelationCheck } from './log/relations.js'
-export { type ScanRead, scanAll, scanPages } from './log/scan-pages.js'
-export type { AppendOptions, OpenLogOptions, Timers } from './log/session-log.js'
-export { SessionLogImpl } from './log/session-log.js'
+} from '@agnes/core-ledger/log/integrity'
+export { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+export { checkRelations, makeRelationCheck } from '@agnes/core-ledger/log/relations'
+export { type ScanRead, scanAll, scanPages } from '@agnes/core-ledger/log/scan-pages'
+export type { AppendOptions, OpenLogOptions, Timers } from '@agnes/core-ledger/log/session-log'
+export { SessionLogImpl } from '@agnes/core-ledger/log/session-log'
 // Named rather than `export *`: a star export puts `cacheKey` and `RegisterMap` on the package's
 // root surface, and `cacheKey` alone is enough for a consumer to assemble a second register map
 // keyed by its own spelling of the composite key. That is the defect RegisterMap was introduced to
@@ -129,10 +159,55 @@ export type {
   RegisterRow,
   ScanQuery,
   StorageAdapter,
-} from './log/storage.js'
-export { registerKey, SCAN_PAGE_MAX, scanTruncated } from './log/storage.js'
+} from '@agnes/core-ledger/log/storage'
+export { registerKey, SCAN_PAGE_MAX, scanTruncated } from '@agnes/core-ledger/log/storage'
+export type { ProjectionCacheLine, ProjectionDef, ProjectionSnapshot } from '@agnes/core-ledger/project/named'
+export { ProjectionRegistry } from '@agnes/core-ledger/project/named'
+export type { RlafDump, RlafRange } from '@agnes/core-ledger/project/rlaf'
+export { exportRlaf } from '@agnes/core-ledger/project/rlaf'
+export type { SurfaceNode } from '@agnes/core-ledger/project/surface'
+export { computeSurface, SurfaceCache, validateReplace } from '@agnes/core-ledger/project/surface'
+export type {
+  CoreUIProjectionUpdate,
+  CoreUITimeline,
+  CoreUITimelinePatch,
+  SlotFill,
+  SlotFillRunner,
+  SlotTrigger,
+  UIOptions,
+  UIProjectionUsageOptions,
+} from '@agnes/core-ledger/project/ui'
+export { projectUI } from '@agnes/core-ledger/project/ui'
+export type { UsageProjectionInput } from '@agnes/core-ledger/project/usage'
+export { contextTokensAtCut, projectUsage } from '@agnes/core-ledger/project/usage'
+export { foldEvents, initialState, reduce } from '@agnes/core-ledger/reduce/reducer'
+export type * from '@agnes/core-ledger/reduce/shapes'
+export type { EffectNode, EffectTree, LedgerState, RegisterCell } from '@agnes/core-ledger/reduce/state'
+export { effectTree } from '@agnes/core-ledger/reduce/state'
+export type { OpenTrackedOptions } from '@agnes/core-ledger/reduce/tracker'
+export { openTracked, pendingEffects, StateTracker, verifyRegisters } from '@agnes/core-ledger/reduce/tracker'
+export {
+  OwnedRegistryTable,
+  type PreparedOwnerReplacement,
+  prepareOwnerReplacement,
+} from '@agnes/core-ledger/registry/owner-batch'
+export { DEFAULT_LOOP } from '@agnes/extension-api'
+export type { Provider } from '@agnes/protocol'
+export { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
+export { bindChildAgentSession, runLoopChild } from './child/loop-port.js'
+export type { InProcessChildBackend, ResidentStart, ResidentTurn } from './child/provider.js'
+export {
+  IN_PROCESS_CHILD_CAPABILITIES,
+  IN_PROCESS_CHILD_PROVIDER_ID,
+  inProcessChildAgentProvider,
+} from './child/provider.js'
+export { bindChildFactory, childBackend, unbindChildFactory } from './child/sessions.js'
+export { HookBlockedError } from './hooks/block.js'
+export { type DispatchContext, HOOK_UNHANDLED, HookEngine, WORKSPACE_HOOK_SANDBOX } from './hooks/engine.js'
+export { type SessionHookInputs, SessionHookPort } from './hooks/port.js'
+export type { CoreDiagName, KernelOptions, SessionOptions } from './kernel.js'
+export { CORE_DIAG_NAMES, Kernel, KernelChildren } from './kernel.js'
 export { LoopEventRegistry } from './loop/events.js'
-export { type LoopPluginContext, LoopRegistry, loopKey, registerLoopPlugin } from './loop/registry.js'
 export {
   AUXILIARY_VISION_MAX_EDGE,
   AUXILIARY_VISION_PURPOSE,
@@ -163,39 +238,9 @@ export {
   executeAuxiliaryVision,
 } from './orchestrator/auxiliary-vision-executor.js'
 export { REQUEST_MEDIA_ARTIFACT_RECLAIMED } from './orchestrator/request-media-surface.js'
-export type { ProjectionCacheLine, ProjectionDef, ProjectionSnapshot } from './project/named.js'
-export { ProjectionRegistry } from './project/named.js'
-export type { RlafDump, RlafRange } from './project/rlaf.js'
-export { exportRlaf } from './project/rlaf.js'
-export type { SurfaceNode } from './project/surface.js'
-export { computeSurface, SurfaceCache, validateReplace } from './project/surface.js'
-export type {
-  CoreUIProjectionUpdate,
-  CoreUITimeline,
-  CoreUITimelinePatch,
-  SlotFill,
-  SlotFillRunner,
-  SlotTrigger,
-  UIOptions,
-  UIProjectionUsageOptions,
-} from './project/ui.js'
-export { projectUI } from './project/ui.js'
-export type { UsageProjectionInput } from './project/usage.js'
-export { contextTokensAtCut, projectUsage } from './project/usage.js'
-export { foldEvents, initialState, reduce } from './reduce/reducer.js'
-export type * from './reduce/shapes.js'
-export type { EffectNode, EffectTree, LedgerState, RegisterCell } from './reduce/state.js'
-export { effectTree } from './reduce/state.js'
-export type { OpenTrackedOptions } from './reduce/tracker.js'
-export { openTracked, pendingEffects, StateTracker, verifyRegisters } from './reduce/tracker.js'
 export type { RefineLimits } from './refine/apply.js'
 export { applyRefine, rollbackRefine } from './refine/apply.js'
 export { HookRegistry, type HookSnapshot } from './registry/hooks.js'
-export {
-  OwnedRegistryTable,
-  type PreparedOwnerReplacement,
-  prepareOwnerReplacement,
-} from './registry/owner-batch.js'
 export { type RegisteredResource, ResourceRegistry } from './registry/resources.js'
 export { type RuntimeSlotFill, SlotRegistry } from './registry/slots.js'
 export type { ResolvedToolPolicyEnvelope } from './registry/tool-policy.js'
@@ -214,7 +259,6 @@ export type { ContractRef, DeriveInput, DeriveOutput, RequestHeaderData } from '
 export { deriveRequest, headerEquals, sanitize, wrapUntrusted } from './request/derive.js'
 export type { EnvelopeCache } from './request/envelope-cache.js'
 export { createEnvelopeCache } from './request/envelope-cache.js'
-export { canonicalJson, sha256Hex, utf8 } from './request/hash.js'
 // Only the branded type and its predicate. The minting function and the unbranded body type stay
 // inside the package on purpose: exporting the body type would hand every consumer the ingredient
 // brand exists to withhold, which is the ability to present a request that was never derived.
@@ -242,17 +286,6 @@ export type { EnqueueMsg } from './step/inbox.js'
 export { claimFrom, inboxEvent } from './step/inbox.js'
 export { estimateTokens } from './step/inference.js'
 export { modelAllowsTool } from './step/model-tools.js'
-export type {
-  CheckpointPhase,
-  OpStateMeta,
-  OpStateObj,
-  OpStatePhase,
-  ToolCallState,
-  ToolsPhase,
-} from './step/op-state.js'
-export { newOpState, withPhase } from './step/op-state.js'
-export type { PresetView } from './step/preset.js'
-export { presetDefaults, readPreset } from './step/preset.js'
 export type { PreviewDelta, PreviewSnapshot } from './step/preview.js'
 export type { CoreOpName } from './step/reentry.js'
 export { CORE_OPS, replacementFor, validateReplacements } from './step/reentry.js'
@@ -287,23 +320,3 @@ export type {
 export { noCompaction, noopHooks, SessionImpl } from './step/session.js'
 export type { ExecOpts, PlannedCall } from './step/tools.js'
 export { approveAndExecute, runToolsPhase } from './step/tools.js'
-export * from './types.js'
-export type {
-  ApprovalWorkspaceContext,
-  CanonicalWorkspaceId,
-  CheckpointWorkspaceContext,
-  ChildWorkspaceLifecycle,
-  ChildWorkspaceRuntimePort,
-  OpaqueSandboxConfine,
-  RevocableFsOps,
-  SessionWorkspaceLifecycle,
-  SessionWorkspaceRuntime,
-  WorkspaceHookSandbox,
-  WorkspaceInvocationLease,
-  WorkspaceInvocationPort,
-  WorkspaceInvocationSource,
-  WorkspaceInvocationToken,
-  WorkspaceInvocationView,
-  WorkspacePublicationDispatch,
-} from './workspace/runtime.js'
-export { createWorkspaceInvocationPort } from './workspace/runtime.js'

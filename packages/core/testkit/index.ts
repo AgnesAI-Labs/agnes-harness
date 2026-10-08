@@ -2,8 +2,8 @@
 // inside test/ so a consumer imports them by package path instead of by a relative path into this
 // package's test tree.
 
+export { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 export { deferredResultProvenance } from '../src/execution/turn/deferred.js'
-export { MemoryStorage } from '../src/log/memory-storage.js'
 export {
   type FakeProvider,
   fakeProvider,

@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { stampFor } from '@agnes/ai/testkit'
 import { testFsPolicy } from '@agnes/core/testkit'
+import type { SessionRecovery } from '@agnes/host-runtime/session'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { SessionRecovery } from '../src/session.js'
 import { createTestHost, startTurn } from '../testkit/index.js'
 
 /**

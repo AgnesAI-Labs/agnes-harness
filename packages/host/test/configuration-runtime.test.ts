@@ -3,8 +3,8 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getApiKeyProvider } from '@agnes/ai'
+import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import { expect, it } from 'vitest'
-import { createConfigurationService } from '../src/configuration.js'
 import { createTestHost, runOnce } from '../testkit/index.js'
 
 it('binds real model calls to account credentials and preserves a running Host after default changes', async () => {

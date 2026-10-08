@@ -2,9 +2,9 @@
 // commit and after each child is created, every key the scenario has touched is opened by a fresh
 // writer from a copy of the store, replaying the whole ledger. Any open that fails is a legal state
 // the open-time checks refuse.
-import { defaultIds } from '../src/ids.js'
-import type { CommitTx, StorageAdapter } from '../src/log/storage.js'
-import { openTracked } from '../src/reduce/tracker.js'
+import { defaultIds } from '@agnes/core-common/ids'
+import type { CommitTx, StorageAdapter } from '@agnes/core-ledger/log/storage'
+import { openTracked } from '@agnes/core-ledger/reduce/tracker'
 import { recordTransitions } from './record-transitions.js'
 
 export type SweepStore = {

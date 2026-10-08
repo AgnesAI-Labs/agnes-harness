@@ -1,6 +1,6 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import type { ModelRecord, RequestBody, TokenCounts } from '@agnes/protocol'
 import { decodeSafeImageBytes } from '@agnes/protocol-validation'
-import { canonicalJson, sha256Hex } from '../request/hash.js'
 import { isLedgerPreparedRequestMedia, type LedgerPreparedRequestMedia } from './request-media-surface.js'
 
 export const AUXILIARY_VISION_MAX_EDGE = 1456

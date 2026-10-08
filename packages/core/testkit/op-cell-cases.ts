@@ -1,10 +1,10 @@
 // Cases for the program counter written as a register cell beside the rows, run against any
 // storage: the in-memory reference and the durable adapter must behave the same way.
 import assert from 'node:assert/strict'
-import { scanAll } from '../src/log/scan-pages.js'
-import type { CommitTx, StorageAdapter } from '../src/log/storage.js'
-import { canonicalJson } from '../src/request/hash.js'
-import type { CoreError, Event, EventInput } from '../src/types.js'
+import { canonicalJson } from '@agnes/core-common/request/hash'
+import type { CoreError, Event, EventInput } from '@agnes/core-common/types'
+import { scanAll } from '@agnes/core-ledger/log/scan-pages'
+import type { CommitTx, StorageAdapter } from '@agnes/core-ledger/log/storage'
 import { fakeProvider, textTurn } from '../test/helpers/fake-provider.js'
 import { actor, openSession } from '../test/helpers/open-session.js'
 import { encodeLedgerState } from './encode-ledger-state.js'

@@ -1,3 +1,7 @@
+import { canonicalJson, sha256Hex, utf8 } from '@agnes/core-common/request/hash'
+import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
+import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
+import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
 import type { ToolDef } from '@agnes/extension-api'
 import type { RequestHeader, ThinkingLevel } from '@agnes/protocol'
 import type { RequestMediaHashMaterial } from '../orchestrator/request-media.js'
@@ -5,16 +9,12 @@ import {
   isLedgerPreparedRequestMedia,
   type LedgerPreparedRequestMedia,
 } from '../orchestrator/request-media-surface.js'
-import type { SurfaceNode } from '../project/surface.js'
-import type { HarnessEntry } from '../reduce/shapes.js'
-import { CoreError, type EventInput, type Seq } from '../types.js'
 import {
   type AuxiliaryVisionDerivedText,
   consumeAuxiliaryVisionDerivedText,
 } from './auxiliary-vision-derived-text.js'
 import { harnessSections, type Merged, type PromptSection } from './contribute.js'
 import type { EnvelopeCache } from './envelope-cache.js'
-import { canonicalJson, sha256Hex, utf8 } from './hash.js'
 import { type InlineImagePolicy, selectInlineImages } from './inline-images.js'
 import { type LedgerRequest, mintFrom, type RequestBody, type RequestMessage } from './mint.js'
 

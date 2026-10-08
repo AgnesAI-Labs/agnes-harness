@@ -2,9 +2,9 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
+import type { Prompter } from '@agnes/host'
 import type { InferenceEvent, ModelRecord } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { Prompter } from '../src/index.js'
 import { ASSEMBLY_STEPS, crashAtEveryStep, createTestHost, runOnce } from '../testkit/index.js'
 
 /** One scripted turn: ScriptedProvider prepends `sent`, so an answer and a stop are all it needs. */

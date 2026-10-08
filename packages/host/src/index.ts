@@ -8,124 +8,117 @@ export {
   scanAll,
   scanPages,
 } from '@agnes/core'
-export type { CapabilityReason, SessionCapability, SessionCapabilitySet } from '@agnes/protocol'
-export {
-  type CredentialFileEnforcement,
-  type CredentialKind,
-  CredentialStoreError,
-  type CredentialStoreReason,
-  credentialFileEnforcement,
-} from './adapters/credential-files.js'
-export {
-  type ApiKeyCredentialV1,
-  type CodexCredentialV2,
-  type CreateCredentialStoreOptions,
-  type CredentialStore,
-  type CredentialWriter,
-  createCredentialStore,
-  type OAuthCredential,
-  type OAuthCredentialV1,
-  type StoredCredential,
-  type StoredCredentialV1,
-  type SubscriptionCredentialV2,
-} from './adapters/credential-store.js'
-export { DDL } from './adapters/ddl.js'
-export {
-  type DetachedChild,
-  releaseDetachedProcess,
-  spawnDetachedProcess,
-} from './adapters/detached-process.js'
-export { createExec, type ExecAdapter, type ExecResult } from './adapters/exec.js'
-export { resolveFileSecretsDirectory } from './adapters/file-secrets-dir.js'
-export { createFs, type HostFs } from './adapters/fs.js'
-export {
-  type AdapterBundle,
-  openAdapters,
-  type Prompter,
-  type SeamAdapters,
-  toSeamAdapters,
-} from './adapters/index.js'
-export {
-  CAPABILITY_IDS,
-  type CapabilityId,
-  type CapabilityLevel,
-  createPlatform,
-  createPosixPlatform,
-  createWin32Platform,
-  type PlatformBackend,
-} from './adapters/platform.js'
-export { resolveConfiguredPowerShell } from './adapters/powershell.js'
-export type { ProcessIdentity } from './adapters/process-identity.js'
-export { defaultProcessIdentity } from './adapters/process-identity-default.js'
-export {
-  composeSecrets,
-  createSecretsEnv,
-  createSecretsFile,
-  parseSecretRef,
-  type SecretResolver,
-} from './adapters/secrets.js'
-export { openConfiguredPersistence, sqlitePersistenceProvider } from './adapters/storage-provider.js'
-export {
-  createSqliteStorage,
-  type SqliteStorage,
-  type SqlParam,
-  type TableHandle,
-  type TableStore,
-} from './adapters/storage-sqlite.js'
-export { createAdminSessionSelection, type HostAdminSessionCatalog } from './admin-session-selection.js'
-export {
-  type ApprovalGrantBinding,
-  type ApprovalGrantManagement,
-  type ApprovalGrantStore,
-  createApprovalGrantStore,
-} from './approval-grants.js'
 export {
   ARTIFACT_RECLAIMED_FAILURE,
   createLocalArtifactReadStore,
   type LocalArtifactReadStore,
-} from './artifact-read-store.js'
-export { ChildAgentRegistry, childAgentCatalog } from './assemble/child-agents.js'
-export { CompactionEngineRegistry, compactionEngineCatalog } from './assemble/compaction-engines.js'
-// MCP-ROWS stage 2b step 3 prep: worker-runtime needs this to build the rows `Assembled['extensionRows']`
-// takes (`prepare({..., dynamic})`) without reaching into Host's internal assemble/ directory.
-export type { DynamicExtension } from './assemble/ext-rows.js'
-export { ModelAdapterRegistry, modelAdapterCatalog } from './assemble/model-adapters.js'
-export * from './assemble/packages.js'
+} from '@agnes/host-artifacts/artifact-read-store'
+export {
+  type ComputerUseArtifactGcRun,
+  type ComputerUseArtifactGcRuntime,
+  createComputerUseArtifactGcRuntime,
+} from '@agnes/host-artifacts/computer-use-artifact-gc'
+export {
+  composeProductionRequestMedia,
+  createProductionImageInputTokenFallback,
+  type ProductionRequestMediaConfiguration,
+} from '@agnes/host-artifacts/request-media-runtime'
 export {
   installProviderRegistry,
   installProviders,
   ProviderRegistry,
   ProvidersService,
-} from './assemble/provider-registry.js'
+} from '@agnes/host-common/assemble/provider-registry'
+export * from '@agnes/host-common/command-policy'
+export * from '@agnes/host-common/errors'
 export {
-  applyProviderSelections,
-  PROVIDER_KINDS,
-  readProviderSelection,
-  readProviderSelections,
-} from './assemble/provider-selection.js'
-export * from './assemble/routes.js'
-export type { HostPluginTreeBase } from './assemble/seams-cordis.js'
-export { ASSEMBLY_STEPS, type AssembleDeps, type Assembled, type AssemblyStep, assemble } from './assemble.js'
-export * from './audit.js'
+  defaultVerifyIntegrity,
+  type LockAudit,
+  lockState,
+  snapshotPolicy,
+  verifyLockIntegrity,
+} from '@agnes/host-common/packages/lock-state'
 export {
-  childEnginePluginLayers,
-  loadChildEnginePluginLayers,
-  overlayChildEngineTarget,
-} from './child-engine-layers.js'
+  emptyLock,
+  type LockEntry,
+  type Lockfile,
+  lockPath,
+  readLock,
+  withLock,
+  writeLock,
+} from '@agnes/host-common/packages/lockfile'
 export {
-  type ChildCandidate,
-  listChildCandidates,
-  maintenanceTick,
-  type RepairResult,
-  repairChildCandidates,
-  sessionsDbPath,
-} from './child-maintenance.js'
-export * from './command-policy.js'
+  createPackageManager,
+  type ManagerOptions,
+  type PackageManager,
+  type PackageStatus,
+  readManifestIn,
+} from '@agnes/host-common/packages/manager'
+export {
+  type ExecFn,
+  type FetchedSource,
+  fetchSource,
+  hashDirectory,
+  type PackageSource,
+  packageDir,
+  parseSource,
+} from '@agnes/host-common/packages/sources'
+export {
+  isDangerous,
+  LICENSE_ALLOWLIST,
+  manifestCapabilities,
+  runTrustGate,
+  verifyInstalledIntegrity,
+} from '@agnes/host-common/packages/trust-gate'
+export {
+  hashWorkspace,
+  readDeployManifest,
+  readProfileFragment,
+  verifyWorkspace,
+  type WorkspaceVerification,
+} from '@agnes/host-common/packages/workspace'
+export {
+  agnesHome,
+  cacheDir,
+  dataDir,
+  fileSecretsDir,
+  hasLegacySessionsDb,
+  inDataDir,
+  legacySessionsDbPath,
+  ownStateRoots,
+} from '@agnes/host-common/paths'
+export * from '@agnes/host-common/presets/index'
+export { canonicalJson, sha256hex } from '@agnes/host-common/profile/canonical'
+export * from '@agnes/host-common/profile/composition'
+export { DEFAULT_COMPUTER_USE } from '@agnes/host-common/profile/computer-use'
+export { expandHome, hashInput, mergePackages, resolveProfile } from '@agnes/host-common/profile/resolve'
+export {
+  assertNoReservedRouteName,
+  BUILTIN_PACKAGES,
+  checkTemplateShape,
+  loadTemplate,
+  RESERVED_ROUTE_NAMES,
+  TEMPLATE_NAMES,
+} from '@agnes/host-common/profile/templates'
+export type * from '@agnes/host-common/profile/types'
+export * from '@agnes/host-common/publication-dispatch'
+export {
+  type PublicationCloseOptions,
+  PublicationGate,
+  type PublicationReadTicket,
+} from '@agnes/host-common/publication-gate'
+export * from '@agnes/host-common/quiet-state'
+export {
+  type AuthenticatedWorkspaceBindingEnvelope,
+  CliWorkspaceAuthority,
+  type WorkspaceBinding,
+} from '@agnes/host-common/workspace-authority'
+export * from '@agnes/host-common/workspace-policy'
 export {
   type ComputerUseAppAdmissionDecision,
   type ComputerUseResolvedAppIdentity,
   evaluateComputerUseAppAdmission,
-} from './computer-use/app-admission.js'
+} from '@agnes/host-computer-use/computer-use/app-admission'
 export {
   type ComputerUseDriverArchitecture,
   type ComputerUseDriverLock,
@@ -140,8 +133,8 @@ export {
   evaluateFixedComputerUsePlatformAdmission,
   inspectComputerUseDriverLock,
   inspectFixedComputerUseDriverLock,
-} from './computer-use/driver-lock.js'
-export { createSqliteComputerUseEffectStore } from './computer-use/effect-store-sqlite.js'
+} from '@agnes/host-computer-use/computer-use/driver-lock'
+export { createSqliteComputerUseEffectStore } from '@agnes/host-computer-use/computer-use/effect-store-sqlite'
 export {
   type ComputerUseAttempt,
   type ComputerUseAttemptDecision,
@@ -162,13 +155,13 @@ export {
   evaluateComputerUseAttempt,
   evaluateComputerUseHostPolicy,
   evaluateComputerUseMutationClaim,
-} from './computer-use/host-enforcement.js'
+} from '@agnes/host-computer-use/computer-use/host-enforcement'
 export {
   activateExtractedLinuxComputerUseDriver,
   type ExtractedLinuxComputerUseDriver,
   extractLockedLinuxComputerUseDriver,
   type LinuxDriverArchiveDependencies,
-} from './computer-use/linux-driver-archive.js'
+} from '@agnes/host-computer-use/computer-use/linux-driver-archive'
 export {
   createLinuxComputerUseBackendProvider,
   createLinuxComputerUseSessionRuntime,
@@ -176,8 +169,8 @@ export {
   type LinuxComputerUseBackendDependencies,
   type LinuxComputerUseSession,
   type VerifiedLinuxComputerUseDriver,
-} from './computer-use/linux-driver-backend.js'
-export { downloadLockedLinuxComputerUseDriver } from './computer-use/linux-driver-download.js'
+} from '@agnes/host-computer-use/computer-use/linux-driver-backend'
+export { downloadLockedLinuxComputerUseDriver } from '@agnes/host-computer-use/computer-use/linux-driver-download'
 export {
   doctorLockedLinuxComputerUseDriver,
   installOrUpdateLockedLinuxComputerUseDriver,
@@ -187,17 +180,17 @@ export {
   type LinuxComputerUseDriverState,
   probeLinuxComputerUseDriverHealth,
   readLinuxComputerUseDriverState,
-} from './computer-use/linux-driver-install.js'
+} from '@agnes/host-computer-use/computer-use/linux-driver-install'
 export {
   type LinuxDriverVerifierDependencies,
   verifyLinuxComputerUseDriver,
-} from './computer-use/linux-driver-verifier.js'
+} from '@agnes/host-computer-use/computer-use/linux-driver-verifier'
 export {
   type LinuxDesktopAppIdentity,
   type LinuxLiveAppIdentity,
   linuxDesktopAppIdentitySync,
   linuxLiveAppIdentitySync,
-} from './computer-use/linux-live-app-identity.js'
+} from '@agnes/host-computer-use/computer-use/linux-live-app-identity'
 export {
   createHostLockedPackageMutationRuntime,
   type HostLockedPackageMutationBlocker,
@@ -208,7 +201,7 @@ export {
   type HostLockedPackageMutationStatus,
   type HostLockedPackageSafeExtractor,
   type HostLockedPackageSignatureVerifier,
-} from './computer-use/locked-package-mutation-runtime.js'
+} from '@agnes/host-computer-use/computer-use/locked-package-mutation-runtime'
 export {
   createMetadataLockedPackageOperationReceiptPort,
   createSqliteLockedPackageOperationReceiptPort,
@@ -216,13 +209,13 @@ export {
   type HostLockedPackageMutationKind,
   type HostLockedPackageOperationReceipt,
   type HostLockedPackageOperationReceiptPort,
-} from './computer-use/locked-package-receipts-sqlite.js'
+} from '@agnes/host-computer-use/computer-use/locked-package-receipts-sqlite'
 export {
   activateExtractedMacOSComputerUseDriver,
   type ExtractedMacOSComputerUseDriver,
   extractLockedMacOSComputerUseDriver,
   type MacOSDriverArchiveDependencies,
-} from './computer-use/macos-driver-archive.js'
+} from '@agnes/host-computer-use/computer-use/macos-driver-archive'
 export {
   createMacOSComputerUseBackendProvider,
   createMacOSComputerUseSessionRuntime,
@@ -231,8 +224,8 @@ export {
   type MacOSComputerUsePermissionStatus,
   probeMacOSComputerUsePermissions,
   type VerifiedMacOSComputerUseDriver,
-} from './computer-use/macos-driver-backend.js'
-export { downloadLockedMacOSComputerUseDriver } from './computer-use/macos-driver-download.js'
+} from '@agnes/host-computer-use/computer-use/macos-driver-backend'
+export { downloadLockedMacOSComputerUseDriver } from '@agnes/host-computer-use/computer-use/macos-driver-download'
 export {
   installOrUpdateLockedMacOSComputerUseDriver,
   type MacOSComputerUseDriverInstallDependencies,
@@ -240,28 +233,28 @@ export {
   type MacOSComputerUseDriverRecord,
   type MacOSComputerUseDriverState,
   readMacOSComputerUseDriverState,
-} from './computer-use/macos-driver-install.js'
+} from '@agnes/host-computer-use/computer-use/macos-driver-install'
 export {
   type MacOSDriverVerifierDependencies,
   verifyMacOSComputerUseDriver,
-} from './computer-use/macos-driver-verifier.js'
+} from '@agnes/host-computer-use/computer-use/macos-driver-verifier'
 export {
   type MacOSLiveAppIdentity,
   macosLiveAppIdentitySync,
   parseMacOSLiveAppIdentity,
-} from './computer-use/macos-live-app-identity.js'
+} from '@agnes/host-computer-use/computer-use/macos-live-app-identity'
 export {
   type ComputerUseRescueAction,
   type ComputerUseRescueReport,
   runComputerUseRescue,
-} from './computer-use/rescue.js'
+} from '@agnes/host-computer-use/computer-use/rescue'
 export {
   activateExtractedWindowsComputerUseDriver,
   type ExtractedWindowsComputerUseDriver,
   extractLockedWindowsComputerUseDriver,
   type ValidatedWindowsDriverArchiveFile,
   validateLockedWindowsComputerUseDriverArchive,
-} from './computer-use/windows-driver-archive.js'
+} from '@agnes/host-computer-use/computer-use/windows-driver-archive'
 export {
   type ComputerUseBackendDependencies,
   type ComputerUseBackendProvider,
@@ -271,12 +264,12 @@ export {
   type WindowsComputerUseArtifactSink,
   type WindowsComputerUseBackendDependencies,
   type WindowsComputerUseBackendProvider,
-} from './computer-use/windows-driver-backend.js'
+} from '@agnes/host-computer-use/computer-use/windows-driver-backend'
 export {
   type ComputerUseDownloadResponse,
   type ComputerUseDownloadTransport,
   downloadLockedWindowsComputerUseDriver,
-} from './computer-use/windows-driver-download.js'
+} from '@agnes/host-computer-use/computer-use/windows-driver-download'
 export {
   installOrUpdateLockedWindowsComputerUseDriver,
   readWindowsComputerUseDriverState,
@@ -286,30 +279,19 @@ export {
   type WindowsComputerUseDriverRecord,
   type WindowsComputerUseDriverRecoveryResult,
   type WindowsComputerUseDriverState,
-} from './computer-use/windows-driver-install.js'
+} from '@agnes/host-computer-use/computer-use/windows-driver-install'
 export {
   type VerifiedWindowsComputerUseDriver,
   verifyWindowsComputerUseDriver,
   type WindowsDriverVerifierDependencies,
-} from './computer-use/windows-driver-verifier.js'
-export {
-  type ComputerUseArtifactGcRun,
-  type ComputerUseArtifactGcRuntime,
-  createComputerUseArtifactGcRuntime,
-} from './computer-use-artifact-gc.js'
-export {
-  type ChildEnginesConfigurationService,
-  type ChildEnginesSnapshot,
-  ConfigurationError,
-  type ConfigurationErrorCode,
-  type ConfigurationService,
-  type ConfigurationServiceOptions,
-  createConfigurationService,
-  type SessionDefaultsConfigurationService,
-} from './configuration.js'
-export type { DeploymentPolicy, ResolvedDeployment } from './deploy/index.js'
-export { resolveDeployment } from './deploy/index.js'
-export * from './errors.js'
+} from '@agnes/host-computer-use/computer-use/windows-driver-verifier'
+// MCP-ROWS stage 2b step 3 prep: worker-runtime needs this to build the rows `Assembled['extensionRows']`
+// takes (`prepare({..., dynamic})`) without reaching into Host's internal assemble/ directory.
+export type { DynamicExtension } from '@agnes/host-extensions/assemble/ext-rows'
+export * from '@agnes/host-extensions/assemble/packages'
+export type { HostPluginTreeBase } from '@agnes/host-extensions/assemble/seams-cordis'
+export type { DeploymentPolicy, ResolvedDeployment } from '@agnes/host-extensions/deploy/index'
+export { resolveDeployment } from '@agnes/host-extensions/deploy/index'
 export {
   type ActivationBarrierSnapshot,
   ActivationInProgressError,
@@ -321,11 +303,11 @@ export {
   createExtensionActivationBarrier,
   type ExtensionActivationBarrier,
   type QueuedActivationInvocation,
-} from './ext-host/activation-barrier.js'
+} from '@agnes/host-extensions/ext-host/activation-barrier'
 export type {
   ExtensionIsolationMode,
   ExtensionIsolationOptions,
-} from './ext-host/hooks-isolation-assembly.js'
+} from '@agnes/host-extensions/ext-host/hooks-isolation-assembly'
 export {
   buildExtensionApi,
   checkApiRange,
@@ -340,141 +322,187 @@ export {
   resolveEntry,
   type ToolAuthority,
   type ToolPort,
-} from './ext-host/index.js'
+} from '@agnes/host-extensions/ext-host/index'
 export {
   isServicePreDispatchFailure,
   type ServiceAuthority,
   type ServiceEffectAdmission,
   type ServiceInspection,
-} from './ext-host/service-invocation.js'
-export { createHost, type Host, type HostOptions, type HostSession } from './host.js'
+} from '@agnes/host-extensions/ext-host/service-invocation'
+export * from '@agnes/host-extensions/resources/index'
+export type { McpManageBridge, McpManageInvocation } from '@agnes/host-extensions/resources/mcp-manage-port'
+export type {
+  PluginManageBridge,
+  PluginManageInvocation,
+} from '@agnes/host-extensions/resources/plugin-manage-port'
+export {
+  createSkillInstaller,
+  type SkillInstallAuthority,
+} from '@agnes/host-extensions/resources/skill-install'
+export { validInstallPathPolicy } from '@agnes/host-extensions/resources/skill-install-files'
+export type {
+  SkillInstallBridge,
+  SkillInstallInvocation,
+} from '@agnes/host-extensions/resources/skill-install-port'
+export {
+  type CredentialFileEnforcement,
+  type CredentialKind,
+  CredentialStoreError,
+  type CredentialStoreReason,
+  credentialFileEnforcement,
+} from '@agnes/host-infrastructure/adapters/credential-files'
+export {
+  type ApiKeyCredentialV1,
+  type CodexCredentialV2,
+  type CreateCredentialStoreOptions,
+  type CredentialStore,
+  type CredentialWriter,
+  createCredentialStore,
+  type OAuthCredential,
+  type OAuthCredentialV1,
+  type StoredCredential,
+  type StoredCredentialV1,
+  type SubscriptionCredentialV2,
+} from '@agnes/host-infrastructure/adapters/credential-store'
+export { DDL } from '@agnes/host-infrastructure/adapters/ddl'
+export {
+  type DetachedChild,
+  releaseDetachedProcess,
+  spawnDetachedProcess,
+} from '@agnes/host-infrastructure/adapters/detached-process'
+export { createExec, type ExecAdapter, type ExecResult } from '@agnes/host-infrastructure/adapters/exec'
+export { resolveFileSecretsDirectory } from '@agnes/host-infrastructure/adapters/file-secrets-dir'
+export { createFs, type HostFs } from '@agnes/host-infrastructure/adapters/fs'
+export {
+  CAPABILITY_IDS,
+  type CapabilityId,
+  type CapabilityLevel,
+  createPlatform,
+  createPosixPlatform,
+  createWin32Platform,
+  type PlatformBackend,
+} from '@agnes/host-infrastructure/adapters/platform'
+export { resolveConfiguredPowerShell } from '@agnes/host-infrastructure/adapters/powershell'
+export type { ProcessIdentity } from '@agnes/host-infrastructure/adapters/process-identity'
+export { defaultProcessIdentity } from '@agnes/host-infrastructure/adapters/process-identity-default'
+export {
+  composeSecrets,
+  createSecretsEnv,
+  createSecretsFile,
+  parseSecretRef,
+  type SecretResolver,
+} from '@agnes/host-infrastructure/adapters/secrets'
+export {
+  openConfiguredPersistence,
+  sqlitePersistenceProvider,
+} from '@agnes/host-infrastructure/adapters/storage-provider'
+export {
+  createSqliteStorage,
+  type SqliteStorage,
+  type SqlParam,
+  type TableHandle,
+  type TableStore,
+} from '@agnes/host-infrastructure/adapters/storage-sqlite'
+export {
+  createAdminSessionSelection,
+  type HostAdminSessionCatalog,
+} from '@agnes/host-infrastructure/admin-session-selection'
+export * from '@agnes/host-infrastructure/audit'
+export {
+  type ChildEnginesConfigurationService,
+  type ChildEnginesSnapshot,
+  ConfigurationError,
+  type ConfigurationErrorCode,
+  type ConfigurationService,
+  type ConfigurationServiceOptions,
+  createConfigurationService,
+  type SessionDefaultsConfigurationService,
+} from '@agnes/host-infrastructure/configuration'
+export * from '@agnes/host-infrastructure/sandbox-readiness-manager'
+export * from '@agnes/host-infrastructure/session-workspace-runtime'
+export {
+  resolveWorkspaceDirectory,
+  type WorkspaceDirectory,
+  WorkspaceDirectoryError,
+  type WorkspaceInvalidReason,
+} from '@agnes/host-infrastructure/workspace'
+export {
+  CompactionEngineRegistry,
+  compactionEngineCatalog,
+} from '@agnes/host-providers/assemble/compaction-engines'
+export { ModelAdapterRegistry, modelAdapterCatalog } from '@agnes/host-providers/assemble/model-adapters'
+export {
+  applyProviderSelections,
+  PROVIDER_KINDS,
+  readProviderSelection,
+  readProviderSelections,
+} from '@agnes/host-providers/assemble/provider-selection'
+export * from '@agnes/host-providers/assemble/routes'
+export * from '@agnes/host-providers/profile/composition-state'
+export { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
+export * from '@agnes/host-providers/runtime-target-publisher'
+export * from '@agnes/host-providers/runtime-target-report'
+export {
+  type AdapterBundle,
+  openAdapters,
+  type Prompter,
+  type SeamAdapters,
+  toSeamAdapters,
+} from '@agnes/host-runtime/adapters/index'
+export {
+  type ApprovalGrantBinding,
+  type ApprovalGrantManagement,
+  type ApprovalGrantStore,
+  createApprovalGrantStore,
+} from '@agnes/host-runtime/approval-grants'
+export {
+  ASSEMBLY_STEPS,
+  type AssembleDeps,
+  type Assembled,
+  type AssemblyStep,
+  assemble,
+} from '@agnes/host-runtime/assemble'
+export { ChildAgentRegistry, childAgentCatalog } from '@agnes/host-runtime/assemble/child-agents'
+export {
+  childEnginePluginLayers,
+  loadChildEnginePluginLayers,
+  overlayChildEngineTarget,
+} from '@agnes/host-runtime/child-engine-layers'
+export {
+  type ChildCandidate,
+  listChildCandidates,
+  maintenanceTick,
+  type RepairResult,
+  repairChildCandidates,
+  sessionsDbPath,
+} from '@agnes/host-runtime/child-maintenance'
+export { createHost, type Host, type HostOptions, type HostSession } from '@agnes/host-runtime/host'
 export {
   assertHostPublication,
   type HostConvergenceReport,
   HostPublicationError,
   type HostPublicationReport,
   hostInspectionSource,
-} from './host-facade.js'
-export { closeHost, Rollback } from './lifecycle.js'
+} from '@agnes/host-runtime/host-facade'
+export { closeHost, Rollback } from '@agnes/host-runtime/lifecycle'
+export * from '@agnes/host-runtime/profile/bundle-selection'
 export {
-  defaultVerifyIntegrity,
-  type LockAudit,
-  lockState,
-  snapshotPolicy,
-  verifyLockIntegrity,
-} from './packages/lock-state.js'
-export {
-  emptyLock,
-  type LockEntry,
-  type Lockfile,
-  lockPath,
-  readLock,
-  withLock,
-  writeLock,
-} from './packages/lockfile.js'
-export {
-  createPackageManager,
-  type ManagerOptions,
-  type PackageManager,
-  type PackageStatus,
-  readManifestIn,
-} from './packages/manager.js'
-export {
-  type ExecFn,
-  type FetchedSource,
-  fetchSource,
-  hashDirectory,
-  type PackageSource,
-  packageDir,
-  parseSource,
-} from './packages/sources.js'
-export {
-  isDangerous,
-  LICENSE_ALLOWLIST,
-  manifestCapabilities,
-  runTrustGate,
-  verifyInstalledIntegrity,
-} from './packages/trust-gate.js'
-export {
-  hashWorkspace,
-  readDeployManifest,
-  readProfileFragment,
-  verifyWorkspace,
-  type WorkspaceVerification,
-} from './packages/workspace.js'
-export {
-  agnesHome,
-  cacheDir,
-  dataDir,
-  fileSecretsDir,
-  hasLegacySessionsDb,
-  inDataDir,
-  legacySessionsDbPath,
-  ownStateRoots,
-} from './paths.js'
-export * from './presets/index.js'
-export * from './profile/bundle-selection.js'
-export { canonicalJson, sha256hex } from './profile/canonical.js'
-export * from './profile/composition.js'
-export * from './profile/composition-state.js'
-export * from './profile/composition-visibility.js'
-export { DEFAULT_COMPUTER_USE } from './profile/computer-use.js'
+  compositionAllowsTool,
+  profileForComposition,
+} from '@agnes/host-runtime/profile/composition-selection'
+export * from '@agnes/host-runtime/profile/composition-visibility'
 export {
   type ConfigurationProfileInputsOptions,
   readConfigurationProfileInputs,
-} from './profile/inputs.js'
-export { expandHome, hashInput, mergePackages, resolveProfile } from './profile/resolve.js'
-export * from './profile/session-capabilities.js'
-export {
-  assertNoReservedRouteName,
-  BUILTIN_PACKAGES,
-  checkTemplateShape,
-  loadTemplate,
-  RESERVED_ROUTE_NAMES,
-  TEMPLATE_NAMES,
-} from './profile/templates.js'
-export type * from './profile/types.js'
-export * from './publication-dispatch.js'
-export {
-  type PublicationCloseOptions,
-  PublicationGate,
-  type PublicationReadTicket,
-} from './publication-gate.js'
-export * from './quiet-state.js'
-export {
-  composeProductionRequestMedia,
-  createProductionImageInputTokenFallback,
-  type ProductionRequestMediaConfiguration,
-} from './request-media-runtime.js'
-export * from './resources/index.js'
-export type { McpManageBridge, McpManageInvocation } from './resources/mcp-manage-port.js'
-export type { PluginManageBridge, PluginManageInvocation } from './resources/plugin-manage-port.js'
-export { createSkillInstaller, type SkillInstallAuthority } from './resources/skill-install.js'
-export { validInstallPathPolicy } from './resources/skill-install-files.js'
-export type { SkillInstallBridge, SkillInstallInvocation } from './resources/skill-install-port.js'
-export type { PluginGenerationStatus } from './runtime-generation-host.js'
-export { buildCompleteRuntimeTarget } from './runtime-target-builder.js'
-export * from './runtime-target-publisher.js'
-export * from './runtime-target-report.js'
-export * from './sandbox-readiness-manager.js'
+} from '@agnes/host-runtime/profile/inputs'
+export * from '@agnes/host-runtime/profile/session-capabilities'
+export type { PluginGenerationStatus } from '@agnes/host-runtime/runtime-generation-host'
 export {
   type CreateSessionOptions,
   createSession,
   type SessionRecovery,
   sessionKey,
-} from './session.js'
-export { readProfileTelemetryConsent } from './session-hooks.js'
-export { loadSessionTitle } from './session-title.js'
-export * from './session-workspace-runtime.js'
-export {
-  resolveWorkspaceDirectory,
-  type WorkspaceDirectory,
-  WorkspaceDirectoryError,
-  type WorkspaceInvalidReason,
-} from './workspace.js'
-export {
-  type AuthenticatedWorkspaceBindingEnvelope,
-  CliWorkspaceAuthority,
-  type WorkspaceBinding,
-} from './workspace-authority.js'
-export * from './workspace-policy.js'
+} from '@agnes/host-runtime/session'
+export { readProfileTelemetryConsent } from '@agnes/host-runtime/session-hooks'
+export { loadSessionTitle } from '@agnes/host-runtime/session-title'
+export type { CapabilityReason, SessionCapability, SessionCapabilitySet } from '@agnes/protocol'

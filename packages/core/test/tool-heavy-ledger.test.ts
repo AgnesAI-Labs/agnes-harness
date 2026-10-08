@@ -1,5 +1,5 @@
+import { foldEvents } from '@agnes/core-ledger/reduce/reducer'
 import { describe, expect, it } from 'vitest'
-import { foldEvents } from '../src/reduce/reducer.js'
 import { toolHeavyLedger } from '../testkit/tool-heavy-ledger.js'
 
 describe('the tool-heavy synthetic ledger', () => {

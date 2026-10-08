@@ -31,13 +31,13 @@ export type RemoteSandboxProfile = Readonly<{
 }>
 
 /** The exec-gate posture this seam declares. Restated structurally; the host's own definition is
- *  `ExecGateState` in packages/host/src/adapters/exec.ts. */
+ *  `ExecGateState` in packages/host-infrastructure/src/adapters/exec.ts. */
 export type RemoteExecGateState = Readonly<{
   backend: 'none' | 'l1' | 'remote'
   onUnavailable: 'deny' | 'allow'
 }>
 /** Restated structurally; the host's own definition is `SandboxBackendReport` in
- *  packages/host/src/adapters/platform.ts. */
+ *  packages/host-infrastructure/src/adapters/platform.ts. */
 export type RemoteBackendReport = Readonly<{
   name: 'none' | 'bwrap' | 'seatbelt' | 'remote'
   enforcement: Enforcement
@@ -66,7 +66,7 @@ export type RemoteSandboxContext = Readonly<{
     ): Promise<{ code: number; stdout: string; stderr: string; truncated: boolean }>
   }>
   /** Present only in the context handed to the sandbox factory; consumed structurally (RA16) -
-   *  the real value's shape is `SandboxHostServices` (packages/host/src/adapters/index.ts), but
+   *  the real value's shape is `SandboxHostServices` (packages/host-runtime/src/adapters/index.ts), but
    *  this package never imports that type, only the members it uses. `transport` is a
    *  `RemoteTransport`; it is read here as proof that the host really is in remote mode, not as an
    *  exec route. */

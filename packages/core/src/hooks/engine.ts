@@ -1,3 +1,5 @@
+import { CoreError, type Disposer } from '@agnes/core-common/types'
+import type { WorkspaceHookSandbox } from '@agnes/core-effects/workspace/runtime'
 import type {
   HookContext,
   HookEvent,
@@ -10,8 +12,6 @@ import type {
 import { unavailableProjections } from '@agnes/extension-api'
 import { HookRegistry, type HookSnapshot } from '../registry/hooks.js'
 import type { ToolSource } from '../registry/tools.js'
-import { CoreError, type Disposer } from '../types.js'
-import type { WorkspaceHookSandbox } from '../workspace/runtime.js'
 import { type DispatchOutcome, HookDispatch } from './dispatch.js'
 import { authorHookReturn } from './returns.js'
 

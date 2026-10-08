@@ -5,7 +5,7 @@ import type { ThinkingLevel } from '@agnes/protocol'
  * verified against the provider's own API docs rather than trusted blindly. Keyed by
  * model id. A present entry replaces the catalogue's reasoning/thinkingLevelMap outright:
  * only the levels listed here are offered, each mapped to the real wire value. A deployer's
- * own `thinkingEfforts` profile override (packages/host/src/configuration.ts) is a separate,
+ * own `thinkingEfforts` profile override (packages/host-infrastructure/src/configuration.ts) is a separate,
  * later layer and always wins over this table.
  *
  * DeepSeek V4 Pro and V4 Flash: reasoning_effort supports low/high/max only (no off — the

@@ -1,10 +1,10 @@
+import type { Event, Seq } from '@agnes/core-common/types'
+import { computeSurface, type SurfaceNode, validateReplace } from '@agnes/core-ledger/project/surface'
 import type { RequestBody } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { computeSurface, type SurfaceNode, validateReplace } from '../src/project/surface.js'
 import { deriveRequest } from '../src/request/derive.js'
 import { createEnvelopeCache } from '../src/request/envelope-cache.js'
 import { toProviderRequest } from '../src/request/to-provider.js'
-import type { Event, Seq } from '../src/types.js'
 
 /**
  * Property test for the replace pairing rule. Ledgers are generated along the write paths core

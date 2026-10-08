@@ -61,7 +61,8 @@
     "@sinclair/typebox": "0.34.33",
     "@xterm/headless": "6.0.0",
     "esbuild": "0.28.2",
-    "postject": "1.0.0-alpha.6"
+    "postject": "1.0.0-alpha.6",
+    "@agnes/host-infrastructure": "workspace:*"
   },
   "license": "Apache-2.0"
 }

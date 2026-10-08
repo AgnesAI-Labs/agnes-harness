@@ -6,13 +6,11 @@
   "exports": {
     ".": "./src/index.ts",
     "./artifact-gc-candidate-scanner": "./src/artifact-gc-candidate-scanner.ts",
-    "./artifact-gc-roots-sqlite": "./src/artifact-gc-roots-sqlite.ts",
     "./artifact-ledger-refs": "./src/artifact-ledger-refs.ts",
     "./artifact-read-store": "./src/artifact-read-store.ts",
     "./artifact-ref-index": "./src/artifact-ref-index.ts",
     "./artifact-retention-protection": "./src/artifact-retention-protection.ts",
     "./computer-use-artifact-gc": "./src/computer-use-artifact-gc.ts",
-    "./computer-use-marker": "./src/computer-use-marker.ts",
     "./private-artifact-store": "./src/private-artifact-store.ts",
     "./request-media-runtime": "./src/request-media-runtime.ts",
     "./trajectory-contract": "./src/trajectory-contract.ts",

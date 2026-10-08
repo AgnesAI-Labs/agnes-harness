@@ -1,3 +1,5 @@
+import { isToolResult } from '@agnes/core-effects/effects/tool-dispatch'
+import { withTimeout } from '@agnes/core-effects/effects/wrap'
 import type {
   HookPayloadMap,
   HookReturnMap,
@@ -8,8 +10,6 @@ import type {
   LoopEventRegistryPort,
   LoopEventReturnMap,
 } from '@agnes/extension-api'
-import { isToolResult } from '../effects/tool-dispatch.js'
-import { withTimeout } from '../effects/wrap.js'
 import { authorHookReturn } from '../hooks/returns.js'
 import type { DeriveOutput } from '../request/derive.js'
 import { applyBeforeRequestPatches } from '../request/transforms.js'

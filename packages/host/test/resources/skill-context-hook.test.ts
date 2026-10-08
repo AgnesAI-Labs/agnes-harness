@@ -4,9 +4,9 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { ecosystem as baseEcosystem } from '@agnes/base'
+import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import type { InferenceEvent, RequestBody } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { SkillRuntimeInput } from '../../src/resources/skills.js'
 import { createTestHost } from '../../testkit/index.js'
 
 const baseDir = fileURLToPath(new URL('../../../base', import.meta.url))

@@ -29,30 +29,30 @@ import {
   type HookHandler,
   unavailableProjections,
 } from '@agnes/extension-api'
-import type { ModelRecord, RouteDecl } from '@agnes/protocol'
-import { windowsProcessStartTimeSync } from '@agnes/system-node'
-import { afterEach, describe, expect, it } from 'vitest'
-import type { FencedFs } from '../src/adapters/fs.js'
-import { openAdapters, toSeamAdapters } from '../src/adapters/index.js'
+import { HostError } from '@agnes/host-common/errors'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import type { ProfileInputs } from '@agnes/host-common/profile/types'
+import { type WorkspaceBinding, WorkspaceBindingAuthority } from '@agnes/host-common/workspace-authority'
 import {
   MemoryPackageLoader,
   type PackageModule,
   type SeamFactory,
   type SeamInitContext,
-} from '../src/assemble/packages.js'
-import { trustedHookCommands } from '../src/assemble/trusted-hooks.js'
-import { type AssembleDeps, type Assembled, assemble } from '../src/assemble.js'
-import { createMemoryAudit } from '../src/audit.js'
-import { HostError } from '../src/errors.js'
-import { readConfigurationProfileInputs } from '../src/profile/inputs.js'
-import { resolveProfile } from '../src/profile/resolve.js'
-import type { ProfileInputs } from '../src/profile/types.js'
-import { createSession } from '../src/session.js'
+} from '@agnes/host-extensions/assemble/packages'
+import type { FencedFs } from '@agnes/host-infrastructure/adapters/fs'
+import { createMemoryAudit } from '@agnes/host-infrastructure/audit'
 import {
   type SessionWorkspaceRuntime,
   SessionWorkspaceRuntimeTable,
-} from '../src/session-workspace-runtime.js'
-import { type WorkspaceBinding, WorkspaceBindingAuthority } from '../src/workspace-authority.js'
+} from '@agnes/host-infrastructure/session-workspace-runtime'
+import { openAdapters, toSeamAdapters } from '@agnes/host-runtime/adapters/index'
+import { type AssembleDeps, type Assembled, assemble } from '@agnes/host-runtime/assemble'
+import { trustedHookCommands } from '@agnes/host-runtime/assemble/trusted-hooks'
+import { readConfigurationProfileInputs } from '@agnes/host-runtime/profile/inputs'
+import { createSession } from '@agnes/host-runtime/session'
+import type { ModelRecord, RouteDecl } from '@agnes/protocol'
+import { windowsProcessStartTimeSync } from '@agnes/system-node'
+import { afterEach, describe, expect, it } from 'vitest'
 import { attachTestSeamPlugins } from '../testkit/cordis-seams.js'
 
 /**
@@ -672,7 +672,7 @@ describe('the binding is held to the seam on every reading of the policy', () =>
   it('does not accept a differently-cased integrity floor on a case-sensitive volume', async () => {
     const dataDir = scratch('agnes-l0-data-')
     const workspace = scratch('agnes-l0-ws-')
-    const { createPosixPlatform } = await import('../src/adapters/platform.js')
+    const { createPosixPlatform } = await import('@agnes/host-infrastructure/adapters/platform')
     const detected = createPosixPlatform()
     const platform = { ...detected, fs: () => ({ caseSensitive: true, pathSep: '/' as const }) }
     const bundle = await openAdapters(await resolveProfileForBind(), {

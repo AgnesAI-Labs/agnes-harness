@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { type Context, FiberState } from '@agnes/cordis'
+import { assembleOrdinaryPluginTree } from '@agnes/host-extensions/assemble/seams-cordis'
 import {
   buildRuntimeTarget,
   createPluginRow,
@@ -17,7 +18,6 @@ import {
 import type { InferenceEvent, RequestBody } from '@agnes/protocol'
 import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/resource-control-runtime'
 import { describe, expect, it, vi } from 'vitest'
-import { assembleOrdinaryPluginTree } from '../../src/assemble/seams-cordis.js'
 import { createTestHost } from '../../testkit/index.js'
 
 const baseDir = fileURLToPath(new URL('../../../base', import.meta.url))

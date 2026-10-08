@@ -14,7 +14,7 @@ if (!modulePath) {
   process.exit(0)
 }
 const { chromium } = await import(pathToFileURL(modulePath).href)
-const { createCredentialStore } = await import('../../packages/host/src/index.ts')
+const { createCredentialStore } = await import('@agnes/host')
 const { createClient, memoryJournal } = await import('../../packages/sdk/src/index.node.ts')
 const { createPrivateDirectorySync } = await import('../../packages/system-node/src/index.ts')
 const { startWorkbenchProvider } = await import('./workbench-provider.ts')

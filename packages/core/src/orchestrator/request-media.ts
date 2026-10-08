@@ -1,10 +1,10 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import {
   type RequestMediaHeader,
   type RequestMediaManifestEntry,
   validateRequestMedia,
 } from '@agnes/protocol'
 import { decodeSafeImageBytes, SafeImageError } from '@agnes/protocol-validation'
-import { canonicalJson, sha256Hex } from '../request/hash.js'
 
 /** Hermes keeps the newest operation-before/during/after image-bearing tool result nodes. */
 export const REQUEST_MEDIA_NODE_WINDOW = 3

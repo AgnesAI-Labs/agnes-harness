@@ -8,16 +8,16 @@ import {
   persistenceHostContract,
   persistenceSqliteContract,
 } from '@agnes/extension-api/testkit/persistence-contract'
-import { afterAll, describe, expect, it } from 'vitest'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import type { LockState, ProfileFragment, ResolveEnv } from '@agnes/host-common/profile/types'
+import { readNamedExports } from '@agnes/host-extensions/assemble/packages'
+import { persistenceProviderRegistry } from '@agnes/host-infrastructure/adapters/storage-provider'
 import {
   openAdapters,
   openConfiguredPersistence,
   sqlitePersistenceProvider,
-} from '../../src/adapters/index.js'
-import { persistenceProviderRegistry } from '../../src/adapters/storage-provider.js'
-import { readNamedExports } from '../../src/assemble/packages.js'
-import { resolveProfile } from '../../src/profile/resolve.js'
-import type { LockState, ProfileFragment, ResolveEnv } from '../../src/profile/types.js'
+} from '@agnes/host-runtime/adapters/index'
+import { afterAll, describe, expect, it } from 'vitest'
 
 const env: ResolveEnv = {
   platform: { os: 'linux', arch: 'x64', capabilities: {} },
@@ -346,7 +346,7 @@ it('runs the default accounting, refine and MCP domains on metadata without SQL'
   )
   const { seams, mcpCatalogHubFor } = await import('@agnes/base')
   const { fakeSeamInit } = await import('@agnes/base/testkit')
-  const { toSeamAdapters } = await import('../../src/adapters/index.js')
+  const { toSeamAdapters } = await import('@agnes/host-runtime/adapters/index')
   const dir = tempDir()
   const profile = await resolveProfile({ builtin: 'local-dev', lock }, env)
   const bundle = await openAdapters(profile, {

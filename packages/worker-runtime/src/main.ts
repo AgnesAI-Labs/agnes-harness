@@ -290,7 +290,7 @@ export async function runWorker(
     },
     // Mirrors createSecrets above, for secretBinding.kind === 'oauth' (spec §1.6/§3.2/§3.5). Same
     // root `createConfigurationService` uses for its own `createCredentialStore` call
-    // (packages/host/src/configuration.ts:565) -- both this worker process and the daemon-owned
+    // (packages/host-infrastructure/src/configuration.ts:565) -- both this worker process and the daemon-owned
     // config service read/write the same `~/.agh`-shaped credential store, by design (the
     // callback route that writes the initial token exchange runs in yet a third process --
     // `agnes serve`'s launcher -- see oauth-http-handler.ts's module header; all three agree on the

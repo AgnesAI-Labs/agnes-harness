@@ -1,8 +1,12 @@
 import { deflateSync } from 'node:zlib'
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import type { Event, Seq } from '@agnes/core-common/types'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { Kernel } from '../src/kernel.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
 import { prepareAuxiliaryVisionPlan } from '../src/orchestrator/auxiliary-vision.js'
 import {
   type AuxiliaryVisionEffectPort,
@@ -13,10 +17,6 @@ import {
   executeAuxiliaryVision,
 } from '../src/orchestrator/auxiliary-vision-executor.js'
 import { prepareRequestMediaFromSurface } from '../src/orchestrator/request-media-surface.js'
-import type { SurfaceNode } from '../src/project/surface.js'
-import { canonicalJson, sha256Hex } from '../src/request/hash.js'
-import { presetDefaults } from '../src/step/preset.js'
-import type { Event, Seq } from '../src/types.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'

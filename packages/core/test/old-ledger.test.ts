@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { defaultIds } from '@agnes/core-common/ids'
+import type { Event } from '@agnes/core-common/types'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { SessionLogImpl } from '@agnes/core-ledger/log/session-log'
+import { openTracked } from '@agnes/core-ledger/reduce/tracker'
 import { describe, expect, it } from 'vitest'
-import { defaultIds } from '../src/ids.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import { SessionLogImpl } from '../src/log/session-log.js'
-import { openTracked } from '../src/reduce/tracker.js'
-import type { Event } from '../src/types.js'
 import { noTimers } from './helpers/open-session.js'
 
 /**

@@ -1,15 +1,16 @@
 // Exercises core Task 39's full-phase resume matrix against prefixes cut from real sessions. The
 // deferred fixture proves a returned job survives the tools -> deferred phase edge before the
 // poller gets a chance to finish it.
+
+import { defaultIds } from '@agnes/core-common/ids'
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import type { Event } from '@agnes/core-common/types'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { openTracked } from '@agnes/core-ledger/reduce/tracker'
 import { describe, expect, it, vi } from 'vitest'
-import { defaultIds } from '../src/ids.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import { openTracked } from '../src/reduce/tracker.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { canonicalJson, sha256Hex } from '../src/request/hash.js'
 import { deferredEffectId } from '../src/step/deferred.js'
-import { presetDefaults } from '../src/step/preset.js'
-import type { Event } from '../src/types.js'
 import { crashEvents, crashFixtures, crashOpCells, crashStorage } from './helpers/crash-fixtures.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'

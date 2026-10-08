@@ -12,11 +12,11 @@ import { presets as basePresets, seams as baseSeams } from '@agnes/base'
 import { operations as codeOperations, presets as codePresets, PRESET_NAMES } from '@agnes/code'
 import type { Operation, Verdict } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
+import type { ResolvedProfile } from '@agnes/host-common/profile/types'
+import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
+import type { ProviderBuildOptions } from '@agnes/host-providers/assemble/provider'
 import type { InferenceEvent, Provider, RequestBody } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createPlatform } from '../src/adapters/platform.js'
-import type { ProviderBuildOptions } from '../src/assemble/provider.js'
-import type { ResolvedProfile } from '../src/profile/types.js'
 import {
   createTestHost,
   type RunOnceResult,

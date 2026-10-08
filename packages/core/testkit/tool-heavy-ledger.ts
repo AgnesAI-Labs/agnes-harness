@@ -3,7 +3,7 @@
 // tool step of a real recorded session (the `batch-k1` golden recording): the same row types in the
 // same order, with ids, seqs and turn/step numbers rewritten. Op-mark rows keep the recorded shape
 // with only the call ids updated; nothing here folds them further.
-import type { Event, Seq } from '../src/types.js'
+import type { Event, Seq } from '@agnes/core-common/types'
 import { expectedFromGolden, readGolden } from './record-transitions.js'
 
 type Row = Omit<Event, 'seq' | 'id' | 'ts'> & { seq: Seq }

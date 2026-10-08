@@ -1,5 +1,5 @@
+import { checkPresetHardRequirements } from '@agnes/host-runtime/session'
 import { describe, expect, it } from 'vitest'
-import { checkPresetHardRequirements } from '../src/session.js'
 
 // Minimal doubles for `ResolvedProfile` / `Assembled` / `ResolvedPreset`, narrowed to the fields
 // `checkPresetHardRequirements` actually reads (session.ts:61). `adapters.transport` is the exact

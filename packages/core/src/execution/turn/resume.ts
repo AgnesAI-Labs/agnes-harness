@@ -1,6 +1,8 @@
-import { decidedFields, isPending } from '../../effects/approval-answer.js'
-import { scanAll, scanPages } from '../../log/scan-pages.js'
-import type { EffectNode } from '../../reduce/state.js'
+import { type OpStateObj, type ToolCallState, withPhase } from '@agnes/core-common/step/op-state'
+import type { EventInput, Seq } from '@agnes/core-common/types'
+import { decidedFields, isPending } from '@agnes/core-effects/effects/approval-answer'
+import { scanAll, scanPages } from '@agnes/core-ledger/log/scan-pages'
+import type { EffectNode } from '@agnes/core-ledger/reduce/state'
 import {
   hasCompleteToolPolicyEnvelope,
   hasTrustedToolCallProvenance,
@@ -8,10 +10,8 @@ import {
   toolPolicyBindingProblem,
 } from '../../registry/tool-policy.js'
 import { closeTurn } from '../../step/control.js'
-import { type OpStateObj, type ToolCallState, withPhase } from '../../step/op-state.js'
 import type { SessionImpl } from '../../step/session.js'
 import { classifyToolRecovery, type ToolRecoveryDecision } from '../../step/tool-recovery.js'
-import type { EventInput, Seq } from '../../types.js'
 
 export type ResumeMode = 'continue' | 'close'
 export type ResumeAction =

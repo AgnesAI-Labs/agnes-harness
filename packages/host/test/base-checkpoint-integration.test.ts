@@ -3,10 +3,10 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { SeamInitContext } from '@agnes/base'
 import { seams } from '@agnes/base'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import type { LockState, ResolvedProfile, ResolveEnv } from '@agnes/host-common/profile/types'
+import { type AdapterBundle, openAdapters, toSeamAdapters } from '@agnes/host-runtime/adapters/index'
 import { afterEach, describe, expect, it } from 'vitest'
-import { type AdapterBundle, openAdapters, toSeamAdapters } from '../src/adapters/index.js'
-import { resolveProfile } from '../src/profile/resolve.js'
-import type { LockState, ResolvedProfile, ResolveEnv } from '../src/profile/types.js'
 
 const env: ResolveEnv = {
   platform: { os: 'linux', arch: 'x64', capabilities: {} },

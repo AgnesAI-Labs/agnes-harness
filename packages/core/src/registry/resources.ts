@@ -1,8 +1,8 @@
+import { CoreError, type Disposer } from '@agnes/core-common/types'
+import { OwnedRegistryTable } from '@agnes/core-ledger/registry/owner-batch'
 import { extEventType, type ResourceEntry } from '@agnes/extension-api'
 import { inspectJsonData, validateAgainst } from '@agnes/protocol'
 import { ResourceEntry as ResourceSchema } from '@agnes/protocol/gen/hooks'
-import { CoreError, type Disposer } from '../types.js'
-import { OwnedRegistryTable } from './owner-batch.js'
 import type { ToolSource } from './tools.js'
 
 export type RegisteredResource = Readonly<{ entry: Readonly<ResourceEntry>; meta: Readonly<ToolSource> }>

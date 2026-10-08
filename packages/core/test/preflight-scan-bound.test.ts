@@ -1,5 +1,5 @@
+import type { ScanQuery } from '@agnes/core-ledger/log/storage'
 import { expect, it } from 'vitest'
-import type { ScanQuery } from '../src/log/storage.js'
 import { loadAuxiliaryVisionPreflight } from '../src/orchestrator/request-media-preflight.js'
 
 // The preflight read refuses a turn with more than 1,000 preflight rows. It asked for 1,001 in one

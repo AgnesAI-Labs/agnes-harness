@@ -3,10 +3,10 @@ import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { createSecretsFile } from '@agnes/host-infrastructure/adapters/secrets'
 import { bootstrapWorkerResources } from '@agnes/resource-control-worker'
 import { windowsEnsurePrivateDirectorySync, windowsWritePrivateFile } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSecretsFile } from '../../host/src/adapters/secrets.js'
 
 const require = createRequire(import.meta.url)
 const baseRequire = createRequire(join(dirname(dirname(require.resolve('@agnes/base'))), 'package.json'))

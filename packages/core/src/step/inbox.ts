@@ -1,6 +1,6 @@
+import type { EventInput } from '@agnes/core-common/types'
+import type { Inbox, InboxItem } from '@agnes/core-ledger/reduce/shapes'
 import type { Actor, ContentBlock } from '@agnes/protocol'
-import type { Inbox, InboxItem } from '../reduce/shapes.js'
-import type { EventInput } from '../types.js'
 
 export type EnqueueMsg = {
   /** Atomic admission for a continuation: refuse when another input is already pending. */

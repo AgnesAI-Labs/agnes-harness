@@ -1,9 +1,9 @@
 import { realpathSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
+import { EXT_ROW_EXTENSION_IDS, MIGRATED_EXTENSION_IDS } from '@agnes/host-extensions/assemble/ext-rows'
 import type { InferenceEvent } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { EXT_ROW_EXTENSION_IDS, MIGRATED_EXTENSION_IDS } from '../../src/assemble/ext-rows.js'
 import { createTestHost } from '../../testkit/index.js'
 import {
   auditKinds,

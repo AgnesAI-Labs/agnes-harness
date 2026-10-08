@@ -5,10 +5,10 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { seams as baseSeams } from '@agnes/base'
+import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
+import type { HostSession } from '@agnes/host-runtime/host'
 import type { InferenceEvent, JsonValue, Provider, RequestBody } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createSqliteStorage } from '../../src/adapters/storage-sqlite.js'
-import type { HostSession } from '../../src/host.js'
 import { createTestHost } from '../../testkit/index.js'
 
 const baseDir = fileURLToPath(new URL('../../../base', import.meta.url))

@@ -1,9 +1,9 @@
 import { fileURLToPath } from 'node:url'
+import { EXT_ROW_EXTENSION_IDS, MIGRATED_EXTENSION_IDS } from '@agnes/host-extensions/assemble/ext-rows'
+import { OBSERVE_HOOK_EVENTS } from '@agnes/host-extensions/ext-host/row-extension-api'
 import { createPluginRow } from '@agnes/plugin-runtime/host'
 import type { InferenceEvent } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { EXT_ROW_EXTENSION_IDS, MIGRATED_EXTENSION_IDS } from '../../src/assemble/ext-rows.js'
-import { OBSERVE_HOOK_EVENTS } from '../../src/ext-host/row-extension-api.js'
 import { createTestHost } from '../../testkit/index.js'
 import {
   auditKinds,

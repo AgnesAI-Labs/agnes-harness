@@ -1,4 +1,4 @@
-import type { SeamImplementations } from '../../src/effects/seams.js'
+import type { SeamImplementations } from '@agnes/core-effects/effects/seams'
 import { testFsPolicy } from '../../testkit/fenced-fs.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }

@@ -1,16 +1,16 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import type { LockState, ResolveEnv } from '@agnes/host-common/profile/types'
+import { WorkspaceBindingAuthority } from '@agnes/host-common/workspace-authority'
 import {
   createLoopbackTransport,
   type RemoteTransport,
 } from '@agnes/host-infrastructure/adapters/remote-transport'
+import { openAdapters, sandboxHostServices, toSeamAdapters } from '@agnes/host-runtime/adapters/index'
 import { remoteSandboxSeam } from '@agnes/sandbox-remote'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { openAdapters, sandboxHostServices, toSeamAdapters } from '../../src/adapters/index.js'
-import { resolveProfile } from '../../src/profile/resolve.js'
-import type { LockState, ResolveEnv } from '../../src/profile/types.js'
-import { WorkspaceBindingAuthority } from '../../src/workspace-authority.js'
 
 // Toggled only by the close()-failure test below: everything else in this file must see the real
 // loopback transport's exec behave exactly as it always has.

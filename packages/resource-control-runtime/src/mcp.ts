@@ -84,7 +84,7 @@ export type McpCredentialResolver = (ref: string, signal: AbortSignal) => Promis
 /**
  * A resolved OAuth 2.1 credential for one managed MCP server, worker-side
  * with a structural
- * counterpart of `packages/host/src/adapters/credential-store.ts`'s `OAuthCredential`, deliberately
+ * counterpart of `packages/host-infrastructure/src/adapters/credential-store.ts`'s `OAuthCredential`, deliberately
  * NOT imported from `@agnes/host` -- this package has no dependency on it today, matching the same
  * decoupling `oauth-http-handler.ts`'s own `OAuthStoredCredential` type documents for the identical
  * shape.

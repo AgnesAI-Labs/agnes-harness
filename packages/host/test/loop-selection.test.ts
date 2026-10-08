@@ -14,14 +14,14 @@ import {
   loopCheckpointCodec,
   registerLoopPlugin,
 } from '@agnes/extension-api'
+import { parsePackageBundles } from '@agnes/host-common/profile/composition'
+import { createLoader } from '@agnes/host-extensions/ext-host/loader'
+import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
+import { readAdminLoopDefault } from '@agnes/host-providers/assemble/loop-selection'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import { afterEach, expect, it } from 'vitest'
 import * as dagModule from '../../../examples/loops/dag-loop/index.mjs'
 import { scaffold } from '../../../templates/create-agh-plugin.mjs'
-import { readAdminLoopDefault } from '../src/assemble/loop-selection.js'
-import { createConfigurationService } from '../src/configuration.js'
-import { createLoader } from '../src/ext-host/loader.js'
-import { parsePackageBundles } from '../src/profile/composition.js'
 import { createTestHost } from '../testkit/index.js'
 
 const dirs: string[] = []

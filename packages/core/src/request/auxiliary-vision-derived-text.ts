@@ -1,4 +1,5 @@
 import { types as utilTypes } from 'node:util'
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { consumeAuxiliaryVisionNotDispatchedAuthority } from '../orchestrator/auxiliary-vision-assembly.js'
 import {
   consumeAuxiliaryVisionExecutorFallbackAuthority,
@@ -8,7 +9,6 @@ import {
   isLedgerPreparedRequestMedia,
   type LedgerPreparedRequestMedia,
 } from '../orchestrator/request-media-surface.js'
-import { canonicalJson, sha256Hex } from './hash.js'
 
 const MAX_DERIVED_TEXT_BYTES = 1_048_576
 

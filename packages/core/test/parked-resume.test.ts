@@ -1,5 +1,5 @@
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import { describe, expect, it } from 'vitest'
-import { MemoryStorage } from '../src/log/memory-storage.js'
 import { resolvedToolPolicyHash } from '../src/registry/tool-policy.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { continueParked } from '../src/step/parked.js'

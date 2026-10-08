@@ -4,9 +4,9 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { ApprovalRequest, Pending, Verdict } from '@agnes/core'
 import { approvalDeadlineMs, initialState, type LedgerState } from '@agnes/core'
+import { startApprovalExpiry } from '@agnes/host-runtime/approval-expiry'
 import type { InferenceEvent } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { startApprovalExpiry } from '../src/approval-expiry.js'
 import { createTestHost } from '../testkit/index.js'
 
 type PendingApproval = LedgerState['pendingApprovals'] extends ReadonlyMap<string, infer V> ? V : never

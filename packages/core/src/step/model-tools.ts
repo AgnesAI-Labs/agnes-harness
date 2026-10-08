@@ -1,8 +1,8 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import type { ModelRecord, Provider } from '@agnes/protocol'
 import { validateAgainst } from '@agnes/protocol'
 import { ModelRecord as ModelRecordSchema } from '@agnes/protocol/gen/model'
 import type { RegisteredTool, RegistrySnapshot } from '../registry/tools.js'
-import { canonicalJson, sha256Hex } from '../request/hash.js'
 
 export type ModelInput = readonly ('text' | 'image')[]
 

@@ -1,5 +1,5 @@
-import { withTimeout } from '../effects/wrap.js'
-import type { Timers } from '../log/session-log.js'
+import { withTimeout } from '@agnes/core-effects/effects/wrap'
+import type { Timers } from '@agnes/core-ledger/log/session-log'
 
 const nativeTimers: Timers = {
   setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),

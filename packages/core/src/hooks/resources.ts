@@ -1,6 +1,6 @@
+import type { SeamRuntime } from '@agnes/core-effects/effects/wrap'
 import type { ResourceEntry } from '@agnes/extension-api'
 import type { Actor } from '@agnes/protocol'
-import type { SeamRuntime } from '../effects/wrap.js'
 import type { RegisteredResource } from '../registry/resources.js'
 import type { ContextResult } from '../request/transforms.js'
 import type { DispatchContext, HookEngine } from './engine.js'

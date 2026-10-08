@@ -10,7 +10,6 @@
     "./command-policy": "./src/command-policy.ts",
     "./configuration-lock": "./src/configuration-lock.ts",
     "./errors": "./src/errors.ts",
-    "./index": "./src/index.ts",
     "./packages/capabilities": "./src/packages/capabilities.ts",
     "./packages/compat": "./src/packages/compat.ts",
     "./packages/lock-state": "./src/packages/lock-state.ts",
@@ -24,7 +23,6 @@
     "./presets/merge": "./src/presets/merge.ts",
     "./presets/resolve": "./src/presets/resolve.ts",
     "./presets/types": "./src/presets/types.ts",
-    "./presets/validate": "./src/presets/validate.ts",
     "./presets/view": "./src/presets/view.ts",
     "./profile/canonical": "./src/profile/canonical.ts",
     "./profile/composition-freeze": "./src/profile/composition-freeze.ts",
@@ -63,6 +61,8 @@
   "devDependencies": {
     "@agnes/base": "workspace:*",
     "@agnes/code": "workspace:*",
-    "@agnes/host": "workspace:*"
+    "@agnes/host": "workspace:*",
+    "@agnes/host-infrastructure": "workspace:*",
+    "@agnes/host-providers": "workspace:*"
   }
 }

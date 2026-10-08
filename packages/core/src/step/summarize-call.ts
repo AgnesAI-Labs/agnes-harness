@@ -1,4 +1,4 @@
-import { canonicalJson } from '../request/hash.js'
+import { canonicalJson } from '@agnes/core-common/request/hash'
 
 // The one-line header an approver sees for a tool call. It names the call and the fields that decide
 // what it touches, and it never cuts text silently: every shortened value says how much of it is

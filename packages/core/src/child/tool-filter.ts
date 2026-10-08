@@ -1,6 +1,6 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import type { ChildAgentToolFilter } from '@agnes/extension-api'
 import { type RegistrySnapshot, ToolRegistry } from '../registry/tools.js'
-import { canonicalJson, sha256Hex } from '../request/hash.js'
 
 export function narrowChildToolFilter(
   parent?: ChildAgentToolFilter,

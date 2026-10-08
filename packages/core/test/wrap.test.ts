@@ -1,15 +1,15 @@
-import { describe, expect, it, vi } from 'vitest'
-import type { FsPolicy } from '../src/effects/fs-guard.js'
-import { buildToolContext, type FsOps } from '../src/effects/tool-context.js'
-import { SeamRuntime, settlesWithin, withTimeout } from '../src/effects/wrap.js'
-import { presetDefaults } from '../src/step/preset.js'
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import type { FsPolicy } from '@agnes/core-effects/effects/fs-guard'
+import { buildToolContext, type FsOps } from '@agnes/core-effects/effects/tool-context'
+import { SeamRuntime, settlesWithin, withTimeout } from '@agnes/core-effects/effects/wrap'
 import {
   createWorkspaceInvocationPort,
   type WorkspaceInvocationPort,
   type WorkspaceInvocationSource,
   type WorkspaceInvocationView,
   type WorkspacePublicationDispatch,
-} from '../src/workspace/runtime.js'
+} from '@agnes/core-effects/workspace/runtime'
+import { describe, expect, it, vi } from 'vitest'
 import { fencedFs, testFsPolicy } from '../testkit/fenced-fs.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { testFsOps } from './helpers/open-session.js'

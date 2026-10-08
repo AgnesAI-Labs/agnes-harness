@@ -1,7 +1,7 @@
+import { artifactUri, toLedgerContent } from '@agnes/core-effects/effects/tool-result'
 import type { ToolDef } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
-import { artifactUri, toLedgerContent } from '../src/effects/tool-result.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { actor, openSession, readTool } from './helpers/open-session.js'

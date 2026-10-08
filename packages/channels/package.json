@@ -25,5 +25,8 @@
   "optionalDependencies": {
     "dingtalk-stream": "2.1.6-beta.1"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@agnes/host-infrastructure": "workspace:*"
+  }
 }

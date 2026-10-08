@@ -1,7 +1,7 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import { argvHash } from '@agnes/core-effects/effects/runtime'
+import type { ApprovalAsked } from '@agnes/core-ledger/reduce/shapes'
 import type { Actor, ApprovalGrant, ApprovalVerdict } from '@agnes/protocol'
-import { argvHash } from '../effects/runtime.js'
-import type { ApprovalAsked } from '../reduce/shapes.js'
-import { canonicalJson, sha256Hex } from '../request/hash.js'
 import type { SessionImpl } from './session.js'
 
 export type ApprovalGrantBinding = {

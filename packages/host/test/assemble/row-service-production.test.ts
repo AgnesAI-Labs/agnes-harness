@@ -2,10 +2,10 @@ import { cp, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { pluginRowSource } from '@agnes/host-extensions/ext-host/row-extension-host'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import { buildRuntimeTarget, createPluginRow } from '@agnes/plugin-runtime/host'
 import { expect, it } from 'vitest'
-import { pluginRowSource } from '../../src/ext-host/row-extension-host.js'
 import { createTestHost } from '../../testkit/index.js'
 
 it('keeps a pinned row query service and denies it to new sessions when disabled', async () => {

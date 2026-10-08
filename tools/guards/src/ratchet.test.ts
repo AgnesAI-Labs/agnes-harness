@@ -372,7 +372,6 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/base/extensions/tools-search': 400,
   // WEBFETCH-01: new component, exact measured allocation.
   // SKILL-GITHUB-RATE-LIMIT: explicit ZIP byte response; measured 380, no spare.
-  'packages/host/src/adapters/public-fetch': 5,
   // WEBFETCH-01: new component, exact measured allocation.
   // WEBFETCH review fixes: table-local header tracking and conservative optional-end/comment handling.
   // Measured with countLines: 243 (+15); no unrelated budgets changed.
@@ -393,16 +392,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 90 -> 133; exact cap, no exclusions or spare allocation.
   'packages/base/extensions/budget': 133,
   'packages/base/extensions/loop-hygiene': 100,
-  'packages/host/src/adapters/powershell': 1,
-  'packages/host/src/adapters/powershell-command': 1,
-  'packages/host/src/adapters/powershell-file': 1,
-  'packages/host/src/adapters/powershell-temporary': 1,
-  'packages/host/src/adapters/process-identity-win32': 1,
   // 2026-10-07 gap-fill review: Pass persistent shell execution options through the Windows adapter.
   // countLines: 84 -> 86; exact cap, no exclusions or spare allocation.
-  'packages/host/src/adapters/exec-win32': 1,
-  'packages/host/src/adapters/exec-output': 1,
-  'packages/host/src/adapters/secrets-win32': 1,
   // WIN-TITLE-REPAIR: +3 for peer-only rejection backoff; no counting exclusions changed.
   // 2026-09-20 GC attestation keeps Node hashing/path/proxy primitives outside Core, while Windows
   // mapped-image identity remains native-bound. Measured 1080; exact cap.
@@ -611,7 +602,6 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-24 SHARED-SESSION-IDLE-CLOSE C2-C5 and review fixes (user-approved raise for the perf
   // batch), rebased onto main with the other perf lanes: merged tree re-measured with
   // countLines(): 105, exact, no spare.
-  'packages/host/src/approval-expiry': 1,
 
   // 2026-09-12 shared local startup: reviewed scope/discovery/coordination, bounded client
   // bootstrap and executable delivery are new subjects, not spare aggregate headroom. Exact
@@ -804,8 +794,6 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 1230 -> 1286 (+56); exact cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Persist child-engine settings and validated context/search configuration.
   // countLines: 1286 -> 1349; exact cap, no exclusions or spare allocation.
-  'packages/host/src/configuration': 1,
-  'packages/host/src/configuration-lock': 1,
   'packages/daemon/src/supervisor/configuration': 45,
   // S5 service workers reload the profile hash and its immutable snapshot path as one value.
   'packages/daemon/src/supervisor/profile-bindings': 124,
@@ -1171,7 +1159,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 29399 -> 30048; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Await async loop construction, propagate session cancellation and drain initialization before storage closes.
   // countLines: 30048 -> 30103 (+55); exact measured cap, no exclusions or spare allocation.
-  'packages/core/src': 19913,
+  'packages/core/src': 19909,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1421,7 +1409,6 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 6460 -> 6577; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Unify provider errors, own late loop/child results and transfer accepted process-store ownership.
   // countLines: 6577 -> 6603 (+26); exact measured cap, no exclusions or spare allocation.
-  'packages/host/src/assemble': 26,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -2887,27 +2874,22 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 46355 -> 46484 (+129); exact measured cap, no exclusions or spare allocation.
   // Acceptance review: Restore immutable generation sources and publish child-engine configuration with explicit engine admission.
   // countLines: 46484 -> 46566; exact cap, no exclusions or spare allocation.
-  'packages/host/src': 747,
+  'packages/host/src': 508,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
-  'packages/host/src/ext-host/service-invocation': 1,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
   // 2026-09-15: project resume onto the capability fence. Measured 90.
   // WEBFETCH-01: +8 counted lines for approved public retrieval; excludes concurrent work.
   // Acceptance review: Project validated child-engine settings into tool execution capabilities.
   // countLines: 98 -> 130; exact cap, no exclusions or spare allocation.
-  'packages/host/src/ext-host/tool-context-capabilities': 1,
   // T6.3 adds child-failure notification, startup/cancel deadlines and invocation-bound capability
   // attribution. Exact 390.
   // R1 extracts transport, narrows the fixed wrapper, and adds generic entry/lease codecs.
-  'packages/host/src/ext-host/hooks-isolation-client': 1,
   // CORDIS-C1b Task 6 drains isolated descendants before releasing workspace capabilities.
-  'packages/host/src/ext-host/runner-transport': 1,
   // 2026-09-15 (EXTAPI-01): Task 4 threads platform: PlatformFacts through the generic child-process
   // bootstrap path so an isolated hook runner receives the same platform facts an in-process one does.
   // Measured 90; exact cap, no spare.
-  'packages/host/src/ext-host/generic-hooks-runner': 1,
   // 2026-09-15 (EXTAPI-01): Task 4 threads platform: PlatformFacts into the fixed-adapter child-process
   // bootstrap and its reconstructed HookContext, mirroring the generic runner above. Measured 144;
   // exact cap, no spare.
@@ -2916,14 +2898,10 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/base/src/runner-extension': 154,
   'packages/base/src/runner-context': 18,
   // Release-owned runtime probe/spawn and opt-in policy selection remain separate bounded subjects.
-  'packages/host/src/ext-host/hooks-isolation-assembly': 1,
   // R1 selects verified generic Hook packages in addition to the fixed adapter.
   // 2026-09-22 (hooks-runner review fix): thread a per-load token through to the crash-report
   // closure so a stale evicted generation's crash cannot be attributed to its live successor.
   // Re-measured with countLines(): 160, exact cap, no spare.
-  'packages/host/src/ext-host/extension-isolation-selector': 1,
-  'packages/host/src/ext-host/extension-seatbelt': 1,
-  'packages/host/src/ext-host/extension-runner-runtime': 1,
   // The trusted fixed child entry lives outside the author extension's universal 800-line budget.
   // It reuses hooks-runner's prepared implementation and has no general extension loading surface.
   // R1 adds generic preparation, lease/surface codecs and awaited shutdown.
@@ -2956,7 +2934,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2798 -> 2919; exact measured cap, no exclusions or spare allocation.
   // Acceptance review: Preserve live skill importers and latest code composition rows across publication and frozen views.
   // countLines: 2919 -> 2974; exact cap, no exclusions or spare allocation.
-  'packages/host/src/profile': 22,
+  'packages/host/src/profile': 1,
   // 2026-09-09: raised from 1100. 1071 of it was spent and the 29 left could not cover the deny-list
   // repair with anything to spare; the repair measures 1075. The remaining 100 are platform-win32
   // reaching parity with platform-posix - today its probe() asserts a fixed table where posix
@@ -3079,7 +3057,6 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 6061 -> 6781; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Track sandbox/store operations, reject aborted construction and retain process stores through registry teardown.
   // countLines: 6781 -> 6884 (+103); exact measured cap, no exclusions or spare allocation.
-  'packages/host/src/adapters': 49,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
@@ -3102,7 +3079,6 @@ const INITIAL_CEILING: Record<string, number> = {
   // sync helper. Measured 635, exact, no spare (+3).
   // 2026-10-07 integration review: Optional persistence ports over the existing SQLite owner.
   // countLines: 635 -> 641; exact measured cap, no exclusions or spare allocation.
-  'packages/host/src/adapters/storage-sqlite': 1,
   // 2026-09-11: Base Task 19 adds the after-core queue drain, T0 gate integration, verifier and
   // compact triggers, human gate, and production tool/operation sharing. Measured: 394; cap at 400.
   // 2026-10-07 gap-fill review: Pause inherited goals until explicit resume and retain governed continuation input.

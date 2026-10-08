@@ -3,8 +3,9 @@
 // it along with the product code; change it only when the ledger format itself changes, so it keeps
 // describing the fold the product must still produce. (Changed once for that reason: the program
 // counter left the ledger rows and the fold.)
-import { isEventType, normalize, type SessionStart } from '@agnes/protocol'
-import { isRegisterTombstone, registerKey } from '../../src/log/storage.js'
+
+import { CoreError, type Event, type Seq } from '@agnes/core-common/types'
+import { isRegisterTombstone, registerKey } from '@agnes/core-ledger/log/storage'
 import type {
   ApprovalAsked,
   ApprovalDecided,
@@ -15,9 +16,9 @@ import type {
   HarnessEntry,
   Inbox,
   PlanItems,
-} from '../../src/reduce/shapes.js'
-import type { EffectNode, RegisterCell } from '../../src/reduce/state.js'
-import { CoreError, type Event, type Seq } from '../../src/types.js'
+} from '@agnes/core-ledger/reduce/shapes'
+import type { EffectNode, RegisterCell } from '@agnes/core-ledger/reduce/state'
+import { isEventType, normalize, type SessionStart } from '@agnes/protocol'
 
 /** The ledger state as the reference folds it: every table a plain, writable Map or Set. */
 export type LedgerState = {

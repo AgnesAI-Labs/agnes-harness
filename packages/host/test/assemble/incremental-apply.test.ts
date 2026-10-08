@@ -1,5 +1,5 @@
+import { RuntimePluginCatalogue } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { describe, expect, it } from 'vitest'
-import { RuntimePluginCatalogue } from '../../src/runtime-plugin-catalogue.js'
 import {
   livePluginHost,
   pluginRow,

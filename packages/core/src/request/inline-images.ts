@@ -1,6 +1,6 @@
+import { CoreError } from '@agnes/core-common/types'
+import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
 import { type ModelRecord, modelImageInputError } from '@agnes/protocol'
-import type { SurfaceNode } from '../project/surface.js'
-import { CoreError } from '../types.js'
 import type { RequestBody, RequestMessage } from './mint.js'
 
 export type InlineImagePolicy = {

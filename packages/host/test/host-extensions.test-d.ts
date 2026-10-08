@@ -1,6 +1,6 @@
+import type { ExtensionStatus } from '@agnes/host-extensions/ext-host/index'
+import type { Host } from '@agnes/host-runtime/host'
 import { expectTypeOf } from 'vitest'
-import type { ExtensionStatus } from '../src/ext-host/index.js'
-import type { Host } from '../src/host.js'
 
 // Host.extensions() really returns the managed ext host's own ExtensionStatus, not a cast that
 // merely reuses the legacy ExtStatus's runtime shape under a new name - the two are structurally

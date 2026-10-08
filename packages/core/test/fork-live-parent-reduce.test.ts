@@ -1,11 +1,11 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import type { IdMinter, Seq } from '@agnes/core-common/types'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import type { StorageAdapter } from '@agnes/core-ledger/log/storage'
 import type { ModelRecord } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
 import { Kernel } from '../src/kernel.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import type { StorageAdapter } from '../src/log/storage.js'
-import { presetDefaults } from '../src/step/preset.js'
 import type { SessionImpl } from '../src/step/session.js'
-import type { IdMinter, Seq } from '../src/types.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { type FakeProvider, fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
@@ -76,8 +76,8 @@ function kernel(storage: StorageAdapter, provider: FakeProvider) {
 }
 
 const counter = vi.hoisted(() => ({ on: false, calls: 0 }))
-vi.mock('../src/reduce/reducer.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/reduce/reducer.js')>()
+vi.mock('@agnes/core-ledger/reduce/reducer', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agnes/core-ledger/reduce/reducer')>()
   return {
     ...actual,
     reduce: (...args: Parameters<typeof actual.reduce>) => {

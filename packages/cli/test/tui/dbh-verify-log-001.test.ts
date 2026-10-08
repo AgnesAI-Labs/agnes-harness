@@ -5,7 +5,7 @@ import { renderTable, ToolCard } from '../../src/tui/views/tool-card.js'
 // DBH LOG-001 verification. Oracle is external to the renderer:
 //   - packages/protocol/schema/slots.json:55-60 — `rows`' inner arrays have neither minItems nor
 //     maxItems nor any binding to `columns.length`, so a ragged row is schema-valid.
-//   - packages/core/src/project/ui.ts:648-657 — after schema + byte-cap checks the payload is
+//   - packages/core-ledger/src/project/ui.ts:648-657 — after schema + byte-cap checks the payload is
 //     structuredClone'd onto `tool.slots` with no row/column normalisation.
 // A renderer sitting behind those two must therefore survive a row longer than the header.
 describe('DBH LOG-001: renderTable must survive a schema-valid ragged row', () => {

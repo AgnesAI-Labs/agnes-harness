@@ -1,11 +1,11 @@
+import type { ChildExecutionState } from '@agnes/core-child-control/child/types'
+import type { Event, Seq } from '@agnes/core-common/types'
+import type { ScanQuery } from '@agnes/core-ledger/log/storage'
+import { ChildTraceCache } from '@agnes/core-ledger/project/child-trace-cache'
+import { projectUI, UIProjectionCell } from '@agnes/core-ledger/project/ui'
 import type { Provider, UISpan } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ChildExecutionState } from '../src/child/types.js'
 import { Kernel } from '../src/kernel.js'
-import type { ScanQuery } from '../src/log/storage.js'
-import { ChildTraceCache } from '../src/project/child-trace-cache.js'
-import { projectUI, UIProjectionCell } from '../src/project/ui.js'
-import type { Event, Seq } from '../src/types.js'
 import {
   answerThenHang,
   cancel,

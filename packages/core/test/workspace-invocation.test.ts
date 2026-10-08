@@ -1,6 +1,6 @@
+import type { WorkspaceInvocationSource, WorkspaceInvocationView } from '@agnes/core'
+import { createWorkspaceInvocationPort, HookEngine } from '@agnes/core'
 import { describe, expect, it, vi } from 'vitest'
-import type { WorkspaceInvocationSource, WorkspaceInvocationView } from '../src/index.js'
-import { createWorkspaceInvocationPort, HookEngine } from '../src/index.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 
 const source = (over: Partial<WorkspaceInvocationSource> = {}): WorkspaceInvocationSource => {

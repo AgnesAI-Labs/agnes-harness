@@ -182,7 +182,7 @@ describe('host boundaries', () => {
     }
   })
   it('index re-exports the documented surface for this iteration', async () => {
-    const mod = (await import('../src/index.js')) as Record<string, unknown>
+    const mod = (await import('@agnes/host')) as Record<string, unknown>
     for (const n of [
       'resolveProfile',
       'createHost',

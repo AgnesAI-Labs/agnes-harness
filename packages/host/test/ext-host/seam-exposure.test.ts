@@ -5,13 +5,13 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { LeaseView, PlatformFacts, SessionRef } from '@agnes/extension-api'
 import { serviceFixture } from '@agnes/extension-api/testkit'
-import type { InferenceEvent } from '@agnes/protocol'
-import { afterEach, describe, expect, it } from 'vitest'
-import { createPlatform } from '../../src/adapters/platform.js'
 import {
   connectIsolatedHooksRunner,
   type IsolatedHooksRunner,
-} from '../../src/ext-host/hooks-isolation-client.js'
+} from '@agnes/host-extensions/ext-host/hooks-isolation-client'
+import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
+import type { InferenceEvent } from '@agnes/protocol'
+import { afterEach, describe, expect, it } from 'vitest'
 import { createTestHost, runOnce, type TestHost } from '../../testkit/index.js'
 
 // What the spec pins, sorted the way Object.keys(...).sort() will hand it back (spec §6.1).

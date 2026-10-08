@@ -4,9 +4,9 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel } from '@agnes/ai/testkit'
 import { operations as codeOperations } from '@agnes/code'
+import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
 import { describe, expect, it } from 'vitest'
-import type { SkillRuntimeInput } from '../../src/resources/skills.js'
 import { createTestHost, expectExtends, startWireCapture, type WireApi } from '../../testkit/index.js'
 
 const baseDir = fileURLToPath(new URL('../../../base/', import.meta.url))

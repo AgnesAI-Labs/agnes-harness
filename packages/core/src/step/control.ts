@@ -1,7 +1,7 @@
+import { withPhase } from '@agnes/core-common/step/op-state'
+import type { EventInput, Seq } from '@agnes/core-common/types'
 import type { Actor } from '@agnes/protocol'
-import type { EventInput, Seq } from '../types.js'
 import { deferredEffectId } from './deferred.js'
-import { withPhase } from './op-state.js'
 import type { SessionImpl, StepOutcome, TurnEndReason } from './session.js'
 
 export type AbortResult = { seq: Seq | null; alreadyTerminal: boolean }

@@ -1,5 +1,5 @@
+import { CoreError, SCAN_PAGE_MAX, type ScanQuery, scanAll, scanPages } from '@agnes/core'
 import { describe, expect, it } from 'vitest'
-import { CoreError, SCAN_PAGE_MAX, type ScanQuery, scanAll, scanPages } from '../../core/src/index.js'
 
 type Row = { seq: number; type: string; lane: string }
 

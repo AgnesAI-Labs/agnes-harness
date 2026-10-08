@@ -1,4 +1,6 @@
 import { types as utilTypes } from 'node:util'
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import type { Seq } from '@agnes/core-common/types'
 import type { RequestBody, TokenCounts } from '@agnes/protocol'
 import {
   reconcileTreeReservationHandle,
@@ -7,9 +9,7 @@ import {
   settleTreeSpendHandle,
   type TreeReservationHandle,
 } from '../child/runtime-budget.js'
-import { canonicalJson, sha256Hex } from '../request/hash.js'
 import type { SessionImpl } from '../step/session.js'
-import type { Seq } from '../types.js'
 import {
   type AuxiliaryVisionOutcome,
   type AuxiliaryVisionPlan,

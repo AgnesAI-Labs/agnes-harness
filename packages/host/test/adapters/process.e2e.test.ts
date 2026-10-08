@@ -1,9 +1,9 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createExec, createPolicyOpenProcess } from '@agnes/host-infrastructure/adapters/exec'
+import { openLocalProcess } from '@agnes/host-infrastructure/adapters/process'
 import { describe, expect, it } from 'vitest'
-import { createExec, createPolicyOpenProcess } from '../../src/adapters/exec.js'
-import { openLocalProcess } from '../../src/adapters/process.js'
 
 describe.skipIf(process.platform === 'win32')('Host interactive processes', () => {
   it('provides a real PTY, input, resize, interruption and joined cleanup with bounded launch and joined cleanup', async () => {

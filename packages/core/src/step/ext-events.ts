@@ -1,9 +1,9 @@
+import { CoreError, type Event, type Seq } from '@agnes/core-common/types'
+import { scanPages } from '@agnes/core-ledger/log/scan-pages'
+import type { ScanQuery } from '@agnes/core-ledger/log/storage'
 import { extEventType } from '@agnes/extension-api'
 import { inspectJsonData } from '@agnes/protocol'
-import { scanPages } from '../log/scan-pages.js'
-import type { ScanQuery } from '../log/storage.js'
 import type { ToolSource } from '../registry/tools.js'
-import { CoreError, type Event, type Seq } from '../types.js'
 import type { SessionImpl } from './session.js'
 
 function invalid(message = 'invalid extension event'): never {

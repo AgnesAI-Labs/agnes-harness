@@ -1,7 +1,7 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import { presetDefaults } from '../src/step/preset.js'
 import { fakeProvider, sent, sentFor, textTurn, usage } from './helpers/fake-provider.js'
 import { actor, immediateTimers, openSession } from './helpers/open-session.js'
 

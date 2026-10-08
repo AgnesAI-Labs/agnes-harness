@@ -15,10 +15,10 @@ import type { LocalBackend } from './backend.js'
  * `credentialStore` is the one exception to "everything durable lives only in the daemon process" -
  * `@agnes/host`'s `createCredentialStore` is a plain, atomic-per-file store (rename+fsync, no
  * in-memory journal to race against another process's own in-memory copy - see
- * packages/host/src/adapters/credential-files.ts), so constructing a second instance here, pointed
+ * packages/host-infrastructure/src/adapters/credential-files.ts), so constructing a second instance here, pointed
  * at the exact same `root` the daemon's own Host process uses (`backend.scope.home` -
  * `DaemonScope.home` is the identical anchor `createConfigurationService`/`createCredentialStore`
- * already use daemon-side, per packages/host/src/configuration.ts), is safe: writes to one
+ * already use daemon-side, per packages/host-infrastructure/src/configuration.ts), is safe: writes to one
  * `secret://...` ref never collide with a concurrent write to a different ref, and this handler is
  * the only writer for any given MCP server's OAuth credential ref in practice (one browser-driven
  * callback per authorization attempt).

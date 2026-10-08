@@ -3,13 +3,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { HookEngine, type SessionImpl, type WorkspaceInvocationPort } from '@agnes/core'
 import type { HookContext, HookInvocationSnapshot } from '@agnes/extension-api'
-import { describe, expect, it, vi } from 'vitest'
 import {
   applyTelemetryConsent,
   createSessionHookPort,
   readProfileTelemetryConsent,
   readTelemetryConsent,
-} from '../src/session-hooks.js'
+} from '@agnes/host-runtime/session-hooks'
+import { describe, expect, it, vi } from 'vitest'
 
 const lease: HookContext['lease'] = {
   expiresAt: '2999-01-01T00:00:00.000Z',

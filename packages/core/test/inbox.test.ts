@@ -1,8 +1,8 @@
+import { CoreError } from '@agnes/core-common/types'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import type { CommitTx } from '@agnes/core-ledger/log/storage'
 import { describe, expect, it, vi } from 'vitest'
-import { MemoryStorage } from '../src/log/memory-storage.js'
-import type { CommitTx } from '../src/log/storage.js'
 import { INBOX_BUDGET_EVENT } from '../src/step/inbox.js'
-import { CoreError } from '../src/types.js'
 import { fakeProvider } from './helpers/fake-provider.js'
 import { actor, openSession } from './helpers/open-session.js'
 
@@ -63,7 +63,7 @@ describe('Inbox segment', () => {
       })
     expect(session.lastSeq).toBe(before)
     expect((await session.projectUI()).pendingInputs).toEqual(remaining)
-    const { projectUI } = await import('../src/project/ui.js')
+    const { projectUI } = await import('@agnes/core-ledger/project/ui')
     expect(
       (await projectUI(await log.scan({ fromSeq: 1, limit: 100 }), { sessionKey: session.key }))
         .pendingInputs,
@@ -142,7 +142,7 @@ describe('Inbox segment', () => {
       kind: 'follow_up',
     })
     expect((await session.projectUI()).pendingInputs?.map((item) => item.preview)).toEqual(['B', 'D'])
-    const replay = await import('../src/project/ui.js')
+    const replay = await import('@agnes/core-ledger/project/ui')
     expect(
       (await replay.projectUI(await log.scan({ fromSeq: 1, limit: 100 }), { sessionKey: session.key }))
         .pendingInputs,

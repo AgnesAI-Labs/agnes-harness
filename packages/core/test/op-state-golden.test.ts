@@ -1,5 +1,5 @@
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import { describe, expect, it } from 'vitest'
-import { MemoryStorage } from '../src/log/memory-storage.js'
 import { opMarkProblems } from '../testkit/op-mark-checks.js'
 import {
   CONCURRENT_SCENARIOS,

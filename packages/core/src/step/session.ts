@@ -1,3 +1,70 @@
+import { hasChildControl } from '@agnes/core-child-control/child/store'
+import { LEGACY_LOOP } from '@agnes/core-common/loop/registry'
+import { newOpState, type OpStateObj, opMark, withPhase } from '@agnes/core-common/step/op-state'
+import type { PresetView } from '@agnes/core-common/step/preset'
+import {
+  type Clock,
+  CoreError,
+  type Event,
+  type EventInput,
+  type IdMinter,
+  type Seq,
+} from '@agnes/core-common/types'
+import { isPending, normalizeApproval } from '@agnes/core-effects/effects/approval-answer'
+import { EffectRuntime } from '@agnes/core-effects/effects/effect'
+import { type ExecuteAttempt, ExecutePermitRegistry } from '@agnes/core-effects/effects/execute-permits'
+import { type NestedToolLease, NestedToolScheduler } from '@agnes/core-effects/effects/scheduler'
+import type {
+  ApprovalAnswer,
+  ApprovalRequest,
+  Pending,
+  Verdict,
+  VerifierVerdict,
+} from '@agnes/core-effects/effects/seams'
+import type { ChildrenFactory, ToolContextDeps } from '@agnes/core-effects/effects/tool-context'
+import {
+  assertToolDispatchAvailable,
+  dispatchTool,
+  type HostDispatchObservation,
+  type HostToolDispatchPort,
+} from '@agnes/core-effects/effects/tool-dispatch'
+import { ToolPolicyRegistry, ToolRuntimeRegistry } from '@agnes/core-effects/effects/tool-providers'
+import type { SeamRuntime } from '@agnes/core-effects/effects/wrap'
+import type { InvariantRegistry } from '@agnes/core-ledger/invariants/registry'
+import { scanAll, scanPages } from '@agnes/core-ledger/log/scan-pages'
+import type { SessionLogImpl, Timers } from '@agnes/core-ledger/log/session-log'
+import { SCAN_PAGE_MAX, type ScanQuery } from '@agnes/core-ledger/log/storage'
+import {
+  type ChildTrace,
+  ChildTraceCache,
+  embedChildTraces,
+} from '@agnes/core-ledger/project/child-trace-cache'
+import { exportRlaf, type RlafDump, type RlafRange } from '@agnes/core-ledger/project/rlaf'
+import type { SurfaceCache, SurfaceNode } from '@agnes/core-ledger/project/surface'
+import {
+  attachChildTraces,
+  collectSubagentKeys,
+  subagentOwners,
+  type TraceOwners,
+} from '@agnes/core-ledger/project/trace'
+import { turnsForNodes } from '@agnes/core-ledger/project/turns'
+import {
+  boundedTimelinePage,
+  type CoreUIHistoryPage,
+  type CoreUIOpeningResult,
+  type CoreUIProjectionUpdate,
+  type CoreUITimeline,
+  projectUI,
+  turnCharge,
+  type UIOptions,
+  type UIProjectionCell,
+} from '@agnes/core-ledger/project/ui'
+import { fillInlineNodes, fillInlinePage } from '@agnes/core-ledger/project/ui-inline-slots'
+import { fillLiveSlots } from '@agnes/core-ledger/project/ui-live-slots'
+import { contextTokensAtCut, projectUsage } from '@agnes/core-ledger/project/usage'
+import type { Inbox, InboxItem } from '@agnes/core-ledger/reduce/shapes'
+import { type EffectTree, effectTree } from '@agnes/core-ledger/reduce/state'
+import { currentOp, type StateTracker } from '@agnes/core-ledger/reduce/tracker'
 import type {
   HookPayloadMap,
   HookReturnMap,
@@ -43,33 +110,13 @@ import {
   validateActor,
 } from '@agnes/protocol'
 import { unbindChildFactory } from '../child/sessions.js'
-import { hasChildControl } from '../child/store.js'
-import { isPending, normalizeApproval } from '../effects/approval-answer.js'
-import { EffectRuntime } from '../effects/effect.js'
-import { type ExecuteAttempt, ExecutePermitRegistry } from '../effects/execute-permits.js'
-import { type NestedToolLease, NestedToolScheduler } from '../effects/scheduler.js'
-import type { ApprovalAnswer, ApprovalRequest, Pending, Verdict, VerifierVerdict } from '../effects/seams.js'
-import type { ChildrenFactory, ToolContextDeps } from '../effects/tool-context.js'
-import {
-  assertToolDispatchAvailable,
-  dispatchTool,
-  type HostDispatchObservation,
-  type HostToolDispatchPort,
-} from '../effects/tool-dispatch.js'
-import { ToolPolicyRegistry, ToolRuntimeRegistry } from '../effects/tool-providers.js'
-import type { SeamRuntime } from '../effects/wrap.js'
 import { runDeferred } from '../execution/turn/deferred.js'
-import type { InvariantRegistry } from '../invariants/registry.js'
 // A type-only import, erased at compile time, so it is not a runtime cycle back to the kernel.
 import type { CoreDiagName } from '../kernel.js'
-import { scanAll, scanPages } from '../log/scan-pages.js'
-import type { SessionLogImpl, Timers } from '../log/session-log.js'
-import { SCAN_PAGE_MAX, type ScanQuery } from '../log/storage.js'
 import { LoopChildren } from '../loop/children.js'
 import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
 import { publicOutcome, shouldStopLoop } from '../loop/outcome.js'
 import { createLoopContext, disposeLoopContext } from '../loop/ports.js'
-import { LEGACY_LOOP } from '../loop/registry.js'
 import type {
   AuxiliaryVisionAssemblyInput,
   AuxiliaryVisionProductionAdmission,
@@ -79,28 +126,6 @@ import type {
   RequestMediaArtifactReader,
   RequestMediaSurfaceLimits,
 } from '../orchestrator/request-media-surface.js'
-import { type ChildTrace, ChildTraceCache, embedChildTraces } from '../project/child-trace-cache.js'
-import { exportRlaf, type RlafDump, type RlafRange } from '../project/rlaf.js'
-import type { SurfaceCache, SurfaceNode } from '../project/surface.js'
-import { attachChildTraces, collectSubagentKeys, subagentOwners, type TraceOwners } from '../project/trace.js'
-import { turnsForNodes } from '../project/turns.js'
-import {
-  boundedTimelinePage,
-  type CoreUIHistoryPage,
-  type CoreUIOpeningResult,
-  type CoreUIProjectionUpdate,
-  type CoreUITimeline,
-  projectUI,
-  turnCharge,
-  type UIOptions,
-  type UIProjectionCell,
-} from '../project/ui.js'
-import { fillInlineNodes, fillInlinePage } from '../project/ui-inline-slots.js'
-import { fillLiveSlots } from '../project/ui-live-slots.js'
-import { contextTokensAtCut, projectUsage } from '../project/usage.js'
-import type { Inbox, InboxItem } from '../reduce/shapes.js'
-import { type EffectTree, effectTree } from '../reduce/state.js'
-import { currentOp, type StateTracker } from '../reduce/tracker.js'
 import { ResourceRegistry } from '../registry/resources.js'
 import type { RegistrySnapshot, ToolRegistry, ToolSource } from '../registry/tools.js'
 import type { PromptSection } from '../request/contribute.js'
@@ -114,7 +139,6 @@ import type {
   RuntimePromptPreload,
   RuntimePromptPreloader,
 } from '../runtime/current.js'
-import { type Clock, CoreError, type Event, type EventInput, type IdMinter, type Seq } from '../types.js'
 import { expireApprovals, resumeApproval } from './approval-callback.js'
 import { restoreSessionGrants } from './approval-grants.js'
 import { runCompaction } from './compaction.js'
@@ -135,8 +159,6 @@ import {
 } from './inbox.js'
 import { discloseTools, resolveModel, runInference } from './inference.js'
 import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
-import { newOpState, type OpStateObj, opMark, withPhase } from './op-state.js'
-import type { PresetView } from './preset.js'
 import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.js'
 import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } from './reentry.js'
 import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
@@ -369,7 +391,7 @@ export type SessionDeps = {
   surface: SurfaceCache
   ui: UIProjectionCell
   /** Fresh registry runner for inline tool cards. Explicit dynamic fills override it. */
-  slotFills?: () => import('../project/ui.js').SlotFillRunner
+  slotFills?: () => import('@agnes/core-ledger/project/ui').SlotFillRunner
   lane: string
   runtime: SeamRuntime
   provider: Provider
@@ -413,15 +435,15 @@ export type SessionDeps = {
   contractForModel?: (target: { route: string; model: string }) => ContractRef
   children: ChildrenFactory
   /** Safe authority data; raw workspace runtime capabilities are consumed before Session publish. */
-  workspaceIdentity?: import('../workspace/runtime.js').WorkspaceSessionIdentity
+  workspaceIdentity?: import('@agnes/core-effects/workspace/runtime').WorkspaceSessionIdentity
   /** Sole invocation lease owner for workspace-bound effects. */
-  workspaceInvocation?: import('../workspace/runtime.js').WorkspaceInvocationPort
+  workspaceInvocation?: import('@agnes/core-effects/workspace/runtime').WorkspaceInvocationPort
   /** Host publication admission used before every workspace invocation acquire. */
-  workspacePublication?: import('../workspace/runtime.js').WorkspacePublicationDispatch
+  workspacePublication?: import('@agnes/core-effects/workspace/runtime').WorkspacePublicationDispatch
   /** The sole workspace close delegate retained by this session. */
-  workspaceLease?: import('../workspace/runtime.js').SessionWorkspaceLifecycle
+  workspaceLease?: import('@agnes/core-effects/workspace/runtime').SessionWorkspaceLifecycle
   /** Host-owned reservation port inherited by default child factories. */
-  childWorkspaceRuntime?: import('../workspace/runtime.js').ChildWorkspaceRuntimePort
+  childWorkspaceRuntime?: import('@agnes/core-effects/workspace/runtime').ChildWorkspaceRuntimePort
   ids: IdMinter
   clock: Clock
   actor: Actor
@@ -1994,7 +2016,7 @@ export class SessionImpl {
     return this.exclusively<CoreUIProjectionUpdate>(async () => {
       this.guardProjection()
       const filledPatch = async (
-        patch: import('../project/ui.js').CoreUITimelinePatch,
+        patch: import('@agnes/core-ledger/project/ui').CoreUITimelinePatch,
       ): Promise<CoreUIProjectionUpdate> => {
         await fillInlineNodes(
           patch.changes.flatMap((change) => (change.op === 'upsert' ? [change.node] : [])),

@@ -8,18 +8,18 @@ import {
   type PersistenceSessionStore,
   ProviderError,
 } from '@agnes/extension-api'
-import { expect, it } from 'vitest'
-import { installSandboxProviders } from '../../../host/src/adapters/sandbox-providers.js'
-import { createPersistenceProviderRegistry } from '../../../host/src/adapters/storage-provider.js'
-import { installCompactionEngines } from '../../../host/src/assemble/compaction-engines.js'
-import { installLoops } from '../../../host/src/assemble/loops.js'
-import { installModelAdapters } from '../../../host/src/assemble/model-adapters.js'
+import { createPersistenceProviderRegistry } from '@agnes/host-infrastructure/adapters/storage-provider'
+import { installSandboxProviders } from '@agnes/host-providers/adapters/sandbox-providers'
+import { installCompactionEngines } from '@agnes/host-providers/assemble/compaction-engines'
+import { installLoops } from '@agnes/host-providers/assemble/loops'
+import { installModelAdapters } from '@agnes/host-providers/assemble/model-adapters'
 import {
   applyProviderPreset,
   readProviderSelection,
   readProviderSelections,
-} from '../../../host/src/assemble/provider-selection.js'
-import { installToolProviders } from '../../../host/src/assemble/tool-providers.js'
+} from '@agnes/host-providers/assemble/provider-selection'
+import { installToolProviders } from '@agnes/host-providers/assemble/tool-providers'
+import { expect, it } from 'vitest'
 import {
   installProviderRegistry,
   ProviderRegistry,

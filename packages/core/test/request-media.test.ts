@@ -1,4 +1,5 @@
 import { deflateSync } from 'node:zlib'
+import { sha256Hex } from '@agnes/core-common/request/hash'
 import { describe, expect, it } from 'vitest'
 import {
   hashPreparedRequestMedia,
@@ -7,7 +8,6 @@ import {
   RequestMediaPreflightError,
   restoreRequestMedia,
 } from '../src/orchestrator/request-media.js'
-import { sha256Hex } from '../src/request/hash.js'
 
 const u32 = (value: number) => [value >>> 24, value >>> 16, value >>> 8, value].map((byte) => byte & 0xff)
 const crcTable = new Uint32Array(256)

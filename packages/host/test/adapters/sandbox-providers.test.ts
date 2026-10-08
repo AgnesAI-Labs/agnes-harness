@@ -10,20 +10,20 @@ import {
   type SandboxProvider,
   sandboxUnavailable,
 } from '@agnes/extension-api'
-import { normalizePluginExport } from '@agnes/plugin-runtime/host'
-import { afterAll, describe, expect, it } from 'vitest'
-import { createExec, createPolicyExec } from '../../src/adapters/exec.js'
-import { createLocalSandboxProvider } from '../../src/adapters/sandbox-local.js'
+import { createExec, createPolicyExec } from '@agnes/host-infrastructure/adapters/exec'
+import { createLocalSandboxProvider } from '@agnes/host-infrastructure/adapters/sandbox-local'
+import { createAdminSessionSelection } from '@agnes/host-infrastructure/admin-session-selection'
+import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import {
   bindStartupSandboxProvider,
   createSandboxDispatchExec,
   installSandboxProviders,
   readSandboxStartupConfig,
   type SandboxProviderSlot,
-} from '../../src/adapters/sandbox-providers.js'
-import { createAdminSessionSelection } from '../../src/admin-session-selection.js'
-import type {} from '../../src/assemble/loops.js'
-import { createConfigurationService } from '../../src/configuration.js'
+} from '@agnes/host-providers/adapters/sandbox-providers'
+import type {} from '@agnes/host-providers/assemble/loops'
+import { normalizePluginExport } from '@agnes/plugin-runtime/host'
+import { afterAll, describe, expect, it } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
 
 const cwd = mkdtempSync(join(tmpdir(), 'agnes-sandbox-provider-'))

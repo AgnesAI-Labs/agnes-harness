@@ -1,8 +1,8 @@
+import { CoreError, type Seq } from '@agnes/core-common/types'
+import type { Verdict } from '@agnes/core-effects/effects/seams'
 import { type Actor, inspectJsonData, isDateTime, validateAgainst } from '@agnes/protocol'
 import { ApprovalDecided } from '@agnes/protocol/gen/session-v1'
 import { type Static, Type } from '@sinclair/typebox'
-import type { Verdict } from '../effects/seams.js'
-import { CoreError, type Seq } from '../types.js'
 import { permanentGrantId } from './approval-grants.js'
 import type { SessionImpl } from './session.js'
 

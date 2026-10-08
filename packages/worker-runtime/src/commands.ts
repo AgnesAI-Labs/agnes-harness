@@ -230,7 +230,7 @@ export async function prepareIdleResources(
  *
  * `setPreset`/`setModel` go through `o.host.validatePresetSwitch`/`validateModelSwitch` first, not
  * a `HostSession` method the caller invokes unchecked — `Host` is the only place that can weigh a
- * switch against the actual assembly (`packages/host/src/host.ts`), and `HostSession` has no method
+ * switch against the actual assembly (`packages/host-runtime/src/host.ts`), and `HostSession` has no method
  * that does this check on its own.
  *
  * `decideApproval` resolves a pending ticket through `HostSession.resumeApproval` — core's session
@@ -452,7 +452,7 @@ export async function handleCommand(
  *
  * Skills: `agnes/skills` is reloaded with the new generation, and its `loaded` flag is checked
  * explicitly — `reloadEcosystemExtension`'s own `managed.load()` resolves with `{ loaded: false,
- * error }` rather than throwing (packages/host/src/ext-host/managed-host.ts), so a silent failure
+ * error }` rather than throwing (packages/host-extensions/src/ext-host/managed-host.ts), so a silent failure
  * would otherwise be missed. `tool_search`'s Skill listing (agnes/mcp-search) reads whatever
  * generation agnes/skills serves, so nothing else needs reloading (design §3.9, D123).
  *

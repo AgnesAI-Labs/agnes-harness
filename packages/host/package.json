@@ -30,7 +30,6 @@
     "@agnes/sandbox-remote": "workspace:*",
     "@agnes/system-node": "workspace:*",
     "ajv": "8.20.0",
-    "jiti": "2.7.0",
     "yaml": "2.9.0",
     "@agnes/host-common": "workspace:*",
     "@agnes/host-infrastructure": "workspace:*",

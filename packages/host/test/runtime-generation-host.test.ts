@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { PluginExtensionAPI } from '@agnes/extension-api'
+import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
+import { createGenerationSkills } from '@agnes/host-runtime/runtime-generation-resources'
 import {
   hashDirectory,
   RuntimeGenerationSnapshotStore,
@@ -16,8 +18,6 @@ import {
   type SkillGenerationSnapshot,
 } from '@agnes/resource-control-runtime'
 import { expect, it } from 'vitest'
-import { createGenerationSkills } from '../src/runtime-generation-resources.js'
-import { buildCompleteRuntimeTarget } from '../src/runtime-target-builder.js'
 import { createTestHost } from '../testkit/index.js'
 import { fixtureTool } from './fixtures/tool.js'
 

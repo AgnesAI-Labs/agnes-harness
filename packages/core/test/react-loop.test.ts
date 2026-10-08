@@ -1,3 +1,6 @@
+import { bindChildAgentSession, inProcessChildAgentProvider } from '@agnes/core'
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type {
   ChildAgentService,
   CreateDelegatedChildInput,
@@ -7,11 +10,8 @@ import type {
 } from '@agnes/extension-api'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createReactLoop, type ReactConfig } from '../../../examples/loops/react-loop/index.mjs'
-import { bindChildAgentSession, inProcessChildAgentProvider } from '../src/index.js'
 import { Kernel } from '../src/kernel.js'
-import { MemoryStorage } from '../src/log/memory-storage.js'
 import { CompactionRunner } from '../src/step/compaction.js'
-import { presetDefaults } from '../src/step/preset.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, type Script, sent, sentFor, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
@@ -262,7 +262,7 @@ it.each(['uncertain-model', 'uncertain-tool', 'model-receipt', 'assistant-commit
     const session = await f.k.session('cold', { ...options, loop: f.loop })
     await enqueue(session)
     let snapshot: Awaited<ReturnType<typeof session.scan>> | undefined
-    let opCells: import('../src/log/storage.js').RegisterRow[] = []
+    let opCells: import('@agnes/core-ledger/log/storage').RegisterRow[] = []
     const commit = (f.k.o.storage as MemoryStorage).commit.bind(f.k.o.storage)
     vi.spyOn(f.k.o.storage, 'commit').mockImplementation(async (key, tx) => {
       const result = await commit(key, tx)
@@ -556,7 +556,7 @@ it.each(['intent', 'creation', 'receipt'] as const)(
       },
     )
     let snapshot: Awaited<ReturnType<MemoryStorage['scan']>> | undefined
-    let opCells: import('../src/log/storage.js').RegisterRow[] = []
+    let opCells: import('@agnes/core-ledger/log/storage').RegisterRow[] = []
     let creation: CreateDelegatedChildInput | undefined
     const create = storage.createDelegatedChild.bind(storage)
     vi.spyOn(storage, 'createDelegatedChild').mockImplementation(async (input) => {
@@ -661,7 +661,7 @@ it.each(['marker', 'receipt', 'joined'] as const)(
     const f = setup([toolTurn('export_job', {}), textTurn('after job')], {}, { seams })
     f.k.tools.add(tool, { source: 'test', trust: 'builtin' })
     let snapshot: Awaited<ReturnType<MemoryStorage['scan']>> | undefined
-    let opCells: import('../src/log/storage.js').RegisterRow[] = []
+    let opCells: import('@agnes/core-ledger/log/storage').RegisterRow[] = []
     const commit = f.k.o.storage.commit.bind(f.k.o.storage)
     vi.spyOn(f.k.o.storage, 'commit').mockImplementation(async (key, tx) => {
       const result = await commit(key, tx)

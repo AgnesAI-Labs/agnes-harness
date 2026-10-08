@@ -1,16 +1,16 @@
 import { closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { isHostError } from '@agnes/host-common/errors'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import type { LockState, ResolveEnv } from '@agnes/host-common/profile/types'
+import { openAdapters, sandboxHostServices, toSeamAdapters } from '@agnes/host-runtime/adapters/index'
 import {
   createPrivateDirectorySync,
   createPrivateFileSync,
   windowsProcessStartTimeSync,
 } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { openAdapters, sandboxHostServices, toSeamAdapters } from '../../src/adapters/index.js'
-import { isHostError } from '../../src/errors.js'
-import { resolveProfile } from '../../src/profile/resolve.js'
-import type { LockState, ResolveEnv } from '../../src/profile/types.js'
 import { runTestNode } from './test-node.js'
 
 const env: ResolveEnv = {
@@ -291,7 +291,7 @@ describe('openAdapters', () => {
   // Windows uses its owned Job; POSIX must still call the injected platform tree-kill route.
   it('uses the platform-specific termination route and waits for the command to exit', async () => {
     dir = mkdtempSync(join(tmpdir(), 'agnes-data-'))
-    const { createPlatform } = await import('../../src/adapters/platform.js')
+    const { createPlatform } = await import('@agnes/host-infrastructure/adapters/platform')
     const real = createPlatform()
     const calls: number[] = []
     const instrumented = {
@@ -338,7 +338,7 @@ describe('openAdapters', () => {
   })
   it('accepts an injected platform instead of detecting one, and probes it', async () => {
     dir = mkdtempSync(join(tmpdir(), 'agnes-data-'))
-    const { createWin32Platform } = await import('../../src/adapters/platform-win32.js')
+    const { createWin32Platform } = await import('@agnes/host-infrastructure/adapters/platform-win32')
     const injected = createWin32Platform()
     const p = await resolveProfile({ builtin: 'local-dev', lock }, env)
     const b = await openAdapters(p, { dataDir: dir, workspaceRoot: dir, platform: injected })

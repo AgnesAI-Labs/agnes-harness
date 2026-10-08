@@ -1,16 +1,16 @@
+import { newOpState, type OpStateObj, type ToolCallState } from '@agnes/core-common/step/op-state'
+import { CoreError } from '@agnes/core-common/types'
+import { scanAll } from '@agnes/core-ledger/log/scan-pages'
+import type { ApprovalAsked } from '@agnes/core-ledger/reduce/shapes'
 import type { ExecutionDomain, ResolvedToolCallPolicy } from '@agnes/protocol'
-import { scanAll } from '../../log/scan-pages.js'
-import type { ApprovalAsked } from '../../reduce/shapes.js'
 import {
   hasAuthenticToolPolicyHash,
   hasCompleteToolPolicyEnvelope,
   hasTrustedToolCallProvenance,
 } from '../../registry/tool-policy.js'
 import { approvalBindingHash } from '../../step/approval-grants.js'
-import { newOpState, type OpStateObj, type ToolCallState } from '../../step/op-state.js'
 import type { SessionImpl } from '../../step/session.js'
 import { continueVerifier } from '../../step/verifier-continuation.js'
-import { CoreError } from '../../types.js'
 
 export async function approvalContinuation(
   s: SessionImpl,

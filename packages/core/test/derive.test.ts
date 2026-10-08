@@ -1,7 +1,9 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import { CoreError, type Event } from '@agnes/core-common/types'
+import { computeSurface } from '@agnes/core-ledger/project/surface'
 import type { ToolDef } from '@agnes/extension-api'
 import { validateEvent } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { computeSurface } from '../src/project/surface.js'
 import type { DeriveInput, DeriveOutput, RequestHeaderData } from '../src/request/derive.js'
 import {
   assertKind,
@@ -13,10 +15,8 @@ import {
   wrapUntrusted,
 } from '../src/request/derive.js'
 import { createEnvelopeCache } from '../src/request/envelope-cache.js'
-import { canonicalJson, sha256Hex } from '../src/request/hash.js'
 import { isLedgerRequest, mintFrom } from '../src/request/mint.js'
 import { toProviderRequest } from '../src/request/to-provider.js'
-import { CoreError, type Event } from '../src/types.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 // A nonce in the shape core now insists on: 32 lowercase hex characters. The old `abcd` fixture is

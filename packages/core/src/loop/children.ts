@@ -1,8 +1,8 @@
+import { MICROCREDITS_PER_CREDIT } from '@agnes/core-child-control/child/credits'
+import { hasChildControl } from '@agnes/core-child-control/child/store'
+import { CoreError } from '@agnes/core-common/types'
 import type { ChildAgentHandle, ChildAgentParentScope, ChildAgentSessionService } from '@agnes/extension-api'
-import { MICROCREDITS_PER_CREDIT } from '../child/credits.js'
-import { hasChildControl } from '../child/store.js'
 import type { SessionImpl } from '../step/session.js'
-import { CoreError } from '../types.js'
 
 /** Read the parent's current ceiling, including already held/settled tree spend. */
 async function remainingBudget(s: SessionImpl): Promise<number | undefined> {

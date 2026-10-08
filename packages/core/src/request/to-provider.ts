@@ -1,3 +1,4 @@
+import { CoreError } from '@agnes/core-common/types'
 import {
   SLOT_NAMES,
   validateAgainst,
@@ -5,7 +6,6 @@ import {
   type RequestMessage as WireMessage,
 } from '@agnes/protocol'
 import { RequestBody as WireSchema } from '@agnes/protocol/gen/model'
-import { CoreError } from '../types.js'
 import { auxiliaryVisionSettledForProvider, requestMediaForProvider } from './derive.js'
 import { isLedgerRequest, type LedgerRequest, type RequestMessage } from './mint.js'
 

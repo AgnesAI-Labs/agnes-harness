@@ -5,10 +5,10 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { publishDaemonDiscovery, resolveDaemonScope } from '@agnes/daemon'
+import { defaultProcessIdentity } from '@agnes/host-infrastructure/adapters/process-identity-default'
 import { listenWindowsPipe } from '@agnes/system-node/windows-pipe'
 import { expect, it, vi } from 'vitest'
 import { acquireOwnerLock } from '../../daemon/src/supervisor/owner-lock.js'
-import { defaultProcessIdentity } from '../../host/src/adapters/process-identity-default.js'
 import { channelPipeTransport } from '../src/runner/client.js'
 
 const windows = process.platform === 'win32' // guards-allow-platform: real Windows channel pipe verification.

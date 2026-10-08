@@ -1,7 +1,7 @@
+import type { Event } from '@agnes/core-common/types'
+import type { ScanQuery } from '@agnes/core-ledger/log/storage'
 import { describe, expect, it } from 'vitest'
-import type { ScanQuery } from '../src/log/storage.js'
 import { mediaLedgerForHeader } from '../src/step/inference.js'
-import type { Event } from '../src/types.js'
 
 type Row = Pick<Event, 'seq' | 'type' | 'lane'> & { sourceEventSeqs?: number[] }
 

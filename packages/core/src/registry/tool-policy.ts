@@ -1,6 +1,6 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { resolveToolCallPolicy } from '@agnes/extension-api'
 import type { JsonValue, ResolvedToolCallPolicy as PersistedToolCallPolicy } from '@agnes/protocol'
-import { canonicalJson, sha256Hex } from '../request/hash.js'
 import type { ExecutionDomain, RegisteredTool } from './tools.js'
 
 export type CompleteResolvedToolCallPolicy = PersistedToolCallPolicy &

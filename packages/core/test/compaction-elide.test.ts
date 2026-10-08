@@ -1,9 +1,9 @@
+import { canonicalJson } from '@agnes/core-common/request/hash'
+import type { Event } from '@agnes/core-common/types'
+import { computeSurface } from '@agnes/core-ledger/project/surface'
 import { describe, expect, it } from 'vitest'
-import { computeSurface } from '../src/project/surface.js'
-import { canonicalJson } from '../src/request/hash.js'
 import { elideSpan } from '../src/step/compaction-elide.js'
 import { estimateTokens } from '../src/step/inference.js'
-import type { Event } from '../src/types.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 let seq = 0

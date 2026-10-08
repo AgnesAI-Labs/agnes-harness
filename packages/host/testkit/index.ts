@@ -19,23 +19,23 @@ import type {
 } from '@agnes/core'
 import { type Event, prepareIntegrity, scanAll, verifyLedger } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
+import type { TrajectoryResolver } from '@agnes/host-artifacts/trajectory-network'
+import type { PresetDoc } from '@agnes/host-common/presets/types'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import type { LockState, ProfileInputs, ResolvedProfile } from '@agnes/host-common/profile/types'
+import { MemoryPackageLoader, type PackageModule } from '@agnes/host-extensions/assemble/packages'
+import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
+import { localRealpathSync } from '@agnes/host-infrastructure/adapters/fs-io-local'
+import type { CapabilityLevel, PlatformBackend } from '@agnes/host-infrastructure/adapters/platform'
+import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
+import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
+import { type AuditEvent, type AuditSink, createMemoryAudit } from '@agnes/host-infrastructure/audit'
+import type { ProviderBuildOptions } from '@agnes/host-providers/assemble/provider'
+import { ASSEMBLY_STEPS, type AssemblyStep } from '@agnes/host-runtime/assemble'
+import { createHost, type Host, type HostOptions, type HostSession } from '@agnes/host-runtime/host'
+import type { SessionRecovery } from '@agnes/host-runtime/session'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
-import { localRealpathSync } from '../src/adapters/fs-io-local.js'
-import type { CapabilityLevel, PlatformBackend } from '../src/adapters/platform.js'
-import { createPlatform } from '../src/adapters/platform.js'
-import { createSqliteStorage } from '../src/adapters/storage-sqlite.js'
-import { MemoryPackageLoader, type PackageModule } from '../src/assemble/packages.js'
-import type { ProviderBuildOptions } from '../src/assemble/provider.js'
-import { ASSEMBLY_STEPS, type AssemblyStep } from '../src/assemble.js'
-import { type AuditEvent, type AuditSink, createMemoryAudit } from '../src/audit.js'
-import { createHost, type Host, type HostOptions, type HostSession } from '../src/host.js'
-import type { PresetDoc } from '../src/presets/types.js'
-import { resolveProfile } from '../src/profile/resolve.js'
-import type { LockState, ProfileInputs, ResolvedProfile } from '../src/profile/types.js'
-import type { SkillRuntimeInput } from '../src/resources/skills.js'
-import type { SessionRecovery } from '../src/session.js'
-import type { TrajectoryResolver } from '../src/trajectory-network.js'
 import { attachTestSeamPlugins } from './cordis-seams.js'
 
 export { attachTestSeamPlugins } from './cordis-seams.js'
@@ -133,7 +133,7 @@ function fakePlatform(caps: Record<string, CapabilityLevel['level']>): PlatformB
 export type TestHostOptions = {
   /** Opt out of the production publisher view in tests that deliberately exercise raw Kernel ports. */
   currentRuntime?: import('@agnes/core').KernelOptions['currentRuntime']
-  serviceAuthority?: import('../src/ext-host/service-invocation.js').ServiceAuthority
+  serviceAuthority?: import('@agnes/host-extensions/ext-host/service-invocation').ServiceAuthority
   dataDir: string
   /** Builtin template loaded by the real resolver; omitted uses local-dev. */
   template?: string

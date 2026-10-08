@@ -1,8 +1,8 @@
 import { performance } from 'node:perf_hooks'
+import type { Event } from '@agnes/core-common/types'
+import { TurnProjection } from '@agnes/core-ledger/project/turns'
 import type { UITurnCall, UITurnUsage } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { TurnProjection } from '../src/project/turns.js'
-import type { Event } from '../src/types.js'
 import { toolHeavyLedger } from '../testkit/tool-heavy-ledger.js'
 
 const emptyTotals = (): UITurnUsage['totals'] => ({

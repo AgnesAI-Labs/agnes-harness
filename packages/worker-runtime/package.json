@@ -23,5 +23,8 @@
     "@agnes/resource-control-worker": "workspace:*",
     "@agnes/package-manager": "workspace:*"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@agnes/host-infrastructure": "workspace:*"
+  }
 }

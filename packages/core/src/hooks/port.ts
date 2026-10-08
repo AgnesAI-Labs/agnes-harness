@@ -1,3 +1,4 @@
+import { CoreError } from '@agnes/core-common/types'
 import type { HookPayloadMap, HookReturnMap } from '@agnes/extension-api'
 import { inspectJsonData, type JsonValue } from '@agnes/protocol'
 import type { HookSnapshot } from '../registry/hooks.js'
@@ -5,7 +6,6 @@ import type { PromptSection } from '../request/contribute.js'
 import type { DeriveOutput } from '../request/derive.js'
 import { applyBeforeRequestPatches, applyContextResults, type ContextResult } from '../request/transforms.js'
 import type { HookPort } from '../step/session.js'
-import { CoreError } from '../types.js'
 import { type DispatchContext, HOOK_UNHANDLED, type HookEngine } from './engine.js'
 import { discoverResources, type ResourceDiscovery, type ResourceDiscoveryInputs } from './resources.js'
 

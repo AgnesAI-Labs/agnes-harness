@@ -12,9 +12,9 @@ import {
   mcpServerExtension,
 } from '@agnes/base'
 import { testFsPolicy } from '@agnes/core/testkit'
+import { createPosixPlatform, createWin32Platform } from '@agnes/host-infrastructure/adapters/platform'
 import type { InferenceEvent, ToolCall } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createPosixPlatform, createWin32Platform } from '../../src/adapters/platform.js'
 import { createTestHost } from '../../testkit/index.js'
 
 // The package directory, not an import: host does not depend on @agnes/base, it loads what the

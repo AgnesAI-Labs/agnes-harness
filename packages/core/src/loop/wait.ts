@@ -1,7 +1,7 @@
+import { CoreError } from '@agnes/core-common/types'
+import type { Inbox } from '@agnes/core-ledger/reduce/shapes'
 import type { LoopContext } from '@agnes/extension-api'
-import type { Inbox } from '../reduce/shapes.js'
 import type { SessionImpl } from '../step/session.js'
-import { CoreError } from '../types.js'
 
 const WAKE = 'x/core/loop-wake'
 const CONSUMED = 'x/core/loop-wake-consumed'

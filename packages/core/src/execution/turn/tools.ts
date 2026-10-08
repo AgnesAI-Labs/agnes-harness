@@ -1,15 +1,17 @@
+import { hasChildControl, transitionChildState } from '@agnes/core-child-control/child/store'
+import { type OpStateObj, type ToolCallState, withPhase } from '@agnes/core-common/step/op-state'
+import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
+import { approvalRefusal, isPending } from '@agnes/core-effects/effects/approval-answer'
+import { type EffectHandle, type EffectOutcome, effectOutcome } from '@agnes/core-effects/effects/effect'
+import type { ExecuteAttempt } from '@agnes/core-effects/effects/execute-permits'
+import type { NestedToolLease } from '@agnes/core-effects/effects/scheduler'
+import { buildToolContext, type FsOps, type ToolContextDeps } from '@agnes/core-effects/effects/tool-context'
+import type { HostDispatchObservation } from '@agnes/core-effects/effects/tool-dispatch'
+import { toLedgerContent } from '@agnes/core-effects/effects/tool-result'
+import { settlesWithin, withTimeout } from '@agnes/core-effects/effects/wrap'
+import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { ToolResult } from '@agnes/extension-api'
 import type { Actor, ExecutionDomain, JsonValue, ResolvedToolCallPolicy } from '@agnes/protocol'
-import { hasChildControl, transitionChildState } from '../../child/store.js'
-import { approvalRefusal, isPending } from '../../effects/approval-answer.js'
-import { type EffectHandle, type EffectOutcome, effectOutcome } from '../../effects/effect.js'
-import type { ExecuteAttempt } from '../../effects/execute-permits.js'
-import type { NestedToolLease } from '../../effects/scheduler.js'
-import { buildToolContext, type FsOps, type ToolContextDeps } from '../../effects/tool-context.js'
-import type { HostDispatchObservation } from '../../effects/tool-dispatch.js'
-import { toLedgerContent } from '../../effects/tool-result.js'
-import { settlesWithin, withTimeout } from '../../effects/wrap.js'
-import { scanAll } from '../../log/scan-pages.js'
 import { dispatchLoopEvent } from '../../loop/events.js'
 import {
   hasAuthenticToolPolicyHash,
@@ -30,11 +32,9 @@ import {
 } from '../../step/approval-grants.js'
 import { finishAborted } from '../../step/control.js'
 import { deferredEffectId } from '../../step/deferred.js'
-import { type OpStateObj, type ToolCallState, withPhase } from '../../step/op-state.js'
 import type { ChainStep, SessionImpl, StepOutcome } from '../../step/session.js'
 import { summarizeCall } from '../../step/summarize-call.js'
 import { stepVerifyInput, toolVerifyInput } from '../../step/verify-input.js'
-import { CoreError, type EventInput, type Seq } from '../../types.js'
 import { resolveModel } from './inference.js'
 import { approvalContinuation } from './parked.js'
 
@@ -1108,7 +1108,9 @@ export async function approveAndExecute(
     const invokeAttempt = (attempt: ExecuteAttempt): Promise<HostDispatchObservation> => {
       const workspaceInvocation = s.d.workspaceInvocation
       if (workspaceInvocation) {
-        const handler = async (view: import('../../workspace/runtime.js').WorkspaceInvocationView) => {
+        const handler = async (
+          view: import('@agnes/core-effects/workspace/runtime').WorkspaceInvocationView,
+        ) => {
           const confined = await view.ready(ac.signal)
           const ctx = context(view.fs(), {
             sandbox: view.hookSandbox(),

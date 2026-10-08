@@ -64,7 +64,7 @@ export type OAuthStartResult =
  * of failure for the browser sitting on the other end of the redirect. */
 export type OnOAuthAuthorizationStatus = (serverId: string, status: OAuthAuthorizationStatus) => Promise<void>
 
-/** Exactly the shape `packages/host/src/adapters/credential-store.ts`'s `OAuthCredential` requires
+/** Exactly the shape `packages/host-infrastructure/src/adapters/credential-store.ts`'s `OAuthCredential` requires
  * for `CredentialStore.putOAuth`. Deliberately NOT importing that type from `@agnes/host` - this
  * package (`resource-control-runtime`) has no dependency on `@agnes/host` today, and adding one just
  * to name a type would be a needless new package edge for a shape any structurally-compatible object

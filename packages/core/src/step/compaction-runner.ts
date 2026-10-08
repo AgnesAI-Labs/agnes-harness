@@ -1,3 +1,4 @@
+import { CoreError } from '@agnes/core-common/types'
 import type {
   CompactionEngineInstance,
   CompactionInput,
@@ -7,7 +8,6 @@ import type {
   HookPayloadMap,
 } from '@agnes/extension-api'
 import { createCompactionThreshold } from '@agnes/extension-api'
-import { CoreError } from '../types.js'
 import type { CompactionPort } from './session.js'
 
 type BeforeCompactPayload = HookPayloadMap['before_compact']

@@ -1,7 +1,7 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { expect, it } from 'vitest'
 import { deriveRequest, sanitize } from '../src/request/derive.js'
 import { createEnvelopeCache } from '../src/request/envelope-cache.js'
-import { canonicalJson, sha256Hex } from '../src/request/hash.js'
 import { isLedgerRequest } from '../src/request/mint.js'
 import { toProviderRequest } from '../src/request/to-provider.js'
 import {

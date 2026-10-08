@@ -1,5 +1,5 @@
+import { ExecutePermitRegistry } from '@agnes/core-effects/effects/execute-permits'
 import { describe, expect, it } from 'vitest'
-import { ExecutePermitRegistry } from '../src/effects/execute-permits.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { actor, openSession, readTool } from './helpers/open-session.js'

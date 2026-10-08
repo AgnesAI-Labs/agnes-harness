@@ -1,3 +1,29 @@
+import { hasChildControl } from '@agnes/core-child-control/child/store'
+import { isActiveChildState } from '@agnes/core-child-control/child/types'
+import { defaultIds } from '@agnes/core-common/ids'
+import { LEGACY_LOOP, LoopRegistry, loopKey } from '@agnes/core-common/loop/registry'
+import type { PresetView } from '@agnes/core-common/step/preset'
+import { type Clock, CoreError, type IdMinter, type Seq, type SessionKey } from '@agnes/core-common/types'
+import { assertFsEnforces } from '@agnes/core-effects/effects/fs-guard'
+import { platformFacts } from '@agnes/core-effects/effects/platform-facts'
+import { SEAM_NAMES, type SeamImplementations } from '@agnes/core-effects/effects/seams'
+import type { ChildrenFactory, FsOps, ToolContextDeps } from '@agnes/core-effects/effects/tool-context'
+import type { HostToolDispatchPort } from '@agnes/core-effects/effects/tool-dispatch'
+import { ToolPolicyRegistry, ToolRuntimeRegistry } from '@agnes/core-effects/effects/tool-providers'
+import { SeamRuntime } from '@agnes/core-effects/effects/wrap'
+import type {
+  ChildWorkspaceRuntimePort,
+  SessionWorkspaceLifecycle,
+  SessionWorkspaceRuntime,
+  WorkspaceInvocationPort,
+} from '@agnes/core-effects/workspace/runtime'
+import { CORE_CHECKS } from '@agnes/core-ledger/invariants/core-checks'
+import { InvariantRegistry } from '@agnes/core-ledger/invariants/registry'
+import { forkPaths } from '@agnes/core-ledger/log/fork-seed'
+import type { Timers } from '@agnes/core-ledger/log/session-log'
+import type { StorageAdapter } from '@agnes/core-ledger/log/storage'
+import { ProjectionRegistry } from '@agnes/core-ledger/project/named'
+import { openTracked } from '@agnes/core-ledger/reduce/tracker'
 import type {
   ChildAgentParentScope,
   ChildAgentSessionService,
@@ -15,34 +41,15 @@ import { ProviderError } from '@agnes/extension-api'
 import type { Actor, ApprovalMode, Provider, SessionStart } from '@agnes/protocol'
 import { KernelChildren } from './child/factory.js'
 import { bindChildFactory } from './child/sessions.js'
-import { hasChildControl } from './child/store.js'
 import { bindChildSessionToolFilter, ChildToolRegistry } from './child/tool-filter.js'
-import { isActiveChildState } from './child/types.js'
-import { assertFsEnforces } from './effects/fs-guard.js'
-import { platformFacts } from './effects/platform-facts.js'
-import { SEAM_NAMES, type SeamImplementations } from './effects/seams.js'
-import type { ChildrenFactory, FsOps, ToolContextDeps } from './effects/tool-context.js'
-import type { HostToolDispatchPort } from './effects/tool-dispatch.js'
-import { ToolPolicyRegistry, ToolRuntimeRegistry } from './effects/tool-providers.js'
-import { SeamRuntime } from './effects/wrap.js'
 import { type DispatchContext, HookEngine } from './hooks/engine.js'
-import { defaultIds } from './ids.js'
-import { CORE_CHECKS } from './invariants/core-checks.js'
-import { InvariantRegistry } from './invariants/registry.js'
-import { forkPaths } from './log/fork-seed.js'
-import type { Timers } from './log/session-log.js'
-import type { StorageAdapter } from './log/storage.js'
 import { LoopEventRegistry } from './loop/events.js'
-import { LEGACY_LOOP, LoopRegistry, loopKey } from './loop/registry.js'
-import { ProjectionRegistry } from './project/named.js'
-import { openTracked } from './reduce/tracker.js'
 import { HookRegistry } from './registry/hooks.js'
 import { ResourceRegistry } from './registry/resources.js'
 import { SlotRegistry } from './registry/slots.js'
 import { ToolRegistry } from './registry/tools.js'
 import type { ContractRef } from './request/derive.js'
 import type { CurrentRuntimeLookup, RuntimePromptPreloader } from './runtime/current.js'
-import type { PresetView } from './step/preset.js'
 import { CORE_OPS, type CoreOpName, replacementFor, validateReplacements } from './step/reentry.js'
 import {
   type CompactionPort,
@@ -53,13 +60,6 @@ import {
   type SessionDeps,
   SessionImpl,
 } from './step/session.js'
-import { type Clock, CoreError, type IdMinter, type Seq, type SessionKey } from './types.js'
-import type {
-  ChildWorkspaceRuntimePort,
-  SessionWorkspaceLifecycle,
-  SessionWorkspaceRuntime,
-  WorkspaceInvocationPort,
-} from './workspace/runtime.js'
 
 /**
  * The closed set of `x/core/*` diagnostic names. Five of them are written outside this file:
@@ -171,7 +171,7 @@ export type SessionOptions = {
   /** Host runtime identity carried unchanged into the assembled session. */
   workspaceRuntime?: SessionWorkspaceRuntime
   /** Safe authority identity retained after the raw workspace runtime is consumed. */
-  workspaceIdentity?: import('./workspace/runtime.js').WorkspaceSessionIdentity
+  workspaceIdentity?: import('@agnes/core-effects/workspace/runtime').WorkspaceSessionIdentity
   /** Sole invocation lease owner for every workspace capability used by this session. */
   workspaceInvocation?: WorkspaceInvocationPort
   /** Unique Host-owned close delegate for this session's runtime. */

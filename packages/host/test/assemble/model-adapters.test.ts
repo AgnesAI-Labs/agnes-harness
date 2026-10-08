@@ -6,18 +6,18 @@ import { fakeModel } from '@agnes/ai/testkit'
 import { Context } from '@agnes/cordis'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import type { ModelAdapter, ModelAdapterInstance } from '@agnes/extension-api'
-import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
-import type { InferenceEvent, RequestBody } from '@agnes/protocol'
-import { afterEach, expect, it } from 'vitest'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import { MemoryPackageLoader, type PackageModule } from '@agnes/host-extensions/assemble/packages'
+import { createMemoryAudit } from '@agnes/host-infrastructure/audit'
 import {
   installModelAdapters,
   ModelAdapterRegistry,
   modelAdapterCatalog,
-} from '../../src/assemble/model-adapters.js'
-import { MemoryPackageLoader, type PackageModule } from '../../src/assemble/packages.js'
-import { assemble } from '../../src/assemble.js'
-import { createMemoryAudit } from '../../src/audit.js'
-import { resolveProfile } from '../../src/profile/resolve.js'
+} from '@agnes/host-providers/assemble/model-adapters'
+import { assemble } from '@agnes/host-runtime/assemble'
+import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
+import type { InferenceEvent, RequestBody } from '@agnes/protocol'
+import { afterEach, expect, it } from 'vitest'
 import { attachTestSeamPlugins } from '../../testkit/cordis-seams.js'
 
 const dirs: string[] = []

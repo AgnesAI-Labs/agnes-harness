@@ -3,10 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { seams as baseSeams } from '@agnes/base'
+import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
+import type { HostSession } from '@agnes/host-runtime/host'
 import type { InferenceEvent, JsonValue } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createSqliteStorage } from '../src/adapters/storage-sqlite.js'
-import type { HostSession } from '../src/host.js'
 import { createTestHost } from '../testkit/index.js'
 
 const dirs: string[] = []

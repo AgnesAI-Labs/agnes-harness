@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { testSubscriptionCredential } from '@agnes/ai'
-import { createCodexLogin } from '../../../host/src/codex-login.js'
+import { createCodexLogin } from '@agnes/host-infrastructure/codex-login'
 
 // Exercise the real pi-ai flows and Host interaction bridge. Only HTTP is faked;
 // never replace the login implementation (that would hide missing bundled modules).

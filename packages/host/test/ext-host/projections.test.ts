@@ -8,12 +8,12 @@ import type {
   ProjectionReader,
   ProjectionReadResult,
 } from '@agnes/extension-api'
+import { bindExtensionInvocations } from '@agnes/host-extensions/assemble/extension-ports'
+import { buildExtensionAPI } from '@agnes/host-extensions/ext-host/api-proxy'
+import { DisposerBag } from '@agnes/host-extensions/ext-host/disposers'
+import { leaseFor } from '@agnes/host-extensions/ext-host/lease'
 import type { JsonValue } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bindExtensionInvocations } from '../../src/assemble/extension-ports.js'
-import { buildExtensionAPI } from '../../src/ext-host/api-proxy.js'
-import { DisposerBag } from '../../src/ext-host/disposers.js'
-import { leaseFor } from '../../src/ext-host/lease.js'
 import { createTestHost } from '../../testkit/index.js'
 import { fixtureTool } from '../fixtures/tool.js'
 

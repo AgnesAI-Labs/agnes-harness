@@ -24,22 +24,15 @@
     "./assemble/tool-providers": "./src/assemble/tool-providers.ts",
     "./profile/bundles-reader": "./src/profile/bundles-reader.ts",
     "./profile/composition-state": "./src/profile/composition-state.ts",
-    "./resource-generation-cell": "./src/resource-generation-cell.ts",
-    "./runtime-candidate": "./src/runtime-candidate.ts",
     "./runtime-generation-view": "./src/runtime-generation-view.ts",
     "./runtime-hot-policy": "./src/runtime-hot-policy.ts",
     "./runtime-mutation-gate": "./src/runtime-mutation-gate.ts",
     "./runtime-plugin-catalogue": "./src/runtime-plugin-catalogue.ts",
     "./runtime-session-overlay": "./src/runtime-session-overlay.ts",
-    "./runtime-state": "./src/runtime-state.ts",
-    "./runtime-target-assembler": "./src/runtime-target-assembler.ts",
     "./runtime-target-builder": "./src/runtime-target-builder.ts",
-    "./runtime-target-claims": "./src/runtime-target-claims.ts",
     "./runtime-target-publisher": "./src/runtime-target-publisher.ts",
     "./runtime-target-report": "./src/runtime-target-report.ts",
-    "./runtime-target-resource-bootstrap": "./src/runtime-target-resource-bootstrap.ts",
-    "./runtime-target-resources": "./src/runtime-target-resources.ts",
-    "./runtime-target-static-authority": "./src/runtime-target-static-authority.ts"
+    "./runtime-target-resource-bootstrap": "./src/runtime-target-resource-bootstrap.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

@@ -1,5 +1,5 @@
+import { exportRlaf } from '@agnes/core-ledger/project/rlaf'
 import { expect, it } from 'vitest'
-import { exportRlaf } from '../src/project/rlaf.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { actor, openSession } from './helpers/open-session.js'
 

@@ -1,4 +1,4 @@
-import { codexCredentials } from '../../src/adapters/codex-credentials.js'
+import { codexCredentials } from '@agnes/host-infrastructure/adapters/codex-credentials'
 
 const [home, ref, mode] = process.argv.slice(2)
 if (!home || !ref) throw new Error('missing fixture args')

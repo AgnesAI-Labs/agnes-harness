@@ -2,6 +2,26 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  assertCompositionCompatible,
+  type CompositionCatalog,
+  checkCompositionPatch,
+  compositionDump,
+  expandBundles,
+  parsePackageBundles,
+  resolveComposition,
+  validateComposition,
+} from '@agnes/host-common/profile/composition'
+import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import { createCompositionAdmin, readBundleSelection } from '@agnes/host-runtime/profile/bundle-selection'
+import {
+  compositionAllowsTool,
+  profileForComposition,
+} from '@agnes/host-runtime/profile/composition-selection'
+import {
+  capabilityEnabled,
+  resolveSessionCapabilities,
+} from '@agnes/host-runtime/profile/session-capabilities'
+import {
   SessionCapabilitySet,
   validateAgainst,
   validatePreset,
@@ -9,21 +29,6 @@ import {
   validateResolvedProfile,
 } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
-import { createCompositionAdmin, readBundleSelection } from '../../src/profile/bundle-selection.js'
-import {
-  assertCompositionCompatible,
-  type CompositionCatalog,
-  checkCompositionPatch,
-  compositionAllowsTool,
-  compositionDump,
-  expandBundles,
-  parsePackageBundles,
-  profileForComposition,
-  resolveComposition,
-  validateComposition,
-} from '../../src/profile/composition.js'
-import { resolveProfile } from '../../src/profile/resolve.js'
-import { capabilityEnabled, resolveSessionCapabilities } from '../../src/profile/session-capabilities.js'
 
 const env = {
   platform: { os: 'linux' as const, arch: 'x64', capabilities: {} },
