@@ -1,6 +1,10 @@
 /** CLI startup and home errors use fixed text, never an upstream error body. */
 const en = {
   home: 'Home',
+  daemonScope:
+    'This AGH home already owns an App Server with different profile or data settings. Use the running configuration, or stop that server before changing it.',
+  daemonBusy:
+    'Another App Server or launcher owns this AGH home. Connect to the running server or wait for startup to complete.',
   profile: 'Profile',
   doctor: 'Doctor',
   ok: 'ready',
@@ -18,6 +22,9 @@ const en = {
 } as const
 const zh: Record<keyof typeof en, string> = {
   home: '运行目录',
+  daemonScope:
+    '此 AGH 运行目录已有 App Server，配置档或数据目录与本次请求不同。请使用现有配置，或先停止该服务再更改配置。',
+  daemonBusy: '此 AGH 运行目录已由另一个 App Server 或启动器占用。请连接现有服务，或等待启动完成。',
   profile: '配置档',
   doctor: '运行诊断',
   ok: '就绪',
@@ -36,20 +43,34 @@ export function startupFailure(
   env: Readonly<Record<string, string | undefined>>,
 ): string | undefined {
   const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
+  if (
+    code !== 'E_DAEMON_SCOPE_CONFLICT' &&
+    error &&
+    typeof error === 'object' &&
+    'cause' in error &&
+    error.cause
+  ) {
+    const cause = startupFailure(error.cause, env)
+    if (cause) return cause
+  }
   const key =
-    code === 'EADDRINUSE'
-      ? 'port'
-      : ['EACCES', 'EPERM', 'EROFS', 'ENOSPC'].includes(String(code))
-        ? 'writable'
-        : code === 'E_HOME_VERSION'
-          ? 'version'
-          : code === 'E_HOME_UNSAFE'
-            ? 'unsafe'
-            : ['CREDENTIAL_STORE_UNSAFE', 'CONFIG_CREDENTIAL_STORE', 'E_SECRET_UNRESOLVED'].includes(
-                  String(code),
-                )
-              ? 'credentials'
-              : undefined
+    code === 'E_DAEMON_SCOPE_CONFLICT'
+      ? 'daemonScope'
+      : ['E_DAEMON_BUSY', 'E_DAEMON_STARTUP_BUSY'].includes(String(code))
+        ? 'daemonBusy'
+        : code === 'EADDRINUSE'
+          ? 'port'
+          : ['EACCES', 'EPERM', 'EROFS', 'ENOSPC'].includes(String(code))
+            ? 'writable'
+            : code === 'E_HOME_VERSION'
+              ? 'version'
+              : code === 'E_HOME_UNSAFE'
+                ? 'unsafe'
+                : ['CREDENTIAL_STORE_UNSAFE', 'CONFIG_CREDENTIAL_STORE', 'E_SECRET_UNRESOLVED'].includes(
+                      String(code),
+                    )
+                  ? 'credentials'
+                  : undefined
   return key ? firstRunText(env, key) : undefined
 }
 

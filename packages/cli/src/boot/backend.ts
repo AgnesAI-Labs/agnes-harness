@@ -387,7 +387,7 @@ async function discoverOrStart(
     try {
       const identityTimeoutMs = Math.min(1_000, Math.max(1, deadlineAt - Date.now()))
       status = await withinDeadline(
-        () => daemonStatus(scope.dataDir, { identityTimeoutMs, socketTimeoutMs: identityTimeoutMs }),
+        () => daemonStatus(scope.home, { identityTimeoutMs, socketTimeoutMs: identityTimeoutMs }),
         deadlineAt,
         options.signal,
       )
@@ -514,7 +514,7 @@ async function stopOwnChild(
   let status: Awaited<ReturnType<typeof daemonStatus>> | undefined
   try {
     status = await withinDeadline(
-      () => daemonStatus(scope.dataDir, { identityTimeoutMs: 250, socketTimeoutMs: 250 }),
+      () => daemonStatus(scope.home, { identityTimeoutMs: 250, socketTimeoutMs: 250 }),
       Date.now() + CLIENT_CLEANUP_TIMEOUT_MS,
     )
   } catch {
@@ -524,7 +524,7 @@ async function stopOwnChild(
     try {
       const result = await withinDeadline(
         () =>
-          stopDaemon(scope.dataDir, {
+          stopDaemon(scope.home, {
             identityTimeoutMs: 250,
             waitMs: CLIENT_CLEANUP_TIMEOUT_MS,
             pollMs: 25,

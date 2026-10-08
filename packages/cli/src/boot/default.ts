@@ -31,7 +31,7 @@ export async function bootDefault(
       home: deps.home,
       ...(p.profile ? { profile: p.profile } : {}),
     })
-    if ((await daemonStatus(scope.dataDir)).running)
+    if ((await daemonStatus(scope.home)).running)
       throw new BootError(
         'A daemon is already running for this home/profile. Omit --standalone to connect, or use --ephemeral for an isolated run.',
       )

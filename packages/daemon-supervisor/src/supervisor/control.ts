@@ -189,7 +189,7 @@ export async function runDaemonControl(
     ...(args.dataDir !== undefined ? { dataDir: args.dataDir } : {}),
     allowMissingProfile: true,
   })
-  const dataDir = scope.dataDir
+  const dataDir = scope.home
   // A descriptor is the daemon's generation-bound statement of which profile/home owns this data
   // directory. Validate it before maintenance can signal or report a live daemon; if an older
   // installation has only owner.json, retain the owner-only compatibility path below.

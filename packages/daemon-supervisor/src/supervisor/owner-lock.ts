@@ -8,6 +8,7 @@ import { encodeOwner, type Owner, readOwner } from './owner-record.js'
 
 export class OwnerLockError extends Error {
   override name = 'OwnerLockError'
+  readonly code = 'E_DAEMON_BUSY'
   constructor() {
     super('daemon owner identity unavailable or already active')
   }

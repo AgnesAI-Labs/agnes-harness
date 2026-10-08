@@ -84,12 +84,13 @@ function release(home: string): void {
     registrations.delete(home)
   }
 }
-/** Journal files are untrusted on export. Project only the fixed schema, including historical lookup. */
+/** Journal files are untrusted on export. Project only the fixed schema, including lookup within a bounded recent window. */
 export function readDiagnosticJournal(
   home: string,
   limit: number,
   diagnosticId?: string,
 ): DiagnosticRecord[] {
+  limit = Number.isFinite(limit) ? Math.max(1, Math.min(1000, Math.floor(limit))) : 1
   const byId = new Map<string, DiagnosticRecord>()
   const accept = (input: unknown): void => {
     const row = safeDiagnosticRecord(input)
@@ -104,14 +105,17 @@ export function readDiagnosticJournal(
       ? windowsOpenPrivateFileSync(file)
       : openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW)
     try {
-      if (!fstatSync(fd).isFile()) throw new Error('Invalid diagnostic journal')
+      const stat = fstatSync(fd)
+      if (!stat.isFile()) throw new Error('Invalid diagnostic journal')
+      // Limit bounds I/O and parsing work, including corrupt lines and id-specific lookups.
+      const start = Math.max(0, stat.size - limit * 4096)
       // Fixed-size chunks avoid loading the durable history into memory. Oversize lines are discarded.
-      const buffer = Buffer.alloc(64 * 1024)
-      let position = 0,
+      const buffer = Buffer.alloc(Math.min(64 * 1024, limit * 4096))
+      let position = start,
         line = '',
-        skipping = false
-      for (;;) {
-        const n = readChunk(fd, buffer, 0, buffer.length, position)
+        skipping = start > 0
+      while (position < stat.size) {
+        const n = readChunk(fd, buffer, 0, Math.min(buffer.length, stat.size - position), position)
         if (!n) break
         position += n
         for (const char of buffer.subarray(0, n).toString('utf8')) {

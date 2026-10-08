@@ -47,10 +47,10 @@ const failed = (name: DoctorSectionName, detail: string): Section => ({
 export async function doctorDaemon(deps: Pick<DoctorCommandDeps, 'home'>): Promise<Section> {
   const dataDir = hostDataDir(deps.home)
   try {
-    const state = await daemonStatus(dataDir)
+    const state = await daemonStatus(deps.home)
     if (!state.running) return { name: 'daemon', status: 'warn', detail: ['not running'] }
 
-    const report = await daemonDoctor({ dataDir, clock: Date.now })
+    const report = await daemonDoctor({ dataDir, home: deps.home, clock: Date.now })
     const status = report.sections.some((section) => section.status === 'fail')
       ? 'fail'
       : report.sections.some((section) => section.status === 'warn')
@@ -99,7 +99,7 @@ export async function doctorCommand(
       probeAccounts: parsed.probe,
       ...(deps.configuration ? { configuration: deps.configuration } : {}),
       ...(deps.signal ? { signal: deps.signal } : {}),
-      connection: async () => (await daemonStatus(hostDataDir(deps.home))).socketReachable === true,
+      connection: async () => (await daemonStatus(deps.home)).socketReachable === true,
     })
     const sections = report.checks.map((check) => ({
       name: check.id,

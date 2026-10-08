@@ -15,12 +15,20 @@ import {
 import { describe, expect, it, vi } from 'vitest'
 import { Kernel } from '../src/kernel.js'
 import { LoopEventRegistry } from '../src/loop/events.js'
+import { createLoopContext, disposeLoopContext } from '../src/loop/ports.js'
 import { applyBeforeRequestPatches } from '../src/request/transforms.js'
 import { noopHooks } from '../src/step/session.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
-import { actor, noTimers, readTool, testFsOps, testWorkspaceInvocation } from './helpers/open-session.js'
+import {
+  actor,
+  noTimers,
+  openSession,
+  readTool,
+  testFsOps,
+  testWorkspaceInvocation,
+} from './helpers/open-session.js'
 
 const codec = loopCheckpointCodec(1, (state) => {
   if (state !== 'ready' && state !== 'done') throw new Error('invalid echo checkpoint')
@@ -44,10 +52,13 @@ function echoDriver(ctx: LoopContext, initial: 'ready' | 'done' = 'ready'): Loop
       })
       const response = await ctx.model.complete(request, signal)
       const text = response.flatMap((event) => (event.type === 'text_delta' ? [event.delta] : [])).join('')
-      await ctx.events.emit('assistant/message', {
-        content: [{ type: 'text', text }],
-        stopReason: 'end_turn',
-      })
+      await ctx.events.assistant(
+        {
+          content: [{ type: 'text', text }],
+          stopReason: 'end_turn',
+        },
+        codec.encode('done'),
+      )
       await ctx.events.emit('x/echo/result', {
         single: result.content,
         batch: batch.map((item) => item.content),
@@ -824,3 +835,75 @@ it.each(['deny', 'quote'] as const)(
     }
   },
 )
+
+it('keeps custom Loop events untrusted and refuses reserved event types', async () => {
+  const f = await openSession({ provider: fakeProvider([]) })
+  const ctx = await createLoopContext(f.session)
+  try {
+    for (const type of [
+      'x/core/loop-invocation',
+      'x/core/loop-checkpoint',
+      'tool/result',
+      'approval/decided',
+      'assistant/message',
+      'turn/end',
+    ])
+      await expect(ctx.events.emit(type, {})).rejects.toMatchObject({ code: 'E_ENVELOPE' })
+    await ctx.events.emit('x/example/progress', { progress: 1 })
+    expect(await f.log.scan({ type: 'x/example/progress', limit: 10 })).toEqual([
+      expect.objectContaining({ origin: `ext:${f.session.loop.id}`, trust: 'untrusted', ignorable: true }),
+    ])
+  } finally {
+    disposeLoopContext(ctx)
+    await f.session.close()
+  }
+})
+it('does not recover invocation receipts from an extension source', async () => {
+  const f = await openSession({ provider: fakeProvider([]) })
+  const ctx = await createLoopContext(f.session)
+  try {
+    await f.log.append([
+      f.session.ev(
+        'x/core/loop-invocation',
+        {
+          invocationId: 'foreign',
+          fingerprint: 'foreign',
+          status: 'responded',
+          checkpoint: null,
+          loop: f.session.loop,
+          result: { content: [] },
+        },
+        { ignorable: true, origin: 'ext:example', trust: 'untrusted' },
+      ),
+    ])
+    expect(await ctx.effects.status('foreign')).toEqual({ invocationId: 'foreign', status: 'not-sent' })
+  } finally {
+    disposeLoopContext(ctx)
+    await f.session.close()
+  }
+})
+
+it('refuses a trusted invocation receipt bound to another loop', async () => {
+  const f = await openSession({ provider: fakeProvider([]) })
+  const ctx = await createLoopContext(f.session)
+  try {
+    await f.log.append([
+      f.session.ev(
+        'x/core/loop-invocation',
+        {
+          invocationId: 'wrong-loop',
+          fingerprint: 'fixture',
+          status: 'responded',
+          checkpoint: null,
+          loop: { id: 'other', version: '1.0.0' },
+          result: { content: [] },
+        },
+        { ignorable: true },
+      ),
+    ])
+    await expect(ctx.effects.status('wrong-loop')).rejects.toMatchObject({ code: 'E_RELATION' })
+  } finally {
+    disposeLoopContext(ctx)
+    await f.session.close()
+  }
+})

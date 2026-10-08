@@ -34,10 +34,13 @@ function driver(ctx: LoopContext, saved?: LoopCheckpoint): LoopDriver {
       if (failure?.type === 'error') throw new Error(failure.message)
       active.throwIfAborted()
       const text = reply.flatMap((event) => (event.type === 'text_delta' ? [event.delta] : [])).join('')
-      await ctx.events.emit('assistant/message', {
-        content: [{ type: 'text', text }],
-        stopReason: 'end_turn',
-      })
+      await ctx.events.assistant(
+        {
+          content: [{ type: 'text', text }],
+          stopReason: 'end_turn',
+        },
+        codec.encode({ done: true }),
+      )
       state = { done: true }
       await ctx.checkpoints.write(codec.encode(state))
       await ctx.events.finish('completed')

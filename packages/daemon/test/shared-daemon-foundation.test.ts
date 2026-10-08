@@ -515,6 +515,25 @@ describe('generation-bound discovery and Web credential', () => {
 })
 
 describe('startup coordination', () => {
+  it('serializes one canonical home across data directories, profiles and aliases', async () => {
+    const home = await root('agh-home-owner-')
+    const alias = await root('agh-home-alias-')
+    await symlink(home, join(alias, 'home'), process.platform === 'win32' ? 'junction' : 'dir')
+    const firstScope = await resolveDaemonScope({ home, profile: 'local-dev', dataDir: join(home, 'a') })
+    const secondScope = await resolveDaemonScope({
+      home: join(alias, 'home'),
+      profile: 'enterprise',
+      dataDir: join(home, 'b'),
+    })
+    expect(secondScope.discoveryPath).toBe(firstScope.discoveryPath)
+    const first = acquireDaemonStartup(firstScope)
+    try {
+      expect(() => acquireDaemonStartup(secondScope)).toThrow(DaemonStartupBusyError)
+    } finally {
+      first.release()
+    }
+  })
+
   it('has a recognizable busy failure and an idempotent release', async () => {
     const dataDir = await root('agnes-startup-lock-')
     const scope = await resolveDaemonScope({ home: dataDir, profile: 'local-dev', dataDir })
@@ -600,10 +619,10 @@ describe('maintenance target resolution', () => {
 
   it('refuses maintenance for a profile or home that conflicts with a live discovery record', async () => {
     const home = await root('agnes-control-scope-home-')
-    const otherHome = await root('agnes-control-scope-other-home-')
+    const otherDataDir = await root('agnes-control-scope-other-data-')
     const dataDir = await root('agnes-control-scope-data-')
     const processIdentity = async () => ({ state: 'alive' as const, startId: 'control-scope-test' })
-    const ownerLock = await acquireOwnerLock(dataDir, {
+    const ownerLock = await acquireOwnerLock(await canonicalPath(home), {
       socketPath: join(dataDir, 'daemon', 'agnesd.sock'),
       processIdentity,
     })
@@ -624,7 +643,7 @@ describe('maintenance target resolution', () => {
       ).rejects.toThrow(/discovery does not match/)
       await expect(
         runDaemonControl(
-          { command: 'status', home: otherHome, profile: 'local-dev', dataDir },
+          { command: 'status', home, profile: 'local-dev', dataDir: otherDataDir },
           { status, processIdentity },
         ),
       ).rejects.toThrow(/discovery does not match/)

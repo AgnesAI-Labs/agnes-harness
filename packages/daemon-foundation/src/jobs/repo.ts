@@ -1,4 +1,5 @@
-import type { JobSpec, Schedule } from '@agnes/protocol'
+import { isDeepStrictEqual } from 'node:util'
+import { type JobSpec, rpcError, type Schedule } from '@agnes/protocol'
 import { ensure, type TableHandle } from '../storage/table.js'
 
 export type JobStatusName = 'waiting' | 'delayed' | 'active' | 'completed' | 'failed' | 'dead' | 'cancelled'
@@ -113,7 +114,21 @@ export class JobsRepo {
 
   insert(job: JobRow): boolean {
     return this.table.transaction(() => {
-      if (this.get(job.idempotencyKey)) return false
+      const existing = this.get(job.idempotencyKey)
+      if (existing) {
+        const request = (row: JobRow) => ({
+          sessionKey: row.sessionKey,
+          profileHash: row.profileHash,
+          payload: row.payload,
+          schedule: row.schedule,
+          maxAttempts: row.maxAttempts,
+          budget: row.budget,
+          protected: row.protected,
+        })
+        if (!isDeepStrictEqual(request(existing), request(job)))
+          throw rpcError('SEMANTIC_REJECTED', { reason: 'JOB_IDENTITY_CONFLICT' })
+        return false
+      }
       this.table.exec(
         `INSERT INTO jobs (
           idempotency_key, session_key, profile_hash, payload, schedule, status,

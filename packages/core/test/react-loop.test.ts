@@ -249,14 +249,26 @@ it.each([
   },
 )
 
-it.each(['uncertain-model', 'uncertain-tool', 'model-receipt', 'assistant-commit', 'tool-receipt'] as const)(
+it.each([
+  'uncertain-model',
+  'uncertain-tool',
+  'model-receipt',
+  'assistant-commit',
+  'tool-result',
+  'tool-receipt',
+] as const)(
   'cold-resumes mid-turn at %s without repeating effects or assistant messages',
   async (boundary) => {
     let executions = 0
     const f = setup([toolTurn('read', {}), textTurn('final')])
     const tool = readTool(async () => {
       executions++
-      return { content: [{ type: 'text', text: 'read once' }] }
+      return {
+        content: [{ type: 'text', text: 'read once' }],
+        structured: { approved: true },
+        details: { source: 'fixture' },
+        terminate: false,
+      }
     })
     f.k.tools.add(tool, { source: 'test', trust: 'builtin' })
     const session = await f.k.session('cold', { ...options, loop: f.loop })
@@ -267,6 +279,7 @@ it.each(['uncertain-model', 'uncertain-tool', 'model-receipt', 'assistant-commit
     vi.spyOn(f.k.o.storage, 'commit').mockImplementation(async (key, tx) => {
       const result = await commit(key, tx)
       const match = tx.events.some((row) => {
+        if (boundary === 'tool-result') return row.type === 'tool/result'
         if (boundary === 'assistant-commit') return row.type === 'assistant/message'
         const data = row.data as { status?: string; invocationId?: string }
         return (
@@ -293,6 +306,18 @@ it.each(['uncertain-model', 'uncertain-tool', 'model-receipt', 'assistant-commit
     reopened.k.tools.add(tool, { source: 'test', trust: 'builtin' })
     const cold = await reopened.k.session('cold', options)
     await cold.resume()
+    if (boundary === 'tool-result' || boundary === 'tool-receipt') {
+      const receipt = await reopened.contexts.at(-1)!.effects.status('react:1:tool:0:0')
+      expect(receipt).toMatchObject({
+        status: 'responded',
+        result: {
+          content: [{ type: 'text', text: 'read once' }],
+          structured: { approved: true },
+          details: { source: 'fixture' },
+          terminate: false,
+        },
+      })
+    }
     if (boundary.startsWith('uncertain')) {
       expect(await run(cold)).toMatchObject({
         reason: 'error',
@@ -310,7 +335,7 @@ it.each(['uncertain-model', 'uncertain-tool', 'model-receipt', 'assistant-commit
     expect(reopened.provider.calls).toBe(1)
     expect(await cold.scan({ type: 'assistant/message', limit: 10 })).toHaveLength(2)
     expect(await cold.scan({ type: 'tool/call', limit: 10 })).toHaveLength(1)
-    expect(executions).toBe(boundary === 'tool-receipt' ? 1 : 2)
+    expect(executions).toBe(boundary === 'tool-receipt' || boundary === 'tool-result' ? 1 : 2)
   },
 )
 

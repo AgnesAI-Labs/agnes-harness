@@ -174,7 +174,7 @@ export async function isolatedRuntime(launcher: 'root' | 'installed' = 'root') {
         ws = html.match(/data-ws="([^"]+)"/)?.[1] ?? ''
         if (!ws) throw new Error('The real workbench did not advertise a daemon WebSocket')
       } else {
-        const owner = JSON.parse(await readFile(join(home, 'data/daemon/owner.json'), 'utf8'))
+        const owner = JSON.parse(await readFile(join(home, 'daemon/owner.json'), 'utf8'))
         socketPath = owner.socketPath
       }
       const client = createClient({

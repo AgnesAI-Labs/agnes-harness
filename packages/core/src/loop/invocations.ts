@@ -7,6 +7,7 @@ import type { SessionImpl } from '../step/session.js'
 
 const EVENT = 'x/core/loop-invocation'
 type Record = {
+  loop: { id: string; version: string }
   invocationId: string
   fingerprint: string
   status: 'may-have-sent' | 'responded'
@@ -27,10 +28,19 @@ export class LoopInvocations {
       fromSeq: (this.s.d.log.parent?.boundarySeq ?? 0) + 1,
       toSeq: this.s.lastSeq,
     })
-    return rows
-      .map((row) => row.data as unknown as Record)
+    const event = rows
       .reverse()
-      .find((row) => row.invocationId === id)
+      .find(
+        (row) =>
+          row.origin === 'system' &&
+          row.trust === 'trusted' &&
+          (row.data as { invocationId?: string }).invocationId === id,
+      )
+    if (!event) return undefined
+    const record = event.data as unknown as Record
+    if (record.loop?.id !== this.s.loop.id || record.loop?.version !== this.s.loop.version)
+      throw new CoreError('E_RELATION', 'Invocation receipt does not match the pinned loop')
+    return record
   }
   async status(id: string): Promise<LoopEffectStatus> {
     const row = await this.record(id)
@@ -52,7 +62,12 @@ export class LoopInvocations {
     })
     const link = links
       .reverse()
-      .find((event) => (event.data as { invocationId?: string }).invocationId === id)
+      .find(
+        (event) =>
+          event.origin === 'system' &&
+          event.trust === 'trusted' &&
+          (event.data as { invocationId?: string }).invocationId === id,
+      )
     const toolUseId = (link?.data as { toolUseId?: string } | undefined)?.toolUseId
     if (toolUseId) {
       const results = await scanAll((query) => this.s.d.log.scan(query), {
@@ -65,7 +80,37 @@ export class LoopInvocations {
         .reverse()
         .find((event) => (event.data as { toolUseId?: string }).toolUseId === toolUseId)
       if (result) {
-        const data = result.data as { content: ToolResult['content']; isError?: boolean; code?: string }
+        // Core appends this versioned author response beside tool/result in the same transaction.
+        const responses = await this.s.d.log.scan({
+          type: 'x/core/tool-response',
+          lane: this.s.lane,
+          fromSeq: result.seq + 1,
+          toSeq: result.seq + 1,
+          limit: 1,
+        })
+        const response = responses[0]
+        const saved = response?.data as
+          | { version?: number; toolUseId?: string; result?: ToolResult }
+          | undefined
+        if (
+          response?.origin === 'system' &&
+          response.trust === 'trusted' &&
+          saved?.version === 1 &&
+          saved.toolUseId === toolUseId &&
+          saved.result
+        )
+          return {
+            status: 'responded',
+            invocationId: id,
+            checkpoint: row.checkpoint,
+            result: structuredClone(saved.result),
+          }
+        const data = result.data as {
+          content: ToolResult['content']
+          isError?: boolean
+          code?: string
+          structured?: unknown
+        }
         // A recovery placeholder is uncertainty, not a real response from the external tool.
         if (data.code !== 'TOOL_OUTCOME_UNKNOWN')
           return {
@@ -74,6 +119,7 @@ export class LoopInvocations {
             checkpoint: row.checkpoint,
             result: structuredClone({
               content: data.content,
+              ...(data.structured === undefined ? {} : { structured: data.structured }),
               ...(data.isError === undefined ? {} : { isError: data.isError }),
             }),
           }
@@ -105,9 +151,14 @@ export class LoopInvocations {
       toSeq: this.s.lastSeq,
     })
     return (
-      links.reverse().find((row) => (row.data as { invocationId?: string }).invocationId === id)?.data as
-        | { toolUseId?: string }
-        | undefined
+      links
+        .reverse()
+        .find(
+          (row) =>
+            row.origin === 'system' &&
+            row.trust === 'trusted' &&
+            (row.data as { invocationId?: string }).invocationId === id,
+        )?.data as { toolUseId?: string } | undefined
     )?.toolUseId
   }
   async settleTool(id: string, result: ToolResult): Promise<void> {
@@ -165,6 +216,7 @@ export class LoopInvocations {
         this.s.ev(
           EVENT,
           {
+            loop: this.s.loop,
             invocationId: id,
             fingerprint,
             status: 'may-have-sent',
@@ -181,6 +233,7 @@ export class LoopInvocations {
       this.s.ev(
         EVENT,
         {
+          loop: this.s.loop,
           invocationId: id,
           fingerprint: sha256Hex(canonicalJson(input)),
           status: 'responded',

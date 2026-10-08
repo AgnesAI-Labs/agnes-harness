@@ -157,6 +157,47 @@ describe('participant RPC', () => {
     await opened.close()
   })
 
+  it('maps an asynchronously stale owned approval to APPROVAL_REJECTED', async () => {
+    const opened = await openTestHost()
+    const endpoint = opened.endpoint()
+    try {
+      await endpoint.handle(initialize)
+      const created = (await endpoint.handle({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'session/new',
+        params: { cwd: opened.dataDir, mcpServers: [] },
+      })) as { result: { sessionId: string } }
+      const session = opened.host.kernel.get(created.result.sessionId)!
+      const scan = vi
+        .spyOn(session, 'scan')
+        .mockResolvedValue([
+          { seq: 1, type: 'approval/asked', data: { pending: { ticket: 'stale-owned' } } },
+        ] as never)
+      const decide = vi
+        .spyOn(session, 'resumeApproval')
+        .mockRejectedValue(Object.assign(new Error('approval already resolved'), { code: 'E_RELATION' }))
+      try {
+        await expect(
+          endpoint.handle({
+            jsonrpc: '2.0',
+            id: 3,
+            method: '_agnes/v1/approval.decide',
+            params: { ticket: 'stale-owned', verdict: 'allowed-once', approverCredential: { kind: 'local' } },
+          }),
+        ).resolves.toMatchObject({
+          error: { code: -32009, data: { code: 'APPROVAL_REJECTED', reason: 'approval already resolved' } },
+        })
+      } finally {
+        scan.mockRestore()
+        decide.mockRestore()
+      }
+    } finally {
+      await endpoint.close()
+      await opened.close()
+    }
+  })
+
   it('maps a ticket absent from every open session to APPROVAL_REJECTED', async () => {
     const opened = await openTestHost()
     const endpoint = opened.endpoint()

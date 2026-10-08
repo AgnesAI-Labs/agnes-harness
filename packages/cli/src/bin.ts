@@ -604,7 +604,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
           allowPackageRecovery: true,
         })
         const executeRescue = async () => {
-          const daemon = await daemonStatus(scope.dataDir)
+          const daemon = await daemonStatus(scope.home)
           const { runComputerUseRescue } = await import('@agnes/host')
           return computerUseRescueCommand(p, {
             dataDir: scope.dataDir,
