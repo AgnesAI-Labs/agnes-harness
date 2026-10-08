@@ -61,22 +61,28 @@ export function isTestFile(file: string): boolean {
   return SOURCE_EXTENSIONS.some((ext) => file.endsWith(`.test${ext}`))
 }
 
-export function listSourceFiles(dir: string, opts: { excludeDirs?: string[] } = {}): string[] {
+export function listSourceFiles(
+  dir: string | readonly string[],
+  opts: { excludeDirs?: readonly string[]; extensions?: readonly string[] } = {},
+): string[] {
   // extension-api / bridges write a generated/ output directory inside the package, not only gen/, so
   // the default exclusion set covers both.
   const exclude = new Set(opts.excludeDirs ?? DEFAULT_EXCLUDE_DIRS)
+  const extensions = opts.extensions ?? SOURCE_EXTENSIONS
   const out: string[] = []
   const walk = (d: string) => {
     if (!existsSync(d)) return
-    for (const entry of readdirSync(d)) {
-      const full = join(d, entry)
-      if (statSync(full).isDirectory()) {
-        if (!exclude.has(entry)) walk(full)
-      } else if (SOURCE_EXTENSIONS.some((ext) => entry.endsWith(ext))) {
+    for (const entry of readdirSync(d, { withFileTypes: true })) {
+      const full = join(d, entry.name)
+      // Keep following symlinks as before; ordinary entries need no extra filesystem lookup.
+      const isDirectory = entry.isSymbolicLink() ? statSync(full).isDirectory() : entry.isDirectory()
+      if (isDirectory) {
+        if (!exclude.has(entry.name)) walk(full)
+      } else if (extensions.some((ext) => entry.name.endsWith(ext))) {
         out.push(resolve(full))
       }
     }
   }
-  walk(dir)
+  for (const base of typeof dir === 'string' ? [dir] : dir) walk(base)
   return out.sort()
 }

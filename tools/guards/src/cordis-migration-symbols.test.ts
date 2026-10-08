@@ -41,19 +41,34 @@ const sessionEnvironmentRules: Rule[] = [
   },
 ]
 
+// The repository does not change during this suite. Share its listing and source snapshot across
+// rules instead of walking and rereading every production file for every forbidden symbol.
+let productionFiles: string[] | undefined
+let contractFiles: string[] | undefined
+const sources = new Map<string, string>()
+
+function sourceFor(file: string): string {
+  let source = sources.get(file)
+  if (source === undefined) {
+    source = readFileSync(file, 'utf8')
+    sources.set(file, source)
+  }
+  return source
+}
+
 function productionSourceFiles(): string[] {
   const packageRoot = join(root, 'packages')
-  return readdirSync(packageRoot)
-    .flatMap((entry) =>
-      listSourceFiles(join(packageRoot, entry, 'src'), {
-        excludeDirs: [...DEFAULT_EXCLUDE_DIRS, 'test', 'tests', 'fixtures'],
-      }),
-    )
-    .filter((file) => !isTestFile(file))
+  productionFiles ??= listSourceFiles(
+    readdirSync(packageRoot).map((entry) => join(packageRoot, entry, 'src')),
+    {
+      excludeDirs: [...DEFAULT_EXCLUDE_DIRS, 'test', 'tests', 'fixtures'],
+    },
+  ).filter((file) => !isTestFile(file))
+  return productionFiles
 }
 
 function runtimeContractFiles(): string[] {
-  return [
+  contractFiles ??= [
     ...productionSourceFiles(),
     ...listSourceFiles(join(root, 'packages/cli/launch'), {
       excludeDirs: [...DEFAULT_EXCLUDE_DIRS, 'test', 'tests', 'fixtures'],
@@ -65,12 +80,13 @@ function runtimeContractFiles(): string[] {
         : [],
     ),
   ]
+  return contractFiles
 }
 
 function scanFiles(rule: Rule, files: string[]): Record<string, number> {
   const hits: Record<string, number> = {}
   for (const file of files) {
-    const source = readFileSync(file, 'utf8')
+    const source = sourceFor(file)
     const count = Array.from(source.matchAll(new RegExp(rule.pattern.source, rule.pattern.flags))).length
     if (count) hits[relative(root, file).replaceAll('\\', '/')] = count
   }
@@ -78,14 +94,8 @@ function scanFiles(rule: Rule, files: string[]): Record<string, number> {
 }
 
 function scan(rule: Rule): Record<string, number> {
-  const hits: Record<string, number> = {}
   const files = rule.id === 'c2_runtime_stale_frame' ? runtimeContractFiles() : productionSourceFiles()
-  for (const file of files) {
-    const source = readFileSync(file, 'utf8')
-    const count = Array.from(source.matchAll(new RegExp(rule.pattern.source, rule.pattern.flags))).length
-    if (count) hits[relative(root, file).replaceAll('\\', '/')] = count
-  }
-  return hits
+  return scanFiles(rule, files)
 }
 
 function runtimeContractErrors(file: string, source: string): string[] {
@@ -158,7 +168,7 @@ const preparedOwnerFiles = new Set([
 
 function preparedOwnerErrors(files: string[]): string[] {
   return files.flatMap((file) =>
-    preparedOwnerError(relative(root, file).replaceAll('\\', '/'), readFileSync(file, 'utf8')),
+    preparedOwnerError(relative(root, file).replaceAll('\\', '/'), sourceFor(file)),
   )
 }
 
@@ -188,23 +198,26 @@ describe('Cordis runtime architecture guards', () => {
     for (const id of Object.keys(allowlist.rules)) expect(knownRules.has(id), `unknown rule ${id}`).toBe(true)
   })
   for (const rule of migrationRules) {
+    // Each rule checks the full production tree; shared Linux runners can exceed the default 5s.
     it(`${rule.id} has no unreviewed production hits`, () => {
       expect(
         scan(rule),
         `update ${relative(root, allowlistPath)} only with a reviewed design change`,
       ).toEqual(allowlist.rules[rule.id] ?? {})
-    })
+    }, 15_000)
   }
 
   for (const rule of sessionEnvironmentRules) {
+    // Includes production, launchers, generated protocol and schemas: a full-repository contract scan.
     it(`${rule.id} stays absent from the shared-worker contract`, () => {
       expect(scanFiles(rule, runtimeContractFiles())).toEqual({})
-    })
+    }, 15_000)
   }
 
+  // Both ownership checks scan all production sources, with the same CI load allowance as above.
   it('keeps Host runtime target application single-argument', () => {
     const actual = productionSourceFiles().flatMap((file) =>
-      runtimeContractErrors(relative(root, file).replaceAll('\\', '/'), readFileSync(file, 'utf8')),
+      runtimeContractErrors(relative(root, file).replaceAll('\\', '/'), sourceFor(file)),
     )
     expect(actual).toEqual([])
     expect(runtimeContractErrors('bad.ts', 'host.applyRuntimeTarget(tree, resource)')).toEqual([
@@ -220,7 +233,7 @@ describe('Cordis runtime architecture guards', () => {
     expect(runtimeContractErrors('bad.ts', 'host.applyRuntimeTarget(tree, resource,)')).toEqual([
       'bad.ts: applyRuntimeTarget must have exactly one parameter or argument',
     ])
-  })
+  }, 15_000)
 
   it('keeps the prepared installer API in its two internal owner files', () => {
     expect(preparedOwnerErrors(productionSourceFiles())).toEqual([])
@@ -233,5 +246,5 @@ describe('Cordis runtime architecture guards', () => {
     expect(preparedOwnerFiles).toEqual(
       new Set(['packages/cordis/src/host.ts', 'packages/plugin-runtime/src/row-mount.ts']),
     )
-  })
+  }, 15_000)
 })

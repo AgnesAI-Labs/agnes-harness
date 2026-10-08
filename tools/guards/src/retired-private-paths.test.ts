@@ -1,7 +1,7 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_EXCLUDE_DIRS, repoRoot } from './repo.js'
+import { listSourceFiles, repoRoot, SOURCE_EXTENSIONS } from './repo.js'
 
 const root = repoRoot()
 const retired = new Set<string>(
@@ -42,26 +42,23 @@ function privateImports(file: string, source: string): string[] {
   })
 }
 
-function moduleFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const path = join(dir, entry.name)
-    if (entry.isDirectory()) return DEFAULT_EXCLUDE_DIRS.includes(entry.name) ? [] : moduleFiles(path)
-    return /\.[cm]?[jt]sx?$/.test(entry.name) ? [path] : []
-  })
-}
-
 describe('retired implementation private paths', () => {
+  // This intentionally reads every module, including tests/scripts; allow CI load beyond 5 seconds.
   it('rejects reintroducing imports of retired modules, including tests and build scripts', () => {
     expect(retired.size).toBeGreaterThan(0)
-    const errors = ['packages', 'tools', 'examples']
-      .flatMap((dir) => moduleFiles(join(root, dir)))
-      .flatMap((file) =>
-        privateImports(relative(root, file), readFileSync(file, 'utf8')).map(
-          (target) => `${relative(root, file)} imports ${target}`,
-        ),
-      )
+    const files = listSourceFiles(
+      ['packages', 'tools', 'examples'].map((dir) => join(root, dir)),
+      {
+        extensions: [...SOURCE_EXTENSIONS, '.mtsx', '.ctsx', '.js', '.mjs', '.cjs', '.jsx', '.mjsx', '.cjsx'],
+      },
+    )
+    expect(files.length, 'no modules found, so the repository guard checked nothing').toBeGreaterThan(100)
+    const errors = files.flatMap((file) => {
+      const path = relative(root, file)
+      return privateImports(path, readFileSync(file, 'utf8')).map((target) => `${path} imports ${target}`)
+    })
     expect(errors).toEqual([])
-  })
+  }, 15_000)
 
   it.each([
     "import type { IdMinter } from '../src/ids.js'",
@@ -73,6 +70,9 @@ describe('retired implementation private paths', () => {
     `import /* ${' '.repeat(8192)} */ ( /* comment */ '../src/ids.js')`,
     `export { defaultIds } from${' '.repeat(8192)}'../src/ids.js'`,
     "import { defaultIds } from '@agnes/core/src/ids.js'",
+    "import /* comment */ ('../src/ids.js')",
+    "vi /* comment */ . doUnmock /* comment */ (\n'../src/ids.js')",
+    "export { defaultIds } from\n/* comment */ '../src/ids.js'",
   ])('rejects the removed path in %s', (source) => {
     expect(privateImports('packages/core/test/refusal.test.ts', source)).toEqual(['packages/core/src/ids.ts'])
   })
@@ -87,6 +87,11 @@ describe('retired implementation private paths', () => {
   })
 
   it('allows public facades, real owners, retained shims and quoted fixture source', () => {
+    const largeFixture = 'const fixture = "not an import";\n'.repeat(10_000)
+    expect(privateImports('packages/core/test/compatibility.test.ts', largeFixture)).toEqual([])
+    expect(
+      privateImports('packages/core/test/compatibility.test.ts', `${largeFixture}import '../src/ids.js'`),
+    ).toEqual(['packages/core/src/ids.ts'])
     expect(
       privateImports(
         'packages/core/test/compatibility.test.ts',
