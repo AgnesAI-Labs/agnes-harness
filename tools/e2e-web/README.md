@@ -47,13 +47,19 @@ separate from this gate.
 
 ## Gate and failure evidence
 
-The required GitHub status is **Web E2E gate** from `.github/workflows/e2e-web.yml` (macOS 14).
+The required GitHub status is **Web E2E gate** from `.github/workflows/e2e-web.yml`. It aggregates
+every macOS 14 and Linux Web shard and the separate Linux contracts job; a failed or cancelled
+dependency fails the aggregate.
 Maintainers must select that status in the target branch's required checks/ruleset; committing a
 workflow alone does not change GitHub branch protection. The workflow runs on pull requests,
 merge groups, integration/main pushes and manual dispatch, without path-based skips.
 
-The independent specs share two workers with per-test scheduling, zero retries, an eight-minute test deadline and a ten-minute CI gate
-step. `test.only` and retry overrides are refused. A flaky spec remains a gate failure; do not
+The local command shares two workers with per-test scheduling. CI runs four complete, disjoint
+shards per platform with one worker per runner, so concurrent daemon/worker/Chromium trees do not
+compete on the same small runner. Linux fast tests, typechecks, structural guards and kernel
+regressions run in their own hard-gated job instead of consuming the Web job's execution budget.
+Every shard keeps zero retries, an eight-minute test deadline and a ten-minute CI gate step.
+`test.only` and retry overrides are refused. A flaky spec remains a gate failure; do not
 quarantine it with retries or `test.skip`. To investigate, run the named spec several times:
 
 ```sh
@@ -62,7 +68,9 @@ pnpm e2e:web --reuse-build --grep 'local hot reload' --repeat-each 3
 
 `.agnes-tmp/e2e-web` (existing ignored local-acceptance directory) contains the HTML/JSON report, screen/failure screenshots,
 failure traces, browser errors, process logs and SDK evidence attachments. Redacted diagnostics and
-session events are collected through the public SDK before shutdown, including hook attribution. Set
+session events are collected through the public SDK before shutdown, including hook attribution.
+SDK and browser RPC timings contain only method names, durations and error codes, never parameters
+or response bodies. CI artifacts include the platform and shard number to avoid upload collisions. Set
 `AGH_WEB_TEST_OUTPUT` to place these artifacts elsewhere. The harness closes its SDK clients,
 stops its own serve process, runs `daemon stop` for its isolated home, and removes only its own
 temporary directory. Browser console errors, uncaught page errors and off-loopback requests fail.
