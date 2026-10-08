@@ -115,7 +115,8 @@
     "@agnes/resource-control-runtime",
     "@agnes/worker-runtime",
     "@agnes/error-sanitization",
-    "@agnes/system-node"
+    "@agnes/system-node",
+    "@agnes/daemon-foundation"
   ],
   "@agnes/cli": [
     "@agnes/system-node",
@@ -255,5 +256,13 @@
     "@agnes/resource-control-runtime",
     "@agnes/sandbox-remote",
     "@agnes/system-node"
+  ],
+  "@agnes/daemon-foundation": [
+    "@agnes/base",
+    "@agnes/host",
+    "@agnes/package-manager",
+    "@agnes/plugin-runtime",
+    "@agnes/protocol",
+    "@agnes/worker-runtime"
   ]
 }

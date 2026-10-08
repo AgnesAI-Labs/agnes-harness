@@ -25,6 +25,7 @@ describe('repo', () => {
       '@agnes/core-ledger',
       '@agnes/cosmokit',
       '@agnes/daemon',
+      '@agnes/daemon-foundation',
       '@agnes/e2e-web',
       '@agnes/error-sanitization',
       '@agnes/extension-api',

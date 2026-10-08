@@ -1,9 +1,8 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-const local = fileURLToPath(new URL('../src/local/', import.meta.url))
 const files: string[] = []
 const walk = (d: string): void => {
   for (const e of readdirSync(d)) {
@@ -12,7 +11,10 @@ const walk = (d: string): void => {
     else if (e.endsWith('.ts')) files.push(p)
   }
 }
-walk(local)
+for (const owner of ['daemon', 'daemon-foundation', 'daemon-rpc']) {
+  const source = fileURLToPath(new URL(`../../${owner}/src/local/`, import.meta.url))
+  if (existsSync(source)) walk(source)
+}
 
 describe('daemon/local boundary', () => {
   it('has files to check at all', () => {
@@ -22,7 +24,7 @@ describe('daemon/local boundary', () => {
   it('never imports supervisor, worker, node:net or node:child_process', () => {
     for (const f of files) {
       const t = readFileSync(f, 'utf8')
-      expect(t, f).not.toMatch(/from ['"]\.\.\/(supervisor|worker)\//)
+      expect(t, f).not.toMatch(/from ['"](?:\.\.\/(supervisor|worker)\/|@agnes\/daemon-supervisor)/)
       expect(t, f).not.toMatch(/from ['"]node:(net|child_process)['"]/)
       expect(t, f).not.toMatch(/from ['"]@agnes\/(core|sdk|base|ai)['"]/)
     }

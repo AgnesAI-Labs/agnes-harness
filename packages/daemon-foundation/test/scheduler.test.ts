@@ -1,10 +1,10 @@
 import { createExtensionActivationBarrier } from '@agnes/host'
 import type { Actor, ContentBlock } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
+import { sqliteTables } from '../../daemon/test/sqlite-tables.js'
 import { type JobRow, JobsRepo } from '../src/jobs/repo.js'
 import { Scheduler, type SchedulerRegistry } from '../src/jobs/scheduler.js'
 import type { WorkspaceBindingEnvelope } from '../src/storage/workspaces.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 const row = (key: string, over: Partial<JobRow> = {}): JobRow => ({
   idempotencyKey: key,

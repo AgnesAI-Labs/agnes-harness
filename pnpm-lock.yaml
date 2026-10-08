@@ -446,6 +446,9 @@ importers:
       '@agnes/base':
         specifier: workspace:*
         version: link:../base
+      '@agnes/daemon-foundation':
+        specifier: workspace:*
+        version: link:../daemon-foundation
       '@agnes/error-sanitization':
         specifier: workspace:*
         version: link:../error-sanitization
@@ -501,6 +504,31 @@ importers:
       '@types/ws':
         specifier: 8.18.1
         version: 8.18.1
+
+  packages/daemon-foundation:
+    dependencies:
+      '@agnes/base':
+        specifier: workspace:*
+        version: link:../base
+      '@agnes/host':
+        specifier: workspace:*
+        version: link:../host
+      '@agnes/package-manager':
+        specifier: workspace:*
+        version: link:../package-manager
+      '@agnes/plugin-runtime':
+        specifier: workspace:*
+        version: link:../plugin-runtime
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@agnes/worker-runtime':
+        specifier: workspace:*
+        version: link:../worker-runtime
+    devDependencies:
+      '@agnes/daemon':
+        specifier: workspace:*
+        version: link:../daemon
 
   packages/error-sanitization: {}
 

@@ -11,7 +11,7 @@ type Fixture = {
   reason?: string
 }
 
-const fixtures = readFileSync(new URL('../fixtures/cron-clock.jsonl', import.meta.url), 'utf8')
+const fixtures = readFileSync(new URL('../../daemon/fixtures/cron-clock.jsonl', import.meta.url), 'utf8')
   .split('\n')
   .filter(Boolean)
   .map((line) => JSON.parse(line) as Fixture)

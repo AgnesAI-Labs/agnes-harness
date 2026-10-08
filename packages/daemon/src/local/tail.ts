@@ -1,1 +1,1 @@
-export { type Disposer, type TailOptions, tailSession } from '@agnes/worker-runtime'
+export * from '@agnes/daemon-foundation/local/tail'

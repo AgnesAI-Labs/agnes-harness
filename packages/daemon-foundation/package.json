@@ -1,0 +1,52 @@
+{
+  "name": "@agnes/daemon-foundation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./composite-desired": "./src/composite-desired.ts",
+    "./index": "./src/index.ts",
+    "./jobs/repo": "./src/jobs/repo.ts",
+    "./jobs/schedule": "./src/jobs/schedule.ts",
+    "./jobs/scheduler": "./src/jobs/scheduler.ts",
+    "./jobs/service": "./src/jobs/service.ts",
+    "./lease/lease": "./src/lease/lease.ts",
+    "./lease/reclaim": "./src/lease/reclaim.ts",
+    "./local/attached": "./src/local/attached.ts",
+    "./local/endpoint": "./src/local/endpoint.ts",
+    "./local/meta": "./src/local/meta.ts",
+    "./local/notice": "./src/local/notice.ts",
+    "./local/ports": "./src/local/ports.ts",
+    "./local/preview": "./src/local/preview.ts",
+    "./local/tail": "./src/local/tail.ts",
+    "./registry": "./src/registry.ts",
+    "./rpc": "./src/rpc.ts",
+    "./storage/claims-table": "./src/storage/claims-table.ts",
+    "./storage/command-journal": "./src/storage/command-journal.ts",
+    "./storage/composite-target-store": "./src/storage/composite-target-store.ts",
+    "./storage/lister": "./src/storage/lister.ts",
+    "./storage/session-ownership": "./src/storage/session-ownership.ts",
+    "./storage/session-preferences": "./src/storage/session-preferences.ts",
+    "./storage/source-auth-rotation": "./src/storage/source-auth-rotation.ts",
+    "./storage/table": "./src/storage/table.ts",
+    "./storage/workspaces": "./src/storage/workspaces.ts",
+    "./workspace-binding": "./src/workspace-binding.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "pnpm --dir ../.. exec vitest run packages/daemon-foundation/test --maxWorkers=1"
+  },
+  "dependencies": {
+    "@agnes/base": "workspace:*",
+    "@agnes/host": "workspace:*",
+    "@agnes/package-manager": "workspace:*",
+    "@agnes/plugin-runtime": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/worker-runtime": "workspace:*"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@agnes/daemon": "workspace:*"
+  }
+}

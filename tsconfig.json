@@ -249,6 +249,12 @@
     },
     {
       "path": "packages/host-runtime"
+    },
+    {
+      "path": "packages/daemon-foundation"
+    },
+    {
+      "path": "packages/daemon-foundation/tsconfig.test.json"
     }
   ]
 }

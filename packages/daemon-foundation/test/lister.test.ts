@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createSqliteStorage, type TableHandle as HostTableHandle } from '@agnes/host'
 import { describe, expect, it } from 'vitest'
+import { sqliteTables } from '../../daemon/test/sqlite-tables.js'
 import {
   MemorySessionWorkspaces,
   SessionWorkspaceIndex,
@@ -10,7 +11,6 @@ import {
   TicketIndex,
 } from '../src/storage/lister.js'
 import { ensure, type TableHandle } from '../src/storage/table.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 const EVENTS_DDL = `CREATE TABLE IF NOT EXISTS events (
   session_key TEXT NOT NULL, seq INTEGER NOT NULL, ts INTEGER NOT NULL, id TEXT NOT NULL,

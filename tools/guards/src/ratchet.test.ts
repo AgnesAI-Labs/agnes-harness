@@ -234,6 +234,8 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // preset composition and inline projection repairs. Only exceeded scopes and missing bundled
 // extension keys change; scanning, source exclusions and the default extension ceiling stay fixed.
 const INITIAL_CEILING: Record<string, number> = {
+  'packages/daemon-foundation/src/jobs': 638,
+  'packages/daemon-foundation/src': 4214,
   'packages/host-runtime/src/approval-expiry': 105,
   'packages/host-runtime/src/adapters': 465,
   'packages/host-runtime/src/profile': 1497,
@@ -2086,7 +2088,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 27898 -> 28105; exact cap, no exclusions or spare allocation.
   // Acceptance review: Persist child-engine settings through publication and recover legacy default loop pins when listing sessions.
   // countLines: 28105 -> 28157; exact cap, no exclusions or spare allocation.
-  'packages/daemon/src': 28157,
+  'packages/daemon/src': 23971,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2419,7 +2421,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-07 reviewed growth: local reload and plugin lifecycle state projections.
   // countLines: 79 -> 82 (+3); exact cap, no exclusions or spare allocation.
   'packages/web/src/admin/plugins/types': 82,
-  'packages/daemon/src/jobs': 800,
+  'packages/daemon/src/jobs': 4,
   'packages/bridges/src': 2600,
   // I7 Channels12/13 add durable refs, bounded multipart outbound delivery, gap recovery, and
   // lifecycle/resource limits. Measured total: 3607; exact cap.

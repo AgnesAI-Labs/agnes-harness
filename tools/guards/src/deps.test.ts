@@ -124,6 +124,7 @@ const LAYER: Record<string, number> = {
   '@agnes/host-runtime': 6.07,
   '@agnes/host': 7,
   '@agnes/sdk': 3,
+  '@agnes/daemon-foundation': 8.1,
   '@agnes/daemon': 9,
   // Channel's outer client launcher consumes the daemon's public discovery reader, like other clients.
   '@agnes/channels': 10,

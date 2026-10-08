@@ -2,11 +2,11 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { sqliteTables } from '../../daemon/test/sqlite-tables.js'
 import {
   MemorySessionPrincipalOwnership,
   SessionPrincipalOwnershipIndex,
 } from '../src/storage/session-ownership.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 const roots: string[] = []
 afterEach(() => {

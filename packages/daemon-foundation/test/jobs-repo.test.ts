@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { sqliteTables } from '../../daemon/test/sqlite-tables.js'
 import { type JobRow, JobsRepo } from '../src/jobs/repo.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 const row = (key: string, over: Partial<JobRow> = {}): JobRow => ({
   idempotencyKey: key,
