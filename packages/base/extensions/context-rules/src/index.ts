@@ -23,7 +23,10 @@ export const rulesProjection: ProjectionDef<Scopes> = {
       if (typeof path === 'string' && path.length <= 4096)
         directories.push(key === 'cwd' ? path : dirname(path))
     }
-    return { directories: [...new Set(directories)].slice(-128) }
+    const next = [...new Set(directories)].slice(-128)
+    if (next.length === state.directories.length && next.every((dir, i) => dir === state.directories[i]))
+      return state as Scopes
+    return { directories: next }
   },
 }
 export default defineExtension((agnes) => {

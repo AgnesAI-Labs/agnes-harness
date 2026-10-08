@@ -35,6 +35,14 @@ describe('live repository context', () => {
       type: 'tool/call',
       data: { args: { path: 'nested/file.ts' } },
     } as unknown as Parameters<typeof rulesProjection.apply>[1])
+    // A repeated or unrelated tool call must preserve Core's unchanged-state identity contract.
+    for (const args of [{ path: 'nested/file.ts' }, { text: 'no filesystem scope' }])
+      expect(
+        rulesProjection.apply(scopes, {
+          type: 'tool/call',
+          data: { args },
+        } as unknown as Parameters<typeof rulesProjection.apply>[1]),
+      ).toBe(scopes)
     const first = await loadContextRules(cwd, scopes.directories, config, home)
     expect(first.files.map((f) => f.content)).toEqual(['Global', 'Root', 'Overlay', 'Nested'])
     expect(first.content).toContain('cannot grant permissions')
