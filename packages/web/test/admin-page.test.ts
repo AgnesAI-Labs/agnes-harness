@@ -206,7 +206,7 @@ it.each([
   }
 })
 
-it('renders all real local releases and carries a selected catalog source through preview and install', async () => {
+it('groups real catalog releases and carries the selected version source through preview and install', async () => {
   document.documentElement.innerHTML = html
     .replace('<link rel="stylesheet" href="/style.css" />', '')
     .replace('<script type="module" src="/admin.js"></script>', '')
@@ -325,7 +325,7 @@ it('renders all real local releases and carries a selected catalog source throug
   expect(document.querySelector('.plugin-empty')?.classList.contains('admin-empty-state')).toBe(true)
   expect(document.querySelector('.plugin-empty .admin-empty-state-mark')).not.toBeNull()
   document.querySelector<HTMLButtonElement>('[data-testid="settings-nav-discover"]')?.click()
-  await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(6))
+  await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(3))
 
   const listText = document.getElementById('plugin-list')?.textContent ?? ''
   expect(listText).toContain('@agnes-examples/hot-tool')
@@ -339,6 +339,13 @@ it('renders all real local releases and carries a selected catalog source throug
     (row) => row.textContent.includes('@agnes-examples/hot-tool') && row.textContent.includes('1.1.0'),
   )
   expect(v2).toBeDefined()
+  const picker = v2?.querySelector<HTMLSelectElement>('[data-testid="plugin-version-picker"]')
+  expect(picker?.options.length).toBe(2)
+  if (!picker) throw new Error('catalog version picker missing')
+  picker.value = '1.1.0'
+  picker.dispatchEvent(new Event('change', { bubbles: true }))
+  await vi.waitFor(() => expect(v2?.querySelector('.plugin-source')?.textContent).toBe('1.1.0'))
+  expect(document.getElementById('plugin-detail')?.hasAttribute('open')).toBe(false)
   v2?.click()
   expect(document.getElementById('plugin-detail')?.textContent).toContain('Version 1.1.0')
   const check = [...document.querySelectorAll<HTMLButtonElement>('#plugin-detail button')].find(

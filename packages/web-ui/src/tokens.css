@@ -629,3 +629,11 @@ button.primary-button {
   justify-self: end;
   white-space: nowrap;
 }
+
+/* Provider row disclosures follow the compact plugin list rhythm. */
+.agnes-settings-row > .agnes-settings-details {
+  margin: 0.375rem 0 0;
+}
+.agnes-settings-row > .agnes-settings-details > summary {
+  padding-block: 0.25rem;
+}

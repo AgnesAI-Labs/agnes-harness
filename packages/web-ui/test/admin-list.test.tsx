@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 import type { PackageCatalogDescriptor } from '@agnes/protocol'
-import { createElement } from 'react'
+import { act, createElement } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mountRegion, PluginList, UiLocaleProvider, type UiLocaleSource } from '../src/index.js'
 
@@ -98,3 +98,49 @@ function checkContributionDetails(locale: 'en' | 'zh-CN', summary: string) {
   expect(host.querySelector('.plugin-row-content > p:not(.plugin-source)')).toBeNull()
   dispose()
 }
+
+it('groups catalog versions and reviews the selected version without opening the card on selection', async () => {
+  const base: PackageCatalogDescriptor = {
+    id: '@example/panel',
+    version: '1.0.0',
+    source: { type: 'file', ref: 'file:./panel' },
+    integrity: 'sha256-' + 'a'.repeat(64),
+    license: 'MIT',
+    contributions: [],
+    compatibility: 'supported',
+    sourceId: 'local',
+    retrievedAt: '2026-10-08T00:00:00Z',
+  }
+  const host = document.createElement('div')
+  document.body.append(host)
+  let chosen: string | undefined
+  const dispose = mountRegion(
+    host,
+    createElement(PluginList, {
+      ...listProps,
+      tab: 'discover',
+      rows: [base, { ...base, version: '2.0.0', compatibility: 'unsupported' }],
+      primaryActionOf: (item) => ({
+        label: 'Review',
+        disabled: false,
+        run: () => {
+          chosen = item.version
+        },
+      }),
+      onOpen: (item) => {
+        chosen = item.version
+      },
+    }),
+  )
+  expect(host.querySelectorAll('[data-plugin-id]')).toHaveLength(1)
+  const picker = host.querySelector<HTMLSelectElement>('[data-testid="plugin-version-picker"]')!
+  await act(async () => {
+    picker.value = '2.0.0'
+    picker.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  expect(chosen).toBeUndefined()
+  expect(host.querySelector('.plugin-compatibility')?.textContent).toBe('Unsupported')
+  host.querySelector<HTMLButtonElement>('.plugin-row > button')?.click()
+  expect(chosen).toBe('2.0.0')
+  dispose()
+})

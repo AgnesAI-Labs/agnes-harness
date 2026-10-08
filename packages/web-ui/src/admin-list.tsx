@@ -1,9 +1,9 @@
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor, PackageSource } from '@agnes/protocol'
-import type { JSX, ReactNode } from 'react'
+import { type JSX, type ReactNode, useState } from 'react'
 import { ADMIN_LOCALE_NAMESPACE, contributionText, type RuntimeStateView, sourceLabel } from './admin-text.js'
 import { adminLocaleCatalog } from './locales/admin.js'
 import { ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog } from './locales/admin-list.js'
-import { SettingsDetails } from './settings-layout.js'
+import { SettingsDetails, SettingsSelect } from './settings-layout.js'
 import { Badge } from './ui/badge.js'
 import { StateSwitch } from './ui/state-lights.js'
 import { useUiText } from './ui-locale.js'
@@ -245,6 +245,12 @@ export function PluginList({
 }): JSX.Element {
   const { t } = useUiText(ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog)
   const { t: adminText } = useUiText(ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
+  const [versions, setVersions] = useState<Record<string, string>>({})
+  const groups = new Map<string, (PackageInstalledDescriptor | PackageCatalogDescriptor)[]>()
+  for (const row of rows) {
+    const key = tab === 'discover' ? row.id : `${row.id}@${row.version}`
+    groups.set(key, [...(groups.get(key) ?? []), row])
+  }
   if (loading && !rows.length) {
     return <p className="plugin-empty">{t('empty.loading')}</p>
   }
@@ -276,7 +282,11 @@ export function PluginList({
       {tab === 'installed' && !inventoryAuthoritative && (
         <p className="plugin-inventory-status">{t('inventory.stale')}</p>
       )}
-      {rows.map((item) => {
+      {[...groups.values()].map((group) => {
+        const item = group.find((row) => row.version === versions[row.id]) ?? group[0]!
+        const alternatives = group.filter(
+          (row, index) => group.findIndex((entry) => entry.version === row.version) === index,
+        )
         const runtime = runtimeOf(item.id)
         const nameKey = `row.name.${item.id}`
         const presentation = presentationOf?.(item)
@@ -294,14 +304,17 @@ export function PluginList({
         return (
           // biome-ignore lint/a11y/useKeyWithClickEvents: The heading button provides the same keyboard action; the row adds a pointer hit area without nesting interactive roles.
           <article
-            key={`${item.id}@${item.version}`}
+            key={tab === 'discover' ? item.id : `${item.id}@${item.version}`}
             className="plugin-row"
             data-plugin-id={item.id}
             data-tab={tab}
             onClick={(event) => {
               // 行内 Switch / 动作按钮自己处理点击；置灰控件在部分浏览器里不发 click，
               // 事件会落到行上，所以这里再挡一次，避免「拨开关顺带打开详情」。
-              if (event.target instanceof Element && event.target.closest('.switch, button, a, details'))
+              if (
+                event.target instanceof Element &&
+                event.target.closest('.switch, button, a, details, select, label')
+              )
                 return
               onOpen(item)
             }}
@@ -319,6 +332,28 @@ export function PluginList({
               </h2>
               {metadataOf?.(item)}
               {description && <p>{description}</p>}
+              {alternatives.length > 1 ? (
+                <SettingsDetails title={t('row.versions')} data-testid="plugin-other-versions">
+                  <label htmlFor={`plugin-version-${encodeURIComponent(item.id)}`}>
+                    {t('row.version')}
+                    <SettingsSelect
+                      id={`plugin-version-${encodeURIComponent(item.id)}`}
+                      data-testid="plugin-version-picker"
+                      aria-label={t('row.version')}
+                      value={item.version}
+                      onChange={(event) =>
+                        setVersions((prior) => ({ ...prior, [item.id]: event.target.value }))
+                      }
+                    >
+                      {alternatives.map((entry) => (
+                        <option key={entry.version} value={entry.version}>
+                          {entry.version}
+                        </option>
+                      ))}
+                    </SettingsSelect>
+                  </label>
+                </SettingsDetails>
+              ) : null}
               <p className="plugin-source">{item.version}</p>
               <SettingsDetails title={t('row.technicalDetails')}>
                 <p>

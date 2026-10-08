@@ -6944,3 +6944,10 @@ body.admin-page {
 .transcript-node-host {
   display: contents;
 }
+/* Only provider rows opt into compact technical disclosures. */
+.runtime-settings .agnes-settings-row > .agnes-settings-details {
+  margin: 0.375rem 0 0;
+}
+.runtime-settings .agnes-settings-row > .agnes-settings-details > summary {
+  padding-block: 0.25rem;
+}
