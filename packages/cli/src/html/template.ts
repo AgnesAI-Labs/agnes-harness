@@ -78,6 +78,8 @@ function renderNode(node: UINode): string {
       const total = node.sections.reduce((sum, s) => sum + s.tokens, 0)
       return `<section class="node minor">Context breakdown · ${node.sections.length} sections · ${total} tokens (estimated)</section>`
     }
+    case 'ledger-recovery':
+      return `<section class="node recovery"><div class="content">Recovered through event ${node.validThroughSeq}; damaged tail quarantined. Diagnostic ID: ${escapeHtml(node.diagnosticId)}</div></section>`
     case 'contribute-conflict':
       return `<section class="node minor">Contribute conflict · ${escapeHtml(node.key)}: ${escapeHtml(node.ops.join(', '))}</section>`
   }

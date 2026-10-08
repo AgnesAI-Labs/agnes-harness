@@ -6,6 +6,7 @@ The standard preset advertises these tools from official `defineTool` plugins. D
 
 | Tool | Input and behavior |
 | --- | --- |
+| `read` | Reads confined workspace text, session attachments and originals. Local single-frame PNG/JPEG becomes artifact-backed model image input for a vision-capable model. Input limits: 4 MiB and 16 million pixels. Aspect-preserving downsampling uses the active model/runtime byte, dimension and pixel limits; metadata is stripped. Web uses the existing tool image card. Non-vision models receive an honest text notice without inspecting pixels. Other formats require a suitable tool. |
 | `web_search` | `{"queries":["topic"]}`; one to four nonempty queries. A host-owned provider returns titles, URLs and snippets. Without a configured provider/key, returns `WEB_SEARCH_UNAVAILABLE`; use `web_fetch` with a known URL. |
 | `ask_user_question` | `{"questions":[{"id":"route","question":"Choose a route","options":["A","B"]}]}`. Omit options for free text; `multiple:true` accepts several labels; `allowFreeText:true` admits an additional answer. One to four questions with unique ids. `timeoutMs` defaults to 0 (continue immediately); 1–60000 optionally waits up to a durable deadline. Sibling tools remain allowed; late answers arrive as new input. |
 | `present` | `{"files":[{"path":"report.pdf","name":"Report.pdf","description":"Review copy"}]}`. Registers existing readable regular files, copying their bytes into session artifacts. Up to sixteen files, each and the total at most 32 MiB. The Web card provides Open and Download. |

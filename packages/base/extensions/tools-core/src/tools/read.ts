@@ -2,6 +2,7 @@ import { defineTool, type ToolContext, type ToolResult } from '@agnes/extension-
 import { observe, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'
 import { byteLength, describeFailure, parseSpillLocator, splitByBytes } from '../guards/output.js'
 import { normalizeWorkspacePath } from '../paths.js'
+import { localImageMime, readLocalImage } from './local-image.js'
 import { ReadParams } from './schemas.js'
 
 // Ceiling on how much of a file is pulled into memory for one call. Without it a single read of a
@@ -169,7 +170,7 @@ function pageOfLines(
 export const readTool = defineTool({
   name: 'read',
   description:
-    'Read an actual workspace file (relative paths use the session working directory), not packaged demo fixtures, with line numbers; offset and limit page through it. Also reads artifact:// truncated outputs. Read uploaded text files using session-file://message-seq/file-index; long lines wrap into paged rows. session-file://list lists saved attachments (offset/limit page entries). Binary files, PDF, audio and video may be unreadable with the current pi-ai input. For image originals, use session-image://list, then session-image://message-seq/image-index; combine references as session-image://12/1,34/2. Originals count toward the model image limit; inspect them before claiming unseen details.',
+    'Read an actual workspace file (relative paths use the session working directory), not packaged demo fixtures, with line numbers; offset and limit page through it. Also reads artifact:// truncated outputs. Read uploaded text files using session-file://message-seq/file-index; long lines wrap into paged rows. session-file://list lists saved attachments (offset/limit page entries). Local single-frame PNG/JPEG files become model image input when vision is supported; inputs are limited to 4 MiB and 16 million pixels, and are downscaled to the active limits. Other binary files, PDF, audio and video may be unreadable. For image originals, use session-image://list, then session-image://message-seq/image-index; combine references as session-image://12/1,34/2. Originals count toward the model image limit; inspect them before claiming unseen details.',
   parameters: ReadParams,
   meta: {
     isReadOnly: true,
@@ -265,6 +266,7 @@ export const readTool = defineTool({
       if ((e as { code?: string }).code === 'ENOENT') observe(ctx.session.key, abs, undefined)
       return { content: [{ type: 'text', text: `read failed: ${(e as Error).message}` }], isError: true }
     }
+    if (localImageMime(bytes)) return readLocalImage(bytes, args.path, ctx)
     if (isBinary(bytes))
       return {
         content: [

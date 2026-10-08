@@ -1,5 +1,6 @@
 import type { ModelRecord, RequestBody, ResponseMeta, RouteDecl } from '@agnes/protocol'
 import { modelImageInputError } from '@agnes/protocol'
+import { createDeploymentFetch, ensureDeploymentProxy } from '@agnes/system-node/deployment-network'
 import type {
   Api,
   AssistantMessageEvent,
@@ -417,6 +418,8 @@ export class PiAdapter extends WireAdapter {
         throw new Error(payloadError)
       }
     }
+    ensureDeploymentProxy()
+    const networkTimeouts = decl.networkTimeouts
     const requestHeaders = this.requestHeaders(route, req)
     const dropThinking = record.thinkingReplay === 'drop'
     const { context } = toContext(req, { dropThinking })
@@ -448,7 +451,7 @@ export class PiAdapter extends WireAdapter {
         const bytes = new Uint8Array(await request.clone().arrayBuffer())
         checkPayloadBytes(bytes.byteLength)
         opts.reportSent?.({ sentHash: sha256Hex(bytes), transforms })
-        const response = await globalThis.fetch(request)
+        const response = await network.fetch(request)
         Object.assign(wire, responseMeta(response))
         return response
       }
@@ -459,15 +462,28 @@ export class PiAdapter extends WireAdapter {
     // and the question stops being "did this route respond" and becomes "will this answer end".
     // The total deadline is what answers the second one. A route that hangs with neither is a turn
     // that never finishes, and a session that can never be closed.
+    const network = createDeploymentFetch(networkTimeouts)
     const inner = new AbortController()
     const onAbort = () => inner.abort()
     if (opts.signal.aborted) inner.abort()
     else opts.signal.addEventListener('abort', onAbort, { once: true })
-    const total = setTimeout(() => inner.abort(), opts.timeoutMs.total)
+    const total = setTimeout(
+      () => inner.abort(),
+      Math.min(opts.timeoutMs.total, networkTimeouts?.requestMs ?? 300_000),
+    )
     let first: ReturnType<typeof setTimeout> | undefined = setTimeout(
       () => inner.abort(),
       opts.timeoutMs.firstToken,
     )
+    let idleExpired = false
+    let idle: ReturnType<typeof setTimeout> | undefined
+    const resetIdle = () => {
+      clearTimeout(idle)
+      idle = setTimeout(() => {
+        idleExpired = true
+        inner.abort()
+      }, networkTimeouts?.streamIdleMs ?? 60_000)
+    }
     let firstSeen = false
     // One listener for the whole run. Racing a freshly built promise per event would register a
     // listener per event, which on a long answer is a leak that grows with the answer.
@@ -528,40 +544,46 @@ export class PiAdapter extends WireAdapter {
           ),
         )
         if (this.providerId) requestModel.provider = this.providerId
-        const it = this.streamImpl(requestModel, context, {
-          ...this.streamOptions(route, req, { ...opts, signal: inner.signal }),
-          onPayload: (payload) => {
-            payloadError = providerPayloadImageError(payload, record.inputLimits)
-            if (payloadError) throw new Error(payloadError)
-            // SDK-backed transports expose their provider payload here. Binary fields (Bedrock)
-            // serialize as Base64, not JSON objects with numeric keys.
-            checkPayloadBytes(
-              Buffer.byteLength(
-                JSON.stringify(payload, (_key, value) =>
-                  value instanceof Uint8Array ? Buffer.from(value).toString('base64') : value,
+        const it = network.run(() =>
+          this.streamImpl(requestModel, context, {
+            ...this.streamOptions(route, req, { ...opts, signal: inner.signal }),
+            onPayload: (payload) => {
+              payloadError = providerPayloadImageError(payload, record.inputLimits)
+              if (payloadError) throw new Error(payloadError)
+              // SDK-backed transports expose their provider payload here. Binary fields (Bedrock)
+              // serialize as Base64, not JSON objects with numeric keys.
+              checkPayloadBytes(
+                Buffer.byteLength(
+                  JSON.stringify(payload, (_key, value) =>
+                    value instanceof Uint8Array ? Buffer.from(value).toString('base64') : value,
+                  ),
+                  'utf8',
                 ),
-                'utf8',
-              ),
-            )
-          },
-          // Raw pi streaming does not apply catalog limits; Agnes otherwise defaults to 4096 upstream.
-          ...(decl.baseUrl.replace(/\/$/, '') === AGNES_AI_BASE_URL
-            ? { maxTokens: req.sampling?.maxTokens ?? record.maxTokens }
-            : {}),
-          ...(requestAuth?.apiKey === undefined ? {} : { apiKey: requestAuth.apiKey }),
-          // pi-ai checks header-owned authentication in stream options before it
-          // constructs a client. Model headers alone cannot authenticate Kimi OAuth.
-          ...(requestAuth?.headers === undefined ? {} : { headers: requestAuth.headers }),
-          ...(decl.api === 'openai-codex-responses' && this.resolveCredential
-            ? { transport: 'sse' as const }
-            : {}),
-          ...(observable.has(decl.api) ? { fetch: fetchBody(wire) } : {}),
-        })[Symbol.asyncIterator]()
+              )
+            },
+            // Raw pi streaming does not apply catalog limits; Agnes otherwise defaults to 4096 upstream.
+            ...(decl.baseUrl.replace(/\/$/, '') === AGNES_AI_BASE_URL
+              ? { maxTokens: req.sampling?.maxTokens ?? record.maxTokens }
+              : {}),
+            ...(requestAuth?.apiKey === undefined ? {} : { apiKey: requestAuth.apiKey }),
+            // pi-ai checks header-owned authentication in stream options before it
+            // constructs a client. Model headers alone cannot authenticate Kimi OAuth.
+            ...(requestAuth?.headers === undefined ? {} : { headers: requestAuth.headers }),
+            ...(decl.api === 'openai-codex-responses' && this.resolveCredential
+              ? { transport: 'sse' as const }
+              : {}),
+            ...(observable.has(decl.api) ? { fetch: fetchBody(wire) } : {}),
+            timeoutMs: networkTimeouts?.requestMs ?? 300_000,
+            connectTimeoutMs: networkTimeouts?.connectMs ?? 10_000,
+            streamIdleTimeoutMs: networkTimeouts?.streamIdleMs ?? 60_000,
+          })[Symbol.asyncIterator](),
+        )
         try {
           for (;;) {
             // Racing rather than `for await`, because a hung stream never produces the next value
             // and a loop waiting on it could not notice its own deadline passing.
-            const next = await Promise.race([it.next(), stopped])
+            resetIdle()
+            const next = await Promise.race([network.run(() => it.next()), stopped])
             if (payloadError) {
               yield {
                 type: 'error',
@@ -643,7 +665,13 @@ export class PiAdapter extends WireAdapter {
             type: 'error',
             reason: aborted ? 'aborted' : 'error',
             code: aborted ? 'ABORTED' : 'TIMEOUT',
-            message: aborted ? 'aborted' : firstSeen ? 'total timeout' : 'first token timeout',
+            message: aborted
+              ? 'aborted'
+              : idleExpired
+                ? 'stream idle timeout'
+                : firstSeen
+                  ? 'total timeout'
+                  : 'first token timeout',
             retryable: !aborted,
             ...withResponse(wire),
           }
@@ -677,6 +705,8 @@ export class PiAdapter extends WireAdapter {
         }
       }
     } finally {
+      clearTimeout(idle)
+      void network.close().catch(() => undefined)
       clearTimeout(total)
       if (first) clearTimeout(first)
       opts.signal.removeEventListener('abort', onAbort)

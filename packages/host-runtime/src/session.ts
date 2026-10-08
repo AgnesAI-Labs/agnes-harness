@@ -427,20 +427,22 @@ export async function createSession(
   // session it already holds - so a second open of a live session is E_LANE_BUSY and never reaches
   // this line. That matters: resuming underneath a turn already running on that session would be two
   // writers to one program counter, which no lease is watching for.
-  const recovery = await session.resume()
+  const tailRecovery = session.d.log.recovery
+  const recovery = await session.resume(tailRecovery ? { mode: 'close' } : {})
   // `resumed` alone is not news - it says a turn was open, which a parked session is too. What the
   // caller is told about is work that was actually settled, which is what makes the report honest on
   // a second open that found nothing left to do.
-  if (recovery.actions.length > 0) {
+  if (tailRecovery || recovery.actions.length > 0) {
     audit?.write({
       kind: 'session.recovered',
       detail: {
         sessionKey: key,
+        ...(tailRecovery ? { ...tailRecovery, reason: 'damaged-tail' } : {}),
         ...(recovery.phase ? { phase: recovery.phase } : {}),
         actions: recovery.actions.map((x) => x.action),
       },
     })
-    opts.onRecovered?.(recovery)
+    if (recovery.actions.length > 0) opts.onRecovered?.(recovery)
   }
   // A graceful endpoint close records cancel_requested before the log is torn down. Resume settles
   // the interrupted inference but leaves the turn in failure_drain; the next prompt would then

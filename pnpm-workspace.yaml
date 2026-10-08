@@ -9,4 +9,5 @@ packages:
   - examples/sandbox/docker
   - tools/*
 patchedDependencies:
+  '@earendil-works/pi-ai@0.87.1': patches/@earendil-works__pi-ai@0.87.1.patch
   jiti@2.7.0: patches/jiti@2.7.0.patch

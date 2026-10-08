@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -429,7 +429,10 @@ describe('storage-sqlite', () => {
       clock: () => now,
       timers: { setTimeout: () => 0, clearTimeout: () => undefined },
     })
-    await log.append([ev('user/message', { content: [{ type: 'text', text: 'original' }] })])
+    await log.append([
+      ev('user/message', { content: [{ type: 'text', text: 'original' }] }),
+      ev('user/message', { content: [{ type: 'text', text: 'valid successor' }] }),
+    ])
     await log.close()
     await s.close()
 
@@ -513,5 +516,80 @@ describe('storage-sqlite', () => {
     }
     await storage.close()
     rmSync(dir, { recursive: true, force: true })
+  })
+  it.each(['json', 'checksum'])(
+    'quarantines a damaged %s tail, keeps the valid prefix, and persists a diagnostic notice',
+    async (kind) => {
+      const options = {
+        storage: s,
+        key: 'tail',
+        writerRunId: 'writer',
+        ttlMs: 1000,
+        ids: defaultIds(),
+        clock: () => now,
+      }
+      const log = await SessionLogImpl.open(options)
+      await log.append([
+        ev('user/message', { content: [{ type: 'text', text: 'first' }] }),
+        ev('user/message', { content: [{ type: 'text', text: 'second' }] }),
+        ev('user/message', { content: [{ type: 'text', text: 'damaged' }] }),
+      ])
+      await log.close()
+      const db = new DatabaseSync(s.file)
+      db.prepare(
+        kind === 'json'
+          ? "UPDATE events SET data = '{' WHERE session_key = 'tail' AND seq = 3"
+          : "UPDATE events SET integrity_digest = 'bad' WHERE session_key = 'tail' AND seq = 3",
+      ).run()
+      db.close()
+      const tracked = await openTracked({ ...options, writerRunId: 'reader' })
+      expect(tracked.log.recovery).toMatchObject({ validThroughSeq: 2, diagnosticId: expect.any(String) })
+      expect((await tracked.log.scan({ type: 'user/message', limit: 10 })).map((row) => row.data)).toEqual([
+        { content: [{ type: 'text', text: 'first' }] },
+        { content: [{ type: 'text', text: 'second' }] },
+      ])
+      const recovery = tracked.log.recovery
+      if (!recovery) throw new Error('Missing recovery report')
+      expect(JSON.parse(readFileSync(recovery.quarantineFile, 'utf8')).damaged).toHaveLength(1)
+      expect(statSync(recovery.quarantineFile).mode & 0o777).toBe(0o600)
+      expect((await tracked.log.scan({ type: 'x/core/ledger-tail-recovered', limit: 1 }))[0]?.data).toEqual(
+        recovery,
+      )
+      await tracked.log.close()
+      const reopened = await SessionLogImpl.open({ ...options, writerRunId: 'again' })
+      expect(reopened.recovery).toBeUndefined()
+      expect(reopened.lastSeq).toBe(3)
+      await reopened.close()
+    },
+  )
+
+  it('refuses interior damage and future format versions without discarding valid events', async () => {
+    const options = {
+      storage: s,
+      key: 'middle',
+      writerRunId: 'writer',
+      ttlMs: 1000,
+      ids: defaultIds(),
+      clock: () => now,
+    }
+    const log = await SessionLogImpl.open(options)
+    await log.append(
+      Array.from({ length: 3 }, () => ev('user/message', { content: [{ type: 'text', text: 'valid' }] })),
+    )
+    await log.close()
+    const db = new DatabaseSync(s.file)
+    db.prepare("UPDATE events SET integrity_digest = 'bad' WHERE session_key = 'middle' AND seq = 2").run()
+    await expect(SessionLogImpl.open({ ...options, writerRunId: 'reader' })).rejects.toMatchObject({
+      code: 'E_LEDGER_INTEGRITY',
+    })
+    expect(db.prepare("SELECT COUNT(*) AS n FROM events WHERE session_key = 'middle'").get()).toMatchObject({
+      n: 3,
+    })
+    expect(readdirSync(dir).some((name) => name.includes('.tail-'))).toBe(false)
+    db.prepare("UPDATE sessions SET format_version = 2 WHERE session_key = 'middle'").run()
+    await expect(s.open('middle', { writerRunId: 'future-reader', ttlMs: 1000 })).rejects.toMatchObject({
+      code: 'E_FORMAT',
+    })
+    db.close()
   })
 })

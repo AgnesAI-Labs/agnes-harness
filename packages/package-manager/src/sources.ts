@@ -14,6 +14,7 @@ import {
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { runIsolatedCommand } from '@agnes/package-isolation'
 import type { PackageProvenance } from '@agnes/protocol'
+import { deploymentFetch } from '@agnes/system-node/deployment-network'
 import { bundledExampleSource, bundledPluginSourceRoot } from './bundled-plugin-source.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
@@ -251,7 +252,22 @@ export function readPackageJson(dir: string): PackageJson {
   }
 }
 
-const INHERITED_ENV = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR', 'TEMP', 'TMP', 'SystemRoot'] as const
+const INHERITED_ENV = [
+  'PATH',
+  'HOME',
+  'LANG',
+  'LC_ALL',
+  'TMPDIR',
+  'TEMP',
+  'TMP',
+  'SystemRoot',
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'NO_PROXY',
+  'http_proxy',
+  'https_proxy',
+  'no_proxy',
+] as const
 function childEnvironment(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     npm_config_ignore_scripts: 'true',
@@ -262,6 +278,10 @@ function childEnvironment(): NodeJS.ProcessEnv {
     GIT_TERMINAL_PROMPT: '0',
   }
   for (const name of INHERITED_ENV) if (process.env[name] !== undefined) env[name] = process.env[name]
+  // Git/curl consume lower-case proxy names; preserve explicit lower-case precedence.
+  env.http_proxy ??= env.HTTP_PROXY
+  env.https_proxy ??= env.HTTPS_PROXY ?? env.http_proxy
+  env.no_proxy ??= env.NO_PROXY
   return env
 }
 
@@ -598,7 +618,7 @@ export async function fetchSource(
         break
       }
       case 'url': {
-        const response = await fetch(checked.ref.slice(4), {
+        const response = await deploymentFetch(checked.ref.slice(4), {
           redirect: 'error',
           signal: AbortSignal.any([AbortSignal.timeout(120000), ...(opts.signal ? [opts.signal] : [])]),
         })

@@ -1888,6 +1888,30 @@
         {
           "type": "object",
           "additionalProperties": false,
+          "required": ["kind", "id", "seq", "diagnosticId", "validThroughSeq"],
+          "properties": {
+            "kind": {
+              "const": "ledger-recovery"
+            },
+            "id": {
+              "type": "string"
+            },
+            "seq": {
+              "type": "integer"
+            },
+            "diagnosticId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "validThroughSeq": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
           "required": ["kind", "id", "seq", "content"],
           "properties": {
             "kind": {
@@ -3813,6 +3837,27 @@
       "additionalProperties": false,
       "required": ["action"],
       "properties": {
+        "networkTimeouts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            },
+            "connectMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            },
+            "streamIdleMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            }
+          }
+        },
         "defaultSettings": { "$ref": "model.json#/$defs/ModelSettings" },
         "action": {
           "enum": ["start", "poll", "answer", "test", "commit", "cancel"]
@@ -4127,6 +4172,27 @@
       "additionalProperties": false,
       "required": ["providerId", "model"],
       "properties": {
+        "networkTimeouts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            },
+            "connectMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            },
+            "streamIdleMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            }
+          }
+        },
         "defaultSettings": { "$ref": "model.json#/$defs/ModelSettings" },
         "providerId": {
           "type": "string",
@@ -4333,6 +4399,27 @@
         "credentialConfigured"
       ],
       "properties": {
+        "networkTimeouts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            },
+            "connectMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            },
+            "streamIdleMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            }
+          }
+        },
         "accountId": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",

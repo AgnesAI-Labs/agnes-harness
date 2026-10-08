@@ -191,6 +191,30 @@ describe('timeouts and cancellation', () => {
     }
   })
 
+  it.each([
+    [{ requestMs: 30 }, 'total timeout'],
+    [{ streamIdleMs: 30 }, 'stream idle timeout'],
+  ] as const)('applies account deadline %j after output has started', async (networkTimeouts, message) => {
+    vi.useFakeTimers()
+    const stall: StreamImpl = () =>
+      (async function* () {
+        yield { type: 'text_delta', contentIndex: 0, delta: 'a', partial: msg('') } as never
+        await new Promise<never>(() => {})
+      })()
+    try {
+      const a = adapter({ manualRoutes: [{ ...route, networkTimeouts }], streamImpl: stall })
+      a.bindCredential('gw', 'k')
+      const pending = drain(a, { timeoutMs: { firstToken: 1000, total: 4000 } })
+      await vi.advanceTimersByTimeAsync(31)
+      expect(await pending).toEqual([
+        { type: 'text_delta', delta: 'a' },
+        { type: 'error', reason: 'error', code: 'TIMEOUT', message, retryable: true },
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('a caller abort ends the stream as ABORTED rather than as a timeout', async () => {
     const ac = new AbortController()
     setTimeout(() => ac.abort(), 10)

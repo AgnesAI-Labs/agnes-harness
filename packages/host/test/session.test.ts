@@ -1,10 +1,14 @@
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { stampFor } from '@agnes/ai/testkit'
 import { testFsPolicy } from '@agnes/core/testkit'
+import type { ToolContext } from '@agnes/extension-api'
+import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 import type { SessionRecovery } from '@agnes/host-runtime/session'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
+import { Type } from '@sinclair/typebox'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTestHost, startTurn } from '../testkit/index.js'
 
@@ -283,6 +287,105 @@ describe('createSession', () => {
     expect(closed.length).toBe(opened.length)
     await host.close()
   })
+  it.each([false, true])(
+    'quarantines a damaged tail without replaying tools when repair was already committed=%s',
+    async (repairCommitted) => {
+      const dataDir = tmp()
+      let executions = 0
+      const first = await createTestHost({
+        dataDir,
+        script: [
+          [
+            {
+              type: 'toolcall_end',
+              call: { toolUseId: '', name: 'read', args: { path: 'pending.txt' }, ordinal: 0 },
+              via: 'native',
+            },
+            { type: 'done', reason: 'toolUse' },
+          ],
+        ],
+      })
+      const session = await first.host.createSession({ cwd: dataDir })
+      const tools = session.currentTools()
+      tools.add(
+        {
+          name: 'read',
+          description: 'A safe tool with an interrupted durable effect',
+          parameters: Type.Object({ path: Type.String() }),
+          meta: {
+            isReadOnly: true,
+            isDestructive: false,
+            isConcurrencySafe: true,
+            isOpenWorld: false,
+            replay: 'safe',
+            costHint: {},
+            deferLoading: false,
+            requiresApproval: 'never',
+          },
+          execute: async (_args: unknown, ctx: ToolContext) => {
+            executions++
+            if (!ctx.signal.aborted)
+              await new Promise<void>((resolve) =>
+                ctx.signal.addEventListener('abort', () => resolve(), { once: true }),
+              )
+            return { content: [{ type: 'text', text: 'once' }] }
+          },
+        },
+        { source: 'test/pending-read', trust: 'builtin' },
+      )
+      await session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'run once' }],
+        actor: session.d.actor,
+      })
+      const running = session
+        .run({ until: 'turn-end', signal: new AbortController().signal })
+        .catch(() => undefined)
+      await vi.waitFor(() => expect(executions).toBe(1))
+      await session.d.log.append([session.ev('x/test/torn-tail', { pending: true }, { ignorable: true })])
+      const damagedSeq = session.lastSeq
+      await session.d.log.close()
+      await first.host.close()
+      await running
+      const db = new DatabaseSync(join(dataDir, 'sessions.db'))
+      db.prepare('UPDATE events SET data = ? WHERE session_key = ? AND seq = ?').run(
+        '{',
+        session.key,
+        damagedSeq,
+      )
+      db.close()
+      if (repairCommitted) {
+        const storage = createSqliteStorage({ file: join(dataDir, 'sessions.db') })
+        expect(
+          (await storage.open(session.key, { writerRunId: 'repair-only', ttlMs: 60000 })).recovery,
+        ).toBeDefined()
+        // Lose the opener before Host reconciliation: only the durable audit and counter remain.
+        await storage.release(session.key, 'repair-only')
+        await storage.close()
+      }
+      const reopened = await createTestHost({ dataDir })
+
+      try {
+        const recovered = await reopened.host.createSession({ cwd: dataDir })
+        expect(executions).toBe(1)
+        expect(JSON.stringify(await recovered.scan({ type: 'tool/result', limit: 10 }))).toContain(
+          'TOOL_OUTCOME_UNKNOWN',
+        )
+        const notice = (await recovered.projectUI(undefined, { surface: 'web' })).nodes.find(
+          (node) => node.kind === 'ledger-recovery',
+        )
+        expect(notice).toMatchObject({ validThroughSeq: damagedSeq - 1, diagnosticId: expect.any(String) })
+        if (!repairCommitted)
+          expect(
+            reopened.audit.events.find((event) => event.kind === 'session.recovered')?.detail,
+          ).toMatchObject({ reason: 'damaged-tail', diagnosticId: expect.any(String) })
+        expect(await recovered.scan({ type: 'x/core/ledger-tail-recovered', limit: 10 })).toHaveLength(1)
+        expect(recovered.state.openTurn.size).toBe(0)
+      } finally {
+        await reopened.host.close()
+      }
+    },
+  )
+
   // The other side of the same wiring, and the one that has to hold for nearly every open there
   // will ever be: a ledger that ended cleanly is opened exactly as it was before recovery existed.
   it('appends nothing and reports nothing when the session needed no recovery', async () => {

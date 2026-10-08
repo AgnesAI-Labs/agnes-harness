@@ -1,3 +1,4 @@
+import { deploymentFetch } from '@agnes/system-node/deployment-network'
 import type { ObservabilityConfig } from './config.js'
 
 type Point = {
@@ -111,7 +112,7 @@ export class OtlpTransport {
       )
       for (let attempt = 0; attempt < 3 && !this.closed; attempt++) {
         try {
-          const response = await fetch(url, {
+          const response = await deploymentFetch(url, {
             method: 'POST',
             headers: { ...this.config.headers, 'content-type': 'application/json' },
             body,

@@ -6,7 +6,10 @@ import { isTestFile, listSourceFiles, repoRoot } from './repo.js'
 const root = repoRoot()
 
 /**
- * The ledger's `events` table is append-only except for deleting a whole session.
+ * The ledger's `events` table is append-only except for whole-session deletion and quarantined
+ * damaged-tail recovery. Recovery preserves the valid prefix and appends a fresh audit row: an
+ * index anchor before damage is unchanged; one in the removed suffix disappears or has a new id,
+ * forcing the existing artifact index to rebuild under the ledger lock.
  *
  * The Computer Use artifact GC proves "this session's indexed prefix is unchanged" from the id and
  * integrity digest of one anchor row, then re-extracts only the rows after it under the ledger
@@ -38,10 +41,18 @@ describe('ledger events are append-only apart from whole-session deletion', () =
       (file) => file.split(sep).includes('src') && !isTestFile(file),
     )
     expect(files.length, 'no product source found, so this guard checked nothing').toBeGreaterThan(100)
+    const recoveryFile = 'packages/host-infrastructure/src/adapters/ledger-tail-recovery.ts'
+    const recoveryDelete = 'DELETE FROM events WHERE session_key = ? AND seq >= ?'
+    // This single, tested recovery operation is the only partial-delete exception. Ordinary SQL
+    // remains forbidden, including the same statement in any other file.
+    expect(forbiddenEventWrites(readFileSync(join(root, recoveryFile), 'utf8'))).toEqual([recoveryDelete])
     const offenders = files.flatMap((file) =>
-      forbiddenEventWrites(readFileSync(file, 'utf8')).map(
-        (statement) => `${relative(root, file).split(sep).join('/')}: ${statement}`,
-      ),
+      forbiddenEventWrites(readFileSync(file, 'utf8'))
+        .filter(
+          (statement) =>
+            relative(root, file).split(sep).join('/') !== recoveryFile || statement !== recoveryDelete,
+        )
+        .map((statement) => `${relative(root, file).split(sep).join('/')}: ${statement}`),
     )
     expect(offenders, offenders.join('\n')).toEqual([])
   })

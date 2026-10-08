@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { readSessionAttachment } from '../src/request/session-files.js'
 import { readSessionImages } from '../src/request/session-images.js'
+import { fencedFs, testFsPolicy } from '../testkit/fenced-fs.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { actor, openSession } from './helpers/open-session.js'
 
@@ -462,3 +463,109 @@ it('runs a long image conversation and reloads originals through the existing to
     readSessionImages(session, { path: 'session-image://list' }, cancelled.signal),
   ).rejects.toThrow('cancelled')
 })
+
+it.each([true, false])(
+  'projects confined workspace images into the model request only when vision=%s',
+  async (vision) => {
+    const bytes = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIAQAAAADsdIMmAAAACHRFWHRtYXJrZXIAME95DiIAAAALSURBVHicY2BABQAAEAABOb2PZQAAAABJRU5ErkJggg==',
+      'base64',
+    )
+    const artifacts = new Map<string, Uint8Array>()
+    const scripts = [toolTurn('read', { path: 'picture.png' }), textTurn('finished')]
+    const provider = fakeProvider(scripts)
+    provider.models = () => [{ ...model, input: vision ? ['text', 'image'] : ['text'] }]
+    const registry = new ToolRegistry()
+    registry.add(
+      {
+        name: 'read',
+        description: 'Read through the confined tool port and prepare model pixels',
+        parameters: Type.Object({ path: Type.String() }),
+        meta: {
+          isReadOnly: true,
+          isDestructive: false,
+          isConcurrencySafe: true,
+          isOpenWorld: false,
+          replay: 'safe',
+          costHint: {},
+          deferLoading: false,
+          requiresApproval: 'never',
+        },
+        async execute(args: unknown, ctx: ToolContext) {
+          const { path } = args as { path: string }
+          const pixels = await ctx.fs.read(path)
+          if (!ctx.session.imageInput) throw new Error('Missing image preparation port')
+          return ctx.session.imageInput({ bytes: pixels, mimeType: 'image/png', name: path })
+        },
+      },
+      { source: 'test', trust: 'builtin' },
+    )
+    const reads: string[] = []
+    const fsOps = fencedFs(
+      {
+        read: async (path) => {
+          reads.push(path)
+          return bytes
+        },
+        write: async () => undefined,
+        list: async () => [],
+        stat: async () => ({ kind: 'file', size: bytes.length, mtimeMs: 0 }),
+      },
+      testFsPolicy('/w'),
+    )
+    const { session, log } = await openSession({
+      provider,
+      registry,
+      fsOps,
+      imageInputTokenFallback: ({ imageCount }) => ({ tokens: 128, imageCount }),
+      seams: (await import('./helpers/fake-seams.js')).fakeSeams({
+        artifacts: {
+          put: async (bytes, meta) => {
+            const sha256 = sha256Hex(bytes)
+            artifacts.set(sha256, bytes)
+            return { sha256, size: bytes.length, mime: meta?.mime ?? 'image/png' }
+          },
+        },
+      }),
+      requestMedia: {
+        readArtifact: async ({ sha256 }) => artifacts.get(sha256),
+        surfaceLimits: {
+          maxLedgerEvents: 4096,
+          maxSurfaceNodes: 512,
+          maxContentBlocks: 4096,
+          maxManifestEntries: 32,
+          maxCandidateBytes: 1024 * 1024,
+          maxCandidatePixels: 8_000_000,
+        },
+        mediaLimits: {
+          maxManifestEntries: 32,
+          maxSelectedImages: 4,
+          maxSelectedBlocks: 8,
+          maxBytesPerImage: 1024 * 1024,
+          maxDimensionPerImage: 1456,
+          maxPixelsPerImage: 1456 ** 2,
+          maxSelectedBytes: 1024 * 1024,
+          maxSelectedPixels: 8_000_000,
+        },
+      },
+    })
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'Inspect picture.png' }], actor })
+    expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+      'completed',
+    )
+    const images = provider.requests
+      .at(-1)
+      ?.messages.flatMap((message) => message.content.filter((block) => block.type === 'image'))
+    expect(images).toHaveLength(vision ? 1 : 0)
+    expect(reads).toEqual(['/w/picture.png'])
+    expect(artifacts.size).toBe(vision ? 1 : 0)
+    const results = await log.scan({ type: 'tool/result', limit: 10 })
+    expect(JSON.stringify(results)).toContain(vision ? 'untrusted data' : 'pixels were not inspected')
+    scripts.push(toolTurn('read', { path: '/outside/picture.png' }), textTurn('refused outside path'))
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'Inspect outside image' }], actor })
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect(reads).toEqual(['/w/picture.png'])
+    expect((await log.scan({ type: 'tool/result', limit: 10 })).at(-1)?.data).toMatchObject({ isError: true })
+    await session.close()
+  },
+)

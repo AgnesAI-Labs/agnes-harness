@@ -22,6 +22,7 @@ import type { PersistenceSqliteSchemaObject } from '@agnes/extension-api'
 import { assertSessionTreeTableName } from '@agnes/host-common/session-tree-schema'
 import { sqliteChildControl } from './child-control-sqlite.js'
 import { DDL } from './ddl.js'
+import { recoverSqliteTail } from './ledger-tail-recovery.js'
 import { assertOwnedSql, confineToOwnFile } from './sql-guard.js'
 import { syncCheckpointsToMedium } from './sqlite-durability.js'
 
@@ -469,11 +470,26 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
           throw new CoreError('E_WRITER_LEASE', 'session held by another writer', { holder: l.run_id })
         const created =
           Number(q.insertSession.run(key, null, null, new Date(clock()).toISOString()).changes) === 1
+        const version = (q.session.get(key) as { format_version: number }).format_version
+        if (version !== 1)
+          throw new CoreError(
+            'E_FORMAT',
+            `Unsupported ledger format version ${version}; this runtime supports version 1`,
+          )
         q.upsertLease.run(key, claim.writerRunId, clock() + claim.ttlMs, claim.ttlMs)
+        const recovery = recoverSqliteTail<Row>({
+          db,
+          key,
+          file: opts.file,
+          now: clock(),
+          decode: rowToIntegrity,
+          encodeKey: keyBytes,
+        })
         const parent = parentOf(key)
         return {
           lastSeq: lastSeq(key),
           formatVersion: 1,
+          ...(recovery ? { recovery } : {}),
           ...(created ? { created: true } : {}),
           ...(parent ? { parent } : {}),
         }

@@ -100,6 +100,7 @@ export type OpenResult = {
   formatVersion: number
   created?: boolean
   parent?: { key: SessionKey; boundarySeq: Seq }
+  recovery?: { diagnosticId: string; quarantineFile: string; validThroughSeq: Seq }
 }
 
 export interface StorageAdapter {

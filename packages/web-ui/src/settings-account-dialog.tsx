@@ -95,6 +95,7 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
             </Button>
             <p id="config-error" role="alert" />
           </fieldset>
+          <div id="config-account-network" />
         </div>
         <div className="config-detail-footer">
           <p id="config-account-guard">{t('accounts.guard')}</p>

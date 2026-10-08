@@ -1,4 +1,5 @@
 import type { ProbeReport, RouteDecl } from '@agnes/protocol'
+import { deploymentFetch } from '@agnes/system-node/deployment-network'
 import { ApiKeyProviderError } from './api-key-providers.js'
 
 const MAX_CATALOG_BYTES = 1024 * 1024
@@ -162,7 +163,7 @@ export async function probeModelsEndpoint(
       return failed('invalid endpoint')
     url.pathname = `${url.pathname.replace(/\/$/, '')}/${anthropic ? 'v1/models' : 'models'}`
     url.hash = ''
-    const response = await fetch(url, {
+    const response = await deploymentFetch(url, {
       signal: ac.signal,
       redirect: 'error',
       headers,

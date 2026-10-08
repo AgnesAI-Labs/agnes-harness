@@ -99,15 +99,19 @@ it('operates the React settings pane and account dialog without losing native fo
         enabled: true,
         credentialConfigured: true,
         authType: 'api-key',
+        networkTimeouts: { requestMs: 90000, connectMs: 4000, streamIdleMs: 15000 },
       },
     ],
     defaultAccountId: 'work',
     effect: 'new-sessions',
   }
+  const save = vi.fn(async () => snapshot)
   const controller = createSettingsController({
     client: {
       config: {
         get: async () => snapshot,
+        save,
+        test: async () => ({ verified: true, models: snapshot.accounts?.[0]?.models ?? [] }),
         providers: async () => ({
           providers: [
             {
@@ -127,6 +131,30 @@ it('operates the React settings pane and account dialog without losing native fo
     await controller.open()
     expect(dialog.querySelectorAll('.config-account')).toHaveLength(1)
     expect(dialog.querySelector('#config-accounts button[aria-label="编辑 Work"]')).toBeTruthy()
+    dialog.querySelector<HTMLButtonElement>('#config-accounts button[aria-label="编辑 Work"]')?.click()
+    dialog.querySelector<HTMLElement>('[data-testid="account-network-details"] summary')?.click()
+    const field = dialog.querySelector<HTMLInputElement>('[data-testid="account-network-connectMs"]')
+    expect(field?.value).toBe('4000')
+    expect(dialog.querySelector('[data-testid="account-network-timeouts"]')?.textContent).toContain(
+      zhT('accounts.network.legend'),
+    )
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    flushSync(() => {
+      setter?.call(field, '5000')
+      field?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    dialog.querySelector<HTMLButtonElement>('#config-test')?.click()
+    await vi.waitFor(() =>
+      expect(dialog.querySelector<HTMLButtonElement>('#config-save')?.disabled).toBe(false),
+    )
+    dialog.querySelector<HTMLButtonElement>('#config-save')?.click()
+    await vi.waitFor(() =>
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          networkTimeouts: { requestMs: 90000, connectMs: 5000, streamIdleMs: 15000 },
+        }),
+      ),
+    )
     dialog.querySelector<HTMLButtonElement>('#config-add-account')?.click()
     expect(dialog.querySelector<HTMLDialogElement>('#account-dialog')?.open).toBe(true)
     expect(dialog.querySelector<HTMLSelectElement>('#config-provider')?.value).toBe('openai')
@@ -137,7 +165,7 @@ it('operates the React settings pane and account dialog without losing native fo
   } finally {
     controller.close()
     for (const host of dialog.querySelectorAll<HTMLElement>(
-      '#config-accounts, .agnes-ui-button-host, .agnes-ui-field-host',
+      '#config-accounts, #config-account-network, .agnes-ui-button-host, .agnes-ui-field-host',
     ))
       unmountRegion(host)
     paneRoot.unmount()

@@ -103,9 +103,23 @@ export function openJsonlStore(options: PersistenceOpenOptions): PersistenceSess
           ttlMs: claim.ttlMs,
         })
         const parent = session(key)?.parent
+        const tailRecovery = db.get<{ diagnosticId: string; quarantineFile: string }>(
+          identity('journal-recovery'),
+        )
+        const notified =
+          tailRecovery &&
+          rows(key).some(
+            ({ event }) =>
+              event.type === 'x/core/ledger-tail-recovered' &&
+              (event.data as { diagnosticId?: unknown } | undefined)?.diagnosticId ===
+                tailRecovery.diagnosticId,
+          )
         return {
           lastSeq: last(key),
           formatVersion: 1,
+          ...(tailRecovery && !notified && !created
+            ? { recovery: { ...tailRecovery, validThroughSeq: last(key) } }
+            : {}),
           ...(created ? { created: true } : {}),
           ...(parent ? { parent } : {}),
         }

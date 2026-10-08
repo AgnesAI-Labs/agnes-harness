@@ -75,6 +75,10 @@ test('UI first run, Agent selection, demo read/cancel, account save and restart 
     await expect(dialog.getByRole('combobox', { name: 'Provider: DeepSeek', exact: true })).toBeVisible()
     await dialog.getByRole('textbox', { name: 'Base URL', exact: true }).fill(provider.baseUrl)
     await dialog.getByLabel('API Key', { exact: true }).fill(provider.apiKey)
+    await dialog.getByTestId('account-network-details').locator('summary').click()
+    await dialog.getByTestId('account-network-requestMs').fill('90000')
+    await dialog.getByTestId('account-network-connectMs').fill('4000')
+    await dialog.getByTestId('account-network-streamIdleMs').fill('15000')
     await dialog.getByRole('button', { name: 'Test connection', exact: true }).click()
     await expect(dialog.getByRole('button', { name: 'Save account', exact: true })).toBeEnabled()
     await dialog.getByRole('button', { name: 'Save account', exact: true }).click()
@@ -82,7 +86,11 @@ test('UI first run, Agent selection, demo read/cancel, account save and restart 
     const saved = await client.config.get()
     expect(saved.accounts).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ label: 'Offline UI account', credentialConfigured: true }),
+        expect.objectContaining({
+          label: 'Offline UI account',
+          credentialConfigured: true,
+          networkTimeouts: { requestMs: 90000, connectMs: 4000, streamIdleMs: 15000 },
+        }),
       ]),
     )
     expect(JSON.stringify(saved)).not.toContain(provider.apiKey)
@@ -93,6 +101,11 @@ test('UI first run, Agent selection, demo read/cancel, account save and restart 
     const url = page.url()
     await page.goto('about:blank')
     await runtime.restart()
+    expect(
+      (await (await runtime.connect()).config.get()).accounts?.find(
+        (row) => row.label === 'Offline UI account',
+      )?.networkTimeouts,
+    ).toEqual({ requestMs: 90000, connectMs: 4000, streamIdleMs: 15000 })
     await page.goto(url)
     await expect(page.getByTestId('conversation-turn')).toContainText('UI_CREDENTIAL_PERSISTED')
     await turn(page, 'Use the same stored credential after restart')

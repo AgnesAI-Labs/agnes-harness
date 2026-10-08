@@ -1,0 +1,79 @@
+diff --git a/dist/api/bedrock-converse-stream.d.ts b/dist/api/bedrock-converse-stream.d.ts
+index 5d44bf071e84329250385366c0e6f623c7d910dd..11327964c5304fec728a16b592be115c9f050e7f 100644
+--- a/dist/api/bedrock-converse-stream.d.ts
++++ b/dist/api/bedrock-converse-stream.d.ts
+@@ -1,6 +1,10 @@
+ import type { SimpleStreamOptions, StreamFunction, StreamOptions, ThinkingBudgets, ThinkingLevel } from "../types.ts";
+ export type BedrockThinkingDisplay = "summarized" | "omitted";
+ export interface BedrockOptions extends StreamOptions {
++    /** Connection deadline configured by the deployment account. */
++    connectTimeoutMs?: number;
++    /** Socket idle deadline configured by the deployment account. */
++    streamIdleTimeoutMs?: number;
+     region?: string;
+     profile?: string;
+     toolChoice?: "auto" | "any" | "none" | {
+diff --git a/dist/api/bedrock-converse-stream.js b/dist/api/bedrock-converse-stream.js
+index 44e3f13e808f0665a44e34437e173743f81bd51f..7db95594f8319d673697e1913a184f28c88c0dc7 100644
+--- a/dist/api/bedrock-converse-stream.js
++++ b/dist/api/bedrock-converse-stream.js
+@@ -103,13 +103,16 @@ export const stream = (model, context, options = {}) => {
+                 // on `http2` module and has no support for http agent.
+                 // Use NodeHttpHandler to support HTTP(S) proxy agents.
+                 config.requestHandler = new NodeHttpHandler({
+-                    httpAgent: new HttpProxyAgent(proxyUrl),
+-                    httpsAgent: new HttpsProxyAgent(proxyUrl),
++                    httpAgent: new HttpProxyAgent(proxyUrl, { timeout: options.connectTimeoutMs }),
++                    httpsAgent: new HttpsProxyAgent(proxyUrl, { timeout: options.connectTimeoutMs }),
++                    connectionTimeout: options.connectTimeoutMs,
++                    requestTimeout: options.timeoutMs,
++                    socketTimeout: options.streamIdleTimeoutMs,
+                 });
+             }
+-            else if (getProviderEnvValue("AWS_BEDROCK_FORCE_HTTP1", options.env) === "1") {
++            else if (getProviderEnvValue("AWS_BEDROCK_FORCE_HTTP1", options.env) === "1" || options.connectTimeoutMs !== undefined || options.streamIdleTimeoutMs !== undefined || options.timeoutMs !== undefined) {
+                 // Some custom endpoints require HTTP/1.1 instead of HTTP/2
+-                config.requestHandler = new NodeHttpHandler();
++                config.requestHandler = new NodeHttpHandler({ connectionTimeout: options.connectTimeoutMs, requestTimeout: options.timeoutMs, socketTimeout: options.streamIdleTimeoutMs });
+             }
+         }
+         else {
+diff --git a/dist/utils/node-http-proxy.js b/dist/utils/node-http-proxy.js
+index d7dd398e021e3e23be4648670012ba8cdd891678..f2cc57f046b91e9cbc40e5ec03edd7689cac5eef 100644
+--- a/dist/utils/node-http-proxy.js
++++ b/dist/utils/node-http-proxy.js
+@@ -10,11 +10,11 @@ const DEFAULT_PROXY_PORTS = {
+ function getProxyEnv(key, env) {
+     const lowercaseKey = key.toLowerCase();
+     const uppercaseKey = key.toUpperCase();
+-    return (env?.[lowercaseKey] ||
+-        env?.[uppercaseKey] ||
+-        getProviderEnvValue(lowercaseKey) ||
+-        getProviderEnvValue(uppercaseKey) ||
+-        "");
++    return (env?.[lowercaseKey] ??
++        env?.[uppercaseKey] ??
++        (typeof process !== "undefined" ? process.env[lowercaseKey] ?? process.env[uppercaseKey] : undefined) ??
++        getProviderEnvValue(lowercaseKey) ??
++        getProviderEnvValue(uppercaseKey));
+ }
+ function parseProxyTargetUrl(targetUrl) {
+     if (targetUrl instanceof URL) {
+@@ -60,7 +60,7 @@ function parseNoProxyEntry(entry) {
+     return { host: trimmed, port: 0 };
+ }
+ function shouldProxyHostname(hostname, port, env) {
+-    const noProxy = getProxyEnv("no_proxy", env).toLowerCase();
++    const noProxy = (getProxyEnv("no_proxy", env) ?? "").toLowerCase();
+     if (!noProxy) {
+         return true;
+     }
+@@ -106,7 +106,7 @@ function getProxyForUrl(targetUrl, env) {
+     if (!shouldProxyHostname(hostname, port, env)) {
+         return "";
+     }
+-    let proxy = getProxyEnv(`${protocol}_proxy`, env) || getProxyEnv("all_proxy", env);
++    let proxy = getProxyEnv(`${protocol}_proxy`, env) ?? (protocol === "https" ? getProxyEnv("http_proxy", env) : undefined) ?? getProxyEnv("all_proxy", env) ?? "";
+     if (proxy && !proxy.includes("://")) {
+         proxy = `${protocol}://${proxy}`;
+     }

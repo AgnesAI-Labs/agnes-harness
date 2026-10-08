@@ -96,11 +96,17 @@ it('tests a real provider catalogue, saves an atomic non-secret record, and expo
     model,
     expectedRevision: 0,
     defaultSettings,
+    networkTimeouts: { requestMs: 90000, connectMs: 4000, streamIdleMs: 15000 },
   })
   if (process.getuid) expect((await lstat(root)).mode & 0o7777).toBe(0o700)
   expect(saved).toMatchObject({ profile: 'local-dev', revision: 1, configured: true, effect: 'new-sessions' })
   expect(await service.get()).toEqual(saved)
   expect(saved.accounts?.[0]?.models[0]?.defaultSettings).toEqual(defaultSettings)
+  expect(saved.accounts?.[0]?.networkTimeouts).toEqual({
+    requestMs: 90000,
+    connectMs: 4000,
+    streamIdleMs: 15000,
+  })
 
   const overlay = await service.profileInput()
   expect(overlay.provider?.catalog).toEqual({ include: [] })
@@ -123,7 +129,19 @@ it('tests a real provider catalogue, saves an atomic non-secret record, and expo
   })
 
   const other = createConfigurationService({ home: root, profile: 'local-dev' })
+  for (const networkTimeouts of [
+    { connectMs: 0 },
+    { requestMs: 1.5 },
+    { streamIdleMs: 3600001 },
+    { unknown: 1 },
+    null,
+  ])
+    await expect(
+      service.save({ providerId: 'openai', model, networkTimeouts: networkTimeouts as never }),
+    ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
   const second = await service.save({ providerId: 'openai', model, expectedRevision: 1 })
+  expect(second.accounts?.[0]?.networkTimeouts).toEqual(saved.accounts?.[0]?.networkTimeouts)
+  expect(JSON.stringify(await service.profileInput())).toContain('networkTimeouts')
   expect(second.revision).toBe(2)
   expect(second.accounts?.[0]?.models[0]?.defaultSettings).toEqual(defaultSettings)
   await expect(other.get()).resolves.toMatchObject({ revision: 2, configured: true })

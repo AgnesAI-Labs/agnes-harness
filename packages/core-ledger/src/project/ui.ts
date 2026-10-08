@@ -932,6 +932,20 @@ export class UIProjectionCell {
         changed.add(id)
         break
       }
+      case 'x/core/ledger-tail-recovered': {
+        const recovery = data as { diagnosticId?: unknown; validThroughSeq?: unknown }
+        if (typeof recovery.diagnosticId !== 'string' || !Number.isSafeInteger(recovery.validThroughSeq))
+          break
+        this.pushNode({
+          kind: 'ledger-recovery',
+          id,
+          seq,
+          diagnosticId: clip(recovery.diagnosticId, 128),
+          validThroughSeq: Number(recovery.validThroughSeq),
+        })
+        changed.add(id)
+        break
+      }
       case 'turn/start':
         this.turn = (data as { turn: number }).turn
         this.step = 0

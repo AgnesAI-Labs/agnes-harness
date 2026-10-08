@@ -16,7 +16,7 @@
   "@agnes/web-server": ["@agnes/protocol", "@agnes/history-index"],
   "@agnes/web-admin-frame": [],
   "@agnes/package-admin-client-node": ["@agnes/protocol"],
-  "@agnes/resource-control-runtime": ["@agnes/cordis", "@agnes/protocol"],
+  "@agnes/resource-control-runtime": ["@agnes/cordis", "@agnes/protocol", "@agnes/system-node"],
   "@agnes/resource-control-store": ["@agnes/protocol", "@agnes/system-node"],
   "@agnes/resource-control-client-node": ["@agnes/protocol"],
   "@agnes/cli-launch": [],
@@ -61,7 +61,7 @@
     "@agnes/core-effects",
     "@agnes/core-artifacts"
   ],
-  "@agnes/ai": ["@agnes/protocol", "@agnes/core", "@agnes/extension-api"],
+  "@agnes/ai": ["@agnes/protocol", "@agnes/core", "@agnes/extension-api", "@agnes/system-node"],
   "@agnes/base": [
     "@agnes/protocol",
     "@agnes/protocol-validation",
@@ -203,7 +203,8 @@
     "@agnes/host-common",
     "@agnes/protocol",
     "@agnes/sandbox-remote",
-    "@agnes/system-node"
+    "@agnes/system-node",
+    "@agnes/core-ledger"
   ],
   "@agnes/host-computer-use": [
     "@agnes/core",

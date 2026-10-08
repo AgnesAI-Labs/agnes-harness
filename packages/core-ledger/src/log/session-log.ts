@@ -141,6 +141,7 @@ export class SessionLogImpl {
   private integrityState: IntegrityState
   private readonly createdOnOpen: boolean
   readonly parent: { key: SessionKey; boundarySeq: Seq } | undefined
+  recovery: import('./storage.js').OpenResult['recovery']
 
   private constructor(
     private readonly o: OpenLogOptions,
@@ -162,6 +163,11 @@ export class SessionLogImpl {
   static async open(o: OpenLogOptions): Promise<SessionLogImpl> {
     const opened = await o.storage.open(o.key, { writerRunId: o.writerRunId, ttlMs: o.ttlMs })
     try {
+      if (opened.formatVersion !== 1)
+        throw new CoreError(
+          'E_FORMAT',
+          `Unsupported ledger format version ${opened.formatVersion}; this runtime supports version 1`,
+        )
       // The complete integrity chain is verified before any replayed state is exposed; a replay
       // consumer only ever sees rows that have already passed.
       const replay = o.replay
@@ -173,7 +179,7 @@ export class SessionLogImpl {
         replay ? (events) => replay.page(events) : undefined,
       )
       const rows = await o.storage.registers(o.key)
-      return new SessionLogImpl(
+      const log = new SessionLogImpl(
         o,
         opened.lastSeq,
         rows,
@@ -181,6 +187,8 @@ export class SessionLogImpl {
         opened.created === true,
         opened.parent,
       )
+      log.recovery = opened.recovery
+      return log
     } catch (error) {
       await o.storage.release(o.key, o.writerRunId).catch(() => undefined)
       throw error
@@ -200,6 +208,11 @@ export class SessionLogImpl {
   ): Promise<SessionLogImpl> {
     const opened = await o.storage.open(o.key, { writerRunId: o.writerRunId, ttlMs: o.ttlMs })
     try {
+      if (opened.formatVersion !== 1)
+        throw new CoreError(
+          'E_FORMAT',
+          `Unsupported ledger format version ${opened.formatVersion}; this runtime supports version 1`,
+        )
       if (
         opened.parent?.key !== parent.key ||
         opened.parent.boundarySeq !== parent.boundarySeq ||

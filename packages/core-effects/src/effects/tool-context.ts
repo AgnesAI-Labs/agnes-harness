@@ -108,6 +108,8 @@ export type ToolContextDeps = {
   appendPlan(items: PlanItem[]): Promise<Seq>
   requestCompaction(instructions?: string): void
   readImages?: ToolContext['session']['readImages']
+  imageInputPolicy?: ToolContext['session']['imageInputPolicy']
+  imageInput?: ToolContext['session']['imageInput']
   readAttachment?: ToolContext['session']['readAttachment']
   progress(note: string): void
   artifactJobEvent(job: ArtifactJob): Promise<void>
@@ -151,6 +153,8 @@ export function buildToolContext(
       depth: d.depth,
       generationDepth: d.generationDepth,
       ...(d.readImages ? { readImages: d.readImages } : {}),
+      ...(d.imageInputPolicy ? { imageInputPolicy: d.imageInputPolicy } : {}),
+      ...(d.imageInput ? { imageInput: d.imageInput } : {}),
       ...(d.readAttachment ? { readAttachment: d.readAttachment } : {}),
     },
     projections: unavailableProjections,

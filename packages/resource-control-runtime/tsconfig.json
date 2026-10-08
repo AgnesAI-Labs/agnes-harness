@@ -6,5 +6,18 @@
   },
   "include": ["**/*.ts"],
   "exclude": ["dist", "node_modules"],
-  "references": [{ "path": "../../tsconfig.config.json" }, { "path": "../cordis" }, { "path": "../protocol" }]
+  "references": [
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../cordis"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../system-node"
+    }
+  ]
 }

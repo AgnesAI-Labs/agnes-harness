@@ -48,6 +48,7 @@ export type CodexLoginDependencies = {
     model: string,
     signal: AbortSignal,
     defaultSettings?: ModelSettings,
+    networkTimeouts?: ConfigOAuthInput['networkTimeouts'],
   ): Promise<ConfigSnapshot>
 }
 
@@ -75,7 +76,7 @@ export function createCodexLogin(deps: CodexLoginDependencies) {
       start: ['action', 'accountId', 'providerId', 'label', 'expectedRevision', 'loginMethod'],
       poll: ['action', 'operationId'],
       answer: ['action', 'operationId', 'promptId', 'answer'],
-      commit: ['action', 'operationId', 'model', 'defaultSettings'],
+      commit: ['action', 'operationId', 'model', 'defaultSettings', 'networkTimeouts'],
       test: ['action', 'operationId', 'model'],
       cancel: ['action', 'operationId'],
     }
@@ -286,9 +287,13 @@ export function createCodexLogin(deps: CodexLoginDependencies) {
         input.defaultSettings === undefined ? undefined : normalizeModelSettings(input.defaultSettings)
       if (input.defaultSettings !== undefined && defaults === undefined) error()
       const settingsKey =
-        defaults === undefined
+        defaults === undefined && input.networkTimeouts === undefined
           ? undefined
-          : JSON.stringify([defaults.thinking ?? null, defaults.contextWindow ?? null])
+          : JSON.stringify([
+              defaults?.thinking ?? null,
+              defaults?.contextWindow ?? null,
+              input.networkTimeouts ?? null,
+            ])
       if (input.action === 'commit' && op.result.state === 'saved') {
         if (input.model !== op.committedModel || settingsKey !== op.committedSettings) error()
         return structuredClone(op.result)
@@ -325,6 +330,7 @@ export function createCodexLogin(deps: CodexLoginDependencies) {
           input.model as string,
           op.controller.signal,
           defaults,
+          input.networkTimeouts,
         )
         op.credential = undefined
         op.committedModel = input.model as string

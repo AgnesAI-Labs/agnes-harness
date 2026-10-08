@@ -88,6 +88,8 @@ export interface PersistenceOpenResult {
   formatVersion: number
   created?: boolean
   parent?: { key: string; boundarySeq: number }
+  /** A damaged tail was quarantined before opening this valid prefix. */
+  recovery?: { diagnosticId: string; quarantineFile: string; validThroughSeq: number }
 }
 
 export interface PersistenceRegisterRow {

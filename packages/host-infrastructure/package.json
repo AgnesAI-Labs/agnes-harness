@@ -61,7 +61,8 @@
     "@agnes/sandbox-remote": "workspace:*",
     "@agnes/system-node": "workspace:*",
     "ipaddr.js": "2.5.0",
-    "undici": "8.10.2"
+    "undici": "8.10.2",
+    "@agnes/core-ledger": "workspace:*"
   },
   "license": "Apache-2.0 AND MIT",
   "devDependencies": {

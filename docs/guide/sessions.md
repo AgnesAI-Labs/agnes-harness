@@ -12,6 +12,12 @@ A session contains task history, model selection, and execution state. A user re
 
 <a id="找到并继续会话"></a>
 
+## A damaged log tail
+
+Opening a SQLite ledger with a torn JSON/checksum tail preserves its verified prefix, durably quarantines the damaged raw rows and registers in a private `sessions.db.tail-<diagnosticId>.json` sidecar, and records a recovery diagnostic. The JSONL example similarly preserves exact damaged bytes in `store.jsonl.tail-<diagnosticId>.bin`. Web shows a localized notice with the diagnostic ID. Keep the sidecar when investigating a storage failure; it is not ordinary model context.
+
+Outstanding effects are closed as unknown instead of being replayed, including normally replay-safe tools. Check the external result before requesting another operation. A valid event/transaction after damage, a missing chain link, or a damaged prefix referenced by a fork refuses automatic truncation. Unknown future format versions are refused explicitly; this recovery does not upgrade or migrate formats.
+
 ## Find and resume a session
 
 ```sh

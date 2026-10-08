@@ -157,6 +157,9 @@
   "dependencies": {
     "@agnes/core": "workspace:*",
     "@agnes/history-index": "workspace:*",
+    "@agnes/loop-default": "workspace:*",
+    "@agnes/mcp-transport-health": "workspace:*",
+    "@agnes/observability": "workspace:*",
     "@agnes/plugin-runtime": "workspace:*",
     "@agnes/protocol": "workspace:*",
     "@agnes/protocol-validation": "workspace:*",
@@ -169,11 +172,9 @@
     "ajv-formats": "3.0.1",
     "isomorphic-git": "1.41.9",
     "jiti": "2.7.0",
+    "sharp": "0.34.5",
     "turndown": "7.2.4",
-    "yaml": "2.9.0",
-    "@agnes/loop-default": "workspace:*",
-    "@agnes/mcp-transport-health": "workspace:*",
-    "@agnes/observability": "workspace:*"
+    "yaml": "2.9.0"
   },
   "devDependencies": {
     "@agnes/extension-api": "workspace:*",

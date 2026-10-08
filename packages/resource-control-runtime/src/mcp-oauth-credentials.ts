@@ -1,3 +1,4 @@
+import { deploymentFetch } from '@agnes/system-node/deployment-network'
 import { refreshAuthorization } from '@modelcontextprotocol/sdk/client/auth.js'
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { McpOAuthCredential, McpOAuthCredentialResolver } from './mcp.js'
@@ -99,7 +100,10 @@ function isStoredOAuthCredential(
 export function createMcpOAuthCredentialResolver(
   opts: CreateMcpOAuthCredentialResolverOptions,
 ): McpOAuthCredentialResolver {
-  const fetchImpl = withTimeout(opts.fetchImpl, opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS)
+  const fetchImpl = withTimeout(
+    opts.fetchImpl ?? deploymentFetch,
+    opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+  )
 
   return async (serverId, signal, serverUrl, staticClientId) => {
     if (signal.aborted) throw new DOMException('operation aborted', 'AbortError')

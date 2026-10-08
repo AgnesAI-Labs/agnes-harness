@@ -615,6 +615,12 @@ function nativeContent(
       ) : (
         <div data-slot-state="empty">{t('slot.notReady')}</div>
       )
+    case 'ledger-recovery':
+      return (
+        <div className="node-body" role="status" data-testid="ledger-tail-recovery-notice">
+          {t('timeline.ledgerRecovery', { seq: node.validThroughSeq, diagnosticId: node.diagnosticId })}
+        </div>
+      )
     case 'contribute-conflict':
       return (
         <>

@@ -6,6 +6,7 @@
 
 | 工具 | 输入与行为 |
 | --- | --- |
+| `read` | 读取受工作区权限约束的文本、会话附件及原图。对支持视觉的模型，本地单帧 PNG/JPEG 通过 artifact 成为模型图片输入；输入上限 4 MiB、1600 万像素。按当前模型/运行时的字节、尺寸及像素限制等比例缩小，并去掉元数据。Web 沿用工具图片卡片；非视觉模型收到明确未检查像素的文字说明。其他格式需相应工具。 |
 | `web_search` | `{"queries":["主题"]}`；一至四条非空查询。宿主提供搜索标题、链接和摘要。没有配置搜索提供方或密钥时返回 `WEB_SEARCH_UNAVAILABLE`，可改用已知 URL 调用 `web_fetch`。 |
 | `ask_user_question` | `{"questions":[{"id":"route","question":"请选择路线","options":["A","B"]}]}`。省略 options 使用自由文本；`multiple:true` 允许多选，`allowFreeText:true` 允许补充答案。一至四个问题，id 必须唯一。`timeoutMs` 默认为 0（立即继续），1–60000 可选择等待至持久化截止时间。同批其他工具仍可执行；晚答作为新输入送达。 |
 | `present` | `{"files":[{"path":"report.pdf","name":"Report.pdf","description":"供审阅"}]}`。注册已存在、可读取的普通文件，将内容复制为会话产物。最多十六个文件，每个文件和总量都不超过 32 MiB。Web 卡片提供打开和下载。 |

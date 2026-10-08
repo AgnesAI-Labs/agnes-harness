@@ -12,12 +12,16 @@
     "./process-detached": "./src/process-detached.ts",
     "./windows-pipe": "./src/windows-pipe.ts",
     "./process-broker": "./runtime/process-broker.mjs",
-    "./native": "./dist/native/agnes-system.node"
+    "./native": "./dist/native/agnes-system.node",
+    "./deployment-network": "./src/deployment-network.ts"
   },
   "scripts": {
     "build:native": "node scripts/build-native.mjs",
     "typecheck": "tsc -b",
     "test": "vitest run"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "dependencies": {
+    "undici": "7.29.0"
+  }
 }

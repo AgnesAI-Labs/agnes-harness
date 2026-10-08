@@ -6,6 +6,7 @@ import {
   dataDir as hostDataDir,
   type ResolvedProfile,
 } from '@agnes/host'
+import { deploymentProxyHosts } from '@agnes/system-node/deployment-network'
 import type { ParsedArgs } from '../args.js'
 import { profileNameFrom } from '../boot/inputs.js'
 import { assembleLocalHost, type LocalBootDeps } from '../boot/local.js'
@@ -21,6 +22,7 @@ export type DoctorCommandDeps = LocalBootDeps
 
 export const DOCTOR_SECTIONS = [
   'platform',
+  'network',
   'provider',
   'storage',
   'profile',
@@ -116,6 +118,19 @@ export async function doctorCommand(
         case 'platform':
           sections.push(await doctorPlatform(commandDeps))
           break
+        case 'network': {
+          const proxies = deploymentProxyHosts()
+          sections.push({
+            name: 'network',
+            status: proxies.http === 'invalid' || proxies.https === 'invalid' ? 'fail' : 'ok',
+            detail: [
+              `HTTP proxy: ${proxies.http}`,
+              `HTTPS proxy: ${proxies.https}`,
+              `NO_PROXY exclusions: ${proxies.exclusionsConfigured ? 'configured' : 'none'}`,
+            ],
+          })
+          break
+        }
         case 'storage':
           sections.push(await doctorStorage(commandDeps))
           break

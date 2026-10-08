@@ -1,4 +1,5 @@
 import { checkToolDef } from '@agnes/extension-api'
+import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 import { type FakeToolContext, fakeToolContext } from '../../../testkit/tool-context.js'
 
@@ -367,4 +368,56 @@ it('reads session images through the session port and fails closed on older runt
     content,
   })
   expect(ctx.calls.read).toEqual([])
+})
+
+it('reads confined local PNG/JPEG bytes as model images, downsizes them, and falls back honestly for text models', async () => {
+  for (const format of ['png', 'jpeg'] as const) {
+    const bytes = await sharp({ create: { width: 2000, height: 1000, channels: 3, background: 'red' } })
+      .toFormat(format)
+      .toBuffer()
+    const base = ctxOf({ cwd: '/w', files: { '/w/picture': bytes } })
+    const received: Uint8Array[] = []
+    const ctx = {
+      ...base,
+      session: {
+        ...base.session,
+        imageInputPolicy: async () => ({
+          supported: true,
+          maxWidth: 100,
+          maxHeight: 100,
+          maxBytes: 100000,
+          maxPixels: 10000,
+        }),
+        imageInput: async ({ bytes, mimeType }: { bytes: Uint8Array; mimeType: string }) => {
+          received.push(bytes)
+          const ref = await base.artifacts.put(bytes, { mime: mimeType })
+          return { content: [{ type: 'image' as const, ref, mime: mimeType }] }
+        },
+      },
+    }
+    const result = await readTool.execute({ path: 'picture' }, ctx)
+    expect(result.content[0]?.type).toBe('image')
+    expect(await sharp(received[0]).metadata()).toMatchObject({ width: 100, height: 50 })
+    expect(base.calls.read[0]?.path).toBe('picture')
+    const fallback = await readTool.execute(
+      { path: 'picture' },
+      {
+        ...ctx,
+        session: {
+          ...ctx.session,
+          imageInputPolicy: async () => ({
+            supported: false,
+            maxWidth: 100,
+            maxHeight: 100,
+            maxBytes: 100000,
+            maxPixels: 10000,
+          }),
+        },
+      },
+    )
+    expect(textOf(fallback)).toContain('pixels were not inspected')
+    expect(received).toHaveLength(1)
+    base.mem.files.set('/w/picture', Uint8Array.of(0x89, 0x50, 0x4e, 0x47))
+    expect((await readTool.execute({ path: 'picture' }, ctx)).isError).toBe(true)
+  }
 })

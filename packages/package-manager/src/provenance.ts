@@ -7,6 +7,7 @@ import {
   type PackageProvenance,
   type PackageSourcePolicy,
 } from '@agnes/protocol'
+import { deploymentFetch } from '@agnes/system-node/deployment-network'
 import { verify } from 'sigstore'
 import { PackageError } from './errors.js'
 import { canonical, readStaticJson } from './integrity.js'
@@ -237,7 +238,7 @@ export async function fetchNpmProvenance(
     if (parsed.origin !== 'https://registry.npmjs.org' || parsed.username || parsed.password)
       throw failure('npm provenance endpoint is not the official registry')
     const timeout = AbortSignal.timeout(15_000)
-    const response = await fetch(parsed, {
+    const response = await deploymentFetch(parsed, {
       redirect: 'error',
       signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     })

@@ -145,6 +145,15 @@ export function whatToDraw(
       const blocks = slotBlocks(node.fill.slot, node.fill.payload, node.fill.requestSeq)
       return blocks.length === 0 ? null : { blocks }
     }
+    case 'ledger-recovery':
+      return {
+        blocks: [
+          {
+            kind: 'text',
+            markdown: `已恢复至有效日志事件 ${node.validThroughSeq}；损坏尾部已隔离。诊断编号：${node.diagnosticId}`,
+          },
+        ],
+      }
     case 'context-sections':
     case 'contribute-conflict':
     case 'context':

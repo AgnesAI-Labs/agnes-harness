@@ -76,7 +76,7 @@
       "license": "MIT",
       "source": "https://github.com/earendil-works/pi/tree/main/packages/ai",
       "purpose": "Provider adapters, model catalog and streaming AI protocol support.",
-      "rationale": "Uses the project's selected public AI abstraction instead of maintaining parallel provider implementations.",
+      "rationale": "Uses the project's selected public AI abstraction instead of maintaining parallel provider implementations. A retained pnpm patch wires Bedrock connection/request/socket deadlines into its existing Smithy proxy transport; no upstream copyright notice is removed.",
       "consumers": ["packages/ai"]
     },
     {
@@ -214,12 +214,12 @@
     },
     {
       "name": "undici",
-      "version": "8.10.2",
+      "version": "7.29.0,8.10.2",
       "license": "MIT",
       "source": "https://github.com/nodejs/undici",
       "purpose": "Provides the explicit HTTP dispatcher used by bounded public retrieval.",
-      "rationale": "Allows connection policy and redirect handling to stay under Host control instead of relying on ambient global fetch state.",
-      "consumers": ["packages/host-computer-use", "packages/host-infrastructure"]
+      "rationale": "Allows connection policy and redirect handling to stay under Host control instead of relying on ambient global fetch state. Undici 7 dispatchers are compatible with Node 24 built-in fetch; public-fetch retains its independent Undici 8 policy transport.",
+      "consumers": ["packages/host-computer-use", "packages/host-infrastructure", "packages/system-node"]
     },
     {
       "name": "ws",
@@ -296,6 +296,15 @@
         "packages/web-ui",
         "packages/web-units"
       ]
+    },
+    {
+      "name": "sharp",
+      "version": "0.34.5",
+      "license": "Apache-2.0",
+      "source": "https://github.com/lovell/sharp",
+      "purpose": "Bounded PNG/JPEG decoding and aspect-preserving downsampling for local model image input.",
+      "rationale": "The shared safe-image validator does not decode raster pixels or resize images; native codec and transitive license notices ship with the runtime.",
+      "consumers": ["packages/base"]
     }
   ]
 }

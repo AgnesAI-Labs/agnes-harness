@@ -1491,6 +1491,27 @@
       "additionalProperties": false,
       "required": ["extensions"],
       "properties": {
+        "networkTimeouts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            },
+            "connectMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            },
+            "streamIdleMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600000
+            }
+          }
+        },
         "backend": {
           "enum": ["auto", "seatbelt", "bwrap", "restricted-token"]
         },

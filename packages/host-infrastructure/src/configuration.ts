@@ -50,6 +50,7 @@ import {
   type SessionDefaultsSnapshot,
 } from '@agnes/protocol'
 import { renameWriteThrough, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
+import { deploymentFetch, ensureDeploymentProxy } from '@agnes/system-node/deployment-network'
 import { subscriptionCredentials } from './adapters/codex-credentials.js'
 import {
   CredentialStoreError,
@@ -194,6 +195,7 @@ type StoredAccount = StoredConfigurationV1['provider'] & {
   route: string
   enabled: boolean
   authType: 'api-key' | 'oauth'
+  networkTimeouts?: import('@agnes/protocol').ConfigSaveInput['networkTimeouts']
 }
 type StoredConfiguration = {
   version: 2
@@ -399,6 +401,7 @@ function parseSaveInput(value: unknown): {
         'enabled',
         'makeDefault',
         'defaultSettings',
+        'networkTimeouts',
       ].includes(key),
     )
   )
@@ -408,6 +411,7 @@ function parseSaveInput(value: unknown): {
     ...(input.baseUrl === undefined ? {} : { baseUrl: input.baseUrl }),
     ...(input.apiKey === undefined ? {} : { apiKey: input.apiKey }),
   })
+  if (input.networkTimeouts !== undefined) checkedNetworkTimeouts(input.networkTimeouts)
   const model = parseModel(input.model)
   if (
     input.expectedRevision !== undefined &&
@@ -502,7 +506,7 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
   for (const row of value.accounts) {
     if (
       !isRecord(row) ||
-      ![9, 10].includes(Object.keys(row).length) ||
+      ![9, 10, 11].includes(Object.keys(row).length) ||
       !Object.keys(row).every((key) =>
         [
           'id',
@@ -515,6 +519,7 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
           'route',
           'enabled',
           'authType',
+          'networkTimeouts',
         ].includes(key),
       ) ||
       typeof row.accountId !== 'string' ||
@@ -576,6 +581,9 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
       enabled: row.enabled,
       authType,
       credentialRef: ref,
+      ...(row.networkTimeouts === undefined
+        ? {}
+        : { networkTimeouts: checkedNetworkTimeouts(row.networkTimeouts) }),
     })
   }
   if (
@@ -675,7 +683,8 @@ export function createConfigurationService(
   const configPath = join(profileDir, FILE)
   const lockPath = join(profileDir, LOCK_FILE)
   const legacyPath = join(profileDir, LEGACY_FILE)
-  const request = options.request ?? globalThis.fetch
+  ensureDeploymentProxy()
+  const request = options.request ?? deploymentFetch
   const credentialStore = createCredentialStore({ root: home })
   let loading: Promise<StoredConfiguration | undefined> | undefined
   const catalogueCache = new Map<string, Promise<StaticCatalogue>>()
@@ -862,6 +871,7 @@ export function createConfigurationService(
         providerId: row.id,
         route: row.route,
         baseUrl: row.baseUrl,
+        ...(row.networkTimeouts === undefined ? {} : { networkTimeouts: row.networkTimeouts }),
         model: row.model,
         models: await staticCatalogue(providerFor(row.id, row.authType))
           .catch(() => ({ records: [] as ModelRecord[] }))
@@ -1105,6 +1115,11 @@ export function createConfigurationService(
       route: existing?.route ?? (input.accountId === undefined ? entry.route : `account-${id}`),
       baseUrl,
       model: parsed.model,
+      ...(input.networkTimeouts === undefined
+        ? existing?.networkTimeouts
+          ? { networkTimeouts: existing.networkTimeouts }
+          : {}
+        : { networkTimeouts: checkedNetworkTimeouts(input.networkTimeouts) }),
       models: result.models.map((model) => {
         const defaults =
           model.id === parsed.model && input.defaultSettings !== undefined
@@ -1243,7 +1258,8 @@ export function createConfigurationService(
             },
           }
         : {}),
-    async commit(input, credential, model, signal, defaultSettings) {
+    async commit(input, credential, model, signal, defaultSettings, networkTimeouts) {
+      if (networkTimeouts !== undefined) checkedNetworkTimeouts(networkTimeouts)
       if (((await loadState())?.revision ?? 0) !== input.expectedRevision)
         throw new ConfigurationError('CONFIG_REVISION_CONFLICT')
       signal.throwIfAborted()
@@ -1293,6 +1309,11 @@ export function createConfigurationService(
             model,
             enabled: existing?.enabled ?? true,
             authType: 'oauth',
+            ...(networkTimeouts === undefined
+              ? existing?.networkTimeouts
+                ? { networkTimeouts: existing.networkTimeouts }
+                : {}
+              : { networkTimeouts: checkedNetworkTimeouts(networkTimeouts) }),
           }
           const next: StoredConfiguration = {
             version: 2,
@@ -1433,6 +1454,7 @@ export function createConfigurationService(
               route,
               api,
               baseUrl: row.baseUrl,
+              ...(row.networkTimeouts === undefined ? {} : { networkTimeouts: row.networkTimeouts }),
               credentialRef: row.credentialRef,
               displayName: index === 0 ? row.label : `${row.label} · ${api}`,
               models,
@@ -1465,4 +1487,22 @@ export function createConfigurationService(
       throw new ConfigurationError('CONFIG_PERSIST_FAILED')
     }
   }
+}
+
+function checkedNetworkTimeouts(
+  value: unknown,
+): NonNullable<import('@agnes/protocol').ConfigSaveInput['networkTimeouts']> {
+  if (
+    !isRecord(value) ||
+    !Object.entries(value).every(
+      ([key, timeout]) =>
+        ['requestMs', 'connectMs', 'streamIdleMs'].includes(key) &&
+        typeof timeout === 'number' &&
+        Number.isSafeInteger(timeout) &&
+        timeout >= 1 &&
+        timeout <= 3_600_000,
+    )
+  )
+    throw new ConfigurationError('CONFIG_INVALID_INPUT')
+  return value
 }

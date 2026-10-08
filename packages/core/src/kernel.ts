@@ -85,6 +85,7 @@ export const CORE_DIAG_NAMES = [
   'budget-recount',
   'child-interrupted',
   'resume-closed',
+  'ledger-tail-recovered',
   'tool-missing-on-resume',
   'tool-policy-refused-on-resume',
   'registers-rebuilt',
@@ -658,6 +659,14 @@ export class Kernel {
     }
     this.sessions.set(key, session)
     if (registersRebuilt) await session.diag('registers-rebuilt', { sessionKey: key })
+    if (log.recovery) {
+      const [lastRecovery] = await log.scan({ type: 'x/core/ledger-tail-recovered', order: 'desc', limit: 1 })
+      if (
+        (lastRecovery?.data as { diagnosticId?: unknown } | undefined)?.diagnosticId !==
+        log.recovery.diagnosticId
+      )
+        await log.append([session.ev('x/core/ledger-tail-recovered', log.recovery, { ignorable: true })])
+    }
     return session
   }
 

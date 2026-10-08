@@ -23,6 +23,7 @@ import {
 import { createElement } from 'react'
 import { oauthControls } from './oauth-controls.js'
 import { createAccountPickers } from './provider-picker.js'
+import { accountNetworkFields } from './settings/account-network.js'
 
 export type SettingsControllerOptions = {
   client: Client
@@ -158,6 +159,14 @@ function focusable(value: Element | null): value is HTMLElement {
  */
 export function createSettingsController(options: SettingsControllerOptions): SettingsController {
   const ui = readElements()
+  const networkFields = accountNetworkFields(
+    optionalElement('config-account-network', 'div') ?? null,
+    tr,
+    () => {
+      revision += 1
+      updateButtons()
+    },
+  )
   const providerPicker = createAccountPickers(ui)
   let connected = true
   let configuration: ConfigSnapshot | undefined
@@ -222,7 +231,11 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const account = selectedAccount()
     if (!account || !canUseSavedModels()) return false
     const name = accountName?.value.trim()
-    return ui.models.value !== account.model || (!!name && name !== account.label)
+    return (
+      ui.models.value !== account.model ||
+      (!!name && name !== account.label) ||
+      networkFields.changed(account)
+    )
   }
 
   const oauth = oauthControls(ui.oauthMount, options.client.config, {
@@ -298,6 +311,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const oauthSelected = isOAuth()
     oauth.visible(oauthSelected)
     oauth.disabled(!connected || busy)
+    networkFields.disabled(!connected || busy)
     if (ui.apiKey.closest('label')) (ui.apiKey.closest('label') as HTMLElement).hidden = oauthSelected
     ui.provider.disabled =
       !connected || busy || oauth.operation() !== undefined || selectedAccount() !== undefined
@@ -447,6 +461,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     ui.authMethod.value = savedAuth && methods.includes(savedAuth) ? savedAuth : (methods[0] ?? 'api-key')
     if (selected) ui.provider.value = providerValue(selected, ui.authMethod.value)
     ui.authMethodField.hidden = methods.length < 2
+    networkFields.load(selectedAccount())
     ui.baseUrl.value = savedProvider()?.baseUrl ?? selected?.baseUrl ?? ''
     // A saved credential is represented only by credentialConfigured. It is never read back here.
     ui.apiKey.value = ''
@@ -634,8 +649,10 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const modelId = ui.models.value
     let request: ReturnType<typeof input>
     let defaultSettings: ModelSettings | undefined
+    let networkTimeouts: NonNullable<ReturnType<typeof networkFields.read>>
     try {
       request = input()
+      networkTimeouts = networkFields.read()
       defaultSettings = ui.thinking || ui.contextWindow ? readModelSettings() : undefined
       if (accountName && editingId && !accountName.value.trim())
         throw new Error(tr('settings.account.nameRequired'))
@@ -654,6 +671,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
             action: 'commit',
             operationId: oauthId,
             model: modelId,
+            networkTimeouts,
             ...(defaultSettings === undefined ? {} : { defaultSettings }),
           })
         : undefined
@@ -664,6 +682,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
           ...request,
           ...(accountName && editingId ? { label: accountName.value.trim() } : {}),
           model: modelId,
+          networkTimeouts,
           ...(defaultSettings === undefined ? {} : { defaultSettings }),
           ...(configuration ? { expectedRevision: configuration.revision } : {}),
         }))
@@ -969,5 +988,13 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     if (connected && ui.dialog.open && !opening) void open()
   }
 
-  return { open, close, refreshLocale: renderAccounts, setConnected }
+  return {
+    open,
+    close,
+    refreshLocale: () => {
+      renderAccounts()
+      networkFields.render()
+    },
+    setConnected,
+  }
 }

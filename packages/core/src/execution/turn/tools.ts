@@ -21,6 +21,7 @@ import {
 } from '../../registry/tool-policy.js'
 import { readSessionAttachment } from '../../request/session-files.js'
 import { readSessionImages } from '../../request/session-images.js'
+import { imageInput, imageInputPolicy } from '../../request/tool-images.js'
 import {
   approvalBindingHash,
   approvalScopesForCall,
@@ -1076,6 +1077,8 @@ export async function approveAndExecute(
             t.compactionRequested = i ?? null
           },
           ...(s.d.requestMedia ? { readImages: (input) => readSessionImages(s, input, ac.signal) } : {}),
+          imageInputPolicy: async () => imageInputPolicy(s),
+          imageInput: (input) => imageInput(s, input, ac.signal),
           readAttachment: (input) => {
             markAttachmentRead()
             return readSessionAttachment(s, input, ac.signal)

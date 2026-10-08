@@ -90,6 +90,8 @@ function displayText(
       return `${node.fill.slot}: ${node.fill.extId}`
     case 'contribute-conflict':
       return `${node.key}: ${node.ops.join(',')}`
+    case 'ledger-recovery':
+      return t('timeline.ledgerRecovery', { seq: node.validThroughSeq, diagnosticId: node.diagnosticId })
   }
 }
 

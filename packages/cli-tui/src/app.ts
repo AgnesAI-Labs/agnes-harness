@@ -67,6 +67,8 @@ function nodeText(node: UINode): string {
       // presence of its own: collectSlots() reads it out of the projected timeline directly and
       // routes it to the hint row or status bar instead. Never dump its payload as text here.
       return ''
+    case 'ledger-recovery':
+      return `Recovered the valid log through event ${node.validThroughSeq}; damaged tail quarantined. Diagnostic ID: ${node.diagnosticId}`
     case 'context-sections':
     case 'contribute-conflict':
       // Advisory diagnostic rows, not turn transcript: /context reads these directly off

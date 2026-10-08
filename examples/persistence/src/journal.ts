@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import {
   closeSync,
   existsSync,
@@ -7,24 +7,17 @@ import {
   openSync,
   readFileSync,
   rmSync,
-  truncateSync,
   writeFileSync,
   writeSync,
 } from 'node:fs'
 import { join } from 'node:path'
+import { type Change, digest, type Frame, readJournalTail, replaceDamagedJournal } from './journal-tail.js'
 
 export function fail(code: string, message: string): never {
   throw Object.assign(new Error(message), { code })
 }
 export const identity = (...parts: unknown[]): string => JSON.stringify(parts)
 export const jsonCopy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
-
-type Change = [string, unknown] | [string]
-type Frame = { version: 1; revision: number; previous: string | null; changes: Change[]; digest: string }
-const digest = (changes: Change[], revision: number, previous: string | null): string =>
-  createHash('sha256')
-    .update(JSON.stringify([revision, previous, changes]))
-    .digest('hex')
 
 /** A single fsynced line commits an entire synchronous transaction, including nested writes. */
 export class Journal {
@@ -75,38 +68,70 @@ export class Journal {
     try {
       if (existsSync(this.path)) {
         const bytes = readFileSync(this.path)
-        const end = bytes.lastIndexOf(10) + 1
-        for (const line of bytes.subarray(0, end).toString('utf8').split('\n')) {
-          if (!line) continue
-          let frame: Frame
-          try {
-            frame = JSON.parse(line) as Frame
-          } catch {
-            fail('E_STORAGE_FAULT', 'invalid committed JSONL transaction')
-          }
-          if (frame.version !== 1) fail('E_FORMAT', 'unsupported JSONL journal version')
-          if (
-            !Array.isArray(frame.changes) ||
-            frame.revision !== this.revision + 1 ||
-            frame.previous !== this.previous ||
-            frame.digest !== digest(frame.changes, frame.revision, frame.previous)
-          )
-            fail('E_STORAGE_FAULT', 'invalid journal checksum')
-          this.revision = frame.revision
-          this.previous = frame.digest
+        const tail = readJournalTail(bytes)
+        this.revision = tail.revision
+        this.previous = tail.previous
+        for (const frame of tail.frames)
           for (const change of frame.changes) {
-            if (
-              !Array.isArray(change) ||
-              typeof change[0] !== 'string' ||
-              (change.length !== 1 && change.length !== 2)
-            )
-              fail('E_STORAGE_FAULT', 'invalid journal mutation')
             if (change.length === 1) this.data.delete(change[0])
             else this.data.set(change[0], change[1])
           }
+        if (tail.badOffset !== undefined) {
+          const diagnosticId = randomUUID()
+          const recovery = { diagnosticId, quarantineFile: `${this.path}.tail-${diagnosticId}.bin` }
+          const changes: Change[] = [[identity('journal-recovery'), recovery]]
+          for (const [key, value] of this.data) {
+            const parts = JSON.parse(key) as unknown[]
+            if (parts[0] !== 'register' || parts[2] !== 'op.state') continue
+            const cell = value as { data: Record<string, unknown> }
+            const op = cell.data
+            if (!op || typeof op !== 'object') continue
+            changes.push([
+              key,
+              {
+                ...cell,
+                data: {
+                  ...op,
+                  control: {
+                    status: 'cancel_requested',
+                    requestedAt: new Date().toISOString(),
+                    by: { id: 'ledger-recovery', org: '', role: 'system', deptPath: [], attrs: {} },
+                  },
+                  phase: {
+                    kind: 'failure_drain',
+                    error: {
+                      code: 'LEDGER_TAIL_RECOVERED',
+                      message:
+                        'Damaged journal tail was quarantined; outstanding effects must not be replayed.',
+                    },
+                    provenance: { kind: 'seam' },
+                  },
+                },
+              },
+            ])
+          }
+          const revision = this.revision + 1
+          const frame: Frame = {
+            version: 1,
+            revision,
+            previous: this.previous,
+            changes,
+            digest: digest(changes, revision, this.previous),
+          }
+          replaceDamagedJournal(this.path, bytes, tail.badOffset, frame)
+          for (const change of changes) if (change.length === 2) this.data.set(change[0], change[1])
+          this.revision = revision
+          this.previous = frame.digest
+        } else if (bytes.length && bytes.at(-1) !== 10) {
+          // A complete checksum-valid final transaction survives a missing newline.
+          const fd = openSync(this.path, 'a')
+          try {
+            writeSync(fd, '\n')
+            fsyncSync(fd)
+          } finally {
+            closeSync(fd)
+          }
         }
-        // Only a non-newline-terminated, unacknowledged transaction may be discarded.
-        if (end !== bytes.length) truncateSync(this.path, end)
       }
       this.fd = openSync(this.path, 'a', 0o600)
       fsyncSync(this.fd)

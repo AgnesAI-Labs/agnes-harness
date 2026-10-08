@@ -192,6 +192,10 @@ cpSync(
 )
 for (const name of ['esbuild', '@esbuild'])
   cpSync(join(local, 'node_modules', name), join(out, 'node_modules', name), { recursive: true })
+for (const name of readdirSync(join(local, 'node_modules')).filter(
+  (name) => name !== '@agnes' && name !== 'esbuild' && name !== '@esbuild',
+))
+  cpSync(join(local, 'node_modules', name), join(out, 'node_modules', name), { recursive: true })
 const runtime = join(out, 'runtime')
 mkdirSync(runtime, { recursive: true })
 const runtimeNode = join(runtime, process.platform === 'win32' ? 'node.exe' : 'node')

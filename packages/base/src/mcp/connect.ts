@@ -1,4 +1,5 @@
 import { type CloseObservableTransport, observeTransportDisconnect } from '@agnes/mcp-transport-health'
+import { deploymentFetch } from '@agnes/system-node/deployment-network'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 // SSEClientTransport is the legacy pre-2025-03-26 MCP SSE transport. The SDK marks it @deprecated in
 // favor of Streamable HTTP, but it is deliberately kept here as a backward-compat path for remote
@@ -161,7 +162,7 @@ function policedHttpFetch(
       const hopInit: RequestInit = crossOrigin
         ? { ...requestInit, headers: withoutHeaders(requestInit?.headers, strippedOnCrossOrigin) }
         : { ...requestInit }
-      const response = await fetch(url, { ...hopInit, redirect: 'manual' })
+      const response = await deploymentFetch(url, { ...hopInit, redirect: 'manual' })
       const location = response.headers.get('location')
       const isRedirect = REDIRECT_STATUSES.has(response.status) && location !== null
       if (!isRedirect) return response

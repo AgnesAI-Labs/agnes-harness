@@ -120,6 +120,29 @@ const nodes: UINode[] = [
 ]
 
 describe('W3b projected message DOM', () => {
+  it('announces a localized damaged-tail recovery with its diagnostic id', async () => {
+    const store = createConversationProjectionStore({
+      sessionId: 'session',
+      nodes: [
+        {
+          kind: 'ledger-recovery',
+          id: 'recovery',
+          seq: 10,
+          validThroughSeq: 9,
+          diagnosticId: 'tail-diagnostic',
+        },
+      ],
+    })
+    await mount(store)
+    const notice = host.querySelector('[data-testid="ledger-tail-recovery-notice"]')
+    expect(notice?.getAttribute('role')).toBe('status')
+    expect(notice?.textContent).toBe(
+      t('timeline.ledgerRecovery', { seq: 9, diagnosticId: 'tail-diagnostic' }),
+    )
+    expect(notice?.textContent).toContain('tail-diagnostic')
+    expect(notice?.textContent).not.toContain('timeline.ledgerRecovery')
+  })
+
   it('renders ordinary message content through assistant-ui message parts', async () => {
     const store = createConversationProjectionStore({
       sessionId: 'session',

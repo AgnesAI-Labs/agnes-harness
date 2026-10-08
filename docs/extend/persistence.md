@@ -8,6 +8,8 @@ A complete provider can replace SQLite for the entire Host. Export a `persistenc
 
 The [JSONL example](../../examples/persistence/) implements all required ports using Node built-ins. Install and enable the package before selecting `persistence: { provider: jsonl }` in the user profile. Omitted selection stays on SQLite. Settings → Providers displays the selected backend and capabilities. Selection takes effect after restart; existing sessions and files stay with their provider.
 
+Providers may return optional `open().recovery: { diagnosticId, quarantineFile, validThroughSeq }` only after durably quarantining damaged bytes and preserving the valid prefix. Persist a no-replay cancellation/failure fence in the same recovery transaction: a crash before Host handles the report must not make pending effects replayable. Host closes outstanding effects and records a localized recovery diagnostic. Never discard checksum-valid successors or use this path for format migration.
+
 ## Package storage and compatibility
 
 Default usage accounting, refinement proposals, MCP indexing, approval grants and locked-package receipts use owner-scoped metadata. A package seam receives `adapters.storage.namespace(name)`; the Host binds the owner, so packages cannot choose another owner through that handle. Values must be JSON serializable and reads return detached values. `transaction(fn)` is synchronous and atomic; throwing or returning a Promise rolls back its writes. Child identity and tree budget accounting remain on `childControl`, while expired leases and operation-state inspection remain on `reclaim`.
