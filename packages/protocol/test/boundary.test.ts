@@ -68,6 +68,7 @@ describe('protocol src boundary', () => {
         'diagnosticRecords',
         'observeDiagnostics',
         'normalizeRpcError',
+        'errorMessageKey',
         'httpRpcError',
         'CHILD_ENGINE_ROW_IDS',
         'ChildEnginesSaveParams',
