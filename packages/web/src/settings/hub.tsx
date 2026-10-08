@@ -4,7 +4,7 @@ import type {
   PluginGenerationStatus,
   RuntimeAdminSnapshot,
 } from '@agnes/protocol'
-import { Button, useUiText } from '@agnes/web-ui'
+import { Button, Tabs, useUiText } from '@agnes/web-ui'
 import { type ReactNode, useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
@@ -34,7 +34,6 @@ export const SETTINGS_PAGES = [
   'models',
   'bundles',
   'security',
-  'resources',
   'context',
   'examples',
   'history',
@@ -42,10 +41,19 @@ export const SETTINGS_PAGES = [
   'jobs',
   'schedules',
 ] as const
+export const SETTINGS_GROUPS = [
+  ['models', 'bundles', 'engines'],
+  ['plugins', 'providers', 'examples'],
+  ['search', 'context'],
+  ['jobs', 'schedules', 'terminal'],
+  ['security'],
+  ['history'],
+] as const
 export type SettingsPage = (typeof SETTINGS_PAGES)[number]
 function initialPage(): SettingsPage {
   const value = new URLSearchParams(location.search).get('settings')
-  return SETTINGS_PAGES.find((page) => page === value) ?? 'plugins'
+  const embedded = document.querySelector<HTMLElement>('#config-form')?.dataset.runtimePage
+  return SETTINGS_PAGES.find((page) => page === (embedded ?? value)) ?? 'plugins'
 }
 export function SettingsHub({
   api,
@@ -71,11 +79,20 @@ export function SettingsHub({
   schedules?: SchedulesApi
 }) {
   const { t } = useUiText(SETTINGS_NAMESPACE, settingsCatalog)
+  const embedded = !!document.getElementById('config-form')
   const [page, setPage] = useState<SettingsPage>(initialPage)
   const [snapshot, setSnapshot] = useState<RuntimeAdminSnapshot>()
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const [revision, setRevision] = useState(0)
+  useEffect(() => {
+    const listener = (event: Event) => {
+      const value = (event as CustomEvent<SettingsPage>).detail
+      if (SETTINGS_PAGES.includes(value)) setPage(value)
+    }
+    document.addEventListener('agnes:settings-page', listener)
+    return () => document.removeEventListener('agnes:settings-page', listener)
+  }, [])
   useEffect(() => {
     onPage(page)
   }, [page, onPage])
@@ -103,20 +120,36 @@ export function SettingsHub({
   }, [api, revision])
   return (
     <div className="runtime-settings">
-      <nav aria-label={t('navigation')} data-testid="settings-navigation">
-        {SETTINGS_PAGES.map((id) => (
-          <Button
-            key={id}
-            data-testid={`settings-nav-${id}`}
-            aria-current={page === id ? 'page' : undefined}
-            type={page === id ? 'primary' : 'default'}
-            onClick={() => setPage(id)}
-          >
-            {t(id)}
-          </Button>
-        ))}
-      </nav>
+      {!embedded && (
+        <nav aria-label={t('navigation')} data-testid="settings-navigation">
+          {SETTINGS_PAGES.map((id) => (
+            <Button
+              key={id}
+              data-testid={`settings-nav-${id}`}
+              aria-current={page === id ? 'page' : undefined}
+              type={page === id ? 'primary' : 'default'}
+              onClick={() => setPage(id)}
+            >
+              {t(id)}
+            </Button>
+          ))}
+        </nav>
+      )}
       <section data-testid={`settings-page-${page}`} aria-label={t(page)}>
+        {embedded &&
+          SETTINGS_GROUPS.filter((group) => group.some((id) => id === page) && group.length > 1).map(
+            (group) => (
+              <Tabs
+                key={group[0]}
+                activeKey={page}
+                onChange={(id) => setPage(id as SettingsPage)}
+                items={group.map((id) => ({
+                  key: id,
+                  label: <span data-testid={`settings-nav-${id}-tab`}>{t(id)}</span>,
+                }))}
+              />
+            ),
+          )}
         <h2>{t(page)}</h2>
         {busy && <p role="status">{t('loading')}</p>}
         {failed && <p role="alert">{t('unavailable')}</p>}
@@ -154,7 +187,7 @@ export function SettingsHub({
           <>
             <p>{t('modelsHelp')}</p>
             <SessionDefaultsPanel api={api} canSave={canSave} t={pluginText} />
-            <Button href="/?settings=model">{t('accounts')}</Button>
+            {!embedded && <Button href="/?settings=model">{t('accounts')}</Button>}
           </>
         )}
         {page === 'bundles' && (
@@ -164,13 +197,6 @@ export function SettingsHub({
           </>
         )}
         {page === 'security' && snapshot && <SecurityPanel snapshot={snapshot} t={t} />}
-        {page === 'resources' && (
-          <>
-            <p>{t('resourcesHelp')}</p>
-            <Button href="/admin/resources">{t('openResources')}</Button>
-            <iframe className="runtime-resources" title={t('resources')} src="/admin/resources" />
-          </>
-        )}
         {(page === 'terminal' || page === 'jobs') && <JobsPanel key={page} terminal={page === 'terminal'} />}
         {page === 'context' && <ContextPanel canSave={canSave} />}
         {page === 'examples' && (

@@ -254,6 +254,8 @@ it('navigates runtime capabilities and never offers a disallowed security preset
       onReview() {},
     }),
   )
+  expect(host.querySelector('iframe')).toBeNull()
+  expect(host.querySelector('[data-testid="settings-nav-resources"]')).toBeNull()
   for (const page of SETTINGS_PAGES) {
     await act(async () =>
       host.querySelector<HTMLButtonElement>(`[data-testid="settings-nav-${page}"]`)?.click(),

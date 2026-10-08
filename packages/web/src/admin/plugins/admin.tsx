@@ -45,7 +45,7 @@ import {
 } from '@agnes/web-ui'
 import type { ReactNode } from 'react'
 import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
-import { SettingsHub, type SettingsPage } from '../../settings/hub.js'
+import { SETTINGS_GROUPS, SettingsHub, type SettingsPage } from '../../settings/hub.js'
 import type { SchedulesApi } from '../../settings/schedules.js'
 import { AdminApiError, PluginAdminApi } from './api.js'
 import { CapabilityReview, FailureHelp } from './capability-review.js'
@@ -299,6 +299,24 @@ class PluginAdminPage {
       .closest('.admin-main, .admin-pane-body')
       ?.querySelector<HTMLElement>('.plugin-toolbar')
     if (toolbar) toolbar.hidden = page !== 'plugins'
+    const shell = document.getElementById('config-form')
+    if (shell) {
+      shell.dataset.runtimePage = page
+      for (const item of shell.querySelectorAll<HTMLElement>('[data-runtime-page]')) {
+        const active =
+          item.dataset.runtimePage === page ||
+          SETTINGS_GROUPS.some(
+            (group) => group[0] === item.dataset.runtimePage && group.some((id) => id === page),
+          )
+        item.classList.toggle('active', active)
+        if (active) item.setAttribute('aria-current', 'page')
+        else item.removeAttribute('aria-current')
+      }
+      this.#listHost
+        .closest('.settings-content')
+        ?.querySelector<HTMLElement>('.config-heading')
+        ?.setAttribute('hidden', '')
+    }
   }
   readonly #reviewExample = (item: PackageCatalogDescriptor): void => {
     this.#tab = 'discover'

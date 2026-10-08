@@ -27,7 +27,7 @@ export interface SettingsRegionHandle {
 }
 
 const SETTINGS_MARKUP = `<form id="config-form">
-<aside class="settings-rail" aria-label="设置分类" data-i18n-aria="settings-shell.railAria"><div class="settings-rail-heading"><div><p class="eyebrow">Agnes Workbench</p><p class="settings-rail-title" data-i18n="settings-shell.railTitle">设置</p></div><button id="config-close" class="icon-button" type="button" aria-label="关闭设置" data-i18n-aria="settings-shell.close"><svg class="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div><div class="settings-nav-group"><p class="settings-nav-label" data-i18n="settings-shell.basicLabel">基础设置</p>
+<aside data-testid="settings-navigation" class="settings-rail" aria-label="设置分类" data-i18n-aria="settings-shell.railAria"><div class="settings-rail-heading"><div><p class="eyebrow">Agnes Workbench</p><p class="settings-rail-title" data-i18n="settings-shell.railTitle">设置</p></div><button id="config-close" class="icon-button" type="button" aria-label="关闭设置" data-i18n-aria="settings-shell.close"><svg class="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg></button></div><div class="settings-nav-group"><p class="settings-nav-label" data-i18n="settings-shell.basicLabel">基础设置</p>
 <button id="model-settings" class="settings-nav-item active" type="button" aria-current="page"><svg class="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8h10M7 12h10M7 16h6" /><rect x="3.5" y="4" width="17" height="16" rx="3" /></svg><span data-i18n="settings-shell.modelNav">模型与账户</span></button>
 <button id="plugin-management" class="settings-nav-item" type="button"><svg class="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v4M16 3v4M5 7h14v4a7 7 0 0 1-14 0V7ZM9 18v3M15 18v3" /></svg><span data-i18n="settings-shell.pluginNav">插件管理</span></button>
 <div class="settings-nav-tabs" role="tablist" aria-orientation="vertical" aria-label="资源类型" data-i18n-aria="settings-shell.resourceTabsAria"><button id="skills-tab" class="settings-nav-item" type="button" role="tab" aria-selected="true" aria-controls="resource-list"><svg class="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.2 5.6L20 10.8l-5.8 2.2L12 19l-2.2-6L4 10.8l5.8-2.2Z" /></svg><span data-i18n="settings-shell.skillsNav">技能</span></button><button id="mcp-tab" class="settings-nav-item" type="button" role="tab" aria-selected="false" aria-controls="resource-list" tabindex="-1"><svg class="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6v4h4v6h-4v8H9v-8H5V7h4Z" /></svg><span>MCP</span></button></div>
@@ -78,9 +78,41 @@ const NAV_IDS: Record<SettingsPane, string[]> = {
 /** Stable mount point left in the settings shell for one independently replaceable pane row. */
 export const settingsPaneSlotHostId = (pane: SettingsPane) => `settings-pane-slot-${pane}`
 
+const RUNTIME_NAV = [
+  ['agent', ['models', 'bundles', 'engines']],
+  ['plugins', ['plugins', 'providers', 'examples']],
+  ['tools', ['search', 'context']],
+  ['automation', ['jobs', 'schedules', 'terminal']],
+  ['security', ['security']],
+  ['history', ['history']],
+] as const
+
 function templateFromSettingsMarkup(): HTMLTemplateElement {
   const template = document.createElement('template')
   template.innerHTML = SETTINGS_MARKUP
+  const rail = template.content.querySelector('.settings-nav-group')
+  rail?.querySelector('.settings-nav-label')?.setAttribute('hidden', '')
+  const plugin = template.content.querySelector('#plugin-management')
+  if (rail && plugin) {
+    for (const [group, pages] of RUNTIME_NAV) {
+      for (const page of pages.slice(0, 1)) {
+        const button =
+          page === 'plugins'
+            ? (plugin.cloneNode(true) as HTMLButtonElement)
+            : document.createElement('button')
+        button.id = page === 'plugins' ? 'plugin-management' : `runtime-settings-${page}`
+        button.type = 'button'
+        button.className = 'settings-nav-item'
+        button.dataset.runtimePage = page
+        button.dataset.testid = `settings-nav-${page}`
+        if (page === 'plugins')
+          button.querySelector('span')?.setAttribute('data-i18n', `settings-shell.group.${group}`)
+        else button.innerHTML = `<span data-i18n="settings-shell.group.${group}">${page}</span>`
+        rail.insertBefore(button, plugin)
+      }
+    }
+    plugin.remove()
+  }
   return template
 }
 
@@ -204,11 +236,19 @@ function SettingsBuiltinImpl(
         const item = root.querySelector<HTMLElement>(`#${id}`)
         if (!item) continue
         const active =
-          name === pane && (pane !== 'resources' || item.getAttribute('aria-selected') === 'true')
+          name === pane &&
+          (pane !== 'resources' || item.getAttribute('aria-selected') === 'true') &&
+          (pane !== 'plugin' || (root.dataset.runtimePage ?? 'plugins') === 'plugins')
         item.classList.toggle('active', active)
         if (active) item.setAttribute('aria-current', 'page')
         else item.removeAttribute('aria-current')
       }
+    for (const item of root.querySelectorAll<HTMLElement>('[data-runtime-page]')) {
+      const active = pane === 'plugin' && item.dataset.runtimePage === (root.dataset.runtimePage ?? 'plugins')
+      item.classList.toggle('active', active)
+      if (active) item.setAttribute('aria-current', 'page')
+      else item.removeAttribute('aria-current')
+    }
     if (pane === 'resources') {
       const list = root.querySelector<HTMLElement>('#resource-list')
       const selected = root.querySelector<HTMLButtonElement>('.settings-nav-tabs [aria-selected="true"]')
@@ -265,7 +305,20 @@ function SettingsBuiltinImpl(
       }
     }
     bind('model-settings', { pane: 'model' })
-    bind('plugin-management', { pane: 'plugin' })
+    for (const button of root.querySelectorAll<HTMLButtonElement>('[data-runtime-page]')) {
+      const listener = () => {
+        root.dataset.runtimePage = button.dataset.runtimePage
+        const shell = root.querySelector<HTMLElement>('#config-form')
+        if (shell) shell.dataset.runtimePage = button.dataset.runtimePage
+        open('plugin')
+        options.onChange?.({ pane: 'plugin' })
+        root.dispatchEvent(
+          new CustomEvent('agnes:settings-page', { detail: button.dataset.runtimePage, bubbles: true }),
+        )
+      }
+      button.addEventListener('click', listener)
+      listeners.push(() => button.removeEventListener('click', listener))
+    }
     bind('skills-tab', { pane: 'resources', tab: 'skills' })
     bind('mcp-tab', { pane: 'resources', tab: 'mcp' })
     bind('archived-settings', { pane: 'archived' })
