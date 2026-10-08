@@ -4,6 +4,7 @@ packages:
   - examples/packages/cordis-greeting
   - examples/loops/dag-loop
   - examples/loops/react-loop
+  - examples/demos
   - examples/persistence
   - examples/sandbox/docker
   - tools/*

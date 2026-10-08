@@ -8,6 +8,8 @@
 
 [项目首页](../README.zh-CN.md) · [为什么选择 AGH](guide/why-agh.zh-CN.md) · [体验示例](guide/demo.zh-CN.md) · [MHS（即将开放）](guide/mhs.zh-CN.md)
 
+
+[三个产品演示](guide/demos.zh-CN.md)
 ## 选择你的起点
 
 | 你想做什么 | 推荐路径 | 完成后你会得到 |

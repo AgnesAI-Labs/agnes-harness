@@ -12,6 +12,8 @@ Run tasks through CLI and Web, connect business capabilities with plugins, captu
 
 <a id="选择你的起点"></a>
 
+
+[Three product demos](guide/demos.md)
 ## Choose your starting point
 
 | Your goal | Recommended path | What you will achieve |

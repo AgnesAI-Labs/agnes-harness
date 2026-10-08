@@ -180,6 +180,8 @@ CLI、Web 与 SDK 共享同一套后台会话。在终端用 `/resume <id>` 恢�
 
 **先选一个示例，再换成你的业务逻辑。**[打开演示指南 →](docs/guide/demo.zh-CN.md)
 
+[运行三个产品演示 →](docs/guide/demos.zh-CN.md)
+
 ## 从源码开始
 
 当前为 **开发者预览（pre-alpha）**，通过源码构建体验。准备 Node.js 24.10+、pnpm 10.34.5，以及平台所需的原生构建工具，获取源码与完整步骤见[安装指南](docs/guide/install.zh-CN.md)。

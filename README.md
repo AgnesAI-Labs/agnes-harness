@@ -178,7 +178,7 @@ The repository includes runnable examples for backend capabilities, custom inter
 | [A panel](docs/develop/frontend.md) | Load your own sidebar panel and update its version | Show task information and business state for a particular role |
 | [A full-stack plugin](docs/develop/fullstack.md) | Read a backend result from a panel, then inspect updates and rollback | Package a business service together with its interface |
 
-**Choose an example, then add your business logic.** [Open the demo guide →](docs/guide/demo.md)
+**Choose an example, then add your business logic.** [Open the demo guide →](docs/guide/demo.md) · [Run the three product demos →](docs/guide/demos.md)
 
 ## Run from source
 
