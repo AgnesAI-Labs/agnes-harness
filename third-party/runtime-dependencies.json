@@ -64,6 +64,7 @@
         "packages/web",
         "packages/web-admin",
         "packages/web-client",
+        "packages/web-conversation",
         "packages/web-foundation",
         "packages/web-ui",
         "packages/web-units"
@@ -279,6 +280,22 @@
       "purpose": "Verify npm publisher provenance, Fulcio certificate chains and transparency evidence.",
       "rationale": "Use the maintained Sigstore verifier rather than implementing trust roots, certificate validation or transparency log proofs in Agnes.",
       "consumers": ["packages/package-manager"]
+    },
+    {
+      "name": "react-dom",
+      "version": "18.3.1",
+      "license": "MIT",
+      "source": "https://github.com/facebook/react/tree/main/packages/react-dom",
+      "purpose": "DOM renderer for the web workbench and client module mount points; bundled into /vendor/* shared-singleton chunks.",
+      "rationale": "Same pin line as react (WC5).",
+      "consumers": [
+        "packages/web",
+        "packages/web-admin",
+        "packages/web-client",
+        "packages/web-conversation",
+        "packages/web-ui",
+        "packages/web-units"
+      ]
     }
   ]
 }

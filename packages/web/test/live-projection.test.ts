@@ -7,13 +7,13 @@ import type {
 } from '@agnes/protocol'
 import { UI_PROJECTION_MAX_BYTES } from '@agnes/protocol'
 import type { LedgerEvent } from '@agnes/sdk/browser'
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   APPROVAL_SEARCH_PAGES,
   approvalOutsideWindow,
   createLiveProjection,
   findApproval,
-} from '../src/live-projection.js'
+} from '@agnes/web-conversation/live-projection'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { receiptFromTurns } from '../src/view.js'
 
 afterEach(() => vi.useRealTimers())

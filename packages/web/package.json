@@ -24,7 +24,8 @@
     "@agnes/web-ui": "workspace:*",
     "@agnes/web-units": "workspace:*",
     "@agnes/web-foundation": "workspace:*",
-    "@agnes/web-admin": "workspace:*"
+    "@agnes/web-admin": "workspace:*",
+    "@agnes/web-conversation": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "18.3.12",

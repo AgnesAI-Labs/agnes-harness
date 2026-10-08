@@ -1,6 +1,6 @@
 import type { EventEnvelope, TurnEnd, UINode, UITimeline, UITurn } from '@agnes/protocol'
 import type { LocaleVars } from '@agnes/web-client'
-import type { Translate } from './presentation.js'
+import type { Translate } from '@agnes/web-conversation/presentation'
 
 type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 type ApprovalOption = ApprovalNode['options'][number]

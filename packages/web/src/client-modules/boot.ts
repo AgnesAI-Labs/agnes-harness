@@ -139,7 +139,7 @@ export async function startClientModules(options: {
   topbarContainer?: HTMLElement | undefined
   approvalContainer?: HTMLElement | undefined
   composerContainer?: HTMLElement | undefined
-  composer?: import('../composer.js').ComposerRegionOptions | undefined
+  composer?: import('@agnes/web-conversation/composer').ComposerRegionOptions | undefined
   traceContainer?: HTMLElement | undefined
   trace?: import('../region-slots.js').TraceRegionOptions | undefined
   rightbarContainer?: HTMLElement | undefined

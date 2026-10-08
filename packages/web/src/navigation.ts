@@ -1,5 +1,5 @@
 import type { PageSessionMeta, WorkspaceEntry } from '@agnes/protocol'
-import type { Translate } from './presentation.js'
+import type { Translate } from '@agnes/web-conversation/presentation'
 import { attachSessionMenu, closeSessionMenu, createSessionMenuTrigger } from './session-menu.js'
 
 type SessionRow = PageSessionMeta['items'][number] & { cwd?: string }

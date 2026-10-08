@@ -1,8 +1,8 @@
 /** @vitest-environment happy-dom */
 
+import { zhT } from '@agnes/web-foundation/testkit/locale'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDocumentPreview, sanitizeDocumentHtml } from '../src/document-preview.js'
-import { zhT } from './helpers/locale.js'
 
 afterEach(() => {
   document.body.replaceChildren()

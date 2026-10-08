@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import type { ComposerRegionOptions } from '@agnes/web-conversation/composer'
 import { vi } from 'vitest'
 import {
   type AgnesClient,
@@ -7,7 +8,6 @@ import {
   type ClientModulesRuntime,
   startClientModules,
 } from '../src/client-modules/boot.js'
-import type { ComposerRegionOptions } from '../src/composer.js'
 import type { SidebarActions, SidebarState } from '../src/sidebar.js'
 
 export type WebPageName = 'index.html' | 'admin.html' | 'resources.html'

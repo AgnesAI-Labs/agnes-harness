@@ -85,6 +85,7 @@
         "packages/web",
         "packages/web-admin",
         "packages/web-client",
+        "packages/web-conversation",
         "packages/web-foundation",
         "packages/web-ui",
         "packages/web-units"
@@ -101,6 +102,7 @@
         "packages/web",
         "packages/web-admin",
         "packages/web-client",
+        "packages/web-conversation",
         "packages/web-foundation",
         "packages/web-ui",
         "packages/web-units"
@@ -134,21 +136,6 @@
       "consumers": ["packages/cli"]
     },
     {
-      "name": "react-dom",
-      "version": "18.3.1",
-      "license": "MIT",
-      "source": "https://github.com/facebook/react/tree/main/packages/react-dom",
-      "purpose": "DOM renderer for the web workbench and client module mount points; bundled into /vendor/* shared-singleton chunks.",
-      "rationale": "Same pin line as react (WC5).",
-      "consumers": [
-        "packages/web",
-        "packages/web-admin",
-        "packages/web-client",
-        "packages/web-ui",
-        "packages/web-units"
-      ]
-    },
-    {
       "name": "tsx",
       "version": "4.23.13",
       "license": "MIT",
@@ -173,7 +160,7 @@
       "source": "https://github.com/vitest-dev/vitest",
       "purpose": "Unit, integration, conformance and guard test runner.",
       "rationale": "Provides one test runtime compatible with the workspace's ESM TypeScript setup.",
-      "consumers": [".", "packages/web-admin", "packages/web-foundation"]
+      "consumers": [".", "packages/web-admin", "packages/web-conversation", "packages/web-foundation"]
     },
     {
       "name": "postject",

@@ -33,6 +33,32 @@ import { settingsCatalog } from '@agnes/web-admin/settings/locales'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import { bindDismissibleDialog } from '@agnes/web-admin-frame'
 import { settingsSections } from '@agnes/web-client'
+import type { ApprovalAction } from '@agnes/web-conversation/approval'
+import { approvalToolName, liveApprovalCard } from '@agnes/web-conversation/approval-card'
+import type { ComposerView } from '@agnes/web-conversation/composer'
+import { createComputerUsePaneController } from '@agnes/web-conversation/computer-use-pane'
+import { renderGoalCard } from '@agnes/web-conversation/goal-card'
+import {
+  APPROVAL_SEARCH_PAGES,
+  approvalOutsideWindow,
+  createLiveProjection,
+  findApproval,
+  type LiveProjection,
+} from '@agnes/web-conversation/live-projection'
+import { PlanModeRequestError, submitPlanCommand } from '@agnes/web-conversation/plan-mode'
+import {
+  canSubmitComposer,
+  composerActionPresentation,
+  composerHintPresentation,
+  errorNotice,
+  type KnownSessionModel,
+  modelSelectAccessibleName,
+  modelSelectLabel,
+  setButtonLabel,
+  shouldShowEmptyState,
+  type Translate,
+  workspaceErrorNotice,
+} from '@agnes/web-conversation/presentation'
 import { bindAppearance, bindSkinGroup } from '@agnes/web-foundation/appearance'
 import { installBrowserLogCapture } from '@agnes/web-foundation/browser-log'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
@@ -53,24 +79,12 @@ import {
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
 import { createCatalogTranslator } from '@agnes/web-ui'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
-import type { ApprovalAction } from './approval.js'
-import { approvalToolName, liveApprovalCard } from './approval-card.js'
 import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
 import { startPluginHotReload } from './client-modules/hot-reload.js'
 import type { RosterSource } from './client-modules/reconcile.js'
 import { bindSlotCardContext } from './client-modules/timeline-slot.js'
-import type { ComposerView } from './composer.js'
 import { rememberWebComposer, selectionFromMemory } from './composer-memory.js'
-import { createComputerUsePaneController } from './computer-use-pane.js'
 import { createDiagnosticsDialog } from './diagnostics-dialog.js'
-import { renderGoalCard } from './goal-card.js'
-import {
-  APPROVAL_SEARCH_PAGES,
-  approvalOutsideWindow,
-  createLiveProjection,
-  findApproval,
-  type LiveProjection,
-} from './live-projection.js'
 import {
   type LoopSelection,
   loadNewSessionCatalog,
@@ -80,20 +94,6 @@ import {
 } from './loop-picker.js'
 import type { ModelPickerOption } from './model-picker.js'
 import { renderWorkspaceOptions } from './navigation.js'
-import { PlanModeRequestError, submitPlanCommand } from './plan-mode.js'
-import {
-  canSubmitComposer,
-  composerActionPresentation,
-  composerHintPresentation,
-  errorNotice,
-  type KnownSessionModel,
-  modelSelectAccessibleName,
-  modelSelectLabel,
-  setButtonLabel,
-  shouldShowEmptyState,
-  type Translate,
-  workspaceErrorNotice,
-} from './presentation.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
 import { createSessionActions, forkTitle } from './session-actions.js'
 import { bindWebSession, loadWebSession } from './session-binding.js'

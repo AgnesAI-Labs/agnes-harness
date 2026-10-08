@@ -45,7 +45,15 @@ it('rejects untranslated presentation copy, layout styles and bypassed settings 
 it('keeps every frontend source inside the shared presentation boundaries', () => {
   const root = repoRoot()
   const violations: string[] = []
-  for (const pkg of ['web', 'web-admin', 'web-foundation', 'web-ui', 'web-client', 'web-units']) {
+  for (const pkg of [
+    'web',
+    'web-conversation',
+    'web-admin',
+    'web-foundation',
+    'web-ui',
+    'web-client',
+    'web-units',
+  ]) {
     for (const file of listSourceFiles(join(root, 'packages', pkg, 'src')).filter(
       (file) => !isTestFile(file),
     )) {

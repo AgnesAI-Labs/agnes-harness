@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
+import { createMarkdownRenderer } from '@agnes/web-conversation/markdown'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createMarkdownRenderer } from '../src/markdown.js'
 import { createTimelineRenderer } from '../src/timeline.js'
 import { zhLocaleService, zhT } from './helpers/locale.js'
 

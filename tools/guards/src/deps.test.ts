@@ -135,6 +135,7 @@ const LAYER: Record<string, number> = {
   '@agnes/bridges': 9,
   '@agnes/web-foundation': 9.1,
   '@agnes/web-admin': 9.2,
+  '@agnes/web-conversation': 9.2,
   '@agnes/web': 10,
   // CLI's serve command composes the public Node static server; Web still depends only on SDK/protocol.
   '@agnes/cli': 11,

@@ -1,5 +1,6 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import type { ClientResourceService, LocaleService, SessionService, SlotRegistry } from '@agnes/web-client'
+import { isConversationNode } from '@agnes/web-conversation/conversation-visibility'
 import {
   AssistantRuntimeProvider,
   createConversationProjectionStore,
@@ -18,7 +19,6 @@ import {
 import { flushSync } from 'react-dom'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { WebConversationMessages } from './conversation-message-adapter.js'
-import { isConversationNode } from './conversation-visibility.js'
 import type { TimelineMeta } from './timeline.js'
 
 const nearBottom = (element: HTMLElement) =>

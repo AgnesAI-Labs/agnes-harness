@@ -56,6 +56,7 @@ it('keeps every exported frontend catalog paired across all frontend packages', 
   for (const pkg of [
     'web',
     'web-foundation',
+    'web-conversation',
     'web-admin',
     'web-ui',
     'web-units',

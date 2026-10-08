@@ -1,8 +1,13 @@
 // @vitest-environment happy-dom
 import type { UINode, UsageView } from '@agnes/protocol'
+import {
+  costDetails,
+  costSummary,
+  createUsagePanel,
+  type UsagePanelUpdater,
+} from '@agnes/web-conversation/usage'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createTimelineRenderer } from '../src/timeline.js'
-import { costDetails, costSummary, createUsagePanel, type UsagePanelUpdater } from '../src/usage.js'
 import { zhLocaleService, zhT } from './helpers/locale.js'
 
 const panels: UsagePanelUpdater[] = []

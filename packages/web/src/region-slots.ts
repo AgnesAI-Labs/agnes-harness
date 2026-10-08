@@ -20,6 +20,9 @@ import {
   type SlotRegistry,
   SlotsProvider,
 } from '@agnes/web-client'
+import type { DocumentPreviewInput, DocumentPreviewKind } from '@agnes/web-conversation/document-preview'
+import { isComposerSubmitShortcut, resizeComposer } from '@agnes/web-conversation/presentation'
+import { createUsagePanel } from '@agnes/web-conversation/usage'
 import { applyLocaleText } from '@agnes/web-foundation/locale-preference'
 import type { AntdRoot } from '@agnes/web-ui'
 import { createAntdRoot } from '@agnes/web-ui'
@@ -66,15 +69,12 @@ import { createElement, type ReactNode, useLayoutEffect, useMemo, useState } fro
 import { flushSync } from 'react-dom'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { observeSlotCards } from './client-modules/timeline-slot.js'
-import type { DocumentPreviewInput, DocumentPreviewKind } from './document-preview.js'
 import { LoopPicker } from './loop-picker.js'
 import { createModelPicker } from './model-picker.js'
 import { renderSessionNavigation } from './navigation.js'
-import { isComposerSubmitShortcut, resizeComposer } from './presentation.js'
 import { bindSidebar } from './shell.js'
 import { createTimelineRenderer } from './timeline.js'
 import { TimelineNodeHost } from './timeline-node-host.js'
-import { createUsagePanel } from './usage.js'
 
 export type { ConversationChildContainers, ConversationHandle } from '@agnes/web-units'
 

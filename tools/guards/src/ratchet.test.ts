@@ -235,6 +235,16 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // extension keys change; scanning, source exclusions and the default extension ceiling stay fixed.
 const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
+  'packages/web-conversation/src/presentation': 138,
+  // Pure Web ownership migration: exact measured countLines; no spare allocation.
+  'packages/web-conversation/src/markdown': 48,
+  // Pure Web ownership migration: exact measured countLines; no spare allocation.
+  'packages/web-conversation/src/turns': 301,
+  // Pure Web ownership migration: exact measured countLines; no spare allocation.
+  'packages/web-conversation/src/trace-panel': 11,
+  // Pure Web ownership migration: exact measured countLines; no spare allocation.
+  'packages/web-conversation/src': 2605,
+  // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/settings': 5093,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/permission-picker': 248,
@@ -497,8 +507,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
   // 2026-09-20: map the already-sanitized turn AUTH category to a reconnect instruction. Exact.
   // Output-limit and rate-limit failures render actionable guidance. Measured +4, exact allocation.
-  'packages/web/src/presentation': 138,
-  'packages/web/src/markdown': 48,
+  'packages/web/src/presentation': 1,
+  'packages/web/src/markdown': 1,
   // Phase03 Web workbench: separate settings controller, stable keyed timeline, run receipts,
   // and client integration. Each component is bounded independently; no execution state
   // machine is added to Web. SDK adds reconnect-start and pre-load permission registration.
@@ -575,7 +585,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-17 DSH parity: gantt + event list + inspector. Measured 411.
   // 2026-09-17 DSH layout: idle-compressed gantt. Measured 445.
   // B1/main integration: +7 formatter lines around typed turn lookup and expressions; exact count.
-  'packages/web/src/trace-panel': 478,
+  'packages/web/src/trace-panel': 1,
   // 2026-09-15/16 (admin-pages A5b): the popover placement and listbox key map moved to
   // @agnes/web-admin-frame, so this file only keeps its own state machine and rendering.
   // 2026-09-25 UI refactor: model options now render through the React region contract.
@@ -625,7 +635,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web/src/shell': 107,
   // 2026-09-17 rebase 后的重新实测：turns.ts 把过程摘要搬进过程行、用量面板只留关键项、
   // 运行中页脚整行隐藏（原 432 是旧实现的实测值），收紧到实测精确值 399。
-  'packages/web/src/turns': 407,
+  'packages/web/src/turns': 1,
   // 2026-09-24 WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C6 (Web incremental wiring) and its review fixes,
   // rebased onto main after C0-C2: merged tree re-measured with countLines(): 99, exact.
   'packages/web/src/view': 116,
@@ -2391,7 +2401,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 19657 -> 22109; exact cap, no exclusions or spare allocation.
   // Acceptance review: Retain published composition details and stable expanded goal state during admin refresh.
   // countLines: 22109 -> 22110; exact cap, no exclusions or spare allocation.
-  'packages/web/src': 12461,
+  'packages/web/src': 9881,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

@@ -3,9 +3,9 @@
 import { Context } from '@agnes/cordis'
 import type { SessionPreviewParams, UINode, UITimeline, UITurn } from '@agnes/protocol'
 import { SlotRegistry } from '@agnes/web-client'
+import { createLiveProjection } from '@agnes/web-conversation/live-projection'
 import { act, createElement, useState } from 'react'
 import { expect, it, vi } from 'vitest'
-import { createLiveProjection } from '../src/live-projection.js'
 import { mountTranscriptRegion } from '../src/region-slots.js'
 import { zhLocaleService } from './helpers/locale.js'
 

@@ -14,6 +14,7 @@
 | TUI | [cli-tui](../../packages/cli-tui/src) | [测试](../../packages/cli-tui/test) |
 | Web 展示与连接 | [web](../../packages/web/src)、[web-server](../../packages/web-server/src) | [Web 测试](../../packages/web/test) |
 | Web 外观与语言基础 | [web-foundation](../../packages/web-foundation/src) | [基础模块测试](../../packages/web-foundation/test) |
+| Web 会话展示 | [web-conversation](../../packages/web-conversation/src) | [模块测试](../../packages/web-conversation/test) |
 | Web 管理与设置 | [web-admin](../../packages/web-admin/src) | [模块测试](../../packages/web-admin/test) |
 | 前端插件与槽位 | [web-client](../../packages/web-client/src)、[web-slots](../../packages/web-slots/src)、[web-units](../../packages/web-units/src) | [名册对账](../../packages/web/test/client-modules.reconcile.test.ts) |
 | 协议/校验 | [protocol schema](../../packages/protocol/schema)、[method table](../../packages/protocol/src/methods.ts)、[protocol-validation](../../packages/protocol-validation/src) | [protocol tests](../../packages/protocol/test) |

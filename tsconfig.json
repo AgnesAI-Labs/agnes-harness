@@ -291,6 +291,12 @@
     },
     {
       "path": "packages/web-admin/tsconfig.test.json"
+    },
+    {
+      "path": "packages/web-conversation"
+    },
+    {
+      "path": "packages/web-conversation/tsconfig.test.json"
     }
   ]
 }

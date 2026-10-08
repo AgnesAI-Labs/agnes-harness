@@ -16,6 +16,7 @@ Links point to source at the same revision as this document. See [verification](
 | TUI | [cli-tui](../../packages/cli-tui/src) | [Tests](../../packages/cli-tui/test) |
 | Web presentation and connections | [web](../../packages/web/src), [web-server](../../packages/web-server/src) | [Web tests](../../packages/web/test) |
 | Web appearance and locale foundation | [web-foundation](../../packages/web-foundation/src) | [Foundation tests](../../packages/web-foundation/test) |
+| Web conversation presentation | [web-conversation](../../packages/web-conversation/src) | [Module tests](../../packages/web-conversation/test) |
 | Web administration and settings | [web-admin](../../packages/web-admin/src) | [Module tests](../../packages/web-admin/test) |
 | Frontend plugins and slots | [web-client](../../packages/web-client/src), [web-slots](../../packages/web-slots/src), [web-units](../../packages/web-units/src) | [Roster reconciliation](../../packages/web/test/client-modules.reconcile.test.ts) |
 | Protocol / validation | [protocol schema](../../packages/protocol/schema), [method table](../../packages/protocol/src/methods.ts), [protocol-validation](../../packages/protocol-validation/src) | [Protocol tests](../../packages/protocol/test) |

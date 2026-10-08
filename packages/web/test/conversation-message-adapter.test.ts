@@ -3,6 +3,7 @@
 import { Context } from '@agnes/cordis'
 import type { UINode, UITurn } from '@agnes/protocol'
 import { SlotRegistry } from '@agnes/web-client'
+import { costDetails, costSummary } from '@agnes/web-conversation/usage'
 import {
   AssistantRuntimeProvider,
   createConversationProjectionStore,
@@ -12,7 +13,6 @@ import { act, createElement, useEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebConversationMessages } from '../src/conversation-message-adapter.js'
-import { costDetails, costSummary } from '../src/usage.js'
 import { zhLocaleService, zhT } from './helpers/locale.js'
 
 let host: HTMLDivElement

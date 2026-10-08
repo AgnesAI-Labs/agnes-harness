@@ -3,10 +3,10 @@
 import { Context } from '@agnes/cordis'
 import type { UINode, UITurn } from '@agnes/protocol'
 import { SlotRegistry } from '@agnes/web-client'
+import { costDetails, costSummary } from '@agnes/web-conversation/usage'
 import { act, createElement, useEffect, useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mountTranscriptRegion } from '../src/region-slots.js'
-import { costDetails, costSummary } from '../src/usage.js'
 import { zhLocaleService, zhT } from './helpers/locale.js'
 
 const contexts: Context[] = []

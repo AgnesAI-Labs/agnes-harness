@@ -1,6 +1,6 @@
 import type { PageSessionMeta } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
-import type { Translate } from './presentation.js'
+import type { Translate } from '@agnes/web-conversation/presentation'
 
 export type SessionAction = 'rename' | 'fork' | 'archive'
 

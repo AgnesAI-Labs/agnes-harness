@@ -47,6 +47,9 @@
       "path": "../web-client"
     },
     {
+      "path": "../web-conversation"
+    },
+    {
       "path": "../web-foundation"
     },
     {

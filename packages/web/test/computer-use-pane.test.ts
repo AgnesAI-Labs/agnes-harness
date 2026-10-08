@@ -1,11 +1,14 @@
 /** @vitest-environment happy-dom */
 import { Context } from '@agnes/cordis'
 import { SlotRegistry } from '@agnes/web-client'
+import { createComputerUsePaneController } from '@agnes/web-conversation/computer-use-pane'
+import type {
+  ComputerUseOperationPolling,
+  ComputerUseStatusClient,
+} from '@agnes/web-conversation/computer-use-state'
 import { createElement, StrictMode } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { type AgnesClient, startClientModules } from '../src/client-modules/boot.js'
-import { createComputerUsePaneController } from '../src/computer-use-pane.js'
-import type { ComputerUseOperationPolling, ComputerUseStatusClient } from '../src/computer-use-state.js'
 import { mountSettingsPaneRegion, settingsPaneSlot } from '../src/region-slots.js'
 
 const ready = {

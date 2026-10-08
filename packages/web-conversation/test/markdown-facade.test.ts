@@ -1,7 +1,8 @@
 /** @vitest-environment happy-dom */
+
+import { zhT } from '@agnes/web-foundation/testkit/locale'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createMarkdownRenderer } from '../src/markdown.js'
-import { zhT } from './helpers/locale.js'
 
 afterEach(() => {
   document.getSelection()?.removeAllRanges()

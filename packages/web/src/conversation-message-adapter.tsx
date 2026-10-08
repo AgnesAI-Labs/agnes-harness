@@ -9,6 +9,13 @@ import {
   SlotsProvider,
 } from '@agnes/web-client'
 import {
+  conversationToolCardKind,
+  keepConversationCardVisible,
+} from '@agnes/web-conversation/conversation-card-layout'
+import { RegisteredConversationCard } from '@agnes/web-conversation/conversation-registry'
+import { DefaultToolCards } from '@agnes/web-conversation/default-tool-cards'
+import { toolIconReact } from '@agnes/web-conversation/tool-icon'
+import {
   ConversationInteractionResult,
   ConversationMarkdown,
   ConversationMessages,
@@ -19,10 +26,6 @@ import {
 } from '@agnes/web-ui/assistant-ui'
 import { type ReactNode, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
-import { conversationToolCardKind, keepConversationCardVisible } from './conversation-card-layout.js'
-import { RegisteredConversationCard } from './conversation-registry.js'
-import { DefaultToolCards } from './default-tool-cards.js'
-import { toolIconReact } from './tool-icon.js'
 
 type SlotNode = Extract<UINode, { kind: 'slot' }>
 const noSessionSubscription = () => () => undefined
