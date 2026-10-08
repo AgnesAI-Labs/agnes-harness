@@ -210,9 +210,11 @@ export async function isolatedRuntime() {
     dispose: async () => {
       try {
         await stop()
-      } finally {
-        await rm(root, { recursive: true, force: true })
+      } catch (error) {
+        log += `Cleanup failed; retained isolated AGH_HOME: ${home}\n`
+        throw error
       }
+      await rm(root, { recursive: true, force: true })
     },
   }
   return runtime
