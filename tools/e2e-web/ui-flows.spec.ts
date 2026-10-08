@@ -353,13 +353,15 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     .getByRole('dialog', { name: 'Enable @agnes-examples/hot-tool-plugin', exact: true })
     .getByRole('button', { name: 'Confirm enable', exact: true })
     .click()
+  // Completion opens a modal: its background controls are intentionally inaccessible.
+  const enabledDetails = page.getByRole('dialog', { name: 'Plugin details', exact: true })
+  await expect(enabledDetails).toContainText('Enable: Completed')
+  await enabledDetails.getByRole('button', { name: /Close/ }).click()
   const toggle = page.getByRole('switch', {
     name: 'Request to disable @agnes-examples/hot-tool-plugin',
     exact: true,
   })
   await expect(toggle).toBeChecked()
-  const enabledDetails = page.getByRole('dialog', { name: 'Plugin details', exact: true })
-  if (await enabledDetails.isVisible()) await enabledDetails.getByRole('button', { name: /Close/ }).click()
   await page
     .getByRole('searchbox', { name: 'Search plugins', exact: true })
     .fill('@agnes-examples/hot-tool-plugin')
@@ -378,11 +380,12 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     .getByRole('dialog', { name: 'Request disable for @agnes-examples/hot-tool-plugin', exact: true })
     .getByRole('button', { name: 'Request disable', exact: true })
     .click()
+  const disabledDetails = page.getByRole('dialog', { name: 'Plugin details', exact: true })
+  await expect(disabledDetails).toContainText('Disable: Completed')
+  await disabledDetails.getByRole('button', { name: /Close/ }).click()
   await expect(
     page.getByRole('switch', { name: 'Request to enable @agnes-examples/hot-tool-plugin', exact: true }),
   ).not.toBeChecked()
-  const disabledDetails = page.getByRole('dialog', { name: 'Plugin details', exact: true })
-  if (await disabledDetails.isVisible()) await disabledDetails.getByRole('button', { name: /Close/ }).click()
   await closeSettings(page)
   await fresh(page)
   await turn(page, 'A new session after disabling the plugin')

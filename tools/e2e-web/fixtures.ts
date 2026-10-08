@@ -30,6 +30,10 @@ export const test = base.extend<{ runtime: Runtime; browserHealth: undefined }>(
           await runtime.dispose()
         } finally {
           await info.attach('serve.log', { body: runtime.logs(), contentType: 'text/plain' })
+          await info.attach('sdk-rpc-timing.json', {
+            body: runtime.requests(),
+            contentType: 'application/json',
+          })
         }
       }
     }

@@ -3,7 +3,14 @@ import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/pro
 import { createServer } from 'node:net'
 import { join, resolve } from 'node:path'
 import { AGH_DIR, type DiagnosticsEventsResult } from '@agnes/protocol'
-import { createClient, memoryJournal, type NodeClient, wsTransport } from '@agnes/sdk'
+import {
+  createClient,
+  memoryJournal,
+  type NodeClient,
+  type TransportFactory,
+  unixTransport,
+  wsTransport,
+} from '@agnes/sdk'
 
 const entry = resolve('packages/cli/dist/local/agnes.mjs')
 export async function isolatedRuntime() {
@@ -38,6 +45,48 @@ export async function isolatedRuntime() {
   let web: ChildProcess | undefined
   let log = ''
   const clients = new Set<NodeClient>()
+  const requests: { method: string; durationMs: number; code?: unknown }[] = []
+  const measured =
+    (factory: TransportFactory): TransportFactory =>
+    async (handlers) => {
+      const pending = new Map<string | number, { method: string; started: number }>()
+      const transport = await factory({
+        ...handlers,
+        onClose(info) {
+          for (const request of pending.values())
+            requests.push({
+              method: request.method,
+              durationMs: Math.round(performance.now() - request.started),
+              code: `transport-${info.reason}`,
+            })
+          pending.clear()
+          handlers.onClose(info)
+        },
+        onMessage(message) {
+          if ('id' in message && !('method' in message)) {
+            const request = pending.get(message.id)
+            if (request) {
+              pending.delete(message.id)
+              requests.push({
+                method: request.method,
+                durationMs: Math.round(performance.now() - request.started),
+                ...(message.error ? { code: message.error.data?.code } : {}),
+              })
+            }
+          }
+          handlers.onMessage(message)
+        },
+      })
+      return {
+        kind: transport.kind,
+        close: () => transport.close(),
+        send: (message) => {
+          if ('id' in message && 'method' in message)
+            pending.set(message.id, { method: message.method, started: performance.now() })
+          return transport.send(message)
+        },
+      }
+    }
   const cli = (args: string[]) =>
     new Promise<string>((done, reject) => {
       const child = execFile(
@@ -127,7 +176,8 @@ export async function isolatedRuntime() {
             ? { kind: 'unix', path: socketPath }
             : { kind: 'ws', url: ws, protocols: ['agnes-v1'] },
         transportFactories: {
-          ws: (options) => wsTransport({ ...options, url: ws, headers: { Origin: url } }),
+          unix: () => measured(unixTransport({ path: socketPath })),
+          ws: (options) => measured(wsTransport({ ...options, url: ws, headers: { Origin: url } })),
         },
         auth: { kind: 'local' },
         journal: memoryJournal(),
@@ -207,6 +257,7 @@ export async function isolatedRuntime() {
       }
     },
     logs: () => log,
+    requests: () => JSON.stringify(requests, null, 2),
     dispose: async () => {
       try {
         await stop()
