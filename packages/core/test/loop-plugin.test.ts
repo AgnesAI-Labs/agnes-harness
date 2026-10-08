@@ -926,10 +926,13 @@ it('recovers exact author tool content and metadata if the subsequent receipt ap
   }
   let executions = 0
   f.session.d.registry.add(
-    readTool(async () => {
-      executions++
-      return result
-    }),
+    {
+      ...readTool(),
+      execute: async () => {
+        executions++
+        return result
+      },
+    },
     { source: 'test', trust: 'builtin' },
   )
   const ctx = await createLoopContext(f.session)
