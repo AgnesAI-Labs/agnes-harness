@@ -17,15 +17,15 @@ const root = repoRoot()
  * declaration site and the probe builder may even name it. A second comparison in the kernel has
  * to name it, and naming it here is what goes red.
  */
-const CORE_FILES = ['core', 'core-common', 'core-child-control', 'core-ledger'].flatMap((name) =>
-  listSourceFiles(join(root, 'packages', name, 'src'), { excludeDirs: LITERAL_SCAN_EXCLUDE_DIRS }),
+const CORE_FILES = ['core', 'core-common', 'core-child-control', 'core-ledger', 'core-effects'].flatMap(
+  (name) => listSourceFiles(join(root, 'packages', name, 'src'), { excludeDirs: LITERAL_SCAN_EXCLUDE_DIRS }),
 )
 // seams.ts is where the contract is declared; fs-guard.ts is where the decision and the probe are
 // declared; index.ts only re-exports the names, which is how consumers reach them without a second
 // declaration.
 const CORE_ALLOWED = [
-  'packages/core/src/effects/fs-guard.ts',
-  'packages/core/src/effects/seams.ts',
+  'packages/core-effects/src/effects/fs-guard.ts',
+  'packages/core-effects/src/effects/seams.ts',
   'packages/core/src/index.ts',
 ]
 
@@ -52,11 +52,11 @@ describe('the file policy decision lives in one place', () => {
   })
 
   it('the declaration sites still exist, so the rule above cannot pass by naming nothing', () => {
-    expect(readFileSync(join(root, 'packages/core/src/effects/fs-guard.ts'), 'utf8')).toContain(
+    expect(readFileSync(join(root, 'packages/core-effects/src/effects/fs-guard.ts'), 'utf8')).toContain(
       'decideFsPath',
     )
     expect(
-      readFileSync(join(root, 'packages/core/src/effects/seams.ts'), 'utf8'),
+      readFileSync(join(root, 'packages/core-effects/src/effects/seams.ts'), 'utf8'),
       'the sandbox seam answers the full policy, not a deny list',
     ).toContain('fsPolicy(): FsPolicy')
     expect(readFileSync(join(root, 'packages/core/src/index.ts'), 'utf8')).toContain('decideFsPath')

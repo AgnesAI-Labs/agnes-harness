@@ -201,6 +201,12 @@
     },
     {
       "path": "packages/core-ledger/tsconfig.test.json"
+    },
+    {
+      "path": "packages/core-effects"
+    },
+    {
+      "path": "packages/core-effects/tsconfig.test.json"
     }
   ]
 }

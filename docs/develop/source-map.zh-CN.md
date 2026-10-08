@@ -17,7 +17,7 @@
 | 协议/校验 | [protocol schema](../../packages/protocol/schema)、[method table](../../packages/protocol/src/methods.ts)、[protocol-validation](../../packages/protocol-validation/src) | [protocol tests](../../packages/protocol/test) |
 | SDK 会话/传输 | [sdk](../../packages/sdk/src) | [sdk tests](../../packages/sdk/test) |
 | daemon/worker | [daemon](../../packages/daemon/src)、[worker-runtime](../../packages/worker-runtime/src) | [daemon tests](../../packages/daemon/test) |
-| 执行循环/恢复 | [core-common](../../packages/core-common/src), [core-child-control](../../packages/core-child-control/src), [core-ledger](../../packages/core-ledger/src), [core](../../packages/core/src) | [core tests](../../packages/core/test) |
+| 执行循环/恢复 | [core-common](../../packages/core-common/src), [core-child-control](../../packages/core-child-control/src), [core-ledger](../../packages/core-ledger/src), [core-effects](../../packages/core-effects/src), [core](../../packages/core/src) | [core tests](../../packages/core/test) |
 | provider 类型/统一生命周期/组合目录 | [类型合同](../../packages/extension-api/src/provider-kind.ts)、[注册表](../../packages/host/src/assemble/provider-registry.ts)、[选择](../../packages/host/src/assemble/provider-selection.ts)、[provider 架构](architecture-plugins.zh-CN.md) | [注册与选择测试](../../packages/host/test/assemble/provider-registry.test.ts)、[Host 装配](../../packages/host/test/assemble/tool-providers.test.ts) |
 | 配置/装配/凭据/平台 | [host](../../packages/host/src)、[system-node](../../packages/system-node/src) | [host tests](../../packages/host/test) |
 | 模型/流解析 | [ai](../../packages/ai/src) | [ai tests](../../packages/ai/test) |

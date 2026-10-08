@@ -1,6 +1,6 @@
+import type { EventInput } from '@agnes/core-common/types'
 import { describe, expect, it } from 'vitest'
 import { EffectRuntime, effectOutcome } from '../src/effects/effect.js'
-import type { EventInput } from '../src/types.js'
 
 describe('effect outcomes', () => {
   it('uses the safety precedence unknown, aborted, error, ok', () => {

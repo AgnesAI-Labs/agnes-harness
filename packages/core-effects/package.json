@@ -1,0 +1,40 @@
+{
+  "name": "@agnes/core-effects",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./effects/approval-answer": "./src/effects/approval-answer.ts",
+    "./effects/effect": "./src/effects/effect.ts",
+    "./effects/execute-permits": "./src/effects/execute-permits.ts",
+    "./effects/fs-guard": "./src/effects/fs-guard.ts",
+    "./effects/platform-facts": "./src/effects/platform-facts.ts",
+    "./effects/remote-transport": "./src/effects/remote-transport.ts",
+    "./effects/runtime": "./src/effects/runtime.ts",
+    "./effects/scheduler": "./src/effects/scheduler.ts",
+    "./effects/seams": "./src/effects/seams.ts",
+    "./effects/tool-context": "./src/effects/tool-context.ts",
+    "./effects/tool-dispatch": "./src/effects/tool-dispatch.ts",
+    "./effects/tool-providers": "./src/effects/tool-providers.ts",
+    "./effects/tool-result": "./src/effects/tool-result.ts",
+    "./effects/tool-runtime": "./src/effects/tool-runtime.ts",
+    "./effects/wrap": "./src/effects/wrap.ts",
+    "./workspace/runtime": "./src/workspace/runtime.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "pnpm --dir ../.. exec vitest run packages/core-effects/test --maxWorkers=1"
+  },
+  "dependencies": {
+    "@agnes/core-child-control": "workspace:*",
+    "@agnes/core-common": "workspace:*",
+    "@agnes/core-ledger": "workspace:*",
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/protocol": "workspace:*"
+  },
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@agnes/core": "workspace:*"
+  }
+}

@@ -1,9 +1,9 @@
+import { presetDefaults } from '@agnes/core-common/step/preset'
 import type { PublicFetch } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
+import { fakeSeams } from '../../core/test/helpers/fake-seams.js'
 import { buildToolContext, type ChildHandle, type ChildrenFactory } from '../src/effects/tool-context.js'
 import { SeamRuntime } from '../src/effects/wrap.js'
-import { presetDefaults } from '../src/step/preset.js'
-import { fakeSeams } from './helpers/fake-seams.js'
 
 function setup(
   seams = fakeSeams(),

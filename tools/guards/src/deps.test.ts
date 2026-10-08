@@ -99,6 +99,7 @@ const LAYER: Record<string, number> = {
   '@agnes/core-common': 1.1,
   '@agnes/core-child-control': 1.2,
   '@agnes/core-ledger': 1.3,
+  '@agnes/core-effects': 1.4,
   '@agnes/core': 2,
   '@agnes/loop-default': 2, // First-party loop plugin consumes the author API.
 

@@ -1,7 +1,7 @@
+import { presetDefaults, readPreset } from '@agnes/core-common/step/preset'
 import { DEFAULT_OUTPUT_MAX_BYTES } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { SEAM_NAMES, type SeamImplementations, type TestSeams } from '../src/effects/seams.js'
-import { presetDefaults, readPreset } from '../src/step/preset.js'
 
 describe('preset view', () => {
   it('preserves omitted, empty and selected prompt sections without sharing the input array', () => {

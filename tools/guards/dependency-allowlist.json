@@ -55,7 +55,8 @@
     "@agnes/extension-api",
     "@agnes/core-common",
     "@agnes/core-child-control",
-    "@agnes/core-ledger"
+    "@agnes/core-ledger",
+    "@agnes/core-effects"
   ],
   "@agnes/ai": ["@agnes/protocol", "@agnes/core", "@agnes/extension-api"],
   "@agnes/base": [
@@ -156,6 +157,13 @@
   "@agnes/core-ledger": [
     "@agnes/core-child-control",
     "@agnes/core-common",
+    "@agnes/extension-api",
+    "@agnes/protocol"
+  ],
+  "@agnes/core-effects": [
+    "@agnes/core-child-control",
+    "@agnes/core-common",
+    "@agnes/core-ledger",
     "@agnes/extension-api",
     "@agnes/protocol"
   ]

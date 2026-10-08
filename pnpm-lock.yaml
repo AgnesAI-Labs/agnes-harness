@@ -315,6 +315,9 @@ importers:
       '@agnes/core-common':
         specifier: workspace:*
         version: link:../core-common
+      '@agnes/core-effects':
+        specifier: workspace:*
+        version: link:../core-effects
       '@agnes/core-ledger':
         specifier: workspace:*
         version: link:../core-ledger
@@ -352,6 +355,28 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
+
+  packages/core-effects:
+    dependencies:
+      '@agnes/core-child-control':
+        specifier: workspace:*
+        version: link:../core-child-control
+      '@agnes/core-common':
+        specifier: workspace:*
+        version: link:../core-common
+      '@agnes/core-ledger':
+        specifier: workspace:*
+        version: link:../core-ledger
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+    devDependencies:
+      '@agnes/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/core-ledger:
     dependencies:

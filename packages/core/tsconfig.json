@@ -26,6 +26,9 @@
     },
     {
       "path": "../core-ledger"
+    },
+    {
+      "path": "../core-effects"
     }
   ]
 }
