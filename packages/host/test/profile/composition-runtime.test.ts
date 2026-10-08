@@ -92,13 +92,6 @@ ${
     // A live deployment starts with no bundles, then receives both through publication.
     runtimePluginSources: async () => sources,
   }
-  return { ids, sources, options }
-}
-
-it('isolates bundle tools from default and other bundles while retaining general plugins', async () => {
-  const { ids, sources, options } = bundleFixture()
-  const fixture = await pluginHost(sources, options)
-  const dataDir = fixture.dataDir
   const row = (vendor: string, disabled = false) =>
     createPluginRow({
       ...pluginRow('ext:' + vendor, 'plugin', disabled, { vendor }),
@@ -106,6 +99,13 @@ it('isolates bundle tools from default and other bundles while retaining general
       exportName: 'plugin',
       inject: vendor === 'acme/a' ? ['extension', 'loops'] : ['extension'],
     })
+  return { ids, sources, options, row }
+}
+
+it('isolates bundle tools from default and other bundles while retaining general plugins', async () => {
+  const { ids, sources, options, row } = bundleFixture()
+  const fixture = await pluginHost(sources, options)
+  const dataDir = fixture.dataDir
   const target = targetOf(ids.map((vendor) => row(vendor)))
   try {
     await fixture.host.applyRuntimeTarget(target)
@@ -158,6 +158,22 @@ it('isolates bundle tools from default and other bundles while retaining general
     } finally {
       writeFileSync(manifestFile, manifestBytes)
     }
+    await normal.close()
+    await a.close()
+    await b.close()
+  } finally {
+    await fixture.host.close()
+  }
+})
+
+it('drains a disabled business bundle while existing sessions retain their code', async () => {
+  const { ids, sources, options, row } = bundleFixture()
+  const fixture = await pluginHost(sources, options)
+  const dataDir = fixture.dataDir
+  try {
+    await fixture.host.applyRuntimeTarget(targetOf(ids.map((vendor) => row(vendor))))
+    const normal = await fixture.host.createSession({ key: 'default-tools', cwd: dataDir })
+    const a = await fixture.host.createSession({ key: 'bundle-a', cwd: dataDir, bundles: ['acme/a#a'] })
     expect(
       (await fixture.host.applyRuntimeTarget(targetOf(ids.map((vendor) => row(vendor, vendor === 'acme/a')))))
         .ok,
@@ -185,26 +201,21 @@ it('isolates bundle tools from default and other bundles while retaining general
     await fresh.close()
     await normal.close()
     await a.close()
-    await b.close()
   } finally {
     await fixture.host.close()
   }
 })
 
 it('retains a cold bundle pin after the live general plugin is disabled', async () => {
-  const { ids, sources, options } = bundleFixture()
+  const { ids, sources, options, row } = bundleFixture()
   let fixture = await pluginHost(sources, options)
   const dataDir = fixture.dataDir
   try {
-    await fixture.host.applyRuntimeTarget(
-      targetOf(ids.map((vendor) => pluginRow('ext:' + vendor, 'plugin', false, { vendor }))),
-    )
+    await fixture.host.applyRuntimeTarget(targetOf(ids.map((vendor) => row(vendor))))
     const a = await fixture.host.createSession({ key: 'bundle-a', cwd: dataDir, bundles: ['acme/a#a'] })
     const pin = a.pluginGenerationId
     const report = await fixture.host.applyRuntimeTarget(
-      targetOf(
-        ids.map((vendor) => pluginRow('ext:' + vendor, 'plugin', vendor === 'acme/general', { vendor })),
-      ),
+      targetOf(ids.map((vendor) => row(vendor, vendor === 'acme/general'))),
     )
     expect(report.ok, JSON.stringify(report)).toBe(true)
     await a.close()

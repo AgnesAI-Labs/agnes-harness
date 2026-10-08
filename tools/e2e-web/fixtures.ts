@@ -31,6 +31,32 @@ export const test = base.extend<{ runtime: Runtime; browserHealth: undefined }>(
   browserHealth: [
     async ({ page, context }, use, info) => {
       const errors: string[] = []
+      const requests: { method: string; durationMs: number; code?: unknown }[] = []
+      page.on('websocket', (socket) => {
+        const pending = new Map<string | number, { method: string; started: number }>()
+        socket.on('framesent', ({ payload }) => {
+          if (typeof payload !== 'string') return
+          const message = JSON.parse(payload) as { id?: string | number; method?: string }
+          if (message.id !== undefined && message.method)
+            pending.set(message.id, { method: message.method, started: performance.now() })
+        })
+        socket.on('framereceived', ({ payload }) => {
+          if (typeof payload !== 'string') return
+          const message = JSON.parse(payload) as {
+            id?: string | number
+            error?: { data?: { code?: unknown } }
+          }
+          if (message.id === undefined) return
+          const request = pending.get(message.id)
+          if (!request) return
+          pending.delete(message.id)
+          requests.push({
+            method: request.method,
+            durationMs: Math.round(performance.now() - request.started),
+            ...(message.error ? { code: message.error.data?.code } : {}),
+          })
+        })
+      })
       page.on('pageerror', (error) => errors.push(`pageerror: ${error.message}`))
       page.on('console', (message) => {
         if (message.type() === 'error') errors.push(`console: ${message.text()}`)
@@ -45,6 +71,10 @@ export const test = base.extend<{ runtime: Runtime; browserHealth: undefined }>(
       await use(undefined)
       await info.attach('browser-errors.json', {
         body: JSON.stringify(errors, null, 2),
+        contentType: 'application/json',
+      })
+      await info.attach('rpc-timing.json', {
+        body: JSON.stringify(requests, null, 2),
         contentType: 'application/json',
       })
       expect(errors, 'All console errors, page errors and external requests fail the gate').toEqual([])
