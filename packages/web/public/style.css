@@ -6940,3 +6940,7 @@ body.admin-page {
 .goal-card button {
   margin: 0;
 }
+
+.transcript-node-host {
+  display: contents;
+}

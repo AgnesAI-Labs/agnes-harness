@@ -1,4 +1,6 @@
+import { computerUseUiCatalog } from './locales/computer-use.js'
 import { Button } from './ui/button.js'
+import { useUiText } from './ui-locale.js'
 
 export type SettingsComputerUseView = Readonly<{
   status: Readonly<{ label: string; summary: string; runtime: string; blockers: readonly string[] }>
@@ -39,7 +41,11 @@ export function SettingsComputerUse({
   /** Render-time copy. Defaults to the English catalog so a missing host still stays in the default language. */
   text?: (key: string) => string
 }) {
-  const label = (key: string, fallback: string) => text?.(key) ?? fallback
+  const { t } = useUiText('@agnes/web-ui/computer-use', computerUseUiCatalog)
+  const label = (key: string) => {
+    const value = text?.(key)
+    return value && value !== key ? value : t(key)
+  }
   return (
     <section
       id="computer-use-settings-pane"
@@ -49,13 +55,8 @@ export function SettingsComputerUse({
     >
       <header className="config-heading">
         <div>
-          <h2>Computer Use</h2>
-          <p>
-            {label(
-              'computerUse.intro',
-              'Let Agnes see the screen and operate apps. This needs a model that accepts images.',
-            )}
-          </p>
+          <h2>{label('computerUse.title')}</h2>
+          <p>{label('computerUse.intro')}</p>
         </div>
         <Button
           id="computer-use-refresh"
@@ -64,12 +65,12 @@ export function SettingsComputerUse({
           disabled={view.controls.refreshDisabled}
           onClick={() => void actions.refresh()}
         >
-          {label('computerUse.action.refresh', 'Refresh status')}
+          {label('computerUse.action.refresh')}
         </Button>
       </header>
       <div className="config-workspace">
         <section className="config-card" aria-labelledby="computer-use-state">
-          <p className="eyebrow">{label('computerUse.status.eyebrow', 'Status')}</p>
+          <p className="eyebrow">{label('computerUse.status.eyebrow')}</p>
           <strong id="computer-use-state" role="status">
             {view.status.label}
           </strong>
@@ -82,7 +83,7 @@ export function SettingsComputerUse({
           </ul>
         </section>
         <section className="config-card" aria-labelledby="computer-use-permission-state">
-          <p className="eyebrow">{label('computerUse.permissions.eyebrow', 'System permissions')}</p>
+          <p className="eyebrow">{label('computerUse.permissions.eyebrow')}</p>
           <strong id="computer-use-permission-state">{view.permissions.label}</strong>
           <p id="computer-use-permission-summary">{view.permissions.summary}</p>
           <Button
@@ -93,11 +94,11 @@ export function SettingsComputerUse({
             disabled={view.controls.grantDisabled}
             onClick={() => void actions.grantPermissions()}
           >
-            {label('computerUse.permissions.grant', 'Open macOS authorization')}
+            {label('computerUse.permissions.grant')}
           </Button>
         </section>
         <section className="config-card" aria-labelledby="computer-use-doctor-state">
-          <p className="eyebrow">{label('computerUse.doctor.eyebrow', 'Driver diagnostics')}</p>
+          <p className="eyebrow">{label('computerUse.doctor.eyebrow')}</p>
           <strong id="computer-use-doctor-state">{view.doctor.label}</strong>
           <p id="computer-use-doctor-summary">{view.doctor.summary}</p>
           <Button
@@ -107,11 +108,11 @@ export function SettingsComputerUse({
             disabled={view.controls.doctorDisabled}
             onClick={() => void actions.doctor()}
           >
-            {label('computerUse.doctor.run', 'Run diagnostics')}
+            {label('computerUse.doctor.run')}
           </Button>
         </section>
         <section className="config-card" aria-labelledby="computer-use-operation-state">
-          <p className="eyebrow">{label('computerUse.operation.eyebrow', 'Install and maintenance')}</p>
+          <p className="eyebrow">{label('computerUse.operation.eyebrow')}</p>
           <strong id="computer-use-operation-state">{view.operation.label}</strong>
           <p id="computer-use-operation-summary">{view.operation.summary}</p>
           <div className="config-actions">
@@ -122,7 +123,7 @@ export function SettingsComputerUse({
               disabled={view.controls.installDisabled}
               onClick={() => void actions.install()}
             >
-              {label('computerUse.action.install', 'Prepare driver')}
+              {label('computerUse.action.install')}
             </Button>
             <Button
               id="computer-use-update"
@@ -131,7 +132,7 @@ export function SettingsComputerUse({
               disabled={view.controls.updateDisabled}
               onClick={() => void actions.update()}
             >
-              {label('computerUse.action.update', 'Update driver')}
+              {label('computerUse.action.update')}
             </Button>
             <Button
               id="computer-use-restart"
@@ -140,7 +141,7 @@ export function SettingsComputerUse({
               disabled={view.controls.restartDisabled}
               onClick={() => void actions.restart()}
             >
-              {label('computerUse.action.restart', 'Restart driver')}
+              {label('computerUse.action.restart')}
             </Button>
             <Button
               id="computer-use-operation-refresh"
@@ -149,7 +150,7 @@ export function SettingsComputerUse({
               disabled={view.controls.operationRefreshDisabled}
               onClick={() => void actions.refreshOperation()}
             >
-              {label('computerUse.action.operationRefresh', 'Refresh progress')}
+              {label('computerUse.action.operationRefresh')}
             </Button>
             <Button
               id="computer-use-operation-cancel"
@@ -159,7 +160,7 @@ export function SettingsComputerUse({
               disabled={view.controls.cancelDisabled}
               onClick={() => void actions.cancelOperation()}
             >
-              {label('computerUse.action.cancel', 'Cancel operation')}
+              {label('computerUse.action.cancel')}
             </Button>
           </div>
         </section>

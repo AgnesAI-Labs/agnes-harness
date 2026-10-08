@@ -4,11 +4,15 @@ import { adminConfirmationLocaleCatalog } from '../src/locales/admin-confirmatio
 import { adminDetailLocaleCatalog } from '../src/locales/admin-detail.js'
 import { adminDialogsLocaleCatalog } from '../src/locales/admin-dialogs.js'
 import { adminListLocaleCatalog } from '../src/locales/admin-list.js'
+import { computerUseUiCatalog } from '../src/locales/computer-use.js'
+import { configFormCatalog } from '../src/locales/config-form.js'
 import { conversationLocaleCatalog } from '../src/locales/conversation.js'
 import { resourceDetailLocaleCatalog } from '../src/locales/resource-detail.js'
 import { resourceListLocaleCatalog } from '../src/locales/resource-list.js'
 
 const catalogs = [
+  ['computer use', computerUseUiCatalog],
+  ['config form', configFormCatalog],
   ['admin confirmation', adminConfirmationLocaleCatalog],
   ['admin dialogs', adminDialogsLocaleCatalog],
   ['admin detail', adminDetailLocaleCatalog],

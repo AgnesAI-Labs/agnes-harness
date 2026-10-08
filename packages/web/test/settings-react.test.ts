@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { ConfigSnapshot } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
+import { settingsSections } from '@agnes/web-client'
+import '../src/settings/registry.js'
 import { unmountRegion } from '@agnes/web-ui'
 import { SettingsBuiltin, SettingsPaneBuiltin } from '@agnes/web-units'
 import { createElement } from 'react'
@@ -62,7 +64,9 @@ it('operates the React settings pane and account dialog without losing native fo
   dialog.id = 'config'
   document.body.append(dialog)
   const shellRoot = createRoot(dialog)
-  flushSync(() => shellRoot.render(createElement(SettingsBuiltin, { options: {} })))
+  flushSync(() =>
+    shellRoot.render(createElement(SettingsBuiltin, { options: { sections: settingsSections } })),
+  )
   expect(dialog.querySelectorAll('[data-testid="settings-navigation"]')).toHaveLength(1)
   expect(dialog.querySelectorAll('#skills-tab')).toHaveLength(1)
   expect(dialog.querySelectorAll('#mcp-tab')).toHaveLength(1)

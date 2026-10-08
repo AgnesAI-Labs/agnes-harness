@@ -178,7 +178,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
   )
   return (
     <div
-      style={{ display: 'contents' }}
+      className="transcript-node-host"
       data-agnes-region-owner="builtin"
       data-agnes-region-unit="transcript"
     >

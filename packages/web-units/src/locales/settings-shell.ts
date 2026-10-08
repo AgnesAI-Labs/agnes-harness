@@ -3,6 +3,15 @@ import type { LocaleCatalog } from './index.js'
 /** 设置壳模板（S1）：首帧由宿主 applyLocaleText 回填，切换语言走 boot 的全文档回填。 */
 export const settingsShellLocaleCatalog: LocaleCatalog = {
   en: {
+    'settings-shell.computerUseWaiting': 'Waiting for checks',
+    'settings-shell.computerUseWaitingSummary': 'Waiting for the local backend connection.',
+    'settings-shell.computerUsePermissionsSummary':
+      'Required system permissions appear when the driver is ready.',
+    'settings-shell.computerUseDoctorSummary': 'Check whether the local driver is working.',
+    'settings-shell.computerUseNoRecord': 'No records',
+    'settings-shell.computerUsePrepareSummary':
+      'First use prepares the driver automatically; existing installations are checked and reused.',
+    'settings-shell.workbenchBrand': 'Agnes Workbench',
     'settings-shell.mcpNav': 'MCP',
     'settings-shell.computerUseNav': 'Computer Use',
 
@@ -94,6 +103,13 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'settings-shell.saveAccount': 'Save account',
   },
   'zh-CN': {
+    'settings-shell.computerUseWaiting': '等待检查',
+    'settings-shell.computerUseWaitingSummary': '正在等待连接本地后台。',
+    'settings-shell.computerUsePermissionsSummary': '驱动就绪后显示当前系统所需的权限。',
+    'settings-shell.computerUseDoctorSummary': '检查本机驱动是否正常。',
+    'settings-shell.computerUseNoRecord': '没有记录',
+    'settings-shell.computerUsePrepareSummary': '首次使用会自动准备驱动；已有安装会先验证并复用。',
+    'settings-shell.workbenchBrand': 'Agnes Workbench',
     'settings-shell.mcpNav': 'MCP',
     'settings-shell.computerUseNav': 'Computer Use',
 

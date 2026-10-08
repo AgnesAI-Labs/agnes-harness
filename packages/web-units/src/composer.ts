@@ -45,6 +45,7 @@ import {
   useState,
 } from 'react'
 import { flushSync } from 'react-dom'
+import { composerLocaleCatalog } from './locales/composer.js'
 import type { Translate } from './locales/index.js'
 
 export type ModelPickerOption = {
@@ -211,26 +212,35 @@ function pickerState(view: ComposerView): ModelPickerState {
 }
 
 const INITIAL_VIEW: ComposerView = {
-  cancel: { disabled: true, hidden: true, label: 'Stop' },
+  cancel: { disabled: true, hidden: true, label: composerLocaleCatalog.en['composer.initial.stop']! },
   connected: false,
   configured: false,
   hasSession: false,
-  hint: { kind: 'state', text: 'Connect to the backend to start' },
-  input: { disabled: true, placeholder: 'Describe what you want to do…' },
+  hint: { kind: 'state', text: composerLocaleCatalog.en['composer.initial.connect']! },
+  input: { disabled: true, placeholder: composerLocaleCatalog.en['composer.initial.placeholder']! },
   loading: false,
   model: {
-    accessibleName: 'Select the model for this session',
+    accessibleName: composerLocaleCatalog.en['composer.initial.modelAria']!,
     disabled: true,
-    label: 'Select model',
+    label: composerLocaleCatalog.en['composer.initial.model']!,
     options: [],
     pending: false,
   },
   permission: { disabled: true, pending: false, selected: 'workspace' },
   sending: false,
-  send: { disabled: true, label: 'Send', mode: 'idle', title: 'Send (Enter)' },
+  send: {
+    disabled: true,
+    label: composerLocaleCatalog.en['composer.initial.send']!,
+    mode: 'idle',
+    title: composerLocaleCatalog.en['composer.initial.sendTitle']!,
+  },
   stopping: false,
   usage: undefined,
-  workspace: { disabled: true, label: 'Select workspace', title: 'Select workspace' },
+  workspace: {
+    disabled: true,
+    label: composerLocaleCatalog.en['composer.initial.workspace']!,
+    title: composerLocaleCatalog.en['composer.initial.workspace']!,
+  },
 }
 
 interface ComposerProps extends ComposerRegionOptions {

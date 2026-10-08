@@ -3,6 +3,14 @@ import type { LocaleCatalog } from './index.js'
 /** 组件内置可访问性文案。经 `ComposerDependencies.translate` 注入，命名空间 `@agnes/web-units`。 */
 export const composerLocaleCatalog: LocaleCatalog = {
   en: {
+    'composer.initial.stop': 'Stop',
+    'composer.initial.connect': 'Connect to the backend to start',
+    'composer.initial.placeholder': 'Describe what you want to do…',
+    'composer.initial.modelAria': 'Select the model for this session',
+    'composer.initial.model': 'Select model',
+    'composer.initial.send': 'Send',
+    'composer.initial.sendTitle': 'Send (Enter)',
+    'composer.initial.workspace': 'Select workspace',
     'composer.attachment.add': 'Add attachments',
     'composer.attachment.hint':
       'All file types; up to 50 attachments and 100 MiB total after image processing. Images follow model limits. Some formats may be unreadable.',
@@ -44,6 +52,14 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.image.tooLarge': 'Attachments in one message must total no more than 100 MiB.',
   },
   'zh-CN': {
+    'composer.initial.stop': '停止',
+    'composer.initial.connect': '请连接后台后开始',
+    'composer.initial.placeholder': '描述你想完成的任务…',
+    'composer.initial.modelAria': '选择本会话的模型',
+    'composer.initial.model': '选择模型',
+    'composer.initial.send': '发送',
+    'composer.initial.sendTitle': '发送（Enter）',
+    'composer.initial.workspace': '选择工作区',
     'composer.attachment.add': '添加附件',
     'composer.attachment.hint':
       '可上传各类文件，最多 50 个，图片处理后附件合计不超过 100 MiB。图片按模型限制；部分格式可能无法解析。',

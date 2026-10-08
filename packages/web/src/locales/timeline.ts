@@ -3,6 +3,7 @@ import type { LocaleCatalog } from '@agnes/web-client'
 /** 时间线节点、回合投影与审批状态。渲染时取词；fingerprint 掺 locale 版本保证切换后全量刷新。 */
 export const timelineLocaleCatalog: LocaleCatalog = {
   en: {
+    'brand.harness': 'Agnes Harness',
     'tool.interaction.answered': 'Question answered: {answer}',
     'tool.interaction.question.name': 'Ask a question',
     'tool.interaction.question.completed': 'Question sent — awaiting your answer.',
@@ -90,6 +91,7 @@ export const timelineLocaleCatalog: LocaleCatalog = {
     'turn.error.noDetail': 'The run did not finish ({reason}); no error details were received.',
   },
   'zh-CN': {
+    'brand.harness': 'Agnes Harness',
     'tool.interaction.answered': '已回答问题：{answer}',
     'tool.interaction.question.name': '提问',
     'tool.interaction.question.completed': '问题已发送，等待你的回答。',

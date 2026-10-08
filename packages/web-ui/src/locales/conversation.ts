@@ -6,6 +6,8 @@ import type { LocaleCatalog } from './index.js'
  */
 export const conversationLocaleCatalog: LocaleCatalog = {
   en: {
+    'brand.agent': 'Agnes',
+    'brand.harness': 'Agnes Harness',
     'tool.interaction.answered': 'Question answered: {answer}',
     'tool.interaction.question.name': 'Ask a question',
     'tool.interaction.question.completed': 'Question sent — awaiting your answer.',
@@ -204,6 +206,8 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'settings.oauth.methodLabel': 'Auth method',
   },
   'zh-CN': {
+    'brand.agent': 'Agnes',
+    'brand.harness': 'Agnes Harness',
     'tool.interaction.answered': '已回答问题：{answer}',
     'tool.interaction.question.name': '提问',
     'tool.interaction.question.completed': '问题已发送，等待你的回答。',

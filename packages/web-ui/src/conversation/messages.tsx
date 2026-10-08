@@ -314,7 +314,7 @@ function AssistantMessage({
       : node.text
   return (
     <>
-      <p className="node-label">Agnes</p>
+      <p className="node-label">{t('brand.agent')}</p>
       {!hideThinking && (
         <details ref={disclosure} className="thinking" hidden={!shownThinking}>
           <summary>{t('timeline.thinkingSummary')}</summary>
@@ -425,7 +425,7 @@ function ConversationMessageView() {
         </div>
       ) : node.kind === 'assistant' ? (
         <>
-          <p className="node-label">Agnes</p>
+          <p className="node-label">{t('brand.agent')}</p>
           <div className="aui-assistant-message-content aui:mx-2 aui:self-stretch aui:min-w-0 aui:min-h-[4.25rem] aui:text-sm aui:leading-relaxed aui:text-[var(--agnes-text-primary)]">
             <MessagePrimitive.Parts components={assistantMessageParts} />
           </div>
@@ -835,7 +835,7 @@ function Turn({
           <span className="process-avatar">
             <span className="agnes-mark process-avatar-mark" aria-hidden="true" />
           </span>
-          <span className="process-name">Agnes Harness</span>
+          <span className="process-name">{props.t('brand.harness')}</span>
         </span>
         <p className="turn-status" data-agnes-dynamic="turn-process" hidden={processCount > 0}>
           {statusText}

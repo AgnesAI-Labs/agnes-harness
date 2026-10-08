@@ -22,7 +22,7 @@ const root = repoRoot()
  * suite must go red; removing it must go green again.
  */
 
-const FORBIDDEN_PREFIXES = ['@assistant-ui/', '@ant-design/']
+const FORBIDDEN_PREFIXES = ['antd/', '@assistant-ui/', '@ant-design/']
 const FORBIDDEN_EXACT = new Set(['antd'])
 const ALLOWED_PKG = '@agnes/web-ui'
 const ALLOWED_DEP_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']
@@ -62,6 +62,12 @@ function violationsFor(pkgDir: string): string[] {
   }
   return out
 }
+
+it('also fences private library entry points and dynamic imports', () => {
+  for (const name of ['antd', 'antd/es/button', '@assistant-ui/react', '@ant-design/icons'])
+    expect(isExternalUI(name)).toBe(true)
+  expect(isExternalUI('@agnes/web-ui')).toBe(false)
+})
 
 describe('external UI libraries are only imported by the web-ui component layer', () => {
   it('antd / @assistant-ui imports appear only in packages/web-ui', () => {

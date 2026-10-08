@@ -72,7 +72,7 @@ function makeTurnEntry(onFork: ((turn: UITurn) => Promise<void>) | undefined, t:
   avatar.append(avatarMark)
   const name = document.createElement('span')
   name.className = 'process-name'
-  name.textContent = 'Agnes Harness'
+  name.textContent = t('brand.harness')
   identity.append(avatar, name)
   const status = document.createElement('p')
   status.className = 'turn-status'
