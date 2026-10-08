@@ -47,6 +47,11 @@ export const AgnesV1 = Type.Module({
   "CompactOutcome": Type.Union([Type.Object({ "state": Type.Literal('completed'), "endSeq": Type.Integer({ minimum: 1 }) }, { additionalProperties: false }), Type.Object({ "state": Type.Literal('failed'), "endSeq": Type.Integer({ minimum: 1 }) }, { additionalProperties: false }), Type.Object({ "state": Type.Literal('unknown') }, { additionalProperties: false })]),
   "ErrorData": Type.Object({ "code": Type.String({ maxLength: 64 }) }),
   "SessionIdParams": Type.Object({ "sessionId": Type.String({ maxLength: 512 }) }, { additionalProperties: false }),
+  "SessionWorkspaceListParams": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 512 }), "path": Type.Optional(Type.String({ maxLength: 4096 })) }, { additionalProperties: false }),
+  "SessionWorkspaceEntry": Type.Object({ "name": Type.String({ minLength: 1, maxLength: 255 }), "kind": Type.Union([Type.Literal('file'), Type.Literal('directory'), Type.Literal('other')]), "git": Type.Optional(Type.Union([Type.Literal('modified'), Type.Literal('added'), Type.Literal('deleted'), Type.Literal('untracked'), Type.Literal('renamed')])) }, { additionalProperties: false }),
+  "SessionWorkspaceListResult": Type.Object({ "path": Type.String({ maxLength: 4096 }), "truncated": Type.Boolean(), "entries": Type.Array(Type.Ref('SessionWorkspaceEntry'), { maxItems: 500 }) }, { additionalProperties: false }),
+  "SessionWorkspaceReadParams": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 512 }), "path": Type.String({ minLength: 1, maxLength: 4096 }) }, { additionalProperties: false }),
+  "SessionWorkspaceReadResult": Type.Object({ "path": Type.String({ maxLength: 4096 }), "size": Type.Integer({ minimum: 0 }), "binary": Type.Boolean(), "truncated": Type.Boolean(), "text": Type.Optional(Type.String({ maxLength: 1048576 })) }, { additionalProperties: false }),
   "ApprovalGrantListParams": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 512 }), "toolId": Type.String({ minLength: 1, maxLength: 128 }), "scope": Type.String({ minLength: 1, maxLength: 256 }), "policyVersion": Type.String({ minLength: 1, maxLength: 64 }) }, { additionalProperties: false }),
   "ApprovalGrantRecord": Type.Object({ "grantId": Type.String({ minLength: 1, maxLength: 128 }), "profileHash": Type.String({ pattern: "^sha256-[a-f0-9]{64}$" }), "actorId": Type.String({ minLength: 1, maxLength: 256 }), "actorOrg": Type.String({ minLength: 1, maxLength: 256 }), "toolId": Type.String({ minLength: 1, maxLength: 128 }), "scope": Type.String({ minLength: 1, maxLength: 256 }), "policyVersion": Type.String({ minLength: 1, maxLength: 64 }), "createdAt": Type.String({ format: "date-time" }), "revokedAt": Type.Optional(Type.String({ format: "date-time" })) }, { additionalProperties: false }),
   "ApprovalGrantRevokeParams": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 512 }), "toolId": Type.String({ minLength: 1, maxLength: 128 }), "scope": Type.String({ minLength: 1, maxLength: 256 }), "policyVersion": Type.String({ minLength: 1, maxLength: 64 }), "grantId": Type.String({ minLength: 1, maxLength: 128 }) }, { additionalProperties: false }),
@@ -297,6 +302,16 @@ export const ErrorData = AgnesV1.Import('ErrorData')
 export type ErrorData = Static<typeof ErrorData>
 export const SessionIdParams = AgnesV1.Import('SessionIdParams')
 export type SessionIdParams = Static<typeof SessionIdParams>
+export const SessionWorkspaceListParams = AgnesV1.Import('SessionWorkspaceListParams')
+export type SessionWorkspaceListParams = Static<typeof SessionWorkspaceListParams>
+export const SessionWorkspaceEntry = AgnesV1.Import('SessionWorkspaceEntry')
+export type SessionWorkspaceEntry = Static<typeof SessionWorkspaceEntry>
+export const SessionWorkspaceListResult = AgnesV1.Import('SessionWorkspaceListResult')
+export type SessionWorkspaceListResult = Static<typeof SessionWorkspaceListResult>
+export const SessionWorkspaceReadParams = AgnesV1.Import('SessionWorkspaceReadParams')
+export type SessionWorkspaceReadParams = Static<typeof SessionWorkspaceReadParams>
+export const SessionWorkspaceReadResult = AgnesV1.Import('SessionWorkspaceReadResult')
+export type SessionWorkspaceReadResult = Static<typeof SessionWorkspaceReadResult>
 export const ApprovalGrantListParams = AgnesV1.Import('ApprovalGrantListParams')
 export type ApprovalGrantListParams = Static<typeof ApprovalGrantListParams>
 export const ApprovalGrantRecord = AgnesV1.Import('ApprovalGrantRecord')

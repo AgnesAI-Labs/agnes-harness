@@ -29,6 +29,14 @@ export type ConversationCard = Readonly<{
   matches(input: ConversationCardInput): boolean
   component: ComponentType<{ card: ConversationCardInput; context: UiExtensionContext }>
 }>
+/** A session dock panel. `right` is the side dock and `bottom` is the lower dock. */
+export type WorkbenchPanel = Readonly<{
+  id: string
+  order: number
+  edge: 'right' | 'bottom'
+  titleKey: string
+  component: ComponentType<{ context: UiExtensionContext }>
+}>
 
 /** Registration returns an identity-bound disposer suitable for a client module's effect scope. */
 export class UiExtensionRegistry<Entry extends { readonly id: string; readonly order: number }> {
@@ -70,3 +78,4 @@ export class UiExtensionRegistry<Entry extends { readonly id: string; readonly o
 /** Shared through the host's @agnes/web-client platform singleton, including installed modules. */
 export const settingsSections = new UiExtensionRegistry<SettingsSection>()
 export const conversationCards = new UiExtensionRegistry<ConversationCard>()
+export const workbenchPanels = new UiExtensionRegistry<WorkbenchPanel>()

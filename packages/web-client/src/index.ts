@@ -115,5 +115,6 @@ export type {
   ConversationCardInput,
   SettingsSection,
   UiExtensionContext,
+  WorkbenchPanel,
 } from './ui-registries.js'
-export { conversationCards, settingsSections, UiExtensionRegistry } from './ui-registries.js'
+export { conversationCards, settingsSections, UiExtensionRegistry, workbenchPanels } from './ui-registries.js'

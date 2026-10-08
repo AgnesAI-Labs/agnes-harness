@@ -46,7 +46,7 @@ export function unresolvedLabels(known: string[]) {
         text &&
         (keys.has(text) ||
           (namespaces.has(text.split('.')[0]) && /^[a-z][\w-]*\.[\w.-]+$/i.test(text)) ||
-          /^(?:app|shell|settings|composer|index-shell|cards|session|topbar|sidebar|tool|goal)\.[\w.-]+$/.test(
+          /^(?:app|shell|settings|composer|index-shell|cards|session|topbar|sidebar|tool|goal|workbench)\.[\w.-]+$/.test(
             text,
           ))
       )

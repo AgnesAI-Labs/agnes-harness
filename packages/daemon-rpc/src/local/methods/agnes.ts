@@ -66,6 +66,7 @@ import {
   type ToolDetailReadResult,
 } from '@agnes/worker-runtime'
 import { commandAdmissionId, commandBinding } from '../command-binding.js'
+import { registerWorkspaceFiles } from '../workspace-files.js'
 import { runQueued } from '../command-queue.js'
 import { createBlockedComputerUseControlPlane } from '../computer-use-control.js'
 import { type Feed, type LocalContext, legacyLedgerRpcError } from './acp.js'
@@ -434,6 +435,8 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.projectUIOpening',
       'session.projectUIHistory',
       'session.tools',
+      'session.workspace.list',
+      'session.workspace.read',
       'session.readToolDetail',
       'session.list',
       'session.rename',
@@ -612,6 +615,7 @@ export function registerAgnes(
   attached: Map<string, AttachedFeed>,
 ): void {
   const requireOwner = requireSessionOwner(cx)
+  registerWorkspaceFiles(ep, cx, requireOwner)
   const computerUseControl = createBlockedComputerUseControlPlane(cx.lockedPackageMutations, cx.computerUse)
   type GrantBindingParams = {
     sessionId: string

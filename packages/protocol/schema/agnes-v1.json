@@ -539,6 +539,60 @@
         }
       }
     },
+    "SessionWorkspaceListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "path": { "type": "string", "maxLength": 4096 }
+      }
+    },
+    "SessionWorkspaceEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "kind": { "enum": ["file", "directory", "other"] },
+        "git": { "enum": ["modified", "added", "deleted", "untracked", "renamed"] }
+      }
+    },
+    "SessionWorkspaceListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "truncated", "entries"],
+      "properties": {
+        "path": { "type": "string", "maxLength": 4096 },
+        "truncated": { "type": "boolean" },
+        "entries": {
+          "type": "array",
+          "maxItems": 500,
+          "items": { "$ref": "#/$defs/SessionWorkspaceEntry" }
+        }
+      }
+    },
+    "SessionWorkspaceReadParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "path"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "path": { "type": "string", "minLength": 1, "maxLength": 4096 }
+      }
+    },
+    "SessionWorkspaceReadResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "size", "binary", "truncated"],
+      "properties": {
+        "path": { "type": "string", "maxLength": 4096 },
+        "size": { "type": "integer", "minimum": 0 },
+        "binary": { "type": "boolean" },
+        "truncated": { "type": "boolean" },
+        "text": { "type": "string", "maxLength": 1048576 }
+      }
+    },
     "ApprovalGrantListParams": {
       "type": "object",
       "additionalProperties": false,

@@ -101,6 +101,8 @@ export type MethodName =
   | '_agnes/v1/session.projectUIOpening'
   | '_agnes/v1/session.projectUIHistory'
   | '_agnes/v1/session.tools'
+  | '_agnes/v1/session.workspace.list'
+  | '_agnes/v1/session.workspace.read'
   | '_agnes/v1/session.readToolDetail'
   | '_agnes/v1/session.followUp'
   | '_agnes/v1/session.fork'
@@ -252,6 +254,14 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     result: A.UIHistoryPage,
   },
   '_agnes/v1/session.tools': clientRequest(SessionToolsParams, SessionToolsResult),
+  '_agnes/v1/session.workspace.list': clientRequest(
+    A.SessionWorkspaceListParams,
+    A.SessionWorkspaceListResult,
+  ),
+  '_agnes/v1/session.workspace.read': clientRequest(
+    A.SessionWorkspaceReadParams,
+    A.SessionWorkspaceReadResult,
+  ),
   '_agnes/v1/session.readToolDetail': clientRequest(
     A.SessionReadToolDetailParams,
     A.SessionReadToolDetailResult,

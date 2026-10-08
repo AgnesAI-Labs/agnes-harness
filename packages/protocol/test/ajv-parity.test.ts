@@ -472,6 +472,11 @@ const AGNES_DEFS: Record<string, TSchema> = {
   CompactOutcome: AgnesGen.CompactOutcome,
   ErrorData: AgnesGen.ErrorData,
   SessionIdParams: AgnesGen.SessionIdParams,
+  SessionWorkspaceListParams: AgnesGen.SessionWorkspaceListParams,
+  SessionWorkspaceEntry: AgnesGen.SessionWorkspaceEntry,
+  SessionWorkspaceListResult: AgnesGen.SessionWorkspaceListResult,
+  SessionWorkspaceReadParams: AgnesGen.SessionWorkspaceReadParams,
+  SessionWorkspaceReadResult: AgnesGen.SessionWorkspaceReadResult,
   ApprovalGrantListParams: AgnesGen.ApprovalGrantListParams,
   ApprovalGrantRecord: AgnesGen.ApprovalGrantRecord,
   ApprovalGrantRevokeParams: AgnesGen.ApprovalGrantRevokeParams,
@@ -2562,6 +2567,57 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       {}, // missing required sessionId
     ],
     note: 'valid and the first invalid reuse fixtures/methods/i1.jsonl (session-detach-params-ok / session-detach-params-extra-key)',
+  },
+  SessionWorkspaceListParams: {
+    valid: { sessionId: 's', path: 'src' },
+    invalid: [
+      {},
+      { sessionId: '' },
+      { sessionId: 's', path: rep(4097) },
+      { sessionId: 's', path: 'src', extra: true },
+    ],
+    note: 'relative workspace listing; path is optional and bounded',
+  },
+  SessionWorkspaceEntry: {
+    valid: { name: 'a.ts', kind: 'file', git: 'modified' },
+    invalid: [
+      { kind: 'file' },
+      { name: '', kind: 'file' },
+      { name: rep(256), kind: 'file' },
+      { name: 'a.ts', kind: 'link' },
+      { name: 'a.ts', kind: 'file', git: 'copied' },
+      { name: 'a.ts', kind: 'file', target: '../secret' },
+    ],
+    note: 'one directory entry; git is optional and closed',
+  },
+  SessionWorkspaceListResult: {
+    valid: { path: '', truncated: false, entries: [{ name: 'a.ts', kind: 'file' }] },
+    invalid: [
+      { path: '', truncated: false },
+      { path: rep(4097), truncated: false, entries: [] },
+      { path: '', truncated: 'no', entries: [] },
+      {
+        path: '',
+        truncated: false,
+        entries: Array.from({ length: 501 }, (_, index) => ({ name: `f${index}.txt`, kind: 'file' })),
+      },
+    ],
+    note: 'listing is capped at 500 entries',
+  },
+  SessionWorkspaceReadParams: {
+    valid: { sessionId: 's', path: 'a.ts' },
+    invalid: [{ sessionId: 's' }, { sessionId: 's', path: '' }, { sessionId: 's', path: rep(4097) }],
+    note: 'read requires one relative path',
+  },
+  SessionWorkspaceReadResult: {
+    valid: { path: 'a.ts', size: 1, binary: false, truncated: false, text: 'a' },
+    invalid: [
+      { path: 'a.ts', size: 0, binary: false },
+      { path: 'a.ts', size: -1, binary: false, truncated: false },
+      { path: 'a.ts', size: 1, binary: false, truncated: false, text: rep(1_048_577) },
+      { path: 'a.ts', size: 1, binary: false, truncated: false, outside: true },
+    ],
+    note: 'text is omitted for binary or oversized files and is capped at 1 MiB',
   },
   ApprovalGrantListParams: {
     valid: { sessionId: 's', toolId: 'computer_use', scope: 'cua:click:background', policyVersion: 'v1' },
@@ -6071,6 +6127,16 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SessionToolsParams',
     result: 'SessionToolsResult',
   },
+  '_agnes/v1/session.workspace.list': {
+    fileId: AGNES_ID,
+    params: 'SessionWorkspaceListParams',
+    result: 'SessionWorkspaceListResult',
+  },
+  '_agnes/v1/session.workspace.read': {
+    fileId: AGNES_ID,
+    params: 'SessionWorkspaceReadParams',
+    result: 'SessionWorkspaceReadResult',
+  },
   '_agnes/v1/sessionSelection.loops': {
     fileId: AGNES_ID,
     params: 'ConfigEmptyParams',
@@ -6679,6 +6745,8 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [{}, { sessionId: '' }, { sessionId: 's', extra: true }],
     note: 'session catalog parameters',
   },
+  '_agnes/v1/session.workspace.list': AGNES_SAMPLES.SessionWorkspaceListParams as Sample,
+  '_agnes/v1/session.workspace.read': AGNES_SAMPLES.SessionWorkspaceReadParams as Sample,
   '_agnes/v1/sessionSelection.loops': AGNES_SAMPLES.ConfigEmptyParams as Sample,
   '_agnes/v1/sessionSelection.modelAdapters': AGNES_SAMPLES.ConfigEmptyParams as Sample,
   '_agnes/v1/sessionSelection.defaults.get': AGNES_SAMPLES.ConfigEmptyParams as Sample,
@@ -6998,6 +7066,8 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
     ],
     note: 'session catalog result',
   },
+  '_agnes/v1/session.workspace.list': AGNES_SAMPLES.SessionWorkspaceListResult as Sample,
+  '_agnes/v1/session.workspace.read': AGNES_SAMPLES.SessionWorkspaceReadResult as Sample,
 
   '_agnes/v1/session.rename': AGNES_SAMPLES.SessionPreferences as Sample,
   '_agnes/v1/session.archive': AGNES_SAMPLES.SessionPreferences as Sample,

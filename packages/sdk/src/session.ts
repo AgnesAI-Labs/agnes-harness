@@ -16,6 +16,8 @@ import {
   type SessionAttachResult,
   type SessionBudgetResult,
   type SessionPreviewParams,
+  type SessionWorkspaceListResult,
+  type SessionWorkspaceReadResult,
   type SessionProjectUIHistoryParams,
   type SessionProjectUIOpeningParams,
   type SessionProjectUIParams,
@@ -491,6 +493,20 @@ export class Session {
 
   budget(): Promise<SessionBudgetResult> {
     return this.client.call<SessionBudgetResult>('_agnes/v1/session.budget', { sessionId: this.id })
+  }
+
+  workspaceList(path = ''): Promise<SessionWorkspaceListResult> {
+    return this.client.call<SessionWorkspaceListResult>('_agnes/v1/session.workspace.list', {
+      sessionId: this.id,
+      ...(path ? { path } : {}),
+    })
+  }
+
+  workspaceRead(path: string): Promise<SessionWorkspaceReadResult> {
+    return this.client.call<SessionWorkspaceReadResult>('_agnes/v1/session.workspace.read', {
+      sessionId: this.id,
+      path,
+    })
   }
 
   setPreset(preset: string): Promise<EffectiveFromResult> {
