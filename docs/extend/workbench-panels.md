@@ -30,6 +30,8 @@ Use `Session.jobsRead(jobId?)` to list session jobs or retrieve capped output. `
 
 Open and input obey the active session tool policy, including read-only and plan-mode refusal. An authenticated human action supplies the human approval; it cannot bypass preset denial. Open uses the same fitted workspace sandbox as tool execution, with no caller-selected cwd or raw-spawn fallback. Changing sandbox permissions requires a new session; the Host refuses a preset switch that would change the existing workspace sandbox. Errors remain backend facts; output is bounded to 64 Ki characters per stream, and overflow is visibly marked. `terminalScreen` and `terminalKey` from `@agnes/web-ui` share the plain-text VT rendering and keyboard mapping used by settings; terminal bytes never become HTML.
 
+If the OS backend cannot enforce the preset, `session/new` and `session/load` refuse with JSON-RPC `SEMANTIC_REJECTED` (-32011), `data.code: SANDBOX_UNAVAILABLE` and `messageKey: appServer.errors.unavailable`. Exception messages, paths and backend output are not returned. Explicit full-access retains its existing behavior; unrecognized failures remain errors.
+
 The built-in terminal serializes and batches keyboard/paste input per session and job, with at most 64 Ki characters waiting to send. A full buffer refuses the new input and reports it. A failed send discards the unsent remainder without retrying uncertain bytes. Detaching or switching tabs/sessions discards only unsent UI input; accepted bytes and processes remain owned by the backend.
 
 ## Live goal panel
