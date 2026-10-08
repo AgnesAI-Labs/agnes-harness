@@ -115,10 +115,14 @@ test('UI MCP stdio and skills slash reach the real host', async ({ page, runtime
     'node',
     '--arg',
     resolve('tools/e2e-web/fixtures/mcp.mjs'),
+    '--sandbox-profile',
+    'off-with-warning',
     '--yes',
   ])
   const revision = async () => {
-    const value = /revision=([a-f0-9]{64})/.exec(await runtime.cli(['mcp', 'get', 'e2e']))?.[1]
+    const stored = await runtime.cli(['mcp', 'get', 'e2e'])
+    expect(stored).toContain('sandbox=off-with-warning')
+    const value = /revision=([a-f0-9]{64})/.exec(stored)?.[1]
     if (!value) throw new Error('MCP must supply a reviewed revision')
     return value
   }

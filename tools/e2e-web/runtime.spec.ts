@@ -187,10 +187,14 @@ test('CLI MCP stdio fixture runs through the SDK and workspace skills are discov
     'node',
     '--arg',
     resolve('tools/e2e-web/fixtures/mcp.mjs'),
+    '--sandbox-profile',
+    'off-with-warning',
     '--yes',
   ])
   const revision = async () => {
-    const value = /revision=([a-f0-9]{64})/.exec(await runtime.cli(['mcp', 'get', 'e2e']))?.[1]
+    const stored = await runtime.cli(['mcp', 'get', 'e2e'])
+    expect(stored).toContain('sandbox=off-with-warning')
+    const value = /revision=([a-f0-9]{64})/.exec(stored)?.[1]
     if (!value) throw new Error('MCP get must return its reviewed revision')
     return value
   }

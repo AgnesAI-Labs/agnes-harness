@@ -141,3 +141,8 @@ Set `AGH_UI_AXE=1` for WCAG A/AA checks on every 1440-pixel screen in the UI mat
 Set `AGH_UI_ISOLATED=1` to run each matrix case with its own disposable real daemon, workspace and synthetic deliverable.
 
 The three spec files may run in parallel with two workers; each test owns a fresh home, workspace, daemon, port and SDK clients. Tests within a file remain serial. This bounds hosted-runner duration without retries or relaxed assertions. Credential and visual tool flows explicitly choose full-access; L1 refusal is covered separately by sandbox integration tests.
+
+The synthetic stdio MCP fixture explicitly selects `off-with-warning` and checks that the
+profile is persisted before trust/enable. Its live tool and Skill assertions also run on
+hosts where MCP confinement is unavailable. Strict confinement and refusal are covered by
+the sandbox backend and resource-control-worker integration tests.
