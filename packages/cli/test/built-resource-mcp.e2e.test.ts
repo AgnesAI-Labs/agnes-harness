@@ -202,7 +202,7 @@ describe('built CLI managed MCP lifecycle', () => {
     const workspace = join(root, 'workspace')
     if (!windows) {
       for (const name of ['agnesd.sock', 'workers.sock'])
-        expect(Buffer.byteLength(join(home, 'data', 'daemon', name))).toBeLessThanOrEqual(103)
+        expect(Buffer.byteLength(join(home, 'daemon', name))).toBeLessThanOrEqual(103)
     }
     if (windows) windowsEnsurePrivateDirectorySync(home)
     else await mkdir(home, { mode: 0o700 })
@@ -222,7 +222,7 @@ describe('built CLI managed MCP lifecycle', () => {
       (await readFile(legacy.startsPath, 'utf8').catch(() => '')).trim().split('\n').filter(Boolean)
     const tools = Array.from({ length: 120 }, (_, index) => `tool${String(index + 1).padStart(3, '0')}`)
     const recordDaemon = async () => {
-      const owner = JSON.parse(await readFile(join(home, 'data', 'daemon', 'owner.json'), 'utf8'))
+      const owner = JSON.parse(await readFile(join(home, 'daemon', 'owner.json'), 'utf8'))
       daemonPids.add(owner.pid)
       return owner.pid as number
     }
@@ -262,7 +262,7 @@ describe('built CLI managed MCP lifecycle', () => {
       }
       console.info('MCP_PROCESS_CLEANUP', JSON.stringify({ pids, alive: pids.filter(processAlive) }))
     }
-    await mkdir(join(home, 'data', 'daemon'), { recursive: true, mode: 0o700 })
+    await mkdir(join(home, 'daemon'), { recursive: true, mode: 0o700 })
     let daemonLog = ''
     const daemon = spawn(
       nodePath,

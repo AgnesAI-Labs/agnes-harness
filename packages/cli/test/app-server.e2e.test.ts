@@ -107,7 +107,7 @@ it('embeds JSONL on the shared daemon, streams a turn, answers approval, and lea
       },
     }
     expect(await first.call('initialize', init)).toHaveProperty('protocolVersion', 1)
-    const owner = JSON.parse(await readFile(join(home, 'data/daemon/owner.json'), 'utf8'))
+    const owner = JSON.parse(await readFile(join(home, 'daemon/owner.json'), 'utf8'))
     await first.call('_agnes/v1/workspace.add', { path: cwd })
     const session = await first.call('session/new', { cwd, mcpServers: [] })
     expect(session.sessionId).toEqual(expect.any(String))
@@ -128,7 +128,7 @@ it('embeds JSONL on the shared daemon, streams a turn, answers approval, and lea
     await first.close()
     const second = bridge()
     await second.call('initialize', init)
-    expect(JSON.parse(await readFile(join(home, 'data/daemon/owner.json'), 'utf8')).pid).toBe(owner.pid)
+    expect(JSON.parse(await readFile(join(home, 'daemon/owner.json'), 'utf8')).pid).toBe(owner.pid)
     const list = await second.call('_agnes/v1/session.list', {})
     expect(list.items.some((item: { sessionId: string }) => item.sessionId === session.sessionId)).toBe(true)
     const signalled = new Promise<number | null>((done) => second.child.once('exit', done))
