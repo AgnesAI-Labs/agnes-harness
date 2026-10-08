@@ -38,7 +38,7 @@ it('owns settings and plan writes behind local admin and registered-workspace au
     endpoint.conn.credentialKind = 'local'
     const credential = {
       provider: 'mcp-oauth',
-      accessToken: 'synthetic-access',
+      accessToken: 'fixture-token',
       expiresAt: 2000000000000,
       refreshToken: 'synthetic-refresh',
       scope: ['read'],

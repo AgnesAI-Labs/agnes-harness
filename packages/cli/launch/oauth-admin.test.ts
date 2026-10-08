@@ -75,7 +75,7 @@ it('forwards authorization status and scoped credential writes through the daemo
   await opts?.onAuthorizationStatus?.('srv-1', 'authorized')
   const credential = {
     provider: 'mcp-oauth',
-    accessToken: 'synthetic-access',
+    accessToken: 'fixture-token',
     expiresAt: 2000000000000,
     refreshToken: 'synthetic-refresh',
     scope: ['read'],

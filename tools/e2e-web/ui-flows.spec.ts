@@ -194,7 +194,11 @@ test('UI ask, plan approval, deliverable, child and goal cards perform their act
   await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed')
   const composer = page.getByRole('textbox', { name: 'Task content', exact: true })
   await composer.fill('/plan Inspect the workspace before writing')
+  const planWrite = page.waitForResponse(
+    (response) => response.url().endsWith('/api/plan-mode') && response.request().method() === 'POST',
+  )
   await composer.press('Enter')
+  expect((await planWrite).ok()).toBe(true)
   await expect
     .poll(
       async () =>

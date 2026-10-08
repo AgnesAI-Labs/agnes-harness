@@ -5452,7 +5452,7 @@ const AppSamples: Record<string, Sample> = {
       serverId: 'github',
       credential: {
         provider: 'fixture',
-        accessToken: 'synthetic-access',
+        accessToken: 'fixture-token',
         refreshToken: 'synthetic-refresh',
         expiresAt: 0,
         scope: [],
@@ -5464,7 +5464,7 @@ const AppSamples: Record<string, Sample> = {
         serverId: '../other',
         credential: {
           provider: 'fixture',
-          accessToken: 'synthetic-access',
+          accessToken: 'fixture-token',
           refreshToken: 'synthetic-refresh',
           expiresAt: 0,
           scope: [],
@@ -6487,7 +6487,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
       serverId: 'github',
       credential: {
         provider: 'fixture',
-        accessToken: 'synthetic-access',
+        accessToken: 'fixture-token',
         refreshToken: 'synthetic-refresh',
         expiresAt: 0,
         scope: [],
@@ -6499,7 +6499,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
         serverId: '../other',
         credential: {
           provider: 'fixture',
-          accessToken: 'synthetic-access',
+          accessToken: 'fixture-token',
           refreshToken: 'synthetic-refresh',
           expiresAt: 0,
           scope: [],
