@@ -515,6 +515,7 @@ function filePath(path: string): string {
     typeof path !== 'string' ||
     !isAbsolute(path) ||
     path.includes('\0') ||
+    (!windows && /\p{Surrogate}/u.test(path)) ||
     (windows && (parse(path).root.length < 2 || /^\\\\[?.]\\/.test(path) || /:/.test(path.slice(2))))
   )
     throw Object.assign(new TypeError('Expected an absolute filesystem path'), { code: 'EINVAL' })

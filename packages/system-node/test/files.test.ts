@@ -171,5 +171,16 @@ it.runIf(process.platform !== 'win32')(
     expect(() => openCanonicalFileSync(join(canonical, 'alias', 'name\n中文.txt'))).toThrow()
     expect(() => openCanonicalFileSync(join(canonical, 'leaf'))).toThrow()
     expect(() => listCanonicalDirectorySync(join(canonical, 'alias'))).toThrow()
+    writeFileSync(join(canonical, 'ordinary-\ufffd.txt'), 'synthetic fixture only')
+    const replacementFd = openCanonicalFileSync(join(canonical, 'ordinary-\ufffd.txt'))
+    try {
+      expect(readFileSync(replacementFd, 'utf8')).toBe('synthetic fixture only')
+    } finally {
+      closeSync(replacementFd)
+    }
+    expect(() => {
+      const malformedFd = openCanonicalFileSync(join(canonical, 'ordinary-\ud800.txt'))
+      closeSync(malformedFd)
+    }).toThrow(expect.objectContaining({ code: 'EINVAL' }))
   },
 )

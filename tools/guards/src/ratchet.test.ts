@@ -454,7 +454,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-21: add Linux same-handle artifact deletion dispatch and availability. Exact 1122.
   // 2026-09-22: no-replace directory publication, +17 measured lines; no fallback.
   // SKILL-DELETE-PRIORITY: +47 counted lines for 64-bit deletion and platform path preflight; no spare.
-  'packages/system-node/src': 1381,
+  'packages/system-node/src': 1382,
   // 2026-09-13 in-process ecosystem: verified snapshots, rollback journal/GC and the local examples
   // catalogue are the PackageManager-owned state machine. Exact post-integration total; no spare.
   // 2026-09-14: Task 1 orphaned-pin-cleanup adds listRuntimePinsStore() function and
