@@ -11,9 +11,9 @@ export function bwrapConfine(argv: readonly string[], options: ClosedNetworkConf
   const policy = validateClosedNetworkOptions(options)
   return [
     'bwrap',
-    '--ro-bind',
-    '/',
-    '/',
+    ...(policy.readPaths
+      ? policy.readPaths.flatMap((path) => ['--ro-bind', path, path])
+      : ['--ro-bind', '/', '/']),
     '--dev',
     '/dev',
     '--proc',
@@ -21,7 +21,7 @@ export function bwrapConfine(argv: readonly string[], options: ClosedNetworkConf
     '--unshare-pid',
     '--unshare-ipc',
     '--unshare-uts',
-    '--unshare-net',
+    ...(policy.network === 'allow' ? [] : ['--unshare-net']),
     '--die-with-parent',
     ...policy.allowPaths.flatMap((path) => ['--bind', path, path]),
     // These mounts occur after writable binds, so a deny below an allow remains masked.

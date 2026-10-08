@@ -124,3 +124,20 @@ Changing a definition changes the row's revision, while unchanged servers can re
 The runner's source and tests are linked below. Check [verification](../maintainers/verification.md) for the actual runtime version and external-service coverage.
 
 Source: [management commands](../../packages/resource-control-cli/src/resources.ts), [schema](../../packages/protocol/schema/resource-control.json), [resource bootstrap](../../packages/resource-control-worker/src/runtime-bootstrap.ts), [worker startup](../../packages/worker-runtime/src/main.ts), [turn reload](../../packages/worker-runtime/src/commands.ts), [per-server runner](../../packages/worker-runtime/src/mcp-row-runtime.ts), and [row derivation](../../packages/worker-runtime/src/mcp-server-rows.ts). Verified anchors are recorded in the [source-check manifest](../../tools/public-docs/source-checks.json).
+
+## Sandboxing local community servers
+
+Managed community stdio servers default to `strict`. Choose `sandboxProfile` in MCP settings before trusting that definition:
+
+| Profile | Workspace | Own MCP data | Network |
+| --- | --- | --- | --- |
+| `strict` | Read | Read/write | Denied |
+| `workspace-write` | Read/write | Read/write | Denied |
+| `network` | Read | Read/write | Allowed |
+| `off-with-warning` | Full host access | Full host access | Allowed |
+
+The profile is part of the revision approved in the trust dialog. Editing it requires a new trust decision and reconnects the server. Only an exact definition verified by the administrator's signed official catalog defaults to off; manual/local definitions remain community definitions.
+
+Sandboxed children read the workspace, their own data directory and necessary read-only executable/system files. Their `HOME` and `TMPDIR` point to `<profile-data>/mcp/<server-id>`; they cannot read the user's home secrets or write arbitrary outside paths. Keep server runtime dependencies in the workspace or package its entry point as a self-contained file. Declare an optional absolute `workspacePath` in the server settings (CLI: `--sandbox-workspace /workspace/project`), alongside `--sandbox-profile strict`. This directory is part of the reviewed definition, so editing it revokes the prior trust decision. Without a declared workspace, shared workers grant only the server data directory; the connection never silently adopts a different session’s workspace.
+
+The connection owner uses the existing command sandbox probe and compiler (macOS Seatbelt or Linux bubblewrap when it actually runs). Missing or unusable enforcement refuses the connection with `E_MCP_SANDBOX_UNAVAILABLE`, shown in MCP diagnostics; it never silently starts unconfined. Windows currently requires explicitly approving `off-with-warning`. That profile grants the child full host access; review the executable before confirming. HTTP/SSE servers are remote and retain their existing URL, credential and tool policies.

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { readDaemonDiscovery, resolveDaemonScope } from '@agnes/daemon'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
+import { build } from 'esbuild'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { setupMcpLegacySentinel } from './built-resource-mcp-legacy.js'
 import { mcpChatProvider } from './built-resource-mcp-provider.js'
@@ -113,30 +114,36 @@ function processAlive(pid: number): boolean {
 
 async function officialPagedServer(directory: string): Promise<string> {
   const server = join(directory, 'official-paged-mcp.mjs')
-  await writeFile(
-    server,
-    [
-      "import { createRequire } from 'node:module'",
-      'const require = createRequire(import.meta.url)',
-      `const { Server } = require(${JSON.stringify(sdkPaths.server)})`,
-      `const { StdioServerTransport } = require(${JSON.stringify(sdkPaths.stdio)})`,
-      `const { ListToolsRequestSchema, CallToolRequestSchema } = require(${JSON.stringify(sdkPaths.types)})`,
-      "const tools = Array.from({ length: 120 }, (_, i) => ({ name: 'tool' + String(i + 1).padStart(3, '0'), description: 'Fixture tool ' + (i + 1), inputSchema: { type: 'object', properties: { marker: { type: 'string' }, behavior: { type: 'string', enum: ['ok', 'fail', 'disconnect', 'hang'] } }, required: ['marker', 'behavior'], additionalProperties: false } }))",
-      "const server = new Server({ name: 'built-cli-pager', version: '1.0.0' }, { capabilities: { tools: {} } })",
-      "server.setRequestHandler(ListToolsRequestSchema, async (request) => { const start = request.params?.cursor === '100' ? 100 : 0; return { tools: tools.slice(start, start + 100), ...(start === 0 ? { nextCursor: '100' } : {}) } })",
-      `const { appendFileSync } = require('node:fs')`,
-      `appendFileSync(${JSON.stringify(join(directory, 'starts.jsonl'))}, JSON.stringify({ pid: process.pid, parentPid: process.ppid }) + '\\n')`,
-      `server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+  await build({
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    outfile: server,
+    banner: {
+      js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+    },
+    stdin: {
+      resolveDir: directory,
+      contents: [
+        `import { Server } from ${JSON.stringify(sdkPaths.server)}`,
+        `import { StdioServerTransport } from ${JSON.stringify(sdkPaths.stdio)}`,
+        `import { ListToolsRequestSchema, CallToolRequestSchema } from ${JSON.stringify(sdkPaths.types)}`,
+        "const tools = Array.from({ length: 120 }, (_, i) => ({ name: 'tool' + String(i + 1).padStart(3, '0'), description: 'Fixture tool ' + (i + 1), inputSchema: { type: 'object', properties: { marker: { type: 'string' }, behavior: { type: 'string', enum: ['ok', 'fail', 'disconnect', 'hang'] } }, required: ['marker', 'behavior'], additionalProperties: false } }))",
+        "const server = new Server({ name: 'built-cli-pager', version: '1.0.0' }, { capabilities: { tools: {} } })",
+        "server.setRequestHandler(ListToolsRequestSchema, async (request) => { const start = request.params?.cursor === '100' ? 100 : 0; return { tools: tools.slice(start, start + 100), ...(start === 0 ? { nextCursor: '100' } : {}) } })",
+        `const { appendFileSync } = require('node:fs')`,
+        `appendFileSync(${JSON.stringify(join(directory, 'starts.jsonl'))}, JSON.stringify({ pid: process.pid, parentPid: process.ppid }) + '\\n')`,
+        `server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
         const { marker, behavior } = request.params.arguments;
         appendFileSync(${JSON.stringify(join(directory, 'calls.jsonl'))}, JSON.stringify({ pid: process.pid, parentPid: process.ppid, name: request.params.name, marker, behavior }) + '\\n');
         if (behavior === 'disconnect') { process.exit(0); }
         if (behavior === 'hang') await new Promise((resolve) => extra.signal.addEventListener('abort', resolve, { once: true }));
         return { content: [{ type: 'text', text: (behavior === 'fail' ? 'MCP_FAILURE_' : 'MCP_RESULT_') + marker }], ...(behavior === 'fail' ? { isError: true } : {}) }
       })`,
-      'await server.connect(new StdioServerTransport())',
-    ].join('\n'),
-    'utf8',
-  )
+        'await server.connect(new StdioServerTransport())',
+      ].join('\n'),
+    },
+  })
   return server
 }
 
@@ -297,6 +304,10 @@ describe('built CLI managed MCP lifecycle', () => {
           managedExecutable,
           '--arg',
           server,
+          '--sandbox-profile',
+          windows ? 'off-with-warning' : 'workspace-write',
+          '--sandbox-workspace',
+          root,
           ...tools.flatMap((tool) => ['--allow-tool', tool]),
         ],
         workspace,
@@ -527,6 +538,10 @@ describe('built CLI managed MCP lifecycle', () => {
             nodePath,
             '--arg',
             server,
+            '--sandbox-profile',
+            windows ? 'off-with-warning' : 'workspace-write',
+            '--sandbox-workspace',
+            root,
             ...tools.flatMap((tool) => ['--allow-tool', tool]),
           ],
           workspace,

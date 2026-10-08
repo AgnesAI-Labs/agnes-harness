@@ -25,7 +25,7 @@ export function commandHelp(command?: Command): string {
     case 'sessions':
       return 'Usage: agh sessions list [--cwd <dir>] | show <key> | migrate <key> [--profile <name>] [--json]\nMigrate a closed historical session to compatible current plugins, preserving its loop and composition.'
     case 'plugins':
-      return `Usage: agh plugins add <url|path> [--yes]\nagh plugins pack <folder> [output.tgz]\nagh plugins trust|enable <id> [--yes]\nagh plugins reload [id] [--profile <name>]\nagh plugins publication-status [--profile <name>] [--json]\nAdd reviews capabilities and installs, trusts and enables that exact version. Pack does not start the backend.\n${common}`
+      return `Usage: agh plugins add <url|path> [--yes]\nagh plugins pack <folder> [output.tgz]\nagh plugins trust|enable <id> [--yes]\nagh plugins reload [id] [--profile <name>]\nagh plugins provenance <id> [--profile <name>] [--json]\nagh plugins publication-status [--profile <name>] [--json]\nAdd reviews capabilities and installs, trusts and enables that exact version. Pack does not start the backend.\n${common}`
     case 'package':
     case 'install':
       return `Usage: agh install <source> [--yes]\nagh package inspect|add <source> [--yes]\nagh package trust <id> [<integrity> <capabilityHash>] [--yes]\nagh package enable|disable|rollback|remove <id> [--yes]\nagh package status|list|catalog|operation|cancel\n${common}`

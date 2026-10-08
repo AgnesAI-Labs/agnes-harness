@@ -232,6 +232,7 @@ function descriptor(row: McpRow): McpServerDescriptor {
             ? 'degraded'
             : 'unavailable',
     source: 'managed',
+    ...(status.sandboxProfile ? { sandboxProfile: status.sandboxProfile } : {}),
     ...(status.lastSafeError ? { lastSafeError: status.lastSafeError } : {}),
     ...(row.definition.secretBinding.kind === 'oauth'
       ? { authorizationStatus: row.authorizationStatus ?? 'pending' }

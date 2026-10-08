@@ -247,6 +247,14 @@ export function commitPackage(
   operation: string,
   stage?: string,
 ): void {
+  if (next?.provenance)
+    next = {
+      ...next,
+      provenance: {
+        ...next.provenance,
+        trustDecision: next.state.trusted ? 'confirmed' : operation === 'untrust' ? 'revoked' : 'pending',
+      },
+    }
   if (existsSync(journalPath(s))) fail('pending-transaction')
   const dest = packageDir(s.dataDir, s.profile, id),
     old = lock.packages[id] ?? null

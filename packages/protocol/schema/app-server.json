@@ -87,7 +87,11 @@
             "SEARCH_NOT_CONFIGURED",
             "SEARCH_RATE_LIMITED",
             "SEARCH_ROUTE",
-            "SEARCH_TIMEOUT"
+            "SEARCH_TIMEOUT",
+            "E_PACKAGE_PROVENANCE",
+            "E_PACKAGE_SOURCE_POLICY",
+            "E_MCP_SANDBOX_UNAVAILABLE",
+            "E_PACKAGE_INTEGRITY"
           ]
         }
       },

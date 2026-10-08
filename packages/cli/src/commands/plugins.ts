@@ -18,6 +18,15 @@ export async function runPluginDevelopmentCommand(
   write: (text: string) => void,
 ): Promise<void> {
   const profile = p.profile ?? 'local-dev'
+  if (p.command === 'plugins' && p.positional[0] === 'provenance') {
+    if (p.positional.length !== 2) throw new UsageError('usage: agh plugins provenance <id>')
+    const result = await client.request('_agnes/v1/packages.provenance', {
+      profile,
+      id: p.positional[1] as string,
+    })
+    write(`${JSON.stringify(result, null, p.json ? undefined : 2)}\n`)
+    return
+  }
   if (p.command === 'plugins' && p.positional[0] === 'publication-status') {
     if (p.positional.length !== 1) throw new UsageError('plugins publication-status takes no arguments')
     const result = await client.packages.publicationStatus({ profile })

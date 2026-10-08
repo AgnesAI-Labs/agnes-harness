@@ -266,8 +266,18 @@ describe('fetchSource', () => {
     })
     const into = join(dir, 'npm')
     await expect(
-      fetchSource(parseSource('npm:@agnes/base@1.2.3'), into, { cwd: dir, exec, extract }),
+      fetchSource(parseSource('npm:@agnes/base@1.2.3'), into, {
+        cwd: dir,
+        exec,
+        extract,
+        npmProvenance: async () => ({
+          publisher: 'npm:fixture',
+          signatureVerified: false,
+          verification: 'unverified',
+        }),
+      }),
     ).resolves.toMatchObject({
+      provenance: { publisher: 'npm:fixture', signatureVerified: false },
       dir: into,
       integrity,
       version: '1.2.3',
@@ -279,10 +289,29 @@ describe('fetchSource', () => {
     ])
     expect(extract).toHaveBeenCalledOnce()
 
+    const rejectedTarget = join(dir, 'npm-invalid-provenance')
+    await expect(
+      fetchSource(parseSource('npm:@agnes/base@1.2.3'), rejectedTarget, {
+        cwd: dir,
+        exec,
+        extract,
+        npmProvenance: async () => {
+          throw Object.assign(new Error('invalid provenance'), { code: 'E_PACKAGE_PROVENANCE' })
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'E_PACKAGE_PROVENANCE' })
+    expect(existsSync(rejectedTarget)).toBe(false)
+    expect(readdirSync(dir).some((name) => name.startsWith('.agnes-fetch-'))).toBe(false)
+
     releasedAt = '2026-02-31T00:00:00Z'
     const invalidTimeTarget = join(dir, 'npm-invalid-time')
     await expect(
-      fetchSource(parseSource('npm:@agnes/base@1.2.3'), invalidTimeTarget, { cwd: dir, exec, extract }),
+      fetchSource(parseSource('npm:@agnes/base@1.2.3'), invalidTimeTarget, {
+        cwd: dir,
+        exec,
+        extract,
+        npmProvenance: async () => undefined,
+      }),
     ).rejects.toThrow(/release time/)
     expect(existsSync(invalidTimeTarget)).toBe(false)
   })
@@ -300,7 +329,12 @@ describe('fetchSource', () => {
     }
     const into = join(dir, 'npm-bad')
     await expect(
-      fetchSource(parseSource('npm:@agnes/base@1.2.3'), into, { cwd: dir, exec, extract }),
+      fetchSource(parseSource('npm:@agnes/base@1.2.3'), into, {
+        cwd: dir,
+        exec,
+        extract,
+        npmProvenance: async () => undefined,
+      }),
     ).rejects.toThrow(/E_PACKAGE_INTEGRITY/)
     expect(extract).not.toHaveBeenCalled()
     expect(existsSync(into)).toBe(false)
@@ -329,7 +363,11 @@ describe('fetchSource', () => {
     }
     const into = join(dir, 'npm-default')
     await expect(
-      fetchSource(parseSource('npm:@agnes/base@1.2.3'), into, { cwd: dir, exec }),
+      fetchSource(parseSource('npm:@agnes/base@1.2.3'), into, {
+        cwd: dir,
+        exec,
+        npmProvenance: async () => undefined,
+      }),
     ).resolves.toMatchObject({ dir: into, integrity, version: '1.2.3' })
     expect(readFileSync(join(into, 'package.json'), 'utf8')).toContain('@agnes/base')
     const localArchive = join(dir, 'local-tarball')
@@ -351,7 +389,11 @@ describe('fetchSource', () => {
       }
       const into = join(dir, 'npm-link')
       await expect(
-        fetchSource(parseSource('npm:@agnes/base@1.2.3'), into, { cwd: dir, exec }),
+        fetchSource(parseSource('npm:@agnes/base@1.2.3'), into, {
+          cwd: dir,
+          exec,
+          npmProvenance: async () => undefined,
+        }),
       ).rejects.toThrow(/link or special entry/)
       expect(existsSync(into)).toBe(false)
     },
@@ -376,6 +418,7 @@ describe('fetchSource', () => {
     const fetched = await fetchSource(parseSource(`git:https://example.com/x.git#${commit}`), into, {
       cwd: dir,
       exec,
+      npmProvenance: async () => undefined,
     })
     expect(fetched).toMatchObject({ dir: into, version: '2.0.0', license: 'MIT' })
     expect(
@@ -400,7 +443,11 @@ describe('fetchSource', () => {
     }
     const into = join(dir, 'git-mismatch')
     await expect(
-      fetchSource(parseSource(`git:https://example.com/x.git#${commit}`), into, { cwd: dir, exec }),
+      fetchSource(parseSource(`git:https://example.com/x.git#${commit}`), into, {
+        cwd: dir,
+        exec,
+        npmProvenance: async () => undefined,
+      }),
     ).rejects.toThrow(/E_PACKAGE_INTEGRITY/)
     expect(existsSync(into)).toBe(false)
     expect(readdirSync(dir).some((name) => name.startsWith('.agnes-fetch-'))).toBe(false)

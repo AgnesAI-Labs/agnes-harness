@@ -12,7 +12,8 @@
     "./child-engines": "./extensions/subagent-sdk/src/document.ts",
     "./testkit": "./testkit/index.ts",
     "./presets/*": "./presets/*",
-    "./plan-mode": "./extensions/plan-mode/src/state.ts"
+    "./plan-mode": "./extensions/plan-mode/src/state.ts",
+    "./sandbox": "./extensions/sandbox/src/backends.ts"
   },
   "agnes": {
     "plugins": [

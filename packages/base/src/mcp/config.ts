@@ -9,6 +9,9 @@ export type McpServerConfig = {
   /** 'sse' is the legacy pre-2025-03-26 remote transport; resolvedConfig() builds it directly. */
   transport: 'stdio' | 'http' | 'sse'
   cmd?: string[]
+  cwd?: string
+  workspacePath?: string
+  sandboxProfile?: 'strict' | 'workspace-write' | 'network' | 'off-with-warning'
   url?: string
   /** Fixed Host-supplied minimum process environment. Managed definitions never populate it. */
   baseEnv?: Record<string, string>

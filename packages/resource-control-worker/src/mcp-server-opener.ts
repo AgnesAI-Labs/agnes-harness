@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto'
 import { open, readFile, realpath, stat } from 'node:fs/promises'
-import { win32 } from 'node:path'
+import { join, win32 } from 'node:path'
 import { connectMcp, type McpServerOpener } from '@agnes/base'
 import { jcs, type McpServerDefinitionInput, validateResourceControlData } from '@agnes/protocol'
 import {
@@ -11,6 +11,7 @@ import {
   resolvedConfig,
   validateManagedHttpUrl,
 } from '@agnes/resource-control-runtime'
+import { type McpSandboxContext, mcpSandboxProfile, sandboxMcpConfig } from './mcp-sandbox.js'
 import type { WorkerResourceBootstrapInput } from './runtime-bootstrap.js'
 import { deploymentMcpPolicy } from './skill-bootstrap.js'
 
@@ -100,6 +101,7 @@ export type McpServerOpenerDeps = Readonly<{
   oauthCredentials?: McpOAuthCredentialResolver
   approvedLocalStart?(definition: McpServerDefinitionInput): Promise<boolean>
   connectTimeoutMs?: number
+  sandbox?: McpSandboxContext
 }>
 
 /**
@@ -121,15 +123,32 @@ export function createMcpServerOpener(deps: McpServerOpenerDeps): McpServerOpene
     const approved = definition.transport.kind === 'stdio' && (await deps.approvedLocalStart?.(definition))
     const stdioPolicy =
       approved && definition.transport.kind === 'stdio'
-        ? { allowedExecutables: [...deps.stdioPolicy.allowedExecutables, definition.transport.executable] }
+        ? {
+            ...deps.stdioPolicy,
+            allowedExecutables: [...deps.stdioPolicy.allowedExecutables, definition.transport.executable],
+          }
         : deps.stdioPolicy
-    const config = await resolvedConfig(
+    const resolved = await resolvedConfig(
       { definition, revision: '', desired: 'enabled', trust: 'trusted' },
       deps.resolver,
       signal,
       deps.baseEnv,
       { stdioPolicy, httpPolicy: deps.httpPolicy },
       deps.oauthCredentials ? { oauthCredentials: deps.oauthCredentials } : undefined,
+    )
+    const config = await sandboxMcpConfig(
+      {
+        ...resolved,
+        ...(definition.transport.kind === 'stdio'
+          ? {
+              sandboxProfile: mcpSandboxProfile(definition, deps.sandbox) as NonNullable<
+                typeof resolved.sandboxProfile
+              >,
+            }
+          : {}),
+      },
+      deps.sandbox,
+      signal,
     )
     // Worker-local HMAC avoids persisting credentials or exposing guessable credential digests.
     const key = createHmac('sha256', salt).update(jcs({ definition, config })).digest('hex')
@@ -162,7 +181,7 @@ export function createMcpServerOpener(deps: McpServerOpenerDeps): McpServerOpene
  * No OAuth resolver: OAuth-bound definitions never become rows (design §3.4, D105/D109).
  */
 export function createWorkerMcpServerOpener(
-  input: Pick<WorkerResourceBootstrapInput, 'env' | 'profile' | 'createSecrets'>,
+  input: Pick<WorkerResourceBootstrapInput, 'env' | 'profile' | 'createSecrets' | 'cwd' | 'agnesHomeDir'>,
   managedAllowedExecutables: readonly string[] = [],
 ): McpServerOpener {
   const policy = deploymentMcpPolicy(input.env)
@@ -183,6 +202,12 @@ export function createWorkerMcpServerOpener(
             ),
         }
       : {}),
+    sandbox: {
+      ...(input.agnesHomeDir ? { profileDir: join(input.agnesHomeDir, 'profiles', input.profile.name) } : {}),
+      dataDir: input.profile.dataDir,
+      ...(input.cwd ? { workspace: input.cwd } : {}),
+      ...(input.env.PATH ? { path: input.env.PATH } : {}),
+    },
     baseEnv: {},
     stdioPolicy: {
       get allowedExecutables() {

@@ -41,6 +41,7 @@ describe('worker stdio MCP bootstrap', () => {
             definition: {
               serverId: 'fixture',
               displayName: 'Fixture',
+              ...(process.platform === 'win32' ? { sandboxProfile: 'off-with-warning' } : {}),
               transport: { kind: 'stdio', executable: process.execPath, args: [server] },
               secretBinding: { kind: 'none' },
               toolPolicy: { allow: ['first', 'second'] },
@@ -209,4 +210,83 @@ describe('worker stdio MCP bootstrap', () => {
       await state?.runtime.mcp.close()
     }
   })
+})
+
+describe('community stdio sandbox profiles', () => {
+  it.each(['strict', 'workspace-write', 'network', 'off-with-warning'] as const)(
+    'enforces %s against a real MCP child',
+    async (sandboxProfile) => {
+      const { mkdir, readFile } = await import('node:fs/promises')
+      const { createServer } = await import('node:net')
+      const { createMcpServerOpener } = await import('../src/mcp-server-opener.js')
+      const root = await mkdtemp(join(tmpdir(), 'agnes-mcp-sandbox-'))
+      roots.push(root)
+      const workspace = join(root, 'workspace'),
+        syntheticHome = join(root, 'synthetic-home'),
+        dataDir = join(root, 'data')
+      await mkdir(workspace)
+      await mkdir(join(syntheticHome, '.ssh'), { recursive: true })
+      const privateFile = join(syntheticHome, '.ssh', 'fixture-key'),
+        outside = join(root, 'outside.txt')
+      await writeFile(privateFile, 'SYNTHETIC-KEY-NO-REAL-CREDENTIAL')
+      const listener = createServer((socket) => socket.end())
+      await new Promise<void>((resolve) => listener.listen(0, '127.0.0.1', resolve))
+      const address = listener.address()
+      if (!address || typeof address === 'string') throw Error('listener unavailable')
+      const server = join(workspace, 'server.mjs')
+      await writeFile(
+        server,
+        `import readline from 'node:readline'; import {readFile,writeFile,stat} from 'node:fs/promises'; import {connect} from 'node:net';
+const reply=(id,result)=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',id,result})+'\\n');
+const attempt=async(fn)=>{try{await fn();return true}catch{return false}};
+readline.createInterface({input:process.stdin}).on('line',async(line)=>{const r=JSON.parse(line);if(r.method==='initialize')reply(r.id,{protocolVersion:'2025-03-26',capabilities:{tools:{}},serverInfo:{name:'sandbox-fixture',version:'1'}});else if(r.method==='tools/list')reply(r.id,{tools:[{name:'probe',description:'Synthetic boundary probe',inputSchema:{type:'object',properties:{},additionalProperties:false}}]});else if(r.method==='tools/call'){const p=r.params.arguments; const result={privateRead:await attempt(()=>readFile(p.privateFile)),privateStat:await attempt(()=>stat(p.privateFile)),outsideWrite:await attempt(()=>writeFile(p.outside,'outside')),workspaceWrite:await attempt(()=>writeFile(p.workspaceFile,'workspace')),dataWrite:await attempt(()=>writeFile(process.env.HOME+'/own-data','data')),network:await attempt(()=>new Promise((resolve,reject)=>{const socket=connect({host:'localhost',family:4,port:p.port});socket.setTimeout(1000,()=>{socket.destroy();reject(Error('timeout'))});socket.once('connect',()=>{socket.destroy();resolve()});socket.once('error',reject)}))};reply(r.id,{content:[{type:'text',text:JSON.stringify(result)}]})}else if(r.id!==undefined)reply(r.id,{})})`,
+      )
+      const opener = createMcpServerOpener({
+        resolver: async () => '',
+        baseEnv: { HOME: syntheticHome },
+        stdioPolicy: { allowedExecutables: [process.execPath] },
+        httpPolicy: {},
+        sandbox: { dataDir },
+      })
+      let connection: Awaited<ReturnType<typeof opener.connect>> | undefined
+      try {
+        const pending = opener.connect(
+          {
+            serverId: 'fixture',
+            displayName: 'Fixture',
+            sandboxProfile,
+            workspacePath: workspace,
+            transport: { kind: 'stdio', executable: process.execPath, args: [server] },
+            secretBinding: { kind: 'none' },
+          },
+          new AbortController().signal,
+        )
+        if (process.platform === 'win32' && sandboxProfile !== 'off-with-warning') {
+          await expect(pending).rejects.toMatchObject({ code: 'E_MCP_SANDBOX_UNAVAILABLE' })
+          return
+        }
+        connection = await pending
+        expect((await connection.listTools()).map((tool) => tool.name)).toEqual(['probe'])
+        const response = await connection.callTool(
+          'probe',
+          { privateFile, outside, workspaceFile: join(workspace, 'result.txt'), port: address.port },
+          { signal: new AbortController().signal },
+        )
+        const text = response.content.find((item) => item.type === 'text')
+        if (!text || text.type !== 'text') throw Error('probe result missing')
+        expect(JSON.parse(text.text)).toEqual({
+          privateRead: sandboxProfile === 'off-with-warning',
+          privateStat: sandboxProfile === 'off-with-warning',
+          outsideWrite: sandboxProfile === 'off-with-warning',
+          workspaceWrite: sandboxProfile === 'workspace-write' || sandboxProfile === 'off-with-warning',
+          dataWrite: true,
+          network: sandboxProfile === 'network' || sandboxProfile === 'off-with-warning',
+        })
+        expect(await readFile(privateFile, 'utf8')).toBe('SYNTHETIC-KEY-NO-REAL-CREDENTIAL')
+      } finally {
+        await connection?.close()
+        await new Promise<void>((resolve) => listener.close(() => resolve()))
+      }
+    },
+  )
 })

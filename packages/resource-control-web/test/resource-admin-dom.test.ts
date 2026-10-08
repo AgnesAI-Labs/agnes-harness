@@ -295,6 +295,10 @@ it.each(['stdio-env', 'http-bearer', 'http-header'])(
     expect(byId('mcp-executable-row').hidden).toBe(!stdio)
     expect(byId('mcp-header-row').hidden).toBe(kind !== 'http-header')
     change('mcp-secret', stdio ? 'TOKEN=secret://dom/token' : 'secret://dom/token')
+    if (stdio) {
+      change('mcp-sandbox', 'workspace-write')
+      change('mcp-workspace', '/work/project')
+    }
     change('mcp-executable', 'fixture')
     change('mcp-args', '--mode\ntest')
     change('mcp-url', 'https://example.com/mcp')
@@ -304,6 +308,7 @@ it.each(['stdio-env', 'http-bearer', 'http-header'])(
     expect(submitted('mcp/create')[0]?.body.definition).toEqual({
       serverId: 'created',
       displayName: 'Created MCP',
+      ...(stdio ? { sandboxProfile: 'workspace-write', workspacePath: '/work/project' } : {}),
       transport: stdio
         ? { kind: 'stdio', executable: 'fixture', args: ['--mode', 'test'] }
         : { kind: 'http', url: 'https://example.com/mcp' },

@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,7 +9,7 @@ import {
   scopedPackageProfileDirectory,
 } from '@agnes/daemon-admin/packages/index'
 import { createTestHost } from '@agnes/host/testkit'
-import { createPackageManager, emptyLock, readLock, writeLock } from '@agnes/package-manager'
+import { createPackageManager, emptyLock, packageDir, readLock, writeLock } from '@agnes/package-manager'
 import type {
   PackageInspectParams,
   PackageInstallParams,
@@ -17,6 +17,7 @@ import type {
   PackageOperation,
   PackageOperationGetParams,
   PackageOperationReceipt,
+  PackageProvenanceParams,
 } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
@@ -75,6 +76,10 @@ it('installs actual bytes through authenticated HTTP → Node SDK → shared han
     switch (action) {
       case 'list':
         return client.packages.list(params as PackageListParams)
+      case 'provenance':
+        return client.request('_agnes/v1/packages.provenance', params as PackageProvenanceParams)
+      case 'source-policy':
+        return client.request('_agnes/v1/packages.sourcePolicy', params as PackageListParams)
       case 'inspect':
         return client.packages.inspect(params as PackageInspectParams)
       case 'install':
@@ -145,6 +150,17 @@ it('installs actual bytes through authenticated HTTP → Node SDK → shared han
     expect(await client.packages.list({ profile: 'local-dev' })).toMatchObject({
       packages: [{ id: 'acme/pkg-a', trusted: false }],
     })
+    const provenance = await (await post('provenance', { profile: 'local-dev', id: 'acme/pkg-a' })).json()
+    expect(provenance).toMatchObject({
+      sourceKind: 'local-folder',
+      resolvedLocation: realpathSync(join(root, 'candidate')),
+      version: preview.preview.version,
+      installer: 'user',
+      trustDecision: 'pending',
+    })
+    expect(await (await post('source-policy', { profile: 'local-dev' })).json()).toMatchObject({
+      allowedSources: 'any-with-confirmation',
+    })
     const freshEndpoint = createLocalEndpoint(host, { packageAdmin: { service: service() } })
     const freshClient = createClient({
       transport: { kind: 'inproc', endpoint: freshEndpoint },
@@ -154,9 +170,21 @@ it('installs actual bytes through authenticated HTTP → Node SDK → shared han
     try {
       await freshClient.initialize()
       expect(await freshClient.packages.operation.get(receipt)).toEqual(installed)
+      expect(
+        await freshClient.request('_agnes/v1/packages.provenance', {
+          profile: 'local-dev',
+          id: 'acme/pkg-a',
+        }),
+      ).toEqual(provenance)
     } finally {
       await freshClient.close()
     }
+    writeFileSync(join(packageDir(root, 'local-dev', 'acme/pkg-a'), 'index.ts'), 'tampered')
+    const refused = await post('provenance', { profile: 'local-dev', id: 'acme/pkg-a' })
+    expect(refused.status).toBeGreaterThanOrEqual(400)
+    expect(await refused.json()).toMatchObject({
+      error: { data: { cause: { code: 'E_PACKAGE_INTEGRITY' } } },
+    })
   } finally {
     admin.close()
     http.closeAllConnections()

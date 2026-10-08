@@ -26,7 +26,8 @@
     "@agnes/base",
     "@agnes/protocol",
     "@agnes/resource-control-runtime",
-    "@agnes/system-node"
+    "@agnes/system-node",
+    "@agnes/package-manager"
   ],
   "@agnes/resource-control-daemon": [
     "@agnes/system-node",

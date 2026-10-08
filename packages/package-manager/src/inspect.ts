@@ -312,9 +312,9 @@ export function inspectStaged(input: {
     previousAtoms = new Set(capabilityAtoms(input.previous?.declaredCapabilities))
   capabilityDiff.added.push(...difference(currentAtoms, previousAtoms))
   capabilityDiff.removed.push(...difference(previousAtoms, currentAtoms))
-  const warnings: PackagePreview['warnings'] = [
-    { code: 'unverified-provenance', safeMessage: 'Package signature has not been verified.' },
-  ]
+  const warnings: PackagePreview['warnings'] = fetched.provenance?.signatureVerified
+    ? []
+    : [{ code: 'unverified-provenance', safeMessage: 'Package signature has not been verified.' }]
   if (!pkg.license || pkg.license === 'UNLICENSED')
     warnings.push({ code: 'unlicensed', safeMessage: 'No package license was declared.' })
   if (capabilityDiff.added.length)
@@ -341,6 +341,7 @@ export function inspectStaged(input: {
       source: input.source,
       integrity: fetched.integrity,
       signatureVerified: false,
+      ...(fetched.provenance ?? {}),
       ...(fetched.releasedAt ? { releasedAt: fetched.releasedAt } : {}),
     },
     contributions,

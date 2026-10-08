@@ -30,6 +30,7 @@ vi.mock('@agnes/base', async (original) => ({
 const stdioDefinition: McpServerDefinitionInput = {
   serverId: 'gh',
   displayName: 'GitHub',
+  sandboxProfile: 'off-with-warning',
   transport: { kind: 'stdio', executable: '/usr/local/bin/gh-mcp', args: [] },
   secretBinding: { kind: 'stdio-env', env: { GH_TOKEN: 'secret:gh-token' } },
 } as McpServerDefinitionInput
@@ -201,6 +202,7 @@ describe('createWorkerMcpServerOpener', () => {
     ({
       serverId: 'plain',
       displayName: 'Plain',
+      sandboxProfile: 'off-with-warning',
       transport: { kind: 'stdio', executable, args: [] },
       secretBinding: { kind: 'none' },
     }) as McpServerDefinitionInput
@@ -361,5 +363,21 @@ describe('createWorkerMcpServerOpener', () => {
     expect(resolve).toHaveBeenCalledTimes(2)
     const [config] = connectMcp.mock.calls[2] as [McpServerConfig, unknown, unknown]
     expect(config).toMatchObject({ env: { GH_TOKEN: 'value-of-secret:gh-token' } })
+  })
+})
+
+it('refuses an unconfined community stdio start unless the approved definition explicitly opts out', async () => {
+  const opener = createMcpServerOpener({
+    resolver: async () => '',
+    baseEnv: {},
+    stdioPolicy: { allowedExecutables: ['/usr/local/bin/gh-mcp'] },
+    httpPolicy: {},
+  })
+  const { sandboxProfile: _profile, ...definition } = stdioDefinition as Extract<
+    McpServerDefinitionInput,
+    { sandboxProfile?: unknown }
+  >
+  await expect(opener.connect(definition, new AbortController().signal)).rejects.toMatchObject({
+    code: 'E_MCP_SANDBOX_UNAVAILABLE',
   })
 })

@@ -6,7 +6,7 @@ export const mcpHelper = {
     ctx.extension().registerTool({
       name: 'mcp_manage',
       description:
-        'Connect MCP servers to this Agnes Harness (AGH), visible in Settings → MCP. Use prepare with a definition, then commit its proposalId for native user confirmation. Default target is AGH, not another client. Dependencies/add-ons alone are not registration. End this turn after submission; tools become available on later turns. Use list/status to verify actual results. Credentials belong in AGH secure settings, never chat.',
+        'Connect MCP servers to this Agnes Harness (AGH), visible in Settings → MCP. Use prepare with a definition, then commit its proposalId for native user confirmation. Default target is AGH, not another client. Dependencies/add-ons alone are not registration. End this turn after submission; tools become available on later turns. Use list/status to verify actual results. Community stdio defaults to strict sandbox; declare its absolute workspacePath and request workspace-write or network only when needed. off-with-warning requires explicit approval of full host access. Credentials belong in AGH secure settings, never chat.',
       parameters: object({
         action: enumeration('prepare', 'commit', 'status', 'cancel', 'list'),
         definition: optional(
@@ -20,6 +20,8 @@ export const mcpHelper = {
                 object({ kind: enumeration('http', 'sse'), url: string() }),
               ],
             },
+            sandboxProfile: optional(enumeration('strict', 'workspace-write', 'network', 'off-with-warning')),
+            workspacePath: optional(string()),
             secretBinding: object({ kind: enumeration('none') }),
           }),
         ),

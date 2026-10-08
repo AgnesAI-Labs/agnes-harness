@@ -503,6 +503,19 @@ class ResourceAdminPage {
               const value = await this.api().mcpStatus(selected.serverId)
               const panel: (readonly [string, string])[] = [
                 [this.#t('fact.connection'), value.connectionState],
+                ...(selected.transportKind === 'stdio'
+                  ? [
+                      [
+                        this.#t('sandbox.title'),
+                        this.#t(
+                          'sandbox.' +
+                            (('sandboxProfile' in selected.definition
+                              ? selected.definition.sandboxProfile
+                              : undefined) ?? 'strict'),
+                        ),
+                      ] as const,
+                    ]
+                  : []),
                 [this.#t('fact.tools'), String(value.toolCount)],
                 [this.#t('fact.observed-revision'), value.observedRevision ?? this.#t('fact.none')],
                 [this.#t('fact.catalog-revision'), value.catalogRevision ?? this.#t('fact.none')],
@@ -559,7 +572,15 @@ class ResourceAdminPage {
       name: this.#itemName(item),
       revision: `${item.revision.slice(0, 12)}…`,
     })
-    if (!(await this.confirm(summary))) return
+    const sandbox =
+      item.kind === 'mcp' && item.definition.transport.kind === 'stdio'
+        ? this.#t(
+            'sandbox.' +
+              (('sandboxProfile' in item.definition ? item.definition.sandboxProfile : undefined) ??
+                'strict'),
+          )
+        : ''
+    if (!(await this.confirm(sandbox ? summary + '\n' + sandbox : summary))) return
     try {
       await this.#setDesired(item, next)
     } catch (error) {
@@ -651,6 +672,15 @@ class ResourceAdminPage {
       this.#t('action.test-mcp-summary', { name: server.displayName, revision }),
       () => this.api().mcpTest(server.serverId, server.revision),
     )
+    const sandboxSummary =
+      server.transportKind === 'stdio'
+        ? '\n' +
+          this.#t(
+            'sandbox.' +
+              (('sandboxProfile' in server.definition ? server.definition.sandboxProfile : undefined) ??
+                'strict'),
+          )
+        : ''
     add(
       this.#t(resourceDesiredEnabled(server) ? 'action.disable' : 'action.enable'),
       this.#t('action.request', {
@@ -658,7 +688,7 @@ class ResourceAdminPage {
         kind: 'MCP',
         name: server.displayName,
         revision,
-      }),
+      }) + sandboxSummary,
       async () => {
         await this.#setDesired(server, !resourceDesiredEnabled(server))
         return undefined
@@ -718,9 +748,13 @@ class ResourceAdminPage {
 
 let editing: McpServerDescriptor | undefined
 function writeDefinition(definition: McpServerDefinitionInput): void {
+  $('mcp-workspace', 'input').value =
+    ('workspacePath' in definition ? definition.workspacePath : undefined) ?? ''
   $('mcp-id', 'input').value = definition.serverId
   $('mcp-name', 'input').value = definition.displayName
   mcpTransport.value = definition.transport.kind
+  $('mcp-sandbox', 'select').value =
+    ('sandboxProfile' in definition ? definition.sandboxProfile : undefined) ?? 'strict'
   $('mcp-executable', 'input').value =
     definition.transport.kind === 'stdio' ? definition.transport.executable : ''
   $('mcp-args', 'textarea').value =
@@ -763,6 +797,7 @@ function openMcpDialog(server?: McpServerDescriptor, t: LocaleTranslator = activ
 function syncResourcePickers(t: LocaleTranslator = activeResourceText): void {
   for (const picker of mcpPickers) picker.destroy()
   mcpPickers = [
+    createSelectPicker($('mcp-sandbox', 'select'), { label: t('sandbox.title') }),
     createSelectPicker(mcpTransport, { label: t('select.transport') }),
     createSelectPicker(mcpSecretKind, { label: t('select.secret') }),
     createSelectPicker($('mcp-header-name', 'select'), { label: t('select.header') }),
@@ -771,6 +806,8 @@ function syncResourcePickers(t: LocaleTranslator = activeResourceText): void {
 
 function syncTransport(t: LocaleTranslator = activeResourceText): void {
   const stdio = mcpTransport.value === 'stdio'
+  $('mcp-workspace-row', 'label').hidden = !stdio
+  $('mcp-sandbox-row', 'label').hidden = !stdio
   $('mcp-executable-row', 'label').hidden = !stdio
   $('mcp-args-row', 'label').hidden = !stdio
   $('mcp-url-row', 'label').hidden = stdio
@@ -864,6 +901,14 @@ function definitionFromForm(t: LocaleTranslator = activeResourceText): McpServer
       serverId,
       displayName,
       transport: { kind: 'stdio', executable, args },
+      ...($('mcp-workspace', 'input').value.trim()
+        ? { workspacePath: $('mcp-workspace', 'input').value.trim() }
+        : {}),
+      sandboxProfile: $('mcp-sandbox', 'select').value as
+        | 'strict'
+        | 'workspace-write'
+        | 'network'
+        | 'off-with-warning',
       secretBinding,
       ...(allow.length ? { toolPolicy: { allow } } : {}),
     }
@@ -995,7 +1040,11 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
             revision: `${editing.revision.slice(0, 12)}…`,
           })
         : activeResourceText('action.create-mcp-summary', { name: definition.displayName })
-      if (!(await page.confirm(summary))) return
+      const sandboxSummary =
+        'sandboxProfile' in definition
+          ? '\n' + activeResourceText('sandbox.' + definition.sandboxProfile)
+          : ''
+      if (!(await page.confirm(summary + sandboxSummary))) return
       const receipt = editing
         ? await page.api().mcpUpdate(editing.serverId, editing.revision, definition)
         : await page.api().mcpCreate(definition)

@@ -1,3 +1,4 @@
+import { createHash, generateKeyPairSync, sign } from 'node:crypto'
 import {
   cpSync,
   existsSync,
@@ -5,6 +6,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
@@ -15,10 +17,12 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import {
   createPackageManager,
   emptyLock,
+  isOfficialMcpDefinition,
   type ManagerOptions,
   packageDir,
   parseSource,
   readLock,
+  verifyNpmProvenance,
   writeLock,
 } from '../src/index.js'
 
@@ -84,10 +88,21 @@ afterEach(() => rmSync(root, { recursive: true, force: true }))
 it('uses a stable frozen inventory, exact trust snapshot, desired-only enable, local offline rollback and tombstone', async () => {
   const m = await install(manager({ references: emptyRefs })),
     initial = await m.inventory(profile)
+  expect(await m.provenance(profile, id)).toMatchObject({
+    sourceKind: 'local-folder',
+    resolvedLocation: realpathSync(join(root, 'source')),
+    version: '1.0.0',
+    treeIntegrity: initial.packages[0]?.entry.treeIntegrity,
+    installedAt: '2026-09-13T00:00:00Z',
+    installer: 'user',
+    trustDecision: 'pending',
+    verification: 'unverified',
+  })
   expect(initial.hash).toBe((await m.inventory(profile)).hash)
   expect(Object.isFrozen(initial.packages[0]?.entry.state)).toBe(true)
   await expect(m.trust(profile, id)).rejects.toMatchObject({ code: 'E_PACKAGE_TRUST' })
   await m.trust(profile, id, await decision(m))
+  expect((await m.provenance(profile, id)).trustDecision).toBe('confirmed')
   await m.setEnabled(profile, id, true)
   expect((await m.inventory(profile)).packages[0]).toMatchObject({ trusted: true, enabled: true })
   version('2.0.0')
@@ -295,6 +310,7 @@ it('rejects tree/lock metadata tampering and unknown legacy contribution stays b
     dir = packageDir(root, 'local-dev', id)
   writeFileSync(join(dir, 'tamper'), 'changed')
   await expect(m.inventory(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+  await expect(m.provenance(profile, id)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
   rmSync(join(dir, 'tamper'))
   const lock = load(),
     entry = lock.packages[id]
@@ -383,4 +399,96 @@ it('the Host read-only lock adapter refuses a changed modern trust snapshot', as
   if (!entry) throw Error('missing')
   entry.dependencies['acme/new'] = '1.0.0'
   expect(() => lockState(lock, { profileDir: profile })).toThrow('trust snapshot differs')
+})
+
+it('enforces administrator source policy and exact Ed25519 catalog tuples at installation', async () => {
+  const m = manager(),
+    preview = await m.inspect(profile, source)
+  const config = join(profile, 'package-sources.json')
+  writeFileSync(config, JSON.stringify({ allowedSources: 'official-only' }))
+  await expect(m.install(profile, source, { expectedIntegrity: preview.integrity })).rejects.toMatchObject({
+    code: 'E_PACKAGE_SOURCE_POLICY',
+  })
+  expect(load().packages[id]).toBeUndefined()
+  const keys = generateKeyPairSync('ed25519')
+  const definition = {
+    serverId: 'official-fixture',
+    displayName: 'Official fixture',
+    transport: { kind: 'stdio' as const, executable: '/usr/bin/example', args: [] },
+    secretBinding: { kind: 'none' as const },
+  }
+  const { jcs } = await import('@agnes/protocol')
+  const statement = {
+    mcpDefinitions: [`sha256-${createHash('sha256').update(jcs(definition)).digest('hex')}`],
+    keyId: 'development-test',
+    issuedAt: '2026-09-13T00:00:00Z',
+    entries: [
+      {
+        id,
+        version: preview.version,
+        source,
+        treeIntegrity: preview.provenance.treeIntegrity!,
+        publisher: 'Agnes test maintainer',
+      },
+    ],
+  }
+  const { canonical } = await import('../src/integrity.js')
+  const signature = sign(null, Buffer.from(canonical(statement)), keys.privateKey).toString('base64')
+  const policy = {
+    allowedSources: 'official-only' as const,
+    officialKeys: { 'development-test': keys.publicKey.export({ type: 'spki', format: 'pem' }) as string },
+    officialCatalog: { statement, signature },
+  }
+  expect(isOfficialMcpDefinition(policy, definition)).toBe(true)
+  expect(isOfficialMcpDefinition(policy, { ...definition, displayName: 'Changed' })).toBe(false)
+  writeFileSync(config, JSON.stringify(policy))
+  await m.install(profile, source, { expectedIntegrity: preview.integrity })
+  expect(await m.provenance(profile, id)).toMatchObject({
+    sourceKind: 'official-catalog',
+    verification: 'official-ed25519',
+    publisher: 'Agnes test maintainer',
+    signatureVerified: true,
+  })
+  writeFileSync(
+    config,
+    JSON.stringify({
+      ...policy,
+      officialCatalog: { statement: { ...statement, issuedAt: '2026-09-14T00:00:00Z' }, signature },
+    }),
+  )
+  await expect(m.inspect(profile, source)).rejects.toMatchObject({ code: 'E_PACKAGE_PROVENANCE' })
+  await expect(m.provenance(profile, id)).rejects.toMatchObject({ code: 'E_PACKAGE_PROVENANCE' })
+  writeFileSync(config, JSON.stringify({ allowedSources: 'official-only' }))
+  await expect(m.provenance(profile, id)).rejects.toMatchObject({ code: 'E_PACKAGE_SOURCE_POLICY' })
+})
+it('binds npm verified identity to exact package subject and actual archive digest', async () => {
+  const integrity = `sha512-${Buffer.alloc(64, 1).toString('base64')}`
+  const bundle = {
+    dsseEnvelope: {
+      payloadType: 'application/vnd.in-toto+json',
+      payload: Buffer.from(
+        JSON.stringify({
+          subject: [
+            { name: 'pkg:npm/fixture@1.0.0', digest: { sha512: Buffer.alloc(64, 1).toString('hex') } },
+          ],
+        }),
+      ).toString('base64'),
+    },
+  }
+  const verified = async () => ({
+    identity: {
+      subjectAlternativeName: 'https://github.com/fixture/repo/.github/workflows/release.yml@refs/heads/main',
+    },
+  })
+  expect(
+    await verifyNpmProvenance({ name: 'fixture', version: '1.0.0', integrity, bundle }, verified),
+  ).toMatchObject({ verification: 'npm-sigstore', signatureVerified: true })
+  await expect(
+    verifyNpmProvenance({ name: 'fixture', version: '2.0.0', integrity, bundle }, verified),
+  ).rejects.toMatchObject({ code: 'E_PACKAGE_PROVENANCE' })
+  await expect(
+    verifyNpmProvenance({ name: 'fixture', version: '1.0.0', integrity, bundle }, async () => {
+      throw Error('invalid certificate')
+    }),
+  ).rejects.toMatchObject({ code: 'E_PACKAGE_PROVENANCE' })
 })

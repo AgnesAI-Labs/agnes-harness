@@ -338,6 +338,18 @@ export const PACKAGE_ADMIN_METHODS = Object.freeze({
     'read',
     'packages.read',
   ),
+  '_agnes/v1/packages.provenance': contract(
+    P.PackageProvenanceParams,
+    P.PackageProvenance,
+    'read',
+    'packages.read',
+  ),
+  '_agnes/v1/packages.sourcePolicy': contract(
+    P.PackageListParams,
+    P.PackageSourcePolicy,
+    'read',
+    'packages.read',
+  ),
   '_agnes/v1/packages.list': contract(P.PackageListParams, P.PackageListResult, 'read', 'packages.read'),
   // Skins are derived from the installed-package inventory: the request reuses PackageListParams and
   // the read permission rather than adding a permission that would ripple into the authorization surface.
@@ -522,6 +534,8 @@ export type PackageAdminDataName =
   | 'PackageCapabilityDiff'
   | 'PackageBlocker'
   | 'PackageWarning'
+  | 'PackageProvenanceParams'
+  | 'PackageSourcePolicy'
   | 'PackageProvenance'
   | 'PluginCapabilities'
   | 'PackagePreview'
@@ -579,6 +593,8 @@ const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
   PackageCapabilityDiff: P.PackageCapabilityDiff,
   PackageBlocker: P.PackageBlocker,
   PackageWarning: P.PackageWarning,
+  PackageProvenanceParams: P.PackageProvenanceParams,
+  PackageSourcePolicy: P.PackageSourcePolicy,
   PackageProvenance: P.PackageProvenance,
   PluginCapabilities: P.PluginCapabilities,
   PackagePreview: P.PackagePreview,

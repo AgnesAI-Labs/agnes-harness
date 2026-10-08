@@ -14,7 +14,8 @@
     "@agnes/base": "workspace:*",
     "@agnes/protocol": "workspace:*",
     "@agnes/resource-control-runtime": "workspace:*",
-    "@agnes/system-node": "workspace:*"
+    "@agnes/system-node": "workspace:*",
+    "@agnes/package-manager": "workspace:*"
   },
   "license": "Apache-2.0"
 }

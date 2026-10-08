@@ -2,7 +2,7 @@
  * to the assembling seam; this leaf does not claim a backend is available. */
 export function seatbeltDenyNetworkArgv(
   argv: string[],
-  policy: { allowPaths: string[]; denyPaths: string[] },
+  policy: { allowPaths: string[]; denyPaths: string[]; readPaths?: string[]; network?: 'deny' | 'allow' },
 ): string[] {
   const invalid = () => new Error('invalid sandbox policy')
   const quote = (value: string): string => {
@@ -23,15 +23,30 @@ export function seatbeltDenyNetworkArgv(
   )
     throw invalid()
   if (!Array.isArray(policy.allowPaths) || !Array.isArray(policy.denyPaths)) throw invalid()
+  const parents = new Set(
+    (policy.readPaths ?? []).flatMap((path) => {
+      quote(path)
+      const parts = path.split('/')
+      return parts.slice(1).map((_, index) => parts.slice(0, index + 1).join('/') || '/')
+    }),
+  )
   const profile = [
     '(version 1)',
     '(deny default)',
     '(allow process*)',
     '(allow sysctl-read)',
-    '(allow file-read*)',
+    ...(policy.readPaths
+      ? [
+          ...[...parents].map((path) => `(allow file-read-metadata (literal ${quote(path)}))`),
+          '(allow file-read* (literal "/"))',
+        ]
+      : []),
+    ...(policy.readPaths
+      ? policy.readPaths.map((path) => `(allow file-read* (subpath ${quote(path)}))`)
+      : ['(allow file-read*)']),
     ...policy.allowPaths.map((path) => `(allow file-write* (subpath ${quote(path)}))`),
     ...policy.denyPaths.map((path) => `(deny file-read* file-write* (subpath ${quote(path)}))`),
-    '(deny network*)',
+    policy.network === 'allow' ? '(allow network*)' : '(deny network*)',
   ].join('\n')
   return ['/usr/bin/sandbox-exec', '-p', profile, ...argv]
 }

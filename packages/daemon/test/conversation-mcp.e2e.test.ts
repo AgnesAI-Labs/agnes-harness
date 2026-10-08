@@ -56,6 +56,8 @@ it('a conversation approves registration and calls the real stdio server on its 
   const definition = {
     serverId: 'fixture',
     displayName: 'Conversation fixture',
+    workspacePath: await realpath(process.cwd()),
+    ...(process.platform === 'win32' ? { sandboxProfile: 'off-with-warning' } : {}),
     transport: { kind: 'stdio', executable: process.execPath, args: [scriptPath] },
     secretBinding: { kind: 'none' },
   }
@@ -213,6 +215,8 @@ it('a conversation approves registration and calls the real stdio server on its 
     })
     await session.run({ until: 'turn-end', signal: AbortSignal.timeout(10_000) })
     expect(permission).toHaveBeenCalledTimes(1)
+    expect(JSON.stringify(permission.mock.calls[0])).toContain('Sandbox:')
+    expect(JSON.stringify(permission.mock.calls[0])).toContain(definition.workspacePath)
     expect((await store.mcp.workerManaged('local-dev'))[0]?.desired).toBe('enabled')
     release()
     await vi.waitFor(() => expect(rows?.status('fixture')?.connectionState).toBe('ready'), {

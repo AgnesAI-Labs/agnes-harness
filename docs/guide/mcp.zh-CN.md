@@ -114,3 +114,20 @@ session worker 启动及资源变化后的轮次边界调用 `createMcpRowRuntim
 逐服务器运行器的源码与测试可在下方查阅。实际运行版本及外部服务验证范围见[验证记录](../maintainers/verification.zh-CN.md)。
 
 源码入口：[管理命令](../../packages/resource-control-cli/src/resources.ts)、[Schema](../../packages/protocol/schema/resource-control.json)、[资源启动](../../packages/resource-control-worker/src/runtime-bootstrap.ts)、[Worker 启动](../../packages/worker-runtime/src/main.ts)、[轮次重载](../../packages/worker-runtime/src/commands.ts)、[逐服务器运行器](../../packages/worker-runtime/src/mcp-row-runtime.ts)与[派生](../../packages/worker-runtime/src/mcp-server-rows.ts)。校验位置记录在[源码锚点清单](../../tools/public-docs/source-checks.json)。
+
+## 社区本地服务器沙箱
+
+管理的社区 stdio 服务器默认使用 `strict`。在 MCP 设置中选择 `sandboxProfile` 后，再信任对应定义：
+
+| 配置 | 工作区 | 自身 MCP 数据目录 | 网络 |
+| --- | --- | --- | --- |
+| `strict` | 只读 | 读写 | 禁止 |
+| `workspace-write` | 读写 | 读写 | 禁止 |
+| `network` | 只读 | 读写 | 允许 |
+| `off-with-warning` | 完整主机访问 | 完整主机访问 | 允许 |
+
+沙箱配置属于信任对话框批准的修订。修改后需要新的信任决定，并重新连接服务器。只有管理员签名官方目录验证过的精确定义默认关闭沙箱；手动和本地定义仍视为社区来源。
+
+受限子进程可读取工作区、自身数据目录及必要的只读可执行程序和系统文件。`HOME` 和 `TMPDIR` 指向 `<profile-data>/mcp/<server-id>`；不能读取用户家目录中的私密文件或任意写入外部路径。运行依赖放在工作区，或将入口打包为自包含文件。可在服务器设置中声明可选绝对路径 `workspacePath`（CLI：`--sandbox-workspace /workspace/project`，并配置 `--sandbox-profile strict`）。该目录属于审阅过的定义，修改会撤销之前的信任决定。未声明工作区的共享 worker 只授予服务器数据目录；连接不会悄悄采用另一个会话的工作区。
+
+连接管理复用已有 command sandbox 的探测和编译入口（macOS Seatbelt 或实际可用的 Linux bubblewrap）。隔离不可用时以 `E_MCP_SANDBOX_UNAVAILABLE` 拒绝连接，并在 MCP 诊断中显示；不会静默裸启动。Windows 当前需要显式批准 `off-with-warning`。该配置允许子进程访问完整主机，请先审阅可执行程序再确认。HTTP/SSE 是远程服务器，继续使用已有 URL、凭据及工具策略。

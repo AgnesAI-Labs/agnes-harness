@@ -268,6 +268,15 @@
       "purpose": "Bundled ripgrep executable for official file search tools. Platform packages include ripgrep and its third-party licenses.",
       "rationale": "Use a pinned search engine without requiring a system rg installation.",
       "consumers": ["packages/base"]
+    },
+    {
+      "name": "sigstore",
+      "version": "4.1.1",
+      "license": "Apache-2.0",
+      "source": "https://github.com/sigstore/sigstore-js",
+      "purpose": "Verify npm publisher provenance, Fulcio certificate chains and transparency evidence.",
+      "rationale": "Use the maintained Sigstore verifier rather than implementing trust roots, certificate validation or transparency log proofs in Agnes.",
+      "consumers": ["packages/package-manager"]
     }
   ]
 }

@@ -5727,6 +5727,8 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     PackageBlocker: PackageAdminGen.PackageBlocker,
     PackageWarning: PackageAdminGen.PackageWarning,
     PackageProvenance: PackageAdminGen.PackageProvenance,
+    PackageProvenanceParams: PackageAdminGen.PackageProvenanceParams,
+    PackageSourcePolicy: PackageAdminGen.PackageSourcePolicy,
     PackagePreview: PackageAdminGen.PackagePreview,
     PackageTrustDecision: PackageAdminGen.PackageTrustDecision,
     PackageInstalledDescriptor: PackageAdminGen.PackageInstalledDescriptor,
@@ -5908,6 +5910,16 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/packages.provenance': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PackageProvenanceParams',
+    result: 'PackageProvenance',
+  },
+  '_agnes/v1/packages.sourcePolicy': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PackageListParams',
+    result: 'PackageSourcePolicy',
+  },
   '_agnes/v1/admin.mcp.oauth.save': {
     fileId: 'https://agnes.ai/schema/app-server-v1',
     params: 'AdminMcpOAuthSave',
@@ -6482,6 +6494,16 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/packages.provenance': {
+    valid: { profile: 'local-dev', id: 'fixture' },
+    invalid: [{ profile: 'local-dev' }],
+    note: 'package identity required',
+  },
+  '_agnes/v1/packages.sourcePolicy': {
+    valid: { profile: 'local-dev' },
+    invalid: [{ profile: '../escape' }],
+    note: 'profile boundary',
+  },
   '_agnes/v1/admin.mcp.oauth.save': {
     valid: {
       serverId: 'github',
@@ -6796,6 +6818,8 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/packages.provenance': PackageAdminSamples.PackageProvenance as Sample,
+  '_agnes/v1/packages.sourcePolicy': PackageAdminSamples.PackageSourcePolicy as Sample,
   '_agnes/v1/admin.mcp.oauth.save': {
     valid: {},
     invalid: [{ extra: 1 }],

@@ -297,7 +297,11 @@ export function createMcpManageRequests(options: {
         throw rpcError('SEMANTIC_REJECTED', { code: 'MCP_PROPOSAL_EXPIRED' })
       proposal.busy = true
       try {
-        const summary = `Connect to Agnes Harness: ${proposal.definition.displayName}\n${JSON.stringify(proposal.definition.transport)}\nShared by sessions in the current AGH profile. This registers, trusts, and enables this configuration. The start command may download and run third-party software. This approval covers only this configuration and does not change other clients.`
+        const sandbox =
+          proposal.definition.transport.kind === 'stdio'
+            ? `\nSandbox: ${'sandboxProfile' in proposal.definition ? (proposal.definition.sandboxProfile ?? 'strict') : 'strict'}${'workspacePath' in proposal.definition ? `; workspace: ${proposal.definition.workspacePath}` : ''}. off-with-warning permits full host access.`
+            : ''
+        const summary = `Connect to Agnes Harness: ${proposal.definition.displayName}\n${JSON.stringify(proposal.definition.transport)}${sandbox}\nShared by sessions in the current AGH profile. This registers, trusts, and enables this configuration. The start command may download and run third-party software. This approval covers only this configuration and does not change other clients.`
         const prompt = new PrompterRouter({
           record: () => {},
           connections: () => [conn],

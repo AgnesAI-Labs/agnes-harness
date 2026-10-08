@@ -123,6 +123,13 @@ export function localPackageAdmin(
         return client.packages.catalog.list(params as PackageCatalogListParams)
       case 'catalog/get':
         return client.packages.catalog.get(params as PackageCatalogGetParams)
+      case 'provenance':
+        return client.request(
+          '_agnes/v1/packages.provenance',
+          params as import('@agnes/protocol').PackageProvenanceParams,
+        )
+      case 'source-policy':
+        return client.request('_agnes/v1/packages.sourcePolicy', params as PackageListParams)
       case 'publication-status':
         return client.packages.publicationStatus(params as PackageListParams)
       case 'sessions/migrate':

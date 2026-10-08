@@ -173,6 +173,9 @@ const actuals = new Set<PackageActivationActual>([
   'unavailable',
 ])
 const safeMessage: Record<PackageAdminError['code'], string> = {
+  E_PACKAGE_PROVENANCE: 'Package provenance verification failed. Reinstall from a verified source.',
+  E_PACKAGE_SOURCE_POLICY: 'The administrator policy does not allow this package source.',
+
   E_PACKAGE_SOURCE: 'The package source could not be accepted.',
   E_PACKAGE_INTEGRITY: 'Package data could not be verified.',
   E_PACKAGE_TRUST: 'The package does not meet the required trust policy.',
@@ -304,6 +307,7 @@ function projectPackage(
     source: projectSource(row.entry.source),
     integrity: row.entry.integrity,
     trusted: row.trusted,
+    ...(row.entry.provenance ? { provenance: row.entry.provenance } : {}),
     ...(row.kinds === undefined ? {} : { kinds: [...row.kinds] }),
     desired: row.enabled ? 'enabled' : 'installed-disabled',
     actual: row.localFailure
@@ -596,6 +600,13 @@ class Service implements PackageAdminService {
           throw new Error('E_PACKAGE_STATE: invalid generation status')
         return status
       }
+      if (method === '_agnes/v1/packages.provenance')
+        return await this.options.manager.provenance(
+          await this.options.profileDirectory(data.profile as string),
+          data.id as string,
+        )
+      if (method === '_agnes/v1/packages.sourcePolicy')
+        return this.options.manager.sourcePolicy(await this.options.profileDirectory(data.profile as string))
       if (method === '_agnes/v1/packages.list') return await this.list(data as { profile: string })
       if (method === '_agnes/v1/plugins.tree.get')
         return this.pluginTreeView(data as { profile: string }, true)

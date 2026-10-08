@@ -89,11 +89,24 @@ it('installs actual npm archives, then rolls back offline using the pinned tree 
       agnesVersion: '0.1.0',
       now: () => '2026-09-13T00:00:00Z',
       exec,
+      npmProvenance: async () => ({
+        signatureVerified: true,
+        verification: 'npm-sigstore',
+        publisher: 'fixture verified publisher',
+      }),
       references: async () => [],
     })
+    writeFileSync(
+      join(profile, 'package-sources.json'),
+      JSON.stringify({ allowedSources: 'official+npm-with-provenance' }),
+    )
     const first = parseSource('npm:@acme/pkg-a@1.0.0'),
       preview = await manager.inspect(profile, first)
     await manager.install(profile, first, { expectedIntegrity: preview.integrity })
+    expect(await manager.provenance(profile, '@acme/pkg-a')).toMatchObject({
+      verification: 'npm-sigstore',
+      signatureVerified: true,
+    })
     const initial = (await manager.inventory(profile)).packages[0]
     if (!initial) throw Error('missing')
     await manager.trust(profile, '@acme/pkg-a', {

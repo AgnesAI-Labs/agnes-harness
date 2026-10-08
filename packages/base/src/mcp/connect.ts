@@ -341,6 +341,7 @@ function stdioTransport(cfg: McpServerConfig, deps: McpSdkDeps): SdkTransport {
   return deps.createStdioTransport({
     command,
     args,
+    ...(cfg.cwd ? { cwd: cfg.cwd } : {}),
     env: { ...(cfg.baseEnv ?? deps.defaultEnvironment()), ...(cfg.env ?? {}) },
   })
 }

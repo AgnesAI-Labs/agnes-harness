@@ -33,6 +33,11 @@ export function generationExtensionRestorer(
         resolver: async (ref) => input.createSecrets(input.profile).resolve(ref),
         approvedLocalStart: (definition) =>
           Promise.resolve(policy.localStartApprovals === true && jcs(definition) === jcs(entry.definition)),
+        sandbox: {
+          dataDir: input.profile.dataDir,
+          ...(input.cwd ? { workspace: input.cwd } : {}),
+          ...(input.env.PATH ? { path: input.env.PATH } : {}),
+        },
         baseEnv: {},
         stdioPolicy: { allowedExecutables: policy.allowedExecutables },
         httpPolicy: { allowLoopbackHttp: policy.allowLoopbackHttp, localDaemon: policy.localDaemon },

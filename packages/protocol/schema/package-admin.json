@@ -682,6 +682,38 @@
         },
         "signatureVerified": {
           "type": "boolean"
+        },
+        "sourceKind": {
+          "enum": ["official-catalog", "npm", "git", "local-folder", "tarball"]
+        },
+        "resolvedLocation": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "treeIntegrity": {
+          "type": "string",
+          "pattern": "^sha256-[a-f0-9]{64}$"
+        },
+        "publisher": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "verification": {
+          "enum": ["unverified", "official-ed25519", "npm-sigstore"]
+        },
+        "installedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "installer": {
+          "enum": ["user", "agent"]
+        },
+        "trustDecision": {
+          "enum": ["pending", "confirmed", "revoked"]
         }
       },
       "required": ["source", "integrity", "signatureVerified"]
@@ -1031,6 +1063,9 @@
         "failureDocs": {
           "type": "string",
           "maxLength": 1024
+        },
+        "provenance": {
+          "$ref": "#/$defs/PackageProvenance"
         }
       },
       "required": [
@@ -1126,7 +1161,9 @@
             "E_PACKAGE_STATE",
             "E_PACKAGE_BLOCKED",
             "E_PACKAGE_PREVIEW_STALE",
-            "E_PACKAGE_CANCELLED"
+            "E_PACKAGE_CANCELLED",
+            "E_PACKAGE_PROVENANCE",
+            "E_PACKAGE_SOURCE_POLICY"
           ]
         },
         "safeMessage": {
@@ -2703,6 +2740,34 @@
         },
         "ui": {
           "type": "boolean"
+        }
+      }
+    },
+    "PackageProvenanceParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "id"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9.-]{0,63}$"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "PackageSourcePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowedSources"],
+      "properties": {
+        "allowedSources": {
+          "enum": ["official-only", "official+npm-with-provenance", "any-with-confirmation"]
         }
       }
     }

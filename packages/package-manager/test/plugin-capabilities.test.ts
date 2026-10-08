@@ -120,6 +120,7 @@ it('pins an unqualified git URL in the preview without executing the plugin', as
     dir = join(f.root, 'git-stage')
   const fetched = await fetchSource(parseSource('git:https://example.com/plugin.git'), dir, {
     cwd: f.root,
+    npmProvenance: async () => undefined,
     exec: async (_command, args) => {
       if (args.includes('ls-remote')) return { stdout: commit + '\tHEAD\n' }
       if (args.includes('rev-parse')) return { stdout: commit + '\n' }

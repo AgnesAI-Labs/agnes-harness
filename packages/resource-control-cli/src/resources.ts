@@ -101,6 +101,8 @@ const VALUE_FLAGS = new Set([
   '--expected-revision',
   '--root-key',
   '--name',
+  '--sandbox-profile',
+  '--sandbox-workspace',
   '--stdio',
   '--http',
   '--sse',
@@ -230,7 +232,7 @@ function resourceLine(resource: ResourceDescriptor): string {
       : ''
     return `${resource.resourceId} name=${resource.name} revision=${resource.revision} trust=${resource.trust} desired=${resource.desired} actual=${resource.actual} ${resolution} source=${resource.sourceIdentity.scope}/${resource.sourceIdentity.rootKey}${resource.stale ? ' stale=true' : ''}${error}`
   }
-  return `${resource.serverId} revision=${resource.revision} trust=${resource.trust} desired=${resource.desired} actual=${resource.actual} transport=${resource.transportKind}`
+  return `${resource.serverId} revision=${resource.revision} trust=${resource.trust} desired=${resource.desired} actual=${resource.actual} transport=${resource.transportKind}${resource.transportKind === 'stdio' ? ` sandbox=${resource.sandboxProfile ?? ('sandboxProfile' in resource.definition ? resource.definition.sandboxProfile : undefined) ?? 'strict'}` : ''}`
 }
 function operationLine(operation: ResourceOperation): string {
   const result = operation.result
@@ -296,6 +298,16 @@ function buildDefinition(parsed: Parsed, serverId: string): McpServerDefinitionI
   const stdio = one(parsed, '--stdio')
   const http = one(parsed, '--http')
   const sse = one(parsed, '--sse')
+  const workspacePath = one(parsed, '--sandbox-workspace')
+  if (workspacePath && !stdio) throw new UsageError('--sandbox-workspace requires stdio')
+  const sandboxProfile = one(parsed, '--sandbox-profile')
+  if (
+    sandboxProfile &&
+    (!stdio || !['strict', 'workspace-write', 'network', 'off-with-warning'].includes(sandboxProfile))
+  )
+    throw new UsageError(
+      '--sandbox-profile requires stdio and one of strict, workspace-write, network, off-with-warning',
+    )
   // Count how many transport flags were provided
   const transportCount = [stdio, http, sse].filter((v) => v !== undefined).length
   if (transportCount !== 1)
@@ -332,6 +344,10 @@ function buildDefinition(parsed: Parsed, serverId: string): McpServerDefinitionI
       serverId,
       displayName,
       transport: { kind: 'stdio', executable: stdio, args },
+      ...(workspacePath ? { workspacePath } : {}),
+      ...(sandboxProfile
+        ? { sandboxProfile: sandboxProfile as 'strict' | 'workspace-write' | 'network' | 'off-with-warning' }
+        : {}),
       secretBinding: secretEnv.length ? { kind: 'stdio-env', env } : { kind: 'none' },
       ...(many(parsed, '--allow-tool').length
         ? { toolPolicy: { allow: [...many(parsed, '--allow-tool')] } }
@@ -661,7 +677,7 @@ export async function runResourceCommand(
           serverId: valid(need(serverId, 'agh mcp status <serverId>'), SERVER, 'server id'),
         })
         io.write(
-          `${value.serverId} connection=${value.connectionState} revision=${value.observedRevision ?? 'none'} catalog=${value.catalogRevision ?? 'none'} tools=${value.toolCount}${value.lastSafeError ? `\n${value.lastSafeError.code}: ${value.lastSafeError.message}` : ''}`,
+          `${value.serverId} connection=${value.connectionState} revision=${value.observedRevision ?? 'none'} catalog=${value.catalogRevision ?? 'none'} tools=${value.toolCount}${value.sandboxProfile ? ` sandbox=${value.sandboxProfile}` : ''}${value.lastSafeError ? `\n${value.lastSafeError.code}: ${value.lastSafeError.message}` : ''}`,
         )
         return
       }
@@ -689,6 +705,8 @@ export async function runResourceCommand(
         [
           '--profile',
           '--name',
+          '--sandbox-profile',
+          '--sandbox-workspace',
           '--stdio',
           '--http',
           '--sse',
@@ -710,7 +728,11 @@ export async function runResourceCommand(
         'server id',
       )
       const definition = buildDefinition(parsed, id)
-      await confirm(io, `add MCP ${id} (${definition.transport.kind}) with trust=untrusted`, parsed)
+      await confirm(
+        io,
+        `add MCP ${id} (${definition.transport.kind}) with trust=untrusted${'sandboxProfile' in definition ? ` sandbox=${definition.sandboxProfile}` : ''}${'workspacePath' in definition ? ` workspace=${definition.workspacePath}` : ''}`,
+        parsed,
+      )
       const receipt = await client.mcp.servers.create({
         profile: p,
         definition,
@@ -731,6 +753,8 @@ export async function runResourceCommand(
           '--profile',
           '--expected-revision',
           '--name',
+          '--sandbox-profile',
+          '--sandbox-workspace',
           '--stdio',
           '--http',
           '--sse',
@@ -753,7 +777,11 @@ export async function runResourceCommand(
       )
       const revision = expected(parsed, 'agh mcp update <serverId> --expected-revision <revision> ...')
       const definition = buildDefinition(parsed, id)
-      await confirm(io, `update MCP ${id} at revision ${revision}; trust will need review`, parsed)
+      await confirm(
+        io,
+        `update MCP ${id} at revision ${revision}; trust will need review${'sandboxProfile' in definition ? ` sandbox=${definition.sandboxProfile}` : ''}${'workspacePath' in definition ? ` workspace=${definition.workspacePath}` : ''}`,
+        parsed,
+      )
       const receipt = await client.mcp.servers.update({
         profile: p,
         serverId: id,

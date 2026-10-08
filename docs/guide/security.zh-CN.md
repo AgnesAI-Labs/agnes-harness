@@ -87,3 +87,21 @@ Provider 密钥经配置服务存入凭据后端；公开配置只保留 `secret
 作者声明 `capabilities: { ledger: true, ... }`，并显式提供 `metadata`、`childControl`、`reclaim` 和 `scanIntegrity`。SQLite 账本和子任务文件保持兼容。旧授权及回执 schema 先严格校验，再复制到 metadata；撤权先持久化后通知。旧 SQL 表保留用于回退核验，新 metadata 更新不反写旧表。
 
 实现依据：[默认 profile](../../packages/host-common/templates/local-dev.yaml)、[普通行 API](../../packages/host-extensions/src/ext-host/row-extension-api.ts)、[MCP 参数策略](../../packages/resource-control-cli/src/resources.ts)、[Web server](../../packages/web-server/src/server.ts)。
+
+## 包来源记录与来源策略
+
+新安装保存解析后的来源和版本、打包文件树 SHA256、可用的发布者证据、安装时间、安装者及信任决定。`agh plugins provenance <id> --json` 读取记录；App Server 的 `_agnes/v1/packages.provenance` 和 `_agnes/v1/packages.sourcePolicy` 是管理只读方法。审阅对话框和插件详情展示相同摘要。验证发布者不等于隔离插件代码：进程内插件仍需审阅其声明的权限。
+
+安装时验证下载内容；加载安装包和不可变代际快照时重新计算文件树摘要。摘要不一致拒绝加载（`E_PACKAGE_INTEGRITY`）；无效来源证据使用 `E_PACKAGE_PROVENANCE`。旧锁记录继续可读，但不会自动获得已验证发布者身份。npm 有 attestation 时通过 Sigstore 验证，并核对精确包名、版本及实际下载档案摘要；证据缺失显示未验证，证据无效则拒绝安装。
+
+管理端来源记录包含已声明来源的解析位置。诊断消息仍使用固定的安全摘要，不暴露无关本地路径。
+
+管理员配置 `<AGH_HOME>/profiles/<profile>/package-sources.json`：
+
+```json
+{ "allowedSources": "any-with-confirmation" }
+```
+
+默认 `any-with-confirmation` 保留绑定摘要的信任确认。`official-only` 只允许签名官方目录中的精确包；`official+npm-with-provenance` 另外允许已验证发布者证据的 npm 包。获取包及加载安装清单时检查策略。策略变化不会悄悄替换运行会话已经固定的代码。
+
+官方目录预留维护者管理的 Ed25519 公钥槽：`officialKeys` 将密钥 ID 映射到 PEM 公钥；`officialCatalog` 保存 `{ "statement": { "keyId", "issuedAt", "entries" }, "signature" }`。每个签名条目绑定 `id`、`version`、解析后的 `source`、`treeIntegrity` 和 `publisher`。签名是 statement 按键排序的规范 JSON 的 UTF-8 字节上的 Ed25519 签名，以 base64 保存。可选签名字段 `mcpDefinitions` 保存完整 MCP 定义经 JCS 序列化后的 `sha256-<hex>` 摘要，只有精确匹配的已验证定义才能取得官方 stdio 默认配置。管理员配置公钥，不接受下载包自带的公钥。测试动态生成开发密钥；生产官方签名密钥及目录由维护者配置。

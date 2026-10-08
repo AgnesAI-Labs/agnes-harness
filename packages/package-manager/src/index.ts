@@ -29,6 +29,15 @@ export * from './plugin-manifest.js'
 export * from './plugin-pack.js'
 export * from './plugin-state.js'
 export * from './ports.js'
+export {
+  isOfficialMcpDefinition,
+  type OfficialCatalogStatement,
+  type PackageSourceConfiguration,
+  packageSourcePolicy,
+  readPackageSourceConfiguration,
+  verifyNpmProvenance,
+  verifyOfficialCatalog,
+} from './provenance.js'
 export type {
   RuntimePin,
   RuntimePinPurpose,

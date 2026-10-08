@@ -5,6 +5,14 @@ export const PLUGIN_ADMIN_LOCALE_NAMESPACE = '@agnes/web/plugin-admin'
 
 export const pluginAdminLocaleCatalog: LocaleCatalog = {
   en: {
+    'provenance.digest': 'Tree integrity (SHA256)',
+    'provenance.installed': 'Installed',
+    'provenance.publisher': 'Publisher',
+    'provenance.source': 'Source',
+    'provenance.unverified': 'Publisher evidence has not been verified. Review the source before trusting.',
+    'provenance.verified':
+      'Verified publisher evidence. Plugin code still runs with its declared permissions.',
+    'provenance.title': 'Source verification',
     'failure.repair': 'Review the plugin details, resolve the reported issue and retry activation.',
     'compatibility.supported': 'Supported',
     'compatibility.unsupported': 'Unsupported',
@@ -209,6 +217,13 @@ export const pluginAdminLocaleCatalog: LocaleCatalog = {
     'source.validation.prefix': 'This source reference must start with “{prefix}”, for example {example}.',
   },
   'zh-CN': {
+    'provenance.digest': '文件树摘要（SHA256）',
+    'provenance.installed': '安装时间',
+    'provenance.publisher': '发布者',
+    'provenance.source': '来源',
+    'provenance.unverified': '发布者证据尚未验证。信任前请审阅来源。',
+    'provenance.verified': '发布者证据已验证。插件代码仍以其声明的权限运行。',
+    'provenance.title': '来源验证',
     'failure.repair': '检查插件详情，解决已报告的问题后重试启用。',
     'compatibility.supported': '兼容',
     'compatibility.unsupported': '不兼容',

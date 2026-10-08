@@ -7,6 +7,12 @@ import { canonical, capabilityHash, freezeData, snapshotHash } from './integrity
 import type { LockEntry, Lockfile } from './lockfile.js'
 import { capabilityPolicyBlockers, readPluginCapabilityPolicy } from './plugin-capabilities.js'
 import type { AgnesPluginKind } from './plugin-manifest.js'
+import {
+  enforcePackageSourcePolicy,
+  readPackageSourceConfiguration,
+  recordProvenance,
+  verifyOfficialCatalog,
+} from './provenance.js'
 import { hashDirectory, packageDir, parseSource } from './sources.js'
 import { previousPackageDir } from './store.js'
 import { verifyWorkspace } from './workspace.js'
@@ -83,6 +89,15 @@ export function verifyPackageDirectory(
   )
     throw new PackageError('E_LOCK_MISMATCH', 'installed inventory tree differs from lock', {
       detail: { id },
+    })
+  if (
+    entry.provenance &&
+    (entry.provenance.treeIntegrity !== entry.treeIntegrity ||
+      entry.provenance.version !== entry.version ||
+      canonical(entry.provenance.source) !== canonical(entry.source))
+  )
+    throw new PackageError('E_LOCK_MISMATCH', 'Package provenance differs from installed snapshot', {
+      code: 'E_PACKAGE_PROVENANCE',
     })
   const source = parseSource(entry.source.ref)
   let checked: ReturnType<typeof inspectStaged>
@@ -205,6 +220,7 @@ export function readInventory(
       entry.declaredCapabilities,
       readPluginCapabilityPolicy(options.profileDir),
     )
+    let provenance = entry.provenance
     let hash = capabilityHash(entry)
     let kinds: readonly AgnesPluginKind[] | undefined
     if (entry.contributions === undefined || entry.treeIntegrity === undefined)
@@ -220,6 +236,22 @@ export function readInventory(
         directory,
         options.ceiling ?? lock.policySnapshot.capabilityCeiling,
       )
+      provenance = verifyOfficialCatalog(
+        readPackageSourceConfiguration(options.profileDir),
+        id,
+        recordProvenance(
+          entry.source,
+          {
+            dir: directory,
+            version: entry.version,
+            integrity: entry.integrity,
+            dependencies: entry.dependencies,
+            ...(entry.provenance ? { provenance: entry.provenance } : {}),
+          },
+          entry.treeIntegrity,
+        ),
+      )
+      if (entry.trust !== 'builtin') enforcePackageSourcePolicy(options.profileDir, provenance)
       hash = verified.capabilityHash
       kinds = verified.kinds
       blockers.push(
@@ -239,7 +271,7 @@ export function readInventory(
       })
     packages.push({
       id,
-      entry,
+      entry: provenance ? { ...entry, provenance } : entry,
       directory,
       capabilityHash: hash,
       trusted,

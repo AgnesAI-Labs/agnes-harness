@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -46,7 +46,8 @@ it('new owner and unchanged Host API produce identical lock bytes and installed 
     lockBytes.push(
       readFileSync(owner.lockPath(dir), 'utf8')
         .replaceAll(lock.profile, '<profile>')
-        .replace(profile.hash, '<resolved-profile-hash>'),
+        .replace(profile.hash, '<resolved-profile-hash>')
+        .replaceAll(realpathSync(fixture), '<fixture>'),
     )
     const installed = owner.packageDir(dir, lock.profile, 'acme/pkg-a')
     trees.push(
@@ -59,7 +60,7 @@ it('new owner and unchanged Host API produce identical lock bytes and installed 
       }),
     )
   }
-  const golden = JSON.parse(readFileSync(join(fixture, 'package-manager/pm1-8c51bc9.json'), 'utf8'))
+  const golden = JSON.parse(readFileSync(join(fixture, 'package-manager/pm1-provenance.json'), 'utf8'))
   const historicalHash = JSON.parse(golden.lock).resolvedProfileHash as string
   golden.lock = golden.lock.replace(historicalHash, '<resolved-profile-hash>')
   expect({ lock: lockBytes[0], tree: trees[0] }).toEqual(golden)

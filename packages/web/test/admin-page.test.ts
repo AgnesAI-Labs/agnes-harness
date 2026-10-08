@@ -363,6 +363,9 @@ it('groups real catalog releases and carries the selected version source through
     expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Install preview'),
   )
   expect(document.getElementById('plugin-confirm-preview')?.textContent).toContain(selected.integrity)
+  expect(document.querySelector('[aria-label="Source verification"]')?.textContent).toContain(
+    'Publisher evidence has not been verified',
+  )
   expect(document.getElementById('plugin-confirm-preview')?.textContent).toContain('examples/hot-tool')
 
   document.getElementById('plugin-confirm-action')?.click()

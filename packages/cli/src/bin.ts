@@ -688,7 +688,8 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       return 0
     }
     if (
-      (p.command === 'plugins' && !['reload', 'publication-status'].includes(p.positional[0] ?? '')) ||
+      (p.command === 'plugins' &&
+        !['reload', 'publication-status', 'provenance'].includes(p.positional[0] ?? '')) ||
       p.command === 'package' ||
       p.command === 'install'
     ) {

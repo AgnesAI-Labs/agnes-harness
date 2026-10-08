@@ -88,6 +88,7 @@ export function trustPackageEntry(
       runTrustGate({ id, entry, manifest, ceiling, now: trusted, minimumReleaseAgeMin })
     }
   entry.trustDecision = { ...decision, decidedAt: trusted }
+  if (entry.provenance) entry.provenance.trustDecision = 'confirmed'
   entry.state.trusted = trusted
   return entry
 }

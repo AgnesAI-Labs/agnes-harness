@@ -366,7 +366,16 @@
             "displayName": { "type": "string", "minLength": 1, "maxLength": 128 },
             "transport": { "$ref": "#/$defs/McpStdioTransport" },
             "secretBinding": { "$ref": "#/$defs/McpStdioSecretBinding" },
-            "toolPolicy": { "$ref": "#/$defs/McpToolPolicy" }
+            "toolPolicy": { "$ref": "#/$defs/McpToolPolicy" },
+            "sandboxProfile": {
+              "enum": ["strict", "workspace-write", "network", "off-with-warning"]
+            },
+            "workspacePath": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^(?:/|[A-Za-z]:\\\\)[^\\x00-\\x1f\\x7f]*$"
+            }
           }
         },
         {
@@ -428,6 +437,9 @@
         "lastSafeError": { "$ref": "#/$defs/SafeError" },
         "authorizationStatus": {
           "oneOf": [{ "enum": ["pending", "authorized", "needs-reconnect", "error"] }, { "type": "null" }]
+        },
+        "sandboxProfile": {
+          "enum": ["strict", "workspace-write", "network", "off-with-warning"]
         }
       }
     },
@@ -471,6 +483,9 @@
               "name": { "type": "string", "minLength": 1, "maxLength": 128 }
             }
           }
+        },
+        "sandboxProfile": {
+          "enum": ["strict", "workspace-write", "network", "off-with-warning"]
         }
       }
     },

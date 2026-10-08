@@ -191,6 +191,36 @@ describe('resource CLI argument boundary', () => {
     expect(output).toContain('agh mcp trust example --expected-revision <revision>')
     expect(output).toContain('agh mcp enable example --expected-revision <revision>')
   })
+  it.each(['strict', 'workspace-write', 'network', 'off-with-warning'])(
+    'accepts the explicit sandbox profile %s but rejects unknown profiles',
+    async (profile) => {
+      await expect(
+        runResourceCommand(
+          'mcp',
+          ['add', 'example', '--name', 'Example', '--stdio', 'example', '--sandbox-profile', profile],
+          {} as never,
+          { write: () => undefined },
+        ),
+      ).rejects.toThrow('operation cancelled')
+      await expect(
+        runResourceCommand(
+          'mcp',
+          [
+            'add',
+            'example',
+            '--name',
+            'Example',
+            '--stdio',
+            'example',
+            '--sandbox-profile',
+            'silent-fallback',
+          ],
+          {} as never,
+          { write: () => undefined },
+        ),
+      ).rejects.toThrow('--sandbox-profile requires')
+    },
+  )
   it('accepts normal dash-prefixed stdio arguments but rejects shell command switches', async () => {
     await expect(
       runResourceCommand(

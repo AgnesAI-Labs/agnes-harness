@@ -190,6 +190,7 @@ describe('PackageManager lifecycle', () => {
       agnesVersion: '0.1.0',
       cwd: profileDir,
       exec,
+      npmProvenance: async () => undefined,
       extract,
       now: () => '2026-09-07T00:00:00Z',
     })

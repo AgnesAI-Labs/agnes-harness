@@ -270,6 +270,7 @@ export function usage(): string {
     'agh plugins add <url|path> [--yes] | pack <folder> [output.tgz] | trust|enable <id> [--yes]',
     'agh install <src> [--profile <p>] [--yes]',
     'agh dev <plugin-folder> [--profile <p>]   agh plugins reload [id] [--profile <p>]',
+    'agh plugins provenance <id> [--profile <p>] [--json]',
     'agh plugins publication-status [--profile <p>] [--json]',
     'agh packages pins inspect | release <pinId...> [--profile <p>]',
     'agh resources list|get|operation|cancel|enable|disable ...   agh skills list|refresh|trust ...',

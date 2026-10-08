@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { type ExtensionManifest, satisfiesApiRange } from '@agnes/extension-api'
-import { type PackagePreview, validatePackageAdminData } from '@agnes/protocol'
+import {
+  type PackagePreview,
+  type PackageProvenance,
+  type PackageSourcePolicy,
+  validatePackageAdminData,
+} from '@agnes/protocol'
 import type { PackageAuditSink } from './audit.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
@@ -32,6 +37,14 @@ import { readManifestIn } from './manifest.js'
 import { type RuntimePluginSnapshot, runtimePluginSnapshotsFromPins } from './package-plugin-loader.js'
 import { readPluginCapabilityPolicy } from './plugin-capabilities.js'
 import { checkCancelled, type OperationOptions, type PackageSourceAdapter, progress } from './ports.js'
+import {
+  enforcePackageSourcePolicy,
+  type fetchNpmProvenance,
+  packageSourcePolicy,
+  readPackageSourceConfiguration,
+  recordProvenance,
+  verifyOfficialCatalog,
+} from './provenance.js'
 import {
   collectRuntimeSnapshotsStore,
   listRuntimePinsStore,
@@ -75,6 +88,8 @@ export type PackageStatus = {
 }
 
 export interface PackageManager {
+  provenance(profileDir: string, id: string): Promise<PackageProvenance>
+  sourcePolicy(profileDir: string): PackageSourcePolicy
   readonly localPluginRoots: LocalPluginRoots | undefined
   bindLocalPluginReload(reload: LocalPluginReload): void
   reportLocalPluginFailure(profileDir: string, id: string): void
@@ -147,6 +162,7 @@ export type ManagerOptions = {
   agnesVersion: string
   now?: () => string
   exec?: ExecFn
+  npmProvenance?: typeof fetchNpmProvenance
   extract?: (tarball: string, into: string) => Promise<void>
   minimumReleaseAgeMin?: number
   ceiling?: string[]
@@ -154,6 +170,7 @@ export type ManagerOptions = {
   references?: PackageReferences
   audit?: PackageAuditSink
   auditActor?: string
+  installer?: 'user' | 'agent'
   checkpoint?: (point: PackageCommitPoint) => void
   runtimeCheckpoint?: (point: RuntimeSnapshotCommitPoint) => void
   sourceAdapters?: readonly PackageSourceAdapter[]
@@ -266,6 +283,9 @@ function entryFrom(
     })
   const common = {
     version: fetched.version,
+    ...(fetched.provenance
+      ? { provenance: { ...fetched.provenance, installedAt: installed, trustDecision: 'pending' as const } }
+      : {}),
     integrity: fetched.integrity,
     trust: 'trusted' as const,
     license: pkg.license,
@@ -355,12 +375,32 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     claimStage(stage)
     return stage
   }
-  const fetch = (source: PackageSource, stage: string, cwd: string): Promise<FetchedSource> =>
-    fetchSource(source, stage, {
-      cwd,
-      ...(options.exec ? { exec: options.exec } : {}),
-      ...(options.extract ? { extract: options.extract } : {}),
-    })
+  const annotate = (source: PackageSource, fetched: FetchedSource, profileDir: string): FetchedSource => {
+    const tree = hashDirectory(fetched.dir, { exclude: [] })
+    const provenance = verifyOfficialCatalog(
+      readPackageSourceConfiguration(profileDir),
+      readPackageJson(fetched.dir).name,
+      recordProvenance(source, fetched, tree),
+    )
+    enforcePackageSourcePolicy(profileDir, provenance)
+    return { ...fetched, provenance: { ...provenance, installer: options.installer ?? 'user' } }
+  }
+  const fetch = async (
+    source: PackageSource,
+    stage: string,
+    cwd: string,
+    profileDir = cwd,
+  ): Promise<FetchedSource> =>
+    annotate(
+      source,
+      await fetchSource(source, stage, {
+        cwd,
+        ...(options.exec ? { exec: options.exec } : {}),
+        ...(options.npmProvenance ? { npmProvenance: options.npmProvenance } : {}),
+        ...(options.extract ? { extract: options.extract } : {}),
+      }),
+      profileDir,
+    )
 
   const acquire = async (
     source: PackageSource,
@@ -379,6 +419,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         : await fetchSource(source, stage, {
             cwd,
             ...(options.exec ? { exec: options.exec } : {}),
+            ...(options.npmProvenance ? { npmProvenance: options.npmProvenance } : {}),
             ...(options.extract ? { extract: options.extract } : {}),
             ...(op.signal ? { signal: op.signal } : {}),
           })
@@ -388,7 +429,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       progress(op, 'inspecting')
       if (hashDirectory(stage, { exclude: [], ...(op.signal ? { signal: op.signal } : {}) }) !== acquiredTree)
         throw new PackageError('E_LOCK_MISMATCH', 'staging changed during inspection')
-      return fetched
+      return annotate(source, fetched, profileDir)
     } catch (error) {
       checkCancelled(op.signal)
       throw error
@@ -513,7 +554,17 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         localFailures.delete(candidate.source.ref)
         const entry = entryFrom(
           candidate.source,
-          { dir: stage, version: pkg.version, integrity: prepared.integrity, dependencies: pkg.dependencies },
+          annotate(
+            candidate.source,
+            {
+              dir: stage,
+              version: pkg.version,
+              integrity: prepared.integrity,
+              resolvedLocation: realpathSync(candidate.directory),
+              dependencies: pkg.dependencies,
+            },
+            profileDir,
+          ),
           pkg,
           undefined,
           stamp(),
@@ -529,6 +580,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           trusted: capabilityChanged || (current && current.state.trusted === null) ? null : stamp(),
           enabled: capabilityChanged ? false : (current?.state.enabled ?? true),
         }
+        if (entry.provenance) entry.provenance.trustDecision = entry.state.trusted ? 'confirmed' : 'pending'
         if (entry.state.trusted !== null)
           entry.trustDecision = {
             integrity: entry.integrity,
@@ -618,6 +670,31 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     return freezeData({ ...inventory, packages })
   }
   const manager: PackageManager = {
+    sourcePolicy: packageSourcePolicy,
+    async provenance(profileDir, id) {
+      return locked(profileDir, async () => {
+        const row = installed(storeFor(profileDir), load(profileDir), id, false)
+        return row.entry.provenance
+          ? {
+              ...row.entry.provenance,
+              trustDecision: row.entry.state.trusted
+                ? 'confirmed'
+                : row.entry.provenance.trustDecision === 'revoked'
+                  ? 'revoked'
+                  : 'pending',
+            }
+          : recordProvenance(
+              row.entry.source,
+              {
+                dir: row.directory ?? '',
+                version: row.entry.version,
+                integrity: row.entry.integrity,
+                dependencies: row.entry.dependencies,
+              },
+              row.entry.treeIntegrity ?? row.entry.integrity,
+            )
+      })
+    },
     localPluginRoots: options.localPlugins,
     bindLocalPluginReload(reload) {
       localReload = reload
@@ -910,7 +987,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         writable(lock)
         const stage = stageFor(profileDir)
         try {
-          const fetched = await fetch(source, stage, options.cwd ?? profileDir)
+          const fetched = await fetch(source, stage, options.cwd ?? profileDir, profileDir)
           const pkg = readPackageJson(stage)
           if (pkg.version !== fetched.version)
             throw new PackageError('E_LOCK_MISMATCH', 'fetched package version changed before install', {
@@ -1021,6 +1098,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         if (options.references || lock.workspace)
           await assertNoReferences(store, lock, id, 'disable', options.references)
         const next = structuredClone(entry)
+        if (next.provenance) next.provenance.trustDecision = 'revoked'
         next.state.trusted = null
         next.state.enabled = false
         delete next.trustDecision
@@ -1217,7 +1295,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         const source = parseSource(`npm:${id}@${current.previous.version}`)
         const stage = stageFor(profileDir)
         try {
-          const fetched = await fetch(source, stage, options.cwd ?? profileDir)
+          const fetched = await fetch(source, stage, options.cwd ?? profileDir, profileDir)
           if (fetched.integrity !== current.previous.integrity)
             throw new PackageError('E_LOCK_MISMATCH', `${id} previous source differs from the lockfile`, {
               detail: { id, reason: 'integrity' },
@@ -1300,13 +1378,18 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             })
           const source = parseSource(`workspace:${extension.path}`)
           const integrity = hashDirectory(dir)
-          const fetched: FetchedSource = {
-            dir,
-            version: pkg.version,
-            integrity,
-            license: pkg.license,
-            dependencies: pkg.dependencies,
-          }
+          const fetched: FetchedSource = annotate(
+            source,
+            {
+              dir,
+              resolvedLocation: realpathSync(dir),
+              version: pkg.version,
+              integrity,
+              license: pkg.license,
+              dependencies: pkg.dependencies,
+            },
+            profileDir,
+          )
           const entry = entryFrom(
             fetched.source ?? source,
             fetched,
@@ -1324,6 +1407,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             now: installed,
             minimumReleaseAgeMin,
           })
+          if (entry.provenance) entry.provenance.trustDecision = 'confirmed'
           entry.state.trusted = installed
           entry.state.enabled = true
           entries[extension.id] = entry

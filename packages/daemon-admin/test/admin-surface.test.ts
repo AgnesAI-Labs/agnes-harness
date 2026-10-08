@@ -283,6 +283,8 @@ describe('local package admin surface trust boundary', () => {
     const expectedPaths = [
       'catalog/list',
       'generations',
+      'provenance',
+      'source-policy',
       'publication-status',
       'sessions/migrate',
       'catalog/get',

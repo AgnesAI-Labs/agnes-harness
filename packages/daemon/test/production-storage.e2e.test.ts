@@ -507,6 +507,8 @@ describe('production supervisor storage', () => {
         const definition = {
           serverId,
           displayName: serverId,
+          sandboxProfile: windows ? 'off-with-warning' : 'workspace-write',
+          workspacePath: dir,
           transport: { kind: 'stdio', executable, args: [server, pidFile] },
           secretBinding: { kind: 'none' },
           toolPolicy: { allow: ['status'] },
@@ -679,6 +681,8 @@ describe('production supervisor storage', () => {
       const definition = {
         serverId: 'secret-audit',
         displayName: 'Secret audit',
+        sandboxProfile: process.platform === 'win32' ? 'off-with-warning' : 'workspace-write',
+        workspacePath: dir,
         transport: { kind: 'stdio', executable: process.execPath, args: [server, expectedHash, observation] },
         secretBinding: { kind: 'stdio-env', env: { TOKEN: 'secret://audit/token' } },
         toolPolicy: { allow: ['status'] },

@@ -1079,7 +1079,12 @@ it('projects manager diagnostics with fixed safe text instead of package-provide
   expect(warningOperation.preview?.warnings).toEqual([
     { code: 'unlicensed', safeMessage: 'Package license information is unavailable.' },
   ])
-  expect(JSON.stringify(warningOperation)).not.toContain(root)
+  // The requested source location is deliberate admin review data; diagnostics cannot leak paths.
+  expect(warningOperation.preview?.provenance.resolvedLocation).toBe(preview.provenance.resolvedLocation)
+  const { resolvedLocation: _location, ...evidence } = warningOperation.preview!.provenance
+  expect(
+    JSON.stringify({ ...warningOperation, preview: { ...warningOperation.preview, provenance: evidence } }),
+  ).not.toContain(root)
 
   const failure = new Error(`unavailable source at ${root}`)
   Object.assign(failure, { code: 'E_PACKAGE_SOURCE' })

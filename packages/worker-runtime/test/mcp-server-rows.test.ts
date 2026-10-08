@@ -165,6 +165,7 @@ it('reconstructs a cold generation MCP factory from SecretRefs and refuses unkno
   if (!row?.generation) throw new Error('missing MCP resource factory metadata')
   const restore = generationExtensionRestorer({
     env: {},
+    profile: { name: 'local-dev', dataDir: '/synthetic-resource-data' },
     createSecrets: () => {
       throw new Error('SecretRefs must be resolved only when connecting')
     },

@@ -6,6 +6,8 @@ export type ClosedNetworkConfineOptions = Readonly<{
   denyPaths: readonly string[]
   /** A non-empty list is deliberately unsupported until a real host-filtering proxy exists. */
   networkAllow?: readonly string[]
+  readPaths?: readonly string[]
+  network?: 'deny' | 'allow'
 }>
 
 export type SandboxBackendCompileCode =
@@ -79,12 +81,16 @@ export function validateClosedNetworkOptions(options: ClosedNetworkConfineOption
   cwd: string
   allowPaths: string[]
   denyPaths: string[]
+  readPaths?: string[]
+  network?: 'deny' | 'allow'
 } {
   requireClosedNetwork(options.networkAllow)
   const cwd = validateAbsolutePaths([options.cwd], 'deny')[0]
   if (!cwd) throw backendCompileFault('E_SANDBOX_BACKEND_POLICY', 'missing cwd')
   return {
     cwd,
+    ...(options.readPaths ? { readPaths: validateAbsolutePaths(options.readPaths, 'deny') } : {}),
+    ...(options.network ? { network: options.network } : {}),
     allowPaths: validateAbsolutePaths(options.allowPaths, 'allow'),
     denyPaths: validateAbsolutePaths(options.denyPaths, 'deny'),
   }

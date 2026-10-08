@@ -210,6 +210,9 @@
                     },
                     "declaredCapabilities": {
                       "$ref": "package-admin.json#/$defs/PluginCapabilities"
+                    },
+                    "provenance": {
+                      "$ref": "package-admin.json#/$defs/PackageProvenance"
                     }
                   }
                 }
@@ -241,6 +244,9 @@
             },
             "declaredCapabilities": {
               "$ref": "package-admin.json#/$defs/PluginCapabilities"
+            },
+            "provenance": {
+              "$ref": "package-admin.json#/$defs/PackageProvenance"
             }
           }
         },
@@ -447,6 +453,9 @@
                     },
                     "declaredCapabilities": {
                       "$ref": "package-admin.json#/$defs/PluginCapabilities"
+                    },
+                    "provenance": {
+                      "$ref": "package-admin.json#/$defs/PackageProvenance"
                     }
                   }
                 }
@@ -478,6 +487,9 @@
             },
             "declaredCapabilities": {
               "$ref": "package-admin.json#/$defs/PluginCapabilities"
+            },
+            "provenance": {
+              "$ref": "package-admin.json#/$defs/PackageProvenance"
             }
           }
         }

@@ -19,6 +19,7 @@ import {
   type ResourceActivationBarrier,
   validateManagedHttpUrl,
 } from '@agnes/resource-control-runtime'
+import { mcpSandboxProfile, sandboxMcpConfig } from './mcp-sandbox.js'
 import { syncManagedMcpExecutableAllowlist } from './mcp-server-opener.js'
 import { deploymentMcpPolicy, scanSkills } from './skill-bootstrap.js'
 import { removeFilesystemSkill } from './skill-remove.js'
@@ -195,20 +196,41 @@ export async function bootstrapWorkerResources(
         }
       : {}),
     // Deployment-owned policy stays separate from resource definitions and durable state.
-    stdioPolicy: { allowedExecutables: mcpPolicy.allowedExecutables },
+    stdioPolicy: {
+      allowedExecutables: mcpPolicy.allowedExecutables,
+      sandboxProfile: (definition) =>
+        mcpSandboxProfile(definition, {
+          dataDir: input.profile.dataDir,
+          ...(input.agnesHomeDir
+            ? { profileDir: join(input.agnesHomeDir, 'profiles', input.profile.name) }
+            : {}),
+        }),
+    },
     httpPolicy: { allowLoopbackHttp: mcpPolicy.allowLoopbackHttp, localDaemon: mcpPolicy.localDaemon },
     connect: async (config, options) =>
-      connectMcp(config, undefined, {
-        signal: options.signal,
-        connectTimeoutMs: options.timeoutMs,
-        // An HTTP redirect target gets the same HTTPS/loopback policy check the configured URL
-        // already passed, so a compromised server cannot bounce the connection past it (SSRF).
-        validateRedirectUrl: (url) =>
-          validateManagedHttpUrl(url, {
-            allowLoopbackHttp: mcpPolicy.allowLoopbackHttp,
-            localDaemon: mcpPolicy.localDaemon,
-          }),
-      }),
+      connectMcp(
+        await sandboxMcpConfig(
+          config,
+          {
+            dataDir: input.profile.dataDir,
+            ...(input.cwd ? { workspace: input.cwd } : {}),
+            ...(input.env.PATH ? { path: input.env.PATH } : {}),
+          },
+          options.signal,
+        ),
+        undefined,
+        {
+          signal: options.signal,
+          connectTimeoutMs: options.timeoutMs,
+          // An HTTP redirect target gets the same HTTPS/loopback policy check the configured URL
+          // already passed, so a compromised server cannot bounce the connection past it (SSRF).
+          validateRedirectUrl: (url) =>
+            validateManagedHttpUrl(url, {
+              allowLoopbackHttp: mcpPolicy.allowLoopbackHttp,
+              localDaemon: mcpPolicy.localDaemon,
+            }),
+        },
+      ),
     inspectCatalog: inspectRemoteCatalog,
     // Deliberately still a no-op, not the cross-worker notifier this docstring's function name might
     // suggest (@agnes/resource-control-runtime's `notifyLiveSessionWorkers`). This function

@@ -3,6 +3,12 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 /** Static resource-admin copy shared by the blocking boot script and the runtime locale source. */
 export const resourceAdminShellLocaleCatalog: LocaleCatalog = {
   en: {
+    'sandbox.workspace': 'Workspace folder (optional, absolute path)',
+    'sandbox.off-with-warning': 'Off: full host access (explicit approval)',
+    'sandbox.network': 'Network, workspace read',
+    'sandbox.workspace-write': 'Workspace write, no network',
+    'sandbox.strict': 'Strict: workspace read, no network',
+    'sandbox.title': 'Sandbox profile',
     'confirmation.title': 'Confirm action',
     'confirmation.cancel': 'Cancel',
     'confirmation.confirm': 'Confirm',
@@ -53,6 +59,12 @@ export const resourceAdminShellLocaleCatalog: LocaleCatalog = {
     'shell.form.secret-placeholder': 'secret://namespace/name or TOKEN=secret://namespace/name',
   },
   'zh-CN': {
+    'sandbox.workspace': '工作区目录（可选，绝对路径）',
+    'sandbox.off-with-warning': '关闭：访问完整主机（须明确批准）',
+    'sandbox.network': '允许联网，工作区只读',
+    'sandbox.workspace-write': '允许工作区写入，禁止联网',
+    'sandbox.strict': '严格：工作区只读，禁止联网',
+    'sandbox.title': '沙箱配置',
     'confirmation.title': '确认操作',
     'confirmation.cancel': '取消',
     'confirmation.confirm': '确认',

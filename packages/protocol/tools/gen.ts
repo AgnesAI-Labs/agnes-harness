@@ -296,7 +296,13 @@ const TARGETS: Array<{
     imports: [
       {
         from: 'schema/package-admin.json',
-        defs: ['PackageContributionSummary', 'PackageTrustDecision', 'PluginCapabilities'],
+        defs: [
+          'PackageContributionSummary',
+          'PackageTrustDecision',
+          'PluginCapabilities',
+          'PackageProvenance',
+          'PackageSource',
+        ],
       },
       { from: 'schema/surface.json', defs: ['SurfaceDescriptor', 'SurfaceArtifact', 'SurfaceServiceGrant'] },
       {

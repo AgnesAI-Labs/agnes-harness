@@ -99,3 +99,21 @@ The persistence contract separates ledger, metadata/KV, durable child-control, r
 Provider authors declare `capabilities: { ledger: true, ... }` and expose `metadata`, `childControl`, `reclaim` and `scanIntegrity` explicitly. SQLite ledger/child files remain compatible. Legacy grant and receipt schemas are validated before copying to metadata; revocations remain durable before observers are notified. Legacy SQL tables remain for rollback evidence, but metadata changes are not reflected back into them.
 
 Implementation: [default profile](../../packages/host-common/templates/local-dev.yaml), [ordinary row API](../../packages/host-extensions/src/ext-host/row-extension-api.ts), [MCP argument policy](../../packages/resource-control-cli/src/resources.ts), [Web server](../../packages/web-server/src/server.ts).
+
+## Package provenance and source policy
+
+New installations record the resolved source and version, packed tree SHA256, publisher evidence when available, installation time, installer and trust decision. `agh plugins provenance <id> --json` reads that record; App Server `_agnes/v1/packages.provenance` and `_agnes/v1/packages.sourcePolicy` are admin read methods. The review dialog and plugin details display the same summary. A verified publisher does not isolate plugin code: in-process plugins still require review of their declared permissions.
+
+Install verifies downloaded bytes; loading installed packages and immutable generation snapshots rehashes the tree. A mismatch fails closed (`E_PACKAGE_INTEGRITY`); invalid provenance evidence uses `E_PACKAGE_PROVENANCE`. Existing lock records remain readable but gain no verified publisher identity automatically. npm attestations, when present, are verified with Sigstore and must name the exact pinned package/version and packed archive digest. Missing evidence remains visibly unverified; invalid evidence refuses installation.
+
+Administrative provenance includes the declared resolved source location. Diagnostic messages remain fixed safe summaries and do not disclose unrelated local paths.
+
+Administrators configure `<AGH_HOME>/profiles/<profile>/package-sources.json`:
+
+```json
+{ "allowedSources": "any-with-confirmation" }
+```
+
+`any-with-confirmation` is the default and retains the existing digest-bound trust approval. `official-only` accepts signed official catalog tuples. `official+npm-with-provenance` additionally accepts npm packages with verified publisher evidence. Policy is checked at acquisition and installed inventory load. Changing policy does not silently replace code already pinned by a running session.
+
+The official catalog has a maintainer-owned Ed25519 key slot: `officialKeys` maps key IDs to PEM public keys; `officialCatalog` holds `{ "statement": { "keyId", "issuedAt", "entries" }, "signature" }`. Each signed entry binds `id`, `version`, resolved `source`, `treeIntegrity` and `publisher`. Signature bytes are Ed25519 over UTF-8 canonical sorted-key JSON of the statement, encoded as base64. An optional signed `mcpDefinitions` list contains `sha256-<hex>` hashes of JCS-serialized full MCP definitions. Only an exact verified definition receives the official stdio default. Keys are configured by the administrator, never accepted from downloaded packages. Tests generate development keys; provisioning the real official signing key and catalog is a maintainer action.

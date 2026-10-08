@@ -13,6 +13,8 @@ export interface AppServerMethods {
   "_agnes/v1/admin.mcp.oauth.save": { params: Static<typeof import("./app-server.js").AdminMcpOAuthSave>; result: Static<typeof import("./app-server.js").AdminEmpty>; direction: "c2s"; kind: "request" }
   "_agnes/v1/packages.catalog.list": { params: Static<typeof import("./package-admin.js").PackageCatalogListParams>; result: Static<typeof import("./package-admin.js").PackageCatalogPage>; direction: "c2s"; kind: "request" }
   "_agnes/v1/packages.catalog.get": { params: Static<typeof import("./package-admin.js").PackageCatalogGetParams>; result: Static<typeof import("./package-admin.js").PackageCatalogDescriptor>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/packages.provenance": { params: Static<typeof import("./package-admin.js").PackageProvenanceParams>; result: Static<typeof import("./package-admin.js").PackageProvenance>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/packages.sourcePolicy": { params: Static<typeof import("./package-admin.js").PackageListParams>; result: Static<typeof import("./package-admin.js").PackageSourcePolicy>; direction: "c2s"; kind: "request" }
   "_agnes/v1/packages.list": { params: Static<typeof import("./package-admin.js").PackageListParams>; result: Static<typeof import("./package-admin.js").PackageListResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/skins.list": { params: Static<typeof import("./package-admin.js").PackageListParams>; result: Static<typeof import("./package-admin.js").SkinListResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/skins.read": { params: Static<typeof import("./package-admin.js").SkinReadParams>; result: Static<typeof import("./package-admin.js").SkinReadResult>; direction: "c2s"; kind: "request" }

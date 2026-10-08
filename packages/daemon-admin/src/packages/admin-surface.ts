@@ -29,6 +29,8 @@ export const ACTIONS = {
   'catalog/list': '_agnes/v1/packages.catalog.list',
   'catalog/get': '_agnes/v1/packages.catalog.get',
   list: '_agnes/v1/packages.list',
+  provenance: '_agnes/v1/packages.provenance',
+  'source-policy': '_agnes/v1/packages.sourcePolicy',
   generations: '_agnes/v1/plugins.generations',
   'publication-status': '_agnes/v1/plugins.publicationStatus',
   'sessions/migrate': '_agnes/v1/sessions.migrate',

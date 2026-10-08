@@ -8,6 +8,9 @@ export type McpServerConfig = {
   id: string
   transport: 'stdio' | 'http' | 'sse'
   cmd?: string[]
+  cwd?: string
+  workspacePath?: string
+  sandboxProfile?: 'strict' | 'workspace-write' | 'network' | 'off-with-warning'
   url?: string
   baseEnv?: Record<string, string>
   env?: Record<string, string>
@@ -52,7 +55,10 @@ export type McpCatalogInspector = (
   config: McpServerConfig,
   options: McpInspectOptions,
 ) => Promise<Readonly<{ tools: readonly McpRemoteTool[]; skipped: readonly McpSkippedTool[] }>>
-export type McpStdioPolicy = Readonly<{ allowedExecutables: readonly string[] }>
+export type McpStdioPolicy = Readonly<{
+  allowedExecutables: readonly string[]
+  sandboxProfile?(definition: McpServerDefinitionInput): McpServerConfig['sandboxProfile']
+}>
 /**
  * Deployment capability only. A persisted/request definition cannot widen either switch.
  * `localDaemon` identifies the transport endpoint's machine, rather than using a mutable
@@ -379,6 +385,13 @@ export async function resolvedConfig(
     return Object.freeze({
       id: definition.serverId,
       transport: 'stdio',
+      ...('workspacePath' in definition && definition.workspacePath
+        ? { workspacePath: definition.workspacePath }
+        : {}),
+      sandboxProfile:
+        ('sandboxProfile' in definition ? definition.sandboxProfile : undefined) ??
+        policies.stdioPolicy.sandboxProfile?.(definition) ??
+        'strict',
       cmd: [definition.transport.executable, ...definition.transport.args],
       baseEnv: fixedEnvironment(baseEnv),
       ...(Object.keys(env).length ? { env: Object.freeze(env) } : {}),
@@ -502,6 +515,16 @@ export function createMcpResourceManager(options: Options) {
     const seen = observed.get(serverId)
     return Object.freeze({
       serverId,
+      ...(entry?.config.sandboxProfile
+        ? { sandboxProfile: entry.config.sandboxProfile }
+        : input?.definition.transport.kind === 'stdio'
+          ? {
+              sandboxProfile:
+                options.stdioPolicy.sandboxProfile?.(input.definition) ??
+                ('sandboxProfile' in input.definition ? input.definition.sandboxProfile : undefined) ??
+                ('strict' as const),
+            }
+          : {}),
       connectionState: entry
         ? 'ready'
         : (seen?.state ?? (input?.desired === 'disabled' ? 'disabled' : 'unavailable')),
@@ -696,6 +719,13 @@ export function createMcpResourceManager(options: Options) {
           serverId,
           'MCP_OAUTH_NEEDS_RECONNECT',
           'MCP OAuth credential requires re-authorization',
+          input,
+        )
+      if ((error as { code?: unknown })?.code === 'E_MCP_SANDBOX_UNAVAILABLE')
+        return failed(
+          serverId,
+          'E_MCP_SANDBOX_UNAVAILABLE',
+          'No usable stdio sandbox is available. Explicitly approve off-with-warning or configure a working sandbox.',
           input,
         )
       return failed(serverId, 'MCP_CONNECT_FAILED', 'MCP connection or catalog health check failed', input)

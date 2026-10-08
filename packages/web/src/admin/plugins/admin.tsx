@@ -55,7 +55,7 @@ import { SETTINGS_NAMESPACE, settingsCatalog } from '../../settings/locales.js'
 import { sessionStartUrl } from '../../settings/runtime-panels.js'
 import type { SchedulesApi } from '../../settings/schedules.js'
 import { AdminApiError, PluginAdminApi } from './api.js'
-import { CapabilityReview, FailureHelp } from './capability-review.js'
+import { CapabilityReview, FailureHelp, ProvenanceReview } from './capability-review.js'
 import {
   GenerationDrainSummary,
   KindFilter,
@@ -779,6 +779,7 @@ class PluginAdminPage {
         ),
       facts: (
         <>
+          <ProvenanceReview value={preview.provenance} t={this.#t} />
           <CapabilityReview value={preview.declaredCapabilities} t={this.#t} />
           {combined ? (
             <UpdateActivationFacts installed={installed!} preview={preview} />
@@ -1340,7 +1341,12 @@ class PluginAdminPage {
           metadata={
             <>
               <PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.#t} />
-              {'desired' in item && <CapabilityReview value={item.declaredCapabilities} t={this.#t} />}
+              {'desired' in item && (
+                <>
+                  <ProvenanceReview value={item.provenance} t={this.#t} />
+                  <CapabilityReview value={item.declaredCapabilities} t={this.#t} />
+                </>
+              )}
               {'desired' in item &&
               (item.actual === 'failed' ||
                 item.blockers.length ||
@@ -1756,6 +1762,7 @@ class PluginAdminPage {
       label: () => this.#t('confirm.enable.action'),
       facts: (
         <>
+          <ProvenanceReview value={item.provenance} t={this.#t} />
           <CapabilityReview value={item.declaredCapabilities} t={this.#t} />
           {!item.trusted ? <TrustConfirmationFacts item={item} leadKey="lead.trust-enable" /> : undefined}
         </>

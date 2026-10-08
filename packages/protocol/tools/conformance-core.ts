@@ -122,6 +122,8 @@ const CONFIG_VALIDATORS: Record<string, (x: unknown) => ValidationResult<unknown
     validatePackageAdminData('PackageCapabilityDiff' satisfies PackageAdminDataName, x),
   PackageBlocker: (x) => validatePackageAdminData('PackageBlocker' satisfies PackageAdminDataName, x),
   PackageWarning: (x) => validatePackageAdminData('PackageWarning' satisfies PackageAdminDataName, x),
+  PackageProvenanceParams: (x) => validatePackageAdminData('PackageProvenanceParams', x),
+  PackageSourcePolicy: (x) => validatePackageAdminData('PackageSourcePolicy', x),
   PackageProvenance: (x) => validatePackageAdminData('PackageProvenance' satisfies PackageAdminDataName, x),
   PackagePreview: (x) => validatePackageAdminData('PackagePreview' satisfies PackageAdminDataName, x),
   PackageTrustDecision: (x) =>

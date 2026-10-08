@@ -13,11 +13,13 @@ import {
 } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { runIsolatedCommand } from '@agnes/package-isolation'
+import type { PackageProvenance } from '@agnes/protocol'
 import { bundledExampleSource, bundledPluginSourceRoot } from './bundled-plugin-source.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
 import { extractPluginArchive } from './plugin-archives.js'
 import { checkCancelled } from './ports.js'
+import { fetchNpmProvenance } from './provenance.js'
 import { claimFetch, readyStage } from './staging.js'
 
 export type PackageSource = {
@@ -30,6 +32,9 @@ export type ExecFn = (
   opts: { cwd: string; signal?: AbortSignal },
 ) => Promise<{ stdout: string }>
 export type FetchedSource = {
+  provenance?: PackageProvenance
+  sourceKind?: PackageProvenance['sourceKind']
+  resolvedLocation?: string
   dir: string
   source?: PackageSource
   version: string
@@ -418,6 +423,7 @@ export async function fetchSource(
   opts: {
     cwd: string
     exec?: ExecFn
+    npmProvenance?: typeof fetchNpmProvenance
     extract?: (tarball: string, into: string, signal?: AbortSignal) => Promise<void>
     signal?: AbortSignal
   },
@@ -453,11 +459,15 @@ export async function fetchSource(
     let integrity: string
     let releasedAt: string | undefined
     let resolvedSource: PackageSource | undefined
+    let resolvedLocation: string | undefined
+    let sourceKind: PackageProvenance['sourceKind']
     switch (checked.type) {
       case 'file':
       case 'path':
       case 'workspace': {
         const from = localSource(checked, opts.cwd)
+        resolvedLocation = from
+        sourceKind = lstatSync(from).isFile() ? 'tarball' : 'local-folder'
         if (contained(from, target))
           throw sourceError('package destination is inside its source', 'destination-inside-source')
         if (statSync(from).isFile()) {
@@ -617,9 +627,30 @@ export async function fetchSource(
     }
     checkCancelled(opts.signal)
     ensureEmptyDestination(target)
+    const provenance =
+      checked.type === 'npm'
+        ? await (opts.npmProvenance ?? fetchNpmProvenance)(
+            pkg.name,
+            pkg.version,
+            integrity,
+            opts.signal,
+            join(work, 'sigstore-cache'),
+          )
+        : undefined
     readyStage(target)
     renameSync(payload, target)
     return {
+      ...(provenance
+        ? {
+            provenance: {
+              source: (resolvedSource ?? checked) as PackageProvenance['source'],
+              integrity,
+              ...provenance,
+            },
+          }
+        : {}),
+      ...(sourceKind ? { sourceKind } : {}),
+      ...(resolvedLocation ? { resolvedLocation } : {}),
       dir: target,
       ...(resolvedSource ? { source: resolvedSource } : {}),
       version: pkg.version,
