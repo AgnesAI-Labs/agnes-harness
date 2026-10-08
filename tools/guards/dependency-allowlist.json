@@ -53,7 +53,8 @@
     "@agnes/protocol",
     "@agnes/protocol-validation",
     "@agnes/extension-api",
-    "@agnes/core-common"
+    "@agnes/core-common",
+    "@agnes/core-child-control"
   ],
   "@agnes/ai": ["@agnes/protocol", "@agnes/core", "@agnes/extension-api"],
   "@agnes/base": [
@@ -149,5 +150,6 @@
   "@agnes/system-node": [],
   "@agnes/model-adapters": ["@agnes/ai", "@agnes/extension-api", "@agnes/plugin-runtime", "@agnes/protocol"],
   "@agnes/loop-default": ["@agnes/extension-api"],
-  "@agnes/core-common": ["@agnes/extension-api", "@agnes/protocol"]
+  "@agnes/core-common": ["@agnes/extension-api", "@agnes/protocol"],
+  "@agnes/core-child-control": ["@agnes/core-common", "@agnes/extension-api"]
 }

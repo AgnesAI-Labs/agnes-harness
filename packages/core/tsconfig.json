@@ -20,6 +20,9 @@
   "references": [
     {
       "path": "../core-common"
+    },
+    {
+      "path": "../core-child-control"
     }
   ]
 }

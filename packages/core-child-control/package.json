@@ -1,0 +1,25 @@
+{
+  "name": "@agnes/core-child-control",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./child/admission": "./src/child/admission.ts",
+    "./child/allowlist": "./src/child/allowlist.ts",
+    "./child/credits": "./src/child/credits.ts",
+    "./child/directory": "./src/child/directory.ts",
+    "./child/events": "./src/child/events.ts",
+    "./child/store": "./src/child/store.ts",
+    "./child/types": "./src/child/types.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -b",
+    "test": "pnpm --dir ../.. exec vitest run packages/core-child-control/test --maxWorkers=1"
+  },
+  "dependencies": {
+    "@agnes/core-common": "workspace:*",
+    "@agnes/extension-api": "workspace:*"
+  },
+  "license": "Apache-2.0"
+}

@@ -234,6 +234,7 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // preset composition and inline projection repairs. Only exceeded scopes and missing bundled
 // extension keys change; scanning, source exclusions and the default extension ceiling stay fixed.
 const INITIAL_CEILING: Record<string, number> = {
+  'packages/core-child-control/src': 390,
   'packages/core-common/src': 520,
   // 2026-09-22 M11 browser effect-command closure: exact measured deltas for the explicit
   // authorization facade, private BFF/RPC, durable journal reuse, and cross-platform test repair.
@@ -1128,7 +1129,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 29399 -> 30048; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Await async loop construction, propagate session cancellation and drain initialization before storage closes.
   // countLines: 30048 -> 30103 (+55); exact measured cap, no exclusions or spare allocation.
-  'packages/core/src': 29632,
+  'packages/core/src': 29256,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.

@@ -19,7 +19,7 @@ Links point to source at the same revision as this document. See [verification](
 | Protocol / validation | [protocol schema](../../packages/protocol/schema), [method table](../../packages/protocol/src/methods.ts), [protocol-validation](../../packages/protocol-validation/src) | [Protocol tests](../../packages/protocol/test) |
 | SDK sessions / transports | [sdk](../../packages/sdk/src) | [SDK tests](../../packages/sdk/test) |
 | daemon / worker | [daemon](../../packages/daemon/src), [worker-runtime](../../packages/worker-runtime/src) | [Daemon tests](../../packages/daemon/test) |
-| Execution loop / recovery | [core-common](../../packages/core-common/src), [core](../../packages/core/src) | [Core tests](../../packages/core/test) |
+| Execution loop / recovery | [core-common](../../packages/core-common/src), [core-child-control](../../packages/core-child-control/src), [core](../../packages/core/src) | [Core tests](../../packages/core/test) |
 | Provider kinds / shared lifecycle / combined catalog | [kind contract](../../packages/extension-api/src/provider-kind.ts), [registry](../../packages/host/src/assemble/provider-registry.ts), [selection](../../packages/host/src/assemble/provider-selection.ts), [provider architecture](architecture-plugins.md) | [Registry and selection tests](../../packages/host/test/assemble/provider-registry.test.ts), [Host assembly](../../packages/host/test/assemble/tool-providers.test.ts) |
 | Configuration / assembly / credentials / platforms | [host](../../packages/host/src), [system-node](../../packages/system-node/src) | [Host tests](../../packages/host/test) |
 | Models / stream parsing | [ai](../../packages/ai/src) | [AI tests](../../packages/ai/test) |

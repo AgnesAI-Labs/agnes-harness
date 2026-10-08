@@ -189,6 +189,12 @@
     },
     {
       "path": "packages/core-common/tsconfig.test.json"
+    },
+    {
+      "path": "packages/core-child-control"
+    },
+    {
+      "path": "packages/core-child-control/tsconfig.test.json"
     }
   ]
 }

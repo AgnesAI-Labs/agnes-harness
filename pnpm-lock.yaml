@@ -309,6 +309,9 @@ importers:
 
   packages/core:
     dependencies:
+      '@agnes/core-child-control':
+        specifier: workspace:*
+        version: link:../core-child-control
       '@agnes/core-common':
         specifier: workspace:*
         version: link:../core-common
@@ -328,6 +331,15 @@ importers:
       '@agnes/loop-default':
         specifier: workspace:*
         version: link:../loop-default
+
+  packages/core-child-control:
+    dependencies:
+      '@agnes/core-common':
+        specifier: workspace:*
+        version: link:../core-common
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
 
   packages/core-common:
     dependencies:

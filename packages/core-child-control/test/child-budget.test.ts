@@ -1,7 +1,7 @@
+import { CoreError } from '@agnes/core-common/types'
 import { describe, expect, it } from 'vitest'
 import { admitFanOut, admitGeneration } from '../src/child/admission.js'
 import { capToMicrocredits, chargeToMicrocredits, fitsCap } from '../src/child/credits.js'
-import { CoreError } from '../src/types.js'
 
 describe('child credit conversion', () => {
   it('floors caps, ceils charges, and refuses illegal values', () => {

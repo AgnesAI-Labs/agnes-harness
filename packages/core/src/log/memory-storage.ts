@@ -1,6 +1,6 @@
-import { admitFanOut, inheritAncestorScopeIds } from '../child/admission.js'
-import { addMicro, fitsCap } from '../child/credits.js'
-import type { ChildControlStore } from '../child/store.js'
+import { admitFanOut, inheritAncestorScopeIds } from '@agnes/core-child-control/child/admission'
+import { addMicro, fitsCap } from '@agnes/core-child-control/child/credits'
+import type { ChildControlStore } from '@agnes/core-child-control/child/store'
 import {
   type BeginChildAttemptInput,
   type BudgetScopeRecord,
@@ -22,7 +22,7 @@ import {
   type ReserveResult,
   type SettleRequest,
   type TreeUsage,
-} from '../child/types.js'
+} from '@agnes/core-child-control/child/types'
 import { type Clock, CoreError, type Event, type Seq, type SessionKey } from '../types.js'
 import {
   type CommitReceipt,
