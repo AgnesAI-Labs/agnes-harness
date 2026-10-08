@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vitest'
 import { type AdminApiError, PluginAdminApi } from '../src/admin/plugins/api.js'
 import { ADMIN_FEATURES, hasFeature } from '../src/admin/plugins/types.js'
+import { loadRuntimeCatalog } from '../src/settings/api.js'
 
 const context = {
   profile: 'local-dev',
@@ -10,6 +11,37 @@ const context = {
   authScope: 'auth.test-scope',
   features: ['packages.composite-activation.v1'],
 }
+
+it('shows newly installed bundles from the admin catalog while the shared worker retains its boot profile', async () => {
+  const runtime = {
+    providers: [],
+    presets: [{ id: 'standard', isDefault: true }],
+    bundles: [],
+    localPluginFolders: { home: '/fixture/home-plugins', workspace: '/workspace/plugins' },
+  }
+  const catalog = [{ id: '@agnes-fde/knowledge-qa#knowledge-qa', sourcePackage: '@agnes-fde/knowledge-qa' }]
+  const fetcher = vi.fn<typeof fetch>(
+    async (url) =>
+      new Response(
+        JSON.stringify(
+          url === '/admin/api/runtime'
+            ? runtime
+            : { revision: 0, bundles: [], effect: 'restart-required', catalog },
+        ),
+      ),
+  )
+  expect(await loadRuntimeCatalog(fetcher)).toEqual({ ...runtime, bundles: catalog })
+  for (const invalid of [{ catalog: 'unknown' }, { catalog: [{ id: 1 }] }, null]) {
+    fetcher.mockImplementation(
+      async (url) => new Response(JSON.stringify(url === '/admin/api/runtime' ? runtime : invalid)),
+    )
+    await expect(loadRuntimeCatalog(fetcher)).rejects.toThrow('invalid bundle catalog')
+  }
+  fetcher.mockImplementation(async (url) =>
+    url === '/admin/api/runtime' ? new Response(JSON.stringify(runtime)) : new Response('', { status: 503 }),
+  )
+  await expect(loadRuntimeCatalog(fetcher)).rejects.toThrow('bundle catalog unavailable')
+})
 
 it('reads typed composition information through the existing route and retains legacy tool groups', async () => {
   const snapshot = {

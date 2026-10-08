@@ -25,8 +25,22 @@ it('preserves empty-value choices and ignores hidden/disabled items', () => {
   select.addEventListener('change', changed)
   trigger.click()
   expect(document.querySelectorAll('[role="option"]')).toHaveLength(2)
+  picker.sync()
+  expect(trigger.getAttribute('aria-expanded')).toBe('true')
+  const panel = document.getElementById('choice-listbox') as HTMLElement
+  const row = document.getElementById('choice-listbox-1') as HTMLElement
+  Object.defineProperty(panel, 'clientHeight', { value: 50 })
+  Object.defineProperty(row, 'offsetTop', { value: 60 })
+  Object.defineProperty(row, 'offsetHeight', { value: 20 })
+  trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }))
+  expect(panel.scrollTop).toBe(30)
+  document.dispatchEvent(new Event('scroll'))
+  expect(trigger.getAttribute('aria-expanded')).toBe('true')
   document.getElementById('choice-listbox-1')?.click()
   expect(select.value).toBe('a')
+  trigger.click()
+  document.getElementById('choice-listbox-1')?.click()
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
   trigger.click()
   document.getElementById('choice-listbox-0')?.click()
   expect(select.value).toBe('')
@@ -38,7 +52,9 @@ it('syncs programmatic values, disabled state and form reset without firing chan
   const changed = vi.fn()
   select.addEventListener('change', changed)
   select.value = 'a'
+  trigger.click()
   picker.sync()
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
   expect(trigger.textContent).toBe('Model A')
   select.disabled = true
   picker.sync()

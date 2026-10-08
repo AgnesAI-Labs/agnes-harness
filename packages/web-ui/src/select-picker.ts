@@ -40,6 +40,8 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
   let active = 0
   let typed = ''
   let typedAt = 0
+  let syncedState = ''
+  let anchor: DOMRect | undefined
   const available = (item: HTMLOptionElement) =>
     (options.includeEmpty !== false || !!item.value) &&
     !item.hidden &&
@@ -59,6 +61,15 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
   }
 
   function sync(): void {
+    const state = JSON.stringify([
+      select.disabled,
+      Array.from(select.options).map((item) => {
+        const group = item.closest('optgroup')
+        return [item.value, optionLabel(item), item.selected, available(item), group?.label]
+      }),
+    ])
+    if (state === syncedState) return
+    syncedState = state
     close()
     const selected = select.options[select.selectedIndex]
     const selectedLabel = selected ? optionLabel(selected) : undefined
@@ -84,7 +95,10 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
   }
 
   function onScroll(event: Event): void {
-    if (panel && !event.composedPath().includes(panel)) close()
+    if (!panel || event.composedPath().includes(panel)) return
+    const next = trigger.getBoundingClientRect()
+    // A queued scroll from focusing the trigger may arrive after the menu opens.
+    if (next.top !== anchor?.top || next.left !== anchor?.left) close()
   }
 
   function highlight(index: number): void {
@@ -96,7 +110,12 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
     const row = rows?.[active]
     if (!row) return
     trigger.setAttribute('aria-activedescendant', row.id)
-    row.scrollIntoView?.({ block: 'nearest' })
+    // Scroll only this menu. scrollIntoView can also scroll the containing dialog and dismiss it.
+    if (panel) {
+      const bottom = row.offsetTop + row.offsetHeight
+      if (row.offsetTop < panel.scrollTop) panel.scrollTop = row.offsetTop
+      else if (bottom > panel.scrollTop + panel.clientHeight) panel.scrollTop = bottom - panel.clientHeight
+    }
   }
 
   function choose(index: number): void {
@@ -104,6 +123,7 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
     if (!choice || select.disabled) return
     const changed = select.value !== choice.value
     select.value = choice.value
+    close()
     sync()
     trigger.focus({ preventScroll: true })
     // Use the select's own realm (including embedded settings/test documents).
@@ -175,6 +195,7 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
       panel.dataset.placement = 'below'
     }
     trigger.setAttribute('aria-expanded', 'true')
+    anchor = trigger.getBoundingClientRect()
     trigger.setAttribute('aria-controls', panel.id)
     highlight(
       Math.max(
@@ -226,7 +247,11 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
   })
   select.closest('dialog')?.addEventListener('close', close)
   select.addEventListener('change', sync)
-  const onReset = () => queueMicrotask(sync)
+  const onReset = () =>
+    queueMicrotask(() => {
+      close()
+      sync()
+    })
   select.form?.addEventListener('reset', onReset)
   sync()
   return {

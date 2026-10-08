@@ -7,5 +7,12 @@ export async function loadRuntimeCatalog(
   if (!response.ok) throw new Error('runtime catalog unavailable')
   const value: unknown = await response.json()
   if (!validateAgainst(RuntimeAdminSnapshot, value).ok) throw new Error('invalid runtime catalog')
-  return value as import('@agnes/protocol').RuntimeAdminSnapshot
+  // Shared workers retain their boot composition. The admin catalog owns newly installed bundles.
+  const bundles = await fetcher('/admin/api/bundles', { credentials: 'same-origin', cache: 'no-store' })
+  if (!bundles.ok) throw new Error('bundle catalog unavailable')
+  const selection = (await bundles.json()) as { catalog?: unknown } | null
+  if (!selection || !Array.isArray(selection.catalog)) throw new Error('invalid bundle catalog')
+  const current = { ...(value as import('@agnes/protocol').RuntimeAdminSnapshot), bundles: selection.catalog }
+  if (!validateAgainst(RuntimeAdminSnapshot, current).ok) throw new Error('invalid bundle catalog')
+  return current as import('@agnes/protocol').RuntimeAdminSnapshot
 }
