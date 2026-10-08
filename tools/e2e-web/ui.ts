@@ -71,7 +71,19 @@ export async function fresh(page: Page, locale = 'en') {
   await page.getByTestId('composer-agent').click()
   const permission = page.getByTestId('new-session-preset')
   await permission.click()
-  await page.getByRole('option', { name: locale === 'en' ? /^Full access\b/ : /^完全权限/ }).click()
+  const option = page.getByRole('option', { name: locale === 'en' ? /^Full access\b/ : /^完全权限/ })
+  await expect(option).toBeVisible()
+  // Playwright visibility includes opacity-zero menus. Finish the finite entry motion before
+  // hit-testing an option whose popup is still translating; no sleep or action retry is needed.
+  await option.evaluate(async (element) => {
+    const motions: Animation[] = []
+    for (let node: Element | null = element; node; node = node.parentElement)
+      for (const motion of node.getAnimations())
+        if (motion.playState === 'running' && motion.effect?.getComputedTiming().endTime !== Infinity)
+          motions.push(motion)
+    await Promise.all(motions.map((motion) => motion.finished.catch(() => undefined)))
+  })
+  await option.click()
   await expect(permission).toContainText(locale === 'en' ? 'Full access' : '完全权限')
   await page
     .getByRole('textbox', { name: locale === 'en' ? 'Task content' : '任务内容', exact: true })
