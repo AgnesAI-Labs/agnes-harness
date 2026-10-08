@@ -2,7 +2,7 @@
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { ConfigSnapshot } from '@agnes/protocol'
+import type { ConfigSnapshot, RuntimeAdminSnapshot } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import { settingsSections } from '@agnes/web-client'
 import '../src/settings/registry.js'
@@ -14,6 +14,8 @@ import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
+import type { PluginAdminApi } from '../src/admin/plugins/api.js'
+import { SettingsHub } from '../src/settings/hub.js'
 import { createSettingsController } from '../src/settings.js'
 
 // i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
@@ -155,3 +157,55 @@ it('translates static settings pane text and placeholders when the pane is first
     host.remove()
   }
 })
+
+for (const outcome of ['success', 'failure'] as const) {
+  it(`announces a pending settings refresh and clears it on ${outcome}`, async () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    host.id = 'config-form'
+    host.dataset.runtimePage = 'providers'
+    const root = createRoot(host)
+    let resolveRuntime: (snapshot: RuntimeAdminSnapshot) => void = () => undefined
+    let rejectRuntime: (error: Error) => void = () => undefined
+    const pending = new Promise<RuntimeAdminSnapshot>((resolve, reject) => {
+      resolveRuntime = resolve
+      rejectRuntime = reject
+    })
+    const api = { runtime: () => pending } as PluginAdminApi
+    try {
+      flushSync(() =>
+        root.render(
+          createElement(SettingsHub, {
+            api,
+            canSave: false,
+            pluginText: zhT,
+            installed: [],
+            generations: undefined,
+            onPage: () => undefined,
+            onRefresh: async () => undefined,
+            onReview: () => undefined,
+          }),
+        ),
+      )
+      const refresh = host.querySelector<HTMLButtonElement>('[data-testid="settings-refresh"]')
+      await vi.waitFor(() => expect(refresh?.disabled).toBe(true))
+      expect(refresh?.getAttribute('aria-busy')).toBe('true')
+      if (outcome === 'success') {
+        resolveRuntime({
+          providers: [],
+          presets: [],
+          localPluginFolders: { home: '/fixture/plugins', workspace: '/fixture/workspace' },
+        })
+      } else {
+        rejectRuntime(new Error('Synthetic runtime unavailable'))
+      }
+      await vi.waitFor(() => {
+        expect(refresh?.disabled).toBe(false)
+        expect(refresh?.getAttribute('aria-busy')).toBe('false')
+      })
+    } finally {
+      root.unmount()
+      host.remove()
+    }
+  })
+}

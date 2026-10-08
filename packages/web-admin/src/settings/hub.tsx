@@ -123,6 +123,7 @@ export function SettingsHub({
             <Button
               data-testid="settings-refresh"
               disabled={!api || busy}
+              aria-busy={busy}
               onClick={() => setRevision((value) => value + 1)}
             >
               {t('retry')}
