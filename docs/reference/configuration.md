@@ -28,13 +28,13 @@ Configuration files and model credentials are separate. Prefer CLI `config` or W
 
 Built-in templates provide the base. User profiles and the Host configuration overlay are merged, then the workspace local layer is processed according to trust. Deployment and lockfiles also affect resolution. Configuration-service keys have their own user-layer override rules, rather than arbitrary YAML deep merging. Changing cwd alone does not select another daemon.
 
-<a id="profile-可配置面"></a>
-
 ## Deployment networking
 
 The official model adapters, MCP HTTP/SSE transports, URL/npm/git package downloads and OTLP HTTP export honor `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` (lower-case names take precedence). HTTPS falls back to the HTTP proxy when no HTTPS proxy is configured. `NO_PROXY` bypasses matching hosts; explicit empty lower-case values override upper-case ones. Restart the daemon after changing its environment. `agnes doctor network` reports only effective proxy hosts/ports and whether exclusions are configured, without userinfo or query strings. Workspace `web_fetch` retains its separate public-network policy.
 
 In **Settings → Models → account details**, keep using Base URL for an account endpoint override. The schema-rendered network fields configure optional `networkTimeouts.requestMs`, `connectMs` and `streamIdleMs` (integer milliseconds, 1–3600000). These fields also exist on configuration save/OAuth commit inputs and `provider.routes[]`. Empty fields use defaults: request 300000 ms, connection 10000 ms, stream idle 60000 ms; existing stricter model/turn deadlines still apply. `{}` resets saved overrides. Changes apply to newly assembled sessions; they do not retarget an in-flight request. Stream idle measures gaps in transport/model output, and cancellation clears timers and aborts pending work. Codex uses SSE transport to apply the same proxy and deadline settings. Custom community adapters own their own transport behavior.
+
+<a id="profile-可配置面"></a>
 
 ## Profile fields
 
