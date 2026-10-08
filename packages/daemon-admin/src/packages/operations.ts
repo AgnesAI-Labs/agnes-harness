@@ -16,6 +16,7 @@ export type PackageOperationKind = PackageOperation['operation']
 export type PackageOperationState = PackageOperation['state']
 export type PackageOperationIdentity = Readonly<{
   principalId: string
+  installer?: 'agent'
   clientId: string
   commandId: string
 }>
@@ -66,6 +67,7 @@ const identity = (value: unknown): value is PackageOperationIdentity => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const row = value as Record<string, unknown>
   return (
+    (row.installer === undefined || row.installer === 'agent') &&
     typeof row.principalId === 'string' &&
     row.principalId.length > 0 &&
     row.principalId.length <= 256 &&
@@ -243,7 +245,11 @@ export class FilePackageOperationStore implements PackageOperationStore {
           entry.identity.commandId === input.identity.commandId,
       )
       if (existing) {
-        if (existing.request.kind !== input.request.kind || existing.payloadHash !== input.payloadHash)
+        if (
+          existing.request.kind !== input.request.kind ||
+          existing.payloadHash !== input.payloadHash ||
+          existing.identity.installer !== input.identity.installer
+        )
           return { state: 'conflict' }
         return { state: 'existing', record: clone(existing) }
       }

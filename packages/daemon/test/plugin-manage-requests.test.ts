@@ -151,6 +151,7 @@ it('inspects real files, approves exact content, installs and enables through Pa
   await vi.waitFor(async () =>
     expect((await s.request({ action: 'status', proposalId: p.proposalId })).state).toBe('ready'),
   )
+  expect(await s.manager.provenance(s.profileDir, 'test-plugin')).toMatchObject({ installer: 'agent' })
   expect(s.ask).toHaveBeenCalledOnce()
   expect(JSON.stringify(s.ask.mock.calls)).toContain('sha256-')
   s.restart()

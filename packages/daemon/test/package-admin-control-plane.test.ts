@@ -1033,7 +1033,7 @@ it('replays a received install after a process crash without treating desired st
       startedAt: now,
       updatedAt: now,
     },
-    identity: { principalId: authority.principalId, clientId, commandId: 'crash-replay' },
+    identity: { principalId: authority.principalId, clientId, commandId: 'crash-replay', installer: 'agent' },
     payloadHash: createHash('sha256')
       .update(
         jcs({
@@ -1055,6 +1055,10 @@ it('replays a received install after a process crash without treating desired st
   })
   expect(await operation(restarted, profile, operationId)).toMatchObject({ state: 'completed' })
   expect(existsSync(packageDir(root, profile, 'acme/pkg-a'))).toBe(true)
+  expect(await manager.provenance(profileDir, 'acme/pkg-a')).toMatchObject({ installer: 'agent' })
+  await expect(restarted.call('_agnes/v1/packages.install', params, authority)).rejects.toMatchObject({
+    data: { reason: 'PACKAGE_COMMAND_ID_CONFLICT' },
+  })
   expect(clientModuleEvents).toMatchObject([{ profile, reason: 'inventory', packageId: 'acme/pkg-a' }])
 })
 

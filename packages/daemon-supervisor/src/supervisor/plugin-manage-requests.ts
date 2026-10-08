@@ -121,7 +121,7 @@ export function createPluginManageRequests(options: {
         'packages.activate',
       ])({ conn, clock: Date.now, signal })
       if (!auth) throw rpcError('CAPABILITY_DENIED')
-      return auth
+      return { ...auth, installer: 'agent' as const }
     }
     const call = (method: PackageAdminMethodName, params: Record<string, unknown>) => {
       const auth = authority()

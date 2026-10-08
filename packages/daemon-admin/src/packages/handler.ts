@@ -1082,6 +1082,7 @@ class Service implements PackageAdminService {
       operation,
       identity: {
         principalId: authority.principalId,
+        ...(authority.installer ? { installer: authority.installer } : {}),
         clientId: params.clientId,
         commandId: params.commandId,
       },
@@ -1395,6 +1396,7 @@ class Service implements PackageAdminService {
           break
         case 'install':
           await this.options.manager.install(directory, params.source as PackageSource, {
+            ...(record.identity.installer ? { installer: record.identity.installer } : {}),
             expectedIntegrity: params.expectedIntegrity as string,
             signal,
             onProgress,

@@ -101,7 +101,7 @@ export interface PackageManager {
   install(
     profileDir: string,
     source: PackageSource,
-    opts: OperationOptions & { expectedIntegrity: string },
+    opts: OperationOptions & { expectedIntegrity: string; installer?: 'agent' | 'user' },
   ): Promise<LockEntry>
   add(profileDir: string, spec: string, opts?: { trust?: 'verify' | 'skip' }): Promise<LockEntry>
   trust(profileDir: string, id: string, decision?: TrustDecision): Promise<LockEntry>
@@ -918,7 +918,10 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           writable(lock)
           const stage = stageFor(profileDir)
           try {
-            const fetched = await acquire(source, stage, op, profileDir)
+            const acquired = await acquire(source, stage, op, profileDir)
+            const fetched = op.installer
+              ? { ...acquired, provenance: { ...acquired.provenance!, installer: op.installer } }
+              : acquired
             if (fetched.integrity !== expectedIntegrity)
               throw new PackageError('E_LOCK_MISMATCH', 'package preview is stale', {
                 code: 'E_PACKAGE_PREVIEW_STALE',
