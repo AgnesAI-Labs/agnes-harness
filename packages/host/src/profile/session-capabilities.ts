@@ -122,30 +122,23 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
     !selection.packages?.some((pkg) => pkg.id === id && pkg.enabled === false)
   const listAllows = (list: readonly string[] | undefined, ids: readonly string[]) =>
     !list?.length || ids.some((id) => list.includes(id))
+  const resourceIds = (kind: 'mcp' | 'skills', item: CapabilityResource) => [
+    item.id,
+    item.name ?? '',
+    item.packageId ?? '',
+    ...(kind === 'mcp' ? [item.id.replace(/^mcp\//, ''), 'mcp/' + item.id.replace(/^mcp\//, '')] : []),
+  ]
   const resource = (kind: 'mcp' | 'skills', item: CapabilityResource) =>
     decision(item.id, [
       [packageEnabled(item.packageId), 'package-enabled', source('packages')],
-      [
-        listAllows(selection[kind], [
-          item.id,
-          item.name ?? '',
-          item.packageId ?? '',
-          ...(kind === 'mcp' ? [item.id.replace(/^mcp\//, ''), 'mcp/' + item.id.replace(/^mcp\//, '')] : []),
-        ]),
-        `${kind}-selection`,
-        source(kind),
-      ],
+      [listAllows(selection[kind], resourceIds(kind, item)), `${kind}-selection`, source(kind)],
     ])
   const resources = (kind: 'mcp' | 'skills') => {
     const live = input.live?.[kind] ?? []
     const actual = live.map((item) => resource(kind, item))
     if (input.live?.[kind] !== undefined)
       for (const id of selection[kind] ?? []) {
-        if (
-          !live.some((item) =>
-            [item.id, item.name, item.packageId, item.id.replace(/^mcp\//, '')].includes(id),
-          )
-        )
+        if (!live.some((item) => resourceIds(kind, item).includes(id)))
           actual.push(
             decision(id, [[false, 'resource-unavailable', { layer: 'session', name: 'live-resources' }]]),
           )
@@ -305,7 +298,7 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
             resourceRequest: resource(
               input.resourceRequest.kind,
               input.live?.[input.resourceRequest.kind]?.find((item) =>
-                [item.id, item.name, item.id.replace(/^mcp\//, '')].includes(input.resourceRequest!.id),
+                resourceIds(input.resourceRequest!.kind, item).includes(input.resourceRequest!.id),
               ) ?? { id: input.resourceRequest.id },
             ),
           }

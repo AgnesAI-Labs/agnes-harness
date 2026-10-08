@@ -92,7 +92,7 @@ it.each(capabilityCases)(
       reader: {
         profile: {
           tools: ['read', 'owned'],
-          mcp: ['one'],
+          mcp: ['mcp/one'],
           skills: ['reader'],
           uiModules: ['panel'],
           plugins: { 'tool:blocked': { enabled: false } },
@@ -176,6 +176,7 @@ it.each(capabilityCases)(
     }
     if (user.bundles) {
       expect(result.mcp.filter((item) => item.enabled).map((item) => item.id)).toEqual(['one'])
+      expect(result.mcp.map((item) => item.id)).toEqual(['one', 'two'])
       expect(result.uiModules.filter((item) => item.enabled).map((item) => item.id)).toEqual(['panel'])
     }
     if (mode === 'hot reload')
