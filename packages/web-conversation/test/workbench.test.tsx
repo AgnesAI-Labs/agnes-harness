@@ -161,7 +161,7 @@ it('clears fact records on session changes and ignores an old response while kee
   }
 })
 
-it('detaches terminals on unmount and restores tabs while agent output remains read-only', async () => {
+it('orders rapid terminal input, drops unsent input on detach and restores read-only agent tabs', async () => {
   localStorage.clear()
   const human = {
     id: 'human',
@@ -178,7 +178,14 @@ it('detaches terminals on unmount and restores tabs while agent output remains r
     stderr: '',
   }
   const agent = { ...human, id: 'agent', owner: 'agent', stdout: 'agent output' }
-  let evicted = false
+  let evicted = false,
+    releaseInput: (() => void) | undefined,
+    holdInput = false,
+    failInput = false
+  const releaseHeldInput = () => {
+    if (!releaseInput) throw new Error('No input is pending')
+    releaseInput()
+  }
   const session = {
     id: 's',
     jobsRead: async (id?: string) => {
@@ -189,8 +196,21 @@ it('detaches terminals on unmount and restores tabs while agent output remains r
         ...(id ? { job: id === human.id ? human : agent } : {}),
       }
     },
-    jobsControl: async () => {
-      throw new Error('Agent controls must not dispatch')
+    jobsControl: async (input: { operation: string; jobId: string; text?: string }) => {
+      if (input.operation !== 'send' || input.jobId !== human.id)
+        throw new Error('Agent controls must not dispatch')
+      if (holdInput) {
+        holdInput = false
+        await new Promise<void>((resolve) => {
+          releaseInput = resolve
+        })
+      }
+      if (failInput) {
+        failInput = false
+        throw new Error('Input refused')
+      }
+      human.stdout += input.text ?? ''
+      return { output: { ...human } }
     },
   } as unknown as Session
   const host = document.createElement('div')
@@ -203,11 +223,42 @@ it('detaches terminals on unmount and restores tabs while agent output remains r
     renderRegion(host, <TerminalPanel context={context} />)
     await vi.waitFor(() => expect(host.querySelector('textarea')?.value).toBe('human output'))
     expect(host.querySelector('[data-testid="terminal-kill"]')).not.toBeNull()
+    const type = (keys: string[]) => {
+      flushSync(() => {
+        for (const key of keys)
+          host.querySelector('textarea')?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+      })
+    }
+    holdInput = true
+    type(['a', 'b', 'c', 'Enter'])
+    await vi.waitFor(() => expect(releaseInput).toBeTypeOf('function'))
+    expect(human.stdout).toBe('human output')
+    releaseHeldInput()
+    await vi.waitFor(() => expect(human.stdout).toBe('human outputabc\r'))
+    holdInput = true
+    failInput = true
+    releaseInput = undefined
+    type(['d'])
+    await vi.waitFor(() => expect(releaseInput).toBeTypeOf('function'))
+    const paste = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(paste, 'clipboardData', { value: { getData: () => 'A'.repeat(65536) } })
+    flushSync(() => host.querySelector('textarea')?.dispatchEvent(paste))
+    type(['e'])
+    expect(host.textContent).toContain(context.t('workbench.terminal.inputFull'))
+    releaseHeldInput()
+    await vi.waitFor(() => expect(host.textContent).toContain(context.t('workbench.error')))
+    expect(human.stdout).toBe('human outputabc\r')
+    holdInput = true
+    releaseInput = undefined
+    type(['x', 'y'])
+    await vi.waitFor(() => expect(releaseInput).toBeTypeOf('function'))
     unmountRegion(host)
+    releaseHeldInput()
+    await vi.waitFor(() => expect(human.stdout).toBe('human outputabc\rx'))
     expect(human.status).toBe('running')
     expect(agent.status).toBe('running')
     renderRegion(host, <TerminalPanel context={context} />)
-    await vi.waitFor(() => expect(host.querySelector('textarea')?.value).toBe('human output'))
+    await vi.waitFor(() => expect(host.querySelector('textarea')?.value).toBe('xuman outputabc'))
     const follow = [...host.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('Attach'),
     )
