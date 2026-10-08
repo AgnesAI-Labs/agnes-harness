@@ -25,7 +25,8 @@
     "./resources/admin-surface": "./src/resources/admin-surface.ts",
     "./resources/index": "./src/resources/index.ts",
     "./app-server": "./src/app-server.ts",
-    "./packages/authoring-tests": "./src/packages/authoring-tests.ts"
+    "./packages/authoring-tests": "./src/packages/authoring-tests.ts",
+    "./runtime-doctor": "./src/runtime-doctor.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",
