@@ -321,7 +321,7 @@ describe('SessionHookPort', () => {
       engine.on(
         'context',
         () => {
-          if (fail) throw new Error('unreadable live resource')
+          if (fail) throw new Error('unreadable live resource: synthetic-secret')
           return {
             refreshOnRequest: true,
             sections: [{ id: 'rules', order: 120, content: live }],
@@ -341,7 +341,10 @@ describe('SessionHookPort', () => {
         sections: [{ id: 'rules', text: 'live changed' }],
       })
       fail = true
-      await expect(port.refreshContext([])).rejects.toThrow('hook rejected transformation')
+      await expect(port.refreshContext([])).rejects.toMatchObject({
+        code: 'E_ENVELOPE',
+        message: `E_ENVELOPE: hook rejected transformation (context, ${source})`,
+      })
     },
   )
 
