@@ -47,6 +47,7 @@ export function CandidateInbox({
   const [items, setItems] = useState<AuthoringCandidateSummary[]>([]),
     [selected, setSelected] = useState<AuthoringCandidate>(),
     [error, setError] = useState(''),
+    [loaded, setLoaded] = useState(false),
     [busy, setBusy] = useState(false),
     [originTitle, setOriginTitle] = useState<string>()
   const [facts, setFacts] = useState<Record<string, ListFacts>>({})
@@ -87,7 +88,11 @@ export function CandidateInbox({
     const refresh = async () => {
       try {
         const value = await api.candidatesList()
-        if (alive) setItems(value.candidates)
+        if (alive) {
+          setItems(value.candidates)
+          setLoaded(true)
+          setError((current) => (current === t('candidates.unavailable') ? '' : current))
+        }
         const entries: [string, ListFacts | undefined][] = []
         // Hydrate only presentation facts, with bounded I/O and without retaining every file tree.
         for (let offset = 0; offset < value.candidates.length && alive; offset += 4) {
@@ -184,6 +189,7 @@ export function CandidateInbox({
         : ['failed', 'interrupted'].includes(state)
           ? ('bad' as const)
           : ('off' as const)
+  if (loaded && !items.length && !selected && !error) return null
   return (
     <section className="plugin-candidates" data-testid="plugin-candidates" aria-label={t('candidates.title')}>
       <SettingsToolbar>

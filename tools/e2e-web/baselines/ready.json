@@ -164,7 +164,15 @@
     "request-trace-en-light",
     "request-trace-en-dark",
     "request-trace-zh-CN-light",
-    "request-trace-zh-CN-dark"
+    "request-trace-zh-CN-dark",
+    "settings-search-en-light",
+    "mcp-form-en-light",
+    "settings-search-en-dark",
+    "mcp-form-en-dark",
+    "settings-search-zh-CN-light",
+    "mcp-form-zh-CN-light",
+    "settings-search-zh-CN-dark",
+    "mcp-form-zh-CN-dark"
   ],
   "pending": {},
   "platforms": ["darwin", "linux"],

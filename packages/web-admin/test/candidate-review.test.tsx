@@ -1,10 +1,15 @@
+/** @vitest-environment happy-dom */
 import { readFileSync } from 'node:fs'
 import type { AuthoringCandidate, PackagePreview } from '@agnes/protocol'
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
+import type { PluginAdminApi } from '../src/admin/plugins/api.js'
 import { candidateDiff } from '../src/admin/plugins/candidate-diff.js'
 import { CandidateListFacts, candidateIdentity } from '../src/admin/plugins/candidate-list.js'
 import { addedPermissions, CandidateDelta, capabilityLabel } from '../src/admin/plugins/candidate-review.js'
+import { CandidateInbox } from '../src/admin/plugins/candidates.js'
 import { pluginAdminLocaleCatalog } from '../src/admin/plugins/locales/admin.js'
 
 it.each([
@@ -115,5 +120,48 @@ it('distinguishes same-name candidate versions, skills and source-turn time in b
     expect(
       renderToStaticMarkup(<CandidateListFacts identity={candidateIdentity(skill)} now={now} t={text} />),
     ).toContain(text('candidates.timeUnavailable'))
+  }
+})
+
+it('hides a verified empty inbox, keeps polling and exposes list failures', async () => {
+  vi.useFakeTimers()
+  const scope = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }
+  scope.IS_REACT_ACT_ENVIRONMENT = true
+  const list = vi.fn().mockResolvedValue({ candidates: [] })
+  const api = { candidatesList: list, candidatesShow: async () => candidate } as unknown as PluginAdminApi
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  try {
+    await act(async () =>
+      root.render(
+        <CandidateInbox
+          api={api}
+          canReview
+          canTest
+          t={t}
+          confirm={() => undefined}
+          onPublished={async () => undefined}
+        />,
+      ),
+    )
+    expect(host.querySelector('[data-testid="plugin-candidates"]')).toBeNull()
+    list.mockResolvedValue({ candidates: [candidate] })
+    await act(async () => vi.advanceTimersByTimeAsync(3000))
+    expect(host.querySelector('[data-testid="candidate-open"]')?.textContent).toContain(candidate.packageId)
+    list.mockResolvedValue({ candidates: [] })
+    await act(async () => vi.advanceTimersByTimeAsync(3000))
+    expect(host.querySelector('[data-testid="plugin-candidates"]')).toBeNull()
+    list.mockRejectedValue(new Error('offline'))
+    await act(async () => vi.advanceTimersByTimeAsync(3000))
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(t('candidates.unavailable'))
+    list.mockResolvedValue({ candidates: [] })
+    await act(async () => vi.advanceTimersByTimeAsync(3000))
+    expect(host.querySelector('[data-testid="plugin-candidates"]')).toBeNull()
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+    vi.useRealTimers()
+    scope.IS_REACT_ACT_ENVIRONMENT = false
   }
 })

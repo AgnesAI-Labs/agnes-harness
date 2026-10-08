@@ -1,5 +1,5 @@
-import { rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { copyFile, rm } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
@@ -34,6 +34,21 @@ for (const locale of ['en', 'zh-CN'])
       test.setTimeout(150_000)
       // This matrix owns the genuinely empty Skills screen; the slash flow owns discovery.
       await rm(join(runtime.workspace, AGH_DIR, 'skills'), { recursive: true })
+      await copyFile(resolve('tools/e2e-web/fixtures/mcp.mjs'), join(runtime.workspace, 'fixture.mjs'))
+      await runtime.cli([
+        'mcp',
+        'add',
+        'e2e',
+        '--name',
+        'Synthetic MCP',
+        '--stdio',
+        'node',
+        '--arg',
+        './fixture.mjs',
+        '--sandbox-profile',
+        'off-with-warning',
+        '--yes',
+      ])
       await preferences(page, locale, theme)
       await page.goto(runtime.url)
       await expect(page.getByTestId('first-run-skip')).toBeVisible()
@@ -79,6 +94,7 @@ for (const locale of ['en', 'zh-CN'])
           exact: true,
         })
         .click()
+      let fieldSurface = ''
       for (const id of pages) {
         await section(page, id)
         const native: Record<string, [string, string]> = {
@@ -95,6 +111,46 @@ for (const locale of ['en', 'zh-CN'])
             page.getByRole('heading', { name: heading[locale === 'en' ? 0 : 1], exact: true }),
           ).toBeVisible()
         else await expect(page.getByTestId(`settings-page-${id}`)).toBeVisible()
+        if (id === 'plugins') {
+          await expect(page.getByTestId('plugin-candidates')).toHaveCount(0)
+          fieldSurface = await page
+            .getByRole('searchbox', { name: locale === 'en' ? 'Search plugins' : '搜索插件', exact: true })
+            .evaluate((input) => getComputedStyle(input).backgroundColor)
+        }
+        if (id === 'search') {
+          await expect(page.getByTestId('search-api-key')).toBeEnabled()
+          for (const control of [
+            'search-api-key',
+            'search-endpoint',
+            'search-max-results',
+            'search-test-query',
+          ]) {
+            await expect(page.locator(`#${control}`)).toHaveCSS('background-color', fieldSurface)
+          }
+          await quality('settings-search', true)
+        }
+        if (id === 'mcp') {
+          await page
+            .locator('#resource-list article')
+            .filter({ hasText: 'Synthetic MCP' })
+            .getByRole('button')
+            .first()
+            .click()
+          await page
+            .locator('#resource-detail')
+            .getByRole('button', { name: locale === 'en' ? 'Edit' : '编辑', exact: true })
+            .click()
+          await expect(page.locator('#mcp-dialog')).toBeVisible()
+          for (const control of ['mcp-name', 'mcp-executable', 'mcp-args', 'mcp-secret', 'mcp-tools']) {
+            await expect(page.locator(`#${control}`)).toHaveCSS('background-color', fieldSurface)
+          }
+          await expect(page.locator('#mcp-sandbox-trigger')).toHaveCSS('background-color', fieldSurface)
+          await page.mouse.move(0, 0)
+          await quality('mcp-form', true)
+          await page.locator('#mcp-cancel').click()
+          await page.keyboard.press('Escape')
+          await expect(page.locator('#resource-detail')).toBeHidden()
+        }
         if (id === 'providers') {
           const disclosures = page.getByTestId('provider-technical-details')
           expect(await disclosures.count()).toBeGreaterThan(0)

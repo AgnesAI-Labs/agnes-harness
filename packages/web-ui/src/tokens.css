@@ -203,7 +203,7 @@
   padding: 0.5rem 0.75rem;
   border: 1px solid var(--agnes-line-primary);
   border-radius: var(--radius-md);
-  background: var(--agnes-bg-page);
+  background: var(--agnes-bg-surface);
   color: var(--agnes-text-primary);
   font: inherit;
 }
