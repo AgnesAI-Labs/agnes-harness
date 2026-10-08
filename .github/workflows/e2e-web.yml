@@ -147,6 +147,11 @@ jobs:
         run: |
           pnpm --filter @agnes/host build:native
           pnpm --filter @agnes/system-node build:native
+      # External template consumer tests require the declarations emitted by the original job.
+      # Each shard owns its runner; the contracts job's build products are not shared.
+      - name: Typecheck production and fixtures
+        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
+        run: pnpm typecheck
       # Same complete fast tier and one worker as pnpm test, partitioned by Vitest.
       - name: Fast tests (zero retries)
         env: { AGH_RATCHET_REPORT: '1' }
