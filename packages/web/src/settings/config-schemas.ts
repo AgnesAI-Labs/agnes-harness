@@ -37,19 +37,24 @@ export const searchConfigSchema = {
       type: 'integer',
       minimum: 1,
       maximum: 10,
-      'x-ui': { labelKey: 'searchMaxResults', id: 'search-max-results', testId: 'search-max-results' },
+      'x-ui': {
+        labelKey: 'searchMaxResults',
+        control: 'text',
+        id: 'search-max-results',
+        testId: 'search-max-results',
+      },
     },
     timeoutMs: {
       type: 'integer',
       minimum: 1000,
       maximum: 60000,
-      'x-ui': { labelKey: 'searchTimeout', id: 'search-timeout', testId: 'search-timeout' },
+      'x-ui': { labelKey: 'searchTimeout', control: 'text', id: 'search-timeout', testId: 'search-timeout' },
     },
     ratePerMinute: {
       type: 'integer',
       minimum: 1,
       maximum: 600,
-      'x-ui': { labelKey: 'searchRate', id: 'search-rate', testId: 'search-rate' },
+      'x-ui': { labelKey: 'searchRate', control: 'text', id: 'search-rate', testId: 'search-rate' },
     },
     enabled: {
       type: 'boolean',

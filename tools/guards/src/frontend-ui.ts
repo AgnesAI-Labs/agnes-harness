@@ -53,9 +53,13 @@ export function frontendUiViolations(source: string, file: string): FrontendViol
       results.push({ rule: 'layout', offset: match.index, text: match[0] })
     // Built-in runtime pages can be imported for helpers, but rendered only by the registry.
     if (!file.endsWith('/settings/registry.tsx')) {
-      for (const match of code.matchAll(
-        /<(?:SearchPanel|ChildEnginesPanel|ContextPanel|ExamplesPanel|HistorySearchPanel|SchedulesPage|SecurityPanel|JobsPanel)\b/g,
-      ))
+      const names =
+        'SearchPanel|ChildEnginesPanel|ContextPanel|ExamplesPanel|HistorySearchPanel|SchedulesPage|SecurityPanel|JobsPanel|SessionDefaultsPanel|BundlesPanel|PresetsPanel|PublicationPanel|GenerationsPanel|LocalPluginsPanel'
+      const aliases = [...code.matchAll(new RegExp(`(?:${names})\\s+as\\s+(\\w+)`, 'g'))].map(
+        (match) => match[1],
+      )
+      const roots = [names, ...aliases].join('|')
+      for (const match of code.matchAll(new RegExp(`(?:<|createElement\\(\\s*)(?:${roots})\\b`, 'g')))
         results.push({ rule: 'settings', offset: match.index, text: match[0] })
     }
   }

@@ -21,9 +21,14 @@ it('rejects untranslated presentation copy, layout styles and bypassed settings 
       frontendUiViolations(code, 'packages/web/src/new.tsx').some((v) => v.rule === 'layout'),
       code,
     ).toBe(true)
-  expect(frontendUiViolations('<SearchPanel />', 'packages/web/src/app.ts')).toContainEqual(
-    expect.objectContaining({ rule: 'settings' }),
-  )
+  for (const code of [
+    '<SearchPanel />',
+    'createElement(BundlesPanel, {})',
+    "import {SearchPanel as NewPanel} from './settings/search.js'; <NewPanel />",
+  ])
+    expect(frontendUiViolations(code, 'packages/web/src/app.ts')).toContainEqual(
+      expect.objectContaining({ rule: 'settings' }),
+    )
   expect(frontendUiViolations('<SearchPanel />', 'packages/web/src/settings/registry.tsx')).toEqual([])
   expect(
     frontendUiViolations(

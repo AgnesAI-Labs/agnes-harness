@@ -84,6 +84,20 @@ it('shows the unconfigured state and saves a key without rendering it again', as
   const input = host.querySelector<HTMLInputElement>('[data-testid="search-api-key"]')
   if (!input) throw new Error('missing key field')
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+  const count = host.querySelector<HTMLInputElement>('[data-testid="search-max-results"]')
+  expect(count?.type).toBe('text')
+  expect(count?.inputMode).toBe('numeric')
+  await act(async () => {
+    setter?.call(count, '2.5')
+    count?.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="search-save"]')?.click())
+  expect(saved).toBe(false)
+  expect(host.querySelector('[role="alert"]')).not.toBeNull()
+  await act(async () => {
+    setter?.call(count, '5')
+    count?.dispatchEvent(new Event('input', { bubbles: true }))
+  })
   await act(async () => {
     setter?.call(input, key)
     input.dispatchEvent(new Event('input', { bubbles: true }))

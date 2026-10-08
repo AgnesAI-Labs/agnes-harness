@@ -54,6 +54,10 @@ it('refuses unsupported schemas and invalid configuration without leaking creden
     { ...schema, oneOf: [] },
     { ...schema, additionalProperties: true },
     { type: 'string', pattern: '[' },
+    { type: 'object', properties: [], additionalProperties: false },
+    { anyOf: [{ const: 'option', type: 'boolean' }] },
+    { type: 'invalid', enum: ['option'] },
+    { type: 'array', uniqueItems: 'true', items: { type: 'string' } },
   ])
     expect(configSchemaSupported(bad as ConfigSchema)).toBe(false)
   const cycle: { type: 'object'; additionalProperties: false; properties: Record<string, ConfigSchema> } = {
@@ -115,6 +119,9 @@ describe('schema form actions and control semantics', () => {
     expect(save).not.toHaveBeenCalled()
     expect(host.querySelector('[role="alert"]')?.textContent).toContain('credential reference')
     const credential = host.querySelector<HTMLInputElement>('#credential')!
+    expect(credential.getAttribute('aria-invalid')).toBe('true')
+    expect(credential.getAttribute('aria-describedby')).toBe('credential-error')
+    expect(host.querySelector('#credential-error')).not.toBeNull()
     const setInput = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
     await act(async () => {
       setInput.call(credential, valid.credential)

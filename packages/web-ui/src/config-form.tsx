@@ -8,7 +8,13 @@ import {
 } from './config-schema.js'
 import { CONFIG_FORM_NAMESPACE, configFormCatalog } from './locales/config-form.js'
 import type { Translate } from './locales/index.js'
-import { SettingsInput, SettingsSelect, SettingsState, SettingsTextArea } from './settings-layout.js'
+import {
+  SettingsInput,
+  SettingsSelect,
+  SettingsState,
+  SettingsTextArea,
+  SettingsToolbar,
+} from './settings-layout.js'
 import { Button } from './ui/button.js'
 import { Field } from './ui/field.js'
 import { useUiText } from './ui-locale.js'
@@ -45,7 +51,14 @@ export function SchemaControl({
     lastValue.current = value
   }, [value, arrayText])
   const ui = schema['x-ui']
-  const props = { id: id ?? ui?.id, 'data-testid': testId ?? ui?.testId, 'aria-label': ariaLabel, disabled }
+  const props = {
+    id: id ?? ui?.id,
+    'data-testid': testId ?? ui?.testId,
+    'aria-label': ariaLabel,
+    'aria-invalid': invalid || undefined,
+    'aria-describedby': describedBy,
+    disabled,
+  }
   const choices = configChoices(schema)
   if (choices)
     return (
@@ -93,7 +106,8 @@ export function SchemaControl({
   return (
     <SettingsInput
       {...props}
-      type={numeric ? 'number' : 'text'}
+      type={numeric && ui?.control !== 'text' ? 'number' : 'text'}
+      inputMode={numeric && ui?.control === 'text' ? 'numeric' : undefined}
       autoComplete="off"
       spellCheck={schema.format === 'credential-reference' ? false : undefined}
       value={String(value ?? '')}
@@ -103,7 +117,11 @@ export function SchemaControl({
       maxLength={schema.maxLength}
       placeholder={ui?.placeholderKey ? t(ui.placeholderKey) : undefined}
       onChange={(event) =>
-        onChange(numeric && event.target.value !== '' ? Number(event.target.value) : event.target.value)
+        onChange(
+          numeric && ui?.control !== 'text' && event.target.value !== ''
+            ? Number(event.target.value)
+            : event.target.value,
+        )
       }
     />
   )
@@ -169,7 +187,18 @@ export function SchemaConfigFields({
                 ? (value[key] as Record<string, unknown>)
                 : {}
             }
-            onChange={(next) => onChange({ ...value, [key]: next })}
+            onChange={(next) =>
+              onChange({
+                ...value,
+                [key]:
+                  ui.control === 'text' &&
+                  (field.type === 'number' || field.type === 'integer') &&
+                  typeof next === 'string' &&
+                  next !== ''
+                    ? Number(next)
+                    : next,
+              })
+            }
             t={t}
             disabled={disabled}
             issues={issues}
@@ -190,7 +219,18 @@ export function SchemaConfigFields({
           <SchemaControl
             schema={field}
             value={value[key]}
-            onChange={(next) => onChange({ ...value, [key]: next })}
+            onChange={(next) =>
+              onChange({
+                ...value,
+                [key]:
+                  ui.control === 'text' &&
+                  (field.type === 'number' || field.type === 'integer') &&
+                  typeof next === 'string' &&
+                  next !== ''
+                    ? Number(next)
+                    : next,
+              })
+            }
             t={t}
             disabled={disabled}
             id={id}
@@ -298,19 +338,23 @@ export function SchemaConfigForm({
           {text(`error.${issues.find((issue) => issue.code === 'unknown' || issue.code === 'schema')?.code}`)}
         </SettingsState>
       )}
-      {onSave && (
-        <Button htmlType="submit" loading={busy} disabled={readOnly || busy || !supported}>
-          {text('save')}
-        </Button>
-      )}
-      {onTest && (
-        <Button
-          htmlType="button"
-          disabled={readOnly || busy || !supported}
-          onClick={() => void run(onTest, 'tested')}
-        >
-          {text('test')}
-        </Button>
+      {(onSave || onTest) && (
+        <SettingsToolbar>
+          {onSave && (
+            <Button htmlType="submit" loading={busy} disabled={readOnly || busy || !supported}>
+              {text('save')}
+            </Button>
+          )}
+          {onTest && (
+            <Button
+              htmlType="button"
+              disabled={readOnly || busy || !supported}
+              onClick={() => void run(onTest, 'tested')}
+            >
+              {text('test')}
+            </Button>
+          )}
+        </SettingsToolbar>
       )}
       {status && (
         <SettingsState tone={status === 'error.action' ? 'error' : 'success'}>{text(status)}</SettingsState>

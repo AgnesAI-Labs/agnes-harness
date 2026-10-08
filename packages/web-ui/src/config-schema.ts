@@ -8,7 +8,7 @@ export type ConfigSchema = Readonly<{
   additionalProperties?: false
   items?: ConfigSchema
   enum?: readonly (string | number | boolean)[]
-  anyOf?: readonly { const: string | number | boolean }[]
+  anyOf?: readonly { const: string | number | boolean; type?: 'string' | 'number' | 'integer' | 'boolean' }[]
   const?: string | number | boolean
   minimum?: number
   maximum?: number
@@ -27,7 +27,7 @@ export type ConfigSchema = Readonly<{
     optionKeys?: Readonly<Record<string, string>>
     id?: string
     testId?: string
-    control?: 'textarea' | 'checkbox'
+    control?: 'textarea' | 'checkbox' | 'text'
   }>
 }>
 export type ConfigIssue = Readonly<{
@@ -77,11 +77,26 @@ export function configSchemaSupported(schema: ConfigSchema): boolean {
     const s = value as ConfigSchema
     const choices = configChoices(s)
     if (s.enum && s.anyOf) return false
+    if (
+      s.type !== undefined &&
+      !['object', 'string', 'boolean', 'number', 'integer', 'array'].includes(s.type)
+    )
+      return false
+    if (s.uniqueItems !== undefined && typeof s.uniqueItems !== 'boolean') return false
+    if (
+      s.required !== undefined &&
+      (!Array.isArray(s.required) || s.required.some((key) => typeof key !== 'string'))
+    )
+      return false
     let valid =
       !choices ||
       (choices.length > 0 &&
         choices.length <= 128 &&
-        choices.every((v) => ['string', 'number', 'boolean'].includes(typeof v)))
+        choices.every(
+          (v) =>
+            ['string', 'number', 'boolean'].includes(typeof v) &&
+            (typeof v !== 'number' || Number.isFinite(v)),
+        ))
     const ui = s['x-ui']
     if (
       ui &&
@@ -98,7 +113,7 @@ export function configSchemaSupported(schema: ConfigSchema): boolean {
         (ui.optionKeys !== undefined &&
           (!object(ui.optionKeys) ||
             Object.values(ui.optionKeys).some((value) => typeof value !== 'string' || !value))) ||
-        (ui.control !== undefined && !['textarea', 'checkbox'].includes(ui.control)))
+        (ui.control !== undefined && !['textarea', 'checkbox', 'text'].includes(ui.control)))
     )
       valid = false
     if (choices && new Set(choices.map(String)).size !== choices.length) valid = false
@@ -120,7 +135,10 @@ export function configSchemaSupported(schema: ConfigSchema): boolean {
       !s.anyOf.every(
         (entry) =>
           Object.keys(entry).every((key) => key === 'const' || key === 'type') &&
-          Object.hasOwn(entry, 'const'),
+          Object.hasOwn(entry, 'const') &&
+          (entry.type === undefined ||
+            entry.type === typeof entry.const ||
+            (entry.type === 'integer' && Number.isInteger(entry.const))),
       )
     )
       valid = false
@@ -142,7 +160,7 @@ export function configSchemaSupported(schema: ConfigSchema): boolean {
       )
         valid = false
     if (s.type === 'object') {
-      valid &&= !!s.properties && s.additionalProperties === false
+      valid &&= object(s.properties) && s.additionalProperties === false
       valid &&= Object.entries(s.properties ?? {}).every(
         ([key, child]) => !['__proto__', 'prototype', 'constructor'].includes(key) && visit(child, depth + 1),
       )
