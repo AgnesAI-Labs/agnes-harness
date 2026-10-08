@@ -137,7 +137,7 @@ $env:AGNES_PROFILE = 'local-dev'
 node .\packages\cli\dist\local\agnes.mjs serve
 ```
 
-普通长期使用可以不设置 `AGH_HOME`，默认是 `~/.agh`。同一 home/profile/dataDir 共享后台；不同项目目录不是自动隔离的账号或后台。Unix socket 路径有限，实验 home 尽量短。默认 socket 路径过长时，后台会选择经过身份与权限校验的短临时目录；显式指定的 socket 路径过长时仍会拒绝启动。
+普通长期使用可以不设置 `AGH_HOME`，默认是 `~/.agh`。每个规范化 AGH_HOME 只有一个后台；配置档和 dataDir 必须与运行实例一致。不同项目目录不是自动隔离的账号或后台。Unix socket 路径有限，实验 home 尽量短。默认 socket 路径过长时，后台会选择经过身份与权限校验的短临时目录；显式指定的 socket 路径过长时仍会拒绝启动。
 
 ## 重建与版本切换
 
