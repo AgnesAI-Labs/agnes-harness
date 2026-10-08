@@ -1128,7 +1128,6 @@ export class SessionImpl {
     let content: ContentBlock[]
     try {
       content = structuredClone(msg.content)
-      validateUserMessageImages(content)
     } catch (error) {
       return Promise.reject(error)
     }
@@ -1139,13 +1138,28 @@ export class SessionImpl {
         if (!Number.isFinite(msg.budget) || msg.budget < 0)
           throw new CoreError('E_ENVELOPE', 'a per-turn budget override must be a finite non-negative number')
       }
+      const cur = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
+      const oversized = () =>
+        new CoreError(
+          'E_ENVELOPE',
+          'Queued inputs are too large. Wait for a pending message to finish or remove one before sending more attachments.',
+        )
+      // String lengths are a conservative UTF-8/JSON lower bound. Refuse a known-oversized
+      // inbox before decoding large media or allocating its entire serialized frame.
+      let minimumBytes = 0
+      for (const item of [...cur.items, { content }])
+        for (const block of item.content) {
+          if ('data' in block && typeof block.data === 'string') minimumBytes += block.data.length
+          if (block.type === 'text') minimumBytes += block.text.length
+          if (minimumBytes > MAX_FRAME_BYTES - 4096) throw oversized()
+        }
+      validateUserMessageImages(content)
       if (content.some((block) => block.type === 'image')) {
         const target = resolveModel(this, 'primary')
         const model = this.d.provider.models().find((m) => m.route === target.route && m.id === target.model)
         const error = modelImageInputError(model, [{ content }])
         if (error) throw new CoreError('E_ENVELOPE', error)
       }
-      const cur = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
       if (msg.ifEmpty && cur.items.length)
         throw new CoreError('E_RELATION', 'continuation input competed with pending input')
       const item: InboxItem = {
@@ -1161,11 +1175,7 @@ export class SessionImpl {
         trust: msg.trust ?? 'trusted',
       }
       const nextInbox = inboxEvent(this.lane, this.d.actor, { items: [...cur.items, item] })
-      if (encoder.encode(JSON.stringify(nextInbox)).byteLength > MAX_FRAME_BYTES - 4096)
-        throw new CoreError(
-          'E_ENVELOPE',
-          'Queued inputs are too large. Wait for a pending message to finish or remove one before sending more attachments.',
-        )
+      if (encoder.encode(JSON.stringify(nextInbox)).byteLength > MAX_FRAME_BYTES - 4096) throw oversized()
       const r = await this.d.log.append([
         nextInbox,
         ...(msg.budget !== undefined

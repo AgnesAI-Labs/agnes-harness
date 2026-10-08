@@ -1078,16 +1078,40 @@ it('surfaces a status message and clears a stale list when packages.pins.inspect
   history.replaceState(null, '', '/admin/plugins#pins-inspect-fail-token')
   const pin = orphanPin()
   let inspectCalls = 0
+  let releasePins = () => {}
+  const delayedPins = new Promise<void>((resolve) => {
+    releasePins = resolve
+  })
+  let inventoryVersion = '1.0.0'
   const fetcher = vi.fn<typeof fetch>(async (input) => {
     const url = String(input)
     if (url.endsWith('/session')) return new Response('{}', { status: 200 })
     if (url.endsWith('/context')) return Response.json(pinsContext())
-    if (url.endsWith('/list')) return Response.json({ packages: [] })
+    if (url.endsWith('/list'))
+      return Response.json({
+        packages: [
+          {
+            id: 'acme/inventory',
+            source: { type: 'file', ref: 'file:./inventory' },
+            integrity: `sha256-${'9'.repeat(64)}`,
+            contributions: [],
+            capabilityHash,
+            version: inventoryVersion,
+            trusted: true,
+            desired: 'enabled',
+            actual: 'running',
+            cleanupPending: false,
+            rollbackTarget: null,
+            blockers: [],
+          },
+        ],
+      })
     if (url.endsWith('/pins/inspect')) {
       inspectCalls++
       // First refresh (on start()) succeeds with one orphan; a later refresh fails and must not
       // leave that stale orphan showing as current.
       if (inspectCalls === 1) return Response.json({ orphans: [pin] })
+      await delayedPins
       return Response.json(
         { error: { code: 'ADMIN_UNAVAILABLE', message: '暂时无法读取孤儿 pin。' } },
         { status: 500 },
@@ -1102,7 +1126,13 @@ it('surfaces a status message and clears a stale list when packages.pins.inspect
   await vi.waitFor(() => expect(document.getElementById('orphan-pins')).toHaveProperty('hidden', false))
   expect(document.getElementById('orphan-pins-list')?.textContent).toContain('acme/plugin@1.0.0')
 
-  await admin.reload()
+  inventoryVersion = '2.0.0'
+  const refreshing = admin.reload()
+  // A supplementary pin read must not leave the primary inventory frozen behind Loading.
+  await vi.waitFor(() => expect(inspectCalls).toBe(2))
+  expect(document.getElementById('plugin-list')?.textContent).toContain('2.0.0')
+  releasePins()
+  await refreshing
 
   await vi.waitFor(() =>
     expect(document.getElementById('orphan-pins-status')?.textContent).toContain('暂时无法读取孤儿 pin。'),

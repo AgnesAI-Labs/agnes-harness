@@ -6,7 +6,8 @@ export default defineConfig({
   testDir: '.',
   testMatch: ['runtime.spec.ts', 'ui-gate.spec.ts', 'ui-flows.spec.ts'],
   workers: 2,
-  fullyParallel: false,
+  // Every spec owns a fresh home and daemon; spread long flows across both workers.
+  fullyParallel: true,
   forbidOnly: true,
   retries: 0,
   failOnFlakyTests: true,

@@ -159,10 +159,17 @@ describe('user message images', () => {
       0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, 0, 1, 0, 1, 1, 1, 0x11, 0, 0xff, 0xda, 0, 8, 1, 1, 0, 0, 63, 0,
     ])
     bytes.set([0xff, 0xd9], bytes.length - 2)
-    const content = [{ type: 'image' as const, mimeType: 'image/jpeg', data: bytes.toString('base64') }]
+    const backlogImage = { type: 'image' as const, mimeType: 'image/jpeg', data: bytes.toString('base64') }
+    const content = [backlogImage]
     await session.enqueue('next-turn', { content, actor })
     await expect(session.enqueue('next-turn', { content, actor })).rejects.toMatchObject({
       code: 'E_ENVELOPE',
+    })
+    // A known oversized backlog is refused before decoding a second huge, malformed image.
+    const malformed = [{ ...backlogImage, data: backlogImage.data.slice(0, -4) + '!!!!' }]
+    await expect(session.enqueue('next-turn', { content: malformed, actor })).rejects.toMatchObject({
+      code: 'E_ENVELOPE',
+      message: expect.stringContaining('Queued inputs are too large'),
     })
     expect(session.latest('inbox')).toMatchObject({ items: [{ content }] })
     expect(await log.scan({ type: 'inbox', limit: 10 })).toHaveLength(1)

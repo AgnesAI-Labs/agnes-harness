@@ -39,7 +39,7 @@ vi.mock('@agnes/host-infrastructure/adapters/process-identity-default', () => ({
   defaultProcessIdentity: async () => ({ state: 'alive', startId: 'composition-test-worker' }),
 }))
 
-it('isolates bundle tools from default and other bundles while retaining general plugins and cold pins', async () => {
+function bundleFixture() {
   const ids = ['acme/a', 'acme/b', 'acme/general']
   const sources = ids.map((vendor, index) => {
     const source = pluginSourceWith(
@@ -92,7 +92,12 @@ ${
     // A live deployment starts with no bundles, then receives both through publication.
     runtimePluginSources: async () => sources,
   }
-  let fixture = await pluginHost(sources, options)
+  return { ids, sources, options }
+}
+
+it('isolates bundle tools from default and other bundles while retaining general plugins', async () => {
+  const { ids, sources, options } = bundleFixture()
+  const fixture = await pluginHost(sources, options)
   const dataDir = fixture.dataDir
   const row = (vendor: string, disabled = false) =>
     createPluginRow({
@@ -178,23 +183,45 @@ ${
     const fresh = await fixture.host.createSession({ key: 'after-disable', cwd: dataDir })
     expect(fresh.currentTools().resolve('fixture_2')).toBeUndefined()
     await fresh.close()
-    const pin = a.pluginGenerationId
     await normal.close()
     await a.close()
     await b.close()
+  } finally {
+    await fixture.host.close()
+  }
+})
+
+it('retains a cold bundle pin after the live general plugin is disabled', async () => {
+  const { ids, sources, options } = bundleFixture()
+  let fixture = await pluginHost(sources, options)
+  const dataDir = fixture.dataDir
+  try {
+    await fixture.host.applyRuntimeTarget(
+      targetOf(ids.map((vendor) => pluginRow('ext:' + vendor, 'plugin', false, { vendor }))),
+    )
+    const a = await fixture.host.createSession({ key: 'bundle-a', cwd: dataDir, bundles: ['acme/a#a'] })
+    const pin = a.pluginGenerationId
+    const report = await fixture.host.applyRuntimeTarget(
+      targetOf(
+        ids.map((vendor) => pluginRow('ext:' + vendor, 'plugin', vendor === 'acme/general', { vendor })),
+      ),
+    )
+    expect(report.ok, JSON.stringify(report)).toBe(true)
+    await a.close()
     await fixture.host.close()
     fixture = await pluginHost(sources, { ...options, dataDir })
     const reopened = await fixture.host.createSession({ key: 'bundle-a', cwd: dataDir })
     expect(reopened.pluginGenerationId).toBe(pin)
     expect(reopened.currentTools().resolve('fixture_0')).toBeDefined()
     expect(reopened.currentTools().resolve('fixture_1')).toBeUndefined()
+    expect(reopened.currentTools().resolve('fixture_2')).toBeDefined()
     await reopened.close()
   } finally {
     await fixture.host.close()
   }
 })
 
-it('runs preset compositions side by side, filters tools and retains the generation on cold reopen', async () => {
+function presetCompositionFixture() {
   const root = mkdtempSync(join(tmpdir(), 'agnes-compositions-'))
   let refuseWriter = false
   const options = {
@@ -260,6 +287,17 @@ it('runs preset compositions side by side, filters tools and retains the generat
       },
     },
   }
+  return {
+    root,
+    options,
+    refuseWriter: (value: boolean) => {
+      refuseWriter = value
+    },
+  }
+}
+
+it('isolates preset compositions and keeps session bundle choices immutable', async () => {
+  const { root, options } = presetCompositionFixture()
   let host: Awaited<ReturnType<typeof createTestHost>>['host'] | undefined
   try {
     host = (await createTestHost(options)).host
@@ -332,6 +370,38 @@ it('runs preset compositions side by side, filters tools and retains the generat
     await expect(
       host.createSession({ key: 'missing-bundle', cwd: root, bundles: ['missing#bundle'] }),
     ).rejects.toThrow('unknown bundle')
+    await observer.close()
+    const profileDir = join(root, 'profiles', 'local-dev')
+    // Use the same durable directory as createTestHost's production Host options.
+    const bindings = new CompositionSessionStore(profileDir)
+    expect(bindings.read(reader.key)?.tree.preset).toBe('reader')
+    expect(bindings.read(observer.key)?.tree.sessionBundles).toEqual(['@fixture/session#reader'])
+    expect(bindings.read(observer.key)?.tree.sources.tools).toEqual({
+      layer: 'session',
+      name: '@fixture/session#reader',
+    })
+    expect(await readLiveCompositionSessions(profileDir)).toHaveLength(2)
+    await reader.close()
+    expect(await readLiveCompositionSessions(profileDir)).toHaveLength(1)
+    await writer.close()
+  } finally {
+    await host?.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('publishes model changes per composition and reports a partial provider refusal', async () => {
+  const { root, options, refuseWriter } = presetCompositionFixture()
+  const { host } = await createTestHost(options)
+  try {
+    const reader = await host.createSession({ key: 'reader-session', preset: 'reader', cwd: root })
+    const writer = await host.createSession({ key: 'writer-session', preset: 'writer', cwd: root })
+    const observer = await host.createSession({
+      key: 'observer-session',
+      preset: 'observer',
+      cwd: root,
+      bundles: ['@fixture/session#reader'],
+    })
     const next = structuredClone(host.profile)
     const route = next.provider.routes?.find((route) => route.route === 'gw')
     const first = route?.models?.[0]
@@ -340,7 +410,7 @@ it('runs preset compositions side by side, filters tools and retains the generat
     await expect(host.applyModelProfile({ ...next, dataDir: join(root, 'other-backend') })).rejects.toThrow(
       'non-model configuration requires restart',
     )
-    refuseWriter = true
+    refuseWriter(true)
     const partial = await host.applyModelProfile(next)
     expect(partial).toMatchObject({
       operation: 'models',
@@ -359,20 +429,34 @@ it('runs preset compositions side by side, filters tools and retains the generat
       writer.setModel({ slot: 'primary', route: route.route, model: 'live-model' }),
     ).rejects.toThrow('E_MODEL_UNKNOWN')
     await observer.setModel({ slot: 'primary', route: route.route, model: 'live-model' })
-    refuseWriter = false
+    refuseWriter(false)
     expect(await host.applyModelProfile(next)).toMatchObject({ ok: true })
     await writer.setModel({ slot: 'primary', route: route.route, model: 'live-model' })
+    await reader.close()
+    await writer.close()
+    await observer.close()
+  } finally {
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('restores and migrates pinned preset and bundle compositions after a cold reopen', async () => {
+  const { root, options } = presetCompositionFixture()
+  let host: Awaited<ReturnType<typeof createTestHost>>['host'] | undefined
+  try {
+    host = (await createTestHost(options)).host
+    const reader = await host.createSession({ key: 'reader-session', preset: 'reader', cwd: root })
+    const writer = await host.createSession({ key: 'writer-session', preset: 'writer', cwd: root })
+    const observer = await host.createSession({
+      key: 'observer-session',
+      preset: 'observer',
+      cwd: root,
+      bundles: ['@fixture/session#reader'],
+    })
     await observer.close()
     const profileDir = join(root, 'profiles', 'local-dev')
-    // Use the same durable directory as createTestHost's production Host options.
     const bindings = new CompositionSessionStore(profileDir)
-    expect(bindings.read(reader.key)?.tree.preset).toBe('reader')
-    expect(bindings.read(observer.key)?.tree.sessionBundles).toEqual(['@fixture/session#reader'])
-    expect(bindings.read(observer.key)?.tree.sources.tools).toEqual({
-      layer: 'session',
-      name: '@fixture/session#reader',
-    })
-    expect(await readLiveCompositionSessions(profileDir)).toHaveLength(2)
     const generation = reader.pluginGenerationId
     await reader.close()
     expect(await readLiveCompositionSessions(profileDir)).toHaveLength(1)

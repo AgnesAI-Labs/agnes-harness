@@ -25,13 +25,20 @@ it('reconnects a user PTY after refresh; typing and explicit close control that 
     truncated: false,
     stdout: 'ready\r\n',
   }
+  let acknowledge: (() => void) | undefined
   const api = {
     read: vi.fn(async (_scope: string, id?: string) => ({
       jobs: [job],
       completions: [],
       ...(id ? { job } : {}),
     })),
-    control: vi.fn(async (_scope: string, _input: Record<string, unknown>) => ({ ok: true })),
+    control: vi.fn(async (_scope: string, input: Record<string, unknown>) => {
+      if (input.operation === 'send' && input.text === 'x')
+        await new Promise<void>((resolve) => {
+          acknowledge = resolve
+        })
+      return { ok: true }
+    }),
   }
   const container = document.createElement('div')
   document.body.append(container)
@@ -49,6 +56,21 @@ it('reconnects a user PTY after refresh; typing and explicit close control that 
         ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true }))
     })
     expect(api.control).toHaveBeenCalledWith('session-a', { operation: 'send', jobId: 'pty-a', text: 'x' })
+    await act(async () => {
+      for (const key of ['y', 'z', 'Enter'])
+        container
+          .querySelector('[data-testid="terminal-output"]')
+          ?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+    })
+    await act(async () => acknowledge?.())
+    // PTY writes preserve every byte, but queued typing is sent together after a slow acknowledgement.
+    expect(api.control).toHaveBeenCalledWith('session-a', { operation: 'send', jobId: 'pty-a', text: 'yz\r' })
+    expect(
+      api.control.mock.calls
+        .filter(([, input]) => input.operation === 'send')
+        .map(([, input]) => input.text)
+        .join(''),
+    ).toBe('xyz\r')
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[data-testid="terminal-close"]')?.click(),
     )

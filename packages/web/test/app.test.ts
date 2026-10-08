@@ -1492,9 +1492,15 @@ describe('web session selection', () => {
     installPublicFixture()
     history.replaceState(null, '', '/#test-launcher-token')
     let pickerCalls = 0
+    let releasePicker = () => {}
+    const pickerReady = new Promise<void>((resolve) => {
+      releasePicker = resolve
+    })
     const fetcher = vi.fn<typeof fetch>(async (_input, init) => {
-      if ((init?.method ?? 'GET') === 'GET')
+      if ((init?.method ?? 'GET') === 'GET') {
+        await pickerReady
         return new Response(JSON.stringify({ available: true }), { status: 200 })
+      }
       pickerCalls++
       return new Response(
         JSON.stringify(
@@ -1526,9 +1532,13 @@ describe('web session selection', () => {
     await import('../src/app.js')
     const dialog = document.getElementById('new-session') as HTMLDialogElement
     const picker = document.getElementById('workspace-pick') as HTMLButtonElement
+    await vi.waitFor(() => expect(dialog.open).toBe(true))
+    expect(picker.getAttribute('aria-busy')).toBe('true')
+    releasePicker()
     await vi.waitFor(() => {
-      expect(dialog.open).toBe(true)
       expect(picker.disabled).toBe(false)
+      expect(picker.getAttribute('aria-busy')).toBe('false')
+      expect(document.getElementById('new-session-create')?.getAttribute('aria-busy')).toBe('false')
     })
 
     picker.click()

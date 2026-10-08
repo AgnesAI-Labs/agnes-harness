@@ -46,13 +46,33 @@ const ready = (serverId: string) => ({
   toolCount: 1,
   observedAt: new Date().toISOString(),
 })
+// These tests own the lifecycle driver. Await its public completion rather than
+// racing durable journal writes with a fixed count of 2 ms reads on a loaded runner.
+const drivers = new WeakMap<TestService, (operationId: string) => Promise<void>>()
+function drivenService(store: McpResourceStore): TestService {
+  store.setDeferredDrive(true)
+  const service = testService(createResourceControlService(store))
+  const running = new Map<string, Promise<void>>()
+  drivers.set(service, (operationId) => {
+    let pending = running.get(operationId)
+    if (!pending) {
+      pending = store.driveOperation(profile, operationId)
+      running.set(operationId, pending)
+    }
+    return pending
+  })
+  return service
+}
+function drive(service: TestService, operationId: string): Promise<void> {
+  const start = drivers.get(service)
+  if (!start) throw new Error('test service has no completion barrier')
+  return start(operationId)
+}
 async function settled(service: TestService, operationId: string) {
-  for (let i = 0; i < 100; i++) {
-    const op = await service.call('_agnes/v1/resources.operation.get', { profile, operationId }, authority)
-    if (['succeeded', 'failed', 'cancelled'].includes(op.state)) return op
-    await new Promise((resolve) => setTimeout(resolve, 2))
-  }
-  throw new Error('operation did not settle')
+  await drive(service, operationId)
+  const op = await service.call('_agnes/v1/resources.operation.get', { profile, operationId }, authority)
+  expect(['succeeded', 'failed', 'cancelled']).toContain(op.state)
+  return op
 }
 afterEach(async () => {
   if (directory) await rm(directory, { recursive: true, force: true })
@@ -80,7 +100,7 @@ describe('MCP durable resource control', () => {
       test: async () => ({ toolCount: 1, catalogRevision: 'a'.repeat(64) }),
       tools: async ({ serverId }) => ({ serverId, catalogRevision: 'a'.repeat(64), items: [] }),
     })
-    const service = testService(createResourceControlService(store))
+    const service = drivenService(store)
     const create = await service.call(
       '_agnes/v1/mcp.servers.create',
       { profile, definition, clientId: 'client', commandId: 'create-1' },
@@ -181,7 +201,7 @@ describe('MCP durable resource control', () => {
         }),
       tools: async ({ serverId }) => ({ serverId, catalogRevision: 'a'.repeat(64), items: [] }),
     })
-    const service = testService(createResourceControlService(store))
+    const service = drivenService(store)
     const create = await service.call(
       '_agnes/v1/mcp.servers.create',
       { profile, definition, clientId: 'client', commandId: 'create-1' },
@@ -212,6 +232,7 @@ describe('MCP durable resource control', () => {
       },
       authority,
     )
+    const driving = drive(service, tested.operationId)
     await vi.waitFor(() => expect(finishTest).toBeDefined())
     // A worker observation of the same server arrives while the test is still running. It says
     // nothing about the test, so the operation must stay open until the test itself reports.
@@ -224,6 +245,7 @@ describe('MCP durable resource control', () => {
       ),
     ).resolves.toMatchObject({ state: 'running' })
     finishTest?.()
+    await driving
     expect(await settled(service, tested.operationId)).toMatchObject({
       state: 'succeeded',
       result: { toolCount: 1, catalogRevision: 'a'.repeat(64) },
@@ -244,7 +266,7 @@ describe('MCP durable resource control', () => {
       test: async () => ({ toolCount: 1, catalogRevision: 'a'.repeat(64) }),
       tools: async ({ serverId }) => ({ serverId, catalogRevision: 'a'.repeat(64), items: [] }),
     })
-    const service = testService(createResourceControlService(store))
+    const service = drivenService(store)
     const create = await service.call(
       '_agnes/v1/mcp.servers.create',
       { profile, definition, clientId: 'client', commandId: 'create-1' },
@@ -275,6 +297,7 @@ describe('MCP durable resource control', () => {
       },
       authority,
     )
+    const driving = drive(service, enable.operationId)
     await vi.waitFor(() => expect(finishEnable).toBeDefined())
     // An idle worker reports the server as disabled before the enable has started it.
     await store.observeWorker(profile, [{ ...ready(definition.serverId), connectionState: 'disabled' }])
@@ -286,6 +309,7 @@ describe('MCP durable resource control', () => {
       ),
     ).resolves.toMatchObject({ state: 'running' })
     finishEnable?.()
+    await driving
     expect(await settled(service, enable.operationId)).toMatchObject({ state: 'succeeded' })
   })
 
@@ -359,7 +383,7 @@ describe('MCP durable resource control', () => {
       tools,
       unstage: async () => undefined,
     })
-    const service = testService(createResourceControlService(store))
+    const service = drivenService(store)
     const create = await service.call(
       '_agnes/v1/mcp.servers.create',
       { profile, definition, clientId: 'client', commandId: 'create-catalog' },
@@ -520,6 +544,19 @@ describe('MCP durable resource control', () => {
       },
     })
     const service = testService(createResourceControlService(store))
+    const barrier = () => {
+      let resolve = () => {}
+      const promise = new Promise<void>((done) => {
+        resolve = done
+      })
+      return { promise, resolve }
+    }
+    let completion = barrier()
+    store.setSuccessfulSnapshotHandler(() => completion.resolve())
+    drivers.set(service, async () => {
+      await completion.promise
+      completion = barrier()
+    })
     const create = await service.call(
       '_agnes/v1/mcp.servers.create',
       { profile, definition, clientId: 'client', commandId: 'create-snapshot' },
@@ -631,7 +668,7 @@ describe('MCP durable resource control', () => {
       test: async () => ({ toolCount: 1, catalogRevision: 'a'.repeat(64) }),
       tools: async ({ serverId }) => ({ serverId, catalogRevision: 'a'.repeat(64), items: [] }),
     })
-    const service = testService(createResourceControlService(managed))
+    const service = drivenService(managed)
     const create = await service.call(
       '_agnes/v1/mcp.servers.create',
       { profile, definition, clientId: 'client', commandId: 'managed-create' },

@@ -100,19 +100,34 @@ export function JobsPanel({
       setBusy(false)
     }
   }
-  // Queue keystrokes so fast typing preserves order without dropping keys during requests.
-  const inputQueue = useRef(Promise.resolve())
+  // Preserve PTY byte order and the captured owner; batch typing queued behind a slow write.
+  const inputQueue = useRef({
+    running: false,
+    pending: [] as { scope: string; id: string; text: string }[],
+  })
   function send(text: string) {
     if (!jobId) return
+    const queue = inputQueue.current
     const scope = sessionId,
       id = jobId
-    inputQueue.current = inputQueue.current
-      .then(async () => {
-        await api.control(scope, { operation: 'send', jobId: id, text })
-      })
-      .catch(() => {
-        if (owner.current === scope) setError(true)
-      })
+    const tail = queue.pending.at(-1)
+    if (tail?.scope === scope && tail.id === id && tail.text.length + text.length <= 16_384) tail.text += text
+    else queue.pending.push({ scope, id, text })
+    if (queue.running) return
+    queue.running = true
+    void (async () => {
+      try {
+        for (let input = queue.pending.shift(); input; input = queue.pending.shift()) {
+          try {
+            await api.control(input.scope, { operation: 'send', jobId: input.id, text: input.text })
+          } catch {
+            if (owner.current === input.scope) setError(true)
+          }
+        }
+      } finally {
+        queue.running = false
+      }
+    })()
   }
   return (
     <SettingsCard className="runtime-card" data-testid={terminal ? 'terminal-panel' : 'jobs-panel'}>

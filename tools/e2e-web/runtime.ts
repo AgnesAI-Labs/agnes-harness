@@ -2,7 +2,7 @@ import { type ChildProcess, execFile, spawn } from 'node:child_process'
 import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { join, resolve } from 'node:path'
-import { AGH_DIR } from '@agnes/protocol'
+import { AGH_DIR, type DiagnosticsEventsResult } from '@agnes/protocol'
 import { createClient, memoryJournal, type NodeClient, wsTransport } from '@agnes/sdk'
 
 const entry = resolve('packages/cli/dist/local/agnes.mjs')
@@ -52,7 +52,7 @@ export async function isolatedRuntime() {
       child.stdin?.end()
     })
   const stop = async () => {
-    log += `Before shutdown: ${await cli(['daemon', 'status']).catch((error: Error) => error.message)}\n`
+    log += `Stopping serve child ${web?.pid ?? 'already exited'}\n`
     const closedClients = await Promise.allSettled([...clients].map((client) => client.close()))
     const failures = closedClients.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []))
     clients.clear()
@@ -94,22 +94,28 @@ export async function isolatedRuntime() {
     }
     throw new Error(`serve readiness timeout: ${log}`)
   }
-  return {
+  const runtime = {
     home,
     workspace,
     url,
     cli,
     start,
-    connect: async (transport: 'local' | 'web' = 'local') => {
-      // Read only the served document's advertised endpoint; all admin operations use SDK RPC.
-      const html = await (await fetch(url)).text()
-      const ws = html.match(/data-ws="([^"]+)"/)?.[1]
-      if (!ws) throw new Error('The real workbench did not advertise a daemon WebSocket')
-      const owner = JSON.parse(await readFile(join(home, 'data/daemon/owner.json'), 'utf8'))
+    connect: async (transport: 'local' | 'web' = 'local', registerWorkspace = true) => {
+      let ws = ''
+      let socketPath = ''
+      if (transport === 'web') {
+        // Discover only the served document's endpoint; administrative operations use SDK RPC.
+        const html = await (await fetch(url)).text()
+        ws = html.match(/data-ws="([^"]+)"/)?.[1] ?? ''
+        if (!ws) throw new Error('The real workbench did not advertise a daemon WebSocket')
+      } else {
+        const owner = JSON.parse(await readFile(join(home, 'data/daemon/owner.json'), 'utf8'))
+        socketPath = owner.socketPath
+      }
       const client = createClient({
         transport:
           transport === 'local'
-            ? { kind: 'unix', path: owner.socketPath }
+            ? { kind: 'unix', path: socketPath }
             : { kind: 'ws', url: ws, protocols: ['agnes-v1'] },
         transportFactories: {
           ws: (options) => wsTransport({ ...options, url: ws, headers: { Origin: url } }),
@@ -119,7 +125,7 @@ export async function isolatedRuntime() {
       })
       await client.initialize()
       clients.add(client)
-      await client.workspace.add(workspace)
+      if (registerWorkspace) await client.workspace.add(workspace)
       return client
     },
     restart: async () => {
@@ -165,8 +171,31 @@ export async function isolatedRuntime() {
       }
     },
     diagnostics: async () => {
-      const audit = await readFile(join(home, 'data/audit/daemon.jsonl'), 'utf8').catch(() => '')
-      return audit.slice(-256_000)
+      try {
+        const client = await runtime.connect('local', false)
+        const collected = await client.call('_agnes/v1/diagnostics.collect', {})
+        const sessions = (await client.session.list()).items
+        const events = await Promise.all(
+          sessions.map(async (session) => {
+            try {
+              return {
+                sessionId: session.sessionId,
+                ...(await client.call<DiagnosticsEventsResult>('_agnes/v1/diagnostics.events', {
+                  sessionId: session.sessionId,
+                  afterSeq: 0,
+                  limit: 500,
+                  maxBytes: 256_000,
+                })),
+              }
+            } catch (error) {
+              return { sessionId: session.sessionId, error: String(error) }
+            }
+          }),
+        )
+        return JSON.stringify({ collected, events })
+      } catch (error) {
+        return JSON.stringify({ error: String(error) })
+      }
     },
     logs: () => log,
     dispose: async () => {
@@ -177,5 +206,6 @@ export async function isolatedRuntime() {
       }
     },
   }
+  return runtime
 }
 export type Runtime = Awaited<ReturnType<typeof isolatedRuntime>>

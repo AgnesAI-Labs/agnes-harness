@@ -73,7 +73,6 @@ import {
   type AdminSurfaceLink,
   hasFeature,
   type PluginRuntimeSource,
-  type PluginTreeView,
 } from './types.js'
 
 const OPERATION_STORAGE_PREFIX = 'agnes-plugin-operation-ids:'
@@ -393,24 +392,14 @@ class PluginAdminPage {
       // Context remains useful even when inventory cannot be read: its recovery flag must still
       // disable effects, while read-only catalog calls may remain available.
       this.#state = { ...this.#state, context }
-      const list = await this.#api.list()
+      // Independent read models can load together. Optional feeds never block a valid inventory.
+      const [list, surfaceFeed, tree] = await Promise.all([
+        this.#api.list(),
+        this.#api.surfaceLinks().catch(() => undefined),
+        this.#api.treeList().catch(() => undefined),
+      ])
       if (generation !== this.#generation) return
-      let surfaceLinks: readonly AdminSurfaceLink[] = []
-      try {
-        surfaceLinks = (await this.#api.surfaceLinks()).surfaces
-      } catch {
-        // Surface links are supplementary. Never hide a valid installed inventory because the
-        // live route feed is unavailable, and never retain a stale link after it can no longer
-        // be confirmed.
-      }
-      if (generation !== this.#generation) return
-      let tree: PluginTreeView | undefined
-      try {
-        tree = await this.#api.treeList()
-      } catch {
-        // Tree actual is the qualified report view. A miss must not hide installed inventory.
-      }
-      if (generation !== this.#generation) return
+      const surfaceLinks = surfaceFeed?.surfaces ?? []
       this.#state = {
         ...this.#state,
         context,
@@ -423,6 +412,7 @@ class PluginAdminPage {
         connection: 'connected',
       }
       this.scheduleTreePoll()
+      this.render()
       try {
         const { orphans } = await this.#api.pinsInspect()
         if (generation !== this.#generation) return
@@ -1085,11 +1075,13 @@ class PluginAdminPage {
             message: this.errorMessage(error),
           })
         : this.errorMessage(error)
-      : this.#state.lastOperation
-        ? this.#t('notice.operation-refreshed', {
-            operation: operationLabel(this.#state.lastOperation, this.#adminT),
-          })
-        : this.noticeText() || connectionNotice
+      : this.#state.loading
+        ? this.#t('connection.loading')
+        : this.#state.lastOperation
+          ? this.#t('notice.operation-refreshed', {
+              operation: operationLabel(this.#state.lastOperation, this.#adminT),
+            })
+          : this.noticeText() || connectionNotice
     const noticeKind = error ? 'error' : connection === 'connected' ? this.#noticeState.kind : 'state'
     this.#notice.textContent = noticeMessage
     this.#notice.dataset.kind = noticeKind

@@ -1471,6 +1471,14 @@ async function forkTurn(turn: UITurn): Promise<void> {
   composerRuntime.focus()
 }
 function renderNewSessionControls(): void {
+  newSessionCreate.setAttribute(
+    'aria-busy',
+    String(sessionPending || newSessionCreating || workspacePickerBusy),
+  )
+  workspacePick.setAttribute(
+    'aria-busy',
+    String(sessionPending || newSessionCreating || workspacePickerBusy || workspacePickerReady === undefined),
+  )
   newSessionCreate.disabled =
     !connected || sessionPending || newSessionCreating || workspacePickerBusy || !newSessionCwd.value.trim()
   setButtonLabel(

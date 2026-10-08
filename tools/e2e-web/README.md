@@ -41,7 +41,7 @@ plugin generations after reload/restart, MCP stdio invocation, workspace skill d
 bundled FDE workflow writing a deliverable. They assert durable tool results and persisted output,
 not just that a request was accepted.
 
-The runtime fixture records a startup screenshot before each spec. Maintained page flows use the
+SDK flows start only their SDK client; maintained page flows own first-run screenshots and use the
 same real daemon and public SDK for persisted-state assertions. The older UI smoke files remain
 separate from this gate.
 
@@ -52,7 +52,7 @@ Maintainers must select that status in the target branch's required checks/rules
 workflow alone does not change GitHub branch protection. The workflow runs on pull requests,
 merge groups, integration/main pushes and manual dispatch, without path-based skips.
 
-The suite has two workers, zero retries, an eight-minute test deadline and a ten-minute CI gate
+The independent specs share two workers with per-test scheduling, zero retries, an eight-minute test deadline and a ten-minute CI gate
 step. `test.only` and retry overrides are refused. A flaky spec remains a gate failure; do not
 quarantine it with retries or `test.skip`. To investigate, run the named spec several times:
 
@@ -60,8 +60,9 @@ quarantine it with retries or `test.skip`. To investigate, run the named spec se
 pnpm e2e:web --reuse-build --grep 'local hot reload' --repeat-each 3
 ```
 
-`.agnes-tmp/e2e-web` (existing ignored local-acceptance directory) contains the HTML/JSON report, startup/failure screenshots,
-failure traces, browser errors, process logs and SDK evidence attachments. Set
+`.agnes-tmp/e2e-web` (existing ignored local-acceptance directory) contains the HTML/JSON report, screen/failure screenshots,
+failure traces, browser errors, process logs and SDK evidence attachments. Redacted diagnostics and
+session events are collected through the public SDK before shutdown, including hook attribution. Set
 `AGH_WEB_TEST_OUTPUT` to place these artifacts elsewhere. The harness closes its SDK clients,
 stops its own serve process, runs `daemon stop` for its isolated home, and removes only its own
 temporary directory. Browser console errors, uncaught page errors and off-loopback requests fail.
@@ -146,3 +147,9 @@ The synthetic stdio MCP fixture explicitly selects `off-with-warning` and checks
 profile is persisted before trust/enable. Its live tool and Skill assertions also run on
 hosts where MCP confinement is unavailable. Strict confinement and refusal are covered by
 the sandbox backend and resource-control-worker integration tests.
+
+CI sets `AGH_RATCHET_REPORT=1` for fast tests and repository guards while the owner
+remeasures the merged line budgets. Every exceeded scope is listed as `RATCHET_DEBT`
+and appended to the job summary; budgets are unchanged. Only the line ceiling is
+report-only: structural, dependency, counting-regression and functional assertions
+remain hard gates. Local guard runs enforce the original ceilings by default.

@@ -65,6 +65,16 @@ export async function accessible(page: Page, info: TestInfo, name: string) {
 }
 export async function screen(page: Page, info: TestInfo, name: string) {
   await settled(page)
+  // Streaming pins to the bottom; the visual contract frames the completed tool row from its start.
+  if (name.startsWith('tool-row-')) {
+    await page.getByRole('region', { name: /^(Conversation|对话)$/, exact: true }).evaluate((viewport) => {
+      const behavior = viewport.style.scrollBehavior
+      viewport.style.scrollBehavior = 'auto'
+      viewport.scrollTop = 0
+      viewport.style.scrollBehavior = behavior
+    })
+    await page.mouse.move(0, 0)
+  }
   const manifest = JSON.parse(readFileSync('tools/e2e-web/baselines/ready.json', 'utf8')) as {
     ready: string[]
     pending: Record<string, string>

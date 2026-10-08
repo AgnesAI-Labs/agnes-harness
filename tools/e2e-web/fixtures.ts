@@ -6,10 +6,7 @@ export const test = base.extend<{ runtime: Runtime; browserHealth: undefined }>(
     const runtime = await isolatedRuntime()
     try {
       await runtime.start()
-      // Startup artifact only. Phase 1 never clicks or asserts page-level UI behavior.
-      await page.goto(runtime.url)
-      await page.screenshot({ path: info.outputPath('startup.png'), animations: 'disabled' })
-      await page.goto('about:blank')
+      // UI specs own their navigation and screen assertions; SDK flows do not boot a second client.
       await use(runtime)
     } finally {
       try {
@@ -18,9 +15,9 @@ export const test = base.extend<{ runtime: Runtime; browserHealth: undefined }>(
           contentType: 'image/png',
         })
         await page.close()
-        await info.attach('daemon-audit.jsonl', {
+        await info.attach('runtime-diagnostics.json', {
           body: await runtime.diagnostics(),
-          contentType: 'text/plain',
+          contentType: 'application/json',
         })
       } finally {
         try {
