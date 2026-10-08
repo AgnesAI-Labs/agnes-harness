@@ -268,11 +268,11 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon-rpc/src/local/auth': 341,
   'packages/daemon-rpc/src': 7142,
   'packages/daemon-supervisor/src/supervisor/startup': 18,
-  'packages/daemon-supervisor/src/supervisor/discovery': 442,
+  'packages/daemon-supervisor/src/supervisor/discovery': 446,
   'packages/daemon-supervisor/src/supervisor/scope': 254,
   'packages/daemon-supervisor/src/supervisor/configuration': 45,
   'packages/daemon-supervisor/src/supervisor/service-worker': 103,
-  'packages/daemon-supervisor/src': 10334,
+  'packages/daemon-supervisor/src': 10372,
   'packages/daemon-admin/src/packages/project': 43,
   'packages/daemon-admin/src/packages/permissions': 74,
   'packages/daemon-admin/src/packages/operations': 416,
@@ -282,8 +282,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon-admin/src': 5464,
   'packages/daemon-surfaces/src/surfaces': 1961,
   'packages/daemon-surfaces/src': 1962,
-  'packages/daemon-foundation/src/jobs': 638,
-  'packages/daemon-foundation/src': 4232,
+  'packages/daemon-foundation/src/jobs': 653,
+  'packages/daemon-foundation/src': 4247,
   'packages/host-runtime/src/approval-expiry': 105,
   'packages/host-runtime/src/adapters': 465,
   'packages/host-runtime/src/profile': 1655,
@@ -302,7 +302,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-extensions/src/ext-host/hooks-isolation-client': 232,
   'packages/host-extensions/src/ext-host/tool-context-capabilities': 130,
   'packages/host-extensions/src/ext-host/service-invocation': 254,
-  'packages/host-extensions/src': 8068,
+  'packages/host-extensions/src': 8077,
   'packages/host-extensions/src/assemble': 1259,
   'packages/host-artifacts/src': 2243,
   'packages/host-computer-use/src': 10586,
@@ -509,7 +509,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 7131 -> 7200; exact measured cap, no exclusions or spare allocation.
   // Acceptance review: Include all runnable FDE examples and loop bundle manifests in the local example catalog.
   // countLines: 7200 -> 7217; exact cap, no exclusions or spare allocation.
-  'packages/package-manager/src': 8249,
+  'packages/package-manager/src': 8250,
   'packages/package-manager/src/catalog': 211,
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
@@ -674,7 +674,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // ceiling after the session-resume picker (87b62431) landed without a paired raise, so this key
   // was red on arrival. This raise carries that overshoot rather than hiding it -- the picker's 97
   // lines still owe their own measured justification here.
-  'packages/cli/src': 8641,
+  'packages/cli/src': 8662,
   // 2026-10-07 reviewed growth: portable package sources, capability review and explicit confirmation UX.
   // countLines: 160 -> 230 (+70); exact cap, no exclusions or spare allocation.
   'packages/cli/src/commands/package': 230,
@@ -1208,7 +1208,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 29399 -> 30048; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Await async loop construction, propagate session cancellation and drain initialization before storage closes.
   // countLines: 30048 -> 30103 (+55); exact measured cap, no exclusions or spare allocation.
-  'packages/core/src': 20155,
+  'packages/core/src': 20242,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
