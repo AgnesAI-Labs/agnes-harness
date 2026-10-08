@@ -67,6 +67,7 @@ describe('repo', () => {
       '@agnes/web',
       '@agnes/web-admin-frame',
       '@agnes/web-client',
+      '@agnes/web-foundation',
       '@agnes/web-server',
       '@agnes/web-slots',
       '@agnes/web-ui',

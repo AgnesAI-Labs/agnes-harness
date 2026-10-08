@@ -1,3 +1,4 @@
+import { getBrowserLog } from '@agnes/web-foundation/browser-log'
 import {
   createAntdRoot,
   type DiagnosticsDialogSnapshot,
@@ -8,7 +9,6 @@ import {
 import { diagnosticsLocale, diagnosticsText } from '@agnes/web-units/diagnostics-locale'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
-import { getBrowserLog } from './browser-log.js'
 import {
   type CollectedDiagnostics,
   type CollectInput,

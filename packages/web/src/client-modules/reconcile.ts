@@ -24,7 +24,7 @@ import {
   type PluginRuntimeState,
   type RuntimeErrorStage,
   RuntimeStatusStore,
-} from './runtime-status.js'
+} from '@agnes/web-foundation/client-modules/runtime-status'
 
 /** 名册里的 ready 模块（WC3 modules 的最小子集）。 */
 export interface ReadyClientModule {

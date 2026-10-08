@@ -146,7 +146,7 @@ describe('skin token application', () => {
 // guards the choice rather than the symptom: a future edit that switches to injection would look
 // correct in review and fail silently in the browser.
 describe('first paint stays inside the page CSP', () => {
-  const sources = ['../src/theme-boot.ts', '../src/skin.ts'].map((path) => ({
+  const sources = ['../../web/src/theme-boot.ts', '../src/skin.ts'].map((path) => ({
     path,
     text: readFileSync(new URL(path, import.meta.url), 'utf8'),
   }))

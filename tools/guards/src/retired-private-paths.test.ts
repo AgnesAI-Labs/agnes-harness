@@ -27,12 +27,12 @@ function privateImports(file: string, source: string): string[] {
     const spec = value.split(/[?#]/)[0]!.replaceAll('\\', '/')
     const path = spec.startsWith('.')
       ? relative(root, resolve(dirname(join(root, file)), spec)).replaceAll('\\', '/')
-      : /^@agnes\/(?:core|host)\/src\//.test(spec)
+      : /^@agnes\/(?:core|host|web)\/src\//.test(spec)
         ? `packages/${spec.slice('@agnes/'.length)}`
         : ''
     const targets = /\.[cm]?[jt]sx?$/.test(path)
-      ? [path.replace(/\.[cm]?[jt]sx?$/, '.ts')]
-      : [`${path}.ts`, `${path}/index.ts`]
+      ? [path.replace(/\.[cm]?[jt]sx?$/, '.ts'), path.replace(/\.[cm]?[jt]sx?$/, '.tsx')]
+      : [`${path}.ts`, `${path}.tsx`, `${path}/index.ts`]
     return targets.filter((target) => retired.has(target))
   })
 }
@@ -45,7 +45,7 @@ function moduleFiles(dir: string): string[] {
   })
 }
 
-describe('removed Core and Host private paths', () => {
+describe('retired implementation private paths', () => {
   it('rejects reintroducing imports of retired modules, including tests and build scripts', () => {
     expect(retired.size).toBeGreaterThan(0)
     const errors = ['packages', 'tools', 'examples']
@@ -68,6 +68,15 @@ describe('removed Core and Host private paths', () => {
     "import { defaultIds } from '@agnes/core/src/ids.js'",
   ])('rejects the removed path in %s', (source) => {
     expect(privateImports('packages/core/test/refusal.test.ts', source)).toEqual(['packages/core/src/ids.ts'])
+  })
+
+  it.each([
+    "import { applyTheme } from '../src/theme.js'",
+    "export * from '@agnes/web/src/theme.js'",
+    "import('../src/./theme.js')",
+    "vi.mock('../src/theme.js', () => ({}))",
+  ])('rejects the retired Web path in %s', (source) => {
+    expect(privateImports('packages/web/test/theme.test.ts', source)).toEqual(['packages/web/src/theme.ts'])
   })
 
   it('allows public facades, real owners, retained shims and quoted fixture source', () => {

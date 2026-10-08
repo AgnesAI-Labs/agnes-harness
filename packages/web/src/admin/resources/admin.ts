@@ -1,5 +1,5 @@
 import type { ResourceAdminMount, ResourceAdminOptions } from '@agnes/resource-control-web/admin'
-import { tr } from '../../locale-bridge.js'
+import { tr } from '@agnes/web-foundation/locale-bridge'
 
 export type { ResourceAdminMount, ResourceAdminOptions } from '@agnes/resource-control-web/admin'
 /** Host owns the settings IA; the public resource controller owns operations and state. */

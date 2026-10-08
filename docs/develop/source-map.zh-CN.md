@@ -13,6 +13,7 @@
 | 参数/启动/运行目录 | [cli](../../packages/cli/src)、[cli-launch](../../packages/cli-launch/src) | [CLI 参数](../../packages/cli/test/args.test.ts)、[共享本地验收](../../tools/acceptance/shared-local-delivery.test.ts) |
 | TUI | [cli-tui](../../packages/cli-tui/src) | [测试](../../packages/cli-tui/test) |
 | Web 展示与连接 | [web](../../packages/web/src)、[web-server](../../packages/web-server/src) | [Web 测试](../../packages/web/test) |
+| Web 外观与语言基础 | [web-foundation](../../packages/web-foundation/src) | [基础模块测试](../../packages/web-foundation/test) |
 | 前端插件与槽位 | [web-client](../../packages/web-client/src)、[web-slots](../../packages/web-slots/src)、[web-units](../../packages/web-units/src) | [名册对账](../../packages/web/test/client-modules.reconcile.test.ts) |
 | 协议/校验 | [protocol schema](../../packages/protocol/schema)、[method table](../../packages/protocol/src/methods.ts)、[protocol-validation](../../packages/protocol-validation/src) | [protocol tests](../../packages/protocol/test) |
 | SDK 会话/传输 | [sdk](../../packages/sdk/src) | [sdk tests](../../packages/sdk/test) |

@@ -234,6 +234,8 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // preset composition and inline projection repairs. Only exceeded scopes and missing bundled
 // extension keys change; scanning, source exclusions and the default extension ceiling stay fixed.
 const INITIAL_CEILING: Record<string, number> = {
+  // Pure Web ownership migration: exact measured countLines; no spare allocation.
+  'packages/web-foundation/src': 2328,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
   'packages/daemon-rpc/src/local/auth': 341,
   'packages/daemon-rpc/src': 6790,
@@ -2379,7 +2381,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 19657 -> 22109; exact cap, no exclusions or spare allocation.
   // Acceptance review: Retain published composition details and stable expanded goal state during admin refresh.
   // countLines: 22109 -> 22110; exact cap, no exclusions or spare allocation.
-  'packages/web/src': 22110,
+  'packages/web/src': 21811,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

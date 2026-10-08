@@ -27,13 +27,29 @@ import {
 } from '@agnes/sdk/browser'
 import { bindDismissibleDialog } from '@agnes/web-admin-frame'
 import { settingsSections } from '@agnes/web-client'
+import { bindAppearance, bindSkinGroup } from '@agnes/web-foundation/appearance'
+import { installBrowserLogCapture } from '@agnes/web-foundation/browser-log'
+import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
+import {
+  applyDocumentLocale,
+  readLocalePreference,
+  writeLocalePreference,
+} from '@agnes/web-foundation/locale-preference'
+import {
+  cacheSkinEntry,
+  clearSkinCache,
+  fetchSkinCss,
+  planSkinReconcile,
+  readSkinCache,
+  SKIN_STORAGE_KEY,
+  type SkinRosterEntry,
+} from '@agnes/web-foundation/skin'
+import { safeThemeStorage } from '@agnes/web-foundation/theme'
 import { createCatalogTranslator } from '@agnes/web-ui'
 import { sessionLoopSelection } from './admin/plugins/session-loop.js'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
-import { bindAppearance, bindSkinGroup } from './appearance.js'
 import type { ApprovalAction } from './approval.js'
 import { approvalToolName, liveApprovalCard } from './approval-card.js'
-import { installBrowserLogCapture } from './browser-log.js'
 import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
 import { startPluginHotReload } from './client-modules/hot-reload.js'
 import type { RosterSource } from './client-modules/reconcile.js'
@@ -50,8 +66,6 @@ import {
   findApproval,
   type LiveProjection,
 } from './live-projection.js'
-import { setLocaleTranslator } from './locale-bridge.js'
-import { applyDocumentLocale, readLocalePreference, writeLocalePreference } from './locale-preference.js'
 import {
   type LoopSelection,
   loadNewSessionCatalog,
@@ -84,16 +98,6 @@ import { loadRuntimeCatalog } from './settings/api.js'
 import { settingsCatalog } from './settings/locales.js'
 import { effectiveSessionPreset, permissionForSessionPreset } from './settings/session-choice.js'
 import { createSettingsController } from './settings.js'
-import {
-  cacheSkinEntry,
-  clearSkinCache,
-  fetchSkinCss,
-  planSkinReconcile,
-  readSkinCache,
-  SKIN_STORAGE_KEY,
-  type SkinRosterEntry,
-} from './skin.js'
-import { safeThemeStorage } from './theme.js'
 import {
   durableApprovalActions,
   nodeText,

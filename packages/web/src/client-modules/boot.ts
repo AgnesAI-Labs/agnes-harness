@@ -22,13 +22,7 @@ import {
   SlotsProvider,
   ThemeService,
 } from '@agnes/web-client'
-import type { AntdRoot } from '@agnes/web-ui'
-import { createAntdRoot, WEB_UI_LOCALE_NAMESPACE, webUiLocaleCatalog } from '@agnes/web-ui'
-import { BuiltinWebUnitRegistry, WEB_UNITS_LOCALE_NAMESPACE, webUnitsLocaleCatalog } from '@agnes/web-units'
-import { diagnosticsCatalog } from '@agnes/web-units/diagnostics-locale'
-import { traceCatalog } from '@agnes/web-units/trace-locale'
-import { createElement } from 'react'
-import { WEB_LOCALE_NAMESPACE, webLocaleCatalog } from '../locale-catalog.js'
+import { WEB_LOCALE_NAMESPACE, webLocaleCatalog } from '@agnes/web-foundation/locale-catalog'
 import {
   applyDocumentLocale,
   applyLocaleText,
@@ -37,9 +31,24 @@ import {
   readLocalePreference,
   syncLocaleRadios,
   type UiLocale,
-} from '../locale-preference.js'
-import { COMPUTER_USE_LOCALE_NAMESPACE, computerUseCatalog } from '../locales/computer-use.js'
-import { SERVER_ERROR_LOCALE_NAMESPACE, serverErrorCatalog } from '../locales/server-errors.js'
+} from '@agnes/web-foundation/locale-preference'
+import { COMPUTER_USE_LOCALE_NAMESPACE, computerUseCatalog } from '@agnes/web-foundation/locales/computer-use'
+import {
+  SERVER_ERROR_LOCALE_NAMESPACE,
+  serverErrorCatalog,
+} from '@agnes/web-foundation/locales/server-errors'
+import {
+  readThemePreference,
+  resolveTheme,
+  safeThemeStorage,
+  THEME_STORAGE_KEY,
+} from '@agnes/web-foundation/theme'
+import type { AntdRoot } from '@agnes/web-ui'
+import { createAntdRoot, WEB_UI_LOCALE_NAMESPACE, webUiLocaleCatalog } from '@agnes/web-ui'
+import { BuiltinWebUnitRegistry, WEB_UNITS_LOCALE_NAMESPACE, webUnitsLocaleCatalog } from '@agnes/web-units'
+import { diagnosticsCatalog } from '@agnes/web-units/diagnostics-locale'
+import { traceCatalog } from '@agnes/web-units/trace-locale'
+import { createElement } from 'react'
 import type {
   ApprovalRegionMount,
   ComposerRegionMount,
@@ -67,7 +76,6 @@ import {
   mountTranscriptRegion,
 } from '../region-slots.js'
 import type { SidebarActions, SidebarState } from '../sidebar.js'
-import { readThemePreference, resolveTheme, safeThemeStorage, THEME_STORAGE_KEY } from '../theme.js'
 import { type ClientReconciler, createReconciler, type RosterSource } from './reconcile.js'
 
 export interface ClientModulesRuntime {

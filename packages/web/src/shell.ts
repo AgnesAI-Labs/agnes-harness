@@ -1,4 +1,4 @@
-import { tr } from './locale-bridge.js'
+import { tr } from '@agnes/web-foundation/locale-bridge'
 
 const getButton = (id: string) => {
   const value = document.getElementById(id)

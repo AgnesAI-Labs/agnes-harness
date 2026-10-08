@@ -9,7 +9,7 @@ import {
   computerUseLocale,
   computerUsePhrase,
   computerUseText,
-} from './locales/computer-use.js'
+} from '@agnes/web-foundation/locales/computer-use'
 
 export type ComputerUseStatusClient = Readonly<{
   call<T>(method: string, params: unknown): Promise<T>

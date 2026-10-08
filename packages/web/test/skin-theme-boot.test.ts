@@ -1,8 +1,9 @@
 /** @vitest-environment happy-dom */
+
+import { LOCALE_STORAGE_KEY } from '@agnes/web-foundation/locale-preference'
+import { SKIN_CACHE_VERSION, SKIN_STORAGE_KEY } from '@agnes/web-foundation/skin'
+import { THEME_STORAGE_KEY } from '@agnes/web-foundation/theme'
 import { expect, it } from 'vitest'
-import { LOCALE_STORAGE_KEY } from '../src/locale-preference.js'
-import { SKIN_CACHE_VERSION, SKIN_STORAGE_KEY } from '../src/skin.js'
-import { THEME_STORAGE_KEY } from '../src/theme.js'
 
 it('repaints skin tokens on same-page theme changes and removes them when the skin cache clears', async () => {
   localStorage.setItem(THEME_STORAGE_KEY, 'light')

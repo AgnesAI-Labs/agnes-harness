@@ -1,6 +1,7 @@
 import { Context } from '@agnes/cordis'
 import type { ContentBlock, UINode, UITurn } from '@agnes/protocol'
 import { type ClientResourceService, LocaleService, type SessionService } from '@agnes/web-client'
+import { webLocaleCatalog } from '@agnes/web-foundation/locale-catalog'
 import { createAntdRoot, webUiLocaleCatalog } from '@agnes/web-ui'
 import {
   AssistantRuntimeProvider,
@@ -10,7 +11,6 @@ import {
 import { Approval, webUnitsLocaleCatalog } from '@agnes/web-units'
 import { useState } from 'react'
 import { WebConversationMessages } from '../../../packages/web/src/conversation-message-adapter.js'
-import { webLocaleCatalog } from '../../../packages/web/src/locale-catalog.js'
 
 // Synthetic contract data, real renderer and shared stylesheet. No daemon, model or process effects.
 const localeName = new URLSearchParams(location.search).get('locale') === 'zh-CN' ? 'zh-CN' : 'en'

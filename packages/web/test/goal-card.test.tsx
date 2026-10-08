@@ -1,11 +1,11 @@
 /** @vitest-environment happy-dom */
 import type { UITimeline } from '@agnes/protocol'
+import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
+import { webLocaleCatalog } from '@agnes/web-foundation/locale-catalog'
 import { unmountRegion } from '@agnes/web-ui'
 import { flushSync } from 'react-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { goalSlot, renderGoalCard } from '../src/goal-card.js'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
-import { webLocaleCatalog } from '../src/locale-catalog.js'
 
 const goal = {
   id: 'g',

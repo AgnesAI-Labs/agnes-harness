@@ -15,10 +15,10 @@ import {
   type SlotRegistry,
   SlotsProvider,
 } from '@agnes/web-client'
+import { toolCardsLocaleCatalog } from '@agnes/web-foundation/locales/tool-cards'
 import type { AntdRoot } from '@agnes/web-ui'
 import { createAntdRoot } from '@agnes/web-ui'
 import { createElement, type ReactElement } from 'react'
-import { toolCardsLocaleCatalog } from '../locales/tool-cards.js'
 import type { ClaimResolver } from './boot.js'
 
 /** 与 protocol `kind:'slot'` 节点同形的最小切片。 */

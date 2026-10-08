@@ -1399,6 +1399,9 @@ importers:
       '@agnes/web-client':
         specifier: workspace:*
         version: link:../web-client
+      '@agnes/web-foundation':
+        specifier: workspace:*
+        version: link:../web-foundation
       '@agnes/web-server':
         specifier: workspace:*
         version: link:../web-server
@@ -1408,9 +1411,6 @@ importers:
       '@agnes/web-units':
         specifier: workspace:*
         version: link:../web-units
-      marked:
-        specifier: 18.0.12
-        version: 18.0.12
     devDependencies:
       '@types/react':
         specifier: 18.3.12
@@ -1457,6 +1457,37 @@ importers:
       react-dom:
         specifier: 18.3.1
         version: 18.3.1(react@18.3.1)
+
+  packages/web-foundation:
+    dependencies:
+      '@agnes/base':
+        specifier: workspace:*
+        version: link:../base
+      '@agnes/web-client':
+        specifier: workspace:*
+        version: link:../web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../web-ui
+      '@agnes/web-units':
+        specifier: workspace:*
+        version: link:../web-units
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+    devDependencies:
+      '@agnes/cordis':
+        specifier: workspace:*
+        version: link:../cordis
+      '@types/react':
+        specifier: 18.3.12
+        version: 18.3.12
+      '@types/react-dom':
+        specifier: 18.3.1
+        version: 18.3.1
+      vitest:
+        specifier: 5.0.0
+        version: 5.0.0(@types/node@26.4.1)(happy-dom@20.14.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0(patch_hash=77f93f7110d63c7b4551ac2eab9c87a64c2ba97de0b71047e25171d3fac05fd2))(tsx@4.23.13)(yaml@2.9.0))
 
   packages/web-server:
     dependencies:

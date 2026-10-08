@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 import type { ModelSettings } from '@agnes/protocol'
+import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
 import {
   createModelPicker,
   type ModelPickerOption,

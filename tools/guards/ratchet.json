@@ -31,7 +31,7 @@
   "packages/daemon/src/supervisor/service-worker": 1,
   "packages/daemon/src/surfaces": 13,
   "packages/daemon/src/worker/service-authority": 48,
-  "packages/web/src": 22110,
+  "packages/web/src": 21811,
   "packages/web/src/admin/plugins/admin": 1714,
   "packages/web/src/admin/plugins/confirmation": 322,
   "packages/web/src/admin/plugins/api": 485,
@@ -188,5 +188,6 @@
   "packages/daemon-supervisor/src/supervisor/configuration": 45,
   "packages/daemon-supervisor/src/supervisor/scope": 247,
   "packages/daemon-supervisor/src/supervisor/discovery": 442,
-  "packages/daemon-supervisor/src/supervisor/startup": 18
+  "packages/daemon-supervisor/src/supervisor/startup": 18,
+  "packages/web-foundation/src": 2328
 }

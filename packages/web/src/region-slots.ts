@@ -18,6 +18,7 @@ import {
   type SlotRegistry,
   SlotsProvider,
 } from '@agnes/web-client'
+import { applyLocaleText } from '@agnes/web-foundation/locale-preference'
 import type { AntdRoot } from '@agnes/web-ui'
 import { createAntdRoot } from '@agnes/web-ui'
 import { ConversationUsage, DocumentPreview } from '@agnes/web-ui/assistant-ui'
@@ -64,7 +65,6 @@ import { flushSync } from 'react-dom'
 import type { ClaimResolver } from './client-modules/boot.js'
 import { observeSlotCards } from './client-modules/timeline-slot.js'
 import type { DocumentPreviewInput, DocumentPreviewKind } from './document-preview.js'
-import { applyLocaleText } from './locale-preference.js'
 import { LoopPicker } from './loop-picker.js'
 import { createModelPicker } from './model-picker.js'
 import { renderSessionNavigation } from './navigation.js'

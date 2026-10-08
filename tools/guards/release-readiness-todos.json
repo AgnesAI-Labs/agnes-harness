@@ -28,6 +28,7 @@
         "@agnes/daemon-admin",
         "@agnes/daemon-foundation",
         "@agnes/daemon-rpc",
+        "@agnes/daemon-supervisor",
         "@agnes/daemon-surfaces",
         "@agnes/error-sanitization",
         "@agnes/extension-api",
@@ -64,12 +65,12 @@
         "@agnes/web",
         "@agnes/web-admin-frame",
         "@agnes/web-client",
+        "@agnes/web-foundation",
         "@agnes/web-server",
         "@agnes/web-slots",
         "@agnes/web-ui",
         "@agnes/web-units",
-        "@agnes/worker-runtime",
-        "@agnes/daemon-supervisor"
+        "@agnes/worker-runtime"
       ]
     }
   ]

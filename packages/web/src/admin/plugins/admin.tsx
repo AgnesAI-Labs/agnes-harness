@@ -8,6 +8,7 @@ import type {
   RuntimePinReleaseResult,
 } from '@agnes/protocol'
 import { settingsSections } from '@agnes/web-client'
+import type { PluginRuntimeState } from '@agnes/web-foundation/client-modules/runtime-status'
 import {
   ADMIN_CONFIRMATION_LOCALE_NAMESPACE,
   ADMIN_DETAIL_LOCALE_NAMESPACE,
@@ -49,7 +50,6 @@ import {
   unmountRegion,
 } from '@agnes/web-ui'
 import type { ReactNode } from 'react'
-import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
 import { SettingsHub, type SettingsPage } from '../../settings/hub.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from '../../settings/locales.js'
 import { sessionStartUrl } from '../../settings/runtime-panels.js'

@@ -1,10 +1,10 @@
 import { answerPrefix, parseAnswer, type UINode } from '@agnes/protocol'
 import type { ToolCardInlinePayload } from '@agnes/protocol/gen/slots'
 import { type ClientResourceService, conversationCards, type SessionService } from '@agnes/web-client'
+import { toolCardsLocaleCatalog } from '@agnes/web-foundation/locales/tool-cards'
 import { Button, ConversationCardLayout, SettingsInput, SettingsTextArea } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import { RegisteredConversationCard } from './conversation-registry.js'
-import { toolCardsLocaleCatalog } from './locales/tool-cards.js'
 import { WorkflowRunCard } from './workflow-run-card.js'
 
 type Text = (key: string) => string

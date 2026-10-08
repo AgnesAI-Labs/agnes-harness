@@ -5,6 +5,7 @@ import type {
   EventEnvelope,
   UITimeline,
 } from '@agnes/protocol'
+import { redactDiagnostic, redactDiagnosticText } from '@agnes/web-foundation/diagnostics-redact'
 import { diagnosticsText } from '@agnes/web-units/diagnostics-locale'
 // 走诊断相关的子路径，而不是 @agnes/web-units 的包根 barrel：barrel 会连带导出整个 UI 组件树
 // (含 XMarkdown 的 CJS 构建)，而它的 CJS 里有 require('./DebugPanel.css')，在没有 CSS 加载器的
@@ -19,7 +20,6 @@ import type {
 } from '@agnes/web-units/diagnostics-types'
 import { renderDiagnosticsViewer } from '@agnes/web-units/diagnostics-viewer'
 import { buildZip, type ZipEntry } from '@agnes/web-units/diagnostics-zip'
-import { redactDiagnostic, redactDiagnosticText } from './diagnostics-redact.js'
 
 export type RpcCall = (method: string, params: unknown, opts?: { signal?: AbortSignal }) => Promise<unknown>
 export type CollectInput = {

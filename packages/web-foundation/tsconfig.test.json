@@ -1,0 +1,31 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/test",
+    "tsBuildInfoFile": "dist/tsconfig.test.tsbuildinfo"
+  },
+  "include": ["test/**/*.ts", "test/**/*.tsx"],
+  "references": [
+    {
+      "path": "."
+    },
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../base"
+    },
+    {
+      "path": "../web-client"
+    },
+    {
+      "path": "../web-ui"
+    },
+    {
+      "path": "../web-units"
+    },
+    {
+      "path": "./tsconfig.testkit.json"
+    }
+  ]
+}

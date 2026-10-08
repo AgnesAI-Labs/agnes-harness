@@ -1,15 +1,15 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { webLocaleCatalog } from '@agnes/web-foundation/locale-catalog'
+import { appLocaleCatalog } from '@agnes/web-foundation/locales/app'
+import { composerLocaleCatalog } from '@agnes/web-foundation/locales/composer'
+import { indexShellLocaleCatalog } from '@agnes/web-foundation/locales/index-shell'
+import { sessionLocaleCatalog } from '@agnes/web-foundation/locales/session'
+import { settingsLocaleCatalog } from '@agnes/web-foundation/locales/settings'
+import { timelineLocaleCatalog } from '@agnes/web-foundation/locales/timeline'
 import { expect, it } from 'vitest'
 import { pluginAdminShellLocaleCatalog } from '../src/admin/plugins/locales/shell.js'
-import { webLocaleCatalog } from '../src/locale-catalog.js'
-import { appLocaleCatalog } from '../src/locales/app.js'
-import { composerLocaleCatalog } from '../src/locales/composer.js'
-import { indexShellLocaleCatalog } from '../src/locales/index-shell.js'
-import { sessionLocaleCatalog } from '../src/locales/session.js'
-import { settingsLocaleCatalog } from '../src/locales/settings.js'
-import { timelineLocaleCatalog } from '../src/locales/timeline.js'
 
 const catalogs = [
   ['web app', appLocaleCatalog],
@@ -51,9 +51,9 @@ function catalogFiles(directory: string): string[] {
         : []
   })
 }
-it('keeps every exported frontend catalog paired across all four frontend packages', async () => {
+it('keeps every exported frontend catalog paired across all frontend packages', async () => {
   let count = 0
-  for (const pkg of ['web', 'web-ui', 'web-units', 'web-client', 'resource-control-web'])
+  for (const pkg of ['web', 'web-foundation', 'web-ui', 'web-units', 'web-client', 'resource-control-web'])
     for (const file of catalogFiles(resolve('packages', pkg, 'src'))) {
       const exports = await import(/* @vite-ignore */ pathToFileURL(file).href)
       for (const [name, value] of Object.entries(exports)) {

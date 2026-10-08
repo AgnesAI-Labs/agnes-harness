@@ -1,4 +1,6 @@
 /** @vitest-environment happy-dom */
+
+import { zhT } from '@agnes/web-foundation/testkit/locale'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { bindAppearance, bindSkinGroup } from '../src/appearance.js'
 import { setLocaleTranslator } from '../src/locale-bridge.js'
@@ -6,7 +8,6 @@ import { webLocaleCatalog } from '../src/locale-catalog.js'
 import { applyLocaleText, syncLocaleRadios, type UiLocale } from '../src/locale-preference.js'
 import { SKIN_CACHE_VERSION, SKIN_STORAGE_KEY } from '../src/skin.js'
 import { FONT_SCALE_STORAGE_KEY, THEME_STORAGE_KEY } from '../src/theme.js'
-import { zhT } from './helpers/locale.js'
 
 // i18n: these suites assert zh-CN catalog output; pin the translator before imports run.
 setLocaleTranslator(zhT)

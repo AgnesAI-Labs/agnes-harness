@@ -1,0 +1,46 @@
+{
+  "name": "@agnes/web-foundation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./appearance": "./src/appearance.ts",
+    "./browser-log": "./src/browser-log.ts",
+    "./client-modules/runtime-status": "./src/client-modules/runtime-status.ts",
+    "./diagnostics-redact": "./src/diagnostics-redact.ts",
+    "./locale-bridge": "./src/locale-bridge.ts",
+    "./locale-catalog": "./src/locale-catalog.ts",
+    "./locale-preference": "./src/locale-preference.ts",
+    "./locales/app": "./src/locales/app.ts",
+    "./locales/composer": "./src/locales/composer.ts",
+    "./locales/computer-use": "./src/locales/computer-use.ts",
+    "./locales/goal": "./src/locales/goal.ts",
+    "./locales/index-shell": "./src/locales/index-shell.ts",
+    "./locales/server-errors": "./src/locales/server-errors.ts",
+    "./locales/session": "./src/locales/session.ts",
+    "./locales/settings": "./src/locales/settings.ts",
+    "./locales/timeline": "./src/locales/timeline.ts",
+    "./locales/tool-cards": "./src/locales/tool-cards.ts",
+    "./skin": "./src/skin.ts",
+    "./theme": "./src/theme.ts",
+    "./testkit/locale": "./testkit/locale.ts"
+  },
+  "scripts": {
+    "test": "pnpm --dir ../.. exec vitest run packages/web-foundation/test --maxWorkers=1",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/base": "workspace:*",
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*",
+    "@agnes/web-units": "workspace:*",
+    "react": "18.3.1"
+  },
+  "devDependencies": {
+    "vitest": "5.0.0",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@agnes/cordis": "workspace:*"
+  },
+  "license": "Apache-2.0"
+}

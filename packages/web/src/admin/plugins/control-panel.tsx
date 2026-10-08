@@ -6,6 +6,7 @@ import type {
   PluginGenerationStatus,
   SessionDefaultsSnapshot,
 } from '@agnes/protocol'
+import type { PluginRuntimeState } from '@agnes/web-foundation/client-modules/runtime-status'
 import {
   Badge,
   Button,
@@ -17,7 +18,6 @@ import {
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
-import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
 import { ChoiceLabel, choiceName, type ResolvedComposition, readComposition } from '../../settings/choices.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from '../../settings/locales.js'
 import { SessionToolsPanel } from '../../settings/session-tools.js'

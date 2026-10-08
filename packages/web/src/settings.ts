@@ -10,6 +10,7 @@ import type {
 } from '@agnes/protocol'
 import { minimumContextBudget } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
+import { tr } from '@agnes/web-foundation/locale-bridge'
 import {
   appServerErrorMessage,
   modelThinkingOptions,
@@ -20,7 +21,6 @@ import {
   unmountRegion,
 } from '@agnes/web-ui'
 import { createElement } from 'react'
-import { tr } from './locale-bridge.js'
 import { oauthControls } from './oauth-controls.js'
 import { createAccountPickers } from './provider-picker.js'
 

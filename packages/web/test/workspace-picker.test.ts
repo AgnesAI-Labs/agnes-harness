@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
+
+import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { describe, expect, it, vi } from 'vitest'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { requestWorkspacePicker, workspacePickerAvailable } from '../src/workspace-picker.js'
 import { zhT } from './helpers/locale.js'
 

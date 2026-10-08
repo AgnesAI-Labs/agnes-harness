@@ -14,7 +14,7 @@ import type {
   PluginGenerationStatus,
   PluginTreeView,
 } from '@agnes/protocol'
-import type { PluginRuntimeState } from '../../client-modules/runtime-status.js'
+import type { PluginRuntimeState } from '@agnes/web-foundation/client-modules/runtime-status'
 
 export type AdminContext = Readonly<
   Omit<PackageAdminContext, 'permissions' | 'features'> & {

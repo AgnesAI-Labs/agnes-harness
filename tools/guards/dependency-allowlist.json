@@ -152,7 +152,8 @@
     "@agnes/web-client",
     "@agnes/web-server",
     "@agnes/web-ui",
-    "@agnes/web-units"
+    "@agnes/web-units",
+    "@agnes/web-foundation"
   ],
   "@agnes/guards": [],
   "@agnes/sandbox-remote": ["@agnes/core"],
@@ -312,5 +313,6 @@
     "@agnes/resource-control-worker",
     "@agnes/system-node",
     "@agnes/worker-runtime"
-  ]
+  ],
+  "@agnes/web-foundation": ["@agnes/base", "@agnes/web-client", "@agnes/web-ui", "@agnes/web-units"]
 }

@@ -1,8 +1,9 @@
 /** @vitest-environment happy-dom */
+
+import { webLocaleCatalog } from '@agnes/web-foundation/locale-catalog'
+import { LOCALE_STORAGE_KEY, writeLocalePreference } from '@agnes/web-foundation/locale-preference'
+import { safeThemeStorage } from '@agnes/web-foundation/theme'
 import { afterEach, expect, it, vi } from 'vitest'
-import { webLocaleCatalog } from '../src/locale-catalog.js'
-import { LOCALE_STORAGE_KEY, writeLocalePreference } from '../src/locale-preference.js'
-import { safeThemeStorage } from '../src/theme.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
 afterEach(() => {

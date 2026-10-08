@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
+import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { bindSidebar, showSettingsPane } from '../src/shell.js'
 import { zhT } from './helpers/locale.js'
 

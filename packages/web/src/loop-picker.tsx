@@ -6,10 +6,10 @@ import {
   isSessionDefaultsSnapshot,
   type SessionDefaultsSnapshot,
 } from '@agnes/protocol'
+import { tr as hostText } from '@agnes/web-foundation/locale-bridge'
+import { composerLocaleCatalog } from '@agnes/web-foundation/locales/composer'
 import { Button, Field, Popover, Select, SettingsInput, useUiText } from '@agnes/web-ui'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { tr as hostText } from './locale-bridge.js'
-import { composerLocaleCatalog } from './locales/composer.js'
 import { ChoiceLabel, choiceName, type ResolvedComposition, readComposition } from './settings/choices.js'
 
 export type LoopSelection = { id: string; version: string }

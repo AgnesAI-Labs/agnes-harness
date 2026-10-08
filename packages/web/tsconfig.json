@@ -29,28 +29,31 @@
       "path": "../cordis"
     },
     {
-      "path": "../web-client"
-    },
-    {
-      "path": "../web-units"
-    },
-    {
       "path": "../protocol"
-    },
-    {
-      "path": "../sdk"
     },
     {
       "path": "../resource-control-web"
     },
     {
+      "path": "../sdk"
+    },
+    {
       "path": "../web-admin-frame"
+    },
+    {
+      "path": "../web-client"
+    },
+    {
+      "path": "../web-foundation"
     },
     {
       "path": "../web-server"
     },
     {
       "path": "../web-ui"
+    },
+    {
+      "path": "../web-units"
     }
   ]
 }

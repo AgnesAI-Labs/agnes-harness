@@ -1,6 +1,6 @@
+import { tr } from '@agnes/web-foundation/locale-bridge'
 import * as webUi from '@agnes/web-ui'
 import { createElement, type ReactNode } from 'react'
-import { tr } from './locale-bridge.js'
 
 export type PermissionMode = 'view' | 'workspace' | 'full'
 

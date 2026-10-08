@@ -2,10 +2,10 @@
 
 import type { ConfigSnapshot, ConfigTestResult } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
+import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { unmountRegion } from '@agnes/web-ui'
 import { Window } from 'happy-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { createSettingsController } from '../src/settings.js'
 import { renderSettingsMarkup } from '../src/settings-region.js'
 import { zhT } from './helpers/locale.js'

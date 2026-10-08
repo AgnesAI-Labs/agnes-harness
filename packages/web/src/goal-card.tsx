@@ -1,6 +1,7 @@
 import type { UITimeline } from '@agnes/protocol'
 import type { GoalSnapshot, StatusLinePayload } from '@agnes/protocol/gen/slots'
 import { conversationCards } from '@agnes/web-client'
+import { tr } from '@agnes/web-foundation/locale-bridge'
 import {
   Button,
   ConversationCardLayout,
@@ -13,7 +14,6 @@ import {
 import type { ComponentProps } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { RegisteredConversationCard } from './conversation-registry.js'
-import { tr } from './locale-bridge.js'
 
 export function goalSlot(timeline?: UITimeline): StatusLinePayload | undefined {
   const live = timeline?.slots?.find((fill) => fill.extId === 'agnes/goal' && fill.slot === 'status.line')

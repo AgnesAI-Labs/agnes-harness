@@ -1,5 +1,5 @@
+import { tr } from '@agnes/web-foundation/locale-bridge'
 import { createSelectPicker, type SelectPicker } from '@agnes/web-ui'
-import { tr } from './locale-bridge.js'
 
 export function createProviderPicker(select: HTMLSelectElement): SelectPicker {
   return createSelectPicker(select, {

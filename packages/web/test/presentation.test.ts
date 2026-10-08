@@ -1,5 +1,5 @@
+import { webLocaleCatalog } from '@agnes/web-foundation/locale-catalog'
 import { describe, expect, it } from 'vitest'
-import { webLocaleCatalog } from '../src/locale-catalog.js'
 import {
   canSubmitComposer,
   composerActionPresentation,

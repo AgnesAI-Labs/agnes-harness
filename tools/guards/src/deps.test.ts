@@ -133,6 +133,7 @@ const LAYER: Record<string, number> = {
   // Channel's outer client launcher consumes the daemon's public discovery reader, like other clients.
   '@agnes/channels': 10,
   '@agnes/bridges': 9,
+  '@agnes/web-foundation': 9.1,
   '@agnes/web': 10,
   // CLI's serve command composes the public Node static server; Web still depends only on SDK/protocol.
   '@agnes/cli': 11,

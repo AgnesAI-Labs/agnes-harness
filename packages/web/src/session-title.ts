@@ -1,4 +1,4 @@
-import { tr } from './locale-bridge.js'
+import { tr } from '@agnes/web-foundation/locale-bridge'
 
 /** Use persisted metadata before a provisional label, consistently across header and navigation. */
 export function sessionTitle(saved: string | undefined, prompt?: string): string {

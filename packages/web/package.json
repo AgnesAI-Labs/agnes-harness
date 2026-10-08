@@ -24,7 +24,7 @@
     "@agnes/web-server": "workspace:*",
     "@agnes/web-ui": "workspace:*",
     "@agnes/web-units": "workspace:*",
-    "marked": "18.0.12"
+    "@agnes/web-foundation": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "18.3.12",

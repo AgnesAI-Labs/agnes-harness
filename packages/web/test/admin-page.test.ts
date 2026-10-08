@@ -9,10 +9,10 @@ import type {
   PackagePreview,
   RuntimePinDescriptor,
 } from '@agnes/protocol'
+import type { PluginRuntimeState } from '@agnes/web-foundation/client-modules/runtime-status'
 import { afterEach, expect, it, vi } from 'vitest'
 import { pluginAdminLocaleCatalog } from '../src/admin/plugins/locales/admin.js'
 import { ADMIN_FEATURES } from '../src/admin/plugins/types.js'
-import type { PluginRuntimeState } from '../src/client-modules/runtime-status.js'
 
 type RuntimeFixture = Readonly<{
   snapshot(): ReadonlyMap<string, PluginRuntimeState>

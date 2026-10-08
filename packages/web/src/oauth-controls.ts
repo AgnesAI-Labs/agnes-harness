@@ -1,8 +1,8 @@
 import type { ConfigModel, ConfigOAuthInput, ConfigProvider } from '@agnes/protocol'
 import { loginSubscription, type OAuthClient } from '@agnes/sdk/browser'
+import { tr } from '@agnes/web-foundation/locale-bridge'
 import { Button, createRegionHost, Field, mountRegion } from '@agnes/web-ui'
 import { createElement } from 'react'
-import { tr } from './locale-bridge.js'
 
 type UiButton = { button: HTMLButtonElement; host: HTMLElement; dispose?: () => void }
 type UiField = { field: HTMLLabelElement; input: HTMLInputElement; host: HTMLElement; dispose?: () => void }

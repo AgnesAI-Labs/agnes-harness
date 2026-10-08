@@ -37,12 +37,15 @@ it('rejects untranslated presentation copy, layout styles and bypassed settings 
     ),
   ).toEqual([])
   expect(frontendUiViolations('// <Button>Save</Button>', 'packages/web/src/new.tsx')).toEqual([])
+  expect(
+    frontendUiViolations('<div style={{ gap: 12 }} />', 'packages/web-foundation/src/new.tsx'),
+  ).toContainEqual(expect.objectContaining({ rule: 'layout' }))
 })
 
 it('keeps every frontend source inside the shared presentation boundaries', () => {
   const root = repoRoot()
   const violations: string[] = []
-  for (const pkg of ['web', 'web-ui', 'web-client', 'web-units']) {
+  for (const pkg of ['web', 'web-foundation', 'web-ui', 'web-client', 'web-units']) {
     for (const file of listSourceFiles(join(root, 'packages', pkg, 'src')).filter(
       (file) => !isTestFile(file),
     )) {

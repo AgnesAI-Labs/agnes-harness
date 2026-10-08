@@ -46,7 +46,7 @@ export function frontendUiViolations(source: string, file: string): FrontendViol
   report('copy', /\.setAttribute\(\s*['"](?:aria-label|title|placeholder)['"]\s*,\s*['"]([^'"\n]+)['"]/g, 1)
   report('copy', /\b(?:alert|confirm|prompt)\(\s*['"]([^'"\n]+)['"]/g, 1)
   report('copy', />\s*\{\s*['"]([^'"\n]+)['"]\s*\}/g, 1)
-  if (/packages\/web\/src\//.test(file)) {
+  if (/packages\/web(?:-foundation|-admin|-conversation)?\/src\//.test(file)) {
     for (const match of code.matchAll(
       /\.setAttribute\(\s*['"]style['"]|\bstyle\s*=\s*\{|\.style\.(?:display|gap|padding|margin|gridTemplateColumns|alignItems|justifyContent)\s*=/g,
     ))

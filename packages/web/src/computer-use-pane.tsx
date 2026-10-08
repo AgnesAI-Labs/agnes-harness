@@ -1,3 +1,4 @@
+import { computerUseLocale, computerUseText } from '@agnes/web-foundation/locales/computer-use'
 import { SettingsComputerUse } from '@agnes/web-ui'
 import { createElement, useLayoutEffect, useSyncExternalStore } from 'react'
 import {
@@ -7,7 +8,6 @@ import {
   type ComputerUseStatusController,
   createComputerUseState,
 } from './computer-use-state.js'
-import { computerUseLocale, computerUseText } from './locales/computer-use.js'
 
 /** Web owns coordination; each real pane mount gets a fresh, independently retired state. */
 export function createComputerUsePaneController(

@@ -1,11 +1,11 @@
 /** @vitest-environment happy-dom */
 import { Context } from '@agnes/cordis'
 import { ClientResourceService, SessionService, SlotOutlet, SlotRegistry } from '@agnes/web-client'
+import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { createElement, StrictMode, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { startClientModules } from '../src/client-modules/boot.js'
-import { setLocaleTranslator } from '../src/locale-bridge.js'
 import { mountRightbarRegion, type RightbarDocument } from '../src/region-slots.js'
 import { zhLocaleService, zhT } from './helpers/locale.js'
 

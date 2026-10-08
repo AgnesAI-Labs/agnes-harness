@@ -1,5 +1,4 @@
 import { resourceAdminShellLocaleCatalog } from '@agnes/resource-control-web/locale-shell'
-import { pluginAdminShellLocaleCatalog } from './admin/plugins/locales/shell.js'
 import {
   applyDocumentLocale,
   applyLocaleText,
@@ -7,8 +6,8 @@ import {
   LOCALE_STORAGE_KEY,
   readLocalePreference,
   type UiLocale,
-} from './locale-preference.js'
-import { indexShellLocaleCatalog as workbenchShellLocaleCatalog } from './locales/index-shell.js'
+} from '@agnes/web-foundation/locale-preference'
+import { indexShellLocaleCatalog as workbenchShellLocaleCatalog } from '@agnes/web-foundation/locales/index-shell'
 import {
   applySkinTokens,
   readSkinCache,
@@ -17,7 +16,7 @@ import {
   selectedSkin,
   skinOverride,
   syncSkinSheet,
-} from './skin.js'
+} from '@agnes/web-foundation/skin'
 import {
   applyFontScale,
   applyTheme,
@@ -29,7 +28,8 @@ import {
   systemPrefersDark,
   THEME_STORAGE_KEY,
   watchSystemTheme,
-} from './theme.js'
+} from '@agnes/web-foundation/theme'
+import { pluginAdminShellLocaleCatalog } from './admin/plugins/locales/shell.js'
 
 /**
  * 首帧防闪烁入口。

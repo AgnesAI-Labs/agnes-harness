@@ -276,6 +276,15 @@
     },
     {
       "path": "packages/daemon-supervisor"
+    },
+    {
+      "path": "packages/web-foundation"
+    },
+    {
+      "path": "packages/web-foundation/tsconfig.test.json"
+    },
+    {
+      "path": "packages/web-foundation/tsconfig.testkit.json"
     }
   ]
 }

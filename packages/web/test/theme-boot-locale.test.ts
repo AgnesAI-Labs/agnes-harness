@@ -1,8 +1,9 @@
 /** @vitest-environment happy-dom */
+
+import { LOCALE_STORAGE_KEY, writeLocalePreference } from '@agnes/web-foundation/locale-preference'
+import { indexShellLocaleCatalog } from '@agnes/web-foundation/locales/index-shell'
+import { safeThemeStorage } from '@agnes/web-foundation/theme'
 import { afterEach, expect, it, vi } from 'vitest'
-import { LOCALE_STORAGE_KEY, writeLocalePreference } from '../src/locale-preference.js'
-import { indexShellLocaleCatalog } from '../src/locales/index-shell.js'
-import { safeThemeStorage } from '../src/theme.js'
 
 afterEach(() => {
   vi.restoreAllMocks()

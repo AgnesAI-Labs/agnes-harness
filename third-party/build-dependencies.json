@@ -84,6 +84,7 @@
         "packages/resource-control-web",
         "packages/web",
         "packages/web-client",
+        "packages/web-foundation",
         "packages/web-ui",
         "packages/web-units"
       ]
@@ -95,7 +96,13 @@
       "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react-dom",
       "purpose": "Type declarations for react-dom 18 used by the web workbench and web-client.",
       "rationale": "Type-only companion of the pinned react-dom dependency; same version line.",
-      "consumers": ["packages/web", "packages/web-client", "packages/web-ui", "packages/web-units"]
+      "consumers": [
+        "packages/web",
+        "packages/web-client",
+        "packages/web-foundation",
+        "packages/web-ui",
+        "packages/web-units"
+      ]
     },
     {
       "name": "@types/turndown",
@@ -158,7 +165,7 @@
       "source": "https://github.com/vitest-dev/vitest",
       "purpose": "Unit, integration, conformance and guard test runner.",
       "rationale": "Provides one test runtime compatible with the workspace's ESM TypeScript setup.",
-      "consumers": ["."]
+      "consumers": [".", "packages/web-foundation"]
     },
     {
       "name": "postject",

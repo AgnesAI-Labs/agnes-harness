@@ -1,4 +1,4 @@
-import { tr } from './locale-bridge.js'
+import { tr } from '@agnes/web-foundation/locale-bridge'
 
 export type WorkspacePickerResult =
   | { status: 'selected'; path: string }
