@@ -40,6 +40,7 @@ for (const locale of ['en', 'zh-CN']) {
     await page.getByTestId('settings-nav-plugins').click()
     await page.getByTestId('settings-nav-plugins-tab').click()
     await expect(page.getByTestId('plugin-creator')).toBeVisible()
+    await page.getByTestId('plugin-diagnostics').locator('summary').first().click()
     await expect(page.getByTestId('composition-publication')).toBeVisible()
     await page.getByTestId('plugin-generations').locator('summary').click()
     await expect(page.getByTestId('migration-session-key')).toBeVisible()
@@ -67,9 +68,10 @@ for (const locale of ['en', 'zh-CN']) {
 }
 test('confirms migration of an isolated fixture session', async ({ page }) => {
   const sessionId = process.env.AGH_MIGRATION_SESSION
-  test.skip(!sessionId, 'Set AGH_MIGRATION_SESSION to an idle session in an isolated test home.')
+  test.skip(!sessionId, 'Set AGH_MIGRATION_SESSION to a closed session in an isolated test home.')
   if (!sessionId) return
   await page.goto('/admin/plugins')
+  await page.getByTestId('plugin-diagnostics').locator('summary').first().click()
   await page.getByTestId('plugin-generations').locator('summary').click()
   await page.getByTestId('migration-session-key').fill(sessionId)
   await page.getByTestId('migrate-session').click()

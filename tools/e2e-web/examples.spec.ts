@@ -31,14 +31,17 @@ for (const [locale, example, loop] of [
         const other = locale === 'en' ? 'zh-CN' : 'en'
         await page.evaluate((value: string) => {
           document.documentElement.lang = value
-          window.dispatchEvent(new Event('agnes:locale-changed'))
+          window.dispatchEvent(new CustomEvent('agnes:locale-changed', { detail: value }))
         }, other)
-        await expect(page.locator('#plugin-confirm h3').first()).toHaveText(
-          other === 'en' ? 'Requested capabilities' : '请求的能力',
-        )
+        await expect(
+          page.locator('#plugin-confirm').getByRole('heading', {
+            name: other === 'en' ? 'Requested capabilities' : '请求的能力',
+            exact: true,
+          }),
+        ).toBeVisible()
         await page.evaluate((value: string) => {
           document.documentElement.lang = value
-          window.dispatchEvent(new Event('agnes:locale-changed'))
+          window.dispatchEvent(new CustomEvent('agnes:locale-changed', { detail: value }))
         }, locale)
 
         await page.locator('#plugin-confirm-action').click()
