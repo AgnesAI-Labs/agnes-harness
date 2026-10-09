@@ -1,0 +1,2588 @@
+[
+  {
+    "def": "RegisterResult",
+    "valid": true,
+    "note": "4.2",
+    "value": {
+      "session": "s17",
+      "hub": {
+        "name": "example-hub",
+        "version": "1.4.0"
+      },
+      "time": 1791400000.12
+    }
+  },
+  {
+    "def": "NerveHello",
+    "valid": true,
+    "note": "4.3",
+    "value": {
+      "type": "hello",
+      "device": "arm-03"
+    }
+  },
+  {
+    "def": "RegisterParams",
+    "valid": true,
+    "note": "5, with the sources of 13.1, the tool of 6 and the manual block of 9",
+    "value": {
+      "protocol": "mhs/v1",
+      "device": {
+        "id": "arm-03",
+        "kind": "arm",
+        "model": "Example Arm 6",
+        "name": "Bench arm",
+        "vendor": "Example Robotics",
+        "firmware": "2.1.0",
+        "mobile": false
+      },
+      "profile": {
+        "size_m": [0.4, 0.4, 0.9],
+        "weight_kg": 11,
+        "reach_m": 0.85,
+        "notes": "6-axis arm bolted to the bench. Payload up to 3 kg. Stops on contact."
+      },
+      "localization": "none",
+      "resources": {
+        "arm": "reject",
+        "gripper": "reject"
+      },
+      "sources": [
+        {
+          "id": "cam_front",
+          "kind": "video",
+          "codec": "h264",
+          "encoding": "rgb",
+          "size": [1280, 720],
+          "hz": 30,
+          "fov_deg": [69, 42],
+          "bitrate_kbps": [300, 4000],
+          "gop_s": 1,
+          "mount": {
+            "xyz": [0.12, 0, 0.3],
+            "rpy": [0, 10, 0]
+          },
+          "description": "front camera, tilted 10 degrees down",
+          "default": true
+        },
+        {
+          "id": "lidar",
+          "kind": "scan",
+          "hz": 10,
+          "range_m": [0.1, 12],
+          "mount": {
+            "xyz": [0, 0, 0.35],
+            "rpy": [0, 0, 0]
+          },
+          "description": "2D lidar on top"
+        },
+        {
+          "id": "people",
+          "kind": "detections",
+          "of": "cam_front",
+          "hz": 15,
+          "model": {
+            "name": "example-person-det",
+            "version": "3.1"
+          },
+          "labels": ["person"],
+          "description": "people detected on board in the front camera"
+        },
+        {
+          "id": "battery",
+          "kind": "values",
+          "hz": 1,
+          "default": true,
+          "description": "main battery",
+          "fields": {
+            "percent": {
+              "type": "number",
+              "unit": "%",
+              "min": 0,
+              "max": 100,
+              "alert": {
+                "warn": 30,
+                "bad": 15,
+                "below": true
+              }
+            }
+          }
+        }
+      ],
+      "tools": [
+        {
+          "name": "move_joint",
+          "description": "Move one joint to an angle and hold it there.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "joint": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6,
+                "description": "joint number, 1 is the base"
+              },
+              "angle": {
+                "type": "number",
+                "minimum": -170,
+                "maximum": 170,
+                "description": "target angle in degrees"
+              }
+            },
+            "required": ["joint", "angle"]
+          },
+          "uses": ["arm"],
+          "motion": true,
+          "pausable": true,
+          "timeout": 20
+        }
+      ],
+      "manual": {
+        "axes": [
+          {
+            "id": "vx",
+            "role": "forward",
+            "unit": "m/s",
+            "min": -0.4,
+            "max": 0.4
+          },
+          {
+            "id": "wz",
+            "role": "turn",
+            "unit": "deg/s",
+            "min": -60,
+            "max": 60
+          },
+          {
+            "id": "z",
+            "role": "up",
+            "unit": "m/s",
+            "min": -0.05,
+            "max": 0.05,
+            "keys": ["r", "f"]
+          }
+        ],
+        "rate_hz": 10,
+        "deadman_s": 0.5,
+        "speeds": [
+          {
+            "label": "slow",
+            "scale": 0.5
+          },
+          {
+            "label": "fast",
+            "scale": 1.0
+          }
+        ]
+      },
+      "ui": {
+        "icon": "arm",
+        "primary": "cam_front"
+      }
+    }
+  },
+  {
+    "def": "Tool",
+    "valid": true,
+    "note": "6",
+    "value": {
+      "name": "move_joint",
+      "description": "Move one joint to an angle and hold it there.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "joint": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 6,
+            "description": "joint number, 1 is the base"
+          },
+          "angle": {
+            "type": "number",
+            "minimum": -170,
+            "maximum": 170,
+            "description": "target angle in degrees"
+          }
+        },
+        "required": ["joint", "angle"]
+      },
+      "uses": ["arm"],
+      "motion": true,
+      "pausable": true,
+      "timeout": 20
+    }
+  },
+  {
+    "def": "Request",
+    "valid": true,
+    "note": "7.1 envelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "c31",
+      "method": "mhs/call",
+      "params": {
+        "name": "move_joint",
+        "arguments": {
+          "joint": 2,
+          "angle": 45
+        },
+        "meta": {
+          "job": "j12",
+          "level": 2,
+          "caller": "agent"
+        }
+      }
+    }
+  },
+  {
+    "def": "CallParams",
+    "valid": true,
+    "note": "7.1",
+    "value": {
+      "name": "move_joint",
+      "arguments": {
+        "joint": 2,
+        "angle": 45
+      },
+      "meta": {
+        "job": "j12",
+        "level": 2,
+        "caller": "agent"
+      }
+    }
+  },
+  {
+    "def": "CallReply",
+    "valid": true,
+    "note": "7.1 accepted",
+    "value": {
+      "accepted": true
+    }
+  },
+  {
+    "def": "CallReply",
+    "valid": true,
+    "note": "7.1 busy",
+    "value": {
+      "accepted": false,
+      "status": "rejected",
+      "reason": "busy",
+      "detail": "arm held by move_joint (c30)",
+      "holder": {
+        "call": "c30",
+        "tool": "move_joint"
+      }
+    }
+  },
+  {
+    "def": "Notification",
+    "valid": true,
+    "note": "7.2 envelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "mhs/progress",
+      "params": {
+        "call": "c31",
+        "done": 20,
+        "total": 45,
+        "text": "joint 2 at 20 degrees"
+      }
+    }
+  },
+  {
+    "def": "ProgressParams",
+    "valid": true,
+    "note": "7.2",
+    "value": {
+      "call": "c31",
+      "done": 20,
+      "total": 45,
+      "text": "joint 2 at 20 degrees"
+    }
+  },
+  {
+    "def": "ResultParams",
+    "valid": true,
+    "note": "7.3",
+    "value": {
+      "call": "c31",
+      "status": "done",
+      "detail": "joint 2 at 45.0 degrees",
+      "notes": [],
+      "data": {
+        "angle": 45.0
+      }
+    }
+  },
+  {
+    "def": "CallRef",
+    "valid": true,
+    "note": "8.1 cancel",
+    "value": {
+      "call": "c31"
+    }
+  },
+  {
+    "def": "CancelResult",
+    "valid": true,
+    "note": "8.1",
+    "value": {
+      "cancelled": true
+    }
+  },
+  {
+    "def": "Empty",
+    "valid": true,
+    "note": "8.2 stop params",
+    "value": {}
+  },
+  {
+    "def": "StopResult",
+    "valid": true,
+    "note": "8.2",
+    "value": {
+      "stopped": ["c31"]
+    }
+  },
+  {
+    "def": "PauseResult",
+    "valid": true,
+    "note": "8.3",
+    "value": {
+      "paused": true
+    }
+  },
+  {
+    "def": "ResumeResult",
+    "valid": true,
+    "note": "8.3",
+    "value": {
+      "resumed": true
+    }
+  },
+  {
+    "def": "Manual",
+    "valid": true,
+    "note": "9",
+    "value": {
+      "axes": [
+        {
+          "id": "vx",
+          "role": "forward",
+          "unit": "m/s",
+          "min": -0.4,
+          "max": 0.4
+        },
+        {
+          "id": "wz",
+          "role": "turn",
+          "unit": "deg/s",
+          "min": -60,
+          "max": 60
+        },
+        {
+          "id": "z",
+          "role": "up",
+          "unit": "m/s",
+          "min": -0.05,
+          "max": 0.05,
+          "keys": ["r", "f"]
+        }
+      ],
+      "rate_hz": 10,
+      "deadman_s": 0.5,
+      "speeds": [
+        {
+          "label": "slow",
+          "scale": 0.5
+        },
+        {
+          "label": "fast",
+          "scale": 1.0
+        }
+      ]
+    }
+  },
+  {
+    "def": "NerveManual",
+    "valid": true,
+    "note": "9 input",
+    "value": {
+      "type": "manual",
+      "axes": {
+        "vx": 0.2,
+        "wz": 0
+      }
+    }
+  },
+  {
+    "def": "Source",
+    "valid": true,
+    "note": "13.1 cam_front",
+    "value": {
+      "id": "cam_front",
+      "kind": "video",
+      "codec": "h264",
+      "encoding": "rgb",
+      "size": [1280, 720],
+      "hz": 30,
+      "fov_deg": [69, 42],
+      "bitrate_kbps": [300, 4000],
+      "gop_s": 1,
+      "mount": {
+        "xyz": [0.12, 0, 0.3],
+        "rpy": [0, 10, 0]
+      },
+      "description": "front camera, tilted 10 degrees down",
+      "default": true
+    }
+  },
+  {
+    "def": "Source",
+    "valid": true,
+    "note": "13.1 lidar",
+    "value": {
+      "id": "lidar",
+      "kind": "scan",
+      "hz": 10,
+      "range_m": [0.1, 12],
+      "mount": {
+        "xyz": [0, 0, 0.35],
+        "rpy": [0, 0, 0]
+      },
+      "description": "2D lidar on top"
+    }
+  },
+  {
+    "def": "Source",
+    "valid": true,
+    "note": "13.1 people",
+    "value": {
+      "id": "people",
+      "kind": "detections",
+      "of": "cam_front",
+      "hz": 15,
+      "model": {
+        "name": "example-person-det",
+        "version": "3.1"
+      },
+      "labels": ["person"],
+      "description": "people detected on board in the front camera"
+    }
+  },
+  {
+    "def": "Source",
+    "valid": true,
+    "note": "13.1 battery",
+    "value": {
+      "id": "battery",
+      "kind": "values",
+      "hz": 1,
+      "default": true,
+      "description": "main battery",
+      "fields": {
+        "percent": {
+          "type": "number",
+          "unit": "%",
+          "min": 0,
+          "max": 100,
+          "alert": {
+            "warn": 30,
+            "bad": 15,
+            "below": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "def": "NerveData",
+    "valid": true,
+    "note": "13.5",
+    "value": {
+      "type": "data",
+      "source": "people",
+      "seq": 5521,
+      "t": 1791400000.29,
+      "of_seq": 4410,
+      "lag": 0.031,
+      "data": {
+        "w": 1280,
+        "h": 720,
+        "items": [
+          {
+            "label": "person",
+            "conf": 0.91,
+            "box": [412, 180, 520, 610],
+            "track": 17,
+            "bearing": 18.5,
+            "dist": 1.8
+          }
+        ]
+      }
+    }
+  },
+  {
+    "def": "DetectionsData",
+    "valid": true,
+    "note": "13.5 payload",
+    "value": {
+      "w": 1280,
+      "h": 720,
+      "items": [
+        {
+          "label": "person",
+          "conf": 0.91,
+          "box": [412, 180, 520, 610],
+          "track": 17,
+          "bearing": 18.5,
+          "dist": 1.8
+        }
+      ]
+    }
+  },
+  {
+    "def": "NerveData",
+    "valid": true,
+    "note": "14.2 values",
+    "value": {
+      "type": "data",
+      "source": "battery",
+      "seq": 902,
+      "t": 1791400000.311,
+      "data": {
+        "percent": 76
+      }
+    }
+  },
+  {
+    "def": "ValuesData",
+    "valid": true,
+    "note": "14.2 values payload",
+    "value": {
+      "percent": 76
+    }
+  },
+  {
+    "def": "NerveData",
+    "valid": true,
+    "note": "14.2 video",
+    "value": {
+      "type": "data",
+      "source": "cam_front",
+      "seq": 4410,
+      "t": 1791400000.29,
+      "data": {
+        "key": false,
+        "w": 1280,
+        "h": 720
+      },
+      "bin": true
+    }
+  },
+  {
+    "def": "VideoData",
+    "valid": true,
+    "note": "14.2 video payload",
+    "value": {
+      "key": false,
+      "w": 1280,
+      "h": 720
+    }
+  },
+  {
+    "def": "KeyframeParams",
+    "valid": true,
+    "note": "14.4",
+    "value": {
+      "sources": ["cam_front"]
+    }
+  },
+  {
+    "def": "KeyframeResult",
+    "valid": true,
+    "note": "14.4",
+    "value": {
+      "sources": ["cam_front"]
+    }
+  },
+  {
+    "def": "ConfigureParams",
+    "valid": true,
+    "note": "14.5",
+    "value": {
+      "sources": {
+        "cam_front": {
+          "on": true,
+          "hz": 15,
+          "bitrate_kbps": 1500
+        },
+        "lidar": {
+          "on": true,
+          "hz": 5
+        },
+        "people": {
+          "on": false
+        }
+      }
+    }
+  },
+  {
+    "def": "ConfigureResult",
+    "valid": true,
+    "note": "14.5",
+    "value": {
+      "sources": {
+        "cam_front": {
+          "on": true,
+          "hz": 15,
+          "bitrate_kbps": 1500
+        },
+        "lidar": {
+          "on": true,
+          "hz": 5
+        },
+        "people": {
+          "on": false
+        }
+      }
+    }
+  },
+  {
+    "def": "TimeResult",
+    "valid": true,
+    "note": "14.7",
+    "value": {
+      "t": 1791400000.251
+    }
+  },
+  {
+    "def": "NerveClip",
+    "valid": true,
+    "note": "14.8",
+    "value": {
+      "type": "clip",
+      "id": "a7",
+      "rate": 24000,
+      "channels": 1
+    }
+  },
+  {
+    "def": "RegisterParams",
+    "valid": true,
+    "note": "C.1",
+    "value": {
+      "protocol": "mhs/v1",
+      "device": {
+        "id": "env-01",
+        "kind": "sensor",
+        "model": "Example Air 2"
+      },
+      "sources": [
+        {
+          "id": "air",
+          "kind": "values",
+          "hz": 0.2,
+          "default": true,
+          "description": "air near the floor",
+          "fields": {
+            "temperature": {
+              "type": "number",
+              "unit": "°C",
+              "min": -20,
+              "max": 60,
+              "alert": {
+                "warn": 35,
+                "bad": 45
+              }
+            },
+            "humidity": {
+              "type": "number",
+              "unit": "%",
+              "min": 0,
+              "max": 100
+            }
+          }
+        },
+        {
+          "id": "door",
+          "kind": "switch",
+          "description": "front door contact",
+          "fields": {
+            "open": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "def": "CallReply",
+    "valid": true,
+    "note": "busy because of manual control",
+    "value": {
+      "accepted": false,
+      "status": "rejected",
+      "reason": "busy",
+      "holder": {
+        "manual": true
+      }
+    }
+  },
+  {
+    "def": "CallReply",
+    "valid": true,
+    "note": "custom reason",
+    "value": {
+      "accepted": false,
+      "status": "rejected",
+      "reason": "x_low_battery",
+      "detail": "battery below 5%"
+    }
+  },
+  {
+    "def": "ResultParams",
+    "valid": true,
+    "note": "interrupted with after",
+    "value": {
+      "call": "c31",
+      "status": "interrupted",
+      "reason": "stop",
+      "detail": "stopped",
+      "after": {
+        "odometry": {
+          "x": 1,
+          "y": 0,
+          "yaw": 90,
+          "v": 0,
+          "w": 0
+        }
+      }
+    }
+  },
+  {
+    "def": "ResultParams",
+    "valid": true,
+    "note": "custom error reason",
+    "value": {
+      "call": "c31",
+      "status": "error",
+      "reason": "x_jammed",
+      "detail": "gripper jammed"
+    }
+  },
+  {
+    "def": "Source",
+    "valid": true,
+    "note": "custom kind",
+    "value": {
+      "id": "torque",
+      "kind": "x_torque_map",
+      "description": "joint torques"
+    }
+  },
+  {
+    "def": "Unit",
+    "valid": true,
+    "note": "custom unit",
+    "value": "x_kmh"
+  },
+  {
+    "def": "Response",
+    "valid": true,
+    "note": "error response",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "1",
+      "error": {
+        "code": -32001,
+        "message": "unsupported protocol version"
+      }
+    }
+  },
+  {
+    "def": "RegisterParams",
+    "valid": false,
+    "note": "missing device",
+    "value": {
+      "protocol": "mhs/v1",
+      "profile": {
+        "size_m": [0.4, 0.4, 0.9],
+        "weight_kg": 11,
+        "reach_m": 0.85,
+        "notes": "6-axis arm bolted to the bench. Payload up to 3 kg. Stops on contact."
+      },
+      "localization": "none",
+      "resources": {
+        "arm": "reject",
+        "gripper": "reject"
+      },
+      "sources": [
+        {
+          "id": "cam_front",
+          "kind": "video",
+          "codec": "h264",
+          "encoding": "rgb",
+          "size": [1280, 720],
+          "hz": 30,
+          "fov_deg": [69, 42],
+          "bitrate_kbps": [300, 4000],
+          "gop_s": 1,
+          "mount": {
+            "xyz": [0.12, 0, 0.3],
+            "rpy": [0, 10, 0]
+          },
+          "description": "front camera, tilted 10 degrees down",
+          "default": true
+        },
+        {
+          "id": "lidar",
+          "kind": "scan",
+          "hz": 10,
+          "range_m": [0.1, 12],
+          "mount": {
+            "xyz": [0, 0, 0.35],
+            "rpy": [0, 0, 0]
+          },
+          "description": "2D lidar on top"
+        },
+        {
+          "id": "people",
+          "kind": "detections",
+          "of": "cam_front",
+          "hz": 15,
+          "model": {
+            "name": "example-person-det",
+            "version": "3.1"
+          },
+          "labels": ["person"],
+          "description": "people detected on board in the front camera"
+        },
+        {
+          "id": "battery",
+          "kind": "values",
+          "hz": 1,
+          "default": true,
+          "description": "main battery",
+          "fields": {
+            "percent": {
+              "type": "number",
+              "unit": "%",
+              "min": 0,
+              "max": 100,
+              "alert": {
+                "warn": 30,
+                "bad": 15,
+                "below": true
+              }
+            }
+          }
+        }
+      ],
+      "tools": [
+        {
+          "name": "move_joint",
+          "description": "Move one joint to an angle and hold it there.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "joint": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6,
+                "description": "joint number, 1 is the base"
+              },
+              "angle": {
+                "type": "number",
+                "minimum": -170,
+                "maximum": 170,
+                "description": "target angle in degrees"
+              }
+            },
+            "required": ["joint", "angle"]
+          },
+          "uses": ["arm"],
+          "motion": true,
+          "pausable": true,
+          "timeout": 20
+        }
+      ],
+      "manual": {
+        "axes": [
+          {
+            "id": "vx",
+            "role": "forward",
+            "unit": "m/s",
+            "min": -0.4,
+            "max": 0.4
+          },
+          {
+            "id": "wz",
+            "role": "turn",
+            "unit": "deg/s",
+            "min": -60,
+            "max": 60
+          },
+          {
+            "id": "z",
+            "role": "up",
+            "unit": "m/s",
+            "min": -0.05,
+            "max": 0.05,
+            "keys": ["r", "f"]
+          }
+        ],
+        "rate_hz": 10,
+        "deadman_s": 0.5,
+        "speeds": [
+          {
+            "label": "slow",
+            "scale": 0.5
+          },
+          {
+            "label": "fast",
+            "scale": 1.0
+          }
+        ]
+      },
+      "ui": {
+        "icon": "arm",
+        "primary": "cam_front"
+      }
+    }
+  },
+  {
+    "def": "RegisterParams",
+    "valid": false,
+    "note": "other major version",
+    "value": {
+      "protocol": "mhs/2",
+      "device": {
+        "id": "arm-03",
+        "kind": "arm",
+        "model": "Example Arm 6",
+        "name": "Bench arm",
+        "vendor": "Example Robotics",
+        "firmware": "2.1.0",
+        "mobile": false
+      },
+      "profile": {
+        "size_m": [0.4, 0.4, 0.9],
+        "weight_kg": 11,
+        "reach_m": 0.85,
+        "notes": "6-axis arm bolted to the bench. Payload up to 3 kg. Stops on contact."
+      },
+      "localization": "none",
+      "resources": {
+        "arm": "reject",
+        "gripper": "reject"
+      },
+      "sources": [
+        {
+          "id": "cam_front",
+          "kind": "video",
+          "codec": "h264",
+          "encoding": "rgb",
+          "size": [1280, 720],
+          "hz": 30,
+          "fov_deg": [69, 42],
+          "bitrate_kbps": [300, 4000],
+          "gop_s": 1,
+          "mount": {
+            "xyz": [0.12, 0, 0.3],
+            "rpy": [0, 10, 0]
+          },
+          "description": "front camera, tilted 10 degrees down",
+          "default": true
+        },
+        {
+          "id": "lidar",
+          "kind": "scan",
+          "hz": 10,
+          "range_m": [0.1, 12],
+          "mount": {
+            "xyz": [0, 0, 0.35],
+            "rpy": [0, 0, 0]
+          },
+          "description": "2D lidar on top"
+        },
+        {
+          "id": "people",
+          "kind": "detections",
+          "of": "cam_front",
+          "hz": 15,
+          "model": {
+            "name": "example-person-det",
+            "version": "3.1"
+          },
+          "labels": ["person"],
+          "description": "people detected on board in the front camera"
+        },
+        {
+          "id": "battery",
+          "kind": "values",
+          "hz": 1,
+          "default": true,
+          "description": "main battery",
+          "fields": {
+            "percent": {
+              "type": "number",
+              "unit": "%",
+              "min": 0,
+              "max": 100,
+              "alert": {
+                "warn": 30,
+                "bad": 15,
+                "below": true
+              }
+            }
+          }
+        }
+      ],
+      "tools": [
+        {
+          "name": "move_joint",
+          "description": "Move one joint to an angle and hold it there.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "joint": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6,
+                "description": "joint number, 1 is the base"
+              },
+              "angle": {
+                "type": "number",
+                "minimum": -170,
+                "maximum": 170,
+                "description": "target angle in degrees"
+              }
+            },
+            "required": ["joint", "angle"]
+          },
+          "uses": ["arm"],
+          "motion": true,
+          "pausable": true,
+          "timeout": 20
+        }
+      ],
+      "manual": {
+        "axes": [
+          {
+            "id": "vx",
+            "role": "forward",
+            "unit": "m/s",
+            "min": -0.4,
+            "max": 0.4
+          },
+          {
+            "id": "wz",
+            "role": "turn",
+            "unit": "deg/s",
+            "min": -60,
+            "max": 60
+          },
+          {
+            "id": "z",
+            "role": "up",
+            "unit": "m/s",
+            "min": -0.05,
+            "max": 0.05,
+            "keys": ["r", "f"]
+          }
+        ],
+        "rate_hz": 10,
+        "deadman_s": 0.5,
+        "speeds": [
+          {
+            "label": "slow",
+            "scale": 0.5
+          },
+          {
+            "label": "fast",
+            "scale": 1.0
+          }
+        ]
+      },
+      "ui": {
+        "icon": "arm",
+        "primary": "cam_front"
+      }
+    }
+  },
+  {
+    "def": "RegisterParams",
+    "valid": false,
+    "note": "device id with a capital letter",
+    "value": {
+      "protocol": "mhs/v1",
+      "device": {
+        "id": "Arm-03",
+        "kind": "arm",
+        "model": "Example Arm 6",
+        "name": "Bench arm",
+        "vendor": "Example Robotics",
+        "firmware": "2.1.0",
+        "mobile": false
+      },
+      "profile": {
+        "size_m": [0.4, 0.4, 0.9],
+        "weight_kg": 11,
+        "reach_m": 0.85,
+        "notes": "6-axis arm bolted to the bench. Payload up to 3 kg. Stops on contact."
+      },
+      "localization": "none",
+      "resources": {
+        "arm": "reject",
+        "gripper": "reject"
+      },
+      "sources": [
+        {
+          "id": "cam_front",
+          "kind": "video",
+          "codec": "h264",
+          "encoding": "rgb",
+          "size": [1280, 720],
+          "hz": 30,
+          "fov_deg": [69, 42],
+          "bitrate_kbps": [300, 4000],
+          "gop_s": 1,
+          "mount": {
+            "xyz": [0.12, 0, 0.3],
+            "rpy": [0, 10, 0]
+          },
+          "description": "front camera, tilted 10 degrees down",
+          "default": true
+        },
+        {
+          "id": "lidar",
+          "kind": "scan",
+          "hz": 10,
+          "range_m": [0.1, 12],
+          "mount": {
+            "xyz": [0, 0, 0.35],
+            "rpy": [0, 0, 0]
+          },
+          "description": "2D lidar on top"
+        },
+        {
+          "id": "people",
+          "kind": "detections",
+          "of": "cam_front",
+          "hz": 15,
+          "model": {
+            "name": "example-person-det",
+            "version": "3.1"
+          },
+          "labels": ["person"],
+          "description": "people detected on board in the front camera"
+        },
+        {
+          "id": "battery",
+          "kind": "values",
+          "hz": 1,
+          "default": true,
+          "description": "main battery",
+          "fields": {
+            "percent": {
+              "type": "number",
+              "unit": "%",
+              "min": 0,
+              "max": 100,
+              "alert": {
+                "warn": 30,
+                "bad": 15,
+                "below": true
+              }
+            }
+          }
+        }
+      ],
+      "tools": [
+        {
+          "name": "move_joint",
+          "description": "Move one joint to an angle and hold it there.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "joint": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6,
+                "description": "joint number, 1 is the base"
+              },
+              "angle": {
+                "type": "number",
+                "minimum": -170,
+                "maximum": 170,
+                "description": "target angle in degrees"
+              }
+            },
+            "required": ["joint", "angle"]
+          },
+          "uses": ["arm"],
+          "motion": true,
+          "pausable": true,
+          "timeout": 20
+        }
+      ],
+      "manual": {
+        "axes": [
+          {
+            "id": "vx",
+            "role": "forward",
+            "unit": "m/s",
+            "min": -0.4,
+            "max": 0.4
+          },
+          {
+            "id": "wz",
+            "role": "turn",
+            "unit": "deg/s",
+            "min": -60,
+            "max": 60
+          },
+          {
+            "id": "z",
+            "role": "up",
+            "unit": "m/s",
+            "min": -0.05,
+            "max": 0.05,
+            "keys": ["r", "f"]
+          }
+        ],
+        "rate_hz": 10,
+        "deadman_s": 0.5,
+        "speeds": [
+          {
+            "label": "slow",
+            "scale": 0.5
+          },
+          {
+            "label": "fast",
+            "scale": 1.0
+          }
+        ]
+      },
+      "ui": {
+        "icon": "arm",
+        "primary": "cam_front"
+      }
+    }
+  },
+  {
+    "def": "RegisterParams",
+    "valid": false,
+    "note": "misspelled kind",
+    "value": {
+      "protocol": "mhs/v1",
+      "device": {
+        "id": "arm-03",
+        "kind": "arm",
+        "model": "Example Arm 6",
+        "name": "Bench arm",
+        "vendor": "Example Robotics",
+        "firmware": "2.1.0",
+        "mobile": false
+      },
+      "profile": {
+        "size_m": [0.4, 0.4, 0.9],
+        "weight_kg": 11,
+        "reach_m": 0.85,
+        "notes": "6-axis arm bolted to the bench. Payload up to 3 kg. Stops on contact."
+      },
+      "localization": "none",
+      "resources": {
+        "arm": "reject",
+        "gripper": "reject"
+      },
+      "sources": [
+        {
+          "id": "cam_front",
+          "kind": "video",
+          "codec": "h264",
+          "encoding": "rgb",
+          "size": [1280, 720],
+          "hz": 30,
+          "fov_deg": [69, 42],
+          "bitrate_kbps": [300, 4000],
+          "gop_s": 1,
+          "mount": {
+            "xyz": [0.12, 0, 0.3],
+            "rpy": [0, 10, 0]
+          },
+          "description": "front camera, tilted 10 degrees down",
+          "default": true
+        },
+        {
+          "id": "lidar",
+          "kind": "scan",
+          "hz": 10,
+          "range_m": [0.1, 12],
+          "mount": {
+            "xyz": [0, 0, 0.35],
+            "rpy": [0, 0, 0]
+          },
+          "description": "2D lidar on top"
+        },
+        {
+          "id": "people",
+          "kind": "detection",
+          "of": "cam_front",
+          "hz": 15,
+          "model": {
+            "name": "example-person-det",
+            "version": "3.1"
+          },
+          "labels": ["person"],
+          "description": "people detected on board in the front camera"
+        },
+        {
+          "id": "battery",
+          "kind": "values",
+          "hz": 1,
+          "default": true,
+          "description": "main battery",
+          "fields": {
+            "percent": {
+              "type": "number",
+              "unit": "%",
+              "min": 0,
+              "max": 100,
+              "alert": {
+                "warn": 30,
+                "bad": 15,
+                "below": true
+              }
+            }
+          }
+        }
+      ],
+      "tools": [
+        {
+          "name": "move_joint",
+          "description": "Move one joint to an angle and hold it there.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "joint": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6,
+                "description": "joint number, 1 is the base"
+              },
+              "angle": {
+                "type": "number",
+                "minimum": -170,
+                "maximum": 170,
+                "description": "target angle in degrees"
+              }
+            },
+            "required": ["joint", "angle"]
+          },
+          "uses": ["arm"],
+          "motion": true,
+          "pausable": true,
+          "timeout": 20
+        }
+      ],
+      "manual": {
+        "axes": [
+          {
+            "id": "vx",
+            "role": "forward",
+            "unit": "m/s",
+            "min": -0.4,
+            "max": 0.4
+          },
+          {
+            "id": "wz",
+            "role": "turn",
+            "unit": "deg/s",
+            "min": -60,
+            "max": 60
+          },
+          {
+            "id": "z",
+            "role": "up",
+            "unit": "m/s",
+            "min": -0.05,
+            "max": 0.05,
+            "keys": ["r", "f"]
+          }
+        ],
+        "rate_hz": 10,
+        "deadman_s": 0.5,
+        "speeds": [
+          {
+            "label": "slow",
+            "scale": 0.5
+          },
+          {
+            "label": "fast",
+            "scale": 1.0
+          }
+        ]
+      },
+      "ui": {
+        "icon": "arm",
+        "primary": "cam_front"
+      }
+    }
+  },
+  {
+    "def": "RegisterParams",
+    "valid": false,
+    "note": "a device declaring world",
+    "value": {
+      "protocol": "mhs/v1",
+      "device": {
+        "id": "arm-03",
+        "kind": "arm",
+        "model": "Example Arm 6",
+        "name": "Bench arm",
+        "vendor": "Example Robotics",
+        "firmware": "2.1.0",
+        "mobile": false
+      },
+      "profile": {
+        "size_m": [0.4, 0.4, 0.9],
+        "weight_kg": 11,
+        "reach_m": 0.85,
+        "notes": "6-axis arm bolted to the bench. Payload up to 3 kg. Stops on contact."
+      },
+      "localization": "none",
+      "resources": {
+        "arm": "reject",
+        "gripper": "reject"
+      },
+      "sources": [
+        {
+          "id": "cam_front",
+          "kind": "video",
+          "codec": "h264",
+          "encoding": "rgb",
+          "size": [1280, 720],
+          "hz": 30,
+          "fov_deg": [69, 42],
+          "bitrate_kbps": [300, 4000],
+          "gop_s": 1,
+          "mount": {
+            "xyz": [0.12, 0, 0.3],
+            "rpy": [0, 10, 0]
+          },
+          "description": "front camera, tilted 10 degrees down",
+          "default": true
+        },
+        {
+          "id": "lidar",
+          "kind": "scan",
+          "hz": 10,
+          "range_m": [0.1, 12],
+          "mount": {
+            "xyz": [0, 0, 0.35],
+            "rpy": [0, 0, 0]
+          },
+          "description": "2D lidar on top"
+        },
+        {
+          "id": "people",
+          "kind": "detections",
+          "of": "cam_front",
+          "hz": 15,
+          "model": {
+            "name": "example-person-det",
+            "version": "3.1"
+          },
+          "labels": ["person"],
+          "description": "people detected on board in the front camera"
+        },
+        {
+          "id": "battery",
+          "kind": "values",
+          "hz": 1,
+          "default": true,
+          "description": "main battery",
+          "fields": {
+            "percent": {
+              "type": "number",
+              "unit": "%",
+              "min": 0,
+              "max": 100,
+              "alert": {
+                "warn": 30,
+                "bad": 15,
+                "below": true
+              }
+            }
+          }
+        },
+        {
+          "id": "world",
+          "kind": "world",
+          "description": "map"
+        }
+      ],
+      "tools": [
+        {
+          "name": "move_joint",
+          "description": "Move one joint to an angle and hold it there.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "joint": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6,
+                "description": "joint number, 1 is the base"
+              },
+              "angle": {
+                "type": "number",
+                "minimum": -170,
+                "maximum": 170,
+                "description": "target angle in degrees"
+              }
+            },
+            "required": ["joint", "angle"]
+          },
+          "uses": ["arm"],
+          "motion": true,
+          "pausable": true,
+          "timeout": 20
+        }
+      ],
+      "manual": {
+        "axes": [
+          {
+            "id": "vx",
+            "role": "forward",
+            "unit": "m/s",
+            "min": -0.4,
+            "max": 0.4
+          },
+          {
+            "id": "wz",
+            "role": "turn",
+            "unit": "deg/s",
+            "min": -60,
+            "max": 60
+          },
+          {
+            "id": "z",
+            "role": "up",
+            "unit": "m/s",
+            "min": -0.05,
+            "max": 0.05,
+            "keys": ["r", "f"]
+          }
+        ],
+        "rate_hz": 10,
+        "deadman_s": 0.5,
+        "speeds": [
+          {
+            "label": "slow",
+            "scale": 0.5
+          },
+          {
+            "label": "fast",
+            "scale": 1.0
+          }
+        ]
+      },
+      "ui": {
+        "icon": "arm",
+        "primary": "cam_front"
+      }
+    }
+  },
+  {
+    "def": "CallReply",
+    "valid": false,
+    "note": "busy without holder (CALL-3)",
+    "value": {
+      "accepted": false,
+      "status": "rejected",
+      "reason": "busy"
+    }
+  },
+  {
+    "def": "CallReply",
+    "valid": false,
+    "note": "hub-only reason (RES-1)",
+    "value": {
+      "accepted": false,
+      "status": "rejected",
+      "reason": "offline"
+    }
+  },
+  {
+    "def": "ResultParams",
+    "valid": false,
+    "note": "interrupted without reason",
+    "value": {
+      "call": "c31",
+      "status": "interrupted"
+    }
+  },
+  {
+    "def": "ResultParams",
+    "valid": false,
+    "note": "hub-only reason (RES-1)",
+    "value": {
+      "call": "c31",
+      "status": "interrupted",
+      "reason": "preempted"
+    }
+  },
+  {
+    "def": "ResultParams",
+    "valid": false,
+    "note": "rejected is never a result",
+    "value": {
+      "call": "c31",
+      "status": "rejected",
+      "reason": "busy"
+    }
+  },
+  {
+    "def": "Tool",
+    "valid": false,
+    "note": "tool without timeout",
+    "value": {
+      "name": "move_joint",
+      "description": "Move one joint to an angle and hold it there.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "joint": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 6,
+            "description": "joint number, 1 is the base"
+          },
+          "angle": {
+            "type": "number",
+            "minimum": -170,
+            "maximum": 170,
+            "description": "target angle in degrees"
+          }
+        },
+        "required": ["joint", "angle"]
+      },
+      "uses": ["arm"],
+      "motion": true,
+      "pausable": true
+    }
+  },
+  {
+    "def": "Tool",
+    "valid": false,
+    "note": "parameter root is not an object",
+    "value": {
+      "name": "move_joint",
+      "description": "Move one joint to an angle and hold it there.",
+      "inputSchema": {
+        "type": "array",
+        "properties": {
+          "joint": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 6,
+            "description": "joint number, 1 is the base"
+          },
+          "angle": {
+            "type": "number",
+            "minimum": -170,
+            "maximum": 170,
+            "description": "target angle in degrees"
+          }
+        },
+        "required": ["joint", "angle"]
+      },
+      "uses": ["arm"],
+      "motion": true,
+      "pausable": true,
+      "timeout": 20
+    }
+  },
+  {
+    "def": "Tool",
+    "valid": false,
+    "note": "keyword outside the subset (TOOL-1)",
+    "value": {
+      "name": "move_joint",
+      "description": "Move one joint to an angle and hold it there.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "joint": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 6,
+            "description": "joint number, 1 is the base"
+          },
+          "angle": {
+            "type": "number",
+            "minimum": -170,
+            "maximum": 170,
+            "description": "target angle in degrees",
+            "pattern": "^[0-9]+$"
+          }
+        },
+        "required": ["joint", "angle"]
+      },
+      "uses": ["arm"],
+      "motion": true,
+      "pausable": true,
+      "timeout": 20
+    }
+  },
+  {
+    "def": "Source",
+    "valid": false,
+    "note": "derived source without of (PER-3)",
+    "value": {
+      "id": "people",
+      "kind": "detections",
+      "hz": 15,
+      "model": {
+        "name": "example-person-det",
+        "version": "3.1"
+      },
+      "labels": ["person"],
+      "description": "people detected on board in the front camera"
+    }
+  },
+  {
+    "def": "Source",
+    "valid": false,
+    "note": "codec other than h264 (VID-1)",
+    "value": {
+      "id": "cam_front",
+      "kind": "video",
+      "codec": "h265",
+      "encoding": "rgb",
+      "size": [1280, 720],
+      "hz": 30,
+      "fov_deg": [69, 42],
+      "bitrate_kbps": [300, 4000],
+      "gop_s": 1,
+      "mount": {
+        "xyz": [0.12, 0, 0.3],
+        "rpy": [0, 10, 0]
+      },
+      "description": "front camera, tilted 10 degrees down",
+      "default": true
+    }
+  },
+  {
+    "def": "Source",
+    "valid": false,
+    "note": "gop_s above 2 s (VID-5)",
+    "value": {
+      "id": "cam_front",
+      "kind": "video",
+      "codec": "h264",
+      "encoding": "rgb",
+      "size": [1280, 720],
+      "hz": 30,
+      "fov_deg": [69, 42],
+      "bitrate_kbps": [300, 4000],
+      "gop_s": 3,
+      "mount": {
+        "xyz": [0.12, 0, 0.3],
+        "rpy": [0, 10, 0]
+      },
+      "description": "front camera, tilted 10 degrees down",
+      "default": true
+    }
+  },
+  {
+    "def": "Source",
+    "valid": false,
+    "note": "unit outside the registry",
+    "value": {
+      "id": "battery",
+      "kind": "values",
+      "hz": 1,
+      "default": true,
+      "description": "main battery",
+      "fields": {
+        "percent": {
+          "type": "number",
+          "unit": "km/h",
+          "min": 0,
+          "max": 100,
+          "alert": {
+            "warn": 30,
+            "bad": 15,
+            "below": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "def": "Manual",
+    "valid": false,
+    "note": "manual without deadman_s",
+    "value": {
+      "axes": [
+        {
+          "id": "vx",
+          "role": "forward",
+          "unit": "m/s",
+          "min": -0.4,
+          "max": 0.4
+        },
+        {
+          "id": "wz",
+          "role": "turn",
+          "unit": "deg/s",
+          "min": -60,
+          "max": 60
+        },
+        {
+          "id": "z",
+          "role": "up",
+          "unit": "m/s",
+          "min": -0.05,
+          "max": 0.05,
+          "keys": ["r", "f"]
+        }
+      ],
+      "rate_hz": 10,
+      "speeds": [
+        {
+          "label": "slow",
+          "scale": 0.5
+        },
+        {
+          "label": "fast",
+          "scale": 1.0
+        }
+      ]
+    }
+  },
+  {
+    "def": "DetectionsData",
+    "valid": false,
+    "note": "confidence above 1 (PER-5)",
+    "value": {
+      "w": 640,
+      "h": 480,
+      "items": [
+        {
+          "label": "person",
+          "conf": 1.5,
+          "box": [0, 0, 1, 1]
+        }
+      ]
+    }
+  },
+  {
+    "def": "NerveData",
+    "valid": false,
+    "note": "negative seq",
+    "value": {
+      "type": "data",
+      "source": "battery",
+      "seq": -1,
+      "t": 1,
+      "data": {}
+    }
+  },
+  {
+    "def": "NerveHello",
+    "valid": false,
+    "note": "hello without device",
+    "value": {
+      "type": "hello"
+    }
+  },
+  {
+    "def": "ConfigureParams",
+    "valid": false,
+    "note": "zero width",
+    "value": {
+      "sources": {
+        "cam_front": {
+          "size": [0, 720]
+        }
+      }
+    }
+  },
+  {
+    "def": "Request",
+    "valid": false,
+    "note": "numeric id (MSG-2)",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": 7,
+      "method": "mhs/call"
+    }
+  },
+  {
+    "def": "GnssData",
+    "valid": true,
+    "note": "MOS Appendix B: alt is optional",
+    "value": {
+      "lat": 31.2,
+      "lon": 121.5,
+      "fix": "2d",
+      "acc_m": 5
+    }
+  },
+  {
+    "def": "Detection",
+    "valid": true,
+    "note": "no mask",
+    "value": {
+      "label": "person",
+      "conf": 0.5,
+      "box": [0, 0, 1, 1]
+    }
+  },
+  {
+    "def": "RegisterParams",
+    "valid": true,
+    "note": "with state fields (MHS 10.1)",
+    "value": {
+      "protocol": "mhs/v1",
+      "device": {
+        "id": "arm-03",
+        "kind": "arm",
+        "model": "Example Arm 6",
+        "name": "Bench arm",
+        "vendor": "Example Robotics",
+        "firmware": "2.1.0",
+        "mobile": false
+      },
+      "profile": {
+        "size_m": [0.4, 0.4, 0.9],
+        "weight_kg": 11,
+        "reach_m": 0.85,
+        "notes": "6-axis arm bolted to the bench. Payload up to 3 kg. Stops on contact."
+      },
+      "localization": "none",
+      "resources": {
+        "arm": "reject",
+        "gripper": "reject"
+      },
+      "sources": [
+        {
+          "id": "cam_front",
+          "kind": "video",
+          "codec": "h264",
+          "encoding": "rgb",
+          "size": [1280, 720],
+          "hz": 30,
+          "fov_deg": [69, 42],
+          "bitrate_kbps": [300, 4000],
+          "gop_s": 1,
+          "mount": {
+            "xyz": [0.12, 0, 0.3],
+            "rpy": [0, 10, 0]
+          },
+          "description": "front camera, tilted 10 degrees down",
+          "default": true
+        },
+        {
+          "id": "lidar",
+          "kind": "scan",
+          "hz": 10,
+          "range_m": [0.1, 12],
+          "mount": {
+            "xyz": [0, 0, 0.35],
+            "rpy": [0, 0, 0]
+          },
+          "description": "2D lidar on top"
+        },
+        {
+          "id": "people",
+          "kind": "detections",
+          "of": "cam_front",
+          "hz": 15,
+          "model": {
+            "name": "example-person-det",
+            "version": "3.1"
+          },
+          "labels": ["person"],
+          "description": "people detected on board in the front camera"
+        },
+        {
+          "id": "battery",
+          "kind": "values",
+          "hz": 1,
+          "default": true,
+          "description": "main battery",
+          "fields": {
+            "percent": {
+              "type": "number",
+              "unit": "%",
+              "min": 0,
+              "max": 100,
+              "alert": {
+                "warn": 30,
+                "bad": 15,
+                "below": true
+              }
+            }
+          }
+        }
+      ],
+      "tools": [
+        {
+          "name": "move_joint",
+          "description": "Move one joint to an angle and hold it there.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "joint": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6,
+                "description": "joint number, 1 is the base"
+              },
+              "angle": {
+                "type": "number",
+                "minimum": -170,
+                "maximum": 170,
+                "description": "target angle in degrees"
+              }
+            },
+            "required": ["joint", "angle"]
+          },
+          "uses": ["arm"],
+          "motion": true,
+          "pausable": true,
+          "timeout": 20
+        }
+      ],
+      "manual": {
+        "axes": [
+          {
+            "id": "vx",
+            "role": "forward",
+            "unit": "m/s",
+            "min": -0.4,
+            "max": 0.4
+          },
+          {
+            "id": "wz",
+            "role": "turn",
+            "unit": "deg/s",
+            "min": -60,
+            "max": 60
+          },
+          {
+            "id": "z",
+            "role": "up",
+            "unit": "m/s",
+            "min": -0.05,
+            "max": 0.05,
+            "keys": ["r", "f"]
+          }
+        ],
+        "rate_hz": 10,
+        "deadman_s": 0.5,
+        "speeds": [
+          {
+            "label": "slow",
+            "scale": 0.5
+          },
+          {
+            "label": "fast",
+            "scale": 1.0
+          }
+        ]
+      },
+      "ui": {
+        "icon": "arm",
+        "primary": "cam_front"
+      },
+      "state": {
+        "mode": {
+          "type": "string",
+          "enum": ["idle", "cleaning"],
+          "description": "what it is doing"
+        },
+        "battery": {
+          "type": "number",
+          "unit": "%",
+          "min": 0,
+          "max": 100,
+          "alert": {
+            "warn": 20,
+            "bad": 10,
+            "below": true
+          }
+        },
+        "volume": {
+          "type": "integer",
+          "min": 0,
+          "max": 10,
+          "writable": true
+        }
+      }
+    }
+  },
+  {
+    "def": "StateParams",
+    "valid": true,
+    "note": "MHS 10.1 example",
+    "value": {
+      "t": 1791400000.5,
+      "values": {
+        "mode": "cleaning",
+        "battery": 76
+      }
+    }
+  },
+  {
+    "def": "StateParams",
+    "valid": true,
+    "note": "standard fields",
+    "value": {
+      "t": 1791400000.5,
+      "values": {
+        "problem": null,
+        "faults": ["E12"]
+      }
+    }
+  },
+  {
+    "def": "StateParams",
+    "valid": false,
+    "note": "without t",
+    "value": {
+      "values": {
+        "mode": "idle"
+      }
+    }
+  },
+  {
+    "def": "StateParams",
+    "valid": false,
+    "note": "bad field name",
+    "value": {
+      "t": 1,
+      "values": {
+        "Mode": "idle"
+      }
+    }
+  },
+  {
+    "def": "SetParams",
+    "valid": true,
+    "note": "MHS 10.1 example",
+    "value": {
+      "values": {
+        "volume": 12
+      }
+    }
+  },
+  {
+    "def": "SetResult",
+    "valid": true,
+    "note": "MHS 10.1 example",
+    "value": {
+      "values": {
+        "volume": 10
+      },
+      "notes": ["volume was 12, clamped to 10"]
+    }
+  },
+  {
+    "def": "SetResult",
+    "valid": true,
+    "note": "a refused field",
+    "value": {
+      "values": {},
+      "refused": {
+        "battery": "not writable"
+      }
+    }
+  },
+  {
+    "def": "SetResult",
+    "valid": false,
+    "note": "without values",
+    "value": {
+      "notes": []
+    }
+  },
+  {
+    "def": "RegisterParams",
+    "valid": false,
+    "note": "writable must be a boolean",
+    "value": {
+      "protocol": "mhs/v1",
+      "device": {
+        "id": "arm-03",
+        "kind": "arm",
+        "model": "Example Arm 6",
+        "name": "Bench arm",
+        "vendor": "Example Robotics",
+        "firmware": "2.1.0",
+        "mobile": false
+      },
+      "profile": {
+        "size_m": [0.4, 0.4, 0.9],
+        "weight_kg": 11,
+        "reach_m": 0.85,
+        "notes": "6-axis arm bolted to the bench. Payload up to 3 kg. Stops on contact."
+      },
+      "localization": "none",
+      "resources": {
+        "arm": "reject",
+        "gripper": "reject"
+      },
+      "sources": [
+        {
+          "id": "cam_front",
+          "kind": "video",
+          "codec": "h264",
+          "encoding": "rgb",
+          "size": [1280, 720],
+          "hz": 30,
+          "fov_deg": [69, 42],
+          "bitrate_kbps": [300, 4000],
+          "gop_s": 1,
+          "mount": {
+            "xyz": [0.12, 0, 0.3],
+            "rpy": [0, 10, 0]
+          },
+          "description": "front camera, tilted 10 degrees down",
+          "default": true
+        },
+        {
+          "id": "lidar",
+          "kind": "scan",
+          "hz": 10,
+          "range_m": [0.1, 12],
+          "mount": {
+            "xyz": [0, 0, 0.35],
+            "rpy": [0, 0, 0]
+          },
+          "description": "2D lidar on top"
+        },
+        {
+          "id": "people",
+          "kind": "detections",
+          "of": "cam_front",
+          "hz": 15,
+          "model": {
+            "name": "example-person-det",
+            "version": "3.1"
+          },
+          "labels": ["person"],
+          "description": "people detected on board in the front camera"
+        },
+        {
+          "id": "battery",
+          "kind": "values",
+          "hz": 1,
+          "default": true,
+          "description": "main battery",
+          "fields": {
+            "percent": {
+              "type": "number",
+              "unit": "%",
+              "min": 0,
+              "max": 100,
+              "alert": {
+                "warn": 30,
+                "bad": 15,
+                "below": true
+              }
+            }
+          }
+        }
+      ],
+      "tools": [
+        {
+          "name": "move_joint",
+          "description": "Move one joint to an angle and hold it there.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "joint": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6,
+                "description": "joint number, 1 is the base"
+              },
+              "angle": {
+                "type": "number",
+                "minimum": -170,
+                "maximum": 170,
+                "description": "target angle in degrees"
+              }
+            },
+            "required": ["joint", "angle"]
+          },
+          "uses": ["arm"],
+          "motion": true,
+          "pausable": true,
+          "timeout": 20
+        }
+      ],
+      "manual": {
+        "axes": [
+          {
+            "id": "vx",
+            "role": "forward",
+            "unit": "m/s",
+            "min": -0.4,
+            "max": 0.4
+          },
+          {
+            "id": "wz",
+            "role": "turn",
+            "unit": "deg/s",
+            "min": -60,
+            "max": 60
+          },
+          {
+            "id": "z",
+            "role": "up",
+            "unit": "m/s",
+            "min": -0.05,
+            "max": 0.05,
+            "keys": ["r", "f"]
+          }
+        ],
+        "rate_hz": 10,
+        "deadman_s": 0.5,
+        "speeds": [
+          {
+            "label": "slow",
+            "scale": 0.5
+          },
+          {
+            "label": "fast",
+            "scale": 1.0
+          }
+        ]
+      },
+      "ui": {
+        "icon": "arm",
+        "primary": "cam_front"
+      },
+      "state": {
+        "mode": {
+          "type": "string",
+          "enum": ["idle", "cleaning"],
+          "description": "what it is doing"
+        },
+        "battery": {
+          "type": "number",
+          "unit": "%",
+          "min": 0,
+          "max": 100,
+          "alert": {
+            "warn": 20,
+            "bad": 10,
+            "below": true
+          }
+        },
+        "volume": {
+          "type": "integer",
+          "min": 0,
+          "max": 10,
+          "writable": "yes"
+        }
+      }
+    }
+  },
+  {
+    "def": "Field",
+    "valid": true,
+    "note": "MOS 3.3, a field with a role and the part it belongs to",
+    "value": {
+      "type": "number",
+      "unit": "°C",
+      "role": "temperature",
+      "of": "motor",
+      "alert": {
+        "warn": 70,
+        "bad": 85
+      }
+    }
+  },
+  {
+    "def": "StateField",
+    "valid": true,
+    "note": "MHS 10.1 with MOS Appendix C: a wearer's heart rate",
+    "value": {
+      "type": "integer",
+      "unit": "bpm",
+      "role": "heart_rate",
+      "alert": {
+        "warn": 140,
+        "bad": 170
+      }
+    }
+  },
+  {
+    "def": "Field",
+    "valid": true,
+    "note": "MOS Appendix C: a custom role",
+    "value": {
+      "type": "number",
+      "role": "x_filter_load"
+    }
+  },
+  {
+    "def": "Field",
+    "valid": false,
+    "note": "MOS Appendix C: a role outside the vocabulary without x_",
+    "value": {
+      "type": "number",
+      "role": "fuel"
+    }
+  },
+  {
+    "def": "Source",
+    "valid": true,
+    "note": "MOS 4 and Appendix B: a pose source with max_error_m",
+    "value": {
+      "id": "pose",
+      "kind": "pose",
+      "description": "where the robot is on the office map",
+      "model": {
+        "name": "example-slam",
+        "version": "2"
+      },
+      "max_error_m": 0.5
+    }
+  },
+  {
+    "def": "Source",
+    "valid": false,
+    "note": "MOS 4: max_error_m is not negative",
+    "value": {
+      "id": "pose",
+      "kind": "pose",
+      "description": "where the robot is",
+      "model": {
+        "name": "example-slam",
+        "version": "2"
+      },
+      "max_error_m": -1
+    }
+  },
+  {
+    "def": "RegisterParams",
+    "valid": true,
+    "note": "MOS 3.5: a fixed device with its placement, and the map it defines",
+    "value": {
+      "protocol": "mhs/v1",
+      "device": {
+        "id": "cam-02",
+        "kind": "camera"
+      },
+      "localization": "fixed",
+      "placement": {
+        "map": "site",
+        "x": 3,
+        "y": -2,
+        "yaw": 90
+      },
+      "maps": [
+        {
+          "id": "site",
+          "name": "Site",
+          "bounds": [-20, -20, 20, 20],
+          "anchor": {
+            "lat": 52.5,
+            "lon": 13.4,
+            "heading": 0
+          },
+          "places": [
+            {
+              "id": "gate",
+              "name": "Gate",
+              "at": [0, -18],
+              "yaw": 90,
+              "description": "Main gate"
+            },
+            {
+              "id": "yard",
+              "name": "Yard",
+              "points": [[-10, -10], [10, -10], [10, 10]]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "def": "Place",
+    "valid": false,
+    "note": "MAP-1: a place is a landmark or a zone, not both",
+    "value": {
+      "id": "gate",
+      "name": "Gate",
+      "at": [0, 0],
+      "points": [[0, 0], [1, 0], [1, 1]]
+    }
+  },
+  {
+    "def": "Place",
+    "valid": false,
+    "note": "MAP-1: a place needs at or points",
+    "value": {
+      "id": "gate",
+      "name": "Gate"
+    }
+  },
+  {
+    "def": "MapDecl",
+    "valid": false,
+    "note": "3.3: map ids are lowercase",
+    "value": {
+      "id": "Site"
+    }
+  },
+  {
+    "def": "MapAnchor",
+    "valid": true,
+    "note": "MOS 3.5: a map placed in another",
+    "value": {
+      "map": "site",
+      "x": 5,
+      "y": 1,
+      "yaw": 30
+    }
+  },
+  {
+    "def": "WorldData",
+    "valid": true,
+    "note": "Appendix B: world with places",
+    "value": {
+      "map": "site",
+      "entities": [
+        {
+          "device": "cam-02",
+          "x": 3,
+          "y": -2,
+          "yaw": 90,
+          "ok": true,
+          "fixed": true,
+          "zone": "yard"
+        }
+      ],
+      "places": [
+        {
+          "id": "gate",
+          "name": "Gate",
+          "at": [0, -18]
+        }
+      ]
+    }
+  }
+]

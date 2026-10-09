@@ -25,6 +25,7 @@ describe('repo', () => {
       '@agnes/guards',
       '@agnes/host',
       '@agnes/mcp-transport-health',
+      '@agnes/mhs',
       '@agnes/package-admin-client-node',
       '@agnes/package-isolation',
       '@agnes/package-manager',

@@ -45,6 +45,7 @@
       "purpose": "UI runtime for the web workbench, resource administration and in-page client module host; bundled into /vendor/* shared-singleton chunks.",
       "rationale": "Pinned to 18.3.1 per the web client modules design (WC5); a single split build keeps exactly one React copy on the page.",
       "consumers": [
+        "packages/mhs",
         "packages/resource-control-web",
         "packages/web",
         "packages/web-client",
@@ -103,6 +104,7 @@
         "packages/core",
         "packages/extension-api",
         "packages/host",
+        "packages/mhs",
         "packages/plugin-runtime",
         "packages/protocol",
         "packages/protocol-validation",
@@ -206,7 +208,7 @@
       "source": "https://github.com/websockets/ws",
       "purpose": "WebSocket client transport and authenticated daemon listener.",
       "rationale": "Supplies the Node WebSocket implementation needed where the browser-native API is unavailable.",
-      "consumers": ["packages/daemon", "packages/sdk"]
+      "consumers": ["packages/daemon", "packages/mhs", "packages/sdk"]
     },
     {
       "name": "yaml",
@@ -231,7 +233,16 @@
       "source": "https://github.com/ajv-validator/ajv",
       "purpose": "Compile Extension and MCP tool schemas at runtime and independently verify protocol conformance.",
       "rationale": "Reuse the established schema implementation; reject invalid or external references before callbacks run.",
-      "consumers": ["packages/base", "packages/host", "packages/protocol"]
+      "consumers": ["packages/base", "packages/host", "packages/mhs", "packages/protocol"]
+    },
+    {
+      "name": "three",
+      "version": "0.186.1",
+      "license": "MIT",
+      "source": "https://github.com/mrdoob/three.js",
+      "purpose": "Render the 3D demo world of Agnes MHS in the browser.",
+      "rationale": "The standard WebGL scene graph, with the loaders and post-processing the demo needs.",
+      "consumers": ["examples/mars-world"]
     }
   ]
 }

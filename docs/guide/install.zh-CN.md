@@ -24,7 +24,7 @@ cd agnes-harness
 | 项目 | 要求 |
 | --- | --- |
 | Node.js | `>=24.10`；已记录的验证环境见[验证记录](../maintainers/verification.zh-CN.md) |
-| pnpm | `10.34.5`，见根 `packageManager`；可以通过 Corepack 调用 |
+| pnpm | `10.34.5`，见根 `packageManager`。Node 24 自带 Corepack，可由它提供；Node 25 及以后不再自带，用 `npm install -g pnpm@10.34.5` 安装 |
 | macOS | 构建原生 helper 需要 Xcode Command Line Tools；命令沙箱使用 Seatbelt |
 | Linux | 命令工具需要 bubblewrap 和可用的 user namespace；仅存在 bwrap 文件不代表可用 |
 | Windows | Node 同版本 headers/import library、Visual Studio C++ Build Tools 与 Windows SDK；平台限制见后文 |
@@ -33,13 +33,13 @@ cd agnes-harness
 
 ```sh
 node --version
-corepack pnpm --version
+pnpm --version
 pnpm install --frozen-lockfile
 pnpm --filter @agnes/cli build:local
 node packages/cli/dist/local/agnes.mjs --help
 ```
 
-没有可用的 `pnpm` 命令时，把下文 `pnpm` 换成 `corepack pnpm`。根目录没有 `pnpm build` 脚本；完整运行目录由 CLI 包的 `build:local` 构建。
+在 Node 24 上没有可用的 `pnpm` 命令时，把下文 `pnpm` 换成 `corepack pnpm`。根目录没有 `pnpm build` 脚本；完整运行目录由 CLI 包的 `build:local` 构建。
 
 输出位于 `packages/cli/dist/local/`，包括 `agnes.mjs`、daemon、worker、Web 与平台所需辅助资源。搬运时保持整个目录，不要只复制入口文件。`@agnes/web build` 仅构建 Web，不能替代完整本地分发。
 
@@ -90,7 +90,7 @@ node .\packages\cli\dist\local\agnes.mjs serve
 
 ```sh
 AGH_BUILD_ROOT="$(mktemp -d /tmp/agh-build.XXXXXX)"
-corepack pnpm --filter @agnes/cli build:local --output-dir "$AGH_BUILD_ROOT/runtime"
+pnpm --filter @agnes/cli build:local --output-dir "$AGH_BUILD_ROOT/runtime"
 node "$AGH_BUILD_ROOT/runtime/agnes.mjs" --help
 ```
 
@@ -100,7 +100,7 @@ PowerShell（同样从源码仓库根执行）：
 $aghBuildRoot = Join-Path ([IO.Path]::GetTempPath()) ('agh-build-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $aghBuildRoot | Out-Null
 $aghBuildOutput = Join-Path $aghBuildRoot 'runtime'
-corepack.cmd pnpm --filter @agnes/cli build:local --output-dir $aghBuildOutput
+pnpm.cmd --filter @agnes/cli build:local --output-dir $aghBuildOutput
 if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
 node (Join-Path $aghBuildOutput 'agnes.mjs') --help
 ```

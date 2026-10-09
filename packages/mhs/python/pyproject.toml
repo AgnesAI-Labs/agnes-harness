@@ -1,0 +1,25 @@
+[project]
+name = "agnes-mhs"
+version = "0.1.0"
+description = "Agnes MHS device library: write MHS devices in Python, validate messages, and check conformance with mhs-check"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "jsonschema>=4.18",
+    "websockets>=14",
+]
+
+[project.optional-dependencies]
+video = [
+    "av>=17.1.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.15,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "av>=17.1.0",
+    "pytest>=9.1.1",
+]

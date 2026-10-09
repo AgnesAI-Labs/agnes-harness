@@ -235,6 +235,48 @@ it('issues a fresh CSP style nonce for each served HTML document', async () => {
   }
 })
 
+it('lets only the workbench document reach the Agnes MHS hub', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agnes-web-hub-'))
+  const port = await availablePort()
+  await expect(
+    createWebServer({ root, wsUrl: 'ws://127.0.0.1:4321', port, hubOrigin: 'http://hub/path' }),
+  ).rejects.toThrow('AGNES_HUB_ORIGIN')
+  const server = await createWebServer({
+    root,
+    wsUrl: 'ws://127.0.0.1:4321',
+    port,
+    origin: `http://127.0.0.1:${port}`,
+    hubOrigin: 'http://192.168.1.20:4180/',
+  })
+  try {
+    const nonceMarker = '<meta name="agnes-csp-nonce" content="__AGNES_CSP_NONCE__">'
+    await writeFile(join(root, 'index.html'), `${nonceMarker}<meta data-ws="__AGNES_WS_URL__">`)
+    await writeFile(join(root, 'admin.html'), nonceMarker)
+    const directives = (policy: string | null) =>
+      Object.fromEntries(
+        (policy ?? '').split(';').map((part) => {
+          const [name, ...values] = part.trim().split(/\s+/)
+          return [name, values]
+        }),
+      )
+    const page = await fetch(`${server.url}/`)
+    expect(page.status).toBe(200)
+    const workbench = directives(page.headers.get('content-security-policy'))
+    expect(workbench['connect-src']).toEqual([
+      "'self'",
+      'http://192.168.1.20:4180',
+      'ws://192.168.1.20:4180',
+      'ws://127.0.0.1:4321',
+    ])
+    expect(workbench['media-src']).toEqual(["'self'", 'blob:', 'http://192.168.1.20:4180'])
+    const admin = (await fetch(`${server.url}/admin/plugins`)).headers.get('content-security-policy')
+    expect(admin).not.toContain('192.168.1.20')
+  } finally {
+    await server.close()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 it('fails closed when an admin API handler is not installed', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agnes-web-admin-missing-'))
   const port = await availablePort()

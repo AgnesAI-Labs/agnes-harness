@@ -1,0 +1,1309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/mhs-v1.json",
+  "title": "Agnes MHS v1 (mhs/v1): every message, part, kind payload and vocabulary between a device and a hub",
+  "description": "Section numbers refer to packages/mhs/spec/mhs-spec.md. Objects stay open because receivers ignore unknown fields (MSG-6); the parameter schema of a tool is the one closed object (TOOL-1). Cross-field rules (unique ids, uses naming declared resources, seq continuity, binary pairing, timing) are checked by mhs-check, not here.",
+  "$defs": {
+    "DeviceId": {
+      "description": "Device id (3.3).",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+    },
+    "Name": {
+      "description": "Source id, field name, resource name or axis id (3.3).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+    },
+    "MapId": {
+      "description": "Map id or place id (3.3, MOS 3.5).",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "ToolName": {
+      "description": "Tool name (3.3).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "CustomName": {
+      "description": "Custom vocabulary entry: x_ followed by the identifier syntax (3.3, 15).",
+      "type": "string",
+      "pattern": "^x_[a-z][a-z0-9_]{0,31}$"
+    },
+    "Time": {
+      "description": "Unix time in seconds, with a fractional part (3.5).",
+      "type": "number"
+    },
+    "Text": {
+      "description": "A short plain sentence for people and language models (3.6).",
+      "type": "string"
+    },
+    "Short": {
+      "description": "Up to 40 characters.",
+      "type": "string",
+      "maxLength": 40
+    },
+    "Vec2": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "Vec3": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "Size": {
+      "description": "[width, height] in pixels.",
+      "type": "array",
+      "items": { "type": "integer", "minimum": 1 },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "Range": {
+      "description": "[min, max].",
+      "type": "array",
+      "items": { "type": "number", "minimum": 0 },
+      "minItems": 2,
+      "maxItems": 2
+    },
+
+    "Kind": {
+      "description": "Data kind (MOS Appendix B).",
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "image",
+            "video",
+            "scan",
+            "points",
+            "audio",
+            "imu",
+            "odometry",
+            "gnss",
+            "values",
+            "switch",
+            "text",
+            "detections",
+            "pose",
+            "grid",
+            "transcript",
+            "world"
+          ]
+        },
+        { "$ref": "#/$defs/CustomName" }
+      ]
+    },
+    "AxisRole": {
+      "description": "Manual axis role (Appendix B.2).",
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": ["forward", "turn", "strafe", "up", "roll", "pitch", "yaw", "zoom", "grip", "joint"]
+        },
+        { "$ref": "#/$defs/CustomName" }
+      ]
+    },
+    "FieldRole": {
+      "description": "Field role (MOS Appendix C).",
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "battery",
+            "voltage",
+            "current",
+            "power",
+            "charging",
+            "temperature",
+            "cpu",
+            "memory",
+            "storage",
+            "signal",
+            "consumable",
+            "heart_rate",
+            "body_temperature",
+            "spo2"
+          ]
+        },
+        { "$ref": "#/$defs/CustomName" }
+      ]
+    },
+    "Status": {
+      "description": "Call status (10.2, Appendix B.6).",
+      "type": "string",
+      "enum": ["done", "rejected", "interrupted", "error"]
+    },
+    "Reason": {
+      "description": "Every reason code, including those only a hub may send (10.2).",
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "invalid",
+            "busy",
+            "unsafe",
+            "offline",
+            "denied",
+            "stop",
+            "cancel",
+            "manual",
+            "estop",
+            "preempted",
+            "pause_timeout",
+            "disconnect",
+            "dependency",
+            "timeout",
+            "stuck",
+            "unreachable",
+            "failed"
+          ]
+        },
+        { "$ref": "#/$defs/CustomName" }
+      ]
+    },
+    "RejectReason": {
+      "description": "Reasons a device may reject a call with, other than busy (7.1, RES-1).",
+      "anyOf": [{ "type": "string", "enum": ["invalid", "unsafe"] }, { "$ref": "#/$defs/CustomName" }]
+    },
+    "InterruptReason": {
+      "description": "Reasons a device may end a call as interrupted (10.2, RES-1).",
+      "anyOf": [
+        { "type": "string", "enum": ["stop", "cancel", "manual", "estop", "pause_timeout"] },
+        { "$ref": "#/$defs/CustomName" }
+      ]
+    },
+    "ErrorReason": {
+      "description": "Reasons a device may end a call as error (10.2).",
+      "anyOf": [
+        { "type": "string", "enum": ["dependency", "timeout", "stuck", "unreachable", "failed"] },
+        { "$ref": "#/$defs/CustomName" }
+      ]
+    },
+    "Unit": {
+      "description": "Unit (Appendix B.4).",
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "m",
+            "mm",
+            "m/s",
+            "m/s²",
+            "deg",
+            "deg/s",
+            "rad",
+            "rad/s",
+            "s",
+            "ms",
+            "min",
+            "Hz",
+            "bpm",
+            "V",
+            "A",
+            "W",
+            "Wh",
+            "%",
+            "°C",
+            "Pa",
+            "kPa",
+            "lux",
+            "ppm",
+            "dB",
+            "dBm",
+            "kg",
+            "N",
+            "N·m",
+            "kbit/s"
+          ]
+        },
+        { "$ref": "#/$defs/CustomName" }
+      ]
+    },
+    "Encoding": {
+      "description": "What the pixels of an image or video mean (MOS Appendix B).",
+      "type": "string",
+      "enum": ["rgb", "mono", "depth", "thermal", "ir"]
+    },
+    "Localization": {
+      "description": "How the device knows where it is (5.2).",
+      "type": "string",
+      "enum": ["none", "fixed", "self", "external"]
+    },
+    "Placement": {
+      "description": "Where a fixed device is installed: its body pose in a map frame (5.2).",
+      "type": "object",
+      "required": ["map", "x", "y", "yaw"],
+      "properties": {
+        "map": { "$ref": "#/$defs/MapId" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "yaw": { "type": "number" }
+      }
+    },
+    "Place": {
+      "description": "A named place on a map: a landmark or a zone (MOS 3.5).",
+      "oneOf": [{ "$ref": "#/$defs/Landmark" }, { "$ref": "#/$defs/Zone" }]
+    },
+    "Landmark": {
+      "description": "A named point on a map; yaw is the direction to face there (MOS 3.5).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/MapId" },
+        "name": { "type": "string" },
+        "at": { "$ref": "#/$defs/Vec2" },
+        "yaw": { "type": "number" },
+        "description": { "$ref": "#/$defs/Text" }
+      }
+    },
+    "Zone": {
+      "description": "A named area on a map, outlined by at least three points (MOS 3.5).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "points"],
+      "properties": {
+        "id": { "$ref": "#/$defs/MapId" },
+        "name": { "type": "string" },
+        "points": { "type": "array", "items": { "$ref": "#/$defs/Vec2" }, "minItems": 3 },
+        "description": { "$ref": "#/$defs/Text" }
+      }
+    },
+    "MapAnchor": {
+      "description": "Where a map frame lies in a wider one: in another map, or on the Earth (MOS 3.5).",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["map", "x", "y", "yaw"],
+          "properties": {
+            "map": { "$ref": "#/$defs/MapId" },
+            "x": { "type": "number" },
+            "y": { "type": "number" },
+            "yaw": { "type": "number" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["lat", "lon", "heading"],
+          "properties": {
+            "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+            "lon": { "type": "number", "minimum": -180, "maximum": 180 },
+            "heading": { "type": "number" }
+          }
+        }
+      ]
+    },
+    "MapDecl": {
+      "description": "A map a device defines: its frame and named places (MOS 3.5).",
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "$ref": "#/$defs/MapId" },
+        "name": { "type": "string" },
+        "bounds": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
+        "anchor": { "$ref": "#/$defs/MapAnchor" },
+        "places": { "type": "array", "items": { "$ref": "#/$defs/Place" } }
+      }
+    },
+    "ConflictPolicy": {
+      "description": "What happens to a new call using a held resource (6.3).",
+      "type": "string",
+      "enum": ["reject", "queue"]
+    },
+    "ErrorCode": {
+      "description": "JSON-RPC error codes (3.2).",
+      "type": "integer",
+      "enum": [-32700, -32600, -32601, -32602, -32001, -32003]
+    },
+
+    "Request": {
+      "description": "JSON-RPC 2.0 request; ids are strings (MSG-1, MSG-2).",
+      "type": "object",
+      "required": ["jsonrpc", "id", "method"],
+      "properties": {
+        "jsonrpc": { "const": "2.0" },
+        "id": { "type": "string", "minLength": 1 },
+        "method": { "type": "string" },
+        "params": { "type": "object" }
+      }
+    },
+    "Notification": {
+      "description": "JSON-RPC 2.0 notification: a request without an id.",
+      "type": "object",
+      "required": ["jsonrpc", "method"],
+      "properties": {
+        "jsonrpc": { "const": "2.0" },
+        "method": { "type": "string" },
+        "params": { "type": "object" }
+      }
+    },
+    "Response": {
+      "description": "JSON-RPC 2.0 response: a result or an error.",
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["jsonrpc", "id", "result"],
+          "properties": {
+            "jsonrpc": { "const": "2.0" },
+            "id": { "type": "string", "minLength": 1 },
+            "result": { "type": "object" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["jsonrpc", "id", "error"],
+          "properties": {
+            "jsonrpc": { "const": "2.0" },
+            "id": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
+            "error": { "$ref": "#/$defs/Error" }
+          }
+        }
+      ]
+    },
+    "Error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "integer" },
+        "message": { "type": "string" },
+        "data": {}
+      }
+    },
+
+    "RegisterParams": {
+      "description": "mhs/register, device to hub: the device description (5).",
+      "type": "object",
+      "required": ["protocol", "device"],
+      "properties": {
+        "protocol": { "const": "mhs/v1" },
+        "device": { "$ref": "#/$defs/Device" },
+        "profile": { "$ref": "#/$defs/Profile" },
+        "localization": { "$ref": "#/$defs/Localization" },
+        "placement": { "$ref": "#/$defs/Placement" },
+        "maps": { "type": "array", "items": { "$ref": "#/$defs/MapDecl" } },
+        "resources": { "$ref": "#/$defs/Resources" },
+        "state": { "$ref": "#/$defs/StateFields" },
+        "sources": { "type": "array", "items": { "$ref": "#/$defs/Source" } },
+        "tools": { "type": "array", "items": { "$ref": "#/$defs/Tool" } },
+        "manual": { "$ref": "#/$defs/Manual" },
+        "ui": { "$ref": "#/$defs/DeviceUi" }
+      }
+    },
+    "RegisterResult": {
+      "description": "Reply to mhs/register (4.2).",
+      "type": "object",
+      "required": ["session", "hub", "time"],
+      "properties": {
+        "session": { "type": "string" },
+        "hub": {
+          "type": "object",
+          "required": ["name", "version"],
+          "properties": { "name": { "type": "string" }, "version": { "type": "string" } }
+        },
+        "time": { "$ref": "#/$defs/Time" }
+      }
+    },
+    "CallParams": {
+      "description": "mhs/call, hub to device (7.1). The request id is the call id.",
+      "type": "object",
+      "required": ["name", "arguments"],
+      "properties": {
+        "name": { "$ref": "#/$defs/ToolName" },
+        "arguments": { "type": "object" },
+        "meta": { "description": "Hub bookkeeping; devices must not act on it (CALL-1).", "type": "object" }
+      }
+    },
+    "CallReply": {
+      "description": "Reply to mhs/call: accepted, or rejected with a reason (7.1).",
+      "anyOf": [
+        { "$ref": "#/$defs/CallAccepted" },
+        { "$ref": "#/$defs/CallRejectedBusy" },
+        { "$ref": "#/$defs/CallRejected" }
+      ]
+    },
+    "CallAccepted": {
+      "type": "object",
+      "required": ["accepted"],
+      "properties": { "accepted": { "const": true } }
+    },
+    "CallRejectedBusy": {
+      "description": "A busy rejection names the holder (CALL-3).",
+      "type": "object",
+      "required": ["accepted", "status", "reason", "holder"],
+      "properties": {
+        "accepted": { "const": false },
+        "status": { "const": "rejected" },
+        "reason": { "const": "busy" },
+        "detail": { "$ref": "#/$defs/Text" },
+        "holder": { "$ref": "#/$defs/Holder" }
+      }
+    },
+    "CallRejected": {
+      "type": "object",
+      "required": ["accepted", "status", "reason"],
+      "properties": {
+        "accepted": { "const": false },
+        "status": { "const": "rejected" },
+        "reason": { "$ref": "#/$defs/RejectReason" },
+        "detail": { "$ref": "#/$defs/Text" }
+      }
+    },
+    "Holder": {
+      "description": "What holds a resource: a call, or manual control (7.1, 10.1).",
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["call", "tool"],
+          "properties": { "call": { "type": "string" }, "tool": { "$ref": "#/$defs/ToolName" } }
+        },
+        {
+          "type": "object",
+          "required": ["manual"],
+          "properties": { "manual": { "const": true } }
+        }
+      ]
+    },
+    "ProgressParams": {
+      "description": "mhs/progress, device to hub (7.2).",
+      "type": "object",
+      "required": ["call"],
+      "properties": {
+        "call": { "type": "string" },
+        "done": { "type": "number" },
+        "total": { "type": "number" },
+        "text": { "$ref": "#/$defs/Text" },
+        "data": { "type": "object" },
+        "state": { "type": "string", "enum": ["paused", "running"] }
+      }
+    },
+    "ResultParams": {
+      "description": "mhs/result, device to hub: exactly one per accepted call (7.3).",
+      "anyOf": [
+        { "$ref": "#/$defs/ResultDone" },
+        { "$ref": "#/$defs/ResultInterrupted" },
+        { "$ref": "#/$defs/ResultError" }
+      ]
+    },
+    "ResultCommon": {
+      "type": "object",
+      "required": ["call"],
+      "properties": {
+        "call": { "type": "string" },
+        "detail": { "$ref": "#/$defs/Text" },
+        "notes": { "type": "array", "items": { "$ref": "#/$defs/Text" } },
+        "data": { "type": "object" },
+        "after": { "$ref": "#/$defs/After" }
+      }
+    },
+    "ResultDone": {
+      "allOf": [
+        { "$ref": "#/$defs/ResultCommon" },
+        {
+          "type": "object",
+          "required": ["status"],
+          "properties": { "status": { "const": "done" } }
+        }
+      ]
+    },
+    "ResultInterrupted": {
+      "allOf": [
+        { "$ref": "#/$defs/ResultCommon" },
+        {
+          "type": "object",
+          "required": ["status", "reason"],
+          "properties": {
+            "status": { "const": "interrupted" },
+            "reason": { "$ref": "#/$defs/InterruptReason" }
+          }
+        }
+      ]
+    },
+    "ResultError": {
+      "allOf": [
+        { "$ref": "#/$defs/ResultCommon" },
+        {
+          "type": "object",
+          "required": ["status", "reason"],
+          "properties": {
+            "status": { "const": "error" },
+            "reason": { "$ref": "#/$defs/ErrorReason" }
+          }
+        }
+      ]
+    },
+    "After": {
+      "description": "Snapshot when a call ended; mobile devices include odometry (7.3).",
+      "type": "object",
+      "properties": {
+        "odometry": { "$ref": "#/$defs/OdometryData" },
+        "pose": { "$ref": "#/$defs/PoseData" }
+      }
+    },
+    "CallRef": {
+      "description": "Params of mhs/cancel, mhs/pause and mhs/resume (8).",
+      "type": "object",
+      "required": ["call"],
+      "properties": { "call": { "type": "string" } }
+    },
+    "Empty": {
+      "description": "Params of mhs/stop and mhs/time.",
+      "type": "object"
+    },
+    "CancelResult": {
+      "type": "object",
+      "required": ["cancelled"],
+      "properties": { "cancelled": { "type": "boolean" } }
+    },
+    "StopResult": {
+      "description": "The ids of the calls the stop interrupted (8.2).",
+      "type": "object",
+      "required": ["stopped"],
+      "properties": { "stopped": { "type": "array", "items": { "type": "string" } } }
+    },
+    "PauseResult": {
+      "type": "object",
+      "required": ["paused"],
+      "properties": { "paused": { "type": "boolean" } }
+    },
+    "ResumeResult": {
+      "type": "object",
+      "required": ["resumed"],
+      "properties": { "resumed": { "type": "boolean" } }
+    },
+    "ConfigureParams": {
+      "description": "mhs/configure, hub to device: which sources to stream and how (MOS 8).",
+      "type": "object",
+      "required": ["sources"],
+      "properties": { "sources": { "$ref": "#/$defs/SourceSettings" } }
+    },
+    "ConfigureResult": {
+      "description": "What the device actually applied (MOS STR-4).",
+      "type": "object",
+      "required": ["sources"],
+      "properties": { "sources": { "$ref": "#/$defs/SourceSettings" } }
+    },
+    "SourceSettings": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+      "additionalProperties": { "$ref": "#/$defs/SourceSetting" }
+    },
+    "SourceSetting": {
+      "type": "object",
+      "properties": {
+        "on": { "type": "boolean" },
+        "hz": { "type": "number", "minimum": 0 },
+        "bitrate_kbps": { "type": "number", "minimum": 0 },
+        "size": { "$ref": "#/$defs/Size" }
+      }
+    },
+    "KeyframeParams": {
+      "description": "mhs/keyframe, hub to device (MOS 7).",
+      "type": "object",
+      "required": ["sources"],
+      "properties": { "sources": { "type": "array", "items": { "$ref": "#/$defs/Name" } } }
+    },
+    "KeyframeResult": {
+      "type": "object",
+      "required": ["sources"],
+      "properties": { "sources": { "type": "array", "items": { "$ref": "#/$defs/Name" } } }
+    },
+    "StateParams": {
+      "description": "mhs/state, device to hub: changed state values; all of them right after registration (MHS 10.1, STATE-1, STATE-2).",
+      "type": "object",
+      "required": ["t", "values"],
+      "properties": {
+        "t": { "$ref": "#/$defs/Time" },
+        "values": { "$ref": "#/$defs/StateValues" }
+      }
+    },
+    "StateValues": {
+      "description": "State values by field name. Each value follows its field's declaration; problem is a sentence or null, faults a list of codes.",
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+      "additionalProperties": {
+        "anyOf": [
+          { "type": "number" },
+          { "type": "boolean" },
+          { "type": "string" },
+          { "type": "null" },
+          { "type": "array", "items": { "type": "string" } }
+        ]
+      }
+    },
+    "SetParams": {
+      "description": "mhs/set, hub to device: new values for writable state fields (MHS 10.1, STATE-3).",
+      "type": "object",
+      "required": ["values"],
+      "properties": { "values": { "$ref": "#/$defs/StateValues" } }
+    },
+    "SetResult": {
+      "description": "The values in effect after mhs/set, notes on clamping, and the fields left unchanged with why.",
+      "type": "object",
+      "required": ["values"],
+      "properties": {
+        "values": { "$ref": "#/$defs/StateValues" },
+        "notes": { "type": "array", "items": { "$ref": "#/$defs/Text" } },
+        "refused": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+          "additionalProperties": { "$ref": "#/$defs/Text" }
+        }
+      }
+    },
+    "TimeResult": {
+      "description": "The device clock, the same clock as data t (MOS TIME-2).",
+      "type": "object",
+      "required": ["t"],
+      "properties": { "t": { "$ref": "#/$defs/Time" } }
+    },
+
+    "NerveHello": {
+      "description": "First message on the Nerve channel (MOS 2.1, CONN-4).",
+      "type": "object",
+      "required": ["type", "device"],
+      "properties": { "type": { "const": "hello" }, "device": { "$ref": "#/$defs/DeviceId" } }
+    },
+    "NerveData": {
+      "description": "One data message (MOS 5). The payload is checked against the data definition of the source's kind.",
+      "type": "object",
+      "required": ["type", "source", "seq", "t", "data"],
+      "properties": {
+        "type": { "const": "data" },
+        "source": { "$ref": "#/$defs/Name" },
+        "seq": { "type": "integer", "minimum": 0 },
+        "t": { "$ref": "#/$defs/Time" },
+        "data": { "type": "object" },
+        "bin": { "type": "boolean" },
+        "of_seq": { "type": "integer", "minimum": 0 },
+        "lag": { "type": "number", "minimum": 0 }
+      }
+    },
+    "NerveManual": {
+      "description": "Manual input, hub to device; absent axes are zero (9).",
+      "type": "object",
+      "required": ["type", "axes"],
+      "properties": {
+        "type": { "const": "manual" },
+        "axes": {
+          "type": "object",
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+          "additionalProperties": { "type": "number" }
+        }
+      }
+    },
+    "NerveClip": {
+      "description": "An audio clip for the device; 16-bit little-endian PCM follows as a binary frame (MOS 2.3).",
+      "type": "object",
+      "required": ["type", "id", "rate", "channels"],
+      "properties": {
+        "type": { "const": "clip" },
+        "id": { "type": "string", "minLength": 1 },
+        "rate": { "type": "integer", "minimum": 1 },
+        "channels": { "type": "integer", "minimum": 1 }
+      }
+    },
+
+    "Device": {
+      "type": "object",
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "$ref": "#/$defs/DeviceId" },
+        "kind": { "$ref": "#/$defs/Short" },
+        "model": { "$ref": "#/$defs/Short" },
+        "name": { "$ref": "#/$defs/Short" },
+        "vendor": { "$ref": "#/$defs/Short" },
+        "firmware": { "$ref": "#/$defs/Short" },
+        "mobile": { "type": "boolean" },
+        "radius": { "type": "number", "minimum": 0 }
+      }
+    },
+    "Profile": {
+      "description": "Physical facts and usage notes, informative (5.1).",
+      "type": "object",
+      "properties": {
+        "size_m": { "$ref": "#/$defs/Vec3" },
+        "weight_kg": { "type": "number", "minimum": 0 },
+        "max_speed": { "type": "number", "minimum": 0 },
+        "reach_m": { "type": "number", "minimum": 0 },
+        "payload_kg": { "type": "number", "minimum": 0 },
+        "runtime_min": { "type": "number", "minimum": 0 },
+        "notes": { "$ref": "#/$defs/Text" }
+      }
+    },
+    "Resources": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+      "additionalProperties": { "$ref": "#/$defs/ConflictPolicy" }
+    },
+    "Tool": {
+      "description": "A tool declaration (6.1).",
+      "type": "object",
+      "required": ["name", "description", "inputSchema", "timeout"],
+      "properties": {
+        "name": { "$ref": "#/$defs/ToolName" },
+        "description": { "$ref": "#/$defs/Text" },
+        "inputSchema": { "$ref": "#/$defs/InputSchema" },
+        "uses": { "type": "array", "items": { "$ref": "#/$defs/Name" } },
+        "motion": { "type": "boolean" },
+        "readOnly": { "type": "boolean" },
+        "pausable": { "type": "boolean" },
+        "needs": { "type": "array", "items": { "type": "string" } },
+        "timeout": { "type": "number", "minimum": 0 },
+        "ui": { "$ref": "#/$defs/ToolUi" }
+      }
+    },
+    "InputSchema": {
+      "description": "The parameters of a tool: an object schema in the subset of 6.2.",
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "object" },
+        "properties": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/ParamSchema" }
+        },
+        "required": { "type": "array", "items": { "type": "string" } },
+        "description": { "type": "string" }
+      }
+    },
+    "ParamSchema": {
+      "description": "One parameter: only the keywords of 6.2 (TOOL-1), plus presentation hints.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["object", "number", "integer", "string", "boolean", "array"] },
+        "properties": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/ParamSchema" }
+        },
+        "required": { "type": "array", "items": { "type": "string" } },
+        "default": {},
+        "minimum": { "type": "number" },
+        "maximum": { "type": "number" },
+        "maxLength": { "type": "integer", "minimum": 0 },
+        "items": { "$ref": "#/$defs/ParamSchema" },
+        "minItems": { "type": "integer", "minimum": 0 },
+        "maxItems": { "type": "integer", "minimum": 0 },
+        "enum": { "type": "array", "minItems": 1 },
+        "description": { "type": "string" },
+        "ui": { "$ref": "#/$defs/ParamUi" }
+      }
+    },
+    "Mount": {
+      "description": "Pose of a sensor in the body frame: meters and degrees, intrinsic Z-Y-X (3.4).",
+      "type": "object",
+      "required": ["xyz", "rpy"],
+      "properties": { "xyz": { "$ref": "#/$defs/Vec3" }, "rpy": { "$ref": "#/$defs/Vec3" } }
+    },
+    "Model": {
+      "description": "What computes a derived source (MOS 4).",
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": { "name": { "type": "string" }, "version": { "type": "string" } }
+    },
+    "Field": {
+      "description": "A field of a values or switch source (MOS 3.3), or of the device state (MHS 10.1).",
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "enum": ["number", "integer", "boolean", "string"] },
+        "enum": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "unit": { "$ref": "#/$defs/Unit" },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "alert": {
+          "type": "object",
+          "properties": {
+            "warn": { "type": "number" },
+            "bad": { "type": "number" },
+            "below": { "type": "boolean" }
+          }
+        },
+        "role": { "$ref": "#/$defs/FieldRole" },
+        "of": { "$ref": "#/$defs/Name" },
+        "description": { "$ref": "#/$defs/Text" },
+        "ui": { "$ref": "#/$defs/FieldUi" }
+      }
+    },
+    "StateField": {
+      "description": "A state field (MHS 10.1): a field declaration plus whether the hub may set it.",
+      "allOf": [
+        { "$ref": "#/$defs/Field" },
+        { "type": "object", "properties": { "writable": { "type": "boolean" } } }
+      ]
+    },
+    "StateFields": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+      "additionalProperties": { "$ref": "#/$defs/StateField" }
+    },
+    "Fields": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+      "additionalProperties": { "$ref": "#/$defs/Field" }
+    },
+    "Manual": {
+      "description": "What a person can steer by hand (9).",
+      "type": "object",
+      "required": ["axes", "rate_hz", "deadman_s"],
+      "properties": {
+        "axes": { "type": "array", "items": { "$ref": "#/$defs/Axis" }, "minItems": 1 },
+        "rate_hz": { "type": "number", "minimum": 0 },
+        "deadman_s": { "type": "number", "minimum": 0 },
+        "speeds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["label", "scale"],
+            "properties": {
+              "label": { "type": "string" },
+              "scale": { "type": "number", "minimum": 0, "maximum": 1 }
+            }
+          }
+        }
+      }
+    },
+    "Axis": {
+      "type": "object",
+      "required": ["id", "role", "unit", "min", "max"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Name" },
+        "role": { "$ref": "#/$defs/AxisRole" },
+        "unit": { "$ref": "#/$defs/Unit" },
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "keys": { "type": "array", "items": { "type": "string" }, "minItems": 2, "maxItems": 2 },
+        "joint": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "DeviceUi": {
+      "description": "Presentation hints for a device (Appendix B.7).",
+      "type": "object",
+      "properties": {
+        "icon": { "type": "string" },
+        "primary": { "$ref": "#/$defs/Name" },
+        "order": { "type": "number" }
+      }
+    },
+    "SourceUi": {
+      "type": "object",
+      "properties": {
+        "group": { "type": "string" },
+        "order": { "type": "number" },
+        "label": { "type": "string" },
+        "hidden": { "type": "boolean" },
+        "widget": { "type": "string" }
+      }
+    },
+    "FieldUi": {
+      "type": "object",
+      "properties": {
+        "label": { "type": "string" },
+        "tile": { "type": "boolean" },
+        "widget": { "type": "string" },
+        "hidden": { "type": "boolean" }
+      }
+    },
+    "ToolUi": {
+      "type": "object",
+      "properties": {
+        "group": { "type": "string" },
+        "label": { "type": "string" },
+        "confirm": { "anyOf": [{ "type": "boolean" }, { "type": "string" }] },
+        "hidden": { "type": "boolean" },
+        "widget": { "type": "string" }
+      }
+    },
+    "ParamUi": {
+      "type": "object",
+      "properties": {
+        "pick": { "type": "string", "enum": ["map-point", "map-pose", "map-polygon"] },
+        "limit": { "type": "number" },
+        "label": { "type": "string" }
+      }
+    },
+
+    "Source": {
+      "description": "A data source a device declares (MOS 3.1): one of the kinds a device may produce. world is produced by hubs only.",
+      "anyOf": [
+        { "$ref": "#/$defs/ImageSource" },
+        { "$ref": "#/$defs/VideoSource" },
+        { "$ref": "#/$defs/ScanSource" },
+        { "$ref": "#/$defs/PointsSource" },
+        { "$ref": "#/$defs/AudioSource" },
+        { "$ref": "#/$defs/PlainSource" },
+        { "$ref": "#/$defs/ValuesSource" },
+        { "$ref": "#/$defs/DetectionsSource" },
+        { "$ref": "#/$defs/PoseSource" },
+        { "$ref": "#/$defs/GridSource" },
+        { "$ref": "#/$defs/TranscriptSource" },
+        { "$ref": "#/$defs/CustomSource" }
+      ]
+    },
+    "SourceCommon": {
+      "type": "object",
+      "required": ["id", "kind", "description"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Name" },
+        "kind": { "$ref": "#/$defs/Kind" },
+        "description": { "$ref": "#/$defs/Text" },
+        "hz": { "type": "number", "minimum": 0 },
+        "mount": { "$ref": "#/$defs/Mount" },
+        "switchable": { "type": "boolean" },
+        "default": { "type": "boolean" },
+        "ui": { "$ref": "#/$defs/SourceUi" }
+      }
+    },
+    "ImageSource": {
+      "allOf": [
+        { "$ref": "#/$defs/SourceCommon" },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "image" },
+            "encoding": { "$ref": "#/$defs/Encoding" },
+            "mime": { "type": "string", "enum": ["image/jpeg", "image/png"] },
+            "size": { "$ref": "#/$defs/Size" },
+            "sizes": { "type": "array", "items": { "$ref": "#/$defs/Size" } },
+            "fov_deg": { "$ref": "#/$defs/Vec2" },
+            "range_m": { "$ref": "#/$defs/Range" },
+            "depth_units": { "const": "mm" }
+          }
+        }
+      ]
+    },
+    "VideoSource": {
+      "allOf": [
+        { "$ref": "#/$defs/SourceCommon" },
+        {
+          "type": "object",
+          "required": ["codec", "gop_s"],
+          "properties": {
+            "kind": { "const": "video" },
+            "codec": { "const": "h264" },
+            "encoding": { "$ref": "#/$defs/Encoding" },
+            "size": { "$ref": "#/$defs/Size" },
+            "sizes": { "type": "array", "items": { "$ref": "#/$defs/Size" } },
+            "fov_deg": { "$ref": "#/$defs/Vec2" },
+            "bitrate_kbps": { "$ref": "#/$defs/Range" },
+            "gop_s": { "type": "number", "minimum": 0, "maximum": 2 },
+            "profile": { "type": "string", "enum": ["baseline", "main", "high"] }
+          }
+        }
+      ]
+    },
+    "ScanSource": {
+      "allOf": [
+        { "$ref": "#/$defs/SourceCommon" },
+        {
+          "type": "object",
+          "properties": { "kind": { "const": "scan" }, "range_m": { "$ref": "#/$defs/Range" } }
+        }
+      ]
+    },
+    "PointsSource": {
+      "allOf": [
+        { "$ref": "#/$defs/SourceCommon" },
+        {
+          "type": "object",
+          "properties": { "kind": { "const": "points" }, "range_m": { "$ref": "#/$defs/Range" } }
+        }
+      ]
+    },
+    "AudioSource": {
+      "allOf": [
+        { "$ref": "#/$defs/SourceCommon" },
+        {
+          "type": "object",
+          "required": ["rate", "channels"],
+          "properties": {
+            "kind": { "const": "audio" },
+            "rate": { "type": "integer", "minimum": 1 },
+            "channels": { "type": "integer", "minimum": 1 }
+          }
+        }
+      ]
+    },
+    "PlainSource": {
+      "description": "Kinds without declaration metadata.",
+      "allOf": [
+        { "$ref": "#/$defs/SourceCommon" },
+        {
+          "type": "object",
+          "properties": { "kind": { "type": "string", "enum": ["imu", "odometry", "gnss", "text"] } }
+        }
+      ]
+    },
+    "ValuesSource": {
+      "description": "values and switch sources declare their fields (MOS 3.3).",
+      "allOf": [
+        { "$ref": "#/$defs/SourceCommon" },
+        {
+          "type": "object",
+          "required": ["fields"],
+          "properties": {
+            "kind": { "type": "string", "enum": ["values", "switch"] },
+            "fields": { "$ref": "#/$defs/Fields" }
+          }
+        }
+      ]
+    },
+    "DetectionsSource": {
+      "allOf": [
+        { "$ref": "#/$defs/SourceCommon" },
+        {
+          "type": "object",
+          "required": ["of", "model"],
+          "properties": {
+            "kind": { "const": "detections" },
+            "of": { "$ref": "#/$defs/Name" },
+            "model": { "$ref": "#/$defs/Model" },
+            "labels": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      ]
+    },
+    "PoseSource": {
+      "allOf": [
+        { "$ref": "#/$defs/SourceCommon" },
+        {
+          "type": "object",
+          "required": ["model"],
+          "properties": {
+            "kind": { "const": "pose" },
+            "of": { "$ref": "#/$defs/Name" },
+            "model": { "$ref": "#/$defs/Model" },
+            "max_error_m": { "type": "number", "minimum": 0 }
+          }
+        }
+      ]
+    },
+    "GridSource": {
+      "allOf": [
+        { "$ref": "#/$defs/SourceCommon" },
+        {
+          "type": "object",
+          "required": ["model"],
+          "properties": { "kind": { "const": "grid" }, "model": { "$ref": "#/$defs/Model" } }
+        }
+      ]
+    },
+    "TranscriptSource": {
+      "allOf": [
+        { "$ref": "#/$defs/SourceCommon" },
+        {
+          "type": "object",
+          "required": ["of", "model"],
+          "properties": {
+            "kind": { "const": "transcript" },
+            "of": { "$ref": "#/$defs/Name" },
+            "model": { "$ref": "#/$defs/Model" },
+            "lang": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "CustomSource": {
+      "allOf": [
+        { "$ref": "#/$defs/SourceCommon" },
+        {
+          "type": "object",
+          "properties": { "kind": { "$ref": "#/$defs/CustomName" }, "fields": { "$ref": "#/$defs/Fields" } }
+        }
+      ]
+    },
+
+    "ImageData": {
+      "description": "image: a JPEG or PNG follows as a binary frame.",
+      "type": "object",
+      "required": ["w", "h"],
+      "properties": { "w": { "type": "integer", "minimum": 1 }, "h": { "type": "integer", "minimum": 1 } }
+    },
+    "VideoData": {
+      "description": "video: one H.264 access unit in Annex B format follows as a binary frame (MOS 7).",
+      "type": "object",
+      "required": ["key", "w", "h"],
+      "properties": {
+        "key": { "type": "boolean" },
+        "w": { "type": "integer", "minimum": 1 },
+        "h": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "ScanData": {
+      "description": "scan: degrees in the sensor frame, counter-clockwise; ranges in meters, null for no return.",
+      "type": "object",
+      "required": ["angle_min", "angle_inc", "ranges"],
+      "properties": {
+        "angle_min": { "type": "number" },
+        "angle_inc": { "type": "number" },
+        "ranges": { "type": "array", "items": { "anyOf": [{ "type": "number" }, { "type": "null" }] } }
+      }
+    },
+    "PointsData": {
+      "description": "points: little-endian float32 records follow as a binary frame.",
+      "type": "object",
+      "required": ["n", "fields"],
+      "properties": {
+        "n": { "type": "integer", "minimum": 0 },
+        "fields": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+      }
+    },
+    "AudioData": {
+      "description": "audio: little-endian signed 16-bit PCM, interleaved, follows as a binary frame.",
+      "type": "object",
+      "required": ["rate", "channels"],
+      "properties": {
+        "rate": { "type": "integer", "minimum": 1 },
+        "channels": { "type": "integer", "minimum": 1 },
+        "speaking": { "type": "boolean" }
+      }
+    },
+    "ImuData": {
+      "type": "object",
+      "required": ["accel", "gyro"],
+      "properties": {
+        "accel": { "$ref": "#/$defs/Vec3" },
+        "gyro": { "$ref": "#/$defs/Vec3" },
+        "rpy": { "$ref": "#/$defs/Vec3" }
+      }
+    },
+    "OdometryData": {
+      "description": "Relative to where the device started: meters, degrees, m/s, deg/s.",
+      "type": "object",
+      "required": ["x", "y", "yaw", "v", "w"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "yaw": { "type": "number" },
+        "v": { "type": "number" },
+        "w": { "type": "number" }
+      }
+    },
+    "GnssData": {
+      "type": "object",
+      "required": ["lat", "lon", "fix", "acc_m"],
+      "properties": {
+        "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+        "lon": { "type": "number", "minimum": -180, "maximum": 180 },
+        "alt": { "type": "number" },
+        "fix": { "type": "string", "enum": ["none", "2d", "3d", "rtk"] },
+        "acc_m": { "type": "number", "minimum": 0 }
+      }
+    },
+    "ValuesData": {
+      "description": "values: only the fields that changed may be sent (MOS 3.3).",
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+      "additionalProperties": { "anyOf": [{ "type": "number" }, { "type": "boolean" }, { "type": "string" }] }
+    },
+    "SwitchData": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+      "additionalProperties": { "anyOf": [{ "type": "boolean" }, { "type": "string" }] }
+    },
+    "TextData": {
+      "type": "object",
+      "required": ["text"],
+      "properties": { "text": { "type": "string" } }
+    },
+    "DetectionsData": {
+      "description": "Boxes in pixels of the of image; bearing in degrees, left positive; dist in meters (MOS PER-5).",
+      "type": "object",
+      "required": ["w", "h", "items"],
+      "properties": {
+        "w": { "type": "integer", "minimum": 1 },
+        "h": { "type": "integer", "minimum": 1 },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/Detection" } }
+      }
+    },
+    "Detection": {
+      "type": "object",
+      "required": ["label", "conf", "box"],
+      "properties": {
+        "label": { "type": "string" },
+        "conf": { "type": "number", "minimum": 0, "maximum": 1 },
+        "box": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
+        "track": { "type": "integer" },
+        "bearing": { "type": "number" },
+        "dist": { "type": "number", "minimum": 0 }
+      }
+    },
+    "PoseData": {
+      "description": "A map-frame pose; ok says whether the fix is trusted; cov is the 3x3 covariance of x, y, yaw.",
+      "type": "object",
+      "required": ["map", "x", "y", "yaw", "ok"],
+      "properties": {
+        "map": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "yaw": { "type": "number" },
+        "ok": { "type": "boolean" },
+        "cov": { "type": "array", "items": { "type": "number" }, "minItems": 9, "maxItems": 9 }
+      }
+    },
+    "GridData": {
+      "description": "grid: an 8-bit grayscale PNG follows; 255 free, 0 occupied, 128 unknown; the top row is the largest y.",
+      "type": "object",
+      "required": ["id", "resolution", "origin"],
+      "properties": {
+        "id": { "type": "string" },
+        "resolution": { "type": "number", "minimum": 0 },
+        "origin": { "$ref": "#/$defs/Vec2" }
+      }
+    },
+    "TranscriptData": {
+      "description": "One utterance; final false for a partial result that will be replaced.",
+      "type": "object",
+      "required": ["text", "final", "start", "end"],
+      "properties": {
+        "text": { "type": "string" },
+        "final": { "type": "boolean" },
+        "start": { "$ref": "#/$defs/Time" },
+        "end": { "$ref": "#/$defs/Time" },
+        "lang": { "type": "string" },
+        "speaking": { "type": "boolean" }
+      }
+    },
+    "WorldData": {
+      "description": "world: one map as the hub knows it, with the devices on it now; produced by hubs only.",
+      "type": "object",
+      "required": ["map", "entities"],
+      "properties": {
+        "map": { "type": "string" },
+        "name": { "type": "string" },
+        "bounds": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
+        "entities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["device", "x", "y", "yaw", "ok"],
+            "properties": {
+              "device": { "$ref": "#/$defs/DeviceId" },
+              "x": { "type": "number" },
+              "y": { "type": "number" },
+              "yaw": { "type": "number" },
+              "ok": { "type": "boolean" },
+              "fixed": { "type": "boolean" },
+              "zone": { "type": "string" }
+            }
+          }
+        },
+        "places": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Place"
+          }
+        }
+      }
+    },
+    "CustomData": {
+      "description": "x_ kinds: any object.",
+      "type": "object"
+    }
+  }
+}

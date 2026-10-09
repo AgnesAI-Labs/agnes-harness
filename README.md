@@ -17,7 +17,7 @@ English | [简体中文](README.zh-CN.md)
 <img src="https://img.shields.io/badge/node-%E2%89%A5%2024.10-339933" alt="Node.js 24.10 or later" />
 <img src="https://img.shields.io/badge/local%20checks-macOS-3b8fff" alt="Recorded local checks: macOS" />
 
-[Quickstart](docs/guide/quickstart.md) · [Architecture](#architecture) · [Try the examples](docs/guide/demo.md) · [Build a plugin](docs/develop/plugins.md) · [Documentation](docs/README.md) · [MHS (coming soon)](docs/guide/mhs.md)
+[Quickstart](docs/guide/quickstart.md) · [Architecture](#architecture) · [Try the examples](docs/guide/demo.md) · [Build a plugin](docs/develop/plugins.md) · [Documentation](docs/README.md) · [MHS and devices](docs/guide/mhs.md)
 
 Developer preview (pre-alpha) · [Source build](#run-from-source) · [Apache-2.0](LICENSE)
 
@@ -65,7 +65,7 @@ What it is not, so you can choose the right trial:
 
 - **Not a hosted service.** AGH is a developer preview that you build from source and run in your own environment.
 - **Not a sandbox for arbitrary plugin code.** Ordinary backend plugins run as trusted in-process code; approvals and the command sandbox apply to the supported execution paths. See [security and trust](docs/guide/security.md).
-- **Not a certified device driver.** MHS device integration builds on MCP and is coming soon. No public MHS specification is open for certification, and device controllers keep real-time control and physical safety.
+- **Not a certified device driver.** MHS is AGH's own device protocol, independent of MCP. Passing its conformance suite does not certify a device as safe, and device controllers keep real-time control and physical safety.
 - **Not finished.** APIs, configuration, and plugin interfaces are evolving and may change.
 
 <a id="architecture"></a>
@@ -82,7 +82,7 @@ The brain, cerebellum, memory and body describe AGH's vision: combine reasoning,
 | **LLM / brain** | Understand requests, reason about the task, and propose actions | Model integration through AI providers |
 | **Jev / cerebellum** | Structured decisions such as routing and scoring to help coordinate execution | Integration in progress; main currently uses the built-in Core loop |
 | **Harness / memory** | Retain session history, task state, execution records, and reusable methods in Skills | Existing task context and recovery mechanisms; Harness also runs and governs execution |
-| **MHS / body** | Connect device capabilities so tasks can read physical state and request actions | Device integration through MCP-based adapters; AGH guides and examples are coming soon |
+| **MHS / body** | Connect device capabilities so tasks can read physical state and request actions | MHS and MOS 1.0 specifications, device libraries, the `mhs-check` conformance suite, and AgnesHub as an optional plugin with device tools for the brain |
 
 FDE is a delivery approach; MHS brings devices into the same work. Both build on the same foundation, and an FDE deployment can include devices.
 
@@ -91,9 +91,9 @@ FDE is a delivery approach; MHS brings devices into the same work. Both build on
 | **App Server** | Shared sessions, task submission, event delivery, and approval routing for CLI, Web, and SDK clients | Task entry points, human confirmation, and status presentation |
 | **Agent Loop** | Model/tool execution, task state, event records, interruption handling, and recovery | High-level device task orchestration and result records |
 | **Sandbox / execution constraints** | Tool authorization and applicable command, file, network, and process constraints | Software execution boundaries; device controllers retain motion control, interlocks, and emergency stops |
-| **Plugins** | Backend tools/services, Web panels, Skills, hooks, and MCP connections, organized with Cordis and package governance | An extension path for MCP-based device adapters and device-facing interfaces; adapters still require implementation and validation |
+| **Plugins** | Backend tools/services, Web panels, Skills, hooks, and MCP connections, organized with Cordis and package governance | AgnesHub runs as an optional plugin: device tools for the brain and a Devices panel in the workbench |
 
-Business connectors and workbenches are built through these extension paths for each deployment. The current repository has no verified general-purpose MHS adapter or end-to-end device example.
+Business connectors and workbenches are built through these extension paths for each deployment. Devices connect through MHS; the repository includes sample devices and a development hub for trying them without hardware.
 
 Follow the actual request path and source ownership in the [architecture guide](docs/develop/architecture.md), or explore the [source map](docs/develop/source-map.md).
 
@@ -139,7 +139,7 @@ Capture task methods in [Skills](docs/guide/skills.md) and package reusable busi
 
 ### 6. The site also has devices
 
-From inspection to instrument coordination, field work connects device state, human judgment, and business workflows. AGH's device integration direction builds on MCP (Model Context Protocol) rather than a vendor-specific SDK, bringing state reads, action requests, and execution receipts into the same task flow. **MHS integration documentation and examples are coming soon.** [Explore the device integration direction →](docs/guide/mhs.md)
+From inspection to instrument coordination, field work connects device state, human judgment, and business workflows. Agnes MHS (Model Hardware Standard) is AGH's own open device protocol, independent of MCP and of vendor-specific SDKs: a device connects to AgnesHub over WebSocket, registers its state, tools, and data sources, and takes calls. Its companion MOS (Model Observation Standard) streams what the device observes, such as camera images, maps, and places. State reads, action requests, and results join the same task flow. [Try devices without hardware →](docs/guide/mhs.md)
 
 ## Public benchmark
 
@@ -156,7 +156,7 @@ On the public [Agents' Last Exam (ALE) leaderboard](https://agents-last-exam.org
 - **FDE and solution engineers** delivering agents into customer systems and workflows
 - **Plugin developers** packaging business tools, services, and interfaces for reuse
 - **Teams that need oversight**: approvals before commands, records of every step, and explicit package trust
-- **Field and lab teams** preparing for device scenarios as MHS integration opens up
+- **Field and lab teams** bringing devices into tasks through MHS
 
 Not a fit yet if you need a hosted service, signed installers, or a production commitment today: AGH is a developer preview.
 
@@ -210,7 +210,7 @@ AGH is a developer preview.
 | Command sandbox and execution constraints | Platform-dependent |
 | Platforms | Recorded local checks on macOS with Node 24; Linux and Windows need separate acceptance |
 | Jev structured decisions | Integration in progress |
-| MHS device integration (MCP-based) | Coming soon |
+| MHS device integration through AgnesHub | Available as an optional plugin |
 
 Use [supported scope and known limitations](docs/reference/limitations.md) to choose your trial environment, and the [verification guide](docs/maintainers/verification.md) for reproducible checks and their scope.
 
@@ -226,7 +226,7 @@ Ordinary backend plugins run as trusted in-process code, so install only package
 Models connect through AI providers, and each provider's catalog determines the available capabilities. The demos on this page were recorded with Agnes AI `agnes-3.0-flash`; quality and tool selection vary by model.
 
 **Can MHS control devices today?**
-No. MHS documentation and examples are coming soon, built on MCP. Canceling an AGH task does not establish that a device stopped safely; device controllers keep interlocks and emergency stops.
+Yes, through AgnesHub: the brain calls the tools a device declares, and AgnesHub checks every call against that declaration. The [MHS guide](docs/guide/mhs.md) starts with sample devices. Canceling an AGH task does not establish that a device stopped safely; device controllers keep interlocks and emergency stops.
 
 **Do you accept pull requests?**
 Code and documentation pull requests are currently limited to invited internal developers. Issues for bug reports and use-case suggestions are welcome; see the [feedback and development policy](CONTRIBUTING.md).

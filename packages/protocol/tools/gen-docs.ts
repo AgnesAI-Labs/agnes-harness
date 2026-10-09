@@ -56,7 +56,7 @@ export function renderToolsMetaDoc(): string {
   const meta = (t.$defs as Record<string, unknown>).ToolMeta as Record<string, unknown>
   const props = meta.properties as Record<string, Record<string, unknown>>
   let md =
-    '# ToolDef meta, the eight keys\n\nGenerated from schema/tooldef.json by tools/gen-docs.ts. Do not edit by hand.\n\n'
+    '# ToolDef meta, eight required keys and one optional\n\nGenerated from schema/tooldef.json by tools/gen-docs.ts. Do not edit by hand.\n\n'
   md += '| key | shape | meaning and consumer |\n|---|---|---|\n'
   for (const k of Object.keys(props)) {
     const { description, ...shape } = props[k] as Record<string, unknown>

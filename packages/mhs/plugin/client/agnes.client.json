@@ -1,0 +1,11 @@
+{
+  "client": {
+    "entry": "./dist/index.js",
+    "styles": ["./dist/index.css"],
+    "slotCatalogVersion": "dsh-client-slots/v1",
+    "slots": ["rightbar", "sidebar.panellist", "shell.overlay", "tool.call.toolview"],
+    "publicConfig": { "hubUrl": "ws://127.0.0.1:4180/ws/hub" },
+    "services": [],
+    "projections": []
+  }
+}

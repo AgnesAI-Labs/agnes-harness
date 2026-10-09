@@ -1,4 +1,5 @@
 import { ARTIFACT_RECLAIMED_FAILURE, REQUEST_MEDIA_ARTIFACT_RECLAIMED } from '@agnes/host'
+import type { EventEnvelope } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { readScreenshotBytes, requestMediaOriginIsValid } from '../src/boot/screenshot-read.js'
 
@@ -25,6 +26,31 @@ describe('local screenshot read for request media', () => {
   ] as const)('checks image result origin %s and trust %s', (origin, trust, allowed) => {
     expect(requestMediaOriginIsValid({ origin, trust })).toBe(allowed)
   })
+  it.each([
+    ['a trusted result of a call that declared images', true, 'tool:read_device', 'trusted', 2, true],
+    ['a trusted result of a call that did not declare them', false, 'tool:read_device', 'trusted', 2, false],
+    ['an untrusted result of a call that declared images', true, 'tool:read_device', 'untrusted', 2, false],
+    ['a result naming another call as its source', true, 'tool:read_device', 'trusted', 1, false],
+    ['a result under another tool name', true, 'tool:other', 'trusted', 2, false],
+  ] as const)(
+    'another tool: allows %s only when declared',
+    (_label, declared, origin, trust, source, allowed) => {
+      const call = {
+        seq: 2,
+        lane: 'main',
+        type: 'tool/call',
+        origin: 'model',
+        trust: 'trusted',
+        data: {
+          toolUseId: 'call-1',
+          name: 'read_device',
+          resolvedPolicy: declared ? { returnsImages: true } : {},
+        },
+      } as unknown as EventEnvelope
+      const result = { origin, trust, lane: 'main', sourceEventSeqs: [source], data: { toolUseId: 'call-1' } }
+      expect(requestMediaOriginIsValid(result, call)).toBe(allowed)
+    },
+  )
   it('returns the reclaimed sentinel at the first MIME, after re-checking the reader', async () => {
     const artifacts = store(async () => {
       throw ARTIFACT_RECLAIMED_FAILURE

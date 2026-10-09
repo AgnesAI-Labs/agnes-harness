@@ -68,6 +68,39 @@ describe('rendered transcript region', () => {
     }, committed)
   })
 
+  it('keeps a session-scoped tool view registered once across new sessions and switches', async () => {
+    runtime = await mountRenderedIndex({ transcript: { nodeHost: 'react' } })
+    // A plugin registers its tool views once, when it is applied, not once per session.
+    runtime.registry.register(
+      { name: 'tool.call.toolview', key: 'probe_tool', id: 'fixture-tool-view', owner: 'fixture' },
+      () => createElement('span', { className: 'fixture-tool-view' }, '插件工具视图'),
+    )
+    const tool: UINode = {
+      kind: 'tool',
+      id: 'tool-1',
+      seq: 1,
+      toolUseId: 'call-1',
+      name: 'probe_tool',
+      status: 'completed',
+      summary: 'probe',
+      enforcement: { level: 'full', scope: ['file'] },
+      children: [],
+      slots: [],
+    }
+    // New session sets no session first; that remounts the conversation and its transcript.
+    for (const sessionId of ['session-a', undefined, 'session-b', undefined, 'session-a']) {
+      runtime.session.setSession(sessionId)
+      if (sessionId === undefined) continue
+      await vi.waitFor(() => expect(runtime?.transcript).toBeDefined(), committed)
+      await vi.waitFor(() => {
+        runtime?.transcript?.render([tool])
+        expect(document.querySelector('#transcript-content .fixture-tool-view')?.textContent).toBe(
+          '插件工具视图',
+        )
+      }, committed)
+    }
+  })
+
   it('renders a claimed plugin card through the default React region bootstrap', async () => {
     runtime = await mountRenderedIndex({
       transcript: { nodeHost: 'react' },
