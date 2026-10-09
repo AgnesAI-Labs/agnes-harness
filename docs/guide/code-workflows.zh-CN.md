@@ -36,6 +36,10 @@ return await tools.workflow({
 子任务使用官方 subagent_spawn 工具，继承深度、扇出、预算和 worktree 策略。
 后续阶段收到上一阶段的有界结果；成员失败后停止工作流。
 
+`ctx.subagent.collect()` 可返回可选的 `receipt`：工作区隔离信息、最多 32 条近期工具结果（名称、账本序号和错误状态），以及 `truncated` 标记。旧版本或外部子代理 provider 可省略该字段；缺失的证据不能视为执行成功回执。
+
+Workflow 回执区分后端工具结果和子代理自行撰写的报告。父代理及后续阶段通过上下文 section 收到当前执行事实，包含工作区隔离方式，以及工具证据是否不完整或不可用。worktree 产物仍留在子工作区，Workflow 不会将子分支合并到主工作区，Web 卡片会明确标注。另行验证集成操作后才能声称文件已进入主工作区；子代理说“已经合并”不构成集成回执。
+
 保留返回的 runId，通过 `workflow_status({ runId })` 查看持久状态，
 或 `workflow({ runId })` 恢复中断的运行。会话 ledger 保存子会话身份，
 恢复时复用已创建的 children 和已完成成员。如果中断发生在创建 child

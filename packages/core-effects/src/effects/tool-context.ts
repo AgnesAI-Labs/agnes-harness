@@ -7,6 +7,7 @@ import type {
   ChildAgentListing,
   ChildAgentModel,
   ChildAgentToolFilter,
+  ChildStatus as ChildResult,
   ExecResult,
   FetchInit,
   FsEntry,
@@ -23,7 +24,13 @@ import type { CheckpointWorkspaceContext, WorkspaceHookSandbox } from '../worksp
 import { assertNotDenied } from './fs-guard.js'
 import type { SeamRuntime } from './wrap.js'
 
-export type ChildStatus = { state: 'running' | 'done' | 'error'; lastSeq: Seq; text?: string; idle?: boolean }
+export type ChildStatus = {
+  state: 'running' | 'done' | 'error'
+  lastSeq: Seq
+  text?: string
+  idle?: boolean
+  receipt?: ChildResult['receipt']
+}
 export type ChildHandle = {
   key: string
   worktree?: string
@@ -365,6 +372,7 @@ export function buildToolContext(
                     ? 'failed'
                     : 'running') as 'running' | 'idle' | 'completed' | 'failed' | 'cancelled',
               ...(status.text !== undefined ? { text: status.text } : {}),
+              ...(status.receipt === undefined ? {} : { receipt: status.receipt }),
             }
           }
           const snap = await d.children.inspect?.(childKey)
@@ -377,6 +385,7 @@ export function buildToolContext(
               | 'failed'
               | 'cancelled',
             ...(snap.text !== undefined ? { text: snap.text } : {}),
+            ...(snap.receipt === undefined ? {} : { receipt: snap.receipt }),
           }
         }
         if (opts?.wait !== true) return snapshot()

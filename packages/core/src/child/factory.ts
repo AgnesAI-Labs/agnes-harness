@@ -15,6 +15,7 @@ import type { ChildAgentListing, ChildAgentResult, ChildAgentStatus } from '@agn
 import type { Provider } from '@agnes/protocol'
 import type { Kernel } from '../kernel.js'
 import type { SessionImpl } from '../step/session.js'
+import { childExecutionReceipt } from './execution-receipt.js'
 import type { ResidentStart, ResidentTurn } from './provider.js'
 import { bindChildFactory, childBackend } from './sessions.js'
 import { childSessionToolFilter, narrowChildToolFilter } from './tool-filter.js'
@@ -753,6 +754,7 @@ export class KernelChildren implements ChildrenFactory {
           lastSeq: terminal ? cachedSeq : child.lastSeq,
           ...(opts.resident && state === 'ready' ? { idle: true } : {}),
           ...(text ? { text } : {}),
+          receipt: await childExecutionReceipt(parent, record),
         }
       },
       close: async () => {
@@ -1054,6 +1056,7 @@ async function snapshotFromLedger(parent: SessionImpl, record: ChildTaskRecord):
       ...base,
       lastSeq: tail[0]?.seq ?? base.lastSeq,
       ...(text ? { text } : {}),
+      receipt: await childExecutionReceipt(parent, record),
     }
   } catch {
     return base

@@ -42,6 +42,10 @@ Children use the official `subagent_spawn` tool and inherit its depth, fan-out,
 budget and worktree rules. Each later stage receives the preceding stage's
 bounded results. A failed member stops the workflow.
 
+`ctx.subagent.collect()` may return an optional `receipt` with workspace isolation, up to 32 recent tool results (name, ledger sequence and error status), and a `truncated` flag. Older or external child providers may omit it; missing evidence is not a successful execution receipt.
+
+Workflow receipts distinguish backend tool results from child-authored reports. The parent and later stages receive current execution facts through a context section, including workspace isolation and whether tool evidence is partial or unavailable. Worktree outputs remain in the child workspace: Workflow does not merge their branches into the main workspace. The Web card marks this explicitly. Verify a separate integration operation before claiming those files are present in the main workspace; a child's statement that it merged files is not an integration receipt.
+
 Retain the returned `runId`. Use `workflow_status({ runId })` to inspect durable
 state or `workflow({ runId })` to resume an interrupted run. The session ledger
 records accepted child identities before collection; resume reuses those
