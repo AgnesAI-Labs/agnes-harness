@@ -1,3 +1,4 @@
+import { uploadedAttachment } from '@agnes/protocol'
 import type { ContentBlock, UINode, UITurn } from '@agnes/protocol'
 import { decodeSafeImage, USER_MESSAGE_IMAGE_LIMITS } from '@agnes/protocol-validation'
 import { MessagePrimitive, ThreadPrimitive, useAssistantState, useThread } from '@assistant-ui/react'
@@ -264,19 +265,26 @@ function UserMessage({ node, t }: { node: Extract<UINode, { kind: 'user' }>; t: 
 }
 
 function UserMessageFiles({ node }: { node: Extract<UINode, { kind: 'user' }> }) {
-  const files = node.content.filter((block) => block.type === 'file')
+  const files = node.content.filter(
+    (block) => block.type === 'file' || (block.type === 'resource_link' && uploadedAttachment(block.uri)),
+  )
   if (files.length === 0) return null
   const occurrences = new Map<string, number>()
   return (
     <ul className="user-message-files">
       {files.map((file) => {
-        const key = `${file.name}:${file.mimeType}:${file.data.length}`
+        const key =
+          file.type === 'file'
+            ? `${file.name}:${file.mimeType}:${file.data.length}`
+            : file.type === 'resource_link'
+              ? file.uri
+              : ''
         const occurrence = occurrences.get(key) ?? 0
         occurrences.set(key, occurrence + 1)
         return (
-          <li key={`${key}:${occurrence}`} title={file.name}>
-            <span>{file.name}</span>
-            <small>{file.mimeType}</small>
+          <li key={`${key}:${occurrence}`} title={'name' in file ? file.name : ''}>
+            <span>{'name' in file ? file.name : ''}</span>
+            <small>{'mimeType' in file ? file.mimeType : ''}</small>
           </li>
         )
       })}

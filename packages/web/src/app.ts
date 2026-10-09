@@ -328,6 +328,7 @@ const clientModules = await startClientModules({
     references,
     initialDraft: savedComposerDraft ?? '',
     onAttachmentsChange: renderControls,
+    prepareUploadSession: prepareAttachmentSession,
     onCancel: handleComposerCancel,
     onPauseResume: handlePauseResume,
     onEditQueued: handleEditQueued,
@@ -1627,6 +1628,37 @@ async function forkSidebar(id: string, title: string): Promise<void> {
   if (refreshError) throw new Error(t('app.fork.refreshFailed', { id: child.id }))
   if (namingError) throw new Error(t('app.fork.renameFailed'))
 }
+let attachmentSessionOpening: Promise<string> | undefined
+async function prepareAttachmentSession(): Promise<string> {
+  if (current) return current.id
+  if (attachmentSessionOpening) return attachmentSessionOpening
+  attachmentSessionOpening = (async () => {
+    if (!draftingNew || !selectedWorkspace?.available || !draftLoopAvailable() || loopCatalogPending)
+      throw new Error(t('app.session.createFailed'))
+    const workspace = selectedWorkspace
+    const model = knownSessionModel
+    const epoch = selection
+    const key = pendingSessionKey ?? crypto.randomUUID()
+    pendingSessionKey = key
+    if (draftBundles.some((id) => !runtimeCatalog?.bundles?.some((bundle) => bundle.id === id)))
+      throw new Error(settingsText('bundleUnavailable'))
+    const created = await client.session.new({
+      cwd: workspace.path,
+      sessionKey: key,
+      ...(draftLoop ? { loop: draftLoop } : {}),
+      ...(draftPreset ? { preset: draftPreset } : {}),
+      ...(draftBundles.length ? { bundles: draftBundles } : {}),
+    })
+    if (epoch !== selection || !draftingNew) throw new Error(t('app.session.selectionChanged'))
+    await open(created.id, { created, workspace, ...(model ? { initialModel: model } : {}) })
+    if (current !== created) throw new Error(t('app.session.selectionChanged'))
+    return created.id
+  })().finally(() => {
+    attachmentSessionOpening = undefined
+  })
+  return attachmentSessionOpening
+}
+
 async function forkTurn(turn: UITurn): Promise<void> {
   const parent = current
   if (!parent || !turn.forkable || turn.endSeq === undefined || projection?.opState !== null)

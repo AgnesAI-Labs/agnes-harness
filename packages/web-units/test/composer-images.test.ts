@@ -14,6 +14,7 @@ import {
   downscaleImageFile,
 } from '../src/composer.js'
 import { webUnitsLocaleCatalog } from '../src/locales/index.js'
+import * as uploads from '../src/file-upload.js'
 
 let host: HTMLDivElement
 let root: Root
@@ -92,6 +93,85 @@ afterEach(async () => {
   else Reflect.deleteProperty(URL, 'revokeObjectURL')
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+})
+
+it('keeps a batch through upload session opening, stores references and cleans a removed file', async () => {
+  const handle = createRef<ComposerHandle>()
+  const cancelled = vi.spyOn(uploads, 'cancelFileUpload').mockResolvedValue(undefined)
+  vi.spyOn(uploads, 'fileUploadLimits').mockResolvedValue({
+    maxBytes: 1024,
+    chunkBytes: 4,
+    allowedMimeTypes: [],
+  })
+  vi.spyOn(uploads, 'uploadFile').mockImplementation(
+    async (file, _session, id, _limits, signal, progress) => {
+      signal.throwIfAborted()
+      progress({ loaded: file.size, total: file.size, phase: 'verifying' })
+      return {
+        type: 'resource_link',
+        name: file.name,
+        mimeType: file.type,
+        uri: `agnes-upload://${'a'.repeat(64)}/${'b'.repeat(64)}/${file.size}/${id}`,
+      }
+    },
+  )
+  await act(async () =>
+    root.render(
+      createElement(Composer, {
+        ref: handle,
+        dependencies,
+        initialView: view,
+        prepareUploadSession: async () => {
+          // The real shell clears attachment state when it publishes the newly opened session.
+          handle.current?.clearImageBlocks()
+          return 'owned-session'
+        },
+        onCancel() {},
+        onDraftChange() {},
+        onError() {},
+        onModelSelect: async () => false,
+        onPermissionSelect: async () => false,
+        onSubmit() {},
+        onWorkspace() {},
+      }),
+    ),
+  )
+  const input = host.querySelector('textarea')
+  if (!input) throw new Error('missing composer input')
+  await act(async () =>
+    input.dispatchEvent(
+      imagePasteEvent([
+        new File(['one'], 'contract.txt', { type: 'text/plain' }),
+        new File(['two'], 'scan.pdf', { type: 'application/pdf' }),
+      ]),
+    ),
+  )
+  await vi.waitFor(() => expect(handle.current?.getAttachmentBlocks()).toHaveLength(2))
+  expect(handle.current?.getAttachmentBlocks().every((block) => block.type === 'resource_link')).toBe(true)
+  expect(cancelled).not.toHaveBeenCalled()
+  cancelled.mockRejectedValue(new Error('cleanup unavailable'))
+  const remove = host.querySelector<HTMLButtonElement>('[data-testid="attachment-remove"]')
+  await act(async () => remove?.click())
+  expect(handle.current?.getAttachmentBlocks()).toHaveLength(1)
+  expect(cancelled).toHaveBeenCalledWith('owned-session', expect.any(String))
+  await vi.waitFor(() =>
+    expect(host.querySelector('[data-testid="attachment-upload"]')?.getAttribute('data-state')).toBe(
+      'failed',
+    ),
+  )
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="attachment-upload-dismiss"]')?.click(),
+  )
+  expect(host.querySelector('[data-testid="attachment-upload"]')?.getAttribute('data-state')).toBe('failed')
+  cancelled.mockResolvedValue(undefined)
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="attachment-upload-retry"]')?.click(),
+  )
+  await vi.waitFor(() =>
+    expect(host.querySelector('[data-testid="attachment-upload"]')?.getAttribute('data-state')).toBe(
+      'cancelled',
+    ),
+  )
 })
 
 it.each([

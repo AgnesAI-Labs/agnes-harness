@@ -2681,6 +2681,16 @@ body.session-switching #approval {
   border: 1px solid var(--agnes-line-primary);
   border-radius: 0.5rem;
 }
+.composer-upload {
+  max-width: min(24rem, 100%);
+}
+.composer-upload progress {
+  width: 100%;
+  accent-color: var(--agnes-text-primary);
+}
+.composer-upload button {
+  justify-self: start;
+}
 .composer-file-preview span {
   overflow-wrap: anywhere;
 }

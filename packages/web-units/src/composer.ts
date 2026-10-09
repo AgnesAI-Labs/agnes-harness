@@ -17,7 +17,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
 import type { ContentBlock, ModelSettings, ThinkingLevel, UIPendingInput, UsageView } from '@agnes/protocol'
-import { userImagePolicy } from '@agnes/protocol'
+import { uploadedAttachment, userImagePolicy } from '@agnes/protocol'
 import {
   decodeAttachmentData,
   decodeSafeImageBytes,
@@ -46,6 +46,7 @@ import {
 } from 'react'
 import { flushSync } from 'react-dom'
 import { ReferencePicker, type ComposerReferences } from './reference-picker.js'
+import { useComposerUploads } from './composer-uploads.js'
 import { composerLocaleCatalog } from './locales/composer.js'
 import type { Translate } from './locales/index.js'
 
@@ -79,7 +80,7 @@ export type ModelPicker = {
 }
 export type PermissionMode = 'view' | 'workspace' | 'full'
 export type ComposerImageBlock = Extract<ContentBlock, { type: 'image' }>
-export type ComposerAttachmentBlock = Extract<ContentBlock, { type: 'image' | 'file' }>
+export type ComposerAttachmentBlock = Extract<ContentBlock, { type: 'image' | 'file' | 'resource_link' }>
 export type PermissionPickerState = { disabled: boolean; pending: boolean; selected: PermissionMode | null }
 export type PermissionPicker = {
   destroy(): void
@@ -184,6 +185,7 @@ export interface ComposerRegionOptions {
   initialDraft?: string
   onCancel(): void
   onAttachmentsChange?(): void
+  prepareUploadSession?(): Promise<string>
   onDraftChange(value: string): void
   onError(error: unknown): void
   onModelSelect(option: ModelPickerOption): Promise<boolean>
@@ -362,6 +364,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     dependencies,
     onCancel,
     onAttachmentsChange,
+    prepareUploadSession,
     onDraftChange,
     onError,
     onModelSelect,
@@ -409,8 +412,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     [onAttachmentsChange],
   )
 
+  const uploads = useComposerUploads(
+    prepareUploadSession,
+    (attachment, id, size) => {
+      publishAttachments([...attachmentsRef.current, { ...attachment, id, size, pixels: 0 }])
+    },
+    onAttachmentsChange,
+    dependencies.translate,
+  )
+
   const clearImageBlocks = useCallback((): void => {
     generation.current += 1
+    uploads.clear()
     pendingCountRef.current = 0
     pendingImageCountRef.current = 0
     setPendingCount(0)
@@ -436,6 +449,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       try {
         let imageIndex = 0
         for (const image of blocks) {
+          if (image.type === 'resource_link') {
+            const ref = uploadedAttachment(image.uri)
+            if (!ref) throw new Error('Invalid uploaded attachment')
+            restored.push({
+              ...image,
+              id: `restored-${++nextAttachmentId.current}`,
+              size: ref.size,
+              pixels: 0,
+            })
+            continue
+          }
           if (image.type === 'file') {
             restored.push({
               ...image,
@@ -473,6 +497,24 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       onError(new Error(imageHint))
       return
     }
+    // Prepare the draft's session before reading a mixed file/image batch: opening it clears the
+    // composer generation. Restore existing inline cards with fresh preview URLs after that clear.
+    if (
+      prepareUploadSession &&
+      !view.hasSession &&
+      files.some((file) => !(policy.supported && nativeImageFile(file)))
+    ) {
+      const saved = attachmentsRef.current.map(
+        ({ id: _id, size: _size, pixels: _pixels, previewUrl: _preview, ...block }) => block,
+      )
+      try {
+        await prepareUploadSession()
+        if (saved.length) restoreAttachmentBlocks(saved)
+      } catch (error) {
+        onError(error)
+        return
+      }
+    }
     const t = dependencies.translate
     // 这张表用于把「内容不是图片」与「读不出来」区分开，所以文案只算一次再比对。
     const invalidImage = t('composer.image.invalid')
@@ -482,12 +524,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     for (const file of files) {
       const visual = policy.supported && nativeImageFile(file)
       // 源图只做粗筛：体积上限留到缩放之后再判，否则大截图会在能被缩小之前就被拒掉。
-      if (file.size > (visual ? MAX_SOURCE_IMAGE_BYTES : MAX_TOTAL_IMAGE_BYTES)) {
+      if (
+        (!uploads.available || visual) &&
+        file.size > (visual ? MAX_SOURCE_IMAGE_BYTES : MAX_TOTAL_IMAGE_BYTES)
+      ) {
         onError(new Error(tooLargeMessage))
         continue
       }
       if (
-        attachmentsRef.current.length + pendingCountRef.current + accepted.length >=
+        attachmentsRef.current.length + pendingCountRef.current + uploads.count() + accepted.length >=
         USER_MESSAGE_ATTACHMENT_LIMITS.maxCount
       ) {
         onError(
@@ -508,6 +553,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       accepted.push(file)
       if (visual) acceptedImages++
     }
+    if (accepted.length === 0) return
+
+    const streamed = uploads.available
+      ? accepted.filter((file) => !(policy.supported && nativeImageFile(file)))
+      : []
+    uploads.add(streamed)
+    for (const file of streamed) accepted.splice(accepted.indexOf(file), 1)
     if (accepted.length === 0) return
 
     const readGeneration = generation.current
@@ -628,6 +680,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const removeImage = (id: string): void => {
     const removed = attachmentsRef.current.find((attachment) => attachment.id === id)
     if (!removed) return
+    if (removed.type === 'resource_link') uploads.remove(id, removed.uri, removed.name, removed.size)
     if (removed.previewUrl) URL.revokeObjectURL(removed.previewUrl)
     publishAttachments(attachmentsRef.current.filter((attachment) => attachment.id !== id))
   }
@@ -685,14 +738,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       },
       getAttachmentBlocks() {
         return attachmentsRef.current.map((block) =>
-          block.type === 'file'
-            ? { type: block.type, data: block.data, mimeType: block.mimeType, name: block.name }
-            : { type: block.type, data: block.data, mimeType: block.mimeType },
+          block.type === 'resource_link'
+            ? {
+                type: block.type,
+                uri: block.uri,
+                ...(block.name ? { name: block.name } : {}),
+                ...(block.mimeType ? { mimeType: block.mimeType } : {}),
+              }
+            : block.type === 'file'
+              ? { type: block.type, data: block.data, mimeType: block.mimeType, name: block.name }
+              : { type: block.type, data: block.data, mimeType: block.mimeType },
         )
       },
       restoreAttachmentBlocks,
       hasPendingImages() {
-        return pendingCountRef.current > 0
+        return pendingCountRef.current > 0 || uploads.pending()
       },
       render(next) {
         flushSync(() => setView(next))
@@ -879,12 +939,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             'aria-label': imageHint,
             'aria-live': 'polite',
           },
+          ...uploads.chips,
           ...attachments.map((attachment, index) =>
             createElement(
               'figure',
               {
                 className: attachment.type === 'image' ? 'composer-image-preview' : 'composer-file-preview',
                 key: attachment.id,
+                'data-testid': 'attachment-ready',
               },
               attachment.type === 'image'
                 ? createElement('img', {
@@ -892,7 +954,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                     alt: dependencies.translate('composer.image.alt', { index: index + 1 }),
                   })
                 : createElement('span', { title: attachment.name }, attachment.name),
-              attachment.type === 'file'
+              attachment.type !== 'image'
                 ? createElement('small', null, `${(attachment.size / 1024).toFixed(1)} KiB`)
                 : null,
               createElement(
@@ -900,6 +962,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 {
                   type: 'button',
                   'data-remove-image': true,
+                  'data-testid': 'attachment-remove',
                   'aria-label': dependencies.translate('composer.attachment.remove', { index: index + 1 }),
                   disabled: view.sending,
                   onClick: () => removeImage(attachment.id),
@@ -1118,6 +1181,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         createElement('input', {
           ref: fileInput,
           type: 'file',
+          'data-testid': 'attachment-file-input',
           hidden: true,
           multiple: true,
           'aria-label': dependencies.translate('composer.attachment.add'),
@@ -1137,14 +1201,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             'aria-label': dependencies.translate('composer.attachment.add'),
             'aria-describedby': 'composer-image-hint',
             'aria-disabled':
-              imageDisabled || attachments.length + pendingCount >= USER_MESSAGE_ATTACHMENT_LIMITS.maxCount,
+              imageDisabled ||
+              attachments.length + pendingCount + uploads.count() >= USER_MESSAGE_ATTACHMENT_LIMITS.maxCount,
             title: imageHint,
             onClick: () => {
               if (imageDisabled) {
                 if (!policy.supported) onError(new Error(imageHint))
                 return
               }
-              if (attachments.length + pendingCount >= USER_MESSAGE_ATTACHMENT_LIMITS.maxCount) {
+              if (
+                attachments.length + pendingCount + uploads.count() >=
+                USER_MESSAGE_ATTACHMENT_LIMITS.maxCount
+              ) {
                 onError(
                   new Error(
                     dependencies.translate('composer.attachment.tooMany', {

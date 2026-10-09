@@ -6,6 +6,7 @@ export default defineConfig({
   testDir: '.',
   testMatch: [
     'feedback.spec.ts',
+    'large-upload.spec.ts',
     'memory.spec.ts',
     'webhooks.spec.ts',
     'diagnostics.spec.ts',
