@@ -20,7 +20,10 @@ export function bindSidebar(narrow: MediaQueryList): { close(): void; dismiss():
     toggle.setAttribute('aria-expanded', String(visible))
     toggle.setAttribute('aria-label', visible ? tr('shell.collapseNav') : tr('shell.openNav'))
     const sidebar = document.querySelector<HTMLElement>('.sidebar')
-    if (sidebar) sidebar.inert = !visible
+    // 宽屏的「收起」只是把侧栏压成 3.5rem 轨道：图标还在屏幕上，点了就得有反应，所以
+    // 这个状态下不能 inert。真正移出视口的只有窄屏的抽屉，那时才需要把它挡在键盘和
+    // 辅助技术之外——`visible` 在宽屏表示「展开」，在窄屏表示「抽屉打开」，两者含义不同。
+    if (sidebar) sidebar.inert = narrow.matches && !visible
     const main = document.querySelector('main')
     if (main) main.inert = narrow.matches && visible
   }

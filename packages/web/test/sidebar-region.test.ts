@@ -27,6 +27,33 @@ const workspace = (path: string, name: string): WorkspaceEntry => ({
   available: true,
 })
 
+/** 侧栏数据的最小完整样本：用例多半只关心会话列表，其余字段取稳定默认值。 */
+const sidebarState = (
+  sessions: PageSessionMeta['items'],
+): {
+  sessions: PageSessionMeta['items']
+  workspaces: WorkspaceEntry[]
+  labels: Map<string, string>
+  currentId: string
+  sessionPending: boolean
+  newDisabled: boolean
+} => ({
+  sessions,
+  workspaces: [workspace('/workspace', '主工作区')],
+  labels: new Map<string, string>(),
+  currentId: 'one',
+  sessionPending: false,
+  newDisabled: false,
+})
+
+/** 窄屏（抽屉模式）的媒体查询替身：`(max-width: 900px)` 命中，配色偏好不命中。 */
+const narrowViewport = (query: string): Record<string, unknown> => ({
+  matches: query.includes('max-width'),
+  media: query,
+  addEventListener: vi.fn(),
+  removeEventListener: vi.fn(),
+})
+
 describe('rendered sidebar region', () => {
   let runtime: Awaited<ReturnType<typeof mountRenderedIndex>> | undefined
 
@@ -36,6 +63,7 @@ describe('rendered sidebar region', () => {
     resetWebDom()
     // 折叠记录是模块级状态，不清会在用例之间串。
     resetCollapsedGroups()
+    vi.unstubAllGlobals()
   })
 
   it('renders the component-owned navigation, workspace groups, menus, and actions', async () => {
@@ -215,24 +243,6 @@ describe('rendered sidebar region', () => {
   // 侧边栏更新挂在事件流上，一次回答期间会被调用数十次，但侧边栏自身的数据多数时候没变。
   // 数据未变时不应重建：重建会丢掉键盘焦点、悬停态与滚动位置。
   it('skips the rebuild while the sidebar data is unchanged', async () => {
-    const sidebarState = (
-      sessions: PageSessionMeta['items'],
-    ): {
-      sessions: PageSessionMeta['items']
-      workspaces: WorkspaceEntry[]
-      labels: Map<string, string>
-      currentId: string
-      sessionPending: boolean
-      newDisabled: boolean
-    } => ({
-      sessions,
-      workspaces: [workspace('/workspace', '主工作区')],
-      labels: new Map<string, string>(),
-      currentId: 'one',
-      sessionPending: false,
-      newDisabled: false,
-    })
-
     runtime = await mountRenderedIndex({
       sidebar: { state: sidebarState([session('one', '/workspace')]) },
     })
@@ -254,7 +264,8 @@ describe('rendered sidebar region', () => {
     const toggle = document.getElementById('sidebar-toggle') as HTMLButtonElement
     toggle.click()
     expect(document.body.classList.contains('sidebar-collapsed')).toBe(true)
-    expect((document.querySelector('aside.sidebar') as HTMLElement | null)?.inert).toBe(true)
+    // 宽屏的收起态是 rail，图标留在屏幕上，所以这里不能是 inert（见下面的 #418 用例）。
+    expect((document.querySelector('aside.sidebar') as HTMLElement | null)?.inert).toBe(false)
     toggle.click()
     expect(document.body.classList.contains('sidebar-collapsed')).toBe(false)
     expect((document.querySelector('aside.sidebar') as HTMLElement | null)?.inert).toBe(false)
@@ -270,5 +281,57 @@ describe('rendered sidebar region', () => {
     await new Promise<void>((resolve) => queueMicrotask(resolve))
     expect(document.getElementById('new')).not.toBeNull()
     expect(document.querySelector('[data-agnes-region-unit="sidebar"]')).not.toBeNull()
+  })
+
+  // issue #418：宽屏收起只把侧栏压成 3.5rem 轨道，「新建会话」与「设置」两个图标仍在屏幕
+  // 上。整条侧栏 inert 会让它们看着能点、实际没反应，所以这个状态下必须保持可交互。
+  it('keeps the icons on the collapsed rail clickable', async () => {
+    const newSession = vi.fn()
+    const openSettings = vi.fn()
+    runtime = await mountRenderedIndex({
+      sidebar: {
+        state: sidebarState([session('one', '/workspace')]),
+        actions: { newSession, openSettings },
+      },
+    })
+    const sidebar = document.querySelector('aside.sidebar') as HTMLElement
+    document.getElementById('sidebar-toggle')?.click()
+    expect(document.body.classList.contains('sidebar-collapsed')).toBe(true)
+    expect(sidebar.inert).toBe(false)
+
+    sidebar.querySelector<HTMLButtonElement>('#new')?.click()
+    sidebar.querySelector<HTMLButtonElement>('#settings')?.click()
+    expect(newSession).toHaveBeenCalledOnce()
+    expect(openSettings).toHaveBeenCalledOnce()
+  })
+
+  // 窄屏的收起是另一回事：抽屉被移出视口，这时才必须 inert，否则键盘和读屏会走进一个
+  // 屏幕外、看不见也关不掉的面板。
+  it('inerts the sidebar only while the narrow drawer is off-screen', async () => {
+    const newSession = vi.fn()
+    vi.stubGlobal('matchMedia', vi.fn(narrowViewport))
+    runtime = await mountRenderedIndex({
+      sidebar: {
+        state: sidebarState([session('one', '/workspace')]),
+        actions: { newSession },
+      },
+    })
+    const sidebar = document.querySelector('aside.sidebar') as HTMLElement
+    const main = document.querySelector('main') as HTMLElement
+
+    expect(sidebar.inert).toBe(true)
+    document.getElementById('sidebar-toggle')?.click()
+    expect(document.body.classList.contains('sidebar-open')).toBe(true)
+    expect(sidebar.inert).toBe(false)
+    expect(main.inert).toBe(true)
+
+    // 抽屉打开时侧栏必须完全可用，否则「收起时不能用」会变成「一直不能用」。
+    sidebar.querySelector<HTMLButtonElement>('#new')?.click()
+    expect(newSession).toHaveBeenCalledOnce()
+
+    document.getElementById('sidebar-close')?.click()
+    expect(document.body.classList.contains('sidebar-open')).toBe(false)
+    expect(sidebar.inert).toBe(true)
+    expect(main.inert).toBe(false)
   })
 })
