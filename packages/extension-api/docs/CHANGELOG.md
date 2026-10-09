@@ -92,6 +92,8 @@ break every request. The three constants are new runtime exports.
 
 ## 1.4.0
 
+- Add optional, session-bound deferred tool invocations and a generic Loop drain through the existing tool policy/approval ports.
+
 - Add the passive `ObservabilityProvider` contract and `observabilityKind` for opt-in telemetry on public committed events and lifecycle ports.
 
 - Optional `ToolContext.pluginManage` port for approved AGH plugin authoring and installation. Host controls identity, invocation lifetime and native approval.

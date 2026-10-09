@@ -99,7 +99,7 @@ Schema 声明结构限制并导出 `X_AGNES_UI_LIMITS`；后台与渲染器还�
 
 以上方法名为待评审声明，尚未注册为 App Server 方法。所有读取/写入前检查会话归属。未认证或跨会话调用使用既有认证/能力 RPC 错误，不泄露 surface 或历史命令结果。格式错误的请求使用 `INVALID_PARAMS`；只有形状正确且绑定会话的命令才能进入动作状态机。归属插件由工具贡献确定，不取自模型提供的 surface 数据。Surface 归属该会话持续中的任务；单纯开启新 turn 不使其失效。后台任务完成/退役时通过本合同关闭其 surface。
 
-现有 service 没有任意工具调度入口。实现需仿照既有官方 service ports 增加窄的公开 `extension-api` 桥接：绑定会话的 ledger scan/append、串行接纳、queued-input enqueue/wake 和投影读取。插件实现状态机。在安全步骤边界通过公开 Loop helper，使用当前 `LoopContext.tools.execute`、`tools.resume`、`effects.status` 执行，绝不直接调用 `ToolDef.execute` 或导入 Core 内部模块。官方默认 Loop 与财务 Loop 需通过公开合同接入 helper。未接入 helper 的自定义 Loop 在工具派发前以 `UI_UNAUTHORIZED` 和不支持执行的解释拒绝提交；依赖模型遵循文字指令不能充当执行桥接。Helper 接入保留选定 Loop 身份/checkpoint 与普通输入，不得领取或丢弃无关 SC1 输入。
+Service 不提供任意工具调度入口。公开[延后工具调用合同](deferred-invocations.zh-CN.md)是唯一的通用执行桥接，可供 UI、webhook、schedule 使用。Host 将持久队列绑定到会话锁定的 session/lane，通过公开 Loop context 的可选端口接入，Core 不变。默认 Loop 与财务 Loop 在安全步骤边界，通过 `LoopContext.tools.execute`、`tools.resume`、`effects.status` 通用排空；不包含 UI 专用 helper 或组件逻辑。Intelligent UI 是一个生产方：校验动作、持久化绑定、将已声明工具 invocation 入队。队列事实与生产方通知仍基于 ledger。未安装生产插件时队列端口为空，默认 Loop 调度不变。缺少通用排空能力的自定义 Loop 在工具派发前拒绝提交。禁止直接调用 `ToolDef.execute`、导入 Core 私有模块、依赖模型文字指令执行或消费无关 SC1 输入。
 
 不可变的已接纳命令绑定 surface revision、归属 generation、任务/通道、已认证 actor、动作、完整校验的参数以及稳定 invocation id。命令事实构成工作队列，从 ledger 重建；不增加数据库或 Agent 输入通道。执行时 helper 再检查绑定任务、surface 与工具目录，再沿普通 tool policy、approval、auto review、sandbox、deny-list 控制执行原工具。业务 `confirmed: true` 仅满足 `action.confirm`，不授予工具权限。存在 `received`、`pending-approval`、`executing` 动作时，update/close 返回 `UI_BUSY`，避免审批票据下的审阅数据改变。未解决的 `outcomeUnknown` 失败也保持该 surface 锁定，直到既有效果对账解决它。相同 surface 以不同 command id 并发提交也返回瞬时 `OVERLOADED`，不创建第二个 invocation。
 
@@ -161,7 +161,7 @@ Render/update/close、提交接纳和执行状态转换沿会话 ledger 既有�
 
 Fact-chain 与 trace 展示 surface id/revision 和归属、received 命令/actor、解析后的工具 invocation、审批、效果与结果、终态 UI 事实、Agent 队列输入及 Agent 下一次 surface 更新。按 ledger 序号与稳定 id 关联，不能靠相近时间猜测。缺失回执/投递/revision 链接明确展示为缺口。UI 不能将插件编写的标签/事实提升为授权决定证据。
 
-[财务对账试点](../../examples/fde/finance-reconcile/index.mjs) 保持合成源账本和精确整数分。对账后渲染差异、柱状图和调整表单。“确认调整”映射到现有模拟调整工具 `fde_finance_approve`，保留其需要审批的元数据与 policy。业务工具根据已提交对账事实与选择校验提案，包括交易成员、整数分、原因、无重复 id、是否已处理。表单编辑不能悄悄覆盖已提交差异。获得权限与模拟回执后，queued result 恢复 Agent；Agent 将已处理行更新为 `simulated-approved`，保留未解决交易，明确 `posted: false`。审批拒绝/失败不能标记行已处理。UI helper 替换试点既有业务提问阶段，不再要求第二次自由文本 “Proceed”。
+[财务对账试点](../../examples/fde/finance-reconcile/index.mjs) 保持合成源账本和精确整数分。对账后渲染差异、柱状图和调整表单。“确认调整”映射到现有模拟调整工具 `fde_finance_approve`，保留其需要审批的元数据与 policy。业务工具根据已提交对账事实与选择校验提案，包括交易成员、整数分、原因、无重复 id、是否已处理。表单编辑不能悄悄覆盖已提交差异。获得权限与模拟回执后，queued result 恢复 Agent；Agent 将已处理行更新为 `simulated-approved`，保留未解决交易，明确 `posted: false`。审批拒绝/失败不能标记行已处理。通用 deferred-invocation drain 替换试点既有业务提问阶段，不再要求第二次自由文本 “Proceed”。
 
 后续扩展点可允许插件通过现有已审阅 client module 注册其他组件渲染器，并随会话 generation 锁定。它需要组件 namespace/version 声明、服务端载荷 Schema、已审阅模块身份、回退、大小限制和无障碍要求。本阶段不实现注册钩子或自定义 kind；未知类型拒绝。
 

@@ -6,7 +6,9 @@ import {
   type LoopRegistryPort,
   type LoopSelection,
   ProviderError,
+  withDeferredToolInvocations,
 } from '@agnes/extension-api'
+import './deferred-invocations.js'
 import { ProviderLifetime } from '@agnes/host-common/assemble/provider-lifetime'
 import {
   installProviderRegistry,
@@ -114,7 +116,10 @@ export class LoopsService extends Service implements LoopRegistryPort {
     )
   }
   resolve(selection: LoopSelection) {
-    return this.registry.resolve({ provider: selection.id, version: selection.version })
+    const factory = this.registry.resolve({ provider: selection.id, version: selection.version })
+    return withDeferredToolInvocations(factory, (key, lane) =>
+      this.ctx.deferredInvocations?.forSession(key, lane),
+    )
   }
 
   catalog() {

@@ -175,6 +175,8 @@ export interface LoopToolCall {
 }
 
 export interface LoopContext {
+  /** Optional durable work from any producer; Host binds it to this session and lane. */
+  readonly deferredInvocations?: import('./deferred-invocations.js').DeferredToolInvocationQueue
   readonly sessionKey: string
   readonly lane: string
   prepareRequest(options?: LoopRequestOptions): Promise<LoopRequest>

@@ -70,3 +70,5 @@ export * from './feedback.js'
 export * from './plugin-config.js'
 
 export type { RemoteTransport } from './remote-transport.js'
+
+export * from './deferred-invocations.js'

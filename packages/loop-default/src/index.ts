@@ -1,5 +1,6 @@
 import {
   DEFAULT_LOOP,
+  drainDeferredToolInvocations,
   type LoopCheckpoint,
   type LoopCheckpointCodec,
   type LoopContext,
@@ -35,6 +36,8 @@ function create(ctx: LoopContext): LoopDriver {
     checkpoint: () => codec.encode(null),
     async step(signal): Promise<LoopStepOutcome> {
       if (disposed) throw new Error('Default loop driver is disposed')
+      const deferred = await drainDeferredToolInvocations(ctx, signal)
+      if (deferred) return deferred
       const continuation = ctx.turn.continuation()
       if (!continuation) {
         const parked = await ctx.input.resumeParked()
@@ -71,7 +74,16 @@ export const defaultLoopFactory: LoopFactory = Object.freeze({
   ...DEFAULT_LOOP,
   checkpointMode: 'ledger',
   controls: { steer: true, interrupt: true, pause: true },
-  capabilities: ['model', 'tools', 'multimodal', 'compaction', 'children', 'park', 'recovery'],
+  capabilities: [
+    'model',
+    'tools',
+    'multimodal',
+    'compaction',
+    'children',
+    'park',
+    'recovery',
+    'deferred-invocations',
+  ],
   codec,
   create,
   resume(ctx: LoopContext, checkpoint: LoopCheckpoint) {

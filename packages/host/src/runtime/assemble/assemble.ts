@@ -202,6 +202,7 @@ import {
 import { bindModelContracts } from '@agnes/host-providers/assemble/contracts'
 import { isolationInventory } from '@agnes/host-providers/assemble/isolation-inventory'
 import { readAdminLoopDefault } from '@agnes/host-providers/assemble/loop-selection'
+import { DeferredInvocationsService } from '@agnes/host-providers/assemble/deferred-invocations'
 import { installLoops } from '@agnes/host-providers/assemble/loops'
 import {
   installModelAdapters,
@@ -1153,6 +1154,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             rowExtensions.installRoot(root, origins)
             rowServices.installRoot(root, origins)
             installModelAdapters(root, origins)
+            new DeferredInvocationsService(root, origins)
             installLoops(root, origins)
             installReferenceResolvers(root)
             const promptRegistry: import('@agnes/host-common/assemble/provider-registry').ProviderRegistry<SystemPromptProvider> =

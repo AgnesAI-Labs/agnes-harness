@@ -47,6 +47,7 @@
     "definePersistenceProvider",
     "defineProviderKind",
     "defineTool",
+    "drainDeferredToolInvocations",
     "extEventType",
     "isExtensionError",
     "isJsonPayload",
@@ -67,6 +68,7 @@
     "sandboxUnavailable",
     "satisfiesApiRange",
     "systemPromptKind",
-    "unavailableProjections"
+    "unavailableProjections",
+    "withDeferredToolInvocations"
   ]
 }

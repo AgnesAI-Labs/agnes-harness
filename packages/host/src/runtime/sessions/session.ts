@@ -28,6 +28,7 @@ import type { Actor, LoopSelection, SessionStart } from '@agnes/protocol'
 import type { Assembled } from '../assemble/assemble.js'
 import type { HostSession } from '../lifecycle/host.js'
 import { resolveSessionCapabilities } from '../profile/session-capabilities.js'
+import { bindDeferredInvocations } from './deferred-invocations.js'
 import { replaySwitchesOnOpen } from './session-switch.js'
 
 /**
@@ -422,6 +423,15 @@ export async function createSession(
       : {}),
     seams: { ...opts.seams, sandbox: guardedSandbox },
   })
+  const releaseDeferred = bindDeferredInvocations(a, session)
+  const closeDeferredSession = session.close.bind(session)
+  session.close = async () => {
+    try {
+      await closeDeferredSession()
+    } finally {
+      releaseDeferred()
+    }
+  }
   // 6 what comes back is the zero-privilege session, and a sound one.
   //
   // A process that died mid-answer leaves a step nothing closed, and the next turn on that ledger is

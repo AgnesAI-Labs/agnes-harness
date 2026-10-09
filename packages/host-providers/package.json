@@ -11,6 +11,7 @@
     "./assemble/contracts": "./src/assemble/contracts.ts",
     "./assemble/isolation-inventory": "./src/assemble/isolation-inventory.ts",
     "./assemble/loop-selection": "./src/assemble/loop-selection.ts",
+    "./assemble/deferred-invocations": "./src/assemble/deferred-invocations.ts",
     "./assemble/loops": "./src/assemble/loops.ts",
     "./assemble/model-adapters": "./src/assemble/model-adapters.ts",
     "./assemble/model-runtime": "./src/assemble/model-runtime.ts",
