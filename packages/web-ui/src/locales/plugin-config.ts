@@ -1,0 +1,46 @@
+import type { LocaleCatalog } from './index.js'
+export const PLUGIN_CONFIG_NAMESPACE = '@agnes/web-ui/plugin-config'
+export const pluginConfigCatalog: LocaleCatalog = {
+  en: {
+    format: 'Expected format: {format}.',
+    title: 'Configuration',
+    variant: 'Variant',
+    add: 'Add item',
+    remove: 'Remove',
+    addKey: 'Add key',
+    key: 'Key',
+    rename: 'Rename key',
+    json: 'JSON editor',
+    fallback: 'Edit this subtree as JSON. The complete schema is validated by the server.',
+    secret:
+      'Secret reference only (secret://namespace/name). Store the secret in the credential store first.',
+    invalid: 'Invalid field ({code}).',
+    syntax: 'Enter valid JSON.',
+    required: 'Required',
+    create: 'Set value',
+    clear: 'Clear value',
+    defaults: 'Use defaults',
+    variantHelp:
+      'Choose a variant, then use its defaults to replace the value. Switching the view preserves your draft.',
+  },
+  'zh-CN': {
+    format: '字段格式：{format}。',
+    title: '配置',
+    variant: '方案',
+    add: '添加项目',
+    remove: '删除',
+    addKey: '添加键',
+    key: '键名',
+    rename: '修改键名',
+    json: 'JSON 编辑器',
+    fallback: '此子树使用 JSON 编辑；服务端会校验完整 schema。',
+    secret: '仅填写密钥引用（secret://namespace/name），请先在凭据存储中保存密钥。',
+    invalid: '字段不合法（{code}）。',
+    syntax: '请输入合法 JSON。',
+    required: '必填',
+    create: '设置值',
+    clear: '清除值',
+    defaults: '使用默认值',
+    variantHelp: '选择方案后，可用默认值替换当前值。切换展示方案会保留草稿。',
+  },
+}

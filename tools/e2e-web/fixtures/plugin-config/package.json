@@ -1,0 +1,67 @@
+{
+  "name": "@agnes-e2e/plugin-config",
+  "version": "1.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./index.js"
+  },
+  "license": "Apache-2.0",
+  "agnes": {
+    "plugins": [
+      {
+        "export": "agent",
+        "id": "ext:e2e/config-agent",
+        "apiRange": "^1.4.0",
+        "provide": [
+          "e2eConfigAgent"
+        ],
+        "configReload": "live",
+        "config": {
+          "name": "Support",
+          "credential": "secret://fixture/key",
+          "queues": [
+            "general"
+          ],
+          "settings": {
+            "retries": 2
+          }
+        },
+        "configSchema": {
+          "type": "object",
+          "required": [
+            "name",
+            "credential",
+            "queues",
+            "settings"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Business agent name"
+            },
+            "credential": {
+              "type": "string",
+              "format": "credential-reference"
+            },
+            "queues": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            },
+            "settings": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}

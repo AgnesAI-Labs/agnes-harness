@@ -15,6 +15,7 @@ export default defineConfig({
     'prompt-trace.spec.ts',
     'fact-chain.spec.ts',
     'runtime.spec.ts',
+    'plugin-config.spec.ts',
     'ui-gate.spec.ts',
     'ui-flows.spec.ts',
     'first-run.spec.ts',

@@ -94,3 +94,15 @@ export {
 export { Switch, type SwitchProps } from './ui/switch.js'
 export { Tabs, type TabsProps } from './ui/tabs.js'
 export * from './ui-locale.js'
+export {
+  PluginSchemaFields,
+  type PluginSchemaFieldsProps,
+  type PluginFormIssue,
+} from './plugin-schema-fields.js'
+export {
+  pluginFormKind,
+  pluginSchemaDefault,
+  resolvePluginSchema,
+  PLUGIN_FORM_MAX_DEPTH,
+  type PluginSchema,
+} from './plugin-schema-model.js'
