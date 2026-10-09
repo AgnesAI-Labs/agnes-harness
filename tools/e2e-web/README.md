@@ -84,7 +84,7 @@ twelve-minute global deadline, with shorter per-spec deadlines.
 quarantine it with retries or `test.skip`. To investigate, run the named spec several times:
 
 ```sh
-pnpm e2e:web --reuse-build --grep 'local hot reload' --repeat-each 3
+pnpm e2e:web --reuse-build --grep 'UI local rescan' --repeat-each 3
 ```
 
 `.agnes-tmp/e2e-web` (existing ignored local-acceptance directory) contains the HTML/JSON report, screen/failure screenshots,

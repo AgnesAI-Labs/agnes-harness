@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
 import type { Page } from '@playwright/test'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
@@ -495,6 +495,14 @@ test('UI local rescan preserves old/new code through a daemon restart', async ({
   await turn(page, 'call e2e_version {"text":"new"}')
   const newer = await current(page, runtime)
   expect((await toolResult(newer, 'e2e_version'))?.structured).toMatchObject({ version: 2 })
+  expect(newer.id).not.toBe(old.id)
+  // Rescan must preserve an already-bound session before recovery is involved.
+  await page.goto(new URL(`/?session=${encodeURIComponent(old.id)}`, runtime.url).href)
+  await expect(page.getByTestId('conversation-turn')).toHaveCount(1)
+  await turn(page, 'call e2e_version {"text":"still old"}')
+  expect((await toolResult(await current(page, runtime), 'e2e_version'))?.structured).toMatchObject({
+    version: 1,
+  })
   await page.goto('about:blank')
   await runtime.restart()
   for (const [session, version] of [
@@ -502,12 +510,16 @@ test('UI local rescan preserves old/new code through a daemon restart', async ({
     [newer, 2],
   ] as const) {
     await page.goto(new URL(`/?session=${encodeURIComponent(session.id)}`, runtime.url).href)
-    await expect(page.getByTestId('conversation-turn')).toHaveCount(1)
+    await expect(page.getByTestId('conversation-turn')).toHaveCount(version === 1 ? 2 : 1)
     await turn(page, 'call e2e_version {"text":"restored"}')
     const restored = await current(page, runtime)
     expect((await toolResult(restored, 'e2e_version'))?.structured).toMatchObject({ version })
     await expect(await detail(page, 'e2e_version')).toContainText(`"version":${version}`)
   }
+  await info.attach('generations.json', {
+    body: JSON.stringify(await (await runtime.connect()).packages.generations({ profile: 'local-dev' })),
+    contentType: 'application/json',
+  })
   await quality(page, info, 'restarted-generations')
 })
 
@@ -528,8 +540,19 @@ test('UI FDE bundle selection runs and restores its durable deliverable', async 
   const session = await current(page, runtime)
   expect(await session.capabilities()).toMatchObject({
     bundles: ['@agnes-fde/knowledge-qa#knowledge-qa'],
-    loop: { value: { id: 'fde.knowledge-qa' } },
+    loop: { value: { id: 'fde.knowledge-qa', version: '3.0.0' } },
   })
+  expect(JSON.stringify(await toolResult(session, 'present'))).toContain('report.md')
+  expect(JSON.stringify(await toolResult(session, 'write'))).toContain('fde-output/knowledge-qa/')
+  const output = await session.projectUI(undefined, { surface: 'web' })
+  expect(JSON.stringify(output)).toContain('knowledge-qa')
+  const write = output.nodes.findLast((node) => node.kind === 'tool' && node.name === 'write')
+  if (write?.kind !== 'tool') throw new Error('FDE must write its deliverable')
+  const args = (await session.readToolDetail(write.seq, write.resultSeq)).call.args
+  if (!args || typeof args !== 'object' || Array.isArray(args) || typeof args.path !== 'string')
+    throw new Error('FDE write must have a persisted output path')
+  expect(await readFile(join(runtime.workspace, args.path), 'utf8')).toContain('Source-backed answer')
+  await info.attach('fde-projection.json', { body: JSON.stringify(output), contentType: 'application/json' })
   const card = page.getByTestId('deliverable-card')
   await expect(card).toContainText('report.md')
   const download = page.waitForEvent('download')
@@ -548,7 +571,14 @@ test('UI FDE bundle selection runs and restores its durable deliverable', async 
     timeout: 25_000,
   })
   await expect(card).toContainText('report.md')
+  const restored = await current(page, runtime)
+  expect(await restored.capabilities()).toMatchObject({
+    bundles: ['@agnes-fde/knowledge-qa#knowledge-qa'],
+    loop: { value: { id: 'fde.knowledge-qa', version: '3.0.0' } },
+  })
   await turn(page, 'Who reviews refund requests?')
+  expect(JSON.stringify(await toolResult(restored, 'present'))).toContain('report.md')
+  expect(JSON.stringify(await restored.projectUI(undefined, { surface: 'web' }))).toContain('knowledge-qa')
   await expect(card.last()).toContainText('report.md')
   await quality(page, info, 'fde-deliverable')
 })

@@ -237,54 +237,6 @@ test('folder capability review, explicit trust/enable, tool invocation and disab
   await info.attach('review.json', { body: JSON.stringify(preview), contentType: 'application/json' })
 })
 
-test('local hot reload preserves old/new session generations through daemon restart', async ({
-  runtime,
-}, info) => {
-  const client = await runtime.connect()
-  await runtime.localTool(1)
-  await client.call('_agnes/v1/sessionSelection.reloadLocal', {})
-  const loop = (await client.sessionSelection.loops()).find((loop) => loop.id === 'agnes.default')
-  if (!loop) throw new Error('The default Agent loop must be available')
-  const old = await client.session.new({
-    sessionKey: randomUUID(),
-    cwd: runtime.workspace,
-    preset: 'full-access',
-    loop,
-  })
-  await old.attach()
-  await prompt(old, 'call e2e_version {"text":"old"}')
-  expect((await toolResult(old, 'e2e_version'))?.structured).toMatchObject({ version: 1 })
-  await runtime.localTool(2)
-  await client.call('_agnes/v1/sessionSelection.reloadLocal', {})
-  const fresh = await client.session.new({
-    sessionKey: randomUUID(),
-    cwd: runtime.workspace,
-    preset: 'full-access',
-    loop,
-  })
-  expect(fresh.id).not.toBe(old.id)
-  await fresh.attach()
-  await prompt(fresh, 'call e2e_version {"text":"new"}')
-  expect((await toolResult(fresh, 'e2e_version'))?.structured).toMatchObject({ version: 2 })
-  await prompt(old, 'call e2e_version {"text":"still old"}')
-  expect((await toolResult(old, 'e2e_version'))?.structured).toMatchObject({ version: 1 })
-  await runtime.restart()
-  const restarted = await runtime.connect()
-  for (const [id, version] of [
-    [old.id, 1],
-    [fresh.id, 2],
-  ] as const) {
-    const restored = await restarted.session.load(id, { cwd: runtime.workspace })
-    await restored.attach()
-    await prompt(restored, 'call e2e_version {"text":"persisted"}')
-    expect((await toolResult(restored, 'e2e_version'))?.structured).toMatchObject({ version })
-  }
-  await info.attach('generations.json', {
-    body: JSON.stringify(await restarted.packages.generations({ profile: 'local-dev' })),
-    contentType: 'application/json',
-  })
-})
-
 test('CLI MCP stdio fixture runs through the SDK and workspace skills are discovered', async ({
   runtime,
 }) => {
@@ -331,46 +283,4 @@ test('CLI MCP stdio fixture runs through the SDK and workspace skills are discov
   expect(skills).toContain('actual=ready')
   await prompt(session, 'call skill_read {"name":"e2e-playbook"}')
   expect(JSON.stringify(await toolResult(session, 'skill_read'))).toContain('E2E_SKILL_LOADED')
-})
-
-test('FDE bundle installs and runs its source-backed local workflow', async ({ runtime }, info) => {
-  const client = await runtime.connect()
-  await install(client, 'examples/fde/knowledge-qa')
-  const session = await client.session.new({
-    sessionKey: randomUUID(),
-    cwd: runtime.workspace,
-    preset: 'full-access',
-    bundles: ['@agnes-fde/knowledge-qa#knowledge-qa'],
-  })
-  await session.attach()
-  expect(await session.capabilities()).toMatchObject({
-    loop: { value: { id: 'fde.knowledge-qa', version: '3.0.0' } },
-    bundles: ['@agnes-fde/knowledge-qa#knowledge-qa'],
-  })
-  await prompt(session, 'What is the refund window and who reviews refund requests?')
-  const present = await toolResult(session, 'present')
-  expect(JSON.stringify(present)).toContain('report.md')
-  const output = await session.projectUI(undefined, { surface: 'web' })
-  expect(JSON.stringify(output)).toContain('knowledge-qa')
-  const read = await toolResult(session, 'write')
-  expect(JSON.stringify(read)).toContain('fde-output/knowledge-qa/')
-  const write = output.nodes.findLast((node) => node.kind === 'tool' && node.name === 'write')
-  if (write?.kind !== 'tool') throw new Error('FDE must write its deliverable')
-  const detail = await session.readToolDetail(write.seq, write.resultSeq)
-  const args = detail.call.args
-  if (!args || typeof args !== 'object' || Array.isArray(args) || typeof args.path !== 'string')
-    throw new Error('FDE write must have a persisted output path')
-  expect(await readFile(join(runtime.workspace, args.path), 'utf8')).toContain('Source-backed answer')
-  await info.attach('fde-projection.json', { body: JSON.stringify(output), contentType: 'application/json' })
-  await runtime.restart()
-  const restarted = await runtime.connect()
-  const restored = await restarted.session.load(session.id, { cwd: runtime.workspace })
-  await restored.attach()
-  expect(await restored.capabilities()).toMatchObject({
-    loop: { value: { id: 'fde.knowledge-qa', version: '3.0.0' } },
-    bundles: ['@agnes-fde/knowledge-qa#knowledge-qa'],
-  })
-  await prompt(restored, 'Who reviews refund requests?')
-  expect(JSON.stringify(await toolResult(restored, 'present'))).toContain('report.md')
-  expect(JSON.stringify(await restored.projectUI(undefined, { surface: 'web' }))).toContain('knowledge-qa')
 })
