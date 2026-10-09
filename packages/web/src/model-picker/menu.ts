@@ -1,7 +1,7 @@
 import { tr } from '@agnes/web-foundation/locale-bridge'
 import { createElement, type ReactNode } from 'react'
-import type { ModelPickerOption, ModelPickerState } from './model-picker-types.js'
-import { sameOption } from './model-picker-state.js'
+import type { ModelPickerOption, ModelPickerState } from './types.js'
+import { sameOption } from './state.js'
 
 export function modelOption(
   option: ModelPickerOption,

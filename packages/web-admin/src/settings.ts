@@ -30,7 +30,7 @@ import {
   option,
   errorText,
   focusable,
-} from './settings-dialog.js'
+} from './settings/dialog.js'
 
 export type SettingsControllerOptions = {
   client: Client

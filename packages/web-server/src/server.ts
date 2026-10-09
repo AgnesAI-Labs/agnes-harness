@@ -1,85 +1,37 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
-import { extname, isAbsolute, join, posix } from 'node:path'
-import {
-  type AppServerParams,
-  type AppServerResult,
-  httpRpcError,
-  normalizeRpcError,
-  type RpcError,
-} from '@agnes/protocol'
+import { createServer, type ServerResponse } from 'node:http'
+import { extname, isAbsolute, join } from 'node:path'
+import { httpRpcError, normalizeRpcError, type RpcError } from '@agnes/protocol'
 import { HISTORY_SEARCH_PATH, handleHistorySearch } from './history-route.js'
 import { FILE_UPLOAD_PATH } from '@agnes/protocol'
-import { handleFileUpload, type FileUploadHandler } from './upload-route.js'
-import { VENDOR_ENTRY_NAMES } from './vendor-assets.js'
+import { handleFileUpload } from './upload-route.js'
 import { webhookRoute } from './webhook-route.js'
-
-export const DEFAULT_WEB_PORT = 4177
-export const WORKSPACE_PICKER_PATH = '/api/workspace-picker'
-export const PLAN_MODE_PATH = '/api/plan-mode'
-const PLAN_MODE_BODY_LIMIT = 64 * 1024
-const HOST = '127.0.0.1'
-const FILES = new Set([
-  'index.html',
-  'admin.html',
-  'resources.html',
-  'theme.js',
-  'theme.js.map',
-  'app.js',
-  'app.js.map',
-  'admin.js',
-  'admin.js.map',
-  'admin-standalone.js',
-  'admin-standalone.js.map',
-  'resources.js',
-  'resources.js.map',
-  'resources-standalone.js',
-  'resources-standalone.js.map',
-  'style.css',
-  'antd.css',
-  'tokens.css',
-  // 侧栏品牌位与过程行头像共用的客户端 AgnesMark 位图。白名单仍然逐文件放行
-  // （不放宽成任意 .png），它由 packages/web/public 随 style.css 一起拷进发行目录。
-  'brand-mark.png',
-])
-const MIME: Record<string, string> = {
-  '.html': 'text/html',
-  '.js': 'text/javascript',
-  '.map': 'application/json',
-  '.css': 'text/css',
-  '.png': 'image/png',
-}
-// Skin assets are a separate namespace from the build artifacts above: their extension allowlist is
-// the same one the installer enforces, so an unknown extension is refused here rather than sniffed.
-const SKIN_MIME: Record<string, string> = {
-  '.css': 'text/css',
-  '.webp': 'image/webp',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.avif': 'image/avif',
-  '.woff2': 'font/woff2',
-  '.woff': 'font/woff',
-}
-// Client module assets (`/plugins/*`) are executable code and styles served to the page, so their
-// extension allowlist is narrower than the skins one: exactly the module entry, its stylesheet and
-// source maps. An unknown extension is refused here rather than sniffed.
-const CLIENT_MODULE_MIME: Record<string, string> = {
-  '.js': 'text/javascript',
-  '.mjs': 'text/javascript',
-  '.css': 'text/css',
-  '.map': 'application/json',
-}
-
-/** What a skin resolver answers with: a file to read, the bytes, or nothing. */
-export type SkinAssetResolution = string | Uint8Array | null
-
-/** What a client module resolver answers with: a file to read, the bytes, or nothing. */
-export type ClientModuleAssetResolution = string | Uint8Array | null
-
-/** A reload hint for one immutable client-module snapshot. */
-export type PluginRebuiltEvent = Readonly<{ packageId: string; revision: string }>
+import type { PluginRebuiltEvent, WebServerOptions, WebServer } from './server-types.js'
+export type {
+  SkinAssetResolution,
+  ClientModuleAssetResolution,
+  PluginRebuiltEvent,
+  WebServerOptions,
+  WorkspacePickerResult,
+  WorkspacePicker,
+  WebServer,
+} from './server-types.js'
+export { DEFAULT_WEB_PORT, WORKSPACE_PICKER_PATH, PLAN_MODE_PATH } from './server-assets.js'
+import {
+  DEFAULT_WEB_PORT,
+  WORKSPACE_PICKER_PATH,
+  PLAN_MODE_PATH,
+  PLAN_MODE_BODY_LIMIT,
+  HOST,
+  MIME,
+  SKIN_MIME,
+  CLIENT_MODULE_MIME,
+  importMapScriptHash,
+  fileName,
+} from './server-assets.js'
+import { loopbackOrigin, loopbackWs, port } from './server-security.js'
+import { readLimitedBody, json, listen } from './server-http.js'
 
 type WatchedPluginBuild = {
   packageId: string
@@ -88,262 +40,6 @@ type WatchedPluginBuild = {
   size: number
   digest: string
 }
-
-export type WebServerOptions = {
-  fileUpload?: FileUploadHandler
-  /** Directory containing the built index.html, app.js and style.css files. */
-  root: string
-  /** Credential-free loopback WebSocket endpoint advertised to the browser. */
-  wsUrl: string
-  /** @deprecated Ignored legacy input; local Web access no longer uses a browser token. */
-  token?: string
-  /** Fixed local HTTP port. The default is kept stable for the daemon origin contract. */
-  port?: number
-  /** Exact page origin selected by the daemon. Defaults to http://127.0.0.1:<port>. */
-  origin?: string
-  /** Add the source-development reload client and event stream. Disabled for ordinary serve runs. */
-  developmentReload?: boolean
-  /**
-   * Optional fixed admin-surface BFF. It receives matching requests before static routing and
-   * returns true only when it wrote the response itself.
-   */
-  handleAdmin?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>
-  /**
-   * Optional same-origin skin asset resolver. Receives the request pathname and answers with either
-   * an absolute file path, the bytes themselves, or null. Path authority lives in the resolver (the
-   * package manager owns it), so this server never learns where packages are installed; it owns only
-   * method, MIME and headers.
-   *
-   * Bytes exist because the production launcher is not the process that owns the files: it asks the
-   * daemon over RPC (design §22). Returning bytes keeps that a single round trip with no temporary
-   * file to clean up, and it may be async for the same reason.
-   */
-  skinAsset?: (pathname: string) => SkinAssetResolution | Promise<SkinAssetResolution>
-  /**
-   * Optional same-origin client module asset resolver for `/plugins/*` (design WC3). Same contract
-   * as `skinAsset`: it receives the request pathname and answers with either an absolute file path,
-   * the bytes themselves, or null. Path authority lives in the resolver (the daemon answers only
-   * from its immutable snapshots), so this server never learns where packages are installed; it owns
-   * only method, the three-MIME allowlist and headers. A miss and a refusal are the same null, which
-   * this route turns into the same 404 the skin route uses.
-   */
-  clientModuleAsset?: (pathname: string) => ClientModuleAssetResolution | Promise<ClientModuleAssetResolution>
-  /**
-   * Optional launcher-owned subscription to daemon roster rebuilds.  The static server only fans
-   * these safe `{ packageId, revision }` hints out over same-origin SSE; it neither watches package
-   * directories nor learns package-store paths.  A missing subscription deliberately leaves the
-   * endpoint alive but inert (release builds have no development watcher).
-   */
-  subscribePluginEvents?: (
-    listener: (event: PluginRebuiltEvent) => void,
-  ) => (() => void) | Promise<() => void>
-  /**
-   * Poll file-backed plugin build artifacts after they are served.  `mtimeMs` is only a cheap
-   * sentinel: a rebuilt event is emitted only after the bytes are hashed and the digest differs.
-   * This is intentionally stat polling rather than fs.watch because the resolver may point at a
-   * network mount.  The default is 500 ms, a proven cadence for network-backed file systems.
-   */
-  pluginBuildPollMs?: number
-  /** Optional launcher-owned native directory picker. Paths are still validated by workspace.add. */
-  workspacePicker?: WorkspacePicker
-  /**
-   * Optional mounted-Surface reverse proxy (`@agnes/daemon`'s `createMountProxy`). A GET/HEAD consults
-   * it just before the static asset whitelist (`fileName`) so a mount like `/demo` is not rejected as
-   * an unknown asset, and only there: every branch above it (the workspace picker, `handleAdmin`, the
-   * fixed admin API 503s under `/admin`, the `/skins` and `/plugins` resolvers) already returns before
-   * this point for any request it handles, so this can never shadow them. Any other method consults it
-   * from inside the method gate, only when `Origin` is this server's origin and `Sec-Fetch-Site` is
-   * absent or `same-origin`; otherwise that request stays a 405. It answers
-   * synchronously with whether it claimed the request (the forwarded response itself is written
-   * asynchronously); when it returns false or is not provided, behavior is byte-for-byte the same as
-   * before this option existed.
-   */
-  mountProxy?: (request: IncomingMessage, response: ServerResponse) => boolean
-  /**
-   * Ledger directory for same-origin history search. When omitted, the route uses the standard
-   * home data directory. A profile with a custom dataDir must pass this; the route does not guess.
-   */
-  historyDataDir?: string
-  historySearch?: (
-    input: AppServerParams<'_agnes/v1/admin.history.search'>,
-  ) => Promise<AppServerResult<'_agnes/v1/admin.history.search'>>
-  triggers?: (
-    input: import('@agnes/protocol/gen/app-server').WebhookRequest,
-  ) => Promise<import('@agnes/protocol/gen/app-server').WebhookResult>
-  planCommand?: (
-    input: AppServerParams<'_agnes/v1/admin.plan'>,
-  ) => Promise<AppServerResult<'_agnes/v1/admin.plan'>>
-}
-
-export type WorkspacePickerResult =
-  | { status: 'selected'; path: string }
-  | { status: 'cancelled' }
-  | { status: 'unavailable' }
-
-export type WorkspacePicker = {
-  available(): Promise<boolean>
-  pick(signal: AbortSignal): Promise<WorkspacePickerResult>
-}
-
-export type WebServer = {
-  url: string
-  reloadDevelopmentClients?(): void
-  close(): Promise<void>
-}
-
-function loopbackOrigin(value: string): URL {
-  let origin: URL
-  try {
-    origin = new URL(value)
-  } catch {
-    throw new Error('Web origin must be an exact loopback HTTP origin')
-  }
-  if (
-    origin.protocol !== 'http:' ||
-    !['127.0.0.1', 'localhost', '[::1]'].includes(origin.hostname) ||
-    origin.username ||
-    origin.password ||
-    origin.pathname !== '/' ||
-    origin.search ||
-    origin.hash
-  )
-    throw new Error('Web origin must be an exact loopback HTTP origin')
-  return origin
-}
-
-function loopbackWs(value: string): URL {
-  let url: URL
-  try {
-    url = new URL(value)
-  } catch {
-    throw new Error('WebSocket endpoint must be a credential-free loopback URL')
-  }
-  if (
-    !['ws:', 'wss:'].includes(url.protocol) ||
-    !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash
-  )
-    throw new Error('WebSocket endpoint must be a credential-free loopback URL')
-  return url
-}
-
-function port(value: number): number {
-  if (!Number.isInteger(value) || value < 0 || value > 65_535) throw new Error('invalid Web port')
-  return value
-}
-
-/** WC5：index.html 内联 import map 脚本体（<script type="importmap"> 与 </script> 之间的精确字节）
- *  的 SHA-256，供 CSP script-src 以哈希放行。文件缺失或无 import map 时返回 undefined（fail-closed）。 */
-async function importMapScriptHash(root: string): Promise<string | undefined> {
-  let html: string
-  try {
-    html = await readFile(join(root, 'index.html'), 'utf8')
-  } catch {
-    return undefined
-  }
-  const match = html.match(/<script type="importmap">([\s\S]*?)<\/script>/)
-  if (!match) return undefined
-  const body = match?.[1]
-  if (!body) return undefined
-  return createHash('sha256').update(body, 'utf8').digest('base64')
-}
-
-function fileName(requestUrl: string): string {
-  let pathname: string
-  try {
-    pathname = new URL(requestUrl, 'http://127.0.0.1').pathname
-  } catch {
-    throw new Error('invalid Web request path')
-  }
-  const file =
-    pathname === '/'
-      ? 'index.html'
-      : pathname === '/admin/plugins' || pathname === '/admin/plugins/'
-        ? 'admin.html'
-        : pathname === '/admin/resources' || pathname === '/admin/resources/'
-          ? 'resources.html'
-          : // URL paths use forward slashes on every OS; disk paths are joined only when reading.
-            posix.normalize(pathname).replace(/^[/\\]+/, '')
-  // esbuild 的 splitting 会为动态 import() 产出带哈希的共享 chunk。它们与入口同为同源静态资源，
-  // 所以用固定模式放行，而不是把路径校验放宽成任意文件。
-  const isChunk = /^chunk-[A-Za-z0-9_-]+\.(?:js|css)(\.map)?$/.test(file)
-  // WC5：/vendor/* 平台共享单例命名空间——入口文件名固定（import map 的映射目标），共享 chunk
-  // 走 chunk- 哈希模式；命名空间内不允许任意文件，不放宽成目录列举。
-  const vendorEntry = /^vendor\/([a-z0-9-]+)\.js(?:\.map)?$/.exec(file)?.[1]
-  const isVendor =
-    (vendorEntry !== undefined && VENDOR_ENTRY_NAMES.has(vendorEntry)) ||
-    /^vendor\/chunk-[A-Za-z0-9_-]+\.js(\.map)?$/.test(file)
-  if (!(FILES.has(file) || isChunk || isVendor) || file.includes('..')) throw new Error('Web asset not found')
-  return file
-}
-
-function readLimitedBody(request: IncomingMessage, limit: number): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    let size = 0
-    const fail = (): void => {
-      request.removeAllListeners('data')
-      reject(new Error('invalid body'))
-    }
-    request.on('data', (chunk: Buffer) => {
-      size += chunk.length
-      if (size > limit) {
-        fail()
-        return
-      }
-      chunks.push(chunk)
-    })
-    request.on('end', () => {
-      if (size !== limit) fail()
-      else resolve(Buffer.concat(chunks).toString('utf8'))
-    })
-    request.on('error', fail)
-  })
-}
-
-function json(response: ServerResponse, status: number, body: unknown): void {
-  // Compatibility refusals also use the App Server envelope, never exception prose.
-  if (body && typeof body === 'object' && 'error' in body) {
-    const error = body.error
-    if (
-      typeof error === 'string' ||
-      (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string')
-    ) {
-      const code = typeof error === 'string' ? 'INVALID_REQUEST' : (error.code as string)
-      body = { ...body, error: httpRpcError(status, code) }
-    }
-  }
-  response.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store',
-    'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
-    'Referrer-Policy': 'no-referrer',
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
-  })
-  response.end(JSON.stringify(body))
-}
-
-function listen(server: Server, requestedPort: number): Promise<{ port: number; host: string }> {
-  return new Promise((resolve, reject) => {
-    const failed = (error: Error) => reject(error)
-    server.once('error', failed)
-    server.listen(requestedPort, HOST, () => {
-      server.removeListener('error', failed)
-      const address = server.address()
-      if (!address || typeof address === 'string') {
-        reject(new Error('Web listener did not bind'))
-        return
-      }
-      resolve({ port: address.port, host: address.address })
-    })
-  })
-}
-
 /** Start the static Web client. The daemon is intentionally outside this module's lifecycle. */
 export async function createWebServer(options: WebServerOptions): Promise<WebServer> {
   if (!isAbsolute(options.root)) throw new Error('Web asset root must be absolute')

@@ -1,4 +1,4 @@
-import type { ModelPickerOption, ModelPickerSettings, ModelPickerState } from './model-picker-types.js'
+import type { ModelPickerOption, ModelPickerSettings, ModelPickerState } from './types.js'
 
 export function sameOption(
   left: ModelPickerOption | undefined,

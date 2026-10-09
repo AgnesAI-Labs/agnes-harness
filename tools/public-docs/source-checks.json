@@ -118,7 +118,7 @@
     ]
   },
   {
-    "path": "packages/web-server/src/server.ts",
+    "path": "packages/web-server/src/server-assets.ts",
     "includes": ["posix.normalize(pathname)"]
   },
   {

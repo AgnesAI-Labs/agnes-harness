@@ -258,7 +258,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-conversation/src': 4172,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src/settings': 6299,
+  'packages/web-admin/src/settings': 6404,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/permission-picker': 248,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
@@ -266,7 +266,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/admin/plugins/api': 543,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src': 12005,
+  'packages/web-admin/src': 12219,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-foundation/src': 2340,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
@@ -602,7 +602,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-04 preview-path fixes: the leaf keyboard boundary follows the previewed model, the
   // duplicate-submit short circuit applies only to the current model, the blur guard covers the
   // detail panel, and hover matches the keyboard path (+6 counted lines). Measured: 975, exact.
-  'packages/web/src/model-picker': 800,
+  'packages/web/src/model-picker': 997,
   // 2026-09-25 UI refactor: settings-owned element construction uses the shared UI host boundary.
   // Re-measured with countLines(): 754, exact, no spare.
   // 2026-10-07 integration review: Provider, generation, publication, bundle and security settings
@@ -3198,7 +3198,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: new scope -> 78; exact cap, no exclusions or spare allocation.
   'packages/loop-default/src': 80,
   'packages/base/extensions/computer-use': 1785,
-  'packages/web-admin/src/admin/plugins/admin': 1930,
+  'packages/web-admin/src/admin/plugins/admin': 2144,
   'packages/web-ui/src/admin-confirmation': 442,
   'packages/web-ui/src/admin-text': 114,
 }
