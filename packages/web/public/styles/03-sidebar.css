@@ -1,0 +1,251 @@
+.sidebar {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0.375rem 0.75rem;
+  /* 侧栏自己**不滚动**：滚动职责只归 `#sessions`。此前这里是 `auto`，
+     一旦内容总高超出视口（窗口拉矮，或 `sidebar.panellist` 插槽有内容），
+     整个侧栏变成滚动容器，底部的「设置」行会随列表一起滚出视野。
+     裁掉溢出即可 —— 列表在剩余空间里自己滚，底部行始终留在原位。 */
+  overflow: hidden;
+  border-right: 1px solid var(--agnes-line-primary);
+  background: var(--agnes-bg-app-sidebar);
+  border-right-color: var(--agnes-line-primary);
+}
+/* 插槽只承载组件生命周期；会话列表和底部操作仍参与侧栏的纵向 flex 布局。
+   必须覆盖到**最内层**的 slot 包装：侧栏实际有 `ui:sidebar` → `sidebar` 两组各两层包装，
+   只让外层透明时，内层 `[data-slot="sidebar"]` / `[data-slot-entry]` 仍是普通 block 盒子，
+   `#sessions` 的 flex:1 与 `.sidebar-footer` 的 flex:none 全部失效 ——
+   列表不再自己滚动，底部「设置」也不会钉在侧栏底部。这里按后代泛化，避免写死嵌套深度。 */
+.sidebar :where([data-slot], [data-slot-entry]) {
+  display: contents;
+}
+.sidebar-head,
+.topbar,
+.connection-group,
+.dialog-heading,
+.dialog-heading-actions {
+  display: flex;
+  align-items: center;
+}
+.sidebar-head {
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0 0.5rem 0.25rem;
+  margin: 0 0 0.5rem;
+  min-height: 3.75rem;
+}
+.brand-lockup {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+/* 品牌锁定组合沿用原 AgnesMark，图形标和字标共用主题品牌色。 */
+.brand-lockup {
+  color: var(--agnes-brand-primary);
+}
+/* 原 AgnesMark 以 alpha 蒙版着色，侧栏、空态与过程行头像复用同一资产。 */
+.agnes-mark {
+  flex: 0 0 auto;
+  background: currentColor;
+  -webkit-mask: url("/brand-mark.png") center / contain no-repeat;
+  mask: url("/brand-mark.png") center / contain no-repeat;
+}
+.brand-mark-image {
+  width: 1.375rem;
+  height: 1.375rem;
+}
+.brand-wordmark-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 1.0625rem;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+.eyebrow,
+.section-label,
+.task-heading h1,
+.task-heading span,
+#composer-hint,
+.field-hint,
+.dialog-intro {
+  margin: 0;
+}
+.eyebrow {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+.section-label {
+  color: var(--agnes-text-tertiary);
+  font-size: 0.875rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.25rem;
+  text-transform: none;
+}
+.sidebar-actions {
+  display: grid;
+}
+.sidebar-actions .primary-button {
+  height: 2.375rem;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  border-width: 0.5px;
+  border-color: var(--agnes-line-emphasis);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-page);
+  box-shadow: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.375rem;
+}
+.section-label {
+  margin: 0;
+}
+#sessions {
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  align-content: start;
+  gap: 0.125rem;
+  /* flex:1 + min-height:0 会把列表压进剩余空间；不裁 overflow 时多出来的行
+     直接画到下面的「设置」行上。列表自己滚动，footer 才能钉在底部。 */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.session-row {
+  display: flex;
+  align-items: center;
+  position: relative;
+  min-width: 0;
+  border-radius: var(--radius-md);
+}
+.session-row > :where(.session) {
+  flex: 1;
+  min-width: 0;
+}
+/* 行状态统一在这里上色：悬停、当前会话（`data-active` 由 navigation 打在行上）、
+   菜单打开期间钉住（面板已脱离文档流，指针离开行就丢了 `:hover`）。 */
+.session-row:hover,
+.session-row[data-active="true"],
+.session-row[data-menu-open="true"] {
+  background: var(--agnes-bg-hover);
+}
+.session-menu {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  /* 右缘留 8px（+12px 侧栏内边距 =「⋯」离窗口右缘 24px）：标题距左缘 42px，
+     动作位贴死右缘（16px）会让整行观感左重右轻。 */
+  margin-right: 0.5rem;
+  opacity: 0;
+  pointer-events: none;
+}
+.session-row:hover .session-menu,
+.session-row:focus-within .session-menu,
+.session-row[data-menu-open="true"] .session-menu {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Touch has no durable hover target.  Keeping the session action hit area inert on a narrow
+   sidebar made the menu unreachable by an ordinary tap; expose the already-reserved action slot
+   there while retaining the compact hover treatment for pointer desktops. */
+@media (max-width: 720px) {
+  .session-menu {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+.session-menu-trigger {
+  /* 行内动作使用 16px 裸图标、三级文字色；显式设置 min-height，避免悬停时行高跳动。 */
+  width: 1rem;
+  min-height: 1rem;
+  height: 1rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--agnes-text-tertiary);
+  background: transparent;
+}
+.session-menu-trigger:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--agnes-text-primary);
+  background: transparent;
+}
+/* 菜单卡使用 4px 内边距和 20px 圆角；宽度与落点由 positionPopover 设置。
+   面板挂在 body 上，必须用 fixed 避开侧栏的 overflow 裁剪。 */
+.session-menu-actions {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  padding: 0.25rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 0;
+  border-radius: 1.25rem;
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-popover);
+  box-shadow: var(--shadow-elevation-prominent), var(--shadow-hairline);
+}
+/* 菜单单元显式左对齐；全局 button 使用 inline-flex 居中，text-align 不会覆盖它。 */
+.session-menu-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.625rem;
+  border: 0;
+  border-radius: 0.625rem;
+  color: var(--agnes-text-primary);
+  background: transparent;
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.375rem;
+  text-align: left;
+}
+.session-menu-actions button:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--agnes-bg-hover);
+}
+.session-menu-actions .icon {
+  color: var(--agnes-text-tertiary);
+}
+.session-rename-dialog {
+  width: min(480px, calc(100vw - 32px));
+  padding: 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.session-rename-dialog form {
+  display: grid;
+  gap: 16px;
+}
+.session-rename-dialog input {
+  width: 100%;
+  min-width: 0;
+}
+.session-rename-error {
+  margin: 0;
+  color: var(--agnes-status-danger-text);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.session-rename-error:empty {
+  display: none;
+}

@@ -1,3 +1,4 @@
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 /** @vitest-environment happy-dom */
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -21,7 +22,7 @@ function ruleBody(css: string, selector: string): string {
 }
 
 it('both hosts share one scroll model: documents fixed, list scrolls, detail scrolls only in the middle', async () => {
-  const css = await readFile(resolve(publicDirectory, 'style.css'), 'utf8')
+  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
 
   // The standalone host must declare its own model instead of inheriting `overflow: hidden` from the
   // workbench shell (style.css top). That inheritance, plus nothing to scroll, is exactly what made
@@ -46,7 +47,7 @@ it('both hosts share one scroll model: documents fixed, list scrolls, detail scr
 })
 
 it('keeps settings DSH and pane mounts inside the content grid column', async () => {
-  const css = await readFile(resolve(publicDirectory, 'style.css'), 'utf8')
+  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
   const content = ruleBody(css, '#settings-content-slots')
   expect(content).toContain('grid-column: 2')
   expect(content).toContain('grid-row: 1')
@@ -56,7 +57,7 @@ it('keeps settings DSH and pane mounts inside the content grid column', async ()
 })
 
 it('settings mount the shared admin surface in-document without iframe-era overrides', async () => {
-  const css = await readFile(resolve(publicDirectory, 'style.css'), 'utf8')
+  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
   // The pane id is now a legitimate same-document host. Keep rejecting the old cross-document
   // layout path, and verify the real mounted surface rather than banning its host selector.
   expect(css).not.toContain('admin-embedded')
@@ -88,7 +89,7 @@ it('the resource toolbar keeps its actions with the tabs', async () => {
 })
 
 it('list rows use fixed tracks so the Switch column aligns across rows', async () => {
-  const css = await readFile(resolve(publicDirectory, 'style.css'), 'utf8')
+  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
   // Each row is its own grid, so an `auto` track is sized per row and the Switch column drifts.
   // 状态灯移除后每行只剩标题和 Switch；资源页也必须收成两段，否则空出来的第三段会把 Switch 挤离右边缘。
   expect(ruleBody(css, '.plugin-row')).not.toMatch(/grid-template-columns:[^;]*\bauto\b/)
@@ -97,7 +98,7 @@ it('list rows use fixed tracks so the Switch column aligns across rows', async (
 })
 
 it('the toolbar search field owns its type scale and a visible border in every state', async () => {
-  const css = await readFile(resolve(publicDirectory, 'style.css'), 'utf8')
+  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
   const field = ruleBody(css, '.plugin-search-field input')
   // Without an explicit size it fell back to the 16px body value and looked oversized next to the
   // 13px controls in the same toolbar.
@@ -107,13 +108,13 @@ it('the toolbar search field owns its type scale and a visible border in every s
 })
 
 it('keeps the Agnes mark while hiding the wordmark in the collapsed sidebar', async () => {
-  const css = await readFile(resolve(publicDirectory, 'style.css'), 'utf8')
+  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
   const wordmark = css.match(/body\.sidebar-collapsed \.brand-wordmark-text\s*\{[^}]*\}/)?.[0]
   expect(wordmark).toContain('display: none')
 })
 
 it('gives plugin and resource empty states the shared hero layout', async () => {
-  const css = await readFile(resolve(publicDirectory, 'style.css'), 'utf8')
+  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
   const empty = ruleBody(css, '.admin-empty-state')
   expect(empty).toContain('display: grid')
   expect(empty).toContain('place-content: center')

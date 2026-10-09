@@ -1,0 +1,660 @@
+.conversation-turn {
+  margin: 0 0 1rem;
+}
+.turn-user:empty,
+.turn-final:empty,
+.turn-process-body:empty,
+.turn-attention:empty {
+  display: none;
+}
+.turn-response {
+  min-width: 0;
+}
+/* 身份行独立于过程折叠；摘要只承载真实状态、耗时和计数，箭头紧随文字。 */
+.turn-process {
+  min-width: 0;
+  margin: 0 0 0.5rem;
+  color: var(--agnes-text-tertiary);
+}
+.turn-process > summary {
+  width: fit-content;
+  max-width: 100%;
+  min-height: 1.5rem;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  color: var(--agnes-text-secondary);
+  background: transparent;
+  font-size: var(--font-size-sm);
+  line-height: 1.5rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* 身份行：圆形描边头像 + 助手名字。 */
+.process-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  margin: 1rem 0 0.5rem;
+}
+.turn-status {
+  margin: 0 0 0.5rem;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5rem;
+  overflow-wrap: anywhere;
+}
+.turn-error {
+  margin: 0 0 0.5rem;
+  color: var(--agnes-status-danger-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.process-avatar {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: 50%;
+  background: var(--agnes-bg-surface);
+}
+/* mask 会把元素自身的描边一起裁掉，所以圆框在外层、图形标在内层。 */
+.process-avatar-mark {
+  width: 1rem;
+  height: 1rem;
+  background: var(--agnes-brand-primary);
+}
+.process-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--agnes-text-primary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.process-row {
+  max-width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.process-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.process-chevron {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  color: var(--agnes-text-tertiary);
+  transform: rotate(-90deg);
+  transition:
+    transform var(--transition),
+    color var(--transition-fast);
+}
+.turn-process[open] .process-chevron {
+  transform: rotate(0deg);
+}
+.turn-process > summary:hover,
+.turn-process > summary:focus-visible {
+  color: var(--agnes-text-primary);
+}
+.turn-process > summary:hover .process-chevron,
+.turn-process > summary:focus-visible .process-chevron {
+  color: var(--agnes-text-secondary);
+}
+/* 过程成员沿内容轴排列；只由思考正文绘制竖线，工具行和元信息保留自身层级。 */
+.turn-process-body {
+  margin-top: 0.5rem;
+  padding-left: 0;
+  border-left: 0;
+}
+.turn-process-body > * {
+  margin: 0;
+  padding: 0.5rem 0;
+}
+.turn-process-body > :first-child {
+  padding-top: 0;
+}
+.turn-process-body > :last-child {
+  padding-bottom: 0;
+}
+.turn-process-body > * + * {
+  border-top: 0.5px solid var(--agnes-line-primary);
+}
+/* 工具行前缀图标：24 网格描边字形，与名称同族。 */
+.tool-icon {
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--agnes-text-tertiary);
+}
+/* 步骤标题 */
+.turn-process-body .node-label,
+.turn-process-body .tool-name {
+  color: var(--agnes-text-primary);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.5rem;
+  text-transform: none;
+}
+.turn-process-body .tool-status {
+  color: var(--agnes-text-tertiary);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.5rem;
+}
+.turn-process-body .tool-summary {
+  margin: 0.25rem 0 0;
+  padding: 0.375rem 0.5rem;
+  overflow: visible;
+  border: 0.5px solid var(--agnes-line-primary);
+  border-radius: 0.5rem;
+  color: var(--agnes-text-secondary);
+  background: var(--agnes-bg-code);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 0.6875rem;
+  line-height: 1.1875rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* 元信息（用量这类）：更小、更弱，与步骤正文区分开。 */
+.turn-process-body .timeline-node.cost {
+  color: var(--agnes-text-tertiary);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+/* 标签不参与收缩：否则长数值会把「用量」挤成一列两个字。 */
+.turn-process-body .cost .node-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.turn-process-body .cost .node-label,
+.turn-process-body .cost .node-body {
+  color: var(--agnes-text-tertiary);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.125rem;
+}
+.turn-process-body .cost .node-body {
+  color: var(--agnes-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+/* 「查看详情」是步骤里的次级动作 */
+.turn-process-body .tool-detail {
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.5rem;
+  color: var(--agnes-text-tertiary);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+/* 行内详情：0fr → 1fr 的栅格行过渡，展开与收起两个方向都有动画；
+   内容层 overflow: hidden 才有收缩效果。 */
+.tool-detail-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--transition);
+}
+.tool-detail-body > .tool-detail-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.tool[data-expanded="true"] .tool-detail-body,
+[data-agnes-tool-card][data-expanded="true"] .tool-detail-body {
+  grid-template-rows: 1fr;
+}
+.tool-detail-text {
+  max-height: 16.25rem;
+  overflow-y: auto;
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.75rem;
+  border: 0.5px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-secondary);
+  background: var(--agnes-bg-code);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 0.6875rem;
+  line-height: 1.1875rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.turn-process-body .tool-detail:hover:not(:disabled) {
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-hover);
+}
+.turn-response .turn-process-body .timeline-node {
+  margin-left: 0;
+}
+.turn-process-body > .timeline-node.assistant {
+  padding-left: 0;
+}
+.turn-attention {
+  margin: 1rem 0 0;
+}
+.turn-final .assistant {
+  margin-top: 0;
+}
+.turn-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  row-gap: 0.5rem;
+  min-height: 1.75rem;
+  margin: 1rem 0 0 -0.375rem;
+  color: var(--agnes-text-tertiary);
+}
+.turn-action,
+.turn-meta {
+  min-width: 1.75rem;
+  min-height: 1.75rem;
+  height: 1.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.375rem 0.5rem;
+  border-color: transparent;
+  border-radius: 28px;
+  color: var(--agnes-text-tertiary);
+  background: transparent;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.5rem;
+  cursor: pointer;
+}
+.turn-action {
+  width: 1.75rem;
+  padding: 0.375rem;
+}
+.turn-action .icon {
+  width: 0.9375rem;
+  height: 0.9375rem;
+}
+.turn-action:hover:not(:disabled),
+.turn-meta:hover:not(:disabled),
+.turn-meta:focus-visible {
+  border-color: transparent;
+  color: var(--agnes-text-secondary);
+  background: var(--agnes-bg-hover);
+}
+.turn-meta {
+  min-width: 0;
+  margin-left: -0.375rem;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.turn-usage {
+  position: relative;
+}
+.turn-usage > summary {
+  list-style: none;
+}
+.turn-usage > summary::-webkit-details-marker {
+  display: none;
+}
+.turn-usage-grid {
+  position: fixed;
+  z-index: 60;
+  display: none;
+  grid-template-columns: minmax(76px, auto) minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0;
+  padding: 1rem;
+  max-height: min(22rem, 60vh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 0;
+  border-radius: 0.75rem;
+  color: var(--agnes-text-tertiary);
+  background: var(--agnes-bg-page);
+  box-shadow: var(--shadow-elevation-prominent);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+.turn-usage-grid dt,
+.turn-usage-grid dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.turn-usage-grid dd {
+  color: var(--agnes-text-secondary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.turn-usage[open] .turn-usage-grid {
+  display: grid;
+}
+
+@media (max-width: 420px) {
+  .turn-usage-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .turn-usage-grid dd {
+    margin-bottom: 0.5rem;
+    text-align: left;
+  }
+}
+.turn-feedback {
+  color: var(--agnes-status-danger-text);
+  font-size: var(--font-size-xs);
+}
+.timeline-unassigned:not(:empty) {
+  margin: 0 0 1rem;
+  padding: 0.625rem;
+  border-left: 1px solid var(--agnes-line-primary);
+}
+.timeline-node.user {
+  width: fit-content;
+  max-width: min(calc(var(--chat-content-width) * 0.702), 82%);
+  margin: 0 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.user .node-label {
+  display: none;
+}
+.user .node-body {
+  padding: 0.625rem 1rem;
+  border: 0;
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-card);
+  font-size: 0.875rem;
+  line-height: 1.375rem;
+  white-space: pre-wrap;
+}
+.timeline-node.assistant {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.assistant .node-label {
+  display: none;
+}
+.timeline-node.tool,
+.timeline-node.cost,
+.timeline-node.artifact,
+.timeline-node.compaction {
+  margin: 0;
+  border-radius: var(--radius-lg);
+}
+.timeline-node.tool {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.call-usage > summary {
+  width: fit-content;
+  padding: 0.25rem 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+.composer-workspace {
+  align-items: center;
+  min-height: 1.75rem;
+  max-width: min(360px, 45cqw);
+  justify-content: flex-start;
+  padding: 0 0.25rem 0 0.5rem;
+  overflow: hidden;
+  border-color: transparent;
+  border-radius: 1.5rem;
+  color: var(--agnes-text-secondary);
+  background: transparent;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+.composer-workspace:hover:not(:disabled),
+#model:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-bg-hover);
+}
+.composer-workspace [data-workspace-label],
+#model [data-model-label],
+.composer-permission [data-permission-label] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-permission {
+  align-items: center;
+  min-height: 1.75rem;
+  max-width: min(360px, 45cqw);
+  justify-content: flex-start;
+  gap: 0.25rem;
+  padding: 0 0.25rem 0 0.5rem;
+  overflow: hidden;
+  border-color: transparent;
+  border-radius: 1.5rem;
+  color: var(--agnes-text-secondary);
+  background: transparent;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+.composer-permission:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-bg-hover);
+}
+.composer-permission[aria-expanded="true"] .model-chevron {
+  transform: rotate(180deg);
+}
+.permission-picker {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  min-width: min(240px, calc(100vw - 32px));
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 0.25rem;
+  border: 0;
+  border-radius: 1.25rem;
+  /* 此前是未定义的 --agnes-bg-elevated：声明失效 → background 退到 initial（全透明），
+     面板下的正文直接透出来。对齐另外两个浮层（session-menu / model-picker）用 popover。 */
+  background: var(--agnes-bg-popover);
+  box-shadow: var(--shadow-elevation-prominent);
+}
+.permission-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+.permission-picker-option {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: start;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.85rem;
+  cursor: pointer;
+}
+.permission-picker-option[data-active="true"],
+.permission-picker-option:hover {
+  background: var(--agnes-bg-hover);
+}
+.permission-picker-check {
+  color: var(--agnes-text-emphasis);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.permission-picker-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+.permission-picker-label {
+  color: var(--agnes-text-emphasis);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.permission-picker-hint {
+  color: var(--agnes-text-tertiary);
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+#cancel {
+  min-height: 2.125rem;
+  padding: 0 0.75rem;
+  border-color: transparent;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+#session-usage {
+  width: auto;
+
+  z-index: 15;
+}
+.session-usage {
+  position: relative;
+}
+.session-usage > summary {
+  width: 1.75rem;
+  height: 1.75rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  overflow: visible;
+  border-radius: 999px;
+  color: var(--agnes-text-secondary);
+  /* 圆环本身就是指示器，底下再垫一块灰底会脏。只在悬停时给一点反馈。 */
+  background: transparent;
+  list-style: none;
+  transition: background var(--transition-fast);
+}
+.session-usage > summary:hover {
+  background: var(--agnes-bg-hover);
+}
+.session-usage > summary::-webkit-details-marker {
+  display: none;
+}
+.usage-ring {
+  width: 1rem;
+  height: 1rem;
+  display: block;
+  border-radius: 50%;
+  background: conic-gradient(var(--agnes-brand-primary) var(--usage-pct, 0%), var(--agnes-line-primary) 0);
+  /* 豁免：mask 的不透明停靠点必须是纯黑，它不是主题色（见设计 §5.1）。 */
+  -webkit-mask: radial-gradient(circle, transparent 48%, #000 50%);
+  mask: radial-gradient(circle, transparent 48%, #000 50%);
+}
+.usage-summary-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.session-usage > .usage-popover {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.5rem);
+  width: min(20rem, calc(100vw - 2rem));
+  /* 合并 Token 用量分区后内容变长（上下文 4 行 + Token 10 行），面板上限放到
+     36rem 并让视口兜底；真放不下时在面板内滚动。 */
+  max-height: min(36rem, calc(100vh - 6rem));
+  padding: 0.75rem;
+  overflow: auto;
+  border: 0;
+  border-radius: 0.75rem;
+  color: var(--agnes-text-secondary);
+  background: var(--agnes-bg-page);
+  box-shadow: var(--shadow-elevation-prominent);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  cursor: default;
+}
+.usage-popover-head {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+}
+.usage-popover-title {
+  margin: 0;
+  color: var(--agnes-text-tertiary);
+  font-size: 0.75rem;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.usage-context-value {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.usage-context-caption {
+  margin: 0 0 0 auto;
+  overflow: hidden;
+  color: var(--agnes-text-primary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.usage-bar {
+  display: flex;
+  gap: 1px;
+  height: 0.25rem;
+  margin: 0.625rem 0 0.75rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--agnes-bg-hover);
+}
+.usage-bar > span {
+  flex: none;
+  min-width: 2px;
+  height: 100%;
+  display: block;
+  border-radius: 1px;
+  background: var(--agnes-brand-primary);
+}
+:where(.usage-popover) .usage-grid {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 0.125rem 0.75rem;
+  margin: 0;
+  padding: 0;
+  border-top: 0;
+}
+:where(.usage-popover) .usage-grid dt,
+:where(.usage-popover) .usage-grid dd {
+  min-width: 0;
+  margin: 0;
+}
+:where(.usage-popover) .usage-grid dt {
+  overflow: hidden;
+  color: var(--agnes-text-secondary);
+  text-overflow: ellipsis;
+}
+:where(.usage-popover) .usage-grid dd {
+  color: var(--agnes-text-primary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
+}

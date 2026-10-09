@@ -51,3 +51,17 @@ Dismissible dialog DOM bindings: [web-ui](../../packages/web-ui/src/dom/dialog-b
 Host assembly contract tests: [owner suites](../../packages/host/test/owners)
 
 Private paths under daemon, Host and Web use their owning packages directly; obsolete one-line forwarding paths have been removed. Plugin author registration is explicitly supplied from `@agnes/host/testkit`.
+
+Large frontend entries retain their original exports while delegating to domain modules:
+
+| Entry | Owning modules |
+| --- | --- |
+| Trace view | [pure trace model](../../packages/web-units/src/trace-model.ts), [React view](../../packages/web-units/src/trace.ts) |
+| Plugin administration | [page lifecycle and operations](../../packages/web-admin/src/admin/plugins/admin/page.tsx), [views](../../packages/web-admin/src/admin/plugins/admin/views.tsx), [control panels](../../packages/web-admin/src/admin/plugins/control-panel.tsx) |
+| Settings and model picker | [dialog helpers](../../packages/web-admin/src/settings/dialog.ts), [model picker helpers](../../packages/web/src/model-picker), [settings catalogs](../../packages/web-foundation/src/locales/settings), [plugin catalogs](../../packages/web-admin/src/admin/plugins/locales/admin) |
+| Resource administration | [MCP form](../../packages/resource-control-web/src/mcp-form.ts), [page](../../packages/resource-control-web/src/admin.tsx) |
+| Client services and slots | [service contracts](../../packages/web-client/src/service-contracts.ts), [service entry](../../packages/web-client/src/services.ts), [slot core](../../packages/web-slots/src/core.ts), [slot contracts](../../packages/web-slots/src/types.ts) |
+| Static Web server | [options](../../packages/web-server/src/server-types.ts), [assets](../../packages/web-server/src/server-assets.ts), [security](../../packages/web-server/src/server-security.ts), [HTTP helpers](../../packages/web-server/src/server-http.ts) |
+| Web styles | [ordered manifest](../../packages/web/public/style.css), [domain fragments](../../packages/web/public/styles), [source composer](../../tools/web-style-source.mjs) |
+
+CSS fragments remain in their original cascade order, including later overrides for the same domain. Both build paths compose them into the existing `/style.css` asset before appending conversation styles. Source-style tests and theme-token generation read the same composed source; development watches every fragment.

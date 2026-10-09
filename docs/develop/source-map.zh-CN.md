@@ -49,3 +49,17 @@ MCP 传输健康回调：[implementation](../../packages/base/src/mcp/transport-
 Host 组合合同测试：[owner suites](../../packages/host/test/owners)
 
 Daemon、Host、Web 的私有实现路径直接使用所属包；已删除过时的一行转发路径。插件作者显式从 `@agnes/host/testkit` 提供注册桥。
+
+大型前端入口保留原有出口，具体职责分给领域模块：
+
+| 入口 | 所属模块 |
+| --- | --- |
+| 轨迹视图 | [纯轨迹模型](../../packages/web-units/src/trace-model.ts)、[React 视图](../../packages/web-units/src/trace.ts) |
+| 插件管理 | [页面生命周期与操作](../../packages/web-admin/src/admin/plugins/admin/page.tsx)、[视图](../../packages/web-admin/src/admin/plugins/admin/views.tsx)、[控制面板](../../packages/web-admin/src/admin/plugins/control-panel.tsx) |
+| 设置与模型选择 | [对话框辅助](../../packages/web-admin/src/settings/dialog.ts)、[模型选择辅助](../../packages/web/src/model-picker)、[设置词典](../../packages/web-foundation/src/locales/settings)、[插件词典](../../packages/web-admin/src/admin/plugins/locales/admin) |
+| 资源管理 | [MCP 表单](../../packages/resource-control-web/src/mcp-form.ts)、[页面](../../packages/resource-control-web/src/admin.tsx) |
+| 客户端服务与插槽 | [服务合同](../../packages/web-client/src/service-contracts.ts)、[服务入口](../../packages/web-client/src/services.ts)、[插槽核心](../../packages/web-slots/src/core.ts)、[插槽合同](../../packages/web-slots/src/types.ts) |
+| 静态 Web 服务 | [选项](../../packages/web-server/src/server-types.ts)、[资源](../../packages/web-server/src/server-assets.ts)、[安全校验](../../packages/web-server/src/server-security.ts)、[HTTP 辅助](../../packages/web-server/src/server-http.ts) |
+| Web 样式 | [有序清单](../../packages/web/public/style.css)、[领域片段](../../packages/web/public/styles)、[源文件拼接工具](../../tools/web-style-source.mjs) |
+
+CSS 片段保留原来的级联顺序，同一领域的后置覆盖仍在后面。两条构建路径先拼接为现有 `/style.css`，再追加对话样式；样式源码测试与主题 token 生成读取相同的拼接源码，开发模式监听每个片段。

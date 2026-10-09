@@ -1,3 +1,4 @@
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 /** @vitest-environment happy-dom */
 
 import { readFileSync } from 'node:fs'
@@ -237,7 +238,7 @@ function assertNoIdSurfaceProperties(css: string, samples: readonly PageRoot[]):
 }
 
 describe('skin region surface invariant (R1)', () => {
-  const css = readFileSync(resolve(process.cwd(), 'packages/web/public/style.css'), 'utf8')
+  const css = readWebStyleSource(resolve(process.cwd(), 'packages/web/public/style.css'))
   let runtime: Awaited<ReturnType<typeof mountRenderedIndex>> | undefined
   let samples: PageRoot[]
 

@@ -161,7 +161,7 @@ Other dialogs, `settings-pane`, and the listed hook surfaces do not require `!im
 
 ## 3. Semantic tokens
 
-The following variable names can appear in `tokens`. The allowlist is generated from `packages/web/public/style.css`, which is the authoritative theme color source. Adding/removing tokens without updating generated output fails `gen:check`; documentation tests compare this list with the generated allowlist.
+The following variable names can appear in `tokens`. The allowlist is generated from `packages/web/public/style.css`, whose ordered source fragments in `public/styles/` are the authoritative theme color source. Adding/removing tokens without updating generated output fails `gen:check`; documentation tests compare this list with the generated allowlist.
 
 <!-- theme-tokens:begin -->
 --agnes-brand-primary

@@ -1,0 +1,186 @@
+#cancel,
+#send {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+#send[data-mode="idle"] {
+  width: 2.125rem;
+  min-width: 2.125rem;
+  height: 2.125rem;
+  min-height: 2.125rem;
+  padding: 0;
+  border-radius: 999px;
+  transform: translateY(-2px);
+}
+dialog {
+  inset: 0;
+  margin: auto;
+  width: min(23.75rem, calc(100vw - 3rem));
+  max-height: var(--dialog-max-height);
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-2xl);
+  color: var(--agnes-text-secondary);
+  background: var(--agnes-bg-page);
+  box-shadow: var(--shadow-elevation-prominent);
+  /* showModal 打开时从下方 8px 淡入；遮罩同步淡入。关闭仍瞬时。 */
+  transition:
+    opacity var(--transition),
+    translate var(--transition),
+    overlay var(--transition) allow-discrete;
+}
+@starting-style {
+  dialog[open] {
+    opacity: 0;
+    translate: 0 8px;
+  }
+  dialog[open]::backdrop {
+    opacity: 0;
+  }
+}
+/* 关闭态必须隐藏。作者样式里的 `display` 会覆盖浏览器对关闭态 dialog 的 `display: none`，
+   于是空盒子（带边框/圆角/阴影）会在页面上渲染成一条"灰线"——插件详情与资源详情此前正是如此。
+   这条兜底与下面把 `.plugin-detail` 的 display 限定到 `[open]` 一起用：治本 + 防复发。 */
+dialog:not([open]) {
+  display: none;
+}
+dialog::backdrop {
+  background: var(--agnes-bg-scrim);
+  backdrop-filter: blur(2px);
+  transition:
+    opacity var(--transition),
+    overlay var(--transition) allow-discrete;
+}
+#new-session {
+  width: min(30rem, calc(100% - 2rem));
+}
+#new-session-error {
+  margin: 0;
+  color: var(--agnes-status-danger-text);
+  font-size: var(--font-size-sm);
+}
+#new-session-error:empty {
+  display: none;
+}
+/* 工具详情默认就是宽版：此前有个"展开阅读/收起阅读"切换按钮，属于多余的一次点击。 */
+.dialog-heading {
+  justify-content: space-between;
+  gap: 1rem;
+}
+.dialog-heading-actions {
+  flex: 0 0 auto;
+  gap: 0.5rem;
+}
+.dialog-heading h2,
+#config-form h2,
+#new-session-form h2 {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.5rem;
+}
+.dialog-intro {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+/* 共享确认弹窗的说明是多行文本（操作摘要 + 后台复核提示），必须保留换行。 */
+#admin-confirm-description {
+  white-space: pre-line;
+}
+.config-heading {
+  display: grid;
+  gap: var(--s8);
+}
+#new-session-form .eyebrow {
+  color: var(--agnes-text-emphasis);
+}
+#config-form .config-heading .eyebrow {
+  color: var(--agnes-brand-primary);
+  font-size: var(--font-size-xs);
+}
+#config-form .config-heading p {
+  margin: 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+.config-section {
+  min-width: 0;
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.config-section + .config-section {
+  padding-top: 1rem;
+}
+.config-section legend {
+  padding: 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.form-field {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.375rem;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.form-field input:not([type="checkbox"]):not([type="radio"]),
+.form-field select,
+.form-field textarea {
+  width: 100%;
+  min-height: var(--control-height-form);
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  line-height: var(--line-sm);
+}
+/* 即时校验的红边（aria-invalid 由 mcp-form-validation 反馈写入）：只换边框色，
+   不动 box-shadow，聚焦时的品牌焦点环仍然生效。 */
+.form-field :is(input, select, textarea)[aria-invalid="true"] {
+  border-color: var(--agnes-status-danger-text);
+}
+.field-hint {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+#config-key-hint:empty {
+  display: none;
+}
+#config-form #config-test {
+  justify-self: start;
+  flex: 0 0 auto;
+  min-height: 2.5rem;
+  border-color: var(--agnes-line-emphasis);
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-bg-surface);
+}
+#config-state,
+#config-form #config-error {
+  min-height: 1.3rem;
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+#config-state {
+  color: var(--agnes-text-tertiary);
+}
+#config-form #config-error {
+  color: var(--agnes-status-danger-text);
+}
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+}

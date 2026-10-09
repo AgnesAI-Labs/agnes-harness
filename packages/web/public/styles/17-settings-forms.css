@@ -1,0 +1,1010 @@
+#config-form .agnes-settings-page-heading {
+  padding-inline-end: 3.25rem;
+}
+#config-close .icon {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+.settings-rail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0 0.75rem;
+}
+.settings-nav-group {
+  display: grid;
+  gap: 0.25rem;
+}
+.settings-nav-label {
+  display: none;
+}
+.settings-nav-item {
+  width: 100%;
+  min-height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  padding: 0.5625rem 1rem 0.5625rem 0.75rem;
+  border: 0;
+  border-radius: 0.75rem;
+  color: var(--agnes-text-primary);
+  background: transparent;
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.375rem;
+  text-align: start;
+}
+.settings-nav-item.active,
+.settings-nav-item[aria-current="page"] {
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-selected);
+  box-shadow: none;
+}
+.settings-nav-item:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-hover);
+}
+#config-form .settings-nav-item .icon {
+  width: 0.9375rem;
+  height: 0.9375rem;
+}
+.settings-content {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: transparent;
+}
+#config-form .config-heading:not(.agnes-settings-page-heading) {
+  min-height: 3.375rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 1.25rem 1.5rem 0.75rem;
+  border-bottom: 1px solid var(--agnes-line-primary);
+  background: transparent;
+}
+#config-form .config-heading .eyebrow {
+  display: none;
+}
+#config-form .config-heading h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.5rem;
+}
+#config-form .config-heading > div > p {
+  max-width: 38rem;
+  margin: 0;
+  color: var(--agnes-text-tertiary);
+  font-size: 0.875rem;
+  line-height: 1.375rem;
+}
+/* 模型账户页：账户列表在上、账户详情在下（用户要求改成上下结构）。
+   外观页仍沿用两栏，未动。 */
+#model-settings-pane .config-workspace {
+  width: min(100%, 45rem);
+  flex: 0 1 auto;
+  display: block;
+  padding-bottom: 1.5rem;
+  overflow: visible;
+}
+.config-workspace {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(17rem, 0.86fr) minmax(26rem, 1.5fr);
+  gap: 1.25rem;
+  padding: 0.5rem 1.5rem 1.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+#computer-use-settings-pane .config-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  overflow-x: hidden;
+}
+#computer-use-settings-pane .config-card {
+  flex: 0 0 auto;
+  padding: 1rem;
+  overflow-wrap: anywhere;
+  box-shadow: none;
+}
+#computer-use-settings-pane .config-card p {
+  margin: 0.5rem 0;
+  text-wrap: pretty;
+}
+#computer-use-settings-pane .config-card .eyebrow {
+  margin-top: 0;
+  color: var(--agnes-text-tertiary);
+}
+#computer-use-settings-pane .config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+#computer-use-settings-pane .config-heading {
+  padding-right: 3rem;
+  flex-wrap: wrap;
+}
+#computer-use-blockers:empty,
+#computer-use-runtime:empty {
+  display: none;
+}
+.config-accounts-section {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  overflow: visible;
+}
+#model-settings-pane .config-accounts-section {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.config-accounts-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0;
+  padding: 1rem 0 0.75rem;
+  border-top: 0;
+}
+#model-settings-pane .config-accounts-heading h3 {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.config-accounts-heading h3,
+.config-detail-heading h3 {
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+#config-form .config-accounts-heading > div > p,
+#config-form #config-account-context {
+  margin-top: 0.25rem;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+#config-add-account {
+  flex: 0 0 auto;
+  border-color: var(--agnes-line-emphasis);
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-bg-surface);
+}
+#config-accounts {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 0.5rem;
+  padding: 0.5rem 0 0;
+  overflow: visible;
+}
+#config-accounts[data-state="empty"]::before {
+  padding: 1.5rem 0.75rem;
+  border: 1px dashed var(--agnes-line-emphasis);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-tertiary);
+  content: attr(data-empty-text);
+  font-size: var(--font-size-xs);
+  text-align: center;
+}
+#config-accounts[data-state="loading"]::before {
+  padding: 1.5rem 0.75rem;
+  border: 1px dashed var(--agnes-line-emphasis);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-tertiary);
+  content: attr(data-loading-text);
+  font-size: var(--font-size-xs);
+  text-align: center;
+}
+.config-account {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "identity actions"
+    "meta actions";
+  align-items: center;
+  justify-items: stretch;
+  gap: 0.125rem 0.75rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  background: var(--agnes-bg-page);
+  transition:
+    border-color var(--transition-fast),
+    background-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+.config-account::before {
+  display: none;
+}
+.config-account:hover,
+.config-account:focus-visible {
+  border-color: var(--agnes-line-emphasis);
+  background: var(--agnes-bg-hover);
+  box-shadow: none;
+}
+.config-account[data-selected="true"] {
+  border-color: var(--agnes-line-emphasis);
+}
+.config-account-select {
+  min-width: 0;
+  min-height: 1.375rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  grid-area: identity;
+  gap: 0.5rem;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-md);
+  color: var(--agnes-text-primary);
+  background: transparent;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  text-align: start;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.config-account-select::before {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--agnes-text-tertiary);
+  content: "";
+}
+.config-account[data-status="ready"] .config-account-select::before {
+  background: var(--agnes-status-success-text);
+}
+.config-account[data-status="missing"] .config-account-select::before {
+  background: var(--agnes-status-danger-text);
+}
+.config-account-select:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--agnes-text-primary);
+  background: transparent;
+  box-shadow: none;
+}
+.config-account-meta {
+  grid-area: meta;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.375rem;
+  padding-left: 1rem;
+  overflow: hidden;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.125rem;
+}
+.config-account-meta > :first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.config-account-status {
+  flex: 0 0 auto;
+  padding: 0.0625rem 0.375rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-sm);
+  color: var(--agnes-text-secondary);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
+.config-account-status[data-tone="success"] {
+  color: var(--agnes-status-success-text);
+}
+.config-account-status[data-tone="brand"] {
+  color: var(--agnes-text-emphasis);
+}
+.config-account-actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+.config-account-actions button {
+  min-height: 1.75rem;
+  padding: 0.25rem 0.5rem;
+  border-color: var(--agnes-line-emphasis);
+  border-radius: var(--radius-md);
+  color: var(--agnes-text-tertiary);
+  background: var(--agnes-surface-glass-soft);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+.config-account-actions button:hover:not(:disabled) {
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-surface-glass-hover);
+}
+.config-account button:focus-visible {
+  outline: 2px solid var(--agnes-input-border-focus);
+  outline-offset: 2px;
+}
+.config-list-note {
+  margin-top: auto;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--agnes-line-primary);
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+.config-detail-card {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.config-detail-heading {
+  min-height: 4.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--agnes-line-primary);
+}
+#config-form .config-detail-heading .eyebrow {
+  margin-bottom: 0.25rem;
+  color: var(--agnes-text-disabled);
+  font-size: var(--font-size-xs);
+}
+#config-form #config-account-context {
+  flex: 0 1 auto;
+  max-width: 13rem;
+  color: var(--agnes-text-tertiary);
+  text-align: end;
+}
+.config-detail-grid {
+  min-height: 0;
+  flex: 1;
+  padding: 1.25rem;
+  overflow-y: auto;
+}
+/* 账户详情 / 新增弹窗：外壳沿用全局 dialog 口径（宽度 / 圆角 / 阴影 / 遮罩），
+   这里只补内部排版 —— 内容可滚动、关闭按钮浮在右上、页脚保留原分隔线样式。 */
+#account-dialog {
+  width: min(30rem, calc(100vw - 3rem));
+}
+.select-picker-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  min-width: 0;
+  min-height: max(44px, var(--control-height-form));
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--agnes-input-border);
+  border-radius: var(--radius-md);
+  color: var(--agnes-input-content-strong);
+  background: var(--agnes-input-surface);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  text-align: start;
+  box-shadow: none;
+}
+.select-picker-trigger:hover:not(:disabled) {
+  border-color: var(--agnes-input-border-emphasis);
+  background: var(--agnes-bg-hover);
+}
+.select-picker-trigger:active:not(:disabled),
+.select-picker-trigger[aria-expanded="true"] {
+  border-color: var(--agnes-input-border-focus);
+  background: var(--agnes-brand-emphasis-soft);
+  transform: none;
+}
+.select-picker-trigger:focus-visible {
+  outline: 2px solid var(--agnes-brand-primary);
+  outline-offset: 2px;
+}
+.select-picker-trigger:disabled {
+  color: var(--agnes-text-tertiary);
+  background: var(--agnes-bg-card);
+  cursor: not-allowed;
+}
+.select-picker-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select-picker-chevron {
+  flex: 0 0 auto;
+  width: 0.375rem;
+  height: 0.375rem;
+  margin: 0 0.125rem 0.1875rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+.select-picker-trigger[aria-expanded="true"] .select-picker-chevron {
+  transform: rotate(225deg);
+  margin-bottom: 0;
+}
+.select-picker-panel {
+  position: fixed;
+  inset: auto;
+  z-index: 40;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.375rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--agnes-line-emphasis) transparent;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  background: var(--agnes-bg-popover);
+  color: var(--agnes-text-primary);
+  box-shadow: var(--shadow-elevation-prominent);
+  font-size: var(--font-size-sm);
+}
+.select-picker-group + .select-picker-group {
+  margin-top: 0.5rem;
+}
+.select-picker-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 0.625rem 0.5rem;
+  color: var(--agnes-text-tertiary);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  line-height: 1.25rem;
+  text-transform: uppercase;
+  cursor: default;
+  user-select: none;
+}
+.select-picker-heading::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--agnes-line-primary);
+}
+.select-picker-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 44px;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--radius-sm);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.select-picker-option:hover,
+.select-picker-panel[data-keyboard="true"] .select-picker-option[data-active="true"] {
+  background: var(--agnes-bg-hover);
+}
+.select-picker-option[aria-selected="true"] {
+  background: var(--agnes-brand-emphasis-soft);
+  font-weight: 500;
+}
+.select-picker-panel[data-keyboard="true"] .select-picker-option[data-active="true"] {
+  outline: 1px solid var(--agnes-brand-primary);
+  outline-offset: -1px;
+}
+.select-picker-option:active {
+  background: var(--agnes-bg-selected);
+}
+.select-picker-check {
+  flex: 0 0 1rem;
+  color: var(--agnes-brand-primary);
+  text-align: center;
+}
+#account-dialog .account-dialog-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 1;
+}
+.account-dialog-body {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: var(--dialog-max-height);
+  overflow: hidden;
+}
+/* 只有表单内容滚动，标题与操作区始终保留在弹窗可视范围内。 */
+#account-dialog .config-detail-grid {
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 0.875rem 1.25rem 1rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+#account-dialog .config-detail-heading {
+  min-height: auto;
+  display: grid;
+  gap: 0.125rem;
+  padding: 1.25rem 3rem 0.875rem 1.25rem;
+}
+#account-dialog .config-detail-heading .eyebrow {
+  display: none;
+}
+#account-dialog .config-detail-heading h3 {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.5rem;
+}
+#account-dialog #config-account-context {
+  max-width: none;
+  margin: 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.125rem;
+  text-align: start;
+}
+#account-dialog .config-detail-footer {
+  position: static;
+  flex: 0 0 auto;
+}
+/* 模型账户页的字段整行铺开（用户要求改成上下结构）；
+   设置弹窗整体在 #config-form 内，故用面板 id 收窄作用范围。 */
+#config-form #model-settings-pane .config-section {
+  grid-template-columns: minmax(0, 1fr);
+}
+:is(#config-form, #account-dialog) .config-section {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+}
+:is(#config-form, #account-dialog) .config-section + .config-section {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--agnes-line-primary);
+}
+:is(#config-form, #account-dialog) .config-section legend {
+  grid-column: 1 / -1;
+  margin-bottom: 0.25rem;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.06em;
+}
+:is(#config-form, #account-dialog) .form-field {
+  gap: 0.375rem;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+}
+:is(#config-form, #account-dialog) .form-field-wide,
+:is(#config-form, #account-dialog) .config-validation-section .config-validation-controls,
+:is(#config-form, #account-dialog) .config-validation-section #config-state,
+:is(#config-form, #account-dialog) .config-validation-section #config-error {
+  grid-column: 1 / -1;
+}
+:is(#config-form, #account-dialog)
+  input:not(.ant-select-input):not(.agnes-settings-toolbar input):not(.agnes-settings-input-surface),
+:is(#config-form, #account-dialog) select,
+:is(#config-form, #account-dialog) .select-picker-trigger {
+  height: var(--control-height-form);
+  min-height: var(--control-height-form);
+  padding: 0.625rem 0.75rem;
+  border-color: var(--agnes-input-border);
+  border-radius: var(--radius-md);
+  color: var(--agnes-input-content-strong);
+  background: var(--agnes-input-surface);
+  font-size: var(--font-size-sm);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    background-color var(--transition-fast);
+}
+:is(#config-form, #account-dialog)
+  input:not(.ant-select-input):not(.agnes-settings-toolbar input):not(
+    .agnes-settings-input-surface
+  ):hover:not(:disabled),
+:is(#config-form, #account-dialog) select:hover:not(:disabled) {
+  border-color: var(--agnes-input-border-emphasis);
+  background: var(--agnes-input-surface);
+}
+:is(#config-form, #account-dialog)
+  input:not(.ant-select-input):not(.agnes-settings-toolbar input):not(
+    .agnes-settings-input-surface
+  ):focus-visible,
+:is(#config-form, #account-dialog) select:focus-visible {
+  background: var(--agnes-input-surface);
+}
+:is(#config-form, #account-dialog)
+  input:not(.ant-select-input):not(.agnes-settings-toolbar input):not(.agnes-settings-input-surface):disabled,
+:is(#config-form, #account-dialog) select:disabled {
+  color: var(--agnes-text-tertiary);
+  border-color: var(--agnes-line-primary);
+  background: var(--agnes-bg-card);
+}
+:is(#config-form, #account-dialog) #config-key-hint {
+  min-height: 1.1rem;
+  margin-top: 0.125rem;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+#account-dialog .oauth-controls {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-md);
+  background: var(--agnes-bg-card);
+}
+#account-dialog .oauth-controls[hidden] {
+  display: none;
+}
+#account-dialog .oauth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+#account-dialog .oauth-actions button {
+  flex: 1 1 8rem;
+}
+#account-dialog .oauth-status {
+  min-height: 1.125rem;
+  margin: 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+#account-dialog :is(.oauth-status, .oauth-links):empty {
+  display: none;
+}
+#account-dialog .oauth-links a {
+  color: var(--agnes-text-emphasis);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}
+#account-dialog .oauth-prompt[hidden] {
+  display: none;
+}
+:is(#config-form, #account-dialog) .config-validation-section .config-validation-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 1rem;
+}
+:is(#config-form, #account-dialog) .config-validation-controls > #config-test {
+  height: var(--control-height-form);
+  min-height: var(--control-height-form);
+}
+:is(#config-form, #account-dialog) .config-validation-section #config-state,
+:is(#config-form, #account-dialog) .config-validation-section #config-error {
+  min-height: 0;
+  margin: 0;
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+:is(#config-form, #account-dialog) .config-validation-section #config-state {
+  color: var(--agnes-text-tertiary);
+}
+:is(#config-form, #account-dialog) .config-validation-section #config-error {
+  color: var(--agnes-status-danger-text);
+}
+:is(#config-form, #account-dialog) .config-validation-section #config-error:empty {
+  display: none;
+}
+.config-detail-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--agnes-line-primary);
+  background: var(--agnes-bg-surface);
+}
+#config-account-guard {
+  max-width: 27rem;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+#config-save {
+  min-width: 7rem;
+  min-height: 2.5rem;
+  flex: 0 0 auto;
+  border-radius: var(--radius-md);
+}
+
+@media (max-width: 900px) {
+  #config {
+    width: calc(100vw - 1.25rem);
+    height: calc(100dvh - 1.25rem);
+    max-height: calc(100dvh - 1.25rem);
+  }
+  #config-form {
+    grid-template-columns: 13rem minmax(0, 1fr);
+  }
+  #config-form .config-heading,
+  .config-workspace {
+    padding-inline: 1.25rem;
+  }
+  .config-workspace {
+    grid-template-columns: minmax(15rem, 0.8fr) minmax(21rem, 1.2fr);
+    gap: 0.75rem;
+  }
+  #config-form .config-section {
+    grid-template-columns: 1fr;
+  }
+  #config-form .form-field-wide,
+  #config-form .config-validation-section .config-validation-controls,
+  #config-form .config-validation-section #config-state,
+  #config-form .config-validation-section #config-error,
+  #config-form .config-section legend {
+    grid-column: 1;
+  }
+}
+
+@media (max-width: 840px) {
+  #config {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+  #config-form {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  #settings-content-slots {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .settings-rail {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-right: 0;
+    border-bottom: 1px solid var(--agnes-line-primary);
+  }
+  .settings-rail-heading {
+    padding: 0;
+  }
+  .settings-nav-group {
+    grid-template-columns: auto auto;
+    align-items: center;
+  }
+  .settings-nav-label {
+    display: none;
+  }
+  .settings-nav-item {
+    min-height: 2.25rem;
+    width: auto;
+    padding: 0.5rem 0.625rem;
+  }
+  .settings-content {
+    overflow-y: auto;
+  }
+  #config-form .config-heading:not(.agnes-settings-page-heading) {
+    min-height: auto;
+    align-items: flex-start;
+    padding: 1.25rem 1rem;
+  }
+  #config-form .config-heading h2 {
+    font-size: var(--font-size-xl);
+  }
+  .config-workspace {
+    min-height: auto;
+    display: grid;
+    grid-template-columns: 1fr;
+    flex: none;
+    padding: 1rem;
+    overflow: visible;
+  }
+  #config-accounts {
+    max-height: 15rem;
+  }
+  .config-detail-grid {
+    overflow: visible;
+  }
+}
+
+@media (max-width: 480px) {
+  .settings-rail {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .settings-nav-group {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .settings-rail-heading .eyebrow,
+  #config-form #config-account-context {
+    display: none;
+  }
+  .settings-nav-item {
+    flex: 1 1 50%;
+    justify-content: center;
+  }
+  #config-form .config-heading:not(.agnes-settings-page-heading) {
+    padding-block: 1rem;
+  }
+  .config-accounts-heading,
+  .config-detail-heading,
+  .config-detail-grid,
+  .config-detail-footer {
+    padding: 1rem;
+  }
+  .config-accounts-heading {
+    align-items: center;
+  }
+  .config-accounts-heading p,
+  #config-add-account span {
+    display: none;
+  }
+  #config-add-account {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    padding: 0;
+  }
+  .config-account-select {
+    grid-template-columns: 2rem minmax(0, 1fr);
+  }
+  #config-form .config-validation-section .config-validation-controls,
+  .config-detail-footer {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+  #config-form #config-test,
+  #config-save {
+    width: 100%;
+  }
+  #account-dialog .config-detail-footer {
+    flex-direction: column;
+  }
+}
+.usage-disclosure {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+}
+.usage-disclosure summary {
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.usage-disclosure summary:focus-visible {
+  outline: 2px solid var(--agnes-input-border-focus);
+  outline-offset: 2px;
+}
+.usage-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--s8) 1rem;
+  margin: 0.75rem 0 0.25rem;
+}
+.usage-grid dt,
+.usage-grid dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.usage-grid dd {
+  color: var(--agnes-text-primary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.usage-note {
+  margin: 0.625rem 0 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+#send[data-mode="idle"] > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+.turn-process-body .assistant .node-label {
+  display: none;
+}
+.confirm-review-section[open] > summary {
+  border-bottom: 1px solid var(--agnes-line-primary);
+}
+.appearance-options {
+  margin: 0;
+  padding: 1rem 1rem;
+  border: 0;
+}
+.appearance-card {
+  padding-top: 0.75rem;
+}
+.appearance-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+}
+.appearance-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+.appearance-option-name {
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+.appearance-option-hint {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+.appearance-option + .appearance-option {
+  margin-top: 0.5rem;
+}
+.appearance-option:hover {
+  background: var(--agnes-bg-hover);
+}
+.appearance-option:has(input:checked) {
+  border-color: var(--agnes-input-border-focus);
+  background: var(--agnes-brand-emphasis-soft);
+}
+#config-form /* fieldset 的 legend 默认画在边框区，会顶到卡片上沿。
+   display:block 让它回到正常流里，fieldset 的 padding-top 才起作用。 */
+.appearance-options legend {
+  display: block;
+  padding: 0 0 var(--s12);
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+#config-form .appearance-option input {
+  width: 1rem;
+  height: 1rem;
+  min-height: 0;
+  margin: 0.125rem 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  accent-color: var(--agnes-brand-primary);
+}
+
+#appearance-settings-pane .config-workspace {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+/* 原生 select 太丑：去掉系统外观，自绘箭头。
+   必须带 #config-form——文件前部已有 #config-form select 的 padding 简写 (1,0,1)，
+   裸 .form-field select 只有 (0,1,1)，padding-right 会被压掉，箭头压住文字。 */
+.plugin-dialog-form select,
+#config-form select {
+  appearance: none;
+  padding-right: 2rem;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentcolor 50%),
+    linear-gradient(135deg, currentcolor 50%, transparent 50%);
+  background-position:
+    right 1rem center,
+    right 0.72rem center;
+  background-size:
+    0.3rem 0.3rem,
+    0.3rem 0.3rem;
+  background-repeat: no-repeat;
+}
+

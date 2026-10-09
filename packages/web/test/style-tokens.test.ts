@@ -1,3 +1,4 @@
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 /**
  * `style.css` 的 token 门禁。
  *
@@ -14,7 +15,6 @@
  * 不引入 CSS 解析依赖：这里只需要"规则 → 声明"这一层结构，自写的最小解析器够用，
  * 且下面是显式断言而不是静默跳过——解析退化（规则数异常）本身就会红。
  */
-import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 
@@ -232,7 +232,7 @@ const DYNAMIC_CUSTOM_PROPERTIES = new Set([
 ])
 
 beforeAll(async () => {
-  rules = parseRules(stripComments(await readFile(stylePath, 'utf8')))
+  rules = parseRules(stripComments(readWebStyleSource(stylePath)))
   collectTokens()
 })
 

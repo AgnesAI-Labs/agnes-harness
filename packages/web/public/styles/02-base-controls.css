@@ -1,0 +1,232 @@
+   6. 组件层 —— 一代化：每个选择器只声明一次，零具体色值
+   原 181 个硬编码色值已按规则映射到语义 token；重复块已合并（后声明者胜）。
+   ═══════════════════════════════════════════════════════════════════════ */
+* {
+  box-sizing: border-box;
+  /* 隐藏滚动条外观，保留各容器原有的滚动行为。 */
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+:where([hidden]) {
+  display: none !important;
+}
+html,
+body {
+  min-width: 0;
+  min-height: 100%;
+}
+body {
+  height: 100dvh;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 288px minmax(0, 1fr);
+  overflow: hidden;
+}
+/* 区域表面钩子（不变量 R1，设计 §20）：可换肤表面属性必须声明在 data-agnes-region 选择器 (0,1,0) 上，
+   不能声明在元素的 #id (1,0,0) 上。皮肤样式表靠 adoptedStyleSheets 排在文档样式表之后取胜，
+   同特异性下皮肤必胜；但只要基础样式把同一属性声明在 #id 上，皮肤就永远赢不了。
+   布局、尺寸、交互态（:hover / :focus*）仍留在各自的 id/class 规则上。其余区域规则见各自元素附近。 */
+[data-agnes-region="app"] {
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-app-content);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-body);
+  line-height: 1.5;
+}
+::selection {
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-selected);
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  border: 1px solid var(--agnes-line-emphasis);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-page);
+}
+/* 输入类控件用自己的语义角色（底色/文字/边框），button 不吃这一组。
+   此前输入框与页面同底、占位符与真实值同色，控件不"像"控件。 */
+input,
+select,
+textarea {
+  border-color: var(--agnes-input-border);
+  color: var(--agnes-input-content-strong);
+  background: var(--agnes-input-surface);
+}
+button {
+  min-height: var(--control-height);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  line-height: 1.2;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
+}
+button:hover:not(:disabled) {
+  border-color: var(--agnes-line-emphasis);
+  background: var(--agnes-bg-hover);
+}
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+button:focus-visible,
+summary:focus-visible,
+[role="tab"]:focus-visible {
+  outline: 2px solid var(--agnes-input-border-focus);
+  outline-offset: 2px;
+}
+
+/* 表单控件吃 outline 会和自身边框叠成双层，看着又粗又脏。
+   改成「边框变色 + 一圈柔和品牌环」，既克制又仍然醒目。 */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--agnes-input-border-focus);
+  box-shadow: 0 0 0 3px var(--agnes-brand-focus-ring);
+}
+button:disabled,
+button.ant-btn:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+  color: var(--agnes-text-tertiary);
+  border-color: var(--agnes-line-primary);
+  background: var(--agnes-bg-card);
+}
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+input,
+select {
+  min-height: var(--control-height);
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+}
+textarea {
+  min-height: 2.875rem;
+  max-height: 11.25rem;
+  padding: 0.25rem 0;
+  resize: none;
+}
+::placeholder {
+  color: var(--agnes-input-placeholder);
+  opacity: 1;
+}
+.icon {
+  width: 1rem;
+  height: 1rem;
+  display: block;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
+}
+/* ── 客户端（agnes-code）图标的绘制约定 ──────────────────────────────────────
+   这些字形直接取自客户端 `ui/desktop/src/components/icons/*` 与
+   `images/projectIcon_*.svg`。客户端各图标的 fill/stroke 口径不同（自定义图标基本是
+   纯 fill；Settings 是 16 网格上的 stroke 1.2；projectIcon 是"填充 + 0.144 极细描边"），
+   而 SVG 上的 stroke-width 属性会被上面 .icon 的 CSS 覆盖，故按图标再声明一次。 */
+.icon-fill {
+  fill: currentColor;
+  stroke: none;
+}
+.icon-settings {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+}
+.icon-folder {
+  fill: currentColor;
+  stroke: currentColor;
+  stroke-width: 0.144;
+}
+.icon-folder-open {
+  stroke-width: 0.1953;
+  display: none;
+}
+/* 工作区分组标题的展开/收起两态，对应客户端 AgnesProjectFolderIcon 的 expanded 属性。 */
+.workspace-heading[aria-expanded="true"] .icon-folder-open {
+  display: block;
+}
+.workspace-heading[aria-expanded="true"] .icon-folder-closed {
+  display: none;
+}
+.skip-link {
+  position: fixed;
+  z-index: 100;
+  top: 0.75rem;
+  left: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-inverse);
+  background: var(--agnes-button-primary-bg);
+  transform: translateY(-180%);
+  transition: transform var(--transition-fast);
+}
+.skip-link:focus {
+  transform: translateY(0);
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+.primary-button {
+  border-color: var(--agnes-button-primary-bg);
+  color: var(--agnes-button-primary-content);
+  background: var(--agnes-button-primary-bg);
+}
+.primary-button:hover:not(:disabled) {
+  border-color: var(--agnes-button-primary-bg-hover);
+  background: var(--agnes-button-primary-bg-hover);
+  box-shadow: var(--shadow-elevation);
+}
+.secondary-button {
+  color: var(--agnes-button-outline-content);
+  background: transparent;
+}
+.secondary-button.compact {
+  min-height: 2rem;
+  padding: 0.25rem 0.625rem;
+}
+.icon-button {
+  width: 1.75rem;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  min-height: 1.75rem;
+  padding: 0;
+  border-color: transparent;
+  border-radius: 50%;
+  color: var(--agnes-text-secondary);
+  background: transparent;
+}
+.icon-button:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-bg-hover);
+}

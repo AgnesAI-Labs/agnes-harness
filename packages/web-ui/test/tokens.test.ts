@@ -1,3 +1,4 @@
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
@@ -8,7 +9,7 @@ const root = resolve(import.meta.dirname, '../../..')
 describe('web-ui theme bridge', () => {
   it('only references semantic tokens declared by the existing Web skin', () => {
     const bridge = readFileSync(resolve(root, 'packages/web-ui/src/tokens.css'), 'utf8')
-    const skin = readFileSync(resolve(root, 'packages/web/public/style.css'), 'utf8')
+    const skin = readWebStyleSource(resolve(root, 'packages/web/public/style.css'))
     const references = [...bridge.matchAll(/var\((--[a-z0-9-]+)/g)].map((match) => match[1])
     const missing = [...new Set(references)].filter((name) => !skin.includes(`${name}:`))
     expect(missing).toEqual([])

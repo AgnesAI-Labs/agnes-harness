@@ -1,0 +1,17 @@
+/* Only provider rows opt into compact technical disclosures. */
+.runtime-settings .agnes-settings-row > .agnes-settings-details {
+  margin: 0.375rem 0 0;
+}
+.runtime-settings .agnes-settings-row > .agnes-settings-details > summary {
+  padding-block: 0.25rem;
+}
+
+[data-agnes-region="workbench-right"] {
+  background: var(--agnes-bg-surface);
+  border-left: 1px solid var(--agnes-line-primary);
+}
+[data-agnes-region="workbench-bottom"] {
+  background: var(--agnes-bg-surface);
+  border-top: 1px solid var(--agnes-line-primary);
+}
+

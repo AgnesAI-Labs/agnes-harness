@@ -1,0 +1,205 @@
+/* The review owns a bounded body; decisions stay visible outside its scrollport. */
+.plugin-candidates {
+  min-width: 0;
+  margin-block: var(--s16);
+}
+.plugin-candidates dl,
+.plugin-candidates dd {
+  margin-inline: 0;
+  overflow-wrap: anywhere;
+}
+.plugin-candidates summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.plugin-candidates .candidate-list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--s8);
+}
+.plugin-candidates .candidate-list button {
+  width: 100%;
+  height: auto;
+  min-height: var(--control-height);
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s12);
+  text-align: start;
+}
+.plugin-candidates .candidate-list button > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.plugin-candidates .candidate-list-facts {
+  display: grid;
+  gap: var(--s4);
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+}
+.plugin-drain-notice {
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.plugin-drain-notice p {
+  margin-block: var(--s8);
+}
+.plugin-drain-notice summary {
+  cursor: pointer;
+}
+.plugin-candidates .candidate-list .agnes-ui-badge {
+  flex-shrink: 0;
+}
+.plugin-candidates .candidate-review-panel {
+  min-width: 0;
+  min-height: 0;
+  height: min(32rem, calc(100dvh - 18rem));
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  background: var(--agnes-bg-surface);
+  overflow: hidden;
+}
+.plugin-candidates .candidate-summary {
+  flex: 0 0 auto;
+  padding: var(--s16);
+  border-bottom: 1px solid var(--agnes-line-primary);
+}
+.plugin-candidates .candidate-summary-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s12);
+}
+.plugin-candidates .candidate-summary h4 {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-body);
+}
+.plugin-candidates .candidate-summary p {
+  margin: var(--s8) 0;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.plugin-candidates .candidate-summary-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s8) var(--s16);
+  font-size: var(--font-size-sm);
+}
+.plugin-candidates .candidate-review-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--s16);
+}
+.plugin-candidates .candidate-review-body h4,
+.plugin-candidates .candidate-review-body h5 {
+  margin: var(--s12) 0 var(--s8);
+  font-size: var(--font-size-sm);
+}
+.plugin-candidates .candidate-review-body p {
+  margin: 0 0 var(--s12);
+}
+.plugin-candidates .candidate-review-body ul {
+  padding-inline-start: var(--s20);
+  margin: var(--s8) 0 var(--s16);
+}
+.plugin-candidates .candidate-review-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: var(--s12) var(--s16);
+  border-top: 1px solid var(--agnes-line-primary);
+  background: var(--agnes-bg-surface);
+}
+.plugin-candidates .candidate-file {
+  margin-block: var(--s8);
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-md);
+}
+.plugin-candidates .candidate-file summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s8);
+  padding: var(--s10) var(--s12);
+  font-size: var(--font-size-sm);
+}
+.plugin-candidates .candidate-file summary::before {
+  content: "›";
+  flex-shrink: 0;
+}
+.plugin-candidates .candidate-file[open] summary::before {
+  content: "⌄";
+}
+.plugin-candidates .candidate-file summary > span:first-child {
+  min-width: 0;
+  flex: 1;
+}
+.plugin-candidates .candidate-file pre {
+  margin: 0;
+  max-height: 14rem;
+  overflow: auto;
+  white-space: pre;
+  font: var(--font-size-xs) / 1.7 var(--font-mono);
+}
+.plugin-candidates .candidate-diff-line {
+  display: block;
+  min-width: max-content;
+  padding-inline: var(--s12);
+}
+.plugin-candidates .candidate-diff-added {
+  color: var(--agnes-status-success-text);
+  background: var(--agnes-status-success-bg);
+}
+.plugin-candidates .candidate-diff-removed {
+  color: var(--agnes-status-danger-text);
+  background: var(--agnes-status-danger-bg);
+}
+.candidate-technical {
+  margin-block: var(--s16);
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+}
+.candidate-technical code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.candidate-technical pre {
+  max-height: 14rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.plugin-candidates .candidate-summary-heading > span {
+  flex-shrink: 0;
+}
+.plugin-candidates .candidate-summary h4,
+.plugin-candidates .candidate-summary p {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.candidate-technical dd {
+  margin-inline: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 840px) {
+  /* Keep room for review decisions when the settings rail moves above the content. */
+  #config-form:has(.candidate-review-panel) .settings-rail {
+    max-height: min(12rem, 25dvh);
+  }
+}

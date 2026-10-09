@@ -1,3 +1,4 @@
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 /** @vitest-environment happy-dom */
 
 import { readFileSync } from 'node:fs'
@@ -8,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 // 覆盖层，由 CSS 的媒体查询决定。两边断点必须一致：不一致时中间那段宽度里 JS 走桌面
 // 折叠分支、CSS 已经把侧栏移出视口，按钮点下去没有任何可见反应。
 const sidebarSource = readFileSync(resolve(__dirname, '../../web-units/src/sidebar.ts'), 'utf8')
-const css = readFileSync(resolve(__dirname, '../public/style.css'), 'utf8')
+const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
 
 function narrowBreakpoint(): number {
   const match = /matchMedia\('\(max-width:\s*(\d+)px\)'\)/.exec(sidebarSource)

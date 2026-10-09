@@ -1,4 +1,5 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
+import { readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { webLocaleCatalog } from '@agnes/web-foundation/locale-catalog'
@@ -40,7 +41,7 @@ it('keeps web catalogs paired and every translated value non-empty', () => {
       expect(emptyValues, `${name} ${locale} empty values`).toEqual([])
     }
   }
-  const css = readFileSync(resolve('packages/web/public/style.css'), 'utf8')
+  const css = readWebStyleSource(resolve('packages/web/public/style.css'))
   expect(css.match(/content:\s*["'][^"']*\p{Script=Han}[^"']*["']/gu)).toBeNull()
 })
 

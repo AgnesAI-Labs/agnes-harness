@@ -1,0 +1,170 @@
+/* Narrow screens keep actions reachable while content owns its scrolling. */
+@media (max-width: 900px) {
+  body[data-agnes-region="app"] :is(button, select, summary) {
+    min-width: 32px;
+    min-height: 32px;
+  }
+  :is(#composer-workspace, #composer-permission, #model, #config-close) {
+    min-width: 32px;
+    min-height: 32px;
+  }
+  summary {
+    align-content: center;
+  }
+  .session-tabs-bar {
+    flex-wrap: wrap;
+    gap: 0.25rem 0.5rem;
+    padding-inline: 0.75rem;
+  }
+  .session-tabs {
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .session-tabs-bar .session-goal-host {
+    margin-inline-start: 0;
+  }
+  .composer-controls {
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+  .composer-controls > :is(button, .model-field) {
+    flex: 0 1 auto;
+    max-width: 100%;
+  }
+  .composer-controls .model-field {
+    margin-inline-start: 0;
+  }
+  .composer-agent.agnes-ui-button {
+    max-width: 100%;
+    min-width: 0;
+  }
+  .composer-controls #model {
+    max-width: 12rem;
+  }
+  #session-usage {
+    margin-inline-start: auto;
+  }
+  #config-form .settings-rail {
+    display: block;
+    max-height: none;
+    padding: 0.75rem;
+    overflow: visible;
+  }
+  .settings-rail-heading {
+    min-height: 32px;
+    padding-inline-end: 2.5rem;
+    margin-block-end: 0.5rem;
+  }
+  #config-close {
+    top: 0.75rem;
+    right: 0.75rem;
+  }
+  .settings-nav-group {
+    display: flex;
+    gap: 0.25rem;
+    overflow-x: auto;
+  }
+  .settings-nav-item {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  .settings-rail .settings-nav-label {
+    display: none;
+  }
+  #config-form .config-heading {
+    flex-wrap: wrap;
+  }
+  #config-form .config-heading > div {
+    min-width: 0;
+  }
+  .appearance-option-hint {
+    color: var(--agnes-text-secondary);
+  }
+  :is(.deliverable-actions, .candidate-provenance) a,
+  [data-testid="candidate-fact-chain"],
+  [data-testid="deliverable-open"],
+  [data-testid="deliverable-download"] {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    min-width: 32px;
+  }
+  main:has(#view-trace[aria-selected="true"]) #composer-mount {
+    display: none;
+  }
+  :is(.agnes-settings-checkbox, .ant-checkbox-wrapper, .ant-radio-wrapper) {
+    min-height: 32px;
+    align-content: center;
+  }
+  .trace-gantt-track {
+    height: 32px;
+  }
+  /* The list selects events on touch screens; the dense chart remains an overview. */
+  .trace-gantt-bar {
+    min-height: 0;
+  }
+  [data-agnes-region="trace"]:has(.trace-inspector:not([hidden])) {
+    grid-template-rows: minmax(0, 1fr);
+  }
+  [data-agnes-region="trace"]:has(.trace-inspector:not([hidden]))
+    :is(.trace-toolbar, .trace-gantt, .trace-list) {
+    display: none;
+  }
+  .trace-body {
+    grid-template-rows: minmax(0, 1fr);
+  }
+  #workbench-right .workbench-resize {
+    width: 32px;
+    left: -16px;
+  }
+  #workbench-bottom .workbench-resize {
+    height: 32px;
+    top: -16px;
+  }
+  .request-trace pre {
+    min-height: 32px;
+    align-content: center;
+  }
+  .agnes-settings-actions [role="note"][tabindex] {
+    display: inline-flex;
+    min-height: 32px;
+    align-items: center;
+  }
+  .trace-search {
+    min-height: 32px;
+  }
+  .tool-head {
+    flex-wrap: wrap;
+  }
+  .timeline-node:is(.tool, .cost, .artifact, .compaction) {
+    margin-inline: 0;
+  }
+  .request-trace-tabs .ant-tabs-tab {
+    min-width: 32px;
+    justify-content: center;
+  }
+  .workbench-terminal-tabs [aria-selected="true"] {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-selected);
+  }
+  .config-account-actions button {
+    color: var(--agnes-text-primary);
+  }
+  .diagnostics-include label {
+    min-height: 32px;
+    align-items: center;
+  }
+  .turn-footer {
+    max-width: 100%;
+    margin-inline: 0;
+  }
+  .trace-inspector-head {
+    flex-wrap: wrap;
+  }
+  .trace-inspector-title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+

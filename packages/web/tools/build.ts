@@ -1,4 +1,5 @@
-import { appendFile, cp, mkdir, readFile, rm } from 'node:fs/promises'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
+import { appendFile, writeFile, cp, mkdir, readFile, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -127,10 +128,11 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
     }),
   )
   await Promise.all(
-    ['index.html', 'admin.html', 'resources.html', 'style.css', 'brand-mark.png']
+    ['index.html', 'admin.html', 'resources.html', 'brand-mark.png']
       .map((file) => cp(join(root, 'public', file), join(out, file)))
       .concat([cp(antdCss, join(out, 'antd.css')), cp(tokensCss, join(out, 'tokens.css'))]),
   )
+  await writeFile(join(out, 'style.css'), readWebStyleSource(join(root, 'public', 'style.css')))
   // Conversation rules share the existing style.css URL on all three pages. The local CLI build
   // must apply the same composition when copying Web assets into its own static root.
   await appendFile(join(out, 'style.css'), `\n${await readFile(conversationCss, 'utf8')}`)

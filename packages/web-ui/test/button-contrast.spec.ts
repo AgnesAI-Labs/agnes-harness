@@ -1,3 +1,4 @@
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
@@ -8,12 +9,10 @@ import { build } from 'esbuild'
 const root = resolve(import.meta.dirname, '../../..')
 const require = createRequire(import.meta.url)
 const css = [
-  resolve(root, 'packages/web/public/style.css'),
-  require.resolve('antd/dist/antd.css'),
-  resolve(root, 'packages/web-ui/src/tokens.css'),
-]
-  .map((path) => readFileSync(path, 'utf8'))
-  .join('\n')
+  readWebStyleSource(resolve(root, 'packages/web/public/style.css')),
+  readFileSync(require.resolve('antd/dist/antd.css'), 'utf8'),
+  readFileSync(resolve(root, 'packages/web-ui/src/tokens.css'), 'utf8'),
+].join('\n')
 let fixture: string
 
 test.beforeAll(async () => {

@@ -1,3 +1,4 @@
+import { webStyleInputs } from '../../../tools/web-style-source.mjs'
 import { type FSWatcher, realpathSync, watch as watchDirectory } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,7 +11,7 @@ const copiedInputs = [
   join(root, 'public', 'index.html'),
   join(root, 'public', 'admin.html'),
   join(root, 'public', 'resources.html'),
-  join(root, 'public', 'style.css'),
+  ...webStyleInputs(join(root, 'public', 'style.css')),
   join(root, 'public', 'brand-mark.png'),
   join(root, '..', 'web-ui', 'src', 'tokens.css'),
   join(root, '..', 'web-ui', 'src', 'conversation', 'messages.css'),

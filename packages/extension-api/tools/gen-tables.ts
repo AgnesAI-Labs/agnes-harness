@@ -1,3 +1,4 @@
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -33,7 +34,7 @@ for (const [source, field, name, render] of [
 
 // The theme-token whitelist comes from the Web client's own stylesheet rather than a protocol
 // schema, so it is generated here directly: `style.css` stays the single colour authority.
-const styleCss = readFileSync(join(pkg, '..', 'web', 'public', 'style.css'), 'utf8')
+const styleCss = readWebStyleSource(join(pkg, '..', 'web', 'public', 'style.css'))
 emit('theme-tokens.ts', renderThemeTokenTable(extractThemeTokenNames(styleCss)))
 
 if (dirty) process.exitCode = 1

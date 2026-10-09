@@ -1,6 +1,6 @@
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 /** @vitest-environment happy-dom */
 
-import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
@@ -49,7 +49,7 @@ describe('report-problem button placement', () => {
   })
 
   it('moves the row chrome to the bar and keeps the button from growing the tab row on phones', () => {
-    const css = readFileSync(resolve(__dirname, '../public/style.css'), 'utf8')
+    const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
     const rule = (selector: string, from = 0) =>
       new RegExp(`^\\s*${selector.replace(/[.#]/g, '\\$&')} \\{([^}]*)\\}`, 'm').exec(css.slice(from))?.[1]
     expect(rule('.session-tabs-bar')).toMatch(/border-bottom: 1px solid var\(--agnes-line-primary\)/)

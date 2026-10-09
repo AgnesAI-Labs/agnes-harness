@@ -1,11 +1,11 @@
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 /** @vitest-environment happy-dom */
 
-import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
-const css = readFileSync(resolve(__dirname, '../public/style.css'), 'utf8')
+const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
 
 function rule(selector: string): string {
   const escaped = selector.replace(/[.#[\]]/g, '\\$&')

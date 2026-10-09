@@ -1,0 +1,906 @@
+.plugin-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  /* 不再自带边框与阴影：它与搜索框/按钮会叠成双层描边。边框留给控件自己。 */
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.plugin-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.375rem;
+  padding: 0;
+  border-bottom: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.plugin-tabs button {
+  position: relative;
+  min-height: var(--control-height);
+  padding: 0.4375rem 0.0625rem 0.5625rem;
+  border: 0;
+  border-radius: 0;
+  color: var(--agnes-text-tertiary);
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  transition: color var(--transition-fast) ease;
+}
+.plugin-tabs button:hover:not(:disabled),
+.plugin-tabs button[aria-selected="true"] {
+  border-color: transparent;
+  color: var(--agnes-text-primary);
+  background: transparent;
+}
+.plugin-search-field {
+  min-width: min(19rem, 45%);
+}
+.plugin-search-field input {
+  width: 100%;
+  min-height: var(--control-height);
+  padding-inline: 0.75rem;
+  /* 之前边框被显式置为透明、且 :focus 只改底色，导致常态与焦点态都没有边框；
+     字号也没声明，落到 body 的 16px，比工具条里其他 13px 控件明显偏大。 */
+  font-size: var(--font-size-sm);
+  border-color: var(--agnes-input-border);
+  background: var(--agnes-input-surface);
+}
+.plugin-search-field input:hover {
+  border-color: var(--agnes-line-emphasis);
+}
+/* 焦点态沿用全站 input:focus-visible（文件顶部表单控件规则）：边框变
+   --agnes-input-border-focus 并带一圈 --agnes-brand-focus-ring，此处不再覆盖。 */
+.plugin-layout {
+  /* 详情搬进独立模态框后，布局里只剩列表一列。这里仍需建立纵向 flex 高度链，
+     否则列表会按内容高度撑开，再被 .admin-pane-body 的 overflow: hidden 裁掉。 */
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin-top: 1rem;
+}
+.resource-admin-page .admin-main {
+  max-width: 1240px;
+}
+.resource-admin-header {
+  align-items: center;
+}
+.resource-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  /* 与 .plugin-toolbar 一致：间距交给 .plugin-layout 的 margin-top。 */
+  margin: 0;
+}
+.resource-toolbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.resource-layout {
+  min-height: 0;
+}
+/* 技能与 MCP 列表与插件页同构：标题 / Switch 两段固定轨道，
+   同一列表内各行因此严格对齐（状态灯移除后不再是三段，留着空轨道会把 Switch 挤离右边缘）。 */
+.resource-row {
+  grid-template-columns: minmax(0, 1fr) 2.375rem;
+}
+.resource-empty {
+  padding: 1.25rem 0.75rem;
+  color: var(--agnes-text-secondary);
+  white-space: pre-line;
+}
+#resource-list[data-state="error"] {
+  border-color: var(--agnes-status-danger-text);
+}
+#resource-notice [data-resource-retry] {
+  margin-left: 0.75rem;
+}
+.resource-roots {
+  margin: 0 0.75rem 0.75rem;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+  color: var(--agnes-text-secondary);
+}
+.resource-facts {
+  display: grid;
+  grid-template-columns: minmax(104px, 0.75fr) minmax(0, 1.25fr);
+  gap: 0.5rem 1rem;
+  margin: 1.25rem 0;
+  padding: 1rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  background: var(--agnes-bg-page);
+}
+.resource-facts dt {
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+}
+.resource-facts dd {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
+.resource-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1rem 0 0.625rem;
+}
+.resource-safe-error {
+  margin: 0.75rem 0;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--radius-md);
+  color: var(--agnes-status-danger-text);
+  background: var(--agnes-status-danger-bg);
+  font-size: var(--font-size-sm);
+}
+.resource-operation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.625rem;
+  margin-top: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-secondary);
+  background: var(--agnes-bg-surface);
+  font-size: var(--font-size-sm);
+}
+
+@media (max-width: 760px) {
+  .resource-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .resource-toolbar-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+  .resource-toolbar-actions > button {
+    width: 100%;
+  }
+  .resource-toolbar-actions:has(> #mcp-create[hidden]) > #skill-refresh,
+  .resource-toolbar-actions:has(> #skill-refresh[hidden]) > #mcp-create {
+    grid-column: 1 / -1;
+  }
+  .resource-facts {
+    grid-template-columns: 1fr;
+    gap: 0.125rem;
+  }
+  .resource-facts dt {
+    margin-top: 0.5rem;
+  }
+}
+.plugin-list {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  /* 列表是两个宿主的唯一纵向滚动容器。 */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.plugin-inventory-status {
+  margin: 0 0 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--agnes-status-warning-text);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-status-warning-text);
+  background: var(--agnes-status-warning-bg);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+.plugin-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.375rem;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  background: var(--agnes-bg-page);
+  cursor: pointer;
+  outline: 0;
+  text-align: left;
+  transition:
+    background-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+.plugin-row:last-of-type {
+  margin-bottom: 0;
+}
+/* 目录页第三列是动作按钮而不是 Switch，宽度随文案变，所以在基础轨上单独覆盖。 */
+.plugin-row[data-tab="discover"] {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+.plugin-row[data-tab="installed"]:has(.plugin-row-retry) {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.plugin-row:hover,
+.plugin-row:focus-visible {
+  border-color: var(--agnes-line-emphasis);
+  background: var(--agnes-bg-hover);
+  box-shadow: none;
+}
+.plugin-row:focus-visible {
+  outline: 2px solid var(--agnes-input-border-focus);
+  outline-offset: -2px;
+}
+.plugin-row-content {
+  min-width: 0;
+}
+.plugin-row h2 {
+  margin: 0;
+  /* 行标题单行截断 + title 全文（见渲染代码）：长插件名/长 MCP 名不得撑破行。 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.plugin-detail h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-md);
+  font-weight: 700;
+  letter-spacing: -0.012em;
+  line-height: 1.35;
+}
+.plugin-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.plugin-detail-close {
+  flex: 0 0 auto;
+}
+.plugin-row-content p {
+  margin: 0.125rem 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+.plugin-row-content .plugin-source {
+  color: var(--agnes-text-secondary);
+}
+.plugin-row-content .resource-safe-error {
+  margin-top: 0.5rem;
+  color: var(--agnes-status-danger-text);
+  white-space: normal;
+}
+.plugin-surface-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: 0.375rem;
+}
+.plugin-surface-link {
+  min-height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.625rem;
+  border: 1px solid var(--agnes-line-emphasis);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-button-outline-content);
+  background: transparent;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+}
+.plugin-surface-link:hover {
+  background: var(--agnes-bg-hover);
+}
+.plugin-surface-link:focus-visible {
+  outline: 2px solid var(--agnes-input-border-focus);
+  outline-offset: 2px;
+}
+/* 状态指示灯：信任 / 期望 / 实际 / 浏览器 UI 四格纵向排开。此前是一排文字 chip，
+   长短随取值变化，扫读要逐字读。改用色点后一眼能看出"哪一格不对劲"。
+   颜色不进 JS，只由这里的 data-tone 决定。 */
+.state-lights {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+.state-light {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  font-size: var(--font-size-xs);
+  line-height: 1.3;
+}
+.state-light-dot {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-full);
+  background: var(--agnes-text-tertiary);
+}
+.state-light-copy {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  min-width: 0;
+}
+.state-light-name {
+  flex: 0 0 auto;
+  color: var(--agnes-text-tertiary);
+}
+.state-light-value {
+  overflow: hidden;
+  color: var(--agnes-text-secondary);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.state-light[data-tone="ok"] .state-light-dot {
+  background: var(--agnes-status-success-text);
+}
+.state-light[data-tone="ok"] .state-light-value {
+  color: var(--agnes-status-success-text);
+}
+.state-light[data-tone="warn"] .state-light-dot {
+  background: var(--agnes-status-warning-text);
+}
+.state-light[data-tone="warn"] .state-light-value {
+  color: var(--agnes-status-warning-text);
+}
+.state-light[data-tone="bad"] .state-light-dot {
+  background: var(--agnes-status-danger-text);
+}
+.state-light[data-tone="bad"] .state-light-value {
+  color: var(--agnes-status-danger-text);
+}
+.state-light[data-tone="off"] .state-light-dot {
+  background: var(--agnes-line-emphasis);
+}
+.state-light[data-tone="off"] .state-light-value {
+  color: var(--agnes-text-tertiary);
+}
+
+/* Switch：行内第三列，拨的是"期望状态"。真实生效结果由本地后台回报，
+   所以它只表达意图，不代表已经生效（那一格由"实际"灯负责）。
+   button 本身就是轨道，内部 span 只负责圆钮定位。 */
+.switch {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  width: 2.375rem;
+  min-width: 2.375rem;
+  height: 1.375rem;
+  min-height: 1.375rem;
+  padding: 0;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-full);
+  background: var(--agnes-bg-card);
+  cursor: pointer;
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+.switch-track {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.switch-knob {
+  position: absolute;
+  top: 50%;
+  left: 0.1875rem;
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: var(--radius-full);
+  background: var(--agnes-text-tertiary);
+  transform: translateY(-50%);
+  transition:
+    transform var(--transition-fast),
+    background-color var(--transition-fast);
+}
+.switch[aria-checked="true"] {
+  border-color: var(--agnes-brand-primary);
+  background: var(--agnes-brand-primary);
+}
+.switch[aria-checked="true"] .switch-knob {
+  /* 轨道是品牌填充色，圆钮沿用"品牌填充上的内容色"这个既有语义 token，
+     深浅色各自取到正确的前景（浅色白、深色近黑）。 */
+  background: var(--agnes-button-primary-content);
+  transform: translate(1rem, -50%);
+}
+.switch:focus-visible {
+  outline: 2px solid var(--agnes-input-border-focus);
+  outline-offset: 2px;
+}
+.switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.plugin-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  justify-content: flex-end;
+}
+.plugin-row-actions .secondary-button {
+  min-width: 5.75rem;
+}
+.plugin-empty {
+  display: grid;
+  place-content: center;
+  min-height: 18rem;
+  padding: 2rem;
+  text-align: center;
+}
+.admin-empty-state {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  min-height: 18rem;
+  padding: 2rem;
+  text-align: center;
+}
+.admin-empty-state-mark {
+  display: block;
+  width: 3rem;
+  height: 3rem;
+  margin-bottom: 0.875rem;
+  color: var(--agnes-brand-primary);
+  opacity: 0.86;
+}
+.admin-empty-state h2 {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-md);
+}
+.admin-empty-state p {
+  max-width: 21rem;
+  margin: 0.5rem 0 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+.admin-empty-state-hints {
+  display: grid;
+  gap: 0.375rem;
+  width: min(100%, 30rem);
+  margin: 0.875rem 0 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-text-tertiary);
+  background: var(--agnes-bg-surface);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+  list-style: none;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.plugin-more {
+  width: calc(100% - 2rem);
+  justify-content: center;
+  margin: 0.75rem 1rem 1rem;
+}
+.plugin-detail[open] {
+  /* 三段式容器：头部固定 / 中段滚动 / 动作固定。内部结构见 .admin-detail-scroll 与
+     .admin-detail-actions；操作按钮因此永远不会被内容推出可视区。
+     选择器限定 `[open]`：否则 `display: flex` 会覆盖浏览器对关闭态 dialog 的 `display: none`，
+     空盒子就会在页面正中渲染成一条灰线。 */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: var(--dialog-max-height);
+  padding: 0;
+  overflow: hidden;
+}
+/* 详情是模态框（不再是面板右侧的固定抽屉），宽度自己定，不再由 .plugin-layout 的列宽决定。
+   三段式的三段里，头部与动作是 flex: 0 0 auto，只有中段 flex:1 + overflow-y:auto，
+   因此"描述太长 → 底部按钮够不到"结构上不可能发生。 */
+#plugin-detail,
+#resource-detail {
+  width: min(42rem, calc(100vw - 2rem));
+}
+.admin-detail-head {
+  flex: 0 0 auto;
+  padding: 1rem 1rem 0.75rem;
+  border-bottom: 1px solid var(--agnes-line-primary);
+}
+.admin-detail-scroll {
+  flex: 1;
+  min-height: 0;
+  padding: 0 1rem 1rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.admin-detail-actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem 1rem;
+  border-top: 1px solid var(--agnes-line-primary);
+  background: var(--agnes-bg-page);
+}
+.plugin-detail > p:not(.plugin-detail-version):not(.plugin-detail-state) {
+  margin: 0.5rem 0 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+.plugin-detail-version,
+.plugin-detail-state {
+  margin: var(--s8) 0 0;
+  overflow-wrap: anywhere;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+.plugin-detail-state {
+  color: var(--agnes-text-emphasis);
+  font-weight: 600;
+}
+.plugin-facts {
+  display: grid;
+  grid-template-columns: 5.25rem minmax(0, 1fr);
+  gap: 0.5rem 0.75rem;
+  margin: 1.25rem 0 0;
+  padding: 0.75rem;
+  border-radius: var(--radius-card);
+  background: var(--agnes-bg-card);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+.plugin-facts dt {
+  color: var(--agnes-text-secondary);
+}
+.plugin-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--agnes-text-secondary);
+}
+.plugin-blockers,
+.plugin-operations {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--agnes-status-danger-text);
+  border-radius: var(--radius-card);
+  background: var(--agnes-status-danger-bg);
+}
+.plugin-operations {
+  border-color: var(--agnes-line-primary);
+  background: var(--agnes-bg-surface);
+}
+.plugin-blockers h3,
+.plugin-operations h3 {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-sm);
+}
+.plugin-blockers ul {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.625rem 0 0;
+  padding-left: 1rem;
+  color: var(--agnes-status-danger-text);
+  font-size: var(--font-size-xs);
+}
+.plugin-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+.danger-button {
+  min-height: 2.25rem;
+  padding: var(--s8) 0.75rem;
+  border: 1px solid var(--agnes-status-danger-text);
+  border-radius: var(--radius-lg);
+  color: var(--agnes-status-danger-text);
+  background: var(--agnes-status-danger-bg);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+/* 此前 hover 与常态声明完全相同，悬停零反馈。
+   改为反色填充：文字用 --agnes-text-inverse，浅 4.53:1 / 深 5.72:1。 */
+.danger-button:hover:not(:disabled) {
+  border-color: var(--agnes-status-danger-text);
+  color: var(--agnes-text-inverse);
+  background: var(--agnes-status-danger-text);
+}
+.operation-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.625rem;
+}
+.operation-row p {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+}
+.plugin-dialog-form {
+  display: grid;
+  gap: 1rem;
+  max-height: inherit;
+  padding: 1.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.confirm-facts {
+  display: grid;
+  gap: 0.625rem;
+  min-width: 0;
+}
+.confirm-facts-lead {
+  margin: 0;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+.confirm-facts-list {
+  display: grid;
+  grid-template-columns: minmax(5.75rem, 7rem) minmax(0, 1fr);
+  gap: 0.25rem 0.625rem;
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-card);
+  background: var(--agnes-bg-surface);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+.confirm-facts-list dt {
+  color: var(--agnes-text-tertiary);
+}
+.confirm-facts-list dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--agnes-text-secondary);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: var(--font-size-xs);
+}
+.confirm-review-section {
+  min-width: 0;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-card);
+  background: var(--agnes-bg-page);
+}
+.confirm-review-section > summary {
+  padding: 0.625rem 0.75rem;
+  cursor: pointer;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  list-style-position: inside;
+}
+.confirm-review-content {
+  display: grid;
+  gap: 0.625rem;
+  min-width: 0;
+  padding: 0.75rem;
+}
+.confirm-review-content ul {
+  display: grid;
+  gap: var(--s8);
+  margin: 0;
+  padding-left: 1rem;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+.confirm-review-content li {
+  overflow-wrap: anywhere;
+}
+.confirm-contributions {
+  padding-left: 1rem;
+}
+.confirm-contributions li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--agnes-line-primary);
+}
+.confirm-contributions li:last-child {
+  border-bottom: 0;
+}
+.confirm-contributions p,
+.confirm-empty-fact {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.confirm-contributions p + p {
+  margin-top: 0.25rem;
+  color: var(--agnes-text-tertiary);
+}
+.confirm-empty-fact {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+.plugin-form-error {
+  min-height: 1.25rem;
+  margin: 0;
+  color: var(--agnes-status-danger-text);
+  font-size: var(--font-size-sm);
+}
+
+/* 窄屏（窗口 ≤900px）。iframe 时代这里必须靠容器查询或宿主特例覆盖，因为 @media 量的是
+   iframe 自己的宽度（≈922px）而不是窗口，于是"窄屏规则"在嵌入态恒为真——那正是详情掉到
+   列表下方、详情同时失去自身滚动的根因。去掉 iframe 后 @media 重新量窗口，这套补丁不再需要。
+   窄屏由 .admin-pane-body / .admin-main 滚，列表按自然高度排列；模态详情保留自己的正文滚动。 */
+@media (max-width: 900px) {
+  .plugin-layout {
+    grid-template-columns: 1fr;
+    flex: none;
+  }
+  .plugin-list {
+    max-height: none;
+    overflow: visible;
+    overscroll-behavior: auto;
+  }
+  .admin-pane-body,
+  .admin-main {
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 900px) {
+  .admin-header,
+  .admin-main {
+    width: min(100% - 2rem, 44rem);
+  }
+}
+
+@media (max-width: 540px) {
+  .admin-header {
+    min-height: 6.5rem;
+    grid-template-columns: 1fr auto;
+    gap: 0.75rem;
+  }
+  .admin-heading {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  .admin-header > :first-child {
+    grid-row: 2;
+  }
+  .admin-header > :last-child {
+    grid-row: 2;
+  }
+  .plugin-toolbar {
+    display: grid;
+    gap: 0.5rem;
+  }
+  .plugin-search-field {
+    min-width: 0;
+  }
+  .plugin-tabs {
+    width: 100%;
+  }
+  .plugin-tabs button {
+    flex: 1 1 50%;
+    min-height: 2.75rem;
+  }
+  .plugin-search-field input {
+    min-height: 2.75rem;
+  }
+  .plugin-row {
+    grid-template-columns: minmax(0, 1fr) 2.375rem;
+    gap: 0.5rem;
+    padding: 0.75rem;
+  }
+  .plugin-row[data-tab="discover"] {
+    grid-template-columns: minmax(0, 1fr) 6rem auto;
+  }
+  .plugin-row > :last-child.secondary-button,
+  .plugin-row > :last-child .secondary-button,
+  .plugin-detail-actions button,
+  .danger-button {
+    min-height: 2.75rem;
+  }
+  .plugin-detail-actions > * {
+    flex: 1 1 10rem;
+  }
+  .plugin-dialog-form {
+    padding: 1rem;
+  }
+  .confirm-facts-list {
+    grid-template-columns: 1fr;
+    gap: 0.125rem;
+  }
+  .confirm-facts-list dd {
+    margin-bottom: var(--s8);
+  }
+}
+
+@media (max-width: 360px) {
+  .admin-header,
+  .admin-main {
+    width: calc(100% - 1.5rem);
+  }
+  .admin-header > :last-child,
+  .admin-header > :first-child {
+    padding-inline: 0.625rem;
+    font-size: var(--font-size-xs);
+  }
+  .plugin-row > :last-child.secondary-button,
+  .plugin-row > :last-child .secondary-button {
+    min-width: 0;
+    padding-inline: 0.5rem;
+  }
+}
+#config::backdrop {
+  background: var(--agnes-bg-scrim);
+  backdrop-filter: blur(2px);
+}
+#config-form .settings-rail-heading .eyebrow,
+.settings-nav-label,
+.settings-rail-title,
+.config-accounts-heading h3,
+.config-detail-heading h3,
+.config-list-note,
+#config-account-guard {
+  margin: 0;
+}
+#config-form .config-accounts-heading > div > p,
+#config-form .config-detail-heading > div > p,
+#config-form #config-account-context {
+  margin: 0;
+}
+#config-form .settings-rail-heading .eyebrow {
+  display: none;
+  color: var(--agnes-text-disabled);
+  font-size: var(--font-size-xs);
+}
+.settings-rail-title {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.5rem;
+}
+#config-close {
+  position: absolute;
+  top: 20px;
+  right: 14px;
+  z-index: 1;
+  width: 1.75rem;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  min-height: 1.75rem;
+  padding: 0;
+  border-radius: 28px;
+  color: var(--agnes-text-primary);
+}
+#config-form:has(#settings-section-tabs[hidden]) .agnes-settings-page-header {
+  padding-inline-end: 2rem;
+}

@@ -1,0 +1,368 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   1. 基础色 —— 唯一允许出现具体色值的区域
+   命名：--agnes-color-{族}-{阶}[-a{透明}]
+   ═══════════════════════════════════════════════════════════════════════ */
+:root {
+  --agnes-color-transparent: transparent;
+  --agnes-color-white: #ffffff;
+  --agnes-color-black-a06: rgb(0 0 0 / 6%);
+  --agnes-color-black-a85: rgb(0 0 0 / 85%);
+
+  --agnes-color-neutral-025: #fdfeff;
+  --agnes-color-neutral-050: #fbfbfb;
+  --agnes-color-neutral-075: #fafafa;
+  --agnes-color-neutral-100: #e2e2e2;
+  --agnes-color-neutral-150: #d9d9d9;
+  --agnes-color-neutral-200: #d2dfe3;
+  --agnes-color-neutral-250: #c6cfd6;
+  --agnes-color-neutral-275: #c5c7d1;
+  --agnes-color-neutral-300: #c4cbd7;
+  --agnes-color-neutral-325: #b9c1ce;
+  --agnes-color-neutral-350: #b3b9c3;
+  --agnes-color-neutral-360: #b1b1b1;
+  --agnes-color-neutral-375: #b2bcd0;
+  --agnes-color-neutral-400: #aec1c7;
+  --agnes-color-neutral-425: #a1a6bd;
+  --agnes-color-neutral-450: #a0acb1;
+  --agnes-color-neutral-475: #909aa4;
+  --agnes-color-neutral-500: #8d98b3;
+  --agnes-color-neutral-550: #6b7280;
+  --agnes-color-neutral-560: #626978;
+  --agnes-color-neutral-575: #676d83;
+  --agnes-color-neutral-600: #667188;
+  --agnes-color-neutral-625: #4e586a;
+  --agnes-color-neutral-650: #4a556b;
+  --agnes-color-neutral-675: #485054;
+  --agnes-color-neutral-700: #464e5c;
+  --agnes-color-neutral-725: #424656;
+  --agnes-color-neutral-750: #2c303b;
+  --agnes-color-neutral-775: #2b313c;
+  --agnes-color-neutral-790: #2a2e35;
+  --agnes-color-neutral-800: #22252c;
+  --agnes-color-neutral-850: #1c2026;
+  --agnes-color-neutral-900: #191c1d;
+  --agnes-color-neutral-950: #161b21;
+
+  --agnes-color-brand-indigo-300: #849aff;
+  --agnes-color-brand-indigo-400: #6983fc;
+  --agnes-color-brand-indigo-450: #3c57d5;
+  --agnes-color-brand-indigo-500: #3248af;
+  --agnes-color-brand-blue-400: #5c9eff;
+  --agnes-color-brand-blue-500: #0066ff;
+  --agnes-color-brand-cyan-100: #cff2ff;
+  --agnes-color-brand-cyan-200: #baeafb;
+  --agnes-color-brand-cyan-300: #b5e5ff;
+  --agnes-color-brand-cyan-400: #98dbff;
+
+  --agnes-color-green-400: #4ade80;
+  --agnes-color-green-600: #15803d;
+  --agnes-color-green-bg-light: #dcfce7;
+  --agnes-color-green-bg-dark: #1f3b2b;
+  --agnes-color-yellow-400: #ffb547;
+  --agnes-color-yellow-600: #ff8e12;
+  /* 步骤 3 把浅色警告文字换成 yellow-600 后，落在 #f8f1df 上只有 2.04:1。
+     补一档足够深的黄（沿用步骤 3 之前的语义值 #805e21）用于浅色文字：5.26:1。 */
+  --agnes-color-yellow-700: #805e21;
+  --agnes-color-red-400: #ff5c5c;
+  --agnes-color-red-600: #e52626;
+  /* 同上：red-600 落在 #f5cdcd 上只有 3.13:1，补一档深红用于浅色危险文字：5.54:1。 */
+  --agnes-color-red-700: #8f2f2f;
+  --agnes-color-red-bg-light: #f5cdcd;
+  /* 原 #4a2323 配 red-400 文字只有 4.46:1，压深一档到 4.79:1。 */
+  --agnes-color-red-bg-dark: #421f1f;
+
+  /* 透明变体必须定义为完整颜色值，不得用整体 opacity 模拟 */
+  --agnes-color-white-a70: rgb(255 255 255 / 70%);
+  --agnes-color-white-a50: rgb(255 255 255 / 50%);
+  --agnes-color-white-a30: rgb(255 255 255 / 30%);
+  --agnes-color-white-a04: rgb(255 255 255 / 4%);
+  --agnes-color-neutral-725-a60: rgb(66 70 86 / 60%);
+  --agnes-color-neutral-300-a60: rgb(196 203 215 / 60%);
+  --agnes-color-neutral-575-a12: rgb(103 109 131 / 12%);
+  --agnes-color-neutral-150-a40: rgb(217 217 217 / 40%);
+  --agnes-color-neutral-100-a70: rgb(226 226 226 / 70%);
+  --agnes-color-neutral-850-a70: rgb(28 32 38 / 70%);
+  --agnes-color-brand-indigo-500-a30: rgb(50 72 175 / 30%);
+  --agnes-color-brand-indigo-400-a30: rgb(105 131 252 / 30%);
+  --agnes-color-brand-indigo-500-a10: rgb(50 72 175 / 10%);
+  --agnes-color-brand-indigo-400-a10: rgb(105 131 252 / 10%);
+  --agnes-color-brand-blue-500-a05: rgb(0 102 255 / 5%);
+  --agnes-color-brand-blue-400-a05: rgb(92 158 255 / 5%);
+  --agnes-color-line-light-a80: rgb(194 198 216 / 80%);
+  --agnes-color-line-light-a30: rgb(194 198 216 / 30%);
+  --agnes-color-line-light-a20: rgb(194 198 216 / 20%);
+  --agnes-color-line-dark-primary: #393f49;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   2. 语义 token —— 浅色（组件只允许引用这一层）
+   组件禁止直接引用 --agnes-color-*；命名描述用途不描述色值。
+   ═══════════════════════════════════════════════════════════════════════ */
+:root {
+  color-scheme: light;
+
+  /* Brand */
+  --agnes-brand-primary: var(--agnes-color-brand-indigo-500);
+  --agnes-brand-focus-ring: var(--agnes-color-brand-indigo-500-a30);
+  --agnes-brand-emphasis-soft: var(--agnes-color-brand-indigo-500-a10);
+
+  /* Text */
+  --agnes-text-primary: var(--agnes-color-neutral-900);
+  --agnes-text-secondary: var(--agnes-color-neutral-725);
+  /* Keep tertiary copy readable on both hover surfaces and soft selected backgrounds. */
+  --agnes-text-tertiary: var(--agnes-color-neutral-560);
+  --agnes-text-disabled: var(--agnes-color-neutral-350);
+  --agnes-text-inverse: var(--agnes-color-white);
+  /* 强调文字：桌面端 token 集无此角色，本次补齐（设计 §5.4） */
+  --agnes-text-emphasis: var(--agnes-color-brand-indigo-500);
+
+  /* Icon —— 只有 secondary 有"非继承"消费点（连接状态灯）；
+     其余图标一律走 .icon 的 stroke: currentColor 继承按钮文字色。 */
+  --agnes-icon-secondary: var(--agnes-color-neutral-360);
+
+  /* Background */
+  --agnes-bg-page: var(--agnes-color-white);
+  --agnes-bg-surface: var(--agnes-color-neutral-025);
+  --agnes-bg-popover: var(--agnes-color-white);
+  --agnes-bg-card: var(--agnes-color-neutral-150-a40);
+  --agnes-bg-code: var(--agnes-color-neutral-150-a40);
+  --agnes-bg-selected: var(--agnes-color-neutral-575-a12);
+  --agnes-bg-hover: var(--agnes-color-neutral-150-a40);
+  --agnes-bg-scrim: var(--agnes-color-white-a50);
+  --agnes-bg-lightbox: var(--agnes-color-black-a85);
+  /* 头部和设置表头不使用磨砂底；-soft / -hover 仍有消费点。 */
+  --agnes-surface-glass-soft: rgb(255 255 255 / 72%);
+  --agnes-surface-glass-hover: rgb(255 255 255 / 54%);
+
+  /* Input */
+  --agnes-input-surface: var(--agnes-bg-surface);
+  --agnes-input-content-strong: var(--agnes-color-neutral-900);
+  --agnes-input-placeholder: var(--agnes-color-neutral-725-a60);
+  --agnes-input-border: var(--agnes-color-line-light-a30);
+  --agnes-input-border-emphasis: var(--agnes-color-line-light-a80);
+  --agnes-input-border-focus: var(--agnes-color-brand-indigo-500);
+
+  /* Line */
+  --agnes-line-emphasis: var(--agnes-color-line-light-a80);
+  --agnes-line-primary: var(--agnes-color-line-light-a30);
+  /* --agnes-line-secondary 已无消费点；最浅发丝由 --agnes-line-primary 承担。 */
+
+  /* Button —— secondary 在 .secondary-button 里是描边按钮，不需要填充角色；
+     disabled 沿用 --agnes-text-tertiary + --agnes-bg-card（单独配 disabled 底色会掉到 1.43:1）。 */
+  --agnes-button-primary-bg: var(--agnes-color-brand-indigo-500);
+  --agnes-button-primary-bg-hover: var(--agnes-color-brand-indigo-450);
+  --agnes-button-primary-content: var(--agnes-color-white);
+  --agnes-button-outline-content: var(--agnes-color-neutral-675);
+
+  /* Status */
+  --agnes-status-success-text: var(--agnes-color-green-600);
+  --agnes-status-success-bg: var(--agnes-color-green-bg-light);
+  --agnes-status-warning-text: var(--agnes-color-yellow-700);
+  /* 警告背景：桌面端只有 warning 文字色，本次补齐（设计 §5.4） */
+  --agnes-status-warning-bg: #f8f1df;
+  --agnes-status-danger-text: var(--agnes-color-red-700);
+  --agnes-status-danger-bg: var(--agnes-color-red-bg-light);
+  --agnes-status-info-text: var(--agnes-color-brand-blue-500);
+
+  /* Shadow —— 阴影内含颜色，必须随主题切换，故归语义层而不是尺度层：
+     尺度层的 :root 在文件更后方，与 .dark 特异性相同，会把深色值覆盖回浅色。 */
+  --shadow-elevation: 0 4px 20px -12px rgb(0 0 0 / 12%);
+  --shadow-hairline: 0 0 0 1px rgb(0 0 0 / 5%);
+  --shadow-dialog: 0 28px 80px rgb(22 30 25 / 20%);
+  --shadow-elevation-soft:
+    0 0 0 0.5px var(--agnes-line-primary), 0 4px 16px rgb(0 0 0 / 3%), 0 0 24px rgb(0 0 0 / 3%);
+  --shadow-elevation-prominent:
+    0 0 0 0.5px var(--agnes-line-primary), 0 3px 8px rgb(0 0 0 / 4%), 0 0 20px rgb(0 0 0 / 5%);
+
+  /* 品牌填充不使用内高光，--agnes-highlight-inset 已删除。 */
+
+  /* Product-specific */
+  /* 内容面保持纯白，侧栏使用浅灰，避免相邻表面只差一个色阶而难以区分。 */
+  --agnes-bg-app-sidebar: var(--agnes-color-neutral-075);
+  --agnes-bg-app-content: var(--agnes-bg-page);
+
+  /* Trace 时序图和类型标记的语义色；组件层只消费这些角色，不保留具体色值。 */
+  --agnes-trace-track: rgb(127 127 127 / 8%);
+  --agnes-trace-row-current: rgb(127 127 127 / 10%);
+  --agnes-trace-row-hover: rgb(127 127 127 / 7%);
+  --agnes-trace-lane-input: #9aa8b5;
+  --agnes-trace-lane-user: #4d7ec8;
+  --agnes-trace-lane-context: #3fa37a;
+  --agnes-trace-lane-model: #6f62c4;
+  --agnes-trace-lane-tool: #d4843a;
+  --agnes-trace-badge-user-text: var(--agnes-text-primary);
+  --agnes-trace-badge-user-bg: rgb(59 111 182 / 14%);
+  --agnes-trace-badge-context-text: var(--agnes-text-primary);
+  --agnes-trace-badge-context-bg: rgb(47 143 106 / 14%);
+  --agnes-trace-badge-assistant-text: var(--agnes-text-primary);
+  --agnes-trace-badge-assistant-bg: rgb(92 82 168 / 14%);
+  --agnes-trace-badge-tool-text: var(--agnes-text-primary);
+  --agnes-trace-badge-tool-bg: rgb(195 107 34 / 14%);
+  --agnes-trace-badge-approval-text: var(--agnes-text-primary);
+  --agnes-trace-badge-approval-bg: rgb(138 90 18 / 12%);
+  --agnes-trace-badge-compaction-text: var(--agnes-text-primary);
+  --agnes-trace-badge-compaction-bg: rgb(78 88 106 / 12%);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   3. 语义 token —— 深色（与浅色分类同序、名字成对）
+   必须出现在浅色 :root 之后，同名 token 才能覆盖。
+   ═══════════════════════════════════════════════════════════════════════ */
+.dark {
+  color-scheme: dark;
+
+  /* Brand */
+  --agnes-brand-primary: var(--agnes-color-brand-indigo-400);
+  --agnes-brand-focus-ring: var(--agnes-color-brand-indigo-400-a30);
+  --agnes-brand-emphasis-soft: var(--agnes-color-brand-indigo-400-a10);
+
+  /* Text */
+  --agnes-text-primary: var(--agnes-color-neutral-050);
+  --agnes-text-secondary: var(--agnes-color-neutral-300);
+  /* 三级文字：原为 neutral-700，在 #161b21 上只有 2.07:1，几乎不可读。
+     neutral-500 给到 6.0:1，仍明显低于 secondary，保持三级次序。 */
+  --agnes-text-tertiary: var(--agnes-color-neutral-500);
+  --agnes-text-disabled: var(--agnes-color-neutral-625);
+  /* 深色品牌色是亮靛蓝，反色内容必须是近黑：白字只有 3.36:1，近黑 5.16:1。 */
+  --agnes-text-inverse: var(--agnes-color-neutral-950);
+  --agnes-text-emphasis: var(--agnes-color-brand-indigo-400);
+
+  /* Icon —— 同浅色：只有 secondary 有非继承消费点（连接状态灯） */
+  --agnes-icon-secondary: var(--agnes-color-neutral-575);
+
+  /* Background */
+  /* 深色下三级表面必须拉开：页面底 ≠ 弹窗/输入框底 ≠ 面板底。
+     原先三者都是 neutral-950，弹窗与页面同色，只剩 1px 边框可分。 */
+  --agnes-bg-page: var(--agnes-color-neutral-850);
+  --agnes-bg-surface: var(--agnes-color-neutral-800);
+  --agnes-bg-popover: var(--agnes-color-neutral-800);
+  --agnes-bg-card: var(--agnes-color-white-a04);
+  --agnes-bg-code: var(--agnes-color-neutral-850);
+  --agnes-bg-selected: var(--agnes-color-neutral-750);
+  --agnes-bg-hover: var(--agnes-color-white-a04);
+  --agnes-bg-scrim: var(--agnes-color-neutral-850-a70);
+  --agnes-surface-glass-soft: rgb(255 255 255 / 8%);
+  --agnes-surface-glass-hover: rgb(255 255 255 / 12%);
+
+  /* Input */
+  --agnes-input-surface: var(--agnes-bg-surface);
+  --agnes-input-content-strong: var(--agnes-color-neutral-050);
+  --agnes-input-placeholder: var(--agnes-color-neutral-300-a60);
+  --agnes-input-border: var(--agnes-color-line-dark-primary);
+  --agnes-input-border-emphasis: var(--agnes-color-line-dark-primary);
+  --agnes-input-border-focus: var(--agnes-color-brand-indigo-400);
+
+  /* Line */
+  --agnes-line-emphasis: var(--agnes-color-neutral-790);
+  --agnes-line-primary: var(--agnes-color-line-dark-primary);
+
+  /* Button —— 同浅色：secondary 是描边按钮，disabled 沿用 tertiary + bg-card */
+  --agnes-button-primary-bg: var(--agnes-color-brand-indigo-400);
+  --agnes-button-primary-bg-hover: var(--agnes-color-brand-indigo-300);
+  --agnes-button-primary-content: var(--agnes-color-neutral-950);
+  --agnes-button-outline-content: var(--agnes-color-white);
+
+  /* Status */
+  --agnes-status-success-text: var(--agnes-color-green-400);
+  --agnes-status-success-bg: var(--agnes-color-green-bg-dark);
+  --agnes-status-warning-text: var(--agnes-color-yellow-400);
+  --agnes-status-warning-bg: #3a2f18;
+  --agnes-status-danger-text: var(--agnes-color-red-400);
+  --agnes-status-danger-bg: var(--agnes-color-red-bg-dark);
+  --agnes-status-info-text: var(--agnes-color-brand-blue-400);
+
+  /* Shadow —— 深色底上浅色阴影看不见，改用更强的黑；hairline 反过来用浅环 */
+  --shadow-elevation: 0 4px 20px -12px rgb(0 0 0 / 55%);
+  --shadow-hairline: 0 0 0 1px rgb(255 255 255 / 8%);
+  --shadow-dialog: 0 28px 80px rgb(0 0 0 / 55%);
+  --shadow-elevation-soft:
+    0 0 0 0.5px var(--agnes-line-primary), 0 4px 16px rgb(0 0 0 / 3%), 0 0 24px rgb(0 0 0 / 3%);
+  --shadow-elevation-prominent:
+    0 0 0 0.5px var(--agnes-line-primary), 0 3px 8px rgb(0 0 0 / 4%), 0 0 20px rgb(0 0 0 / 5%);
+
+  /* 与浅色同值：品牌填充仍是靛蓝，顶部高光的角色不变 */
+
+  /* Product-specific */
+  --agnes-bg-app-sidebar: var(--agnes-color-neutral-850);
+  --agnes-bg-app-content: var(--agnes-color-neutral-950);
+
+  /* 保留 Trace 类型的稳定识别色；透明背景自然与深色表面合成。 */
+  --agnes-trace-track: rgb(127 127 127 / 8%);
+  --agnes-trace-row-current: rgb(127 127 127 / 10%);
+  --agnes-trace-row-hover: rgb(127 127 127 / 7%);
+  --agnes-trace-lane-input: #9aa8b5;
+  --agnes-trace-lane-user: #4d7ec8;
+  --agnes-trace-lane-context: #3fa37a;
+  --agnes-trace-lane-model: #6f62c4;
+  --agnes-trace-lane-tool: #d4843a;
+  --agnes-trace-badge-user-text: var(--agnes-text-primary);
+  --agnes-trace-badge-user-bg: rgb(59 111 182 / 14%);
+  --agnes-trace-badge-context-text: var(--agnes-text-primary);
+  --agnes-trace-badge-context-bg: rgb(47 143 106 / 14%);
+  --agnes-trace-badge-assistant-text: var(--agnes-text-primary);
+  --agnes-trace-badge-assistant-bg: rgb(92 82 168 / 14%);
+  --agnes-trace-badge-tool-text: var(--agnes-text-primary);
+  --agnes-trace-badge-tool-bg: rgb(195 107 34 / 14%);
+  --agnes-trace-badge-approval-text: var(--agnes-text-primary);
+  --agnes-trace-badge-approval-bg: rgb(138 90 18 / 12%);
+  --agnes-trace-badge-compaction-text: var(--agnes-text-primary);
+  --agnes-trace-badge-compaction-bg: rgb(78 88 106 / 12%);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   4. 尺度 —— 无深浅维度，不参与别名映射
+   --radius-card / --radius-panel 是既有名字原样提升进本层：
+   圆角是纯尺度，既无深浅维度也无"基础/语义"分层，故不新建 token、
+   不做别名（同名别名会构成 var 自引用）。
+   ═══════════════════════════════════════════════════════════════════════ */
+:root {
+  --font-sans:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.8125rem;
+  --font-size-body: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --line-xs: 1rem;
+  --line-sm: 1.25rem;
+  --line-md: 1.5rem;
+  --line-lg: 1.75rem;
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --radius-main-page: 32px;
+  --radius-modal: 28px;
+  --radius-full: 9999px;
+  --radius-card: 1.125rem;
+  --radius-panel: 1.375rem;
+  --s2: 2px;
+  --s4: 4px;
+  --s8: 8px;
+  --s10: 10px;
+  --s12: 12px;
+  --s16: 16px;
+  --s20: 20px;
+  --s24: 24px;
+  --s32: 32px;
+  --s48: 48px;
+  --chat-content-width: 57.5rem;
+  --composer-card-max-width: calc(var(--chat-content-width) + 2rem);
+  --admin-content-width: 70rem;
+  --control-height: 2.25rem;
+  --control-height-form: 2.75rem;
+  --control-height-touch: 44px;
+  --dialog-max-height: min(46rem, calc(100dvh - 3rem));
+  /* 阴影已上移到语义层（第 2 节 Shadow 组）：内含颜色，需要 .dark 覆盖。
+     三档仍是极简口径，只是不再属于"无深浅维度"的尺度层。 */
+  --transition-fast: 140ms ease-out;
+  --transition: 170ms ease-out;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════

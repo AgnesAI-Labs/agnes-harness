@@ -1,7 +1,8 @@
 #!/usr/bin/env node
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { appendFile, chmod, copyFile, cp, mkdir, readdir, readFile, rm } from 'node:fs/promises'
+import { appendFile, writeFile, chmod, copyFile, cp, mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -294,10 +295,11 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
     logLevel: 'warning',
   })
   await Promise.all(
-    ['index.html', 'admin.html', 'resources.html', 'style.css', 'brand-mark.png'].map((file) =>
+    ['index.html', 'admin.html', 'resources.html', 'brand-mark.png'].map((file) =>
       copyFile(join(repoPackages, 'web', 'public', file), join(webOut, file)),
     ),
   )
+  await writeFile(join(webOut, 'style.css'), readWebStyleSource(join(webRoot, 'public', 'style.css')))
   const webUi = join(repoPackages, 'web-ui')
   const antdCss = require.resolve('antd/dist/antd.css', { paths: [webUi] })
   await Promise.all([

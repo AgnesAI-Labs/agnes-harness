@@ -1,0 +1,284 @@
+#config {
+  position: relative;
+  width: 1100px;
+  max-width: calc(100vw - 48px);
+  height: min(800px, calc(100dvh - 48px));
+  max-height: calc(100dvh - 48px);
+  border: 0;
+  border-radius: var(--radius-main-page);
+  background: var(--agnes-bg-surface);
+  box-shadow: var(--shadow-elevation-prominent);
+}
+/* 设置拆成独立插槽后，透过宿主包装保留表单到当前面板的高度链。
+   隐藏面板仍由 [hidden] 排除，不为未选中的插槽留下空网格行。 */
+#config > div:has(> div > #config-form),
+#config > div > div:has(> #config-form),
+#settings-dsh-shell-slots,
+#settings-dsh-shell-slots > [id^="settings-dsh-slot-"],
+#settings-dsh-shell-slots > [id^="settings-dsh-slot-"] > [data-slot],
+#settings-dsh-shell-slots > [id^="settings-dsh-slot-"] > [data-slot] > [data-slot-entry],
+#settings-pane-slots,
+#settings-pane-slots > [data-agnes-settings-pane-slot],
+#settings-pane-slots > [data-agnes-settings-pane-slot] > [data-slot],
+#settings-pane-slots > [data-agnes-settings-pane-slot] > [data-slot] > [data-slot-entry],
+#settings-pane-slots [data-agnes-region-owner="builtin"][data-agnes-region-unit^="settings-"] {
+  display: contents;
+}
+#config-form {
+  grid-template-columns: 13rem minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  border-radius: inherit;
+  height: 100%;
+  max-height: none;
+  display: grid;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+#settings-content-slots {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* Admin 面板有两个宿主：设置弹窗里的 .admin-pane（本组规则）与独立页的 .admin-page /
+   .admin-main。两者共用同一套滚动模型——文档不滚动、列表是唯一纵向滚动容器、详情只有中段
+   滚动——这样"内容超出就被裁掉"结构上不会再发生。 */
+.admin-pane {
+  min-height: 0;
+}
+.admin-pane-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0.5rem 1.5rem 1.5rem;
+}
+.admin-toolbar-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.settings-rail {
+  background: transparent;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.125rem;
+  padding: 1.375rem 0.75rem 0;
+  border-right: 0;
+}
+.config-card {
+  min-width: 0;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-xl);
+  background: var(--agnes-bg-page);
+  box-shadow: var(--shadow-elevation);
+}
+
+@media (max-width: 720px) {
+  body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sidebar {
+    width: min(19rem, calc(100vw - 2.5rem));
+  }
+  .topbar {
+    min-height: 3.4rem;
+    padding-inline: 0.75rem;
+  }
+  #transcript-content {
+    padding: 1.5rem 1rem 5rem;
+  }
+  .timeline-node.user {
+    max-width: 92%;
+  }
+  .timeline-node.assistant {
+    padding-left: 2rem;
+  }
+  .timeline-node.tool,
+  .timeline-node.cost,
+  .timeline-node.artifact,
+  .timeline-node.compaction {
+    margin-left: 2rem;
+  }
+  #composer {
+    width: calc(100% - 1rem);
+    min-height: 6.75rem;
+  }
+  /* 区域规则紧跟在同一媒体查询内、同一层叠位置：挪到文件末尾会反过来压掉这条响应式覆盖。 */
+  [data-agnes-region="composer"] {
+    border-radius: var(--radius-xl);
+  }
+  #session-usage {
+    margin-left: auto;
+  }
+  .composer-workspace {
+    max-width: 9rem;
+  }
+  #config {
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+  }
+}
+body.admin-page {
+  height: 100dvh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* 独立页此前从工作台外壳继承了 overflow: hidden 却没有自己的滚动模型，内容一高就被裁掉。
+     现在与设置面板共用"文档不滚、列表滚"的模型，这里显式声明。 */
+  overflow: hidden;
+}
+/* 独立页的文字色故意比工作台低一档。用 (0,1,0) 的类选择器而不是 (0,1,1) 的 `body.admin-page`：
+   高于 (0,1,0) 的基础声明会让皮肤的区域规则永远赢不了（设计 §20）。 */
+.admin-page {
+  color: var(--agnes-text-secondary);
+}
+.admin-header {
+  width: min(var(--admin-content-width), calc(100% - 3rem));
+  min-height: 7.5rem;
+  display: grid;
+  grid-template-columns: minmax(9rem, 1fr) minmax(0, 2fr) minmax(9rem, 1fr);
+  align-items: center;
+  gap: 1rem;
+  margin: 0 auto;
+  flex: 0 0 auto;
+}
+.admin-header > :last-child {
+  justify-self: end;
+}
+.admin-header > :first-child {
+  justify-self: start;
+  width: auto;
+}
+.admin-heading {
+  min-width: 0;
+  text-align: center;
+}
+.admin-heading .eyebrow {
+  margin: 0 0 0.125rem;
+  color: var(--agnes-text-emphasis);
+}
+.admin-heading h1 {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: clamp(1.45rem, 2vw, 1.8rem);
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+}
+.admin-main {
+  width: min(var(--admin-content-width), calc(100% - 3rem));
+  margin: 0 auto;
+  padding: 0 0 1.5rem;
+  /* 与 .admin-pane-body 同构：吃掉剩余高度，把滚动交给列表与详情。 */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.admin-notice {
+  min-height: 1.35rem;
+  margin: 0 0 0.75rem;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+.admin-notice[data-kind="error"] {
+  color: var(--agnes-status-danger-text);
+}
+/* resource-control-web 会写 kind=success/warning，admin 会写 kind=state；
+   此前只有 error 有样式，成功与警告态和普通提示同色。 */
+.admin-notice[data-kind="success"] {
+  color: var(--agnes-status-success-text);
+}
+.admin-notice[data-kind="warning"] {
+  color: var(--agnes-status-warning-text);
+}
+.admin-notice[data-kind="state"] {
+  color: var(--agnes-status-info-text);
+}
+.recovery-notice {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin: 0 0 1rem;
+  padding: 0.75rem 0.75rem;
+  border: 1px solid var(--agnes-status-warning-text);
+  border-inline-start: 3px solid var(--agnes-status-warning-text);
+  border-radius: var(--radius-card);
+  background: var(--agnes-status-warning-bg);
+}
+.recovery-notice strong {
+  color: var(--agnes-status-warning-text);
+  font-size: var(--font-size-sm);
+}
+.recovery-notice p {
+  margin: 0;
+  color: var(--agnes-status-warning-text);
+  font-size: var(--font-size-sm);
+}
+.orphan-pins {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  padding: 0.75rem 0.75rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-inline-start: 3px solid var(--agnes-status-warning-text);
+  border-radius: var(--radius-card);
+  background: var(--agnes-status-warning-bg);
+}
+.orphan-pins-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+}
+.orphan-pins-heading strong {
+  color: var(--agnes-status-warning-text);
+  font-size: var(--font-size-sm);
+}
+.orphan-pins-status {
+  margin: 0;
+  color: var(--agnes-status-warning-text);
+  font-size: var(--font-size-sm);
+}
+.orphan-pins-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.orphan-pin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--agnes-status-warning-text);
+  border-radius: var(--radius-md);
+  background: var(--agnes-status-warning-bg);
+}
+.orphan-pin-content p {
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+.orphan-pin-content .orphan-pin-meta {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+.orphan-pin-content .orphan-pin-error {
+  color: var(--agnes-status-danger-text);
+}

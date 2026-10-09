@@ -1,3 +1,4 @@
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { execFileSync } from 'node:child_process'
 import { readdir, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
@@ -18,12 +19,14 @@ beforeAll(() => {
 
 it('ships private conversation styles in the existing three-page style asset', async () => {
   const [base, conversation, built, files] = await Promise.all([
-    readFile(resolve(web, 'public/style.css'), 'utf8'),
+    readWebStyleSource(resolve(web, 'public/style.css')),
     readFile(resolve(repository, 'packages/web-ui/src/conversation/messages.css'), 'utf8'),
     readFile(resolve(web, 'dist/web/style.css'), 'utf8'),
     readdir(resolve(web, 'dist/web')),
   ])
   expect(built.startsWith(base)).toBe(true)
+  expect(built).not.toContain('@import "./styles/')
+  expect(files).not.toContain('styles')
   expect(built).toContain(conversation.trim())
   expect(built).toContain('.x-markdown')
   expect(built).toContain('.x-markdown-light')

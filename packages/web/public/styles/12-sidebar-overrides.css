@@ -1,0 +1,109 @@
+.empty-brand-mark {
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  color: var(--agnes-text-primary);
+  background: transparent;
+  box-shadow: none;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.sidebar-actions .primary-button:hover:not(:disabled) {
+  border-color: var(--agnes-line-emphasis);
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-bg-surface);
+  box-shadow: var(--shadow-elevation);
+}
+.sidebar-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+  min-height: 2.25rem;
+  padding-left: 0.25rem;
+  margin: 0.5rem 0 0.25rem;
+  border-radius: var(--radius-lg);
+}
+.sidebar-section-heading .section-label {
+  margin: 0;
+  letter-spacing: 0.045em;
+  text-transform: none;
+}
+.icon-button.subtle {
+  width: 1.75rem;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  min-height: 1.75rem;
+}
+.workspace-group {
+  /* 组与组之间比组内行距（2px）大一档：工作区分组靠这条 6px 的缝表达，
+     每个组内是同一条 2px 节奏。首组不吃这条缝（上方是「新会话」按钮，已有间距）。 */
+  margin-top: 0.375rem;
+}
+.workspace-group:first-child {
+  margin-top: 0;
+}
+.workspace-heading-row {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+.workspace-heading {
+  flex: 1;
+  min-width: 0;
+  min-height: 2.125rem;
+  gap: 0.375rem;
+  justify-content: flex-start;
+  padding: 0 0.5rem;
+  border-color: transparent;
+  /* 与 .session:hover 完全一致：通用 button:hover 会把描边刷成 --agnes-line-emphasis，
+     悬停时多出一圈灰边，观感与下方会话行不统一。 */
+  border-radius: var(--radius-md);
+  color: var(--agnes-text-primary);
+  background: transparent;
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.25rem;
+}
+.workspace-heading:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--agnes-bg-hover);
+}
+.workspace-heading-row .workspace-new-session {
+  width: 1.75rem;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  min-height: 1.75rem;
+  opacity: 0;
+  pointer-events: none;
+}
+.workspace-heading-row:hover .workspace-new-session,
+.workspace-new-session:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.workspace-heading .workspace-name,
+.session .session-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 会话行与工作区行同宽：此前这里多 10px 左内缩，导致文件夹的悬停底色比会话宽一截。
+   层级由文件夹图标与标题缩进表达，不靠底色宽度。 */
+.workspace-sessions {
+  display: grid;
+  gap: 0.125rem;
+}
+
+/* hero 品牌标：用客户端 AgnesMark 位图（与侧栏品牌位同一资源）代替原来的 "AGH" 文字占位。
+   mask 靠 background 显色，所以这里必须显式给 currentColor —— 上面那条基础规则里的
+   background: transparent 是在"文字标"时代写的，会盖掉 .agnes-mark 的着色。 */
+.empty-brand-mark {
+  width: 3.5rem;
+  height: 3.5rem;
+  margin: 0 auto 1.25rem;
+  border-radius: 0;
+  color: var(--agnes-brand-primary);
+  background: currentColor;
+}

@@ -1,0 +1,271 @@
+.sidebar-backdrop,
+.sidebar-close {
+  display: none;
+}
+body.sidebar-collapsed {
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+}
+body {
+  transition: grid-template-columns var(--transition);
+}
+.sidebar {
+  transition:
+    width var(--transition),
+    padding var(--transition),
+    opacity var(--transition);
+}
+@media (min-width: 901px) {
+  body.sidebar-collapsed .sidebar {
+    align-items: center;
+    padding: 1.125rem 0.625rem 0.375rem;
+    overflow: hidden;
+    border-right: 1px solid var(--agnes-line-primary);
+  }
+  body.sidebar-collapsed .brand-wordmark-text {
+    display: none;
+  }
+  body.sidebar-collapsed .brand-lockup {
+    gap: 0;
+  }
+  body.sidebar-collapsed .sidebar-head {
+    justify-content: center;
+    padding: 0;
+    min-height: 2.25rem;
+    margin: 0 0 0.75rem;
+  }
+  body.sidebar-collapsed .sidebar-actions .primary-button {
+    width: 2.25rem;
+    height: 2.25rem;
+    min-height: 2.25rem;
+    padding: 0;
+    gap: 0;
+    margin: 0 0 0.75rem;
+    border-color: transparent;
+    background: transparent;
+  }
+  body.sidebar-collapsed .sidebar-actions .primary-button span {
+    display: none;
+  }
+  body.sidebar-collapsed .sidebar-section-heading,
+  body.sidebar-collapsed #sessions {
+    display: none;
+  }
+  body.sidebar-collapsed .sidebar-footer {
+    margin-top: auto;
+  }
+  body.sidebar-collapsed .sidebar-footer button {
+    width: 2.25rem;
+    min-height: 2.25rem;
+    padding: 0;
+    justify-content: center;
+  }
+  body.sidebar-collapsed .sidebar-footer button span {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  body,
+  body.sidebar-collapsed {
+    display: block;
+  }
+  .sidebar {
+    position: fixed;
+    z-index: 20;
+    inset: 0 auto 0 0;
+    width: min(17rem, calc(100vw - 3.25rem));
+    transform: translateX(-105%);
+    transition: transform var(--transition);
+    box-shadow: var(--shadow-dialog);
+  }
+  body:not(.sidebar-open) .sidebar {
+    visibility: hidden;
+    pointer-events: none;
+    box-shadow: none;
+  }
+  body.sidebar-open .sidebar {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+  }
+  body.sidebar-collapsed .sidebar {
+    display: flex;
+    width: min(17rem, calc(100vw - 3.25rem));
+    padding: 1.25rem 0.75rem 0.75rem;
+    /* 与宽屏同口径：覆盖层也不做滚动容器，底部行不随列表滚走。 */
+    overflow: hidden;
+    border-right: 1px solid var(--agnes-line-primary);
+  }
+  .sidebar-close,
+  .sidebar-toggle {
+    display: inline-flex;
+  }
+  .sidebar-backdrop {
+    position: fixed;
+    z-index: 10;
+    inset: 0;
+    width: 100%;
+    min-height: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: var(--agnes-bg-scrim);
+  }
+  body:not(.sidebar-open) .sidebar-backdrop {
+    display: none;
+  }
+  main {
+    height: 100dvh;
+    min-height: 0;
+  }
+  #notice,
+  #reconnect-notice,
+  #approval,
+  #composer,
+  #empty-state {
+    width: calc(100% - 2rem);
+  }
+  #transcript-content {
+    padding-inline: 1rem;
+  }
+  .new-content {
+    right: 1rem;
+  }
+}
+
+@media (max-width: 540px) {
+  /* Touch targets stay usable even where the desktop skin intentionally uses compact controls. */
+  button,
+  input,
+  select {
+    min-height: 44px;
+  }
+  .topbar {
+    min-height: 3.75rem;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+  }
+  .connection-group {
+    gap: var(--s8);
+  }
+  /* 窄屏只留一个状态点：文字仍对屏幕阅读器可见，视觉上的原因说明交给
+     #reconnect-notice。「断开连接」按钮已移除，不再需要为它单独放宽触控尺寸。 */
+  #connection {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    clip-path: inset(50%);
+  }
+  button,
+  input,
+  select {
+    min-height: 2.75rem;
+  }
+  .icon-button {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    height: 2.75rem;
+    min-height: 2.75rem;
+  }
+  /* 页签行里的按钮与页签同高，不把 2.25rem 的页签行撑高。 */
+  #report-problem {
+    width: 2.25rem;
+    min-width: 2.25rem;
+    height: 2.25rem;
+    min-height: 2.25rem;
+  }
+  .secondary-button.compact {
+    min-height: 2.75rem;
+  }
+  .sidebar-actions .primary-button,
+  .session,
+  .code-copy,
+  .tool-detail,
+  .new-content {
+    min-height: 2.75rem;
+  }
+  #composer {
+    margin-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+  #prompt {
+    min-height: 3rem;
+  }
+  #model {
+    min-height: 2.75rem;
+  }
+  #send[data-mode="idle"] {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    height: 2.75rem;
+    min-height: 2.75rem;
+  }
+  #config-form,
+  #new-session-form {
+    padding: 1rem;
+  }
+  .dialog-heading-actions {
+    gap: 0.25rem;
+  }
+}
+
+@media (max-width: 380px) {
+  #notice,
+  #reconnect-notice,
+  #approval,
+  #composer,
+  #empty-state {
+    width: calc(100% - 1.5rem);
+  }
+  #transcript-content {
+    padding-inline: 0.75rem;
+  }
+  .composer-controls {
+    gap: var(--s8);
+  }
+  .model-field {
+    min-width: 0;
+    max-width: none;
+    flex: 1 1 3.5rem;
+  }
+  #model {
+    max-width: 100%;
+  }
+  #cancel,
+  #send:not([data-mode="idle"]) {
+    padding-inline: 0.625rem;
+  }
+  .dialog-heading {
+    align-items: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition: 0ms;
+    --transition-fast: 0ms;
+  }
+  .sidebar,
+  .skip-link,
+  button,
+  #composer,
+  #transcript,
+  #approval,
+  #empty-state,
+  [data-agnes-region="approval"],
+  dialog,
+  dialog::backdrop,
+  .tool,
+  .model-chevron,
+  .model-picker-option {
+    transition: none;
+  }
+  .message-reveal-fragment {
+    animation: none;
+  }
+  #transcript {
+    scroll-behavior: auto;
+  }
+}

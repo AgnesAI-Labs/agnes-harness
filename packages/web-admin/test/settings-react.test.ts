@@ -1,6 +1,6 @@
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 /** @vitest-environment happy-dom */
 
-import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { ConfigSnapshot, RuntimeAdminSnapshot } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
@@ -41,7 +41,7 @@ afterEach(() => {
 })
 
 it('keeps the account dialog close control anchored and the action footer visible in short viewports', () => {
-  const css = readFileSync(stylePath, 'utf8')
+  const css = readWebStyleSource(stylePath)
   const close = styleRule(css, '#account-dialog .account-dialog-close')
   const body = styleRule(css, '.account-dialog-body')
   const content = styleRule(css, '#account-dialog .config-detail-grid')

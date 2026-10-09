@@ -1,0 +1,140 @@
+/* Agent picker matches the existing workspace, permissions and model chips. */
+.composer-agent.agnes-ui-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 2rem;
+  padding: 0 calc(0.5rem - 1px);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+  box-shadow: none;
+}
+.agent-chip-value {
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-picker-panel {
+  width: min(22rem, calc(100vw - 3rem));
+  display: grid;
+  gap: 1rem;
+}
+.agent-picker-panel .agnes-ui-field {
+  display: grid;
+  gap: 0.375rem;
+}
+.agent-picker-select {
+  width: 100%;
+}
+.agent-choice {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  align-items: baseline;
+}
+.agent-choice small {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+.session-goal-host {
+  width: min(100%, var(--chat-content-width, 48rem));
+  margin-inline: auto;
+}
+.goal-card {
+  margin: 0.5rem 1rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-card);
+  background: var(--agnes-bg-surface);
+}
+.goal-card > .agnes-ui-button {
+  width: auto;
+  max-width: 100%;
+}
+.goal-card form {
+  display: grid;
+  gap: 0.75rem;
+  padding-block: 0.75rem;
+}
+.goal-card .agnes-ui-field {
+  display: grid;
+  gap: 0.375rem;
+}
+
+.runtime-settings [data-testid="settings-refresh"] {
+  margin: 0;
+}
+.runtime-settings .runtime-card {
+  margin: 0;
+}
+.runtime-settings > section > .agnes-ui-tabs {
+  margin-bottom: 1rem;
+}
+.runtime-settings .config-heading {
+  padding: 0;
+}
+.runtime-settings .config-heading h2 {
+  margin-bottom: 0;
+}
+.runtime-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+}
+.session-goal-host {
+  width: min(100%, 52rem);
+  margin-inline: auto;
+  padding: 0.5rem 1.5rem 0;
+}
+
+#plugin-settings-pane:has(.runtime-settings) > .config-heading {
+  display: none;
+}
+#plugin-settings-pane .admin-pane-body {
+  padding-top: 1rem;
+}
+
+#config-form[data-runtime-page]:not([data-runtime-page="plugins"]) #plugin-settings-pane .plugin-toolbar {
+  display: none;
+}
+#plugin-settings-pane:has(.runtime-settings) .plugin-layout {
+  margin-top: 0;
+}
+
+/* The shared card stack owns spacing; legacy runtime margins must not accumulate. */
+.runtime-settings .agnes-settings-card details {
+  margin-block: 0;
+}
+#plugin-settings-pane:has(.runtime-settings) #admin-notice:empty,
+#plugin-settings-pane:has(.runtime-settings) #plugin-tree-status:empty {
+  display: none;
+}
+
+.session-tabs-bar .session-goal-host {
+  width: auto;
+  margin: 0 0 0 auto;
+  padding: 0;
+  flex: 0 1 auto;
+}
+.session-tabs-bar:has(.session-goal-host:not([hidden])) #report-problem {
+  margin-left: 0.5rem;
+}
+.session-goal-host .agnes-ui-button {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.goal-card {
+  width: min(24rem, calc(100vw - 3rem));
+  margin: 0;
+  padding: 0.5rem;
+  background: transparent;
+}
+.goal-card button {
+  margin: 0;
+}
+
+.transcript-node-host {
+  display: contents;
+}

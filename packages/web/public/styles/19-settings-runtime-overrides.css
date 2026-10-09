@@ -1,0 +1,57 @@
+/* One rail owns settings navigation in the workbench. */
+.settings-rail .settings-nav-label {
+  display: block;
+}
+.settings-rail {
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.settings-nav-label {
+  margin: 1rem 0 0.375rem;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+.settings-nav-item {
+  min-height: 2rem;
+  padding-block: 0.375rem;
+}
+.runtime-settings > nav {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: 0.25rem;
+  width: 13rem;
+  flex-shrink: 0;
+  margin: 0;
+}
+.runtime-settings > nav .agnes-ui-button {
+  justify-content: flex-start;
+}
+.runtime-settings:has(> nav) {
+  display: flex;
+  gap: 2rem;
+}
+.runtime-settings > section {
+  min-width: 0;
+  flex: 1;
+}
+.runtime-settings h2 {
+  margin: 0 0 1rem;
+  font-size: var(--font-size-lg);
+}
+.runtime-settings [data-testid="settings-refresh"] {
+  margin-bottom: 1rem;
+}
+@media (max-width: 640px) {
+  .runtime-settings:has(> nav) {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .runtime-settings > nav {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+

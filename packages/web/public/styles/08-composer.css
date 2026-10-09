@@ -1,0 +1,356 @@
+/* 空态判据取 `#empty-state` 的 hidden，与 app 的 shouldShowEmptyState 同一个信号。
+   此前用的 `#transcript:empty` 永远不成立：React 树恒定渲染一个 `#transcript-content`
+   子节点，`:empty` 不匹配，下面这一组规则全是死规则，实际效果一直是"输入卡贴底"。 */
+body:has(#empty-state:not([hidden])) #prompt {
+  min-height: 3.25rem;
+}
+/* 新会话（空态）：hero 与输入卡作为**一组**在剩余空间里垂直居中。两级绝对定位
+   （.conversation-region-root 与 #empty-state）必须在空态下放开，hero 才撑得出真实
+   高度；否则 shell 高度为 0，后面两份 auto 外边距无处可吃。顶栏在空态是绝对定位的
+   悬浮开关，不占流，所以不再需要补偿它的高度。 */
+body:has(#empty-state:not([hidden])) .workbench-split {
+  flex: 0 1 auto;
+  margin-top: auto;
+}
+body:has(#empty-state:not([hidden])) .conversation-region-root,
+body:has(#empty-state:not([hidden])) #empty-state {
+  position: static;
+  inset: auto;
+}
+body:has(#empty-state:not([hidden])) .conversation-shell {
+  overflow: visible;
+}
+/* 空态下会话清单里没有内容，但它带着 16px 上下内边距会占位、把 hero 顶下去，
+   于是 hero 跑出 shell 而整体偏离居中。空态时直接让位。 */
+body:has(#empty-state:not([hidden])) #transcript {
+  display: none;
+}
+/* 下边那份 auto 必须挂在 main 的 flex 子项上：挂到 #composer 上会被 #composer-mount
+   挡住，块级上下文里的纵向 auto 外边距会算成 0，居中就只剩上面那一份。 */
+body:has(#empty-state:not([hidden])) #composer-mount {
+  margin-bottom: auto;
+}
+/* 新会话时顶栏不成立：标题、状态都没有内容，页签也没有会话可切。容器降为不占流的
+   透明浮层，只留下左上角的侧栏开关——窄屏和折叠态下它是唤出导航的唯一入口，不能
+   跟着一起消失。连接异常那一行仍然保留（见 connection-group 的可见性规则）。 */
+body:has(#empty-state:not([hidden])) main {
+  position: relative;
+}
+body:has(#empty-state:not([hidden])) .topbar {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 6;
+  min-height: 0;
+  padding: 0.625rem 1.75rem;
+  border-bottom: 0;
+  background: transparent;
+}
+body:has(#empty-state:not([hidden])) .topbar .task-heading,
+body:has(#empty-state:not([hidden])) .session-tabs-bar {
+  display: none;
+}
+/* .task-heading 平时靠 flex:1 把连接组顶到右边；它退场后这份推力要显式补回来。 */
+body:has(#empty-state:not([hidden])) .connection-group {
+  margin-left: auto;
+}
+/* 切换会话的加载态：上一会话画面降不透明度（含会话区外的审批卡），提示内容
+   正在被替换；新投影就绪后由 body.session-switching 移除而平滑恢复。
+   空态时 #transcript 不显示，这条自然落空，不影响新建草稿的 hero。 */
+body.session-switching #transcript,
+body.session-switching #approval {
+  opacity: 0.55;
+}
+#composer {
+  width: min(calc(100% - 2rem), var(--composer-card-max-width));
+  margin: 0 auto 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.5rem 0 0;
+  transition: box-shadow var(--transition);
+  position: relative;
+  z-index: 7;
+}
+[data-agnes-region="composer"] {
+  /* 输入卡的 backdrop-filter 必须声明在区域钩子上，供皮肤覆盖（R1 不变量）。 */
+  border: 0;
+  border-radius: 1.375rem;
+  background: var(--agnes-bg-page);
+  box-shadow: var(--shadow-elevation-soft);
+  backdrop-filter: none;
+}
+/* 队列是输入卡上方的一张独立卡片。排队的消息和正在写的草稿是两件事，早先把它塞在输入卡
+   内部，两者读起来是一件事。现在它是 form 的前一个兄弟节点：宽度和居中与输入卡对齐，
+   圆角取同一个值，成为一组而不是一体。 */
+.composer-queue {
+  width: min(calc(100% - 2rem), var(--composer-card-max-width));
+  margin: 0 auto 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-panel);
+  background: var(--agnes-bg-card);
+  box-shadow: var(--shadow-elevation-soft);
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+}
+.composer-queue-count {
+  margin: 0 0 0.25rem;
+  padding: 0 0.375rem;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+/* 列表标记换成自绘序号：默认的 ol 数字是浏览器给的字形，跟卡片其余部分不是一套。
+   仍用 ol，读屏时的"第 N 项"语义不变。 */
+.composer-queue ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: composer-queue-item;
+  max-height: 10rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* 第 6 节开头把全局滚动条外观藏了。队列这里破例恢复细滚动条：超过 max-height 时若只靠
+     计数行提示还有内容，用户不会想到这块能滚。 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--agnes-line-emphasis) transparent;
+}
+.composer-queue li {
+  counter-increment: composer-queue-item;
+}
+/* 行间距沿用侧栏的 2px 组内节奏。 */
+.composer-queue li + li {
+  margin-top: 0.125rem;
+}
+.composer-queue-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.25rem 0.375rem;
+  border-radius: var(--radius-md);
+}
+/* 行本身不可点，所以底色只在指针或焦点落到这一行的动作上时出现，用来说明你正要操作哪一条。 */
+.composer-queue-row:hover,
+.composer-queue-row:focus-within {
+  background: var(--agnes-bg-hover);
+}
+/* 序号跟按钮的 aria-label「立即发送第 N 条待执行消息」指的是同一件事，右对齐让个位对齐。 */
+.composer-queue-row::before {
+  content: counter(composer-queue-item);
+  flex: none;
+  min-width: 1rem;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.composer-queue-preview {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 全局 button 是带边框的 36px 控件，放这里既和右下角的主发送键抢视线，又把每行撑高。
+   退成无边框文字按钮，只留品牌色。底色/边框/字色必须显式写：全局的 button:disabled 与本块
+   同为 (0,1,1)，靠本块更靠后生效，漏掉哪一条都会让禁用态变回一块灰底方块。 */
+.composer-queue button {
+  flex: none;
+  min-height: 1.5rem;
+  padding: 0.125rem 0.5rem;
+  border-color: transparent;
+  border-radius: var(--radius-full);
+  color: var(--agnes-brand-primary);
+  background: transparent;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+}
+.composer-queue button:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--agnes-brand-emphasis-soft);
+}
+.composer-queue button:active:not(:disabled) {
+  transform: none;
+}
+.composer-queue button:disabled {
+  color: var(--agnes-text-tertiary);
+  border-color: transparent;
+  background: transparent;
+}
+/* 正在发送或删除的按钮给个转圈。必须排在 :disabled 之后：进行中的
+   那一行两条同时命中，靠后的一条决定它显示为进行中，而不是跟着整列一起灰掉。 */
+.composer-queue button[aria-busy="true"] {
+  gap: 0.375rem;
+  color: var(--agnes-text-tertiary);
+}
+.composer-queue button[aria-busy="true"]::before {
+  content: "";
+  flex: none;
+  width: 0.625rem;
+  height: 0.625rem;
+  border: 1.5px solid var(--agnes-line-emphasis);
+  border-top-color: var(--agnes-brand-primary);
+  border-radius: var(--radius-full);
+  animation: composer-queue-spin 700ms linear infinite;
+}
+@keyframes composer-queue-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.composer-queue-error {
+  margin: 0.5rem 0 0;
+  padding: 0.375rem 0.5rem;
+  border-radius: var(--radius-md);
+  color: var(--agnes-status-danger-text);
+  background: var(--agnes-status-danger-bg);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}
+/* 全局那份 reduced-motion 只清 transition，转圈是 animation，得单独关。 */
+@media (prefers-reduced-motion: reduce) {
+  .composer-queue button[aria-busy="true"]::before {
+    animation: none;
+  }
+}
+.composer-writing {
+  min-height: 0;
+  /* 卡片圆角 22px 而卡片本身没有水平内边距：writing 区全宽铺到卡缘时，
+     textarea 首行和 hint 行的字体正好落进左上圆角的裁切区、hint 甚至贴着卡缘。
+     两侧各留 14px，加上 textarea 自身的 14px 左内边距，字形离卡缘 28px，稳出圆角。 */
+  padding: 0 0.875rem;
+}
+#prompt {
+  display: block;
+  width: 100%;
+  min-height: 2.25rem;
+  line-height: 1.5rem;
+  padding: 0.25rem 0.5rem 0 0.875rem;
+  font-size: 0.875rem;
+}
+[data-agnes-region="composer-input"] {
+  border: 0;
+  border-radius: 0;
+  color: var(--agnes-text-primary);
+  background: transparent;
+}
+#prompt:focus-visible {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+#composer-hint {
+  margin-top: 0.25rem;
+  /* 与 textarea 的字形左缘对齐（writing 区 14px + 自身 14px），否则 hint 贴着卡片边。 */
+  padding: 0 0.875rem;
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.125rem;
+}
+#composer-hint:empty,
+#composer-hint:not([data-kind="state"]) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+/* 附件在输入文字之上，所以顶边距归它：0.25rem 加上表单的 0.5rem，与 textarea 首行齐平。 */
+.composer-image-attachments {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.25rem 0.875rem 0;
+}
+/* 没有待发图片（也没有正在读取的）时整块不占位：容器常驻 DOM，靠这条把空态收掉，
+   否则这段上边距会把输入框整体顶下去。 */
+.composer-image-attachments:not(
+  :has(.composer-image-preview, .composer-file-preview, .composer-image-pending)
+) {
+  display: none;
+}
+.composer-image-preview-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.composer-image-preview {
+  position: relative;
+  width: 4.5rem;
+  height: 3.5rem;
+  margin: 0;
+}
+.composer-image-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: 0.5rem;
+  object-fit: cover;
+}
+.composer-file-preview {
+  position: relative;
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  max-width: min(16rem, 100%);
+  margin: 0;
+  padding: 0.5rem 1rem 0.5rem 0.75rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: 0.5rem;
+}
+.composer-upload {
+  max-width: min(24rem, 100%);
+}
+.composer-upload progress {
+  width: 100%;
+  accent-color: var(--agnes-text-primary);
+}
+.composer-upload button {
+  justify-self: start;
+}
+.composer-file-preview span {
+  overflow-wrap: anywhere;
+}
+.composer-file-preview small {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+.composer-image-preview [data-remove-image],
+.composer-file-preview [data-remove-image] {
+  position: absolute;
+  top: -0.375rem;
+  right: -0.375rem;
+  display: grid;
+  width: 1.25rem;
+  min-height: 1.25rem;
+  height: 1.25rem;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: 50%;
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-page);
+  line-height: 1;
+}
+.composer-image-pending {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+.composer-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.125rem 0.5rem 0.375rem;
+  container-type: inline-size;
+}

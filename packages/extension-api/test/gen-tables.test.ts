@@ -1,3 +1,4 @@
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { HOOK_EVENTS, HOOK_TABLE, THEME_TOKEN_NAMES } from '../src/index.js'
@@ -104,7 +105,7 @@ describe('theme token table generation', () => {
     expect(() => renderThemeTokenTable(['--a', '--a'])).toThrow('duplicate')
     // The checked-in artifact and the live stylesheet must agree, or gen:check has drifted.
     const live = extractThemeTokenNames(
-      readFileSync(new URL('../../web/public/style.css', import.meta.url), 'utf8'),
+      readWebStyleSource(new URL('../../web/public/style.css', import.meta.url)),
     )
     expect([...THEME_TOKEN_NAMES]).toEqual(live)
     expect(live.length).toBeGreaterThan(40)

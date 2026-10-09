@@ -159,7 +159,7 @@ textarea {
 
 ## 3. 语义 token 清单
 
-以下是可以写进 `tokens` 的变量名。白名单由 `packages/web/public/style.css` 生成，文档测试会将本清单与生成结果核对。**该样式表是唯一色彩权威**；增删 token 后未更新生成物会使 `gen:check` 失败。
+以下是可以写进 `tokens` 的变量名。白名单由 `packages/web/public/style.css` 生成，文档测试会将本清单与生成结果核对。**该清单按顺序引用的 `public/styles/` 文件是唯一色彩权威**；增删 token 后未更新生成物会使 `gen:check` 失败。
 
 <!-- theme-tokens:begin -->
 --agnes-brand-primary

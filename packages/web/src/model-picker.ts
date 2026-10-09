@@ -19,7 +19,6 @@ const submenuWidth = 280
 /** 鼠标离开列表与子菜单后延时收起子菜单，留出从行走到子菜单那段空隙的时间。 */
 const hoverCloseDelay = 240
 
-/** 详情面板显示的一套值，以及它属于哪个模型、是不是当前会话模型。 */
 /**
  * Owns the transient model list while the app retains the confirmed session model.
  *
