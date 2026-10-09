@@ -52,6 +52,9 @@ export function registerAppServerAdmin(
     service.saveMcpOAuth(input as AdminMcpOAuthSave),
   )
   // Config writes are optional on context; conservatively require activate for this combined method.
+  register('_agnes/v1/admin.triggers', true, (input) =>
+    service.triggers(input as import('@agnes/protocol/gen/app-server').WebhookRequest),
+  )
   register('_agnes/v1/admin.memory', true, (input) => service.memory(input as AdminMemoryParams))
   register('_agnes/v1/admin.context', true, (input) => service.context(input as AdminContextParams))
 }

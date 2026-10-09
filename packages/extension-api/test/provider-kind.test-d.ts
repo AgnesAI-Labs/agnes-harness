@@ -1,7 +1,17 @@
-import type { LoopFactory, ToolPolicy } from '../src/index.js'
+import type { LoopFactory, ToolPolicy, WebhookTriggerProvider } from '../src/index.js'
 import { defineProviderKind, type ProviderRegistrationPort } from '../src/provider-kind.js'
 
-function providerTypes(port: ProviderRegistrationPort, loop: LoopFactory, policy: ToolPolicy) {
+function providerTypes(
+  port: ProviderRegistrationPort,
+  loop: LoopFactory,
+  policy: ToolPolicy,
+  webhook: WebhookTriggerProvider,
+) {
+  port.register('webhook-trigger', 'test', webhook)
+  const trigger: WebhookTriggerProvider = port.resolve('webhook-trigger', 'test')
+  void trigger
+  // @ts-expect-error Webhook providers do not expose Loop authority.
+  port.register('webhook-trigger', 'test', loop)
   port.register('loop', 'test', loop)
   const result: ToolPolicy = port.resolve('tool-policy', 'test')
   void result

@@ -5,6 +5,7 @@ import {
   defineChildAgentProvider,
   defineCompactionEngine,
   definePersistenceProvider,
+  defineProvider,
   defineSandboxProvider,
   defineToolPolicy,
   defineToolRuntime,
@@ -27,6 +28,9 @@ describe('plugin author API', () => {
       decide: () => ({ effect: 'deny' as const, reason: 'test' }),
     }
     expect(defineToolPolicy(policy)).toBe(policy)
+    const trigger = { id: 'generic', version: '1.0.0', verify: async () => undefined }
+    expect(defineProvider('webhook-trigger', trigger)).toBe(trigger)
+    expect(() => defineProvider('webhook-trigger', { ...trigger, verify: undefined } as never)).toThrow()
     const helpers: readonly ((provider: never) => unknown)[] = [
       defineToolPolicy,
       defineToolRuntime,

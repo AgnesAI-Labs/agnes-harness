@@ -38,6 +38,9 @@
     },
     {
       "path": "../resource-control-runtime"
+    },
+    {
+      "path": "../extension-api"
     }
   ]
 }

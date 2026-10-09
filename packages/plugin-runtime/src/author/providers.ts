@@ -17,6 +17,7 @@ export function defineProvider<K extends keyof KindMap, P extends KindMap[NoInfe
   provider: P,
 ): P {
   const methods: Record<keyof KindMap, readonly string[]> = {
+    'webhook-trigger': ['verify'],
     memory: ['open'],
     loop: ['create', 'resume'],
     'model-adapter': ['create'],

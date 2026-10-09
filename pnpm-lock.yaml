@@ -541,6 +541,9 @@ importers:
 
   packages/daemon-admin:
     dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
       '@agnes/base':
         specifier: workspace:*
         version: link:../base
@@ -660,6 +663,9 @@ importers:
 
   packages/daemon-supervisor:
     dependencies:
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       '@agnes/base':
         specifier: workspace:*
         version: link:../base

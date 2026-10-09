@@ -6097,7 +6097,46 @@ function resourceControlSamples(): Record<ResourceControlSampleName, Sample> {
 }
 
 const ResourceControlSamples = resourceControlSamples()
+const webhookRuleSample = {
+  id: 'issues',
+  enabled: true,
+  provider: 'github',
+  auth: 'hmac',
+  secretRef: 'secret://webhooks/sample',
+  event: 'issues',
+  filters: {},
+  workspace: '/synthetic',
+  agent: 'default',
+  bundles: [],
+  template: '{{$.issue.title}}',
+  timestampPath: '$.issue.updated_at',
+  windowSeconds: 300,
+  ratePerMinute: 10,
+}
+const webhookConfigSample = { enabled: false, path: '/hooks/events', maxPayloadBytes: 262144 }
 const AppSamples: Record<string, Sample> = {
+  WebhookRule: {
+    valid: webhookRuleSample,
+    invalid: [{ ...webhookRuleSample, secretRef: 'plaintext' }],
+    note: 'Secrets are references only',
+  },
+  WebhookConfig: {
+    valid: webhookConfigSample,
+    invalid: [{ ...webhookConfigSample, path: '/api/admin' }],
+    note: 'Explicit isolated opt-in path',
+  },
+  WebhookDelivery: {
+    valid: { id: 'delivery', at: 1, status: 'accepted' },
+    invalid: [{ id: 'delivery', at: 1, status: 'ok', payload: {} }],
+    note: 'Metadata only',
+  },
+  WebhookSnapshot: {
+    valid: { config: webhookConfigSample, rules: [], deliveries: [], secretRefs: [] },
+    invalid: [{ config: webhookConfigSample, rules: [], deliveries: [], secretRefs: ['plaintext'] }],
+    note: 'No secret values',
+  },
+  WebhookRequest: { valid: { action: 'list' }, invalid: [{ action: 'other' }], note: 'Closed action table' },
+  WebhookResult: { valid: {}, invalid: [{ secret: 'plaintext' }], note: 'Closed result' },
   DoctorParams: {
     valid: {},
     invalid: [{ probeAccounts: 'yes' }, { home: '/untrusted' }],
@@ -6706,6 +6745,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
     params: 'SessionEditQueuedParams',
     result: 'SessionSteerResult',
+  },
+  '_agnes/v1/admin.triggers': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'WebhookRequest',
+    result: 'WebhookResult',
   },
   '_agnes/v1/session.factChain': {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
@@ -7415,6 +7459,11 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     valid: { sessionId: 'owned', itemId: 'i', commandId: 'c', content: [{ type: 'text', text: 'edited' }] },
     invalid: [{ sessionId: 'owned', itemId: 'i', commandId: 'c', content: [] }],
     note: 'edit only undelivered queue input',
+  },
+  '_agnes/v1/admin.triggers': {
+    note: 'Private webhook administration validates action and secret references.',
+    valid: { action: 'list' },
+    invalid: [{ action: 'unknown' }, { action: 'upsert', rule: { secretRef: 'plain-text-secret' } }],
   },
   '_agnes/v1/session.factChain': {
     valid: { sessionId: 'owned', laneId: 'main', anchor: { kind: 'tool', toolUseId: 'tool-1' } },

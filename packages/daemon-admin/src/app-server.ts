@@ -1,4 +1,5 @@
-import { realpath } from 'node:fs/promises'
+import { readdir, realpath } from 'node:fs/promises'
+import { join } from 'node:path'
 import { loadContextRules, readContextConfig, writeContextConfig } from '@agnes/base'
 import { applyPlanCommand } from '@agnes/base/plan-mode'
 import { createSearchAdmin } from '@agnes/base/search'
@@ -6,6 +7,8 @@ import { HistoryIndexError, searchHistoryDirectory } from '@agnes/history-index'
 import {
   createCompositionAdmin,
   createCredentialStore,
+  createSecretsEnv,
+  createSecretsFile,
   type ResolvedProfile,
   resolveFileSecretsDirectory,
 } from '@agnes/host'
@@ -19,6 +22,7 @@ import type {
   AdminPlanParams,
 } from '@agnes/protocol/gen/app-server'
 import { credentialRefFor } from '@agnes/resource-control-runtime'
+import { createWebhookService, type TriggerSessionInput } from './webhooks/service.js'
 
 /** One daemon-owned closure for local settings; HTTP adapters never access credentials/files. */
 export function createAppServerAdmin(options: {
@@ -29,6 +33,7 @@ export function createAppServerAdmin(options: {
   memory?(
     input: AdminMemoryParams,
   ): Promise<Pick<import('@agnes/protocol/gen/app-server').AdminMemoryResult, 'inspection' | 'file'>>
+  triggerSession?(input: TriggerSessionInput): Promise<void>
   workspaces(): Promise<{ items: { path: string; available: boolean }[] }>
 }) {
   const composition = createCompositionAdmin({
@@ -48,7 +53,37 @@ export function createAppServerAdmin(options: {
       remove: (ref) => credentials.remove(ref),
     },
   })
+  const webhookSecrets = async () => {
+    const profile = await options.resolveProfile()
+    const config = profile.adapters.secrets
+    if (config.kind === 'env') return { resolver: createSecretsEnv(), dir: undefined }
+    if (config.kind !== 'file') throw new Error('Webhook secrets unavailable')
+    const dir = resolveFileSecretsDirectory({
+      home: options.home,
+      dataDir: options.dataDir,
+      ...(config.path ? { path: config.path } : {}),
+    })
+    return { resolver: createSecretsFile({ dir }), dir }
+  }
+  const triggers = createWebhookService({
+    dataDir: options.dataDir,
+    workspaces: options.workspaces,
+    ...(options.triggerSession ? { createSession: options.triggerSession } : {}),
+    resolveSecret: async (ref) => (await webhookSecrets()).resolver.resolve(ref),
+    secretRefs: async () => {
+      const { dir } = await webhookSecrets().catch(() => ({ dir: undefined }))
+      if (!dir) return []
+      const refs: string[] = []
+      for (const ns of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+        if (!ns.isDirectory() || !/^[a-z0-9-]+$/.test(ns.name)) continue
+        for (const item of await readdir(join(dir, ns.name), { withFileTypes: true }))
+          if (item.isFile() && /^[a-z0-9._-]+$/.test(item.name)) refs.push(`secret://${ns.name}/${item.name}`)
+      }
+      return refs.sort().slice(0, 4096)
+    },
+  })
   return {
+    triggers: triggers.handle,
     bundles: () => composition.bundles(),
     saveBundles: (input: AdminBundlesSave) => composition.saveBundles(input),
     composition: (preset?: string) => composition.dump(preset),

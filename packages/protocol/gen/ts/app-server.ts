@@ -38,6 +38,12 @@ export const AppServerV1 = Type.Module({
   "ObservabilityHealth": Type.Object({ "status": Type.Union([Type.Literal('disabled'), Type.Literal('idle'), Type.Literal('ok'), Type.Literal('backoff'), Type.Literal('rejected'), Type.Literal('closed')]), "queued": Type.Integer({ minimum: 0 }), "dropped": Type.Integer({ minimum: 0 }), "failures": Type.Integer({ minimum: 0 }), "lastExportAt": Type.Optional(Type.String()) }, { additionalProperties: false }),
   "AdminObservabilityParams": Type.Object({ "settings": Type.Optional(Type.Ref('ObservabilitySettings')), "test": Type.Optional(Type.Boolean()) }, { additionalProperties: false }),
   "AdminObservabilityResult": Type.Object({ "settings": Type.Ref('ObservabilitySettings'), "health": Type.Ref('ObservabilityHealth'), "connection": Type.Optional(Type.Union([Type.Literal('ok'), Type.Literal('failed')])), "workerHealth": Type.Optional(Type.Ref('ObservabilityHealth')), "workerState": Type.Optional(Type.Union([Type.Literal('available'), Type.Literal('idle'), Type.Literal('unavailable')])) }, { additionalProperties: false }),
+  "WebhookRule": Type.Object({ "id": Type.String({ minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9-]{0,63}$" }), "enabled": Type.Boolean(), "provider": Type.Union([Type.Literal('github'), Type.Literal('generic')]), "auth": Type.Union([Type.Literal('hmac'), Type.Literal('bearer')]), "secretRef": Type.String({ minLength: 1, maxLength: 256, pattern: "^secret://[a-z0-9-]+/[a-z0-9._-]+$" }), "event": Type.String({ minLength: 1, maxLength: 128 }), "filters": Type.Record(Type.String(), JsonValue), "workspace": Type.String({ minLength: 1, maxLength: 4096 }), "agent": Type.String({ minLength: 1, maxLength: 64 }), "bundles": Type.Array(Type.String({ minLength: 1, maxLength: 512 }), { maxItems: 64 }), "template": Type.String({ minLength: 1, maxLength: 8192 }), "timestampPath": Type.String({ minLength: 1, maxLength: 256 }), "windowSeconds": Type.Integer({ minimum: 1, maximum: 86400 }), "ratePerMinute": Type.Integer({ minimum: 1, maximum: 1000 }) }, { additionalProperties: false }),
+  "WebhookConfig": Type.Object({ "enabled": Type.Boolean(), "path": Type.String({ minLength: 1, maxLength: 256, pattern: "^/hooks/[a-z0-9][a-z0-9/-]{0,200}$" }), "maxPayloadBytes": Type.Integer({ minimum: 1, maximum: 1048576 }) }, { additionalProperties: false }),
+  "WebhookDelivery": Type.Object({ "id": Type.String({ minLength: 1, maxLength: 64 }), "at": Type.Integer({ minimum: 0 }), "status": Type.Union([Type.Literal('pending'), Type.Literal('accepted'), Type.Literal('bad-signature'), Type.Literal('no-rule'), Type.Literal('duplicate'), Type.Literal('rate-limited'), Type.Literal('replay'), Type.Literal('disabled'), Type.Literal('invalid-payload'), Type.Literal('too-large'), Type.Literal('capacity'), Type.Literal('failed'), Type.Literal('unknown')]), "ruleId": Type.Optional(Type.String({ minLength: 1, maxLength: 64 })), "sessionId": Type.Optional(Type.String({ minLength: 1, maxLength: 256 })) }, { additionalProperties: false }),
+  "WebhookSnapshot": Type.Object({ "config": Type.Ref('WebhookConfig'), "rules": Type.Array(Type.Ref('WebhookRule'), { maxItems: 128 }), "deliveries": Type.Array(Type.Ref('WebhookDelivery'), { maxItems: 200 }), "secretRefs": Type.Array(Type.String({ minLength: 1, maxLength: 256, pattern: "^secret://[a-z0-9-]+/[a-z0-9._-]+$" }), { maxItems: 4096 }) }, { additionalProperties: false }),
+  "WebhookRequest": Type.Object({ "action": Type.Union([Type.Literal('list'), Type.Literal('configure'), Type.Literal('upsert'), Type.Literal('delete'), Type.Literal('test'), Type.Literal('deliver')]), "config": Type.Optional(Type.Ref('WebhookConfig')), "rule": Type.Optional(Type.Ref('WebhookRule')), "ruleId": Type.Optional(Type.String({ minLength: 1, maxLength: 64 })), "payload": Type.Optional(JsonValue), "body": Type.Optional(Type.String({ maxLength: 1400000 })), "headers": Type.Optional(Type.Record(Type.String(), Type.String({ maxLength: 1024 }))), "tooLarge": Type.Optional(Type.Boolean()) }, { additionalProperties: false }),
+  "WebhookResult": Type.Object({ "snapshot": Type.Optional(Type.Ref('WebhookSnapshot')), "delivery": Type.Optional(Type.Ref('WebhookDelivery')) }, { additionalProperties: false }),
 })
 
 export const AppServerErrorCause = AppServerV1.Import('AppServerErrorCause')
@@ -106,6 +112,18 @@ export const AdminObservabilityParams = AppServerV1.Import('AdminObservabilityPa
 export type AdminObservabilityParams = Static<typeof AdminObservabilityParams>
 export const AdminObservabilityResult = AppServerV1.Import('AdminObservabilityResult')
 export type AdminObservabilityResult = Static<typeof AdminObservabilityResult>
+export const WebhookRule = AppServerV1.Import('WebhookRule')
+export type WebhookRule = Static<typeof WebhookRule>
+export const WebhookConfig = AppServerV1.Import('WebhookConfig')
+export type WebhookConfig = Static<typeof WebhookConfig>
+export const WebhookDelivery = AppServerV1.Import('WebhookDelivery')
+export type WebhookDelivery = Static<typeof WebhookDelivery>
+export const WebhookSnapshot = AppServerV1.Import('WebhookSnapshot')
+export type WebhookSnapshot = Static<typeof WebhookSnapshot>
+export const WebhookRequest = AppServerV1.Import('WebhookRequest')
+export type WebhookRequest = Static<typeof WebhookRequest>
+export const WebhookResult = AppServerV1.Import('WebhookResult')
+export type WebhookResult = Static<typeof WebhookResult>
 
 export const ADMIN_METHODS = {
   "_agnes/v1/admin.bundles.get": {kind:'request',direction:'c2s',params:AdminEmpty,result:AdminBundlesResult},
@@ -121,4 +139,5 @@ export const ADMIN_METHODS = {
   "_agnes/v1/doctor.run": {kind:'request',direction:'c2s',params:DoctorParams,result:DoctorResult},
   "_agnes/v1/admin.memory": {kind:'request',direction:'c2s',params:AdminMemoryParams,result:AdminMemoryResult},
   "_agnes/v1/admin.observability": {kind:'request',direction:'c2s',params:AdminObservabilityParams,result:AdminObservabilityResult},
+  "_agnes/v1/admin.triggers": {kind:'request',direction:'c2s',params:WebhookRequest,result:WebhookResult},
 } as const

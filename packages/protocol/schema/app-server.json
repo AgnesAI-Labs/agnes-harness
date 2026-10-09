@@ -1210,9 +1210,255 @@
         "connection": {
           "enum": ["ok", "failed"]
         },
-        "workerHealth": { "$ref": "#/$defs/ObservabilityHealth" },
-        "workerState": { "enum": ["available", "idle", "unavailable"] }
+        "workerHealth": {
+          "$ref": "#/$defs/ObservabilityHealth"
+        },
+        "workerState": {
+          "enum": ["available", "idle", "unavailable"]
+        }
       }
+    },
+    "WebhookRule": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "provider": {
+          "enum": ["github", "generic"]
+        },
+        "auth": {
+          "enum": ["hmac", "bearer"]
+        },
+        "secretRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^secret://[a-z0-9-]+/[a-z0-9._-]+$"
+        },
+        "event": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "filters": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "workspace": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "bundles": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "maxItems": 64
+        },
+        "template": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "timestampPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "windowSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "ratePerMinute": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "id",
+        "enabled",
+        "provider",
+        "auth",
+        "secretRef",
+        "event",
+        "filters",
+        "workspace",
+        "agent",
+        "bundles",
+        "template",
+        "timestampPath",
+        "windowSeconds",
+        "ratePerMinute"
+      ],
+      "additionalProperties": false
+    },
+    "WebhookConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^/hooks/[a-z0-9][a-z0-9/-]{0,200}$"
+        },
+        "maxPayloadBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        }
+      },
+      "required": ["enabled", "path", "maxPayloadBytes"],
+      "additionalProperties": false
+    },
+    "WebhookDelivery": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "accepted",
+            "bad-signature",
+            "no-rule",
+            "duplicate",
+            "rate-limited",
+            "replay",
+            "disabled",
+            "invalid-payload",
+            "too-large",
+            "capacity",
+            "failed",
+            "unknown"
+          ]
+        },
+        "ruleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": ["id", "at", "status"],
+      "additionalProperties": false
+    },
+    "WebhookSnapshot": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/WebhookConfig"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WebhookRule"
+          },
+          "maxItems": 128
+        },
+        "deliveries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WebhookDelivery"
+          },
+          "maxItems": 200
+        },
+        "secretRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^secret://[a-z0-9-]+/[a-z0-9._-]+$"
+          },
+          "maxItems": 4096
+        }
+      },
+      "required": ["config", "rules", "deliveries", "secretRefs"],
+      "additionalProperties": false
+    },
+    "WebhookRequest": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "enum": ["list", "configure", "upsert", "delete", "test", "deliver"]
+        },
+        "config": {
+          "$ref": "#/$defs/WebhookConfig"
+        },
+        "rule": {
+          "$ref": "#/$defs/WebhookRule"
+        },
+        "ruleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "payload": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 1400000
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "tooLarge": {
+          "type": "boolean"
+        }
+      },
+      "required": ["action"],
+      "additionalProperties": false
+    },
+    "WebhookResult": {
+      "type": "object",
+      "properties": {
+        "snapshot": {
+          "$ref": "#/$defs/WebhookSnapshot"
+        },
+        "delivery": {
+          "$ref": "#/$defs/WebhookDelivery"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
     }
   },
   "x-methods": {
@@ -1267,6 +1513,10 @@
     "_agnes/v1/admin.observability": {
       "params": "AdminObservabilityParams",
       "result": "AdminObservabilityResult"
+    },
+    "_agnes/v1/admin.triggers": {
+      "params": "WebhookRequest",
+      "result": "WebhookResult"
     }
   }
 }

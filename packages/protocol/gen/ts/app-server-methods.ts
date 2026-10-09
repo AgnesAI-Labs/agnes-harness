@@ -14,6 +14,7 @@ export interface AppServerMethods {
   "_agnes/v1/doctor.run": { params: Static<typeof import("./app-server.js").DoctorParams>; result: Static<typeof import("./app-server.js").DoctorResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.memory": { params: Static<typeof import("./app-server.js").AdminMemoryParams>; result: Static<typeof import("./app-server.js").AdminMemoryResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.observability": { params: Static<typeof import("./app-server.js").AdminObservabilityParams>; result: Static<typeof import("./app-server.js").AdminObservabilityResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/admin.triggers": { params: Static<typeof import("./app-server.js").WebhookRequest>; result: Static<typeof import("./app-server.js").WebhookResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/plugins.candidates.list": { params: Static<typeof import("./package-admin.js").PackageListParams>; result: Static<typeof import("./package-admin.js").AuthoringCandidateList>; direction: "c2s"; kind: "request" }
   "_agnes/v1/plugins.candidates.show": { params: Static<typeof import("./package-admin.js").AuthoringShowParams>; result: Static<typeof import("./package-admin.js").AuthoringCandidate>; direction: "c2s"; kind: "request" }
   "_agnes/v1/plugins.candidates.create": { params: Static<typeof import("./package-admin.js").AuthoringCreateParams>; result: Static<typeof import("./package-admin.js").AuthoringCandidate>; direction: "c2s"; kind: "request" }

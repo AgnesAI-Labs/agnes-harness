@@ -7,9 +7,11 @@ import type { PersistenceProvider } from './persistence.js'
 import type { SandboxProvider } from './sandbox-provider.js'
 import type { ToolPolicy } from './tool-policy.js'
 import type { ToolRuntimeProvider } from './tool-runtime.js'
+import type { WebhookTriggerProvider } from './webhook-trigger.js'
 
 /** Built-in names bind registration and resolution to the same contract. */
 export interface KindMap {
+  'webhook-trigger': WebhookTriggerProvider
   memory: MemoryProvider
   loop: LoopFactory
   'model-adapter': ModelAdapter
@@ -22,6 +24,7 @@ export interface KindMap {
 }
 export type ProviderLifecycleScope = 'session' | 'generation' | 'workspace' | 'process'
 export const PROVIDER_LIFECYCLE_SCOPES = Object.freeze({
+  'webhook-trigger': 'process',
   memory: 'session',
   loop: 'session',
   'model-adapter': 'generation',

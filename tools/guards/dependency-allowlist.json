@@ -282,7 +282,8 @@
     "@agnes/protocol",
     "@agnes/resource-control-runtime",
     "@agnes/resource-control-store",
-    "@agnes/system-node"
+    "@agnes/system-node",
+    "@agnes/extension-api"
   ],
   "@agnes/daemon-rpc": [
     "@agnes/base",
@@ -311,7 +312,8 @@
     "@agnes/resource-control-worker",
     "@agnes/system-node",
     "@agnes/worker-runtime",
-    "@agnes/observability"
+    "@agnes/observability",
+    "@agnes/sdk"
   ],
   "@agnes/web-foundation": ["@agnes/base", "@agnes/web-client", "@agnes/web-ui", "@agnes/web-units"],
   "@agnes/web-admin": [

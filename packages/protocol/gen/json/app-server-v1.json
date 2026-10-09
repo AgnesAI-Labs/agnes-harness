@@ -134,6 +134,16 @@
         "$ref": "#/$defs/_agnes_v1_admin_observabilityResult"
       }
     },
+    "_agnes/v1/admin.triggers": {
+      "kind": "request",
+      "direction": "c2s",
+      "params": {
+        "$ref": "#/$defs/_agnes_v1_admin_triggersParams"
+      },
+      "result": {
+        "$ref": "#/$defs/_agnes_v1_admin_triggersResult"
+      }
+    },
     "_agnes/v1/plugins.candidates.list": {
       "kind": "request",
       "direction": "c2s",
@@ -1986,7 +1996,7 @@
     }
   },
   "$defs": {
-    "Df38d62e33341_AppServerErrorCause": {
+    "D5023cb747df9_AppServerErrorCause": {
       "$ref": "#/$defs/R1114124d86fb"
     },
     "R1114124d86fb": {
@@ -2286,7 +2296,7 @@
         "code"
       ]
     },
-    "Df38d62e33341_AppServerError": {
+    "D5023cb747df9_AppServerError": {
       "$ref": "#/$defs/Ra13ad79ec12b"
     },
     "Ra13ad79ec12b": {
@@ -2400,7 +2410,7 @@
               "type": "string"
             },
             "cause": {
-              "$ref": "#/$defs/Df38d62e33341_AppServerErrorCause"
+              "$ref": "#/$defs/D5023cb747df9_AppServerErrorCause"
             }
           },
           "required": [
@@ -2416,7 +2426,7 @@
         "data"
       ]
     },
-    "Df38d62e33341_AdminEmpty": {
+    "D5023cb747df9_AdminEmpty": {
       "$ref": "#/$defs/R91fe060caa26"
     },
     "R91fe060caa26": {
@@ -2424,7 +2434,7 @@
       "type": "object",
       "properties": {}
     },
-    "Df38d62e33341_AdminBundlesSave": {
+    "D5023cb747df9_AdminBundlesSave": {
       "$ref": "#/$defs/Rb408c73d920d"
     },
     "Rb408c73d920d": {
@@ -2449,7 +2459,7 @@
         "bundles"
       ]
     },
-    "Df38d62e33341_AdminBundlesResult": {
+    "D5023cb747df9_AdminBundlesResult": {
       "$ref": "#/$defs/Re00e8d605acf"
     },
     "Re00e8d605acf": {
@@ -2501,7 +2511,7 @@
         "effect"
       ]
     },
-    "Df38d62e33341_AdminCompositionParams": {
+    "D5023cb747df9_AdminCompositionParams": {
       "$ref": "#/$defs/Re1b7c9538ab8"
     },
     "Re1b7c9538ab8": {
@@ -2514,7 +2524,7 @@
         }
       }
     },
-    "Df38d62e33341_AdminCompositionResult": {
+    "D5023cb747df9_AdminCompositionResult": {
       "$ref": "#/$defs/R41fbd0de4040"
     },
     "R41fbd0de4040": {
@@ -2664,7 +2674,7 @@
         }
       ]
     },
-    "Df38d62e33341_AdminSearchSave": {
+    "D5023cb747df9_AdminSearchSave": {
       "$ref": "#/$defs/R04e0722a900b"
     },
     "R04e0722a900b": {
@@ -2699,7 +2709,7 @@
         "provider"
       ]
     },
-    "Df38d62e33341_AdminSearchTest": {
+    "D5023cb747df9_AdminSearchTest": {
       "$ref": "#/$defs/R62f246babdb7"
     },
     "R62f246babdb7": {
@@ -2720,7 +2730,7 @@
         "query"
       ]
     },
-    "Df38d62e33341_AdminSearchResult": {
+    "D5023cb747df9_AdminSearchResult": {
       "$ref": "#/$defs/R58fc95d93535"
     },
     "R58fc95d93535": {
@@ -2731,7 +2741,7 @@
         }
       }
     },
-    "Df38d62e33341_AdminContextConfig": {
+    "D5023cb747df9_AdminContextConfig": {
       "$ref": "#/$defs/R21894b8f67d6"
     },
     "R21894b8f67d6": {
@@ -2800,7 +2810,7 @@
         "customSkillRoots"
       ]
     },
-    "Df38d62e33341_AdminContextParams": {
+    "D5023cb747df9_AdminContextParams": {
       "$ref": "#/$defs/R2bb94c6540c5"
     },
     "R2bb94c6540c5": {
@@ -2868,7 +2878,7 @@
         }
       }
     },
-    "Df38d62e33341_AdminContextResult": {
+    "D5023cb747df9_AdminContextResult": {
       "$ref": "#/$defs/Rdff469d08979"
     },
     "Rdff469d08979": {
@@ -2876,7 +2886,7 @@
       "type": "object",
       "properties": {
         "config": {
-          "$ref": "#/$defs/Df38d62e33341_AdminContextConfig"
+          "$ref": "#/$defs/D5023cb747df9_AdminContextConfig"
         },
         "workspaces": {
           "maxItems": 4096,
@@ -2973,7 +2983,7 @@
         "workspaces"
       ]
     },
-    "Df38d62e33341_AdminHistoryParams": {
+    "D5023cb747df9_AdminHistoryParams": {
       "$ref": "#/$defs/R7eec7d41924b"
     },
     "R7eec7d41924b": {
@@ -3003,7 +3013,7 @@
         "workspace"
       ]
     },
-    "Df38d62e33341_AdminHistoryResult": {
+    "D5023cb747df9_AdminHistoryResult": {
       "$ref": "#/$defs/R26245f75b96e"
     },
     "R26245f75b96e": {
@@ -3068,7 +3078,7 @@
         "truncated"
       ]
     },
-    "Df38d62e33341_AdminPlanParams": {
+    "D5023cb747df9_AdminPlanParams": {
       "$ref": "#/$defs/R41dcb196c5fd"
     },
     "R41dcb196c5fd": {
@@ -3090,7 +3100,7 @@
         "line"
       ]
     },
-    "Df38d62e33341_AdminPlanResult": {
+    "D5023cb747df9_AdminPlanResult": {
       "$ref": "#/$defs/R0e8b17dba52d"
     },
     "R0e8b17dba52d": {
@@ -3110,7 +3120,7 @@
         "text"
       ]
     },
-    "Df38d62e33341_AdminMcpOAuthSave": {
+    "D5023cb747df9_AdminMcpOAuthSave": {
       "$ref": "#/$defs/R546900150242"
     },
     "R546900150242": {
@@ -3171,7 +3181,7 @@
         "credential"
       ]
     },
-    "Df38d62e33341_DoctorParams": {
+    "D5023cb747df9_DoctorParams": {
       "$ref": "#/$defs/R7c9eacc877fc"
     },
     "R7c9eacc877fc": {
@@ -3183,7 +3193,7 @@
         }
       }
     },
-    "Df38d62e33341_DoctorCheck": {
+    "D5023cb747df9_DoctorCheck": {
       "$ref": "#/$defs/R40a46a573031"
     },
     "R40a46a573031": {
@@ -3324,7 +3334,7 @@
         "fixHintKey"
       ]
     },
-    "Df38d62e33341_DoctorResult": {
+    "D5023cb747df9_DoctorResult": {
       "$ref": "#/$defs/R3c0dc227323d"
     },
     "R3c0dc227323d": {
@@ -3335,7 +3345,7 @@
           "maxItems": 32,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Df38d62e33341_DoctorCheck"
+            "$ref": "#/$defs/D5023cb747df9_DoctorCheck"
           }
         },
         "status": {
@@ -3364,7 +3374,7 @@
         "status"
       ]
     },
-    "Df38d62e33341_MemorySettings": {
+    "D5023cb747df9_MemorySettings": {
       "$ref": "#/$defs/R9e1c4826d751"
     },
     "R9e1c4826d751": {
@@ -3432,7 +3442,7 @@
         "userEnabled"
       ]
     },
-    "Df38d62e33341_MemorySettingsPatch": {
+    "D5023cb747df9_MemorySettingsPatch": {
       "$ref": "#/$defs/Rb5599f16e0d9"
     },
     "Rb5599f16e0d9": {
@@ -3490,7 +3500,7 @@
         }
       }
     },
-    "Df38d62e33341_MemorySource": {
+    "D5023cb747df9_MemorySource": {
       "$ref": "#/$defs/Re064708ffd3b"
     },
     "Re064708ffd3b": {
@@ -3517,7 +3527,7 @@
         "turn"
       ]
     },
-    "Df38d62e33341_MemoryFileInfo": {
+    "D5023cb747df9_MemoryFileInfo": {
       "$ref": "#/$defs/R458b6f8d1a47"
     },
     "R458b6f8d1a47": {
@@ -3548,7 +3558,7 @@
         "lines"
       ]
     },
-    "Df38d62e33341_MemoryFile": {
+    "D5023cb747df9_MemoryFile": {
       "$ref": "#/$defs/Rf3b7224971d2"
     },
     "Rf3b7224971d2": {
@@ -3584,7 +3594,7 @@
         "content"
       ]
     },
-    "Df38d62e33341_MemoryInspection": {
+    "D5023cb747df9_MemoryInspection": {
       "$ref": "#/$defs/Ra3f73dc2539d"
     },
     "Ra3f73dc2539d": {
@@ -3597,13 +3607,13 @@
           "type": "string"
         },
         "settings": {
-          "$ref": "#/$defs/Df38d62e33341_MemorySettings"
+          "$ref": "#/$defs/D5023cb747df9_MemorySettings"
         },
         "files": {
           "maxItems": 128,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Df38d62e33341_MemoryFileInfo"
+            "$ref": "#/$defs/D5023cb747df9_MemoryFileInfo"
           }
         },
         "bytes": {
@@ -3611,7 +3621,7 @@
           "type": "integer"
         },
         "lastWriter": {
-          "$ref": "#/$defs/Df38d62e33341_MemorySource"
+          "$ref": "#/$defs/D5023cb747df9_MemorySource"
         }
       },
       "required": [
@@ -3621,7 +3631,7 @@
         "bytes"
       ]
     },
-    "Df38d62e33341_AdminMemoryParams": {
+    "D5023cb747df9_AdminMemoryParams": {
       "$ref": "#/$defs/R5bb1426342f0"
     },
     "R5bb1426342f0": {
@@ -3634,7 +3644,7 @@
           "type": "string"
         },
         "settings": {
-          "$ref": "#/$defs/Df38d62e33341_MemorySettingsPatch"
+          "$ref": "#/$defs/D5023cb747df9_MemorySettingsPatch"
         },
         "file": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.md$",
@@ -3653,7 +3663,7 @@
         "cwd"
       ]
     },
-    "Df38d62e33341_AdminMemoryResult": {
+    "D5023cb747df9_AdminMemoryResult": {
       "$ref": "#/$defs/R32e6cfb52318"
     },
     "R32e6cfb52318": {
@@ -3683,10 +3693,10 @@
           }
         },
         "inspection": {
-          "$ref": "#/$defs/Df38d62e33341_MemoryInspection"
+          "$ref": "#/$defs/D5023cb747df9_MemoryInspection"
         },
         "file": {
-          "$ref": "#/$defs/Df38d62e33341_MemoryFile"
+          "$ref": "#/$defs/D5023cb747df9_MemoryFile"
         }
       },
       "required": [
@@ -3694,7 +3704,7 @@
         "inspection"
       ]
     },
-    "Df38d62e33341_ObservabilitySettings": {
+    "D5023cb747df9_ObservabilitySettings": {
       "$ref": "#/$defs/R0b672034daad"
     },
     "R0b672034daad": {
@@ -3787,7 +3797,7 @@
         "enabled"
       ]
     },
-    "Df38d62e33341_ObservabilityHealth": {
+    "D5023cb747df9_ObservabilityHealth": {
       "$ref": "#/$defs/R90edc6e323e7"
     },
     "R90edc6e323e7": {
@@ -3845,7 +3855,7 @@
         "failures"
       ]
     },
-    "Df38d62e33341_AdminObservabilityParams": {
+    "D5023cb747df9_AdminObservabilityParams": {
       "$ref": "#/$defs/Rc20fedecc357"
     },
     "Rc20fedecc357": {
@@ -3853,14 +3863,14 @@
       "type": "object",
       "properties": {
         "settings": {
-          "$ref": "#/$defs/Df38d62e33341_ObservabilitySettings"
+          "$ref": "#/$defs/D5023cb747df9_ObservabilitySettings"
         },
         "test": {
           "type": "boolean"
         }
       }
     },
-    "Df38d62e33341_AdminObservabilityResult": {
+    "D5023cb747df9_AdminObservabilityResult": {
       "$ref": "#/$defs/R28f3453b8b2c"
     },
     "R28f3453b8b2c": {
@@ -3868,10 +3878,10 @@
       "type": "object",
       "properties": {
         "settings": {
-          "$ref": "#/$defs/Df38d62e33341_ObservabilitySettings"
+          "$ref": "#/$defs/D5023cb747df9_ObservabilitySettings"
         },
         "health": {
-          "$ref": "#/$defs/Df38d62e33341_ObservabilityHealth"
+          "$ref": "#/$defs/D5023cb747df9_ObservabilityHealth"
         },
         "connection": {
           "anyOf": [
@@ -3886,7 +3896,7 @@
           ]
         },
         "workerHealth": {
-          "$ref": "#/$defs/Df38d62e33341_ObservabilityHealth"
+          "$ref": "#/$defs/D5023cb747df9_ObservabilityHealth"
         },
         "workerState": {
           "anyOf": [
@@ -3910,83 +3920,449 @@
         "health"
       ]
     },
+    "D5023cb747df9_WebhookRule": {
+      "$ref": "#/$defs/R3bccd36bc71a"
+    },
+    "R3bccd36bc71a": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9-]{0,63}$",
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "const": "github",
+              "type": "string"
+            },
+            {
+              "const": "generic",
+              "type": "string"
+            }
+          ]
+        },
+        "auth": {
+          "anyOf": [
+            {
+              "const": "hmac",
+              "type": "string"
+            },
+            {
+              "const": "bearer",
+              "type": "string"
+            }
+          ]
+        },
+        "secretRef": {
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^secret://[a-z0-9-]+/[a-z0-9._-]+$",
+          "type": "string"
+        },
+        "event": {
+          "minLength": 1,
+          "maxLength": 128,
+          "type": "string"
+        },
+        "filters": {
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "$ref": "#/$defs/Redbfd74eb34e"
+            }
+          }
+        },
+        "workspace": {
+          "minLength": 1,
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "agent": {
+          "minLength": 1,
+          "maxLength": 64,
+          "type": "string"
+        },
+        "bundles": {
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "minLength": 1,
+            "maxLength": 512,
+            "type": "string"
+          }
+        },
+        "template": {
+          "minLength": 1,
+          "maxLength": 8192,
+          "type": "string"
+        },
+        "timestampPath": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        },
+        "windowSeconds": {
+          "minimum": 1,
+          "maximum": 86400,
+          "type": "integer"
+        },
+        "ratePerMinute": {
+          "minimum": 1,
+          "maximum": 1000,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "enabled",
+        "provider",
+        "auth",
+        "secretRef",
+        "event",
+        "filters",
+        "workspace",
+        "agent",
+        "bundles",
+        "template",
+        "timestampPath",
+        "windowSeconds",
+        "ratePerMinute"
+      ]
+    },
+    "D5023cb747df9_WebhookConfig": {
+      "$ref": "#/$defs/R6df345ce2566"
+    },
+    "R6df345ce2566": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "path": {
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^/hooks/[a-z0-9][a-z0-9/-]{0,200}$",
+          "type": "string"
+        },
+        "maxPayloadBytes": {
+          "minimum": 1,
+          "maximum": 1048576,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "enabled",
+        "path",
+        "maxPayloadBytes"
+      ]
+    },
+    "D5023cb747df9_WebhookDelivery": {
+      "$ref": "#/$defs/R28f7a91e5d83"
+    },
+    "R28f7a91e5d83": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "maxLength": 64,
+          "type": "string"
+        },
+        "at": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "const": "pending",
+              "type": "string"
+            },
+            {
+              "const": "accepted",
+              "type": "string"
+            },
+            {
+              "const": "bad-signature",
+              "type": "string"
+            },
+            {
+              "const": "no-rule",
+              "type": "string"
+            },
+            {
+              "const": "duplicate",
+              "type": "string"
+            },
+            {
+              "const": "rate-limited",
+              "type": "string"
+            },
+            {
+              "const": "replay",
+              "type": "string"
+            },
+            {
+              "const": "disabled",
+              "type": "string"
+            },
+            {
+              "const": "invalid-payload",
+              "type": "string"
+            },
+            {
+              "const": "too-large",
+              "type": "string"
+            },
+            {
+              "const": "capacity",
+              "type": "string"
+            },
+            {
+              "const": "failed",
+              "type": "string"
+            },
+            {
+              "const": "unknown",
+              "type": "string"
+            }
+          ]
+        },
+        "ruleId": {
+          "minLength": 1,
+          "maxLength": 64,
+          "type": "string"
+        },
+        "sessionId": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "status"
+      ]
+    },
+    "D5023cb747df9_WebhookSnapshot": {
+      "$ref": "#/$defs/R7926db09bc6a"
+    },
+    "R7926db09bc6a": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "config": {
+          "$ref": "#/$defs/D5023cb747df9_WebhookConfig"
+        },
+        "rules": {
+          "maxItems": 128,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/D5023cb747df9_WebhookRule"
+          }
+        },
+        "deliveries": {
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/D5023cb747df9_WebhookDelivery"
+          }
+        },
+        "secretRefs": {
+          "maxItems": 4096,
+          "type": "array",
+          "items": {
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^secret://[a-z0-9-]+/[a-z0-9._-]+$",
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "config",
+        "rules",
+        "deliveries",
+        "secretRefs"
+      ]
+    },
+    "D5023cb747df9_WebhookRequest": {
+      "$ref": "#/$defs/Rb2329c71e428"
+    },
+    "Rb2329c71e428": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "action": {
+          "anyOf": [
+            {
+              "const": "list",
+              "type": "string"
+            },
+            {
+              "const": "configure",
+              "type": "string"
+            },
+            {
+              "const": "upsert",
+              "type": "string"
+            },
+            {
+              "const": "delete",
+              "type": "string"
+            },
+            {
+              "const": "test",
+              "type": "string"
+            },
+            {
+              "const": "deliver",
+              "type": "string"
+            }
+          ]
+        },
+        "config": {
+          "$ref": "#/$defs/D5023cb747df9_WebhookConfig"
+        },
+        "rule": {
+          "$ref": "#/$defs/D5023cb747df9_WebhookRule"
+        },
+        "ruleId": {
+          "minLength": 1,
+          "maxLength": 64,
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/Redbfd74eb34e"
+        },
+        "body": {
+          "maxLength": 1400000,
+          "type": "string"
+        },
+        "headers": {
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "maxLength": 1024,
+              "type": "string"
+            }
+          }
+        },
+        "tooLarge": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "action"
+      ]
+    },
+    "D5023cb747df9_WebhookResult": {
+      "$ref": "#/$defs/R7b3bf96b0597"
+    },
+    "R7b3bf96b0597": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "snapshot": {
+          "$ref": "#/$defs/D5023cb747df9_WebhookSnapshot"
+        },
+        "delivery": {
+          "$ref": "#/$defs/D5023cb747df9_WebhookDelivery"
+        }
+      }
+    },
     "_agnes_v1_admin_bundles_getParams": {
-      "$ref": "#/$defs/Df38d62e33341_AdminEmpty"
+      "$ref": "#/$defs/D5023cb747df9_AdminEmpty"
     },
     "_agnes_v1_admin_bundles_getResult": {
-      "$ref": "#/$defs/Df38d62e33341_AdminBundlesResult"
+      "$ref": "#/$defs/D5023cb747df9_AdminBundlesResult"
     },
     "_agnes_v1_admin_bundles_saveParams": {
-      "$ref": "#/$defs/Df38d62e33341_AdminBundlesSave"
+      "$ref": "#/$defs/D5023cb747df9_AdminBundlesSave"
     },
     "_agnes_v1_admin_bundles_saveResult": {
-      "$ref": "#/$defs/Df38d62e33341_AdminBundlesResult"
+      "$ref": "#/$defs/D5023cb747df9_AdminBundlesResult"
     },
     "_agnes_v1_admin_composition_getParams": {
-      "$ref": "#/$defs/Df38d62e33341_AdminCompositionParams"
+      "$ref": "#/$defs/D5023cb747df9_AdminCompositionParams"
     },
     "_agnes_v1_admin_composition_getResult": {
-      "$ref": "#/$defs/Df38d62e33341_AdminCompositionResult"
+      "$ref": "#/$defs/D5023cb747df9_AdminCompositionResult"
     },
     "_agnes_v1_admin_search_getParams": {
-      "$ref": "#/$defs/Df38d62e33341_AdminEmpty"
+      "$ref": "#/$defs/D5023cb747df9_AdminEmpty"
     },
     "_agnes_v1_admin_search_getResult": {
-      "$ref": "#/$defs/Df38d62e33341_AdminSearchResult"
+      "$ref": "#/$defs/D5023cb747df9_AdminSearchResult"
     },
     "_agnes_v1_admin_search_saveParams": {
-      "$ref": "#/$defs/Df38d62e33341_AdminSearchSave"
+      "$ref": "#/$defs/D5023cb747df9_AdminSearchSave"
     },
     "_agnes_v1_admin_search_saveResult": {
-      "$ref": "#/$defs/Df38d62e33341_AdminSearchResult"
+      "$ref": "#/$defs/D5023cb747df9_AdminSearchResult"
     },
     "_agnes_v1_admin_search_testParams": {
-      "$ref": "#/$defs/Df38d62e33341_AdminSearchTest"
+      "$ref": "#/$defs/D5023cb747df9_AdminSearchTest"
     },
     "_agnes_v1_admin_search_testResult": {
-      "$ref": "#/$defs/Df38d62e33341_AdminSearchResult"
+      "$ref": "#/$defs/D5023cb747df9_AdminSearchResult"
     },
     "_agnes_v1_admin_contextParams": {
-      "$ref": "#/$defs/Df38d62e33341_AdminContextParams"
+      "$ref": "#/$defs/D5023cb747df9_AdminContextParams"
     },
     "_agnes_v1_admin_contextResult": {
-      "$ref": "#/$defs/Df38d62e33341_AdminContextResult"
+      "$ref": "#/$defs/D5023cb747df9_AdminContextResult"
     },
     "_agnes_v1_admin_history_searchParams": {
-      "$ref": "#/$defs/Df38d62e33341_AdminHistoryParams"
+      "$ref": "#/$defs/D5023cb747df9_AdminHistoryParams"
     },
     "_agnes_v1_admin_history_searchResult": {
-      "$ref": "#/$defs/Df38d62e33341_AdminHistoryResult"
+      "$ref": "#/$defs/D5023cb747df9_AdminHistoryResult"
     },
     "_agnes_v1_admin_planParams": {
-      "$ref": "#/$defs/Df38d62e33341_AdminPlanParams"
+      "$ref": "#/$defs/D5023cb747df9_AdminPlanParams"
     },
     "_agnes_v1_admin_planResult": {
-      "$ref": "#/$defs/Df38d62e33341_AdminPlanResult"
+      "$ref": "#/$defs/D5023cb747df9_AdminPlanResult"
     },
     "_agnes_v1_admin_mcp_oauth_saveParams": {
-      "$ref": "#/$defs/Df38d62e33341_AdminMcpOAuthSave"
+      "$ref": "#/$defs/D5023cb747df9_AdminMcpOAuthSave"
     },
     "_agnes_v1_admin_mcp_oauth_saveResult": {
-      "$ref": "#/$defs/Df38d62e33341_AdminEmpty"
+      "$ref": "#/$defs/D5023cb747df9_AdminEmpty"
     },
     "_agnes_v1_doctor_runParams": {
-      "$ref": "#/$defs/Df38d62e33341_DoctorParams"
+      "$ref": "#/$defs/D5023cb747df9_DoctorParams"
     },
     "_agnes_v1_doctor_runResult": {
-      "$ref": "#/$defs/Df38d62e33341_DoctorResult"
+      "$ref": "#/$defs/D5023cb747df9_DoctorResult"
     },
     "_agnes_v1_admin_memoryParams": {
-      "$ref": "#/$defs/Df38d62e33341_AdminMemoryParams"
+      "$ref": "#/$defs/D5023cb747df9_AdminMemoryParams"
     },
     "_agnes_v1_admin_memoryResult": {
-      "$ref": "#/$defs/Df38d62e33341_AdminMemoryResult"
+      "$ref": "#/$defs/D5023cb747df9_AdminMemoryResult"
     },
     "_agnes_v1_admin_observabilityParams": {
-      "$ref": "#/$defs/Df38d62e33341_AdminObservabilityParams"
+      "$ref": "#/$defs/D5023cb747df9_AdminObservabilityParams"
     },
     "_agnes_v1_admin_observabilityResult": {
-      "$ref": "#/$defs/Df38d62e33341_AdminObservabilityResult"
+      "$ref": "#/$defs/D5023cb747df9_AdminObservabilityResult"
+    },
+    "_agnes_v1_admin_triggersParams": {
+      "$ref": "#/$defs/D5023cb747df9_WebhookRequest"
+    },
+    "_agnes_v1_admin_triggersResult": {
+      "$ref": "#/$defs/D5023cb747df9_WebhookResult"
     },
     "Dc163e5f240c7_PluginPublicationReport": {
       "$ref": "#/$defs/R286e4c2a03d0"
@@ -34846,7 +35222,7 @@
       "$ref": "#/$defs/De614bf88c21a_DaemonNotice"
     },
     "AppServerError": {
-      "$ref": "#/$defs/Df38d62e33341_AppServerError"
+      "$ref": "#/$defs/D5023cb747df9_AppServerError"
     }
   }
 }

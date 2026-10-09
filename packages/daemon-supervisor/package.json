@@ -74,7 +74,8 @@
     "@agnes/system-node": "workspace:*",
     "@agnes/worker-runtime": "workspace:*",
     "ws": "8.21.3",
-    "@agnes/observability": "workspace:*"
+    "@agnes/observability": "workspace:*",
+    "@agnes/sdk": "workspace:*"
   },
   "license": "Apache-2.0",
   "devDependencies": {
