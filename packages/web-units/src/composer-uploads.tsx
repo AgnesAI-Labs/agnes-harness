@@ -4,8 +4,8 @@ import {
   cancelFileUpload,
   FileUploadFailure,
   fileUploadLimits,
-  uploadFile,
   type UploadProgress,
+  uploadFile,
 } from './file-upload.js'
 import type { Translate } from './locales/index.js'
 
@@ -96,12 +96,14 @@ export function useComposerUploads(
         publish()
       })
   }
+  const cancelRef = useRef(cancel)
+  cancelRef.current = cancel
   useEffect(() => {
     alive.current = true
     return () => {
       alive.current = false
       for (const entry of current.current) {
-        if (entry.state !== 'cancelled') void cancel(entry)
+        if (entry.state !== 'cancelled') void cancelRef.current(entry)
       }
     }
   }, [])

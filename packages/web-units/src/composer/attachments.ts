@@ -7,18 +7,18 @@ import {
   validateUserAttachments,
 } from '@agnes/protocol-validation'
 import { type ClipboardEvent, type DragEvent, useCallback, useLayoutEffect, useRef, useState } from 'react'
-import type { ComposerProps, ComposerView, ComposerAttachmentBlock, ComposerImageBlock } from './contracts.js'
-import {
-  type ComposerAttachment,
-  MAX_IMAGE_BYTES,
-  MAX_TOTAL_IMAGE_BYTES,
-  IMAGE_PREVIEW_LIMITS,
-  MAX_SOURCE_IMAGE_BYTES,
-  readImage,
-  blobBytes,
-  nativeImageFile,
-} from './image-files.js'
 import { useComposerUploads } from '../composer-uploads.js'
+import type { ComposerAttachmentBlock, ComposerImageBlock, ComposerProps, ComposerView } from './contracts.js'
+import {
+  blobBytes,
+  type ComposerAttachment,
+  IMAGE_PREVIEW_LIMITS,
+  MAX_IMAGE_BYTES,
+  MAX_SOURCE_IMAGE_BYTES,
+  MAX_TOTAL_IMAGE_BYTES,
+  nativeImageFile,
+  readImage,
+} from './image-files.js'
 
 type ComposerOptions<K extends keyof ComposerProps> = { [P in K]: ComposerProps[P] }
 
@@ -73,7 +73,7 @@ export function useComposerAttachments({
     for (const attachment of attachmentsRef.current)
       if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
     publishAttachments([])
-  }, [publishAttachments])
+  }, [publishAttachments, uploads])
 
   const restoreAttachmentBlocks = useCallback(
     (blocks: readonly ComposerAttachmentBlock[]): void => {

@@ -1,13 +1,13 @@
 import type { UiActionReceipt } from '@agnes/protocol/gen/intelligent-ui'
-import { workbenchNavigation, type UiExtensionContext } from '@agnes/web-client'
+import { type UiExtensionContext, workbenchNavigation } from '@agnes/web-client'
 import {
   Button,
+  INTELLIGENT_UI_NAMESPACE,
   IntelligentSurface,
   intelligentUiCatalog,
-  INTELLIGENT_UI_NAMESPACE,
   UiLocaleProvider,
-  useUiText,
   type UiLocaleSource,
+  useUiText,
 } from '@agnes/web-ui'
 import { useCallback, useSyncExternalStore } from 'react'
 import type { IntelligentUiClient } from './client.js'
@@ -79,7 +79,7 @@ function SurfaceList({
     return Number(b.status === 'open') - Number(a.status === 'open') || b.updatedSeq - a.updatedSeq
   })
   return (
-    <div data-testid={`intelligent-ui-${placement}`} aria-label={t('ui.title')}>
+    <section data-testid={`intelligent-ui-${placement}`} aria-label={t('ui.title')}>
       {snapshot.error && <p role="alert">{t(snapshot.error)}</p>}
       {placement === 'workbench' && (
         <Button htmlType="button" data-testid="ui-refresh" onClick={() => void client.refresh()}>
@@ -96,7 +96,7 @@ function SurfaceList({
           placement={placement}
         />
       ))}
-    </div>
+    </section>
   )
 }
 export function BoundSurface({

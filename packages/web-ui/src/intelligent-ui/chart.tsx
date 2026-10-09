@@ -3,6 +3,7 @@ import { useId } from 'react'
 import { useUiText } from '../ui-locale.js'
 import { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
 import { uiObject } from './validate.js'
+
 type Chart = Extract<UiComponent, { kind: 'chart' }>
 const colors = [
   '--agnes-brand-primary',
@@ -38,6 +39,7 @@ export function IntelligentChart({ component, data }: { component: Chart; data: 
               const color = `var(${colors[i % colors.length]})`
               if (fraction === 1)
                 return (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: chart marks are stateless ordinal positions, and categories may repeat.
                   <circle key={i} cx="300" cy="100" r="80" fill={color}>
                     <title>
                       {String(row[component.categoryKey])}: {values[i]}
@@ -47,6 +49,7 @@ export function IntelligentChart({ component, data }: { component: Chart; data: 
               return (
                 fraction > 0 && (
                   <path
+                    // biome-ignore lint/suspicious/noArrayIndexKey: stateless ordinal marks allow repeated categories.
                     key={i}
                     fill={color}
                     d={`M300 100 L${300 + Math.cos(start) * 80} ${100 + Math.sin(start) * 80} A80 80 0 ${fraction > 0.5 ? 1 : 0} 1 ${300 + Math.cos(angle) * 80} ${100 + Math.sin(angle) * 80} Z`}
@@ -74,6 +77,7 @@ export function IntelligentChart({ component, data }: { component: Chart; data: 
                 {rows.map((row, i) =>
                   component.chartType === 'bar' ? (
                     <rect
+                      // biome-ignore lint/suspicious/noArrayIndexKey: stateless ordinal marks allow repeated categories.
                       key={i}
                       x={
                         x(i) -
@@ -89,6 +93,7 @@ export function IntelligentChart({ component, data }: { component: Chart; data: 
                       </title>
                     </rect>
                   ) : (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: chart marks are stateless ordinal positions, and categories may repeat.
                     <circle key={i} cx={x(i)} cy={y(Number(row[series.key]))} r="3">
                       <title>
                         {String(row[component.categoryKey])} · {series.label}: {String(row[series.key])}
@@ -115,6 +120,7 @@ export function IntelligentChart({ component, data }: { component: Chart; data: 
           </thead>
           <tbody>
             {rows.map((row, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: chart marks are stateless ordinal positions, and categories may repeat.
               <tr key={i}>
                 <th scope="row">{String(row[component.categoryKey])}</th>
                 {component.series.map((series) => (

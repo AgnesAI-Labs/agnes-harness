@@ -1,8 +1,8 @@
-import { useLayoutEffect, useRef, type RefObject } from 'react'
+import { type RefObject, useLayoutEffect, useRef } from 'react'
 import {
+  type ComposerDependencies,
   type ComposerProps,
   type ComposerView,
-  type ComposerDependencies,
   type ModelPicker,
   type PermissionPicker,
   pickerState,
@@ -54,7 +54,16 @@ export function useComposerPickers({
       renderUsage.current?.dispose?.()
       renderUsage.current = undefined
     }
-  }, [dependencies, onError, onModelSelect, onModelSettingsChange, onPermissionSelect])
+  }, [
+    dependencies,
+    onError,
+    onModelSelect,
+    onModelSettingsChange,
+    onPermissionSelect,
+    model,
+    permission,
+    usage,
+  ])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the preceding effect replaces handles when these inputs change.
   useLayoutEffect(() => {

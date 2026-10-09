@@ -262,17 +262,20 @@ it.each(['success', 'failure'] as const)(
     try {
       flushSync(() =>
         root.render(
-          createElement(SettingsHub, {
-            api: { runtime: () => pending } as PluginAdminApi,
-            canSave: false,
-            pluginText: zhT,
-            installed: [],
-            generations: undefined,
-            children: createElement('p', { 'data-testid': 'independent-content' }, 'Plugin discovery'),
-            onPage() {},
-            async onRefresh() {},
-            onReview() {},
-          }),
+          createElement(
+            SettingsHub,
+            {
+              api: { runtime: () => pending } as PluginAdminApi,
+              canSave: false,
+              pluginText: zhT,
+              installed: [],
+              generations: undefined,
+              onPage() {},
+              async onRefresh() {},
+              onReview() {},
+            },
+            createElement('p', { 'data-testid': 'independent-content' }, 'Plugin discovery'),
+          ),
         ),
       )
       expect(host.querySelector('[data-testid="settings-refresh"]')?.getAttribute('aria-busy')).toBe('true')

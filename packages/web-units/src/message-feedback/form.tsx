@@ -24,7 +24,7 @@ export function MessageFeedback({
   const [expanded, setExpanded] = useState(target.messageSeq === null)
   const [reload, setReload] = useState(0)
   const lifetime = useRef<AbortController | undefined>(undefined)
-  const targetKey = JSON.stringify(target)
+  const { messageSeq, turn } = target
   const changed = !!item && (rating !== item.rating || category !== item.category || note !== item.note)
   useEffect(() => {
     void reload
@@ -37,7 +37,7 @@ export function MessageFeedback({
     void feedbackRequest({ action: 'list', sessionId }, abort.signal)
       .then((result) => {
         const current = result.items.find(
-          (value) => value.target.messageSeq === target.messageSeq && value.target.turn === target.turn,
+          (value) => value.target.messageSeq === messageSeq && value.target.turn === turn,
         )
         if (abort.signal.aborted) return
         setItem(current)
@@ -52,7 +52,7 @@ export function MessageFeedback({
         if (!abort.signal.aborted) setBusy(false)
       })
     return () => abort.abort()
-  }, [sessionId, targetKey, reload])
+  }, [sessionId, messageSeq, turn, reload])
   async function mutate(action: 'put' | 'withdraw' | 'generate', selected = rating) {
     if (busy || error) return
     const signal = lifetime.current?.signal

@@ -1,19 +1,19 @@
 import type { SessionControlledChild } from '@agnes/protocol/gen/agnes-v1'
 import { type ChangeEvent, createElement, type ReactNode, useState } from 'react'
-import { type ComposerDependencies } from './contracts.js'
+import type { ComposerDependencies } from './contracts.js'
 
 export function ChildControlTree({
-  children,
+  nodes,
   disabled = false,
   control,
   t,
 }: {
-  children: readonly SessionControlledChild[]
+  nodes: readonly SessionControlledChild[]
   disabled?: boolean
   control: (id: string, action: 'stop' | 'continue', text?: string) => Promise<void>
   t: ComposerDependencies['translate']
 }) {
-  const ids = new Set(children.map((child) => child.id))
+  const ids = new Set(nodes.map((child) => child.id))
   const renderChild = (child: SessionControlledChild, seen = new Set<string>()): ReactNode => {
     if (seen.has(child.id)) return null
     const next = new Set([...seen, child.id])
@@ -24,7 +24,7 @@ export function ChildControlTree({
       createElement(
         'ul',
         null,
-        children.filter((row) => row.parentId === child.id).map((row) => renderChild(row, next)),
+        nodes.filter((row) => row.parentId === child.id).map((row) => renderChild(row, next)),
       ),
     )
   }
@@ -35,7 +35,7 @@ export function ChildControlTree({
     createElement(
       'ul',
       null,
-      children.filter((child) => !ids.has(child.parentId)).map((child) => renderChild(child)),
+      nodes.filter((child) => !ids.has(child.parentId)).map((child) => renderChild(child)),
     ),
   )
 }

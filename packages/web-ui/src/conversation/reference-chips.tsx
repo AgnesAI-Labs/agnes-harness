@@ -19,9 +19,9 @@ export function UserMessageReferences({
       data-testid="reference-sent-chips"
       aria-label={t('conversation.references')}
     >
-      {references.map((reference, index) => (
+      {references.map((reference) => (
         <li
-          key={`${reference.source}:${reference.id}:${index}`}
+          key={`${reference.source}:${reference.id}:${reference.hash}`}
           data-testid="reference-sent-chip"
           title={`${reference.id}\nSHA-256: ${reference.hash}`}
         >

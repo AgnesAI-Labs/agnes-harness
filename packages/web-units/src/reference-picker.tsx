@@ -1,5 +1,5 @@
 import type { ReferenceCandidate, ReferenceSearchResult } from '@agnes/protocol'
-import { useId, useLayoutEffect, useRef, useState, useSyncExternalStore, type RefObject } from 'react'
+import { type RefObject, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { Translate } from './locales/index.js'
 
 export interface ComposerReferences {
@@ -108,6 +108,7 @@ export function ReferencePicker({
   const choose = useRef<(candidate: ReferenceCandidate) => void>(() => {})
 
   useLayoutEffect(() => {
+    void selected
     setOpened(false)
     setPage({ items: [], truncated: false })
   }, [selected])
@@ -276,13 +277,16 @@ export function ReferencePicker({
           <p className="reference-help">{t('composer.reference.help')}</p>
           <ul
             id={listId}
+            // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: keyboard focus is owned by the textarea.
             role="listbox"
             aria-label={t('composer.reference.label')}
             data-testid="reference-options"
           >
             {page.items.map((item, index) => (
               <li
+                tabIndex={-1}
                 id={`${listId}-${index}`}
+                // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: options use the focused textarea for keyboard navigation.
                 role="option"
                 aria-selected={active === index}
                 data-testid="reference-option"

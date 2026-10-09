@@ -1,9 +1,9 @@
 import type { PluginConfigSnapshot } from '@agnes/protocol'
 import {
   Button,
-  PluginSchemaFields,
-  type PluginSchema,
   type PluginFormIssue,
+  type PluginSchema,
+  PluginSchemaFields,
   pluginSchemaDefault,
   SettingsSelect,
   SettingsToolbar,
@@ -45,6 +45,7 @@ export function PluginConfigPanel({
     })
   }, [])
   useEffect(() => {
+    void loadVersion
     alive.current = true
     const abort = new AbortController()
     void api
@@ -170,8 +171,8 @@ export function PluginConfigPanel({
           <p>{t('revision', { revision: snapshot.revision })}</p>
           {issues.length > 0 && (
             <ul data-testid="plugin-config-errors">
-              {issues.map((issue, index) => (
-                <li role="alert" key={index}>
+              {issues.map((issue) => (
+                <li role="alert" key={`${issue.path}:${issue.code}`}>
                   {issue.path || '/'}: {t('fieldError', { code: issue.code })}
                 </li>
               ))}

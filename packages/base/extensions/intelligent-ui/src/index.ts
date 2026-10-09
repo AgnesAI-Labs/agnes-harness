@@ -4,7 +4,8 @@ import { createIntelligentUiService } from './service.js'
 import { uiProjection } from './state.js'
 
 export { createIntelligentUiService } from './service.js'
-export { uiProjection, UI_EVENTS } from './state.js'
+export { UI_EVENTS, uiProjection } from './state.js'
+
 const meta = {
   isReadOnly: false,
   isDestructive: false,
@@ -82,5 +83,7 @@ export default defineExtension((agnes) => {
       }),
     ),
   )
-  return () => off.reverse().forEach((dispose) => dispose())
+  return () => {
+    for (const dispose of off.reverse()) dispose()
+  }
 })

@@ -1,19 +1,19 @@
-import { useState } from 'react'
-import { Button } from './ui/button.js'
-import { SettingsInput, SettingsSelect } from './settings-layout.js'
+import { type ReactNode, useState } from 'react'
 import { PLUGIN_CONFIG_NAMESPACE, pluginConfigCatalog } from './locales/plugin-config.js'
-import { useUiText } from './ui-locale.js'
+import { PluginSchemaJson } from './plugin-schema-json.js'
 import {
   childPath,
   isSchemaObject,
+  type PluginSchema,
   pluginFormKind,
   pluginSchemaDefault,
   pluginVariantIndex,
   resolvePluginSchema,
-  type PluginSchema,
 } from './plugin-schema-model.js'
 import { PluginSchemaSecret } from './plugin-schema-secret.js'
-import { PluginSchemaJson } from './plugin-schema-json.js'
+import { SettingsInput, SettingsSelect } from './settings-layout.js'
+import { Button } from './ui/button.js'
+import { useUiText } from './ui-locale.js'
 
 export type PluginFormIssue = Readonly<{ path: string; code: string }>
 export interface PluginSchemaFieldsProps {
@@ -67,7 +67,7 @@ export function PluginSchemaFields(props: PluginSchemaFieldsProps) {
   )
   const secret =
     node['x-secret'] === true || node.writeOnly === true || node.format === 'credential-reference'
-  let control
+  let control: ReactNode
   if (secret) {
     control = (
       <PluginSchemaSecret {...common} path={path} value={value} onChange={onChange} onInvalid={onInvalid} />
@@ -96,6 +96,7 @@ export function PluginSchemaFields(props: PluginSchemaFieldsProps) {
           onChange={(event) => setBranch(Number(event.currentTarget.value))}
         >
           {variants.map((variant, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: array positions and schema branch indices are the JSON pointer identities.
             <option key={index} value={index}>
               {isSchemaObject(variant)
                 ? String(variant.title ?? `${t('variant')} ${index + 1}`)
@@ -243,6 +244,7 @@ export function PluginSchemaFields(props: PluginSchemaFieldsProps) {
       control = (
         <div className="agnes-settings-stack">
           {value.map((item, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: array positions and schema branch indices are the JSON pointer identities.
             <fieldset key={index}>
               <legend>{index + 1}</legend>
               {child((node.items ?? true) as PluginSchema, item, index, (next) =>
@@ -280,6 +282,7 @@ export function PluginSchemaFields(props: PluginSchemaFieldsProps) {
       >
         {selected < 0 && <option value={-1}>{JSON.stringify(value)}</option>}
         {choices.map((item, index) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: array positions and schema branch indices are the JSON pointer identities.
           <option key={index} value={index}>
             {typeof item === 'string' ? item : JSON.stringify(item)}
           </option>
@@ -330,6 +333,7 @@ export function PluginSchemaFields(props: PluginSchemaFieldsProps) {
         {typeof node.description === 'string' && <p>{node.description}</p>}
         {typeof node.format === 'string' && <p>{t('format', { format: node.format })}</p>}
         {fieldIssues.map((issue, index) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: array positions and schema branch indices are the JSON pointer identities.
           <p role="alert" key={`${issue.code}:${index}`}>
             {t('invalid', { code: issue.code })}
           </p>

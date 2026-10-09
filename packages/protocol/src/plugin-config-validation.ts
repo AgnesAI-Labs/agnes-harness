@@ -1,6 +1,6 @@
-import { inspectJsonData } from './json-data.js'
 import { Ajv2020 } from 'ajv/dist/2020.js'
 import formats from 'ajv-formats'
+import { inspectJsonData } from './json-data.js'
 
 type PluginConfigSchema = boolean | Readonly<Record<string, unknown>>
 type PluginConfigIssue = Readonly<{ path: string; code: string }>
@@ -105,7 +105,9 @@ export function compilePluginConfig(
         if (schemaMaps.has(key) && value && typeof value === 'object')
           for (const [name, child] of Object.entries(value)) defaults(child, `${path}/${escaped(name)}`)
         else if (schemaLists.has(key) && Array.isArray(value))
-          value.forEach((child, index) => defaults(child, `${path}/${index}`))
+          value.forEach((child, index) => {
+            defaults(child, `${path}/${index}`)
+          })
         else if (schemaFields.has(key)) defaults(value, path)
       }
     }

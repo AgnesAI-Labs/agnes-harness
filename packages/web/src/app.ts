@@ -1,23 +1,23 @@
-import { mountIntelligentUi } from './intelligent-ui/mount.js'
-import { createCommandController } from './app/command-controller.js'
-import { createComposerController } from './app/composer-controller.js'
-import { createSubmissionController } from './app/submission-controller.js'
-import { createSessionController } from './app/session-controller.js'
-import { createTurnController } from './app/turn-controller.js'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import { adaptResourceAdmin } from '@agnes/web-admin/admin/resources/admin'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
 import { factChainLinks } from '@agnes/web-client'
+import { createCommandController } from './app/command-controller.js'
+import { createComposerController } from './app/composer-controller.js'
+import { createSessionController } from './app/session-controller.js'
+import { createSubmissionController } from './app/submission-controller.js'
+import { createTurnController } from './app/turn-controller.js'
+import { mountIntelligentUi } from './intelligent-ui/mount.js'
 import '@agnes/web-admin/settings/registry'
-import {
-  type ConfigSnapshot,
-  type ContentBlock,
-  type ModelSettings,
-  type PageSessionMeta,
-  type ReferenceSelection,
-  type UITimeline,
-  type UITurn,
-  type WorkspaceEntry,
+import type {
+  ConfigSnapshot,
+  ContentBlock,
+  ModelSettings,
+  PageSessionMeta,
+  ReferenceSelection,
+  UITimeline,
+  UITurn,
+  WorkspaceEntry,
 } from '@agnes/protocol'
 import {
   createClient,
@@ -37,7 +37,7 @@ import { settingsSections } from '@agnes/web-client'
 
 import { createComputerUsePaneController } from '@agnes/web-conversation/computer-use-pane'
 
-import { type LiveProjection } from '@agnes/web-conversation/live-projection'
+import type { LiveProjection } from '@agnes/web-conversation/live-projection'
 
 import {
   errorNotice,
@@ -86,7 +86,7 @@ import { bootstrapProbe, createReconnectController, type ReconnectPhase } from '
 import { createSessionActions } from './session-actions.js'
 
 import { createTitleRefresh } from './session-title.js'
-import { type RunReceipt, type WebView } from './view.js'
+import type { RunReceipt, WebView } from './view.js'
 import { unmountWorkbench } from './workbench/dock.js'
 import { requestWorkspacePicker, workspacePickerAvailable } from './workspace-picker.js'
 
@@ -1341,7 +1341,7 @@ function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'clo
 }
 const dockControlsHost = document.getElementById('workbench-controls')
 function renderControls(): void {
-  return composerController.renderControls()
+  composerController.renderControls()
 }
 // 流式期间每个事件都会让轨迹面板全量走查一遍节点，长会话里比时间线本身还贵。
 // busy 时把面板喂食节流到 500ms（尾沿补一帧，喂的是最新视图）；终态与空闲路径
@@ -1358,20 +1358,20 @@ let tracePending:
     }
   | undefined
 function paintTrace(): void {
-  return turnController.paintTrace()
+  turnController.paintTrace()
 }
 function renderTrace(
   view: WebView,
   turns: readonly UITurn[] | undefined,
   meta: ReturnType<typeof transcriptMeta>,
 ): void {
-  return turnController.renderTrace(view, turns, meta)
+  turnController.renderTrace(view, turns, meta)
 }
 function render(): void {
-  return turnController.render()
+  turnController.render()
 }
 function renderApproval(): void {
-  return turnController.renderApproval()
+  turnController.renderApproval()
 }
 function transcriptMeta(): {
   hasEarlier: boolean
@@ -1384,7 +1384,7 @@ function transcriptMeta(): {
 }
 /** Loads earlier pages, `limit` at most, until the parked approval's node is loaded. */
 function searchApproval(limit?: number): void {
-  return turnController.searchApproval(limit)
+  turnController.searchApproval(limit)
 }
 /** What watching the event stream used to do per event: titles, the list, the run receipt. */
 function followEvent(session: Session, event: LedgerEvent): Promise<void> {
@@ -2122,13 +2122,13 @@ async function openAdminPane(pane: AdminPaneName, tab: ResourceTab = 'skills'): 
 }
 
 function handleComposerWorkspace(): void {
-  return composerController.handleComposerWorkspace()
+  composerController.handleComposerWorkspace()
 }
 function handleComposerCancel(): void {
-  return commandController.handleComposerCancel()
+  commandController.handleComposerCancel()
 }
 function handleQueuedAction(itemId: string, kind: 'sendNow' | 'removeQueued'): void {
-  return commandController.handleQueuedAction(itemId, kind)
+  commandController.handleQueuedAction(itemId, kind)
 }
 
 function refreshSessionControls(session: Session): Promise<void> {
@@ -2138,14 +2138,14 @@ function handleChildControl(id: string, action: 'stop' | 'continue', text?: stri
   return commandController.handleChildControl(id, action, text)
 }
 function handlePauseResume(): void {
-  return commandController.handlePauseResume()
+  commandController.handlePauseResume()
 }
 function handleEditQueued(itemId: string, text: string): Promise<void> {
   return commandController.handleEditQueued(itemId, text)
 }
 
 function handleComposerDraftChange(value: string): void {
-  return composerController.handleComposerDraftChange(value)
+  composerController.handleComposerDraftChange(value)
 }
 function imageSubmissionFrameBytes(
   sessionId: string,
@@ -2163,7 +2163,7 @@ function prepareComposerSession(): Promise<Session> {
 }
 
 function submitComposer(): void {
-  return submissionController.submitComposer()
+  submissionController.submitComposer()
 }
 const diagnostics = createDiagnosticsDialog({
   call: (method, params) => client.call(method, params),

@@ -1,3 +1,13 @@
+import { createHash, createHmac, randomBytes } from 'node:crypto'
+import type { DeferredInvocationReceipt, IntelligentUiFactory } from '@agnes/extension-api'
+import {
+  jcs,
+  rpcError,
+  type UiActionReceipt,
+  type UiRefusal,
+  type UiSurfaceRecord,
+  validateAgainst,
+} from '@agnes/protocol'
 import {
   UiActionParams,
   UiCloseParams,
@@ -6,17 +16,7 @@ import {
   UiUpdateParams,
   X_AGNES_UI_LIMITS,
 } from '@agnes/protocol/gen/intelligent-ui'
-import { createHash, createHmac, randomBytes } from 'node:crypto'
-import type { DeferredInvocationReceipt, IntelligentUiFactory } from '@agnes/extension-api'
-import {
-  jcs,
-  rpcError,
-  validateAgainst,
-  type UiActionReceipt,
-  type UiRefusal,
-  type UiSurfaceRecord,
-} from '@agnes/protocol'
-import { foldUiEvent, initialUiState, type ActionRecord, type UiState } from './state.js'
+import { type ActionRecord, foldUiEvent, initialUiState, type UiState } from './state.js'
 import { bindArguments, bounded, json, validateSurface } from './validation.js'
 
 const unfinished = (record: ActionRecord) =>
@@ -327,7 +327,7 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
         }
         if (blocked(value, request.surfaceId))
           throw rpcError('OVERLOADED', { code: 'UI_BUSY', reason: 'surface has an unfinished action' })
-        let args
+        let args: ReturnType<typeof bindArguments>
         try {
           args = bindArguments(surface.surface, request, ports)
         } catch (error) {

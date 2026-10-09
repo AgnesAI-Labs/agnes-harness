@@ -1,11 +1,11 @@
 import { Context } from '@agnes/cordis'
 import type { UiActionParams, UiActionReceipt, UiReadResult } from '@agnes/protocol/gen/intelligent-ui'
-import { LocaleService, workbenchPanels, workbenchNavigation } from '@agnes/web-client'
+import { LocaleService, workbenchNavigation, workbenchPanels } from '@agnes/web-client'
 import {
   createAntdRoot,
   createDocumentLocaleSource,
-  intelligentUiCatalog,
   INTELLIGENT_UI_NAMESPACE,
+  intelligentUiCatalog,
 } from '@agnes/web-ui'
 import { Approval } from '@agnes/web-units'
 import { useSyncExternalStore } from 'react'
@@ -198,6 +198,7 @@ function Fixture() {
       </section>
       <button
         data-testid="fixture-change-data"
+        type="button"
         onClick={() => {
           const next = financeRecord(state.page.surfaces[0]!.surface.revision + 1)
           next.updatedSeq = ++state.page.lastSeq

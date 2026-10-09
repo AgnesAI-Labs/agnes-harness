@@ -16,9 +16,6 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
-import { useComposerAttachments } from './composer/attachments.js'
-import { useComposerPickers } from './composer/pickers.js'
-import { renderComposerQueue } from './composer/queue.js'
 import { USER_MESSAGE_ATTACHMENT_LIMITS } from '@agnes/protocol-validation'
 import {
   type ChangeEvent,
@@ -34,16 +31,19 @@ import {
   useState,
 } from 'react'
 import { flushSync } from 'react-dom'
-import { ReferencePicker } from './reference-picker.js'
+import { useComposerAttachments } from './composer/attachments.js'
+import { ChildControlTree } from './composer/child-controls.js'
 import {
   type ComposerHandle,
-  type ComposerProps,
-  INITIAL_VIEW,
-  type ComposerView,
   type ComposerImageBlock,
+  type ComposerProps,
+  type ComposerView,
+  INITIAL_VIEW,
 } from './composer/contracts.js'
-import { type ComposerAttachment } from './composer/image-files.js'
-import { ChildControlTree } from './composer/child-controls.js'
+import type { ComposerAttachment } from './composer/image-files.js'
+import { useComposerPickers } from './composer/pickers.js'
+import { renderComposerQueue } from './composer/queue.js'
+import { ReferencePicker } from './reference-picker.js'
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
   {
@@ -140,7 +140,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         dependencies.resize(prompt.current)
       },
     }),
-    [dependencies.resize, clearImageBlocks, restoreAttachmentBlocks],
+    [
+      dependencies.resize,
+      clearImageBlocks,
+      restoreAttachmentBlocks,
+      attachmentsRef,
+      pendingCountRef,
+      uploads,
+    ],
   )
 
   useComposerPickers({
@@ -172,7 +179,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     null,
     view.children?.length && onChildControl
       ? createElement(ChildControlTree, {
-          children: view.children,
+          nodes: view.children,
           disabled: view.childrenDisabled === true,
           control: onChildControl,
           t: dependencies.translate,
@@ -533,18 +540,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   )
 })
 
-export { type ModelPickerOption } from './composer/contracts.js'
-export { type ModelPickerSettings } from './composer/contracts.js'
-export { type ModelPickerState } from './composer/contracts.js'
-export { type ModelPicker } from './composer/contracts.js'
-export { type PermissionMode } from './composer/contracts.js'
-export { type ComposerImageBlock } from './composer/contracts.js'
-export { type ComposerAttachmentBlock } from './composer/contracts.js'
-export { type PermissionPickerState } from './composer/contracts.js'
-export { type PermissionPicker } from './composer/contracts.js'
-export { type ComposerDependencies } from './composer/contracts.js'
-export { type ComposerView } from './composer/contracts.js'
-export { type ComposerHandle } from './composer/contracts.js'
-export { type ComposerRegionOptions } from './composer/contracts.js'
-export { type ComposerSlots } from './composer/contracts.js'
+export type {
+  ComposerAttachmentBlock,
+  ComposerDependencies,
+  ComposerHandle,
+  ComposerImageBlock,
+  ComposerRegionOptions,
+  ComposerSlots,
+  ComposerView,
+  ModelPicker,
+  ModelPickerOption,
+  ModelPickerSettings,
+  ModelPickerState,
+  PermissionMode,
+  PermissionPicker,
+  PermissionPickerState,
+} from './composer/contracts.js'
 export { downscaleImageFile } from './composer/image-files.js'

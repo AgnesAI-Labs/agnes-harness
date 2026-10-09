@@ -11,6 +11,7 @@ export function FeedbackProvenance({ sessionId, candidateId }: { sessionId: stri
   const [reload, setReload] = useState(0)
   const [failed, setFailed] = useState(false)
   useEffect(() => {
+    void reload
     const abort = new AbortController()
     setGrowth([])
     setFailed(false)
@@ -25,7 +26,7 @@ export function FeedbackProvenance({ sessionId, candidateId }: { sessionId: stri
         if (!abort.signal.aborted) setFailed(true)
       })
     return () => abort.abort()
-  }, [sessionId, candidateId, reload])
+  }, [sessionId, reload])
   const entries = growth.filter((item) => !candidateId || item.candidateId === candidateId)
   if (!entries.length && !failed) return null
   return (
