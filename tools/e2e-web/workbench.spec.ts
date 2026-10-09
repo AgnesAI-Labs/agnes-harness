@@ -12,6 +12,8 @@ import { chooseWorkspace, fresh, turn } from './ui.js'
 
 // Every gate validates the locale/theme/viewport matrix; the private report is an optional copy.
 async function workbenchScreen(page: Page, info: TestInfo, name: string, folder?: string) {
+  for (const label of await page.locator('.workspace-name').allTextContents())
+    expect(label.trim(), 'Every registered workspace identifies its folder').not.toBe('')
   await screen(page, info, `workbench-${name}`)
   if (folder) await copyFile(info.outputPath(`workbench-${name}.png`), join(folder, `${name}.png`))
 }
@@ -464,6 +466,11 @@ test('changed files review follows confirmed agent effects and preserves current
   await expect(panel.getByTestId('changes-diff')).toContainText('+export const answer = 2')
   await expect(panel.getByTestId('changed-file')).toContainText('+1')
   await expect(panel.getByTestId('changed-file')).toContainText('−0')
+  await expect(panel.getByTestId('changed-file').locator('span').first()).toHaveText('review.ts')
+  await expect(panel.locator('.workbench-change-preview > .workbench-panel-toolbar > code')).toHaveText(
+    'review.ts',
+  )
+  await expect(panel.getByTestId('changes-diff')).toContainText('--- a/review.ts\n+++ b/review.ts\n')
   await translated(page)
   await accessible(page, info, 'changed-files-review')
   const folder = process.env.AGH_WORKBENCH_REPORT
@@ -516,14 +523,15 @@ test('changed files review follows confirmed agent effects and preserves current
   expect(await readFile(join(runtime.workspace, 'review.ts'), 'utf8')).toBe('export const answer = 99\n')
   await panel.locator('.workbench-change-evidence > summary').click()
   await panel.getByTestId('changes-provenance').last().click()
-  await expect(page.getByRole('tab', { name: 'Trace', exact: true })).toHaveAttribute('aria-selected', 'true')
-  const view = await session.projectUI(undefined, { surface: 'web' })
+  await expect(page.getByTestId('workbench-tab-facts')).toHaveAttribute('aria-selected', 'true')
   const receipt = changed.selected?.effects.at(-1)
-  const node = view.nodes.find((node) => node.kind === 'tool' && node.seq === receipt?.callSeq)
-  if (!node) throw new Error('The review provenance must identify a durable tool node')
-  await expect(page.locator('#trace-panel [aria-current=true]')).toHaveAttribute('data-trace-row-id', node.id)
-  await expect(page.locator('.trace-inspector')).toContainText('edit')
-  await page.getByRole('tab', { name: 'Conversation', exact: true }).click()
+  if (!receipt?.laneId) throw new Error('The review provenance must identify its actual ledger lane')
+  const facts = await session.factChain({ kind: 'tool', toolUseId: receipt.toolUseId }, receipt.laneId)
+  expect(facts.nodes).toContainEqual(
+    expect.objectContaining({ kind: 'invocation', toolUseId: receipt.toolUseId }),
+  )
+  await expect(page.getByTestId('fact-chain').locator('[data-fact-kind="invocation"]')).toContainText('edit')
+  await page.getByTestId('workbench-tab-changed-files').click()
   await page.setViewportSize({ width: 375, height: 812 })
   await page.getByTestId('workbench-tab-changed-files').press('Escape')
   await expect(panel).toBeHidden()

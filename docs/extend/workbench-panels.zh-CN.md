@@ -32,7 +32,7 @@ Git badge 由 Host 在已授权的规范工作区根下受控执行 `git status 
 
 打开终端和输入经过当前会话工具策略，包括 read-only 与计划模式拒绝。已认证用户的明确操作提供人工批准，不能覆盖 preset 拒绝。打开操作使用与工具执行相同的会话 sandbox，不接受调用方选择 cwd，也没有 raw-spawn 回退。改变 sandbox 权限需要新建会话；Host 会拒绝改变现有 workspace sandbox 的 preset 切换。错误和状态来自后台；每个输出流上限为 64 Ki 个字符，溢出会明确提示。`@agnes/web-ui` 的 `terminalScreen` 与 `terminalKey` 复用设置页的纯文本 VT 渲染和键盘映射，终端字节不会变成 HTML。
 
-OS 后端无法落实 preset 时，`session/new` 与 `session/load` 返回 JSON-RPC `SEMANTIC_REJECTED`（-32011）、`data.code: SANDBOX_UNAVAILABLE` 和 `messageKey: appServer.errors.unavailable`。不返回异常原文、路径或后端输出。明确选择 full-access 的行为保持原样；未识别的失败仍然是错误。
+OS 后端无法落实 preset 时，`session/new` 与 `session/load` 返回 JSON-RPC `SEMANTIC_REJECTED`（-32011）、`data.code: E_SANDBOX_WORKSPACE`、同一固定 cause code 和 `messageKey: appServer.errors.unavailable`；后续执行拒绝仍为 `SANDBOX_UNAVAILABLE`。不返回异常原文、路径或后端输出。明确选择 full-access 的行为保持原样；未识别的失败仍然是错误。
 
 内置终端按会话和作业串行、合并发送键盘与粘贴输入，待发送缓冲最多 64 Ki 个字符。缓冲已满时拒绝新增输入并提示。发送失败会丢弃尚未发送的剩余内容，不重试状态不确定的字节。断开或切换标签／会话只丢弃未发送的界面输入；已接受的字节与进程仍归后端所有。
 
@@ -49,3 +49,5 @@ OS 后端无法落实 preset 时，`session/new` 与 `session/load` 返回 JSON-
 读取窗口上限为 500 条相关账本记录、100 次副作用、50 个文件和 750 KiB 响应。每侧快照最多 16 KiB UTF-8，单条凭据最多 60,000 字节 JSON；diff 最多 64 KiB 和 200,000 次行比较。二进制、超大或比较成本过高时显示不可用，不伪造行数。连续哈希链可合并会话或轮次变更；链路不连续或历史截断时仅归属最近一次已确认副作用，并明确标注。新鲜度比较记录的写后哈希与当前文件修订号；当前文件过大则显示新鲜度不可用。外部修改不会进入智能体的历史 diff。
 
 可选 `context.openPanel(id, selection)` 导航到已注册面板，不授予后端权限。可选 `context.openRecord(sessionId, callSeq, resultSeq?)` 在既有执行视图中选中实际已加载的工具记录，并返回是否找到。跨会话导航会被拒绝；记录超出已加载历史时打开执行视图并提示加载更早记录，不生成虚构轨迹。两个钩子都不授予写入、恢复或进程控制权限。
+
+更改文件路径显示为普通文本，保留空格与 Unicode；diff header 对控制字符转义，防止带换行的名称伪造 header 行。执行证据通过 `factChainLinks.open({ sessionId, laneId, anchor: { kind: 'tool', toolUseId } })` 打开；可选证据字段 `laneId` 仅来自相互匹配的 call、receipt、result 账本 lane。缺失或不匹配的 lane、不可用的导航均提示无法关联，不通过路径推断 request 或 artifact 来源。

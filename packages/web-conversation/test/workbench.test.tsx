@@ -3,7 +3,7 @@ import { FactChainPanel } from '../src/workbench/fact-chain-panel.js'
 /** @vitest-environment happy-dom */
 
 import type { Session } from '@agnes/sdk/browser'
-import { fileViewerActions } from '@agnes/web-client'
+import { factChainLinks, fileViewerActions } from '@agnes/web-client'
 import { createCatalogTranslator, renderRegion, unmountRegion } from '@agnes/web-ui'
 import { flushSync } from 'react-dom'
 import { expect, it, vi } from 'vitest'
@@ -343,11 +343,14 @@ it('renders kill receipts immediately and keeps a running tab until close is con
 
 it('navigates from file review, renders a read-only diff and ignores results detached by session switching', async () => {
   const revision = 'a'.repeat(64),
+    path = '设计 review.ts',
     mention = vi.fn(),
     openPanel = vi.fn(),
     openRecord = vi.fn(() => false)
+  const openFacts = vi.fn(() => false),
+    disposeFacts = factChainLinks.register(openFacts)
   const file = {
-    path: 'a.ts',
+    path,
     kind: 'added',
     basis: 'session',
     added: 1,
@@ -362,6 +365,7 @@ it('navigates from file review, renders a read-only diff and ignores results det
         resultSeq: 7,
         receiptSeq: 6,
         toolUseId: 'actual-use',
+        laneId: 'main' as string | undefined,
         tool: 'write',
         turn: 1,
         observedAt: '2026-10-09T00:00:00Z',
@@ -400,7 +404,7 @@ it('navigates from file review, renders a read-only diff and ignores results det
     t: createCatalogTranslator(workbenchLocaleCatalog, 'en'),
     openPanel,
     openRecord,
-    selection: { sessionId: 's', path: 'a.ts', revision },
+    selection: { sessionId: 's', path, revision },
     data: {
       session,
       disabled: false,
@@ -414,22 +418,39 @@ it('navigates from file review, renders a read-only diff and ignores results det
     action = document.createElement('div')
   document.body.append(host, action)
   try {
-    renderRegion(action, <ReviewFileAction context={context} path="a.ts" revision={revision} />)
+    renderRegion(action, <ReviewFileAction context={context} path={path} revision={revision} />)
     flushSync(() => (action.querySelector('button') as HTMLButtonElement).click())
-    expect(openPanel).toHaveBeenCalledWith('changed-files', { sessionId: 's', path: 'a.ts', revision })
+    expect(openPanel).toHaveBeenCalledWith('changed-files', { sessionId: 's', path, revision })
     renderRegion(host, <ChangesPanel context={context} />)
     await vi.waitFor(() =>
       expect(host.querySelector('pre')?.textContent).toContain('+<script>plain text</script>'),
     )
-    expect(read).toHaveBeenCalledWith({ scope: 'session', path: 'a.ts', expectedRevision: revision })
+    expect(read).toHaveBeenCalledWith({ scope: 'session', path, expectedRevision: revision })
+    expect(host.querySelector('[data-testid=changed-file] > span')?.textContent).toBe(path)
+    expect(
+      host.querySelector('.workbench-change-preview > .workbench-panel-toolbar > code')?.textContent,
+    ).toBe(path)
     expect(host.querySelector('script')).toBeNull()
     expect(host.textContent).toContain('changed after the recorded agent edit')
     expect(host.textContent).toContain('changed since the preview was read')
     flushSync(() => (host.querySelector('[data-testid=changes-mention]') as HTMLButtonElement).click())
-    expect(mention).toHaveBeenCalledWith('a.ts')
+    expect(mention).toHaveBeenCalledWith(path)
     flushSync(() => (host.querySelector('[data-testid=changes-provenance]') as HTMLButtonElement).click())
-    expect(openRecord).toHaveBeenCalledWith('s', 4, 7)
-    expect(host.textContent).toContain('outside the loaded history')
+    expect(openFacts).toHaveBeenCalledWith({
+      sessionId: 's',
+      laneId: 'main',
+      anchor: { kind: 'tool', toolUseId: 'actual-use' },
+    })
+    expect(openRecord).not.toHaveBeenCalled()
+    expect(host.textContent).toContain('could not be linked')
+    openFacts.mockReturnValue(true)
+    flushSync(() => (host.querySelector('[data-testid=changes-provenance]') as HTMLButtonElement).click())
+    expect(host.textContent).not.toContain('could not be linked')
+    file.effects[0]!.laneId = undefined
+    openFacts.mockClear()
+    flushSync(() => (host.querySelector('[data-testid=changes-provenance]') as HTMLButtonElement).click())
+    expect(openFacts).not.toHaveBeenCalled()
+    expect(host.textContent).toContain('could not be linked')
     flushSync(() => (host.querySelector('[data-path="b.ts"]') as HTMLButtonElement).click())
     await vi.waitFor(() => expect(finishOld).toBeDefined())
     const next = {
@@ -446,6 +467,7 @@ it('navigates from file review, renders a read-only diff and ignores results det
     await vi.waitFor(() => expect(host.textContent).not.toContain('STALE_OLD_SESSION'))
     expect(host.querySelector('textarea')).toBeNull()
   } finally {
+    disposeFacts()
     unmountRegion(host)
     unmountRegion(action)
     host.remove()

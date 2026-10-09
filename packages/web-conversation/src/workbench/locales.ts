@@ -43,8 +43,7 @@ export const workbenchLocaleCatalog: LocaleCatalog = {
     'workbench.changes.revision': 'Review revision',
     'workbench.changes.noFile': 'No confirmed edit for this file is available in the selected scope.',
     'workbench.changes.review': 'Review changes',
-    'workbench.changes.outsideHistory':
-      'This record is outside the loaded history. Load earlier records in Trace to inspect it.',
+    'workbench.changes.unlinked': 'This execution could not be linked to its fact chain.',
     'workbench.goal.title': 'Goal',
     'workbench.goal.empty': 'Create a goal using the quick action above the conversation.',
     'workbench.goal.used': 'Credits used',
@@ -146,7 +145,7 @@ export const workbenchLocaleCatalog: LocaleCatalog = {
     'workbench.changes.revision': '审阅修订号',
     'workbench.changes.noFile': '所选范围内没有此文件可用的已确认更改。',
     'workbench.changes.review': '审阅更改',
-    'workbench.changes.outsideHistory': '此记录不在已加载的历史中。请在轨迹中加载较早记录进行核验。',
+    'workbench.changes.unlinked': '无法将此执行关联到事实链。',
     'workbench.goal.title': '目标',
     'workbench.goal.empty': '使用对话上方的快捷操作创建目标。',
     'workbench.goal.used': '已用额度',

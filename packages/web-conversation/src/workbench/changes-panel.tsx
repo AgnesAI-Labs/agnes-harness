@@ -1,5 +1,5 @@
 import type { SessionWorkspaceChangesResult } from '@agnes/protocol'
-import type { UiExtensionContext } from '@agnes/web-client'
+import { factChainLinks, type UiExtensionContext } from '@agnes/web-client'
 import { appServerErrorMessage, Button, Select, SettingsState } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -141,7 +141,7 @@ function SessionChangesPanel({ context, headerId }: { context: UiExtensionContex
                     setSnapshot(undefined)
                   }}
                 >
-                  <span>{JSON.stringify(file.path)}</span>
+                  <span>{file.path}</span>
                   <span className="workbench-change-counts">
                     {file.added === undefined ? (
                       t('workbench.changes.unavailable')
@@ -161,7 +161,7 @@ function SessionChangesPanel({ context, headerId }: { context: UiExtensionContex
             {selected ? (
               <article className="workbench-change-preview" aria-label={t('workbench.changes.diff')}>
                 <div className="workbench-panel-toolbar">
-                  <code>{JSON.stringify(selected.path)}</code>
+                  <code>{selected.path}</code>
                   <Button size="small" data-testid="changes-mention" onClick={() => mention(selected.path)}>
                     {t('workbench.files.mention')}
                   </Button>
@@ -210,11 +210,15 @@ function SessionChangesPanel({ context, headerId }: { context: UiExtensionContex
                       <Button
                         type="link"
                         size="small"
-                        disabled={!context.openRecord}
                         data-testid="changes-provenance"
                         onClick={() =>
                           setOutsideHistory(
-                            !(context.openRecord?.(session.id, effect.callSeq, effect.resultSeq) ?? false),
+                            !effect.laneId ||
+                              !factChainLinks.open({
+                                sessionId: session.id,
+                                laneId: effect.laneId,
+                                anchor: { kind: 'tool', toolUseId: effect.toolUseId },
+                              }),
                           )
                         }
                       >
@@ -242,7 +246,7 @@ function SessionChangesPanel({ context, headerId }: { context: UiExtensionContex
                       </dl>
                     </div>
                   ))}
-                  {outsideHistory && <p role="status">{t('workbench.changes.outsideHistory')}</p>}
+                  {outsideHistory && <p role="status">{t('workbench.changes.unlinked')}</p>}
                 </details>
               </article>
             ) : snapshot && path ? (

@@ -999,6 +999,11 @@
           "type": "integer",
           "minimum": 0
         },
+        "laneId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
         "toolUseId": {
           "type": "string",
           "maxLength": 128

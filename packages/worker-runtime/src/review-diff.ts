@@ -30,7 +30,9 @@ export function reviewDiff(path: string, before: string, after: string): ReviewD
           ? 1 + (table[(i + 1) * width + j + 1] ?? 0)
           : Math.max(table[(i + 1) * width + j] ?? 0, table[i * width + j + 1] ?? 0)
   const chunks: string[] = [],
-    name = JSON.stringify(path)
+    name = [...path].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
+      ? JSON.stringify(path)
+      : path
   let bytes = 0,
     added = 0,
     removed = 0

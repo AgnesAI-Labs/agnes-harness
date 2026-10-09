@@ -255,7 +255,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-conversation/src/trace-panel': 11,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-conversation/src': 4162,
+  'packages/web-conversation/src': 4165,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/settings': 6335,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
@@ -270,7 +270,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-foundation/src': 2330,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
   'packages/daemon-rpc/src/local/auth': 341,
-  'packages/daemon-rpc/src': 7511,
+  'packages/daemon-rpc/src': 7510,
   'packages/daemon-supervisor/src/supervisor/startup': 18,
   'packages/daemon-supervisor/src/supervisor/discovery': 446,
   'packages/daemon-supervisor/src/supervisor/scope': 254,
@@ -2412,7 +2412,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 19657 -> 22109; exact cap, no exclusions or spare allocation.
   // Acceptance review: Retain published composition details and stable expanded goal state during admin refresh.
   // countLines: 22109 -> 22110; exact cap, no exclusions or spare allocation.
-  'packages/web/src': 10370,
+  'packages/web/src': 10371,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

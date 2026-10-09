@@ -117,65 +117,73 @@ function ledger(root: string) {
 }
 const authority = { stat: async () => ({}) }
 
-it('aggregates confirmed versions, gives exact line counts, and reads current revisions on every request', async () => {
-  const root = temp(),
-    fixture = ledger(root),
-    path = 'new\nfile.ts'
-  fixture.effect(path, '', 'one\n')
-  fixture.add('turn/start', { turn: 2 })
-  fixture.effect(path, 'one\n', 'two\n', { turn: 2, name: 'edit' })
-  writeFileSync(join(root, path), 'two\n')
-  const full = await readWorkspaceChanges(fixture.reader, root, authority, { path })
-  expect(full).toMatchObject({
-    unrecorded: false,
-    truncated: false,
-    files: [{ path, kind: 'added', added: 1, removed: 0, freshness: 'current', basis: 'session' }],
-  })
-  expect(full.selected?.effects).toHaveLength(2)
-  expect(full.selected?.diff).toContain('+two\n')
-  expect(full.selected?.diff).toContain(JSON.stringify(path))
-  const turn = await readWorkspaceChanges(fixture.reader, root, authority, { path, scope: 'turn' })
-  expect(turn.selected).toMatchObject({ added: 1, removed: 1, basis: 'turn' })
-  expect(turn.selected?.diff).toContain('-one\n')
-  writeFileSync(join(root, path), 'external\n')
-  if (!full.selected) throw new Error('Missing selected review')
-  const changed = await readWorkspaceChanges(fixture.reader, root, authority, {
-    path,
-    expectedRevision: full.selected.currentRevision,
-  })
-  expect(changed.selected).toMatchObject({ freshness: 'changed', viewerChanged: true })
-  expect(changed.selected?.diff).not.toContain('external')
-  expect(changed.revision).not.toBe(full.revision)
-  await expect(
-    readWorkspaceChanges(
-      fixture.reader,
-      root,
-      {
-        stat: async () => {
-          throw new Error('Current authority revoked')
+it.each(['new\nfile.ts', '设计 review.ts'])(
+  'aggregates confirmed versions and fresh reads for %j',
+  async (path) => {
+    const root = temp(),
+      fixture = ledger(root)
+    fixture.effect(path, '', 'one\n')
+    fixture.add('turn/start', { turn: 2 })
+    fixture.effect(path, 'one\n', 'two\n', { turn: 2, name: 'edit' })
+    writeFileSync(join(root, path), 'two\n')
+    const full = await readWorkspaceChanges(fixture.reader, root, authority, { path })
+    expect(full).toMatchObject({
+      unrecorded: false,
+      truncated: false,
+      files: [{ path, kind: 'added', added: 1, removed: 0, freshness: 'current', basis: 'session' }],
+    })
+    expect(full.selected?.effects).toHaveLength(2)
+    expect(full.selected?.effects.every((effect) => effect.laneId === 'main')).toBe(true)
+    expect(full.selected?.diff).toContain('+two\n')
+    expect(full.selected?.diff).toContain(`--- a/${path.includes('\n') ? JSON.stringify(path) : path}\n`)
+    const mismatched = ledger(root)
+    mismatched.effect(path, '', 'two\n').lane = 'unverified-lane'
+    expect(
+      (await readWorkspaceChanges(mismatched.reader, root, authority, { path })).selected?.effects[0]?.laneId,
+    ).toBeUndefined()
+    const turn = await readWorkspaceChanges(fixture.reader, root, authority, { path, scope: 'turn' })
+    expect(turn.selected).toMatchObject({ added: 1, removed: 1, basis: 'turn' })
+    expect(turn.selected?.diff).toContain('-one\n')
+    writeFileSync(join(root, path), 'external\n')
+    if (!full.selected) throw new Error('Missing selected review')
+    const changed = await readWorkspaceChanges(fixture.reader, root, authority, {
+      path,
+      expectedRevision: full.selected.currentRevision,
+    })
+    expect(changed.selected).toMatchObject({ freshness: 'changed', viewerChanged: true })
+    expect(changed.selected?.diff).not.toContain('external')
+    expect(changed.revision).not.toBe(full.revision)
+    await expect(
+      readWorkspaceChanges(
+        fixture.reader,
+        root,
+        {
+          stat: async () => {
+            throw new Error('Current authority revoked')
+          },
         },
-      },
-      {},
-    ),
-  ).rejects.toBeDefined()
+        {},
+      ),
+    ).rejects.toBeDefined()
 
-  fixture.effect('new-empty.txt', '', '', { turn: 2 })
-  fixture.effect('existing-empty.txt', '', '', { turn: 2, existed: true })
-  writeFileSync(join(root, 'new-empty.txt'), '')
-  writeFileSync(join(root, 'existing-empty.txt'), '')
-  const empty = await readWorkspaceChanges(fixture.reader, root, authority, { path: 'new-empty.txt' })
-  expect(empty.selected).toMatchObject({
-    path: 'new-empty.txt',
-    kind: 'added',
-    added: 0,
-    removed: 0,
-    diffStatus: 'available',
-    freshness: 'current',
-    diff: '',
-  })
-  expect(empty.selected?.effects).toHaveLength(1)
-  expect(empty.files.map((file) => file.path)).not.toContain('existing-empty.txt')
-})
+    fixture.effect('new-empty.txt', '', '', { turn: 2 })
+    fixture.effect('existing-empty.txt', '', '', { turn: 2, existed: true })
+    writeFileSync(join(root, 'new-empty.txt'), '')
+    writeFileSync(join(root, 'existing-empty.txt'), '')
+    const empty = await readWorkspaceChanges(fixture.reader, root, authority, { path: 'new-empty.txt' })
+    expect(empty.selected).toMatchObject({
+      path: 'new-empty.txt',
+      kind: 'added',
+      added: 0,
+      removed: 0,
+      diffStatus: 'available',
+      freshness: 'current',
+      diff: '',
+    })
+    expect(empty.selected?.effects).toHaveLength(1)
+    expect(empty.files.map((file) => file.path)).not.toContain('existing-empty.txt')
+  },
+)
 
 it('does not attribute an intervening external edit, failed call, forged receipt or transformed result', async () => {
   const root = temp(),
