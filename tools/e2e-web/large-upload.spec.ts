@@ -40,6 +40,7 @@ for (const locale of ['en', 'zh-CN'])
   test(`large attachment progress, chunk retry and mid-upload cancel (${locale})`, async ({
     page,
     runtime,
+    expectedBrowserErrors,
   }, info) => {
     test.setTimeout(180_000)
     await preferences(page, locale)
@@ -61,6 +62,7 @@ for (const locale of ['en', 'zh-CN'])
       }
       if (!retried) {
         retried = true
+        expectedBrowserErrors.push('console: Failed to load resource: net::ERR_CONNECTION_RESET')
         await route.abort('connectionreset')
         return
       }
@@ -220,10 +222,11 @@ test('uploads 512 MiB with measured bounded browser and server memory', async ({
   const messages = (await readSessionEvents(session))
     .filter((row) => row.type === 'user/message')
     .slice(0, 10)
-  const ref = (messages.at(-1)?.data as { content?: { type: string; uri?: string }[] })?.content?.find(
-    (block) => block.uri,
-  )?.uri
-  expect(uploadedAttachment(ref ?? '')?.size).toBe(512 * MiB)
+  const attachments = messages
+    .flatMap((row) => (row.data as { content?: { type: string; uri?: string }[] }).content ?? [])
+    .filter((block) => block.uri?.startsWith('agnes-upload://'))
+  expect(attachments).toHaveLength(1)
+  expect(uploadedAttachment(attachments[0]?.uri ?? '')?.size).toBe(512 * MiB)
   expect(JSON.stringify(messages).length).toBeLessThan(4096)
   const baseline = samples[0]
   if (!baseline) throw new Error('Missing memory baseline')
