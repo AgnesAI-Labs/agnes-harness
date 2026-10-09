@@ -576,7 +576,14 @@ export function expectedFromGolden(golden: GoldenCommit[]): RecordedCommit[] {
   const out: RecordedCommit[] = []
   let cells = new Map<string, { seq: number; data: unknown }>()
   golden.forEach((commit, index) => {
-    const rows = (commit.events as Row[]).map((row) => move(row) as Row)
+    const rows = (commit.events as Row[]).map((row) => {
+      const current = move(row) as Row
+      // These frozen scenarios accept trusted text prompts. The current format records that
+      // input taint explicitly; retain the full equality check against false, rather than omit it.
+      if (current.type === 'turn/start' && (current.data as { trigger?: string }).trigger === 'prompt')
+        return { ...current, data: { ...(current.data as Record<string, unknown>), inputTainted: false } }
+      return current
+    })
     const head = heads[index] as { first: number; last: number; marked: boolean }
     // A delegated or forked child starts with no program counter of its own.
     if (rows.some((row) => row.type === 'session/start' && (row.data as { parent?: unknown }).parent))
