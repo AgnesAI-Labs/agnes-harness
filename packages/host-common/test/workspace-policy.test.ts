@@ -50,10 +50,14 @@ describe('Host workspace policy compiler', () => {
       source: 'host-integrity',
       hard: true,
     })
-    // `.agnes/secrets` is the secrets directory's name from before the `.agh` rename; both stay denied.
-    for (const path of ['/work/.agh/secrets', '/work/.agnes/secrets'])
-      expect(plan.policy.rules).toContainEqual({ effect: 'deny', path, source: 'host-integrity', hard: true })
-    expect(plan.policy.rules.filter((rule) => rule.source === 'host-integrity')).toHaveLength(3)
+    expect(plan.policy.rules).toContainEqual({
+      effect: 'deny',
+      path: '/work/.agh/secrets',
+      source: 'host-integrity',
+      hard: true,
+    })
+    expect(plan.policy.rules.some((rule) => rule.path === '/work/.agnes/secrets')).toBe(false)
+    expect(plan.policy.rules.filter((rule) => rule.source === 'host-integrity')).toHaveLength(2)
     expect(plan.backendOptions.allowPaths).toContain('/work/vendor')
     expect(plan.backendOptions.denyPaths).toContain('/work/secret')
     expect(Object.isFrozen(plan.policy)).toBe(true)

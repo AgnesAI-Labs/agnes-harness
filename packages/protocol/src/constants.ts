@@ -52,10 +52,9 @@ export function isEventType(s: string): boolean {
  */
 export const AGH_DIR = '.agh'
 /**
- * Workspace-relative directories every file tool and sandbox hard-denies. `.agnes/secrets` is where
- * this directory lived before the rename; it stays denied so a workspace still holding one is not exposed.
+ * AGH-owned workspace-relative directories every file tool and sandbox hard-denies.
  */
-export const WORKSPACE_SECRET_DIRS = ['.agh/secrets', '.agnes/secrets'] as const
+export const WORKSPACE_SECRET_DIRS = ['.agh/secrets'] as const
 
 export const META_KEY = 'ai.agnes.harness' as const
 export const AGNES_NS = '_agnes/v1' as const

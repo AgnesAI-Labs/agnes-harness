@@ -34,7 +34,7 @@ A call that is not approved says why, both in the session record and to the mode
 
 `approvals.mode` accepts `manual`, `smart`, and `off`. Web **Full permissions** (`完全权限`) and TUI `/yolo` skip remaining approvals in the current session and allow file tools to read and write outside the selected workspace. The workspace remains the default directory for relative paths. The read-only preset continues to refuse changes. Explicit security denials, protected secret paths, operating-system permissions, and command sandbox constraints still apply. Do not make skipped approvals a beginner example or automation default.
 
-Under Full permissions the Agnes home's own state — `secrets/`, `auth/` and `profiles/` — stays readable to the file tools but is not writable: `write`, `edit` and the other file-changing operations are refused with `denied by policy`, so a session cannot rewrite `profile.yaml` (for example to set `approvals.mode: off`) and carry that into later sessions. The same refusal applies when the selected workspace itself contains that state. Command access follows the selected preset independently: under `workspace-write`, shell writes remain inside the OS sandbox's allowed roots. Under the explicit `full-access` preset, shell has no OS confinement and can modify files accessible to the process, including the Agnes home.
+Under Full permissions the Agnes home's own state — `secrets/`, `auth/` and `profiles/` — stays readable to the file tools but is not writable: `write`, `edit` and the other file-changing operations are refused with `denied by policy`, so a session cannot rewrite `profile.yaml` (for example to set `approvals.mode: off`) and carry that into later sessions. The same refusal applies when the selected workspace itself contains that state. Command access follows the selected preset independently: under `workspace-write`, shell writes remain inside the OS sandbox's allowed roots. Under the explicit `full-access` preset, shell may write outside the workspace, but an installed memory provider retains the Host private-file isolation floor and refuses execution without a usable OS boundary; see [memory](memory.md). Full permissions never authorizes command access to the protected installation state.
 
 Web **Workspace edits** (`工作区内修改`) limits file access to the selected workspace; command execution still follows the approval policy. A path outside that workspace is refused with guidance to switch to Full permissions or select its directory as the workspace, without opening an additional approval request.
 
@@ -54,11 +54,11 @@ Choose a permission preset in the admin session-default selector, CLI `--preset 
 | --- | --- | --- |
 | `read-only` | Probed L1; no writable roots; command network denied | Read tools only; non-read effects are denied even under `/yolo` or `approvals.mode: off`; file writes are refused |
 | `workspace-write` (default) | Probed L1; workspace and explicitly allowed write roots; command network denied | Workspace edits use the existing approval rules; shell and other risky calls still ask |
-| `full-access` | Explicit L0; no OS command confinement | Ordinary tool approval policy allows calls; file tools can reach outside the workspace; principal denials and protected paths still apply |
+| `full-access` | Configured L0; an installed memory provider still requires private-file OS isolation | Ordinary tool approval policy allows calls; file tools can reach outside the workspace; principal denials and protected paths still apply |
 
 Even under `full-access`, `edit` and overwriting an existing file with `write` require that the file was observed in the same session, through a read or a successful creation. `write` also refuses a stale read when another writer has changed the file; read it again before overwriting. Creating a new file does not require a prior read.
 
-To run deliberately on a machine without L1, select `full-access` explicitly, for example `agh --preset full-access`. A profile can persist that choice:
+To allow files outside the workspace, select `full-access` explicitly, for example `agh --preset full-access`. Without a usable L1 backend, mediated file tools remain available but an installed memory provider refuses unconfined commands. A profile can persist that choice:
 
 ```yaml
 presets:
@@ -66,7 +66,7 @@ presets:
   allowed: [standard, read-only, workspace-write, full-access]
 ```
 
-A custom recipe can retain approvals while explicitly overriding `sandbox: { level: L0, required: false, on_unavailable: allow }`. This is unconfined command execution. Changing only `on_unavailable` does not override `required: true`. Web Full permissions and `/yolo` do not disable the selected preset's OS sandbox. L1 backends currently reject non-empty command-network host allowlists; `web_fetch` uses its separate public-network policy. A profile can select another sandbox provider at startup; see [Sandbox providers](sandbox-providers.md). The running process keeps that choice until it starts again.
+A custom recipe can retain approvals while explicitly overriding `sandbox: { level: L0, required: false, on_unavailable: allow }`. This permits unconfined commands only when no installed provider requires private-file isolation. Changing only `on_unavailable` does not override `required: true`. Web Full permissions and `/yolo` do not disable the selected preset's OS sandbox. L1 backends currently reject non-empty command-network host allowlists; `web_fetch` uses its separate public-network policy. A profile can select another sandbox provider at startup; see [Sandbox providers](sandbox-providers.md). The running process keeps that choice until it starts again.
 
 Local Web relies on loopback binding and exact Origin/Host checks, rather than internet user authentication. Do not expose it directly to the public internet. A manual `--connect` must identify the target explicitly. Windows named pipes also check process ownership against discovery records.
 
@@ -90,7 +90,7 @@ The configuration service stores provider keys in a credential backend. Public c
 
 `AGH_HOME` contains sessions, configuration, grants, audits, and caches. Reduced logging does not mean conversation text is free of sensitive information. Review user input, tool arguments, and paths before exporting, taking screenshots, or publishing errors. Do not commit `secrets/`, `auth/`, a complete home, real traces, or credential files. `publicConfig` reaches the browser and must never contain secrets or secret references.
 
-File tools and sandbox policies protect workspace `.agh/secrets` and legacy `.agnes/secrets`. Do not point AGH's home at another product's data directory. Legacy `AGNES_HOME` is a compatibility option with no automatic migration.
+File tools and sandbox policies protect workspace `.agh/secrets`. On Linux, Host prepares its `.agh` ancestor before compiling the command sandbox: it creates only this empty AGH-owned directory with normal permissions when missing, never follows symlinks, and refuses a symlink or non-directory with `E_SANDBOX_WORKSPACE` (`workspace-ancestor-not-directory`). The ancestor remains a real mount anchor so a command cannot rename it to expose secrets. `.agnes/secrets` belongs to another product and has no implicit AGH protection or migration. Do not point AGH's home at another product's data directory. Legacy `AGNES_HOME` is a compatibility option with no automatic migration.
 
 Check the target system before retrying an operation with unknown side effects. Recovering a backend database cannot recall an email, undo a network write, or reverse a physical device action.
 

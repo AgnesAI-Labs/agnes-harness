@@ -213,9 +213,7 @@ describe('openAdapters', () => {
       rmSync(ws, { recursive: true, force: true })
     }
   })
-  // `.agnes/secrets` is the store's name from before the `.agh` rename: a workspace still holding
-  // one must stay as unreadable as one that has moved.
-  it('denies the secret store, under its current and its legacy name, and the git directory from inside the workspace', async () => {
+  it('denies the AGH secret store and git directory, leaving other product names outside its floor', async () => {
     dir = mkdtempSync(join(tmpdir(), 'agnes-data-'))
     const p = await resolveProfile({ builtin: 'local-dev', lock }, env)
     const b = await openAdapters(p, { dataDir: dir, workspaceRoot: dir })
@@ -226,7 +224,7 @@ describe('openAdapters', () => {
     }
     await expect(b.fs.read('.git/config')).rejects.toThrow(/E_FS_DENIED/)
     await expect(b.fs.read('.agh/secrets/k')).rejects.toThrow(/E_FS_DENIED/)
-    await expect(b.fs.read('.agnes/secrets/k')).rejects.toThrow(/E_FS_DENIED/)
+    expect(new TextDecoder().decode(await b.fs.read('.agnes/secrets/k'))).toBe('v')
     await b.close()
   })
   it('still denies the git path when .git is a plain file, as in a worktree', async () => {

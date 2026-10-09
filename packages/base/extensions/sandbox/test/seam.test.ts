@@ -28,10 +28,10 @@ function workspace(overrides: Partial<SeamWorkspace> = {}) {
 const executionPolicy = (value: SeamWorkspace) => ({
   workspaceRoot: value.root,
   digest: value.policy.digest,
-  fsRead: { allow: ['/'], deny: ['/work/proj/.git', '/work/proj/.agh/secrets', '/work/proj/.agnes/secrets'] },
+  fsRead: { allow: ['/'], deny: ['/work/proj/.git', '/work/proj/.agh/secrets'] },
   fsWrite: {
     allow: ['/work/proj'],
-    deny: ['/work/proj/.git', '/work/proj/.agh/secrets', '/work/proj/.agnes/secrets'],
+    deny: ['/work/proj/.git', '/work/proj/.agh/secrets'],
   },
   network: { mode: 'deny', hosts: [] },
   requiredEnforcement: value.enforcement,

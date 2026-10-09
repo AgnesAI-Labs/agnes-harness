@@ -28,7 +28,7 @@ Web 审批卡先显示路径、命令等定位字段，超长的内容会注明�
 
 `approvals.mode` 接受 `manual`、`smart`、`off`。Web「完全权限」和 TUI `/yolo` 会跳过当前会话余下审批，并允许文件工具读写所选工作区之外的文件。工作区仍是相对路径的默认目录。只读预设仍拒绝修改。明确的安全禁令、受保护的密钥路径、操作系统权限和命令沙箱约束仍然生效。不建议把跳过审批写入新手示例或自动化默认配置。
 
-完全权限下，Agnes 主目录自身的状态——`secrets/`、`auth/`、`profiles/`——文件工具仍可读取，但不可写入：`write`、`edit` 等修改文件的操作会被拒绝并提示 `denied by policy`，因此会话无法改写 `profile.yaml`（例如写入 `approvals.mode: off`）并把改动带到之后的会话。所选工作区本身包含这些目录时同样拒绝。命令访问范围独立遵循所选预设：`workspace-write` 下，shell 写入仍受 OS 沙箱允许目录约束；显式选择 `full-access` 后，shell 没有 OS 隔离，可以修改进程有权访问的文件，包括 Agnes 主目录。
+完全权限下，Agnes 主目录自身的状态——`secrets/`、`auth/`、`profiles/`——文件工具仍可读取，但不可写入：`write`、`edit` 等修改文件的操作会被拒绝并提示 `denied by policy`，因此会话无法改写 `profile.yaml`（例如写入 `approvals.mode: off`）并把改动带到之后的会话。所选工作区本身包含这些目录时同样拒绝。命令访问范围独立遵循所选预设：`workspace-write` 下，shell 写入仍受 OS 沙箱允许目录约束；显式选择 `full-access` 后，shell 可写工作区外，但已安装的记忆 provider 仍保留 Host 私有文件隔离底线；没有可用 OS 边界就拒绝执行，见[记忆](memory.zh-CN.md)。完全权限不授权命令访问受保护的安装状态。
 
 Web「工作区内修改」将文件访问限制在所选工作区内，执行命令仍遵循审批策略。访问工作区外路径时会拒绝操作，并提示切换「完全权限」或将目标目录选为工作区，不额外弹出审批。
 
@@ -46,11 +46,11 @@ Web「工作区内修改」将文件访问限制在所选工作区内，执行�
 | --- | --- | --- |
 | `read-only` | 实测 L1；没有可写目录；禁止命令联网 | 仅披露读取工具；即使启用 `/yolo` 或关闭审批，也拒绝非读取效果及文件写入 |
 | `workspace-write`（默认） | 实测 L1；允许工作区和显式额外目录写入；禁止命令联网 | 工作区编辑沿用审批规则；shell 和其他风险调用仍需审批 |
-| `full-access` | 显式 L0；不做 OS 命令隔离 | 普通工具策略放行；文件工具可访问工作区外；主体授权拒绝及保护路径仍生效 |
+| `full-access` | 配置 L0；已安装的记忆 provider 仍要求私有文件 OS 隔离 | 普通工具策略放行；文件工具可访问工作区外；主体授权拒绝及保护路径仍生效 |
 
 即使使用 `full-access`，`edit` 和使用 `write` 覆盖已有文件也要求同一会话中已有该文件的观察记录，可来自读取或成功创建。其他写入者修改文件后，`write` 会拒绝过期的读取记录；必须重新读取再覆盖。创建新文件无需预先读取。
 
-明确接受无 L1 执行时，显式使用 `agh --preset full-access`，或保存：
+需要允许工作区外文件时，显式使用 `agh --preset full-access`。没有可用 L1 时，受控文件工具仍可用，但已安装的记忆 provider 会拒绝未隔离命令。可保存：
 
 ```yaml
 presets:
@@ -58,7 +58,7 @@ presets:
   allowed: [standard, read-only, workspace-write, full-access]
 ```
 
-若要保留审批，可在自定义配方明确覆盖 `sandbox: { level: L0, required: false, on_unavailable: allow }`；命令将不受 OS 隔离。仅修改 `on_unavailable` 不会覆盖 `required: true`。Web「完全权限」和 `/yolo` 不会取消所选预设的 OS 沙箱。当前 L1 后端拒绝非空命令网络主机白名单；`web_fetch` 使用独立的公网访问策略。Profile 可以在启动时选择另一个沙箱提供者，见[沙箱提供者](sandbox-providers.zh-CN.md)。当前进程会保持这个选择，直到再次启动。
+若要保留审批，可在自定义配方明确覆盖 `sandbox: { level: L0, required: false, on_unavailable: allow }`；只有没有已安装 provider 要求私有文件隔离时，才可执行未隔离命令。仅修改 `on_unavailable` 不会覆盖 `required: true`。Web「完全权限」和 `/yolo` 不会取消所选预设的 OS 沙箱。当前 L1 后端拒绝非空命令网络主机白名单；`web_fetch` 使用独立的公网访问策略。Profile 可以在启动时选择另一个沙箱提供者，见[沙箱提供者](sandbox-providers.zh-CN.md)。当前进程会保持这个选择，直到再次启动。
 
 本地 Web 的安全边界是回环监听及精确 Origin/Host 校验，不是互联网用户认证。不要直接把它暴露到公网。手动 `--connect` 必须明确指定目标；Windows 命名管道还核对所属进程与发现记录。
 
@@ -78,7 +78,7 @@ Provider 密钥经配置服务存入凭据后端；公开配置只保留 `secret
 
 `AGH_HOME` 包含会话、配置、授权、审计和缓存。日志经过限缩不代表会话正文没有敏感信息；导出、截图或公开错误时仍要检查用户输入、工具参数与路径。不要提交 `secrets/`、`auth/`、完整 home、真实 trace 或凭据文件。`publicConfig` 会到浏览器，绝不能装入密钥或 secret 引用。
 
-工作区 `.agh/secrets` 与旧 `.agnes/secrets` 均受文件工具/沙箱防护。不要把 AGH 的 home 指到其他产品的数据目录；旧 `AGNES_HOME` 是兼容项，没有自动迁移。
+文件工具与沙箱保护工作区 `.agh/secrets`。Linux 上 Host 在编译命令沙箱前准备祖先 `.agh`：缺失时只以普通权限创建这个 AGH 自有空目录，不跟随符号链接；若已是链接或非目录，以 `E_SANDBOX_WORKSPACE`（`workspace-ancestor-not-directory`）精确拒绝。祖先保留真实挂载锚点，命令不能通过重命名它暴露凭据。`.agnes/secrets` 属于其他产品，不再享有 AGH 隐式防护，也不自动迁移。不要把 AGH 的 home 指到其他产品的数据目录；旧 `AGNES_HOME` 是兼容项，没有自动迁移。
 
 恢复未知副作用前先核对目标系统，再决定重试。后台数据库恢复并不能撤销已发出的邮件、网络写入或物理设备动作。
 

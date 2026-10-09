@@ -183,7 +183,7 @@ describe('grep', () => {
         'tables/t.json': 'hit',
         'audit/log.jsonl': 'hit',
         'sessions.db': 'hit',
-        '.agnes/secrets/token': 'hit',
+        '.agh/secrets/token': 'hit',
         'ok.txt': 'hit',
       },
     })
@@ -209,7 +209,7 @@ describe('grep', () => {
     }
   })
 
-  it('keeps out of the workspace secrets directory under both .agh and the legacy .agnes name', async () => {
+  it('keeps out of AGH secrets while searching ordinary directories owned by other products', async () => {
     const ctx = ctxOf({
       files: { '.agh/secrets/token': 'hit', '.agnes/secrets/token': 'hit', '.agh/notes.txt': 'hit' },
     })
@@ -218,13 +218,13 @@ describe('grep', () => {
       textOf(r)
         .split('\n')
         .filter((l) => l.includes(':1:hit')),
-    ).toEqual(['.agh/notes.txt:1:hit'])
+    ).toEqual(['.agh/notes.txt:1:hit', '.agnes/secrets/token:1:hit'])
     const f = await findTool.execute({ pattern: '**' }, ctx)
     expect(
       textOf(f)
         .split('\n')
         .filter((l) => !l.startsWith('[')),
-    ).toEqual(['.agh/notes.txt'])
+    ).toEqual(['.agh/notes.txt', '.agnes/secrets/token'])
   })
 
   it('skips a file over the read ceiling and counts it, instead of pretending it held nothing', async () => {

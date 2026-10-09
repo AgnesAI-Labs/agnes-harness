@@ -255,7 +255,6 @@ describe('community stdio sandbox profiles', () => {
       const secretsDir = join(workspace, 'configured-secrets')
       const protectedFiles = [
         join(workspace, '.agh/secrets/fixture'),
-        join(workspace, '.agnes/secrets/fixture'),
         join(home, 'secrets/fixture'),
         join(home, 'auth/fixture'),
         join(home, 'daemon/web-credential.json'),
@@ -281,7 +280,6 @@ describe('community stdio sandbox profiles', () => {
         join(homeAlias, 'secrets/fixture'),
         join(homeAlias, 'memory/workspaces/synthetic/MEMORY.md'),
         join(workspaceAlias, '.agh/secrets/fixture'),
-        join(workspaceAlias, '.agnes/secrets/fixture'),
         join(workspaceAlias, 'installation/secrets/fixture'),
         join(workspaceAlias, 'installation/memory/user/MEMORY.md'),
       )

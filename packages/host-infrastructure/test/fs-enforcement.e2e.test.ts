@@ -47,7 +47,7 @@ type Impl = {
   /** The source file that owns the comparison, matched against what the scan below finds. */
   file: string
   deny: string[]
-  /** Whether this implementation also carries the host-integrity floor (.git, .agh/secrets, .agnes/secrets). */
+  /** Whether this implementation also carries the host-integrity floor (.git, .agh/secrets). */
   floor: boolean
   /**
    * Builds the file system with its denied contents in place, and says what its root is. An
@@ -71,9 +71,8 @@ type Impl = {
 
 /**
  * The workspace deny list the host installs, and the one it installs for its own data directory.
- * `.agnes/secrets` is the secrets directory's name from before the `.agh` rename; it stays denied.
  */
-const WORKSPACE_DENY = ['.git', '.agh/secrets', '.agnes/secrets']
+const WORKSPACE_DENY = ['.git', '.agh/secrets']
 const DATA_DENY = ['secrets', 'tables', 'audit', 'sessions.db']
 
 function seedReal(root: string, deny: string[]): void {

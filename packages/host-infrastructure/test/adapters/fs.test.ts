@@ -329,7 +329,7 @@ describe('fs adapter, deny paths and case', () => {
     root = mkdtempSync(join(tmpdir(), 'agnes-case-'))
     mkdirSync(join(root, '.git'))
     writeFileSync(join(root, '.git', 'config'), 'secret')
-    // `.agnes/secrets` is the store's name from before the `.agh` rename; the floor denies both.
+    // Explicit policies may deny additional paths beyond the AGH-owned floor.
     for (const name of ['.agh', '.agnes']) {
       mkdirSync(join(root, name, 'secrets'), { recursive: true })
       writeFileSync(join(root, name, 'secrets', 'key'), 'sekrit')

@@ -171,6 +171,7 @@ import { createConfigurationService } from '@agnes/host-infrastructure/configura
 import { RequestTraceStore } from '@agnes/host-infrastructure/request-traces'
 import { sandboxReadPaths } from '@agnes/host-infrastructure/sandbox-read-paths'
 import { SandboxReadinessManager } from '@agnes/host-infrastructure/sandbox-readiness-manager'
+import { prepareSandboxWorkspaceAncestor } from '@agnes/host-infrastructure/sandbox-workspace-ancestor'
 import {
   createSessionWorkspaceRuntime,
   type SessionWorkspaceRuntime,
@@ -823,6 +824,8 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         },
         compilePolicy: async (openedFence: WorkspaceRuntimeFence) => {
           const sessionFence = openedFence as SessionWorkspaceFence
+          if (!adapters.transport && adapters.platform.os === 'linux')
+            await prepareSandboxWorkspaceAncestor(sessionFence.root)
           const plan = await compileWorkspacePolicy({
             canonicalRoot: sessionFence.root,
             dataDir,

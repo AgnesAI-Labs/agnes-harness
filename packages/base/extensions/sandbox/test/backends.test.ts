@@ -65,6 +65,15 @@ describe('closed-network backend compilers', () => {
     expect(ancestor).toBeLessThan(partitioned.indexOf('--tmpfs'))
     expect(partitioned).toEqual(expect.arrayContaining(['--tmpfs', '/work/proj/.agh/secrets']))
     expect(partitioned.slice(partitioned.lastIndexOf('--remount-ro'), -4)).toEqual(['--remount-ro', '/'])
+    const nested = bwrapConfine(['true'], {
+      ...options,
+      fullAccess: true,
+      allowPaths: ['/'],
+      denyPaths: ['/installation/profiles/local-dev', '/installation/profiles'],
+    })
+    expect(nested.filter((part) => part === '--tmpfs')).toHaveLength(1)
+    expect(nested).toEqual(expect.arrayContaining(['--tmpfs', '/installation/profiles', '--remount-ro']))
+    expect(nested).not.toContain('/installation/profiles/local-dev')
   })
 
   it('rejects lexical aliases, controls, NUL argv and unsafe writable kernel trees', () => {

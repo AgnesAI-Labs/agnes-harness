@@ -9,9 +9,19 @@ import { validateArgv, validateClosedNetworkOptions } from './shared.js'
 export function bwrapConfine(argv: readonly string[], options: ClosedNetworkConfineOptions): string[] {
   const command = validateArgv(argv)
   const policy = validateClosedNetworkOptions(options)
+  const visibleDenies = policy.denyPaths.filter((path) =>
+    [...(policy.readPaths ?? ['/']), ...policy.allowPaths].some(
+      (root) => root === '/' || path === root || path.startsWith(`${root}/`),
+    ),
+  )
+  // A parent mask already hides every descendant. Mounting a child after remount-ro would
+  // attempt to create its mountpoint inside that empty read-only mask and fail with EROFS.
+  const denyRoots = visibleDenies.filter(
+    (path) => !visibleDenies.some((parent) => parent !== path && path.startsWith(`${parent}/`)),
+  )
   const writableAncestors = [
     ...new Set(
-      policy.denyPaths.flatMap((path) => {
+      denyRoots.flatMap((path) => {
         const parts = path.split('/')
         return parts.slice(1).map((_, index) => parts.slice(0, index + 1).join('/') || '/')
       }),
@@ -40,13 +50,7 @@ export function bwrapConfine(argv: readonly string[], options: ClosedNetworkConf
     // masked leaf, so a child cannot relocate Host's private installation directories.
     ...writableAncestors.flatMap((path) => ['--bind', path, path]),
     // These mounts occur after writable binds, so a deny below an allow remains masked.
-    ...policy.denyPaths
-      .filter((path) =>
-        [...(policy.readPaths ?? ['/']), ...policy.allowPaths].some(
-          (root) => root === '/' || path === root || path.startsWith(`${root}/`),
-        ),
-      )
-      .flatMap((path) => ['--tmpfs', path, '--remount-ro', path]),
+    ...denyRoots.flatMap((path) => ['--tmpfs', path, '--remount-ro', path]),
     ...(policy.readPaths ? ['--dir', policy.cwd, '--remount-ro', '/'] : []),
     '--chdir',
     policy.cwd,

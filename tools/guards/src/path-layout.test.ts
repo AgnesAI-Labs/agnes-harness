@@ -259,11 +259,7 @@ describe('the Agnes home directory layout is reconstructed in exactly one place'
     // The same "exactly one place" pin as the paths.ts check above: excluding the owner from the scan
     // must not let the owner itself grow a second spelling unnoticed.
     const text = readFileSync(`${NAMESPACE_MODULE_ABS}.ts`, 'utf8')
-    expect([...text.matchAll(HARNESS_DIR_LITERAL_RE)].map((m) => m[0])).toEqual([
-      "'.agh'",
-      "'.agh/secrets'",
-      "'.agnes/secrets'",
-    ])
+    expect([...text.matchAll(HARNESS_DIR_LITERAL_RE)].map((m) => m[0])).toEqual(["'.agh'", "'.agh/secrets'"])
   })
 
   it('every HARNESS_DIR_LITERAL_EXEMPTIONS entry is still consumed by real source', () => {

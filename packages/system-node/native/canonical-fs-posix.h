@@ -119,7 +119,15 @@ static int canonical_list(canonical_job* job) {
 static void canonical_execute(napi_env env, void* value) {
   (void)env; canonical_job* job = value;
   if (!strcmp(job->operation, "mkdir")) {
-    if (canonical_mkdir(job->path, (mode_t)job->mode) != 0) job->error = errno;
+    if (job->recursive) {
+      if (canonical_mkdir(job->path, (mode_t)job->mode) != 0) job->error = errno;
+    } else {
+      char leaf[NAME_MAX + 1];
+      int parent = canonical_parent(job->path, leaf, sizeof(leaf));
+      if (parent < 0) { job->error = errno; return; }
+      if (mkdirat(parent, leaf, (mode_t)job->mode) != 0) job->error = errno;
+      close(parent);
+    }
     return;
   }
   if (!strcmp(job->operation, "list")) {

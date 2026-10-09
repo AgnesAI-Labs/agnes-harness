@@ -697,25 +697,20 @@ describe('the binding is held to the seam on every reading of the policy', () =>
     }
   })
 
-  // Both names of the workspace secrets directory are floor: `.agh/secrets` is the current one and
-  // `.agnes/secrets` the one from before the rename. A policy that drops either is refused.
-  it.each(['.agh', '.agnes'])(
-    'refuses to bind a policy missing only the %s/secrets hard deny',
-    async (name) => {
-      const dataDir = scratch('agnes-l0-data-')
-      const workspace = scratch('agnes-l0-ws-')
-      const bundle = await openAdapters(await resolveProfileForBind(), { dataDir, workspaceRoot: workspace })
-      try {
-        const valid = bundle.fs.fence()
-        const target = new RegExp(`[\\\\/]${name.replace('.', '\\.')}[\\\\/]secrets$`)
-        const withoutIt = { ...valid, rules: valid.rules.filter((rule) => !target.test(rule.path)) }
-        expect(withoutIt.rules).toHaveLength(valid.rules.length - 1)
-        expect(() => bundle.bindFsPolicy(withoutIt)).toThrow(/host-integrity floor/)
-      } finally {
-        await bundle.close()
-      }
-    },
-  )
+  it.each(['.agh'])('refuses to bind a policy missing only the %s/secrets hard deny', async (name) => {
+    const dataDir = scratch('agnes-l0-data-')
+    const workspace = scratch('agnes-l0-ws-')
+    const bundle = await openAdapters(await resolveProfileForBind(), { dataDir, workspaceRoot: workspace })
+    try {
+      const valid = bundle.fs.fence()
+      const target = new RegExp(`[\\\\/]${name.replace('.', '\\.')}[\\\\/]secrets$`)
+      const withoutIt = { ...valid, rules: valid.rules.filter((rule) => !target.test(rule.path)) }
+      expect(withoutIt.rules).toHaveLength(valid.rules.length - 1)
+      expect(() => bundle.bindFsPolicy(withoutIt)).toThrow(/host-integrity floor/)
+    } finally {
+      await bundle.close()
+    }
+  })
 
   it('an unbound adapter denies process creation and reads nothing outside the bootstrap floor', async () => {
     const dataDir = scratch('agnes-l0-data-')

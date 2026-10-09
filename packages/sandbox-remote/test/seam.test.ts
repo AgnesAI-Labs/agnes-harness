@@ -159,14 +159,13 @@ describe('the compiled remote file policy', () => {
   it('carries the host-integrity floor as hard denies - without it bindFsPolicy poisons the fence', async () => {
     const p = await policyFor({})
     expect(find(p, '/w/.git')).toMatchObject({ effect: 'deny', hard: true, source: 'host-integrity' })
-    expect(p.rules.filter((r) => r.source === 'host-integrity')).toHaveLength(3)
+    expect(p.rules.filter((r) => r.source === 'host-integrity')).toHaveLength(2)
   })
 
-  // `.agnes/secrets` is where the directory lived before the `.agh` rename; a workspace that still
-  // holds one must stay as unreadable as one that has moved.
-  it('hard-denies the workspace secrets directory under both its current and its legacy name', async () => {
+  it('hard-denies only the AGH workspace secrets directory', async () => {
     const p = await policyFor({})
-    for (const path of ['/w/.agh/secrets', '/w/.agnes/secrets'])
+    expect(find(p, '/w/.agnes/secrets')).toBeUndefined()
+    for (const path of ['/w/.agh/secrets'])
       expect(find(p, path), path).toMatchObject({ effect: 'deny', hard: true, source: 'host-integrity' })
   })
 

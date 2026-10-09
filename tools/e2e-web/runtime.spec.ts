@@ -1,10 +1,45 @@
 import { randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, symlink, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { AGH_DIR } from '@agnes/protocol'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { expect, test } from './fixtures.js'
 import { command, complete, install, prompt, toolResult } from './sdk.js'
 import { preferences } from './ui.js'
+
+test('Linux L1 admits a fresh workspace, hides secrets and anchors .agh against rename', async ({
+  runtime,
+}) => {
+  test.skip(process.platform !== 'linux', 'Real bubblewrap namespace regression') // guards-allow-platform: actual Linux kernel boundary.
+  const client = await runtime.connect()
+  const cwd = join(runtime.workspace, 'fresh-l1')
+  await mkdir(cwd)
+  await expect(lstat(join(cwd, AGH_DIR))).rejects.toMatchObject({ code: 'ENOENT' })
+  await client.workspace.add(cwd)
+  const session = await client.session.new({ sessionKey: randomUUID(), cwd, preset: 'standard' })
+  expect((await lstat(join(cwd, AGH_DIR))).isDirectory()).toBe(true)
+  await mkdir(join(cwd, AGH_DIR, 'secrets'), { recursive: true })
+  await writeFile(join(cwd, AGH_DIR, 'secrets', 'key'), 'SYNTHETIC_ANCESTOR_SECRET')
+  await session.attach()
+  session.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
+  const shell =
+    'if cat .agh/secrets/key; then exit 1; fi; if mv .agh moved; then exit 1; fi; printf ANCESTOR_HIDDEN'
+  await prompt(session, `call shell ${JSON.stringify({ command: shell })}`)
+  const result = JSON.stringify((await toolResult(session, 'shell'))?.content)
+  expect(result).toContain('ANCESTOR_HIDDEN')
+  expect(result).not.toContain('SYNTHETIC_ANCESTOR_SECRET')
+  expect(await readFile(join(cwd, AGH_DIR, 'secrets', 'key'), 'utf8')).toBe('SYNTHETIC_ANCESTOR_SECRET')
+  await expect(lstat(join(cwd, 'moved'))).rejects.toMatchObject({ code: 'ENOENT' })
+  const unsafe = join(runtime.workspace, 'unsafe-l1')
+  await mkdir(unsafe)
+  await symlink(join(cwd, AGH_DIR), join(unsafe, AGH_DIR))
+  await client.workspace.add(unsafe)
+  await expect(
+    client.session.new({ sessionKey: randomUUID(), cwd: unsafe, preset: 'standard' }),
+  ).rejects.toMatchObject({
+    data: { code: 'E_SANDBOX_WORKSPACE', reason: 'workspace-ancestor-not-directory' },
+  })
+})
 
 test('fresh first run, keyless demo, SDK account save and credential persistence', async ({
   runtime,

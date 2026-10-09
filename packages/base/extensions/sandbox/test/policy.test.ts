@@ -20,11 +20,7 @@ function policy() {
     dataTmp: p('/home/u/.agh/tmp'),
     homeSsh: p('/home/u/.ssh'),
     dataSecrets: p('/home/u/.agh/secrets'),
-    hostIntegrityDeny: [
-      p('/work/project/.git'),
-      p('/work/project/.agh/secrets'),
-      p('/work/project/.agnes/secrets'),
-    ],
+    hostIntegrityDeny: [p('/work/project/.git'), p('/work/project/.agh/secrets')],
     extraAllow: [
       p('/opt/data'),
       p('/vault/denied/reopened'),
@@ -347,7 +343,7 @@ describe('readSandboxConfig fails closed', () => {
 })
 
 describe('resolvePolicy compiles the full L0 rule set through the injected canonicalizer', () => {
-  it('emits the seven rule kinds with the three host-integrity paths under the workspace', async () => {
+  it('emits the seven rule kinds with the AGH host-integrity paths under the workspace', async () => {
     const { policy, fsPolicy } = await resolvePolicy(resolveInput())
     const bySource = new Map(policy.rules.map((r) => [r.source, r]))
     expect(bySource.get('workspace')).toMatchObject({ effect: 'allow', path: { value: '/work/project' } })
@@ -369,7 +365,6 @@ describe('resolvePolicy compiles the full L0 rule set through the injected canon
     const integrity = policy.rules.filter((r) => r.source === 'host-integrity')
     expect(integrity.map((r) => r.path.value).sort()).toEqual([
       '/work/project/.agh/secrets',
-      '/work/project/.agnes/secrets',
       '/work/project/.git',
     ])
     expect(integrity.every((r) => r.hard && r.effect === 'deny')).toBe(true)
@@ -381,9 +376,10 @@ describe('resolvePolicy compiles the full L0 rule set through the injected canon
     expect(fsPolicy.networkAllow).toEqual([])
   })
 
-  it('hard-denies the workspace secrets directory under both .agh and the legacy .agnes name', async () => {
+  it('hard-denies AGH workspace secrets without reserving other product names', async () => {
     const { policy } = await resolvePolicy(resolveInput())
-    for (const dir of ['.agh', '.agnes']) {
+    expect(decidePath(policy, p('/work/project/.agnes/secrets/token')).effect).toBe('allow')
+    for (const dir of ['.agh']) {
       expect(decidePath(policy, p(`/work/project/${dir}/secrets/token`))).toMatchObject({
         effect: 'deny',
         reason: 'hard-deny',

@@ -376,10 +376,16 @@ export function throwSessionOpenRpcError(error: unknown): never {
       reason: cause ? reason : 'session-initialization-failed',
     })
   }
-  if (e?.code === 'E_SANDBOX_WORKSPACE')
+  if (e?.code === 'E_SANDBOX_WORKSPACE') {
+    const reason = e.reason ?? e.detail?.reason
     throw rpcError('SEMANTIC_REJECTED', {
       code: 'E_SANDBOX_WORKSPACE',
+      ...(typeof reason === 'string' &&
+      ['workspace-ancestor-not-directory', 'workspace-ancestor-unavailable'].includes(reason)
+        ? { reason, cause: { code: 'E_SANDBOX_WORKSPACE' } }
+        : {}),
     })
+  }
   if (e?.code === 'E_LOOP_MISSING')
     throw rpcError('SEMANTIC_REJECTED', {
       code: 'LOOP_MISSING',

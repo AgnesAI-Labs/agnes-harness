@@ -86,6 +86,16 @@ describe('throwSessionOpenRpcError', () => {
       cause: { code: 'E_SANDBOX_WORKSPACE' },
       messageKey: 'appServer.errors.unavailable',
     })
+    for (const reason of ['workspace-ancestor-not-directory', 'workspace-ancestor-unavailable'])
+      for (const error of [
+        { code: 'E_SANDBOX_WORKSPACE', reason },
+        { code: 'E_SANDBOX_WORKSPACE', detail: { reason, path: 'private-path' } },
+      ])
+        expect(caught(error)).toEqual({
+          code: -32011,
+          message: 'SEMANTIC_REJECTED',
+          data: { code: 'E_SANDBOX_WORKSPACE', reason, cause: { code: 'E_SANDBOX_WORKSPACE' } },
+        })
     expect(caught(new WorkspaceDirectoryError('not-found'))).toMatchObject({
       code: -32011,
       data: { code: 'WORKSPACE_INVALID', reason: 'not-found' },

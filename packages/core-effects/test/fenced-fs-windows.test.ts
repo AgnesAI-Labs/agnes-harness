@@ -25,11 +25,13 @@ describe('test filesystem Windows paths on every test platform', () => {
     for (const path of ['src\\file.txt', `${root}\\src\\file.txt`]) {
       expect(new TextDecoder().decode(await fs.read(path))).toBe(expected)
     }
+    expect(new TextDecoder().decode(await fs.read('src\\..\\.agnes\\secrets\\key'))).toBe(
+      `${policy.workspaceRoot}/.agnes/secrets/key`,
+    )
     for (const path of [
       '..\\outside',
       '.git\\config',
       'src\\..\\.agh\\secrets\\key',
-      'src\\..\\.agnes\\secrets\\key',
       'D:\\other\\file',
       '\\\\server\\other\\file',
       'C:relative',

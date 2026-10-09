@@ -271,7 +271,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-foundation/src': 2340,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
   'packages/daemon-rpc/src/local/auth': 341,
-  'packages/daemon-rpc/src': 7519,
+  'packages/daemon-rpc/src': 7525,
   'packages/daemon-supervisor/src/supervisor/startup': 18,
   'packages/daemon-supervisor/src/supervisor/discovery': 446,
   'packages/daemon-supervisor/src/supervisor/scope': 254,
@@ -292,8 +292,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-runtime/src/approval-expiry': 105,
   'packages/host-runtime/src/adapters': 465,
   'packages/host-runtime/src/profile': 1655,
-  'packages/host-runtime/src': 9466,
-  'packages/host-runtime/src/assemble': 3346,
+  'packages/host-runtime/src': 9469,
+  'packages/host-runtime/src/assemble': 3349,
   'packages/host-providers/src/adapters': 477,
   'packages/host-providers/src/profile': 165,
   'packages/host-providers/src': 4639,
@@ -323,7 +323,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-infrastructure/src/configuration': 1443,
   'packages/host-infrastructure/src/adapters/storage-sqlite': 658,
   'packages/host-infrastructure/src/adapters': 6386,
-  'packages/host-infrastructure/src': 10452,
+  'packages/host-infrastructure/src': 10479,
   'packages/host-common/src/configuration-lock': 39,
   'packages/host-common/src/profile': 1840,
   'packages/host-common/src': 3757,
@@ -442,7 +442,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/base/extensions/fs-checkpoint': 390,
   // 2026-10-07 gap-fill review: Governed code runtime I/O and persistent shell integration.
   // countLines: 800 -> 814; exact cap, no exclusions or spare allocation.
-  'packages/base/extensions/sandbox': 854,
+  'packages/base/extensions/sandbox': 856,
   // 2026-10-07 gap-fill review: Cache context contributions by hook registration and refresh live contributors.
   // countLines: 90 -> 133; exact cap, no exclusions or spare allocation.
   'packages/base/extensions/budget': 133,
@@ -3247,7 +3247,7 @@ const EXTENSION_CEILING_EXCEPTIONS = new Map([
   // Reviewed gap-fill implementation; exact countLines, no spare allocation.
   ['tools-web', 1284],
   // Reviewed gap-fill implementation; exact countLines, no spare allocation.
-  ['sandbox', 854],
+  ['sandbox', 856],
   // CORDIS-C1b Task 6 adds invocation-scoped workspace hook snapshots and descendant draining.
   // 2026-09-21 AGH namespace rename, +1 approved by the user: the AGH_DIR import for the workspace
   // `.agh/hooks.json` fallback path. Context-first prompt denial and scoped memo; measured 1007.

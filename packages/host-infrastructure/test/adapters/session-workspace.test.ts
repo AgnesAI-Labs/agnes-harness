@@ -30,7 +30,7 @@ function policy(root: string, digest: string): FsPolicy {
         source: 'host-integrity' as const,
         hard: true,
       }),
-      ...['.agh', '.agnes'].map((name) =>
+      ...['.agh'].map((name) =>
         Object.freeze({
           effect: 'deny' as const,
           path: join(root, name, 'secrets'),
@@ -45,7 +45,7 @@ function policy(root: string, digest: string): FsPolicy {
 }
 
 describe('session workspace adapters', () => {
-  it('holds both workspace secrets directories in its floor, before and at bind', async () => {
+  it('holds the AGH workspace secrets directory in its floor, before and at bind', async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), 'agnes-ws-floor-')))
     roots.push(root)
     const factory = createSessionWorkspaceAdapterFactory({
@@ -55,9 +55,9 @@ describe('session workspace adapters', () => {
     const handle = await factory.openWorkspace(new CliWorkspaceAuthority(root).bind('floor'))
     const fence = await factory.openFence(handle)
     // The bootstrap fence is built from the floor alone.
-    for (const dir of ['.agh', '.agnes'])
+    for (const dir of ['.agh'])
       await expect(fence.fs.read(`${dir}/secrets/key`)).rejects.toThrow(/E_FS_DENIED/)
-    for (const dir of ['.agh', '.agnes']) {
+    for (const dir of ['.agh']) {
       const full = policy(root, 'c'.repeat(64))
       const missing = Object.freeze({
         ...full,

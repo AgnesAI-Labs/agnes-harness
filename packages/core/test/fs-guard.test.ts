@@ -159,17 +159,7 @@ describe('what the probe asks', () => {
     // Apart from the deny entries themselves, every probe names a file that cannot exist, so a
     // conforming file system answers from the policy rather than from a disk.
     expect(probes.filter((p) => !p.includes('agnes-fs-enforcement-probe')).sort()).toEqual(
-      [
-        '.agh/secrets',
-        '.agnes/secrets',
-        '.git',
-        '/data',
-        '/w/.agh/secrets',
-        '/w/.agnes/secrets',
-        '/w/.git',
-        '/w/secrets',
-        'secrets',
-      ].sort(),
+      ['.agh/secrets', '.git', '/data', '/w/.agh/secrets', '/w/.git', '/w/secrets', 'secrets'].sort(),
     )
   })
 

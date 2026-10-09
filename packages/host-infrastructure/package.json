@@ -48,7 +48,8 @@
     "./doctor": "./src/doctor.ts",
     "./system-prompt-settings": "./src/system-prompt-settings.ts",
     "./request-traces": "./src/request-traces.ts",
-    "./sandbox-read-paths": "./src/sandbox-read-paths.ts"
+    "./sandbox-read-paths": "./src/sandbox-read-paths.ts",
+    "./sandbox-workspace-ancestor": "./src/sandbox-workspace-ancestor.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",
