@@ -25,7 +25,6 @@
     "testkit/op-mark-checks.ts",
     "testkit/loops.ts",
     "testkit/op-check-cases.ts",
-    "testkit/encode-ledger-state.ts",
     "testkit/record-transitions.ts",
     "testkit/op-check-sweep.ts",
     "testkit/fenced-fs.ts",

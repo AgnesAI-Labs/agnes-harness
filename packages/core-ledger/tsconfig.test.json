@@ -4,16 +4,15 @@
     "outDir": "dist/test",
     "tsBuildInfoFile": "dist/tsconfig.test.tsbuildinfo"
   },
-  "include": ["test/**/*.ts"],
+  "include": [
+    "test/**/*.ts"
+  ],
   "references": [
     {
       "path": "."
     },
     {
-      "path": "../core/tsconfig.test.json"
-    },
-    {
-      "path": "../core/tsconfig.testkit.json"
+      "path": "tsconfig.testkit.json"
     }
   ]
 }

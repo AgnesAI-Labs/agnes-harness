@@ -33,8 +33,5 @@
     "@agnes/extension-api": "workspace:*",
     "@agnes/protocol": "workspace:*"
   },
-  "license": "Apache-2.0",
-  "devDependencies": {
-    "@agnes/core": "workspace:*"
-  }
+  "license": "Apache-2.0"
 }

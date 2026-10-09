@@ -8,7 +8,7 @@ import { foldEvents, initialState, reduce } from '@agnes/core-ledger/reduce/redu
 import type { LedgerState } from '@agnes/core-ledger/reduce/state'
 import { StateTracker } from '@agnes/core-ledger/reduce/tracker'
 import { describe, expect, it } from 'vitest'
-import { encodeLedgerState } from '../testkit/encode-ledger-state.js'
+import { encodeLedgerState } from '@agnes/core-ledger/testkit/encode-ledger-state'
 import { TRANSITION_SCENARIOS } from '../testkit/record-transitions.js'
 import { goldenLedger, toolHeavyLedger } from '../testkit/tool-heavy-ledger.js'
 

@@ -31,7 +31,8 @@
     "./reduce/state": "./src/reduce/state.ts",
     "./reduce/tracker": "./src/reduce/tracker.ts",
     "./registry/owner-batch": "./src/registry/owner-batch.ts",
-    "./project/fact-chain": "./src/project/fact-chain.ts"
+    "./project/fact-chain": "./src/project/fact-chain.ts",
+    "./testkit/encode-ledger-state": "./testkit/encode-ledger-state.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",
@@ -43,8 +44,5 @@
     "@agnes/extension-api": "workspace:*",
     "@agnes/protocol": "workspace:*"
   },
-  "license": "Apache-2.0",
-  "devDependencies": {
-    "@agnes/core": "workspace:*"
-  }
+  "license": "Apache-2.0"
 }

@@ -437,10 +437,6 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
-    devDependencies:
-      '@agnes/core':
-        specifier: workspace:*
-        version: link:../core
 
   packages/core-ledger:
     dependencies:
@@ -456,10 +452,6 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
-    devDependencies:
-      '@agnes/core':
-        specifier: workspace:*
-        version: link:../core
 
   packages/cosmokit: {}
 
@@ -749,9 +741,6 @@ importers:
         specifier: workspace:*
         version: link:../protocol
     devDependencies:
-      '@agnes/core':
-        specifier: workspace:*
-        version: link:../core
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33

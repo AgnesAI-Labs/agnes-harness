@@ -23,8 +23,7 @@
     "@sinclair/typebox": ">=0.34"
   },
   "devDependencies": {
-    "@sinclair/typebox": "0.34.33",
-    "@agnes/core": "workspace:*"
+    "@sinclair/typebox": "0.34.33"
   },
   "license": "Apache-2.0"
 }

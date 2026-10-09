@@ -9,7 +9,6 @@
     "test/helpers/fake-seams.ts",
     "test/helpers/op-history.ts",
     "test/helpers/open-session.ts",
-    "testkit/encode-ledger-state.ts",
     "testkit/fenced-fs.ts",
     "testkit/gen-crash.ts",
     "testkit/gen-long-session.ts",
@@ -22,13 +21,19 @@
     "testkit/record-transitions.ts",
     "testkit/tool-heavy-ledger.ts"
   ],
-  "exclude": ["dist", "node_modules"],
+  "exclude": [
+    "dist",
+    "node_modules"
+  ],
   "references": [
     {
       "path": "."
     },
     {
       "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../core-ledger/tsconfig.testkit.json"
     }
   ]
 }

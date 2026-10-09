@@ -68,3 +68,5 @@ export * from './workspace-hooks.js'
 export * from './feedback.js'
 
 export * from './plugin-config.js'
+
+export type { RemoteTransport } from './remote-transport.js'

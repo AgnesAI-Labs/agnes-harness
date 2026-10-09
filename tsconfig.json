@@ -294,6 +294,9 @@
     },
     {
       "path": "packages/memory-file/tsconfig.test.json"
+    },
+    {
+      "path": "packages/core-ledger/tsconfig.testkit.json"
     }
   ]
 }

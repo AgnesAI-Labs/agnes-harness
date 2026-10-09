@@ -1,4 +1,6 @@
-import { CoreError, SCAN_PAGE_MAX, type ScanQuery, scanAll, scanPages } from '@agnes/core'
+import { CoreError } from '@agnes/core-common/types'
+import { scanAll, scanPages } from '../src/log/scan-pages.js'
+import { SCAN_PAGE_MAX, type ScanQuery } from '../src/log/storage.js'
 import { describe, expect, it } from 'vitest'
 
 type Row = { seq: number; type: string; lane: string }

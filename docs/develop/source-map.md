@@ -65,3 +65,5 @@ Large frontend entries retain their original exports while delegating to domain 
 | Web styles | [ordered manifest](../../packages/web/public/style.css), [domain fragments](../../packages/web/public/styles), [source composer](../../tools/web-style-source.mjs) |
 
 CSS fragments remain in their original cascade order, including later overrides for the same domain. Both build paths compose them into the existing `/style.css` asset before appending conversation styles. Source-style tests and theme-token generation read the same composed source; development watches every fragment.
+
+`RemoteTransport` is a pure author contract in [extension-api](../../packages/extension-api/src/remote-transport.ts); Core re-exports the same type. Ledger test helpers live in [core-ledger/testkit](../../packages/core-ledger/testkit).

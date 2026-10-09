@@ -7,7 +7,7 @@ import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { CommitTx, StorageAdapter } from '@agnes/core-ledger/log/storage'
 import { fakeProvider, textTurn } from '../test/helpers/fake-provider.js'
 import { actor, openSession } from '../test/helpers/open-session.js'
-import { encodeLedgerState } from './encode-ledger-state.js'
+import { encodeLedgerState } from '@agnes/core-ledger/testkit/encode-ledger-state'
 
 type Make = () => StorageAdapter
 

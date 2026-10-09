@@ -1,7 +1,7 @@
 import { canonicalJson } from '@agnes/core-common/request/hash'
 import type { Event } from '@agnes/core-common/types'
 import { describe, expect, it } from 'vitest'
-import { encodeLedgerState } from '../../core/testkit/encode-ledger-state.js'
+import { encodeLedgerState } from '@agnes/core-ledger/testkit/encode-ledger-state'
 import { checkRelations } from '../src/log/relations.js'
 import { contextAnchorOf } from '../src/reduce/anchor.js'
 import { ChunkedMap } from '../src/reduce/chunked-map.js'

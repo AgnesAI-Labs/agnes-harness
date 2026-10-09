@@ -1,4 +1,5 @@
-import { CoreError, type EventInput, type StorageAdapter } from '@agnes/core'
+import { CoreError, type EventInput } from '@agnes/core-common/types'
+import type { StorageAdapter } from '../src/log/storage.js'
 import { defaultIds } from '@agnes/core-common/ids'
 import { describe, expect, it } from 'vitest'
 import { MemoryStorage } from '../src/log/memory-storage.js'

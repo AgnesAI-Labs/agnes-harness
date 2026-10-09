@@ -18,6 +18,7 @@ const input = {
 describe('author API consistency', () => {
   it('pins root and optional runtime exports without confusing them with type exports', () => {
     expect(Object.keys(api).sort()).toEqual(surface.runtimeExports)
+    expect(Object.keys(api)).not.toContain('RemoteTransport')
     expect(surface.apiVersion).toBe(api.API_VERSION)
     expect(Object.keys(testkit).sort()).toEqual([
       'NEGATIVE_ACTIONS',
