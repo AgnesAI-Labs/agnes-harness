@@ -100,11 +100,14 @@ type Deferred<T> = {
 
 type SessionDouble = {
   id: string
+  controls: ReturnType<typeof vi.fn>
+  control: ReturnType<typeof vi.fn>
+  editQueued: ReturnType<typeof vi.fn>
   cancel: ReturnType<typeof vi.fn>
   detach: ReturnType<typeof vi.fn>
   events: ReturnType<typeof vi.fn>
-  followUp: ReturnType<typeof vi.fn>
-  sendNow: ReturnType<typeof vi.fn>
+  steer: ReturnType<typeof vi.fn>
+  interrupt: ReturnType<typeof vi.fn>
   removeQueued: ReturnType<typeof vi.fn>
   onPermissionRequest: ReturnType<typeof vi.fn>
   onPreview: ReturnType<typeof vi.fn>
@@ -200,6 +203,19 @@ function session(id: string, projectUI: () => Promise<UITimeline>): SessionDoubl
       throw new Error('no history in this double')
     }),
     id,
+    controls: vi.fn(async () => ({
+      controls: { steer: true, interrupt: true, pause: true, cancel: true },
+      paused: false,
+      facts: [],
+      pending: ((await projectUI()).pendingInputs ?? []).map((item) => ({
+        itemId: item.itemId,
+        target: 'next-step',
+        kind: 'steer',
+        content: [{ type: 'text', text: item.preview }],
+      })),
+    })),
+    control: vi.fn(async () => 1),
+    editQueued: vi.fn(async () => 1),
     cancel: vi.fn(async () => undefined),
     detach: vi.fn(async () => undefined),
     events: vi.fn(() => ({
@@ -208,8 +224,8 @@ function session(id: string, projectUI: () => Promise<UITimeline>): SessionDoubl
         return: async () => ({ done: true, value: undefined }),
       }),
     })),
-    followUp: vi.fn(async () => undefined),
-    sendNow: vi.fn(async () => 1),
+    steer: vi.fn(async () => undefined),
+    interrupt: vi.fn(async () => 1),
     removeQueued: vi.fn(async () => 1),
     onPermissionRequest: vi.fn(() => vi.fn()),
     onPreview: vi.fn(() => vi.fn()),
@@ -1862,24 +1878,24 @@ describe('web session selection', () => {
     const hint = document.getElementById('composer-hint') as HTMLParagraphElement
 
     await vi.waitFor(() => expect(send.dataset.mode).toBe('busy'))
-    expect(send.getAttribute('aria-label')).toBe('加入下一轮')
-    expect(send.title).toBe('加入下一轮（Enter）')
+    expect(send.getAttribute('aria-label')).toBe('排队指引')
+    expect(send.title).toBe('排队指引（Enter）')
     expect(hint.dataset.kind).toBe('state')
-    expect(hint.textContent).toBe('可补充下一轮')
+    expect(hint.textContent).toBe('指引将在当前模型调用或工具批次结束后送达。')
     expect(cancel.hidden).toBe(false)
-    expect(cancel.textContent).toBe('停止')
+    expect(cancel.textContent).toBe('取消当前轮')
     expect(document.querySelector('.composer-queue-count')?.textContent).toBe('待执行 · 2')
     expect(
       Array.from(document.querySelectorAll('.composer-queue-preview'), (node) => node.textContent),
     ).toEqual(['第二条提示词', '第三条提示词'])
     const sendNow = deferred<number>()
-    running.sendNow.mockImplementationOnce(() => sendNow.promise)
+    running.interrupt.mockImplementationOnce(() => sendNow.promise)
     const queuedButton = document.querySelector<HTMLButtonElement>('[data-queue-item="C"] button')
     if (!queuedButton) throw new Error('missing queued input action')
     queuedButton.click()
     queuedButton.click()
-    expect(running.sendNow).toHaveBeenCalledTimes(1)
-    expect(running.sendNow).toHaveBeenCalledWith('C')
+    expect(running.interrupt).toHaveBeenCalledTimes(1)
+    expect(running.interrupt).toHaveBeenCalledWith('C')
     expect(queuedButton.disabled).toBe(true)
     expect(queuedButton.getAttribute('aria-busy')).toBe('true')
     expect(cancel.disabled).toBe(true)
@@ -1888,7 +1904,7 @@ describe('web session selection', () => {
       expect(document.querySelector('.composer-queue-error')?.textContent).toBe('synthetic send-now refusal'),
     )
     expect(document.querySelectorAll('[data-queue-item]')).toHaveLength(2)
-    running.sendNow.mockImplementationOnce(async () => {
+    running.interrupt.mockImplementationOnce(async () => {
       pendingInputs = [{ itemId: 'B', preview: '第二条提示词' }]
       sequence++
       return sequence
@@ -1898,7 +1914,7 @@ describe('web session selection', () => {
     expect(document.querySelector('.composer-queue-count')?.textContent).toBe('待执行 · 1')
     expect(running.prompt).not.toHaveBeenCalled()
     const reads = titleList.mock.calls.length
-    running.followUp.mockImplementation(async (input: { type: string; text?: string }[]) => {
+    running.steer.mockImplementation(async (input: { type: string; text?: string }[]) => {
       sequence++
       // 提交内容已是 ContentBlock[]，排队区的 preview 由 daemon 从文本块得出，这里照此模拟。
       const preview = input
@@ -1910,12 +1926,12 @@ describe('web session selection', () => {
     const followUps = ['本轮还没结束，先补充下一轮', '再排一条', '第三条也应立即显示']
     for (const [index, input] of followUps.entries()) {
       submit(input)
-      await vi.waitFor(() => expect(running.followUp).toHaveBeenCalledTimes(index + 1))
+      await vi.waitFor(() => expect(running.steer).toHaveBeenCalledTimes(index + 1))
       await vi.waitFor(() => expect(document.querySelectorAll('[data-queue-item]')).toHaveLength(index + 2))
     }
     expect(
       Array.from(document.querySelectorAll('.composer-queue-preview'), (node) => node.textContent),
-    ).toEqual(['第二条提示词', ...followUps])
+    ).toEqual(['第二条提示词', ...steers])
     expect(titleList).toHaveBeenCalledTimes(reads)
     const composer = document.getElementById('prompt') as HTMLTextAreaElement
     composer.value = '尚未发送的草稿'
@@ -1974,10 +1990,10 @@ describe('web session selection', () => {
     expect(document.querySelector('.composer-queue-count')?.textContent).toBe('待执行 · 3')
     expect(
       Array.from(document.querySelectorAll('.composer-queue-preview'), (node) => node.textContent),
-    ).toEqual(['第二条提示词', ...followUps.slice(1)])
+    ).toEqual(['第二条提示词', ...steers.slice(1)])
     expect(composer.value).toBe('尚未发送的草稿')
     expect(running.cancel).toHaveBeenCalledTimes(1)
-    expect(running.sendNow).toHaveBeenCalledTimes(2)
+    expect(running.interrupt).toHaveBeenCalledTimes(2)
     expect(document.querySelector('.composer-queue-error')).toBeNull()
 
     running.removeQueued.mockImplementationOnce(async (itemId: string) => {
@@ -2251,9 +2267,9 @@ describe('image composer submissions', () => {
     },
   )
 
-  it('sends mixed text and images through session.followUp and restores both on failure', async () => {
+  it('sends mixed text and images through session.steer and restores both on failure', async () => {
     const active = session('old', async () => busyTimeline('old', { route: 'local', id: 'model-a' }))
-    active.followUp.mockRejectedValueOnce(new Error('follow-up rejected'))
+    active.steer.mockRejectedValueOnce(new Error('follow-up rejected'))
     await start(active, true)
     await attachPng()
     const draft = document.getElementById('prompt') as HTMLTextAreaElement
@@ -2261,8 +2277,8 @@ describe('image composer submissions', () => {
     draft.dispatchEvent(new Event('input', { bubbles: true }))
     submit('请解释这张图')
 
-    await vi.waitFor(() => expect(active.followUp).toHaveBeenCalledTimes(1))
-    expect(active.followUp).toHaveBeenCalledWith([
+    await vi.waitFor(() => expect(active.steer).toHaveBeenCalledTimes(1))
+    expect(active.steer).toHaveBeenCalledWith([
       { type: 'text', text: '请解释这张图' },
       { type: 'image', mimeType: 'image/png', data: imagePngData },
     ])
@@ -2314,7 +2330,7 @@ describe('image composer submissions', () => {
     const longText = 'x'.repeat(MAX_FRAME_BYTES)
     submit(longText)
 
-    expect(active.followUp).not.toHaveBeenCalled()
+    expect(active.steer).not.toHaveBeenCalled()
     expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe(longText)
     expect(document.querySelector('.composer-image-preview img')).not.toBeNull()
     expect(document.getElementById('notice')?.textContent).toContain('144 MiB 限制')

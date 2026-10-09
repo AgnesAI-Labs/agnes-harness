@@ -325,6 +325,7 @@ const SESSION_DEFS: Record<string, TSchema> = {
 }
 
 const AGNES_DEFS: Record<string, TSchema> = {
+  SessionControlFact: AgnesGen.SessionControlFact,
   SessionControlParams: AgnesGen.SessionControlParams,
   SessionEditQueuedParams: AgnesGen.SessionEditQueuedParams,
   SessionQueuedControlInput: AgnesGen.SessionQueuedControlInput,
@@ -1820,6 +1821,27 @@ const REVIEW_RESULT = {
 }
 
 const AGNES_SAMPLES: Record<string, Sample> = {
+  SessionControlFact: {
+    valid: {
+      seq: 1,
+      ts: '2026-10-09T00:00:00.000Z',
+      actor: { kind: 'principal', id: 'human' },
+      action: 'pause',
+      outcome: 'requested',
+      details: {},
+    },
+    invalid: [
+      {
+        seq: 0,
+        ts: '',
+        actor: { kind: 'principal', id: 'human' },
+        action: 'pause',
+        outcome: 'requested',
+        details: {},
+      },
+    ],
+    note: 'human control ledger fact',
+  },
   SessionControlParams: {
     valid: { sessionId: 's', action: 'pause', commandId: 'c' },
     invalid: [{ sessionId: 's', action: 'stop', commandId: 'c' }],
