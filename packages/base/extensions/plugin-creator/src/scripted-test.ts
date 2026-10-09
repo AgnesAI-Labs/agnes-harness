@@ -2,9 +2,10 @@
 export const scriptedToolTest = `import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createPluginTestHost, scriptedModel } from '@agnes/plugin-runtime/testkit'
+import { createPluginTestRegistration } from '@agnes/host/testkit'
 import { main, echo } from '../src/index.ts'
 test('scripted model invokes the plugin tool', async () => {
-  const host = await createPluginTestHost(main)
+  const host = await createPluginTestHost(main, { registration: createPluginTestRegistration() })
   const scripted = scriptedModel([[{ type: 'toolcall_end', call: { id: 'echo-1', name: echo.name, args: { message: 'hello' } } }]])
   try {
     const request = { kind: 'inference', sessionKey: 'test', slot: 'primary', route: 'demo', model: 'demo', contractId: null, derivedHash: '0'.repeat(64), system: 'test', messages: [], tools: [] }

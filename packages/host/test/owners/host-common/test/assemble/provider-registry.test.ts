@@ -8,6 +8,11 @@ import {
   type PersistenceSessionStore,
   ProviderError,
 } from '@agnes/extension-api'
+import {
+  installProviderRegistry,
+  ProviderRegistry,
+  providerSource,
+} from '@agnes/host-common/assemble/provider-registry'
 import { createPersistenceProviderRegistry } from '@agnes/host-infrastructure/adapters/storage-provider'
 import { installSandboxProviders } from '@agnes/host-providers/adapters/sandbox-providers'
 import { installCompactionEngines } from '@agnes/host-providers/assemble/compaction-engines'
@@ -20,11 +25,6 @@ import {
 } from '@agnes/host-providers/assemble/provider-selection'
 import { installToolProviders } from '@agnes/host-providers/assemble/tool-providers'
 import { expect, it } from 'vitest'
-import {
-  installProviderRegistry,
-  ProviderRegistry,
-  providerSource,
-} from '../../src/assemble/provider-registry.js'
 
 const kind = defineProviderKind<{ id: string; version: string; ready: boolean }>({
   kind: 'test',

@@ -59,12 +59,5 @@
     "@agnes/protocol": "workspace:*",
     "yaml": "2.9.0"
   },
-  "license": "Apache-2.0 AND MIT",
-  "devDependencies": {
-    "@agnes/base": "workspace:*",
-    "@agnes/code": "workspace:*",
-    "@agnes/host": "workspace:*",
-    "@agnes/host-infrastructure": "workspace:*",
-    "@agnes/host-providers": "workspace:*"
-  }
+  "license": "Apache-2.0 AND MIT"
 }

@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { PreparedEvent, ScanQuery } from '@agnes/core'
 import { SCAN_PAGE_MAX, scanAll, scanPages } from '@agnes/host'
+import { createSqliteStorage, type SqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { ev } from '../../../host/test/adapters/events.js'
-import { createSqliteStorage, type SqliteStorage } from '../../src/adapters/storage-sqlite.js'
+import { ev } from '../../../../adapters/events.js'
 
 const range = (from: number, to: number): number[] =>
   from <= to

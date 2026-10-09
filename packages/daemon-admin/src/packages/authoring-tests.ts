@@ -27,6 +27,7 @@ export const runAuthoringTests: AuthoringTestRunner = async (directory, files, s
       Object.entries(providedExternalModules).map(([name, values]) => [name, Object.keys(values)]),
     ),
     '@agnes/plugin-runtime/testkit': [],
+    '@agnes/host/testkit': ['createPluginTestRegistration'],
   }
   const sdkExports = join(dirname(sdk), 'authoring-sdk-exports.json')
   if (existsSync(sdk)) {
@@ -67,7 +68,13 @@ export const runAuthoringTests: AuthoringTestRunner = async (directory, files, s
                 throw new Error('Only public author SDK modules are available in candidate tests')
               return existsSync(sdk)
                 ? { path: args.path, namespace: 'authoring-sdk' }
-                : { path: require.resolve(args.path) }
+                : {
+                    path: require.resolve(
+                      args.path === '@agnes/host/testkit'
+                        ? '@agnes/host/testkit/plugin-registration'
+                        : args.path,
+                    ),
+                  }
             })
             b.onResolve({ filter: /.*/, namespace: 'authoring-sdk' }, () => ({
               path: pathToFileURL(sdk).href,
@@ -82,15 +89,6 @@ export const runAuthoringTests: AuthoringTestRunner = async (directory, files, s
                     `export const ${k} = namespaces[${JSON.stringify(args.path)}][${JSON.stringify(k)}];`,
                 )
                 .join('\n')}`,
-            }))
-            // Resolve the testkit's optional Host peer through its own public export.
-            // Bundling variable imports cannot otherwise carry the production registration bridge.
-            b.onLoad({ filter: /[/\\]plugin-runtime[/\\]testkit[/\\]plugin\.ts$/ }, (args) => ({
-              loader: 'ts',
-              contents: readFileSync(args.path, 'utf8').replace(
-                'import(hostTestkit)',
-                `import(${JSON.stringify(createRequire(args.path).resolve('@agnes/host/testkit/plugin-registration'))})`,
-              ),
             }))
             // Preserve source-relative asset URLs when a plugin is bundled into a test entry.
             b.onLoad({ filter: /\.(ts|mjs|js)$/ }, async (args) => {

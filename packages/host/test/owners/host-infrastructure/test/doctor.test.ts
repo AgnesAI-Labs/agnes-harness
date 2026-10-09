@@ -2,9 +2,9 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initializeHome } from '@agnes/host'
+import { type DoctorProbe, runDoctor } from '@agnes/host-infrastructure/doctor'
 import { validateMethod } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
-import { type DoctorProbe, runDoctor } from '../src/doctor.js'
 
 const homes: string[] = []
 const home = () => {

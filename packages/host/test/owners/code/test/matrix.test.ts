@@ -1,7 +1,7 @@
 import { presets as basePresets } from '@agnes/base'
+import { loadAllPresets, PRESET_NAMES, type PresetDoc } from '@agnes/code'
 import { resolvePreset, toPresetView } from '@agnes/host'
 import { describe, expect, it } from 'vitest'
-import { loadAllPresets, PRESET_NAMES, type PresetDoc } from '../src/index.js'
 
 /**
  * The recipes this package ships, put through the resolver a deployment uses, against the `base`

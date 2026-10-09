@@ -23,13 +23,7 @@
       "path": "../../tsconfig.config.json"
     },
     {
-      "path": "../host"
-    },
-    {
       "path": "../core/tsconfig.testkit.json"
-    },
-    {
-      "path": "../host/tsconfig.testkit.json"
     }
   ]
 }

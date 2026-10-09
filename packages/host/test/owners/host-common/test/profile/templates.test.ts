@@ -1,5 +1,4 @@
 import { PRESET_NAMES } from '@agnes/code'
-import { describe, expect, it } from 'vitest'
 import {
   assertNoReservedRouteName,
   BUILTIN_PACKAGES,
@@ -7,7 +6,8 @@ import {
   loadTemplate,
   RESERVED_ROUTE_NAMES,
   TEMPLATE_NAMES,
-} from '../../src/profile/templates.js'
+} from '@agnes/host-common/profile/templates'
+import { describe, expect, it } from 'vitest'
 
 describe('templates', () => {
   it('loads the v0.1 templates and each passes the shape check', () => {

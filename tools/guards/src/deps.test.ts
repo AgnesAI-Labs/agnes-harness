@@ -22,13 +22,8 @@ describe('dependency allowlist (dependencies point one way, downward)', () => {
         // here.
       }
       if (pkg.name === '@agnes/plugin-runtime') {
-        expect(pkg.json.dependencies).not.toHaveProperty('@agnes/host')
-        expect(
-          (pkg.json.peerDependenciesMeta as Record<string, { optional?: boolean }> | undefined)?.[
-            '@agnes/host'
-          ]?.optional,
-        ).toBe(true)
-        delete deps['@agnes/host']
+        for (const key of ['dependencies', 'devDependencies', 'peerDependencies'])
+          expect(pkg.json[key] ?? {}).not.toHaveProperty('@agnes/host')
       }
       const agnesDeps = Object.keys(deps).filter((d) => d.startsWith('@agnes/'))
       const allowed = allow[pkg.name]

@@ -1,11 +1,11 @@
 import { loadPreset } from '@agnes/code'
-import { describe, expect, it } from 'vitest'
 import {
   COMMAND_ACTIONS,
   type CommandRule,
   checkCommandRule,
   DEPRECATED_ACTION,
-} from '../src/command-policy.js'
+} from '@agnes/host-common/command-policy'
+import { describe, expect, it } from 'vitest'
 
 describe('checkCommandRule', () => {
   it('accepts both shipped Windows absolute-path rules at session open', () => {

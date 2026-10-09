@@ -70,7 +70,6 @@
   "license": "Apache-2.0 AND MIT",
   "devDependencies": {
     "@agnes/base": "workspace:*",
-    "@agnes/host": "workspace:*",
     "@sinclair/typebox": "0.34.33"
   }
 }

@@ -20,12 +20,10 @@
     "testkit/model-adapter.test.ts",
     "testkit/index.ts",
     "testkit/plugin.ts",
-    "testkit/loop.test.ts",
     "testkit/model-adapter.ts",
     "testkit/loop.ts",
     "testkit/registration.ts",
-    "testkit/model.ts",
-    "testkit/author.test.ts"
+    "testkit/model.ts"
   ],
   "references": [
     {
@@ -45,9 +43,6 @@
     },
     {
       "path": "tsconfig.testkit.json"
-    },
-    {
-      "path": "../host/tsconfig.testkit.json"
     }
   ]
 }

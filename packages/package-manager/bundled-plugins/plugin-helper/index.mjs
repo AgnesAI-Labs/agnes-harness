@@ -107,7 +107,7 @@ export const pluginHelper = {
               path: 'test/plugin.test.mjs',
               content:
                 kind === 'tool'
-                  ? 'import {test} from "node:test";import assert from "node:assert/strict";import {createPluginTestHost} from "@agnes/plugin-runtime/testkit";import {main} from "../index.mjs";test("counts words",async()=>{const host=await createPluginTestHost(main);try{assert.deepEqual((await host.invoke("my_text_stats",{text:"hello world"})).structured,{characters:11,words:2})}finally{await host.dispose()}})\n'
+                  ? 'import {test} from "node:test";import assert from "node:assert/strict";import {createPluginTestHost} from "@agnes/plugin-runtime/testkit";import {createPluginTestRegistration} from "@agnes/host/testkit";import {main} from "../index.mjs";test("counts words",async()=>{const host=await createPluginTestHost(main,{registration:createPluginTestRegistration()});try{assert.deepEqual((await host.invoke("my_text_stats",{text:"hello world"})).structured,{characters:11,words:2})}finally{await host.dispose()}})\n'
                   : 'import {test} from "node:test";import assert from "node:assert/strict";import {main} from "../index.mjs";test("registers Skill data",()=>{let skill;main.apply({skills:{register(value){skill=value}}});assert.equal(skill.name,"my-workflow");assert.ok(skill.body)})\n',
             },
           ],

@@ -1,8 +1,8 @@
+import { createPluginTestRegistration } from '@agnes/host/testkit'
+import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
+import { createPluginTestHost } from '@agnes/plugin-runtime/testkit'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
-import { defineTool } from '../src/author/tool.js'
-import { type Context, defineAgnesPlugin } from '../src/index.js'
-import { createPluginTestHost } from './plugin.js'
 
 const tool = defineTool({
   name: 'author_echo',
@@ -27,6 +27,11 @@ const tool = defineTool({
 
 describe('plugin author host', () => {
   it('uses real Host registration, validates inputs, and unloads tools and plugin effects', async () => {
+    // JavaScript authors also receive a clear refusal when they omit the required port.
+    // @ts-expect-error deliberately exercise the missing JavaScript options argument
+    await expect(createPluginTestHost(defineAgnesPlugin({ apply() {} }))).rejects.toThrow(
+      'Plugin test registration required',
+    )
     let cleaned = false
     const host = await createPluginTestHost(
       defineAgnesPlugin({
@@ -38,6 +43,7 @@ describe('plugin author host', () => {
           })
         },
       }),
+      { registration: createPluginTestRegistration() },
     )
     try {
       expect(await host.invoke('author_echo', { text: 'hello' })).toMatchObject({
@@ -60,16 +66,19 @@ describe('plugin author host', () => {
   it('rejects registration failures and releases effects of a failed plugin', async () => {
     let cleaned = false
     await expect(
-      createPluginTestHost({
-        inject: ['extension'],
-        apply(ctx: Context) {
-          ctx.effect(() => () => {
-            cleaned = true
-          })
-          ctx.extension().registerTool(tool)
-          ctx.extension().registerTool(tool)
+      createPluginTestHost(
+        {
+          inject: ['extension'],
+          apply(ctx: Context) {
+            ctx.effect(() => () => {
+              cleaned = true
+            })
+            ctx.extension().registerTool(tool)
+            ctx.extension().registerTool(tool)
+          },
         },
-      }),
+        { registration: createPluginTestRegistration() },
+      ),
     ).rejects.toThrow()
     expect(cleaned).toBe(true)
   })

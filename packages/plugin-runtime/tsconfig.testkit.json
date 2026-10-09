@@ -5,9 +5,7 @@
     "tsBuildInfoFile": "dist/tsconfig.testkit.tsbuildinfo"
   },
   "include": [
-    "testkit/author.test.ts",
     "testkit/index.ts",
-    "testkit/loop.test.ts",
     "testkit/loop.ts",
     "testkit/model-adapter.test.ts",
     "testkit/model-adapter.ts",
@@ -31,9 +29,6 @@
     },
     {
       "path": "../cordis-loader"
-    },
-    {
-      "path": "../host/tsconfig.testkit.json"
     }
   ]
 }
