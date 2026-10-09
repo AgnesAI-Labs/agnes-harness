@@ -33,6 +33,7 @@ export function createEditTool(record?: FileChangeRecorder) {
       'Apply exact text replacements to a file read in this session. Each oldText must occur exactly once in the current file content - include surrounding lines when a short string would match more than once - and the edits are applied in the order given. Build large generated files incrementally: aim for at most 8 KiB of new content per call, preserve the rest of the file, and split larger additions across multiple calls.',
     parameters: EditParams,
     meta: {
+      paths: [{ arg: 'path', access: 'write' }],
       isReadOnly: false,
       isDestructive: true,
       isConcurrencySafe: false,

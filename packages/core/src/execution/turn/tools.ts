@@ -409,19 +409,29 @@ export async function approveAndExecute(
           decisionId,
         ),
       }
-    const fileArgs = call.args as { path?: unknown; file_path?: unknown }
-    const filePath =
-      fileArgs?.path ?? fileArgs?.file_path ?? (['ls', 'grep', 'find'].includes(call.name) ? '.' : undefined)
-    if (
-      ['read', 'write', 'edit', 'ls', 'grep', 'find'].includes(call.name) &&
-      typeof filePath === 'string' &&
-      s.d.workspaceInvocation
-    ) {
+    for (const path of meta.paths ?? []) {
+      const args = call.args as Record<string, unknown>
+      const target = Object.hasOwn(args, path.arg) ? args[path.arg] : path.default
+      if (target === undefined) continue
+      if (typeof target !== 'string' || !target || target.includes('\0'))
+        return {
+          result: await refuse(
+            s,
+            call.toolUseId,
+            'E_FS_DENIED',
+            'Invalid declared workspace path',
+            decisionId,
+          ),
+        }
+      const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(target)?.[1]?.toLowerCase()
+      if (scheme && path.nonWorkspaceSchemes?.includes(scheme)) continue
       try {
+        if (!s.d.workspaceInvocation) throw new Error('Workspace path preflight unavailable')
         await s.d.workspaceInvocation.run(async (view) => {
           const fs = view.fs()
-          if (fs.preflight) await fs.preflight(filePath, policy.isReadOnly ? 'read' : 'write')
-          else await fs.stat(filePath)
+          if (fs.preflight) await fs.preflight(target, path.access)
+          else if (path.access === 'read') await fs.stat(target)
+          else throw new Error('Workspace write preflight unavailable')
         })
       } catch (error) {
         if ((error as { code?: string }).code !== 'ENOENT')

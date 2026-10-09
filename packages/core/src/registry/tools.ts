@@ -152,6 +152,17 @@ function materializeToolMeta(value: unknown): unknown {
     !Array.isArray(materialized.costHint)
   )
     materialized.costHint = { ...(materialized.costHint as Record<string, unknown>) }
+  if (Array.isArray(materialized.paths))
+    materialized.paths = materialized.paths.map((path) =>
+      path && typeof path === 'object'
+        ? {
+            ...path,
+            ...(Array.isArray(path.nonWorkspaceSchemes)
+              ? { nonWorkspaceSchemes: [...path.nonWorkspaceSchemes] }
+              : {}),
+          }
+        : path,
+    )
   return materialized
 }
 
@@ -166,6 +177,20 @@ function snapshotToolMeta(meta: ToolMeta): ToolMeta {
     costHint,
     deferLoading: meta.deferLoading,
     requiresApproval: meta.requiresApproval,
+    ...(meta.paths
+      ? {
+          paths: Object.freeze(
+            meta.paths.map((path) =>
+              Object.freeze({
+                ...path,
+                ...(path.nonWorkspaceSchemes
+                  ? { nonWorkspaceSchemes: Object.freeze([...path.nonWorkspaceSchemes]) }
+                  : {}),
+              }),
+            ),
+          ),
+        }
+      : {}),
   })
 }
 
@@ -251,6 +276,7 @@ function fingerprintToolDefinition(def: ToolDef, meta: ToolSource): string {
         packageVersion: meta.packageVersion,
         name: def.name,
         parametersHash: sha256Hex(canonicalJson(def.parameters)),
+        ...(def.meta.paths ? { paths: def.meta.paths } : {}),
         policyVersion: def.policyVersion,
         isConcurrencySafe: def.meta.isConcurrencySafe,
         isOpenWorld: def.meta.isOpenWorld,
@@ -265,6 +291,7 @@ function fingerprintToolDefinition(def: ToolDef, meta: ToolSource): string {
       packageVersion: meta.packageVersion ?? 'legacy',
       name: def.name,
       parametersHash: sha256Hex(canonicalJson(def.parameters)),
+      ...(def.meta.paths ? { paths: def.meta.paths } : {}),
       policyVersion: 'static-v1',
       policy: {
         isReadOnly: def.meta.isReadOnly,

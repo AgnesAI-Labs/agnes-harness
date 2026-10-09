@@ -20,6 +20,7 @@ export const DENIED_PATHS = ['.git', ...WORKSPACE_SECRET_DIRS, 'secrets', 'table
 // tool, because they genuinely are the same answer: reading a tree changes nothing, costs nothing
 // worth quoting, and accesses local files through the Host's filesystem port.
 export const SEARCH_META: ToolMeta = {
+  paths: [{ arg: 'path', access: 'read', default: '.', nonWorkspaceSchemes: ['artifact'] }],
   isReadOnly: true,
   isDestructive: false,
   isConcurrencySafe: true,

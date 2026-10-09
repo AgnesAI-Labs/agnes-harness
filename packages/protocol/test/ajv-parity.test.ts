@@ -4330,12 +4330,17 @@ const toolDefOk: Json = {
 const TOOLDEF_SAMPLES: Record<string, Sample> = {
   JsonValue: SESSION_SAMPLES.JsonValue as Sample,
   ToolMeta: {
-    valid: toolMetaOk,
+    valid: {
+      ...toolMetaOk,
+      paths: [{ arg: 'path', access: 'read', default: '.', nonWorkspaceSchemes: ['artifact'] }],
+    },
     invalid: [
       { ...toolMetaOk, deferLoading: undefined }, // the in-process spelling of "no declaration"; on the wire it is null
       { ...toolMetaOk, replay: 'retry' }, // enum
       { ...toolMetaOk, requiresApproval: 'sometimes' }, // enum
       { ...toolMetaOk, costHint: { credits: -1 } }, // boundary: one below minimum:0
+      { ...toolMetaOk, paths: [{ arg: 'path', access: 'execute' }] },
+      { ...toolMetaOk, paths: [{ arg: 'path', access: 'read', extra: true }] },
       { ...toolMetaOk, extra: 1 }, // additionalProperties:false
     ],
     note: 'all eight keys are required, so an author cannot leave one to a default nobody wrote down',

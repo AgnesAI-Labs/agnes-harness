@@ -1,10 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agnes.ai/schema/tooldef.json",
-  "title": "ToolDef (the three model-visible fields plus the eight meta keys)",
+  "title": "ToolDef (model-visible fields and execution metadata)",
   "$ref": "#/$defs/ToolDef",
   "$defs": {
-    "JsonValue": { "$ref": "session-v1.json#/$defs/JsonValue" },
+    "JsonValue": {
+      "$ref": "session-v1.json#/$defs/JsonValue"
+    },
     "ToolMeta": {
       "type": "object",
       "additionalProperties": false,
@@ -41,13 +43,21 @@
         },
         "costHint": {
           "oneOf": [
-            { "type": "null" },
+            {
+              "type": "null"
+            },
             {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "credits": { "type": "number", "minimum": 0 },
-                "wallMs": { "type": "integer", "minimum": 0 }
+                "credits": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "wallMs": {
+                  "type": "integer",
+                  "minimum": 0
+                }
               }
             }
           ],
@@ -58,8 +68,47 @@
           "description": "true keeps the tool out of the default disclosure until a search loads it. null defers to the package default, which the MCP importer reads as true; until that importer lands, null behaves as false. Consumed by disclosure."
         },
         "requiresApproval": {
-          "oneOf": [{ "enum": ["never", "destructive", "always"] }, { "type": "null" }],
+          "oneOf": [
+            {
+              "enum": ["never", "destructive", "always"]
+            },
+            {
+              "type": "null"
+            }
+          ],
           "description": "The approval band; null lets isDestructive and the command policy table decide. Consumed by the approval stage."
+        },
+        "paths": {
+          "type": "array",
+          "maxItems": 32,
+          "description": "Optional declarations of top-level workspace path arguments. The runtime preflights access before every approval mode; URI schemes delegated to resource services never widen the filesystem fence.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["arg", "access"],
+            "properties": {
+              "arg": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+              },
+              "access": {
+                "enum": ["read", "write"]
+              },
+              "default": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "nonWorkspaceSchemes": {
+                "type": "array",
+                "maxItems": 16,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9+.-]{0,63}$"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -68,11 +117,28 @@
       "additionalProperties": false,
       "required": ["type", "properties", "additionalProperties"],
       "properties": {
-        "type": { "const": "object" },
-        "properties": { "type": "object", "additionalProperties": { "$ref": "#/$defs/JsonValue" } },
-        "required": { "type": "array", "items": { "type": "string" } },
-        "additionalProperties": { "const": false },
-        "description": { "type": "string", "maxLength": 2048 }
+        "type": {
+          "const": "object"
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": {
+          "const": false
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 2048
+        }
       }
     },
     "ToolDef": {
@@ -80,10 +146,21 @@
       "additionalProperties": false,
       "required": ["name", "description", "parameters", "meta"],
       "properties": {
-        "name": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" },
-        "description": { "type": "string", "minLength": 1, "maxLength": 4096 },
-        "parameters": { "$ref": "#/$defs/ParametersSchema" },
-        "meta": { "$ref": "#/$defs/ToolMeta" }
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "parameters": {
+          "$ref": "#/$defs/ParametersSchema"
+        },
+        "meta": {
+          "$ref": "#/$defs/ToolMeta"
+        }
       }
     }
   }

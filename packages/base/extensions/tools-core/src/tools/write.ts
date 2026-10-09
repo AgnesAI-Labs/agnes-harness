@@ -17,6 +17,7 @@ export function createWriteTool(record?: FileChangeRecorder) {
       'Create or overwrite a file with the given content. For large generated files, first write a small valid scaffold with unique section markers, then fill the sections with multiple edit calls. Aim for at most 8 KiB of generated content per call to avoid model output truncation; do not generate a whole large file in one call. Read an existing file in this session before overwriting it. Overwriting an existing file is destructive, and content that looks like a partial copy of what is already there is refused rather than written.',
     parameters: WriteParams,
     meta: {
+      paths: [{ arg: 'path', access: 'write' }],
       isReadOnly: false,
       isDestructive: true,
       isConcurrencySafe: false,
