@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { expect, test } from './fixtures.js'
 import { command, complete, install, prompt, toolResult } from './sdk.js'
+import { preferences } from './ui.js'
 
 test('fresh first run, keyless demo, SDK account save and credential persistence', async ({
   runtime,
@@ -87,6 +88,81 @@ test('fresh first run, keyless demo, SDK account save and credential persistence
       body: JSON.stringify(await resumed.projectUI()),
       contentType: 'application/json',
     })
+  } finally {
+    await provider.close()
+  }
+})
+
+test('stored credential rejection offers account repair and recovers without restart', async ({
+  page,
+  runtime,
+}, info) => {
+  await preferences(page, 'en', 'light')
+  const client = await runtime.connect()
+  const model = (await client.config.test({ providerId: 'deepseek' })).models[0]!.id
+  const provider = await startProviderFixture('CREDENTIAL_RECOVERED', undefined, model)
+  try {
+    const accountId = 'revoked-account'
+    const input = {
+      providerId: 'deepseek',
+      accountId,
+      baseUrl: provider.baseUrl,
+      apiKey: provider.apiKey,
+      model,
+      label: 'Revoked fixture account',
+      makeDefault: true,
+    }
+    await client.config.test({
+      providerId: input.providerId,
+      baseUrl: input.baseUrl,
+      apiKey: input.apiKey,
+      model: input.model,
+    })
+    await client.config.save({ ...input, expectedRevision: (await client.config.get()).revision })
+    const session = await client.session.new({
+      sessionKey: randomUUID(),
+      cwd: runtime.workspace,
+      preset: 'full-access',
+    })
+    await session.attach()
+    await prompt(session, 'Before revocation')
+    provider.rotateKey()
+    await expect(session.prompt('Rejected after revocation')).rejects.toMatchObject({
+      data: {
+        code: 'CONFIG_CREDENTIAL_REJECTED',
+        messageKey: 'appServer.errors.credentialRejected',
+        retryable: false,
+        modelRoute: 'account-' + accountId,
+      },
+    })
+    // 401 is permanent: only one upstream inference request is sent for this failed turn.
+    expect(provider.rejectedInferenceRequests).toBe(1)
+    await page.goto(runtime.url + '?session=' + encodeURIComponent(session.id))
+    const composer = page.getByRole('textbox', { name: 'Task content', exact: true })
+    await expect(composer).toBeEnabled()
+    await composer.fill('Show the rejected account hint')
+    await composer.press('Enter')
+    const repair = page.getByTestId('credential-repair')
+    await expect(repair).toHaveText('Fix model account')
+    await expect(page.locator('#notice')).toContainText('credentials have expired or were rejected')
+    expect(provider.rejectedInferenceRequests).toBe(2)
+    await page.screenshot({ path: info.outputPath('credential-repair-en-light.png') })
+    await repair.click()
+    await expect(page.getByRole('dialog', { name: 'Account details', exact: true })).toBeVisible()
+    await expect(page.locator('#config-account-name')).toHaveValue('Revoked fixture account')
+    await page.locator('#config-api-key').fill(provider.apiKey)
+    await page.locator('#config-test').click()
+    await expect(page.locator('#config-save')).toBeEnabled()
+    const revision = (await client.config.get()).revision
+    await page.locator('#config-save').click()
+    await expect.poll(async () => (await client.config.get()).revision).not.toBe(revision)
+    // The revision commits before model publication; wait for the save RPC and UI completion.
+    await expect(page.getByRole('dialog', { name: 'Account details', exact: true })).toBeHidden()
+    await prompt(session, 'After credential correction')
+    const recovered = await session.projectUI()
+    expect(recovered.turns.at(-1)?.status).toBe('completed')
+    expect(JSON.stringify(recovered)).toContain('CREDENTIAL_RECOVERED')
+    expect(provider.rejectedInferenceRequests).toBe(2)
   } finally {
     await provider.close()
   }

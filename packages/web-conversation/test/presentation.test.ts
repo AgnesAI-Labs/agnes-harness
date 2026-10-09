@@ -224,6 +224,9 @@ describe('web presentation controls', () => {
     expect(errorNotice('INTERNAL_ERROR (-32603)', undefined, undefined, 'AUTH', undefined, zhT)).toBe(
       '模型凭据已失效或被上游拒绝，请在设置中重新配置或登录该模型账号。',
     )
+    expect(errorNotice('SEMANTIC_REJECTED (-32011)', undefined, undefined, 'AUTH', undefined, zhT)).toBe(
+      '模型凭据已失效或被上游拒绝，请在设置中重新配置或登录该模型账号。',
+    )
     expect(errorNotice('INTERNAL_ERROR (-32603)', undefined, undefined, 'UNKNOWN', undefined, zhT)).toBe(
       '后台未能完成请求，请稍后重试。',
     )

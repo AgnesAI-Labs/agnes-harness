@@ -61,6 +61,7 @@ export const composerLocaleCatalog: LocaleCatalog = {
       'This session was created by an older build and cannot be opened in this version. Start a new session.',
     'session.error.authFailed':
       'Model credentials have expired or were rejected by the provider. Reconfigure or sign in again in Settings.',
+    'session.error.openAccount': 'Fix model account',
     'session.error.outputLimit':
       'The model reply reached its output allowance and this turn stopped. Ask for step-by-step output, or raise the output allowance.',
     'session.error.rateLimit':
@@ -132,6 +133,7 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'cost.callDetailsAria': '查看本次调用用量明细',
     'session.error.legacyLedger': '该会话由旧版本创建，当前版本无法打开，请新建会话。',
     'session.error.authFailed': '模型凭据已失效或被上游拒绝，请在设置中重新配置或登录该模型账号。',
+    'session.error.openAccount': '修复模型账户',
     'session.error.outputLimit':
       '模型回复达到输出额度，本轮已停止。请要求分步生成，或调整请求输出额度后继续。',
     'session.error.rateLimit':

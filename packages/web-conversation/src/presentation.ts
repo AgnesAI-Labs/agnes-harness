@@ -136,7 +136,7 @@ export function errorNotice(
 ): string {
   // Not a fault to retry or report: the session was written by an older build and cannot be read.
   if (reason === 'legacy-ledger-format') return t('session.error.legacyLedger')
-  if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'AUTH') return t('session.error.authFailed')
+  if (turnErrorCode === 'AUTH') return t('session.error.authFailed')
   if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'OUTPUT_LIMIT')
     return t('session.error.outputLimit')
   if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'RATE_LIMIT')

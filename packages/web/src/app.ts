@@ -632,6 +632,7 @@ function errorMessage(error: unknown): string {
           reason?: unknown
           diagnosticId?: unknown
           diagnosticUnavailable?: unknown
+          modelRoute?: unknown
           error?: { code?: unknown }
         })
       : undefined
@@ -639,7 +640,11 @@ function errorMessage(error: unknown): string {
     message,
     diagnostic?.diagnosticId,
     diagnostic?.diagnosticUnavailable,
-    diagnostic?.code === 'TURN_ERROR' ? diagnostic.error?.code : undefined,
+    diagnostic?.code === 'CONFIG_CREDENTIAL_REJECTED'
+      ? 'AUTH'
+      : diagnostic?.code === 'TURN_ERROR'
+        ? diagnostic.error?.code
+        : undefined,
     diagnostic?.reason,
     t,
   )
@@ -654,6 +659,21 @@ function showError(error: unknown): void {
     notice.dataset.kind = 'error'
   }
   if (newSessionDialog.open) newSessionError.textContent = message
+  const data =
+    error && typeof error === 'object' && 'data' in error
+      ? (error.data as { code?: unknown; modelRoute?: unknown })
+      : undefined
+  if (data?.code === 'CONFIG_CREDENTIAL_REJECTED') {
+    const fix = document.createElement('button')
+    fix.type = 'button'
+    fix.dataset.testid = 'credential-repair'
+    fix.textContent = t('session.error.openAccount')
+    fix.onclick = () => {
+      settingsRegion.open('model')
+      run(() => settings.openAccount(typeof data.modelRoute === 'string' ? data.modelRoute : undefined))
+    }
+    notice.append(document.createTextNode(' '), fix)
+  }
 }
 function run(op: () => Promise<void>): void {
   newSessionError.textContent = ''
