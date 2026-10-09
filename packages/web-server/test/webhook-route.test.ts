@@ -38,6 +38,7 @@ function setup(enabled = true) {
     request.rawHeaders = Object.entries(headers).flatMap(([key, values]) =>
       values.flatMap((value) => [key, value]),
     )
+    request.headersDistinct = headers
     request.push(options.body ?? Buffer.from('{}'))
     request.push(null)
     let status = 0
