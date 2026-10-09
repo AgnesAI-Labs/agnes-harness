@@ -1,4 +1,5 @@
 /** @vitest-environment happy-dom */
+import { SettingsTextArea } from '@agnes/web-ui'
 import { act, createElement, createRef } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -25,20 +26,28 @@ it('navigates a combobox, selects locators without submitting', async () => {
     { source: 'file', id: 'first.txt', label: 'First' },
     { source: 'session', id: 'previous', label: 'Previous' },
   ]
-  const adapter = createComposerReferences(async () => ({ items: candidates, truncated: false }))
+  let pauseSearch = false
+  let releaseSearch: (() => void) | undefined
+  const adapter = createComposerReferences(async () => {
+    if (pauseSearch)
+      await new Promise<void>((resolve) => {
+        releaseSearch = resolve
+      })
+    return { items: candidates, truncated: false }
+  })
   const textarea = createRef<HTMLTextAreaElement>()
   const submit = vi.fn()
   const t = (key: string) => composerLocaleCatalog.en[key] ?? key
-  await act(async () =>
+  const render = (disabled: boolean) =>
     root.render(
       createElement(
         'form',
         { onSubmit: submit },
-        createElement('textarea', { ref: textarea }),
-        createElement(ReferencePicker, { textarea, adapter, t, disabled: false }),
+        createElement(ReferencePicker, { textarea, adapter, t, disabled }),
+        createElement(SettingsTextArea, { ref: textarea, disabled }),
       ),
-    ),
-  )
+    )
+  await act(async () => render(false))
   const input = textarea.current!
   const query = async (value: string) => {
     await act(async () => {
@@ -67,7 +76,16 @@ it('navigates a combobox, selects locators without submitting', async () => {
   expect(adapter.getSnapshot()).toEqual([candidates[1]])
   expect(input.value).toBe('')
   expect(submit).not.toHaveBeenCalled()
+  pauseSearch = true
   await query('@file')
+  // Lazy session admission temporarily disables and blurs the composer during this search.
+  await act(async () => render(true))
+  expect(host.querySelectorAll('[data-testid="reference-option"]')).toHaveLength(0)
+  await act(async () => input.dispatchEvent(new FocusEvent('blur')))
+  await act(async () => render(false))
+  await act(async () => releaseSearch?.())
+  expect(input.getAttribute('role')).toBe('combobox')
+  expect(host.querySelectorAll('[data-testid="reference-option"]')).toHaveLength(2)
   await key('Escape')
   expect(input.hasAttribute('aria-controls')).toBe(false)
   await act(async () => adapter.remove('session', 'previous'))

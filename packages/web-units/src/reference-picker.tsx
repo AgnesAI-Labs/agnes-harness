@@ -1,6 +1,14 @@
 import type { ReferenceCandidate, ReferenceSearchResult } from '@agnes/protocol'
 import { Button } from '@agnes/web-ui'
-import { type RefObject, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import {
+  type RefObject,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react'
 import type { Translate } from './locales/index.js'
 
 export interface ComposerReferences {
@@ -114,7 +122,8 @@ export function ReferencePicker({
     setPage({ items: [], truncated: false })
   }, [selected])
 
-  useLayoutEffect(() => {
+  // The picker precedes the input in the composer; bind after all sibling refs attach.
+  useEffect(() => {
     const input = textarea.current
     if (!input || !adapter) return
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -198,6 +207,8 @@ export function ReferencePicker({
       if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) query()
     }
     const blur = (event: FocusEvent) => {
+      // Admission can disable the input while the backend search opens a draft session.
+      if (disabledRef.current) return
       const related = event.relatedTarget as Element | null
       if (!related?.closest('[data-testid="reference-picker"]')) close()
     }

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { UserMessage } from '@agnes/protocol'
 import { expect, test } from './fixtures.js'
 import { readSessionEvents } from './ledger.js'
 import { chooseWorkspace, fresh, preferences, turn } from './ui.js'
@@ -41,8 +42,8 @@ test('selects file and session references, records send-time versions and links 
   await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed', {
     timeout: 30_000,
   })
-  await expect(page.getByTestId('reference-sent-chips').last().locator('li')).toHaveCount(2)
-  await expect(page.getByTestId('reference-session-link').last()).toHaveAttribute(
+  await expect(page.locator('[data-testid=reference-sent-chips]:visible').locator('li')).toHaveCount(2)
+  await expect(page.locator('[data-testid=reference-session-link]:visible')).toHaveAttribute(
     'href',
     `?session=${sourceId}`,
   )
@@ -52,7 +53,11 @@ test('selects file and session references, records send-time versions and links 
   const messages = (await readSessionEvents(session))
     .filter((row) => row.type === 'user/message')
     .slice(0, 100)
-  const message = messages.at(-1)
+  const referenceMessages = messages.filter((row) =>
+    (row.data as UserMessage).content.some((block) => block.type === 'text' && block.reference !== undefined),
+  )
+  expect(referenceMessages).toHaveLength(1)
+  const message = referenceMessages[0]
   expect(message).toMatchObject({ origin: 'system', trust: 'untrusted' })
   expect(messages.find((row) => row.origin === 'principal')).toMatchObject({
     trust: 'trusted',
@@ -64,10 +69,11 @@ test('selects file and session references, records send-time versions and links 
   expect(serialized).not.toContain('old file contents')
   expect(serialized).toContain('UNTRUSTED REFERENCE')
   await page.reload()
-  await expect(page.getByTestId('reference-session-link').last()).toHaveAttribute(
+  await expect(page.locator('[data-testid=reference-session-link]:visible')).toHaveAttribute(
     'href',
     `?session=${sourceId}`,
   )
-  await page.getByTestId('reference-session-link').last().click()
+  await expect(page.locator('[data-testid=reference-session-link]:visible')).toBeVisible()
+  await page.locator('[data-testid=reference-session-link]:visible').click()
   await expect(page).toHaveURL(new RegExp(`session=${sourceId}`))
 })
