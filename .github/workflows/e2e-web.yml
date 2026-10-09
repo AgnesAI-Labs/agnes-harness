@@ -10,11 +10,13 @@ concurrency:
   group: web-e2e-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
+  # Ten shards split the four full narrow-screen flows 2+2; eight or twelve group all four.
+  # Keep the ten-minute step budget and zero retries without dropping any case.
   e2e-web:
-    name: macOS Web E2E (${{ matrix.shard }}/8)
+    name: macOS Web E2E (${{ matrix.shard }}/10)
     strategy:
       fail-fast: false
-      matrix: { shard: [1, 2, 3, 4, 5, 6, 7, 8] }
+      matrix: { shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] }
     runs-on: macos-14
     timeout-minutes: 15
     steps:
@@ -35,7 +37,7 @@ jobs:
         run: pnpm exec playwright install chromium
       - name: Real daemon and Web gate (zero retries)
         timeout-minutes: 10
-        run: pnpm e2e:web --shard=${{ matrix.shard }}/8 --workers=1
+        run: pnpm e2e:web --shard=${{ matrix.shard }}/10 --workers=1
       - name: Upload report, screenshots, traces and process evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -49,10 +51,10 @@ jobs:
           if-no-files-found: error
           retention-days: 14
   e2e-web-linux:
-    name: Linux Web E2E (${{ matrix.shard }}/8)
+    name: Linux Web E2E (${{ matrix.shard }}/10)
     strategy:
       fail-fast: false
-      matrix: { shard: [1, 2, 3, 4, 5, 6, 7, 8] }
+      matrix: { shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] }
     # Visual baselines use this image and its explicitly provisioned font families.
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -92,7 +94,7 @@ jobs:
       - name: Real daemon and Web gate (zero retries)
         if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.chromium.outcome == 'success' }}
         timeout-minutes: 10
-        run: pnpm e2e:web --reuse-build --shard=${{ matrix.shard }}/8 --workers=1
+        run: pnpm e2e:web --reuse-build --shard=${{ matrix.shard }}/10 --workers=1
       - name: Upload report, screenshots, traces and process evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
