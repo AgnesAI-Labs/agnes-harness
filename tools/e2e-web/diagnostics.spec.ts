@@ -89,7 +89,10 @@ for (const locale of ['en', 'zh-CN'])
       await expect(page.getByTestId('diagnostics-doctor').getByRole('article')).toHaveCount(11)
       await translated(page)
       if (locale === 'zh-CN' && theme === 'light') {
-        for (const id of ['models', 'bundles', 'providers', 'security']) {
+        await section(page, 'models')
+        // Session defaults owns its reads; it no longer consumes the generic runtime catalog.
+        await expect(page.getByTestId('settings-refresh')).toHaveCount(0)
+        for (const id of ['bundles', 'providers', 'security']) {
           await section(page, id)
           const button = page.getByTestId('settings-refresh')
           await expect(button).toBeVisible()

@@ -139,8 +139,15 @@ for (const locale of ['en', 'zh-CN'])
         `call read ${JSON.stringify({ path })}`,
         `call write ${JSON.stringify({ path, content: 'Forbidden replacement' })}`,
         `call edit ${JSON.stringify({ path, edits: [{ oldText: 'precise', newText: 'forbidden' }] })}`,
-      ])
-        await expect(await send(command)).toContainText('MEMORY_DISABLED')
+      ]) {
+        // Declared paths are refused by Core preflight before the file tool executes.
+        const refused = await send(command)
+        await expect(refused).toContainText('E_FS_DENIED')
+        await expect(refused).not.toContainText('Prefer precise synthetic summaries.')
+        expect(
+          (await client.request('_agnes/v1/admin.memory', { cwd, file: 'MEMORY.md' })).file?.content,
+        ).toBe('Prefer precise synthetic summaries.')
+      }
       expect((await client.request('_agnes/v1/admin.memory', { cwd, file: 'MEMORY.md' })).file?.content).toBe(
         'Prefer precise synthetic summaries.',
       )
