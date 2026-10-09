@@ -354,6 +354,12 @@ export function localPackageAdmin(
     },
     triggers: (input: import('@agnes/protocol/gen/app-server').WebhookRequest) =>
       client.request('_agnes/v1/admin.triggers', input),
+    fileUpload: (input: import('@agnes/protocol').FileUploadRequest) =>
+      client.request(
+        '_agnes/v1/session.fileUpload',
+        input,
+        input.operation === 'finish' ? { timeoutMs: null } : {},
+      ),
     historySearch: (input: import('@agnes/protocol').AppServerParams<'_agnes/v1/admin.history.search'>) =>
       client.request('_agnes/v1/admin.history.search', input),
     planCommand: (input: import('@agnes/protocol').AppServerParams<'_agnes/v1/admin.plan'>) =>

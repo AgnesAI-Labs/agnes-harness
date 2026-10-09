@@ -77,6 +77,8 @@ export type ChildrenFactory = {
  * message carries it. Core checks that before a session opens and refuses to open one otherwise.
  */
 export type FsOps = {
+  /** Host-owned admission for bounded native writes; never grants an arbitrary filesystem path. */
+  authorizeWrite?(path: string): Promise<void>
   read(path: string, opts?: { offset?: number; limit?: number }): Promise<Uint8Array>
   write(path: string, data: Uint8Array | string): Promise<void>
   list(path: string): Promise<FsEntry[]>

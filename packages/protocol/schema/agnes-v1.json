@@ -3,6 +3,238 @@
   "$id": "https://agnes.ai/schema/agnes-v1.json",
   "title": "_agnes/v1",
   "$defs": {
+    "FileUploadParams": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "operation": {
+              "const": "limits",
+              "type": "string"
+            },
+            "sessionId": {
+              "minLength": 1,
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "sessionId"
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "operation": {
+              "const": "start",
+              "type": "string"
+            },
+            "sessionId": {
+              "minLength": 1,
+              "maxLength": 512,
+              "type": "string"
+            },
+            "uploadId": {
+              "pattern": "^[a-f0-9-]{36}$",
+              "type": "string"
+            },
+            "name": {
+              "minLength": 1,
+              "maxLength": 256,
+              "type": "string"
+            },
+            "mimeType": {
+              "minLength": 1,
+              "maxLength": 128,
+              "type": "string"
+            },
+            "size": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "operation",
+            "sessionId",
+            "uploadId",
+            "name",
+            "mimeType",
+            "size"
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "operation": {
+              "const": "chunk",
+              "type": "string"
+            },
+            "sessionId": {
+              "minLength": 1,
+              "maxLength": 512,
+              "type": "string"
+            },
+            "uploadId": {
+              "pattern": "^[a-f0-9-]{36}$",
+              "type": "string"
+            },
+            "offset": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            "data": {
+              "maxLength": 1398104,
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "sessionId",
+            "uploadId",
+            "offset",
+            "data",
+            "sha256"
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "operation": {
+              "const": "finish",
+              "type": "string"
+            },
+            "sessionId": {
+              "minLength": 1,
+              "maxLength": 512,
+              "type": "string"
+            },
+            "uploadId": {
+              "pattern": "^[a-f0-9-]{36}$",
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "sessionId",
+            "uploadId",
+            "sha256"
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "operation": {
+              "anyOf": [
+                {
+                  "const": "status",
+                  "type": "string"
+                },
+                {
+                  "const": "cancel",
+                  "type": "string"
+                }
+              ]
+            },
+            "sessionId": {
+              "minLength": 1,
+              "maxLength": 512,
+              "type": "string"
+            },
+            "uploadId": {
+              "pattern": "^[a-f0-9-]{36}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "sessionId",
+            "uploadId"
+          ]
+        }
+      ]
+    },
+    "FileUploadResultSchema": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "limits": {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "maxBytes": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            "chunkBytes": {
+              "minimum": 0,
+              "maximum": 9007199254740991,
+              "type": "integer"
+            },
+            "allowedMimeTypes": {
+              "maxItems": 256,
+              "type": "array",
+              "items": {
+                "maxLength": 128,
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "maxBytes",
+            "chunkBytes",
+            "allowedMimeTypes"
+          ]
+        },
+        "offset": {
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "attachment": {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "resource_link",
+              "type": "string"
+            },
+            "uri": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "name": {
+              "maxLength": 256,
+              "type": "string"
+            },
+            "mimeType": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "uri"
+          ]
+        }
+      }
+    },
     "PluginPublicationReport": { "$ref": "package-admin.json#/$defs/PluginPublicationReport" },
     "PluginPublicationStatusResult": { "$ref": "package-admin.json#/$defs/PluginPublicationStatusResult" },
     "SessionGenerationMigrationParams": {

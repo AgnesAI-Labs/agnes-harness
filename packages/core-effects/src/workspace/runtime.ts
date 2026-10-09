@@ -236,6 +236,11 @@ function invocationView(source: WorkspaceInvocationSource, scope: InvocationScop
   const revokeGrant = source.approval.revokeGrant
   const onGrantRevoked = source.approval.onGrantRevoked
   const fs: RevocableFsOps = Object.freeze({
+    ...(source.fs.authorizeWrite
+      ? {
+          authorizeWrite: (path: string) => scope.track(() => source.fs.authorizeWrite!(path)),
+        }
+      : {}),
     read: (path, opts) => scope.track(() => source.fs.read(path, opts)),
     write: (path, data) => scope.track(() => source.fs.write(path, data)),
     list: (path) => scope.track(() => source.fs.list(path)),

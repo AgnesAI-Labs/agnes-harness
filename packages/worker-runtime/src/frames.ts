@@ -28,6 +28,7 @@ export type SessionMethod =
   | 'readToolDetail'
   | 'feedback.draft'
   | 'workspaceFiles'
+  | 'fileUpload'
   | 'workspaceChanges'
   | 'append'
   | 'setPreset'

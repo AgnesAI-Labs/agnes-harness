@@ -143,6 +143,10 @@ export class RemoteSession {
     ) => this.link.command('editQueuedInput', { itemId, content, actor, admissionId }) as Promise<number>,
   }
 
+  fileUpload(input: import('@agnes/protocol').FileUploadRequest): Promise<unknown> {
+    return this.link.command('fileUpload', input)
+  }
+
   enqueue(target: 'next-turn' | 'next-step', msg: unknown): Promise<number> {
     return this.link.command('enqueue', { target, msg }) as Promise<number>
   }

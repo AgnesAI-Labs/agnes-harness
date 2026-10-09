@@ -331,6 +331,8 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionQueuedControlInput: AgnesGen.SessionQueuedControlInput,
   SessionControlStateResult: AgnesGen.SessionControlStateResult,
 
+  FileUploadParams: AgnesGen.FileUploadParams,
+  FileUploadResultSchema: AgnesGen.FileUploadResultSchema,
   FactChainAnchor: AgnesGen.FactChainAnchor,
   FactChainParams: AgnesGen.FactChainParams,
   FactChainPackage: AgnesGen.FactChainPackage,
@@ -1865,6 +1867,20 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     },
     invalid: [{ controls: {}, paused: 'yes', pending: [] }],
     note: 'durable pause with pinned controls',
+  },
+  FileUploadParams: {
+    note: 'closed upload operation and session identity',
+    valid: { operation: 'limits', sessionId: 'owned' },
+    invalid: [
+      { operation: 'start', sessionId: 'owned' },
+      { operation: 'unknown', sessionId: 'owned' },
+      { operation: 'limits', sessionId: '' },
+    ],
+  },
+  FileUploadResultSchema: {
+    note: 'bounded byte progress and closed result',
+    valid: { offset: 0 },
+    invalid: [{ offset: -1 }, { offset: '0' }, { unknown: true }],
   },
   FactChainAnchor: {
     valid: { kind: 'tool', toolUseId: 'tool-1' },
@@ -6756,6 +6772,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'WebhookRequest',
     result: 'WebhookResult',
   },
+  '_agnes/v1/session.fileUpload': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'FileUploadParams',
+    result: 'FileUploadResultSchema',
+  },
   '_agnes/v1/session.factChain': {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
     params: 'FactChainParams',
@@ -7474,6 +7495,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     valid: { action: 'list' },
     invalid: [{ action: 'unknown' }, { action: 'upsert', rule: { secretRef: 'plain-text-secret' } }],
   },
+  '_agnes/v1/session.fileUpload': AGNES_SAMPLES.FileUploadParams as Sample,
   '_agnes/v1/session.factChain': {
     valid: { sessionId: 'owned', laneId: 'main', anchor: { kind: 'tool', toolUseId: 'tool-1' } },
     invalid: [
@@ -8020,6 +8042,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.control': AGNES_SAMPLES.SessionSteerResult as Sample,
   '_agnes/v1/session.controls': AGNES_SAMPLES.SessionControlStateResult as Sample,
   '_agnes/v1/session.editQueued': AGNES_SAMPLES.SessionSteerResult as Sample,
+  '_agnes/v1/session.fileUpload': AGNES_SAMPLES.FileUploadResultSchema as Sample,
   '_agnes/v1/session.factChain': AGNES_SAMPLES.FactChainResult!,
   '_agnes/v1/doctor.run': AppSamples.DoctorResult!,
   '_agnes/v1/plugins.candidates.reject': PackageAdminSamples.AuthoringCandidate as Sample,

@@ -63,6 +63,21 @@ describe('methods (I1 set)', () => {
       { type: 'file', name: 'https://test.invalid/video', mimeType: 'application/octet-stream', data: '' },
     ])
     expect(() => validateUserAttachments(embedded)).not.toThrow()
+    const uploaded = {
+      type: 'resource_link' as const,
+      name: '../contract.pdf',
+      mimeType: 'application/pdf',
+      uri: `agnes-upload://${'a'.repeat(64)}/${'b'.repeat(64)}/536870912/00000000-0000-4000-8000-000000000001`,
+    }
+    expect(() => validateUserAttachments([uploaded])).not.toThrow()
+    expect(fromAcpPrompt(toAcpPrompt([uploaded]))).toEqual([uploaded])
+    for (const block of [
+      { ...uploaded, uri: uploaded.uri.replace('536870912', '9007199254740992') },
+      { ...uploaded, name: 'bad\nname' },
+      { ...uploaded, mimeType: 'bad' },
+    ])
+      expect(() => validateUserAttachments([block])).toThrow('invalid')
+    expect(() => validateUserAttachments(Array.from({ length: 51 }, () => uploaded))).toThrow('50')
     expect(
       validateMethod('_agnes/v1/session.followUp', 'params', {
         sessionId: 's',
@@ -199,6 +214,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/session.detach',
         '_agnes/v1/session.event',
         '_agnes/v1/session.followUp',
+        '_agnes/v1/session.fileUpload',
         '_agnes/v1/session.fork',
         '_agnes/v1/session.list',
         '_agnes/v1/session.preview',

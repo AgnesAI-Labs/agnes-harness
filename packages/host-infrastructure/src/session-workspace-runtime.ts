@@ -411,9 +411,16 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
       withSessionFileAccess(runtime.fs, () => this.fullAccessFor(sessionKey), invoke)
     const sandbox = runtime.seam ?? unavailableHookSandbox
     const checkpoint = services?.checkpoint ?? unavailableCheckpoint
+    const writeAuthority = runtime.fencedFs ?? runtime.fs
+    const authorizeWrite = writeAuthority.authorizeWrite
     return Object.freeze({
       root: runtime.root,
       fs: {
+        ...(authorizeWrite
+          ? {
+              authorizeWrite: (path: string) => withAccess(() => authorizeWrite.call(writeAuthority, path)),
+            }
+          : {}),
         read: (path, opts) =>
           withAccess(() =>
             runtime.fencedFs

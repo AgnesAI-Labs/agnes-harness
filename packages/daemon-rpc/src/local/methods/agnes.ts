@@ -73,6 +73,7 @@ import {
 import { commandAdmissionId, commandBinding } from '../command-binding.js'
 import { runQueued } from '../command-queue.js'
 import { createBlockedComputerUseControlPlane } from '../computer-use-control.js'
+import { registerFileUpload } from '../file-upload.js'
 import { registerSessionJobs, type SessionJobServices } from '../session-jobs.js'
 import { registerWorkspaceFiles } from '../workspace-files.js'
 import { type Feed, type LocalContext, legacyLedgerRpcError } from './acp.js'
@@ -449,6 +450,7 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.jobs.control',
       'session.workspace.list',
       'session.workspace.read',
+      'session.fileUpload',
       'session.readToolDetail',
       'session.list',
       'session.rename',
@@ -628,6 +630,7 @@ export function registerAgnes(
 ): void {
   const requireOwner = requireSessionOwner(cx)
   registerWorkspaceFiles(ep, cx, requireOwner)
+  registerFileUpload(ep, cx, requireOwner)
   registerSessionJobs(ep, cx.sessionServices, requireOwner)
   const computerUseControl = createBlockedComputerUseControlPlane(cx.lockedPackageMutations, cx.computerUse)
   type GrantBindingParams = {

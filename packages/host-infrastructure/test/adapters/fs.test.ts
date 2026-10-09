@@ -61,6 +61,7 @@ describe('fs adapter', () => {
       () => true,
       async () => {
         expect(new TextDecoder().decode(await f.read('existing.txt'))).toBe('keep')
+        await expect(f.authorizeWrite!('existing.txt')).rejects.toMatchObject({ code: 'E_FS_DENIED' })
         await expect(f.write('existing.txt', new TextEncoder().encode('changed'))).rejects.toMatchObject({
           code: 'E_FS_DENIED',
         })

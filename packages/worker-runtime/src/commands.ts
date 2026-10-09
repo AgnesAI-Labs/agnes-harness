@@ -24,6 +24,7 @@ import {
   type WorkerResourceBootstrapInput,
   type WorkerResourceState,
 } from '@agnes/resource-control-worker'
+import { sessionFileUpload } from './file-upload.js'
 import type { SessionCommandFrame, WorkerCommandFrame } from './frames.js'
 import type { McpRowRuntime } from './mcp-row-runtime.js'
 import { readToolDetailPage } from './tool-detail.js'
@@ -302,6 +303,8 @@ export async function handleCommand(
         if (o.aborts.get(runId) === abort) o.aborts.delete(runId)
       }
     }
+    case 'fileUpload':
+      return sessionFileUpload(session, p as import('@agnes/protocol').FileUploadRequest)
     case 'workspaceChanges':
       return sessionWorkspaceChanges(session, p as Parameters<typeof sessionWorkspaceChanges>[1])
     case 'workspaceFiles':

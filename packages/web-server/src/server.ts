@@ -10,6 +10,8 @@ import {
   type RpcError,
 } from '@agnes/protocol'
 import { HISTORY_SEARCH_PATH, handleHistorySearch } from './history-route.js'
+import { FILE_UPLOAD_PATH } from '@agnes/protocol'
+import { handleFileUpload, type FileUploadHandler } from './upload-route.js'
 import { VENDOR_ENTRY_NAMES } from './vendor-assets.js'
 import { webhookRoute } from './webhook-route.js'
 
@@ -88,6 +90,7 @@ type WatchedPluginBuild = {
 }
 
 export type WebServerOptions = {
+  fileUpload?: FileUploadHandler
   /** Directory containing the built index.html, app.js and style.css files. */
   root: string
   /** Credential-free loopback WebSocket endpoint advertised to the browser. */
@@ -457,6 +460,10 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
       }
       if (await handleWebhook?.(request, response)) return
       const requestUrl = new URL(request.url ?? '/', expectedOrigin)
+      if (requestUrl.pathname === FILE_UPLOAD_PATH) {
+        await handleFileUpload(request, response, expectedOrigin.origin, options.fileUpload)
+        return
+      }
       if (requestUrl.pathname === HISTORY_SEARCH_PATH) {
         const result = await handleHistorySearch({
           method: request.method,

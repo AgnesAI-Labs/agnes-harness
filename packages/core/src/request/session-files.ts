@@ -1,13 +1,18 @@
 import { scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { ToolContext } from '@agnes/extension-api'
-import type { ContentBlock } from '@agnes/protocol'
+import { type ContentBlock, sha256Hex, uploadedAttachment } from '@agnes/protocol'
 import { decodeAttachmentData, USER_MESSAGE_ATTACHMENT_LIMITS } from '@agnes/protocol-validation'
 import type { SessionImpl } from '../step/session.js'
 
-type UserFile = Extract<ContentBlock, { type: 'file' }>
+type UserFile = Extract<ContentBlock, { type: 'file' | 'resource_link' }> & { name: string; mimeType: string }
 const filesOf = (data: unknown): UserFile[] =>
   ((data as { content?: ContentBlock[] })?.content ?? []).filter(
-    (block): block is UserFile => block.type === 'file',
+    (block): block is UserFile =>
+      block.type === 'file' ||
+      (block.type === 'resource_link' &&
+        !!uploadedAttachment(block.uri) &&
+        typeof block.name === 'string' &&
+        typeof block.mimeType === 'string'),
   )
 
 /** Immutable log lookup, bounded to the active lane and the sequence visible at call start. */
@@ -81,6 +86,40 @@ export const readSessionAttachment = async (
   checkAbort()
   const file = filesOf(rows[0]?.data)[index - 1]
   if (!file) return undefined
+  if (file.type === 'resource_link') {
+    const ref = uploadedAttachment(file.uri)
+    const port = session.d.workspaceInvocation
+    if (
+      !ref ||
+      !port ||
+      (ref.session !== sha256Hex(session.key) &&
+        !(
+          session.d.log.parent &&
+          seq <= session.d.log.parent.boundarySeq &&
+          ref.session === sha256Hex(session.d.log.parent.key)
+        ))
+    )
+      throw new Error('Uploaded attachment workspace is unavailable.')
+    const invoke = async (view: Parameters<Parameters<typeof port.run>[0]>[0]) => {
+      checkAbort()
+      // Existing document parsers are bounded. Large originals remain available to workspace
+      // tools, which can read ranges without allocating the entire upload.
+      if (ref.size > USER_MESSAGE_ATTACHMENT_LIMITS.maxAggregateBytes && input.maxBytes === undefined)
+        throw new Error(
+          `Attachment exceeds the document reader byte limit. Read ranges from ${ref.path} with workspace tools.`,
+        )
+      const requested = input.maxBytes ?? USER_MESSAGE_ATTACHMENT_LIMITS.maxAggregateBytes
+      if (!Number.isSafeInteger(requested) || requested < 0) throw new Error('Invalid attachment byte limit.')
+      const limit = Math.min(ref.size, requested, USER_MESSAGE_ATTACHMENT_LIMITS.maxAggregateBytes)
+      // Host maps FsOps reads to the adapter's byte mode; offset is zero-based here.
+      const bytes = await view.fs().read(ref.path, { offset: 0, limit })
+      checkAbort()
+      return { name: file.name, mimeType: file.mimeType, bytes }
+    }
+    return session.d.workspacePublication
+      ? session.d.workspacePublication.workspace(() => ({ port, handler: invoke }))
+      : port.run(invoke)
+  }
   return {
     name: file.name,
     mimeType: file.mimeType,

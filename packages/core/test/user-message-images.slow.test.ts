@@ -1,6 +1,11 @@
 import { sha256Hex } from '@agnes/core-common/request/hash'
 import type { ToolContext } from '@agnes/extension-api'
-import { type ContentBlock, type ModelRecord, USER_MESSAGE_IMAGE_LIMITS } from '@agnes/protocol'
+import {
+  sha256Hex as uploadSessionHash,
+  type ContentBlock,
+  type ModelRecord,
+  USER_MESSAGE_IMAGE_LIMITS,
+} from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
@@ -58,7 +63,7 @@ it.each([
   expect(await log.scan({ type: 'inbox', limit: 10 })).toEqual([])
 })
 
-it.each(['direct', 'nested'] as const)(
+it.each(['direct', 'nested', 'uploaded'] as const)(
   'keeps file originals outside model context and marks %s reads untrusted',
   async (mode) => {
     const scripts = [textTurn('saved')]
@@ -114,8 +119,37 @@ it.each(['direct', 'nested'] as const)(
       },
       { source: 'agnes/tools-core', trust: 'builtin' },
     )
-    const { session, log } = await openSession({ provider, registry })
-    const content = [file(), { ...file(''), name: 'empty.txt', mimeType: 'text/plain' }]
+    const { session, log } = await openSession({
+      provider,
+      registry,
+      ...(mode === 'uploaded'
+        ? {
+            fsOps: fencedFs(
+              {
+                read: async (_path, opts) => {
+                  expect(opts?.offset).toBe(0)
+                  expect(opts?.limit).toBeLessThanOrEqual(100 * 1024 * 1024)
+                  return new TextEncoder().encode('original attachment content').slice(0, opts?.limit)
+                },
+                write: async () => undefined,
+                list: async () => [],
+                stat: async () => ({ kind: 'file' as const, size: 27, mtimeMs: 0 }),
+              },
+              testFsPolicy('/w'),
+            ),
+          }
+        : {}),
+    })
+    const uploaded: ContentBlock = {
+      type: 'resource_link',
+      name: 'data.bin',
+      mimeType: 'text/plain',
+      uri: `agnes-upload://${uploadSessionHash(session.key)}/${'a'.repeat(64)}/27/00000000-0000-4000-8000-000000000001`,
+    }
+    const content = [
+      mode === 'uploaded' ? uploaded : file(),
+      { ...file(''), name: 'empty.txt', mimeType: 'text/plain' },
+    ]
     await session.enqueue('next-turn', { content, actor })
     await session.run({ until: 'turn-end', signal: new AbortController().signal })
     const [row] = await log.scan({ type: 'user/message', lane: 'main', limit: 1 })
@@ -124,12 +158,28 @@ it.each(['direct', 'nested'] as const)(
     const request = JSON.stringify(provider.requests[0])
     expect(request).toContain(path)
     expect(request).toContain('<untrusted')
-    expect(request).not.toContain(content[0]?.data)
+    expect(request).not.toContain(file().data)
     const read = (path: string) => readSessionAttachment(session, { path }, new AbortController().signal)
     expect(new TextDecoder().decode((await read(path))?.bytes)).toBe('original attachment content')
     expect((await read(`session-file://${row.seq}/2`))?.bytes).toHaveLength(0)
     expect(await read(`${path},${path}`)).toBeUndefined()
     expect(await read('session-file://999999/1')).toBeUndefined()
+    if (mode === 'uploaded') {
+      expect(
+        (await readSessionAttachment(session, { path, maxBytes: 4 }, new AbortController().signal))?.bytes,
+      ).toEqual(new TextEncoder().encode('orig'))
+      await expect(
+        readSessionAttachment(session, { path, maxBytes: -1 }, new AbortController().signal),
+      ).rejects.toThrow('byte limit')
+      const wrong = await log.append([
+        session.ev('user/message', {
+          content: [
+            { ...uploaded, uri: uploaded.uri.replace(uploadSessionHash(session.key), 'b'.repeat(64)) },
+          ],
+        }),
+      ])
+      await expect(read(`session-file://${wrong.firstSeq}/1`)).rejects.toThrow('unavailable')
+    }
     const foreign = await log.append([session.ev('user/message', { content: [file()] }, { lane: 'other' })])
     expect(await read(`session-file://${foreign.firstSeq}/1`)).toBeUndefined()
     const list = await readSessionAttachment(

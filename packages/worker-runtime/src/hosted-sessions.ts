@@ -1,6 +1,7 @@
 import type { Host, HostSession, WorkspaceBinding } from '@agnes/host'
 import { rpcError, type WorkerGeneration } from '@agnes/protocol'
 import { handleCommand, type WorkerResourceSlot } from './commands.js'
+import { closeSessionFileUploads } from './file-upload.js'
 import {
   type EventFrame,
   type PreviewFrame,
@@ -325,7 +326,11 @@ export class HostedSessions {
     hosted.tail?.abort()
     const done = (async () => {
       try {
-        await session.close()
+        try {
+          await closeSessionFileUploads(session)
+        } finally {
+          await session.close()
+        }
       } catch (error) {
         this.log(
           key,
@@ -375,7 +380,11 @@ export class HostedSessions {
         preset: stub.preset,
       })
       if (stub.pluginGenerationId && session.pluginGenerationId !== stub.pluginGenerationId) {
-        await session.close()
+        try {
+          await closeSessionFileUploads(session)
+        } finally {
+          await session.close()
+        }
         throw new Error('E_GENERATION_RESUME_MISMATCH: hibernated session changed plugin generation')
       }
       this.stubs.delete(key)
@@ -496,7 +505,11 @@ export class HostedSessions {
       for (const abort of hosted.aborts.values()) abort.abort()
       this.options.channel.closeSession(sessionKey)
       try {
-        await hosted.session.close()
+        try {
+          await closeSessionFileUploads(hosted.session)
+        } finally {
+          await hosted.session.close()
+        }
       } finally {
         // HostSession.close() can fail after the session has already been removed from this owner's
         // map. Always release the kernel registration as well, otherwise no owner remains that can

@@ -7,13 +7,32 @@ export const USER_MESSAGE_ATTACHMENT_LIMITS = Object.freeze({
 
 /** Applies to files and images together, independently of the model's image limits. */
 export function validateUserAttachments(
-  content: readonly { type: string; data?: string; name?: string; mimeType?: string }[],
+  content: readonly { type: string; data?: string; name?: string; mimeType?: string; uri?: string }[],
 ): void {
-  const attachments = content.filter((block) => block.type === 'file' || block.type === 'image')
+  const attachments = content.filter(
+    (block) =>
+      block.type === 'file' ||
+      block.type === 'image' ||
+      (block.type === 'resource_link' && block.uri?.startsWith('agnes-upload:')),
+  )
   if (attachments.length > USER_MESSAGE_ATTACHMENT_LIMITS.maxCount)
     throw new Error('A message can hold at most 50 attachments.')
   let total = 0
   for (const block of attachments) {
+    if (block.type === 'resource_link') {
+      if (
+        !/^agnes-upload:\/\/[a-f0-9]{64}\/[a-f0-9]{64}\/[0-9]+\/[a-f0-9-]{36}$/u.test(block.uri ?? '') ||
+        !Number.isSafeInteger(Number(block.uri?.split('/')[4])) ||
+        !block.name ||
+        block.name.length > 256 ||
+        [...block.name].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127) ||
+        !block.mimeType ||
+        block.mimeType.length > 128 ||
+        !/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/iu.test(block.mimeType)
+      )
+        throw new Error('Uploaded attachment reference is invalid.')
+      continue
+    }
     if (typeof block.data !== 'string') throw new Error('Attachment data must be Base64.')
     if (
       block.type === 'file' &&

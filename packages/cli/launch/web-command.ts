@@ -234,6 +234,7 @@ export async function runWebCommand(
       root: resources.webRoot,
       historySearch: adminHandler.historySearch,
       triggers: adminHandler.triggers,
+      fileUpload: adminHandler.fileUpload,
       planCommand: adminHandler.planCommand,
       wsUrl: backend.web.url,
       port,

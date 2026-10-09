@@ -87,6 +87,7 @@ describe('authenticated session ownership RPC guard', () => {
         { method: '_agnes/v1/session.workspace.list', params: { sessionId } },
         { method: '_agnes/v1/session.workspace.changes', params: { sessionId } },
         { method: '_agnes/v1/session.workspace.read', params: { sessionId, path: 'report.md' } },
+        { method: '_agnes/v1/session.fileUpload', params: { sessionId, operation: 'limits' } },
         { method: '_agnes/v1/session.fork', params: { sessionId, at: 1 } },
       ])
         await expect(stranger.handle({ jsonrpc: '2.0', id: 4, ...request })).resolves.toMatchObject({

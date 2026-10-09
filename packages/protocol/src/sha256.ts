@@ -29,22 +29,50 @@ function utf8(text: string): number[] {
   return out
 }
 
-export function sha256Hex(text: string): string {
-  const bytes = utf8(text)
-  const bitLen = bytes.length * 8
-  bytes.push(0x80)
-  while (bytes.length % 64 !== 56) bytes.push(0)
-  // The length is 64 bits; the high word is written from a float divide because a message long
-  // enough to need it is longer than a 32-bit shift can express.
-  const hi = Math.floor(bitLen / 0x100000000)
-  for (const shift of [24, 16, 8, 0]) bytes.push((hi >>> shift) & 0xff)
-  for (const shift of [24, 16, 8, 0]) bytes.push((bitLen >>> shift) & 0xff)
+/** Incremental byte SHA-256: retains only one 64-byte block, regardless of file size. */
+export class IncrementalSha256 {
+  private h = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
+  private block = new Uint8Array(64)
+  private w = new Uint32Array(64)
+  private used = 0
+  private length = 0
+  private finished = false
 
-  const h = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]
-  const w = new Array<number>(64)
-  for (let block = 0; block < bytes.length; block += 64) {
+  update(bytes: Uint8Array): this {
+    if (this.finished) throw new Error('SHA-256 is already finalized.')
+    this.length += bytes.length
+    for (let at = 0; at < bytes.length; ) {
+      const count = Math.min(64 - this.used, bytes.length - at)
+      this.block.set(bytes.subarray(at, at + count), this.used)
+      this.used += count
+      at += count
+      if (this.used === 64) {
+        this.compress(this.block)
+        this.used = 0
+      }
+    }
+    return this
+  }
+
+  digest(): string {
+    if (this.finished) throw new Error('SHA-256 is already finalized.')
+    const bitLen = this.length * 8
+    const tail = new Uint8Array(this.used < 56 ? 64 : 128)
+    tail.set(this.block.subarray(0, this.used))
+    tail[this.used] = 0x80
+    const view = new DataView(tail.buffer)
+    view.setUint32(tail.length - 8, Math.floor(bitLen / 0x100000000))
+    view.setUint32(tail.length - 4, bitLen >>> 0)
+    this.update(tail.subarray(this.used))
+    this.finished = true
+    return this.h.map((x) => x.toString(16).padStart(8, '0')).join('')
+  }
+
+  private compress(bytes: Uint8Array): void {
+    const h = this.h
+    const w = this.w
     for (let i = 0; i < 16; i++) {
-      const o = block + i * 4
+      const o = i * 4
       w[i] =
         (((bytes[o] as number) << 24) |
           ((bytes[o + 1] as number) << 16) |
@@ -79,5 +107,8 @@ export function sha256Hex(text: string): string {
     const round = [a, b, c, d, e, f, g, hh]
     for (let i = 0; i < 8; i++) h[i] = ((h[i] as number) + (round[i] as number)) >>> 0
   }
-  return h.map((x) => x.toString(16).padStart(8, '0')).join('')
+}
+
+export function sha256Hex(text: string): string {
+  return new IncrementalSha256().update(Uint8Array.from(utf8(text))).digest()
 }
