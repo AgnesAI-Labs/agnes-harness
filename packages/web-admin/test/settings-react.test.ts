@@ -278,7 +278,11 @@ it.each(['success', 'failure'] as const)(
           ),
         ),
       )
-      expect(host.querySelector('[data-testid="settings-refresh"]')?.getAttribute('aria-busy')).toBe('true')
+      await vi.waitFor(() =>
+        expect(host.querySelector('[data-testid="settings-refresh"]')?.getAttribute('aria-busy')).toBe(
+          'true',
+        ),
+      )
       flushSync(() => document.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: 'discover' })))
       expect(host.querySelector('[data-testid="settings-page-discover"]')).not.toBeNull()
       expect(host.querySelector('[data-testid="settings-refresh"]')).toBeNull()

@@ -134,8 +134,8 @@ export function SettingsHub({
             ) : undefined
           }
         >
-          {busy && <SettingsState tone="loading">{t('loading')}</SettingsState>}
-          {failed && <SettingsState tone="error">{t('unavailable')}</SettingsState>}
+          {needsRuntimeCatalog && busy && <SettingsState tone="loading">{t('loading')}</SettingsState>}
+          {needsRuntimeCatalog && failed && <SettingsState tone="error">{t('unavailable')}</SettingsState>}
           {(() => {
             const Component = settingsSections.get(page)?.component
             return Component ? (
