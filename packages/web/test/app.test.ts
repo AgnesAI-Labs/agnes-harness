@@ -267,6 +267,27 @@ function modelMenu(): HTMLElement {
   return found
 }
 
+/**
+ * 即时提示迁移后落在 `document.body` 的 antd 通知浮层里；`#notice` 只剩会话恢复块和两条页面级
+ * 提示（首屏未配置、当前后台找不到该任务），所以断言提示文案要读这一处。
+ * `.agnes-ui-notification` 是 web-ui 包装组件的根类，不依赖 antd 的内部结构。
+ */
+function notices(): string {
+  return [...document.querySelectorAll<HTMLElement>('.agnes-ui-notification')]
+    .map((node) => node.textContent ?? '')
+    .join('\n')
+}
+
+/** 用真实校验器造一个错误实例：断言本地化时不必依赖 protocol-validation 的内部类。 */
+function raisedBy(run: () => void): unknown {
+  try {
+    run()
+  } catch (error) {
+    return error
+  }
+  throw new Error('the invalid input was accepted')
+}
+
 afterEach(async () => {
   window.dispatchEvent(new Event('pagehide'))
   await Promise.resolve()
@@ -780,7 +801,7 @@ describe('web session selection', () => {
       detailRow('model-detail-thinking')?.click()
       expect(leafOption('高')?.getAttribute('aria-selected')).toBe('true')
       leafOption('低')?.click()
-      await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('新会话将使用'))
+      await vi.waitFor(() => expect(notices()).toContain('新会话将使用'))
       // 选完一个参数整条菜单收起，改下一个要重新展开。
       await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
       await openDetail()
@@ -971,7 +992,7 @@ describe('web session selection', () => {
     await savedCallback(snapshot)
     for (const id of ['model', 'composer-workspace', 'composer-permission', 'new', 'prompt'])
       expect(control(id).disabled).toBe(false)
-    expect(document.getElementById('notice')?.textContent).toContain('尚未生效')
+    await vi.waitFor(() => expect(notices()).toContain('尚未生效'))
     models = [...models, { route: 'new', id: 'model-b' }]
     await savedCallback({ ...snapshot, effect: 'new-sessions' })
     control('model').click()
@@ -991,10 +1012,6 @@ describe('web session selection', () => {
 
   it('keeps the model picker flat and applies the selected model settings', async () => {
     installPublicFixture()
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      callback(0)
-      return 1
-    })
     const old = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
     sdk.createClient.mockReturnValue({
       initialize: vi.fn(async () => undefined),
@@ -1092,7 +1109,7 @@ describe('web session selection', () => {
       }
       saveRead.resolve(result)
       await saved
-      expect(document.getElementById('notice')?.textContent).toContain('模型配置已更新')
+      await vi.waitFor(() => expect(notices()).toContain('模型配置已更新'))
       if (order === 'poll-fails') pollRead.reject(new Error('poll unavailable'))
       else pollRead.resolve(result)
       await vi.waitFor(() => expect(modelButton.disabled).toBe(false))
@@ -1102,6 +1119,74 @@ describe('web session selection', () => {
       if (order === 'poll-first') expect(modelMenu().textContent).toContain('model-c')
     },
   )
+
+  /** 首屏引导与会话恢复块共用 #notice；保存设置必须只清掉前者。 */
+  const bootNotConfigured = async (recoveryError: Error | undefined) => {
+    installPublicFixture()
+    const old = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    // 首屏没有可用模型才会挂出配置引导；保存之后再让目录里出现模型。
+    const apis = vi.fn(async () => ({ profile: { models: [] as { route: string; id: string }[] } }))
+    sdk.createClient.mockReturnValue({
+      initialize: vi.fn(async () => undefined),
+      on: vi.fn(),
+      close: vi.fn(async () => undefined),
+      apis,
+      config: {
+        get: vi.fn(async () => ({ configured: false })),
+        providers: vi.fn(async () => ({ providers: [] })),
+      },
+      workspace: { list: vi.fn(async () => ({ items: [] })) },
+      session: { list: vi.fn(async () => ({ items: [{ sessionId: 'old' }] })) },
+    })
+    if (recoveryError) binding.loadWebSession.mockRejectedValueOnce(recoveryError)
+    binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
+    await import('../src/app.js')
+    const notice = document.getElementById('notice') as HTMLElement
+    const save = configurationCallback.saved
+    if (!save) throw new Error('settings callback not bound')
+    const publishModel = () =>
+      apis.mockImplementation(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } }))
+    return {
+      notice,
+      publishModel,
+      save: (snapshot: Partial<ConfigSnapshot>) =>
+        save({
+          configured: true,
+          effect: 'new-sessions',
+          provider: { id: 'local', route: 'local', model: 'model-a' },
+          ...snapshot,
+        } as ConfigSnapshot),
+    }
+  }
+
+  it('clears the first-run guide once a configuration is saved, and reports the result as a notification', async () => {
+    const { notice, publishModel, save } = await bootNotConfigured(undefined)
+    await vi.waitFor(() => expect(notice.textContent).toContain('先配置模型，即可开始第一个任务。'))
+
+    publishModel()
+    await save({})
+
+    // 保存设置走 onSaved 直接回调，不经过 run(op)；没有这条清空，顶栏会一直挂着这句已经不成立的话。
+    expect(notice.textContent).toBe('')
+    await vi.waitFor(() => expect(notices()).toContain('模型配置已更新'))
+  })
+
+  it('keeps the recovery block and its buttons when a configuration is saved', async () => {
+    const missing = Object.assign(new Error('INTERNAL_ERROR (-32603)'), {
+      data: { code: 'SESSION_PROFILE_MISSING' },
+    })
+    const { notice, publishModel, save } = await bootNotConfigured(missing)
+    await vi.waitFor(() => expect(notice.dataset.kind).toBe('session-recovery'))
+    const buttons = [...notice.querySelectorAll('button')]
+
+    publishModel()
+    await save({})
+
+    expect(notice.dataset.kind).toBe('session-recovery')
+    expect(notice.textContent).toContain('旧配置文件已缺失')
+    expect([...notice.querySelectorAll('button')]).toEqual(buttons)
+    await vi.waitFor(() => expect(notices()).toContain('模型配置已更新'))
+  })
 
   it.each(['missing-profile', 'system-error', 'legacy-ledger'])(
     'keeps %s recovery visible and allows retry or a new task',
@@ -1327,7 +1412,7 @@ describe('web session selection', () => {
     const newSessionCreate = document.getElementById('new-session-create') as HTMLButtonElement
 
     await vi.waitFor(() => expect(prompt.disabled).toBe(false))
-    expect(document.getElementById('notice')?.textContent).toContain('无法读取工作区列表')
+    await vi.waitFor(() => expect(notices()).toContain('无法读取工作区列表'))
     expect(send.disabled).toBe(true)
     expect(send.dataset.mode).toBe('idle')
     expect(send.getAttribute('aria-label')).toBe('发送')
@@ -1363,9 +1448,7 @@ describe('web session selection', () => {
     newButton.click()
     expect(newSession.open).toBe(true)
     expect(create).not.toHaveBeenCalled()
-    await vi.waitFor(() =>
-      expect(document.getElementById('notice')?.textContent).toContain('detach cleanup failed'),
-    )
+    await vi.waitFor(() => expect(notices()).toContain('detach cleanup failed'))
     expect(prompt.disabled).toBe(false)
     newSessionCwd.value = '/cancelled-directory'
     newSessionCancel.click()
@@ -1633,9 +1716,7 @@ describe('web session selection', () => {
         )
         if (mode === 'failed') {
           listing.reject(new Error('sidebar list failed'))
-          await vi.waitFor(() =>
-            expect(document.getElementById('notice')?.textContent).toContain('sidebar list failed'),
-          )
+          await vi.waitFor(() => expect(notices()).toContain('sidebar list failed'))
         }
         expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe('')
         expect(fresh.prompt).toHaveBeenCalledTimes(1)
@@ -1721,9 +1802,7 @@ describe('web session selection', () => {
     modelMenu().querySelector<HTMLElement>('[role="option"]')?.click()
 
     submit('保留这条首轮草稿')
-    await vi.waitFor(() =>
-      expect(document.getElementById('notice')?.textContent).toContain('initial model failed'),
-    )
+    await vi.waitFor(() => expect(notices()).toContain('initial model failed'))
     expect(composer.value).toBe('保留这条首轮草稿')
     expect(fresh.prompt).not.toHaveBeenCalled()
     expect(create).toHaveBeenCalledTimes(1)
@@ -1732,9 +1811,7 @@ describe('web session selection', () => {
 
     submit('保留这条首轮草稿')
     await vi.waitFor(() =>
-      expect(document.getElementById('notice')?.textContent).toContain(
-        '模型凭据已失效或被上游拒绝，请在设置中重新配置或登录该模型账号。',
-      ),
+      expect(notices()).toContain('模型凭据已失效或被上游拒绝，请在设置中重新配置或登录该模型账号。'),
     )
     expect(fresh.setModel).toHaveBeenCalledTimes(2)
     expect(fresh.prompt).toHaveBeenCalledTimes(1)
@@ -2216,7 +2293,7 @@ describe('image composer submissions', () => {
     ])
     await vi.waitFor(() => expect(draft.value).toBe('请解释这张图'))
     expect(document.querySelector('.composer-image-preview img')).not.toBeNull()
-    expect(document.getElementById('notice')?.textContent).toContain('follow-up rejected')
+    await vi.waitFor(() => expect(notices()).toContain('follow-up rejected'))
   })
 
   it('accepts an image as a file attachment when the selected model has only text input', async () => {
@@ -2249,10 +2326,38 @@ describe('image composer submissions', () => {
     expect(active.prompt).not.toHaveBeenCalled()
     expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe('保留文字和图片')
     expect(document.querySelector('.composer-image-preview img')).not.toBeNull()
-    expect(document.getElementById('notice')?.textContent).toContain('aggregate pixel limit')
+    await vi.waitFor(() => expect(notices()).toContain('aggregate pixel limit'))
     validation.mockRestore()
     submit('保留文字和图片')
     await vi.waitFor(() => expect(active.prompt).toHaveBeenCalledTimes(1))
+  })
+
+  it('names an attachment refusal in the interface language instead of the validator’s English', async () => {
+    const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
+    await start(active)
+    await attachPng()
+    const protocol = await import('@agnes/protocol')
+    // 同一个「附件过多」有两处报出：输入框侧取词条，提交侧此前只能原样转发英文。用真实校验器造一个
+    // 带 code 的实例，断言就不必依赖 protocol-validation 的内部类。
+    const tooMany = raisedBy(() =>
+      protocol.validateUserAttachments(
+        Array.from({ length: protocol.USER_MESSAGE_ATTACHMENT_LIMITS.maxCount + 1 }, () => ({
+          type: 'file',
+          name: 'a.txt',
+          mimeType: 'text/plain',
+          data: 'eA==',
+        })),
+      ),
+    )
+    const validation = vi.spyOn(protocol, 'validateUserAttachments').mockImplementationOnce(() => {
+      throw tooMany
+    })
+    submit('带附件发送')
+
+    expect(active.prompt).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(notices()).toContain('一条消息最多添加 50 个附件。'))
+    expect(notices()).not.toContain('A message can hold at most 50 attachments.')
+    validation.mockRestore()
   })
 
   it('keeps an image draft and refuses a WebSocket frame that exceeds the transport limit', async () => {
@@ -2265,7 +2370,7 @@ describe('image composer submissions', () => {
     expect(active.followUp).not.toHaveBeenCalled()
     expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe(longText)
     expect(document.querySelector('.composer-image-preview img')).not.toBeNull()
-    expect(document.getElementById('notice')?.textContent).toContain('144 MiB 限制')
+    await vi.waitFor(() => expect(notices()).toContain('144 MiB 限制'))
   })
 })
 
@@ -2337,7 +2442,7 @@ describe('web model confirmation', () => {
     openModelList()
     modelMenu().querySelectorAll<HTMLElement>('[role="option"]')[1]?.click()
     await vi.waitFor(() => expect(old.setModel).toHaveBeenCalledTimes(1))
-    await vi.waitFor(() => expect(document.getElementById('notice')?.dataset.kind).toBe('error'))
+    await vi.waitFor(() => expect(notices()).toContain('model switch failed'))
     expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-a')
     expect(model.getAttribute('aria-label')).not.toContain('account-acct-private')
 
@@ -2439,7 +2544,7 @@ describe('session action review regressions', () => {
     expect(document.querySelector('main')?.inert).toBe(true)
     document.querySelector<HTMLButtonElement>('[data-session-action-id="old"]')?.click()
     menuItem('分叉会话')?.click()
-    await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('没有可分叉'))
+    await vi.waitFor(() => expect(notices()).toContain('没有可分叉'))
     expect(document.body.classList.contains('sidebar-open')).toBe(false)
     expect(document.querySelector('main')?.inert).toBe(false)
     expect(document.activeElement).toBe(document.getElementById('sidebar-toggle'))
@@ -2650,11 +2755,12 @@ describe('incremental opening', () => {
       expect(reload.mock.calls.length).toBe(0)
       expect(probes(fetcher)).toBe(2)
       const status = document.getElementById('reconnect-notice') as HTMLElement
-      const notice = document.getElementById('notice') as HTMLElement
       expect(status.hidden).toBe(false)
       expect(connection.dataset.state).toBe('reconnecting')
-      // The notice states the fact without contradicting the automatic recovery.
-      expect(notice.textContent).not.toContain('重新运行')
+      // 连接断开的文案已经挪到通知浮层，读 #notice 只会拿到空串、断言永远通过不了。先确认提示
+      // 真的出现，再看它没有和自动恢复打架。
+      await vi.waitFor(() => expect(notices()).toContain('与后台的连接已断开'))
+      expect(notices()).not.toContain('重新运行')
       // A Web process that outlived the daemon still serves the old address: no reload into it.
       fetcher.mockImplementation(async () => samePage())
       await vi.waitFor(() => expect(probes(fetcher)).toBe(3), { timeout: 4000 })
@@ -2693,8 +2799,7 @@ describe('incremental opening', () => {
       expect(connection.dataset.state).toBe('closed')
       // A later message rewrites the notice, not the recovery status.
       emit('gap', { sessionId: 'old', earliestSeq: 1 })
-      const notice = document.getElementById('notice') as HTMLElement
-      expect(notice.textContent).toContain('部分历史事件')
+      await vi.waitFor(() => expect(notices()).toContain('部分历史事件'))
       expect(status.querySelector('button')).toBe(retry)
       // Showing the tab again resumes automatic probing, which still refuses the old address.
       fetcher.mockImplementation(async () => samePage())

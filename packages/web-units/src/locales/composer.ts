@@ -4,10 +4,14 @@ import type { LocaleCatalog } from './index.js'
 export const composerLocaleCatalog: LocaleCatalog = {
   en: {
     'composer.attachment.add': 'Add attachments',
+    'composer.attachment.dataInvalid': 'The attachment data is not valid Base64.',
     'composer.attachment.hint':
       'All file types; up to 50 attachments and 100 MiB total after image processing. Images follow model limits. Some formats may be unreadable.',
+    'composer.attachment.nameInvalid': 'The attachment name or file type is invalid.',
     'composer.attachment.remove': 'Remove attachment {index}',
+    'composer.attachment.tooLarge': 'Attachments in one message must total no more than 100 MiB.',
     'composer.attachment.tooMany': 'A message can hold at most {count} attachments.',
+    'composer.attachment.unavailable': 'Attachments cannot be added right now.',
     'composer.input.label': 'Task content',
     'composer.permission.accessible': 'Choose permission for this session',
     'composer.permission.workspace': 'Changes apply within the workspace',
@@ -42,13 +46,19 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.image.remove': 'Remove image {index}',
     'composer.image.tooMany': 'A message can hold at most {count} images.',
     'composer.image.tooLarge': 'Attachments in one message must total no more than 100 MiB.',
+    'composer.image.tooLargePixels':
+      'The image has too many pixels to attach. Crop or scale it down and try again.',
   },
   'zh-CN': {
     'composer.attachment.add': '添加附件',
+    'composer.attachment.dataInvalid': '附件数据不是有效的 Base64。',
     'composer.attachment.hint':
       '可上传各类文件，最多 50 个，图片处理后附件合计不超过 100 MiB。图片按模型限制；部分格式可能无法解析。',
+    'composer.attachment.nameInvalid': '附件名称或文件类型无效。',
     'composer.attachment.remove': '移除附件 {index}',
+    'composer.attachment.tooLarge': '单条消息中的附件合计不能超过 100 MiB。',
     'composer.attachment.tooMany': '一条消息最多添加 {count} 个附件。',
+    'composer.attachment.unavailable': '当前无法添加附件。',
     'composer.input.label': '任务内容',
     'composer.permission.accessible': '选择本会话权限',
     'composer.permission.workspace': '工作区内修改',
@@ -80,5 +90,6 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.image.remove': '移除图片 {index}',
     'composer.image.tooMany': '一条消息最多添加 {count} 张图片。',
     'composer.image.tooLarge': '单条消息中的附件合计不能超过 100 MiB。',
+    'composer.image.tooLargePixels': '图片像素过多，无法添加。请裁剪或缩小后重试。',
   },
 }

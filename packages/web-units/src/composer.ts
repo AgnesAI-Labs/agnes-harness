@@ -26,6 +26,7 @@ import {
   USER_MESSAGE_IMAGE_LIMITS,
   validateUserAttachments,
 } from '@agnes/protocol-validation'
+import { Tooltip } from '@agnes/web-ui'
 import {
   type ChangeEvent,
   type ClipboardEvent,
@@ -45,6 +46,7 @@ import {
   useState,
 } from 'react'
 import { flushSync } from 'react-dom'
+import { attachmentErrorNotice } from './composer-errors.js'
 import type { Translate } from './locales/index.js'
 
 export type ModelPickerOption = {
@@ -442,12 +444,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   )
 
   const addFiles = async (files: readonly File[]): Promise<void> => {
+    const t = dependencies.translate
     if (imageDisabled) {
-      onError(new Error(imageHint))
+      // 文件一个都没加进去，这时报 attachment.hint 那段「各类文件都能传」的限制说明，
+      // 读起来像是加成功了。
+      onError(new Error(t('composer.attachment.unavailable')))
       return
     }
-    const t = dependencies.translate
-    // 这张表用于把「内容不是图片」与「读不出来」区分开，所以文案只算一次再比对。
     const invalidImage = t('composer.image.invalid')
     const tooLargeMessage = t('composer.image.tooLarge')
     const accepted: File[] = []
@@ -557,8 +560,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               onError(new Error(t('composer.image.modelLimit')))
               return
             }
-          } catch {
-            throw new Error(invalidImage)
+          } catch (error) {
+            // 解码自己也卡同一批上限：尺寸或体积超限若报成「不是有效图片」，用户会去改图片格式，
+            // 而该做的是把图缩小。缩放没接线、或缩放后仍超限时才会走到这里。
+            // 不是校验错误的（读取失败）没有对应词条，沿用 invalidImage 兜底。
+            const notice = attachmentErrorNotice(error)
+            onError(new Error(notice ? t(notice.key, notice.vars) : invalidImage))
+            return
           }
           const attachment: ComposerAttachment = {
             type: 'image',
@@ -573,12 +581,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           // 体积，不会各自按同一份旧快照判定而一起越过合计上限。
           publishAttachments([...current, attachment])
         } catch (error) {
-          if (readGeneration === generation.current)
-            onError(
-              error instanceof Error && error.message === invalidImage
-                ? error
-                : new Error(t('composer.image.readFailed')),
-            )
+          // 解码失败的原因在上面那个 catch 里已经按错误码报过，走到这里的是读取失败或文件块的
+          // 附件校验失败。后者带 code（数量、文件名、体积），走共享映射取词条：一律说成
+          // 「无法读取该附件」，用户会去重传，而该做的是少加几个或换个名字。
+          if (readGeneration === generation.current) {
+            const refusal = attachmentErrorNotice(error)
+            onError(new Error(refusal ? t(refusal.key, refusal.vars) : t('composer.image.readFailed')))
+          }
         } finally {
           if (readGeneration === generation.current) {
             pendingCountRef.current -= 1
@@ -1045,41 +1054,52 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           },
         }),
         createElement('span', { id: 'composer-image-hint', className: 'visually-hidden' }, imageHint),
+        // 悬停说明走 antd Tooltip：原生 title 的气泡样式、延迟和位置都不可控，和界面其它浮层也不一致。
+        // 无障碍说明仍由按钮自己的 aria-describedby 指向下面那个 visually-hidden 的 #composer-image-hint，
+        // 所以去掉 title 不丢信息。
         createElement(
-          'button',
-          {
-            id: 'composer-attach',
-            type: 'button',
-            className: 'secondary-button compact',
-            'aria-label': dependencies.translate('composer.attachment.add'),
-            'aria-describedby': 'composer-image-hint',
-            'aria-disabled':
-              imageDisabled || attachments.length + pendingCount >= USER_MESSAGE_ATTACHMENT_LIMITS.maxCount,
-            title: imageHint,
-            onClick: () => {
-              if (imageDisabled) {
-                if (!policy.supported) onError(new Error(imageHint))
-                return
-              }
-              if (attachments.length + pendingCount >= USER_MESSAGE_ATTACHMENT_LIMITS.maxCount) {
-                onError(
-                  new Error(
-                    dependencies.translate('composer.attachment.tooMany', {
-                      count: USER_MESSAGE_ATTACHMENT_LIMITS.maxCount,
-                    }),
-                  ),
-                )
-                return
-              }
-              fileInput.current?.click()
-            },
-          },
+          Tooltip,
+          { title: imageHint },
           createElement(
-            'svg',
-            { className: 'icon', viewBox: '0 0 24 24', 'aria-hidden': true },
-            createElement('path', {
-              d: 'm16 6l-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551',
-            }),
+            'button',
+            {
+              id: 'composer-attach',
+              type: 'button',
+              className: 'secondary-button compact',
+              'aria-label': dependencies.translate('composer.attachment.add'),
+              'aria-describedby': 'composer-image-hint',
+              'aria-disabled':
+                imageDisabled || attachments.length + pendingCount >= USER_MESSAGE_ATTACHMENT_LIMITS.maxCount,
+              onClick: () => {
+                if (imageDisabled) {
+                  // 条件比 addFiles 那处窄，是有意保留的：只有模型不接受图片时才说话，正在发送
+                  // 或输入框未就绪时点它不提示。走到这里原因确定是模型不收图片，取
+                  // image.unsupported；addFiles 那条路是文件一个都没加进去，报的是
+                  // attachment.unavailable，两处的条件与文案都不通用。
+                  if (!policy.supported)
+                    onError(new Error(dependencies.translate('composer.image.unsupported')))
+                  return
+                }
+                if (attachments.length + pendingCount >= USER_MESSAGE_ATTACHMENT_LIMITS.maxCount) {
+                  onError(
+                    new Error(
+                      dependencies.translate('composer.attachment.tooMany', {
+                        count: USER_MESSAGE_ATTACHMENT_LIMITS.maxCount,
+                      }),
+                    ),
+                  )
+                  return
+                }
+                fileInput.current?.click()
+              },
+            },
+            createElement(
+              'svg',
+              { className: 'icon', viewBox: '0 0 24 24', 'aria-hidden': true },
+              createElement('path', {
+                d: 'm16 6l-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551',
+              }),
+            ),
           ),
         ),
         createElement(

@@ -53,6 +53,13 @@ export {
 export { Button, type ButtonProps } from './ui/button.js'
 export { Dialog, type DialogProps } from './ui/dialog.js'
 export { Field, type FieldProps } from './ui/field.js'
+export {
+  type NoticeKind,
+  NotificationHost,
+  type NotificationHostProps,
+  type Notifier,
+  type NotifyInput,
+} from './ui/notification.js'
 export { Select, type SelectProps } from './ui/select.js'
 export {
   type StateLight,
@@ -63,4 +70,5 @@ export {
 } from './ui/state-lights.js'
 export { Switch, type SwitchProps } from './ui/switch.js'
 export { Tabs, type TabsProps } from './ui/tabs.js'
+export { Tooltip, type TooltipProps } from './ui/tooltip.js'
 export * from './ui-locale.js'

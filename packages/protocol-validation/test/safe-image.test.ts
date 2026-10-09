@@ -158,12 +158,17 @@ describe('safe image decoder', () => {
     expect(() =>
       decodeSafeImage({ data: base64(jpeg(10, 10).slice(0, -2)), mimeType: 'image/jpeg' }, limits),
     ).toThrow(/JPEG/)
-    expect(() =>
+  })
+
+  it('accepts a JPEG with bytes after EOI', () => {
+    // Decoders stop at EOI, so a trailer there is outside the image. Real device screenshots carry a
+    // fixed 24-byte trailer; requiring the file to end exactly at EOI rejected them as corrupt.
+    expect(
       decodeSafeImage(
         { data: base64([...jpeg(10, 10), ...new Array(24).fill(0)]), mimeType: 'image/jpeg' },
         limits,
       ),
-    ).toThrow(/trailing bytes/)
+    ).toMatchObject({ mime: 'image/jpeg', width: 10, height: 10 })
   })
 
   it('requires critical PNG chunks in safe order and rejects compressed ancillary data', () => {
