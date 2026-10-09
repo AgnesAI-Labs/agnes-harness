@@ -110,9 +110,9 @@ import {
   UI_PROJECTION_DEFAULT_MAX_BYTES,
   validateActor,
 } from '@agnes/protocol'
-import { restoreToolDisclosure } from '../execution/turn/tool-disclosure.js'
 import { unbindChildFactory } from '../child/sessions.js'
 import { runDeferred } from '../execution/turn/deferred.js'
+import { restoreToolDisclosure } from '../execution/turn/tool-disclosure.js'
 // A type-only import, erased at compile time, so it is not a runtime cycle back to the kernel.
 import type { CoreDiagName } from '../kernel.js'
 import { LoopChildren } from '../loop/children.js'

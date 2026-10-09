@@ -7,7 +7,6 @@ import { withTimeout } from '@agnes/core-effects/effects/wrap'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { BudgetState } from '@agnes/core-ledger/reduce/shapes'
 import type { InferenceEvent, JsonValue, ModelRecord, RequestBody as WireBody } from '@agnes/protocol'
-import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
 import { childReceiptNarrative } from '../../child/receipts.js'
 import {
   releaseTreeReservation,
@@ -72,6 +71,7 @@ import { runCoreReplacement, runSlot } from '../../step/reentry.js'
 import type { OpContext, SessionImpl, StepOutcome } from '../../step/session.js'
 import { toolArgumentError } from '../../step/tool-args.js'
 import { builtinBudgetPreflight, contextBudgetError } from './gate.js'
+import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
 
 /** Truncation reasons already reported per session in this process: one diagnostic row each. */
 const reportedMediaWindows = new WeakMap<SessionImpl, Set<RequestMediaScanTruncation['reason']>>()

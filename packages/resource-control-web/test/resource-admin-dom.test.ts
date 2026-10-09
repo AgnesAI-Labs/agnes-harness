@@ -1,8 +1,8 @@
 /** @vitest-environment happy-dom */
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { createMcpPreset } from '@agnes/resource-control-contracts/mcp-presets'
 import type { McpServerDescriptor } from '@agnes/protocol'
+import { createMcpPreset } from '@agnes/resource-control-contracts/mcp-presets'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 const revision = 'a'.repeat(64)

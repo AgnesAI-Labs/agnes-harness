@@ -12,7 +12,6 @@ import { settlesWithin, withTimeout } from '@agnes/core-effects/effects/wrap'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { ToolResult } from '@agnes/extension-api'
 import type { Actor, ExecutionDomain, JsonValue, ResolvedToolCallPolicy } from '@agnes/protocol'
-import { discloseTool } from './tool-disclosure.js'
 import { dispatchLoopEvent } from '../../loop/events.js'
 import {
   hasAuthenticToolPolicyHash,
@@ -41,6 +40,7 @@ import { resolveModel } from './inference.js'
 import { approveMemoryFile } from './memory-approval.js'
 import { approvalContinuation } from './parked.js'
 import { decideToolPolicy } from './policy-review.js'
+import { discloseTool } from './tool-disclosure.js'
 
 export type ExecOpts = {
   depth: number

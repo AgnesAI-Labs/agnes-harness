@@ -17,8 +17,8 @@ import { surfaceText, validIntelligentSurface } from '@agnes/protocol/intelligen
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { questionSurface } from '../../interaction/src/question.js'
-import { createIntelligentUiService } from '../src/service.js'
 import { reachableParameters } from '../src/parameters.js'
+import { createIntelligentUiService } from '../src/service.js'
 import { uiProjection } from '../src/state.js'
 
 const actor: Actor = { id: 'operator', org: 'synthetic', role: 'owner', deptPath: [], attrs: {} }
