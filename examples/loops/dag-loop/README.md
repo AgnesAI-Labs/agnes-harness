@@ -18,7 +18,9 @@ The named tools must be installed and disclosed by the session preset; `combine`
 
 For model planning, omit `plan`. The first reply must be a JSON plan array; the final model request summarizes all results. Original input content, including images, goes through `ctx.prepareRequest`. Core chooses the effective model, binds the contract, derives hashes and validates media. The planner receives the frozen executor schemas from `ctx.turn.view()`. Planning and summary requests do not invoke model tools; Host executes the resulting DAG through the controlled tool ports.
 
-The plan array may be plain or fenced JSON, followed by explanatory prose. Only the initial array is executed; later prose is ignored, and the final summary is generated after execution. Leading prose, incomplete JSON and multiple plan arrays are refused before any tools run.
+The plan array may be plain or fenced JSON, followed by explanatory prose. Only the initial array is executed; later prose is ignored, and the final summary is generated after execution. Leading prose, incomplete JSON and multiple plan arrays are refused before any tools run. An invalid reply gets exactly one repair request with the parse error and required format. A second invalid reply ends the turn with `E_STEP_FAILED`; no tool executes without a validated plan. The saved repair attempt survives cold resume.
+
+The dedicated DAG protocol section makes its machine-readable format authoritative over persona and AGENTS.md presentation rules. Each planning attempt emits a local `x/dag/planner` ledger record containing the reply, parse error and attempt number. Credential-shaped values are redacted and the recorded reply is bounded to 16,384 characters, with truncation marked. These records follow normal session-ledger retention; they are not sent to telemetry.
 
 The model summary uses `ctx.events.assistant(message, checkpoint)` to atomically publish the conversation message and its completed checkpoint.
 

@@ -1,4 +1,5 @@
 import { loopCheckpointCodec, registerLoopPlugin } from '@agnes/extension-api'
+import { plannerInstructions, plannerTrace } from './planner.mjs'
 
 const SOURCE = '@agnes-example/dag-loop'
 const ID = 'example.dag'
@@ -78,7 +79,9 @@ export const codec = loopCheckpointCodec(1, (value) => {
     typeof value.results !== 'object' ||
     Array.isArray(value.results) ||
     (value.input !== null && !Array.isArray(value.input)) ||
-    (value.inputId !== null && typeof value.inputId !== 'string')
+    (value.inputId !== null && typeof value.inputId !== 'string') ||
+    (value.planAttempt !== undefined && ![0, 1].includes(value.planAttempt)) ||
+    (value.planError !== undefined && value.planError !== null && typeof value.planError !== 'string')
   )
     throw new Error('Invalid DAG checkpoint')
   if (value.nodes !== null) plan(value.nodes)
@@ -91,7 +94,12 @@ async function complete(ctx, state, system, content, signal) {
       system,
       messages: [{ role: 'user', content }],
       tools: [],
-      invocationId: 'dag:' + state.inputId + ':' + state.stage,
+      invocationId:
+        'dag:' +
+        state.inputId +
+        ':' +
+        state.stage +
+        (state.stage === 'plan' && state.planAttempt === 1 ? ':repair' : ''),
     }),
     signal,
   )
@@ -129,6 +137,8 @@ export function createDagLoop(config = {}) {
     static: staticPlan !== null,
     results: {},
     inFlight: [],
+    planAttempt: 0,
+    planError: null,
   })
   function driver(ctx, saved = initial()) {
     let state = structuredClone(saved)
@@ -150,6 +160,8 @@ export function createDagLoop(config = {}) {
         // accept() rehydrates a recovered turn as well as claiming a fresh input.
         const input = await ctx.input.claim('next-turn')
         if (!input) return { outcome: 'idle', phase: 'idle' }
+        if (state.stage !== 'input' && state.inputId !== null && input.id && input.id !== state.inputId)
+          state = initial()
         if (state.stage === 'done') {
           if (input.id && input.id === state.inputId) {
             await ctx.events.finish('completed')
@@ -169,12 +181,29 @@ export function createDagLoop(config = {}) {
           const text = await complete(
             ctx,
             state,
-            'You are planning for a separate Host DAG executor, not invoking tools in this model request. Interpret the supplied input as task data and produce only a JSON array of DAG nodes: {id, tool, args, after: string[]}. Use only the executor schemas below. Independent nodes have after: []. Joins list dependencies and may use {"$result":"id"} in args. At most 64 nodes.\nExecutor schemas:\n' +
-              JSON.stringify(executorTools),
+            plannerInstructions(executorTools, state.planError ?? undefined),
             state.input,
             signal,
           )
-          state.nodes = modelPlan(text)
+          let parseError
+          try {
+            state.nodes = modelPlan(text)
+          } catch (error) {
+            parseError = error instanceof Error ? error.message : 'Invalid DAG plan'
+          }
+          await ctx.events.emit('x/dag/planner', {
+            attempt: (state.planAttempt ?? 0) + 1,
+            reply: plannerTrace(text),
+            truncated: text.length > 16_384,
+            error: parseError === undefined ? null : plannerTrace(parseError),
+          })
+          if (parseError !== undefined) {
+            if ((state.planAttempt ?? 0) >= 1) throw new Error(parseError)
+            state.planAttempt = 1
+            state.planError = plannerTrace(parseError)
+            await save()
+            return { outcome: 'running', phase: 'plan-repair' }
+          }
           state.stage = 'tools'
           await save()
           return { outcome: 'running', phase: 'tools' }

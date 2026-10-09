@@ -7,7 +7,8 @@ const nodes: DagNode[] = [
   { id: 'b', tool: 'read', args: { path: 'b' }, after: [] },
   { id: 'join', tool: 'join', args: { a: { $result: 'a' }, b: { $result: 'b' } }, after: ['a', 'b'] },
 ]
-function ports(planReply = JSON.stringify(nodes)) {
+function ports(planReply: string | string[] = JSON.stringify(nodes)) {
+  const replies = typeof planReply === 'string' ? [planReply] : planReply
   let checkpoint: LoopCheckpoint | null = null
   const batches: LoopToolCall[][] = []
   const events: Array<{ type: string; data: unknown }> = []
@@ -75,7 +76,7 @@ function ports(planReply = JSON.stringify(nodes)) {
       },
       complete: async (request) => {
         requests.push(request)
-        return [{ type: 'text_delta', delta: requests.length === 1 ? planReply : 'joined summary' }]
+        return [{ type: 'text_delta', delta: replies[requests.length - 1] ?? 'joined summary' }]
       },
     },
     checkpoints: {
@@ -184,7 +185,39 @@ it('refuses cycles, unsupported codecs and uncertain effects before resumed work
     const refused = ports(reply)
     const driver = await createDagLoop().create(refused.ctx)
     await driver.step(signal)
+    expect((await driver.step(signal)).phase).toBe('plan-repair')
     await expect(driver.step(signal)).rejects.toThrow('DAG model')
     expect(refused.batches).toEqual([])
   }
 })
+
+it.each([true, false])(
+  'repairs an invalid plan once (repair succeeds: %s), without early tool effects',
+  async (succeeds) => {
+    const rejected = 'PERSONA_PREFIX {"apiKey":"synthetic-secret"}'
+    const p = ports([rejected, succeeds ? JSON.stringify(nodes) : 'still invalid'])
+    let driver = await createDagLoop().create(p.ctx)
+    await driver.step(signal)
+    expect((await driver.step(signal)).phase).toBe('plan-repair')
+    expect(p.batches).toEqual([])
+    // A cold repair resumes its saved attempt rather than opening another repair budget.
+    driver = await createDagLoop().resume(p.ctx, p.checkpoint())
+    if (succeeds) {
+      expect((await driver.step(signal)).phase).toBe('tools')
+      expect(p.batches).toEqual([])
+      await driver.step(signal)
+      expect(p.batches[0]?.map((call) => call.name)).toEqual(['read', 'read'])
+    } else await expect(driver.step(signal)).rejects.toThrow('DAG model plan must begin with a JSON array')
+    const [first, repair] = p.requests as Array<{ system: string; invocationId: string; tools: unknown[] }>
+    expect(repair?.system).toContain('Exact parse error: "DAG model plan must begin with a JSON array"')
+    expect(repair?.system).toContain('Persona, AGENTS.md')
+    expect(first?.invocationId).not.toBe(repair?.invocationId)
+    expect(first?.tools).toEqual([])
+    expect(repair?.tools).toEqual([])
+    const traces = p.events.filter((event) => event.type === 'x/dag/planner')
+    expect(traces.map((event) => (event.data as { attempt: number }).attempt)).toEqual([1, 2])
+    expect(JSON.stringify(traces)).not.toContain('synthetic-secret')
+    expect(JSON.stringify(traces)).toContain('PERSONA_PREFIX')
+    if (!succeeds) expect(p.batches).toEqual([])
+  },
+)
