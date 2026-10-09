@@ -36,6 +36,9 @@ export default defineConfig({
     // Keep functional checks finite without changing product-level deadlines.
     // Explicit per-test timeouts and CLI maxWorkers overrides still take precedence.
     ...(['win32', 'darwin'].includes(process.platform) ? { maxWorkers: 2, testTimeout: 15_000 } : {}), // guards-allow-platform: hosted OS test-runner limits.
+    // Hosted runners also run the Vite coordinator and dependency transforms. Keep one isolated
+    // fork per runner; shard across runners rather than sharing all CPUs with test workers.
+    ...(process.env.CI ? { maxWorkers: 1, pool: 'forks' as const } : {}),
     projects: [
       // `extends: true` concatenates the root exclude, so fast only adds the heavy globs.
       { extends: true, test: { name: 'fast', include: ['**/*.test.{ts,tsx,jsx}'], exclude: heavy } },

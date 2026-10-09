@@ -1,0 +1,237 @@
+{
+  "examples/sandbox/docker/src/docker.e2e.test.ts": {
+    "previous": "examples/sandbox/docker/src/docker.test.ts",
+    "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
+    "observedMaxMs": 2102
+  },
+  "packages/ai/test/pi-probe-models.slow.test.ts": {
+    "previous": "packages/ai/test/pi-probe-models.test.ts",
+    "reason": "Real pending HTTP socket, request deadline and cleanup.",
+    "observedMaxMs": 3006
+  },
+  "packages/base/extensions/subagent/test/worktree-real.e2e.test.ts": {
+    "previous": "packages/base/extensions/subagent/test/worktree-real.test.ts",
+    "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
+    "observedMaxMs": 2063
+  },
+  "packages/base/test/isolation-runner-build.e2e.test.ts": {
+    "previous": "packages/base/test/isolation-runner-build.test.ts",
+    "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
+    "observedMaxMs": 10791
+  },
+  "packages/cli/launch/worker-entry-probe.e2e.test.ts": {
+    "previous": "packages/cli/launch/worker-entry-probe.test.ts",
+    "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
+    "observedMaxMs": 8678
+  },
+  "packages/cli/test/dbh-m04-onboarding-provider-race.slow.test.ts": {
+    "previous": "packages/cli/test/dbh-m04-onboarding-provider-race.test.ts",
+    "reason": "Real TUI/provider setup and asynchronous provider-switch race.",
+    "observedMaxMs": 2499
+  },
+  "packages/cli/test/dbh-m06-ephemeral-inprocess.slow.test.ts": {
+    "previous": "packages/cli/test/dbh-m06-ephemeral-inprocess.test.ts",
+    "reason": "Real shutdown grace and hard-exit cleanup.",
+    "observedMaxMs": 5352
+  },
+  "packages/cli/test/doctor-subagents.e2e.test.ts": {
+    "previous": "packages/cli/test/doctor-subagents.test.ts",
+    "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
+    "observedMaxMs": 13514
+  },
+  "packages/cli/test/exports.slow.test.ts": {
+    "previous": "packages/cli/test/exports.test.ts",
+    "reason": "Loads the full CLI runtime export graph; cold runtime assembly dominates.",
+    "observedMaxMs": 2052
+  },
+  "packages/cli/test/headless-runtime.e2e.test.ts": {
+    "previous": "packages/cli/test/headless-runtime.test.ts",
+    "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
+    "observedMaxMs": 3595
+  },
+  "packages/cli/test/local.e2e.test.ts": {
+    "previous": "packages/cli/test/local.test.ts",
+    "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
+    "observedMaxMs": 24098
+  },
+  "packages/cli/test/resume-flow.e2e.test.ts": {
+    "previous": "packages/cli/test/resume-flow.test.ts",
+    "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
+    "observedMaxMs": 3161
+  },
+  "packages/cli/test/tui/dbh-m11-picker-clips-approval-real.e2e.test.ts": {
+    "previous": "packages/cli/test/tui/dbh-m11-picker-clips-approval-real.test.ts",
+    "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
+    "observedMaxMs": 4616
+  },
+  "packages/cli/test/tui/dbh-verify-conc-005.slow.test.ts": {
+    "previous": "packages/cli/test/tui/dbh-verify-conc-005.test.ts",
+    "reason": "Real TUI render/queue synchronization and timed prompt races.",
+    "observedMaxMs": 2124
+  },
+  "packages/core/test/reduce-purity.slow.test.ts": {
+    "previous": "packages/core/test/reduce-purity.test.ts",
+    "reason": "Full-state purity snapshots for a 300-tool-call ledger.",
+    "observedMaxMs": 5163
+  },
+  "packages/core/test/replace-pairing.property.slow.test.ts": {
+    "previous": "packages/core/test/replace-pairing.property.test.ts",
+    "reason": "Exhaustive replay and replacement checks on 2,000 generated ledgers.",
+    "observedMaxMs": 6598
+  },
+  "packages/core/test/turns-aggregate.slow.test.ts": {
+    "previous": "packages/core/test/turns-aggregate.test.ts",
+    "reason": "1,500 aggregate updates and a 4,000-call ledger.",
+    "observedMaxMs": 3301
+  },
+  "packages/core/test/user-message-images.slow.test.ts": {
+    "previous": "packages/core/test/user-message-images.test.ts",
+    "reason": "100 MiB image payloads and backlog overflow.",
+    "observedMaxMs": 3945
+  },
+  "packages/daemon-rpc/test/session-extras.slow.test.ts": {
+    "previous": "packages/daemon-rpc/test/session-extras.test.ts",
+    "reason": "Large paged ledgers, stable HMAC cuts and multi-session fixture assembly.",
+    "observedMaxMs": 2945
+  },
+  "packages/daemon/test/bin-control.e2e.test.ts": {
+    "previous": "packages/daemon/test/bin-control.test.ts",
+    "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
+    "observedMaxMs": 2767
+  },
+  "packages/daemon/test/scan-truncated-ipc.e2e.test.ts": {
+    "previous": "packages/daemon/test/scan-truncated-ipc.test.ts",
+    "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
+    "observedMaxMs": 5259
+  },
+  "packages/daemon/test/skill-install-requests.slow.test.ts": {
+    "previous": "packages/daemon/test/skill-install-requests.test.ts",
+    "reason": "Disk-backed daemon approval/install lifecycle across real resource operations.",
+    "observedMaxMs": 2173
+  },
+  "packages/daemon/test/skill-watcher.slow.test.ts": {
+    "previous": "packages/daemon/test/skill-watcher.test.ts",
+    "reason": "Real watcher/publish debounce and package-operation settlement.",
+    "observedMaxMs": 2017
+  },
+  "packages/host-artifacts/test/computer-use-artifact-gc.e2e.test.ts": {
+    "previous": "packages/host-artifacts/test/computer-use-artifact-gc.test.ts",
+    "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
+    "observedMaxMs": 3653
+  },
+  "packages/host-infrastructure/test/adapters/op-check-sqlite.slow.test.ts": {
+    "previous": "packages/host-infrastructure/test/adapters/op-check-sqlite.test.ts",
+    "reason": "SQLite replay and consistency at every commit of nested fixture ledgers.",
+    "observedMaxMs": 2308
+  },
+  "packages/host-infrastructure/test/credential-store-race.e2e.test.ts": {
+    "previous": "packages/host-infrastructure/test/credential-store-race.test.ts",
+    "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
+    "observedMaxMs": 6917
+  },
+  "packages/host-providers/test/codex-oauth.e2e.test.ts": {
+    "previous": "packages/host-providers/test/codex-oauth.test.ts",
+    "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
+    "observedMaxMs": 2615
+  },
+  "packages/host/test/assemble/builtin-lease-row-bound.slow.test.ts": {
+    "previous": "packages/host/test/assemble/builtin-lease-row-bound.test.ts",
+    "reason": "Real writer lease expiry after 1,200 ms.",
+    "observedMaxMs": 2194
+  },
+  "packages/host/test/assemble/ext-rows-migrated.slow.test.ts": {
+    "previous": "packages/host/test/assemble/ext-rows-migrated.test.ts",
+    "reason": "Disk-backed full Host/profile/plugin composition and cold runtime assembly.",
+    "observedMaxMs": 2298
+  },
+  "packages/host/test/assemble/incremental-apply.slow.test.ts": {
+    "previous": "packages/host/test/assemble/incremental-apply.test.ts",
+    "reason": "Real compensation timeout, tainted tree recovery and rebuild.",
+    "observedMaxMs": 3888
+  },
+  "packages/host/test/assemble/plugin-extension.slow.test.ts": {
+    "previous": "packages/host/test/assemble/plugin-extension.test.ts",
+    "reason": "Disk-backed full Host/profile/plugin composition and cold runtime assembly.",
+    "observedMaxMs": 2604
+  },
+  "packages/host/test/cache-prefix/context-hook.e2e.test.ts": {
+    "previous": "packages/host/test/cache-prefix/context-hook.test.ts",
+    "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
+    "observedMaxMs": 2058
+  },
+  "packages/host/test/cache-prefix/fork.slow.test.ts": {
+    "previous": "packages/host/test/cache-prefix/fork.test.ts",
+    "reason": "Disk-backed full Host/profile/plugin composition and cold runtime assembly.",
+    "observedMaxMs": 2735
+  },
+  "packages/host/test/cache-prefix/restart.slow.test.ts": {
+    "previous": "packages/host/test/cache-prefix/restart.test.ts",
+    "reason": "Disk-backed full Host/profile/plugin composition and cold runtime assembly.",
+    "observedMaxMs": 2920
+  },
+  "packages/host/test/cache-prefix/skill-preload.slow.test.ts": {
+    "previous": "packages/host/test/cache-prefix/skill-preload.test.ts",
+    "reason": "Disk-backed full Host/profile/plugin composition and cold runtime assembly.",
+    "observedMaxMs": 2142
+  },
+  "packages/host/test/configuration-runtime.slow.test.ts": {
+    "previous": "packages/host/test/configuration-runtime.test.ts",
+    "reason": "Disk-backed full Host/profile/plugin composition and cold runtime assembly.",
+    "observedMaxMs": 2496
+  },
+  "packages/host/test/ext-host/base-tools.slow.test.ts": {
+    "previous": "packages/host/test/ext-host/base-tools.test.ts",
+    "reason": "Real Host upload socket and shutdown deadline.",
+    "observedMaxMs": 2596
+  },
+  "packages/host/test/model-profile-update.slow.test.ts": {
+    "previous": "packages/host/test/model-profile-update.test.ts",
+    "reason": "Disk-backed full Host/profile/plugin composition and cold runtime assembly.",
+    "observedMaxMs": 3171
+  },
+  "packages/host/test/profile/composition-runtime.slow.test.ts": {
+    "previous": "packages/host/test/profile/composition-runtime.test.ts",
+    "reason": "Disk-backed full Host/profile/plugin composition and cold runtime assembly.",
+    "observedMaxMs": 3569
+  },
+  "packages/host/test/session-title.slow.test.ts": {
+    "previous": "packages/host/test/session-title.test.ts",
+    "reason": "Disk-backed full Host, title requests and approval continuation.",
+    "observedMaxMs": 2912
+  },
+  "packages/host/test/task5-workspace-acceptance.slow.test.ts": {
+    "previous": "packages/host/test/task5-workspace-acceptance.test.ts",
+    "reason": "Disk-backed full Host/profile/plugin composition and cold runtime assembly.",
+    "observedMaxMs": 2276
+  },
+  "packages/protocol-validation/test/safe-image.slow.test.ts": {
+    "previous": "packages/protocol-validation/test/safe-image.test.ts",
+    "reason": "100 MiB image boundary validation.",
+    "observedMaxMs": 2071
+  },
+  "packages/sdk/test/stdio.e2e.test.ts": {
+    "previous": "packages/sdk/test/stdio.test.ts",
+    "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
+    "observedMaxMs": 2040
+  },
+  "packages/web-admin/test/admin-page.slow.test.ts": {
+    "previous": "packages/web-admin/test/admin-page.test.ts",
+    "reason": "Real operation/publication polling and full settings DOM assembly.",
+    "observedMaxMs": 4106
+  },
+  "packages/web/test/app.slow.test.ts": {
+    "previous": "packages/web/test/app.test.ts",
+    "reason": "Full workbench assembly and real reconnect backoff; retain startup race coverage.",
+    "observedMaxMs": 6744
+  },
+  "packages/worker-runtime/test/mcp-row-runtime.e2e.test.ts": {
+    "previous": "packages/worker-runtime/test/mcp-row-runtime.test.ts",
+    "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
+    "observedMaxMs": 3792
+  },
+  "templates/scaffold.e2e.test.ts": {
+    "previous": "templates/scaffold.test.ts",
+    "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
+    "observedMaxMs": 6824
+  }
+}

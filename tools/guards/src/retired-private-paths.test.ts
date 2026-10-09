@@ -14,16 +14,21 @@ function privateImports(file: string, source: string): string[] {
     /'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g,
     (token, at: number) => {
       if (!token.startsWith('/') && !token.includes('${')) literals.push({ at, value: token.slice(1, -1) })
-      return ' '.repeat(token.length)
+      // A non-whitespace marker keeps import-prefix matching from consuming the literal.
+      return token.startsWith('/') ? ' '.repeat(token.length) : '#'.repeat(token.length)
     },
   )
+  // Scan import prefixes once, rather than searching the entire growing source prefix for
+  // every literal (quadratic on large generated-fixture and UI modules).
+  const imports = new Set(
+    [
+      ...code.matchAll(
+        /\b(?:import|require)\s*\(\s*|\bvi\s*\.\s*(?:mock|doMock|unmock|doUnmock)\s*\(\s*|\b(?:from|import)\s*/g,
+      ),
+    ].map((match) => match.index + match[0].length),
+  )
   return literals.flatMap(({ at, value }) => {
-    if (
-      !/(?:\b(?:from|import)\s*|\b(?:import|require)\s*\(\s*|\bvi\s*\.\s*(?:mock|doMock|unmock|doUnmock)\s*\(\s*)$/.test(
-        code.slice(0, at),
-      )
-    )
-      return []
+    if (!imports.has(at)) return []
     const spec = value.split(/[?#]/)[0]!.replaceAll('\\', '/')
     const path = spec.startsWith('.')
       ? relative(root, resolve(dirname(join(root, file)), spec)).replaceAll('\\', '/')
@@ -65,6 +70,8 @@ describe('retired implementation private paths', () => {
     "require('../src/ids')",
     'import(`../src/ids.js`)',
     "vi.mock('../src/ids.js', () => ({}))",
+    `import /* ${' '.repeat(8192)} */ ( /* comment */ '../src/ids.js')`,
+    `export { defaultIds } from${' '.repeat(8192)}'../src/ids.js'`,
     "import { defaultIds } from '@agnes/core/src/ids.js'",
   ])('rejects the removed path in %s', (source) => {
     expect(privateImports('packages/core/test/refusal.test.ts', source)).toEqual(['packages/core/src/ids.ts'])

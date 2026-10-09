@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
 
 // Package directories, not imports: host does not depend on @agnes/base, it loads what the profile
-// names off disk. Precedent: packages/host/test/ext-host/base-tools.test.ts:16.
+// names off disk. Precedent: packages/host/test/ext-host/base-tools.slow.test.ts:16.
 const packageDirs = {
   '@agnes/base': fileURLToPath(new URL('../../../base', import.meta.url)),
   '@agnes/code': fileURLToPath(new URL('../../../code', import.meta.url)),

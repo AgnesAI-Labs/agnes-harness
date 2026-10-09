@@ -48,8 +48,8 @@ separate from this gate.
 ## Gate and failure evidence
 
 The required GitHub status is **Web E2E gate** from `.github/workflows/e2e-web.yml`. It aggregates
-every macOS 14 and Linux Web shard, all three Linux fast-test shards and the separate Linux
-contracts job; a failed or cancelled dependency fails the aggregate.
+every macOS 14 and Linux Web shard, all six Linux fast-test shards and the separate Linux
+contracts job and three migrated-heavy shards; a failed or cancelled dependency fails the aggregate.
 Maintainers must select that status in the target branch's required checks/ruleset; committing a
 workflow alone does not change GitHub branch protection. The workflow runs on pull requests,
 merge groups, integration/main pushes and manual dispatch, without path-based skips.
@@ -60,9 +60,14 @@ Chromium and CI fonts; dispatch does not generate or approve missing baselines.
 
 The local command shares two workers with per-test scheduling. CI runs six complete, disjoint
 shards per platform with one worker per runner, so concurrent daemon/worker/Chromium trees do not
-compete on the same small runner. The complete `pnpm test` fast tier runs in three independent
+compete on the same small runner. The complete `pnpm test` fast tier runs in six independent
 Vitest shards with one worker each; typechecks, structural guards and kernel regressions run
-once in a separate contracts job. All shards and contracts remain required by the aggregate,
+once in a separate contracts job. The process/data-heavy files listed in
+`tools/ci/heavy-migrations.json` run in three additional required shards, retaining all coverage
+when a file is moved out of fast. Fast shards upload per-case JSON durations and list cases above
+two seconds in the job summary, with runner capacity and peak RSS in the log. CI uses one isolated
+fork so Vite and dependency transforms have CPU headroom; test deadlines are unchanged.
+All shards and contracts remain required by the aggregate,
 so they cannot consume the Web jobs' execution budget or hide a failed partition.
 Every Web shard keeps zero retries and a ten-minute CI gate step. Local Playwright runs have a
 twelve-minute global deadline, with shorter per-spec deadlines.

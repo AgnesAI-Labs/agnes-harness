@@ -126,10 +126,10 @@ jobs:
         if: ${{ !cancelled() && steps.native.outcome == 'success' }}
         run: pnpm exec vitest run packages/host-infrastructure/test/process-identity-linux.e2e.test.ts packages/base/extensions/sandbox/test/backend-linux.e2e.test.ts packages/package-manager/test/local-watcher.slow.test.ts packages/host-infrastructure/test/adapters/storage-lock.e2e.test.ts --maxWorkers=1
   linux-fast:
-    name: Linux fast tests (${{ matrix.shard }}/3)
+    name: Linux fast tests (${{ matrix.shard }}/6)
     strategy:
       fail-fast: false
-      matrix: { shard: [1, 2, 3] }
+      matrix: { shard: [1, 2, 3, 4, 5, 6] }
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -151,13 +151,50 @@ jobs:
       - name: Typecheck production and fixtures
         if: ${{ !cancelled() && steps.native.outcome == 'success' }}
         run: pnpm typecheck
-      # Same complete fast tier and one worker as pnpm test, partitioned by Vitest.
+      # Reserve capacity for Vite/IPC on 2–4 vCPU runners. Six independent shards bound
+      # retained module graphs and heap pressure without changing the 5s test deadline.
+      - name: Runner capacity
+        run: node tools/ci/test-timings.mjs
       - name: Fast tests (zero retries)
         if: ${{ !cancelled() && steps.native.outcome == 'success' }}
-        run: pnpm test --shard=${{ matrix.shard }}/3
+        run: /usr/bin/time -v pnpm test --pool=forks --shard=${{ matrix.shard }}/6 --reporter=default --reporter=json --reporter=./tools/guards/src/zero-test-reporter.mjs --outputFile.json=.agnes-tmp/ci-fast/timing.json
+      - name: Slow fast-tier cases
+        if: always()
+        run: node tools/ci/test-timings.mjs .agnes-tmp/ci-fast/timing.json
+      - name: Upload per-case durations
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fast-timings-${{ matrix.shard }}-${{ github.run_id }}
+          path: .agnes-tmp/ci-fast
+          include-hidden-files: true
+          if-no-files-found: error
+  linux-migrated-heavy:
+    name: Linux migrated heavy tests (${{ matrix.shard }}/3)
+    strategy:
+      fail-fast: false
+      matrix: { shard: [1, 2, 3] }
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version: 24.20.0, cache: pnpm }
+      - name: Native toolchain and bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev python3 bubblewrap
+      - run: pnpm install --frozen-lockfile
+      - name: Native helpers
+        run: |
+          pnpm --filter @agnes/host build:native
+          pnpm --filter @agnes/system-node build:native
+      - run: pnpm typecheck
+      # Filename migration changes the tier, never coverage: every migrated file stays required.
+      - name: Migrated process and data-heavy tests (zero retries)
+        run: node tools/ci/run-migrated-heavy.mjs --shard=${{ matrix.shard }}/3
   web-e2e-gate:
     name: Web E2E gate
-    needs: [e2e-web, e2e-web-linux, linux-contracts, linux-fast]
+    needs: [e2e-web, e2e-web-linux, linux-contracts, linux-fast, linux-migrated-heavy]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 1
@@ -168,8 +205,10 @@ jobs:
           LINUX_RESULT: ${{ needs.e2e-web-linux.result }}
           CONTRACTS_RESULT: ${{ needs.linux-contracts.result }}
           FAST_RESULT: ${{ needs.linux-fast.result }}
+          MIGRATED_HEAVY_RESULT: ${{ needs.linux-migrated-heavy.result }}
         run: |
           test "$MACOS_RESULT" = success
           test "$LINUX_RESULT" = success
           test "$CONTRACTS_RESULT" = success
           test "$FAST_RESULT" = success
+          test "$MIGRATED_HEAVY_RESULT" = success

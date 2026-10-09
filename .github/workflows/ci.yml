@@ -60,11 +60,11 @@ jobs:
       matrix:
         # The three Windows shards must carry the same testExclude, or the shards overlap or leave gaps.
         include:
-          - { os: ubuntu-latest, label: ubuntu-latest, testArgs: '--maxWorkers=4', testExclude: '', shard: '' }
+          - { os: ubuntu-latest, label: ubuntu-latest, testArgs: '--maxWorkers=1 --pool=forks', testExclude: '', shard: '' }
           - { os: macos-latest, label: macos-latest, testArgs: '--maxWorkers=2', testExclude: '', shard: '' }
-          - { os: windows-latest, label: 'windows-latest shard 1/3', testArgs: '--maxWorkers=2 --shard=1/3', testExclude: 'packages/daemon/test/skill-install-requests.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.test.ts', shard: '1/3' }
-          - { os: windows-latest, label: 'windows-latest shard 2/3', testArgs: '--maxWorkers=2 --shard=2/3', testExclude: 'packages/daemon/test/skill-install-requests.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.test.ts', shard: '2/3' }
-          - { os: windows-latest, label: 'windows-latest shard 3/3', testArgs: '--maxWorkers=2 --shard=3/3', testExclude: 'packages/daemon/test/skill-install-requests.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.test.ts', shard: '3/3' }
+          - { os: windows-latest, label: 'windows-latest shard 1/3', testArgs: '--maxWorkers=2 --shard=1/3', testExclude: 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.test.ts', shard: '1/3' }
+          - { os: windows-latest, label: 'windows-latest shard 2/3', testArgs: '--maxWorkers=2 --shard=2/3', testExclude: 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.test.ts', shard: '2/3' }
+          - { os: windows-latest, label: 'windows-latest shard 3/3', testArgs: '--maxWorkers=2 --shard=3/3', testExclude: 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.test.ts', shard: '3/3' }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -98,7 +98,7 @@ jobs:
       # disk-backed integration file without other Vitest files competing on Windows.
       - name: Windows Skill install requests
         if: runner.os == 'Windows' && matrix.shard == '2/3'
-        run: pnpm exec vitest run packages/daemon/test/skill-install-requests.test.ts --maxWorkers=1
+        run: pnpm exec vitest run packages/daemon/test/skill-install-requests.slow.test.ts --maxWorkers=1
       # These files drive real daemon startup and MCP server processes under fixed startup and
       # shutdown deadlines; run each alone so parallel Vitest files do not starve them.
       - name: Windows daemon startup directories
@@ -181,11 +181,12 @@ jobs:
       # run with less file fan-out than the fast tier. The check job spreads Windows files over
       # three runners, but this job holds every heavy file on one; two at a time there starved each
       # other's process startup, shutdown and file-handle release, so Windows runs them one at a
-      # time. The files run alone below on Windows are held out here.
+      # time. Linux also reserves a CPU for Vite and child-process setup. The files run alone
+      # below on Windows are held out here.
       - name: test heavy tier
         env:
           AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/cli/test/acp-concurrency.e2e.test.ts,packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts,packages/daemon/test/service-worker.e2e.test.ts,packages/cli/test/built-resource-mcp.e2e.test.ts' || '' }}
-        run: pnpm exec vitest run --project heavy --maxWorkers=${{ runner.os == 'Windows' && 1 || 2 }}
+        run: pnpm exec vitest run --project heavy --maxWorkers=${{ runner.os == 'macOS' && 2 || 1 }}
       # The ACP cold-start bound measures concurrent CLI processes. Run it without other Vitest
       # files competing for this runner's cores, while retaining its original assertion.
       - name: Windows ACP cold-start concurrency
