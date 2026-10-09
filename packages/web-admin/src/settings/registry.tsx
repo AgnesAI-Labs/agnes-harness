@@ -10,6 +10,7 @@ import { SettingsCard, SettingsDetails } from '@agnes/web-ui'
 import type { ReactNode } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
+import { AutoReviewPanel } from './auto-review.js'
 import { ChildEnginesPanel } from './child-engines.js'
 import { ContextPanel } from './context.js'
 import { DiagnosticsPanel } from './diagnostics.js'
@@ -153,7 +154,18 @@ const definitions: readonly [
   ['automation', 'schedules', 61, (c, t) => <SchedulesPage api={c.schedules} t={t} />],
   ['automation', 'triggers', 61.5, (c) => <TriggersPanel canSave={c.canSave} />],
   ['automation', 'terminal', 62, () => <JobsPanel terminal />],
-  ['security', 'security', 70, (c, t) => c.snapshot && <SecurityPanel snapshot={c.snapshot} t={t} />],
+  [
+    'security',
+    'security',
+    70,
+    (c, t) =>
+      c.snapshot && (
+        <>
+          <AutoReviewPanel canSave={c.canSave} />
+          <SecurityPanel snapshot={c.snapshot} t={t} />
+        </>
+      ),
+  ],
   ['diagnostics', 'diagnostics', 75, () => <DiagnosticsPanel />],
   ['history', 'history', 80, (_, t) => <HistorySearchPanel t={t} />],
 ]

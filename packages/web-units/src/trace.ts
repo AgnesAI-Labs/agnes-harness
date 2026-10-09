@@ -914,6 +914,23 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
             '×',
           ),
         ),
+        selectedRow.review
+          ? createElement(
+              'section',
+              { 'data-testid': 'trace-auto-review' },
+              createElement('p', null, traceText('trace.review.model', { model: selectedRow.review.model })),
+              createElement(
+                'p',
+                null,
+                traceText('trace.review.decision', {
+                  decision: selectedRow.review.decision,
+                  risk: selectedRow.review.risk,
+                }),
+              ),
+              createElement('p', null, selectedRow.review.reason),
+              createElement('pre', null, JSON.stringify(selectedRow.review, null, 2)),
+            )
+          : null,
         selectedRow.requestTraceId && snapshot.meta?.sessionId && options.openFactChain
           ? createElement(
               'button',

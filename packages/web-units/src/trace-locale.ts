@@ -16,6 +16,8 @@ const en = {
   'trace.controls.child-continue': 'Continue child',
 
   'trace.sessionLoop': 'Agent Loop: {id} · {version}',
+  'trace.review.model': 'Reviewer: {model}',
+  'trace.review.decision': 'Review decision: {decision} · {risk}',
   'trace.badge.user': 'User',
   'trace.badge.context': 'Context',
   'trace.badge.assistant': 'Assistant',
@@ -172,6 +174,8 @@ const zh: Record<keyof typeof en, string> = {
   'trace.controls.child-continue': '继续子代理',
 
   'trace.sessionLoop': 'Agent Loop：{id} · {version}',
+  'trace.review.model': '审查模型：{model}',
+  'trace.review.decision': '审查决定：{decision} · {risk}',
   'trace.badge.user': '用户',
   'trace.badge.context': '上下文',
   'trace.badge.assistant': '助手',
