@@ -12,7 +12,7 @@ Links point to source at the same revision as this document. See [verification](
 
 | Behavior | Main source | Verification starting point |
 | --- | --- | --- |
-| Arguments / startup / runtime directory | [cli](../../packages/cli/src), [launch resources](../../packages/cli/launch/resources.ts) | [CLI arguments](../../packages/cli/test/args.test.ts), [shared local acceptance](../../tools/acceptance/shared-local-delivery.test.ts) |
+| Arguments / startup / runtime directory | [cli](../../packages/cli/src), [launch resources](../../packages/cli/launch/resources.ts) | [CLI arguments](../../packages/cli/test/args.test.ts), [shared local acceptance](../../tools/acceptance/shared-local-delivery.e2e.test.ts) |
 | TUI | [cli-tui](../../packages/cli-tui/src) | [Tests](../../packages/cli-tui/test) |
 | Web presentation and connections | [web](../../packages/web/src), [web-server](../../packages/web-server/src) | [Web tests](../../packages/web/test) |
 | Web appearance and locale foundation | [web-foundation](../../packages/web-foundation/src) | [Foundation tests](../../packages/web-foundation/test) |

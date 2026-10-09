@@ -128,7 +128,7 @@ jobs:
         run: |
           $env:AGNES_ACCEPTANCE_POWERSHELL = (Get-Process -Id $PID).Path
           if (-not $env:AGNES_ACCEPTANCE_POWERSHELL) { throw 'Cannot identify the acceptance PowerShell process' }
-          pnpm exec vitest run tools/acceptance/shared-local-delivery.test.ts
+          pnpm exec vitest run tools/acceptance/shared-local-delivery.e2e.test.ts
       - name: verify local delivery with PowerShell 7
         if: runner.os == 'Windows' && matrix.shard == '1/3'
         shell: pwsh
@@ -137,7 +137,7 @@ jobs:
         run: |
           $env:AGNES_ACCEPTANCE_POWERSHELL = (Get-Process -Id $PID).Path
           if (-not $env:AGNES_ACCEPTANCE_POWERSHELL) { throw 'Cannot identify the acceptance PowerShell process' }
-          pnpm exec vitest run tools/acceptance/shared-local-delivery.test.ts
+          pnpm exec vitest run tools/acceptance/shared-local-delivery.e2e.test.ts
       # Installation and builds must not rewrite committed source or the lockfile.
       - name: verify working tree is clean
         run: git diff --exit-code
@@ -263,7 +263,7 @@ jobs:
         run: ./.github/scripts/prepare-windows-native.ps1 -CacheRoot "$env:RUNNER_TEMP/agnes-node-headers"
       - run: pnpm --filter @agnes/cli build:sea
       - name: smoke production commands, extensions and native runtime
-        run: pnpm --filter @agnes/cli exec vitest run sea/smoke.test.ts sea/windows-runtime.test.ts
+        run: pnpm --filter @agnes/cli exec vitest run sea/smoke.e2e.test.ts sea/windows-runtime.test.ts
         env:
           AGNES_SEA_BIN: dist/sea/${{ matrix.binary }}
           AGNES_SEA_LOADER_HARNESS: dist/sea/sea-loader-smoke-${{ matrix.target }}${{ runner.os == 'Windows' && '.exe' || '' }}
@@ -276,7 +276,7 @@ jobs:
           node -e "require('node:fs').mkdirSync('packages/cli/dist/sea-unpacked', {recursive:true})"
           tar -xzf packages/cli/dist/agnes-${{ matrix.target }}.tar.gz -C packages/cli/dist/sea-unpacked
       - name: smoke extracted distribution
-        run: pnpm --filter @agnes/cli exec vitest run sea/smoke.test.ts sea/windows-runtime.test.ts sea/web-distribution.test.ts --maxWorkers=1
+        run: pnpm --filter @agnes/cli exec vitest run sea/smoke.e2e.test.ts sea/windows-runtime.test.ts sea/web-distribution.test.ts --maxWorkers=1
         env:
           AGNES_SEA_BIN: dist/sea-unpacked/${{ matrix.binary }}
           AGNES_SEA_LOADER_HARNESS: dist/sea/sea-loader-smoke-${{ matrix.target }}${{ runner.os == 'Windows' && '.exe' || '' }}

@@ -1,13 +1,10 @@
 import { readFileSync } from 'node:fs'
 import type { Event } from '@agnes/core-common/types'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { SurfaceCache } from '../src/project/surface.js'
 import { foldEvents } from '../src/reduce/reducer.js'
 
-const events = readFileSync(new URL('../../core/fixtures/reduce/long-session.jsonl', import.meta.url), 'utf8')
-  .trim()
-  .split('\n')
-  .map((line) => JSON.parse(line) as Event)
+let events: Event[]
 
 const best = (run: () => void): number => {
   let elapsed = Number.POSITIVE_INFINITY
@@ -23,6 +20,13 @@ const best = (run: () => void): number => {
 // measures scheduler contention instead of fold cost. Run this file with AGNES_CORE_PERF=1 and
 // --maxWorkers=1; the exploratory 500/50 ms thresholds stay unchanged.
 describe.runIf(process.env.AGNES_CORE_PERF === '1')('fold wall-clock regression gate', () => {
+  beforeAll(() => {
+    events = readFileSync(new URL('../../core/fixtures/reduce/long-session.jsonl', import.meta.url), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Event)
+  })
+
   it('folds 10,000 events under 500 ms, best of three', () => {
     expect(best(() => foldEvents(events))).toBeLessThan(500)
   })

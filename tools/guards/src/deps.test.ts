@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_EXCLUDE_DIRS, isTestFile, listPackages, listSourceFiles, repoRoot } from './repo.js'
@@ -274,4 +274,21 @@ it('detects fixture back-edges, type queries and literal dynamic imports', () =>
       ]),
     ),
   ).toEqual(['leaf → root → leaf'])
+})
+
+it('keeps args.ts under 300 code lines', () => {
+  const lines = readFileSync(join(root, 'packages/cli/src/args.ts'), 'utf8')
+    .split('\n')
+    .filter((line) => line.trim() && !line.trim().startsWith('//'))
+  expect(lines.length).toBeLessThanOrEqual(300)
+})
+
+it('keeps every command module outside core and extension-api', () => {
+  const dir = join(root, 'packages/cli/src/commands')
+  const files = readdirSync(dir).filter((name) => name.endsWith('.ts'))
+  expect(files.length).toBeGreaterThan(0)
+  for (const file of files) {
+    const source = readFileSync(join(dir, file), 'utf8')
+    expect(source, file).not.toMatch(/['"]@agnes\/(?:core|extension-api)(?:\/[^'"]*)?['"]/)
+  }
 })
