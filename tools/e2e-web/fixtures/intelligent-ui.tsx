@@ -8,7 +8,7 @@ import {
   intelligentUiCatalog,
 } from '@agnes/web-ui'
 import { Approval } from '@agnes/web-units'
-import { useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { IntelligentUiClient } from '../../../packages/web/src/intelligent-ui/client.js'
 import {
   IntelligentInline,
@@ -175,6 +175,8 @@ workbenchPanels.register({
 })
 
 function Fixture() {
+  const [dockReady, setDockReady] = useState(false)
+  useEffect(() => setDockReady(true), [])
   useSyncExternalStore(client.subscribe, client.getVersion)
   const pending = client.getSnapshot().receipts.find((receipt) => receipt.status === 'pending-approval')
   const decide = (allow: boolean) => {
@@ -206,12 +208,14 @@ function Fixture() {
   return (
     <main className="workbench-split" style={{ overflow: 'auto', height: '100vh' }}>
       <div id="fixture-controls">
-        <Dock
-          context={{
-            t: (name) => locale.t(name),
-            data: { session: { id: client.sessionId }, disabled: false },
-          }}
-        />
+        {dockReady && (
+          <Dock
+            context={{
+              t: (name) => locale.t(name),
+              data: { session: { id: client.sessionId }, disabled: false },
+            }}
+          />
+        )}
       </div>
       <IntelligentInline binding={binding} />
       <section id="approval">
