@@ -11,14 +11,15 @@ import {
   encodeRuntimeTargetArtifact,
   type RuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
-import type {
-  JsonValue,
-  PluginConfigEntry,
-  PluginConfigGetParams,
-  PluginConfigSaveParams,
-  PluginConfigSaveResult,
-  PluginConfigSnapshot,
-  PluginConfigValidateParams,
+import {
+  type JsonValue,
+  jcs,
+  type PluginConfigEntry,
+  type PluginConfigGetParams,
+  type PluginConfigSaveParams,
+  type PluginConfigSaveResult,
+  type PluginConfigSnapshot,
+  type PluginConfigValidateParams,
 } from '@agnes/protocol'
 import type { PackageAdminAuthority } from './permissions.js'
 import type { PackageProfileDirectory } from './project.js'
@@ -39,12 +40,15 @@ function refusalReason(error: Error, values: readonly unknown[]): string {
     .filter(Boolean)
     .sort((a, b) => b.length - a.length))
     message = message.split(value).join('[redacted]')
-  return message
-    .replace(/secret:\/\/[^\s"'<>]+/gi, '[redacted]')
-    .replace(/(?:Bearer\s+\S+|(?:password|token|credential|api[_-]?key)\s*[:=]\s*\S+)/gi, '[redacted]')
-    .replace(/(?:\/[^\s]+|[A-Za-z]:\\[^\s]+)/g, '[redacted]')
-    .replace(/[\u0000-\u001f\u007f]/g, ' ')
-    .slice(0, 512)
+  return (
+    message
+      .replace(/secret:\/\/[^\s"'<>]+/gi, '[redacted]')
+      .replace(/(?:Bearer\s+\S+|(?:password|token|credential|api[_-]?key)\s*[:=]\s*\S+)/gi, '[redacted]')
+      .replace(/(?:\/[^\s]+|[A-Za-z]:\\[^\s]+)/g, '[redacted]')
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: Remove C0/DEL from untrusted plugin refusal text.
+      .replace(/[\u0000-\u001f\u007f]/g, ' ')
+      .slice(0, 512)
+  )
 }
 
 /** Runtime generation publication owns hot apply; this controller owns validation, CAS and facts. */
@@ -161,7 +165,7 @@ export class PluginConfiguration {
     const allRows = [...target.tree.rows, ...resourceRows]
     const currentRow = allRows.find((row) => row.id === entry.rowId)
     if (currentRow && !ownsRow(currentRow.plugin, input.id)) return result('refused')
-    if (JSON.stringify(entry.value) === JSON.stringify(input.value)) return result('saved')
+    if (jcs(entry.value) === jcs(input.value)) return result('saved')
     const rows = allRows.map((row) =>
       row.id === entry.rowId ? { ...row, config: input.value, configReload: entry.reload } : row,
     )
