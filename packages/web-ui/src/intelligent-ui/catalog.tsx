@@ -5,7 +5,7 @@ import type {
   UiRowContext,
   UiSurface,
 } from '@agnes/protocol/gen/intelligent-ui'
-import { useId, type ReactNode } from 'react'
+import { useCallback, useId, type ReactNode } from 'react'
 import { PluginSchemaFields } from '../plugin-schema-fields.js'
 import { Button } from '../ui/button.js'
 import { useUiText } from '../ui-locale.js'
@@ -50,6 +50,10 @@ function CatalogComponent(props: IntelligentCatalogProps & { component: UiCompon
   const { component, surface, disabled } = props
   const { t, locale } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
   const instance = useId()
+  const reportInvalid = useCallback(
+    (path: string, invalid: boolean) => props.onInvalid(component.id, path, invalid),
+    [props.onInvalid, component.id],
+  )
   const actionButtons = (ids: string[], row?: UiRowContext): ReactNode => (
     <div role="group" aria-label={t('ui.actions')}>
       {ids.map((id) => {
@@ -83,7 +87,7 @@ function CatalogComponent(props: IntelligentCatalogProps & { component: UiCompon
             issues={[]}
             disabled={disabled}
             onChange={(value) => props.onInput(component.id, value)}
-            onInvalid={(path, invalid) => props.onInvalid(component.id, path, invalid)}
+            onInvalid={reportInvalid}
           />
         </fieldset>
         {actionButtons(component.actionIds ?? [])}
