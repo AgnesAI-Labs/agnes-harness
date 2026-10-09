@@ -7,6 +7,7 @@ import {
   installedRuntimeSnapshotId,
   isRuntimePackageEligible,
   parseAgnesPluginEntries,
+  validatePluginManifestConfig,
 } from '@agnes/package-manager'
 import {
   buildRuntimeTarget,
@@ -93,6 +94,7 @@ function rowsForPackage(pkg: InstalledPackage, disabled: boolean): readonly Read
         entryRevision: snapshotId,
         extrasRevision: 'none',
         mountRevision: ORDINARY_MOUNT_REVISION,
+        ...(entry.configReload === undefined ? {} : { configReload: entry.configReload }),
         ...(entry.config === undefined ? {} : { config: entry.config }),
         // The daemon never imports the module, so the row's service metadata comes from the manifest
         // declaration. The mount checks it against the export's own metadata and refuses a mismatch.
@@ -172,6 +174,7 @@ export function rebuildDesiredFromInventory(input: {
   inventory: InstalledInventory
   packageId: string
   operation: CompositeDesiredOperation
+  configuration?: (rowId: string) => unknown
 }): RuntimeTargetArtifact | undefined {
   const previous = input.previous ? decodeRuntimeTargetArtifact(input.previous) : undefined
   const resources = previous?.resource.resources ?? { mcp: [], skills: {} }
@@ -185,7 +188,18 @@ export function rebuildDesiredFromInventory(input: {
   const pkg = input.inventory.packages.find((row) => row.id === input.packageId)
   if (input.operation === 'enable' || input.operation === 'update' || input.operation === 'rollback') {
     if (!pkg || !isRuntimePackageEligible(pkg)) return encodeComplete(kept, resources, resourceRows)
-    kept.push(...rowsForPackage(pkg, false))
+    const declarations = pluginsFromPackage(pkg)
+    kept.push(
+      ...rowsForPackage(pkg, false).map((row) => {
+        const saved = input.configuration?.(row.id)
+        const prior = previous?.tree.rows.find((old) => old.id === row.id && ownsRow(old.plugin, pkg.id))
+        const config = saved !== undefined ? saved : prior?.config !== undefined ? prior.config : row.config
+        const declaration = declarations.find((entry) => entry.id === row.id)
+        if (declaration && config !== undefined && validatePluginManifestConfig(declaration, config).length)
+          throw new Error('E_PLUGIN_CONFIG_INVALID')
+        return config === undefined ? row : Object.freeze({ ...row, config })
+      }),
+    )
     return encodeComplete(kept, resources, resourceRows)
   }
   if (input.operation === 'disable') {

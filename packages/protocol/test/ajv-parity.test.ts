@@ -6861,6 +6861,22 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SessionReferenceSearchParams',
     result: 'SessionReferenceSearchResult',
   },
+  '_agnes/v1/plugins.config.get': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PluginConfigGetParams',
+    result: 'PluginConfigSnapshot',
+  },
+  '_agnes/v1/plugins.config.validate': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PluginConfigValidateParams',
+    result: 'PluginConfigValidation',
+  },
+  '_agnes/v1/plugins.config.save': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'PluginConfigSaveParams',
+    result: 'PluginConfigSaveResult',
+  },
+
   '_agnes/v1/session.factChain': {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
     params: 'FactChainParams',
@@ -7587,6 +7603,30 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     valid: { sessionId: 'owned', query: 'file a' },
     invalid: [{ sessionId: 'owned' }, { sessionId: 'owned', query: 'x'.repeat(257) }],
   },
+  '_agnes/v1/plugins.config.get': {
+    note: 'Plugin config read contract',
+    valid: { profile: 'default', id: '@acme/plugin' },
+    invalid: [{}, { profile: 'default' }],
+  },
+  '_agnes/v1/plugins.config.validate': {
+    note: 'Plugin config validation contract',
+    valid: { profile: 'default', id: '@acme/plugin', rowId: 'ext:acme/plugin', value: {} },
+    invalid: [{}, { profile: 'default' }],
+  },
+  '_agnes/v1/plugins.config.save': {
+    note: 'Plugin config CAS contract',
+    valid: {
+      profile: 'default',
+      id: '@acme/plugin',
+      rowId: 'ext:acme/plugin',
+      value: {},
+      expectedRevision: 'sha256-revision',
+      clientId: 'web',
+      commandId: 'save-1',
+    },
+    invalid: [{}, { profile: 'default' }],
+  },
+
   '_agnes/v1/session.factChain': {
     valid: { sessionId: 'owned', laneId: 'main', anchor: { kind: 'tool', toolUseId: 'tool-1' } },
     invalid: [

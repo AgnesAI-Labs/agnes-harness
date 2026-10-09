@@ -78,6 +78,17 @@ export type PackageAdminClient = Readonly<{
     inspect(params: PackagePinsInspectParams): Promise<PackagePinsInspectResult>
     release(params: PackagePinsReleaseParams): Promise<PackagePinsReleaseResult>
   }>
+  config: Readonly<{
+    get(
+      params: import('@agnes/protocol').PluginConfigGetParams,
+    ): Promise<import('@agnes/protocol').PluginConfigSnapshot>
+    validate(
+      params: import('@agnes/protocol').PluginConfigValidateParams,
+    ): Promise<import('@agnes/protocol').PluginConfigValidation>
+    save(
+      params: import('@agnes/protocol').PluginConfigSaveParams,
+    ): Promise<import('@agnes/protocol').PluginConfigSaveResult>
+  }>
   tree: Readonly<{
     get(params: PackageListParams): Promise<PluginTreeView>
     list(params: PackageListParams): Promise<PluginTreeView>
@@ -191,6 +202,20 @@ export function createPackageAdminClient(client: PackageAdminRpc): PackageAdminC
         client.call('_agnes/v1/packages.pins.inspect', params),
       release: (params: PackagePinsReleaseParams): Promise<PackagePinsReleaseResult> =>
         client.call('_agnes/v1/packages.pins.release', params),
+    }),
+    config: Object.freeze({
+      get: (
+        params: import('@agnes/protocol').PluginConfigGetParams,
+      ): Promise<import('@agnes/protocol').PluginConfigSnapshot> =>
+        client.call('_agnes/v1/plugins.config.get', params),
+      validate: (
+        params: import('@agnes/protocol').PluginConfigValidateParams,
+      ): Promise<import('@agnes/protocol').PluginConfigValidation> =>
+        client.call('_agnes/v1/plugins.config.validate', params),
+      save: (
+        params: import('@agnes/protocol').PluginConfigSaveParams,
+      ): Promise<import('@agnes/protocol').PluginConfigSaveResult> =>
+        client.call('_agnes/v1/plugins.config.save', params),
     }),
     tree: Object.freeze({
       get: (params: PackageListParams): Promise<PluginTreeView> =>

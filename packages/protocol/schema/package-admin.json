@@ -3,6 +3,230 @@
   "$id": "https://agnes.ai/schema/package-admin.json",
   "title": "Package Admin contracts",
   "$defs": {
+    "PluginConfigGetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "id"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "PluginConfigValidateParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "id", "rowId", "value"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "rowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "value": {
+          "$ref": "session-v1.json#/$defs/JsonValue"
+        }
+      }
+    },
+    "PluginConfigSaveParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "id", "rowId", "value", "expectedRevision", "clientId", "commandId"],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "rowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "value": {
+          "$ref": "session-v1.json#/$defs/JsonValue"
+        },
+        "expectedRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "PluginConfigEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rowId", "schema", "value", "reload"],
+      "properties": {
+        "rowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "schema": {
+          "$ref": "session-v1.json#/$defs/JsonValue"
+        },
+        "value": {
+          "$ref": "session-v1.json#/$defs/JsonValue"
+        },
+        "reload": {
+          "enum": ["live", "next-session"]
+        }
+      }
+    },
+    "PluginConfigAudit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["who", "when", "rowId", "revision", "before", "after"],
+      "properties": {
+        "who": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "when": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "rowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "before": {
+          "$ref": "session-v1.json#/$defs/JsonValue"
+        },
+        "after": {
+          "$ref": "session-v1.json#/$defs/JsonValue"
+        }
+      }
+    },
+    "PluginConfigSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "entries", "audit"],
+      "properties": {
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PluginConfigEntry"
+          }
+        },
+        "audit": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PluginConfigAudit"
+          }
+        }
+      }
+    },
+    "PluginConfigValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issues"],
+      "properties": {
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "code"],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            }
+          }
+        }
+      }
+    },
+    "PluginConfigSaveResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "revision", "reason", "issues", "reload"],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "reason": {
+          "enum": ["saved", "invalid", "conflict", "refused"]
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "code"],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              }
+            }
+          }
+        },
+        "reload": {
+          "enum": ["live", "next-session"]
+        }
+      }
+    },
     "PluginPublicationReport": {
       "type": "object",
       "additionalProperties": false,

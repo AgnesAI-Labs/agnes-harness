@@ -22,6 +22,7 @@ export interface MountIdentityInput {
 export interface EntryRow {
   readonly id: string
   readonly plugin: string
+  readonly configReload?: 'live' | 'next-session'
   readonly config?: unknown
   readonly inject: readonly string[]
   readonly disabled: boolean
@@ -53,6 +54,7 @@ export function snapshotEntryRow(row: Readonly<EntryRow>): Readonly<EntryRow> {
     mountRevision: row.mountRevision,
     entryRevision: row.entryRevision,
     extrasRevision: row.extrasRevision,
+    ...(row.configReload === undefined ? {} : { configReload: row.configReload }),
     ...(row.config === undefined ? {} : { config: row.config }),
   })
 }

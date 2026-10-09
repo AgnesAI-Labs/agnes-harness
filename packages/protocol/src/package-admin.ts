@@ -553,6 +553,24 @@ export const PACKAGE_ADMIN_METHODS = Object.freeze({
     'effect',
     'packages.activate',
   ),
+  '_agnes/v1/plugins.config.get': contract(
+    P.PluginConfigGetParams,
+    P.PluginConfigSnapshot,
+    'read',
+    'packages.read',
+  ),
+  '_agnes/v1/plugins.config.validate': contract(
+    P.PluginConfigValidateParams,
+    P.PluginConfigValidation,
+    'read',
+    'packages.read',
+  ),
+  '_agnes/v1/plugins.config.save': contract(
+    P.PluginConfigSaveParams,
+    P.PluginConfigSaveResult,
+    'effect',
+    'packages.activate',
+  ),
 })
 export type PackageAdminMethodName = keyof typeof PACKAGE_ADMIN_METHODS
 

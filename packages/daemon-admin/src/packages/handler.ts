@@ -1,3 +1,4 @@
+import { PluginConfiguration } from './plugin-config.js'
 import { createHash } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
 import { packageOfRow } from '@agnes/daemon-foundation/composite-desired'
@@ -406,6 +407,7 @@ function sortCatalog(entries: readonly PackageCatalogDescriptor[]): PackageCatal
 }
 
 class Service implements PackageAdminService {
+  private readonly configuration: PluginConfiguration
   private readonly candidates: AuthoringCandidates
   private readonly tails = new Map<string, Promise<void>>()
   private readonly active = new Map<string, AbortController>()
@@ -441,6 +443,16 @@ class Service implements PackageAdminService {
       clock: () => string
     },
   ) {
+    this.configuration = new PluginConfiguration({
+      manager: options.manager,
+      profileDirectory: options.profileDirectory,
+      store: () => this.pluginTreeStore(),
+      clock: options.clock,
+      publish: async (artifact) => {
+        if (!options.pluginTreePublisher) throw new Error('E_PACKAGE_STATE')
+        await options.pluginTreePublisher(artifact)
+      },
+    })
     this.candidates = new AuthoringCandidates(
       options.manager,
       options.authoringTestRunner ?? runAuthoringTests,
@@ -557,6 +569,20 @@ class Service implements PackageAdminService {
     )
       operationError(this.recoveryError)
     try {
+      if (method.startsWith('_agnes/v1/plugins.config.')) {
+        if (this.recoveryError) operationError(this.recoveryError)
+        if (method === '_agnes/v1/plugins.config.get')
+          return await this.configuration.get(data as import('@agnes/protocol').PluginConfigGetParams)
+        if (method === '_agnes/v1/plugins.config.validate')
+          return await this.configuration.validate(
+            data as import('@agnes/protocol').PluginConfigValidateParams,
+          )
+        if (data.clientId !== granted.clientId) throw rpcError('CAPABILITY_DENIED')
+        return await this.configuration.save(
+          data as import('@agnes/protocol').PluginConfigSaveParams,
+          granted,
+        )
+      }
       if (method.startsWith('_agnes/v1/plugins.candidates.')) {
         if (this.recoveryError) operationError(this.recoveryError)
         return await this.authoring(method, data, granted)

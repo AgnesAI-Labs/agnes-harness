@@ -111,6 +111,8 @@ export function canonicalizePluginRow(value: unknown): Readonly<PluginRow> {
   if (row.runtime !== 'in-process' && row.runtime !== 'isolated') {
     invalidTree('row.runtime must be normalized')
   }
+  if (row.configReload !== undefined && row.configReload !== 'live' && row.configReload !== 'next-session')
+    invalidTree('row.configReload must be live or next-session')
   const snapshot = {
     id: nonEmptyString(row.id, 'row.id'),
     plugin: nonEmptyString(row.plugin, 'row.plugin'),
@@ -123,6 +125,9 @@ export function canonicalizePluginRow(value: unknown): Readonly<PluginRow> {
     mountRevision: nonEmptyString(row.mountRevision, 'row.mountRevision'),
     entryRevision: nonEmptyString(row.entryRevision, 'row.entryRevision'),
     extrasRevision: nonEmptyString(row.extrasRevision, 'row.extrasRevision'),
+    ...(row.configReload === undefined
+      ? {}
+      : { configReload: row.configReload as NonNullable<PluginRow['configReload']> }),
     ...(row.config === undefined ? {} : { config: snapshotJson(row.config) }),
   } satisfies PluginRow
   return Object.freeze(snapshot)

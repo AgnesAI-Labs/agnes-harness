@@ -77,6 +77,44 @@ const unregister = settingsSections.register({
 
 运行时插件目录刻意只含描述与身份，不包含当前私有配置。此 API 不会虚构沙箱/持久化/压缩的当前值，也不增加任意配置写入器；插件注册的设置面板提供自己支持的管理适配器。
 
+
+## 配置任意已安装插件
+
+打开**设置 → 插件**，选择已安装包，再进入**配置**页签。一个包声明多个 export 时可切换插件条目。安装、信任与配置保存仍是独立操作；保存尚未启用的条目只存储配置，不启用其代码。
+
+`agnes.plugins` 中的每个 manifest 条目可以声明 `@agnes/extension-api` 的公开 `PluginConfigContract`：
+
+```json
+{
+  "export": "businessAgent",
+  "id": "ext:acme/support",
+  "apiRange": "^1.4.0",
+  "configReload": "next-session",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["credential", "queues"],
+    "properties": {
+      "credential": { "type": "string", "format": "credential-reference" },
+      "queues": { "type": "array", "items": { "type": "string" }, "default": [] },
+      "region": { "enum": ["global", "cn"], "default": "global" }
+    }
+  }
+}
+```
+
+Schema 使用同步 JSON Schema 2020-12、标准 format 和本地引用。安装/更新会编译 schema，拒绝非法声明、不符合 schema 的显式 `config`、非法默认值、远程引用、异步验证器及未注册的 format/keyword。`x-*` 作为注释。默认值由管理员明确选择，服务端不会自动补值或修改输入。省略 `configSchema` 等同 `true`，使用 JSON 编辑器；省略 `configReload` 使用公开的 `DEFAULT_PLUGIN_CONFIG_RELOAD`（`next-session`）。
+
+表单支持对象、数组、枚举、`oneOf`/`anyOf` 方案选择、本地嵌套/递归引用、additionalProperties 键值编辑、说明与 format。引用展开在六层后停止。组合断言、元组、未知 UI 注释及无法忠实展示的结构，在对应子树使用 JSON 编辑器。未知键及未选方案的值保留在草稿里，不会被编辑操作过滤掉。完整验证器继续执行 `allOf`、条件、patternProperties、元组等 JSON Schema 断言。错误只返回 JSON Pointer 字段路径与代码，不回显输入值。
+
+每个密钥字段须标注 `format: "credential-reference"`、`x-secret: true` 或 `writeOnly: true`。这些字段在方案、引用、自由键映射中也只接受 `secret://namespace/name` 引用。界面仅编辑引用；创建/替换实际凭据走凭据存储的独立只写 API。JSON 回退编辑仍受同样限制。审计隐藏引用与凭据形状的键值。插件通过授权的 secret 能力解析引用，不应期待配置已被替换为明文。
+
+行内校验与保存都由服务端共享的 `compilePluginConfig` 验证器执行。`_agnes/v1/plugins.config.get` 返回 `{ revision, entries, audit }`；`.validate` 接收 `{ profile, id, rowId, value }`，返回 `{ issues }`；`.save` 另需 `expectedRevision`、`clientId`、`commandId`。读取/验证需要 `packages.read`，保存需要 `packages.activate` 与服务端确定的 client 身份。SDK 入口为 `client.packages.config.get/validate/save`；本地 Web 中继为 `/admin/plugins/api/config/get`、`/validate`、`/save`。
+
+保存返回 `{ ok, revision, reason, issues, reload }`；`reason` 为 `saved`、`invalid`、`conflict` 或 `refused`。旧修订不会覆盖新配置，界面保留草稿并提供重新读取。Schema 错误或候选探测拒绝时，先前 desired 配置与审计保持不变。成功配置与审计事实（主体、时间、条目、修订、脱敏 before/after 差异）在同一次 desired target 事务中提交。持久化覆盖值在禁用/启用后保留，更新时按新 manifest 重验；不兼容则拒绝发布，不会静默重置。
+
+`live` 在运行准入边界应用于使用同一固定代码身份的已有会话，应用被拒绝时补偿已修改容器。`next-session` 保留已有会话的配置，后续会话使用新值。页签明确说明声明的模式。配置不会替换固定代码或放宽须重启的后端边界。官方 observability 插件与[第三方示例](../../examples/third-party-plugin/package.json) 提供 manifest schema 示例。
+
 ## Guard 与验收
 
 `tools/guards/src/frontend-ui.test.ts` 检查 JSX/HTML 显示文字、可访问性属性、presentation props、DOM 文本写入和原生确认；有 locale 绑定的静态 HTML fallback 允许保留。它也禁止 `packages/web/src` 内布局 inline styles，以及 registry 之外直接渲染内置设置页。`ui-layer.test.ts` 将 antd、私有入口和 assistant-ui 限定在 web-ui。源码检查配合 key parity 和主屏幕未解析 key 测试；运行时/插件提供的数据不当作应用固定文案。

@@ -35,7 +35,49 @@
         ],
         "runtime": "in-process",
         "default": true,
-        "apiRange": "^1.4.0"
+        "apiRange": "^1.4.0",
+        "configReload": "next-session",
+        "configSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Enable OpenTelemetry export."
+            },
+            "endpoint": {
+              "type": "string",
+              "format": "uri",
+              "description": "OTLP collector URL."
+            },
+            "tracesEndpoint": {
+              "type": "string",
+              "format": "uri"
+            },
+            "metricsEndpoint": {
+              "type": "string",
+              "format": "uri"
+            },
+            "includeContent": {
+              "type": "boolean",
+              "default": false,
+              "description": "Include model and tool content in telemetry."
+            },
+            "batchMs": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 30000,
+              "default": 1000
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 30000,
+              "default": 3000
+            }
+          }
+        }
       },
       {
         "export": "approvalPlugin",

@@ -1402,6 +1402,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             inventory: surfaceInventory,
             packageId: pkg.id,
             operation: pkg.enabled ? 'enable' : 'disable',
+            configuration: (rowId) => runtimeStore.configAudit.value(pkg.id, rowId),
           })
           if (!target || target.digest === previous?.digest) continue
           try {
@@ -1541,6 +1542,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
                 inventory: latestInventory,
                 packageId,
                 operation,
+                configuration: (rowId) => runtimeStore.configAudit.value(packageId, rowId),
               })
             },
             contributions: (packageId) =>

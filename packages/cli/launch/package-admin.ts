@@ -214,6 +214,12 @@ export function localPackageAdmin(
         return client.packages.pins.release(params as PackagePinsReleaseParams)
       case 'trust-workspace':
         return client.packages.trustWorkspace(params as PackageTrustWorkspaceParams)
+      case 'config/get':
+        return client.packages.config.get(params as import('@agnes/protocol').PluginConfigGetParams)
+      case 'config/validate':
+        return client.packages.config.validate(params as import('@agnes/protocol').PluginConfigValidateParams)
+      case 'config/save':
+        return client.packages.config.save(params as import('@agnes/protocol').PluginConfigSaveParams)
       case 'tree/get':
         return client.packages.tree.get(params as PackageListParams)
       case 'tree/list':
