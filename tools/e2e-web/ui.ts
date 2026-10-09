@@ -68,6 +68,10 @@ export async function chooseWorkspace(page: Page, runtime: Runtime, locale = 'en
 
 export async function fresh(page: Page, locale = 'en') {
   await page.getByRole('button', { name: locale === 'en' ? 'New session' : '新会话', exact: true }).click()
+  await fullAccess(page, locale)
+}
+
+export async function fullAccess(page: Page, locale = 'en') {
   await expect(page.getByTestId('composer-agent')).toBeEnabled()
   await page.getByTestId('composer-agent').click()
   const permission = page.getByTestId('new-session-preset')

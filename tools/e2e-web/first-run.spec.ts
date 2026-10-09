@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
-import { chooseWorkspace, closeSettings, preferences } from './ui.js'
+import { chooseWorkspace, closeSettings, fullAccess, preferences } from './ui.js'
 
 for (const locale of ['en', 'zh-CN'])
   for (const theme of ['light', 'dark'])
@@ -88,10 +88,7 @@ for (const locale of ['en', 'zh-CN'])
           expect(diagnostics.checks.find((check) => check.id === 'accounts')?.probed).toBe(false)
           if (diagnostics.checks.find((check) => check.id === 'sandbox')?.status !== 'ok') {
             // A restricted host cannot admit L1. Select the existing explicit permission preset.
-            await page.getByTestId('composer-agent').click()
-            await page.getByTestId('new-session-preset').click()
-            await page.getByRole('option', { name: en ? /^Full access\b/ : /^完全权限/ }).click()
-            await page.getByTestId('composer-agent').click()
+            await fullAccess(page, locale)
           }
           const composer = page.getByRole('textbox', { name: en ? 'Task content' : '任务内容', exact: true })
           await composer.fill('Complete my first task')
