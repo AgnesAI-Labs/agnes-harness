@@ -39,7 +39,14 @@ export class EffectRuntime {
       effectId,
       intent: this.o.ev('effect/intent', { effectId, ...body }),
       settle: (outcome: EffectOutcome): EventInput =>
-        this.o.ev('effect/settled', { effectId, outcome, durationMs: this.o.clock() - started }),
+        this.o.ev('effect/settled', {
+          effectId,
+          outcome,
+          // The clock is wall time, which can step backwards (NTP, a resumed VM). A negative duration
+          // fails the row's schema and, because settlement rides an atomic batch, would take the
+          // whole step down with it; a duration is a non-negative integer.
+          durationMs: Math.max(0, Math.round(this.o.clock() - started)),
+        }),
     }
   }
 }
