@@ -752,6 +752,7 @@ export class UIProjectionCell {
         const thinking = text(message.content, 'thinking')
         if (thinking) final.thinking = thinking
         if (node) {
+          node.seq = final.seq
           node.text = final.text
           node.streaming = false
           if (thinking) node.thinking = thinking

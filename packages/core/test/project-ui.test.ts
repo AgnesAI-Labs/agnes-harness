@@ -472,10 +472,12 @@ it('shows a live partial stream and finalizes it without duplicate assistant con
     if ((await session.scan({ type: 'assistant/output', toSeq: session.lastSeq })).length) break
     await new Promise<void>((resolve) => setImmediate(resolve))
   }
+  let streamingId: string | undefined
   try {
     const timeline = await session.projectUI()
     // The node exists while streaming, but its text lives only in the previews a viewer merges in.
     const [streaming] = kind(timeline.nodes, 'assistant')
+    streamingId = streaming?.id
     expect(streaming).toMatchObject({ text: '', streaming: true })
     expect(typeof streaming?.effectId).toBe('string')
     expect(seen).toContain('text:partial')
@@ -484,8 +486,11 @@ it('shows a live partial stream and finalizes it without duplicate assistant con
     await pending
   }
   const after = await session.projectUI()
+  const [settled] = await session.scan({ type: 'assistant/message', toSeq: session.lastSeq })
   expect(kind(after.nodes, 'assistant')).toHaveLength(1)
   expect(kind(after.nodes, 'assistant')[0]).toMatchObject({
+    id: streamingId,
+    seq: settled?.seq,
     text: 'partial',
     thinking: 'reason',
     streaming: false,

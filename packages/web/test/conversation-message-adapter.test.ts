@@ -2,7 +2,7 @@
 
 import { Context } from '@agnes/cordis'
 import type { UINode, UITurn } from '@agnes/protocol'
-import { SlotRegistry } from '@agnes/web-client'
+import { SessionService, SlotRegistry } from '@agnes/web-client'
 import { costDetails, costSummary } from '@agnes/web-conversation/usage'
 import {
   AssistantRuntimeProvider,
@@ -11,7 +11,7 @@ import {
 } from '@agnes/web-ui/assistant-ui'
 import { act, createElement, useEffect, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WebConversationMessages } from '../src/conversation-message-adapter.js'
 import { zhLocaleService, zhT } from './helpers/locale.js'
 
@@ -37,6 +37,7 @@ afterEach(async () => {
   await act(async () => root.unmount())
   await ctx.fiber.dispose()
   host.remove()
+  vi.unstubAllGlobals()
 })
 
 const user: UINode = { kind: 'user', id: 'user', seq: 1, content: [{ type: 'text', text: 'earlier' }] }
@@ -333,6 +334,15 @@ it('uses the complete shared cost contract through the real adapter without an i
 })
 
 it.each([true, false])('shows a failed turn reason through the React adapter (%s)', async (withError) => {
+  vi.stubGlobal('fetch', async () =>
+    Response.json({
+      items: [],
+      growth: [],
+      counts: { up: 0, down: 0, withdrawn: 0, withCandidate: 0 },
+      truncated: false,
+    }),
+  )
+  const session = new SessionService(ctx, 'session')
   const message = 'Increase the context budget. <img src=x> **literal**'
   const turn: UITurn = {
     id: 'turn:1',
@@ -361,7 +371,12 @@ it.each([true, false])('shows a failed turn reason through the React adapter (%s
     return createElement(
       AssistantRuntimeProvider,
       { runtime },
-      createElement(WebConversationMessages, { registry, turns: [current], locale: zhLocaleService() }),
+      createElement(WebConversationMessages, {
+        registry,
+        session,
+        turns: [current],
+        locale: zhLocaleService(),
+      }),
     )
   }
   await act(async () => root.render(createElement(FailedTurn, { current: turn })))
@@ -379,6 +394,14 @@ it.each([true, false])('shows a failed turn reason through the React adapter (%s
     ),
   )
   expect(host.querySelector('.turn-error')).toBeNull()
+  expect(host.querySelectorAll('[data-testid="message-feedback"]')).toHaveLength(1)
+  for (const current of [
+    { ...turn, status: 'running' as const },
+    { ...turn, inherited: true },
+  ]) {
+    await act(async () => root.render(createElement(FailedTurn, { current })))
+    expect(host.querySelector('[data-testid="message-feedback"]')).toBeNull()
+  }
 })
 
 it('keeps each React action footer through replay and history prepend, then retires reused turn IDs across sessions', async () => {

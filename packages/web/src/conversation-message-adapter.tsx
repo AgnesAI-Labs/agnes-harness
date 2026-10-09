@@ -8,6 +8,7 @@ import {
   SlotOutlet,
   type SlotRegistry,
   SlotsProvider,
+  workbenchNavigation,
 } from '@agnes/web-client'
 import {
   conversationToolCardKind,
@@ -25,6 +26,7 @@ import {
   ConversationTurnActions,
   interactionToolPresentation,
 } from '@agnes/web-ui/assistant-ui'
+import { MessageFeedback } from '@agnes/web-units/message-feedback'
 import { type ReactNode, useSyncExternalStore } from 'react'
 import type { ClaimResolver } from './client-modules/boot.js'
 
@@ -273,6 +275,18 @@ export function WebConversationMessages({
     ),
     renderNode: (node, native) => {
       const base = native
+      const feedbackTurn =
+        node.kind === 'assistant' ? turns?.find((turn) => turn.nodeIds.includes(node.id)) : undefined
+      const feedbackReady =
+        sessionScope &&
+        session?.getSnapshot() === sessionScope &&
+        feedbackTurn &&
+        feedbackTurn.status !== 'running' &&
+        feedbackTurn.status !== 'waiting' &&
+        !feedbackTurn.inherited &&
+        node.kind === 'assistant' &&
+        !node.streaming &&
+        node.seq > 0
       const factAnchor =
         node.kind === 'tool'
           ? { kind: 'tool' as const, toolUseId: node.toolUseId }
@@ -282,6 +296,22 @@ export function WebConversationMessages({
       const content = (
         <>
           {base}
+          {feedbackReady && (
+            <MessageFeedback
+              sessionId={sessionScope}
+              target={{ messageSeq: node.seq, turn: feedbackTurn.turn }}
+              openEvidence={(candidateId) => {
+                if (
+                  !factChainLinks.open({
+                    sessionId: sessionScope,
+                    laneId: 'main',
+                    anchor: { kind: 'authoring', candidateId },
+                  })
+                )
+                  workbenchNavigation.open('facts')
+              }}
+            />
+          )}
           {node.kind === 'tool' && node.review && (
             <p data-testid="tool-review-decision">
               {locale?.t(
