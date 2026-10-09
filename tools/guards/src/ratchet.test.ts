@@ -424,7 +424,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-19 secure physical-delete executor and attested-plan lease. Measured 624; exact cap.
   'packages/base/extensions/artifacts-local': 315,
   'packages/base/extensions/approval-policy': 219,
-  'packages/base/extensions/tools-search': 316,
+  'packages/base/extensions/tools-search': 283,
   // WEBFETCH-01: new component, exact measured allocation.
   // SKILL-GITHUB-RATE-LIMIT: explicit ZIP byte response; measured 380, no spare.
   // WEBFETCH-01: new component, exact measured allocation.
