@@ -1,4 +1,4 @@
-import { type UINode, type UITurn } from '@agnes/protocol'
+import type { UINode, UITurn } from '@agnes/protocol'
 import {
   type ClientResourceService,
   factChainLinks,

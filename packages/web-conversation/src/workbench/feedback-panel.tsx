@@ -1,6 +1,6 @@
-import { SettingsState } from '@agnes/web-ui'
 import type { UiExtensionContext } from '@agnes/web-client'
 import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
+import { SettingsState } from '@agnes/web-ui'
 import { MessageFeedback } from '@agnes/web-units/message-feedback'
 import { panelContext } from './context.js'
 export function FeedbackPanel({ context }: { context: UiExtensionContext }) {

@@ -12,9 +12,9 @@ import { THEME_TOKENS } from './generated/theme-tokens.js'
 export type {
   Capabilities as ExtensionCapabilities,
   ExtensionManifest,
+  PluginCategory,
   PluginMetadata,
   PluginMetadataLocale,
-  PluginCategory,
 } from '@agnes/protocol'
 export type { ThemeTokenName } from './generated/theme-tokens.js'
 export { THEME_TOKEN_NAMES } from './generated/theme-tokens.js'

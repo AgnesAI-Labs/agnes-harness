@@ -1,5 +1,5 @@
-import { SettingsCard, SettingsPage, SettingsToolbar } from './settings-layout.js'
 import { computerUseUiCatalog } from './locales/computer-use.js'
+import { SettingsCard, SettingsPage, SettingsToolbar } from './settings-layout.js'
 import { Button } from './ui/button.js'
 import { useUiText } from './ui-locale.js'
 

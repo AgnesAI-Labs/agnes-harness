@@ -13,9 +13,9 @@ import type {
 } from '@agnes/package-manager'
 import {
   AuthoringCandidates,
-  bundledPluginSourceRoot,
-  bundledExampleSource,
   activeRuntimePinId,
+  bundledExampleSource,
+  bundledPluginSourceRoot,
   collectSkinRoster,
   parseSource,
   publicPluginFailureReason,

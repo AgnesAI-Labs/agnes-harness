@@ -1,16 +1,16 @@
+import type { SessionJob, SessionJobsReadResult } from '@agnes/protocol'
+import type { Session } from '@agnes/sdk/browser'
+import type { UiExtensionContext } from '@agnes/web-client'
 import {
-  SettingsToolbar,
   appServerErrorMessage,
   Button,
   Select,
   SettingsState,
   SettingsTextArea,
+  SettingsToolbar,
   terminalKey,
   terminalScreen,
 } from '@agnes/web-ui'
-import type { SessionJob, SessionJobsReadResult } from '@agnes/protocol'
-import type { Session } from '@agnes/sdk/browser'
-import type { UiExtensionContext } from '@agnes/web-client'
 import { useEffect, useRef, useState } from 'react'
 import { panelContext } from './context.js'
 

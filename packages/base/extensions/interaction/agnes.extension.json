@@ -6,9 +6,7 @@
   "capabilities": {
     "tools": {
       "prefix": "",
-      "names": [
-        "ask_user_question"
-      ]
+      "names": ["ask_user_question"]
     },
     "hooks": [],
     "events": true,

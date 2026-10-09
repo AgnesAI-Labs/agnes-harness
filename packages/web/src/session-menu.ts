@@ -1,5 +1,5 @@
-import { createSettingsButton, positionPopover } from '@agnes/web-ui'
 import type { Translate } from '@agnes/web-conversation/presentation'
+import { createSettingsButton, positionPopover } from '@agnes/web-ui'
 import type { SessionAction } from './session-actions.js'
 
 /**

@@ -3,8 +3,8 @@ import { loginSubscription, type OAuthClient } from '@agnes/sdk/browser'
 import { tr } from '@agnes/web-foundation/locale-bridge'
 import {
   Button,
-  createSettingsControl,
   createRegionHost,
+  createSettingsControl,
   Field,
   mountRegion,
   SettingsInput,

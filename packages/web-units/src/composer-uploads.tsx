@@ -1,5 +1,5 @@
-import { Button } from '@agnes/web-ui'
 import type { UploadedAttachment } from '@agnes/protocol'
+import { Button } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import {
   cancelFileUpload,

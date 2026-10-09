@@ -6,9 +6,7 @@
   "capabilities": {
     "tools": {
       "prefix": "",
-      "names": [
-        "present"
-      ]
+      "names": ["present"]
     },
     "events": true,
     "artifacts": true,
@@ -16,9 +14,7 @@
     "projections": [
       {
         "name": "presented",
-        "inputEventTypes": [
-          "x/agnes/deliverables/presented"
-        ],
+        "inputEventTypes": ["x/agnes/deliverables/presented"],
         "maxStateBytes": 262144
       }
     ],

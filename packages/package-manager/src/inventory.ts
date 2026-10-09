@@ -6,11 +6,11 @@ import {
   type PackagePresentation,
   validatePluginMetadata,
 } from '@agnes/protocol'
-import { readPackagePresentation } from './package-presentation.js'
 import { PackageError } from './errors.js'
 import { inspectStaged } from './inspect.js'
 import { canonical, capabilityHash, freezeData, readStaticJson, snapshotHash } from './integrity.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
+import { readPackagePresentation } from './package-presentation.js'
 import { capabilityPolicyBlockers, readPluginCapabilityPolicy } from './plugin-capabilities.js'
 import type { AgnesPluginKind } from './plugin-manifest.js'
 import {

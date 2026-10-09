@@ -1,7 +1,7 @@
-import { renderInteractionSurface, tableSurface } from '../../../src/interaction-surfaces.js'
 import { randomUUID } from 'node:crypto'
 import { defineExtension, defineTool, type ToolContext } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
+import { renderInteractionSurface, tableSurface } from '../../../src/interaction-surfaces.js'
 import { WORKFLOW_RECEIPT_RULE, workflowReceipts } from './receipts.js'
 import { type Run, type State, workflowProjection } from './state.js'
 

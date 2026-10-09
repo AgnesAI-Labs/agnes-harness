@@ -1,4 +1,3 @@
-import { type PluginMetadata, validatePluginMetadata } from '@agnes/protocol'
 import {
   API_VERSION,
   compilePluginConfig,
@@ -6,6 +5,7 @@ import {
   ProviderError,
   satisfiesApiRange,
 } from '@agnes/extension-api'
+import { type PluginMetadata, validatePluginMetadata } from '@agnes/protocol'
 
 export type AgnesPluginRuntime = 'in-process' | 'isolated'
 

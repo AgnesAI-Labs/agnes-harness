@@ -1,5 +1,5 @@
-import { renderInteractionSurface, tableSurface } from '../../../src/interaction-surfaces.js'
 import { defineExtension } from '@agnes/extension-api'
+import { renderInteractionSurface, tableSurface } from '../../../src/interaction-surfaces.js'
 import {
   openScheduleCatalog,
   openSeamScheduleDb,

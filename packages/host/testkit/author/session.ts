@@ -20,8 +20,8 @@ import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target
 import {
   developmentPluginRows,
   hashDirectory,
-  readDevelopmentPlugin,
   type RuntimePluginSnapshot,
+  readDevelopmentPlugin,
 } from '@agnes/package-manager'
 import { defineLoop } from '@agnes/plugin-runtime'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'

@@ -1,6 +1,6 @@
-import { Button } from './ui/button.js'
-import { SettingsCheckbox, SettingsState } from './settings-layout.js'
 import type { JSX } from 'react'
+import { SettingsCheckbox, SettingsState } from './settings-layout.js'
+import { Button } from './ui/button.js'
 
 export type DiagnosticsStep = 'menu' | 'share' | 'ready' | 'saved'
 export type DiagnosticsInclude = { conversation: boolean; logs: boolean; system: boolean }

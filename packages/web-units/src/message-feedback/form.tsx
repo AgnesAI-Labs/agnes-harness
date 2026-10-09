@@ -3,8 +3,8 @@ import {
   Button,
   Field,
   SettingsSelect,
-  SettingsTextArea,
   SettingsState,
+  SettingsTextArea,
   SettingsToolbar,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'

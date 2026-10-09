@@ -223,13 +223,13 @@ export type { DeployManifest } from '../gen/ts/deploy-manifest.js'
 export type {
   Capabilities,
   ClientContribution,
-  UiComponentDeclaration,
   ExtensionManifest,
+  PluginCategory,
   PluginMetadata,
   PluginMetadataLocale,
-  PluginCategory,
   SkinContribution,
   SkinTokenValue,
+  UiComponentDeclaration,
 } from '../gen/ts/extension-manifest.js'
 export type { ServiceCapability } from '../gen/ts/extension-service.js'
 // Preset surface declarations; execution is supplied by the official Intelligent UI plugin.

@@ -1,5 +1,5 @@
-import { Button } from '@agnes/web-ui'
 import type { ReferenceCandidate, ReferenceSearchResult } from '@agnes/protocol'
+import { Button } from '@agnes/web-ui'
 import { type RefObject, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { Translate } from './locales/index.js'
 

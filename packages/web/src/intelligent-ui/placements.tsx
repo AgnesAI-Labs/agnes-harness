@@ -2,17 +2,17 @@ import type { UiActionReceipt } from '@agnes/protocol/gen/intelligent-ui'
 import { type UiExtensionContext, workbenchNavigation } from '@agnes/web-client'
 import {
   Button,
-  SettingsState,
   INTELLIGENT_UI_NAMESPACE,
   IntelligentSurface,
   intelligentUiCatalog,
+  SettingsState,
   UiLocaleProvider,
   type UiLocaleSource,
   useUiText,
 } from '@agnes/web-ui'
 import { useCallback, useSyncExternalStore } from 'react'
-import { CustomUiHost, type CustomUiModuleSource } from './custom-host.js'
 import type { IntelligentUiClient } from './client.js'
+import { CustomUiHost, type CustomUiModuleSource } from './custom-host.js'
 
 export interface UiPlacementBinding {
   subscribe(listener: () => void): () => void

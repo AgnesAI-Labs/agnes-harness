@@ -7,8 +7,8 @@ import {
   workbenchPanels,
 } from '@agnes/web-client'
 import { createDocumentLocaleSource, INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from '@agnes/web-ui'
-import type { CustomUiModuleSource } from './custom-host.js'
 import { IntelligentUiClient } from './client.js'
+import type { CustomUiModuleSource } from './custom-host.js'
 import {
   IntelligentInline,
   IntelligentPanel,

@@ -1,4 +1,4 @@
-import { resolvePluginMetadata, type PackageSource } from '@agnes/protocol'
+import { type PackageSource, resolvePluginMetadata } from '@agnes/protocol'
 import {
   Button,
   blockerText,
@@ -9,13 +9,13 @@ import {
   integrityLabel,
   OrphanPins,
   operationLabel,
-  PluginList,
   PLUGIN_CATEGORIES,
+  PluginList,
   PluginPurposeSections,
-  SettingsSelect,
-  SettingsDetails,
   renderRegion,
+  SettingsDetails,
   SettingsInput,
+  SettingsSelect,
   SettingsToolbar,
   SourceDialogContent,
   sourceLabel,

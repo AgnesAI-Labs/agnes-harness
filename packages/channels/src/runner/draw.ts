@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { AcpPermissionKind, ChannelCapabilities, UiSurfaceRecord, UINode } from '@agnes/protocol'
+import type { AcpPermissionKind, ChannelCapabilities, UINode, UiSurfaceRecord } from '@agnes/protocol'
 import { surfaceText } from '@agnes/protocol/intelligent-ui'
 import type { Block, CardBlock, ChannelMessage } from '../adapter.js'
 
@@ -165,7 +165,7 @@ export function drawSurfaceMessage(
 ): ChannelMessage {
   const path = `/?session=${encodeURIComponent(sessionId)}&surface=${encodeURIComponent(record.surface.id)}`
   const link = webUrl ? new URL(path, webUrl).href : path
-  const escapeMarkdown = (text: string) => text.replace(/[\\`*_{}\[\]()<>#!|]/g, '\\$&')
+  const escapeMarkdown = (text: string) => text.replace(/[\\`*_{}[\]()<>#!|]/g, '\\$&')
   return {
     blocks: [
       {

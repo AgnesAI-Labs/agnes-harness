@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ToolDef } from '@agnes/extension-api'
 import { expect, it, vi } from 'vitest'
-import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { interactionSurfaceId } from '../../../src/interaction-surfaces.js'
+import { fakeToolContext } from '../../../testkit/tool-context.js'
 import interaction, { questionProjection } from '../src/index.js'
 
 it('continues immediately or at the durable deadline, accepts late answers and cancels an active wait', async () => {

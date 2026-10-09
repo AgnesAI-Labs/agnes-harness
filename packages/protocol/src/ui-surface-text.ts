@@ -111,7 +111,6 @@ export function numberedSurfaceInput(
   } catch {
     // Invalid or unresolved schemas cannot admit a terminal answer.
   }
-  if (!valid)
-    throw new Error('Choose the listed option(s), or supply free text when allowed.')
+  if (!valid) throw new Error('Choose the listed option(s), or supply free text when allowed.')
   return { actionId: simple.action.id, input: { [simple.form.id]: translated }, selection: {} }
 }

@@ -294,7 +294,6 @@ import {
   resolveSessionCapabilities,
   type SessionCapabilitySet,
 } from '../profile/session-capabilities.js'
-import { readUiComponentDeclarations } from '../sessions/ui-component-declarations.js'
 import { createIntelligentUiAdapter } from '../sessions/intelligent-ui.js'
 import {
   applyTelemetryConsent,
@@ -302,6 +301,7 @@ import {
   readProfileTelemetryConsent,
   readTelemetryConsent,
 } from '../sessions/session-hooks.js'
+import { readUiComponentDeclarations } from '../sessions/ui-component-declarations.js'
 import type { AssembleDeps } from './assembly-deps.js'
 import { childAgentCatalog, installChildAgents, withBuiltinChildAgents } from './child-agents.js'
 import { initStaticSeams } from './seams.js'

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import descriptor from '../client/agnes.client.json' with { type: 'json' }
 import { fileURLToPath } from 'node:url'
 import { createAuthorTestkit } from '@agnes/host/author-testkit'
 import { test } from 'vitest'
+import descriptor from '../client/agnes.client.json' with { type: 'json' }
 import { main, tools } from '../index.mjs'
 import { value } from '../runtime.mjs'
 import { actionOutcome, reviewSurface } from '../surface.mjs'

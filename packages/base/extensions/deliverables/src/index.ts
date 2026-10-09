@@ -1,7 +1,7 @@
 import { basename, extname } from 'node:path'
 import { type ArtifactRef, defineExtension, defineTool, type ProjectionDef } from '@agnes/extension-api'
-import { interactionSurfaceId, renderInteractionSurface } from '../../../src/interaction-surfaces.js'
 import { Type } from '@sinclair/typebox'
+import { interactionSurfaceId, renderInteractionSurface } from '../../../src/interaction-surfaces.js'
 
 type Deliverable = { name: string; description: string; ref: ArtifactRef }
 type State = { presented: Record<string, Deliverable[]> }

@@ -1,7 +1,7 @@
 import type { ConfigAccount, ConfigAccountInput } from '@agnes/protocol'
-import { Button } from './ui/button.js'
-import { Badge } from './ui/badge.js'
 import { fallbackT, type Translate } from './locales/index.js'
+import { Badge } from './ui/badge.js'
+import { Button } from './ui/button.js'
 
 export type SettingsAccountsProps = {
   accounts: readonly ConfigAccount[]

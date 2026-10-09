@@ -1,7 +1,7 @@
-import { createSettingsButton, materializeSettingsControls } from '@agnes/web-ui'
 import type { PageSessionMeta } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import type { Translate } from '@agnes/web-conversation/presentation'
+import { createSettingsButton, materializeSettingsControls } from '@agnes/web-ui'
 
 export type SessionAction = 'rename' | 'fork' | 'archive'
 

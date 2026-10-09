@@ -1,6 +1,6 @@
-import { createSettingsButton } from '@agnes/web-ui'
 import type { PageSessionMeta, WorkspaceEntry } from '@agnes/protocol'
 import type { Translate } from '@agnes/web-conversation/presentation'
+import { createSettingsButton } from '@agnes/web-ui'
 import { attachSessionMenu, closeSessionMenu, createSessionMenuTrigger } from './session-menu.js'
 
 type SessionRow = PageSessionMeta['items'][number] & { cwd?: string }

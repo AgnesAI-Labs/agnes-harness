@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, join, posix, relative, resolve, sep } from 'node:path'
-import { validUiComponentDeclaration } from '@agnes/protocol/intelligent-ui'
 import { clientModuleRowIdForContribution, packageOfRow } from '@agnes/daemon-foundation/composite-desired'
 import { type CompositionPatch, CompositionSessionStore, compositionModuleAllowed } from '@agnes/host'
 import {
@@ -26,6 +25,7 @@ import {
   isWebClientModuleSlotName,
   jcs,
 } from '@agnes/protocol'
+import { validUiComponentDeclaration } from '@agnes/protocol/intelligent-ui'
 import { init as initModuleLexer, parse as parseModule } from 'es-module-lexer'
 import type { PackageActivationObservation } from './handler.js'
 

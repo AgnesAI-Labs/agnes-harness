@@ -1,8 +1,8 @@
-import { SettingsState, SettingsToolbar } from './settings-layout.js'
-import { Button } from './ui/button.js'
 import type { SkillDescriptor, SkillRootStatus } from '@agnes/protocol'
 import type { JSX } from 'react'
 import { RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog } from './locales/resource-list.js'
+import { SettingsState, SettingsToolbar } from './settings-layout.js'
+import { Button } from './ui/button.js'
 import { StateSwitch } from './ui/state-lights.js'
 import { useUiText } from './ui-locale.js'
 

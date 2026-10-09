@@ -1,7 +1,7 @@
 import { Ajv2020 } from 'ajv/dist/2020.js'
 import {
-  UiComponentDeclaration as UiComponentDeclarationSchema,
   type UiComponentDeclaration,
+  UiComponentDeclaration as UiComponentDeclarationSchema,
 } from '../gen/ts/extension-manifest.js'
 import { UiSurface, X_AGNES_UI_LIMITS } from '../gen/ts/intelligent-ui.js'
 import type { JsonValue } from '../gen/ts/session-v1.js'

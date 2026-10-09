@@ -1,13 +1,13 @@
-import {
-  createSettingsButton,
-  bindDismissibleDialog,
-  createCatalogTranslator,
-  materializeSettingsControls,
-} from '@agnes/web-ui'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import { adaptResourceAdmin } from '@agnes/web-admin/admin/resources/admin'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
 import { factChainLinks } from '@agnes/web-client'
+import {
+  bindDismissibleDialog,
+  createCatalogTranslator,
+  createSettingsButton,
+  materializeSettingsControls,
+} from '@agnes/web-ui'
 import { createCommandController } from './app/command-controller.js'
 import { createComposerController } from './app/composer-controller.js'
 import { createSessionController } from './app/session-controller.js'

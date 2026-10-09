@@ -2,10 +2,10 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { loopCheckpointCodec, registerLoopPlugin, registerToolPolicyPlugin } from '@agnes/extension-api'
 import {
-  drainDeferredToolInvocations,
   defineAgnesPlugin,
   defineLoop,
   defineTool,
+  drainDeferredToolInvocations,
   toolError,
 } from '@agnes/plugin-runtime'
 

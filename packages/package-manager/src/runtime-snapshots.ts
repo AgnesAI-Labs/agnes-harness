@@ -3,10 +3,10 @@ import { lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, wr
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   type PackageBlocker,
-  type PluginMetadata,
-  validatePluginMetadata,
   type PackageContributionSummary,
+  type PluginMetadata,
   validatePackageAdminData,
+  validatePluginMetadata,
 } from '@agnes/protocol'
 import { renameWriteThroughSync } from '@agnes/system-node'
 import { copyPackageTreeSync } from './copy-tree.js'

@@ -1,11 +1,11 @@
 import type {
   CompositionCapabilitySnapshot,
-  RuntimeAdminSnapshot,
   PackageCatalogDescriptor,
   PackageInstalledDescriptor,
   PackageOperation,
   PackagePreview,
   PackageSource,
+  RuntimeAdminSnapshot,
   RuntimePinDescriptor,
   RuntimePinReleaseResult,
 } from '@agnes/protocol'
@@ -22,13 +22,13 @@ import {
   adminDialogsLocaleCatalog,
   adminListLocaleCatalog,
   adminLocaleCatalog,
-  PLUGIN_PRESENTATION_NAMESPACE,
-  pluginPresentationCatalog,
   createDocumentLocaleSource,
   createUiTranslator,
   type DetailActionSpec,
   hasPermission,
+  PLUGIN_PRESENTATION_NAMESPACE,
   PreviewConfirmationFacts,
+  pluginPresentationCatalog,
   RollbackActivationFacts,
   TrustConfirmationFacts,
   terminal,
@@ -54,7 +54,6 @@ import {
   hasFeature,
   type PluginRuntimeSource,
 } from '../types.js'
-import { matchesPluginSearch, pluginPresentation } from './presentation.js'
 import { button, element, setDialog } from './dom.js'
 import { hasClientContribution, isClientOnly, safeMessage, sourceForCatalog } from './model.js'
 import {
@@ -63,6 +62,7 @@ import {
   operationStorageKey as storedOperationKey,
   type TrackedOperation,
 } from './operation-storage.js'
+import { matchesPluginSearch, pluginPresentation } from './presentation.js'
 import {
   renderConfirmPluginView,
   renderDetailPluginView,

@@ -1,13 +1,13 @@
-import { resolvePluginMetadata } from '@agnes/protocol'
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
+import { resolvePluginMetadata } from '@agnes/protocol'
 import {
   Badge,
   Button,
+  PLUGIN_PRESENTATION_NAMESPACE,
+  pluginPresentationCatalog,
   SettingsCard,
   SettingsState,
   useUiText,
-  PLUGIN_PRESENTATION_NAMESPACE,
-  pluginPresentationCatalog,
 } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'

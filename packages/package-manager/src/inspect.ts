@@ -15,6 +15,7 @@ import { containedEntry } from './entry-path.js'
 import { PackageError } from './errors.js'
 import { canonical, capabilityHash, freezeData, readStaticJson, snapshotHash } from './integrity.js'
 import type { LockEntry } from './lockfile.js'
+import { presentPluginRows } from './package-presentation.js'
 import {
   capabilityAtoms,
   capabilityPolicyBlockers,
@@ -26,7 +27,6 @@ import {
   parseAgnesPluginEntries,
   parseAgnesPluginKinds,
 } from './plugin-manifest.js'
-import { presentPluginRows } from './package-presentation.js'
 import { checkCancelled } from './ports.js'
 import { resolveSkins } from './skin-assets.js'
 import { type FetchedSource, hashDirectory, type PackageSource } from './sources.js'

@@ -1,4 +1,3 @@
-import { SettingsState } from '../settings-layout.js'
 import type {
   JsonValue,
   UiAction,
@@ -7,11 +6,12 @@ import type {
   UiSurface,
 } from '@agnes/protocol/gen/intelligent-ui'
 import { type ReactNode, useCallback, useId } from 'react'
-import { SurfaceFormFields } from './form-fields.js'
+import { SettingsState } from '../settings-layout.js'
 import { Button } from '../ui/button.js'
 import { useUiText } from '../ui-locale.js'
-import { CustomUiComponent, type CustomUiRenderer } from './custom.js'
 import { IntelligentChart } from './chart.js'
+import { CustomUiComponent, type CustomUiRenderer } from './custom.js'
+import { SurfaceFormFields } from './form-fields.js'
 import { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
 import { uiObject, validIntelligentSurfaceProjection } from './validate.js'
 

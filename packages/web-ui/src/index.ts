@@ -30,9 +30,12 @@ export {
   MODEL_SETTINGS_LOCALE_NAMESPACE,
   modelSettingsLocaleCatalog,
 } from './locales/model-settings.js'
+export { PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog } from './locales/plugin-presentation.js'
 export { RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog } from './locales/resource-detail.js'
 export { RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog } from './locales/resource-list.js'
 export * from './model-settings.js'
+export * from './plugin-presentation.js'
+export * from './plugin-purpose.js'
 export {
   type PluginFormIssue,
   PluginSchemaFields,
@@ -60,7 +63,6 @@ export { resourceFailureCatalog, resourceFailureKey, resourceFailureLabel } from
 export * from './resource-list.js'
 export * from './schema-settings.js'
 export * from './select-picker.js'
-export * from './settings-control-templates.js'
 export { SettingsAccountDialog } from './settings-account-dialog.js'
 export { SettingsAccounts, type SettingsAccountsProps } from './settings-accounts.js'
 export {
@@ -68,6 +70,7 @@ export {
   type SettingsComputerUseActions,
   type SettingsComputerUseView,
 } from './settings-computer-use.js'
+export * from './settings-control-templates.js'
 export { createSettingsIcon } from './settings-icon.js'
 export {
   SettingsCard,
@@ -109,7 +112,3 @@ export {
 export { Switch, type SwitchProps } from './ui/switch.js'
 export { Tabs, type TabsProps } from './ui/tabs.js'
 export * from './ui-locale.js'
-
-export * from './plugin-presentation.js'
-export * from './plugin-purpose.js'
-export { PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog } from './locales/plugin-presentation.js'
