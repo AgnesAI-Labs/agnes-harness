@@ -1,4 +1,5 @@
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import { defaultLoopFactory } from '@agnes/loop-default'
 import type { Provider } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
@@ -13,7 +14,9 @@ const content = (text: string) => [{ type: 'text' as const, text }]
 const run = (session: Awaited<ReturnType<typeof openSession>>['session']) =>
   session.run({ until: 'turn-end', signal: new AbortController().signal })
 const facts = async (log: Awaited<ReturnType<typeof openSession>>['log']) =>
-  (await log.scan({ type: 'x/core/control', limit: 100 })).map((row) => row.data)
+  (await scanAll((query) => log.scan(query), { type: 'x/core/control', toSeq: log.lastSeq })).map(
+    (row) => row.data,
+  )
 
 function gate() {
   let release!: () => void
@@ -108,6 +111,14 @@ describe('human Loop controls', () => {
     await entered.wait
     await session.enqueue('next-step', { content: content('new direction'), actor })
     const item = (await session.controls.state()).pending[0]!
+    await log.append([
+      session.controls.fact('interrupt', 'requested', actor, {
+        admissionId: 'interrupt',
+        itemId: item.itemId,
+      }),
+      ...Array.from({ length: 500 }, () => session.controls.fact('steer', 'delivered', actor)),
+    ])
+    expect(await session.controls.ending()).toMatchObject({ reason: 'interrupted' })
     await session.controls.apply('interrupt', actor, 'interrupt', item.itemId)
     expect((await running).reason).toBe('interrupted')
     expect(JSON.stringify(await log.scan({ type: 'tool/result', limit: 10 }))).toContain(

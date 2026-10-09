@@ -1043,7 +1043,7 @@ export class KernelChildren implements ChildrenFactory {
       const costs = await parent.d.log.storage.scan(childKey, {
         type: 'cost/ledger',
         fromSeq: (record.boundarySeq + 1) as typeof record.boundarySeq,
-        limit: 1000,
+        limit: 500,
       })
       const tokens = costs.map((row) => {
         const tokens = (row.data as { tokens?: { input?: number; output?: number } }).tokens
@@ -1051,7 +1051,7 @@ export class KernelChildren implements ChildrenFactory {
           ? tokens.input + tokens.output
           : undefined
       })
-      if (costs.length && costs.length < 1000 && tokens.every((value) => typeof value === 'number'))
+      if (costs.length && costs.length < 500 && tokens.every((value) => typeof value === 'number'))
         totalTokens = tokens.reduce<number>((sum, value) => sum + (value ?? 0), 0)
     }
     const first = await parent.d.log.storage.scan(childKey, {

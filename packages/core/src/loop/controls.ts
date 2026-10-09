@@ -1,5 +1,6 @@
 import { withPhase } from '@agnes/core-common/step/op-state'
 import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
+import { scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { Inbox } from '@agnes/core-ledger/reduce/shapes'
 import { type Actor, type ContentBlock, MAX_FRAME_BYTES } from '@agnes/protocol'
 import { validateUserMessageImages } from '../request/user-message-images.js'
@@ -184,26 +185,28 @@ export class SessionControls {
   async ending() {
     const op = this.s.op()
     if (!op) return null
-    const rows = await this.s.d.log.scan({
+    for await (const rows of scanPages((query) => this.s.d.log.scan(query), {
       type: 'x/core/control',
       lane: this.s.lane,
       fromSeq: op.meta.triggerSeq,
+      toSeq: this.s.lastSeq,
       order: 'desc',
-      limit: 1000,
-    })
-    const row = rows.find((row) => {
-      const data = row.data as { action?: string; outcome?: string }
-      return data.outcome === 'requested' && (data.action === 'cancel' || data.action === 'interrupt')
-    })
-    if (!row) return null
-    const data = row.data as { action: string; admissionId: string; itemId?: string }
-    return {
-      reason: data.action === 'interrupt' ? ('interrupted' as const) : ('aborted' as const),
-      event: this.fact(data.action, 'applied', row.actor, {
-        admissionId: data.admissionId,
-        ...(data.itemId ? { itemId: data.itemId } : {}),
-      }),
+    })) {
+      const row = rows.find((row) => {
+        const data = row.data as { action?: string; outcome?: string }
+        return data.outcome === 'requested' && (data.action === 'cancel' || data.action === 'interrupt')
+      })
+      if (!row) continue
+      const data = row.data as { action: string; admissionId: string; itemId?: string }
+      return {
+        reason: data.action === 'interrupt' ? ('interrupted' as const) : ('aborted' as const),
+        event: this.fact(data.action, 'applied', row.actor, {
+          admissionId: data.admissionId,
+          ...(data.itemId ? { itemId: data.itemId } : {}),
+        }),
+      }
     }
+    return null
   }
 
   async apply(
