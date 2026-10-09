@@ -15,10 +15,12 @@ import { expectManifestMatchesCode, usedCapabilities } from '../testkit/assertio
 const extensionsDir = fileURLToPath(new URL('../extensions', import.meta.url))
 const names = readdirSync(extensionsDir)
   .filter((e) => statSync(join(extensionsDir, e)).isDirectory())
+  // This module is an ordinary provider plugin, declared in agnes.plugins instead of a legacy manifest.
+  .filter((e) => e !== 'references')
   .sort()
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
-  agnes?: { extensions?: string[] }
+  agnes?: { extensions?: string[]; plugins?: { id: string; export: string; inject?: string[] }[] }
 }
 const loaded = new Set((pkg.agnes?.extensions ?? []).map((p) => p.replace(/^\.\/extensions\//, '')))
 
@@ -27,6 +29,13 @@ describe('bundled extensions declare what they use', () => {
   it('found the extensions on disk', () => {
     expect(names.length).toBeGreaterThanOrEqual(4)
     expect(names).toContain('tools-core')
+    expect(pkg.agnes?.plugins?.find((entry) => entry.id === 'reference-resolvers:default')).toMatchObject({
+      export: 'referenceResolversPlugin',
+      inject: ['providers'],
+    })
+    expect(existsSync(join(extensionsDir, 'references/src/index.ts'))).toBe(true)
+    const provider = usedCapabilities(join(extensionsDir, 'references/src'))
+    expect([...provider.tools, ...provider.hooks, ...provider.slots, ...provider.resources]).toEqual([])
   })
 
   it.each(names)('%s: manifest matches its source', (name) => {

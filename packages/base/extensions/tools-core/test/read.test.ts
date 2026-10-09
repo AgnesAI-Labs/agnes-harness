@@ -138,6 +138,9 @@ describe('read', () => {
       costHint: {},
       deferLoading: false,
       requiresApproval: 'never',
+      paths: [
+        { arg: 'path', access: 'read', nonWorkspaceSchemes: ['artifact', 'session-file', 'session-image'] },
+      ],
     })
   })
 
