@@ -116,6 +116,14 @@ for (const locale of ['en', 'zh-CN'])
       const capture = async (surface: string, width: number) => {
         expect(++shots).toBeLessThanOrEqual(12)
         const key = `narrow-${surface}-${locale}-${theme}-${width}`
+        if (surface === 'settings') {
+          await settled(page)
+          // Focusing a rail item can retain a horizontal scroll offset from earlier sections.
+          // Frame navigation from its first item at both widths.
+          await page.getByTestId('settings-nav-model').evaluate((button) => {
+            if (button.parentElement) button.parentElement.scrollLeft = 0
+          })
+        }
         // Frame the review itself, independent of the preceding plugin pane's scroll anchor.
         if (surface === 'settings' && width === 375) {
           await page.getByTestId('candidate-review').evaluate((review) => {
