@@ -1,0 +1,911 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agnes.ai/schema/intelligent-ui.json",
+  "title": "Intelligent UI preset surfaces (proposed contract)",
+  "$ref": "#/$defs/UiSurface",
+  "x-agnes-ui-limits": {
+    "surfaceBytes": 32768,
+    "actionBytes": 16384,
+    "factBytes": 65536,
+    "projectionBytes": 262144,
+    "jsonDepth": 16,
+    "schemaDepth": 16,
+    "tableRows": 1000,
+    "chartPoints": 1000,
+    "liveSurfaces": 16,
+    "receiptsPerPage": 64,
+    "newCommandsPerMinute": 30,
+    "pendingCommandsPerSession": 8
+  },
+  "x-agnes-ui-methods": {
+    "_agnes/v1/ui.action": {
+      "params": "UiActionParams",
+      "result": "UiActionReceipt"
+    },
+    "_agnes/v1/ui.read": {
+      "params": "UiReadParams",
+      "result": "UiReadResult"
+    }
+  },
+  "$defs": {
+    "JsonValue": {
+      "$ref": "session-v1.json#/$defs/JsonValue"
+    },
+    "UiKey": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "UiRevision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "UiJsonSchema": {
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        }
+      ]
+    },
+    "UiPlacement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inline",
+        "workbench"
+      ],
+      "properties": {
+        "inline": {
+          "const": true
+        },
+        "workbench": {
+          "const": true
+        },
+        "preferred": {
+          "enum": [
+            "inline",
+            "workbench"
+          ]
+        }
+      }
+    },
+    "UiColumn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "label"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/UiKey"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "format": {
+          "enum": [
+            "text",
+            "number",
+            "currency",
+            "date",
+            "status"
+          ]
+        }
+      }
+    },
+    "UiChartSeries": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "label"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/UiKey"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "UiComponent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "dataKey",
+            "schema"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "kind": {
+              "const": "form"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "dataKey": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "schema": {
+              "$ref": "#/$defs/UiJsonSchema"
+            },
+            "actionIds": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/UiKey"
+              },
+              "minItems": 0,
+              "maxItems": 16
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "dataKey",
+            "rowKey",
+            "columns",
+            "selection"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "kind": {
+              "const": "table"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "dataKey": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "rowKey": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "columns": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/UiColumn"
+              },
+              "minItems": 1,
+              "maxItems": 32
+            },
+            "selection": {
+              "enum": [
+                "none",
+                "single",
+                "multiple"
+              ]
+            },
+            "rowActionIds": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/UiKey"
+              },
+              "minItems": 0,
+              "maxItems": 16
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "dataKey",
+            "chartType",
+            "categoryKey",
+            "series"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "kind": {
+              "const": "chart"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "dataKey": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "chartType": {
+              "enum": [
+                "bar",
+                "line",
+                "pie"
+              ]
+            },
+            "categoryKey": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "series": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/UiChartSeries"
+              },
+              "minItems": 1,
+              "maxItems": 8
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "actionIds"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "kind": {
+              "const": "button-group"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "actionIds": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/UiKey"
+              },
+              "minItems": 1,
+              "maxItems": 16
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "dataKey"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "kind": {
+              "const": "text"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "dataKey": {
+              "$ref": "#/$defs/UiKey"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "dataKey"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "kind": {
+              "const": "status"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "dataKey": {
+              "$ref": "#/$defs/UiKey"
+            }
+          }
+        }
+      ]
+    },
+    "UiArgument": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "literal"
+          ],
+          "properties": {
+            "literal": {
+              "$ref": "#/$defs/JsonValue"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "from",
+            "key"
+          ],
+          "properties": {
+            "from": {
+              "enum": [
+                "data",
+                "input",
+                "row",
+                "selection"
+              ]
+            },
+            "key": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "pointer": {
+              "type": "string",
+              "maxLength": 256,
+              "pattern": "^(?:/(?:[^~]|~[01])*)*$"
+            }
+          }
+        }
+      ]
+    },
+    "UiAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "tool",
+        "argsTemplate",
+        "paramsSchema"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/UiKey"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "tool": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "argsTemplate": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"
+          },
+          "maxProperties": 32,
+          "additionalProperties": {
+            "$ref": "#/$defs/UiArgument"
+          }
+        },
+        "paramsSchema": {
+          "$ref": "#/$defs/UiJsonSchema"
+        },
+        "confirm": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "style": {
+          "enum": [
+            "primary",
+            "secondary",
+            "danger"
+          ]
+        }
+      }
+    },
+    "UiSurface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "revision",
+        "title",
+        "placement",
+        "components",
+        "data",
+        "actions"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/UiKey"
+        },
+        "revision": {
+          "$ref": "#/$defs/UiRevision"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "placement": {
+          "$ref": "#/$defs/UiPlacement"
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UiComponent"
+          },
+          "minItems": 1,
+          "maxItems": 32
+        },
+        "data": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"
+          },
+          "maxProperties": 64,
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UiAction"
+          },
+          "minItems": 0,
+          "maxItems": 32
+        }
+      }
+    },
+    "UiRowContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tableId",
+        "rowId"
+      ],
+      "properties": {
+        "tableId": {
+          "$ref": "#/$defs/UiKey"
+        },
+        "rowId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "UiActionParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "surfaceId",
+        "revision",
+        "actionId",
+        "commandId",
+        "input",
+        "selection"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "surfaceId": {
+          "$ref": "#/$defs/UiKey"
+        },
+        "revision": {
+          "$ref": "#/$defs/UiRevision"
+        },
+        "actionId": {
+          "$ref": "#/$defs/UiKey"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "input": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"
+          },
+          "maxProperties": 32,
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        },
+        "selection": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"
+          },
+          "maxProperties": 32,
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "minItems": 0,
+            "maxItems": 1000,
+            "uniqueItems": true
+          }
+        },
+        "row": {
+          "$ref": "#/$defs/UiRowContext"
+        },
+        "confirmed": {
+          "type": "boolean"
+        },
+        "retryOf": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "UiActionStatus": {
+      "enum": [
+        "received",
+        "rejected",
+        "pending-approval",
+        "executing",
+        "succeeded",
+        "failed"
+      ]
+    },
+    "UiRefusal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "reason": {
+          "enum": [
+            "invalid",
+            "stale",
+            "closed",
+            "duplicate",
+            "unauthorized"
+          ]
+        },
+        "code": {
+          "enum": [
+            "UI_INVALID",
+            "UI_STALE",
+            "UI_CLOSED",
+            "UI_COMMAND_CONFLICT",
+            "UI_UNAUTHORIZED"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "currentRevision": {
+          "$ref": "#/$defs/UiRevision"
+        }
+      }
+    },
+    "UiFailure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message",
+        "retryable",
+        "outcomeUnknown"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "outcomeUnknown": {
+          "type": "boolean"
+        }
+      }
+    },
+    "UiActionReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "surfaceId",
+        "revision",
+        "actionId",
+        "commandId",
+        "status",
+        "seq",
+        "duplicate"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "surfaceId": {
+          "$ref": "#/$defs/UiKey"
+        },
+        "revision": {
+          "$ref": "#/$defs/UiRevision"
+        },
+        "actionId": {
+          "$ref": "#/$defs/UiKey"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "status": {
+          "$ref": "#/$defs/UiActionStatus"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "duplicate": {
+          "type": "boolean"
+        },
+        "invocationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "approvalId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "refusal": {
+          "$ref": "#/$defs/UiRefusal"
+        },
+        "failure": {
+          "$ref": "#/$defs/UiFailure"
+        },
+        "resultSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "retryOf": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "UiSurfaceRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "surface",
+        "status",
+        "createdSeq",
+        "updatedSeq",
+        "owner",
+        "lane",
+        "taskId"
+      ],
+      "properties": {
+        "surface": {
+          "$ref": "#/$defs/UiSurface"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "closed"
+          ]
+        },
+        "createdSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "updatedSeq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "lane": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "taskId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "UiReadParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "surfaceId": {
+          "$ref": "#/$defs/UiKey"
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        }
+      }
+    },
+    "UiReadResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "lastSeq",
+        "surfaces",
+        "actions"
+      ],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "lastSeq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "surfaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UiSurfaceRecord"
+          },
+          "minItems": 0,
+          "maxItems": 16
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UiActionReceipt"
+          },
+          "minItems": 0,
+          "maxItems": 64
+        },
+        "nextCursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "UiRenderParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "surface"
+      ],
+      "properties": {
+        "surface": {
+          "$ref": "#/$defs/UiSurface"
+        }
+      }
+    },
+    "UiUpdateParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "surfaceId",
+        "expectedRevision",
+        "surface"
+      ],
+      "properties": {
+        "surfaceId": {
+          "$ref": "#/$defs/UiKey"
+        },
+        "expectedRevision": {
+          "$ref": "#/$defs/UiRevision"
+        },
+        "surface": {
+          "$ref": "#/$defs/UiSurface"
+        }
+      }
+    },
+    "UiCloseParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "surfaceId",
+        "expectedRevision"
+      ],
+      "properties": {
+        "surfaceId": {
+          "$ref": "#/$defs/UiKey"
+        },
+        "expectedRevision": {
+          "$ref": "#/$defs/UiRevision"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      }
+    }
+  }
+}

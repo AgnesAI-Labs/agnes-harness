@@ -268,6 +268,12 @@ const TARGETS: Array<{
   },
   { schema: 'schema/slots.json', out: 'gen/ts/slots.ts', module: 'SlotsSchema' },
   {
+    schema: 'schema/intelligent-ui.json',
+    out: 'gen/ts/intelligent-ui.ts',
+    module: 'IntelligentUiSchema',
+    imports: [{ from: 'schema/session-v1.json', defs: ['JsonValue'] }],
+  },
+  {
     schema: 'schema/surface.json',
     out: 'gen/ts/surface.ts',
     module: 'SurfaceSchema',

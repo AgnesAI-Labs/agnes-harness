@@ -578,3 +578,29 @@ export {
   redactPluginConfig,
   PLUGIN_SECRET_REF_PATTERN,
 } from './plugin-config-validation.js'
+
+// Preset surface declarations; execution is supplied by the official Intelligent UI plugin.
+export type {
+  UiKey,
+  UiRevision,
+  UiJsonSchema,
+  UiPlacement,
+  UiColumn,
+  UiChartSeries,
+  UiComponent,
+  UiArgument,
+  UiAction,
+  UiSurface,
+  UiRowContext,
+  UiActionParams,
+  UiActionStatus,
+  UiRefusal,
+  UiFailure,
+  UiActionReceipt,
+  UiSurfaceRecord,
+  UiReadParams,
+  UiReadResult,
+  UiRenderParams,
+  UiUpdateParams,
+  UiCloseParams,
+} from '../gen/ts/intelligent-ui.js'

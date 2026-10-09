@@ -419,6 +419,7 @@ describe('Task20 generated type exports', () => {
     'deploy-manifest',
     'jobs',
     'surface',
+    'intelligent-ui',
     'package-admin',
     'resource-control',
   ])('%s owns every non-alias type on the root surface', (file) => {
