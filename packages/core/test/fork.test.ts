@@ -44,6 +44,21 @@ const textOf = (event: Event): string | undefined =>
   (event.data as { content?: Array<{ text?: string }> } | null)?.content?.[0]?.text
 
 describe('SessionLogImpl.forkInto', () => {
+  it('writes the opener preset hash on the child session/start, and omits it when there is none', async () => {
+    const storage = new MemoryStorage()
+    const parent = await openParent(storage, 'parent')
+    await parent.append([user('one')])
+    const hash = `sha256-${'c'.repeat(64)}`
+
+    const withHash = await parent.forkInto(1, 'with', { ...opener, resolvedPresetHash: hash })
+    const without = await parent.forkInto(1, 'without', opener)
+
+    const start = async (log: typeof withHash) =>
+      (await log.scan({ fromSeq: 1, limit: 10 })).find((event) => event.type === 'session/start')?.data
+    expect(await start(withHash)).toMatchObject({ resolvedPresetHash: hash })
+    expect(await start(without)).not.toHaveProperty('resolvedPresetHash')
+  })
+
   it('opens a child on the immutable parent prefix and writes session/start.parent first', async () => {
     const storage = new MemoryStorage()
     const parentEvents: Event[] = []
