@@ -38,8 +38,8 @@ describe('WorkspaceCatalog', () => {
 
     await expect(catalog.list()).resolves.toMatchObject({
       items: [
-        { path: '/repo/a', lastUsedAt: '2026-09-13T00:00:02.000Z' },
-        { path: '/repo/b', lastUsedAt: '2026-09-13T00:00:01.000Z' },
+        { path: '/repo/a', name: 'a', lastUsedAt: '2026-09-13T00:00:02.000Z' },
+        { path: '/repo/b', name: 'b', lastUsedAt: '2026-09-13T00:00:01.000Z' },
       ],
     })
   })
@@ -152,6 +152,7 @@ describe('WorkspaceCatalog', () => {
       items: [
         {
           path: '/repo/a',
+          name: 'a',
           lastUsedAt: '1970-01-01T00:00:01.000Z',
           sessionCount: 1,
           available: true,

@@ -126,3 +126,5 @@ Agent → Memory offers off/ask/automatic access and a Markdown editor with exac
 Memory settings load independently of the runtime catalog. The capacity sentence uses locale-formatted KB and line limits; `memory-actions` groups save/reload in the shared responsive toolbar.
 
 Only sections consuming the runtime catalog show its refresh action; independently loaded settings use their own service states. Settings, search, memory and MCP fields share `--agnes-input-surface`. The existing `ui-gate.spec.ts` matrix checks independent section actions and plain-text MCP credential hints alongside field consistency and empty candidate visibility.
+
+Workspace registration derives display names from canonical directories, falling back to the full path for roots or whitespace-only basenames. The shared browser workspace picker and SDK runtime fixture assert named registrations; the candidate-authoring flow checks both the catalog and sidebar. Workspace resolver, catalog persistence and navigation tests cover the corresponding contract, including POSIX and Windows label fallbacks. Screenshot normalization preserves workspace labels.

@@ -191,7 +191,10 @@ export async function isolatedRuntime(launcher: 'root' | 'installed' = 'root') {
       })
       await client.initialize()
       clients.add(client)
-      if (registerWorkspace) await client.workspace.add(workspace)
+      if (registerWorkspace) {
+        const registered = await client.workspace.add(workspace)
+        if (!registered.workspace.name.trim()) throw new Error('Test workspace must have a display name')
+      }
       return client
     },
     restart: async () => {

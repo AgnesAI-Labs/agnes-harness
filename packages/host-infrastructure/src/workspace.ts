@@ -57,5 +57,6 @@ export async function resolveWorkspaceDirectory(input: string): Promise<Workspac
     throw new WorkspaceDirectoryError('not-accessible', error)
   }
 
-  return Object.freeze({ path, name: basename(path) || path })
+  const name = basename(path)
+  return Object.freeze({ path, name: name.trim() ? name : path })
 }

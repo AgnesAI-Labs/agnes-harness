@@ -58,7 +58,9 @@ export function resetCollapsedGroups(): void {
 
 /** Missing names still identify the selected folder, on POSIX and Windows hosts. */
 function workspaceLabel(workspace: WorkspaceEntry): string {
-  return workspace.name.trim() || workspace.path.split(/[\\/]/).filter(Boolean).at(-1) || workspace.path
+  return (
+    workspace.name.trim() || workspace.path.split(/[\\/]/).filter(Boolean).at(-1)?.trim() || workspace.path
+  )
 }
 
 export function renderWorkspaceOptions(

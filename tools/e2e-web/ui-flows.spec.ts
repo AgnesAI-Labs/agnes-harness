@@ -602,6 +602,10 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   })
   await page.goto(runtime.url)
   await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()
+  await expect(page.locator('.workspace-heading .workspace-name').filter({ hasText: /^w$/ })).toHaveCount(1)
+  expect((await client.workspace.list()).items.every((workspace) => workspace.name.trim().length > 0)).toBe(
+    true,
+  )
   if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
   await section(page, 'plugins')
   await page.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()

@@ -90,23 +90,26 @@ it('keeps the row menu out of the session button and hides archived rows', () =>
   expect(rowElement.hasAttribute('data-menu-open')).toBe(false)
 })
 
-it.each(['/projects/my-folder/', 'C:\\projects\\my-folder\\'])(
-  'uses the folder basename when workspace names are empty (%s)',
-  (path) => {
-    const workspace = { path, name: '   ', available: true, lastUsedAt: null, sessionCount: 0 }
-    const nav = document.createElement('nav'),
-      picker = document.createElement('div')
-    document.body.append(nav, picker)
-    renderSessionNavigation(
-      { nav, workspaces: [workspace], sessions: [], labels: new Map(), newSession() {}, open() {} },
-      zhT,
-    )
-    renderWorkspaceOptions(picker, [workspace], () => {})
-    expect(nav.querySelector('.workspace-name')?.textContent).toBe('my-folder')
-    expect(nav.querySelector('.workspace-new-session')?.getAttribute('aria-label')).toContain('my-folder')
-    expect(picker.querySelector('.workspace-option-name')?.textContent).toBe('my-folder')
-  },
-)
+it.each([
+  ['/projects/my-folder/', 'my-folder'],
+  ['C:\\projects\\my-folder\\', 'my-folder'],
+  ['/', '/'],
+  ['C:\\', 'C:'],
+  ['/projects/   ', '/projects/   '],
+])('keeps a display label when workspace names are empty (%s)', (path, label) => {
+  const workspace = { path, name: '   ', available: true, lastUsedAt: null, sessionCount: 0 }
+  const nav = document.createElement('nav'),
+    picker = document.createElement('div')
+  document.body.append(nav, picker)
+  renderSessionNavigation(
+    { nav, workspaces: [workspace], sessions: [], labels: new Map(), newSession() {}, open() {} },
+    zhT,
+  )
+  renderWorkspaceOptions(picker, [workspace], () => {})
+  expect(nav.querySelector('.workspace-name')?.textContent).toBe(label)
+  expect(nav.querySelector('.workspace-new-session')?.getAttribute('aria-label')).toContain(label)
+  expect(picker.querySelector('.workspace-option-name')?.textContent).toBe(label)
+})
 
 it('marks the current session on the row so the highlight also covers the row actions', () => {
   const nav = document.createElement('nav')

@@ -64,6 +64,9 @@ export async function chooseWorkspace(page: Page, runtime: Runtime, locale = 'en
     })
     .click()
   await expect(workspace).toBeHidden()
+  const names = page.locator('.workspace-heading .workspace-name')
+  await expect(names.filter({ hasText: /^w$/ })).toHaveCount(1)
+  expect((await names.allTextContents()).every((name) => name.trim().length > 0)).toBe(true)
 }
 
 export async function fresh(page: Page, locale = 'en') {

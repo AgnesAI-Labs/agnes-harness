@@ -1,6 +1,6 @@
 import { chmod, mkdir, mkdtemp, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, parse } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { resolveWorkspaceDirectory, WorkspaceDirectoryError } from '../src/workspace.js'
 
@@ -37,17 +37,26 @@ async function reasonOf(path: string): Promise<string | undefined> {
 }
 
 describe('resolveWorkspaceDirectory', () => {
-  it('returns one canonical identity for a directory and a symlink spelling', async () => {
-    const root = await temporaryRoot()
-    const directory = join(root, 'project')
-    const alias = join(root, 'alias')
-    await mkdir(directory)
-    await symlink(directory, alias, windows ? 'junction' : 'dir')
+  it.each(windows ? ['project'] : ['project', '   '])(
+    'returns one named canonical identity for a directory and a symlink spelling (%j)',
+    async (folder) => {
+      const root = await temporaryRoot()
+      const directory = join(root, folder)
+      const alias = join(root, 'alias')
+      await mkdir(directory)
+      await symlink(directory, alias, windows ? 'junction' : 'dir')
 
-    const expected = await realpath(directory)
-    await expect(resolveWorkspaceDirectory(directory)).resolves.toEqual({ path: expected, name: 'project' })
-    await expect(resolveWorkspaceDirectory(alias)).resolves.toEqual({ path: expected, name: 'project' })
-  })
+      const expected = await realpath(directory)
+      const name = folder.trim() ? folder : expected
+      await expect(resolveWorkspaceDirectory(directory)).resolves.toEqual({ path: expected, name })
+      await expect(resolveWorkspaceDirectory(alias)).resolves.toEqual({ path: expected, name })
+      const filesystemRoot = await realpath(parse(expected).root)
+      await expect(resolveWorkspaceDirectory(filesystemRoot)).resolves.toEqual({
+        path: filesystemRoot,
+        name: filesystemRoot,
+      })
+    },
+  )
 
   it('rejects relative, missing and non-directory inputs with stable reasons', async () => {
     const root = await temporaryRoot()
