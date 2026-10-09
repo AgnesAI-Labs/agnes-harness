@@ -173,7 +173,7 @@ Bundle 父先于子、每次解析只应用一次；循环/未知 id 拒绝；�
 
 `@agnes/extension-api/testkit` 导出 `defineFixture`、`serviceFixture`、`projectionFixture`、`NEGATIVE_ACTIONS`、`TRANSPORT_CONTRACT_CASES`、`runProviderConformance` 与八个具名 runner：`loop/modelAdapter/compaction/persistence/sandbox/toolRuntime/toolPolicy/childAgentConformance`。Probe 必须从隔离真实 Host 捕获注册入口，打开真实 service/session 路径，报告 operation ready/cancel/drain；loop/persistence 必需 cold resume。Persistence store-I/O probe 显式报告不支持取消；构造取消另由 Host 生命周期回归覆盖。这些 runner 不自动验证全部 crash/upgrade/platform 路径。
 
-`@agnes/extension-api/testkit/persistence-contract` 独立导出 Vitest suites：`persistenceContract`、`persistenceHostContract`、`persistenceSqliteContract`，使用隔离目录 factory。General testkit 不需导入 Vitest。`@agnes/plugin-runtime/testkit` 重导出 provider runners，并提供 `driveLoop`、`scriptedModel`、`runModelAdapter`、`createPluginTestHost`、`createVerifiedTestRoot`。`driveLoop` 共用 stop rule，可接真实 context；默认 fake context 明确拒绝受控 ledger 操作，不能证明 budget/授权/cold durability/drain 等价。
+`@agnes/extension-api/testkit/persistence-contract` 独立导出 Vitest suites：`persistenceContract`、`persistenceHostContract`、`persistenceSqliteContract`，使用隔离目录 factory。General testkit 不需导入 Vitest。`@agnes/plugin-runtime/testkit` 重导出 provider runners，并提供 `driveLoop`、`scriptedModel`、`runModelAdapter`、`createPluginTestHost`、`createVerifiedTestRoot`。`driveLoop` 共用 stop rule，可接真实 context；默认 fake context 明确拒绝受控 ledger 操作，不能证明 budget/授权/cold durability/drain 等价。 `createPluginTestHost(plugin, { registration })` 必须显式传入注册端口。生产 Host 桥使用 `@agnes/host/testkit` 的 `createPluginTestRegistration`；plugin-runtime 不再加载 Host。
 
 根运行时出口以当前 `api-surface.json` 为准，类型与 testkit 子路径还需单独检查。API 常量、包版本与 changelog 按版本一致性检查维护。下表分组展示主要出口，不作为穷尽的数量或兼容证明。Memory、system-prompt 与 observability 合同分别见对应用户/作者指南。
 

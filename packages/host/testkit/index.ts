@@ -641,3 +641,5 @@ export async function appendRowAsOlderBuild(
     await storage.close()
   }
 }
+
+export { createPluginTestRegistration } from './plugin-registration.js'

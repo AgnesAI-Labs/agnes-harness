@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { resolveToolCallPolicy } from '@agnes/extension-api'
-import { createPluginTestRegistration } from '@agnes/host/testkit/plugin-registration'
+import { createPluginTestRegistration } from '@agnes/host/testkit'
 import { createPluginTestHost, driveLoop } from '@agnes/plugin-runtime/testkit'
 import { answerPrefix } from '@agnes/protocol'
 import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/resource-control-runtime'

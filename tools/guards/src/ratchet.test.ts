@@ -3140,7 +3140,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/base/extensions/refine': 434,
   // 2026-10-07 reviewed growth: bundled author guidance and scaffold/test/install tools; generated assets use the existing exclusion.
   // countLines: 0 -> 179 (+179); exact cap, no exclusions or spare allocation.
-  'packages/base/extensions/plugin-creator': 211,
+  'packages/base/extensions/plugin-creator': 212,
   // 2026-10-07 reviewed growth: scripted/replay/local-OpenAI providers, keyless teaching tools and bounded response recording.
   // countLines: 0 -> 800 (+800); exact cap, no exclusions or spare allocation.
   // Acceptance review: Parse explicit Demo tool calls and return completed FDE fixture turns with end_turn.

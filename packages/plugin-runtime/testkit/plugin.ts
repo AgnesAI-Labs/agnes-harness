@@ -9,16 +9,14 @@ export interface PluginTestOptions {
   config?: unknown
   /** Supply explicit ports for tools that need I/O; omitted ports refuse access. */
   context?: Partial<ToolContext>
-  /** Omit to use @agnes/host's production registration bridge. */
-  registration?: PluginTestRegistration
+  /** Supply a registration bridge, such as createPluginTestRegistration from @agnes/host/testkit. */
+  registration: PluginTestRegistration
 }
 
 /** Mount through a verified third-party row and the production Host registration API. */
-export async function createPluginTestHost(plugin: Plugin, options: PluginTestOptions = {}) {
-  // Runtime import avoids a build-time cycle: Host consumes plugin-runtime, not the reverse.
-  const hostTestkit = '@agnes/host/testkit/plugin-registration'
-  const registration: PluginTestRegistration =
-    options.registration ?? (await import(hostTestkit)).createPluginTestRegistration()
+export async function createPluginTestHost(plugin: Plugin, options: PluginTestOptions) {
+  const registration = options?.registration
+  if (!registration) throw new TypeError('Plugin test registration required')
   const world = createVerifiedTestRoot()
   registration.install(world.root, world.origins)
   const entry = normalizePluginExport(plugin)

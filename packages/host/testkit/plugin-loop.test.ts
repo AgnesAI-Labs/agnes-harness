@@ -1,9 +1,9 @@
 import { type LoopContext, type LoopDriver, loopCheckpointCodec } from '@agnes/extension-api'
+import { createPluginTestRegistration } from '@agnes/host/testkit'
+import { type Context, defineLoop, defineTool } from '@agnes/plugin-runtime'
+import { createPluginTestHost, driveLoop } from '@agnes/plugin-runtime/testkit'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
-import { type Context, defineLoop, defineTool } from '../src/index.js'
-import { driveLoop } from './loop.js'
-import { createPluginTestHost } from './plugin.js'
 
 const codec = loopCheckpointCodec(1, (state) => {
   if (typeof state !== 'number') throw new TypeError('Expected numeric state')
@@ -31,12 +31,15 @@ describe('loop author driver', () => {
         return { content: [], structured: args }
       },
     })
-    const host = await createPluginTestHost({
-      inject: ['extension'],
-      apply(ctx: Context) {
-        ctx.extension().registerTool(tool)
+    const host = await createPluginTestHost(
+      {
+        inject: ['extension'],
+        apply(ctx: Context) {
+          ctx.extension().registerTool(tool)
+        },
       },
-    })
+      { registration: createPluginTestRegistration() },
+    )
     let disposed = false
     const create = (ctx: LoopContext, initial = 0): LoopDriver => {
       let state = initial

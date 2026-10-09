@@ -1224,10 +1224,6 @@ importers:
       '@standard-schema/spec':
         specifier: 1.1.0
         version: 1.1.0
-    devDependencies:
-      '@agnes/host':
-        specifier: workspace:*
-        version: link:../host
 
   packages/protocol:
     dependencies:

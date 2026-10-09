@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { createPluginTestRegistration } from '@agnes/host/testkit'
 import { createPluginTestHost, runModelAdapter } from '@agnes/plugin-runtime/testkit'
 import { adapter, factory, model, modelId, route, toolPlugin } from '../dist/index.js'
 
@@ -20,7 +21,7 @@ const request = {
 }
 
 test('DAG uses the real demo adapter to plan, batches tools and joins before summarizing', async () => {
-  const host = await createPluginTestHost(toolPlugin)
+  const host = await createPluginTestHost(toolPlugin, { registration: createPluginTestRegistration() })
   const instance = adapter.create(config)
   const events = [],
     batches = []

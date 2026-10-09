@@ -1,11 +1,12 @@
+import { createPluginTestRegistration } from '@agnes/host/testkit'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Plugin } from '@agnes/cordis'
+import { createLoader } from '@agnes/host-extensions/ext-host/loader'
 import { stageLocalPlugin } from '@agnes/package-manager'
 import { createPluginTestHost } from '@agnes/plugin-runtime/testkit'
 import { expect, it } from 'vitest'
-import { createLoader } from '../../src/ext-host/loader.js'
 
 it('loads zero-build TS tools and JS plugins through shared author helpers with independent activations', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-local-loader-'))
@@ -27,11 +28,13 @@ async execute() { const text: string = ${JSON.stringify(value)}; return { conten
     stageLocalPlugin(candidate, join(root, 'v1'))
     const old = await createPluginTestHost(
       (await loader.import(join(root, 'v1', '.agnes-local-entry.mjs'))).main as Plugin,
+      { registration: createPluginTestRegistration() },
     )
     writeFileSync(join(source, 'plugin.ts'), tool('new'))
     stageLocalPlugin(candidate, join(root, 'v2'))
     const next = await createPluginTestHost(
       (await loader.import(join(root, 'v2', '.agnes-local-entry.mjs'))).main as Plugin,
+      { registration: createPluginTestRegistration() },
     )
     try {
       expect((await old.invoke('local_echo', {})).content).toEqual([{ type: 'text', text: 'old' }])
@@ -48,6 +51,7 @@ async execute() { const text: string = ${JSON.stringify(value)}; return { conten
     stageLocalPlugin(candidate, join(root, 'v3'))
     const js = await createPluginTestHost(
       (await loader.import(join(root, 'v3', '.agnes-local-entry.mjs'))).main as Plugin,
+      { registration: createPluginTestRegistration() },
     )
     await js.dispose()
   } finally {

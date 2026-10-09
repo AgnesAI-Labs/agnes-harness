@@ -262,7 +262,7 @@ async function packAuthors(root: string, env: NodeJS.ProcessEnv): Promise<string
     await notices(directory, stage)
     tarballs.push(await pack(stage, root, env))
   }
-  // The public plugin testkit lazily imports this production Host bridge. Bundle
+  // Authors explicitly import this production Host registration bridge. Bundle
   // only that exported entry so author tests need neither native storage nor Host internals.
   const host = join(root, 'packages', 'host-testkit')
   await mkdir(host, { recursive: true })
@@ -302,7 +302,10 @@ async function packAuthors(root: string, env: NodeJS.ProcessEnv): Promise<string
         name: '@agnes/host',
         version: packages.get('@agnes/host')!.manifest.version,
         type: 'module',
-        exports: { './testkit/plugin-registration': './plugin-registration.js' },
+        exports: {
+          './testkit': './plugin-registration.js',
+          './testkit/plugin-registration': './plugin-registration.js',
+        },
         dependencies,
         license: packages.get('@agnes/host')!.manifest.license,
       },

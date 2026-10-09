@@ -10,9 +10,10 @@ Generated packages use Node's test runner: run `npm run build`, then `npm test`.
 
 ```js
 import { createPluginTestHost } from '@agnes/plugin-runtime/testkit'
+import { createPluginTestRegistration } from '@agnes/host/testkit'
 import { main } from './dist/index.js'
 
-const host = await createPluginTestHost(main)
+const host = await createPluginTestHost(main, { registration: createPluginTestRegistration() })
 try {
   console.log((await host.invoke('plugin_hello_tool', { message: 'hello' })).structured)
 } finally {
