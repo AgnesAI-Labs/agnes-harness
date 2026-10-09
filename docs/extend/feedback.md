@@ -22,3 +22,5 @@ The ignorable ledger events `x/feedback/item` and `x/feedback/growth` carry plat
 See [the user flow](../guide/feedback.md) and [candidate review](agent-built-plugins.md). The default drafts a new Skill, while memory continues through its existing explicit diff approval flow.
 
 Growth retries recover the candidate by a server-bound profile/principal/session/feedback revision command key before drafting. Candidate persistence followed by a failed ledger link is repaired by linking that same integrity-checked candidate, including after reconnect; draft content is not regenerated. `FeedbackPorts.recoverCandidate` is required for providers implementing this workflow.
+
+Tool-policy providers may implement `ToolPolicy.settings(context, signal)` to select a policy and interpret provider-owned JSON settings. Host supplies deployment context and forwards the selection without naming official policy IDs. The official approval provider owns `AutoReviewSettingsStore` at `@agnes/base/approval-policy`.

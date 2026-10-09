@@ -5,7 +5,8 @@ import {
 } from '@agnes/daemon-admin/packages/index'
 import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { Registry } from '@agnes/daemon-foundation/registry'
-import { AutoReviewSettingsStore, RequestTraceStore, SystemPromptSettingsStore } from '@agnes/host'
+import { AutoReviewSettingsStore } from '@agnes/base/approval-policy'
+import { RequestTraceStore, SystemPromptSettingsStore } from '@agnes/host'
 import {
   type ModelRequestClearParams,
   type ModelRequestParams,

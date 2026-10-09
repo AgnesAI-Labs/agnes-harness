@@ -985,6 +985,9 @@ importers:
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
+      '@agnes/plugin-runtime':
+        specifier: workspace:*
+        version: link:../plugin-runtime
 
   packages/memory-file:
     dependencies:

@@ -4,6 +4,7 @@ import {
   type ToolPolicy,
   type ToolPolicyPluginContext,
 } from '@agnes/extension-api'
+import { selectAutoReviewSettings } from './settings.js'
 import { createAutoReviewPolicy } from './auto-review.js'
 import { decidePlanMode } from '../../plan-mode/src/policy.js'
 import { sandboxToolPolicies } from '../../sandbox/src/tool-policies.js'
@@ -12,6 +13,7 @@ import { sandboxToolPolicies } from '../../sandbox/src/tool-policies.js'
  * risk, taint, and preset denial. Human prompts and durable tickets stay on the approval seam. */
 function withPlanMode(policy: ToolPolicy): ToolPolicy {
   return {
+    ...policy,
     id: policy.id,
     version: policy.version,
     decide(input, signal, ports) {
@@ -20,7 +22,7 @@ function withPlanMode(policy: ToolPolicy): ToolPolicy {
   }
 }
 
-export const toolPolicy = withPlanMode(defaultToolPolicy)
+export const toolPolicy = { ...withPlanMode(defaultToolPolicy), settings: selectAutoReviewSettings }
 export const toolPolicyPlugin = {
   inject: ['toolPolicies'],
   apply(ctx: ToolPolicyPluginContext) {

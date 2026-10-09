@@ -1,3 +1,4 @@
+import { withDeferredToolInvocations } from '@agnes/plugin-runtime'
 import { type Context, Service } from '@agnes/cordis'
 import {
   defineProviderKind,
@@ -6,7 +7,6 @@ import {
   type LoopRegistryPort,
   type LoopSelection,
   ProviderError,
-  withDeferredToolInvocations,
 } from '@agnes/extension-api'
 import './deferred-invocations.js'
 import { ProviderLifetime } from '@agnes/host-common/assemble/provider-lifetime'

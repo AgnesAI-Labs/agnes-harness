@@ -1,7 +1,7 @@
+import { drainDeferredToolInvocations } from '@agnes/plugin-runtime'
 import { MemoryStorage, SessionLogImpl } from '@agnes/core'
 import { defaultIds } from '@agnes/core-common/ids'
 import {
-  drainDeferredToolInvocations,
   type DeferredInvocationLedgerPort,
   type DeferredInvocationReceipt,
   type DeferredToolInvocation,

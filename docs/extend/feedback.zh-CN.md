@@ -22,3 +22,5 @@ type FeedbackServiceFactory = (ports: FeedbackPorts) => FeedbackService
 参见[用户流程](../guide/feedback.zh-CN.md)与[候选评审](agent-built-plugins.zh-CN.md)。默认生成新 Skill；记忆仍走已有的显式差异审批流程。
 
 增长重试先按服务端绑定的 profile/principal/session/反馈 revision command key 恢复 candidate，再决定是否生成草稿。candidate 已保存但账本链接失败时，即使重连也补写同一份完整性校验后的 candidate 链接，不重新生成草稿。实现该流程的 provider 必须提供 `FeedbackPorts.recoverCandidate`。
+
+Tool-policy provider 可实现 `ToolPolicy.settings(context, signal)`，选择策略并解释 provider 自己管理的 JSON 设置。Host 传递部署上下文并转发选择，不辨认官方策略 ID。官方 approval provider 通过 `@agnes/base/approval-policy` 管理 `AutoReviewSettingsStore`。

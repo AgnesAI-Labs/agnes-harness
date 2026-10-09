@@ -1,4 +1,4 @@
-import type { Actor, AutoReviewConfig, JsonValue, ToolReviewFact } from '@agnes/protocol'
+import type { Actor, JsonValue, ToolReviewFact } from '@agnes/protocol'
 import type { ResolvedToolCallPolicy } from './tool.js'
 
 export interface ToolPolicyInput {
@@ -18,7 +18,7 @@ export interface ToolPolicyInput {
   fullAccess: boolean
   approvalMode: 'manual' | 'smart' | 'off' | 'auto-review'
   category?: 'read' | 'write' | 'external'
-  config?: AutoReviewConfig
+  config?: JsonValue
   /** Trusted, retained user instructions. Tool arguments and outputs never grant authority. */
   instructions?: readonly string[]
 }
@@ -35,10 +35,23 @@ export interface ToolPolicyPorts {
   ): Promise<{ text: string; model: string; cost: number; costSource?: 'estimated' | 'gateway' }>
 }
 
+/** Deployment resources are supplied by Host; interpretation and fallback belong to the selected provider. */
+export interface ToolPolicySettingsContext {
+  policy: string
+  profile: string
+  dataDir: string
+  approvalMode: ToolPolicyInput['approvalMode']
+}
+export interface ToolPolicySelection {
+  policy?: string
+  config?: JsonValue
+}
+
 /** Principal authorization remains a host decision and cannot be overridden by a policy. */
 export interface ToolPolicy {
   id: string
   version: string
+  settings?(context: ToolPolicySettingsContext, signal: AbortSignal): Promise<ToolPolicySelection>
   /** Instance-owned resources, drained before registration cleanup. */
   dispose?(): void | Promise<void>
   cleanup?(): void | Promise<void>

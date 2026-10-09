@@ -8,6 +8,7 @@
     "./search": "./extensions/tools-web/src/search/index.ts",
     "./computer-use": "./extensions/computer-use/src/index.ts",
     "./schedule": "./extensions/schedule/src/runtime.ts",
+    "./approval-policy": "./extensions/approval-policy/src/settings.ts",
     "./privacy": "./extensions/privacy/src/redact.ts",
     "./child-engines": "./extensions/subagent-sdk/src/document.ts",
     "./testkit": "./testkit/index.ts",

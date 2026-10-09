@@ -25,3 +25,5 @@ export {
   toolCancelled,
   toolError,
 } from './author.js'
+
+export { drainDeferredToolInvocations, withDeferredToolInvocations } from './deferred-invocations.js'

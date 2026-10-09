@@ -46,7 +46,6 @@
     "./workspace-seam-contexts": "./src/workspace-seam-contexts.ts",
     "./workspace": "./src/workspace.ts",
     "./doctor": "./src/doctor.ts",
-    "./auto-review-settings": "./src/auto-review-settings.ts",
     "./system-prompt-settings": "./src/system-prompt-settings.ts",
     "./request-traces": "./src/request-traces.ts",
     "./sandbox-read-paths": "./src/sandbox-read-paths.ts",

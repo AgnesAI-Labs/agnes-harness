@@ -9,6 +9,7 @@ import type {
   LoopEventReturnMap,
   ToolPolicy,
   ToolPolicyRegistryPort,
+  ToolPolicySettingsContext,
   ToolRuntimeProvider,
   ToolRuntimeRegistryPort,
 } from '@agnes/extension-api'
@@ -146,7 +147,14 @@ export class ToolPoliciesService extends Service implements ToolPolicyRegistryPo
       source,
       {
         ...policy,
-        decide: async (input, signal) => lifetime.run((joined) => policy.decide(input, joined), signal),
+        ...(policy.settings
+          ? {
+              settings: (context: ToolPolicySettingsContext, signal: AbortSignal) =>
+                lifetime.run((joined) => policy.settings!(context, joined), signal),
+            }
+          : {}),
+        decide: async (input, signal, ports) =>
+          lifetime.run((joined) => policy.decide(input, joined, ports), signal),
         dispose: () => lifetime.close(() => policy.cleanup?.()),
       },
       this.ctx,

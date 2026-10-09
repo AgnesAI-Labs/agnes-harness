@@ -465,7 +465,8 @@ export type SessionDeps = {
   /** Trusted resolved profile value. Omission preserves the safe manual default. */
   toolPolicySettings?: (
     basePolicy: string,
-  ) => Promise<{ policy?: string; config?: import('@agnes/protocol').AutoReviewConfig }>
+    signal: AbortSignal,
+  ) => Promise<import('@agnes/extension-api').ToolPolicySelection>
   approvalMode?: ApprovalMode
   /** Host-private attestation boundary for host-computer-use dispatches. */
   hostToolDispatch?: HostToolDispatchPort

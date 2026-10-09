@@ -28,3 +28,5 @@ Host 用 `withDeferredToolInvocations(factory, resolve)` 添加可选 `LoopConte
 Host 适配器使用现有会话 lease 和公开 scan/append/enqueue 接口。关闭会话释放其队列绑定。锁定会话保留生产方 generation。不新增 worker 定时器、数据库或 Core 程序计数器变更。生产方必须能根据自身持久接纳事实修复 enqueue，并通过既有 queued-input 路径投递结果；不能把入队成功当成业务执行成功。
 
 通用 drain 在没有活动 turn 且该 invocation 有原审批 ticket 时，通过公开 `input.resumeParked` 恢复该 ticket。拒绝审批可能只补记 tool/result 而不打开 turn；drain 仍会读取原工具回执、写 failed 并通知生产方。普通输入和非队列审批仍由 Loop 自己处理，queue 不领取它们。
+
+可执行的 drain 与 factory 装饰器由 `@agnes/plugin-runtime` 导出；`@agnes/extension-api` 仅维护队列、生产方与账本端口合同。Loop 插件从公开作者运行库命名空间导入 helper。

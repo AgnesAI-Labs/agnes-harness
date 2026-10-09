@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { ToolPolicy, ToolPolicyDecision, ToolPolicyInput, ToolPolicyPorts } from '@agnes/extension-api'
 import { AutoReviewConfig, type ToolReviewFact, validateAgainst } from '@agnes/protocol'
+import { selectAutoReviewSettings } from './settings.js'
 import { jcs } from './normalize.js'
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
@@ -28,6 +29,7 @@ function valid(value: unknown): value is Pick<ToolReviewFact, 'decision' | 'risk
 export function createAutoReviewPolicy(base: ToolPolicy): ToolPolicy {
   return {
     id: 'auto-review',
+    settings: selectAutoReviewSettings,
     version: '1.0.0',
     async decide(
       input: ToolPolicyInput,
@@ -41,7 +43,8 @@ export function createAutoReviewPolicy(base: ToolPolicy): ToolPolicy {
         ports,
       )
       if (baseline.effect !== 'ask') return baseline
-      const cfg = input.config ?? {}
+      const config = validateAgainst<AutoReviewConfig>(AutoReviewConfig, input.config ?? {})
+      const cfg: AutoReviewConfig = config.ok ? config.value : {}
       const category = input.category ?? (input.policy.isReadOnly ? 'read' : 'write')
       const prompt = `${instruction}\n${jcs({ humanInstructions: input.instructions ?? [], cwd: input.cwd, call: input.call, policy: input.policy, tainted: input.tainted })}`
       const argsHash = hash(jcs(input.call.args))
@@ -74,7 +77,7 @@ export function createAutoReviewPolicy(base: ToolPolicy): ToolPolicy {
         reason: fact.reason,
         review: { ...fact, latencyMs: Math.max(0, performance.now() - start) },
       })
-      if (!validateAgainst(AutoReviewConfig, cfg).ok) {
+      if (!config.ok) {
         fact.reason = 'Invalid reviewer configuration; human approval required'
         return result()
       }

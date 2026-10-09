@@ -1,8 +1,9 @@
 import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { AutoReviewConfig, validateAgainst } from '@agnes/protocol'
-import { promptConfigHash } from './system-prompt-settings.js'
+import type { ToolPolicySettingsContext, ToolPolicySelection } from '@agnes/extension-api'
+const profileHash = (profile: string) => createHash('sha256').update(JSON.stringify(profile)).digest('hex')
 
 /** Operator-owned settings; future rules change only through an explicit administrative save. */
 export class AutoReviewSettingsStore {
@@ -14,7 +15,7 @@ export class AutoReviewSettingsStore {
     private readonly defaultEnabled = false,
   ) {
     this.dir = join(dataDir, 'approval-review')
-    this.file = join(this.dir, `${promptConfigHash(profile)}.json`)
+    this.file = join(this.dir, `${profileHash(profile)}.json`)
   }
   async read(): Promise<AutoReviewConfig> {
     try {
@@ -43,4 +44,26 @@ export class AutoReviewSettingsStore {
     }
     return structuredClone(config)
   }
+}
+
+/** Official provider-owned selection; unreadable operator settings escalate rather than widen risk. */
+export async function selectAutoReviewSettings(
+  context: ToolPolicySettingsContext,
+  signal: AbortSignal,
+): Promise<ToolPolicySelection> {
+  signal.throwIfAborted()
+  if (context.policy !== 'default' && context.policy !== 'auto-review') return {}
+  let config: AutoReviewConfig
+  try {
+    config = await new AutoReviewSettingsStore(
+      context.dataDir,
+      context.profile,
+      context.approvalMode === 'auto-review',
+    ).read()
+  } catch {
+    signal.throwIfAborted()
+    return { policy: 'auto-review', config: { maxReviews: 0 } }
+  }
+  signal.throwIfAborted()
+  return { config, ...(config.enabled && context.policy === 'default' ? { policy: 'auto-review' } : {}) }
 }

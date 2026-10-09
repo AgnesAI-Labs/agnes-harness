@@ -1,6 +1,6 @@
+import { drainDeferredToolInvocations } from '@agnes/plugin-runtime'
 import {
   DEFAULT_LOOP,
-  drainDeferredToolInvocations,
   type LoopCheckpoint,
   type LoopCheckpointCodec,
   type LoopContext,
