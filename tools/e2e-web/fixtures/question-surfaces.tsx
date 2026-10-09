@@ -143,6 +143,7 @@ function Fixture() {
           const receipt = state.page.actions.at(-1)!
           if (receipt.status !== 'received') return
           receipt.status = 'succeeded'
+          receipt.invocationId = 'question-collector-invocation'
           receipt.resultSeq = ++state.page.lastSeq
           receipt.seq = ++state.page.lastSeq
           receipt.summary = JSON.stringify(state.requests.at(-1)?.input)

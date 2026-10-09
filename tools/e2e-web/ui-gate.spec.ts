@@ -214,15 +214,23 @@ for (const locale of ['en', 'zh-CN'])
           await screen(page, info, `discover-version-picker-${locale}-${theme}`)
           const picker = packageRow.getByTestId('plugin-version-picker')
           await expect(picker).toHaveClass(/agnes-ui-select/)
-          await picker.getByRole('combobox').click()
-          await expect(page.getByRole('option')).toHaveCount(2)
+          const combo = picker.getByRole('combobox')
+          await combo.click()
+          const listId = await combo.getAttribute('aria-controls')
+          if (!listId) throw new Error('Version picker must identify its option list')
+          await expect(page.locator(`[id="${listId}"]`).getByRole('option')).toHaveCount(2)
           await page.getByRole('option', { name: '2.0.0', exact: true }).click()
           await expect(packageRow).toHaveAttribute('data-plugin-version', '2.0.0')
           await versions.locator('summary').click()
           await page
             .getByRole('searchbox', { name: locale === 'en' ? 'Search plugins' : '搜索插件', exact: true })
             .fill('@agnes-example/dag-loop')
-          await expect(page.getByRole('heading', { name: /DAG/ })).toHaveCount(1)
+          const results = page.locator('.plugin-row[data-tab="discover"]')
+          await expect(results).toHaveCount(1)
+          await expect(results).toHaveAttribute('data-plugin-id', '@agnes-example/dag-loop')
+          await expect(results.getByRole('heading')).toHaveText(
+            locale === 'en' ? 'Task graph Loop' : '任务图 Loop',
+          )
         }
         await quality(`settings-${id}`, id === 'general' || ['plugins', 'discover', 'skills'].includes(id))
       }

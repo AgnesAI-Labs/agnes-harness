@@ -46,6 +46,7 @@ for (const locale of ['en', 'zh-CN'])
     await expect(panel.getByTestId('ui-option-single-1')).toBeChecked()
     await expect(panel.getByTestId('ui-option-multi-1')).toBeChecked()
     await panel.getByTestId('ui-action-submit').click()
+    await panel.getByTestId('ui-confirm').click()
     await expect(card.locator('[data-status=received]')).toBeVisible()
     await expect(page.getByTestId('fixture-requests')).toContainText(
       '"answers":{"single":"B","multi":["A","B","C"],"text":"Human answer"}',
@@ -65,6 +66,7 @@ test('question submission rejects a stale revision and an ordinary policy refusa
   await card.getByTestId('ui-form-answers').getByRole('textbox', { name: 'Explain' }).fill('Answer')
   await page.getByTestId('fixture-change').click()
   await card.getByTestId('ui-action-submit').click()
+  await card.getByTestId('ui-confirm').click()
   await expect(card.getByTestId('ui-reconfirm-message')).toContainText('Data changed')
   await card.getByTestId('ui-review-current').click()
   await card.getByTestId('ui-option-single-0').check()
@@ -72,5 +74,6 @@ test('question submission rejects a stale revision and an ordinary policy refusa
   await card.getByTestId('ui-form-answers').getByRole('textbox', { name: 'Explain' }).fill('Reviewed answer')
   await page.getByTestId('fixture-deny').click()
   await card.getByTestId('ui-action-submit').click()
+  await card.getByTestId('ui-confirm').click()
   await expect(card.locator('[data-status=rejected]').last()).toContainText('permission was denied')
 })

@@ -231,6 +231,7 @@ test('UI ask, plan approval, deliverable, child and goal cards perform their act
   await question.getByRole('radio', { name: 'Web', exact: true }).check()
   await quality(page, info, 'ask-card')
   await question.getByTestId('ui-action-submit').click()
+  await question.getByTestId('ui-confirm').click()
   await expect(question.getByTestId('ui-action-submit')).toBeDisabled()
   await expect(question.getByRole('radio', { name: 'Web', exact: true })).toBeDisabled()
   await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed')
@@ -400,7 +401,9 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
   await page
     .getByRole('searchbox', { name: 'Search plugins', exact: true })
     .fill('@agnes-examples/hot-tool-plugin')
-  await expect(page.getByRole('heading', { name: /hot-tool-plugin/ })).toHaveCount(1)
+  const installedRow = page.locator('.plugin-row[data-plugin-id="@agnes-examples/hot-tool-plugin"]')
+  await expect(installedRow).toHaveCount(1)
+  await expect(installedRow.getByRole('heading')).toHaveText('Text statistics tool')
   await screen(page, info, 'plugin-cards-en-light')
   await closeSettings(page)
   await fresh(page)
@@ -474,7 +477,7 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     await screen(page, info, `plugin-old-version-${locale}-${theme}`)
     await details.locator('summary').click()
     await expect(details).toContainText('hot-tool-plugin')
-    await expect(details).toContainText(locale === 'en' ? 'Plugin assistant' : '插件助手')
+    await expect(details).toContainText(locale === 'en' ? 'Plugin helper' : '插件助手')
     expect(
       (await details.locator('code').allTextContents()).some((text) =>
         /^@agnes\/(ai|base|code) ·/.test(text),
