@@ -37,6 +37,10 @@ it('configuration passes through the protocol without putting credentials into t
     await expect(client.config.get()).resolves.toEqual(snapshot)
     leak = true
     await expect(client.config.get()).rejects.toBeInstanceOf(ProtocolViolation)
+    // The refusal says which field of the result was wrong, and never what it held.
+    const refusal = (await client.config.get().catch((error: unknown) => error)) as Error
+    expect(refusal.message).toMatch(/^_agnes\/v1\/config\.get result: \/apiKey /)
+    expect(refusal.message).not.toContain('fixture-secret')
   } finally {
     await client.close()
   }

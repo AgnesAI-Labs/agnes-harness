@@ -21,6 +21,7 @@ import {
   type ConfigTestResult,
   type Credential,
   type Cursor,
+  describeValidationErrors,
   META_KEY,
   METHODS,
   type MethodName,
@@ -582,7 +583,7 @@ export class Client {
       : fallback
         ? validateAgainst(fallback, params)
         : null
-    if (v && !v.ok) throw new ProtocolViolation(`${method} params: ${v.errors[0]?.message ?? 'invalid'}`)
+    if (v && !v.ok) throw new ProtocolViolation(`${method} params: ${describeValidationErrors(v.errors)}`)
   }
 
   private checkResult(method: string, result: unknown): void {
@@ -594,7 +595,7 @@ export class Client {
       : fallback
         ? validateAgainst(fallback, result)
         : null
-    if (v && !v.ok) throw new ProtocolViolation(`${method} result: ${v.errors[0]?.message ?? 'invalid'}`)
+    if (v && !v.ok) throw new ProtocolViolation(`${method} result: ${describeValidationErrors(v.errors)}`)
   }
 
   async resendPending(sessionId: string): Promise<void> {

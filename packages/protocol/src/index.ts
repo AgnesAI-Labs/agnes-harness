@@ -459,6 +459,7 @@ export {
   AttachmentValidationError,
   decodeAttachmentData,
   decodeSafeImages,
+  describeValidationErrors,
   isDateTime,
   modelImageInputError,
   SafeImageError,
