@@ -572,3 +572,9 @@ export type {
   PluginConfigValidation,
   PluginConfigSaveResult,
 } from '../gen/ts/package-admin.js'
+
+export {
+  compilePluginConfig,
+  redactPluginConfig,
+  PLUGIN_SECRET_REF_PATTERN,
+} from './plugin-config-validation.js'

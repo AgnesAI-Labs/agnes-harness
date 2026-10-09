@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compilePluginConfig, redactPluginConfig } from '../src/plugin-config.js'
+import { compilePluginConfig, redactPluginConfig } from '../src/plugin-config-validation.js'
 
 describe('plugin configuration JSON Schema', () => {
   it.each([

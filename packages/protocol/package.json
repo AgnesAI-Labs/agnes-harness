@@ -17,9 +17,7 @@
   "dependencies": {
     "@agnes/resource-control-contracts": "workspace:*",
     "@agnes/protocol-validation": "workspace:*",
-    "@sinclair/typebox": "0.34.33"
-  },
-  "devDependencies": {
+    "@sinclair/typebox": "0.34.33",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1"
   },
