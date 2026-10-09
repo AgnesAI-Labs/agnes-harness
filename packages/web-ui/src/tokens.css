@@ -777,9 +777,10 @@ button {
   font-size: var(--font-size-md);
 }
 .resource-row .agnes-ui-button.plugin-details-button {
-  display: inline;
+  display: inline-flex;
+  align-items: center;
   height: auto;
-  min-height: 0;
+  min-height: var(--s32);
   max-width: 100%;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -813,7 +814,7 @@ button {
 }
 .config-account .agnes-ui-button.config-account-select {
   height: auto;
-  min-height: 0;
+  min-height: var(--s32);
   color: inherit;
   background: transparent;
   border: 0;
@@ -948,6 +949,9 @@ select.agnes-settings-input {
   margin: 0;
   padding: 0;
   border: 0;
+}
+.agnes-message-feedback > fieldset > .agnes-ui-button {
+  min-width: var(--s32);
 }
 .agnes-intelligent-surface > header h3 {
   min-width: 0;

@@ -56,8 +56,12 @@
 }
 .workbench-panel-tabs {
   display: flex;
+  min-width: 0;
   gap: 0.25rem;
   overflow-x: auto;
+}
+.workbench-panel-tabs > .agnes-ui-button {
+  flex: 0 0 auto;
 }
 .workbench-panel-tabs [aria-selected="true"] {
   color: var(--agnes-text-primary);
