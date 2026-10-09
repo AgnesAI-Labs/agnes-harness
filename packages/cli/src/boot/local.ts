@@ -285,11 +285,16 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
         const session = mediaHost?.kernel.get(sessionKey)
         if (!before?.active || !session || signal.aborted) return undefined
         const [event] = await session.scan({ fromSeq: nodeSeq, toSeq: nodeSeq, order: 'asc', limit: 1 })
+        const source = event?.sourceEventSeqs?.[0]
+        const [call] =
+          source === undefined
+            ? []
+            : await session.scan({ fromSeq: source, toSeq: source, order: 'asc', limit: 1 })
         if (
           !event ||
           event.seq !== nodeSeq ||
           event.type !== 'tool/result' ||
-          !requestMediaOriginIsValid(event) ||
+          !requestMediaOriginIsValid(event, call) ||
           (event.lane ?? 'main') !== lane
         )
           return undefined

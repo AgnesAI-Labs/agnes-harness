@@ -107,6 +107,8 @@ export function resolveValidatedToolCallPolicy(
     isDestructive: callPolicy.isDestructive,
     isConcurrencySafe: tool.meta.isConcurrencySafe,
     isOpenWorld: tool.meta.isOpenWorld,
+    // Written only when declared, so a tool without it keeps its policy hash.
+    ...(tool.meta.returnsImages === true ? { returnsImages: true as const } : {}),
     replay: callPolicy.replay,
     requiresApproval: callPolicy.requiresApproval,
     approvalScopes,

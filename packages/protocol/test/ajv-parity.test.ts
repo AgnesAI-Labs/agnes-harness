@@ -3587,6 +3587,7 @@ const TOOLDEF_SAMPLES: Record<string, Sample> = {
       { ...toolMetaOk, requiresApproval: 'sometimes' }, // enum
       { ...toolMetaOk, costHint: { credits: -1 } }, // boundary: one below minimum:0
       { ...toolMetaOk, extra: 1 }, // additionalProperties:false
+      { ...toolMetaOk, returnsImages: 'yes' }, // optional, but a boolean when present
     ],
     note: 'all eight keys are required, so an author cannot leave one to a default nobody wrote down',
   },
