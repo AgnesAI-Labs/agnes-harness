@@ -47,6 +47,14 @@ describe('official auto-review policy', () => {
     })
   })
   it('escalates timeout, provider error, malformed output, budget and ineligible calls', async () => {
+    for (const config of [null, false, 0, { maxReviews: -1 }]) {
+      expect(
+        await policy.decide({ ...input, config }, new AbortController().signal, ports('{}')),
+      ).toMatchObject({
+        effect: 'ask',
+        reason: 'Invalid reviewer configuration; human approval required',
+      })
+    }
     for (const scripted of [
       {
         reserve: () => {

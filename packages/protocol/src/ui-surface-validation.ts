@@ -1,5 +1,6 @@
-import { UiSurface, X_AGNES_UI_LIMITS, type JsonValue } from '../gen/ts/intelligent-ui.js'
-import { validateAgainst } from '@agnes/protocol-validation'
+import { UiSurface, X_AGNES_UI_LIMITS } from '../gen/ts/intelligent-ui.js'
+import type { JsonValue } from '../gen/ts/session-v1.js'
+import { validateAgainst } from './validate.js'
 
 export function boundedUiJson(
   value: unknown,
@@ -38,12 +39,20 @@ export function validIntelligentSurface(value: unknown): value is UiSurface {
     return Object.entries(schema).every(
       ([key, child]) =>
         !['__proto__', 'prototype', 'constructor', '$async', '$id'].includes(key) &&
-        (key !== '$ref' || (typeof child === 'string' && child.startsWith('#/'))) && schemaSafe(child),
+        (key !== '$ref' || (typeof child === 'string' && child.startsWith('#/'))) &&
+        schemaSafe(child),
     )
   }
   for (const action of surface.actions) {
-    if (!boundedUiJson(action.paramsSchema, 16384, X_AGNES_UI_LIMITS.schemaDepth) || !schemaSafe(action.paramsSchema)) return false
-    if (Object.keys(action.argsTemplate).some((key) => ['__proto__', 'prototype', 'constructor'].includes(key))) return false
+    if (
+      !boundedUiJson(action.paramsSchema, 16384, X_AGNES_UI_LIMITS.schemaDepth) ||
+      !schemaSafe(action.paramsSchema)
+    )
+      return false
+    if (
+      Object.keys(action.argsTemplate).some((key) => ['__proto__', 'prototype', 'constructor'].includes(key))
+    )
+      return false
   }
   for (const component of surface.components) {
     const refs =
@@ -57,11 +66,20 @@ export function validIntelligentSurface(value: unknown): value is UiSurface {
     if (!Object.hasOwn(surface.data, component.dataKey)) return false
     const data = surface.data[component.dataKey]
     if (component.kind === 'form') {
-      if (!boundedUiJson(component.schema, 16384, X_AGNES_UI_LIMITS.schemaDepth) || !schemaSafe(component.schema)) return false
+      if (
+        !boundedUiJson(component.schema, 16384, X_AGNES_UI_LIMITS.schemaDepth) ||
+        !schemaSafe(component.schema)
+      )
+        return false
     } else if (component.kind === 'text' || component.kind === 'status') {
       if (typeof data !== 'string') return false
     } else {
-      if (!Array.isArray(data) || data.length > (component.kind === 'table' ? X_AGNES_UI_LIMITS.tableRows : X_AGNES_UI_LIMITS.chartPoints) || !data.every(uiObject))
+      if (
+        !Array.isArray(data) ||
+        data.length >
+          (component.kind === 'table' ? X_AGNES_UI_LIMITS.tableRows : X_AGNES_UI_LIMITS.chartPoints) ||
+        !data.every(uiObject)
+      )
         return false
       if (component.kind === 'table') {
         const rows = new Set<string>()

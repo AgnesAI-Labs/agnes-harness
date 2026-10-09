@@ -43,7 +43,10 @@ export function createAutoReviewPolicy(base: ToolPolicy): ToolPolicy {
         ports,
       )
       if (baseline.effect !== 'ask') return baseline
-      const config = validateAgainst<AutoReviewConfig>(AutoReviewConfig, input.config ?? {})
+      const config = validateAgainst<AutoReviewConfig>(
+        AutoReviewConfig,
+        input.config === undefined ? {} : input.config,
+      )
       const cfg: AutoReviewConfig = config.ok ? config.value : {}
       const category = input.category ?? (input.policy.isReadOnly ? 'read' : 'write')
       const prompt = `${instruction}\n${jcs({ humanInstructions: input.instructions ?? [], cwd: input.cwd, call: input.call, policy: input.policy, tainted: input.tainted })}`
