@@ -1,7 +1,7 @@
 import type { FactChainAnchor, FactChainNode, FactChainResult } from '@agnes/protocol'
 import { validateMethod } from '@agnes/protocol'
 import type { UiExtensionContext } from '@agnes/web-client'
-import { Button } from '@agnes/web-ui'
+import { Button, SettingsState } from '@agnes/web-ui'
 import { FeedbackProvenance } from '@agnes/web-units/message-feedback'
 import { useEffect, useState } from 'react'
 import { panelContext } from './context.js'
@@ -62,7 +62,8 @@ export function FactChainPanel({ context }: { context: UiExtensionContext }) {
       abort.abort()
     }
   }, [session, key, anchor, target?.sessionId, target?.laneId, t])
-  if (!target || !anchor || target.sessionId !== session?.id) return <p>{t('facts.empty')}</p>
+  if (!target || !anchor || target.sessionId !== session?.id)
+    return <SettingsState>{t('facts.empty')}</SettingsState>
   const result = record?.key === key ? record.result : undefined
   return (
     <section className="fact-chain" aria-label={t('facts.title')} data-testid="fact-chain">
@@ -77,12 +78,14 @@ export function FactChainPanel({ context }: { context: UiExtensionContext }) {
         {...(anchor.kind === 'authoring' ? { candidateId: anchor.candidateId } : {})}
       />
       {error ? (
-        <div role="alert">
+        <SettingsState tone="error" role="alert">
           <p>{error}</p>
           <Button onClick={() => setRetry((value) => value + 1)}>{t('facts.retry')}</Button>
-        </div>
+        </SettingsState>
       ) : !result ? (
-        <p role="status">{t('facts.loading')}</p>
+        <SettingsState tone="loading" role="status">
+          {t('facts.loading')}
+        </SettingsState>
       ) : (
         <>
           <ol className="fact-chain-nodes">

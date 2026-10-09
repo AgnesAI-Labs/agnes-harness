@@ -98,6 +98,7 @@ export function MessageFeedback({
     (item.rating === 'down' || (item.rating === 'up' && item.category === 'do-again'))
   return (
     <section
+      className="agnes-message-feedback"
       aria-label={t(target.messageSeq === null ? 'session' : 'title')}
       data-testid={target.messageSeq === null ? 'session-feedback' : 'message-feedback'}
     >

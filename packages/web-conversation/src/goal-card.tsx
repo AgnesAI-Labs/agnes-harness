@@ -9,6 +9,7 @@ import {
   Popover,
   renderRegion,
   SettingsInput,
+  SettingsState,
   SettingsTextArea,
 } from '@agnes/web-ui'
 import type { ComponentProps } from 'react'
@@ -68,7 +69,11 @@ export function GoalCard({
             data-testid="goal-card"
             aria-label={tr('goal.title')}
           >
-            {error && <p role="status">{tr('goal.error')}</p>}
+            {error && (
+              <SettingsState tone="error" role="status">
+                {tr('goal.error')}
+              </SettingsState>
+            )}
             <form
               onSubmit={(event) => {
                 event.preventDefault()

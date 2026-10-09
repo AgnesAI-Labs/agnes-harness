@@ -74,7 +74,7 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
   const inspection = snapshot?.inspection
   const numbers = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 })
   return (
-    <SettingsCard title={t('title')} data-testid="memory-panel" aria-busy={busy}>
+    <SettingsCard data-testid="memory-panel" aria-busy={busy}>
       <p>{t('help')}</p>
       <p>{t('privacy')}</p>
       {Boolean(error) && (

@@ -1,4 +1,9 @@
-import { createSettingsButton } from '@agnes/web-ui'
+import {
+  createSettingsButton,
+  bindDismissibleDialog,
+  createCatalogTranslator,
+  materializeSettingsControls,
+} from '@agnes/web-ui'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import { adaptResourceAdmin } from '@agnes/web-admin/admin/resources/admin'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
@@ -66,7 +71,6 @@ import {
   type SkinRosterEntry,
 } from '@agnes/web-foundation/skin'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
-import { bindDismissibleDialog, createCatalogTranslator, materializeSettingsControls } from '@agnes/web-ui'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
 import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
 import { startPluginHotReload } from './client-modules/hot-reload.js'

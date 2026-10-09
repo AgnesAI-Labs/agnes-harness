@@ -1,3 +1,5 @@
+import { SettingsState, SettingsToolbar } from '../settings-layout.js'
+import { Badge } from '../ui/badge.js'
 import type {
   JsonValue,
   UiAction,
@@ -55,19 +57,25 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
       <header>
         <h3 id={titleId}>{surface.title}</h3>
         <span>{t('ui.revision', { revision: surface.revision })}</span>
-        <span>{t(`ui.${record.status}`)}</span>
+        <Badge>{t(`ui.${record.status}`)}</Badge>
         {props.placement === 'inline' && (
           <Button htmlType="button" data-testid="ui-expand" onClick={props.onExpand}>
             {t('ui.expand')}
           </Button>
         )}
       </header>
-      <div role="status" aria-live="polite" aria-atomic="true">
+      <SettingsState
+        hidden={!props.draftChanged && !props.needsReview && !props.error && !props.invalid}
+        tone={props.error || props.invalid ? 'error' : 'empty'}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
         {props.draftChanged && <p data-testid="ui-draft-changed">{t('ui.draftChanged')}</p>}
         {props.needsReview && <p data-testid="ui-reconfirm-message">{t('ui.changed')}</p>}
         {props.error && <p>{t(props.error)}</p>}
         {props.invalid && <p>{t('ui.invalidJson')}</p>}
-      </div>
+      </SettingsState>
       {props.needsReview && (
         <Button htmlType="button" data-testid="ui-review-current" onClick={props.onReview}>
           {t('ui.reconfirm')}
@@ -90,17 +98,19 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
         <section role="group" aria-label={t('ui.confirm')} data-testid="ui-confirmation">
           <p>{props.confirmation.action.confirm ?? props.confirmation.action.label}</p>
           <p>{t('ui.approvalHelp')}</p>
-          <Button
-            htmlType="button"
-            data-testid="ui-confirm"
-            disabled={props.locked || props.invalid || props.confirmation.revision !== surface.revision}
-            onClick={props.onConfirm}
-          >
-            {t('ui.confirm')}
-          </Button>
-          <Button htmlType="button" data-testid="ui-confirm-cancel" onClick={props.onCancel}>
-            {t('ui.cancel')}
-          </Button>
+          <SettingsToolbar>
+            <Button htmlType="button" data-testid="ui-confirm-cancel" onClick={props.onCancel}>
+              {t('ui.cancel')}
+            </Button>
+            <Button
+              htmlType="button"
+              data-testid="ui-confirm"
+              disabled={props.locked || props.invalid || props.confirmation.revision !== surface.revision}
+              onClick={props.onConfirm}
+            >
+              {t('ui.confirm')}
+            </Button>
+          </SettingsToolbar>
         </section>
       )}
       {props.transportPending && (
@@ -150,7 +160,20 @@ function Receipt({
     refusal?.reason === 'stale' || refusal?.reason === 'closed' ? 'ui.changed' : `ui.${refusal?.reason}`
   return (
     <li data-testid={`ui-receipt-${receipt.commandId}`} data-status={receipt.status}>
-      <strong>{t(`ui.${receipt.status}`)}</strong> {evidence}
+      <Badge
+        tone={
+          receipt.status === 'failed'
+            ? 'bad'
+            : receipt.status === 'succeeded'
+              ? 'ok'
+              : receipt.status === 'pending-approval'
+                ? 'warn'
+                : 'off'
+        }
+      >
+        {t(`ui.${receipt.status}`)}
+      </Badge>{' '}
+      {evidence}
       {receipt.summary && <p>{receipt.summary}</p>}
       {refusal && (
         <p>

@@ -1,7 +1,6 @@
-import { SettingsToolbar } from '@agnes/web-ui'
+import { SettingsToolbar, appServerErrorMessage, Button, Select, SettingsState } from '@agnes/web-ui'
 import type { SessionWorkspaceChangesResult } from '@agnes/protocol'
 import { factChainLinks, type UiExtensionContext } from '@agnes/web-client'
-import { appServerErrorMessage, Button, Select, SettingsState } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { panelContext } from './context.js'

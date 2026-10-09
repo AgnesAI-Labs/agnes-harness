@@ -129,7 +129,7 @@ export function TriggersPanel({ canSave }: { canSave: boolean }) {
     </Field>
   )
   return (
-    <SettingsCard title={t('title')} data-testid="triggers-panel" aria-busy={busy}>
+    <SettingsCard data-testid="triggers-panel" aria-busy={busy}>
       <p>{t('help')}</p>
       <p>{t('off')}</p>
       {error && (

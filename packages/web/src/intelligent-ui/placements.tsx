@@ -2,6 +2,7 @@ import type { UiActionReceipt } from '@agnes/protocol/gen/intelligent-ui'
 import { type UiExtensionContext, workbenchNavigation } from '@agnes/web-client'
 import {
   Button,
+  SettingsState,
   INTELLIGENT_UI_NAMESPACE,
   IntelligentSurface,
   intelligentUiCatalog,
@@ -58,7 +59,7 @@ export function IntelligentPanel({
 }
 function Empty() {
   const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
-  return <p>{t('ui.empty')}</p>
+  return <SettingsState>{t('ui.empty')}</SettingsState>
 }
 function SurfaceList({
   binding,
@@ -82,7 +83,7 @@ function SurfaceList({
   })
   return (
     <section data-testid={`intelligent-ui-${placement}`} aria-label={t('ui.title')}>
-      {snapshot.error && <p role="alert">{t(snapshot.error)}</p>}
+      {snapshot.error && <SettingsState tone="error">{t(snapshot.error)}</SettingsState>}
       {placement === 'workbench' && (
         <Button htmlType="button" data-testid="ui-refresh" onClick={() => void client.refresh()}>
           {t('ui.refresh')}

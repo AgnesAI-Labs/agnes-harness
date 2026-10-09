@@ -1,5 +1,5 @@
-import { createSettingsButton } from '@agnes/web-ui'
 import {
+  createSettingsButton,
   createSettingsIcon,
   materializeSettingsControls,
   mountSettingsSelectOptions,

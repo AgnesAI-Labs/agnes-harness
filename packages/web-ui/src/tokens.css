@@ -954,3 +954,35 @@ select.agnes-settings-input {
     padding-inline-start: var(--s16);
   }
 }
+
+/* Feedback uses the same form rhythm inside both conversation and dock hosts. */
+.agnes-message-feedback {
+  display: grid;
+  gap: var(--s12);
+  min-width: 0;
+}
+.agnes-message-feedback > fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.agnes-intelligent-surface > header h3 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--font-size-md);
+  line-height: var(--line-md);
+}
+.agnes-intelligent-surface > header > .agnes-ui-button {
+  margin-inline-start: auto;
+}
+.agnes-intelligent-surface [data-testid="ui-confirmation"] {
+  display: grid;
+  gap: var(--s12);
+  padding: var(--s12);
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-md);
+  background: var(--agnes-bg-card);
+}
+.agnes-intelligent-surface [data-testid="ui-confirmation"] p {
+  margin: 0;
+}

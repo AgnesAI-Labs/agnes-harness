@@ -1,3 +1,4 @@
+import { SettingsState } from '../settings-layout.js'
 import type {
   JsonValue,
   UiAction,
@@ -32,9 +33,9 @@ export function IntelligentCatalog(props: IntelligentCatalogProps) {
   const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
   if (!validIntelligentSurfaceProjection(props.surface))
     return (
-      <p role="alert" data-testid="ui-unavailable">
+      <SettingsState tone="error" role="alert" data-testid="ui-unavailable">
         {t('ui.unavailable')}
-      </p>
+      </SettingsState>
     )
   return (
     <div className="agnes-intelligent-catalog" data-agnes-intelligent-ui="catalog">
