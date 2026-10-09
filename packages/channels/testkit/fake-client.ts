@@ -6,6 +6,7 @@ import type {
   HarnessMeta,
   SessionBudgetResult,
   UITimeline,
+  UiReadResult,
 } from '@agnes/protocol'
 import { type Client, JsonRpcError, type Session } from '@agnes/sdk'
 
@@ -49,6 +50,7 @@ export type FakeSession = Pick<
   | 'budget'
   | 'events'
   | 'projectUI'
+  | 'uiRead'
   | 'cursor'
   | 'detach'
 > & {
@@ -86,6 +88,7 @@ export type FakeClient = Pick<Client, 'initialize' | 'apis' | 'on' | 'close'> & 
   calls: FakeCall[]
   claimResults: Map<string, boolean>
   pushEvent(sessionId: string, event: LedgerEvent): void
+  setSurfaces(sessionId: string, page: UiReadResult): void
   setTimeline(sessionId: string, timeline: UITimeline): void
   emitNotice(notice: DaemonNotice): void
   emit(event: string, payload: unknown): void
@@ -96,6 +99,7 @@ export function createFakeClient(script: FakeScript = {}): FakeClient {
   const calls: FakeCall[] = []
   const queues = new Map<string, Queue<LedgerEvent>>()
   const timelines = new Map<string, UITimeline>()
+  const surfaces = new Map<string, UiReadResult>()
   const notFound = new Set<string>()
   const handlers = new Map<string, Handler[]>()
   const sessions = new Map<string, FakeSession>()
@@ -160,6 +164,10 @@ export function createFakeClient(script: FakeScript = {}): FakeClient {
             nodes: [],
           }
         )
+      },
+      async uiRead(input) {
+        record('uiRead', input)
+        return surfaces.get(id) ?? { sessionId: id, lastSeq: 0, surfaces: [], actions: [] }
       },
       cursor() {
         return { fromSeq: 0, generation: 1 }
@@ -273,6 +281,9 @@ export function createFakeClient(script: FakeScript = {}): FakeClient {
     },
     pushEvent(id, event) {
       queueFor(id).push(event)
+    },
+    setSurfaces(sessionId, page) {
+      surfaces.set(sessionId, page)
     },
     setTimeline(id, timeline) {
       timelines.set(id, timeline)

@@ -77,6 +77,37 @@ async function setup(
   return { adapter, cache, client, outbound, refs, session }
 }
 
+it('publishes recovered surfaces through the existing outbound dedupe without creating a channel action', async () => {
+  const { adapter, client, session, outbound } = await setup()
+  const { questionSurface } = await import('../../base/extensions/interaction/src/question.js')
+  client.setSurfaces(session.id, {
+    sessionId: session.id,
+    lastSeq: 1,
+    actions: [],
+    surfaces: [
+      {
+        surface: questionSurface('q', [{ id: 'pick', question: 'Pick', options: ['A', 'B'] }]),
+        status: 'open',
+        owner: 'agnes/intelligent-ui',
+        lane: 'main',
+        taskId: 'task',
+        createdSeq: 1,
+        updatedSeq: 1,
+      },
+    ],
+  })
+  try {
+    await outbound.flush('k')
+    const count = adapter.sent.length
+    await outbound.flush('k')
+    expect(adapter.sent.length).toBe(count)
+    expect(JSON.stringify(adapter.sent)).toContain('surface=q')
+    expect(client.calls.some((call) => call.method === 'ui.respond')).toBe(false)
+  } finally {
+    await outbound.stop()
+  }
+})
+
 describe('Outbound', () => {
   it('retries a failed notice in its lane with one stable delivery identity', async () => {
     const { adapter, outbound } = await setup({

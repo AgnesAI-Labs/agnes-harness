@@ -1,4 +1,5 @@
-import type { ContentBlock, UINode, UITimeline } from '@agnes/protocol'
+import { randomUUID } from 'node:crypto'
+import type { UiActionParams, UiSurfaceRecord, ContentBlock, UINode, UITimeline } from '@agnes/protocol'
 import { type Branding, DEFAULT_BRANDING, type NodeClient, PreviewMerger, type Session } from '@agnes/sdk'
 import { createAnsi, xterm256 } from './ansi.js'
 import { attachmentsFrom, completeToken, runSlash, type SessionChoice, slashCommandFor } from './commands.js'
@@ -14,7 +15,8 @@ import { renderMarkdown } from './markdown.js'
 import { PackageController } from './package-controller.js'
 import { PermissionModal } from './permission-modal.js'
 import { TuiProjection, type TuiProjectionWindow } from './projection.js'
-import { answerQuestion, pendingQuestion, type QuestionPrompt } from './question-prompt.js'
+import { numberedSurfaceInput, surfaceText } from '@agnes/protocol/intelligent-ui'
+import { pendingSurface } from './surface-prompt.js'
 import { Renderer } from './renderer.js'
 import type { ResourceCommandKind, TuiResourceController } from './resource-controller.js'
 import { type ActionItem, collectSlots } from './slots.js'
@@ -131,7 +133,12 @@ export function formatTuiErrorNotice(error?: unknown): string {
 }
 
 export class TuiApp {
-  private questionPrompt: QuestionPrompt | undefined
+  private surfacePrompt: UiSurfaceRecord | undefined
+  private surfaceCommand: Omit<UiActionParams, 'sessionId'> | undefined
+  private readingSurfaces: Session | undefined
+  private surfaceReadAgain = false
+  private surfaceWatermark = 0
+  private readonly surfaceVersions = new Map<string, number>()
   private readonly modal: PermissionModal
   private offPermission: (() => void) | undefined
   // Registered once in `start()` against whichever client the initial session belongs to. A
@@ -682,12 +689,56 @@ export class TuiApp {
     this.loader.hide()
   }
 
+  private async syncSurfaces(): Promise<void> {
+    const session = this.o.session
+    if (this.stopped || this.closedNotice || typeof session.uiRead !== 'function') return
+    if (this.readingSurfaces === session) {
+      this.surfaceReadAgain = true
+      return
+    }
+    this.readingSurfaces = session
+    try {
+      const page = await session.uiRead()
+      if (this.stopped || this.closedNotice || session !== this.o.session) return
+      if (page.lastSeq < this.surfaceWatermark) {
+        this.surfaceReadAgain = true
+        return
+      }
+      this.surfaceWatermark = page.lastSeq
+      for (const record of page.surfaces) {
+        if (this.surfaceVersions.get(record.surface.id) === record.updatedSeq) continue
+        this.surfaceVersions.set(record.surface.id, record.updatedSeq)
+        this.timeline.appendLocal(
+          session.id,
+          this.localCommandView(
+            record.surface.title,
+            surfaceText(record.surface) +
+              `\n[Open in Web](/?session=${encodeURIComponent(session.id)}&surface=${encodeURIComponent(record.surface.id)})`,
+          ),
+        )
+      }
+      const next = pendingSurface(page)
+      // Keep the displayed request binding until submission; backend refuses an old revision.
+      if (!this.surfacePrompt || this.surfacePrompt.surface.id !== next?.surface.id) this.surfacePrompt = next
+      if (this.surfacePrompt) this.statusBar.setNotice(tt('app.surfacePrompt', this.locale))
+      this.renderer.requestRender()
+    } catch (error) {
+      const code = (error as { data?: { code?: string } } | undefined)?.data?.code
+      if (code !== 'CAPABILITY_DENIED' && code !== 'METHOD_NOT_FOUND' && session === this.o.session)
+        this.showError(error)
+    } finally {
+      if (this.readingSurfaces === session) {
+        this.readingSurfaces = undefined
+        if (this.surfaceReadAgain) {
+          this.surfaceReadAgain = false
+          void this.syncSurfaces()
+        }
+      }
+    }
+  }
+
   private apply(value: UITimeline, options: { opening?: boolean; window?: TuiProjectionWindow } = {}): void {
-    this.questionPrompt = pendingQuestion(value.nodes)
-    if (this.questionPrompt)
-      this.statusBar.setNotice(
-        `Question: ${escapeControl(this.questionPrompt.questions.map((q) => q.question).join('; '))} — reply with option number(s), labels or free text; multiple questions use JSON.`,
-      )
+    void this.syncSurfaces()
     const tools = value.nodes.filter((node) => node.kind === 'tool')
     const ids = new Set(tools.map((node) => node.id))
     for (const id of this.toolCards.keys()) if (!ids.has(id)) this.toolCards.delete(id)
@@ -906,6 +957,11 @@ export class TuiApp {
     // attached. Reset turn-lifecycle state to exactly what a freshly-constructed TuiApp looks like.
     this.resetTurn()
     this.welcomeBanner.setModel(undefined)
+    this.surfacePrompt = undefined
+    this.surfaceCommand = undefined
+    this.surfaceVersions.clear()
+    this.surfaceWatermark = 0
+    this.surfaceReadAgain = false
     this.o.session = next
     this.previews.reset()
     this.previewEffects.length = 0
@@ -963,16 +1019,35 @@ export class TuiApp {
     const skillCommand = /^\/skill\s+invoke\s+\S+/.test(text)
     if (text.startsWith('/') && !skillCommand) throw new Error('Command unavailable')
     this.statusBar.setNotice(undefined)
-    const blocks =
-      this.questionPrompt && !skillCommand
-        ? [{ type: 'text' as const, text: answerQuestion(this.questionPrompt, text) }]
-        : attachmentsFrom(text)
-    if (this.busy && this.questionPrompt && !skillCommand) {
-      await this.o.session.followUp(blocks)
-      this.questionPrompt = undefined
-      this.statusBar.setNotice(tt('app.questionSent', this.locale))
+    if ((this.surfacePrompt || this.surfaceCommand) && !skillCommand) {
+      const record = this.surfacePrompt
+      const session = this.o.session
+      const command =
+        this.surfaceCommand ??
+        (record
+          ? {
+              surfaceId: record.surface.id,
+              revision: record.surface.revision,
+              commandId: randomUUID(),
+              ...numberedSurfaceInput(record.surface, text),
+            }
+          : undefined)
+      if (!command) return
+      this.surfaceCommand = command
+      const receipt = await session.uiAction(command)
+      if (session !== this.o.session || this.stopped) return
+      this.surfaceWatermark = Math.max(this.surfaceWatermark, receipt.seq)
+      this.surfaceCommand = undefined
+      this.surfacePrompt = undefined
+      await this.syncSurfaces()
+      this.statusBar.setNotice(
+        receipt.refusal?.message ?? tt('app.questionSent', this.locale),
+        receipt.status === 'rejected' ? 'error' : 'success',
+      )
+      this.renderer.requestRender()
       return
     }
+    const blocks = attachmentsFrom(text)
     if (this.busy) {
       // The daemon's followUp endpoint durably enqueues input, but this TUI has no background
       // turn runner to wake that queue after the current turn ends. Keep the draft locally and

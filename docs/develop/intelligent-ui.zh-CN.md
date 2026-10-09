@@ -186,3 +186,5 @@ Fact-chain 与 trace 展示 surface id/revision 和归属、received 命令/acto
 ## 问答、表格与交付物 surface
 
 `ask_user_question` 保持模型侧参数。官方交互生产方通过普通工具调用 `ui_render`：问答使用预设 form 和声明的 `ui_submit` 收集工具，表格使用 table，交付物使用纯文本及既有 artifact 引用。收集工具核对 Host 记录的 deferred invocation 和不可变的认证 action，拒绝模型直接调用。成功收集关闭 surface，经 SC1 投递完整答案，保留认证 actor 与 untrusted 内容。回答不授予工具权限。持久化超时只限制可选等待，不关闭表单或使晚答失效；deferred 执行在下一个安全 Loop 边界进行。
+
+文本客户端通过 `ui.read` 恢复 surface。TUI 展示编号选项，以 `ui.action` 提交表单草稿；保留展示版本，传输重试复用同一 command。复杂表单／动作使用认证 Web 链接。渠道展示相同 surface 数据与编号选项；现有回调协议不能认证 surface action，因此通过 Web 链接提交。渠道 runner 的 `outbound.webUrl` 配置为可达的 HTTP(S) Web 基础地址，不含凭据、查询或片段。链接仅含 session/surface 标识，仍需正常 Web 认证与归属校验，不携带 token 或权限授予。

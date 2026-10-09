@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import type { AcpPermissionKind, ChannelCapabilities, UINode } from '@agnes/protocol'
+import type { AcpPermissionKind, ChannelCapabilities, UiSurfaceRecord, UINode } from '@agnes/protocol'
+import { surfaceText } from '@agnes/protocol/intelligent-ui'
 import type { Block, CardBlock, ChannelMessage } from '../adapter.js'
 
 // UINode's approval options are Agnes' own vocabulary (it has a 'allow_permanent' entry for the
@@ -30,7 +31,6 @@ type SlotPayload = {
   body?: string
   link?: string
   text?: string
-  table?: { columns: string[]; rows: string[][] }
   chart?: unknown
   actions?: CardBlock['actions']
 }
@@ -43,14 +43,6 @@ function slotBlocks(slot: string, value: unknown, requestSeq?: number): Block[] 
   const payload = asSlotPayload(value)
   if (slot === 'tool.card.inline') {
     const blocks: Block[] = []
-    if (payload.table !== undefined) {
-      blocks.push({
-        kind: 'table',
-        ...(payload.title === undefined ? {} : { title: payload.title }),
-        columns: payload.table.columns,
-        rows: payload.table.rows,
-      })
-    }
     if (payload.chart !== undefined || (payload.actions?.length ?? 0) > 0) {
       blocks.push({
         kind: 'card',
@@ -162,6 +154,27 @@ export function whatToDraw(
       // surface's human audience, so this gets the same treatment as 'user'/'compaction' above: no
       // channel message for this node.
       return null
+  }
+}
+
+/** Channels have no authenticated surface-action callback; human replies use the same Web action. */
+export function drawSurfaceMessage(
+  record: UiSurfaceRecord,
+  sessionId: string,
+  webUrl?: string,
+): ChannelMessage {
+  const path = `/?session=${encodeURIComponent(sessionId)}&surface=${encodeURIComponent(record.surface.id)}`
+  const link = webUrl ? new URL(path, webUrl).href : path
+  const escapeMarkdown = (text: string) => text.replace(/[\\`*_{}\[\]()<>#!|]/g, '\\$&')
+  return {
+    blocks: [
+      {
+        kind: 'text',
+        markdown:
+          escapeMarkdown(surfaceText(record.surface)) +
+          `\n${record.status === 'closed' ? 'Closed / 已关闭' : 'Submit in authenticated Web / 在认证 Web 中提交'}: [Open / 打开](${link})\nAnswers do not grant tool permission / 回答不授予工具权限。`,
+      },
+    ],
   }
 }
 

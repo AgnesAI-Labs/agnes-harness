@@ -105,3 +105,5 @@ export function validIntelligentSurface(value: unknown): value is UiSurface {
   }
   return true
 }
+
+export { canAnswerSurface, numberedSurfaceInput, surfaceText } from './ui-surface-text.js'

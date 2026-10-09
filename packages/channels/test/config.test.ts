@@ -31,6 +31,21 @@ afterEach(() => {
 })
 
 describe('loadConfig', () => {
+  it.each([
+    'https://web.example/',
+    'javascript:alert(1)',
+    'https://user:secret@web.example/',
+    'https://web.example/?token=x',
+  ])('validates authenticated Web base %s without carrying credentials', async (webUrl) => {
+    const path = write(
+      'web-url.yaml',
+      `channel: fake\nconnect: unix:/tmp/fake.sock\ntenant: t\nagent: a\ncredentialsFile: x\noutbound: { webUrl: '${webUrl}' }\n`,
+    )
+    if (webUrl === 'https://web.example/')
+      await expect(loadConfig(path)).resolves.toMatchObject({ outbound: { webUrl } })
+    else await expect(loadConfig(path)).rejects.toMatchObject({ code: 'E_CONFIG_INVALID' })
+  })
+
   it('loads explicit Windows daemon scope without interpreting tenant or agent as profile', async () => {
     const path = write(
       'windows.yaml',

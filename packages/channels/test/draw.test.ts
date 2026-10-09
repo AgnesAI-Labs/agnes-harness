@@ -1,6 +1,6 @@
 import type { ChannelCapabilities, UINode } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { contentHash, whatToDraw } from '../src/runner/draw.js'
+import { contentHash, drawSurfaceMessage, whatToDraw } from '../src/runner/draw.js'
 
 const caps: ChannelCapabilities = {
   edit: true,
@@ -62,7 +62,6 @@ describe('whatToDraw', () => {
           requestSeq: 3,
           payload: {
             title: '销售',
-            table: { columns: ['战区', '金额'], rows: [['华东', '10']] },
             actions: [{ id: 'export', label: '导出' }],
           },
         },
@@ -71,11 +70,6 @@ describe('whatToDraw', () => {
     const message = whatToDraw(tool, context)
     expect(message?.blocks[0]).toEqual({ kind: 'text', markdown: '⚙ query · 完成' })
     expect(message?.blocks[1]).toMatchObject({
-      kind: 'table',
-      title: '销售',
-      columns: ['战区', '金额'],
-    })
-    expect(message?.blocks[2]).toMatchObject({
       kind: 'card',
       title: '销售',
       actions: [{ id: 'export', label: '导出' }],
@@ -197,4 +191,24 @@ describe('whatToDraw', () => {
     )
     expect(message.blocks[0]?.bytes).toBe(bytes)
   })
+})
+
+it('renders numbered surface choices with an authenticated Web fallback and no permission buttons', async () => {
+  const { questionSurface } = await import('../../base/extensions/interaction/src/question.js')
+  const record = {
+    surface: questionSurface('questions', [{ id: 'pick', question: 'Choose', options: ['A', 'B'] }]),
+    status: 'open' as const,
+    owner: 'agnes/intelligent-ui',
+    lane: 'main',
+    taskId: 'task',
+    createdSeq: 1,
+    updatedSeq: 1,
+  }
+  const message = drawSurfaceMessage(record, 'session x', 'https://web.example/')
+  expect(JSON.stringify(message)).toContain('1. A')
+  expect(JSON.stringify(message)).toContain('2. B')
+  expect(JSON.stringify(message)).toContain('https://web.example/?session=session%20x&surface=questions')
+  expect(JSON.stringify(message)).toContain('认证 Web')
+  expect(message.blocks).toHaveLength(1)
+  expect(message.blocks[0]?.kind).toBe('text')
 })

@@ -4,7 +4,7 @@ import type { ChannelAdapter, ChannelMessage, ChatTarget, MessageRef } from '../
 import { type DegradedCap, degrade } from '../degrade.js'
 import { backoffDelays } from './backoff.js'
 import type { RunnerConfig } from './config.js'
-import { contentHash, whatToDraw } from './draw.js'
+import { contentHash, drawSurfaceMessage, whatToDraw } from './draw.js'
 import type { DeliveryRefRow, RefPart, RefStore } from './ref-store.js'
 import type { SessionCache } from './session-cache.js'
 import { chunkText, TokenBucket } from './throttle.js'
@@ -15,7 +15,7 @@ type Log = {
   error(message: string, meta?: Record<string, unknown>): void
 }
 
-type OutboundSession = Pick<Session, 'id' | 'events' | 'projectUI'>
+type OutboundSession = Pick<Session, 'id' | 'events' | 'projectUI'> & Partial<Pick<Session, 'uiRead'>>
 
 type OutboundDeps = {
   adapter: ChannelAdapter
@@ -207,6 +207,7 @@ export class Outbound {
     lane.watermark = { generation: timeline.generation, upto: timeline.upto }
 
     const known = this.dependencies.refs.forSession(sessionKey, lane.session.id)
+    const messages: Array<{ id: string; message: ChannelMessage }> = []
     for (const node of timeline.nodes) {
       if (!this.isCurrent(sessionKey, lane)) return
       const message = whatToDraw(node, {
@@ -216,7 +217,24 @@ export class Outbound {
           ? {}
           : { artifactsUrl: this.dependencies.artifactsUrl }),
       })
-      if (message === null) continue
+      if (message !== null) messages.push({ id: node.id, message })
+    }
+    if (lane.session.uiRead) {
+      try {
+        const page = await lane.session.uiRead()
+        for (const record of page.surfaces)
+          messages.push({
+            id: `surface:${record.surface.id}`,
+            message: drawSurfaceMessage(record, lane.session.id, this.dependencies.cfg.outbound.webUrl),
+          })
+      } catch (error) {
+        const code = (error as { data?: { code?: string } } | undefined)?.data?.code
+        if (code !== 'CAPABILITY_DENIED' && code !== 'METHOD_NOT_FOUND') throw error
+      }
+    }
+    for (const node of messages) {
+      if (!this.isCurrent(sessionKey, lane)) return
+      const message = node.message
       const hash = contentHash(message)
       const previous = known.get(node.id)
       if (previous?.contentHash === hash && previous.complete) continue
