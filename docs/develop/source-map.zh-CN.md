@@ -56,7 +56,7 @@ Daemon、Host、Web 的私有实现路径直接使用所属包；已删除过时
 | --- | --- |
 | 轨迹视图 | [纯轨迹模型](../../packages/web-units/src/trace-model.ts)、[React 视图](../../packages/web-units/src/trace.ts) |
 | 插件管理 | [页面生命周期与操作](../../packages/web-admin/src/admin/plugins/admin/page.tsx)、[视图](../../packages/web-admin/src/admin/plugins/admin/views.tsx)、[控制面板](../../packages/web-admin/src/admin/plugins/control-panel.tsx) |
-| 设置与模型选择 | [对话框辅助](../../packages/web-admin/src/settings/dialog.ts)、[模型选择辅助](../../packages/web/src/model-picker)、[设置词典](../../packages/web-foundation/src/locales/settings)、[插件词典](../../packages/web-admin/src/admin/plugins/locales/admin) |
+| 设置与模型选择 | [对话框辅助](../../packages/web-admin/src/settings/dialog.ts)、[模型选择辅助](../../packages/web/src/model-picker)、[设置词典](../../packages/web-admin/src/settings/locales)、[插件词典](../../packages/web-admin/src/admin/plugins/locales/admin) |
 | 资源管理 | [MCP 表单](../../packages/resource-control-web/src/mcp-form.ts)、[页面](../../packages/resource-control-web/src/admin.tsx) |
 | 客户端服务与插槽 | [服务合同](../../packages/web-client/src/service-contracts.ts)、[服务入口](../../packages/web-client/src/services.ts)、[插槽核心](../../packages/web-slots/src/core.ts)、[插槽合同](../../packages/web-slots/src/types.ts) |
 | 静态 Web 服务 | [选项](../../packages/web-server/src/server-types.ts)、[资源](../../packages/web-server/src/server-assets.ts)、[安全校验](../../packages/web-server/src/server-security.ts)、[HTTP 辅助](../../packages/web-server/src/server-http.ts) |
