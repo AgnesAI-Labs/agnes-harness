@@ -8,7 +8,7 @@ This is a presentation contract for the existing Web interface. It reuses `@agne
 
 ## Page and panel structure
 
-Use `SettingsPage` for an administrative page: one header with the localized title, a short description and page-level actions; a body of `SettingsCard` or flat `SettingsList` / `SettingsRow` sections; then the affected form's footer actions in `SettingsToolbar`. `SettingsPage` already owns the header and body stack; compose the footer inside the form, rather than introducing another page framework. The settings hub owns the page header: its child panels must not repeat the same title.
+Use `SettingsPage` for an administrative page: one header with the localized title, a short description and page-level actions; a body of `SettingsCard` or flat `SettingsList` / `SettingsRow` sections; then the affected form's footer actions in `SettingsToolbar`. `SettingsPage` already owns the header and body stack; `headingId` and `bodyClassName` preserve existing title IDs and scroll bodies; compose the footer inside the form, rather than introducing another page framework. The settings hub owns the page header: its child panels must not repeat the same title.
 
 Embedded and standalone plugin/resource pages use the same header, body, rows and actions. Keep their existing routes and navigation. The conversation shell retains its sidebar, composer and docks. Workbench panels reuse the same heading/action rhythm and `SettingsState`; conversation cards use `ConversationCardLayout`, with the state and title appropriate to the card. A dock's tab title can supply the panel title; avoid a duplicate heading.
 
@@ -25,7 +25,7 @@ Page actions belong beside the title; row actions belong beside the row; save/ca
 | Boolean setting | `Switch` or `StateSwitch` | Controlled checked/disabled state; `StateSwitch` retains row propagation semantics |
 | Labeled compact checkbox | `SettingsCheckbox` | Checked state, name/value, accessible label and form semantics |
 | Choice group | `SettingsChoice` | Preserve radio semantics, arrow-key behavior and existing name/value selectors |
-| Action | `Button` | `htmlType`, disabled/loading state, accessible name and existing handler |
+| Action | `Button`; `createSettingsButton` for controller-owned DOM actions | `htmlType`, disabled/loading state, accessible name and existing handler |
 | Related views | `Tabs` | Current IDs, focus behavior, `aria-controls` and selected state |
 | Overlay / anchored picker | `Dialog` / `Popover` | Escape, focus return, layering and cleanup |
 | Field | `Field`; `SchemaConfigForm` / `PluginSchemaFields` for declared schemas | Label, hint, error and authoritative caller-owned data |
@@ -72,4 +72,4 @@ Outside web-ui, retain only the hidden file input in `packages/web-units/src/com
 
 Static HTML/template shells must not retain duplicate editable controls after migration. Fixed forms declare `template[data-agnes-control]`; web-ui's `materializeSettingsControls` creates shared token-styled native equivalents before controller binding, preserving IDs, options, validation and host node ownership. Remove obsolete fallback form markup or move it into shared React content, preserving DOM IDs, selectors, public hooks and controller lifetimes. Hidden duplicates are not accepted exceptions.
 
-Review each inventory surface in en and zh-CN, light and dark, at desktop and 390 px, including overflow, keyboard focus and each relevant state. Capture matching before/after evidence using the repository's existing screenshot harness with one browser page at a time. Screenshot capture is evidence, not a claim that behavior tests passed.
+Review each inventory surface in en and zh-CN, light and dark, at desktop and 390 px, including overflow, keyboard focus and each relevant state. Capture evidence using the repository's existing screenshot harness with one browser page at a time. Record the source revision, theme, locale, viewport and any missing baseline explicitly. Screenshot capture is evidence, not a claim that behavior tests passed.

@@ -302,18 +302,6 @@
 }
 .config-account-status {
   flex: 0 0 auto;
-  padding: 0.0625rem 0.375rem;
-  border: 1px solid var(--agnes-line-primary);
-  border-radius: var(--radius-sm);
-  color: var(--agnes-text-secondary);
-  font-size: 0.6875rem;
-  line-height: 1rem;
-}
-.config-account-status[data-tone="success"] {
-  color: var(--agnes-status-success-text);
-}
-.config-account-status[data-tone="brand"] {
-  color: var(--agnes-text-emphasis);
 }
 .config-account-actions {
   grid-area: actions;
@@ -467,7 +455,7 @@
   gap: 0.625rem;
   padding: 0.625rem 0.625rem 0.5rem;
   color: var(--agnes-text-tertiary);
-  font-size: 0.6875rem;
+  font-size: var(--font-size-xs);
   font-weight: 400;
   letter-spacing: 0.06em;
   line-height: 1.25rem;
