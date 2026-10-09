@@ -21,6 +21,7 @@ export async function settled(page: Page) {
   await page.evaluate(() => document.fonts.ready.then(() => undefined))
   // Ant stages entrance classes before creating an animation on a later frame. Wait for
   // that preparation too; an empty getAnimations() result alone can race the fade-in.
+  // Base/active classes can remain on collapsed loading icons after motion finishes.
   // Poll active finite effects: Animation.finished can remain pending for paused effects.
   await expect
     .poll(
@@ -28,7 +29,7 @@ export async function settled(page: Page) {
         page.evaluate(() => ({
           preparing: Array.from(document.querySelectorAll('[class]')).some((element) =>
             Array.from(element.classList).some((name) =>
-              /^ant-.*-(?:appear|enter|leave)(?:-(?:prepare|start|active))?$/.test(name),
+              /^ant-.*-(?:appear|enter|leave)-(?:prepare|start)$/.test(name),
             ),
           ),
           animations: document
