@@ -91,7 +91,7 @@ export async function drainDeferredToolInvocations(
     throw new Error('Deferred invocation belongs to another session or lane')
   const continuation = ctx.turn.continuation()
   if (!continuation) {
-    if (receiptPending(previous)) await queue.enqueue(call, signal)
+    if (receiptPending(previous) && !previous.approvalId) await queue.enqueue(call, signal)
     return null
   }
   if (ctx.turn.cancelled() || signal.aborted) return null
@@ -103,14 +103,31 @@ export async function drainDeferredToolInvocations(
     outcome?: Pick<DeferredInvocationReceipt, 'result' | 'error'>,
   ) => {
     receipt = await queue.transition(call.id, receipt.seq, state, outcome)
+    await queue.notify(signal)
   }
   const complete = async (result: ToolResult) => {
-    if (result.deferred) result = await ctx.jobs.join(call.id, signal)
+    if (Object.hasOwn(result, 'deferred')) result = await ctx.jobs.join(call.id, signal)
+    const original = await queue.read(call.id, signal)
+    const details = result.details ?? original?.result?.details
+    const detailCode =
+      details && typeof details === 'object' && !Array.isArray(details) && typeof details.code === 'string'
+        ? details.code
+        : 'DEFERRED_TOOL_ERROR'
+    const notDispatched = [
+      'TOOL_NOT_FOUND',
+      'TOOL_DISPATCH_NOT_SENT',
+      'HOOK_DENIED',
+      'AUTHZ_DENIED',
+      'POLICY_DENIED',
+      'APPROVAL_REJECTED',
+      'APPROVAL_TIMEOUT',
+      'APPROVAL_UNAVAILABLE',
+      'SANDBOX_UNAVAILABLE',
+      'E_FS_DENIED',
+    ].includes(detailCode)
     await set(result.isError ? 'failed' : 'succeeded', {
       result,
-      ...(result.isError
-        ? { error: failure('DEFERRED_TOOL_ERROR', 'The tool returned an error', true) }
-        : {}),
+      ...(result.isError ? { error: failure(detailCode, 'The tool returned an error', !notDispatched) } : {}),
     })
     await queue.notify(signal)
   }

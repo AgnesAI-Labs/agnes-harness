@@ -1,0 +1,32 @@
+{
+  "id": "agnes/intelligent-ui",
+  "version": "0.1.0",
+  "apiRange": "^1.4",
+  "entry": "./src/index.ts",
+  "capabilities": {
+    "tools": {
+      "prefix": "ui_",
+      "names": ["ui_render", "ui_update", "ui_close"]
+    },
+    "events": true,
+    "projections": [
+      {
+        "name": "surfaces",
+        "inputEventTypes": [
+          "x/agnes/intelligent-ui/surface.opened",
+          "x/agnes/intelligent-ui/surface.updated",
+          "x/agnes/intelligent-ui/surface.closed",
+          "x/agnes/intelligent-ui/action.received",
+          "x/agnes/intelligent-ui/action.rejected",
+          "x/agnes/intelligent-ui/action.pending-approval",
+          "x/agnes/intelligent-ui/action.executing",
+          "x/agnes/intelligent-ui/action.succeeded",
+          "x/agnes/intelligent-ui/action.failed",
+          "x/agnes/intelligent-ui/action.retried",
+          "x/agnes/intelligent-ui/action.delivered"
+        ],
+        "maxStateBytes": 262144
+      }
+    ]
+  }
+}

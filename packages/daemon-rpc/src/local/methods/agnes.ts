@@ -1,3 +1,4 @@
+import { registerIntelligentUi } from './intelligent-ui.js'
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { ScheduleRejected } from '@agnes/base/schedule'
@@ -631,6 +632,7 @@ export function registerAgnes(
   attached: Map<string, AttachedFeed>,
 ): void {
   const requireOwner = requireSessionOwner(cx)
+  registerIntelligentUi(ep, cx, requireOwner)
   registerWorkspaceFiles(ep, cx, requireOwner)
   registerFileUpload(ep, cx, requireOwner)
   registerSessionJobs(ep, cx.sessionServices, requireOwner)

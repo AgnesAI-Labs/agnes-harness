@@ -27,6 +27,8 @@ export type SessionMethod =
   | 'toolCatalog'
   | 'readToolDetail'
   | 'feedback.draft'
+  | 'ui.action'
+  | 'ui.read'
   | 'references'
   | 'workspaceFiles'
   | 'fileUpload'

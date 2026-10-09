@@ -160,7 +160,7 @@ export type R6fc597b37012 = { "code": ("unverified-provenance" | "unlicensed" | 
 export type D9b975f2be03a_PackageProvenance = Rcfbf07acd544
 export type Rcfbf07acd544 = { "source": D9b975f2be03a_PackageSource; "integrity": string; "releasedAt"?: string; "signatureVerified": boolean; "sourceKind"?: ("official-catalog" | "npm" | "git" | "local-folder" | "tarball"); "resolvedLocation"?: string; "version"?: string; "treeIntegrity"?: string; "publisher"?: string; "verification"?: ("unverified" | "official-ed25519" | "npm-sigstore"); "installedAt"?: string; "installer"?: ("user" | "agent"); "trustDecision"?: ("pending" | "confirmed" | "revoked"); "authoring"?: D9b975f2be03a_AuthoringProvenance }
 export type D9b975f2be03a_PackagePreview = R7e6fe8b5aab4
-export type R7e6fe8b5aab4 = { "kinds"?: Array<("tool" | "loop" | "model-adapter" | "mcp" | "skills" | "ui" | "bundle")>; "id": string; "version": string; "source": D9b975f2be03a_PackageSource; "integrity": string; "license": string; "provenance": D9b975f2be03a_PackageProvenance; "contributions": Array<D9b975f2be03a_PackageContributionSummary>; "capabilityDiff": D9b975f2be03a_PackageCapabilityDiff; "dependencies": {  }; "warnings": Array<D9b975f2be03a_PackageWarning>; "blockers": Array<D9b975f2be03a_PackageBlocker>; "capabilityHash"?: string; "declaredCapabilities"?: D9b975f2be03a_PluginCapabilities }
+export type R7e6fe8b5aab4 = { "kinds"?: Array<("tool" | "loop" | "model-adapter" | "mcp" | "skills" | "ui" | "bundle")>; "id": string; "version": string; "source": D9b975f2be03a_PackageSource; "integrity": string; "license": string; "provenance": D9b975f2be03a_PackageProvenance; "contributions": Array<D9b975f2be03a_PackageContributionSummary>; "capabilityDiff": D9b975f2be03a_PackageCapabilityDiff; "dependencies": { [key:string]: string }; "warnings": Array<D9b975f2be03a_PackageWarning>; "blockers": Array<D9b975f2be03a_PackageBlocker>; "capabilityHash"?: string; "declaredCapabilities"?: D9b975f2be03a_PluginCapabilities }
 export type D9b975f2be03a_PackageTrustDecision = Ra05bc6bd339b
 export type Ra05bc6bd339b = { "integrity": string; "capabilityHash": string; "decidedAt": string }
 export type D9b975f2be03a_PackageActivationTrust = Rcd08debfc42b
@@ -236,7 +236,7 @@ export type R8bac693223e4 = { "profile": string; "path": string }
 export type D9b975f2be03a_SkinReadResult = R2395653f1843
 export type R2395653f1843 = ({ "found": false } | { "found": true; "base64": string })
 export type D9b975f2be03a_ClientModuleListResult = R3bd6c7405934
-export type R3bd6c7405934 = { "revision": string; "serverTime": string; "rows"?: Array<D9b975f2be03a_ClientModuleRosterRow>; "rowAliases"?: {  }; "modules": Array<{ "rowId"?: string; "packageId": string; "revision": string; "entryUrl": string; "styleUrls": Array<string>; "slots": Array<string>; "slotCatalogVersion"?: string; "contentDigest"?: string; "extIds": Array<string>; "publicConfig"?: { [key:string]: Rfe766f98ab7f } }>; "statuses": Array<{ "packageId": string; "installedRevision": string; "backendRevision": (string | null); "state": ("ready" | "pending-activation" | "blocked"); "reason"?: ("backend-revision-unavailable" | "backend-not-running" | "unsupported-slot" | "resources-invalid" | "snapshot-quota-exceeded" | "snapshot-retention-limit"); "retained"?: Array<{ "revision": string; "expiresAt": string }> }> }
+export type R3bd6c7405934 = { "revision": string; "serverTime": string; "rows"?: Array<D9b975f2be03a_ClientModuleRosterRow>; "rowAliases"?: { [key:string]: string }; "modules": Array<{ "rowId"?: string; "packageId": string; "revision": string; "entryUrl": string; "styleUrls": Array<string>; "slots": Array<string>; "slotCatalogVersion"?: string; "contentDigest"?: string; "extIds": Array<string>; "publicConfig"?: { [key:string]: Rfe766f98ab7f } }>; "statuses": Array<{ "packageId": string; "installedRevision": string; "backendRevision": (string | null); "state": ("ready" | "pending-activation" | "blocked"); "reason"?: ("backend-revision-unavailable" | "backend-not-running" | "unsupported-slot" | "resources-invalid" | "snapshot-quota-exceeded" | "snapshot-retention-limit"); "retained"?: Array<{ "revision": string; "expiresAt": string }> }> }
 export type D9b975f2be03a_ClientModuleRosterRow = Rafa14ef98234
 export type Rafa14ef98234 = { "rowId": string; "moduleName": string; "packageId"?: string; "enabled": boolean; "phase": ("ready" | "pending-activation" | "blocked" | "disabled"); "revision"?: string; "entryUrl"?: string; "styleUrls"?: Array<string>; "slots"?: Array<string>; "slotCatalogVersion"?: string; "contentDigest"?: string; "extIds"?: Array<string>; "services"?: Array<string>; "publicConfig"?: { [key:string]: Rfe766f98ab7f } }
 export type D9b975f2be03a_ClientModuleListParams = Rc3af15e4ed03
@@ -464,9 +464,9 @@ export type R74074a437b75 = { "kind": "http"; "url": string }
 export type Df09ff2ddd89d_McpSseTransport = R52341c22f450
 export type R52341c22f450 = { "kind": "sse"; "url": string }
 export type Df09ff2ddd89d_McpSecretBinding = R182fe6517936
-export type R182fe6517936 = ({ "kind": "none" } | { "kind": "stdio-env"; "env": {  } } | { "kind": "http-bearer"; "credentialRef": Df09ff2ddd89d_SecretRef } | { "kind": "http-header"; "headerName": ("x-api-key" | "x-api-token"); "credentialRef": Df09ff2ddd89d_SecretRef })
+export type R182fe6517936 = ({ "kind": "none" } | { "kind": "stdio-env"; "env": { [key:string]: Df09ff2ddd89d_SecretRef } } | { "kind": "http-bearer"; "credentialRef": Df09ff2ddd89d_SecretRef } | { "kind": "http-header"; "headerName": ("x-api-key" | "x-api-token"); "credentialRef": Df09ff2ddd89d_SecretRef })
 export type Df09ff2ddd89d_McpStdioSecretBinding = Ra1f197a6797d
-export type Ra1f197a6797d = ({ "kind": "none" } | { "kind": "stdio-env"; "env": {  } })
+export type Ra1f197a6797d = ({ "kind": "none" } | { "kind": "stdio-env"; "env": { [key:string]: Df09ff2ddd89d_SecretRef } })
 export type Df09ff2ddd89d_McpOAuthSecretBinding = R60a9a955c4b1
 export type R60a9a955c4b1 = { "kind": "oauth"; "staticClientId"?: string }
 export type Df09ff2ddd89d_McpHttpSecretBinding = R47f87bbf52c0
@@ -1582,6 +1582,55 @@ export type _agnes_v1_session_detachParams = D0a4e93a38f28_SessionIdParams
 export type _agnes_v1_session_detachResult = D0a4e93a38f28_Empty
 export type _agnes_v1_auth_claimParams = D0a4e93a38f28_AuthClaimParams
 export type _agnes_v1_auth_claimResult = D0a4e93a38f28_AuthClaimResult
+export type D0daa9c8d1800_UiKey = R17019853db81
+export type R17019853db81 = string
+export type D0daa9c8d1800_UiRevision = R74a73fa64fa9
+export type R74a73fa64fa9 = number
+export type D0daa9c8d1800_UiJsonSchema = Rbeeeed66649b
+export type Rbeeeed66649b = (boolean | { [key:string]: Rf3b73f87d837 })
+export type Rf3b73f87d837 = (null | boolean | number | string | Array<Rf3b73f87d837> | { [key:string]: Rf3b73f87d837 })
+export type D0daa9c8d1800_UiPlacement = R07cbcebe0ad1
+export type R07cbcebe0ad1 = { "inline": true; "workbench": true; "preferred"?: ("inline" | "workbench") }
+export type D0daa9c8d1800_UiColumn = R28550a83419f
+export type R28550a83419f = { "key": D0daa9c8d1800_UiKey; "label": string; "format"?: ("text" | "number" | "currency" | "date" | "status") }
+export type D0daa9c8d1800_UiChartSeries = Rf3477d31fed3
+export type Rf3477d31fed3 = { "key": D0daa9c8d1800_UiKey; "label": string }
+export type D0daa9c8d1800_UiComponent = Rf971082f4cc7
+export type Rf971082f4cc7 = ({ "id": D0daa9c8d1800_UiKey; "kind": "form"; "title"?: string; "dataKey": D0daa9c8d1800_UiKey; "schema": D0daa9c8d1800_UiJsonSchema; "actionIds"?: Array<D0daa9c8d1800_UiKey> } | { "id": D0daa9c8d1800_UiKey; "kind": "table"; "title"?: string; "dataKey": D0daa9c8d1800_UiKey; "rowKey": D0daa9c8d1800_UiKey; "columns": Array<D0daa9c8d1800_UiColumn>; "selection": ("none" | "single" | "multiple"); "rowActionIds"?: Array<D0daa9c8d1800_UiKey> } | { "id": D0daa9c8d1800_UiKey; "kind": "chart"; "title"?: string; "dataKey": D0daa9c8d1800_UiKey; "chartType": ("bar" | "line" | "pie"); "categoryKey": D0daa9c8d1800_UiKey; "series": Array<D0daa9c8d1800_UiChartSeries> } | { "id": D0daa9c8d1800_UiKey; "kind": "button-group"; "title"?: string; "actionIds": Array<D0daa9c8d1800_UiKey> } | { "id": D0daa9c8d1800_UiKey; "kind": "text"; "title"?: string; "dataKey": D0daa9c8d1800_UiKey } | { "id": D0daa9c8d1800_UiKey; "kind": "status"; "title"?: string; "dataKey": D0daa9c8d1800_UiKey })
+export type D0daa9c8d1800_UiArgument = R0a15d5c1a153
+export type R0a15d5c1a153 = ({ "literal": Rf3b73f87d837 } | { "from": ("data" | "input" | "row" | "selection"); "key": D0daa9c8d1800_UiKey; "pointer"?: string })
+export type D0daa9c8d1800_UiAction = Ra533b656f012
+export type Ra533b656f012 = { "id": D0daa9c8d1800_UiKey; "label": string; "tool": string; "argsTemplate": { [key:string]: D0daa9c8d1800_UiArgument }; "paramsSchema": D0daa9c8d1800_UiJsonSchema; "confirm"?: string; "style"?: ("primary" | "secondary" | "danger") }
+export type D0daa9c8d1800_UiSurface = Rb2a7c2af5134
+export type Rb2a7c2af5134 = { "id": D0daa9c8d1800_UiKey; "revision": D0daa9c8d1800_UiRevision; "title": string; "placement": D0daa9c8d1800_UiPlacement; "components": Array<D0daa9c8d1800_UiComponent>; "data": { [key:string]: Rf3b73f87d837 }; "actions": Array<D0daa9c8d1800_UiAction> }
+export type D0daa9c8d1800_UiRowContext = R25cf8e9568f8
+export type R25cf8e9568f8 = { "tableId": D0daa9c8d1800_UiKey; "rowId": string }
+export type D0daa9c8d1800_UiActionParams = R513825029ecf
+export type R513825029ecf = { "sessionId": string; "surfaceId": D0daa9c8d1800_UiKey; "revision": D0daa9c8d1800_UiRevision; "actionId": D0daa9c8d1800_UiKey; "commandId": string; "input": { [key:string]: Rf3b73f87d837 }; "selection": { [key:string]: Array<string> }; "row"?: D0daa9c8d1800_UiRowContext; "confirmed"?: boolean; "retryOf"?: string }
+export type D0daa9c8d1800_UiActionStatus = Rd8fd2bd56e22
+export type Rd8fd2bd56e22 = ("received" | "rejected" | "pending-approval" | "executing" | "succeeded" | "failed")
+export type D0daa9c8d1800_UiRefusal = Re90db4e7e0e3
+export type Re90db4e7e0e3 = { "reason": ("invalid" | "stale" | "closed" | "duplicate" | "unauthorized"); "code": ("UI_INVALID" | "UI_STALE" | "UI_CLOSED" | "UI_COMMAND_CONFLICT" | "UI_UNAUTHORIZED"); "message": string; "currentRevision"?: D0daa9c8d1800_UiRevision }
+export type D0daa9c8d1800_UiFailure = Rc5dbf94f859b
+export type Rc5dbf94f859b = { "code": string; "message": string; "retryable": boolean; "outcomeUnknown": boolean }
+export type D0daa9c8d1800_UiActionReceipt = R63eda31ad601
+export type R63eda31ad601 = { "sessionId": string; "surfaceId": D0daa9c8d1800_UiKey; "revision": D0daa9c8d1800_UiRevision; "actionId": D0daa9c8d1800_UiKey; "commandId": string; "status": D0daa9c8d1800_UiActionStatus; "seq": number; "duplicate": boolean; "invocationId"?: string; "approvalId"?: string; "refusal"?: D0daa9c8d1800_UiRefusal; "failure"?: D0daa9c8d1800_UiFailure; "resultSeq"?: number; "summary"?: string; "retryOf"?: string }
+export type D0daa9c8d1800_UiSurfaceRecord = R6ca628e18c00
+export type R6ca628e18c00 = { "surface": D0daa9c8d1800_UiSurface; "status": ("open" | "closed"); "createdSeq": number; "updatedSeq": number; "owner": string; "lane": string; "taskId": string }
+export type D0daa9c8d1800_UiReadParams = Raab23c08361b
+export type Raab23c08361b = { "sessionId": string; "surfaceId"?: D0daa9c8d1800_UiKey; "commandId"?: string; "cursor"?: string; "limit"?: number }
+export type D0daa9c8d1800_UiReadResult = R2e7cdc28109a
+export type R2e7cdc28109a = { "sessionId": string; "lastSeq": number; "surfaces": Array<D0daa9c8d1800_UiSurfaceRecord>; "actions": Array<D0daa9c8d1800_UiActionReceipt>; "nextCursor"?: string }
+export type D0daa9c8d1800_UiRenderParams = R27716a3fe2da
+export type R27716a3fe2da = { "surface": D0daa9c8d1800_UiSurface }
+export type D0daa9c8d1800_UiUpdateParams = R781908159458
+export type R781908159458 = { "surfaceId": D0daa9c8d1800_UiKey; "expectedRevision": D0daa9c8d1800_UiRevision; "surface": D0daa9c8d1800_UiSurface }
+export type D0daa9c8d1800_UiCloseParams = Rf750c2671c58
+export type Rf750c2671c58 = { "surfaceId": D0daa9c8d1800_UiKey; "expectedRevision": D0daa9c8d1800_UiRevision; "reason"?: string }
+export type _agnes_v1_ui_actionParams = D0daa9c8d1800_UiActionParams
+export type _agnes_v1_ui_actionResult = D0daa9c8d1800_UiActionReceipt
+export type _agnes_v1_ui_readParams = D0daa9c8d1800_UiReadParams
+export type _agnes_v1_ui_readResult = D0daa9c8d1800_UiReadResult
 export type _agnes_v1_session_eventParams = D0a4e93a38f28_SessionEventParams
 export type _agnes_v1_session_previewParams = D0a4e93a38f28_SessionPreviewParams
 export type _agnes_v1_daemon_noticeParams = D0a4e93a38f28_DaemonNotice
@@ -1761,6 +1810,8 @@ export interface AppServerMethods {
   "session/set_mode": {params:session_set_modeParams; result:session_set_modeResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/session.detach": {params:_agnes_v1_session_detachParams; result:_agnes_v1_session_detachResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/auth.claim": {params:_agnes_v1_auth_claimParams; result:_agnes_v1_auth_claimResult; direction:"c2s"; kind:"request"}
+  "_agnes/v1/ui.action": {params:_agnes_v1_ui_actionParams; result:_agnes_v1_ui_actionResult; direction:"c2s"; kind:"request"}
+  "_agnes/v1/ui.read": {params:_agnes_v1_ui_readParams; result:_agnes_v1_ui_readResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/session.event": {params:_agnes_v1_session_eventParams; result:void; direction:"s2c"; kind:"notification"}
   "_agnes/v1/session.preview": {params:_agnes_v1_session_previewParams; result:void; direction:"s2c"; kind:"notification"}
   "_agnes/v1/daemon.notice": {params:_agnes_v1_daemon_noticeParams; result:void; direction:"s2c"; kind:"notification"}

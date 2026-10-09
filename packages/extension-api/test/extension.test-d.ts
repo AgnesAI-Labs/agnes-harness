@@ -18,6 +18,7 @@ describe('ExtensionAPI surface', () => {
       | 'registerSlot'
       | 'registerResource'
       | 'events'
+      | 'intelligentUi'
       | 'latestExtEvent'
       | 'ctx'
     >()

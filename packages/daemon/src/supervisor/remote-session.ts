@@ -70,6 +70,21 @@ export class RemoteSession {
     this.latestCache.set(`${e.register}/${dataKey}`, e.data)
   }
 
+  readonly intelligentUi = {
+    action: async (input: import('@agnes/protocol').UiActionParams, actor: Actor, signal: AbortSignal) => {
+      signal.throwIfAborted()
+      const result = await this.link.command('ui.action', { input, actor })
+      signal.throwIfAborted()
+      return result as import('@agnes/protocol').UiActionReceipt
+    },
+    read: async (input: import('@agnes/protocol').UiReadParams, signal: AbortSignal) => {
+      signal.throwIfAborted()
+      const result = await this.link.command('ui.read', { input })
+      signal.throwIfAborted()
+      return result as import('@agnes/protocol').UiReadResult
+    },
+  }
+
   async draftFeedback(
     feedback: import('@agnes/extension-api').FeedbackItem,
     evidence: readonly EventEnvelope[],

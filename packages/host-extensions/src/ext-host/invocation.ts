@@ -62,6 +62,18 @@ export class ExtensionInvocation {
     return admitted ? admitted.run(run) : run()
   }
 
+  assertSession(ref: SessionRef): void {
+    const invocation = this.current.getStore()
+    if (
+      !invocation?.active ||
+      invocation.signal.aborted ||
+      invocation.session.closingOrClosed ||
+      invocation.session.key !== ref.key ||
+      invocation.session.lane !== ref.lane
+    )
+      throw refused('extension session selector is unavailable')
+  }
+
   assertActive(owner: string): void {
     const invocation = this.current.getStore()
     if (

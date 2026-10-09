@@ -43,6 +43,8 @@ export interface ExtensionAPI {
   // ExtensionAPI 构造点（host `ext-host/api.ts` 的旧 stub、`ext-host/api-proxy.ts` 的
   // Task22 新实现，均不在本次改动范围）还没有实现它；必需会把它们双双钉成编译错误。
   latestExtEvent?(name: string): JsonValue | undefined
+  /** Optional owner-bound adapter for the official preset-surface plugin. */
+  readonly intelligentUi?: import('./intelligent-ui.js').IntelligentUiExtensionPort
   readonly ctx: ExtensionContext
 }
 

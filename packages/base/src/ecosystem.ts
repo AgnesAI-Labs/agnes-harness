@@ -12,6 +12,7 @@ import {
   type HooksRunnerExtensionDeps,
   hooksRunnerExtension,
 } from '../extensions/hooks-runner/src/index.js'
+import intelligentUiExtension from '../extensions/intelligent-ui/src/index.js'
 import interactionExtension from '../extensions/interaction/src/index.js'
 import { createJobsExtension } from '../extensions/jobs/src/index.js'
 import { shellJobsFor } from '../extensions/jobs/src/registry.js'
@@ -206,6 +207,7 @@ function defineSubagentExtension(init: SeamInitContext): ExtensionFactory {
 
 /** Trusted factories keyed by the manifest id the host is about to admit. */
 export const ecosystem = {
+  'agnes/intelligent-ui': (): ExtensionFactory => intelligentUiExtension,
   'agnes/workflow': (): ExtensionFactory => workflowExtension,
   'agnes/context-rules': (): ExtensionFactory => contextRulesExtension,
   'agnes/time-context': (): ExtensionFactory => timeContextExtension,

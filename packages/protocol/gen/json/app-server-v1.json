@@ -2068,6 +2068,26 @@
         "$ref": "#/$defs/_agnes_v1_auth_claimResult"
       }
     },
+    "_agnes/v1/ui.action": {
+      "kind": "request",
+      "direction": "c2s",
+      "params": {
+        "$ref": "#/$defs/_agnes_v1_ui_actionParams"
+      },
+      "result": {
+        "$ref": "#/$defs/_agnes_v1_ui_actionResult"
+      }
+    },
+    "_agnes/v1/ui.read": {
+      "kind": "request",
+      "direction": "c2s",
+      "params": {
+        "$ref": "#/$defs/_agnes_v1_ui_readParams"
+      },
+      "result": {
+        "$ref": "#/$defs/_agnes_v1_ui_readResult"
+      }
+    },
     "_agnes/v1/session.event": {
       "kind": "notification",
       "direction": "s2c",
@@ -36990,6 +37010,1114 @@
     },
     "_agnes_v1_auth_claimResult": {
       "$ref": "#/$defs/D0a4e93a38f28_AuthClaimResult"
+    },
+    "D0daa9c8d1800_UiKey": {
+      "$ref": "#/$defs/R17019853db81"
+    },
+    "R17019853db81": {
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$",
+      "type": "string"
+    },
+    "D0daa9c8d1800_UiRevision": {
+      "$ref": "#/$defs/R74a73fa64fa9"
+    },
+    "R74a73fa64fa9": {
+      "minimum": 1,
+      "maximum": 9007199254740991,
+      "type": "integer"
+    },
+    "D0daa9c8d1800_UiJsonSchema": {
+      "$ref": "#/$defs/Rbeeeed66649b"
+    },
+    "Rbeeeed66649b": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "$ref": "#/$defs/Rf3b73f87d837"
+            }
+          }
+        }
+      ]
+    },
+    "Rf3b73f87d837": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Rf3b73f87d837"
+          }
+        },
+        {
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "$ref": "#/$defs/Rf3b73f87d837"
+            }
+          }
+        }
+      ]
+    },
+    "D0daa9c8d1800_UiPlacement": {
+      "$ref": "#/$defs/R07cbcebe0ad1"
+    },
+    "R07cbcebe0ad1": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "inline": {
+          "const": true,
+          "type": "boolean"
+        },
+        "workbench": {
+          "const": true,
+          "type": "boolean"
+        },
+        "preferred": {
+          "anyOf": [
+            {
+              "const": "inline",
+              "type": "string"
+            },
+            {
+              "const": "workbench",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "inline",
+        "workbench"
+      ]
+    },
+    "D0daa9c8d1800_UiColumn": {
+      "$ref": "#/$defs/R28550a83419f"
+    },
+    "R28550a83419f": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+        },
+        "label": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "const": "text",
+              "type": "string"
+            },
+            {
+              "const": "number",
+              "type": "string"
+            },
+            {
+              "const": "currency",
+              "type": "string"
+            },
+            {
+              "const": "date",
+              "type": "string"
+            },
+            {
+              "const": "status",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "label"
+      ]
+    },
+    "D0daa9c8d1800_UiChartSeries": {
+      "$ref": "#/$defs/Rf3477d31fed3"
+    },
+    "Rf3477d31fed3": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+        },
+        "label": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "label"
+      ]
+    },
+    "D0daa9c8d1800_UiComponent": {
+      "$ref": "#/$defs/Rf971082f4cc7"
+    },
+    "Rf971082f4cc7": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+            },
+            "kind": {
+              "const": "form",
+              "type": "string"
+            },
+            "title": {
+              "minLength": 1,
+              "maxLength": 256,
+              "type": "string"
+            },
+            "dataKey": {
+              "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+            },
+            "schema": {
+              "$ref": "#/$defs/D0daa9c8d1800_UiJsonSchema"
+            },
+            "actionIds": {
+              "minItems": 0,
+              "maxItems": 16,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+              }
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "dataKey",
+            "schema"
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+            },
+            "kind": {
+              "const": "table",
+              "type": "string"
+            },
+            "title": {
+              "minLength": 1,
+              "maxLength": 256,
+              "type": "string"
+            },
+            "dataKey": {
+              "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+            },
+            "rowKey": {
+              "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+            },
+            "columns": {
+              "minItems": 1,
+              "maxItems": 32,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/D0daa9c8d1800_UiColumn"
+              }
+            },
+            "selection": {
+              "anyOf": [
+                {
+                  "const": "none",
+                  "type": "string"
+                },
+                {
+                  "const": "single",
+                  "type": "string"
+                },
+                {
+                  "const": "multiple",
+                  "type": "string"
+                }
+              ]
+            },
+            "rowActionIds": {
+              "minItems": 0,
+              "maxItems": 16,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+              }
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "dataKey",
+            "rowKey",
+            "columns",
+            "selection"
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+            },
+            "kind": {
+              "const": "chart",
+              "type": "string"
+            },
+            "title": {
+              "minLength": 1,
+              "maxLength": 256,
+              "type": "string"
+            },
+            "dataKey": {
+              "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+            },
+            "chartType": {
+              "anyOf": [
+                {
+                  "const": "bar",
+                  "type": "string"
+                },
+                {
+                  "const": "line",
+                  "type": "string"
+                },
+                {
+                  "const": "pie",
+                  "type": "string"
+                }
+              ]
+            },
+            "categoryKey": {
+              "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+            },
+            "series": {
+              "minItems": 1,
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/D0daa9c8d1800_UiChartSeries"
+              }
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "dataKey",
+            "chartType",
+            "categoryKey",
+            "series"
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+            },
+            "kind": {
+              "const": "button-group",
+              "type": "string"
+            },
+            "title": {
+              "minLength": 1,
+              "maxLength": 256,
+              "type": "string"
+            },
+            "actionIds": {
+              "minItems": 1,
+              "maxItems": 16,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+              }
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "actionIds"
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+            },
+            "kind": {
+              "const": "text",
+              "type": "string"
+            },
+            "title": {
+              "minLength": 1,
+              "maxLength": 256,
+              "type": "string"
+            },
+            "dataKey": {
+              "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "dataKey"
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+            },
+            "kind": {
+              "const": "status",
+              "type": "string"
+            },
+            "title": {
+              "minLength": 1,
+              "maxLength": 256,
+              "type": "string"
+            },
+            "dataKey": {
+              "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "dataKey"
+          ]
+        }
+      ]
+    },
+    "D0daa9c8d1800_UiArgument": {
+      "$ref": "#/$defs/R0a15d5c1a153"
+    },
+    "R0a15d5c1a153": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "literal": {
+              "$ref": "#/$defs/Rf3b73f87d837"
+            }
+          },
+          "required": [
+            "literal"
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "from": {
+              "anyOf": [
+                {
+                  "const": "data",
+                  "type": "string"
+                },
+                {
+                  "const": "input",
+                  "type": "string"
+                },
+                {
+                  "const": "row",
+                  "type": "string"
+                },
+                {
+                  "const": "selection",
+                  "type": "string"
+                }
+              ]
+            },
+            "key": {
+              "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+            },
+            "pointer": {
+              "maxLength": 256,
+              "pattern": "^(?:/(?:[^~]|~[01])*)*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "from",
+            "key"
+          ]
+        }
+      ]
+    },
+    "D0daa9c8d1800_UiAction": {
+      "$ref": "#/$defs/Ra533b656f012"
+    },
+    "Ra533b656f012": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+        },
+        "label": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        },
+        "tool": {
+          "minLength": 1,
+          "maxLength": 128,
+          "type": "string"
+        },
+        "argsTemplate": {
+          "additionalProperties": false,
+          "maxProperties": 32,
+          "type": "object",
+          "patternProperties": {
+            "^[A-Za-z][A-Za-z0-9_.-]{0,63}$": {
+              "$ref": "#/$defs/D0daa9c8d1800_UiArgument"
+            }
+          }
+        },
+        "paramsSchema": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiJsonSchema"
+        },
+        "confirm": {
+          "minLength": 1,
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "style": {
+          "anyOf": [
+            {
+              "const": "primary",
+              "type": "string"
+            },
+            {
+              "const": "secondary",
+              "type": "string"
+            },
+            {
+              "const": "danger",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "tool",
+        "argsTemplate",
+        "paramsSchema"
+      ]
+    },
+    "D0daa9c8d1800_UiSurface": {
+      "$ref": "#/$defs/Rb2a7c2af5134"
+    },
+    "Rb2a7c2af5134": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+        },
+        "revision": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiRevision"
+        },
+        "title": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        },
+        "placement": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiPlacement"
+        },
+        "components": {
+          "minItems": 1,
+          "maxItems": 32,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/D0daa9c8d1800_UiComponent"
+          }
+        },
+        "data": {
+          "additionalProperties": false,
+          "maxProperties": 64,
+          "type": "object",
+          "patternProperties": {
+            "^[A-Za-z][A-Za-z0-9_.-]{0,63}$": {
+              "$ref": "#/$defs/Rf3b73f87d837"
+            }
+          }
+        },
+        "actions": {
+          "minItems": 0,
+          "maxItems": 32,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/D0daa9c8d1800_UiAction"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "title",
+        "placement",
+        "components",
+        "data",
+        "actions"
+      ]
+    },
+    "D0daa9c8d1800_UiRowContext": {
+      "$ref": "#/$defs/R25cf8e9568f8"
+    },
+    "R25cf8e9568f8": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "tableId": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+        },
+        "rowId": {
+          "minLength": 1,
+          "maxLength": 128,
+          "type": "string"
+        }
+      },
+      "required": [
+        "tableId",
+        "rowId"
+      ]
+    },
+    "D0daa9c8d1800_UiActionParams": {
+      "$ref": "#/$defs/R513825029ecf"
+    },
+    "R513825029ecf": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        },
+        "surfaceId": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+        },
+        "revision": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiRevision"
+        },
+        "actionId": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+        },
+        "commandId": {
+          "minLength": 1,
+          "maxLength": 128,
+          "type": "string"
+        },
+        "input": {
+          "additionalProperties": false,
+          "maxProperties": 32,
+          "type": "object",
+          "patternProperties": {
+            "^[A-Za-z][A-Za-z0-9_.-]{0,63}$": {
+              "$ref": "#/$defs/Rf3b73f87d837"
+            }
+          }
+        },
+        "selection": {
+          "additionalProperties": false,
+          "maxProperties": 32,
+          "type": "object",
+          "patternProperties": {
+            "^[A-Za-z][A-Za-z0-9_.-]{0,63}$": {
+              "minItems": 0,
+              "maxItems": 1000,
+              "uniqueItems": true,
+              "type": "array",
+              "items": {
+                "minLength": 1,
+                "maxLength": 128,
+                "type": "string"
+              }
+            }
+          }
+        },
+        "row": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiRowContext"
+        },
+        "confirmed": {
+          "type": "boolean"
+        },
+        "retryOf": {
+          "minLength": 1,
+          "maxLength": 128,
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "surfaceId",
+        "revision",
+        "actionId",
+        "commandId",
+        "input",
+        "selection"
+      ]
+    },
+    "D0daa9c8d1800_UiActionStatus": {
+      "$ref": "#/$defs/Rd8fd2bd56e22"
+    },
+    "Rd8fd2bd56e22": {
+      "anyOf": [
+        {
+          "const": "received",
+          "type": "string"
+        },
+        {
+          "const": "rejected",
+          "type": "string"
+        },
+        {
+          "const": "pending-approval",
+          "type": "string"
+        },
+        {
+          "const": "executing",
+          "type": "string"
+        },
+        {
+          "const": "succeeded",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "type": "string"
+        }
+      ]
+    },
+    "D0daa9c8d1800_UiRefusal": {
+      "$ref": "#/$defs/Re90db4e7e0e3"
+    },
+    "Re90db4e7e0e3": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "reason": {
+          "anyOf": [
+            {
+              "const": "invalid",
+              "type": "string"
+            },
+            {
+              "const": "stale",
+              "type": "string"
+            },
+            {
+              "const": "closed",
+              "type": "string"
+            },
+            {
+              "const": "duplicate",
+              "type": "string"
+            },
+            {
+              "const": "unauthorized",
+              "type": "string"
+            }
+          ]
+        },
+        "code": {
+          "anyOf": [
+            {
+              "const": "UI_INVALID",
+              "type": "string"
+            },
+            {
+              "const": "UI_STALE",
+              "type": "string"
+            },
+            {
+              "const": "UI_CLOSED",
+              "type": "string"
+            },
+            {
+              "const": "UI_COMMAND_CONFLICT",
+              "type": "string"
+            },
+            {
+              "const": "UI_UNAUTHORIZED",
+              "type": "string"
+            }
+          ]
+        },
+        "message": {
+          "minLength": 1,
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "currentRevision": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiRevision"
+        }
+      },
+      "required": [
+        "reason",
+        "code",
+        "message"
+      ]
+    },
+    "D0daa9c8d1800_UiFailure": {
+      "$ref": "#/$defs/Rc5dbf94f859b"
+    },
+    "Rc5dbf94f859b": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "maxLength": 128,
+          "type": "string"
+        },
+        "message": {
+          "minLength": 1,
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "outcomeUnknown": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable",
+        "outcomeUnknown"
+      ]
+    },
+    "D0daa9c8d1800_UiActionReceipt": {
+      "$ref": "#/$defs/R63eda31ad601"
+    },
+    "R63eda31ad601": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        },
+        "surfaceId": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+        },
+        "revision": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiRevision"
+        },
+        "actionId": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+        },
+        "commandId": {
+          "minLength": 1,
+          "maxLength": 128,
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiActionStatus"
+        },
+        "seq": {
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "duplicate": {
+          "type": "boolean"
+        },
+        "invocationId": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        },
+        "approvalId": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        },
+        "refusal": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiRefusal"
+        },
+        "failure": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiFailure"
+        },
+        "resultSeq": {
+          "minimum": 1,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "summary": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "retryOf": {
+          "minLength": 1,
+          "maxLength": 128,
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "surfaceId",
+        "revision",
+        "actionId",
+        "commandId",
+        "status",
+        "seq",
+        "duplicate"
+      ]
+    },
+    "D0daa9c8d1800_UiSurfaceRecord": {
+      "$ref": "#/$defs/R6ca628e18c00"
+    },
+    "R6ca628e18c00": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "surface": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiSurface"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "const": "open",
+              "type": "string"
+            },
+            {
+              "const": "closed",
+              "type": "string"
+            }
+          ]
+        },
+        "createdSeq": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "updatedSeq": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "owner": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        },
+        "lane": {
+          "minLength": 1,
+          "maxLength": 128,
+          "type": "string"
+        },
+        "taskId": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        }
+      },
+      "required": [
+        "surface",
+        "status",
+        "createdSeq",
+        "updatedSeq",
+        "owner",
+        "lane",
+        "taskId"
+      ]
+    },
+    "D0daa9c8d1800_UiReadParams": {
+      "$ref": "#/$defs/Raab23c08361b"
+    },
+    "Raab23c08361b": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        },
+        "surfaceId": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+        },
+        "commandId": {
+          "minLength": 1,
+          "maxLength": 128,
+          "type": "string"
+        },
+        "cursor": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        },
+        "limit": {
+          "minimum": 1,
+          "maximum": 16,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sessionId"
+      ]
+    },
+    "D0daa9c8d1800_UiReadResult": {
+      "$ref": "#/$defs/R2e7cdc28109a"
+    },
+    "R2e7cdc28109a": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        },
+        "lastSeq": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "surfaces": {
+          "minItems": 0,
+          "maxItems": 16,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/D0daa9c8d1800_UiSurfaceRecord"
+          }
+        },
+        "actions": {
+          "minItems": 0,
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/D0daa9c8d1800_UiActionReceipt"
+          }
+        },
+        "nextCursor": {
+          "minLength": 1,
+          "maxLength": 256,
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "lastSeq",
+        "surfaces",
+        "actions"
+      ]
+    },
+    "D0daa9c8d1800_UiRenderParams": {
+      "$ref": "#/$defs/R27716a3fe2da"
+    },
+    "R27716a3fe2da": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "surface": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiSurface"
+        }
+      },
+      "required": [
+        "surface"
+      ]
+    },
+    "D0daa9c8d1800_UiUpdateParams": {
+      "$ref": "#/$defs/R781908159458"
+    },
+    "R781908159458": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "surfaceId": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+        },
+        "expectedRevision": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiRevision"
+        },
+        "surface": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiSurface"
+        }
+      },
+      "required": [
+        "surfaceId",
+        "expectedRevision",
+        "surface"
+      ]
+    },
+    "D0daa9c8d1800_UiCloseParams": {
+      "$ref": "#/$defs/Rf750c2671c58"
+    },
+    "Rf750c2671c58": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "surfaceId": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiKey"
+        },
+        "expectedRevision": {
+          "$ref": "#/$defs/D0daa9c8d1800_UiRevision"
+        },
+        "reason": {
+          "minLength": 1,
+          "maxLength": 1024,
+          "type": "string"
+        }
+      },
+      "required": [
+        "surfaceId",
+        "expectedRevision"
+      ]
+    },
+    "_agnes_v1_ui_actionParams": {
+      "$ref": "#/$defs/D0daa9c8d1800_UiActionParams"
+    },
+    "_agnes_v1_ui_actionResult": {
+      "$ref": "#/$defs/D0daa9c8d1800_UiActionReceipt"
+    },
+    "_agnes_v1_ui_readParams": {
+      "$ref": "#/$defs/D0daa9c8d1800_UiReadParams"
+    },
+    "_agnes_v1_ui_readResult": {
+      "$ref": "#/$defs/D0daa9c8d1800_UiReadResult"
     },
     "_agnes_v1_session_eventParams": {
       "$ref": "#/$defs/D0a4e93a38f28_SessionEventParams"

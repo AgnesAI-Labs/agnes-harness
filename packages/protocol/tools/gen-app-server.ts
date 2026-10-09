@@ -11,6 +11,7 @@ import { METHODS } from '../src/methods.js'
 import * as Runtime from '../src/runtime-admin.js'
 import * as Schedules from '../src/schedules.js'
 import * as Tools from '../src/session-tools.js'
+import * as Ui from '../gen/ts/intelligent-ui.js'
 
 type Node = Record<string, unknown>
 /** Flatten TypeBox module scopes and recursive ids into portable document-local JSON pointers. */
@@ -18,6 +19,7 @@ export function appServerArtifacts() {
   const definitions: Node = {}
   const modules = [
     ['./acp.js', Acp],
+    ['./intelligent-ui.js', Ui],
     ['./agnes-v1.js', Agnes],
     ['./package-admin.js', Packages],
     ['@agnes/resource-control-contracts/schema', Resources],
@@ -129,9 +131,9 @@ export function appServerArtifacts() {
       const properties = Object.entries((n.properties ?? {}) as Node).map(
         ([name, value]) => `${JSON.stringify(name)}${required.has(name) ? '' : '?'}: ${ts(value)}`,
       )
-      if (n.additionalProperties !== false)
+      if (n.additionalProperties !== false || Object.keys((n.patternProperties ?? {}) as Node).length)
         properties.push(
-          `[key:string]: ${Object.keys((n.properties ?? {}) as Node).length ? 'unknown' : ts(n.additionalProperties ?? Object.values((n.patternProperties as Node) ?? {})[0])}`,
+          `[key:string]: ${Object.keys((n.properties ?? {}) as Node).length ? 'unknown' : ts(n.additionalProperties === false ? Object.values((n.patternProperties as Node) ?? {})[0] : (n.additionalProperties ?? Object.values((n.patternProperties as Node) ?? {})[0]))}`,
         )
       return '{ ' + properties.join('; ') + ' }'
     }

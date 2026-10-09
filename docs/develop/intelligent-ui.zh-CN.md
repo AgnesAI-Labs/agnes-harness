@@ -4,7 +4,7 @@
 
 [架构](architecture.zh-CN.md) · [插件](plugins.zh-CN.md) · [前端](frontend.zh-CN.md) · [会话与恢复](../guide/sessions.zh-CN.md) · [Web 渲染器](intelligent-ui-web.zh-CN.md)
 
-本文是待实现的合同。Schema 与生成类型只声明接口；本次合同变更尚未实现插件、App Server 处理器、渲染器或试点。业务 Agent 将选择预设组件，收集用户选择，通过现有授权路径执行已声明的业务工具，并带着持久证据继续处理。
+本文定义预设 surface 合同。官方后端插件、已认证 App Server 方法与通用 deferred 执行桥已实现该合同；下文描述客户端渲染与财务试点。可用性仍需仓库统一验证。
 
 ## 归属与范围
 
@@ -170,3 +170,5 @@ Fact-chain 与 trace 展示 surface id/revision 和归属、received 命令/acto
 ## 实现验收
 
 扩展最近的有意义测试，覆盖状态表每项转换、规范化命令重复/冲突、非法 Schema/绑定、revision 改变、关闭 surface、归属/任务及工具缺失/不支持 Loop 拒绝、policy/approval/auto-review 拒绝、sandbox 失败、容量/限流接纳、并发命令、工具错误和安全/不安全重试、回执/投递崩溃缺口、待审批/未知效果下的重启恢复。包含 scripted-model 财务流程和共享 inline/panel 状态、刷新、重新确认的 Web spec。真实 daemon/worker 测试放在 `*.e2e.test.ts`；大 ledger/真实定时器测试放在 `*.slow.test.ts`。测试可观察的回执、事实、工具结果和 queued input，不固定内部调用次数。后台与渲染实现审阅完成后，才能声明此能力可用。
+
+公开的可选 `ExtensionAPI.intelligentUi` 适配器在插件已有的 events 与 `surfaces` projection 权限下注册 `IntelligentUiFactory`。`session(ref)` 只能在有效且 owner 匹配的工具／hook 回调内使用。Host 提供 `IntelligentUiPorts`：规范会话／任务身份、本命名空间的账本读写、只读已声明工具 schema、通用 deferred 队列，以及幂等 SC1 投递。Daemon 先验证已认证会话归属，再调用同一会话服务。该适配器没有执行或审批权限。SDK 会话新增 `uiAction()`／`uiRead()`。Projection 保留完整 surface、活跃 receipt，以及字节预算内最近最多 64 条终态 receipt；更早命令仍可通过 `ui.read({ commandId })` 与账本重放恢复。总 projection 预算内为 receipt 预留 64 KiB。

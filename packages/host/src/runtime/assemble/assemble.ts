@@ -1,3 +1,4 @@
+import { createIntelligentUiAdapter } from '../sessions/intelligent-ui.js'
 import { lstatSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -387,6 +388,7 @@ export type Assembled = {
   /** Native, reachability-checked screenshot collector; absent on unsupported platforms. */
   computerUseArtifactGc: ComputerUseArtifactGcRuntime | undefined
   /** Live C1 ordinary Cordis tree containing preset rows and the eight dynamic runtime seams. */
+  intelligentUi: ReturnType<typeof createIntelligentUiAdapter>
   pluginTree: HostPluginTreeBase
   extHost: ManagedExtHost
   /** The managed host's extensions and the plugin rows', in the order each was first seen. */
@@ -2508,8 +2510,13 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     // revokes the exact object capability during failure cleanup/shutdown; ordinary Kernel callers
     // retain the public-after-initialization rule.
     const services = new ServiceRegistry()
+    const intelligentUi = createIntelligentUiAdapter(
+      (ref) => kernel.get(ref.key),
+      pluginTree.root.deferredInvocations,
+    )
     const extPorts = bindExtensionInvocations(
       {
+        intelligentUi,
         services,
         tools: profile.composition
           ? compositionTools(kernel.tools, profile.composition, profile.compositionToolScope)
@@ -3162,6 +3169,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         return computerUseArtifactGc
       },
       pluginTree,
+      intelligentUi,
       extHost: managed,
       extensionStatus,
       rollback,

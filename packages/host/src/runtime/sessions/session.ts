@@ -424,6 +424,14 @@ export async function createSession(
     seams: { ...opts.seams, sandbox: guardedSandbox },
   })
   const releaseDeferred = bindDeferredInvocations(a, session)
+  Object.defineProperty(session, 'intelligentUi', {
+    get: () =>
+      a.intelligentUi.get({
+        key: session.key,
+        lane: session.lane,
+        workspaceRoot: session.d.cwd,
+      }),
+  })
   const closeDeferredSession = session.close.bind(session)
   session.close = async () => {
     try {

@@ -33,6 +33,8 @@ import { validateExtensionCall } from './services.js'
 import { SessionToolsParams, SessionToolsResult } from './session-tools.js'
 import { type ValidationResult, validateAgainst } from './validate.js'
 
+import { UiActionParams, UiActionReceipt, UiReadParams, UiReadResult } from '../gen/ts/intelligent-ui.js'
+
 export type MethodSpec = {
   kind: 'request' | 'notification'
   direction: 'c2s' | 's2c'
@@ -59,6 +61,8 @@ const clientRequest = (params: TSchema, result: TSchema): MethodSpec => ({
 // excess property on the object literal. The runtime key list in test/methods.test.ts pins the same
 // set a third way.
 export type MethodName =
+  | '_agnes/v1/ui.action'
+  | '_agnes/v1/ui.read'
   | AdminMethodName
   | PackageAdminMethodName
   | ResourceControlMethodName
@@ -420,6 +424,8 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: A.AuthClaimParams,
     result: A.AuthClaimResult,
   },
+  '_agnes/v1/ui.action': clientRequest(UiActionParams, UiActionReceipt),
+  '_agnes/v1/ui.read': clientRequest(UiReadParams, UiReadResult),
   // Outbound only. Their params are consulted on both sides: a client validating what it receives
   // reads them, so does the conformance runner, and so does the server before it puts the frame on
   // the wire - daemon's LocalEndpoint refuses an s2c frame this table's schema rejects.

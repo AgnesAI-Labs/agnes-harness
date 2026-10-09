@@ -175,6 +175,8 @@ export interface AppServerMethods {
   "session/set_mode": { params: Static<typeof import("./acp.js").SetSessionModeRequest>; result: Static<typeof import("./acp.js").SetSessionModeResponse>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.detach": { params: Static<typeof import("./agnes-v1.js").SessionIdParams>; result: Static<typeof import("./agnes-v1.js").Empty>; direction: "c2s"; kind: "request" }
   "_agnes/v1/auth.claim": { params: Static<typeof import("./agnes-v1.js").AuthClaimParams>; result: Static<typeof import("./agnes-v1.js").AuthClaimResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/ui.action": { params: Static<typeof import("./intelligent-ui.js").UiActionParams>; result: Static<typeof import("./intelligent-ui.js").UiActionReceipt>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/ui.read": { params: Static<typeof import("./intelligent-ui.js").UiReadParams>; result: Static<typeof import("./intelligent-ui.js").UiReadResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.event": { params: Static<typeof import("./agnes-v1.js").SessionEventParams>; result: void; direction: "s2c"; kind: "notification" }
   "_agnes/v1/session.preview": { params: Static<typeof import("./agnes-v1.js").SessionPreviewParams>; result: void; direction: "s2c"; kind: "notification" }
   "_agnes/v1/daemon.notice": { params: Static<typeof import("./agnes-v1.js").DaemonNotice>; result: void; direction: "s2c"; kind: "notification" }

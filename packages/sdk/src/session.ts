@@ -628,6 +628,18 @@ export class Session {
   }
 
   /** Tools and authorized resources visible in this session's pinned runtime. */
+  uiAction(
+    input: Omit<import('@agnes/protocol').UiActionParams, 'sessionId'>,
+  ): Promise<import('@agnes/protocol').UiActionReceipt> {
+    return this.client.call('_agnes/v1/ui.action', { ...input, sessionId: this.id })
+  }
+
+  uiRead(
+    input: Omit<import('@agnes/protocol').UiReadParams, 'sessionId'> = {},
+  ): Promise<import('@agnes/protocol').UiReadResult> {
+    return this.client.call('_agnes/v1/ui.read', { ...input, sessionId: this.id })
+  }
+
   tools(): Promise<import('@agnes/protocol').SessionToolsResult> {
     return this.client.call('_agnes/v1/session.tools', { sessionId: this.id })
   }

@@ -288,6 +288,18 @@ export async function handleCommand(
 ): Promise<unknown> {
   const p = cmd.params
   switch (cmd.method) {
+    case 'ui.action': {
+      const actor = p.actor as Actor
+      if (!session.intelligentUi) throw rpcError('CAPABILITY_DENIED')
+      return session.intelligentUi.action(
+        p.input as import('@agnes/protocol').UiActionParams,
+        actor,
+        session.ac.signal,
+      )
+    }
+    case 'ui.read':
+      if (!session.intelligentUi) throw rpcError('CAPABILITY_DENIED')
+      return session.intelligentUi.read(p.input as import('@agnes/protocol').UiReadParams, session.ac.signal)
     case 'feedback.draft': {
       const runId = String(p.runId)
       if (!runId.startsWith('feedback:') || o.aborts.has(runId)) throw new Error('Invalid feedback draft id')

@@ -15,6 +15,13 @@ export type RegMeta = ToolSource
 
 /** Internal assembly ports, never exposed directly to an extension factory. */
 export interface KernelPorts {
+  intelligentUi?: {
+    register(factory: import('@agnes/extension-api').IntelligentUiFactory, meta: RegMeta): Disposer
+    get(
+      ref: import('@agnes/extension-api').SessionRef,
+      owner: string,
+    ): import('@agnes/extension-api').IntelligentUiService
+  }
   services: Pick<ServiceRegistry, 'register' | 'registerRow'>
   projections: {
     register: ProjectionRegistry['register']

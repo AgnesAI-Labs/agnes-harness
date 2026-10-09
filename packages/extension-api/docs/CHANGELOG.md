@@ -4,6 +4,10 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+`ExtensionAPI.intelligentUi` adds an optional owner-bound factory adapter for namespace-bound ledger
+projections and idempotent SC1 delivery. It requires existing events/projection grants and provides
+no execution authority; actions use the generic deferred-invocation contract.
+
 `memoryKind` adds an optional, versioned session memory provider with per-turn snapshots,
 ordinary file ports and explicit human editing. `memoryPrivateEvent` exports structural event
 facts while omitting memory-derived payloads. Existing hosts without a provider keep their

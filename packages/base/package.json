@@ -268,7 +268,8 @@
       "./extensions/jobs-web",
       "./extensions/context-rules",
       "./extensions/time-context",
-      "./extensions/schedule"
+      "./extensions/schedule",
+      "./extensions/intelligent-ui"
     ]
   },
   "scripts": {

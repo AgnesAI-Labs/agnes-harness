@@ -131,6 +131,8 @@ export function createDeferredInvocationQueue(
         }
         if (!allowed[old.state].includes(state)) throw new Error('Invalid deferred invocation transition')
         const original = await ports.outcome(id)
+        if (state === 'pending-approval' && !original.approvalId)
+          throw new Error('Deferred approval is missing its original ticket')
         if (state === 'succeeded' && !original.resultSeq)
           throw new Error('Deferred success is missing its original tool receipt')
         const data = {

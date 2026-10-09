@@ -111,7 +111,8 @@ export function bindDeferredInvocations(a: Assembled, session: HostSession): () 
               resultSeq: result.seq,
               result: (response?.data as { result?: ToolResult } | undefined)?.result ?? {
                 content: data!.content,
-                isError: data!.isError,
+                ...(data!.isError !== undefined ? { isError: data!.isError } : {}),
+                ...(data!.code ? { details: { code: data!.code } } : {}),
               },
             }
           : {}),

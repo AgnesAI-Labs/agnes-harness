@@ -102,6 +102,26 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
   })
   return Object.freeze({
     ctx,
+    ...(ports.intelligentUi
+      ? {
+          intelligentUi: Object.freeze({
+            register(factory: import('@agnes/extension-api').IntelligentUiFactory) {
+              registering()
+              if (
+                !caps.events ||
+                !caps.projections?.some((p) => p.name === 'surfaces') ||
+                !lease.allows('event', '')
+              )
+                return refuse('UI requires events and surfaces projection grants')
+              return bag.add(ports.intelligentUi!.register(factory, toolMeta))
+            },
+            session(ref: import('@agnes/extension-api').SessionRef) {
+              alive('execute')
+              return ports.intelligentUi!.get(ref, m.id)
+            },
+          }),
+        }
+      : {}),
     registerService(def) {
       registering()
       return bag.add(ports.services.register(def, { manifest: m, lease, signal }))
