@@ -17,7 +17,7 @@
 <img src="https://img.shields.io/badge/node-%E2%89%A5%2024.10-339933" alt="Node.js 24.10 及以上" />
 <img src="https://img.shields.io/badge/local%20checks-macOS-3b8fff" alt="已记录的本地检查：macOS" />
 
-[快速开始](docs/guide/quickstart.zh-CN.md) · [架构](#architecture) · [体验示例](docs/guide/demo.zh-CN.md) · [开发插件](docs/develop/plugins.zh-CN.md) · [完整文档](docs/README.zh-CN.md) · [MHS（即将开放）](docs/guide/mhs.zh-CN.md)
+[快速开始](docs/guide/quickstart.zh-CN.md) · [架构](#architecture) · [体验示例](docs/guide/demo.zh-CN.md) · [开发插件](docs/develop/plugins.zh-CN.md) · [完整文档](docs/README.zh-CN.md) · [MHS 与设备](docs/guide/mhs.zh-CN.md)
 
 开发者预览（pre-alpha） · [源码构建](#从源码开始) · [Apache-2.0](LICENSE)
 
@@ -65,7 +65,7 @@
 
 - **不是托管服务。** AGH 是开发者预览版，需要从源码构建，在你自己的环境中运行。
 - **不是任意插件代码的沙箱。** 普通后端插件作为受信代码在进程内运行；审批与命令沙箱作用于相应的受支持执行路径。详见[安全与信任](docs/guide/security.zh-CN.md)。
-- **不是经过认证的设备驱动。** MHS 设备接入以 MCP 为基础，即将开放；目前没有可供认证的公开 MHS 规范，实时控制与物理安全仍由设备控制器负责。
+- **不是经过认证的设备驱动。** MHS 是 AGH 自己的设备协议，独立于 MCP。通过它的一致性测试并不证明设备安全，实时控制与物理安全仍由设备控制器负责。
 - **还没有定型。** API、配置与插件接口仍在演进，可能出现破坏兼容性的变更。
 
 <a id="architecture"></a>
@@ -82,7 +82,7 @@
 | **LLM / 大脑** | 理解请求、推理任务、提出行动建议 | 经 AI Provider 接入模型 |
 | **Jev / 小脑** | 路由、评分等结构化决策，协助协调执行 | 接入进行中；main 当前使用内置 Core 循环 |
 | **Harness / 记忆** | 保存会话历史、任务状态、执行记录，以及沉淀在 Skills 中的可复用方法 | 已有任务上下文与恢复机制；Harness 同时负责执行与治理 |
-| **MHS / 身体** | 连接设备能力，让任务读取物理状态、请求设备动作 | 通过基于 MCP 的适配器接入设备；AGH 接入文档与示例即将开放 |
+| **MHS / 身体** | 连接设备能力，让任务读取物理状态、请求设备动作 | MHS 与 MOS 1.0 规范、设备库、`mhs-check` 一致性测试，以及作为可选插件运行、为大脑提供设备工具的 AgnesHub |
 
 FDE 是交付方式，MHS 负责把设备接进来。两者使用同一套底座，FDE 的现场交付也可以包含设备场景。
 
@@ -91,9 +91,9 @@ FDE 是交付方式，MHS 负责把设备接进来。两者使用同一套底座
 | **App Server / 统一接入** | 为 CLI、Web、SDK 提供共享会话、任务提交、事件推送与审批路由 | 任务入口、人工确认与状态展示 |
 | **Agent Loop / 执行循环** | 模型与工具执行、任务状态、事件记录、中断处理与恢复 | 高层设备任务编排与结果记录 |
 | **Sandbox / 执行约束** | 工具授权，以及适用的命令、文件、网络与进程约束 | 软件侧执行边界；运动控制、互锁与急停仍由设备控制器负责 |
-| **Plugins / 插件体系** | 后端工具与服务、Web 面板、Skills、hooks、MCP，由 Cordis 和包治理组织 | 基于 MCP 的设备适配器与设备操作界面的扩展入口；具体适配仍需开发与验证 |
+| **Plugins / 插件体系** | 后端工具与服务、Web 面板、Skills、hooks、MCP，由 Cordis 和包治理组织 | AgnesHub 作为可选插件运行：为大脑提供设备工具，在工作台中提供设备面板 |
 
-具体业务连接器与工作台通过这些扩展入口按现场需求构建。当前仓库没有已验证的通用 MHS 适配器或端到端设备示例。
+具体业务连接器与工作台通过这些扩展入口按现场需求构建。设备经 MHS 接入；仓库附带示例设备和开发中枢，不接硬件也能试用。
 
 实际请求链路与源码归属见[架构说明](docs/develop/architecture.zh-CN.md)，深入实现可从[源码地图](docs/develop/source-map.zh-CN.md)开始。
 
@@ -139,7 +139,7 @@ CLI、Web 与 SDK 共享同一套后台会话。在终端用 `/resume <id>` 恢�
 
 ### 6. 现场还有设备
 
-从巡检到仪器协作，现场工作需要把设备状态、人的判断与业务流程连接起来。AGH 的设备接入方向以 MCP（Model Context Protocol）为基础，而不是厂商专属 SDK，让状态读取、动作请求和执行回执进入同一套任务流程。**MHS 接入文档与示例即将开放。**[了解设备接入方向 →](docs/guide/mhs.zh-CN.md)
+从巡检到仪器协作，现场工作需要把设备状态、人的判断与业务流程连接起来。Agnes MHS（Model Hardware Standard）是 AGH 自己的开放设备协议，独立于 MCP，也不依赖厂商专属 SDK：设备通过 WebSocket 连接 AgnesHub，登记自己的状态、工具和数据源，然后接受调用。配套的 MOS（Model Observation Standard）实时推送设备观测到的内容，例如相机画面、地图与地点。状态读取、动作请求和结果都进入同一套任务流程。[不接硬件先试用设备 →](docs/guide/mhs.zh-CN.md)
 
 ## 公开评测
 
@@ -156,7 +156,7 @@ CLI、Web 与 SDK 共享同一套后台会话。在终端用 `/resume <id>` 恢�
 - **FDE 与解决方案工程师**：把 Agent 交付进客户的业务系统和流程
 - **插件开发者**：把业务工具、服务与界面打包复用
 - **需要过程可控的团队**：命令先审批、每一步有记录、插件包信任明确
-- **现场与实验室团队**：为设备场景提前准备，跟进 MHS 接入的开放
+- **现场与实验室团队**：通过 MHS 把设备接入任务
 
 如果你现在就需要托管服务、已签名的安装包或生产级承诺，AGH 暂时还不适合：它目前是开发者预览版。
 
@@ -210,7 +210,7 @@ AGH 当前为开发者预览。
 | 命令沙箱与执行约束 | 取决于平台 |
 | 平台 | 已在 macOS + Node 24 上记录本地检查；Linux 与 Windows 需另行验收 |
 | Jev 结构化决策 | 接入中 |
-| MHS 设备接入（基于 MCP） | 即将开放 |
+| 经 AgnesHub 的 MHS 设备接入 | 可用，作为可选插件 |
 
 [支持范围与已知限制](docs/reference/limitations.zh-CN.md)帮助你选择试用环境；[验证与复现](docs/maintainers/verification.zh-CN.md)提供检查命令与验收范围。
 
@@ -226,7 +226,7 @@ AGH 当前为开发者预览。
 模型经 AI Provider 接入，可用能力由各 Provider 的模型目录决定。本页演示使用 Agnes AI `agnes-3.0-flash` 录制；不同模型的质量与工具选择会有差异。
 
 **MHS 现在能控制设备吗？**
-还不能。MHS 接入文档与示例即将开放，以 MCP 为基础。在 AGH 中取消任务不等于设备已安全停止；互锁与急停由设备控制器负责。
+能，通过 AgnesHub：大脑调用设备声明的工具，AgnesHub 按设备的声明检查每一次调用。[MHS 指南](docs/guide/mhs.zh-CN.md)从示例设备开始。在 AGH 中取消任务不等于设备已安全停止；互锁与急停由设备控制器负责。
 
 **接受外部 PR 吗？**
 当前代码与文档 PR 仅限受邀内部开发者。欢迎通过 Issues 提交普通问题与场景建议，详见[反馈与协作规则](docs/develop/contributing.zh-CN.md)。

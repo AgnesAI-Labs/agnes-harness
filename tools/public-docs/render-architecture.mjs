@@ -34,7 +34,7 @@ const translations = {
       ['LLM', 'Brain', 'Reasoning and actions', 'Via AI providers'],
       ['Jev', 'Cerebellum', 'Decisions and routing', 'Works with the agent loop'],
       ['Harness', 'Memory', 'State, history, methods', 'Sessions, records, Skills'],
-      ['MHS', 'Body', 'Physical devices', 'Devices via MCP'],
+      ['MHS', 'Body', 'Physical devices', 'Devices via AgnesHub'],
     ],
     server: 'APP SERVER',
     serverDetail: 'Shared sessions · task submission · event streaming · approval routing',
@@ -59,14 +59,14 @@ const translations = {
     fde: ['FDE · ENTERPRISE DELIVERY', 'Compose plugins into a customer-specific agent'],
     fdeItems: ['Knowledge base', 'Database', 'Business systems', 'Domain software'],
     fdeNote: 'Connectors are built and validated per site',
-    mhs: ['MHS · PHYSICAL WORLD', 'Built on MCP'],
-    mhsChain: ['MCP adapter', 'Controller'],
+    mhs: ['MHS · PHYSICAL WORLD', 'Devices speak MHS and MOS'],
+    mhsChain: ['AgnesHub', 'Controller'],
     devices: ['Microscope', 'Robotic arm', 'Liquid handler'],
     mhsNote: 'Illustrative devices · interlocks and e-stops stay on devices',
     footer:
       'FDE delivers at enterprise sites. MHS connects the physical world. Both run on the same foundation.',
     description:
-      'Animated AGH architecture. LLM is the brain, Jev the cerebellum, Harness the memory and MHS the body; MHS device adapters build on MCP. Clients reach the App Server, the Agent Runtime runs the agent loop with Harness memory and controlled execution, plugins extend the runtime, and the same foundation serves enterprise FDE delivery and physical-world integration.',
+      'Animated AGH architecture. LLM is the brain, Jev the cerebellum, Harness the memory and MHS the body; devices connect through AgnesHub over MHS. Clients reach the App Server, the Agent Runtime runs the agent loop with Harness memory and controlled execution, plugins extend the runtime, and the same foundation serves enterprise FDE delivery and physical-world integration.',
   },
   'zh-CN': {
     title: 'Agnes Harness',
@@ -75,7 +75,7 @@ const translations = {
       ['LLM', '大脑', '理解、推理与动作建议', '经 AI Provider 接入'],
       ['Jev', '小脑', '结构化决策与路由', '与 Agent 循环协同'],
       ['Harness', '记忆', '状态、历史与可复用方法', '会话、执行记录、Skills'],
-      ['MHS', '身体', '连接物理设备的能力', '经 MCP 接入设备'],
+      ['MHS', '身体', '连接物理设备的能力', '经 AgnesHub 接入设备'],
     ],
     server: 'APP SERVER · 统一接入',
     serverDetail: '共享会话 · 任务提交 · 事件推送 · 审批路由',
@@ -100,13 +100,13 @@ const translations = {
     fde: ['FDE · 企业现场交付', '组合插件，构建客户专属 Agent'],
     fdeItems: ['知识库', '数据库', '业务系统', '领域软件'],
     fdeNote: '具体连接器按现场开发与验证',
-    mhs: ['MHS · 物理世界', '以 MCP 为基础连接设备'],
-    mhsChain: ['MCP 适配器', '设备控制器'],
+    mhs: ['MHS · 物理世界', '设备通过 MHS 与 MOS 接入'],
+    mhsChain: ['AgnesHub', '设备控制器'],
     devices: ['显微镜', '机械臂', '移液工作站'],
     mhsNote: '设备仅为示意 · 互锁与急停由设备负责',
     footer: 'FDE 服务企业现场，MHS 连接物理世界；两者运行在同一套底座上。',
     description:
-      'AGH 架构动画：LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体，MHS 设备适配器基于 MCP。客户端经 App Server 接入，Agent Runtime 以 Harness 记忆和受控执行运行 Agent 循环，插件扩展运行时，同一底座支撑企业 FDE 交付与物理世界接入。',
+      'AGH 架构动画：LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体，设备经 AgnesHub 以 MHS 接入。客户端经 App Server 接入，Agent Runtime 以 Harness 记忆和受控执行运行 Agent 循环，插件扩展运行时，同一底座支撑企业 FDE 交付与物理世界接入。',
   },
 }
 

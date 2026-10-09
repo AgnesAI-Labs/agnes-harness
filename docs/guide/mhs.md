@@ -6,56 +6,143 @@ English | [简体中文](mhs.zh-CN.md)
 
 [Project home](../../README.md) · [Documentation](../README.md) · [FDE and use cases](why-agh.md)
 
-> **Coming soon: AGH's MHS integration documentation and examples.**
+Agnes MHS (Model Hardware Standard) is how physical devices, such as robots, vehicles, cameras and sensors, connect to AGH. A device dials AgnesHub, registers its state, tools and data sources, then takes calls and streams data. The model never talks to a device directly: it acts through AgnesHub, which checks every call against what the device declared. Agnes MHS is AGH's own protocol, independent of Anthropic's standard of the same name. It borrows the message format (JSON-RPC 2.0) and tool declarations of MCP (Model Context Protocol), and adds what physical devices need: stop, manual control, live state, and streamed sensor data.
 
-From inspection and maintenance to instrument coordination, field work connects device state, human judgment, and business workflows. AGH plans to explore physical device integration through MHS (Model Hardware Standard), built on MCP (Model Context Protocol) as the device connection layer, bringing state reads, operation requests, and execution receipts into one task flow.
+In AGH's [brain, cerebellum, memory, and body metaphor](../develop/architecture.md#brain-cerebellum-memory-and-body), MHS represents the body: the interface to physical capabilities. The devices and their controllers supply those capabilities, while AGH contributes task orchestration, human confirmation, and records.
 
-In AGH's [brain, cerebellum, memory, and body metaphor](../develop/architecture.md#brain-cerebellum-memory-and-body), MHS represents the body: the interface to physical capabilities. The devices and their controllers supply those capabilities, while AGH contributes task orchestration, human confirmation, and records. This direction can be part of an FDE deployment using the same software foundation.
+**Status:** MHS 1.0 and MOS 1.0. Everything below runs from the source repository; [`packages/mhs`](../../packages/mhs/README.md) is the reference for each part.
 
-We plan to publish guides and reproducible examples around these scenarios, helping developers combine device capabilities, human confirmation, and business interfaces into applications.
+<a id="组成部分"></a>
 
-<a id="agh-计划如何接入"></a>
-
-## How AGH plans to integrate
-
-The following is a proposed division of responsibilities. Concrete interfaces still need validation:
+## The parts
 
 ```mermaid
 flowchart LR
-  Task[Business tasks and human confirmation] --> AGH[AGH task orchestration and records]
-  AGH --> Adapter[Device integration adapters]
-  Adapter --> Controller[Device controllers]
-  Controller --> Device[Instruments and physical devices]
-  Device --> Receipt[State and execution receipts]
-  Receipt --> AGH
+  Brain[AGH brain: seven device tools] --> Hub[AgnesHub]
+  Panel[Devices panel and page] -->|AgnesHub API /ws/hub| Hub
+  Hub -->|MHS /ws/mhs| Device[Devices]
+  Device -->|MOS /ws/nerve| Hub
 ```
 
-AGH organizes tasks, authorization interactions, and result records. An adapter connects device capabilities to task execution, while the device controller owns actual motion and site protections. AGH's device integration direction builds the adapter on MCP (Model Context Protocol), a model-agnostic, versioned protocol, rather than a vendor-specific SDK or a ROS bridge. A bare MCP connection alone does not demonstrate MHS compatibility, since no public MHS specification is open for certification.
+| Part | What it is |
+| --- | --- |
+| [MHS](../../packages/mhs/spec/mhs-spec.md) | The command channel: registration, state, tools and calls, stop and pause, manual control, and the safety rules a device keeps by itself |
+| [MOS](../../packages/mhs/spec/mos-spec.md) | The Model Observation Standard, the data channel: sources such as cameras, scans and readings, video streams, and the maps and places positions refer to |
+| AgnesHub | The hub devices connect to. It runs inside AGH as an optional plugin, or on its own for development |
+| [AgnesHub API](../../packages/mhs/server/hub-api.md) | AgnesHub's own interface for the brain, the Devices panel and other clients; it is not a standard |
+| [Conformance suite](../../packages/mhs/spec/mhs-conformance.md) | A JSON Schema for every message, and `mhs-check`, a test hub that checks a device against every requirement that applies to it |
+| Device libraries | `agnes_mhs` for Python and `@agnes/mhs/device` for TypeScript, with example devices |
 
-For example, an inspection task might follow: read status → detect an anomaly → obtain human confirmation → perform a constrained action → verify the receipt. This describes a target workflow. Each device model, action, and failure path needs its own implementation and validation.
+<a id="不接硬件先试用"></a>
 
-<a id="即将开放的内容"></a>
+## Try it without hardware
 
-## What is coming
+After [installing the repository's dependencies](install.md), build the panel and start the development hub from the repository root:
 
-| Content | Planned scope | Status |
+```sh
+pnpm --filter @agnes/mhs build:plugin
+pnpm --filter @agnes/mhs dev-hub
+```
+
+Open `http://127.0.0.1:4191/`. The development hub is the real AgnesHub with four sample devices: `robot-01`, a mobile robot with a camera, a map of its office and manual drive; `lamp-01`, a lamp with writable state; `env-01`, a room sensor installed in the office; and `arm-01`, an arm with a switchable microphone. The page has three tabs: Devices, a card per device that opens a page per device; Flow, the calls and data between AgnesHub and the devices; and World, the office map with its zones, landmarks and devices. Add `?lang=zh-CN`, `?theme=light` or `?device=robot-01` to the address. Typing `health robot-01 hot` or `pose robot-01 lost` in the terminal pushes a device's health and position around.
+
+For a larger world, [`examples/mars-world`](../../examples/mars-world/README.md) is a Mars base in the browser with eleven virtual MHS devices. [Mars base](mars-world.md) shows how to command them from AGH.
+
+<a id="编写并检查设备"></a>
+
+## Write and check a device
+
+[Write a device](mhs-device.md) shows how to write a device with the Python or TypeScript library: a minimal device in both, the API of each, and common patterns. The Python examples are the smallest devices that pass the conformance suite: `examples/sensor.py`, a room sensor, and `examples/camera.py`, a test pattern streamed as H.264. Run Python commands from `packages/mhs/python`, where `uv run` sets up the environment. To connect the sensor to the development hub and see it on the page:
+
+```sh
+cd packages/mhs/python
+uv run python examples/sensor.py ws://127.0.0.1:4191
+```
+
+`mhs-check` is a test hub on port 8800. Start it, then point the device at it:
+
+```sh
+cd packages/mhs/python
+uv run python -m agnes_mhs.check
+uv run python examples/sensor.py          # in a second terminal
+```
+
+It reads the registration, works out which profiles apply, runs their scenarios and reports every requirement as `pass`, `fail`, `warn` (a **SHOULD** missed), `skip` (not run) or `manual` (needs an operator). The exit status is non-zero when a requirement failed.
+
+| Profile | Applies when the device declares |
+| --- | --- |
+| Core | Always |
+| Motion | A tool with `motion: true` |
+| Manual | Manual control |
+| Pause | A pausable tool |
+| Perception, Streaming | Data sources |
+| Maps | Maps, a placement, or a `pose` or `grid` source |
+| Derived perception | A derived source, such as detections |
+| Video | A video source |
+| Audio clip | A tool with a `clip` parameter |
+
+`--profile core,streaming` limits the run, `--no-motion` keeps the device still, `--interactive` asks the operator at the checks only a person can judge (did it really stop?), and `--report report.json` writes the report. The [conformance suite](../../packages/mhs/spec/mhs-conformance.md) describes every scenario and the remaining flags. To check a sample device of the development hub, from the repository root:
+
+```sh
+DEV_DEVICES=robot-01 DEV_DEVICES_TO=ws://127.0.0.1:8800 pnpm --filter @agnes/mhs dev-hub
+```
+
+To record a session and check every message against the schema, run `pnpm --filter @agnes/mhs dev 127.0.0.1:4181 --record session.jsonl`, point a device at `ws://127.0.0.1:4181`, then from `packages/mhs/python` run `uv run python -m agnes_mhs.validate ../session.<device>.jsonl`.
+
+<a id="在-agh-中使用设备"></a>
+
+## Use devices from AGH
+
+AgnesHub runs inside AGH as the `@agnes/mhs` plugin. It is optional: AGH runs without it. With a [source build of AGH](install.md), from the repository root:
+
+1. In a terminal, run `pnpm --filter @agnes/mhs plugin:install`. It builds the plugin and installs it through the normal [package flow](packages.md); confirm the preview. The package starts disabled.
+2. Start Web with AgnesHub's origin, so the workbench may connect to it: `AGNES_HUB_ORIGIN=http://127.0.0.1:4180 node packages/cli/dist/local/agnes.mjs serve`.
+3. In Web, choose Settings → Plugins → `@agnes/mhs` → Enable.
+4. Point devices at `ws://127.0.0.1:4180`, for example `DEV_DEVICES_TO=ws://127.0.0.1:4180 pnpm --filter @agnes/mhs dev-hub`.
+
+| Variable | Read by | Meaning |
 | --- | --- | --- |
-| Integration guide | Device capability descriptions, adapter placement, identity, and permissions | Coming soon |
-| Examples and reproduction steps | Start with read-only status or simulation; state prerequisites and expected results | Coming soon |
-| Device verification notes | Supported models, software versions, test environments, and known limits | Coming soon |
+| `AGNES_HUB_LISTEN` | The daemon, which runs the plugin | `host:port` AgnesHub listens on; default `127.0.0.1:4180`. A bare port listens on loopback |
+| `AGNES_HUB_DATA` | The daemon | AgnesHub's data directory; default `AGH_HOME/hub`. It keeps `maps.json`, the maps devices declared |
+| `AGNES_HUB_ORIGIN` | The Web server | AgnesHub's `http` or `https` origin, added to the workbench's content security policy |
 
-Adapter designs, supported devices, and examples will be announced after validation. No opening date is set. Integration is currently exploratory: the repository has no verified general-purpose MHS adapter or end-to-end device example.
+The daemon reads its variables when it starts: set them before the first command that starts it, or stop the daemon and start it again. The workbench panel connects to the `hubUrl` in `packages/mhs/plugin/client/agnes.client.json`, `ws://127.0.0.1:4180/ws/hub`; for another port, change it there and install again.
+
+While the plugin is enabled:
+
+- **The Devices panel** docks to the right of the workbench, with an entry in the sidebar and a full-screen console. Its tabs are Devices, Flow, Activity (the brain's device calls in the open conversation) and World.
+- **The conversation** shows a card for every device tool call the brain makes.
+- **AgnesHub's own address**, `http://127.0.0.1:4180/`, opens the Devices panel as a page of its own, with every tab except Activity, for a second screen or a phone.
+
+<a id="大脑能做什么"></a>
+
+## What the brain can do
+
+The brain uses devices through seven tools. A device's own tools are an argument of `call_device`, so the tool list stays the same as devices come and go.
+
+| Tool | What it does |
+| --- | --- |
+| `list_devices` | Every device: id, name, kind, availability, health, what it is doing, its tools and sources |
+| `read_device` | A device's state, health and position, and the newest data of the sources asked for |
+| `call_device` | Calls a device tool and waits up to 50 s; a longer job wakes the conversation when it ends |
+| `set_device` | Changes writable state |
+| `stop_device` | Stops one device, or every device |
+| `watch_device`, `unwatch_device` | Waits for a condition, such as a reading crossing a value, and wakes the conversation when it holds or times out |
+
+`read_device` declares `returnsImages`, so the camera pictures it reads reach the model. At the start of every turn the brain also gets a snapshot of the maps and devices. The device tools ask for no approval: device safety does not depend on them (see [device control boundaries](#device-control-boundaries)). The [AgnesHub API](../../packages/mhs/server/hub-api.md#15-the-brain) describes the snapshot and the wake-ups.
+
+<a id="地图位置与固定设备"></a>
+
+## Maps, places and fixed devices
+
+A device that knows its site, because it built a map or was configured with one, declares its maps with named **places**: a landmark is a point, such as a dock or a door, and a zone is an area, such as a room or a field ([MOS section 3.5](../../packages/mhs/spec/mos-spec.md#35-maps-and-places)). AgnesHub keeps every map it has seen, gives them to clients as `hub/world`, and says which zone each position is in. The brain sees the maps and their places in its snapshot, and sends a device to a place by calling the device's own tool with the place's coordinates. The World tab draws them.
+
+A device installed at a fixed spot, such as a wall camera or a room sensor, declares `localization: fixed` and its `placement`: a map, a position and a direction. AgnesHub refuses a fixed device without a placement, and shows it at its placement on the map.
 
 <a id="设备控制边界"></a>
 
 ## Device control boundaries
 
-The device and its control system remain responsible for real-time motion control, interlocks, emergency stops, and local takeover. Canceling an AGH task does not establish that a device has stopped safely. After a connection loss or missing receipt, inspect device state before repeating an action whose outcome is unknown. Desktop Computer Use verification does not establish physical device integration.
+The device and its control system remain responsible for real-time motion control, interlocks, emergency stops, and local takeover. MHS requires a device to enforce its own limits and to stop moving by itself when its connection to AgnesHub is lost; AgnesHub and the brain add checks, but device safety never relies on them. Stopping an AGH task does not establish that a device has stopped safely; `stop_device` asks the device to stop, and its reply says what it stopped. After a connection loss or missing result, read the device's state before repeating an action whose outcome is unknown.
 
-Start with [backend plugins](../develop/backend.md), [MCP](mcp.md), and [full-stack integration](../develop/fullstack.md) to understand the software extension paths. Share device requirements through the [feedback process](../develop/contributing.md). Code and documentation PRs remain limited to invited internal developers.
-
-<a id="english-summary"></a>
-
-## Current status at a glance
-
-**AGH's MHS integration documentation and examples are coming soon.** The direction covers task orchestration, human confirmation, and result verification. A verified general-purpose adapter, supported-device list, and end-to-end device example are not yet available, and no opening date has been announced. Device controllers retain responsibility for real-time control and physical safety.
+The AgnesHub API has no authentication or encryption. AgnesHub listens on loopback unless `AGNES_HUB_LISTEN` says otherwise; listen on a network address only on a trusted network, and never expose AgnesHub to the internet. Passing `mhs-check` shows that a device follows the protocol under the tested conditions; it does not certify the device as safe.
