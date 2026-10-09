@@ -2,11 +2,11 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { loadPrompt, operations, presets } from '@agnes/code'
 import { fakeProvider, textTurn } from '@agnes/core/testkit'
 import { createTestHost, runOnce } from '@agnes/host/testkit'
 import type { RequestBody, RouteDecl } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
-import { loadPrompt, operations, presets } from '../src/index.js'
 
 const dirs: string[] = []
 // createTestHost binds the production AI parser contract. Core's lower-level fakeProvider defaults
@@ -60,8 +60,8 @@ function routeFor(modelId: string): RouteDecl {
   }
 }
 
-const BASE_PACKAGE_DIR = fileURLToPath(new URL('../../base/', import.meta.url))
-const CODE_PACKAGE_DIR = fileURLToPath(new URL('../', import.meta.url))
+const BASE_PACKAGE_DIR = fileURLToPath(new URL('../../../../../base/', import.meta.url))
+const CODE_PACKAGE_DIR = fileURLToPath(new URL('../../../../../code/', import.meta.url))
 
 // Drives one real turn through a freshly assembled host and hands back the one request its
 // FakeProvider recorded. Pin the session key so the two-host fixture isolates its model axis;
@@ -153,7 +153,7 @@ it.each(['standard', 'hybrid', 'code'] as const)(
       dataDir,
       provider,
       packageDirs: {
-        '@agnes/base': fileURLToPath(new URL('../../base/', import.meta.url)),
+        '@agnes/base': fileURLToPath(new URL('../../../../../base/', import.meta.url)),
         '@agnes/code': CODE_PACKAGE_DIR,
       },
       packages: { '@agnes/code': { operations } },
@@ -203,7 +203,7 @@ it('does not advertise an SDK when hybrid has no loaded run_code', async () => {
   const { host } = await createTestHost({
     dataDir,
     provider,
-    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base/', import.meta.url)) },
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../../../../base/', import.meta.url)) },
     packages: { '@agnes/code': { operations } },
     presets: { standard: { name: 'standard', extends: 'base', disclosure: 'hybrid' } },
   })
