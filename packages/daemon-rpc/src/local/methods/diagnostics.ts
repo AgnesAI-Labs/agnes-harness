@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto'
 import { open } from 'node:fs/promises'
 import { release } from 'node:os' // guards-allow-platform: diagnostics report
 import { join } from 'node:path'
-import { type PackageAdminAuthorityResolver, requireLocalAdminAuthority } from '@agnes/daemon-admin/packages/index'
+import {
+  type PackageAdminAuthorityResolver,
+  requireLocalAdminAuthority,
+} from '@agnes/daemon-admin/packages/index'
 import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { Registry } from '@agnes/daemon-foundation/registry'
 import { memoryPrivateEvent } from '@agnes/extension-api'
@@ -114,7 +117,7 @@ export function registerDiagnostics(
     requireLocalAdminAuthority(c, deps.authority, false)
     if (input.settings && !input.test) requireLocalAdminAuthority(c, deps.authority, true)
     if (input.test) requireLocalAdminAuthority(c, deps.authority, true)
-    if ((input.settings || input.test) && await deps.readOnly(c))
+    if ((input.settings || input.test) && (await deps.readOnly(c)))
       throw rpcError('SEMANTIC_REJECTED', { reason: 'E_ADMIN_READ_ONLY' })
     try {
       const result = await administerObservability(input, deps.home)
@@ -217,11 +220,10 @@ export function registerDiagnostics(
       { name: 'daemon', status: 'ok' },
       { name: 'worker', status: 'unavailable' },
     ]
+    const telemetry = typeof deps.telemetry === 'function' ? deps.telemetry() : deps.telemetry
     return {
       schemaVersion: 1,
-      ...(deps.telemetry
-        ? { telemetry: typeof deps.telemetry === 'function' ? deps.telemetry() : deps.telemetry }
-        : {}),
+      ...(telemetry ? { telemetry } : {}),
       collectedAt: new Date(c.clock()).toISOString(),
       agh: { version: typeof AGNES_VERSION === 'string' ? AGNES_VERSION : 'dev' },
       runtime: {

@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@agnes/host": "workspace:*",
+    "@agnes/extension-api": "workspace:*",
     "@agnes/package-manager": "workspace:*",
     "@agnes/plugin-runtime": "workspace:*",
     "@agnes/protocol": "workspace:*",

@@ -94,7 +94,7 @@ export class RemoteSession {
     const runId = `feedback:${randomUUID()}`
     const release = this.beginActivity()
     const abort = () => {
-      void this.link.command('cancel', { runId }).catch(() => undefined)
+      void this.link.command('abort', { runId }).catch(() => undefined)
     }
     signal.addEventListener('abort', abort, { once: true })
     try {
@@ -267,10 +267,10 @@ export class RemoteSession {
     )) as import('@agnes/protocol').SystemPromptSnapshot
   }
 
-  async scan(q: unknown): Promise<unknown[]> {
+  async scan(q: unknown): Promise<EventEnvelope[]> {
     const query = q as Record<string, unknown>
     try {
-      return (await this.link.command('scan', query)) as unknown[]
+      return (await this.link.command('scan', query)) as EventEnvelope[]
     } catch (error) {
       if ((error as { data?: { code?: string } } | null)?.data?.code !== 'SCAN_PAGE_TOO_LARGE') throw error
       const { fromSeq, toSeq } = query

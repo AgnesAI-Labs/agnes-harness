@@ -25,6 +25,7 @@ import {
   sha256hex,
 } from '@agnes/host'
 import { hasPrivateDaclSync } from '@agnes/system-node'
+import { telemetrySnapshot } from '@agnes/observability'
 import { describe, expect, it } from 'vitest'
 import { buildConfig, type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
 import { MemoryTickets } from '../src/storage/lister.js'
@@ -898,7 +899,7 @@ describe('production supervisor storage', () => {
         join(dir, 'observability.json'),
         JSON.stringify({
           enabled: false,
-          includeContent: true,
+          redaction: 'content',
           endpoint: 'https://collector.example:4318/private?token=synthetic-secret',
           headers: { Authorization: 'synthetic-secret' },
         }),
@@ -941,12 +942,14 @@ describe('production supervisor storage', () => {
         tablesDir: join(dir, 'tables'),
       })
       expect(owners).toEqual(['@agnes/daemon', '@agnes/daemon/artifact-read-authority'])
-      expect(received?.telemetryStatus).toEqual({
+      if (!received) throw new Error('Supervisor options were not supplied')
+      const telemetry = telemetrySnapshot(received.config.home ?? received.config.dataDir)
+      expect(telemetry).toEqual({
         enabled: false,
         includeContent: true,
         endpointHosts: ['collector.example:4318'],
       })
-      expect(JSON.stringify(received?.telemetryStatus)).not.toContain('synthetic-secret')
+      expect(JSON.stringify(telemetry)).not.toContain('synthetic-secret')
       expect(received?.jobTables).toBeDefined()
       expect(received?.artifactAuthorityTable).toBeDefined()
       expect(received?.reclaim).toBeDefined()

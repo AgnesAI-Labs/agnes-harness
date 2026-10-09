@@ -74,6 +74,9 @@
     },
     {
       "path": "../observability"
+    },
+    {
+      "path": "../extension-api"
     }
   ]
 }

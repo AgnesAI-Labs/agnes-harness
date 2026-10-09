@@ -470,6 +470,9 @@ importers:
       '@agnes/error-sanitization':
         specifier: workspace:*
         version: link:../error-sanitization
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
       '@agnes/host':
         specifier: workspace:*
         version: link:../host
@@ -528,15 +531,15 @@ importers:
 
   packages/daemon-admin:
     dependencies:
-      '@agnes/extension-api':
-        specifier: workspace:*
-        version: link:../extension-api
       '@agnes/base':
         specifier: workspace:*
         version: link:../base
       '@agnes/daemon-foundation':
         specifier: workspace:*
         version: link:../daemon-foundation
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
       '@agnes/history-index':
         specifier: workspace:*
         version: link:../history-index
@@ -1539,9 +1542,6 @@ importers:
 
   packages/worker-runtime:
     dependencies:
-      '@agnes/observability':
-        specifier: workspace:*
-        version: link:../observability
       '@agnes/ai':
         specifier: workspace:*
         version: link:../ai
@@ -1557,6 +1557,9 @@ importers:
       '@agnes/host':
         specifier: workspace:*
         version: link:../host
+      '@agnes/observability':
+        specifier: workspace:*
+        version: link:../observability
       '@agnes/package-manager':
         specifier: workspace:*
         version: link:../package-manager

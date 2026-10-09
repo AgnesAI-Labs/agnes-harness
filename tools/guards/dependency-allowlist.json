@@ -96,6 +96,7 @@
   ],
   "@agnes/sdk": ["@agnes/protocol", "@agnes/system-node"],
   "@agnes/daemon": [
+    "@agnes/extension-api",
     "@agnes/protocol",
     "@agnes/base",
     "@agnes/host",

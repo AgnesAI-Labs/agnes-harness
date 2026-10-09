@@ -308,7 +308,7 @@ export async function handleCommand(
       try {
         return await draftFeedbackSkill(
           session,
-          p.feedback as import('@agnes/extension-api').FeedbackItem,
+          p.feedback as import('@agnes/protocol/gen/app-server').FeedbackItem,
           p.evidence as import('@agnes/protocol').EventEnvelope[],
           AbortSignal.any([abort.signal, AbortSignal.timeout(30_000)]),
         )
