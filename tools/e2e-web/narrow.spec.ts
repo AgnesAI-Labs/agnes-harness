@@ -116,6 +116,14 @@ for (const locale of ['en', 'zh-CN'])
       const capture = async (surface: string, width: number) => {
         expect(++shots).toBeLessThanOrEqual(12)
         const key = `narrow-${surface}-${locale}-${theme}-${width}`
+        // Frame the review itself, independent of the preceding plugin pane's scroll anchor.
+        if (surface === 'settings' && width === 375) {
+          await page.getByTestId('candidate-review').evaluate((review) => {
+            review.scrollIntoView({ block: 'start', behavior: 'instant' })
+          })
+          await expect(page.getByTestId('candidate-approve')).toBeInViewport({ ratio: 1 })
+          await expect(page.getByTestId('candidate-reject')).toBeInViewport({ ratio: 1 })
+        }
         await screen(page, info, key, [
           page.locator('.trace-stats .trace-stat'),
           page.getByTestId('request-trace').locator('time'),
@@ -144,7 +152,7 @@ for (const locale of ['en', 'zh-CN'])
       await inspect('wizard-welcome')
       await page.setViewportSize(phone)
       await capture('wizard', 375)
-      // Keep a real demo session pinned before an account is configured by the wizard.
+      // Seed tool history with the teaching model before configuring the wizard account.
       const client = await runtime.connect()
       const session = await client.session.new({
         cwd: runtime.workspace,
@@ -177,13 +185,16 @@ for (const locale of ['en', 'zh-CN'])
       )
       await prompt(session, 'call write {"path":"review notes.ts","content":"export const result = 42\\n"}')
       await prompt(session, '/goal --max-rounds 1 Review the delivery')
+      expect((await client.apis()).profile.models).toEqual(
+        expect.arrayContaining([expect.objectContaining({ route: 'demo', id: 'demo-model' })]),
+      )
       await page.getByTestId('first-run-next').click()
       await inspect('wizard-account')
       await page.getByTestId('first-run-add').click()
       const account = page.getByRole('dialog', { name: name('Add account', '添加账户'), exact: true })
       await expect(account).toBeVisible()
       await inspect('wizard-account-form')
-      // The test traverses every wizard step; the demo session above remains pinned.
+      // Traverse every wizard step with a real loopback account.
       const catalog = (await client.config.test({ providerId: 'deepseek' })).models
       const model = catalog[0]?.id
       if (!model) throw new Error('The installed provider must declare a fixture model')
@@ -227,10 +238,38 @@ for (const locale of ['en', 'zh-CN'])
           await page.keyboard.press('Escape')
           await expect(page.getByTestId('composer-agent')).toBeFocused()
         }
+        const route = (await client.config.get()).provider?.route
+        if (!route) throw new Error('The wizard must configure a provider route')
+        await expect
+          .poll(async () =>
+            (await client.apis()).profile.models?.some(
+              (entry) => entry.route === route && entry.id === model,
+            ),
+          )
+          .toBe(true)
+        const offered = (await client.apis()).profile.models
+        expect(offered).not.toEqual(
+          expect.arrayContaining([expect.objectContaining({ route: 'demo', id: 'demo-model' })]),
+        )
+        // Saving an account retires the teaching route. Select an offered model for continuation;
+        // recorded tool/request history still belongs to the demo model that actually produced it.
+        await session.setModel({ slot: 'primary', route, model })
+        await info.attach('configured-model-catalog.json', {
+          body: JSON.stringify(offered?.map(({ route, id }) => ({ route, id }))),
+          contentType: 'application/json',
+        })
         await page.goto(`${runtime.url}/?session=${session.id}`)
         await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed')
         for (const viewport of viewports) {
           await page.setViewportSize(viewport)
+          await expect(page.locator('#model')).toContainText(model)
+          await expect(page.locator('#model')).toBeEnabled()
+          await expect(page.locator('#composer-hint')).not.toHaveText(
+            name(
+              'The current model is no longer available; pick another model',
+              '当前模型已不可用，请重新选择模型',
+            ),
+          )
           await page.getByTestId('conversation-turn').first().getByTestId('turn-process-toggle').click()
           await page.getByTestId('tool-detail-toggle').first().click()
           await expect(page.getByTestId('tool-detail-text').first()).toContainText('Synthetic delivery')
