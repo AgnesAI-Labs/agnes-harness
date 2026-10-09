@@ -185,12 +185,61 @@ describe('preset Intelligent UI catalog', () => {
 })
 
 it('renders schema choices as radio/checkbox and preserves free text in the form draft', async () => {
-  const { questionSurface } = await import('../../base/extensions/interaction/src/question.js')
-  const question = questionSurface('question', [
-    { id: 'single', question: 'Pick one', options: ['A', 'B'] },
-    { id: 'multi', question: 'Pick several', options: ['A', 'B'], multiple: true, allowFreeText: true },
-    { id: 'text', question: 'Explain' },
-  ])
+  const question: UiSurface = {
+    id: 'question',
+    revision: 1,
+    title: 'Questions',
+    placement: { inline: true, workbench: true },
+    components: [
+      {
+        id: 'answers',
+        kind: 'form',
+        dataKey: 'draft',
+        actionIds: ['submit'],
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['single', 'multi', 'text'],
+          properties: {
+            single: {
+              title: 'Pick one',
+              type: 'string',
+              minLength: 1,
+              maxLength: 8192,
+              enum: ['A', 'B'],
+              'x-ui-choices': ['A', 'B'],
+            },
+            multi: {
+              title: 'Pick several',
+              type: 'array',
+              minItems: 1,
+              maxItems: 12,
+              uniqueItems: true,
+              items: { type: 'string', minLength: 1, maxLength: 8192 },
+              'x-ui-choices': ['A', 'B'],
+            },
+            text: { title: 'Explain', type: 'string', minLength: 1, maxLength: 8192 },
+          },
+        },
+      },
+    ],
+    data: { draft: {} },
+    actions: [
+      {
+        id: 'submit',
+        label: 'Submit',
+        tool: 'ui_submit',
+        style: 'primary',
+        argsTemplate: { surfaceId: { literal: 'question' }, answers: { from: 'input', key: 'answers' } },
+        paramsSchema: {
+          type: 'object',
+          required: ['surfaceId', 'answers'],
+          additionalProperties: false,
+          properties: { surfaceId: { const: 'question' }, answers: { type: 'object' } },
+        },
+      },
+    ],
+  }
   const host = document.createElement('div'),
     root = createRoot(host)
   const input = vi.fn(),

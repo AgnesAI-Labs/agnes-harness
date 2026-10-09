@@ -1,4 +1,5 @@
 /** @vitest-environment happy-dom */
+import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { ConfigSnapshot, UIOpeningResult, UIProjectionUpdate, UITimeline } from '@agnes/protocol'
@@ -71,6 +72,8 @@ vi.mock('@agnes/sdk/browser', async (importOriginal) => ({
   createClient: (...args: unknown[]) => {
     const client = sdk.createClient(...args)
     if (client && !('connectionState' in client)) client.connectionState = 'connected'
+    // Session binding is mocked below; these doubles have no cached SDK session handles.
+    if (client && !('sessions' in client)) client.sessions = new Map()
     if (vi.isMockFunction(client?.on) && !client.on.getMockImplementation())
       client.on.mockImplementation(() => () => undefined)
     return client
@@ -536,6 +539,7 @@ describe('web permission synchronization', () => {
       await vi.waitFor(() =>
         expect(old.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'use the current permission' }], {
           titleLocale: 'zh-CN',
+          references: [],
         }),
       )
       expect.soft(pendingLabel).toBe('请选择权限')
@@ -640,6 +644,7 @@ describe('web permission synchronization', () => {
     await vi.waitFor(() =>
       expect(old.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'confirmed permission' }], {
         titleLocale: 'zh-CN',
+        references: [],
       }),
     )
 
@@ -660,6 +665,7 @@ describe('web permission synchronization', () => {
     await vi.waitFor(() =>
       expect(old.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'confirmed after reconnect' }], {
         titleLocale: 'zh-CN',
+        references: [],
       }),
     )
     expect(old.setYolo).toHaveBeenCalledTimes(2)
@@ -915,6 +921,7 @@ describe('web session selection', () => {
       await vi.waitFor(() =>
         expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'use the remembered selection' }], {
           titleLocale: 'zh-CN',
+          references: [],
         }),
       )
       expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全权限')
@@ -988,6 +995,7 @@ describe('web session selection', () => {
     await vi.waitFor(() =>
       expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'create in beta' }], {
         titleLocale: 'zh-CN',
+        references: [],
       }),
     )
   })
@@ -1443,6 +1451,7 @@ describe('web session selection', () => {
     await vi.waitFor(() =>
       expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'must not cross sessions' }], {
         titleLocale: 'zh-CN',
+        references: [],
       }),
     )
   })
@@ -1697,6 +1706,7 @@ describe('web session selection', () => {
         await vi.waitFor(() =>
           expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'first message' }], {
             titleLocale: 'zh-CN',
+            references: [],
           }),
         )
         if (mode === 'failed') {
@@ -1827,6 +1837,7 @@ describe('web session selection', () => {
     await vi.waitFor(() =>
       expect(fresh.prompt).toHaveBeenLastCalledWith([{ type: 'text', text: '成功后的第二条消息' }], {
         titleLocale: 'en',
+        references: [],
       }),
     )
     expect(create).toHaveBeenCalledTimes(1)
@@ -2262,7 +2273,7 @@ describe('image composer submissions', () => {
       await vi.waitFor(() => expect(active.prompt).toHaveBeenCalledTimes(1))
       expect(active.prompt).toHaveBeenCalledWith(
         [{ type: 'image', mimeType, data: Buffer.from(bytes).toString('base64') }],
-        { titleLocale: 'zh-CN' },
+        { titleLocale: 'zh-CN', references: [] },
       )
     },
   )
@@ -2278,10 +2289,13 @@ describe('image composer submissions', () => {
     submit('请解释这张图')
 
     await vi.waitFor(() => expect(active.steer).toHaveBeenCalledTimes(1))
-    expect(active.steer).toHaveBeenCalledWith([
-      { type: 'text', text: '请解释这张图' },
-      { type: 'image', mimeType: 'image/png', data: imagePngData },
-    ])
+    expect(active.steer).toHaveBeenCalledWith(
+      [
+        { type: 'text', text: '请解释这张图' },
+        { type: 'image', mimeType: 'image/png', data: imagePngData },
+      ],
+      { references: [] },
+    )
     await vi.waitFor(() => expect(draft.value).toBe('请解释这张图'))
     expect(document.querySelector('.composer-image-preview img')).not.toBeNull()
     expect(document.getElementById('notice')?.textContent).toContain('follow-up rejected')
@@ -2290,18 +2304,45 @@ describe('image composer submissions', () => {
   it('accepts an image as a file attachment when the selected model has only text input', async () => {
     const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
     await start(active, false, ['text'])
+    const sha256 = createHash('sha256').update(imagePngBytes).digest('hex')
+    const attachment = {
+      type: 'resource_link',
+      name: 'one.png',
+      mimeType: 'image/png',
+      uri: `agnes-upload://${'a'.repeat(64)}/${sha256}/${imagePngBytes.length}/00000000-0000-0000-0000-000000000001`,
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (input, init) => {
+        const query = new URL(String(input), 'http://localhost').searchParams
+        let value: unknown
+        if (!init?.method) {
+          value = { limits: { maxBytes: 1024 * 1024, chunkBytes: 1024, allowedMimeTypes: ['image/png'] } }
+        } else if (query.get('operation') === 'chunk') {
+          if (!(init.body instanceof Blob)) throw new Error('missing upload chunk')
+          expect(new Uint8Array(await init.body.arrayBuffer())).toEqual(imagePngBytes)
+          expect(query.get('sha256')).toBe(sha256)
+          value = { offset: imagePngBytes.length }
+        } else {
+          const control = JSON.parse(String(init.body)) as { operation: string; sha256?: string }
+          if (control.operation === 'finish') {
+            expect(control.sha256).toBe(sha256)
+            value = { attachment }
+          } else value = { offset: 0 }
+        }
+        return new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } })
+      }),
+    )
     await attachPng(false)
     await vi.waitFor(() => expect(document.querySelector('.composer-file-preview')).not.toBeNull())
-
-    expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(false)
+    await vi.waitFor(() =>
+      expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(false),
+    )
     expect(document.querySelector('.composer-image-preview img')).toBeNull()
     expect(document.getElementById('composer-attach')?.getAttribute('aria-disabled')).toBe('false')
     submit('')
     await vi.waitFor(() =>
-      expect(active.prompt).toHaveBeenCalledWith(
-        [{ type: 'file', name: 'one.png', mimeType: 'image/png', data: imagePngData }],
-        { titleLocale: 'zh-CN' },
-      ),
+      expect(active.prompt).toHaveBeenCalledWith([attachment], { titleLocale: 'zh-CN', references: [] }),
     )
   })
 

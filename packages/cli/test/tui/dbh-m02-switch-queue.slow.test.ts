@@ -85,6 +85,11 @@ function gatedEndpoint(opts: { holdOpen?: boolean; refuseT2?: boolean } = {}) {
       turns: [],
       nodes: [],
     }))
+    .on('_agnes/v1/submit', (params) => {
+      expect(params).toMatchObject({ kind: 'control', payload: { action: 'cancel' } })
+      return { seq: 1, replayed: false }
+    })
+    .on('_agnes/v1/submit.ack', () => ({}))
     .on('session/prompt', async (params) => {
       const p = params as { sessionId: string; prompt: Array<{ text?: string }> }
       // Only the very first prompt on s1 is held open: it is the "turn in flight".
@@ -103,8 +108,13 @@ function gatedEndpoint(opts: { holdOpen?: boolean; refuseT2?: boolean } = {}) {
       })
   const cancels = () =>
     endpoint.calls
-      .filter((call) => call.method === 'session/cancel')
-      .map((call) => (call.params as { sessionId: string }).sessionId)
+      .filter(
+        (call) =>
+          call.method === '_agnes/v1/submit' &&
+          (call.params as { kind: string; payload: { action: string } }).kind === 'control' &&
+          (call.params as { payload: { action: string } }).payload.action === 'cancel',
+      )
+      .map((call) => (call.params as { payload: { sessionId: string } }).payload.sessionId)
   return { endpoint, release: turn.release, releaseOpen: opening.release, count, prompts, cancels }
 }
 
