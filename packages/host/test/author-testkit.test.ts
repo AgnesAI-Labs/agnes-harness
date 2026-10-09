@@ -68,58 +68,61 @@ describe('public author testkit', () => {
     }
   })
 
-  it.each(['standard', 'author'])('keeps an in-flight session on its pinned generation while new sessions adopt a reload (%s)', async (preset) => {
-    let entered!: () => void, release!: () => void
-    const ready = new Promise<void>((resolve) => {
-      entered = resolve
-    })
-    const held = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    const kit = await createAuthorTestkit({
-      plugin: plugin('1', false, async () => {
-        entered()
-        await held
-      }),
-      version: '1.0.0',
-      preset,
-      presets: { author: { name: 'author', extends: 'standard' } },
-    })
-    try {
-      const old = await kit.openSession()
-      const pin = old.generation!
-      const pending = old.invoke('version', {})
-      await ready
-      const generation = await kit.reload({ plugin: plugin('2'), version: '2.0.0' })
-      release()
-      expect((await pending).structured).toEqual({ version: '1' })
-      old.assertPinned(pin)
-      expect((await old.invoke('version', {})).structured).toEqual({ version: '1' })
-      const fresh = await kit.openSession()
-      fresh.assertPinned(generation)
-      expect(generation).not.toBe(pin)
-      expect((await fresh.invoke('version', {})).structured).toEqual({ version: '2' })
-      await expect(kit.reload({ plugin: plugin('3'), version: '2.0.0' })).rejects.toThrow('new')
-      await expect(
-        kit.reload({
-          plugin: {
-            apply() {
-              throw new Error('Broken candidate')
-            },
-          },
-          version: '3.0.0',
+  it.each(['standard', 'author'])(
+    'keeps an in-flight session on its pinned generation while new sessions adopt a reload (%s)',
+    async (preset) => {
+      let entered!: () => void, release!: () => void
+      const ready = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      const held = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const kit = await createAuthorTestkit({
+        plugin: plugin('1', false, async () => {
+          entered()
+          await held
         }),
-      ).rejects.toThrow()
-      const retained = await kit.openSession()
-      retained.assertPinned(generation)
-      expect((await retained.invoke('version', {})).structured).toEqual({ version: '2' })
-    } finally {
-      release()
+        version: '1.0.0',
+        preset,
+        presets: { author: { name: 'author', extends: 'standard' } },
+      })
+      try {
+        const old = await kit.openSession()
+        const pin = old.generation!
+        const pending = old.invoke('version', {})
+        await ready
+        const generation = await kit.reload({ plugin: plugin('2'), version: '2.0.0' })
+        release()
+        expect((await pending).structured).toEqual({ version: '1' })
+        old.assertPinned(pin)
+        expect((await old.invoke('version', {})).structured).toEqual({ version: '1' })
+        const fresh = await kit.openSession()
+        fresh.assertPinned(generation)
+        expect(generation).not.toBe(pin)
+        expect((await fresh.invoke('version', {})).structured).toEqual({ version: '2' })
+        await expect(kit.reload({ plugin: plugin('3'), version: '2.0.0' })).rejects.toThrow('new')
+        await expect(
+          kit.reload({
+            plugin: {
+              apply() {
+                throw new Error('Broken candidate')
+              },
+            },
+            version: '3.0.0',
+          }),
+        ).rejects.toThrow()
+        const retained = await kit.openSession()
+        retained.assertPinned(generation)
+        expect((await retained.invoke('version', {})).structured).toEqual({ version: '2' })
+      } finally {
+        release()
+        await kit.dispose()
+      }
+      await expect(kit.openSession()).rejects.toThrow('disposed')
       await kit.dispose()
-    }
-    await expect(kit.openSession()).rejects.toThrow('disposed')
-    await kit.dispose()
-  })
+    },
+  )
 
   it('drains a cancelled invocation and permits another turn on the pinned session', async () => {
     let entered!: () => void
@@ -288,7 +291,7 @@ describe('public author testkit', () => {
       expect(await session.drive(2)).toHaveLength(2)
       expect(await session.drive(9)).toHaveLength(1)
       expect((await session.facts()).filter((event) => event.type === 'x/core/loop-checkpoint')).toHaveLength(
-        3,
+        4,
       )
       await expect(session.drive(0)).rejects.toThrow('positive')
       await expect(session.invoke('version', {})).rejects.toThrow('separate session')

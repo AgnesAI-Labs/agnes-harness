@@ -150,14 +150,21 @@ describe('Inbox segment', () => {
       code: 'E_RELATION',
     })
     expect(await log.scan({ fromSeq: before + 1, limit: 10 })).toMatchObject([
-      { type: 'x/core/control', data: { outcome: 'refused', reason: 'QUEUED_INPUT_GONE', itemId: 'missing' } },
+      {
+        type: 'x/core/control',
+        data: { outcome: 'refused', reason: 'QUEUED_INPUT_GONE', itemId: 'missing' },
+      },
     ])
     await session.acceptInput()
     expect((await log.scan({ type: 'user/message', limit: 5 }))[0]?.data).toMatchObject({
       content: [{ type: 'text', text: 'C' }],
       kind: 'follow_up',
     })
-    expect((await session.projectUI()).pendingInputs?.map((item) => item.preview)).toEqual(['B', 'D', 'steer'])
+    expect((await session.projectUI()).pendingInputs?.map((item) => item.preview)).toEqual([
+      'B',
+      'D',
+      'steer',
+    ])
     const replay = await import('@agnes/core-ledger/project/ui')
     expect(
       (await replay.projectUI(await log.scan({ fromSeq: 1, limit: 100 }), { sessionKey: session.key }))

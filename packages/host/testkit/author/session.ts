@@ -492,8 +492,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
           } catch (error) {
             // A rejected candidate must not remain the catalog for future admissions.
             const restored = await owner.applyRuntimeTarget(current)
-            if (!restored.ok)
-              throw new AggregateError([error], 'Author plugin publication recovery failed')
+            if (!restored.ok) throw new AggregateError([error], 'Author plugin publication recovery failed')
             throw error
           }
         } finally {
