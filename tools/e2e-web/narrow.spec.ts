@@ -124,6 +124,13 @@ for (const locale of ['en', 'zh-CN'])
             if (button.parentElement) button.parentElement.scrollLeft = 0
           })
         }
+        if (surface === 'session') {
+          // Opening a tool after the phone flow can retain the previous reading position.
+          // Frame the completed first turn from its start at both widths.
+          const conversation = page.getByRole('region', { name: /^(Conversation|对话)$/, exact: true })
+          await conversation.evaluate((viewport) => viewport.scrollTo({ top: 0, behavior: 'instant' }))
+          await expect.poll(() => conversation.evaluate((viewport) => viewport.scrollTop)).toBe(0)
+        }
         // Frame the review itself, independent of the preceding plugin pane's scroll anchor.
         if (surface === 'settings' && width === 375) {
           await page.getByTestId('candidate-review').evaluate((review) => {
