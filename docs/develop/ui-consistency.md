@@ -19,12 +19,12 @@ Page actions belong beside the title; row actions belong beside the row; save/ca
 | Need | Public web-ui component | Contract to retain |
 | --- | --- | --- |
 | Text, search, URL, password, numeric input | `SettingsInput` | `type`, ID, ref, autocomplete, limits, validation and change handler |
-| Multiline text, Markdown and command drafts | `SettingsTextArea` | Selection, IME, keyboard shortcuts, ref and draft ownership |
+| Multiline text, Markdown and command drafts | `SettingsTextArea` | Selection, IME, keyboard shortcuts, ref and draft ownership; `presentation="plain"` retains specialized composer/terminal surfaces |
 | Select with existing native form/controller semantics | `SettingsSelect` / `SettingsOptionSelect` | Native value, options, form submission and events |
 | Searchable or rich picker | `Select`; `createSelectPicker` for its supported DOM bridge | Accessible name, keyboard selection, caller-owned state and popup lifecycle |
 | Boolean setting | `Switch` or `StateSwitch` | Controlled checked/disabled state; `StateSwitch` retains row propagation semantics |
 | Labeled compact checkbox | `SettingsCheckbox` | Checked state, name/value, accessible label and form semantics |
-| Choice group | Shared choice presentation inside web-ui | Preserve radio semantics, roving/arrow-key behavior and existing name/value selectors; implementation is still needed |
+| Choice group | `SettingsChoice` | Preserve radio semantics, arrow-key behavior and existing name/value selectors |
 | Action | `Button` | `htmlType`, disabled/loading state, accessible name and existing handler |
 | Related views | `Tabs` | Current IDs, focus behavior, `aria-controls` and selected state |
 | Overlay / anchored picker | `Dialog` / `Popover` | Escape, focus return, layering and cleanup |

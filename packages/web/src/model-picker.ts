@@ -335,7 +335,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
           ),
         ),
       ),
-      createElement('input', {
+      createElement(webUi.SettingsInput, {
         key: 'custom',
         id: 'session-model-window',
         className: 'model-picker-budget',

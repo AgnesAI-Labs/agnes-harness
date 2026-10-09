@@ -1,4 +1,5 @@
 import type { SessionControlledChild } from '@agnes/protocol/gen/agnes-v1'
+import { Button, SettingsInput, SettingsState } from '@agnes/web-ui'
 import { type ChangeEvent, createElement, type ReactNode, useState } from 'react'
 import type { ComposerDependencies } from './contracts.js'
 
@@ -80,9 +81,9 @@ export function ChildControlRow({
       }),
     ),
     createElement(
-      'button',
+      Button,
       {
-        type: 'button',
+        htmlType: 'button',
         'data-testid': 'child-stop',
         disabled: disabled || pending || !child.controls.stop,
         title: child.controls.stop ? t('composer.child.stop') : t('composer.control.unsupported'),
@@ -90,7 +91,7 @@ export function ChildControlRow({
       },
       t('composer.child.stop'),
     ),
-    createElement('input', {
+    createElement(SettingsInput, {
       'data-testid': 'child-continue-message',
       'aria-label': t('composer.child.message'),
       value: text,
@@ -98,9 +99,9 @@ export function ChildControlRow({
       onChange: (event: ChangeEvent<HTMLInputElement>) => setText(event.currentTarget.value),
     }),
     createElement(
-      'button',
+      Button,
       {
-        type: 'button',
+        htmlType: 'button',
         'data-testid': 'child-continue',
         disabled: disabled || pending || !child.controls.continue || !text.trim(),
         title: child.controls.continue ? t('composer.child.continue') : t('composer.control.unsupported'),
@@ -108,6 +109,6 @@ export function ChildControlRow({
       },
       t('composer.child.continue'),
     ),
-    error ? createElement('p', { role: 'alert' }, error) : null,
+    error ? createElement(SettingsState, { tone: 'error' }, error) : null,
   )
 }

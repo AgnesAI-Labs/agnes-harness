@@ -47,6 +47,13 @@ it('uses the injected catalog for provider, base URL and API key field labels', 
     expect(host.querySelector('#config-model-settings-hint')?.textContent).toBe(
       '新会话沿用默认值 · translated',
     )
+    const key = host.querySelector<HTMLInputElement>('#config-api-key')!
+    expect(key.type).toBe('password')
+    expect(key.autocomplete).toBe('new-password')
+    expect(key.getAttribute('aria-describedby')).toBe('config-key-hint')
+    expect(host.querySelector<HTMLInputElement>('#config-account-name')?.maxLength).toBe(128)
+    expect(host.querySelector<HTMLInputElement>('#config-context-window')?.maxLength).toBe(32)
+    expect(host.querySelector<HTMLButtonElement>('#config-save')?.getAttribute('form')).toBe('config-form')
   } finally {
     root.unmount()
     host.remove()

@@ -43,3 +43,5 @@ StateSwitch also renders Boolean schema/settings fields; optional id/testId and 
 | `SettingsCode` | A | 原生 pre | 只读代码区域；可用键盘滚动，来源名称由调用方提供 |
 
 `terminalScreen` / `terminalKey` are shared pure-text VT and keyboard helpers for session and settings terminals; they do not create processes or render HTML. / 两者是会话与设置终端共用的纯文本 VT 和键盘辅助函数，不创建进程或渲染 HTML。
+
+| `SettingsChoice` | A | 原生 radio/checkbox | 共享外观选择呈现；保留 name/value 与方向键、表单语义 / Shared choice presentation preserves native group and form semantics |

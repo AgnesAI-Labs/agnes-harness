@@ -6,6 +6,7 @@ import {
   Button,
   Select,
   SettingsState,
+  SettingsTextArea,
   terminalKey,
   terminalScreen,
 } from '@agnes/web-ui'
@@ -346,7 +347,8 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
             </dl>
           </details>
           {job.truncated && <p role="status">{t('workbench.terminal.truncated')}</p>}
-          <textarea
+          <SettingsTextArea
+            presentation="plain"
             ref={outputElement}
             className="workbench-terminal-output"
             data-testid="workbench-terminal-output"

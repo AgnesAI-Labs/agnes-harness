@@ -1,5 +1,5 @@
 import type { AdminFeedbackResult, FeedbackItem } from '@agnes/protocol/gen/app-server'
-import { Button, Field, SettingsCard, SettingsSelect } from '@agnes/web-ui'
+import { Button, Field, SettingsCard, SettingsInput, SettingsSelect } from '@agnes/web-ui'
 import { feedbackCategories, feedbackRequest, useFeedbackText } from '@agnes/web-units/message-feedback'
 import { useEffect, useState } from 'react'
 
@@ -39,7 +39,7 @@ export function FeedbackAdminPanel() {
     <SettingsCard title={t('admin')} data-testid="feedback-admin">
       <p>{t('privacy')}</p>
       <Field label={t('sessionFilter')}>
-        <input
+        <SettingsInput
           aria-label={t('sessionFilter')}
           data-testid="feedback-session-filter"
           value={session}

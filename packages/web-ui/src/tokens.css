@@ -247,11 +247,14 @@ textarea.agnes-settings-input {
   background: var(--agnes-bg-card);
   cursor: not-allowed;
 }
+.agnes-settings-input[type="radio"],
 .agnes-settings-input[type="checkbox"],
 .agnes-settings-checkbox input {
   width: 1rem;
   height: 1rem;
   min-height: 0;
+  padding: 0;
+  flex: 0 0 auto;
   margin: 0;
   accent-color: var(--agnes-text-emphasis);
 }

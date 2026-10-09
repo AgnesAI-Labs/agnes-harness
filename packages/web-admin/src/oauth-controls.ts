@@ -1,7 +1,7 @@
 import type { ConfigModel, ConfigOAuthInput, ConfigProvider } from '@agnes/protocol'
 import { loginSubscription, type OAuthClient } from '@agnes/sdk/browser'
 import { tr } from '@agnes/web-foundation/locale-bridge'
-import { Button, createRegionHost, Field, mountRegion } from '@agnes/web-ui'
+import { Button, createRegionHost, Field, mountRegion, SettingsInput } from '@agnes/web-ui'
 import { createElement } from 'react'
 
 type UiButton = { button: HTMLButtonElement; host: HTMLElement; dispose?: () => void }
@@ -38,7 +38,7 @@ function uiField(parent: HTMLElement): UiField {
       createElement(
         Field,
         { className: 'form-field oauth-prompt', hidden: true, label: tr('settings.oauth.prompt') },
-        createElement('input', { autoComplete: 'off', type: 'password' }),
+        createElement(SettingsInput, { autoComplete: 'off', type: 'password' }),
       ),
     )
     const field = host.querySelector('label')

@@ -1,4 +1,5 @@
 import type { SessionControlFact } from '@agnes/protocol/gen/agnes-v1'
+import { SettingsInput, SettingsSelect } from '@agnes/web-ui'
 import {
   BADGE_KEY,
   buildGantt,
@@ -1260,7 +1261,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
         allTurnsCollapsed ? traceText('trace.expandTurns') : traceText('trace.collapseTurns'),
       ),
       createElement(
-        'select',
+        SettingsSelect,
         {
           className: 'trace-type-filter',
           'aria-label': traceText('trace.filter.label'),
@@ -1273,7 +1274,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
           createElement('option', { key: kind, value: kind }, traceText(BADGE_KEY[kind]!)),
         ),
       ),
-      createElement('input', {
+      createElement(SettingsInput, {
         className: 'trace-search',
         type: 'search',
         placeholder: traceText('trace.search'),
@@ -1296,7 +1297,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
         { className: 'trace-gantt-controls' },
         createElement('label', { htmlFor: 'trace-timeline-mode' }, traceText('trace.timeline.label')),
         createElement(
-          'select',
+          SettingsSelect,
           {
             id: 'trace-timeline-mode',
             value: timelineMode,

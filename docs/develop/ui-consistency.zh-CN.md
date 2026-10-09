@@ -19,12 +19,12 @@
 | 用途 | web-ui 公开组件 | 必须保留的合同 |
 | --- | --- | --- |
 | 文本、搜索、URL、密码、数字输入 | `SettingsInput` | type、ID、ref、自动填充、上限、校验及变更处理器 |
-| 多行文本、Markdown、命令草稿 | `SettingsTextArea` | 选区、输入法、快捷键、ref 和草稿归属 |
+| 多行文本、Markdown、命令草稿 | `SettingsTextArea` | 选区、输入法、快捷键、ref 和草稿归属；`presentation="plain"` 保留 composer/terminal 专用表面 |
 | 依赖原生表单/控制器的选择器 | `SettingsSelect` / `SettingsOptionSelect` | 原生 value、选项、表单提交与事件 |
 | 可搜索或丰富选择器 | `Select`；受支持的 DOM 桥接用 `createSelectPicker` | 可访问名称、键盘选择、调用方状态及弹层生命周期 |
 | 布尔设置 | `Switch` / `StateSwitch` | 受控 checked/disabled；StateSwitch 保留行内事件传播语义 |
 | 带标签的紧凑复选框 | `SettingsCheckbox` | checked、name/value、可访问标签与表单语义 |
-| 单选组 | web-ui 内共享的选择组呈现 | 保留 radio 语义、方向键行为及既有 name/value 选择器；仍待实现 |
+| 单选组 | `SettingsChoice` | 保留 radio 语义、方向键行为及既有 name/value 选择器 |
 | 操作 | `Button` | htmlType、禁用/忙碌态、可访问名称及处理器 |
 | 关联视图 | `Tabs` | ID、焦点、aria-controls 与选中状态 |
 | 模态/锚点弹层 | `Dialog` / `Popover` | Escape、焦点归还、层级及清理 |

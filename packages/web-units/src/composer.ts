@@ -17,6 +17,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
 import { USER_MESSAGE_ATTACHMENT_LIMITS } from '@agnes/protocol-validation'
+import { Button, SettingsTextArea } from '@agnes/web-ui'
 import {
   type ChangeEvent,
   createElement,
@@ -241,9 +242,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 ? createElement('small', null, `${(attachment.size / 1024).toFixed(1)} KiB`)
                 : null,
               createElement(
-                'button',
+                Button,
                 {
-                  type: 'button',
+                  htmlType: 'button',
                   'data-remove-image': true,
                   'data-testid': 'attachment-remove',
                   'aria-label': dependencies.translate('composer.attachment.remove', { index: index + 1 }),
@@ -271,7 +272,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           { className: 'visually-hidden', htmlFor: 'prompt' },
           dependencies.translate('composer.input.label'),
         ),
-        createElement('textarea', {
+        createElement(SettingsTextArea, {
+          presentation: 'plain',
           ref: prompt,
           id: 'prompt',
           'data-agnes-region': 'composer-input',
@@ -306,11 +308,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         { className: 'composer-controls' },
         slots?.left,
         createElement(
-          'button',
+          Button,
           {
             id: 'composer-workspace',
             className: 'composer-workspace',
-            type: 'button',
+            htmlType: 'button',
             'aria-haspopup': 'dialog',
             title: view.workspace.title,
             disabled: view.workspace.disabled,
@@ -342,12 +344,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         ),
         slots?.permission,
         createElement(
-          'button',
+          Button,
           {
             ref: permission,
             id: 'composer-permission',
             className: 'composer-permission',
-            type: 'button',
+            htmlType: 'button',
             'aria-haspopup': 'listbox',
             'aria-expanded': false,
             'aria-label': dependencies.translate('composer.permission.accessible'),
@@ -384,11 +386,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           'div',
           { className: 'model-field' },
           createElement(
-            'button',
+            Button,
             {
               ref: model,
               id: 'model',
-              type: 'button',
+              htmlType: 'button',
               'aria-haspopup': 'listbox',
               'aria-expanded': false,
               'aria-label': view.model.accessibleName,
@@ -424,9 +426,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         ),
         view.controls
           ? createElement(
-              'button',
+              Button,
               {
-                type: 'button',
+                htmlType: 'button',
                 'data-testid': 'composer-pause-resume',
                 hidden: view.cancel.hidden,
                 disabled: view.controls.disabled || view.controls.pending || !view.controls.pauseSupported,
@@ -449,12 +451,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             )
           : null,
         createElement(
-          'button',
+          Button,
           {
             'data-testid': 'composer-cancel',
             id: 'cancel',
             className: 'secondary-button compact',
-            type: 'button',
+            htmlType: 'button',
             hidden: view.cancel.hidden,
             disabled: view.cancel.disabled,
             onClick: onCancel,
@@ -476,10 +478,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         }),
         createElement('span', { id: 'composer-image-hint', className: 'visually-hidden' }, imageHint),
         createElement(
-          'button',
+          Button,
           {
             id: 'composer-attach',
-            type: 'button',
+            htmlType: 'button',
             className: 'secondary-button compact',
             'aria-label': dependencies.translate('composer.attachment.add'),
             'aria-describedby': 'composer-image-hint',
@@ -517,11 +519,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           ),
         ),
         createElement(
-          'button',
+          Button,
           {
             id: 'send',
             className: 'primary-button',
-            type: 'submit',
+            htmlType: 'submit',
             disabled: view.send.disabled,
             'data-mode': view.send.mode,
             'aria-label': view.send.label,

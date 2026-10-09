@@ -1,3 +1,4 @@
+import { Button, SettingsTextArea } from '@agnes/web-ui'
 import { type ChangeEvent, createElement, useState } from 'react'
 import type { ComposerDependencies } from './contracts.js'
 
@@ -21,7 +22,7 @@ export function QueuedInputEditor({
     'div',
     null,
     editing
-      ? createElement('textarea', {
+      ? createElement(SettingsTextArea, {
           'data-testid': 'queued-steer-editor',
           'aria-label': t('composer.queue.edit'),
           value: draft,
@@ -30,9 +31,9 @@ export function QueuedInputEditor({
         })
       : null,
     createElement(
-      'button',
+      Button,
       {
-        type: 'button',
+        htmlType: 'button',
         'data-testid': 'queued-steer-edit',
         disabled: disabled || pending || (editing && !draft.trim()),
         onClick: () => {
@@ -52,8 +53,8 @@ export function QueuedInputEditor({
     ),
     editing
       ? createElement(
-          'button',
-          { type: 'button', disabled: pending, onClick: () => setEditing(false) },
+          Button,
+          { htmlType: 'button', disabled: pending, onClick: () => setEditing(false) },
           t('composer.queue.discardEdit'),
         )
       : null,

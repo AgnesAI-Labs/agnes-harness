@@ -1,4 +1,5 @@
 import { fallbackT, type Translate } from './locales/index.js'
+import { SettingsInput } from './settings-layout.js'
 import { SettingsOptionSelect } from './settings-option-select.js'
 import { Button } from './ui/button.js'
 import { Field } from './ui/field.js'
@@ -29,7 +30,7 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
           <fieldset className="config-section">
             <legend>{t('accounts.connectionLegend')}</legend>
             <Field className="form-field" label={t('accounts.nameLabel')}>
-              <input
+              <SettingsInput
                 id="config-account-name"
                 maxLength={128}
                 autoComplete="off"
@@ -47,10 +48,10 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
               <SettingsOptionSelect id="config-auth-method" />
             </Field>
             <Field className="form-field form-field-wide" label={t('accounts.baseUrlLabel')}>
-              <input id="config-base-url" autoComplete="url" />
+              <SettingsInput id="config-base-url" autoComplete="url" />
             </Field>
             <Field className="form-field form-field-wide" label={t('accounts.apiKeyLabel')}>
-              <input
+              <SettingsInput
                 id="config-api-key"
                 type="password"
                 autoComplete="new-password"
@@ -78,7 +79,7 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
               <SettingsOptionSelect id="config-thinking" />
             </Field>
             <Field className="form-field" label={t('accounts.contextBudgetLabel')}>
-              <input
+              <SettingsInput
                 id="config-context-window"
                 type="text"
                 maxLength={32}

@@ -71,6 +71,7 @@ export { createSettingsIcon } from './settings-icon.js'
 export {
   SettingsCard,
   SettingsCheckbox,
+  SettingsChoice,
   SettingsCode,
   SettingsDetails,
   SettingsInput,

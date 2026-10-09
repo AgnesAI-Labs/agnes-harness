@@ -1,4 +1,4 @@
-import { renderRegion } from '@agnes/web-ui'
+import { renderRegion, SettingsChoice } from '@agnes/web-ui'
 import { createElement, type ReactNode } from 'react'
 import { tr } from './locale-bridge.js'
 import { applyLocaleText, isUiLocale, syncLocaleRadios, type UiLocale } from './locale-preference.js'
@@ -129,23 +129,15 @@ type SkinOptionsProps = {
 }
 
 function skinOption(value: string, name: string, hint: string, props: SkinOptionsProps): ReactNode {
-  return createElement(
-    'label',
-    { className: 'appearance-option' },
-    createElement('input', {
-      type: 'radio',
-      name: 'agnes-skin',
-      value,
-      checked: value === props.selected,
-      onChange: () => props.onChoose(value),
-    }),
-    createElement(
-      'span',
-      { className: 'appearance-option-copy' },
-      createElement('span', { className: 'appearance-option-name' }, name),
-      hint === '' ? null : createElement('span', { className: 'appearance-option-hint' }, hint),
-    ),
-  )
+  return createElement(SettingsChoice, {
+    type: 'radio',
+    name: 'agnes-skin',
+    value,
+    checked: value === props.selected,
+    label: name,
+    hint,
+    onChange: () => props.onChoose(value),
+  })
 }
 
 function skinOptions(props: SkinOptionsProps): ReactNode {

@@ -96,17 +96,20 @@ export const SettingsInput = forwardRef<
     />
   )
 })
-export const SettingsTextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
-  function SettingsTextArea(props, ref) {
-    return (
-      <textarea
-        {...props}
-        ref={ref}
-        className={['agnes-settings-input', props.className].filter(Boolean).join(' ')}
-      />
-    )
-  },
-)
+export const SettingsTextArea = forwardRef<
+  HTMLTextAreaElement,
+  TextareaHTMLAttributes<HTMLTextAreaElement> & { presentation?: 'field' | 'plain' }
+>(function SettingsTextArea({ presentation = 'field', ...props }, ref) {
+  return (
+    <textarea
+      {...props}
+      ref={ref}
+      className={[presentation === 'field' ? 'agnes-settings-input' : 'agnes-ui-textarea', props.className]
+        .filter(Boolean)
+        .join(' ')}
+    />
+  )
+})
 /** Native select preserves form semantics, following SettingsOptionSelect's account-dialog pattern. */
 export function SettingsSelect(props: SelectHTMLAttributes<HTMLSelectElement>) {
   return <select {...props} className={['agnes-settings-input', props.className].filter(Boolean).join(' ')} />
@@ -175,6 +178,27 @@ export function SettingsCheckbox({
   return (
     <label className="agnes-settings-checkbox">
       <input {...props} type="checkbox" /> <span>{label}</span>
+    </label>
+  )
+}
+
+/** A native choice keeps radio-group keyboard and form semantics in the shared layer. */
+export function SettingsChoice({
+  label,
+  hint,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement> & {
+  type: 'radio' | 'checkbox'
+  label: ReactNode
+  hint?: ReactNode
+}) {
+  return (
+    <label className="appearance-option">
+      <SettingsInput {...props} />
+      <span className="appearance-option-copy">
+        <span className="appearance-option-name">{label}</span>
+        {hint && <span className="appearance-option-hint">{hint}</span>}
+      </span>
     </label>
   )
 }
