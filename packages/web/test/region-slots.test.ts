@@ -265,11 +265,13 @@ describe('migrated transcript region', () => {
       expect(transcript.querySelector<HTMLElement>('[data-agnes-timeline-native]')?.hidden).toBe(false)
     }, committed)
 
+    // The conversation remounts this region for every new session; plugin entries outlive it.
+    mount.dispose()
+    expect(slots.spec('tool.view.cordis')).toMatchObject({ kind: 'keyed', scope: 'session' })
+    expect(slots.entries('conversation.chat.assistant-actions')).toHaveLength(1)
+    expect(slots.entries('tool.view.cordis')).toHaveLength(1)
     removeActions()
     removeCordis()
-    mount.dispose()
-    expect(slots.spec('conversation.chat.assistant-actions')).toBeUndefined()
-    expect(slots.spec('tool.view.cordis')).toBeUndefined()
   })
 })
 

@@ -4,6 +4,13 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+`ToolMeta` gains the optional `returnsImages`. A tool that sets it to true declares that its results carry
+pictures for the model: the call records `returnsImages: true` in its resolved policy, and request media
+sends a result's images to the model when the result is closed-world (trusted) and its call declared this.
+Before, only `read`, `computer_use` and `document_read` could put images in front of the model; another
+tool's images failed the next request. A tool that leaves the key out, every existing tool among them,
+behaves exactly as before, and its recorded policy and policy hash are unchanged.
+
 `ToolContext` gains the optional read-only `defaultTimeoutMs`: the preset-wide default for a tool call
 (`tools.timeout_ms`), next to `timeoutMs`, which is this call's own limit. A tool that lets a caller ask for
 more time uses the default when asked for nothing and caps a request at `timeoutMs`; the `shell` tool does.

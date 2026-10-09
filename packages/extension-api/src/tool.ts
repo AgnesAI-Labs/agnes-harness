@@ -51,6 +51,7 @@ export const MAX_OUTPUT_MAX_BYTES = 1048576
 // the last three are required keys typed `T | undefined` rather than optional `?:` members —
 // with exactOptionalPropertyTypes on, that is what forces the author to type the word. The
 // runtime check in checkToolMeta enforces the same rule for tools that arrive as plain data.
+// `returnsImages` is the one optional key: leaving it out keeps every tool written before it as it was.
 export interface ToolMeta {
   isReadOnly: boolean
   isDestructive: boolean
@@ -60,6 +61,8 @@ export interface ToolMeta {
   costHint: { credits?: number; wallMs?: number } | undefined
   deferLoading: boolean | undefined
   requiresApproval: RiskClass | undefined
+  /** The results carry pictures for the model; they reach it only from a closed-world tool. */
+  returnsImages?: boolean
 }
 export const TOOL_META_KEYS = [
   'isReadOnly',
@@ -324,6 +327,8 @@ export function checkToolMeta(meta: unknown): CheckResult {
     problems.push('deferLoading: expected boolean | undefined')
   if (m.requiresApproval !== undefined && !RISK.has(String(m.requiresApproval)))
     problems.push('requiresApproval: expected never | destructive | always | undefined')
+  if (m.returnsImages !== undefined && typeof m.returnsImages !== 'boolean')
+    problems.push('returnsImages: expected boolean | undefined')
   return problems.length ? { ok: false, problems } : { ok: true }
 }
 

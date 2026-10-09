@@ -16,6 +16,7 @@ import {
   type SlotName,
   SlotOutlet,
   type SlotRegistry,
+  type SlotSpec,
   SlotsProvider,
 } from '@agnes/web-client'
 import type { AntdRoot } from '@agnes/web-ui'
@@ -152,6 +153,17 @@ export const CONVERSATION_CHILD_SLOTS = Object.freeze({
   toolCard: 'conversation.tool-card',
   feedback: 'conversation.feedback',
 })
+const TRANSCRIPT_CHILD_SLOTS: ReadonlyArray<readonly [string, SlotSpec, string]> = [
+  ['conversation.chat.node', { kind: 'keyed', scope: 'session' }, TRANSCRIPT_SLOT as string],
+  ['tool.call.toolview', { kind: 'keyed', scope: 'session' }, TRANSCRIPT_SLOT as string],
+  ['conversation.chat.assistant-actions', { kind: 'list', scope: 'session' }, 'conversation.chat.node'],
+  ['conversation.chat.commandview', { kind: 'keyed', scope: 'session' }, 'conversation.chat.node'],
+  ['conversation.chat.turnTail', { kind: 'chain', scope: 'session' }, 'conversation.chat.node'],
+  ['conversation.message.images', { kind: 'single', scope: 'session' }, 'conversation.chat.node'],
+  ['conversation.trajectory.images', { kind: 'single', scope: 'session' }, 'conversation.chat.node'],
+  ['tool.call.images', { kind: 'single', scope: 'session' }, 'tool.call.toolview'],
+  ['tool.view.cordis', { kind: 'keyed', scope: 'session' }, 'tool.call.toolview'],
+]
 const CONVERSATION_DSH_CHILDREN = Object.freeze({
   ...DSH_MAIN_CONVERSATION_CHILDREN,
 } as const)
@@ -161,12 +173,12 @@ const CONVERSATION_HEADER_DSH_CHILDREN = Object.freeze({
   'conversation.session.header.lineage': { kind: 'single', scope: 'session' },
   'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
 } as const)
-const EMPTY_STATE_DSH_CHILDREN = Object.freeze({
-  'conversation.hero.agentPreset': { kind: 'single', scope: 'root' },
-  'conversation.hero.brand.mark': { kind: 'single', scope: 'root' },
-  'conversation.hero.workspace': { kind: 'single', scope: 'root' },
-  'conversation.hero.workspace.directoryFlow': { kind: 'single', scope: 'root' },
-} as const)
+const EMPTY_STATE_CHILD_SLOTS: ReadonlyArray<readonly [string, SlotSpec]> = [
+  ['conversation.hero.agentPreset', { kind: 'single', scope: 'root' }],
+  ['conversation.hero.brand.mark', { kind: 'single', scope: 'root' }],
+  ['conversation.hero.workspace', { kind: 'single', scope: 'root' }],
+  ['conversation.hero.workspace.directoryFlow', { kind: 'single', scope: 'root' }],
+]
 export const TOPBAR_SLOT = 'ui:topbar' as unknown as SlotName
 export const APPROVAL_SLOT = 'ui:approval' as unknown as SlotName
 export const COMPOSER_SLOT = 'ui:composer' as unknown as SlotName
@@ -1489,6 +1501,11 @@ export function mountTranscriptRegion(
     )
   if (!registry.spec(TRANSCRIPT_SLOT))
     registry.declare(TRANSCRIPT_SLOT as string, { kind: 'single', scope: 'session-maybe' }, 'web-shell')
+  // The conversation remounts this region for every new session, while plugins register into the
+  // node and tool slots once. Declare them once, like conversation.view: a parent entry's children
+  // table would unload them, and every plugin entry in them, on each remount.
+  for (const [name, spec, parent] of TRANSCRIPT_CHILD_SLOTS)
+    if (!registry.spec(name)) registry.declare(name, spec, 'web-shell', parent)
   const handle = { current: null as TranscriptHandle | null }
   const removeBuiltin = registry.register(
     {
@@ -1496,10 +1513,6 @@ export function mountTranscriptRegion(
       id: 'builtin-transcript',
       owner: '@agnes/web-transcript',
       priority: 0,
-      children: {
-        'conversation.chat.node': { kind: 'keyed', scope: 'session' },
-        'tool.call.toolview': { kind: 'keyed', scope: 'session' },
-      },
     },
     () =>
       options.nodeHost === 'react'
@@ -1540,40 +1553,6 @@ export function mountTranscriptRegion(
     },
     () => createElement(SlotOutlet, { name: TRANSCRIPT_SLOT }),
   )
-  // These are child declarations of the two keyed transcript parents. The
-  // declaration-only entries keep the parent/child lifecycle tied to this
-  // transcript mount while their keys stay outside real node/tool keys.
-  const removeChatChildren = registry.register(
-    {
-      name: 'conversation.chat.node',
-      key: '__agnes-native-child-declarations__',
-      id: 'builtin-conversation-chat-children',
-      owner: '@agnes/web-transcript',
-      priority: -1,
-      children: {
-        'conversation.chat.assistant-actions': { kind: 'list', scope: 'session' },
-        'conversation.chat.commandview': { kind: 'keyed', scope: 'session' },
-        'conversation.chat.turnTail': { kind: 'chain', scope: 'session' },
-        'conversation.message.images': { kind: 'single', scope: 'session' },
-        'conversation.trajectory.images': { kind: 'single', scope: 'session' },
-      },
-    },
-    () => null,
-  )
-  const removeToolChildren = registry.register(
-    {
-      name: 'tool.call.toolview',
-      key: '__agnes-native-child-declarations__',
-      id: 'builtin-tool-view-children',
-      owner: '@agnes/web-transcript',
-      priority: -1,
-      children: {
-        'tool.call.images': { kind: 'single', scope: 'session' },
-        'tool.view.cordis': { kind: 'keyed', scope: 'session' },
-      },
-    },
-    () => null,
-  )
   container.replaceChildren()
   const root = createAntdRoot(container)
   flushSync(() => {
@@ -1608,8 +1587,6 @@ export function mountTranscriptRegion(
       if (disposed) return
       disposed = true
       root.unmount()
-      removeToolChildren()
-      removeChatChildren()
       removeViewBuiltin()
       removeBuiltin()
     },
@@ -1630,6 +1607,10 @@ export function mountEmptyStateRegion(
 ): EmptyStateRegionMount {
   if (!registry.spec(EMPTY_STATE_SLOT))
     registry.declare(EMPTY_STATE_SLOT as string, { kind: 'single', scope: 'root' }, 'web-shell')
+  // Remounted for every new session, while plugins register into the hero slots once: declare them
+  // once, like the transcript's child slots, so a remount keeps every plugin entry in them.
+  for (const [name, spec] of EMPTY_STATE_CHILD_SLOTS)
+    if (!registry.spec(name)) registry.declare(name, spec, 'web-shell', EMPTY_STATE_SLOT as string)
   // Priority 0 is the built-in. Third-party entries can explicitly shadow it with a lower value.
   const translate = services.locale ? (key: string) => services.locale?.t(key) ?? key : undefined
   const removeBuiltin = registry.register(
@@ -1638,7 +1619,6 @@ export function mountEmptyStateRegion(
       id: 'builtin-empty-state',
       owner: '@agnes/web-empty-state',
       priority: 0,
-      children: EMPTY_STATE_DSH_CHILDREN,
     },
     () => createElement(EmptyStateBuiltin, translate ? { t: translate } : {}),
   )

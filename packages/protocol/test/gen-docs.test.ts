@@ -27,7 +27,7 @@ describe('gen-docs', () => {
       expect(md).toMatch(new RegExp(`^\\| \`${slot.replace(/\./g, '\\.')}\` \\| multi \\| ${order} \\|`, 'm'))
     expect(md).toContain('65536')
   })
-  it('tools-meta.md carries all eight keys with their descriptions', () => {
+  it('tools-meta.md carries all nine keys with their descriptions', () => {
     const md = renderToolsMetaDoc()
     for (const k of [
       'isReadOnly',
@@ -38,6 +38,7 @@ describe('gen-docs', () => {
       'costHint',
       'deferLoading',
       'requiresApproval',
+      'returnsImages',
     ])
       expect(md, k).toMatch(new RegExp(`^\\| \`${k}\` \\|`, 'm'))
     // The description column is what makes the page worth generating; an empty one would render as
