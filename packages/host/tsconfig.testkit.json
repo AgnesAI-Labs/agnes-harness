@@ -9,7 +9,11 @@
     "testkit/fs-io-memory.ts",
     "testkit/index.ts",
     "testkit/plugin-registration.ts",
-    "testkit/wire-capture.ts"
+    "testkit/wire-capture.ts",
+    "testkit/author/index.ts",
+    "testkit/author/session.ts",
+    "testkit/author/model-replay.ts",
+    "testkit/author/fault-server.ts"
   ],
   "exclude": ["dist", "node_modules"],
   "references": [

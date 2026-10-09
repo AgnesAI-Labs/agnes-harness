@@ -1,0 +1,394 @@
+import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import type { Plugin } from '@agnes/cordis'
+import { scanAll, type Event, type Provider, type ToolResult } from '@agnes/core'
+import {
+  loopCheckpointCodec,
+  loopShouldStop,
+  type LoopContext,
+  type LoopStepOutcome,
+  type LoopFactory,
+} from '@agnes/extension-api'
+import { registerLoopPlugin } from '@agnes/extension-api'
+import { developmentPluginRows, hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
+import { defineLoop } from '@agnes/plugin-runtime'
+import { normalizePluginExport } from '@agnes/plugin-runtime/host'
+import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
+import type { LoopPluginContext } from '@agnes/extension-api'
+import { createTestHost, type TestHostOptions } from '../index.js'
+import type { Host, HostSession } from '@agnes/host-runtime/host'
+
+export interface AuthorPluginVersion {
+  plugin: Plugin
+  version: string
+  config?: unknown
+}
+export interface AuthorTestOptions extends AuthorPluginVersion {
+  packageId?: string
+  loop?: { id: string; version: string }
+  provider?: Provider
+  replies?: TestHostOptions['script']
+  /** Defaults to deny. This callback is the real Host approval seam. */
+  approval?: TestHostOptions['approval']
+  /** Explicit test seam overrides; no credentials or user home are loaded. */
+  seams?: TestHostOptions['seams']
+}
+export interface AuthorSession {
+  readonly key: string
+  readonly generation: string | undefined
+  readonly loop: HostSession['loop']
+  enqueue(text: string): Promise<void>
+  /** Advance at most N public Loop edges; stop at idle, parked or turn-end. */
+  drive(steps: number, signal?: AbortSignal): Promise<LoopStepOutcome[]>
+  /** Uses a Core-controlled tool Loop, with policy, approval and durable effects. */
+  invoke(name: string, args: unknown, signal?: AbortSignal): Promise<ToolResult>
+  facts(): Promise<Event[]>
+  effects(): Promise<Event[]>
+  assertApproval(verdict: string): Promise<void>
+  assertRefused(name: string, code?: string): Promise<void>
+  assertPinned(generation: string): void
+  close(): Promise<void>
+}
+export interface AuthorTestkit {
+  openSession(options?: { key?: string; loop?: AuthorTestOptions['loop'] }): Promise<AuthorSession>
+  reload(next: AuthorPluginVersion): Promise<string>
+  dispose(): Promise<void>
+}
+const invocationLoop = { id: 'author.invoke', version: '1.0.0' }
+const codec = loopCheckpointCodec(1, (state) => state)
+
+/** Isolated actual Host assembly: synthetic snapshot files, author module imports, production pins. */
+export async function createAuthorTestkit(options: AuthorTestOptions): Promise<AuthorTestkit> {
+  const directory = await mkdtemp(join(tmpdir(), 'agh-author-'))
+  const id = options.packageId ?? '@author/plugin'
+  const sources: RuntimePluginSnapshot[] = []
+  const modules = new Map<string, { main: Plugin }>()
+  const results = new Map<string, ToolResult>()
+  let host: Host | undefined
+  let disposed = false
+  let sessionNumber = 0
+  let mutation = false
+  const check = () => {
+    if (disposed) throw new Error('Author testkit disposed')
+  }
+  async function snapshot(next: AuthorPluginVersion): Promise<RuntimePluginSnapshot> {
+    if (!next.version || sources.some((source) => source.snapshot.version === next.version))
+      throw new Error('Each author snapshot needs a new, nonempty version')
+    const entry = normalizePluginExport(next.plugin)
+    const folder = join(directory, 'snapshots', String(sources.length + 1))
+    await mkdir(folder, { recursive: true })
+    const moduleText = `// Imported author module supplied by the test.\nexport const version = ${JSON.stringify(next.version)}\n`
+    await writeFile(join(folder, 'index.mjs'), moduleText)
+    await writeFile(
+      join(folder, 'package.json'),
+      JSON.stringify({
+        name: id,
+        version: next.version,
+        type: 'module',
+        exports: './index.mjs',
+        agnes: {
+          plugins: [
+            {
+              export: 'main',
+              id: `ext:${id}/main`,
+              apiRange: '^1.4.0',
+              default: true,
+              inject: Object.keys(entry.inject),
+              provide: entry.provides,
+              runtime: 'in-process',
+              ...(next.config === undefined ? {} : { config: next.config }),
+            },
+          ],
+        },
+      }),
+    )
+    const integrity = hashDirectory(folder, { exclude: [] })
+    const source: RuntimePluginSnapshot = {
+      snapshot: {
+        packageId: id,
+        version: next.version,
+        directory: folder,
+        snapshotId: integrity,
+        integrity,
+        treeIntegrity: integrity,
+        capabilityHash: createHash('sha256').update(id).digest('hex'),
+        contributions: [],
+      },
+      generation: sources.length + 1,
+      trusted: true,
+    }
+    modules.set(moduleText, { main: next.plugin })
+    sources.push(source)
+    return source
+  }
+  const toolLoop: LoopFactory = defineLoop({
+    ...invocationLoop,
+    codec,
+    capabilities: ['tools'],
+    create(ctx: LoopContext) {
+      return {
+        async step(signal) {
+          const input = await ctx.input.accept()
+          if (!input) return { outcome: 'idle' as const, phase: 'idle' }
+          const text = input.content.find((block) => block.type === 'text')
+          if (!text || text.type !== 'text') throw new Error('Author invoke needs a tool call')
+          const call = JSON.parse(text.text)
+          const result = await ctx.tools.execute({ ...call, invocationId: `author:${input.id}` }, signal)
+          results.set(ctx.sessionKey, result)
+          await ctx.checkpoints.write(codec.encode(null))
+          await ctx.events.finish('completed')
+          return { outcome: 'turn-ended' as const, phase: 'done', reason: 'completed' as const }
+        },
+        checkpoint: () => codec.encode(null),
+        cancel() {},
+        dispose() {},
+      }
+    },
+    resume(ctx: LoopContext) {
+      return toolLoop.create(ctx, new AbortController().signal)
+    },
+  })
+  try {
+    const first = await snapshot(options)
+    host = (
+      await createTestHost({
+        dataDir: directory,
+        disableSessionTitle: true,
+        ...(options.provider ? { provider: options.provider } : { script: options.replies ?? [] }),
+        ...(options.seams ? { seams: options.seams } : {}),
+        approval: async (request) => {
+          const answer = await (options.approval?.(request) ?? Promise.resolve('rejected' as const))
+          return answer
+        },
+        profileInputs: {
+          user: { name: 'local-dev', composition: {}, packages: [{ id, source: 'author-fixture' }] },
+        },
+        lock: {
+          packages: Object.fromEntries([
+            ...['@agnes/ai', '@agnes/base', '@agnes/code'].map((name) => [
+              name,
+              { version: '0.1.0', integrity: 'sha512-fixture', trust: 'builtin', enabled: true },
+            ]),
+            [
+              id,
+              {
+                version: first.snapshot.version,
+                integrity: first.snapshot.integrity,
+                trust: 'trusted',
+                enabled: true,
+              },
+            ],
+          ]),
+        },
+        packageDirs: { [id]: first.snapshot.directory },
+        runtimePluginSnapshots: [first],
+        runtimePluginCatalogue: [first],
+        runtimePluginSources: async () => sources,
+        extensionLoader: {
+          async import(file) {
+            const module = modules.get(await readFile(file, 'utf8'))
+            if (!module) throw new Error('Unknown author module')
+            return module
+          },
+        },
+        packages: {
+          '@agnes/code': {
+            plugins: [
+              {
+                declaration: {
+                  export: 'authorLoop',
+                  id: 'loop:author.invoke',
+                  apiRange: '^1.4.0',
+                  default: true,
+                  inject: ['loops'],
+                  provide: [],
+                  runtime: 'in-process',
+                },
+                entry: normalizePluginExport({
+                  inject: ['loops'],
+                  apply(ctx: LoopPluginContext) {
+                    registerLoopPlugin(ctx, '@agnes/code', toolLoop)
+                  },
+                }),
+              },
+            ],
+          },
+        },
+      })
+    ).host
+    const owner = host
+    const failed = owner.extensions().find((entry) => entry.package === id && (!entry.loaded || entry.error))
+    if (failed) throw new Error(failed.error?.message ?? 'Author plugin failed to load')
+    return {
+      async openSession(input = {}) {
+        check()
+        if (mutation) throw new Error('Author reload in progress')
+        const session = await owner.createSession({
+          key: input.key ?? `author-${++sessionNumber}`,
+          cwd: directory,
+          loop: input.loop ?? options.loop ?? invocationLoop,
+        })
+        let active = false
+        let closed = false
+        const ready = () => {
+          check()
+          if (closed) throw new Error('Author session closed')
+          if (active) throw new Error('Author session busy')
+        }
+        const facts = () => scanAll((query) => session.scan(query), { fromSeq: 1, toSeq: session.lastSeq })
+        async function drive(steps: number, signal = new AbortController().signal, owned = false) {
+          if (!owned) ready()
+          if (!Number.isSafeInteger(steps) || steps < 1) throw new RangeError('steps must be positive')
+          signal.throwIfAborted()
+          active = true
+          let cancellation: Promise<unknown> | undefined
+          const abort = () => {
+            cancellation = session.abort()
+          }
+          signal.addEventListener('abort', abort, { once: true })
+          try {
+            const outcomes: LoopStepOutcome[] = []
+            for (let i = 0; i < steps; i++) {
+              signal.throwIfAborted()
+              const outcome = await session.step()
+              signal.throwIfAborted()
+              outcomes.push(outcome)
+              if (loopShouldStop(outcome, 'turn-end')) break
+            }
+            return outcomes
+          } finally {
+            signal.removeEventListener('abort', abort)
+            try {
+              await cancellation
+            } finally {
+              active = false
+            }
+          }
+        }
+        return {
+          key: session.key,
+          generation: session.pluginGenerationId,
+          loop: session.loop,
+          async enqueue(text) {
+            ready()
+            await session.enqueue('next-turn', { content: [{ type: 'text', text }], actor: session.d.actor })
+          },
+          drive,
+          async invoke(name, args, signal) {
+            ready()
+            if (session.loop.id !== invocationLoop.id)
+              throw new Error(
+                'invoke requires an author.invoke session; open a separate session for your Loop',
+              )
+            signal?.throwIfAborted()
+            const data = JSON.stringify({ name, args })
+            active = true
+            try {
+              await session.enqueue('next-turn', {
+                content: [{ type: 'text', text: data }],
+                actor: session.d.actor,
+              })
+              results.delete(session.key)
+              await drive(1, signal, true)
+              const result = results.get(session.key)
+              if (!result) throw new Error('Tool did not complete; inspect the parked ledger facts')
+              return structuredClone(result)
+            } finally {
+              active = false
+            }
+          },
+          facts,
+          effects: async () => (await facts()).filter((event) => event.type.startsWith('effect/')),
+          async assertApproval(verdict) {
+            const events = await facts()
+            assert.ok(
+              events.some((event) => event.type === 'approval/asked'),
+              'No durable approval request',
+            )
+            assert.ok(
+              events.some(
+                (event) =>
+                  event.type === 'approval/decided' &&
+                  (event.data as { verdict: string }).verdict === verdict,
+              ),
+              `No ${verdict} approval`,
+            )
+          },
+          async assertRefused(name, code) {
+            const events = await facts()
+            const call = events.findLast(
+              (event) => event.type === 'tool/call' && (event.data as { name: string }).name === name,
+            )
+            assert.ok(call, `No tool call: ${name}`)
+            const toolUseId = (call.data as { toolUseId: string }).toolUseId
+            assert.ok(
+              events.some(
+                (event) =>
+                  event.type === 'tool/result' &&
+                  (event.data as { toolUseId: string; isError?: boolean; code?: string }).toolUseId ===
+                    toolUseId &&
+                  (event.data as { isError?: boolean }).isError &&
+                  (!code || (event.data as { code?: string }).code === code),
+              ),
+              'No refusal result',
+            )
+            assert.ok(
+              !events.some(
+                (event) =>
+                  event.type === 'effect/intent' &&
+                  (event.data as { tool?: { toolUseId?: string } }).tool?.toolUseId === toolUseId,
+              ),
+              'Refused tool dispatched an effect',
+            )
+          },
+          assertPinned(generation) {
+            assert.equal(session.pluginGenerationId, generation)
+          },
+          async close() {
+            if (closed) return
+            closed = true
+            await session.close()
+            results.delete(session.key)
+          },
+        }
+      },
+      async reload(next) {
+        check()
+        if (mutation) throw new Error('Author reload in progress')
+        mutation = true
+        try {
+          const source = await snapshot(next)
+          const current = owner.runtimeTargetSnapshot?.()
+          if (!current) throw new Error('Host runtime target unavailable')
+          await owner.applyRuntimeTarget(
+            buildCompleteRuntimeTarget({
+              rows: [
+                ...current.tree.rows.filter((row) => !row.plugin.startsWith(`${id}@`)),
+                ...developmentPluginRows(source, []),
+              ],
+              resources: current.resource.resources,
+            }).target,
+          )
+          const generation = owner.pluginGenerationStatus?.().currentGenerationId
+          if (!generation) throw new Error('Host generation unavailable')
+          return generation
+        } finally {
+          mutation = false
+        }
+      },
+      async dispose() {
+        if (disposed) return
+        disposed = true
+        await owner.close()
+        await rm(directory, { recursive: true, force: true })
+      },
+    }
+  } catch (error) {
+    await host?.close()
+    await rm(directory, { recursive: true, force: true })
+    throw error
+  }
+}
