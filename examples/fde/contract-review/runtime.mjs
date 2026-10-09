@@ -403,8 +403,7 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
               await save()
             }
             const stageCtx = needsApproval
-              ? {
-                  ...ctx,
+              ? Object.assign(Object.create(ctx), {
                   tools: {
                     ...ctx.tools,
                     async execute(call, callSignal) {
@@ -422,7 +421,7 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
                       return ctx.tools.execute(state.approvalCall, callSignal)
                     },
                   },
-                }
+                })
               : ctx
             const data = await stage.run(stageCtx, state, signal)
             signal.throwIfAborted()

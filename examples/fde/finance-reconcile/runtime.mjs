@@ -356,8 +356,7 @@ export function makeBundle({
               await save()
             }
             const stageCtx = needsApproval
-              ? {
-                  ...ctx,
+              ? Object.assign(Object.create(ctx), {
                   tools: {
                     ...ctx.tools,
                     async execute(call, callSignal) {
@@ -375,7 +374,7 @@ export function makeBundle({
                       return ctx.tools.execute(state.approvalCall, callSignal)
                     },
                   },
-                }
+                })
               : ctx
             const data = await stage.run(stageCtx, state, signal)
             signal.throwIfAborted()

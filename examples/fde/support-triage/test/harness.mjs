@@ -300,8 +300,8 @@ export async function runWorkflow(
       })
       const drivenFactory = {
         ...factory,
-        create: (ctx) => factory.create(decorate(ctx)),
-        resume: (ctx, checkpoint) => factory.resume(decorate(ctx), checkpoint),
+        create: (ctx) => factory.create(Object.create(decorate(ctx))),
+        resume: (ctx, checkpoint) => factory.resume(Object.create(decorate(ctx)), checkpoint),
       }
       const run = await driveLoop(drivenFactory, {
         until: 'idle',
