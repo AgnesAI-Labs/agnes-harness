@@ -191,6 +191,7 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await expect(output).toBeVisible()
   const human = (await session.jobsRead()).jobs.find((job) => job.owner === 'human')
   if (!human) throw new Error('human terminal required')
+  await expect(output).toBeEnabled()
   await output.pressSequentially("PS1='wb1$ '; printf '\\033[2J\\033[H'; printf 'WB1_TERMINAL_OK\\n'")
   await output.press('Enter')
   await expect(output).toHaveValue(/WB1_TERMINAL_OK\r?\n/)
@@ -209,6 +210,8 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await expect(output).toHaveValue(/WB1_TERMINAL_OK/)
   await panel.getByTestId('terminal-interrupt').click()
   expect((await session.jobsRead(human.id)).job?.status).toBe('running')
+  // Another client's read can precede the UI's control receipt; keyboard actions do not wait for enabled.
+  await expect(output).toBeEnabled()
   await output.pressSequentially("printf 'WB1_AFTER_INTERRUPT\\n'")
   await output.press('Enter')
   await expect(output).toHaveValue(/WB1_AFTER_INTERRUPT\r?\n/)
