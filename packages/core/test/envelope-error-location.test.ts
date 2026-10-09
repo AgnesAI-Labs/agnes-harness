@@ -62,6 +62,7 @@ describe('where an envelope rejection happened', () => {
     expect(outcome.error?.message).toContain('effect/settled /data/durationMs')
     const rows = await session.scan({ type: 'x/core/invariant', limit: 20 })
     const threw = rows.find((row) => (row.data as { kind?: string } | null)?.kind === 'step-threw')
-    expect((threw?.data as { message: string }).message).toContain('effect/settled /data/durationMs')
+    if (!threw) throw new Error('no step-threw row')
+    expect((threw.data as { message: string }).message).toContain('effect/settled /data/durationMs')
   })
 })
