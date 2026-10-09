@@ -42,6 +42,7 @@ describe('DeepSeek API-key model catalogue', () => {
       'unknown item field',
       { object: 'list', data: [{ ...catalogue.data[0], endpoint: 'https://evil.invalid' }] },
     ],
+    ['empty catalogue', { object: 'list', data: [] }],
     ['unsafe id', { object: 'list', data: [{ ...catalogue.data[0], id: 'bad\nmodel' }] }],
     ['duplicate id', { object: 'list', data: [catalogue.data[0], catalogue.data[0]] }],
   ])('rejects %s without accepting remote routing metadata', async (_name, body) => {
@@ -119,4 +120,35 @@ describe('DeepSeek API-key model catalogue', () => {
     expect(getApiKeyProvider('openai')?.fetchModels).toBeUndefined()
     expect(getApiKeyProvider('anthropic')?.fetchModels).toBeUndefined()
   })
+})
+
+it('refuses timeouts and caller cancellation without reflecting the credential', async () => {
+  {
+    const entry = getApiKeyProvider('deepseek')!
+    const caller = new AbortController()
+    const request = async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> =>
+      new Promise((_resolve, reject) => {
+        const signal = init!.signal!
+        if (signal.aborted) reject(signal.reason)
+        else signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    const cancelled = entry.fetchModels!({ credential: key, signal: caller.signal, request })
+    const refusal = expect(cancelled).rejects.toMatchObject({ code: 'CATALOG_UNAVAILABLE' })
+    caller.abort(new Error(`cancelled ${key}`))
+    await refusal
+    const timeout = vi
+      .spyOn(AbortSignal, 'timeout')
+      .mockReturnValueOnce(AbortSignal.abort(new DOMException('Timed out', 'TimeoutError')))
+    try {
+      await expect(
+        entry.fetchModels!({ credential: key, signal: new AbortController().signal, request }),
+      ).rejects.toMatchObject({ code: 'CATALOG_UNAVAILABLE' })
+    } finally {
+      timeout.mockRestore()
+    }
+    // Invalid deadlines fail before invoking the transport; no real timer is needed.
+    await expect(
+      entry.fetchModels!({ credential: key, signal: new AbortController().signal, request, timeoutMs: 0 }),
+    ).rejects.toMatchObject({ code: 'CATALOG_UNAVAILABLE' })
+  }
 })

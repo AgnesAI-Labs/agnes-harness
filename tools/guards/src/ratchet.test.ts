@@ -679,7 +679,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // ceiling after the session-resume picker (87b62431) landed without a paired raise, so this key
   // was red on arrival. This raise carries that overshoot rather than hiding it -- the picker's 97
   // lines still owe their own measured justification here.
-  'packages/cli/src': 8662,
+  'packages/cli/src': 7867,
   // 2026-10-07 reviewed growth: portable package sources, capability review and explicit confirmation UX.
   // countLines: 160 -> 230 (+70); exact cap, no exclusions or spare allocation.
   'packages/cli/src/commands/package': 230,

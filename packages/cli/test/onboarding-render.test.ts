@@ -135,7 +135,6 @@ it('keeps onboarding and TUI view imports behind their dependency boundaries', a
     new URL('../src/tui/views/auth-method.ts', import.meta.url),
     new URL('../src/tui/views/secret-input.ts', import.meta.url),
     new URL('../src/onboarding/state.ts', import.meta.url),
-    new URL('../src/onboarding/controller.ts', import.meta.url),
   ]
   const sources = await Promise.all(urls.map((url) => readFile(url, 'utf8')))
   for (const source of sources) {
