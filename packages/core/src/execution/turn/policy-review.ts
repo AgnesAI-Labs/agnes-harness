@@ -120,6 +120,7 @@ export async function decideToolPolicy(
           const operation = s.op()!
           let text = '',
             completed = false
+          let costRecorded = false
           let credits = projected.credits
           let creditSource = projected.creditSource
           let tokens: TokenCounts = {
@@ -164,7 +165,7 @@ export async function decideToolPolicy(
               creditSource,
               model: target.model,
             }
-            const recorded = await s.d.runtime.ledgerRecord({
+            costRecorded = await s.d.runtime.ledgerRecord({
               ...spend,
               sessionKey: s.key,
               lane: s.lane,
@@ -172,8 +173,8 @@ export async function decideToolPolicy(
               step: operation.step,
             })
             await s.d.log.append([s.ev('cost/ledger', spend)])
-            if (!recorded) throw new Error('Review cost unavailable')
           }
+          if (!costRecorded) throw new Error('Review cost unavailable')
           return { text, model: target.model, cost: credits, costSource: creditSource }
         },
       },

@@ -35,6 +35,8 @@ const registryRoot = join(root, 'registry')
 let registry: Awaited<ReturnType<typeof localRegistry>> | undefined
 let web: ReturnType<typeof spawn> | undefined
 let webLog = ''
+const cleanupErrors: unknown[] = []
+let primaryFailure: { error: unknown } | undefined
 let succeeded = false
 let daemonStarted = false
 const env: NodeJS.ProcessEnv = {
@@ -213,13 +215,19 @@ try {
   await writeFile(report, `${JSON.stringify(result, null, 2)}\n`)
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
   succeeded = true
+} catch (error) {
+  primaryFailure = { error }
 } finally {
-  const cleanupErrors: unknown[] = []
   // Try each cleanup even when another fails, and retain the exact isolated home for diagnosis.
   if (daemonStarted) await run(['daemon', 'stop']).catch((error: unknown) => cleanupErrors.push(error))
   if (web) await stopWeb(web).catch((error: unknown) => cleanupErrors.push(error))
   if (registry) await registry.close().catch((error: unknown) => cleanupErrors.push(error))
   if (succeeded && !cleanupErrors.length) await rm(root, { recursive: true, force: true })
   else process.stderr.write(`Smoke failed; isolated evidence retained at ${root}\n${webLog}\n`)
-  if (cleanupErrors.length) throw new AggregateError(cleanupErrors, 'Smoke cleanup failed')
 }
+if (cleanupErrors.length)
+  throw new AggregateError(
+    [...(primaryFailure ? [primaryFailure.error] : []), ...cleanupErrors],
+    'Smoke cleanup failed',
+  )
+if (primaryFailure) throw primaryFailure.error
