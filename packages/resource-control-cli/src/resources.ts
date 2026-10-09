@@ -742,9 +742,10 @@ export async function runResourceCommand(
           'agh mcp add [<serverId>] --preset playwright [--sandbox-workspace <path>]',
         )
         try {
+          const workspacePath = one(parsed, '--sandbox-workspace')
           definition = createMcpPreset(preset, {
             serverId: id,
-            workspacePath: one(parsed, '--sandbox-workspace'),
+            ...(workspacePath === undefined ? {} : { workspacePath }),
           })
         } catch (error) {
           throw new UsageError(error instanceof Error ? error.message : 'Invalid MCP preset')
