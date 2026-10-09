@@ -1,3 +1,4 @@
+import { Button } from '@agnes/web-ui'
 import type { ReferenceCandidate, ReferenceSearchResult } from '@agnes/protocol'
 import { type RefObject, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { Translate } from './locales/index.js'
@@ -259,15 +260,15 @@ export function ReferencePicker({
               <span title={item.id}>
                 @{item.source} {item.label}
               </span>
-              <button
-                type="button"
+              <Button
+                htmlType="button"
                 disabled={disabled}
                 data-testid="reference-remove"
                 aria-label={t('composer.reference.remove', { label: item.label })}
                 onClick={() => adapter.remove(item.source, item.id)}
               >
                 ×
-              </button>
+              </Button>
             </li>
           ))}
         </ul>

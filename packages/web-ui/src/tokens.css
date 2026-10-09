@@ -153,14 +153,14 @@
 .agnes-settings-stack {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 1rem;
+  gap: var(--s16);
   min-width: 0;
 }
 .agnes-settings-page .config-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--s16);
   margin-bottom: 1rem;
 }
 .agnes-settings-page .config-heading h2 {
@@ -174,14 +174,14 @@
 }
 .agnes-settings-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--s8);
   flex-wrap: wrap;
   align-items: center;
 }
 .agnes-settings-card {
-  padding: 1rem;
+  padding: var(--s16);
   display: grid;
-  gap: 0.875rem;
+  gap: var(--s12);
   box-shadow: none;
   min-width: 0;
 }
@@ -195,11 +195,11 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 1rem;
+  gap: var(--s16);
 }
 .agnes-ui-field {
   display: grid;
-  gap: 0.375rem;
+  gap: var(--s4);
   min-width: 0;
   margin: 0;
 }
@@ -222,11 +222,14 @@
   min-width: 0;
   min-height: var(--control-height);
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--agnes-line-primary);
+  border: 1px solid var(--agnes-input-border);
   border-radius: var(--radius-md);
   background: var(--agnes-input-surface);
-  color: var(--agnes-text-primary);
+  color: var(--agnes-input-content-strong);
   font: inherit;
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 .agnes-settings-input-surface {
   background: var(--agnes-input-surface);
@@ -236,13 +239,15 @@ textarea.agnes-settings-input {
   resize: vertical;
 }
 .agnes-settings-input:hover:not(:disabled) {
-  border-color: var(--agnes-text-tertiary);
+  border-color: var(--agnes-input-border-emphasis);
 }
 .agnes-settings-input:focus-visible {
-  outline: 2px solid var(--agnes-text-emphasis);
-  outline-offset: 2px;
+  outline: none;
+  border-color: var(--agnes-input-border-focus);
+  box-shadow: 0 0 0 3px var(--agnes-brand-focus-ring);
 }
 .agnes-settings-input:disabled {
+  border-color: var(--agnes-line-primary);
   color: var(--agnes-text-disabled);
   background: var(--agnes-bg-card);
   cursor: not-allowed;
@@ -261,14 +266,14 @@ textarea.agnes-settings-input {
 .agnes-settings-checkbox,
 .agnes-ui-field:has(> input[type="checkbox"]) {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--s8);
   align-items: center;
   font-size: var(--font-size-sm);
 }
 .agnes-settings-card fieldset,
 .agnes-settings-card form {
   display: grid;
-  gap: 0.875rem;
+  gap: var(--s12);
   min-width: 0;
 }
 .agnes-settings-card fieldset.agnes-settings-actions {
@@ -277,7 +282,7 @@ textarea.agnes-settings-input {
 }
 .agnes-settings-card fieldset {
   margin: 0;
-  padding: 1rem;
+  padding: var(--s16);
   border: 1px solid var(--agnes-line-primary);
   border-radius: var(--radius-md);
 }
@@ -325,7 +330,7 @@ textarea.agnes-settings-input {
   max-height: 24rem;
   overflow: auto;
   white-space: pre-wrap;
-  padding: 0.75rem;
+  padding: var(--s12);
   border-radius: var(--radius-md);
   background: var(--agnes-bg-code);
 }
@@ -347,7 +352,7 @@ textarea.agnes-settings-input {
 .agnes-settings-card th,
 .agnes-settings-card td {
   text-align: start;
-  padding: 0.625rem;
+  padding: var(--s10);
   border-bottom: 1px solid var(--agnes-line-primary);
   overflow-wrap: anywhere;
   vertical-align: top;
@@ -359,7 +364,7 @@ textarea.agnes-settings-input {
 .agnes-settings-card details {
   border: 1px solid var(--agnes-line-primary);
   border-radius: var(--radius-md);
-  padding: 0.75rem;
+  padding: var(--s12);
   min-width: 0;
 }
 .agnes-settings-card summary {
@@ -373,16 +378,16 @@ textarea.agnes-settings-input {
 }
 .agnes-settings-list {
   display: grid;
-  gap: 0.875rem;
+  border-block: 1px solid var(--agnes-line-primary);
   list-style: none;
   margin: 0;
   padding: 0;
 }
 .agnes-settings-list > li {
   display: grid;
-  gap: 0.5rem;
-  padding-block: 0.75rem;
-  border-bottom: 1px solid var(--agnes-line-primary);
+  gap: var(--s8);
+  padding-block: var(--s16);
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 .agnes-settings-list > li > span {
@@ -396,7 +401,7 @@ textarea.agnes-settings-input {
 }
 @media (max-width: 640px) {
   .agnes-settings-card {
-    padding: 0.875rem;
+    padding: var(--s12);
   }
   .agnes-settings-page .config-heading {
     flex-wrap: wrap;
@@ -407,7 +412,7 @@ textarea.agnes-settings-input {
 }
 .agnes-settings-section-tabs {
   display: flex;
-  gap: 1rem;
+  gap: var(--s16);
   flex: 0 0 auto;
   padding: 0.75rem 1.5rem 0;
   border-bottom: 1px solid var(--agnes-line-primary);
@@ -544,15 +549,12 @@ button {
   transition-property: box-shadow, transform;
 }
 
-.agnes-settings-list {
-  display: grid;
-  border-block: 1px solid var(--agnes-line-primary);
-}
 .agnes-settings-row {
   padding-block: 1rem;
   min-width: 0;
 }
-.agnes-settings-row + .agnes-settings-row {
+.agnes-settings-row + .agnes-settings-row,
+.agnes-settings-list > li + li {
   border-top: 1px solid var(--agnes-line-primary);
 }
 .agnes-settings-row-heading {
@@ -629,9 +631,6 @@ button {
 .agnes-ui-select:not(.ant-select-disabled) {
   background: var(--agnes-input-surface);
   color: var(--agnes-text-primary);
-}
-.agnes-settings-toolbar .agnes-settings-input {
-  background: var(--agnes-input-surface);
 }
 
 /* Inventory rows use compact disclosures instead of full-page section spacing. */
@@ -766,20 +765,6 @@ button {
   max-width: min(42rem, calc(100vw - 2rem));
   z-index: 900;
 }
-.agnes-settings-checkbox {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.agnes-settings-checkbox input[type="checkbox"] {
-  width: 1rem;
-  min-width: 1rem;
-  height: 1rem;
-  min-height: 1rem;
-  padding: 0;
-  margin: 0;
-}
-
 /* The setup guide owns a dimmed, blurred backdrop; other dialogs keep their skin. */
 .agnes-first-run-layer .ant-modal-mask {
   background: color-mix(in srgb, var(--agnes-bg-lightbox) 65%, transparent);
@@ -852,4 +837,93 @@ button {
   #computer-use-settings-pane > .agnes-settings-page-heading {
     padding-inline-start: var(--s16);
   }
+}
+
+/* Fixed template forms and React fields share labels, help and validation. */
+.form-field {
+  display: grid;
+  gap: var(--s4);
+  min-width: 0;
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}
+.agnes-ui-field > .agnes-settings-input:not([type="checkbox"]):not([type="radio"]),
+.form-field > .agnes-settings-input:not([type="checkbox"]):not([type="radio"]) {
+  min-height: var(--control-height-form);
+  padding: var(--s10) var(--s12);
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  line-height: var(--line-sm);
+}
+.field-hint {
+  color: var(--agnes-text-tertiary);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+.agnes-settings-input[aria-invalid="true"] {
+  border-color: var(--agnes-status-danger-text);
+}
+select.agnes-settings-input {
+  appearance: none;
+  padding-inline-end: var(--s32);
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentcolor 50%),
+    linear-gradient(135deg, currentcolor 50%, transparent 50%);
+  background-position:
+    right 1rem center,
+    right 0.72rem center;
+  background-size:
+    0.3rem 0.3rem,
+    0.3rem 0.3rem;
+  background-repeat: no-repeat;
+}
+.agnes-ui-field > select.agnes-settings-input,
+.form-field > select.agnes-settings-input {
+  padding-inline-end: var(--s32);
+}
+.agnes-settings-state p {
+  color: inherit;
+}
+.agnes-settings-state:empty {
+  display: none;
+}
+.agnes-settings-state > .agnes-settings-toolbar {
+  margin-top: var(--s12);
+}
+.agnes-settings-card .agnes-settings-toolbar {
+  justify-self: stretch;
+}
+.agnes-settings-page-heading > div,
+.agnes-settings-row-heading > div,
+.agnes-settings-card .config-accounts-heading > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.agnes-settings-card h3 {
+  font-size: var(--font-size-md);
+  line-height: var(--line-md);
+}
+.agnes-settings-card h4 {
+  margin-block: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-sm);
+}
+.agnes-settings-row > span {
+  overflow-wrap: anywhere;
+}
+
+.agnes-ui-field > textarea.agnes-settings-input,
+.form-field > textarea.agnes-settings-input {
+  min-height: 5rem;
+}
+.agnes-settings-toolbar > .agnes-ui-button,
+.agnes-settings-actions > .agnes-ui-button {
+  max-width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: var(--control-height);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }

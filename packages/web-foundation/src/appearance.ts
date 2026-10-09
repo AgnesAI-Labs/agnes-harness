@@ -1,4 +1,4 @@
-import { renderRegion, SettingsChoice } from '@agnes/web-ui'
+import { Button, renderRegion, SettingsChoice, SettingsState } from '@agnes/web-ui'
 import { createElement, type ReactNode } from 'react'
 import { tr } from './locale-bridge.js'
 import { applyLocaleText, isUiLocale, syncLocaleRadios, type UiLocale } from './locale-preference.js'
@@ -143,10 +143,10 @@ function skinOption(value: string, name: string, hint: string, props: SkinOption
 function skinOptions(props: SkinOptionsProps): ReactNode {
   if (props.failed)
     return createElement(
-      'p',
-      { className: 'appearance-option-hint' },
+      SettingsState,
+      { tone: 'error', className: 'appearance-option-hint' },
       tr('settings.appearance.skinListFailed'),
-      createElement('button', { type: 'button', onClick: props.onRetry }, tr('settings.appearance.retry')),
+      createElement(Button, { htmlType: 'button', onClick: props.onRetry }, tr('settings.appearance.retry')),
     )
   return createElement(
     'div',

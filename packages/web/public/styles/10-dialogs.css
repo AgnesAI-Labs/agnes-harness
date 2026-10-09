@@ -124,36 +124,6 @@ dialog::backdrop {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.form-field {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.375rem;
-  color: var(--agnes-text-primary);
-  font-size: var(--font-size-sm);
-  font-weight: 600;
-}
-.form-field input:not([type="checkbox"]):not([type="radio"]),
-.form-field select,
-.form-field textarea {
-  width: 100%;
-  min-height: var(--control-height-form);
-  padding: 0.625rem 0.75rem;
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-  font-weight: 400;
-  line-height: var(--line-sm);
-}
-/* 即时校验的红边（aria-invalid 由 mcp-form-validation 反馈写入）：只换边框色，
-   不动 box-shadow，聚焦时的品牌焦点环仍然生效。 */
-.form-field :is(input, select, textarea)[aria-invalid="true"] {
-  border-color: var(--agnes-status-danger-text);
-}
-.field-hint {
-  color: var(--agnes-text-tertiary);
-  font-size: var(--font-size-xs);
-  line-height: 1.45;
-}
 #config-key-hint:empty {
   display: none;
 }

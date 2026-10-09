@@ -1,3 +1,4 @@
+import { Button } from '@agnes/web-ui'
 import type { UploadedAttachment } from '@agnes/protocol'
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -209,8 +210,8 @@ export function useComposerUploads(
               />
             )}
             {active && (
-              <button
-                type="button"
+              <Button
+                htmlType="button"
                 data-testid="attachment-upload-cancel"
                 aria-label={t('composer.upload.cancelName', { name: entry.file.name })}
                 onClick={() => {
@@ -218,11 +219,11 @@ export function useComposerUploads(
                 }}
               >
                 {t('composer.upload.cancel')}
-              </button>
+              </Button>
             )}
             {entry.state === 'failed' && (
-              <button
-                type="button"
+              <Button
+                htmlType="button"
                 data-testid="attachment-upload-retry"
                 onClick={() => {
                   if (entry.controller.signal.aborted) {
@@ -236,11 +237,11 @@ export function useComposerUploads(
                 }}
               >
                 {t('composer.upload.retry')}
-              </button>
+              </Button>
             )}
             {!active && (
-              <button
-                type="button"
+              <Button
+                htmlType="button"
                 data-testid="attachment-upload-dismiss"
                 aria-label={t('composer.upload.dismiss')}
                 onClick={() => {
@@ -253,7 +254,7 @@ export function useComposerUploads(
                 }}
               >
                 ×
-              </button>
+              </Button>
             )}
           </figure>
         )

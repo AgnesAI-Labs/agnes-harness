@@ -3,8 +3,8 @@
   color: var(--agnes-text-primary);
   background: var(--agnes-bg-surface);
   display: grid;
-  gap: 12px;
-  padding: 12px;
+  gap: var(--s12);
+  padding: var(--s12);
   border: 1px solid var(--agnes-line-primary);
   border-radius: var(--radius-md);
   min-width: 0;
@@ -20,7 +20,7 @@
 .agnes-intelligent-catalog [role="group"] {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--s8);
 }
 .agnes-intelligent-table-scroll {
   overflow-x: auto;
@@ -31,7 +31,7 @@
 }
 .agnes-intelligent-catalog th,
 .agnes-intelligent-catalog td {
-  padding: 8px;
+  padding: var(--s8);
   text-align: start;
   border-bottom: 1px solid var(--agnes-line-primary);
 }
@@ -50,13 +50,13 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--s8);
 }
 .agnes-intelligent-surface h3 {
   margin: 0;
 }
 .agnes-intelligent-surface [data-testid="ui-receipts"] {
-  padding-inline-start: 20px;
+  padding-inline-start: var(--s20);
 }
 
 .agnes-intelligent-surface p {

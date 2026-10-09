@@ -594,45 +594,6 @@
 :is(#config-form, #account-dialog) .config-validation-section #config-error {
   grid-column: 1 / -1;
 }
-:is(#config-form, #account-dialog)
-  input:not(.ant-select-input):not(.agnes-settings-toolbar input):not(.agnes-settings-input-surface),
-:is(#config-form, #account-dialog) select,
-:is(#config-form, #account-dialog) .select-picker-trigger {
-  height: var(--control-height-form);
-  min-height: var(--control-height-form);
-  padding: 0.625rem 0.75rem;
-  border-color: var(--agnes-input-border);
-  border-radius: var(--radius-md);
-  color: var(--agnes-input-content-strong);
-  background: var(--agnes-input-surface);
-  font-size: var(--font-size-sm);
-  transition:
-    border-color var(--transition-fast),
-    box-shadow var(--transition-fast),
-    background-color var(--transition-fast);
-}
-:is(#config-form, #account-dialog)
-  input:not(.ant-select-input):not(.agnes-settings-toolbar input):not(
-    .agnes-settings-input-surface
-  ):hover:not(:disabled),
-:is(#config-form, #account-dialog) select:hover:not(:disabled) {
-  border-color: var(--agnes-input-border-emphasis);
-  background: var(--agnes-input-surface);
-}
-:is(#config-form, #account-dialog)
-  input:not(.ant-select-input):not(.agnes-settings-toolbar input):not(
-    .agnes-settings-input-surface
-  ):focus-visible,
-:is(#config-form, #account-dialog) select:focus-visible {
-  background: var(--agnes-input-surface);
-}
-:is(#config-form, #account-dialog)
-  input:not(.ant-select-input):not(.agnes-settings-toolbar input):not(.agnes-settings-input-surface):disabled,
-:is(#config-form, #account-dialog) select:disabled {
-  color: var(--agnes-text-tertiary);
-  border-color: var(--agnes-line-primary);
-  background: var(--agnes-bg-card);
-}
 :is(#config-form, #account-dialog) #config-key-hint {
   min-height: 1.1rem;
   margin-top: 0.125rem;
@@ -987,23 +948,4 @@
 #appearance-settings-pane .config-workspace {
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
-}
-
-/* 原生 select 太丑：去掉系统外观，自绘箭头。
-   必须带 #config-form——文件前部已有 #config-form select 的 padding 简写 (1,0,1)，
-   裸 .form-field select 只有 (0,1,1)，padding-right 会被压掉，箭头压住文字。 */
-.plugin-dialog-form select,
-#config-form select {
-  appearance: none;
-  padding-right: 2rem;
-  background-image:
-    linear-gradient(45deg, transparent 50%, currentcolor 50%),
-    linear-gradient(135deg, currentcolor 50%, transparent 50%);
-  background-position:
-    right 1rem center,
-    right 0.72rem center;
-  background-size:
-    0.3rem 0.3rem,
-    0.3rem 0.3rem;
-  background-repeat: no-repeat;
 }

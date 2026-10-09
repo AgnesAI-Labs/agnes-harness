@@ -36,13 +36,6 @@
   min-width: 0;
   flex: 1;
 }
-.runtime-settings h2 {
-  margin: 0 0 1rem;
-  font-size: var(--font-size-lg);
-}
-.runtime-settings [data-testid="settings-refresh"] {
-  margin-bottom: 1rem;
-}
 @media (max-width: 640px) {
   .runtime-settings:has(> nav) {
     flex-direction: column;
