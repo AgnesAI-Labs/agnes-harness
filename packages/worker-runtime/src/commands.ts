@@ -301,6 +301,36 @@ export async function handleCommand(
       return { ok: true }
     case 'systemPrompt.preview':
       return session.systemPromptPreview()
+    case 'controlState':
+      return session.controls.state()
+    case 'control':
+      if (!['pause', 'resume', 'cancel', 'interrupt'].includes(String(p.action)))
+        throw new TypeError('invalid session control')
+      return session.controls
+        .apply(
+          p.action as 'pause' | 'resume' | 'cancel' | 'interrupt',
+          p.actor as Actor,
+          String(p.admissionId),
+          typeof p.itemId === 'string' ? p.itemId : undefined,
+        )
+        .catch((error: unknown) => {
+          const failure = error as { code?: string; detail?: { control?: unknown; reason?: unknown } }
+          if (failure.detail?.reason === 'CONTROL_NOT_RUNNING')
+            throw rpcError('SEMANTIC_REJECTED', { code: 'CONTROL_NOT_RUNNING' })
+          if (failure.code === 'E_UNSUPPORTED')
+            throw rpcError('SEMANTIC_REJECTED', {
+              code: 'LOOP_CONTROL_UNSUPPORTED',
+              control: failure.detail?.control,
+            })
+          throw error
+        })
+    case 'editQueuedInput':
+      return session.controls.edit(
+        String(p.itemId),
+        p.content as import('@agnes/protocol').ContentBlock[],
+        p.actor as Actor,
+        String(p.admissionId),
+      )
     case 'enqueue':
       return session.enqueue(p.target as 'next-turn' | 'next-step', p.msg as never)
     case 'sendQueuedNow':

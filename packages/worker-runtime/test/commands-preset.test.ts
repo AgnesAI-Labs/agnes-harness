@@ -107,3 +107,46 @@ it.each([true, false])(
     else await expect(application).rejects.toThrow('applied to 0/1 containers')
   },
 )
+
+it('routes controls to the pinned session while Host publication changes', async () => {
+  const apply = vi.fn(async () => 99)
+  const state = { controls: { pause: true }, paused: true, pending: [] }
+  const session = { controls: { apply, state: async () => state } } as unknown as HostSession
+  const host = { controls: { apply: vi.fn() } } as unknown as Host
+  const opts = { aborts: new Map(), host }
+  await expect(
+    handleCommand(
+      session,
+      {
+        kind: 'command',
+        requestId: 'pause',
+        method: 'control',
+        params: { action: 'pause', actor: { kind: 'principal', id: 'human' }, admissionId: 'pause-1' },
+      } as never,
+      opts,
+    ),
+  ).resolves.toBe(99)
+  expect(apply).toHaveBeenCalledWith('pause', { kind: 'principal', id: 'human' }, 'pause-1', undefined)
+  await expect(
+    handleCommand(
+      session,
+      { kind: 'command', requestId: 'state', method: 'controlState', params: {} } as never,
+      opts,
+    ),
+  ).resolves.toEqual(state)
+  apply.mockRejectedValueOnce(
+    Object.assign(new Error('unsupported'), { code: 'E_UNSUPPORTED', detail: { control: 'pause' } }),
+  )
+  await expect(
+    handleCommand(
+      session,
+      {
+        kind: 'command',
+        requestId: 'refusal',
+        method: 'control',
+        params: { action: 'pause', admissionId: 'refusal' },
+      } as never,
+      opts,
+    ),
+  ).rejects.toMatchObject({ data: { code: 'LOOP_CONTROL_UNSUPPORTED', control: 'pause' } })
+})
