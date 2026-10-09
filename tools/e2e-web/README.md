@@ -48,14 +48,17 @@ separate from this gate.
 ## Gate and failure evidence
 
 The required GitHub status is **Web E2E gate** from `.github/workflows/e2e-web.yml`. It aggregates
-all twelve macOS 14 and twelve Linux Web jobs, all six Linux fast-test shards and the separate Linux
-contracts job (including `pnpm test:story`) and three migrated-heavy shards; a failed or cancelled
-dependency fails the aggregate. Eight jobs per platform shard the regular cases; four additional
-jobs each run one narrow
-locale/theme combination. Hosted macOS narrow flows can take over four minutes per case, so
-combining two leaves insufficient room for build and quality prechecks. Every job retains one
-worker, all checks, and the existing deadlines. Uploads retain completed reports, screenshots
-and trace archives, excluding volatile Playwright scratch directories.
+all fourteen macOS 14 and twelve Linux Web jobs, all six Linux fast-test shards and the separate
+Linux contracts job (including `pnpm test:story`) and three migrated-heavy shards; a failed or
+cancelled dependency fails the aggregate. macOS uses nine explicit file/flow lists for regular
+cases, plus one candidate-review job and four single-case narrow locale/theme jobs. The lists
+balance observed hosted-runner durations, including build and quality prechecks: multi-minute
+candidate review and narrow flows need separate budgets, and first-run checks split by locale.
+Linux retains eight regular shards plus four single-case narrow jobs. Every job retains one
+worker, all checks, and the existing deadlines. After adding specs or changing these lists,
+compare each platform's combined `pnpm e2e:web --list` selections with the full list: every case
+must appear exactly once. Uploads retain completed reports, screenshots and trace archives,
+excluding volatile Playwright scratch directories.
 Maintainers must select that status in the target branch's required checks/ruleset; committing a
 workflow alone does not change GitHub branch protection. The workflow runs on pull requests,
 merge groups, integration/main pushes and manual dispatch, without path-based skips.
@@ -64,8 +67,8 @@ watch the returned run with `gh run watch RUN_ID --exit-status`. Dispatch checks
 specs and baselines. Every ready screen needs both platform PNGs captured with the pinned
 Chromium and CI fonts; dispatch does not generate or approve missing baselines.
 
-The local command shares two workers with per-test scheduling. CI runs eight complete, disjoint
-regular shards plus four single-case narrow jobs per platform with one worker per runner, so concurrent daemon/worker/Chromium trees do not
+The local command shares two workers with per-test scheduling. CI runs the platform partitions
+listed above with one worker per runner, so concurrent daemon/worker/Chromium trees do not
 compete on the same small runner. The complete `pnpm test` fast tier runs in six independent
 Vitest shards with one worker each; typechecks, structural guards and kernel regressions run
 once in a separate contracts job. The process/data-heavy files listed in

@@ -10,22 +10,24 @@ concurrency:
   group: web-e2e-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
-  # Narrow flows can take over four minutes each on hosted macOS; give each its own job.
-  # Shard the remaining cases separately, retaining every scan and the ten-minute step budget.
+  # Explicit file/flow lists use hosted-macOS timings, including build and quality prechecks.
+  # Isolate narrow flows and candidate review; retain every scan and the ten-minute step budget.
   e2e-web:
     name: macOS Web E2E (${{ matrix.id }})
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { id: main-1, args: "--grep-invert 'narrow screens' --shard=1/8" }
-          - { id: main-2, args: "--grep-invert 'narrow screens' --shard=2/8" }
-          - { id: main-3, args: "--grep-invert 'narrow screens' --shard=3/8" }
-          - { id: main-4, args: "--grep-invert 'narrow screens' --shard=4/8" }
-          - { id: main-5, args: "--grep-invert 'narrow screens' --shard=5/8" }
-          - { id: main-6, args: "--grep-invert 'narrow screens' --shard=6/8" }
-          - { id: main-7, args: "--grep-invert 'narrow screens' --shard=7/8" }
-          - { id: main-8, args: "--grep-invert 'narrow screens' --shard=8/8" }
+          - { id: main-1, args: "diagnostics.spec.ts fact-chain.spec.ts" }
+          - { id: main-2, args: "first-run.spec.ts --grep 'guided first run en/'" }
+          - { id: main-3, args: "first-run.spec.ts --grep 'guided first run zh-CN/'" }
+          - { id: main-4, args: "memory.spec.ts" }
+          - { id: main-5, args: "prompt-trace.spec.ts" }
+          - { id: main-6, args: "runtime.spec.ts" }
+          - { id: main-7, args: "ui-flows.spec.ts --grep-invert 'agent candidate review'" }
+          - { id: main-8, args: "ui-gate.spec.ts" }
+          - { id: main-9, args: "workbench.spec.ts" }
+          - { id: candidate-review, args: "ui-flows.spec.ts --grep 'agent candidate review'" }
           - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'" }
           - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'" }
           - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'" }
