@@ -24,7 +24,7 @@ already installed executable for local debugging; CI uses the pinned Playwright 
 
 ## Runtime and SDK coverage
 
-Each spec receives a new short `/tmp` directory and an isolated `AGH_HOME` and `HOME`. The harness
+Each real-runtime test receives a new short `/tmp` directory and an isolated `AGH_HOME` and `HOME`. The harness
 starts `node agnes.mjs serve --port PORT` **from the repository root**. It
 uses the first-run keyless demo model, synthetic workspace data, a loopback OpenAI-compatible
 provider and a dependency-free stdio MCP fixture. Child environments allow only the required
@@ -42,7 +42,15 @@ bundled FDE workflow writing a deliverable. They assert durable tool results and
 not just that a request was accepted.
 
 SDK flows start only their SDK client; maintained page flows own first-run screenshots and use the
-same real daemon and public SDK for persisted-state assertions. The older UI smoke files remain
+same real daemon and public SDK for persisted-state assertions. `first-run.spec.ts` keeps one
+complete root-entry flow (en/light/1440) and one installed-entry flow (zh-CN/light/1440).
+Each captures read-only DOM frames and loaded CSS/image/font assets from the production shell
+for both themes and widths. The other six variants use an in-memory loopback HTTP fixture,
+without starting a daemon, worker or provider. All eight screens per variant retain their
+screenshot names, translation, accessibility and focus assertions. Each locale group runs
+serially so decorative checks consume only frames from its successful real flow. Filtering
+should select the whole locale group (`--grep 'guided first run en/'` or `zh-CN/`); selecting
+only a decorative case has no producer and fails explicitly. The older UI smoke files remain
 separate from this gate.
 
 ## Gate and failure evidence
