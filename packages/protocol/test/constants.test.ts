@@ -45,6 +45,14 @@ describe('constants', () => {
     expect(EXT_EVENT_PATTERN.test('x/feedback/item')).toBe(true)
     expect(EXT_EVENT_PATTERN.test('x/feedback/growth')).toBe(true)
     expect(EXT_EVENT_PATTERN.test('x/feedback/forged')).toBe(false)
+    expect(EXT_EVENT_PATTERN.test('x/agnes/intelligent-ui/surface.opened')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/agnes/intelligent-ui/action.pending-approval')).toBe(true)
+    for (const type of [
+      'x/agnes/intelligent-ui/action.forged',
+      'x/vendor/tool/surface.opened',
+      'x/agnes/intelligent-ui/surface.opened/extra',
+    ])
+      expect(EXT_EVENT_PATTERN.test(type)).toBe(false)
   })
   it('exposes namespace constants', () => {
     expect(META_KEY).toBe('ai.agnes.harness')

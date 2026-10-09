@@ -119,8 +119,26 @@ describe('author manifest validation', () => {
   it('namespaces bundled and partner events and rejects reserved shortcuts', () => {
     expect(extEventType('agnes/subagent', 'worktree-skipped')).toBe('x/agnes/subagent/worktree-skipped')
     expect(extEventType('vendor/tool', 'done')).toBe('x/vendor/tool/done')
+    for (const name of [
+      'surface.opened',
+      'surface.updated',
+      'surface.closed',
+      'action.received',
+      'action.rejected',
+      'action.pending-approval',
+      'action.executing',
+      'action.succeeded',
+      'action.failed',
+      'action.retried',
+      'action.delivered',
+    ])
+      expect(extEventType('agnes/intelligent-ui', name)).toBe(`x/agnes/intelligent-ui/${name}`)
     for (const [id, name] of [
       ['core', 'done'],
+      ['vendor/tool', 'surface.opened'],
+      ['agnes/intelligent-ui', 'surface.forged'],
+      ['agnes/intelligent-ui', 'action.forged'],
+      ['agnes/intelligent-ui', 'surface.opened/forged'],
       ['vendor/tool', 'Bad Name'],
       ['vendor/tool', 'x/other'],
       ['', 'done'],

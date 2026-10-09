@@ -20,7 +20,7 @@ export type { ThemeTokenName } from './generated/theme-tokens.js'
 export { THEME_TOKEN_NAMES } from './generated/theme-tokens.js'
 
 export const EXTENSION_ID_PATTERN = /^[a-z0-9-]+\/[a-z0-9-]+$/
-export const EVENT_NAME_PATTERN = /^[a-z0-9-]+$/
+export const EVENT_NAME_PATTERN = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*$/
 export const NETWORK_HOST_PATTERN = /^[a-z0-9.-]+(:[0-9]{1,5})?$/
 
 export function extEventType(extId: string, name: string): string {

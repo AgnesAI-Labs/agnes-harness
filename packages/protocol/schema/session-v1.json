@@ -179,7 +179,7 @@
               ]
             },
             {
-              "pattern": "^x\\/(?:(?:core|agnes)\\/[a-z0-9-]+|host\\/session-title|feedback\\/(?:item|growth)|[a-z0-9-]+\\/[a-z0-9-]+\\/[a-z0-9-]+)$"
+              "pattern": "^x\\/(?:(?:core|agnes)\\/[a-z0-9-]+|host\\/session-title|feedback\\/(?:item|growth)|agnes\\/intelligent-ui\\/(?:surface\\.(?:opened|updated|closed)|action\\.(?:received|rejected|pending-approval|executing|succeeded|failed|retried|delivered))|[a-z0-9-]+\\/[a-z0-9-]+\\/[a-z0-9-]+)$"
             }
           ]
         },
