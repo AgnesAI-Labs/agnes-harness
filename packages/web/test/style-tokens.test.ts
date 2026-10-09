@@ -164,8 +164,11 @@ function contrast(fgName: string, bgName: string, theme: Theme): number | null {
   const fg = resolveColor(fgName, theme)
   const bg = resolveColor(bgName, theme)
   if (!fg || !bg) return null
-  const a = luminance(compositeOver(fg, bg))
-  const b = luminance(bg.rgb)
+  const surface = resolveColor('--agnes-bg-popover', theme)
+  if (!surface) return null
+  const background = compositeOver(bg, surface)
+  const a = luminance(compositeOver(fg, { rgb: background, alpha: 1 }))
+  const b = luminance(background)
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
 }
 
@@ -176,6 +179,9 @@ const TEXT_PAIRS: Array<[string, string]> = [
   ['--agnes-text-primary', '--agnes-bg-page'],
   ['--agnes-text-secondary', '--agnes-bg-page'],
   ['--agnes-text-tertiary', '--agnes-bg-page'],
+  ['--agnes-text-tertiary', '--agnes-brand-emphasis-soft'],
+  ['--agnes-text-tertiary', '--agnes-bg-hover'],
+  ['--agnes-text-tertiary', '--agnes-bg-card'],
   ['--agnes-text-emphasis', '--agnes-bg-page'],
   ['--agnes-text-primary', '--agnes-bg-app-content'],
   ['--agnes-text-secondary', '--agnes-bg-app-content'],

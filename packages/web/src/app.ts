@@ -394,7 +394,6 @@ bindSlotCardContext({ registry: clientModules.registry, claim: claimSlotCard, lo
 const t: Translate = (key, vars) => clientModules.locale.t(key, vars)
 setLocaleTranslator(t)
 clientModules.locale.register('@agnes/web-workbench', workbenchLocaleCatalog)
-clientModules.locale.subscribe(() => renderControls())
 
 // A daemon notice is only an invalidation hint. Every read goes back through the SDK roster
 // endpoint, and a failed read leaves the current page/modules intact for the next hint.
@@ -2104,6 +2103,11 @@ const skinGroup = bindSkinGroup({
     }
     skinChanged()
   },
+})
+clientModules.locale.subscribe(() => {
+  renderControls()
+  updateSidebar()
+  skinGroup.sync()
 })
 window.addEventListener('agnes:packages-changed', () => void skinGroup.refresh())
 window.addEventListener('focus', () => void skinGroup.refresh())
