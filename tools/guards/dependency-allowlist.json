@@ -17,7 +17,7 @@
   "@agnes/resource-control-runtime": ["@agnes/cordis", "@agnes/protocol", "@agnes/system-node"],
   "@agnes/resource-control-store": ["@agnes/protocol", "@agnes/system-node"],
   "@agnes/cli-tui": ["@agnes/protocol", "@agnes/sdk"],
-  "@agnes/resource-control-web": ["@agnes/protocol", "@agnes/web-ui"],
+  "@agnes/resource-control-web": ["@agnes/protocol", "@agnes/resource-control-contracts", "@agnes/web-ui"],
   "@agnes/resource-control-worker": [
     "@agnes/base",
     "@agnes/protocol",
@@ -46,7 +46,12 @@
     "@agnes/resource-control-worker",
     "@agnes/observability"
   ],
-  "@agnes/resource-control-cli": ["@agnes/daemon", "@agnes/protocol", "@agnes/sdk"],
+  "@agnes/resource-control-cli": [
+    "@agnes/daemon",
+    "@agnes/protocol",
+    "@agnes/resource-control-contracts",
+    "@agnes/sdk"
+  ],
   "@agnes/history-index": [],
   "@agnes/extension-api": ["@agnes/protocol"],
   "@agnes/core": [
