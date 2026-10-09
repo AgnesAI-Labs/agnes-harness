@@ -1,3 +1,4 @@
+import { PluginConfigTab } from '../config-tab.js'
 import type { PackageSource } from '@agnes/protocol'
 import {
   Button,
@@ -307,6 +308,8 @@ export function renderDetailPluginView(this: PluginAdminViewContext): void {
   renderRegion(
     this.detail,
     <UiLocaleProvider source={this.locale}>
+      <PluginConfigTab key={item.id} context={this.state.context!} id={item.id}
+        installed={this.tab === 'installed'} onClose={() => this.closeDetail()}>
       <DetailContent
         heading={item.id}
         metadata={
@@ -359,6 +362,7 @@ export function renderDetailPluginView(this: PluginAdminViewContext): void {
         onClose={() => this.closeDetail()}
         onCancelOperation={(operationId, trigger) => void this.cancelOperation(operationId, trigger)}
       />
+      </PluginConfigTab>
     </UiLocaleProvider>,
   )
 }
