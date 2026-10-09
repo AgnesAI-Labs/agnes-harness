@@ -22,7 +22,7 @@ node examples/demos/growing-skills/run.mjs
 | --- | --- |
 | [业务 Agent 即插件](../../examples/demos/business-agent/README.zh-CN.md) | 安装现有 support-triage bundle；业务会话选择自己的 Loop 和工具，并行的默认 Agent 看不到这些工具。禁用后新会话失去 bundle，旧会话仍使用固定代码完成任务。 |
 | [热升级不打断业务](../../examples/demos/hot-upgrade/README.zh-CN.md) | 多步骤工作流停在持久化的审查问题；发布已审查的新包版本，新会话输出 v2 收据。中途重启 daemon 后，旧会话保留 v1、先前工具结果和待回答问题；读取、分类和模拟发送各记录一次。 |
-| [Agent 自己长技能](../../examples/demos/growing-skills/README.zh-CN.md) | 默认 Agent 用 `plugin-helper` 写文本统计插件。用户审查源码并批准原生安装与信任后，新会话调用真实工具，provenance 显示 `installer=agent`。 |
+| [Agent 自己长技能](../../examples/demos/growing-skills/README.zh-CN.md) | 默认 Agent 用 `plugin-helper` 写文本统计插件。用户审查源码和通过的测试、发布审阅过的精确候选哈希后，新会话调用真实工具，provenance 显示 `installer=agent`。 |
 
 默认 demo model 做确定性的教学选择，不执行推理。客服操作是**模拟发送**，不会对外发消息。重启演示验证持久化审查边界和已提交工具结果的恢复；它不承诺任意外部副作用在执行中崩溃后恰好发生一次，未知效果仍会阻塞并要求核查。参见[会话](sessions.zh-CN.md)、[包管理](packages.zh-CN.md)、[安全](security.zh-CN.md)与[固定代码、实时资源](../develop/architecture-plugins.zh-CN.md#固定代码动态资源)。
 

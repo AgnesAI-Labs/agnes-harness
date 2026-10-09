@@ -135,20 +135,45 @@ try {
     say('1. Ask the Agent to create a text statistics plugin through the installed authoring helper.')
     const author = await rt.session({ preset: 'full-access', bundles: [] })
     await prompt(author, 'Create a plugin that counts characters and words in text.')
-    const prepared = await result(author, 'plugin_helper_create')
-    assert.equal(prepared.state, 'prepared')
-    const manifest = JSON.parse(await readFile(join(prepared.directory, 'package.json'), 'utf8'))
-    const source = await readFile(join(prepared.directory, 'index.mjs'), 'utf8')
+    const draft = await result(author, 'plugin_helper_create')
+    assert.equal(draft.state, 'draft')
+    const manifest = JSON.parse(draft.files.find((file) => file.path === 'package.json').after)
+    const source = draft.files.find((file) => file.path === 'index.mjs').after
     assert.equal(manifest.name, 'my-agh-plugin')
     assert.ok(source.includes('my_text_stats'))
+    assert.equal(
+      (await rt.client.packages.list({ profile: 'local-dev' })).packages.some((p) => p.id === manifest.name),
+      false,
+    )
     say('Generated source for review:\n' + source)
-    say(
-      `2. Candidate reviewed: ${manifest.name}@${manifest.version}; tool=my_text_stats; proposal=${prepared.proposalId}. Source saved; not yet installed.`,
+    await prompt(
+      author,
+      `call plugin_helper_install ${JSON.stringify({ action: 'test', proposalId: draft.candidateId })}`,
     )
     await prompt(
       author,
-      `call plugin_helper_install ${JSON.stringify({ action: 'commit', proposalId: prepared.proposalId })}`,
+      `call plugin_helper_install ${JSON.stringify({ action: 'commit', proposalId: draft.candidateId })}`,
     )
+    const reviewed = await rt.client.request('_agnes/v1/plugins.candidates.show', {
+      profile: 'local-dev',
+      candidateId: draft.candidateId,
+    })
+    assert.equal(reviewed.state, 'review')
+    assert.equal(reviewed.tests.state, 'passed')
+    assert.equal(reviewed.tests.hash, draft.candidateHash)
+    assert.ok(
+      await rt.confirm(
+        `Publish reviewed ${manifest.name}@${manifest.version}; candidate=${draft.candidateHash}; review=${reviewed.reviewHash}`,
+      ),
+      'Publication declined',
+    )
+    await rt.client.request('_agnes/v1/plugins.candidates.approve', {
+      ...(await command(rt.client)),
+      candidateId: draft.candidateId,
+      expectedHash: draft.candidateHash,
+      reviewHash: reviewed.reviewHash,
+    })
+    say('2. Source and passing tests reviewed; the human published the exact candidate hash.')
     await waitFor(
       () => rt.client.packages.list({ profile: 'local-dev' }),
       (value) => value.packages.some((p) => p.id === 'my-agh-plugin' && p.actual === 'running'),
@@ -163,7 +188,7 @@ try {
     await prompt(next, 'call my_text_stats {"text":"hello world"}')
     assert.deepEqual(await result(next, 'my_text_stats'), { characters: 11, words: 2 })
     say(
-      '3. Explicit native trust approval completed; next session invokes the real tool: characters=11, words=2; provenance installer=agent.',
+      '3. Human publication of the reviewed hash completed; next session invokes the real tool: characters=11, words=2; provenance installer=agent.',
     )
   }
   say(`PASS ${name}: every claim verified against persisted backend results.`)

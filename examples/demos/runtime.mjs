@@ -62,7 +62,7 @@ export async function runtime(check) {
   let configured = false
   const connect = async () => {
     await cli(['daemon', 'start'])
-    const owner = JSON.parse(await readFile(join(home, 'data/daemon/owner.json'), 'utf8'))
+    const owner = JSON.parse(await readFile(join(home, 'daemon/owner.json'), 'utf8'))
     client = createClient({
       transport: { kind: 'unix', path: owner.socketPath },
       auth: { kind: 'local' },
