@@ -17,9 +17,6 @@
       "path": "../resource-control-client-node"
     },
     {
-      "path": "../package-admin-client-node"
-    },
-    {
       "path": "../system-node"
     }
   ]

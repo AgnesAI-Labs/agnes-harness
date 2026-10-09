@@ -1190,12 +1190,6 @@ importers:
         specifier: workspace:*
         version: link:../system-node
 
-  packages/package-admin-client-node:
-    dependencies:
-      '@agnes/protocol':
-        specifier: workspace:*
-        version: link:../protocol
-
   packages/package-isolation:
     dependencies:
       '@agnes/system-node':
@@ -1417,9 +1411,6 @@ importers:
 
   packages/sdk:
     dependencies:
-      '@agnes/package-admin-client-node':
-        specifier: workspace:*
-        version: link:../package-admin-client-node
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol

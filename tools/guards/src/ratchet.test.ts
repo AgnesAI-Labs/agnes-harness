@@ -1766,9 +1766,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 5443 -> 5447; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Typed search, history, context and child-engine administration methods.
   // countLines: 5447 -> 5456; exact cap, no exclusions or spare allocation.
-  'packages/sdk/src': 5549,
+  'packages/sdk/src': 5740,
   'packages/sdk/src/extensions.node': 21,
-  'packages/sdk/src/package-admin.node': 1,
+  'packages/sdk/src/package-admin.node': 192,
   'packages/sdk/src/surface.browser': 1,
   'packages/sdk/src/surface.node': 149,
   // 2026-09-10: raised from 3000 by daemon Task 17 (WorkerPool / WorkerLink / RemoteSession /

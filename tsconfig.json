@@ -35,9 +35,6 @@
       "path": "packages/protocol-validation"
     },
     {
-      "path": "packages/package-admin-client-node"
-    },
-    {
       "path": "packages/error-sanitization"
     },
     {

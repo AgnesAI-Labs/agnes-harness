@@ -86,7 +86,6 @@ const LAYER: Record<string, number> = {
   '@agnes/web-admin-frame': -1,
   '@agnes/protocol': 0,
   '@agnes/resource-control-client-node': 2,
-  '@agnes/package-admin-client-node': 2,
   '@agnes/cli-tui': 4,
   '@agnes/resource-control-runtime': 6,
   '@agnes/resource-control-store': 6,
@@ -152,7 +151,6 @@ const EXACT_ONLY: Record<string, string[]> = {
   '@agnes/sdk': [
     '@agnes/protocol',
     '@agnes/resource-control-client-node',
-    '@agnes/package-admin-client-node',
     '@agnes/system-node', // Node-only private file journal; browser entry stays free of native imports.
   ],
   '@agnes/extension-api': ['@agnes/protocol'],

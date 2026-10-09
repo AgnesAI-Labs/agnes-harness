@@ -50,7 +50,6 @@ describe('repo', () => {
       '@agnes/memory-file',
       '@agnes/model-adapters',
       '@agnes/observability',
-      '@agnes/package-admin-client-node',
       '@agnes/package-isolation',
       '@agnes/package-manager',
       '@agnes/plugin-runtime',

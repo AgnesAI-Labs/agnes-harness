@@ -15,7 +15,6 @@
   "@agnes/package-isolation": ["@agnes/system-node"],
   "@agnes/web-server": ["@agnes/protocol", "@agnes/history-index"],
   "@agnes/web-admin-frame": [],
-  "@agnes/package-admin-client-node": ["@agnes/protocol"],
   "@agnes/resource-control-runtime": ["@agnes/cordis", "@agnes/protocol", "@agnes/system-node"],
   "@agnes/resource-control-store": ["@agnes/protocol", "@agnes/system-node"],
   "@agnes/resource-control-client-node": ["@agnes/protocol"],
@@ -100,12 +99,7 @@
     "@agnes/host-providers",
     "@agnes/host-runtime"
   ],
-  "@agnes/sdk": [
-    "@agnes/protocol",
-    "@agnes/resource-control-client-node",
-    "@agnes/package-admin-client-node",
-    "@agnes/system-node"
-  ],
+  "@agnes/sdk": ["@agnes/protocol", "@agnes/resource-control-client-node", "@agnes/system-node"],
   "@agnes/daemon": [
     "@agnes/protocol",
     "@agnes/base",
