@@ -8,6 +8,7 @@ import {
   SettingsSelect,
   SettingsState,
   SettingsTextArea,
+  SettingsToolbar,
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
@@ -71,6 +72,7 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
     }
   }
   const inspection = snapshot?.inspection
+  const numbers = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 })
   return (
     <SettingsCard title={t('title')} data-testid="memory-panel" aria-busy={busy}>
       <p>{t('help')}</p>
@@ -128,12 +130,15 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
           </Field>
           <p>{t('offHelp')}</p>
           <p data-testid="memory-size">
-            {t('size')}: {inspection.files.find((file) => file.path === 'MEMORY.md')?.bytes ?? 0} /{' '}
-            {inspection.settings.indexMaxBytes} {t('bytes')}; {inspection.settings.indexMaxLines} {t('lines')}
+            {t('size', {
+              used: numbers.format(
+                (inspection.files.find((file) => file.path === 'MEMORY.md')?.bytes ?? 0) / 1024,
+              ),
+              limit: numbers.format(inspection.settings.indexMaxBytes / 1024),
+              lines: numbers.format(inspection.settings.indexMaxLines),
+            })}
           </p>
-          <p>
-            {t('budget')}: {inspection.settings.tokenBudget} {t('tokens')}
-          </p>
+          <p>{t('budget', { tokens: numbers.format(inspection.settings.tokenBudget) })}</p>
           <SettingsCode label={t('location')} data-testid="memory-root">
             {inspection.root}
           </SettingsCode>
@@ -180,20 +185,22 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
                 />
               </Field>
               <p>{t('conflict')}</p>
-              <Button
-                data-testid="memory-save"
-                disabled={!canSave || busy || content === file.content}
-                onClick={() => void request({ cwd, file: file.path, content, baseHash: file.hash })}
-              >
-                {t('save')}
-              </Button>
-              <Button
-                data-testid="memory-reload"
-                disabled={busy}
-                onClick={() => void request({ cwd, file: file.path })}
-              >
-                {t('reload')}
-              </Button>
+              <SettingsToolbar data-testid="memory-actions">
+                <Button
+                  data-testid="memory-save"
+                  disabled={!canSave || busy || content === file.content}
+                  onClick={() => void request({ cwd, file: file.path, content, baseHash: file.hash })}
+                >
+                  {t('save')}
+                </Button>
+                <Button
+                  data-testid="memory-reload"
+                  disabled={busy}
+                  onClick={() => void request({ cwd, file: file.path })}
+                >
+                  {t('reload')}
+                </Button>
+              </SettingsToolbar>
             </>
           )}
         </>
