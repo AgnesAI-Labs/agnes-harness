@@ -142,7 +142,9 @@ it('runs the fresh local-dev demo through registry and provider without credenti
         expect.arrayContaining(['session', 'turn', 'model', 'tool', 'child']),
       )
       const tool = spans.find((row) => row.name === 'tool')!
-      const turn = spans.find((row) => row.spanId === tool.parentSpanId)!
+      const step = spans.find((row) => row.spanId === tool.parentSpanId)!
+      expect(step.name).toBe('step')
+      const turn = spans.find((row) => row.spanId === step.parentSpanId)!
       expect(turn.name).toBe('turn')
       expect(tool.attributes).toEqual(
         expect.arrayContaining([

@@ -65,6 +65,7 @@ describe('host boundaries', () => {
             '@agnes/ai',
             '@agnes/model-adapters',
             '@agnes/observability',
+            '@agnes/history-index',
             '@agnes/package-manager',
             '@agnes/plugin-runtime',
             '@agnes/resource-control-runtime',

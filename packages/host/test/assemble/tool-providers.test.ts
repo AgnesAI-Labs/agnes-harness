@@ -95,7 +95,7 @@ it('registers the Base default and custom policies through plugin fibers and fai
       },
     })
   })
-  await expect.poll(() => root.toolPolicies.catalog().length).toBe(4)
+  await expect.poll(() => root.toolPolicies.catalog().length).toBe(5)
   expect(root.toolPolicies.catalog()).toContainEqual({
     id: 'default',
     version: '1.0.0',

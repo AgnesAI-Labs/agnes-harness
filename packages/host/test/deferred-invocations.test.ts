@@ -77,7 +77,8 @@ async function fixture() {
       if (value.tool !== 'business_adjust') throw new Error('Not in the session tool catalog')
     },
     changed: async (receipt: DeferredInvocationReceipt) => {
-      if (rejectNotification) throw new Error('Delivery interrupted')
+      if (rejectNotification && (receipt.state === 'succeeded' || receipt.state === 'failed'))
+        throw new Error('Delivery interrupted')
       changed.push(receipt)
     },
   }
