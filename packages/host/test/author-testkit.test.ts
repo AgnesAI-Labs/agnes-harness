@@ -68,7 +68,7 @@ describe('public author testkit', () => {
     }
   })
 
-  it('keeps an in-flight session on its pinned generation while new sessions adopt a reload', async () => {
+  it.each(['standard', 'author'])('keeps an in-flight session on its pinned generation while new sessions adopt a reload (%s)', async (preset) => {
     let entered!: () => void, release!: () => void
     const ready = new Promise<void>((resolve) => {
       entered = resolve
@@ -82,6 +82,8 @@ describe('public author testkit', () => {
         await held
       }),
       version: '1.0.0',
+      preset,
+      presets: { author: { name: 'author', extends: 'standard' } },
     })
     try {
       const old = await kit.openSession()

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -275,18 +275,20 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
       })
     ).host
     const owner = host
+    const createSession = (key: string, loop = options.loop ?? invocationLoop) =>
+      owner.createSession({
+        key,
+        cwd: directory,
+        ...(options.preset ? { preset: options.preset } : {}),
+        loop,
+      })
     const failed = owner.extensions().find((entry) => entry.package === id && (!entry.loaded || entry.error))
     if (failed) throw new Error(failed.error?.message ?? 'Author plugin failed to load')
     return {
       async openSession(input = {}) {
         check()
         if (mutation) throw new Error('Author reload in progress')
-        const session = await owner.createSession({
-          key: input.key ?? `author-${++sessionNumber}`,
-          cwd: directory,
-          ...(options.preset ? { preset: options.preset } : {}),
-          loop: input.loop ?? options.loop ?? invocationLoop,
-        })
+        const session = await createSession(input.key ?? `author-${++sessionNumber}`, input.loop)
         let active = false
         let closed = false
         const ready = () => {
@@ -460,18 +462,40 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
           const source = await snapshot(next)
           const current = owner.runtimeTargetSnapshot?.()
           if (!current) throw new Error('Host runtime target unavailable')
-          await owner.applyRuntimeTarget(
-            buildCompleteRuntimeTarget({
-              rows: [
-                ...current.tree.rows.filter((row) => !row.plugin.startsWith(`${id}@`)),
-                ...developmentPluginRows(source, []),
-              ],
-              resources: current.resource.resources,
-            }).target,
-          )
-          const generation = owner.pluginGenerationStatus?.().currentGenerationId
-          if (!generation) throw new Error('Host generation unavailable')
-          return generation
+          try {
+            const report = await owner.applyRuntimeTarget(
+              buildCompleteRuntimeTarget({
+                rows: [
+                  ...current.tree.rows.filter((row) => !row.plugin.startsWith(`${id}@`)),
+                  ...developmentPluginRows(source, []),
+                ],
+                resources: current.resource.resources,
+              }).target,
+            )
+            if (!report.ok) throw new Error('Author plugin publication failed')
+            // Catalog changes can select a different composition from the initial Host.
+            // Admit with the same defaults as openSession and read its actual code pin.
+            const key = `author-reload-${randomUUID()}`
+            let probe: HostSession | undefined
+            try {
+              probe = await createSession(key)
+              const generation = probe.pluginGenerationId
+              if (!generation) throw new Error('Host generation unavailable')
+              return generation
+            } finally {
+              try {
+                await probe?.close()
+              } finally {
+                await owner.releaseSessionGeneration?.(key)
+              }
+            }
+          } catch (error) {
+            // A rejected candidate must not remain the catalog for future admissions.
+            const restored = await owner.applyRuntimeTarget(current)
+            if (!restored.ok)
+              throw new AggregateError([error], 'Author plugin publication recovery failed')
+            throw error
+          }
         } finally {
           mutation = false
         }
