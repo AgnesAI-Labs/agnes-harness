@@ -175,13 +175,15 @@ export class DeferredInvocationsService extends Service implements DeferredInvoc
   private readonly producers = new Map<string, DeferredInvocationProducer>()
   private readonly sessions = new Map<string, DeferredToolInvocationQueue>()
   constructor(
-    ctx: Context,
+    private readonly ownerContext: Context,
     private readonly origins?: RowOriginLookup,
   ) {
-    super(ctx, 'deferredInvocations')
+    super(ownerContext, 'deferredInvocations')
   }
   register(producer: DeferredInvocationProducer): () => void {
-    providerSource(this.ctx, this.origins, producer.source)
+    // The Host-created registry context owns its backend adapter registration.
+    // A plugin context still needs the verified row witness.
+    if (this.ctx.fiber !== this.ownerContext.fiber) providerSource(this.ctx, this.origins, producer.source)
     if (this.producers.has(producer.source)) throw new Error('Duplicate deferred invocation producer')
     this.producers.set(producer.source, producer)
     return () => {

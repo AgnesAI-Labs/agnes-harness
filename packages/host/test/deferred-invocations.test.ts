@@ -1,4 +1,5 @@
 import { defaultLoopPlugin } from '@agnes/base'
+import { Context } from '@agnes/cordis'
 import { MemoryStorage, SessionLogImpl } from '@agnes/core'
 import { defaultIds } from '@agnes/core-common/ids'
 import type {
@@ -9,7 +10,10 @@ import type {
   LoopFactory,
   ToolResult,
 } from '@agnes/extension-api'
-import { createDeferredInvocationQueue } from '@agnes/host-providers/assemble/deferred-invocations'
+import {
+  createDeferredInvocationQueue,
+  DeferredInvocationsService,
+} from '@agnes/host-providers/assemble/deferred-invocations'
 import { drainDeferredToolInvocations } from '@agnes/plugin-runtime'
 import type { Actor, EventEnvelope } from '@agnes/protocol'
 import { expect, it } from 'vitest'
@@ -290,5 +294,32 @@ it('settles an original rejected approval after restart even when no turn reopen
     expect(f.changed.at(-1)).toMatchObject({ state: 'failed' })
   } finally {
     await f.close()
+  }
+})
+
+it('permits the registry owner bridge while refusing a plugin without a verified row', async () => {
+  const root = new Context()
+  const owner = root.extend()
+  new DeferredInvocationsService(owner, { lookup: () => undefined })
+  const producer = { source: 'fixture', validate: async () => {}, changed: async () => {} }
+  try {
+    const off = owner.deferredInvocations.register(producer)
+    expect(() => owner.deferredInvocations.register(producer)).toThrow('Duplicate')
+    off()
+    let failure: unknown
+    const plugin = owner.plugin((ctx) => {
+      try {
+        ctx.deferredInvocations.register(producer)
+      } catch (error) {
+        failure = error
+      }
+    })
+    await plugin
+    expect(failure).toMatchObject({ code: 'E_EXT_LOAD' })
+    expect(String(failure)).toContain('verified plugin row')
+    const release = owner.deferredInvocations.register(producer)
+    release()
+  } finally {
+    await root.fiber.dispose()
   }
 })
