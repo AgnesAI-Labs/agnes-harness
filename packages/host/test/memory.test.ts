@@ -177,6 +177,103 @@ it('uses normal read/write/edit and approval, injects the next revision, and clo
     expect(telemetry).not.toContain(privateText)
 })
 
+it('pins index and topic revisions across tool requests and a model retry, then refreshes next turn', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'agh-memory-turn-'))
+  homes.push(home)
+  let provider: ScriptedProvider | undefined
+  const { host } = await createTestHost({
+    dataDir: home,
+    disableSessionTitle: true,
+    presets: {
+      standard: {
+        name: 'standard',
+        extends: 'base',
+        model: { route: { primary: 'default' }, retry: { max_attempts: 2, base_delay_ms: 1 } },
+      },
+    },
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+    packages: { '@agnes/base': { plugins, seams: { checkpoint: seams.checkpoint } } },
+    provider: (profile) => {
+      provider = new ScriptedProvider({
+        models: profile.provider.routes?.[0]?.models ?? [],
+        scripts: [
+          call('read', { path: join(hostMemoryRoot(home), '..', 'topic.md') }),
+          [
+            {
+              type: 'error',
+              reason: 'error',
+              code: 'TRANSPORT',
+              message: 'synthetic lost response',
+              retryable: true,
+            },
+          ],
+          done,
+          done,
+        ],
+        onExhausted: 'error',
+      })
+      const infer = provider.infer.bind(provider)
+      provider.infer = async function* (request, options) {
+        if (this.calls.length === 0) {
+          const memory = host.memory(home, 'human')
+          if (!memory) throw new Error('missing memory')
+          for (const [file, content] of [
+            ['topic.md', 'New topic'],
+            ['MEMORY.md', 'New preference [topic](topic.md)'],
+          ] as const) {
+            const prior = await memory.readFile(file)
+            await memory.editFile(file, content, prior.hash)
+          }
+        }
+        yield* infer(request, options)
+      }
+      return provider
+    },
+  })
+  try {
+    const memory = host.memory(home, 'human')
+    if (!memory || !provider) throw new Error('missing memory or provider')
+    await memory.configure({ mode: 'auto' })
+    for (const [file, content] of [
+      ['topic.md', 'Old topic'],
+      ['MEMORY.md', 'Old preference [topic](topic.md)'],
+    ] as const) {
+      const prior = await memory.readFile(file)
+      await memory.editFile(file, content, prior.hash)
+    }
+    const session = await host.createSession({ key: 'turn-snapshot', cwd: home })
+    const turn = async () => {
+      await session.enqueue('next-turn', {
+        actor: session.d.actor,
+        content: [{ type: 'text', text: 'use memory' }],
+      })
+      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'completed',
+      )
+    }
+    await turn()
+    expect(provider.calls).toHaveLength(3)
+    for (const request of provider.calls) {
+      expect(JSON.stringify(request.system)).toContain('Old preference')
+      expect(JSON.stringify(request.system)).not.toContain('New preference')
+    }
+    const results = await session.scan({ type: 'tool/result', limit: 10 })
+    expect(results).toHaveLength(1)
+    expect(JSON.stringify(results[0]?.data)).toContain('Old topic')
+    expect(JSON.stringify(results[0]?.data)).not.toContain('New topic')
+    const revision = /Revision: ([a-f0-9]+)/.exec(JSON.stringify(provider.calls[0]?.system))?.[1]
+    expect(revision).toBeTruthy()
+    for (const request of provider.calls)
+      expect(JSON.stringify(request.system)).toContain(`Revision: ${revision}.`)
+    await turn()
+    expect(provider.calls).toHaveLength(4)
+    expect(JSON.stringify(provider.calls.at(-1)?.system)).toContain('New preference')
+    expect(JSON.stringify(provider.calls.at(-1)?.system)).not.toContain(`Revision: ${revision}.`)
+  } finally {
+    await host.close()
+  }
+})
+
 // The same public provider path as Host, rather than a machine-specific fixture directory.
 import { fileMemoryRoots } from '@agnes/base'
 

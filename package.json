@@ -15,6 +15,7 @@
     "test": "vitest run --project fast --maxWorkers=1",
     "test:heavy": "vitest run --project heavy --maxWorkers=1",
     "test:all": "vitest run --maxWorkers=1",
+    "test:story": "node tools/ci/run-story-fixtures.mjs",
     "typecheck": "tsc -b",
     "lint": "biome check .",
     "gen:check": "pnpm -r --if-present run gen:check",

@@ -2,7 +2,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ScriptedProvider } from '@agnes/ai/testkit'
 import type { PluginExtensionAPI } from '@agnes/extension-api'
+import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import { createGenerationSkills } from '@agnes/host-runtime/runtime-generation-resources'
 import {
@@ -26,7 +28,7 @@ function required<T>(value: T | undefined): T {
   return value
 }
 
-it('keeps old plugin leases across update, close and cold resume, and drains on deletion', async () => {
+it('keeps an in-flight turn on old plugin code across update, close and cold resume, and drains on deletion', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-generations-'))
   let host: Awaited<ReturnType<typeof createTestHost>>['host'] | undefined
   const sources: RuntimePluginSnapshot[] = []
@@ -64,9 +66,52 @@ it('keeps old plugin leases across update, close and cold resume, and drains on 
   }
   const one = makeSource('1.0.0', '1'),
     two = makeSource('2.0.0', '2')
+  let enter!: () => void
+  let resume!: () => void
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve
+  })
+  const release = new Promise<void>((resolve) => {
+    resume = resolve
+  })
+  let holdOldTurn = true
+  const providers: ScriptedProvider[] = []
   const options = {
     dataDir: root,
-    script: [],
+    provider: (profile: ResolvedProfile) => {
+      const provider = new ScriptedProvider({
+        models: profile.provider.routes?.flatMap((route) => route.models ?? []) ?? [],
+        scripts: [
+          [
+            {
+              type: 'toolcall_end',
+              call: { toolUseId: '', name: 'generation_value', args: {}, ordinal: 0 },
+              via: 'native',
+            },
+            { type: 'done', reason: 'toolUse' },
+          ],
+          [
+            { type: 'text_delta', delta: 'old turn completed' },
+            { type: 'done', reason: 'stop' },
+          ],
+          [
+            {
+              type: 'toolcall_end',
+              call: { toolUseId: '', name: 'generation_value', args: {}, ordinal: 0 },
+              via: 'native',
+            },
+            { type: 'done', reason: 'toolUse' },
+          ],
+          [
+            { type: 'text_delta', delta: 'new turn completed' },
+            { type: 'done', reason: 'stop' },
+          ],
+        ],
+        onExhausted: 'error',
+      })
+      providers.push(provider)
+      return provider
+    },
     disableSessionTitle: true,
     runtimePluginSources: async () => sources,
     extensionLoader: {
@@ -80,7 +125,14 @@ it('keeps old plugin leases across update, close and cold resume, and drains on 
               ;(ctx as unknown as { extension(): PluginExtensionAPI }).extension().registerTool({
                 ...fixtureTool('generation_value'),
                 description: version,
-                execute: async () => ({ content: [{ type: 'text', text: version }] }),
+                execute: async (_args, context) => {
+                  if (context.session.key === 'session-a' && holdOldTurn) {
+                    holdOldTurn = false
+                    enter()
+                    await release
+                  }
+                  return { content: [{ type: 'text', text: version }] }
+                },
               })
             },
           }),
@@ -115,6 +167,14 @@ it('keeps old plugin leases across update, close and cold resume, and drains on 
     await host.applyRuntimeTarget(target(one))
     const a = await host.createSession({ key: 'session-a', cwd: root })
     const firstId = a.pluginGenerationId
+    await a.enqueue('next-turn', { actor: a.d.actor, content: [{ type: 'text', text: 'run the old code' }] })
+    const inFlight = a.run({ until: 'turn-end', signal: new AbortController().signal })
+    await Promise.race([
+      entered,
+      inFlight.then(() => {
+        throw new Error('old tool never entered')
+      }),
+    ])
     const reload = await required(host.reloadPlugin)('acme/generation', two.snapshot.directory)
     expect(reload.changed).toBe(true)
     expect(await required(host.reloadPlugin)('acme/generation')).toEqual({ ...reload, changed: false })
@@ -122,6 +182,24 @@ it('keeps old plugin leases across update, close and cold resume, and drains on 
     await host.applyRuntimeTarget(target(one))
     await host.applyRuntimeTarget(target(two))
     const b = await host.createSession({ key: 'session-b', cwd: root })
+    expect(a.pluginGenerationId).toBe(firstId)
+    expect(await a.scan({ type: 'tool/result', limit: 10 })).toEqual([])
+    resume()
+    expect((await inFlight).reason).toBe('completed')
+    expect(JSON.stringify((await a.scan({ type: 'tool/result', limit: 10 }))[0]?.data)).toContain('1.0.0')
+    await b.enqueue('next-turn', { actor: b.d.actor, content: [{ type: 'text', text: 'run the new code' }] })
+    expect((await b.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+      'completed',
+    )
+    expect(JSON.stringify((await b.scan({ type: 'tool/result', limit: 10 }))[0]?.data)).toContain('2.0.0')
+    const oldRequests = providers
+      .flatMap((provider) => provider.calls)
+      .filter((request) => request.sessionKey === a.key)
+    expect(oldRequests).toHaveLength(2)
+    for (const request of oldRequests)
+      expect(request.tools).toContainEqual(
+        expect.objectContaining({ name: 'generation_value', description: '1.0.0' }),
+      )
     const execute = (session: typeof a) =>
       required(session.currentTools().resolve('generation_value')).execute({}, {
         signal: new AbortController().signal,
@@ -238,6 +316,7 @@ it('keeps old plugin leases across update, close and cold resume, and drains on 
       'E_GENERATION_SNAPSHOT_MISSING',
     )
   } finally {
+    resume()
     await host?.close()
     rmSync(root, { recursive: true, force: true })
   }

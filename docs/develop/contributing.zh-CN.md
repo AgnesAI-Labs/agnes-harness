@@ -70,6 +70,8 @@ pnpm test
 
 两条 `build:native` 是包级脚本，与 [CI](../../.github/workflows/ci.yml) 的测试前置步骤一致。macOS 的进程身份测试需要 Host helper，Skill 安装的原子发布测试需要 system-node helper；源码测试前若缺少它们，会得到与产品缺陷不同的环境失败。`pnpm test` 是根目录脚本，默认单 worker 执行快速层，包含 guards；真实 daemon、worker 与 CLI 进程测试命名为 `*.e2e.test.ts`，大账本或依赖真实计时的测试命名为 `*.slow.test.ts`，`pnpm test:heavy` 只跑这两类，`pnpm test:all` 全部执行；`pnpm exec vitest run <文件>` 可单独运行任一层的文件。测试所属层只由文件后缀决定：新测试命名为 `*.e2e.test.ts` 或 `*.slow.test.ts` 即归入重型层。包内自己的 `test` 脚本会运行该包的两层测试，而根目录 `pnpm test` 只运行快速层。本地只改一个模块时先选择该模块相关测试，再按风险决定是否扩大范围。纯文档变更通常不需要重跑模型或全仓端到端。
 
+`pnpm test:story` 运行已审阅发布、执行中 generation 固定、丢失效果回执、不完整摘要、真实子代理回执与单轮记忆修订的维护夹具。`tools/ci/story-fixtures.json` 从已有合同测试中选择用例；命名用例必须真正通过，测试重试为零，选中用例不能 skip 或留 todo。脚本模型与隔离的 fixture 效果端口不会重放真实外部写入。[Web E2E CI](../../.github/workflows/e2e-web.yml) 的 Linux 合同 job 将此命令作为必需门禁，并保存 `.agnes-tmp/story-fixtures` 的逐夹具 JSON；同一用例仍属于原有 fast/heavy 层。
+
 ```sh
 pnpm exec vitest run packages/cli/test/args.test.ts --maxWorkers=1
 pnpm --filter @agnes/cli build:local

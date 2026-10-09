@@ -1418,6 +1418,7 @@ describe('summary stopped at the token cap', () => {
       begins: rows.filter((row) => row.type === 'x/core/compaction-begin'),
       ends: rows.filter((row) => row.type === 'x/core/compaction-end'),
       commits,
+      opened,
     }
   }
 
@@ -1437,13 +1438,24 @@ describe('summary stopped at the token cap', () => {
 
   it('does not commit a summary that was truncated at the cap', async () => {
     const truncated = 'Goal: read big.txt. Progress: read sections 1-7 and'
-    const { reasons, replaced } = await compactWith(capped(truncated))
+    const { reasons, replaced, begins, opened } = await compactWith(capped(truncated))
     expect(reasons).toEqual([])
     expect(replaced).toHaveLength(1)
     const text =
       (replaced[0]?.data as { content?: Array<{ text: string }> } | undefined)?.content?.[0]?.text ?? ''
     expect(text.startsWith('[compaction] No model summary')).toBe(true)
     expect(text).not.toContain(truncated)
+    expect(begins[0]?.data).toMatchObject({ mode: 'elided', cause: expect.stringMatching(/max_tokens/) })
+    expect(replaced[0]?.origin).toBe('system')
+    await opened.log.close()
+    const recoveredProvider = fakeProvider([textTurn('continue after recovery')])
+    const recovered = await openSession({ provider: recoveredProvider, storage: opened.storage })
+    await recovered.session.enqueue('next-turn', { content: [{ type: 'text', text: 'continue' }], actor })
+    expect((await recovered.session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+    const messages = JSON.stringify(recoveredProvider.requests.at(-1)?.messages)
+    expect(messages).toContain('[compaction] No model summary')
+    expect(messages).not.toContain(truncated)
+    await recovered.log.close()
   })
 })
 

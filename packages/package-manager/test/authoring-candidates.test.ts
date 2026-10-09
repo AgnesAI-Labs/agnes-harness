@@ -197,31 +197,41 @@ it('refuses failed tests, foreign owners, unsafe files, symlinks and source edit
   symlinkSync('index.mjs', join(record.tree, 'link.mjs'))
   expect(() => s.candidates.show(s.profile, d.candidateId, 'owner')).toThrow('symbolic link')
 })
-it('publishes the reviewed snapshot through normal installation, preserves agent provenance, and never replays failure or interrupted publication', async () => {
-  const s = setup()
-  const r = await review(s)
-  const publish = vi.fn(async (source: any, value: any) => {
-    await s.manager.install(s.profile, source, { expectedIntegrity: value.candidateHash, installer: 'agent' })
-    throw new Error('trust failed')
-  })
-  await expect(
-    s.candidates.decide(s.profile, r.candidateId, 'owner', r.candidateHash, r.reviewHash!, true, publish),
-  ).rejects.toThrow('trust failed')
-  expect((await s.manager.provenance(s.profile, r.packageId)).installer).toBe('agent')
-  const row = (await s.manager.inventory(s.profile)).packages[0]
-  expect(row).toMatchObject({ trusted: false, enabled: false })
-  const reopened = new AuthoringCandidates(s.manager, s.runner)
-  await expect(
-    reopened.decide(s.profile, r.candidateId, 'owner', r.candidateHash, r.reviewHash!, true, publish),
-  ).rejects.toThrow('Review is stale')
-  expect(publish).toHaveBeenCalledOnce()
-  const file = join(s.profile, '.authoring-candidates', r.candidateId, 'record.json'),
-    record = JSON.parse(readFileSync(file, 'utf8'))
-  record.value.state = 'publishing'
-  writeFileSync(file, JSON.stringify(record))
-  expect(reopened.show(s.profile, r.candidateId, 'owner').state).toBe('interrupted')
-  expect(publish).toHaveBeenCalledOnce()
-})
+it.each(['trust failed', 'reviewed bytes changed'] as const)(
+  'publishes only the approved bytes and never replays failure or interrupted publication: %s',
+  async (failure) => {
+    const s = setup()
+    const r = await review(s)
+    const publish = vi.fn<Parameters<AuthoringCandidates['decide']>[6]>(async (source, value) => {
+      if (failure === 'reviewed bytes changed')
+        writeFileSync(join(source.ref.slice('file:'.length), 'index.mjs'), 'altered after human approval')
+      await s.manager.install(s.profile, source, {
+        expectedIntegrity: value.candidateHash,
+        installer: 'agent',
+      })
+      throw new Error('trust failed')
+    })
+    await expect(
+      s.candidates.decide(s.profile, r.candidateId, 'owner', r.candidateHash, r.reviewHash!, true, publish),
+    ).rejects.toThrow(failure === 'trust failed' ? 'trust failed' : 'package preview is stale')
+    if (failure === 'trust failed') {
+      expect((await s.manager.provenance(s.profile, r.packageId)).installer).toBe('agent')
+      const row = (await s.manager.inventory(s.profile)).packages[0]
+      expect(row).toMatchObject({ trusted: false, enabled: false })
+    } else expect((await s.manager.inventory(s.profile)).packages).toEqual([])
+    const reopened = new AuthoringCandidates(s.manager, s.runner)
+    await expect(
+      reopened.decide(s.profile, r.candidateId, 'owner', r.candidateHash, r.reviewHash!, true, publish),
+    ).rejects.toThrow('Review is stale')
+    expect(publish).toHaveBeenCalledOnce()
+    const file = join(s.profile, '.authoring-candidates', r.candidateId, 'record.json'),
+      record = JSON.parse(readFileSync(file, 'utf8'))
+    record.value.state = 'publishing'
+    writeFileSync(file, JSON.stringify(record))
+    expect(reopened.show(s.profile, r.candidateId, 'owner').state).toBe('interrupted')
+    expect(publish).toHaveBeenCalledOnce()
+  },
+)
 it('reports that published executable tools are available in new sessions and preserves that guidance after reopening', async () => {
   const s = setup()
   const r = await review(s)

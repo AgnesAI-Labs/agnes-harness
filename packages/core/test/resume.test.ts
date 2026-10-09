@@ -36,17 +36,24 @@ const hangingModelAfter = (text: string): Provider => ({
 
 /** A tool that stops until the test lets it go, so the kill lands with the call in flight. */
 function gatedTool(kind: 'read' | 'shell') {
+  let enter!: () => void
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve
+  })
+  const effects: string[] = []
   let release!: () => void
   const gate = new Promise<void>((res) => {
     release = res
   })
   const run = async () => {
+    effects.push(`${kind}:synthetic-effect`)
+    enter()
     await gate
     return { content: [{ type: 'text' as const, text: 'ok' }] }
   }
   const registry = new ToolRegistry()
   registry.add(kind === 'read' ? readTool(run) : shellTool(run), { source: 's', trust: 'builtin' })
-  return { registry, release: () => release() }
+  return { registry, effects, entered, release: () => release() }
 }
 
 const retryOnce = (): PresetView => {
@@ -82,7 +89,12 @@ async function crashInToolCall(
   expect(await a.session.step()).toEqual({ outcome: 'running', phase: 'inference' })
   expect(await a.session.step()).toEqual({ outcome: 'running', phase: 'tools' })
   const stuck = a.session.step().catch(() => undefined)
-  await new Promise((r) => setTimeout(r, 10))
+  await first.entered
+  expect(a.session.op()?.phase).toMatchObject({
+    kind: 'tools',
+    batch: { calls: [expect.objectContaining({ status: 'dispatched', dispatchPhase: 'may_have_sent' })] },
+  })
+  expect(await a.log.scan({ type: 'tool/result', limit: 10 })).toEqual([])
   await a.log.close()
   // Released only once the ledger is gone, so the call's own writes land nowhere - which is what a
   // killed process's in-flight work does. Awaited, so the abandoned step is finished with before the
@@ -94,13 +106,14 @@ async function crashInToolCall(
     source: 's',
     trust: 'builtin',
   })
-  return openSession({
+  const recovered = await openSession({
     provider: fakeProvider([textTurn('after')]),
     registry: second,
     storage,
     key: 'k',
     ...(reopened.seams ? { seams: reopened.seams } : {}),
   })
+  return { ...recovered, effects: first.effects }
 }
 
 /** The same kill, one phase earlier: inside the model request, with no answer of any kind. */
@@ -513,7 +526,14 @@ describe('resume', () => {
   })
 
   it('a tool that must not be replayed becomes TOOL_OUTCOME_UNKNOWN and parks the turn', async () => {
-    const { session, log } = await crashInToolCall('shell')
+    const duplicateEffects: string[] = []
+    const { session, log, effects } = await crashInToolCall('shell', {
+      run: async () => {
+        duplicateEffects.push('duplicate external write')
+        return { content: [{ type: 'text', text: 'must not execute' }] }
+      },
+    })
+    expect(effects).toEqual(['shell:synthetic-effect'])
     expect((await session.resume()).actions[0]?.action).toBe('unknown')
     const result = (await log.scan({ type: 'tool/result', limit: 10 }))[0]
     expect(result?.data).toMatchObject({ code: 'TOOL_OUTCOME_UNKNOWN', isError: true })
@@ -527,6 +547,14 @@ describe('resume', () => {
     // The turn is parked, so the step it was in is closed with it: a turn/end beside an open step is
     // refused, and this is a path where one is still open.
     expect((await types(log)).filter((x) => x === 'step/end')).toHaveLength(1)
+    expect((await log.scan({ type: 'effect/settled', order: 'desc', limit: 1 }))[0]?.data).toMatchObject({
+      outcome: 'unknown',
+    })
+    // Repeated recovery cannot turn a missing receipt into success or repeat the fixture effect.
+    await session.resume()
+    await session.resume()
+    expect(duplicateEffects).toEqual([])
+    expect(await log.scan({ type: 'tool/result', limit: 10 })).toEqual([result])
   })
 
   // Nobody was asked, so "it did not happen" must not be written as the answer: the question stays

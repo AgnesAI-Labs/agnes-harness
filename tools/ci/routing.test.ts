@@ -6,8 +6,25 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { verifyResults } from './result.mjs'
 import { changedPaths, detectDocsOnly, isDocsOnly } from './scope.mjs'
+import { verifyStoryResult } from './story-results.mjs'
 
 const directories: string[] = []
+
+describe('story regression results', () => {
+  it('requires the named fixture to execute, so a renamed, skipped or todo case cannot turn the gate green', () => {
+    const report = (fullName: string, status: string, success = true) => ({
+      success,
+      testResults: [{ assertionResults: [{ fullName, status }] }],
+    })
+    expect(verifyStoryResult(report('story exact fixture', 'passed'), 'exact fixture$')).toBe(1)
+    for (const status of ['failed', 'pending', 'skipped', 'todo'])
+      expect(() => verifyStoryResult(report('story exact fixture', status), 'exact fixture$')).toThrow()
+    expect(() => verifyStoryResult(report('renamed fixture', 'passed'), 'exact fixture$')).toThrow()
+    expect(() =>
+      verifyStoryResult(report('story exact fixture', 'passed', false), 'exact fixture$'),
+    ).toThrow()
+  })
+})
 const temporary = () => {
   const directory = mkdtempSync(join(tmpdir(), 'agh-ci-'))
   directories.push(directory)

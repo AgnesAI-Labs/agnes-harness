@@ -126,6 +126,17 @@ jobs:
       - name: Repository guards
         if: ${{ !cancelled() && steps.native.outcome == 'success' }}
         run: pnpm exec vitest run tools/guards/src --maxWorkers=1
+      - name: Story regressions (zero retries, no selected skips)
+        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
+        run: pnpm test:story
+      - name: Upload story regression results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: story-fixtures-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .agnes-tmp/story-fixtures
+          include-hidden-files: true
+          if-no-files-found: warn
       - name: Linux kernel identity regression
         if: ${{ !cancelled() && steps.native.outcome == 'success' }}
         run: pnpm exec vitest run packages/host-infrastructure/test/process-identity-linux.e2e.test.ts packages/base/extensions/sandbox/test/backend-linux.e2e.test.ts packages/host-infrastructure/test/sandbox-read-paths.e2e.test.ts packages/package-manager/test/local-watcher.slow.test.ts packages/host-infrastructure/test/adapters/storage-lock.e2e.test.ts --maxWorkers=1
