@@ -9,6 +9,7 @@
   "scripts": {
     "e2e:web": "node tools/e2e-web/run.mjs",
     "test:web-smoke": "playwright test --config tools/e2e-web/playwright.ui.config.mjs",
+    "release:pack": "tsx tools/release/release-pack.ts",
     "release:npx-smoke": "tsx tools/release/npx-smoke.ts",
     "release:external-examples": "tsx tools/release/external-examples.ts",
     "dev": "pnpm --filter @agnes/cli dev:web serve",

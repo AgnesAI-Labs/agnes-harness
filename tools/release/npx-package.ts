@@ -27,6 +27,7 @@ export type PublishableManifest = {
   description: string
   type: 'module'
   bin: { agh: './bin/agh' }
+  exports: { './package.json': './package.json' }
   files: string[]
   engines: { node: typeof PUBLIC_NODE_RANGE }
   os: string[]
@@ -46,6 +47,7 @@ export function publishableManifest(triple: string): PublishableManifest {
     description: 'Agnes Harness local runtime (release candidate).',
     type: 'module',
     bin: { [PUBLIC_BIN]: './bin/agh' },
+    exports: { './package.json': './package.json' },
     files: ['bin', 'dist', 'LICENSE', 'NOTICE'],
     engines: { node: PUBLIC_NODE_RANGE },
     os: [os],

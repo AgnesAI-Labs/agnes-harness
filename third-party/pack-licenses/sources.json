@@ -1,0 +1,86 @@
+[
+  {
+    "name": "@npmcli/agent",
+    "version": "4.0.2",
+    "declaredLicense": "ISC",
+    "source": "npm package metadata and README.md; release owner must verify full license notice",
+    "file": "npmcli-agent.txt"
+  },
+  {
+    "name": "@sigstore/verify",
+    "version": "3.1.1",
+    "declaredLicense": "Apache-2.0",
+    "source": "https://raw.githubusercontent.com/sigstore/sigstore-js/769a53d8713248a8bf49edfc2a5d1955b0dcc24d/LICENSE",
+    "file": "sigstore-verify.txt"
+  },
+  {
+    "name": "@earendil-works/pi-ai",
+    "version": "0.87.1",
+    "declaredLicense": "MIT",
+    "source": "https://raw.githubusercontent.com/earendil-works/pi/f1b2e77f5b13b2a199b1052cb79c235451afe7d7/LICENSE",
+    "file": "earendil-works-pi-ai.txt"
+  },
+  {
+    "name": "clean-git-ref",
+    "version": "2.0.1",
+    "declaredLicense": "Apache-2.0",
+    "source": "npm package metadata and README.md; release owner must verify full license notice",
+    "file": "clean-git-ref.txt"
+  },
+  {
+    "name": "data-uri-to-buffer",
+    "version": "4.0.1",
+    "declaredLicense": "MIT",
+    "source": "npm package README.md",
+    "file": "data-uri-to-buffer.txt"
+  },
+  {
+    "name": "diff3",
+    "version": "0.0.3",
+    "declaredLicense": "MIT",
+    "source": "npm package diff3.js and onp.js headers",
+    "file": "diff3.txt"
+  },
+  {
+    "name": "standardwebhooks",
+    "version": "1.1.1",
+    "declaredLicense": "MIT",
+    "source": "https://raw.githubusercontent.com/standard-webhooks/standard-webhooks/7537d2a2d3d52d8f2e0ecd12527af4a9307fd81b/LICENSE",
+    "file": "standardwebhooks.txt"
+  },
+  {
+    "name": "@ant-design/icons-svg",
+    "version": "4.6.0",
+    "declaredLicense": "MIT",
+    "source": "https://raw.githubusercontent.com/ant-design/ant-design-icons/7f2516ac91226d2b41f93b35cb5197c8d94f7189/LICENSE",
+    "file": "ant-design-icons-svg.txt"
+  },
+  {
+    "name": "is-mobile",
+    "version": "5.0.0",
+    "declaredLicense": "MIT",
+    "source": "https://raw.githubusercontent.com/juliangruber/is-mobile/e26c091f26d7aa8f5e432f2c3dce65df8decd681/LICENSE",
+    "file": "is-mobile.txt"
+  },
+  {
+    "name": "react-property",
+    "version": "2.0.2",
+    "declaredLicense": "MIT",
+    "source": "https://raw.githubusercontent.com/facebook/react/v15.6.2/LICENSE (linked upstream React source)",
+    "file": "react-property.txt"
+  },
+  {
+    "name": "react-remove-scroll-bar",
+    "version": "2.3.8",
+    "declaredLicense": "MIT",
+    "source": "https://raw.githubusercontent.com/theKashey/react-remove-scroll-bar/8ca9ba5ea52de03308fe8ced94f7b159a44d28ff/LICENSE",
+    "file": "react-remove-scroll-bar.txt"
+  },
+  {
+    "name": "use-composed-ref",
+    "version": "1.4.0",
+    "declaredLicense": "MIT",
+    "source": "npm package metadata and README.md; release owner must verify full license notice",
+    "file": "use-composed-ref.txt"
+  }
+]

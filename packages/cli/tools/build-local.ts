@@ -105,8 +105,14 @@ export async function copyBundledExamples(outputDirectory: string): Promise<void
   }
 }
 
-async function bundle(entry: string, outfile: string, define: Record<string, string> = {}): Promise<void> {
-  await build({
+async function bundle(
+  entry: string,
+  outfile: string,
+  define: Record<string, string> = {},
+): Promise<BuildResult> {
+  return build({
+    metafile: true,
+    absWorkingDir: cliRoot,
     entryPoints: [entry],
     outfile,
     bundle: true,
@@ -320,7 +326,6 @@ async function buildLocal(out: string, nativeOutput?: string, versionOverride?: 
   const webOut = join(out, 'web')
   await mkdir(join(out, 'native'), { recursive: true })
   await copyRipgrep(out)
-  await copyComputerUseNotice(out)
   await copyBundledPlugins(out)
   await copyBundledExamples(out)
   await copyPluginPackRuntime(out)
@@ -332,12 +337,16 @@ async function buildLocal(out: string, nativeOutput?: string, versionOverride?: 
 
   // This is the normal package executable. SEA keeps its own build path and embedded-manifest
   // defines; sharing the source entry here keeps command routing and trusted loader behavior equal.
-  await bundle(join(cliRoot, 'src', 'bin.ts'), join(out, 'agnes.mjs'), defines)
-  await bundle(join(cliRoot, 'launch', 'daemon-entry.ts'), join(out, 'daemon.mjs'), defines)
+  const backendBuilds = [await bundle(join(cliRoot, 'src', 'bin.ts'), join(out, 'agnes.mjs'), defines)]
+  backendBuilds.push(
+    await bundle(join(cliRoot, 'launch', 'daemon-entry.ts'), join(out, 'daemon.mjs'), defines),
+  )
   const workerSource = existsSync(join(cliRoot, 'launch', 'worker-entry.ts'))
     ? join(cliRoot, 'launch', 'worker-entry.ts')
     : join(repoPackages, 'daemon', 'src', 'worker', 'main.ts')
-  await bundle(workerSource, join(out, 'worker.mjs'), defines)
+  backendBuilds.push(await bundle(workerSource, join(out, 'worker.mjs'), defines))
+  await collectThirdPartyNotices(cliRoot, out, backendBuilds)
+  await copyComputerUseNotice(out)
   await copySystemRuntime(repoPackages, out, nativeOutput)
   const linux = process.platform === 'linux' // guards-allow-platform: native PTY build target
   if (isDarwin() || linux) {

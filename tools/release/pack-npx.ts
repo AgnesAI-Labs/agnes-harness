@@ -5,11 +5,13 @@ import { chmod, copyFile, mkdir, rename, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PUBLIC_PACKAGE_VERSION, publishableManifest } from './npx-package.js'
+import { preparePackPayload } from './pack-payload.js'
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '../..')
 
 export async function packNpxPackage(stage: string): Promise<{ stage: string; triple: string }> {
   const triple = `${process.platform}-${process.arch}` // guards-allow-platform: select the native triple produced by this release machine
+  const manifest = publishableManifest(triple)
   const dist = join(stage, 'dist')
   await mkdir(stage, { recursive: true })
   execFileSync(
@@ -26,13 +28,14 @@ export async function packNpxPackage(stage: string): Promise<{ stage: string; tr
     { stdio: 'inherit', cwd: repo },
   )
   await publishNativeLayout(dist, triple)
+  await preparePackPayload(stage, repo)
   await mkdir(join(stage, 'bin'), { recursive: true })
   const bin = join(stage, 'bin', 'agh')
   await copyFile(join(repo, 'packages/cli/bin/agh'), bin)
   await chmod(bin, 0o755)
   await copyFile(join(repo, 'LICENSE'), join(stage, 'LICENSE'))
   await copyFile(join(repo, 'NOTICE'), join(stage, 'NOTICE'))
-  await writeFile(join(stage, 'package.json'), `${JSON.stringify(publishableManifest(triple), null, 2)}\n`)
+  await writeFile(join(stage, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`)
   await writeFile(join(stage, 'README.md'), readme(triple))
   // A package staged inside this repo must not inherit the root gitignore, which excludes dist/.
   await writeFile(join(stage, '.npmignore'), '*.log\n')

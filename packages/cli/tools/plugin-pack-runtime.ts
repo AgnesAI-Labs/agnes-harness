@@ -1,7 +1,8 @@
 import { cp, mkdir, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { namespaces } from './authoring-sdk.js'
 import { copyImageRuntime } from './image-runtime.js'
 
@@ -10,7 +11,10 @@ export async function copyPluginPackRuntime(outputDirectory: string): Promise<vo
   await copyImageRuntime(outputDirectory)
   const require = createRequire(import.meta.url)
   const { build } = require('esbuild') as typeof import('esbuild')
-  await build({
+  const authoringBuild = await build({
+    metafile: true,
+    absWorkingDir: import.meta.dirname,
+    legalComments: 'eof',
     entryPoints: [join(dirname(fileURLToPath(import.meta.url)), 'authoring-sdk.ts')],
     outfile: join(outputDirectory, 'authoring-sdk.mjs'),
     bundle: true,
@@ -22,6 +26,7 @@ export async function copyPluginPackRuntime(outputDirectory: string): Promise<vo
     },
     logLevel: 'silent',
   })
+  await collectThirdPartyNotices(import.meta.dirname, join(outputDirectory, 'authoring'), [authoringBuild])
   await writeFile(
     join(outputDirectory, 'authoring-sdk-exports.json'),
     JSON.stringify(
@@ -34,10 +39,14 @@ export async function copyPluginPackRuntime(outputDirectory: string): Promise<vo
   const binary = `@esbuild/${process.platform}-${process.arch}` // guards-allow-platform: esbuild binary for this release platform
   for (const name of ['esbuild', binary]) {
     const source = dirname(
-      name === 'esbuild' ? esbuildManifest : esbuildRequire.resolve(name + '/package.json'),
+      name === 'esbuild' ? esbuildManifest : esbuildRequire.resolve(`${name}/package.json`),
     )
     const destination = join(outputDirectory, 'node_modules', name)
     await mkdir(dirname(destination), { recursive: true })
-    await cp(source, destination, { recursive: true, dereference: true })
+    await cp(source, destination, {
+      recursive: true,
+      dereference: true,
+      filter: (path) => !relative(source, path).split(sep).includes('node_modules'),
+    })
   }
 }

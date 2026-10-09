@@ -2,7 +2,7 @@
 // Launcher for the repo build and for the published @agnes/harness package.
 // Resolves symlinks so a PATH shim can point here from outside the package.
 import { spawn } from 'node:child_process'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, realpathSync, symlinkSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, realpathSync, symlinkSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -60,7 +60,7 @@ function ensurePackagedNatives(root) {
     if (!existsSync(source)) continue
     placeFile(source, join(root, 'vendor', '@agnes', 'system-node', 'runtime', name))
   }
-  linkSystemPackage(root)
+  linkVendorPackages(root)
 }
 
 function placeFile(source, target, mode) {
@@ -75,10 +75,20 @@ function placeFile(source, target, mode) {
   }
 }
 
-function linkSystemPackage(root) {
-  const vendorPackage = join(root, 'vendor', '@agnes', 'system-node')
-  if (!existsSync(vendorPackage)) return
-  const link = join(root, 'node_modules', '@agnes', 'system-node')
+function linkVendorPackages(root) {
+  const vendor = join(root, 'vendor')
+  for (const entry of readdirSync(vendor, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const names = entry.name.startsWith('@')
+      ? readdirSync(join(vendor, entry.name)).map((name) => `${entry.name}/${name}`)
+      : [entry.name]
+    for (const name of names) linkVendorPackage(root, name)
+  }
+}
+
+function linkVendorPackage(root, name) {
+  const vendorPackage = join(root, 'vendor', name)
+  const link = join(root, 'node_modules', name)
   if (existsSync(link)) return
   mkdirSync(dirname(link), { recursive: true })
   try {
