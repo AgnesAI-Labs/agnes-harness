@@ -1,5 +1,6 @@
 /** @vitest-environment happy-dom */
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true })
+
 import { Context } from '@agnes/cordis'
 import type { UiCustomComponent } from '@agnes/protocol/gen/intelligent-ui'
 import type { ClientModuleRosterRow } from '@agnes/protocol/gen/package-admin'

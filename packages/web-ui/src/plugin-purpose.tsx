@@ -24,7 +24,12 @@ export function PluginProvidesChips({ value }: { value: PluginPresentation | und
   const counts = new Map<string, number>()
   for (const item of value?.provides ?? []) counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1)
   return (
-    <div className="agnes-settings-actions" aria-label={t('provides')} data-testid="plugin-provides">
+    <div
+      className="agnes-settings-actions"
+      role="group"
+      aria-label={t('provides')}
+      data-testid="plugin-provides"
+    >
       {[...counts].map(([kind, count]) => (
         <Badge key={kind}>
           {t(`provide.${kind}`) === `provide.${kind}` ? kind : t(`provide.${kind}`)} · {count}

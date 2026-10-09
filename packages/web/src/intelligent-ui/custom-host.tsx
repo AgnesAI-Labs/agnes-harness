@@ -1,5 +1,5 @@
-import { boundedUiJson, validIntelligentSurface } from '@agnes/protocol/intelligent-ui'
 import type { ClientModuleRosterRow } from '@agnes/protocol/gen/package-admin'
+import { boundedUiJson, validIntelligentSurface } from '@agnes/protocol/intelligent-ui'
 import type { ThemeService } from '@agnes/web-client'
 import {
   CustomUiFallback,
@@ -17,7 +17,7 @@ export interface CustomUiModuleSource {
 }
 export function selectCustomUiModule(
   rows: readonly ClientModuleRosterRow[],
-  props: CustomUiRenderProps,
+  props: Pick<CustomUiRenderProps, 'surface' | 'component'>,
 ): ClientModuleRosterRow | undefined {
   const matches = rows.filter(
     (row) =>
@@ -51,7 +51,7 @@ export function CustomUiHost(
   const [module, setModule] = useState<ClientModuleRosterRow>()
   const [ready, setReady] = useState(false)
   const [failed, setFailed] = useState(false)
-  const frame = useRef<HTMLIFrameElement>(null)
+  const frame = useRef<HTMLIFrameElement | null>(null)
   const latest = useRef(props)
   latest.current = props
   useEffect(
@@ -63,6 +63,7 @@ export function CustomUiHost(
       }),
     [props.source],
   )
+  // biome-ignore lint/correctness/useExhaustiveDependencies: epoch is the subscription version; reload the roster after invalidation.
   useEffect(() => {
     let disposed = false
     setModule(undefined)
@@ -71,7 +72,8 @@ export function CustomUiHost(
     props.source
       .list(props.sessionId)
       .then((rows) => {
-        if (!disposed) setModule(selectCustomUiModule(rows, props))
+        if (!disposed)
+          setModule(selectCustomUiModule(rows, { surface: props.surface, component: props.component }))
       })
       .catch(() => {
         if (!disposed) setFailed(true)
@@ -125,9 +127,6 @@ export function CustomUiHost(
       window.removeEventListener('message', receive)
     }
   }, [module, theme, locale, props.component, props.surface])
-  useEffect(() => {
-    frame.current?.toggleAttribute('inert', props.disabled)
-  }, [props.disabled, module, ready, theme, locale, epoch])
   const declaration = module?.intelligentComponents?.find((item) => item.kind === props.component.kind)
   return (
     <div data-testid={`ui-custom-host-${props.component.id}`}>
@@ -135,14 +134,18 @@ export function CustomUiHost(
       {module?.entryUrl && !failed && (
         <iframe
           key={`${module.entryUrl}:${epoch}:${theme}:${locale}`}
-          ref={frame}
+          ref={(element) => {
+            frame.current = element
+            element?.toggleAttribute('inert', props.disabled)
+          }}
           src={`${module.entryUrl}?agnes_ui_frame=1`}
           title={declaration?.accessibility.label ?? props.component.title ?? props.component.id}
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
           data-testid={`ui-custom-frame-${props.component.id}`}
           aria-label={t('ui.customFrame')}
-          style={{ width: '100%', height: 320, border: 0, display: ready ? 'block' : 'none' }}
+          className="agnes-custom-ui-frame"
+          hidden={!ready}
         />
       )}
     </div>

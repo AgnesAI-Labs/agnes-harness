@@ -99,7 +99,9 @@ export async function firstRunSnapshots() {
                 if (element instanceof HTMLOptionElement) target.toggleAttribute('selected', element.selected)
               })
               // Keep production DOM and CSS, but stop all app startup, RPCs and module effects.
-              copy.querySelectorAll('script, #agnes-config').forEach((element) => element.remove())
+              copy.querySelectorAll('script, #agnes-config').forEach((element) => {
+                element.remove()
+              })
               copy.querySelectorAll('link[href], img[src]').forEach((element) => {
                 const attribute = element.tagName === 'LINK' ? 'href' : 'src'
                 const asset = new URL(element.getAttribute(attribute)!, location.href)

@@ -1,10 +1,10 @@
-import { SettingsInput, SettingsState } from './settings-layout.js'
-import { Field } from './ui/field.js'
-import { Button } from './ui/button.js'
 import type { McpServerDescriptor, SkillDescriptor } from '@agnes/protocol'
 import type { JSX } from 'react'
 import { useState } from 'react'
 import { RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog } from './locales/resource-detail.js'
+import { SettingsInput, SettingsState } from './settings-layout.js'
+import { Button } from './ui/button.js'
+import { Field } from './ui/field.js'
 import { useUiText } from './ui-locale.js'
 
 export type ResourceDetailAction = Readonly<{
@@ -180,9 +180,9 @@ export function SkillDetailContent({
             key={action.label}
             htmlType="button"
             className={action.className ?? 'secondary-button compact'}
-            danger={action.className?.includes('danger-button')}
-            disabled={action.disabled}
-            title={action.title}
+            danger={action.className?.includes('danger-button') ?? false}
+            disabled={action.disabled ?? false}
+            {...(action.title === undefined ? {} : { title: action.title })}
             onClick={() => onAction(action)}
           >
             {action.label}
@@ -324,9 +324,9 @@ export function McpDetailContent({
             key={action.label}
             htmlType="button"
             className={action.className ?? 'secondary-button compact'}
-            danger={action.className?.includes('danger-button')}
-            disabled={action.disabled}
-            title={action.title}
+            danger={action.className?.includes('danger-button') ?? false}
+            disabled={action.disabled ?? false}
+            {...(action.title === undefined ? {} : { title: action.title })}
             onClick={() => onAction(action)}
           >
             {action.label}

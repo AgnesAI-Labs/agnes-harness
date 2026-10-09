@@ -346,7 +346,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
         disabled: state.disabled || busyNow,
         placeholder: tr('modelSettings.windowPlaceholder', { tokens: capacity }),
         'aria-label': tr('modelSettings.customAria'),
-        'aria-invalid': String(!check.valid),
+        'aria-invalid': !check.valid,
         'aria-describedby': 'session-model-window-hint session-model-settings-error',
         // 逐字符提交会让每次按键都发一次 setModel；回车或离开输入框才算一次确定输入。
         onChange: (event: ChangeEvent<HTMLInputElement>) => {

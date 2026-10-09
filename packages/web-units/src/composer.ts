@@ -245,7 +245,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 Button,
                 {
                   htmlType: 'button',
-                  'data-remove-image': true,
+                  'data-remove-image': 'true',
                   'data-testid': 'attachment-remove',
                   'aria-label': dependencies.translate('composer.attachment.remove', { index: index + 1 }),
                   disabled: view.sending,

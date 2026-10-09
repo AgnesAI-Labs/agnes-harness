@@ -5,7 +5,9 @@ import type {
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from 'react'
-import { forwardRef } from 'react'
+import { forwardRef, useId } from 'react'
+
+type DataAttributes = { [name: `data-${string}`]: string | number | boolean | undefined }
 
 /** Shared settings composition, matching the model/account pane and its card spacing. */
 export function SettingsPage({
@@ -84,7 +86,7 @@ export function SettingsState({
 }
 export const SettingsInput = forwardRef<
   HTMLInputElement,
-  InputHTMLAttributes<HTMLInputElement> & { surface?: 'page' | 'surface' }
+  InputHTMLAttributes<HTMLInputElement> & DataAttributes & { surface?: 'page' | 'surface' }
 >(function SettingsInput({ surface = 'page', ...props }, ref) {
   return (
     <input
@@ -102,7 +104,7 @@ export const SettingsInput = forwardRef<
 })
 export const SettingsTextArea = forwardRef<
   HTMLTextAreaElement,
-  TextareaHTMLAttributes<HTMLTextAreaElement> & { presentation?: 'field' | 'plain' }
+  TextareaHTMLAttributes<HTMLTextAreaElement> & DataAttributes & { presentation?: 'field' | 'plain' }
 >(function SettingsTextArea({ presentation = 'field', ...props }, ref) {
   return (
     <textarea
@@ -115,17 +117,18 @@ export const SettingsTextArea = forwardRef<
   )
 })
 /** Native select preserves form semantics, following SettingsOptionSelect's account-dialog pattern. */
-export const SettingsSelect = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(
-  function SettingsSelect(props, ref) {
-    return (
-      <select
-        {...props}
-        ref={ref}
-        className={['agnes-settings-input', props.className].filter(Boolean).join(' ')}
-      />
-    )
-  },
-)
+export const SettingsSelect = forwardRef<
+  HTMLSelectElement,
+  SelectHTMLAttributes<HTMLSelectElement> & DataAttributes
+>(function SettingsSelect(props, ref) {
+  return (
+    <select
+      {...props}
+      ref={ref}
+      className={['agnes-settings-input', props.className].filter(Boolean).join(' ')}
+    />
+  )
+})
 
 /** Flat settings rows keep controls and diagnostics out of nested cards. */
 export function SettingsList(props: HTMLAttributes<HTMLDivElement>) {
@@ -204,9 +207,11 @@ export function SettingsChoice({
   label: ReactNode
   hint?: ReactNode
 }) {
+  const generatedId = useId()
+  const id = props.id ?? generatedId
   return (
-    <label className="appearance-option">
-      <SettingsInput {...props} />
+    <label className="appearance-option" htmlFor={id}>
+      <SettingsInput {...props} id={id} />
       <span className="appearance-option-copy">
         <span className="appearance-option-name">{label}</span>
         {hint && <span className="appearance-option-hint">{hint}</span>}
