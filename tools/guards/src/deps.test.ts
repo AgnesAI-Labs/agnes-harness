@@ -172,13 +172,25 @@ describe('dependency allowlist matches layer order', () => {
 // Test fixtures can depend on higher layers. Production imports, including type queries and
 // literal dynamic imports, must use declared downward dependencies rather than devDependencies.
 function importedModules(source: string): string[] {
+  const literals = new Map<number, string>()
+  const interpolated: string[] = []
   const text = source.replace(
     /('(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`)|\/\/[^\n]*|\/\*[\s\S]*?\*\//g,
-    (match, literal: string | undefined) => literal ?? ' '.repeat(match.length),
+    (match, literal: string | undefined, offset: number) => {
+      if (literal?.startsWith('`') && literal.includes('${'))
+        interpolated.push(...importedModules(literal.slice(1, -1)))
+      else if (literal) literals.set(offset, literal.slice(1, -1))
+      return literal ? '#'.repeat(match.length) : ' '.repeat(match.length)
+    },
   )
-  return [...text.matchAll(/\b(?:from\s*|import\s*(?:\(\s*)?)["']([^"']+)["']/g)].map(
-    (match) => match[1] as string,
-  )
+  // A starter's quoted source is data, rather than a production dependency of its generator.
+  // Match import prefixes outside literals, then recover only the adjacent module string.
+  return [...text.matchAll(/\b(?:from\s*|import\s*(?:\(\s*)?)(?=#)/g)]
+    .flatMap((match) => {
+      const spec = literals.get(match.index + match[0].length)
+      return spec ? [spec] : []
+    })
+    .concat(interpolated)
 }
 
 function dependencyCycles(graph: Map<string, Set<string>>): string[] {
@@ -259,13 +271,15 @@ it('detects fixture back-edges, type queries and literal dynamic imports', () =>
   expect(
     importedModules(`
     // import('@agnes/ignored')
+    const starter = \`import { fixture } from '@agnes/quoted-fixture'\`
     import type { X } from '@agnes/a'
     export { Y } from '@agnes/b/subpath'
     type Z = import('@agnes/c').Z
     const load = () => import('@agnes/d')
     import '@agnes/e'
+    const interpolated = \`\${import('@agnes/interpolated')}\`
   `),
-  ).toEqual(['@agnes/a', '@agnes/b/subpath', '@agnes/c', '@agnes/d', '@agnes/e'])
+  ).toEqual(['@agnes/a', '@agnes/b/subpath', '@agnes/c', '@agnes/d', '@agnes/e', '@agnes/interpolated'])
   expect(
     dependencyCycles(
       new Map([

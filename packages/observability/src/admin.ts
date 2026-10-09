@@ -21,9 +21,10 @@ export async function administerObservability(
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Invalid observability home')
     const file = join(home, 'observability.json')
     const bytes = Buffer.from(`${JSON.stringify(settings)}\n`)
-    if (process.platform === 'win32')
-      await windowsWritePrivateFile(file, bytes) // guards-allow-platform: private configuration replacement.
-    else {
+    const windows = process.platform === 'win32' // guards-allow-platform: private configuration replacement.
+    if (windows) {
+      await windowsWritePrivateFile(file, bytes)
+    } else {
       const temporary = `${file}.${randomUUID()}.tmp`
       const fd = createPrivateFileSync(temporary)
       try {

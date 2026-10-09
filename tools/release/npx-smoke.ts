@@ -12,9 +12,10 @@ import { command, freePort, stopWeb, treeBytes, waitFor } from './smoke-support.
 
 const repo = resolve(import.meta.dirname, '../..')
 // The smoke owns a POSIX process group; Windows needs a separate process-tree shutdown contract.
-if (process.platform === 'win32')
-  // guards-allow-platform: fail before starting an unverified process tree.
+const windows = process.platform === 'win32' // guards-allow-platform: fail before starting an unverified process tree.
+if (windows) {
   throw new Error('Local-registry smoke requires macOS or Linux; Windows smoke is not implemented')
+}
 const args = process.argv.slice(2)
 const options = new Map<string, string>()
 for (let index = 0; index < args.length; index += 2) {
