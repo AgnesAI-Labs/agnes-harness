@@ -18,7 +18,7 @@ import {
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { contextRequest } from './context.js'
-import { triggersCatalog } from './triggers-locales.js'
+import { triggersCatalog } from './triggers-locale.js'
 
 const blank = (workspace: string): WebhookRule => ({
   id: '',
@@ -61,7 +61,7 @@ export function TriggersPanel({ canSave }: { canSave: boolean }) {
     JSON.stringify(
       {
         action: 'opened',
-        issue: { title: 'Synthetic business event', updated_at: new Date().toISOString() },
+        issue: { title: t('syntheticEvent'), updated_at: new Date().toISOString() },
       },
       null,
       2,
@@ -262,7 +262,7 @@ export function TriggersPanel({ canSave }: { canSave: boolean }) {
               set('auth', 'hmac')
             }}
           >
-            <option value="github">GitHub</option>
+            <option value="github">{t('github')}</option>
             <option value="generic">{t('generic')}</option>
           </SettingsSelect>
         </Field>
@@ -274,11 +274,11 @@ export function TriggersPanel({ canSave }: { canSave: boolean }) {
             disabled={!canSave || busy || rule.provider === 'github'}
             onChange={(event) => set('auth', event.target.value as WebhookRule['auth'])}
           >
-            <option value="hmac">HMAC SHA-256</option>
-            <option value="bearer">Bearer</option>
+            <option value="hmac">{t('hmac')}</option>
+            <option value="bearer">{t('bearer')}</option>
           </SettingsSelect>
         </Field>
-        <Field htmlFor="trigger-secret-picker" label={t('secret')}>
+        <Field htmlFor="trigger-secret-picker" label={t('secretLabel')}>
           <SettingsSelect
             id="trigger-secret-picker"
             data-testid="trigger-secret-picker"

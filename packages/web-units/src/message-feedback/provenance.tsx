@@ -2,7 +2,7 @@ import type { FeedbackGrowth, FeedbackItem } from '@agnes/protocol/gen/app-serve
 import { Button } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import { feedbackRequest } from './api.js'
-import { useFeedbackText } from './locales.js'
+import { useFeedbackText } from './feedback-locale.js'
 
 export function FeedbackProvenance({ sessionId, candidateId }: { sessionId: string; candidateId?: string }) {
   const { t } = useFeedbackText()

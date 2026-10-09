@@ -12,7 +12,7 @@ export const pluginConfigCatalog: LocaleCatalog = {
     rename: 'Rename key',
     json: 'JSON editor',
     fallback: 'Edit this subtree as JSON. The complete schema is validated by the server.',
-    secret:
+    secretHelp:
       'Secret reference only (secret://namespace/name). Store the secret in the credential store first.',
     invalid: 'Invalid field ({code}).',
     syntax: 'Enter valid JSON.',
@@ -34,7 +34,7 @@ export const pluginConfigCatalog: LocaleCatalog = {
     rename: '修改键名',
     json: 'JSON 编辑器',
     fallback: '此子树使用 JSON 编辑；服务端会校验完整 schema。',
-    secret: '仅填写密钥引用（secret://namespace/name），请先在凭据存储中保存密钥。',
+    secretHelp: '仅填写密钥引用（secret://namespace/name），请先在凭据存储中保存密钥。',
     invalid: '字段不合法（{code}）。',
     syntax: '请输入合法 JSON。',
     required: '必填',

@@ -50,7 +50,7 @@ export function PluginSchemaSecret({
           }
         }}
       />
-      <p role={invalid ? 'alert' : undefined}>{t('secret')}</p>
+      <p role={invalid ? 'alert' : undefined}>{t('secretHelp')}</p>
     </>
   )
 }

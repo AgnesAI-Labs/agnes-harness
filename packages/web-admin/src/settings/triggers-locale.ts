@@ -1,5 +1,9 @@
 export const triggersCatalog = {
   en: {
+    github: 'GitHub',
+    hmac: 'HMAC SHA-256',
+    bearer: 'Bearer',
+    syntheticEvent: 'Synthetic business event',
     title: 'Triggers',
     help: 'Business events create normal sessions under the workspace policy. Payload fields are UNTRUSTED input.',
     enabled: 'Expose webhook endpoint',
@@ -10,7 +14,7 @@ export const triggersCatalog = {
     provider: 'Provider',
     generic: 'Generic',
     auth: 'Authentication',
-    secret: 'Secret reference',
+    secretLabel: 'Secret reference',
     refHelp:
       'Select an existing reference, or enter an environment secret reference. Secret values never enter this form.',
     workspace: 'Workspace',
@@ -57,6 +61,10 @@ export const triggersCatalog = {
     unknown: 'Outcome unknown after restart',
   },
   'zh-CN': {
+    github: 'GitHub',
+    hmac: 'HMAC SHA-256',
+    bearer: 'Bearer',
+    syntheticEvent: '模拟业务事件',
     title: '触发器',
     help: '业务事件在工作区正常策略下创建普通会话。载荷字段作为 UNTRUSTED 输入。',
     enabled: '开放 Webhook 端点',
@@ -67,7 +75,7 @@ export const triggersCatalog = {
     provider: '提供者',
     generic: '通用',
     auth: '认证方式',
-    secret: '密钥引用',
+    secretLabel: '密钥引用',
     refHelp: '选择已有引用，或填写环境变量密钥引用。此表单不接收密钥值。',
     workspace: '工作区',
     agent: 'Agent 预设',

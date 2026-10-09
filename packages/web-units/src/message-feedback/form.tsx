@@ -2,7 +2,7 @@ import type { FeedbackItem, FeedbackTarget } from '@agnes/protocol/gen/app-serve
 import { Button, Field, SettingsSelect, SettingsTextArea } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { feedbackRequest } from './api.js'
-import { feedbackCategories, useFeedbackText } from './locales.js'
+import { feedbackCategories, useFeedbackText } from './feedback-locale.js'
 
 export function MessageFeedback({
   sessionId,
