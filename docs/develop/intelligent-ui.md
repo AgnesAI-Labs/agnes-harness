@@ -2,7 +2,7 @@
 
 English | [简体中文](intelligent-ui.zh-CN.md)
 
-[Architecture](architecture.md) · [Plugins](plugins.md) · [Frontend](frontend.md) · [Sessions and recovery](../guide/sessions.md)
+[Architecture](architecture.md) · [Plugins](plugins.md) · [Frontend](frontend.md) · [Sessions and recovery](../guide/sessions.md) · [Web renderer](intelligent-ui-web.md)
 
 This is a proposed implementation contract. The schema and generated types declare the interface; the plugin, App Server handlers, renderer and pilot are not implemented by this contract change. A business agent will select preset components, collect a person's choice, execute a declared business tool through the existing authorization path, and continue with durable evidence.
 

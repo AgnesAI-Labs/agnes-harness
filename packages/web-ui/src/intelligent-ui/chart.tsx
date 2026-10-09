@@ -18,9 +18,10 @@ export function IntelligentChart({ component, data }: { component: Chart; data: 
   const values = rows.flatMap((row) => component.series.map((series) => Number(row[series.key])))
   const min = Math.min(0, ...values),
     max = Math.max(0, ...values)
-  const y = (n: number) => 180 - ((n - min) / (max - min || 1)) * 160
+  const scale = Math.max(Math.abs(min), Math.abs(max), 1)
+  const y = (n: number) => 180 - ((n / scale - min / scale) / (max / scale - min / scale || 1)) * 160
   const x = (i: number) => 20 + ((i + 0.5) / Math.max(1, rows.length)) * 560
-  const total = values.reduce((a, b) => a + b, 0)
+  const total = values.reduce((a, b) => a + b / scale, 0)
   let angle = -Math.PI / 2
   return (
     <figure data-testid={`ui-chart-${component.id}`}>
@@ -31,7 +32,7 @@ export function IntelligentChart({ component, data }: { component: Chart; data: 
         {component.chartType !== 'pie' && <line x1="20" x2="580" y1={y(0)} y2={y(0)} stroke="currentColor" />}
         {component.chartType === 'pie'
           ? rows.map((row, i) => {
-              const fraction = total ? Number(row[component.series[0]!.key]) / total : 0
+              const fraction = total ? Number(row[component.series[0]!.key]) / scale / total : 0
               const start = angle
               angle += fraction * Math.PI * 2
               const color = `var(${colors[i % colors.length]})`

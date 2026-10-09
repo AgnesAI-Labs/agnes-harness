@@ -74,6 +74,7 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
       )}
       <IntelligentCatalog
         surface={surface}
+        instance={props.placement}
         input={props.input}
         selection={props.selection}
         disabled={props.locked}

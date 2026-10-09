@@ -22,7 +22,7 @@ export type UiSnapshot = Readonly<{
   surfaces: readonly UiSurfaceRecord[]
   receipts: readonly UiActionReceipt[]
   ready: boolean
-  error?: 'ui.unavailable' | 'ui.transport' | 'ui.duplicate'
+  error?: 'ui.unavailable' | 'ui.transport' | 'ui.duplicate' | 'ui.retryRow' | 'ui.actionLimit'
   watermark: number
 }>
 const active = (receipt: UiActionReceipt) =>
@@ -38,6 +38,8 @@ export class IntelligentUiClient {
   private readonly changed = new Set<string>()
   private readonly commands = new Map<string, UiActionParams>()
   private readonly sending = new Set<string>()
+  private readonly commandRows = new Map<string, UiRowContext>()
+  private readonly retryRows = new Map<string, UiActionReceipt>()
   private readonly recheck = new Set<string>()
   private readonly reviewed = new Set<string>()
   private readonly confirming = new Map<
@@ -65,8 +67,10 @@ export class IntelligentUiClient {
         for (const item of raw) {
           if (!boundedUiJson(item, X_AGNES_UI_LIMITS.actionBytes)) continue
           const parsed = validateAgainst<UiActionParams>(UiActionParams, item)
-          if (parsed.ok && parsed.value.sessionId === sessionId)
+          if (parsed.ok && parsed.value.sessionId === sessionId) {
             this.commands.set(parsed.value.commandId, parsed.value)
+            if (parsed.value.row) this.commandRows.set(parsed.value.commandId, parsed.value.row)
+          }
         }
     } catch {
       /* an unavailable browser store does not prevent server recovery */
@@ -102,6 +106,10 @@ export class IntelligentUiClient {
       (event) => {
         if (this.disposed) return
         if (this.recovery) {
+          if (this.events.length >= 1024) {
+            this.events = []
+            this.refreshRequested = true
+          }
           this.events.push(event)
           return
         }
@@ -130,7 +138,8 @@ export class IntelligentUiClient {
     }
     this.snapshot = { ...this.snapshot, ready: false }
     this.emit()
-    const work = this.recover(attach)
+    const work = Promise.resolve()
+      .then(() => this.recover(attach))
       .catch(() => {
         if (!this.disposed) {
           this.snapshot = { ...this.snapshot, ready: false, error: 'ui.unavailable' }
@@ -170,7 +179,7 @@ export class IntelligentUiClient {
           })
           if (this.disposed) return
           if (
-            !boundedUiJson(page, X_AGNES_UI_LIMITS.projectionBytes) ||
+            !boundedUiJson(page, X_AGNES_UI_LIMITS.projectionBytes, X_AGNES_UI_LIMITS.jsonDepth + 4) ||
             !validateAgainst<UiReadResult>(UiReadResult, page).ok ||
             page.sessionId !== this.sessionId
           )
@@ -179,14 +188,23 @@ export class IntelligentUiClient {
           watermark = page.lastSeq
           if (
             page.surfaces.some(
-              (record) => !validIntelligentSurface(record.surface) || record.updatedSeq > watermark,
+              (record) =>
+                !validIntelligentSurface(record.surface) ||
+                record.createdSeq > record.updatedSeq ||
+                record.updatedSeq > watermark,
             ) ||
             page.actions.some((receipt) => !this.validReceipt(receipt) || receipt.seq > watermark)
           )
             throw new Error('UI evidence gap')
           surfaces.push(...page.surfaces)
           receipts.push(...page.actions)
-          if (!boundedUiJson({ surfaces, receipts }, X_AGNES_UI_LIMITS.projectionBytes))
+          if (
+            !boundedUiJson(
+              { surfaces, receipts },
+              X_AGNES_UI_LIMITS.projectionBytes,
+              X_AGNES_UI_LIMITS.jsonDepth + 4,
+            )
+          )
             throw new Error('UI projection capacity')
           cursor = page.nextCursor
           if (cursor) {
@@ -211,16 +229,34 @@ export class IntelligentUiClient {
       if (
         !validateAgainst<UiReadResult>(UiReadResult, page).ok ||
         page.sessionId !== this.sessionId ||
-        !boundedUiJson(page, X_AGNES_UI_LIMITS.projectionBytes) ||
-        page.actions.some((item) => !this.validReceipt(item) || item.commandId !== command.commandId)
+        !boundedUiJson(page, X_AGNES_UI_LIMITS.projectionBytes, X_AGNES_UI_LIMITS.jsonDepth + 4) ||
+        page.actions.some(
+          (item) =>
+            !this.validReceipt(item) || item.commandId !== command.commandId || item.seq > page.lastSeq,
+        )
       )
         throw new Error('invalid command recovery')
       // These newer receipts do not advance the surface snapshot/event cursor.
       receipts.push(...page.actions)
     }
     if (this.disposed) return
+    if (watermark < this.snapshot.watermark) throw new Error('UI watermark moved backwards')
     for (const record of surfaces) {
       const previous = this.snapshot.surfaces.find((item) => item.surface.id === record.surface.id)
+      if (record.status === 'closed') {
+        this.confirming.delete(record.surface.id)
+        this.drafts.delete(record.surface.id)
+        this.retryRows.delete(record.surface.id)
+      }
+      if (
+        previous &&
+        (previous.owner !== record.owner ||
+          previous.taskId !== record.taskId ||
+          previous.lane !== record.lane ||
+          previous.surface.revision > record.surface.revision ||
+          (previous.status === 'closed' && record.status === 'open'))
+      )
+        throw new Error('UI surface lifecycle gap')
       if (
         (previous && previous.surface.revision !== record.surface.revision) ||
         (this.drafts.has(record.surface.id) &&
@@ -228,6 +264,7 @@ export class IntelligentUiClient {
       ) {
         this.changed.add(record.surface.id)
         this.confirming.delete(record.surface.id)
+        this.retryRows.delete(record.surface.id)
         this.drafts.delete(record.surface.id)
       }
     }
@@ -267,7 +304,8 @@ export class IntelligentUiClient {
       )
     if (receipt.failure || receipt.refusal) return false
     if (receipt.status === 'pending-approval') return !!receipt.approvalId && !!receipt.invocationId
-    if (receipt.status === 'succeeded') return !!receipt.resultSeq && !!receipt.invocationId
+    if (receipt.status === 'succeeded')
+      return !!receipt.resultSeq && receipt.resultSeq < receipt.seq && !!receipt.invocationId
     return true
   }
 
@@ -318,6 +356,7 @@ export class IntelligentUiClient {
     this.recheck.delete(id)
     this.changed.delete(id)
     this.confirming.delete(id)
+    this.retryRows.delete(id)
     this.drafts.delete(id)
     this.emit()
   }
@@ -354,6 +393,35 @@ export class IntelligentUiClient {
     this.confirming.delete(id)
     this.emit()
   }
+  retry(receipt: UiActionReceipt): void {
+    const id = receipt.surfaceId,
+      record = this.record(id)
+    if (
+      this.locked(id) ||
+      receipt.status !== 'failed' ||
+      !receipt.failure?.retryable ||
+      receipt.failure.outcomeUnknown ||
+      !record
+    )
+      return
+    const action = record.surface.actions.find((item) => item.id === receipt.actionId)
+    if (!action) return
+    const table = record.surface.components.find(
+      (item) => item.kind === 'table' && item.rowActionIds?.includes(action.id),
+    )
+    let row = this.commandRows.get(receipt.commandId)
+    if (table && !row) {
+      const selected = this.draft(id).selection[table.id] ?? []
+      if (selected.length === 1) row = { tableId: table.id, rowId: selected[0]! }
+      else {
+        this.retryRows.set(id, receipt)
+        this.snapshot = { ...this.snapshot, error: 'ui.retryRow' }
+        this.emit()
+        return
+      }
+    }
+    this.choose(id, action, row, receipt.commandId)
+  }
   choose(id: string, action: UiAction, row?: UiRowContext, retryOf?: string): void {
     if (
       this.locked(id) ||
@@ -361,6 +429,9 @@ export class IntelligentUiClient {
       !this.record(id)?.surface.actions.some((item) => item.id === action.id)
     )
       return
+    const retryRow = this.retryRows.get(id)
+    if (retryRow && retryRow.actionId === action.id && row) retryOf = retryRow.commandId
+    this.retryRows.delete(id)
     this.confirming.set(id, {
       action,
       revision: this.record(id)!.surface.revision,
@@ -403,12 +474,16 @@ export class IntelligentUiClient {
       ...(decision.retryOf ? { retryOf: decision.retryOf } : {}),
     }
     if (!boundedUiJson(params, X_AGNES_UI_LIMITS.actionBytes)) {
-      this.snapshot = { ...this.snapshot, error: 'ui.unavailable' }
+      this.snapshot = { ...this.snapshot, error: 'ui.actionLimit' }
       this.emit()
       return
     }
     this.confirming.delete(id)
     this.commands.set(params.commandId, params)
+    if (params.row) {
+      this.commandRows.set(params.commandId, params.row)
+      if (this.commandRows.size > 64) this.commandRows.delete(this.commandRows.keys().next().value!)
+    }
     this.persist()
     this.emit()
     await this.send(params)
@@ -484,5 +559,7 @@ export class IntelligentUiClient {
     this.listeners.clear()
     this.confirming.clear()
     this.drafts.clear()
+    this.commandRows.clear()
+    this.retryRows.clear()
   }
 }

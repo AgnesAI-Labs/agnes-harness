@@ -33,7 +33,9 @@ export const intelligentUiCatalog: LocaleCatalog = {
     'ui.resend': 'Recover submission',
     'ui.approval': 'Open existing approval',
     'ui.approvalHelp': 'Business confirmation does not grant tool permission.',
-    'ui.invalidJson': 'Finish entering valid JSON before submitting.',
+    'ui.actionLimit': 'Submission exceeds the input limit. Reduce selections or form values.',
+    'ui.retryRow': 'Select a row or choose its row action again, then confirm the safe retry.',
+    'ui.invalidJson': 'Complete a valid draft within the input limit before submitting.',
   },
   'zh-CN': {
     'ui.title': '交互界面',
@@ -67,6 +69,8 @@ export const intelligentUiCatalog: LocaleCatalog = {
     'ui.resend': '恢复提交',
     'ui.approval': '打开现有审批',
     'ui.approvalHelp': '业务确认不代表已授予工具权限。',
-    'ui.invalidJson': '请完成合法 JSON 输入后再提交。',
+    'ui.actionLimit': '提交内容超出大小限制，请减少选择项或表单内容。',
+    'ui.retryRow': '请重新选择行或点击对应的行操作，再确认安全重试。',
+    'ui.invalidJson': '请完成合法且未超出大小限制的草稿后再提交。',
   },
 }

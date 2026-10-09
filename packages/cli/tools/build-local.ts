@@ -308,6 +308,10 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   ])
   const conversationCss = await readFile(join(webUi, 'src', 'conversation', 'messages.css'), 'utf8')
   await appendFile(join(webOut, 'style.css'), `\n${conversationCss}`)
+  await appendFile(
+    join(webOut, 'style.css'),
+    `\n${await readFile(join(webUi, 'src', 'intelligent-ui', 'styles.css'), 'utf8')}`,
+  )
   const generatedConversationCss = join(webOut, 'conversation-tailwind.css')
   buildConversationCss(generatedConversationCss)
   await appendFile(join(webOut, 'style.css'), `\n${await readFile(generatedConversationCss, 'utf8')}`)

@@ -79,7 +79,7 @@ export const uiReceipt = (
   duplicate: false,
   status,
   ...(status === 'pending-approval' ? { invocationId: 'invocation-1', approvalId: 'approval-1' } : {}),
-  ...(status === 'succeeded' ? { invocationId: 'invocation-1', resultSeq: 12 } : {}),
+  ...(status === 'succeeded' ? { invocationId: 'invocation-1', resultSeq: 12, seq: 13 } : {}),
   ...(status === 'failed'
     ? {
         failure: {

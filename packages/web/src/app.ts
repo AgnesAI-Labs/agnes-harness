@@ -1,3 +1,4 @@
+import { mountIntelligentUi } from './intelligent-ui/mount.js'
 import { createCommandController } from './app/command-controller.js'
 import { createComposerController } from './app/composer-controller.js'
 import { createSubmissionController } from './app/submission-controller.js'
@@ -952,6 +953,18 @@ if (!conversationRuntime) throw new Error('missing conversation region')
 const renderer = clientModules.transcript as NonNullable<typeof clientModules.transcript>
 if (!renderer) throw new Error('missing transcript region')
 bindSlotCardContext({ registry: clientModules.registry, claim: claimSlotCard, locale: clientModules.locale })
+const unmountIntelligentUi = mountIntelligentUi({
+  client,
+  registry: clientModules.registry,
+  session: clientModules.session,
+  locale: clientModules.locale,
+  approval: () => {
+    searchApproval()
+    const approval = document.getElementById('approval')
+    approval?.scrollIntoView({ block: 'nearest' })
+    approval?.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus()
+  },
+})
 
 // 渲染时取词：t 只在渲染/组装瞬间调用；语言切换后由订阅重跑渲染函数，命令式区域整体重建。
 const t: Translate = (key, vars) => clientModules.locale.t(key, vars)
@@ -2260,6 +2273,7 @@ const modelRefreshTimer = setInterval(() => {
     })
 }, 2000)
 window.addEventListener('pagehide', () => {
+  unmountIntelligentUi()
   firstRun.dispose()
   const dockHost = dockControlsHost
   if (dockHost) unmountWorkbench(dockHost)

@@ -2,7 +2,7 @@
 
 [English](intelligent-ui.md) | 简体中文
 
-[架构](architecture.zh-CN.md) · [插件](plugins.zh-CN.md) · [前端](frontend.zh-CN.md) · [会话与恢复](../guide/sessions.zh-CN.md)
+[架构](architecture.zh-CN.md) · [插件](plugins.zh-CN.md) · [前端](frontend.zh-CN.md) · [会话与恢复](../guide/sessions.zh-CN.md) · [Web 渲染器](intelligent-ui-web.zh-CN.md)
 
 本文是待实现的合同。Schema 与生成类型只声明接口；本次合同变更尚未实现插件、App Server 处理器、渲染器或试点。业务 Agent 将选择预设组件，收集用户选择，通过现有授权路径执行已声明的业务工具，并带着持久证据继续处理。
 

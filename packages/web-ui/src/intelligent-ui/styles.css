@@ -58,3 +58,12 @@
 .agnes-intelligent-surface [data-testid="ui-receipts"] {
   padding-inline-start: 20px;
 }
+
+.agnes-intelligent-surface p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.agnes-intelligent-surface[data-placement="inline"] [data-testid="ui-receipts"] {
+  max-height: 180px;
+  overflow: auto;
+}

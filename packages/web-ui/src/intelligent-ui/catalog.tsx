@@ -15,6 +15,7 @@ import { uiObject, validIntelligentSurface } from './validate.js'
 
 export interface IntelligentCatalogProps {
   surface: UiSurface
+  instance?: string
   input: Record<string, JsonValue>
   selection: Record<string, string[]>
   disabled: boolean
@@ -82,8 +83,12 @@ function CatalogComponent(props: IntelligentCatalogProps & { component: UiCompon
           <PluginSchemaFields
             root={component.schema}
             schema={component.schema}
-            value={props.input[component.id] ?? surface.data[component.dataKey]}
-            path={`/${surface.id}/${component.id}/${instance}`}
+            value={
+              Object.hasOwn(props.input, component.id)
+                ? props.input[component.id]
+                : surface.data[component.dataKey]
+            }
+            path={`/${surface.id}/${component.id}/${props.instance ?? instance}`}
             issues={[]}
             disabled={disabled}
             onChange={(value) => props.onInput(component.id, value)}

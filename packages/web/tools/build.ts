@@ -136,6 +136,10 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
   // Conversation rules share the existing style.css URL on all three pages. The local CLI build
   // must apply the same composition when copying Web assets into its own static root.
   await appendFile(join(out, 'style.css'), `\n${await readFile(conversationCss, 'utf8')}`)
+  await appendFile(
+    join(out, 'style.css'),
+    `\n${await readFile(join(root, '..', 'web-ui', 'src', 'intelligent-ui', 'styles.css'), 'utf8')}`,
+  )
   buildConversationCss(generatedConversationCss)
   await appendFile(join(out, 'style.css'), `\n${await readFile(generatedConversationCss, 'utf8')}`)
   await rm(generatedConversationCss)

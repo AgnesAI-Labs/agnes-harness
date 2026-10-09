@@ -1,7 +1,11 @@
 import { UiSurface, X_AGNES_UI_LIMITS, type JsonValue } from '@agnes/protocol/gen/intelligent-ui'
 import { validateAgainst } from '@agnes/protocol-validation'
 
-export function boundedUiJson(value: unknown, bytes: number, depth = X_AGNES_UI_LIMITS.jsonDepth): boolean {
+export function boundedUiJson(
+  value: unknown,
+  bytes: number,
+  depth: number = X_AGNES_UI_LIMITS.jsonDepth,
+): boolean {
   const visit = (item: unknown, level: number): boolean => {
     if (level > depth) return false
     if (item === null || typeof item === 'string' || typeof item === 'boolean') return true

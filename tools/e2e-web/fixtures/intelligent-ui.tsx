@@ -1,0 +1,229 @@
+import { Context } from '@agnes/cordis'
+import type { UiActionParams, UiActionReceipt, UiReadResult } from '@agnes/protocol/gen/intelligent-ui'
+import { LocaleService, workbenchPanels, workbenchNavigation } from '@agnes/web-client'
+import {
+  createAntdRoot,
+  createDocumentLocaleSource,
+  intelligentUiCatalog,
+  INTELLIGENT_UI_NAMESPACE,
+} from '@agnes/web-ui'
+import { Approval } from '@agnes/web-units'
+import { useSyncExternalStore } from 'react'
+import { IntelligentUiClient } from '../../../packages/web/src/intelligent-ui/client.js'
+import {
+  IntelligentInline,
+  IntelligentPanel,
+  type UiPlacementBinding,
+} from '../../../packages/web/src/intelligent-ui/placements.js'
+import type { IntelligentUiServer } from '../../../packages/web/src/intelligent-ui/types.js'
+import { Dock } from '../../../packages/web/src/workbench/dock.js'
+import { financeRecord, uiPage } from '../../../packages/web/test/intelligent-ui/fixture.js'
+
+// Browser-only fake App Server with persisted synthetic facts. Real catalog, shared client,
+// placements, dock and approval component; never executes a business tool or grants permission.
+const key = 'intelligent-ui-fixture'
+const state: { page: UiReadResult; requests: UiActionParams[] } = JSON.parse(
+  localStorage.getItem(key) ?? 'null',
+) ?? { page: uiPage(), requests: [] }
+const save = () => localStorage.setItem(key, JSON.stringify(state))
+let onEvent: ((event: { seq: number; type: string }) => void) | undefined
+const notify = () => {
+  save()
+  onEvent?.({
+    seq: state.page.lastSeq,
+    type: `x/agnes/intelligent-ui/action.${state.page.actions.at(-1)?.status ?? 'received'}`,
+  })
+}
+const server: IntelligentUiServer = {
+  read: async (params) =>
+    structuredClone({
+      ...state.page,
+      ...(params.commandId
+        ? {
+            surfaces: [],
+            actions: state.page.actions.filter((receipt) => receipt.commandId === params.commandId),
+          }
+        : {}),
+    }),
+  action: async (params) => {
+    const previous = state.page.actions.find((receipt) => receipt.commandId === params.commandId)
+    if (previous) return { ...previous, duplicate: true }
+    state.requests.push(structuredClone(params))
+    const record = state.page.surfaces[0]!
+    const base: UiActionReceipt = {
+      sessionId: params.sessionId,
+      surfaceId: params.surfaceId,
+      revision: params.revision,
+      actionId: params.actionId,
+      commandId: params.commandId,
+      status: 'received',
+      seq: ++state.page.lastSeq,
+      duplicate: false,
+    }
+    const receipt: UiActionReceipt =
+      record.surface.revision !== params.revision
+        ? {
+            ...base,
+            status: 'rejected',
+            refusal: {
+              code: 'UI_STALE',
+              reason: 'stale',
+              message: 'Current data changed',
+              currentRevision: record.surface.revision,
+            },
+          }
+        : {
+            ...base,
+            status: 'pending-approval',
+            invocationId: `invocation-${params.commandId}`,
+            approvalId: `ticket-${params.commandId}`,
+          }
+    state.page.actions.push(receipt)
+    notify()
+    return structuredClone(receipt)
+  },
+  listen: (listener) => {
+    onEvent = listener
+    return () => {
+      onEvent = undefined
+    }
+  },
+  attach: async () => {},
+}
+const language = new URL(location.href).searchParams.get('locale') === 'zh-CN' ? 'zh-CN' : 'en'
+document.documentElement.lang = language
+if (new URL(location.href).searchParams.get('theme') === 'dark')
+  document.documentElement.classList.add('dark')
+const locale = new LocaleService(new Context(), language)
+locale.register(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
+const source = createDocumentLocaleSource({ [INTELLIGENT_UI_NAMESPACE]: intelligentUiCatalog })
+const client = new IntelligentUiClient('session-finance', server, sessionStorage)
+let version = 0,
+  target: ReturnType<UiPlacementBinding['target']>
+const listeners = new Set<() => void>()
+const binding: UiPlacementBinding = {
+  subscribe: (listener) => {
+    listeners.add(listener)
+    return () => {
+      listeners.delete(listener)
+    }
+  },
+  getSnapshot: () => client,
+  getVersion: () => version,
+  locale: source.source,
+  target: () => target,
+  expand: (surfaceId, revision) => {
+    target = { sessionId: client.sessionId, surfaceId, revision }
+    version++
+    for (const listener of listeners) listener()
+    workbenchNavigation.open('intelligent-ui')
+  },
+  approval: () => {
+    document.getElementById('approval')?.scrollIntoView()
+    document.querySelector<HTMLButtonElement>('[data-testid="approval-action"]')?.focus()
+  },
+}
+workbenchPanels.register({
+  id: 'intelligent-ui',
+  order: 1,
+  edge: 'right',
+  titleKey: 'ui.title',
+  component: ({ context }) => <IntelligentPanel binding={binding} context={context} />,
+})
+
+function Fixture() {
+  useSyncExternalStore(client.subscribe, client.getVersion)
+  const pending = client.getSnapshot().receipts.find((receipt) => receipt.status === 'pending-approval')
+  const decide = (allow: boolean) => {
+    const receipt = state.page.actions.find((item) => item.commandId === pending?.commandId)!
+    if (!allow) {
+      Object.assign(receipt, {
+        status: 'rejected',
+        seq: ++state.page.lastSeq,
+        refusal: { code: 'UI_UNAUTHORIZED', reason: 'unauthorized', message: 'Denied' },
+      })
+      notify()
+      return
+    }
+    Object.assign(receipt, { status: 'executing', seq: ++state.page.lastSeq })
+    notify()
+    const resultSeq = ++state.page.lastSeq
+    Object.assign(receipt, {
+      status: 'succeeded',
+      resultSeq,
+      seq: ++state.page.lastSeq,
+      summary: 'Simulated approval; posted: false',
+    })
+    const next = financeRecord(state.page.surfaces[0]!.surface.revision + 1)
+    next.updatedSeq = ++state.page.lastSeq
+    next.surface.data.rows = [{ id: 'txn-1', amountCents: 250, status: 'simulated-approved' }]
+    state.page.surfaces = [next]
+    notify()
+  }
+  return (
+    <main className="workbench-split" style={{ overflow: 'auto', height: '100vh' }}>
+      <div id="fixture-controls">
+        <Dock
+          context={{
+            t: (name) => locale.t(name),
+            data: { session: { id: client.sessionId }, disabled: false },
+          }}
+        />
+      </div>
+      <IntelligentInline binding={binding} />
+      <section id="approval">
+        {pending && (
+          <Approval
+            key={pending.commandId}
+            initialView={{
+              key: pending.approvalId!,
+              title: language === 'en' ? 'Tool permission' : '工具权限审批',
+              summary: 'fde_finance_approve · simulated only',
+              impact: 'The original ticket is preserved across reload.',
+              preview: JSON.stringify(
+                state.requests.find((item) => item.commandId === pending.commandId)?.input ?? {},
+              ),
+              disabled: false,
+              actions: [
+                {
+                  id: 'allow',
+                  label: language === 'en' ? 'Allow once' : '仅允许这次',
+                  onSelect: () => decide(true),
+                },
+                { id: 'deny', label: language === 'en' ? 'Deny' : '拒绝', onSelect: () => decide(false) },
+              ],
+            }}
+          />
+        )}
+      </section>
+      <button
+        data-testid="fixture-change-data"
+        onClick={() => {
+          const next = financeRecord(state.page.surfaces[0]!.surface.revision + 1)
+          next.updatedSeq = ++state.page.lastSeq
+          state.page.surfaces = [next]
+          save()
+        }}
+      >
+        Simulate concurrent revision without event delivery
+      </button>
+      <p data-testid="fixture-command-count">{state.requests.length}</p>
+      <aside id="workbench-right" hidden>
+        <div id="workbench-right-content" />
+      </aside>
+      <aside id="workbench-bottom" hidden>
+        <div id="workbench-bottom-content" />
+      </aside>
+    </main>
+  )
+}
+await client.start()
+createAntdRoot(document.getElementById('fixture-root')!).render(<Fixture />)
+addEventListener(
+  'pagehide',
+  () => {
+    client.dispose()
+    source.dispose()
+  },
+  { once: true },
+)

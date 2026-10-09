@@ -54,58 +54,68 @@ const surface: UiSurface = {
 }
 
 describe('preset Intelligent UI catalog', () => {
-  it('renders all presets, submits only row identity and keeps content inert', async () => {
-    const host = document.createElement('div'),
-      root = createRoot(host)
-    const selection = vi.fn(),
-      action = vi.fn()
-    try {
-      await act(async () =>
-        root.render(
-          createElement(IntelligentCatalog, {
-            surface,
-            input: {},
-            selection: {},
-            disabled: false,
-            onInput: vi.fn(),
-            onSelection: selection,
-            onInvalid: vi.fn(),
-            onAction: action,
-          }),
-        ),
-      )
-      expect(host.querySelectorAll('[data-testid^="ui-component-"]')).toHaveLength(6)
-      expect(host.querySelector('script')).toBeNull()
-      expect(host.textContent).toContain('<script>inert</script>')
-      expect(host.textContent).toContain('250')
-      expect(host.querySelector('svg')?.getAttribute('role')).toBe('img')
-      await act(async () =>
-        host.querySelector<HTMLInputElement>('[data-testid="ui-select-rows-txn-1"]')!.click(),
-      )
-      expect(selection).toHaveBeenCalledWith('rows', ['txn-1'])
-      await act(async () =>
-        host.querySelector<HTMLButtonElement>('[data-testid="ui-action-approve"]')!.click(),
-      )
-      expect(action).toHaveBeenCalledWith(surface.actions[0], { tableId: 'rows', rowId: 'txn-1' })
-      await act(async () =>
-        root.render(
-          createElement(IntelligentCatalog, {
-            surface,
-            input: {},
-            selection: {},
-            disabled: true,
-            onInput: vi.fn(),
-            onSelection: selection,
-            onInvalid: vi.fn(),
-            onAction: action,
-          }),
-        ),
-      )
-      expect(host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.disabled).toBe(true)
-    } finally {
-      await act(async () => root.unmount())
-    }
-  })
+  it.each(['single', 'multiple'] as const)(
+    'renders all presets with %s selection and keeps content inert',
+    async (mode) => {
+      const rendered = structuredClone(surface)
+      const table = rendered.components[0]!
+      if (table.kind !== 'table') throw new Error('Missing table fixture')
+      table.selection = mode
+      const host = document.createElement('div'),
+        root = createRoot(host)
+      const selection = vi.fn(),
+        action = vi.fn()
+      try {
+        await act(async () =>
+          root.render(
+            createElement(IntelligentCatalog, {
+              surface: rendered,
+              input: {},
+              selection: {},
+              disabled: false,
+              onInput: vi.fn(),
+              onSelection: selection,
+              onInvalid: vi.fn(),
+              onAction: action,
+            }),
+          ),
+        )
+        expect(host.querySelectorAll('[data-testid^="ui-component-"]')).toHaveLength(6)
+        expect(host.querySelector('script')).toBeNull()
+        expect(host.textContent).toContain('<script>inert</script>')
+        expect(host.textContent).toContain('250')
+        expect(host.querySelector('svg')?.getAttribute('role')).toBe('img')
+        await act(async () =>
+          host.querySelector<HTMLInputElement>('[data-testid="ui-select-rows-txn-1"]')!.click(),
+        )
+        expect(selection).toHaveBeenCalledWith('rows', ['txn-1'])
+        await act(async () =>
+          host.querySelector<HTMLButtonElement>('[data-testid="ui-action-approve"]')!.click(),
+        )
+        expect(action).toHaveBeenCalledWith(surface.actions[0], { tableId: 'rows', rowId: 'txn-1' })
+        await act(async () =>
+          root.render(
+            createElement(IntelligentCatalog, {
+              surface: rendered,
+              input: {},
+              selection: {},
+              disabled: true,
+              onInput: vi.fn(),
+              onSelection: selection,
+              onInvalid: vi.fn(),
+              onAction: action,
+            }),
+          ),
+        )
+        expect(
+          host.querySelector<HTMLInputElement>(`input[type="${mode === 'single' ? 'radio' : 'checkbox'}"]`)!
+            .disabled,
+        ).toBe(true)
+      } finally {
+        await act(async () => root.unmount())
+      }
+    },
+  )
 
   it.each(['line', 'pie'] as const)('renders %s with accessible source values', async (chartType) => {
     const chart = {

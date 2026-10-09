@@ -230,4 +230,24 @@ describe('Intelligent UI session projection and commands', () => {
     expect(server.submitted).toHaveLength(1)
     client.dispose()
   })
+  it('requires explicit row identity for a safe row retry after reload', async () => {
+    const { client, server, id, action } = await setup()
+    const record = financeRecord()
+    const table = record.surface.components.find((item) => item.kind === 'table')!
+    if (table.kind !== 'table') throw new Error('Missing table fixture')
+    table.rowActionIds = ['confirm']
+    server.page = uiPage(record, [uiReceipt('failed', { commandId: 'old-row-command' })], 20)
+    await client.refresh()
+    client.retry(client.receipts(id)[0]!)
+    expect(client.getSnapshot().error).toBe('ui.retryRow')
+    expect(client.confirmation(id)).toBeUndefined()
+    client.choose(id, action, { tableId: 'differences', rowId: 'txn-1' })
+    await client.confirm(id)
+    expect(server.submitted[0]).toMatchObject({
+      retryOf: 'old-row-command',
+      row: { tableId: 'differences', rowId: 'txn-1' },
+      selection: { differences: ['txn-1'] },
+    })
+    client.dispose()
+  })
 })
