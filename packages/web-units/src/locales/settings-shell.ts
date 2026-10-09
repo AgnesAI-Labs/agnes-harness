@@ -37,6 +37,7 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'settings-shell.page.terminal': 'Terminal',
     'settings-shell.page.security': 'Permissions & sandbox',
     'settings-shell.page.history': 'Search history',
+    'settings-shell.page.feedback': 'Feedback',
 
     'settings-shell.railAria': 'Settings categories',
     'settings-shell.railTitle': 'Settings',
@@ -138,6 +139,7 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
     'settings-shell.page.terminal': '终端',
     'settings-shell.page.security': '权限与沙箱',
     'settings-shell.page.history': '搜索历史',
+    'settings-shell.page.feedback': '反馈',
 
     'settings-shell.railAria': '设置分类',
     'settings-shell.railTitle': '设置',
