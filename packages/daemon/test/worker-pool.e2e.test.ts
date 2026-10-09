@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url'
 import { buildRuntimeTarget, createPluginRow, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { windowsProcessStartTimeSync } from '@agnes/system-node'
 import { describe, expect, it, vi } from 'vitest'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
+import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
 import { CompositeRuntimeDelivery } from '../src/composite-runtime-delivery.js'
 import { type DaemonConfig, DEFAULT_LIMITS } from '../src/config.js'
 import { LocalEndpoint } from '../src/local/endpoint.js'
@@ -16,8 +18,6 @@ import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
 import { encodeFrame } from '../src/supervisor/framing.js'
 import { listenUnix } from '../src/supervisor/socket.js'
 import { WorkerPool } from '../src/supervisor/worker-pool.js'
-import { sqliteTables } from './sqlite-tables.js'
-import { workspaceBinding } from './workspace-authority.js'
 
 async function acquire(
   pool: WorkerPool,

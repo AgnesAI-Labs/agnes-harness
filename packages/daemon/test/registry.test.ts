@@ -1,11 +1,11 @@
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
+import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
 import type { LocalContext } from '../src/local/methods/acp.js'
 import type { SessionEntry } from '../src/local/sessions.js'
 import type { Registry } from '../src/registry.js'
 import { type RemoteEntry, WorkerRegistry } from '../src/supervisor/registry.js'
 import type { WorkerPool } from '../src/supervisor/worker-pool.js'
-import { workspaceBinding } from './workspace-authority.js'
 
 async function open(
   registry: WorkerRegistry,

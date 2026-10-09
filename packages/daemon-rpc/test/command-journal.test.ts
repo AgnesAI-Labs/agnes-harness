@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PersistentCommandJournal } from '@agnes/daemon-foundation/storage/command-journal'
 import { afterEach, describe, expect, it } from 'vitest'
-import { sqliteTables } from '../../daemon/test/sqlite-tables.js'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { commandBinding } from '../src/local/command-binding.js'
 
 const dirs: string[] = []

@@ -1,8 +1,8 @@
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { appendRowAsOlderBuild } from '@agnes/host/testkit'
 import { describe, expect, it } from 'vitest'
-import { openTestHost } from '../../daemon/test/host.js'
 import { legacyLedgerRpcError } from '../src/local/methods/acp.js'
+import { openTestHost } from './host.js'
 
 const initialize = {
   jsonrpc: '2.0' as const,

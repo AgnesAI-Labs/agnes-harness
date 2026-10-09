@@ -2,10 +2,10 @@ import type { InstalledInventory, PackageManager, RuntimePin } from '@agnes/pack
 import { activeRuntimePinId } from '@agnes/package-manager'
 import { buildRuntimeTarget, createPluginRow, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { describe, expect, it, vi } from 'vitest'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { createCompositeTargetActivation } from '../src/composite-target-activation.js'
 import { createRuntimePinCoordinator } from '../src/runtime-pin-coordinator.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 const integrity = `sha256-${'a'.repeat(64)}`
 const treeIntegrity = `sha256-${'b'.repeat(64)}`

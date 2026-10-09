@@ -1,7 +1,7 @@
 import { buildRuntimeTarget, createPluginRow, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { describe, expect, it } from 'vitest'
-import { sqliteTables } from '../../daemon/test/sqlite-tables.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
+import { sqliteTables } from './sqlite-tables.js'
 
 const revision = 'c'.repeat(64)
 

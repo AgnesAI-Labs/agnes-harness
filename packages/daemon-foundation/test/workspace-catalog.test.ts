@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { sqliteTables } from '../../daemon/test/sqlite-tables.js'
 import { MemorySessionWorkspaces } from '../src/storage/lister.js'
 import {
   assertWorkspaceBindingEnvelope,
@@ -11,6 +10,7 @@ import {
   WorkspaceIndex,
   type WorkspaceStore,
 } from '../src/storage/workspaces.js'
+import { sqliteTables } from './sqlite-tables.js'
 
 const workspaceId = (path: string) => createHash('sha256').update(path, 'utf8').digest('hex')
 const resolver =

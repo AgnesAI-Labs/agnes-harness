@@ -14,7 +14,6 @@ import { join } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
 import { readWorkspace } from '@agnes/worker-runtime'
 import { describe, expect, it, vi } from 'vitest'
-import { openTestHost } from '../../daemon/test/host.js'
 import {
   compileIgnore,
   ignoredBy,
@@ -22,6 +21,7 @@ import {
   normalizeWorkspacePath,
   parseGitPorcelain,
 } from '../src/local/workspace-files.js'
+import { openTestHost } from './host.js'
 
 const caps = {
   fs: { readTextFile: false, writeTextFile: false },

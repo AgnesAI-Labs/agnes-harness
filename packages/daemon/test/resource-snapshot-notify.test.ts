@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
+import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
 import { WorkerRegistry } from '../src/supervisor/registry.js'
 import { wireResourceSnapshotNotifications } from '../src/supervisor/supervisor.js'
 import type { WorkerPool } from '../src/supervisor/worker-pool.js'
-import { workspaceBinding } from './workspace-authority.js'
 
 /**
  * Task 5 (resource-live-reload plan) wiring, narrowed by Task 7: the daemon's one hook for "a

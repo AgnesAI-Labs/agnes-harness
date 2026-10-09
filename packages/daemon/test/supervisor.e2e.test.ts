@@ -9,6 +9,7 @@ import { createTestHost } from '@agnes/host/testkit'
 import { createClient, memoryJournal, wsTransport } from '@agnes/sdk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WebSocket } from 'ws'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { type DaemonConfig, DEFAULT_LIMITS } from '../src/config.js'
 import { signSourceAuth, sourceAuthCanonical } from '../src/local/auth.js'
 import { SessionPrincipalOwnershipIndex } from '../src/storage/session-ownership.js'
@@ -18,7 +19,6 @@ import { DaemonMutationLockError } from '../src/supervisor/mutation-lock.js'
 import { daemonSocketPaths } from '../src/supervisor/socket-paths.js'
 import { startSupervisor } from '../src/supervisor/supervisor.js'
 import { localSdkTransport } from './local-socket-path.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 // A `WorkerPool.workerEntry` override that runs a real worker (`runWorker`, src/worker/main.ts) over
 // a fixture Host built with `@agnes/host/testkit`'s `createTestHost` instead of a real package-loader

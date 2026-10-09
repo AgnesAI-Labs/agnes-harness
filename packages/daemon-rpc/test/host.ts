@@ -2,16 +2,12 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ScriptedProvider } from '@agnes/ai/testkit'
+import { MemorySessionWorkspaces } from '@agnes/daemon-foundation/storage/lister'
+import { MemoryWorkspaceStore, WorkspaceCatalog } from '@agnes/daemon-foundation/storage/workspaces'
 import { type Host, resolveWorkspaceDirectory } from '@agnes/host'
 import { createTestHost, type TestHostOptions } from '@agnes/host/testkit'
 import type { InferenceEvent, Provider, RequestBody } from '@agnes/protocol'
-import {
-  createLocalEndpoint,
-  type LocalEndpointOptions,
-  MemoryWorkspaceStore,
-  WorkspaceCatalog,
-} from '../src/local/index.js'
-import { MemorySessionWorkspaces } from '../src/storage/lister.js'
+import { createLocalEndpoint, type LocalEndpointOptions } from '../src/local/index.js'
 
 /** One scripted turn that answers with `text` and stops. ScriptedProvider prepends `sent` itself. */
 export function say(text: string): InferenceEvent[] {

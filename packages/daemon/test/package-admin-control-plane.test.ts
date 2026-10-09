@@ -25,6 +25,8 @@ import {
 import * as systemNode from '@agnes/system-node'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
+import { openTestHost } from '../../daemon-rpc/test/host.js'
 import {
   type ClientModuleRegistry,
   type ClientModulesChanged,
@@ -40,8 +42,6 @@ import {
 } from '../src/packages/index.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
 import { runAgnesd } from '../src/supervisor/supervisor.js'
-import { openTestHost } from './host.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), '../../package-manager/test/fixtures')
 const examples = join(dirname(fileURLToPath(import.meta.url)), '../../../examples/packages')

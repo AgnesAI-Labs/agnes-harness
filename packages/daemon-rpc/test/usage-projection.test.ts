@@ -5,8 +5,8 @@ import { MemorySessionPrincipalOwnership } from '@agnes/daemon-foundation/storag
 import { createTestHost } from '@agnes/host/testkit'
 import { createClient } from '@agnes/sdk'
 import { expect, it } from 'vitest'
-import { testWorkspaceCatalog } from '../../daemon/test/host.js'
 import { createLocalEndpoint } from '../src/local/index.js'
+import { testWorkspaceCatalog } from './host.js'
 
 it('returns identical usage through SDK full/patch/opening/history and a reopened SQLite host', async () => {
   const dataDir = mkdtempSync(join(tmpdir(), 'agnes-usage-rpc-'))

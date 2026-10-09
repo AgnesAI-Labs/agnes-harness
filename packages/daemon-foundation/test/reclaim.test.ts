@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { sqliteTables } from '../../daemon/test/sqlite-tables.js'
 import { type ResumeReport, reclaimExpired, tableReclaimStore } from '../src/lease/reclaim.js'
 import { ensure } from '../src/storage/table.js'
+import { sqliteTables } from './sqlite-tables.js'
 
 const CLAIMS_DDL =
   'CREATE TABLE IF NOT EXISTS writer_claims (session_key TEXT PRIMARY KEY, run_id TEXT NOT NULL, until INTEGER NOT NULL, generation INTEGER NOT NULL)'

@@ -6,10 +6,10 @@ import type { JsonRpcMessage } from '@agnes/daemon-foundation/rpc'
 import { MemorySessionPrincipalOwnership } from '@agnes/daemon-foundation/storage/session-ownership'
 import type { HostSession } from '@agnes/host'
 import { describe, expect, it, vi } from 'vitest'
-import { openTestHost, slowProvider } from '../../daemon/test/host.js'
 import { signSourceAuth, sourceAuthCanonical } from '../src/local/auth.js'
 import { commandAdmissionId, commandBinding } from '../src/local/command-binding.js'
 import { compactOutcomeForRange } from '../src/local/methods/agnes.js'
+import { openTestHost, slowProvider } from './host.js'
 
 const caps = {
   fs: { readTextFile: false, writeTextFile: false },

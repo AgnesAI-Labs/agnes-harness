@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { TableHandle } from '@agnes/daemon-foundation/storage/table'
 import { createSqliteStorage, type TableHandle as HostTableHandle } from '@agnes/host'
 import { describe, expect, it, vi } from 'vitest'
-import { sqliteTables } from '../../daemon/test/sqlite-tables.js'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import {
   type ArtifactAuthorityBinding,
   createArtifactReadAuthorityPort,

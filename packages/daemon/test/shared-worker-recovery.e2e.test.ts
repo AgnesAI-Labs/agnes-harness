@@ -3,11 +3,11 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
+import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
 import { type DaemonConfig, DEFAULT_LIMITS } from '../src/config.js'
 import { WorkerRegistry } from '../src/supervisor/registry.js'
 import { listenUnix } from '../src/supervisor/socket.js'
 import { WorkerPool } from '../src/supervisor/worker-pool.js'
-import { workspaceBinding } from './workspace-authority.js'
 
 const fakeWorker = fileURLToPath(new URL('./fake-worker.ts', import.meta.url))
 const workerSocket = (dir: string): string =>

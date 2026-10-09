@@ -7,7 +7,7 @@ import { PersistentCommandJournal } from '@agnes/daemon-foundation/storage/comma
 import { createExtensionActivationBarrier, type Host } from '@agnes/host'
 import { type ExtensionCallResult, rpcError } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
-import { sqliteTables } from '../../daemon/test/sqlite-tables.js'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { CommandQueue } from '../src/local/command-queue.js'
 import { registerExtensions } from '../src/local/methods/extensions.js'
 

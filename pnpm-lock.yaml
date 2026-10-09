@@ -592,9 +592,6 @@ importers:
       '@agnes/ai':
         specifier: workspace:*
         version: link:../ai
-      '@agnes/daemon':
-        specifier: workspace:*
-        version: link:../daemon
 
   packages/daemon-foundation:
     dependencies:
@@ -616,10 +613,6 @@ importers:
       '@agnes/worker-runtime':
         specifier: workspace:*
         version: link:../worker-runtime
-    devDependencies:
-      '@agnes/daemon':
-        specifier: workspace:*
-        version: link:../daemon
 
   packages/daemon-rpc:
     dependencies:
@@ -657,9 +650,6 @@ importers:
       '@agnes/code':
         specifier: workspace:*
         version: link:../code
-      '@agnes/daemon':
-        specifier: workspace:*
-        version: link:../daemon
       '@agnes/package-manager':
         specifier: workspace:*
         version: link:../package-manager
@@ -749,9 +739,6 @@ importers:
         specifier: workspace:*
         version: link:../system-node
     devDependencies:
-      '@agnes/daemon':
-        specifier: workspace:*
-        version: link:../daemon
       '@agnes/web-server':
         specifier: workspace:*
         version: link:../web-server

@@ -45,8 +45,5 @@
     "@agnes/protocol": "workspace:*",
     "@agnes/worker-runtime": "workspace:*"
   },
-  "license": "Apache-2.0",
-  "devDependencies": {
-    "@agnes/daemon": "workspace:*"
-  }
+  "license": "Apache-2.0"
 }

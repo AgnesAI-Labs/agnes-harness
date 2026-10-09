@@ -1,6 +1,6 @@
 import { SourceAuthRotation } from '@agnes/daemon-foundation/storage/source-auth-rotation'
 import { describe, expect, it } from 'vitest'
-import { sqliteTables } from '../../daemon/test/sqlite-tables.js'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { signSourceAuth, sourceAuthCanonical, verifyAuth } from '../src/local/auth.js'
 
 describe('SourceAuthRotation', () => {

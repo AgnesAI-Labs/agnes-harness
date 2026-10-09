@@ -1,7 +1,7 @@
 import type { JsonRpcMessage } from '@agnes/daemon-foundation/rpc'
 import { validateMethod } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { openTestHost, say } from '../../daemon/test/host.js'
+import { openTestHost, say } from './host.js'
 
 const caps = {
   fs: { readTextFile: false, writeTextFile: false },

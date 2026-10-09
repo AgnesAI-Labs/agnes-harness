@@ -1,6 +1,6 @@
 import { createExtensionActivationBarrier } from '@agnes/host'
 import { expect, it } from 'vitest'
-import { openTestHost, slowProvider } from '../../daemon/test/host.js'
+import { openTestHost, slowProvider } from './host.js'
 
 const deferred = () => {
   let resolve: () => void = () => undefined

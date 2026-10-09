@@ -4,7 +4,7 @@ import { PARSER_VERSION } from '@agnes/ai'
 import { fakeModel, stampFor } from '@agnes/ai/testkit'
 import { createTestHost } from '@agnes/host/testkit'
 import type { InferenceEvent } from '@agnes/protocol'
-import { say } from './host.js'
+import { say } from '../../daemon-rpc/test/host.js'
 
 // A `WorkerPool.workerEntry` override (the same extension point `worker-pool.e2e.test.ts`'s own
 // `fake-worker.ts` uses, via `execPath: process.execPath` + `execArgv: ['--import', 'tsx']`), but

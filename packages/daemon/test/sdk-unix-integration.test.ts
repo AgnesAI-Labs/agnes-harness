@@ -4,11 +4,11 @@ import { resolveWorkspaceDirectory } from '@agnes/host'
 import type { Provider, RequestBody } from '@agnes/protocol'
 import { createClient, fileJournal, memoryJournal, TransportClosed } from '@agnes/sdk'
 import { afterEach, expect, it, vi } from 'vitest'
+import { openTestHost, say, slowProvider } from '../../daemon-rpc/test/host.js'
 import { type createLocalEndpoint, MemoryWorkspaceStore, WorkspaceCatalog } from '../src/local/index.js'
 import { MemorySessionWorkspaces } from '../src/storage/lister.js'
 import { bindConnection } from '../src/supervisor/connection.js'
 import { listenUnix } from '../src/supervisor/socket.js'
-import { openTestHost, say, slowProvider } from './host.js'
 import { localSdkTransport, localSocketPath } from './local-socket-path.js'
 
 const cleanup: Array<() => Promise<void>> = []

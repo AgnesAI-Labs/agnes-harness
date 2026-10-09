@@ -4,8 +4,8 @@ import {
   evaluateFixedComputerUsePlatformAdmission,
 } from '@agnes/host'
 import { describe, expect, it } from 'vitest'
-import { openTestHost } from '../../daemon/test/host.js'
 import { createLocalEndpoint } from '../src/local/index.js'
+import { openTestHost } from './host.js'
 
 // The lazy runtime reports first-use preparation only where the pinned driver is admitted for this
 // platform; everywhere else (Linux today) it reports the platform as unsupported instead.

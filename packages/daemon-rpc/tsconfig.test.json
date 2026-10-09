@@ -10,9 +10,6 @@
       "path": "."
     },
     {
-      "path": "../daemon/tsconfig.test.json"
-    },
-    {
       "path": "../host/tsconfig.testkit.json"
     },
     {
@@ -29,6 +26,9 @@
     },
     {
       "path": "../system-node"
+    },
+    {
+      "path": "../daemon-foundation/tsconfig.test.json"
     }
   ]
 }

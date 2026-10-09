@@ -5,11 +5,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MAX_FRAME_BYTES } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
+import { openTestHost, say } from '../../daemon-rpc/test/host.js'
 import { LocalEndpoint, type RpcEndpoint } from '../src/local/endpoint.js'
 import { bindConnection } from '../src/supervisor/connection.js'
 import { encodeFrame, JsonlDecoder } from '../src/supervisor/framing.js'
 import { listenUnix } from '../src/supervisor/socket.js'
-import { openTestHost, say } from './host.js'
 import { localSocketPath } from './local-socket-path.js'
 
 const cleanups: Array<() => Promise<void>> = []

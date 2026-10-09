@@ -1,6 +1,6 @@
 import type { SessionReadToolDetailResult } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { openTestHost } from '../../daemon/test/host.js'
+import { openTestHost } from './host.js'
 
 const initialize = {
   jsonrpc: '2.0' as const,

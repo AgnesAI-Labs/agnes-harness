@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ARTIFACT_READ_RPC_MAX_BYTES } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import {
   createArtifactReadAuthorityPort,
   PersistentArtifactReadAuthorityIndex,
@@ -12,7 +13,6 @@ import {
   composeProductionArtifactRead,
   composeProductionProjectedArtifactRead,
 } from '../src/supervisor/artifact-read.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 const roots: string[] = []
 afterEach(async () => {

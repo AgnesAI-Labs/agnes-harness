@@ -3,8 +3,8 @@ import { createClient, memoryJournal, TransportClosed } from '@agnes/sdk'
 import { createClient as browserClient, localStorageJournal } from '@agnes/sdk/browser'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WebSocketServer } from 'ws'
-import { openTestHost, say, slowProvider } from '../../daemon/test/host.js'
 import type { createLocalEndpoint } from '../src/local/index.js'
+import { openTestHost, say, slowProvider } from './host.js'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {

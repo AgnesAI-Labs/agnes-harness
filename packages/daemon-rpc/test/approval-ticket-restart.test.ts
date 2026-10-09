@@ -8,9 +8,9 @@ import { createTestHost } from '@agnes/host/testkit'
 import type { Actor, InferenceEvent } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
-import { testWorkspaceCatalog } from '../../daemon/test/host.js'
-import { sqliteTables } from '../../daemon/test/sqlite-tables.js'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { createLocalEndpoint } from '../src/local/index.js'
+import { testWorkspaceCatalog } from './host.js'
 
 const REQUESTER: Actor = { id: 'requester', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 const APPROVER: Actor = { id: 'approver', org: 'local', role: 'admin', deptPath: [], attrs: {} }

@@ -1,6 +1,6 @@
 import { toAcpPrompt, UI_PROJECTION_MAX_BYTES, type UITimeline } from '@agnes/protocol'
 import { expect, it } from 'vitest'
-import { openTestHost } from '../../daemon/test/host.js'
+import { openTestHost } from './host.js'
 
 it('saves a 100 MiB attachment and restores its exact bytes in a bounded Web history opening', async () => {
   const h = await openTestHost()

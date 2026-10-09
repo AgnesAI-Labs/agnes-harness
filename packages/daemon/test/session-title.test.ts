@@ -5,11 +5,11 @@ import { ScriptedProvider } from '@agnes/ai/testkit'
 import { createTestHost } from '@agnes/host/testkit'
 import { type EventEnvelope, SESSION_TITLE_EVENT } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
+import { testWorkspaceCatalog } from '../../daemon-rpc/test/host.js'
 import { createLocalEndpoint } from '../src/local/index.js'
 import { MemorySessionWorkspaces, SessionWorkspaceIndex, StorageLister } from '../src/storage/lister.js'
 import { handleCommand } from '../src/worker/commands.js'
-import { testWorkspaceCatalog } from './host.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 const title = (seq: number, value: string): EventEnvelope => ({
   v: 1,
