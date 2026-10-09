@@ -627,3 +627,81 @@ describe('a builtin row generation taken over while its factory is being prepare
     expect(t.host.statusEntries()[0]?.status.loaded).toBe(true)
   })
 })
+
+// Security/lifecycle cases retained from the retired package-scanning Host.
+describe('builtin row factory boundaries', () => {
+  it.each(['throw', 'reject', 'accessor', 'proxy'])(
+    'contains a %s factory failure and rolls back partial registration',
+    async (kind) => {
+      const t = setup()
+      let reads = 0
+      const failure =
+        kind === 'accessor'
+          ? {
+              get message() {
+                reads++
+                throw new Error('private payload')
+              },
+              get code() {
+                reads++
+                throw new Error('private payload')
+              },
+              toString() {
+                reads++
+                throw new Error('private payload')
+              },
+            }
+          : kind === 'proxy'
+            ? new Proxy(
+                {},
+                {
+                  getOwnPropertyDescriptor() {
+                    throw new Error('private payload')
+                  },
+                },
+              )
+            : new Error('private payload')
+      let retained: ExtensionAPI | undefined
+      const handle = await t.load((api) => {
+        retained = api
+        api.registerTool(tool('grep') as never)
+        if (kind === 'reject') return Promise.reject(failure)
+        throw failure
+      })
+      expect(handle.loaded).toBe(false)
+      expect(t.kernel.tools.size).toBe(0)
+      expect(reads).toBe(0)
+      expect(JSON.stringify({ status: t.host.statusEntries(), audit: t.audit })).not.toContain(
+        'private payload',
+      )
+      expect(() => retained?.registerTool(tool('find') as never)).toThrow()
+      await handle.release('shutdown')
+    },
+  )
+
+  it('closes synchronous registration before a queued microtask and awaits async cleanup', async () => {
+    const t = setup()
+    let late: unknown
+    let released = false
+    const handle = await t.load((api) => {
+      api.registerTool(tool('grep') as never)
+      queueMicrotask(() => {
+        try {
+          api.registerTool(tool('find') as never)
+        } catch (error) {
+          late = error
+        }
+      })
+      return async () => {
+        await Promise.resolve()
+        released = true
+      }
+    })
+    expect(handle.loaded).toBe(true)
+    expect(late).toBeDefined()
+    expect(t.kernel.tools.has('find')).toBe(false)
+    await handle.release('shutdown')
+    expect(released).toBe(true)
+    expect(t.kernel.tools.size).toBe(0)
+  })
+})

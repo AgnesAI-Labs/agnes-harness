@@ -11,7 +11,6 @@ import { Value } from '@sinclair/typebox/value'
 import { afterEach, expect, it } from 'vitest'
 import { buildExtensionApi } from '../../src/ext-host/api.js'
 import { loadError } from '../../src/ext-host/diagnostics.js'
-import { createExtHost } from '../../src/ext-host/host.js'
 import { createLoader, runtimeForm } from '../../src/ext-host/loader.js'
 
 const roots: string[] = []
@@ -182,29 +181,6 @@ it('reloads a plain nested ESM module whose native import would succeed without 
   expect((await f.loader.import(entry)).value).toBe(2)
 })
 
-it('connects real jiti modules to the existing host and kernel tool registry, including cleanup', async () => {
-  const f = setup()
-  const tools = new ToolRegistry()
-  const ext = await createExtHost({
-    packages: new Map([
-      ['fixture/pkg', fileURLToPath(new URL('../../../host/test/fixtures/pkg-exts', import.meta.url))],
-    ]),
-    tools,
-    importModule: (entry) => f.loader.import(entry),
-    log: { debug() {}, info() {}, warn() {}, error() {} },
-  })
-  try {
-    expect(ext.status().find((s) => s.id === 'fixture/ok')?.loaded).toBe(true)
-    expect(tools.resolve('fx_one')?.source).toEqual({ source: 'fixture/ok', trust: 'builtin' })
-    expect(tools.size).toBe(1)
-    expect(tools.resolve('tx_one')).toBeUndefined()
-    expect(ext.status().find((s) => s.id === 'fixture/throws')?.loaded).toBe(false)
-  } finally {
-    await ext.disposeAll()
-  }
-  expect(tools.size).toBe(0)
-})
-
 it('does not let the legacy loader mint classified-tool provenance or a Host domain', () => {
   const tools = new ToolRegistry()
   const api = buildExtensionApi(
@@ -291,56 +267,6 @@ it('accepts prerelease and build identifiers in the cache version', async () => 
   const entry = f.write('index.ts', 'export default () => {}')
   expect(typeof (await loader.import(entry)).default).toBe('function')
   expect(readdirSync(join(f.root, 'cache', 'jiti', '0.1.0-dev+abc')).length).toBeGreaterThan(0)
-})
-
-it('blocks late registration from a real native extension module', async () => {
-  const f = setup()
-  f.write('package.json', JSON.stringify({ agnes: { extensions: ['extension'] } }))
-  f.write(
-    'extension/agnes.extension.json',
-    JSON.stringify({
-      id: 'fixture/phase',
-      version: '1.0.0',
-      apiRange: '^1.0',
-      entry: './index.mjs',
-      capabilities: { tools: { prefix: 'late_' } },
-    }),
-  )
-  const marker = join(f.root, 'result.txt')
-  f.write(
-    'extension/index.mjs',
-    `
-    import { writeFileSync } from 'node:fs'
-    export default (api) => {
-      queueMicrotask(() => {
-        try {
-          api.registerTool({
-            name: 'late_tool', description: 'late registration',
-            parameters: { type: 'object', properties: {}, additionalProperties: false },
-            meta: { isReadOnly: true, isDestructive: false, isConcurrencySafe: true,
-              isOpenWorld: false, replay: 'safe', costHint: undefined, deferLoading: false, requiresApproval: 'never' },
-            execute: async () => ({ content: [] }),
-          })
-          writeFileSync(${JSON.stringify(marker)}, 'REGISTERED')
-        } catch (error) { writeFileSync(${JSON.stringify(marker)}, String(error)) }
-      })
-    }
-  `,
-  )
-  const tools = new ToolRegistry()
-  const ext = await createExtHost({
-    packages: new Map([['fixture/pkg', f.root]]),
-    tools,
-    log: { debug() {}, info() {}, warn() {}, error() {} },
-  })
-  try {
-    expect(ext.status()[0]?.loaded).toBe(true)
-    expect(readFileSync(marker, 'utf8')).toContain('E_CAPABILITY_UNDECLARED')
-    expect(readFileSync(marker, 'utf8')).toContain('outside factory')
-    expect(tools.size).toBe(0)
-  } finally {
-    await ext.disposeAll()
-  }
 })
 
 it.each(['ts', 'js'])(

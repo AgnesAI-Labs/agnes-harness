@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { createExtHost } from '../../src/ext-host/host.js'
+import { createLoader } from '../../src/ext-host/loader.js'
+import { preflightExtension } from '../../src/ext-host/preflight.js'
 import { readBundledExtensionDirs, resolveEntry } from '../../src/ext-host/manifest.js'
 
 const roots: string[] = []
@@ -138,20 +139,15 @@ it('loads a real in-root linked module while rejecting an escaping module before
     symlinkSync(join(id === 'ok' ? dir : outside, 'index.mjs'), join(dir, 'alias.mjs'))
   }
   bundle(root, ['ok', 'escape'])
-  const ext = await createExtHost({
-    packages: new Map([['fixture/pkg', root]]),
-    tools: {
-      add() {
-        throw new Error('these extensions request no tools')
-      },
-    },
-    log: { debug() {}, info() {}, warn() {}, error() {} },
-  })
-  try {
-    expect(ext.status().find((s) => s.id === 'fixture/ok')?.loaded).toBe(true)
-    expect(existsSync(marker)).toBe(false)
-    expect(ext.status().find((s) => s.id === 'escape')?.error?.message).toBe('invalid extension manifest')
-  } finally {
-    await ext.disposeAll()
-  }
+  const admission = (id: string) =>
+    preflightExtension({
+      id: `fixture/${id}`,
+      dir: join(root, id),
+      ceiling: [],
+    })
+  const accepted = admission('ok')
+  const loader = createLoader({ cacheDir: join(root, 'cache'), hostRoot: root, agnesVersion: '0.0.0' })
+  expect(typeof (await loader.import(accepted.entry)).default).toBe('function')
+  expect(() => admission('escape')).toThrow(/E_EXT_LOAD/)
+  expect(existsSync(marker)).toBe(false)
 })

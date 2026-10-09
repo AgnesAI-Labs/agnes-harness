@@ -146,7 +146,7 @@
   "packages/host-computer-use/src": 10586,
   "packages/host-artifacts/src": 2243,
   "packages/host-extensions/src/assemble": 1259,
-  "packages/host-extensions/src": 8097,
+  "packages/host-extensions/src": 7944,
   "packages/host-extensions/src/ext-host/service-invocation": 267,
   "packages/host-extensions/src/ext-host/tool-context-capabilities": 130,
   "packages/host-extensions/src/ext-host/hooks-isolation-client": 232,
