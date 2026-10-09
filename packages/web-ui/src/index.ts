@@ -13,6 +13,7 @@ export { ConversationCardLayout } from './conversation/card-layout.js'
 export * from './diagnostics-dialog.js'
 export { bindAutoDismissDisclosure, bindDismissibleDialog } from './dom/dialog-binding.js'
 export * from './first-run.js'
+export * from './intelligent-ui/index.js'
 export { ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog } from './locales/admin.js'
 export {
   ADMIN_CONFIRMATION_LOCALE_NAMESPACE,
@@ -32,6 +33,18 @@ export {
 export { RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog } from './locales/resource-detail.js'
 export { RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog } from './locales/resource-list.js'
 export * from './model-settings.js'
+export {
+  type PluginFormIssue,
+  PluginSchemaFields,
+  type PluginSchemaFieldsProps,
+} from './plugin-schema-fields.js'
+export {
+  PLUGIN_FORM_MAX_DEPTH,
+  type PluginSchema,
+  pluginFormKind,
+  pluginSchemaDefault,
+  resolvePluginSchema,
+} from './plugin-schema-model.js'
 export * from './popover.js'
 export { promptSourceLabel } from './prompt-source.js'
 export * from './provider-config-form.js'
@@ -94,17 +107,3 @@ export {
 export { Switch, type SwitchProps } from './ui/switch.js'
 export { Tabs, type TabsProps } from './ui/tabs.js'
 export * from './ui-locale.js'
-export {
-  PluginSchemaFields,
-  type PluginSchemaFieldsProps,
-  type PluginFormIssue,
-} from './plugin-schema-fields.js'
-export {
-  pluginFormKind,
-  pluginSchemaDefault,
-  resolvePluginSchema,
-  PLUGIN_FORM_MAX_DEPTH,
-  type PluginSchema,
-} from './plugin-schema-model.js'
-
-export * from './intelligent-ui/index.js'

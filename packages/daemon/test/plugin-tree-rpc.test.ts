@@ -5,13 +5,13 @@ import type { PackageManager } from '@agnes/package-manager'
 import { buildRuntimeTarget, createPluginRow, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { afterEach, describe, expect, it } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
+import { createPackageAdminService } from '../src/packages/handler.js'
+import { FilePackageOperationStore } from '../src/packages/operations.js'
+import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
 import {
   createCompositeReferenceFacts,
   createCompositeTargetActivation,
 } from '../src/supervisor/publication/composite-target-activation.js'
-import { createPackageAdminService } from '../src/packages/handler.js'
-import { FilePackageOperationStore } from '../src/packages/operations.js'
-import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
 
 const revision = 'c'.repeat(64)
 const profile = 'local-dev'

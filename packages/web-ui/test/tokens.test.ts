@@ -1,8 +1,8 @@
-import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 
 const root = resolve(import.meta.dirname, '../../..')
 

@@ -1,7 +1,7 @@
-import { FeedbackPanel } from './feedback-panel.js'
 import { fileViewerActions, workbenchPanels } from '@agnes/web-client'
 import { ChangesPanel, ReviewFileAction } from './changes-panel.js'
 import { FactChainPanel } from './fact-chain-panel.js'
+import { FeedbackPanel } from './feedback-panel.js'
 import { FilesPanel } from './files-panel.js'
 import { GoalPanel } from './goal-panel.js'
 import { TerminalPanel } from './terminal-panel.js'

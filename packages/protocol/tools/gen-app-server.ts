@@ -6,12 +6,12 @@ import type { TSchema } from '@sinclair/typebox'
 import * as Acp from '../gen/ts/acp.js'
 import * as Agnes from '../gen/ts/agnes-v1.js'
 import * as App from '../gen/ts/app-server.js'
+import * as Ui from '../gen/ts/intelligent-ui.js'
 import * as Packages from '../gen/ts/package-admin.js'
 import { METHODS } from '../src/methods.js'
 import * as Runtime from '../src/runtime-admin.js'
 import * as Schedules from '../src/schedules.js'
 import * as Tools from '../src/session-tools.js'
-import * as Ui from '../gen/ts/intelligent-ui.js'
 
 type Node = Record<string, unknown>
 /** Flatten TypeBox module scopes and recursive ids into portable document-local JSON pointers. */

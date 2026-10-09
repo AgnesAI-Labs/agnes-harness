@@ -7,12 +7,6 @@ import { seams } from '@agnes/base'
 import { fakeSeamInit } from '@agnes/base/testkit'
 import { contextTokens, type LedgerSeam } from '@agnes/core'
 import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
-import type { Host, HostSession } from '../src/runtime/lifecycle/host.js'
-import {
-  loadSessionTitle,
-  normalizeSessionTitle,
-  startSessionTitle,
-} from '../src/runtime/sessions/session-title.js'
 import {
   type InferenceEvent,
   type ModelRecord,
@@ -22,6 +16,12 @@ import {
   SESSION_TITLE_EVENT,
 } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
+import type { Host, HostSession } from '../src/runtime/lifecycle/host.js'
+import {
+  loadSessionTitle,
+  normalizeSessionTitle,
+  startSessionTitle,
+} from '../src/runtime/sessions/session-title.js'
 import { createTestHost } from '../testkit/index.js'
 
 const roots: string[] = []

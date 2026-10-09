@@ -23,9 +23,9 @@ import { createElement, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import {
   type EmptyStateRegionMount,
-  settingsPaneSlot,
   SETTINGS_DSH_GLOBAL_SLOT_NAMES,
   SETTINGS_UNIT_OWNER,
+  settingsPaneSlot,
 } from './contracts.js'
 
 export interface SettingsRegionOptions {

@@ -1,8 +1,8 @@
-import { webStyleInputs } from '../../../tools/web-style-source.mjs'
 import { type FSWatcher, realpathSync, watch as watchDirectory } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { BuildResult } from 'esbuild'
+import { webStyleInputs } from '../../../tools/web-style-source.mjs'
 import { buildWeb } from './build.js'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')

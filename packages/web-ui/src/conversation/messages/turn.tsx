@@ -1,9 +1,9 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useInteractionSnapshot } from '../markdown-snapshot.js'
-import { type ConversationMessagesProps, type AssistantNode } from './context.js'
-import { isEmptyStreamingAssistant, Message } from './message.js'
+import type { AssistantNode, ConversationMessagesProps } from './context.js'
 import { markdownState } from './markdown-state.js'
+import { isEmptyStreamingAssistant, Message } from './message.js'
 
 export const TURN_STATUS_KEYS: Record<UITurn['status'], string> = {
   running: 'turn.status.running',

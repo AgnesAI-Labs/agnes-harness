@@ -1,5 +1,5 @@
-import { expect, it } from 'vitest'
 import { startModelFaultServer } from '@agnes/host/author-testkit'
+import { expect, it } from 'vitest'
 
 it('returns scripted HTTP failures and fails closed on exhaustion without retaining request bodies', async () => {
   const server = await startModelFaultServer([

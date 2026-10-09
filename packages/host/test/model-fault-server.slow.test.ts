@@ -1,5 +1,5 @@
-import { expect, it } from 'vitest'
 import { startModelFaultServer } from '@agnes/host/author-testkit'
+import { expect, it } from 'vitest'
 
 it('scripts latency, 429/5xx, SSE, truncation and malformed chunks without capturing secrets', async () => {
   const server = await startModelFaultServer([

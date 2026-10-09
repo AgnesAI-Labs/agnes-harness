@@ -3,6 +3,7 @@
 // package's test tree.
 
 export { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+export { type EncodedLedgerState, encodeLedgerState } from '@agnes/core-ledger/testkit/encode-ledger-state'
 export { deferredResultProvenance } from '../src/execution/turn/deferred.js'
 export {
   type FakeProvider,
@@ -15,7 +16,6 @@ export {
 } from '../test/helpers/fake-provider.js'
 export { fakeSeams } from '../test/helpers/fake-seams.js'
 export { actor, noTimers, openSession, readTool, shellTool } from '../test/helpers/open-session.js'
-export { type EncodedLedgerState, encodeLedgerState } from '@agnes/core-ledger/testkit/encode-ledger-state'
 export { fencedFs, testFsPolicy } from './fenced-fs.js'
 export { defaultLoops } from './loops.js'
 export { OP_CELL_CASES } from './op-cell-cases.js'

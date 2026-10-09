@@ -3,7 +3,7 @@ import { createAntdRoot } from '@agnes/web-ui'
 import { Topbar, type TopbarConnectionState, type TopbarHandle } from '@agnes/web-units'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
-import { type EmptyStateRegionMount, TOPBAR_SLOT, rootStableRegistry } from './contracts.js'
+import { type EmptyStateRegionMount, rootStableRegistry, TOPBAR_SLOT } from './contracts.js'
 
 export interface TopbarRegionMount extends EmptyStateRegionMount, TopbarHandle {
   ready: Promise<void>

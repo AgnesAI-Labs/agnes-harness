@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
-import { actionOutcome, guardAdjustment, recordAdjustment, reviewSurface } from './surface.mjs'
 import { Type } from '@sinclair/typebox'
 import { makeBundle, modelText, tool, value, writeMeta } from './runtime.mjs'
+import { actionOutcome, guardAdjustment, recordAdjustment, reviewSurface } from './surface.mjs'
 
 const row = Type.Object({
   id: Type.String(),

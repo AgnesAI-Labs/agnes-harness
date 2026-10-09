@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url'
 import * as owner from '@agnes/package-manager'
 import { afterEach, expect, it, vi } from 'vitest'
 import { HostError } from '../../src/errors.js'
-import { compat } from '../../src/packages/compat.js'
 import { manifestCapabilities } from '../../src/packages/capabilities.js'
+import { compat } from '../../src/packages/compat.js'
 import * as legacyLock from '../../src/packages/lockfile.js'
 import { createPackageManager } from '../../src/packages/manager.js'
 import { resolveProfile } from '../../src/profile/resolve.js'
@@ -38,7 +38,15 @@ it('new owner and unchanged Host API produce identical lock bytes and installed 
     )
     await owner.snapshotPolicy(dir, profile, '0.1.0')
     const manager = make({ dataDir: dir, agnesVersion: '0.1.0', cwd: fixture })
-    for (const method of ['add', 'trust', 'enable', 'remove', 'rollback', 'trustWorkspace', 'status'] as const)
+    for (const method of [
+      'add',
+      'trust',
+      'enable',
+      'remove',
+      'rollback',
+      'trustWorkspace',
+      'status',
+    ] as const)
       expect(manager[method], method).toBeTypeOf('function')
     await manager.add(dir, 'file:./pkg-a')
     const lock = owner.readLock(dir, { profile: dir.split('/').at(-1) as string, agnesVersion: '0.1.0' })
@@ -97,16 +105,28 @@ it('maps sync and async domain errors back to Host code, message, source and det
   })
   expect((legacy as Error).message).toBe(`E_LOCK_MISMATCH: ${(domain as owner.PackageError).reason}`)
   const source = { file: 'synthetic-profile.yaml', line: 7, layer: 'workspace' as const }
-  const refuse = (error: unknown): never => { throw error }
+  const refuse = (error: unknown): never => {
+    throw error
+  }
   for (const code of [
-    'E_DEP_MISSING', 'E_LOCK_MISMATCH', 'E_WORKSPACE_UNTRUSTED', 'E_PACKAGE_QUARANTINED',
-    'E_API_RANGE', 'E_CEILING_EXCEEDED', 'E_EXT_LOAD', 'E_PROFILE_FRAGMENT_KEY',
+    'E_DEP_MISSING',
+    'E_LOCK_MISMATCH',
+    'E_WORKSPACE_UNTRUSTED',
+    'E_PACKAGE_QUARANTINED',
+    'E_API_RANGE',
+    'E_CEILING_EXCEEDED',
+    'E_EXT_LOAD',
+    'E_PROFILE_FRAGMENT_KEY',
   ] as const) {
     const error = new owner.PackageError(code, 'synthetic refusal', {
-      source, detail: { reason: 'invalid' },
+      source,
+      detail: { reason: 'invalid' },
     })
     const expected = {
-      code, source, detail: { reason: 'invalid' }, message: `${code}: synthetic refusal`,
+      code,
+      source,
+      detail: { reason: 'invalid' },
+      message: `${code}: synthetic refusal`,
     }
     expect(() => compat(refuse)(error)).toThrowError(HostError)
     try {
@@ -143,7 +163,9 @@ it('preserves absent legacy error detail', async () => {
   expect(error).toBeInstanceOf(HostError)
   expect((error as HostError).code).toBe('E_EXT_LOAD')
   expect((error as HostError).detail).toBeUndefined()
-  await expect(compat(async () => {
-    throw new owner.PackageError('E_EXT_LOAD', 'no detail')
-  })()).rejects.toMatchObject({ code: 'E_EXT_LOAD', detail: undefined })
+  await expect(
+    compat(async () => {
+      throw new owner.PackageError('E_EXT_LOAD', 'no detail')
+    })(),
+  ).rejects.toMatchObject({ code: 'E_EXT_LOAD', detail: undefined })
 })

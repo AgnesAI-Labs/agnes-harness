@@ -1,6 +1,6 @@
+import type { FsOps } from '@agnes/core-effects/effects/tool-context'
 import { describe, expect, it } from 'vitest'
 import { fencedFs, testFsPolicy } from '../../testkit/fenced-fs.js'
-import type { FsOps } from '@agnes/core-effects/effects/tool-context'
 
 const inner: FsOps = {
   read: async (path) => new TextEncoder().encode(path),

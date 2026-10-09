@@ -19,6 +19,11 @@ import {
   readLiveCompositionSessions,
 } from '@agnes/host-providers/profile/composition-state'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
+import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
+import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
+import { RuntimeSecurityStatus, SessionCapabilitySet, validateAgainst } from '@agnes/protocol'
+import { Type } from '@sinclair/typebox'
+import { expect, it, vi } from 'vitest'
 import { assertHostPublication } from '../../src/runtime/lifecycle/host-facade.js'
 import {
   compositionModuleAllowed,
@@ -32,11 +37,6 @@ import {
   capabilityToolCatalog,
   resolveSessionCapabilities,
 } from '../../src/runtime/profile/session-capabilities.js'
-import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
-import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
-import { RuntimeSecurityStatus, SessionCapabilitySet, validateAgainst } from '@agnes/protocol'
-import { Type } from '@sinclair/typebox'
-import { expect, it, vi } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
 import { pluginHost, pluginRow, pluginSourceWith, targetOf } from '../assemble/plugin-extension-fixture.js'
 

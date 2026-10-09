@@ -1,8 +1,8 @@
 import type { LocaleCatalog } from '@agnes/web-ui'
 import { candidatesCatalog } from './admin/candidates.js'
+import { operationsCatalog } from './admin/operations.js'
 import { runtimeCatalog } from './admin/runtime.js'
 import { trustCatalog } from './admin/trust.js'
-import { operationsCatalog } from './admin/operations.js'
 import { pluginAdminShellLocaleCatalog } from './shell.js'
 
 export const PLUGIN_ADMIN_LOCALE_NAMESPACE = '@agnes/web/plugin-admin'

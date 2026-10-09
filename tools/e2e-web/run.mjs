@@ -2,8 +2,8 @@ import { spawn } from 'node:child_process'
 import { access, mkdir } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
-import gateConfig from './playwright.config.mjs'
 import { canReuse, recordBuild, sourceHash } from './build-cache.mjs'
+import gateConfig from './playwright.config.mjs'
 
 // Registration is checked before building or starting browsers, including --list and file filters.
 for (const spec of ['human-controls.spec.ts', 'references.spec.ts', 'intelligent-ui.spec.ts']) {

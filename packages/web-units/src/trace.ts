@@ -1,22 +1,24 @@
 import type { SessionControlFact } from '@agnes/protocol/gen/agnes-v1'
 import {
   BADGE_KEY,
-  type GanttBar,
-  type TimelineMode,
-  type TimelineRange,
-  type TraceRow,
   buildGantt,
   buildTraceRows,
   clip,
   durationLabel,
+  type GanttBar,
   metricLabel,
   metricTokensLabel,
+  type TimelineMode,
+  type TimelineRange,
+  type TraceRow,
   tokenLabel,
   traceRowBuilder,
   traceStats,
   truncations,
 } from './trace-model.js'
-export { buildTraceRows, durationLabel, traceRowBuilder, type TraceRow } from './trace-model.js'
+
+export { buildTraceRows, durationLabel, type TraceRow, traceRowBuilder } from './trace-model.js'
+
 import type { ToolCall, ToolResult, UINode, UITurn } from '@agnes/protocol'
 import {
   createElement,

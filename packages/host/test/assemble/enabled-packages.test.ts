@@ -18,11 +18,11 @@ import { WorkspaceBindingAuthority } from '@agnes/host-common/workspace-authorit
 import { readNamedExports } from '@agnes/host-extensions/assemble/packages'
 import { type AuditEvent, type AuditSink, createMemoryAudit } from '@agnes/host-infrastructure/audit'
 import { SessionWorkspaceRuntimeTable } from '@agnes/host-infrastructure/session-workspace-runtime'
-import { type AssembleDeps, assemble } from '../../src/runtime/assemble/assemble.js'
-import { createSession } from '../../src/runtime/sessions/session.js'
 import { parseAgnesPluginEntries } from '@agnes/package-manager'
 import type { RouteDecl } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
+import { type AssembleDeps, assemble } from '../../src/runtime/assemble/assemble.js'
+import { createSession } from '../../src/runtime/sessions/session.js'
 
 const roots: string[] = []
 const packagedIsolation = it.runIf(Boolean(process.env.AGNES_TEST_RUNTIME_DIRECTORY))

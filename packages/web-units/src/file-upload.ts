@@ -1,9 +1,9 @@
 import {
   FILE_UPLOAD_PATH,
-  IncrementalSha256,
   type FileUploadResult,
-  type UploadLimits,
+  IncrementalSha256,
   type UploadedAttachment,
+  type UploadLimits,
 } from '@agnes/protocol'
 
 export type UploadProgress = { loaded: number; total: number; phase: 'uploading' | 'verifying' }

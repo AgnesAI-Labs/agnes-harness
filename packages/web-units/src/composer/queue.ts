@@ -1,6 +1,6 @@
-import { QueuedInputEditor } from './queue-editor.js'
 import { createElement, type RefObject } from 'react'
 import type { ComposerProps, ComposerView } from './contracts.js'
+import { QueuedInputEditor } from './queue-editor.js'
 
 type ComposerOptions<K extends keyof ComposerProps> = { [P in K]: ComposerProps[P] }
 

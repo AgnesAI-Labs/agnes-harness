@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import { type ChildProcess, spawn } from 'node:child_process'
 import { expect, test } from '@playwright/test'
 
 // Runs current production UI against a fake App Server. Backend tool authorization and

@@ -1,11 +1,6 @@
-import { mountMessageFeedback } from '../message-feedback.js'
 import type { UINode, UITurn } from '@agnes/protocol'
-import {
-  type ClientResourceService,
-  type LocaleService,
-  type SessionService,
-  type SlotRegistry,
-} from '@agnes/web-client'
+import type { ClientResourceService, LocaleService, SessionService, SlotRegistry } from '@agnes/web-client'
+import type { mountMessageFeedback } from '../message-feedback.js'
 
 export type TimelineRendererOptions = {
   /** Node entries are owned and ordered inside this content container. */

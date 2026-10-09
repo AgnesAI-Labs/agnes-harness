@@ -5,11 +5,11 @@ import type {
   UiRowContext,
   UiSurfaceRecord,
 } from '@agnes/protocol/gen/intelligent-ui'
-import { useId, type ReactNode } from 'react'
+import { type ReactNode, useId } from 'react'
 import { Button } from '../ui/button.js'
 import { useUiText } from '../ui-locale.js'
 import { IntelligentCatalog, type IntelligentCatalogProps } from './catalog.js'
-import { intelligentUiCatalog, INTELLIGENT_UI_NAMESPACE } from './locales.js'
+import { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
 
 export interface IntelligentSurfaceProps {
   record: UiSurfaceRecord

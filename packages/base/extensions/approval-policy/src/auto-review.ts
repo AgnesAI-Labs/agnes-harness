@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import type { ToolPolicy, ToolPolicyDecision, ToolPolicyInput, ToolPolicyPorts } from '@agnes/extension-api'
 import { AutoReviewConfig, type ToolReviewFact, validateAgainst } from '@agnes/protocol'
-import { selectAutoReviewSettings } from './settings.js'
 import { jcs } from './normalize.js'
+import { selectAutoReviewSettings } from './settings.js'
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const instruction = `Review exactly one pending tool call. Return only JSON {"decision":"allow|deny|escalate","risk":"low|medium|high","reason":"brief explanation"}.

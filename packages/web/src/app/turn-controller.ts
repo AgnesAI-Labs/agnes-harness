@@ -1,6 +1,5 @@
-import type { AppSessionContext } from '../app.js'
+import type { UITurn } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
-import { type UITurn } from '@agnes/protocol'
 import { sessionLoopSelection } from '@agnes/web-admin/admin/plugins/session-loop'
 import type { ApprovalAction } from '@agnes/web-conversation/approval'
 import { approvalToolName, liveApprovalCard } from '@agnes/web-conversation/approval-card'
@@ -9,6 +8,7 @@ import {
   approvalOutsideWindow,
   findApproval,
 } from '@agnes/web-conversation/live-projection'
+import type { AppSessionContext } from '../app.js'
 import { rememberWebComposer } from '../composer-memory.js'
 import { sessionTitle } from '../session-title.js'
 import { durableApprovalActions, nodeText, type WebView, webView } from '../view.js'

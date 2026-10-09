@@ -1,39 +1,39 @@
-export { EMPTY_STATE_SLOT } from './regions/contracts.js'
-export { SIDEBAR_SLOT } from './regions/contracts.js'
-export { TRANSCRIPT_SLOT } from './regions/contracts.js'
-export { CONVERSATION_SLOT } from './regions/contracts.js'
-export { CONVERSATION_CHILD_SLOTS } from './regions/contracts.js'
-export { TOPBAR_SLOT } from './regions/contracts.js'
-export { APPROVAL_SLOT } from './regions/contracts.js'
-export { COMPOSER_SLOT } from './regions/contracts.js'
-export { TRACE_SLOT } from './regions/contracts.js'
-export { SETTINGS_PANE_SLOT } from './regions/contracts.js'
-export { settingsPaneSlot } from './regions/contracts.js'
-export { type EmptyStateRegionMount } from './regions/contracts.js'
-export { mountEmptyStateRegion } from './regions/empty-state.js'
-export { type DshShellRegionMount } from './regions/shell.js'
-export { mountDshShellRegion } from './regions/shell.js'
-export { type SidebarRegionMount } from './regions/sidebar.js'
-export { mountSidebarRegion } from './regions/sidebar.js'
-export { type SettingsRegionOptions } from './regions/settings.js'
-export { type SettingsRegionMount } from './regions/settings.js'
-export { mountSettingsPaneRegion } from './regions/settings.js'
-export { type ComposerRegionMount } from './regions/composer.js'
-export { mountComposerRegion } from './regions/composer.js'
-export { type TraceRegionOptions } from './regions/trace.js'
-export { type TraceRegionMount } from './regions/trace.js'
-export { type RightbarRegionOptions } from './regions/rightbar.js'
-export { type RightbarRegionMount } from './regions/rightbar.js'
-export { type RightbarDocument } from './regions/rightbar.js'
-export { mountRightbarRegion } from './regions/rightbar.js'
-export { mountTraceRegion } from './regions/trace.js'
-export { type TopbarRegionMount } from './regions/topbar.js'
-export { mountTopbarRegion } from './regions/topbar.js'
-export { type ApprovalRegionMount } from './regions/approval.js'
-export { mountApprovalRegion } from './regions/approval.js'
-export { type ConversationRegionOptions } from './regions/conversation.js'
-export { type ConversationRegionMount } from './regions/conversation.js'
-export { mountConversationRegion } from './regions/conversation.js'
-export { type TranscriptRegionMount } from './regions/transcript.js'
-export { mountTranscriptRegion } from './regions/transcript.js'
 export type { ConversationChildContainers, ConversationHandle } from '@agnes/web-units'
+export { type ApprovalRegionMount, mountApprovalRegion } from './regions/approval.js'
+export { type ComposerRegionMount, mountComposerRegion } from './regions/composer.js'
+export {
+  APPROVAL_SLOT,
+  COMPOSER_SLOT,
+  CONVERSATION_CHILD_SLOTS,
+  CONVERSATION_SLOT,
+  EMPTY_STATE_SLOT,
+  type EmptyStateRegionMount,
+  SETTINGS_PANE_SLOT,
+  SIDEBAR_SLOT,
+  settingsPaneSlot,
+  TOPBAR_SLOT,
+  TRACE_SLOT,
+  TRANSCRIPT_SLOT,
+} from './regions/contracts.js'
+export {
+  type ConversationRegionMount,
+  type ConversationRegionOptions,
+  mountConversationRegion,
+} from './regions/conversation.js'
+export { mountEmptyStateRegion } from './regions/empty-state.js'
+export {
+  mountRightbarRegion,
+  type RightbarDocument,
+  type RightbarRegionMount,
+  type RightbarRegionOptions,
+} from './regions/rightbar.js'
+export {
+  mountSettingsPaneRegion,
+  type SettingsRegionMount,
+  type SettingsRegionOptions,
+} from './regions/settings.js'
+export { type DshShellRegionMount, mountDshShellRegion } from './regions/shell.js'
+export { mountSidebarRegion, type SidebarRegionMount } from './regions/sidebar.js'
+export { mountTopbarRegion, type TopbarRegionMount } from './regions/topbar.js'
+export { mountTraceRegion, type TraceRegionMount, type TraceRegionOptions } from './regions/trace.js'
+export { mountTranscriptRegion, type TranscriptRegionMount } from './regions/transcript.js'

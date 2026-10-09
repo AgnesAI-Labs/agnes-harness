@@ -1,14 +1,15 @@
 /** @vitest-environment happy-dom */
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true })
+
 import { act, createElement, useCallback, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it } from 'vitest'
 import { PluginSchemaFields } from '../src/plugin-schema-fields.js'
 import {
+  type PluginSchema,
   pluginFormKind,
   pluginSchemaDefault,
   resolvePluginSchema,
-  type PluginSchema,
 } from '../src/plugin-schema-model.js'
 
 describe('plugin schema form projection', () => {

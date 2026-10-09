@@ -24,12 +24,12 @@ import {
   resourceWorkerObservation,
 } from '@agnes/resource-control-daemon'
 import { windowsProcessStartTimeSync } from '@agnes/system-node'
+import type { DaemonConfig } from './config.js'
+import type { RequestFrame } from './frames.js'
 import type {
   CompositeRuntimeDelivery,
   RuntimeBootDelivery,
 } from './publication/composite-runtime-delivery.js'
-import type { DaemonConfig } from './config.js'
-import type { RequestFrame } from './frames.js'
 import { WorkerLink, type WorkerSessionChannel } from './worker-link.js'
 
 /**

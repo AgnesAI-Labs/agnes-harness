@@ -1,8 +1,8 @@
-import { AutoReviewConfig } from '@agnes/protocol'
 import { createHash } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
   type AdminSessionSelection,
+  AutoReviewConfig,
   ChildEnginesSaveParams,
   ChildEnginesState,
   httpRpcError,

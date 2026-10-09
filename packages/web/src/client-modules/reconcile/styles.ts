@@ -1,4 +1,4 @@
-import { type ReadyClientModule, type PreparedClientStyles } from './contracts.js'
+import type { PreparedClientStyles, ReadyClientModule } from './contracts.js'
 
 export function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {

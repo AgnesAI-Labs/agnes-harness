@@ -456,6 +456,7 @@ export * from '@agnes/host-providers/profile/composition-state'
 export { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 export * from '@agnes/host-providers/runtime-target-publisher'
 export * from '@agnes/host-providers/runtime-target-report'
+export type { CapabilityReason, SessionCapability, SessionCapabilitySet } from '@agnes/protocol'
 export {
   type AdapterBundle,
   openAdapters,
@@ -490,7 +491,9 @@ export {
   repairChildCandidates,
   sessionsDbPath,
 } from './runtime/children/child-maintenance.js'
-export { readFactChainBinding } from './runtime/sessions/fact-chain-binding.js'
+export { draftFeedbackSkill, feedbackSkillFiles } from './runtime/feedback/draft.js'
+export { createFeedbackService } from './runtime/feedback/service.js'
+export type { PluginGenerationStatus } from './runtime/generation/host.js'
 export { createHost, type Host, type HostOptions, type HostSession } from './runtime/lifecycle/host.js'
 export {
   assertHostPublication,
@@ -512,7 +515,7 @@ export {
   readConfigurationProfileInputs,
 } from './runtime/profile/inputs.js'
 export * from './runtime/profile/session-capabilities.js'
-export type { PluginGenerationStatus } from './runtime/generation/host.js'
+export { readFactChainBinding } from './runtime/sessions/fact-chain-binding.js'
 export {
   type CreateSessionOptions,
   createSession,
@@ -521,7 +524,3 @@ export {
 } from './runtime/sessions/session.js'
 export { readProfileTelemetryConsent } from './runtime/sessions/session-hooks.js'
 export { loadSessionTitle } from './runtime/sessions/session-title.js'
-export type { CapabilityReason, SessionCapability, SessionCapabilitySet } from '@agnes/protocol'
-
-export { createFeedbackService } from './runtime/feedback/service.js'
-export { draftFeedbackSkill, feedbackSkillFiles } from './runtime/feedback/draft.js'

@@ -1,8 +1,9 @@
-import { AutoReviewConfig } from './auto-review.js'
 import type { TSchema } from '@sinclair/typebox'
 import * as Acp from '../gen/ts/acp.js'
 import * as A from '../gen/ts/agnes-v1.js'
+import { UiActionParams, UiActionReceipt, UiReadParams, UiReadResult } from '../gen/ts/intelligent-ui.js'
 import { ADMIN_METHODS, type AdminMethodName } from './app-server.js'
+import { AutoReviewConfig } from './auto-review.js'
 import {
   PACKAGE_ADMIN_METHODS,
   type PackageAdminAccessPolicy,
@@ -32,8 +33,6 @@ import {
 import { validateExtensionCall } from './services.js'
 import { SessionToolsParams, SessionToolsResult } from './session-tools.js'
 import { type ValidationResult, validateAgainst } from './validate.js'
-
-import { UiActionParams, UiActionReceipt, UiReadParams, UiReadResult } from '../gen/ts/intelligent-ui.js'
 
 export type MethodSpec = {
   kind: 'request' | 'notification'

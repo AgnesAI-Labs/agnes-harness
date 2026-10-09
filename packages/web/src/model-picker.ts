@@ -2,14 +2,15 @@ import { type ModelSettings, minimumContextBudget, type ThinkingLevel } from '@a
 import { tr } from '@agnes/web-foundation/locale-bridge'
 import * as webUi from '@agnes/web-ui'
 import { type ChangeEvent, createElement, type FocusEvent } from 'react'
-import type { ModelPickerState, ModelPicker, ModelPickerOptions, DetailValues } from './model-picker/types.js'
+import { detailRow, levelOption, modelOptions } from './model-picker/menu.js'
 import { sameOption, sameSettings, sameState } from './model-picker/state.js'
-import { modelOptions, detailRow, levelOption } from './model-picker/menu.js'
+import type { DetailValues, ModelPicker, ModelPickerOptions, ModelPickerState } from './model-picker/types.js'
+
 export type {
+  ModelPicker,
   ModelPickerOption,
   ModelPickerSettings,
   ModelPickerState,
-  ModelPicker,
 } from './model-picker/types.js'
 
 const viewportPadding = 12

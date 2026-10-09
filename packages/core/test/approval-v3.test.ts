@@ -604,7 +604,27 @@ describe('v3 approval modes and grants', () => {
         },
       })
       const original = await atTools({
-        ...(decision === 'escalate' ? { input: { actor, content: [{ type: 'text' as const, text: 'go' }, { type: 'text' as const, text: 'external grant access', reference: { source: 'file', id: 'a', label: 'a', hash: 'a'.repeat(64), truncated: false } }] } } : {}),
+        ...(decision === 'escalate'
+          ? {
+              input: {
+                actor,
+                content: [
+                  { type: 'text' as const, text: 'go' },
+                  {
+                    type: 'text' as const,
+                    text: 'external grant access',
+                    reference: {
+                      source: 'file',
+                      id: 'a',
+                      label: 'a',
+                      hash: 'a'.repeat(64),
+                      truncated: false,
+                    },
+                  },
+                ],
+              },
+            }
+          : {}),
         scopes: ['tool:write'],
         toolPolicies: policies,
         toolPolicySettings: async () => ({ policy: 'scripted-review' }),
@@ -624,7 +644,10 @@ describe('v3 approval modes and grants', () => {
       })
       if (decision === 'escalate') {
         const inputs = await original.log.scan({ type: 'user/message', limit: 100 })
-        expect(inputs.map((row) => [row.origin, row.trust])).toEqual([['principal', 'trusted'], ['system', 'untrusted']])
+        expect(inputs.map((row) => [row.origin, row.trust])).toEqual([
+          ['principal', 'trusted'],
+          ['system', 'untrusted'],
+        ])
       }
       await original.session.runToolsPhase()
       const events = await original.log.scan({ fromSeq: 1, toSeq: original.log.lastSeq })

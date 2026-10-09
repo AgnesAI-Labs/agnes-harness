@@ -1,10 +1,10 @@
-import { identity, label } from './composition-labels.js'
 import type { AdminLoop, AdminModelAdapter, SessionDefaultsSnapshot } from '@agnes/protocol'
 import { Button, Field, Select, SettingsCard, useUiText } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import { ChoiceLabel, choiceName, type ResolvedComposition, readComposition } from '../../settings/choices.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from '../../settings/locales.js'
 import type { PluginAdminApi } from './api.js'
+import { identity, label } from './composition-labels.js'
 import type { Text } from './control-panel-types.js'
 
 export function SessionDefaultsPanel({

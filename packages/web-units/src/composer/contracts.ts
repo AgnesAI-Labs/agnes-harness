@@ -1,10 +1,16 @@
+import type {
+  ContentBlock,
+  ModelSettings,
+  ThinkingLevel,
+  UIPendingInput,
+  UsageView,
+  userImagePolicy,
+} from '@agnes/protocol'
 import type { SessionControlledChild } from '@agnes/protocol/gen/agnes-v1'
-import type { ContentBlock, ModelSettings, ThinkingLevel, UIPendingInput, UsageView } from '@agnes/protocol'
-import { userImagePolicy } from '@agnes/protocol'
-import { type ComponentType, type ReactNode } from 'react'
-import { type ComposerReferences } from '../reference-picker.js'
+import type { ComponentType, ReactNode } from 'react'
 import { composerLocaleCatalog } from '../locales/composer.js'
 import type { Translate } from '../locales/index.js'
+import type { ComposerReferences } from '../reference-picker.js'
 
 export type ModelPickerOption = {
   id: string

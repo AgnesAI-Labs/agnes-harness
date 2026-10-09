@@ -1,13 +1,13 @@
-import { describe, expect, it } from 'vitest'
-import { Type } from '@sinclair/typebox'
-import { jcs, type Actor, type EventEnvelope, type UiActionParams, type UiSurface } from '@agnes/protocol'
 import type {
   DeferredInvocationReceipt,
   DeferredToolInvocation,
   DeferredToolInvocationQueue,
   IntelligentUiService,
 } from '@agnes/extension-api'
+import { type Actor, type EventEnvelope, jcs, type UiActionParams, type UiSurface } from '@agnes/protocol'
 import { validIntelligentSurface } from '@agnes/protocol/intelligent-ui'
+import { Type } from '@sinclair/typebox'
+import { describe, expect, it } from 'vitest'
 import { createIntelligentUiService } from '../src/service.js'
 import { uiProjection } from '../src/state.js'
 

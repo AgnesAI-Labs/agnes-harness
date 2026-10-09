@@ -4,14 +4,14 @@ import { join } from 'node:path'
 import { presetDefaults, SeamRuntime } from '@agnes/core'
 import { fakeSeams } from '@agnes/core/testkit'
 import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
+import type { ApprovalGrant } from '@agnes/protocol'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   type ApprovalGrantBinding,
   bindApprovalGrantStore,
   createApprovalGrantControlPlane,
   createApprovalGrantStore,
 } from '../src/runtime/approval/grants.js'
-import type { ApprovalGrant } from '@agnes/protocol'
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTestHost } from '../testkit/index.js'
 
 const roots: string[] = []

@@ -8,7 +8,7 @@ import {
 import type { AntdRoot } from '@agnes/web-ui'
 import { createAntdRoot } from '@agnes/web-ui'
 import { createElement } from 'react'
-import { type EmptyStateRegionMount, EMPTY_STATE_SLOT, EMPTY_STATE_DSH_CHILDREN } from './contracts.js'
+import { EMPTY_STATE_DSH_CHILDREN, EMPTY_STATE_SLOT, type EmptyStateRegionMount } from './contracts.js'
 
 export function EmptyStateBuiltin({
   t = (key) => key,

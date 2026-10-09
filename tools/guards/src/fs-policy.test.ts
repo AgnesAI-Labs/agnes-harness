@@ -17,14 +17,8 @@ const root = repoRoot()
  * declaration site and the probe builder may even name it. A second comparison in the kernel has
  * to name it, and naming it here is what goes red.
  */
-const CORE_FILES = [
-  'core',
-  'core-common',
-  'core-child-control',
-  'core-ledger',
-  'core-effects',
-].flatMap((name) =>
-  listSourceFiles(join(root, 'packages', name, 'src'), { excludeDirs: LITERAL_SCAN_EXCLUDE_DIRS }),
+const CORE_FILES = ['core', 'core-common', 'core-child-control', 'core-ledger', 'core-effects'].flatMap(
+  (name) => listSourceFiles(join(root, 'packages', name, 'src'), { excludeDirs: LITERAL_SCAN_EXCLUDE_DIRS }),
 )
 // seams.ts is where the contract is declared; fs-guard.ts is where the decision and the probe are
 // declared; index.ts only re-exports the names, which is how consumers reach them without a second

@@ -1,7 +1,7 @@
-import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import {
   extractThemeTokenNames,
   renderHookTable,

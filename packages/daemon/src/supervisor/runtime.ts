@@ -1,6 +1,3 @@
-import { runQueued } from '@agnes/daemon-rpc/local/command-queue'
-import { registerFeedback } from '@agnes/daemon-rpc/local/methods/feedback'
-import { feedbackPorts } from './feedback-ports.js'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -106,8 +103,9 @@ import {
 } from '@agnes/daemon-foundation/storage/workspaces'
 import { PersistentArtifactReadAuthorityIndex } from '@agnes/daemon-rpc/local/artifact-read-authority'
 import type { AuthConfig } from '@agnes/daemon-rpc/local/auth'
-import { CommandQueue } from '@agnes/daemon-rpc/local/command-queue'
+import { CommandQueue, runQueued } from '@agnes/daemon-rpc/local/command-queue'
 import type { LockedPackageMutationStatusSource } from '@agnes/daemon-rpc/local/computer-use-control'
+import { createFollowUpRunner } from '@agnes/daemon-rpc/local/follow-up-runner'
 import { disposeFeeds, type Feed, registerAcp } from '@agnes/daemon-rpc/local/methods/acp'
 import { registerAppServerAdmin } from '@agnes/daemon-rpc/local/methods/admin'
 import {
@@ -122,6 +120,7 @@ import { registerDiagnostics } from '@agnes/daemon-rpc/local/methods/diagnostics
 import { registerDoctor } from '@agnes/daemon-rpc/local/methods/doctor'
 import { executeJournaledEffect, registerExtensions } from '@agnes/daemon-rpc/local/methods/extensions'
 import { registerFactChain } from '@agnes/daemon-rpc/local/methods/fact-chain'
+import { registerFeedback } from '@agnes/daemon-rpc/local/methods/feedback'
 import { registerPromptTrace } from '@agnes/daemon-rpc/local/methods/prompt-trace'
 import { registerSessionPreferences } from '@agnes/daemon-rpc/local/methods/session-preferences'
 import {
@@ -198,6 +197,27 @@ import {
 import { type ActivationLinkPool, notifyLiveSessionWorkers } from '@agnes/resource-control-runtime'
 import { renameWriteThrough, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import {
+  artifactMediaReadReply,
+  composeDefaultProductionProjectedArtifactRead,
+  composeProductionArtifactRead,
+  composeProductionProjectedArtifactRead,
+  type ProductionArtifactAuthorityProjection,
+  type ProductionArtifactReadAuthority,
+} from './artifact-read.js'
+import { startChildMaintenance } from './child-maintenance.js'
+import { type Args, buildConfig, type DaemonConfig } from './config.js'
+import { configurationApplication } from './configuration.js'
+import { bindConnection } from './connection.js'
+import { publishDaemonDiscovery, removeDaemonDiscovery } from './discovery.js'
+import { daemonDoctor } from './doctor.js'
+import { feedbackPorts } from './feedback-ports.js'
+import { type JwksResolver, type JwksTransport, startJwksCache } from './jwks-cache.js'
+import { closeWithAudit, installSignals, shutdownLadder } from './lifecycle.js'
+import { createMcpManageRequests } from './mcp-manage-requests.js'
+import { acquireDaemonMutationLock } from './mutation-lock.js'
+import { acquireOwnerLock } from './owner-lock.js'
+import { createPluginManageRequests } from './plugin-manage-requests.js'
+import {
   CompositeRuntimeDelivery,
   deliverDesiredToWorkers,
 } from './publication/composite-runtime-delivery.js'
@@ -207,29 +227,9 @@ import {
   createCompositeTargetActivation,
 } from './publication/composite-target-activation.js'
 import { createTargetReverter } from './publication/composite-target-revert.js'
-import { type Args, buildConfig, type DaemonConfig } from './config.js'
 import { deferPackageActivation } from './publication/deferred-package-activation.js'
 import { createRuntimePinCoordinator } from './publication/runtime-pin-coordinator.js'
 import { publishProbedRuntimeTarget } from './publication/runtime-target-publisher.js'
-import {
-  artifactMediaReadReply,
-  composeDefaultProductionProjectedArtifactRead,
-  composeProductionArtifactRead,
-  composeProductionProjectedArtifactRead,
-  type ProductionArtifactAuthorityProjection,
-  type ProductionArtifactReadAuthority,
-} from './artifact-read.js'
-import { startChildMaintenance } from './child-maintenance.js'
-import { configurationApplication } from './configuration.js'
-import { bindConnection } from './connection.js'
-import { publishDaemonDiscovery, removeDaemonDiscovery } from './discovery.js'
-import { daemonDoctor } from './doctor.js'
-import { type JwksResolver, type JwksTransport, startJwksCache } from './jwks-cache.js'
-import { closeWithAudit, installSignals, shutdownLadder } from './lifecycle.js'
-import { createMcpManageRequests } from './mcp-manage-requests.js'
-import { acquireDaemonMutationLock } from './mutation-lock.js'
-import { acquireOwnerLock } from './owner-lock.js'
-import { createPluginManageRequests } from './plugin-manage-requests.js'
 import { type RemoteEntry, WorkerRegistry } from './registry.js'
 import { createRuntimeTargetProbeLauncher, spawnRuntimeTargetProbeWorker } from './runtime-target-probe.js'
 import { canonicalPath, resolveDaemonProfile, resolveDaemonScope } from './scope.js'
@@ -244,7 +244,6 @@ import { type SkillWatcher, startSkillWatcher } from './skill-watcher.js'
 import { listenUnix } from './socket.js'
 import { prepareDaemonSocketPaths } from './socket-paths.js'
 import { watchWindowsStopRequest } from './stop-request.js'
-import { createFollowUpRunner } from '@agnes/daemon-rpc/local/follow-up-runner'
 import { webhookSessions } from './webhook-sessions.js'
 import { WorkerPool } from './worker-pool.js'
 import { listenWebSocket } from './ws.js'
@@ -1910,18 +1909,29 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
               reason: 'new session actor authority unavailable',
             })
           }
-    const continueTrigger = createFollowUpRunner({ commandQueue, activationBarrier,
-      onPromptEnd: (id) => registry.retireAtTurnBoundary(id),
-    }, async () => undefined)
+    const continueTrigger = createFollowUpRunner(
+      { commandQueue, activationBarrier, onPromptEnd: (id) => registry.retireAtTurnBoundary(id) },
+      async () => undefined,
+    )
     const triggerSessions = webhookSessions(o.config.socketPath, lock.owner, async (input) => {
       const entry = supervisorRegistry.require(input.sessionKey)
       // Only this backend closure can mint trigger identity/provenance; no chat RPC accepts it.
-      await runQueued(commandQueue, entry.key, entry.ac.signal, () => entry.session.enqueue('next-turn', {
-        content: [{ type: 'text', text: input.prompt }],
-        actor: { id: `webhook:${input.trigger.ruleId}`, org: 'webhook', role: 'trigger', deptPath: [], attrs: { ...input.trigger } },
-        origin: 'system', trust: 'untrusted', kind: 'follow_up',
-        commandId: `webhook:${input.trigger.deliveryId}`,
-      }))
+      await runQueued(commandQueue, entry.key, entry.ac.signal, () =>
+        entry.session.enqueue('next-turn', {
+          content: [{ type: 'text', text: input.prompt }],
+          actor: {
+            id: `webhook:${input.trigger.ruleId}`,
+            org: 'webhook',
+            role: 'trigger',
+            deptPath: [],
+            attrs: { ...input.trigger },
+          },
+          origin: 'system',
+          trust: 'untrusted',
+          kind: 'follow_up',
+          commandId: `webhook:${input.trigger.deliveryId}`,
+        }),
+      )
       continueTrigger(entry)
     })
     startupCleanup.push(() => triggerSessions.close())
@@ -2186,12 +2196,18 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         },
       })
       registerDiagnostics(ep, {
-        authority: transport === 'unix'
-          ? (effectivePackageAdmin?.unixAuthority ?? localPackageAdminAuthority())
-          : (effectivePackageAdmin?.webAuthority ?? denyPackageAdminAuthority),
-        readOnly: (context) => configurationReadOnly(async () => effectivePackageAdmin?.service.call(
-          '_agnes/v1/packages.list', { profile: o.profile.name }, localPackageAdminAuthority(['packages.read'])(context),
-        )),
+        authority:
+          transport === 'unix'
+            ? (effectivePackageAdmin?.unixAuthority ?? localPackageAdminAuthority())
+            : (effectivePackageAdmin?.webAuthority ?? denyPackageAdminAuthority),
+        readOnly: (context) =>
+          configurationReadOnly(async () =>
+            effectivePackageAdmin?.service.call(
+              '_agnes/v1/packages.list',
+              { profile: o.profile.name },
+              localPackageAdminAuthority(['packages.read'])(context),
+            ),
+          ),
         requireSessionOwner: requireSessionOwner(cx),
         registry: cx.registry,
         sessionSnapshot: (key) => workspaces.metadata(key),

@@ -1,5 +1,5 @@
 import type { Translate } from '../../locales/index.js'
-import { type ApprovalNode } from './context.js'
+import type { ApprovalNode } from './context.js'
 
 export const approvalLabelKeys: Record<ApprovalNode['state'], string> = {
   pending: 'timeline.approval.pending',

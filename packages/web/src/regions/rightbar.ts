@@ -17,9 +17,9 @@ import { createElement, useLayoutEffect, useMemo, useState } from 'react'
 import { flushSync } from 'react-dom'
 import {
   type EmptyStateRegionMount,
-  RIGHTBAR_SESSION_CHILDREN,
   RIGHTBAR_DOCUMENT_CHILDREN,
   RIGHTBAR_GUIDE_CHILDREN,
+  RIGHTBAR_SESSION_CHILDREN,
 } from './contracts.js'
 
 export interface RightbarRegionOptions {

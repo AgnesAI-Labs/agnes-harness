@@ -10,7 +10,7 @@ import {
   type StateTone,
   useUiText,
 } from '@agnes/web-ui'
-import type { Text, Plugin } from './control-panel-types.js'
+import type { Plugin, Text } from './control-panel-types.js'
 
 export const PLUGIN_KINDS = ['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui', 'bundle'] as const
 export type PluginKind = (typeof PLUGIN_KINDS)[number]

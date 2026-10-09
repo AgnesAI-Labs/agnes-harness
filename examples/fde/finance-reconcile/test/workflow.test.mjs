@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
-import { test } from 'vitest'
 import { createAuthorTestkit } from '@agnes/host/author-testkit'
+import { test } from 'vitest'
 import { main, tools } from '../index.mjs'
-import { actionOutcome, reviewSurface } from '../surface.mjs'
 import { value } from '../runtime.mjs'
+import { actionOutcome, reviewSurface } from '../surface.mjs'
 
 const packageDirs = {
   '@agnes/base': fileURLToPath(new URL('../../../../packages/base', import.meta.url)),

@@ -1,9 +1,10 @@
 /** @vitest-environment happy-dom */
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true })
+
+import { createDocumentLocaleSource } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
-import { createDocumentLocaleSource } from '@agnes/web-ui'
 import { IntelligentUiClient } from '../../src/intelligent-ui/client.js'
 import {
   IntelligentInline,

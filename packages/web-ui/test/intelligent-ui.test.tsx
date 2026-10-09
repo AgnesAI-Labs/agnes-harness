@@ -1,9 +1,10 @@
 /** @vitest-environment happy-dom */
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true })
+
+import type { UiSurface } from '@agnes/protocol/gen/intelligent-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
-import type { UiSurface } from '@agnes/protocol/gen/intelligent-ui'
 import { IntelligentCatalog, validIntelligentSurface } from '../src/intelligent-ui/index.js'
 
 const surface: UiSurface = {

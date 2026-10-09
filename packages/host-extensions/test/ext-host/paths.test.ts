@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { createLoader } from '../../src/ext-host/loader.js'
-import { preflightExtension } from '../../src/ext-host/preflight.js'
 import { readBundledExtensionDirs, resolveEntry } from '../../src/ext-host/manifest.js'
+import { preflightExtension } from '../../src/ext-host/preflight.js'
 
 const roots: string[] = []
 const directoryLink = process.platform === 'win32' ? 'junction' : 'dir' // guards-allow-platform: actual directory-link fixtures.

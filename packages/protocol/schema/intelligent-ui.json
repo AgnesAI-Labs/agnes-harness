@@ -58,10 +58,7 @@
     "UiPlacement": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "inline",
-        "workbench"
-      ],
+      "required": ["inline", "workbench"],
       "properties": {
         "inline": {
           "const": true
@@ -70,20 +67,14 @@
           "const": true
         },
         "preferred": {
-          "enum": [
-            "inline",
-            "workbench"
-          ]
+          "enum": ["inline", "workbench"]
         }
       }
     },
     "UiColumn": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "key",
-        "label"
-      ],
+      "required": ["key", "label"],
       "properties": {
         "key": {
           "$ref": "#/$defs/UiKey"
@@ -94,23 +85,14 @@
           "maxLength": 256
         },
         "format": {
-          "enum": [
-            "text",
-            "number",
-            "currency",
-            "date",
-            "status"
-          ]
+          "enum": ["text", "number", "currency", "date", "status"]
         }
       }
     },
     "UiChartSeries": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "key",
-        "label"
-      ],
+      "required": ["key", "label"],
       "properties": {
         "key": {
           "$ref": "#/$defs/UiKey"
@@ -127,12 +109,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "id",
-            "kind",
-            "dataKey",
-            "schema"
-          ],
+          "required": ["id", "kind", "dataKey", "schema"],
           "properties": {
             "id": {
               "$ref": "#/$defs/UiKey"
@@ -164,14 +141,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "id",
-            "kind",
-            "dataKey",
-            "rowKey",
-            "columns",
-            "selection"
-          ],
+          "required": ["id", "kind", "dataKey", "rowKey", "columns", "selection"],
           "properties": {
             "id": {
               "$ref": "#/$defs/UiKey"
@@ -199,11 +169,7 @@
               "maxItems": 32
             },
             "selection": {
-              "enum": [
-                "none",
-                "single",
-                "multiple"
-              ]
+              "enum": ["none", "single", "multiple"]
             },
             "rowActionIds": {
               "type": "array",
@@ -218,14 +184,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "id",
-            "kind",
-            "dataKey",
-            "chartType",
-            "categoryKey",
-            "series"
-          ],
+          "required": ["id", "kind", "dataKey", "chartType", "categoryKey", "series"],
           "properties": {
             "id": {
               "$ref": "#/$defs/UiKey"
@@ -242,11 +201,7 @@
               "$ref": "#/$defs/UiKey"
             },
             "chartType": {
-              "enum": [
-                "bar",
-                "line",
-                "pie"
-              ]
+              "enum": ["bar", "line", "pie"]
             },
             "categoryKey": {
               "$ref": "#/$defs/UiKey"
@@ -264,11 +219,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "id",
-            "kind",
-            "actionIds"
-          ],
+          "required": ["id", "kind", "actionIds"],
           "properties": {
             "id": {
               "$ref": "#/$defs/UiKey"
@@ -294,11 +245,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "id",
-            "kind",
-            "dataKey"
-          ],
+          "required": ["id", "kind", "dataKey"],
           "properties": {
             "id": {
               "$ref": "#/$defs/UiKey"
@@ -319,11 +266,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "id",
-            "kind",
-            "dataKey"
-          ],
+          "required": ["id", "kind", "dataKey"],
           "properties": {
             "id": {
               "$ref": "#/$defs/UiKey"
@@ -348,9 +291,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "literal"
-          ],
+          "required": ["literal"],
           "properties": {
             "literal": {
               "$ref": "#/$defs/JsonValue"
@@ -360,18 +301,10 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "from",
-            "key"
-          ],
+          "required": ["from", "key"],
           "properties": {
             "from": {
-              "enum": [
-                "data",
-                "input",
-                "row",
-                "selection"
-              ]
+              "enum": ["data", "input", "row", "selection"]
             },
             "key": {
               "$ref": "#/$defs/UiKey"
@@ -388,13 +321,7 @@
     "UiAction": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "label",
-        "tool",
-        "argsTemplate",
-        "paramsSchema"
-      ],
+      "required": ["id", "label", "tool", "argsTemplate", "paramsSchema"],
       "properties": {
         "id": {
           "$ref": "#/$defs/UiKey"
@@ -428,26 +355,14 @@
           "maxLength": 1024
         },
         "style": {
-          "enum": [
-            "primary",
-            "secondary",
-            "danger"
-          ]
+          "enum": ["primary", "secondary", "danger"]
         }
       }
     },
     "UiSurface": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "revision",
-        "title",
-        "placement",
-        "components",
-        "data",
-        "actions"
-      ],
+      "required": ["id", "revision", "title", "placement", "components", "data", "actions"],
       "properties": {
         "id": {
           "$ref": "#/$defs/UiKey"
@@ -494,10 +409,7 @@
     "UiRowContext": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "tableId",
-        "rowId"
-      ],
+      "required": ["tableId", "rowId"],
       "properties": {
         "tableId": {
           "$ref": "#/$defs/UiKey"
@@ -512,15 +424,7 @@
     "UiActionParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "sessionId",
-        "surfaceId",
-        "revision",
-        "actionId",
-        "commandId",
-        "input",
-        "selection"
-      ],
+      "required": ["sessionId", "surfaceId", "revision", "actionId", "commandId", "input", "selection"],
       "properties": {
         "sessionId": {
           "type": "string",
@@ -583,41 +487,18 @@
       }
     },
     "UiActionStatus": {
-      "enum": [
-        "received",
-        "rejected",
-        "pending-approval",
-        "executing",
-        "succeeded",
-        "failed"
-      ]
+      "enum": ["received", "rejected", "pending-approval", "executing", "succeeded", "failed"]
     },
     "UiRefusal": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "reason",
-        "code",
-        "message"
-      ],
+      "required": ["reason", "code", "message"],
       "properties": {
         "reason": {
-          "enum": [
-            "invalid",
-            "stale",
-            "closed",
-            "duplicate",
-            "unauthorized"
-          ]
+          "enum": ["invalid", "stale", "closed", "duplicate", "unauthorized"]
         },
         "code": {
-          "enum": [
-            "UI_INVALID",
-            "UI_STALE",
-            "UI_CLOSED",
-            "UI_COMMAND_CONFLICT",
-            "UI_UNAUTHORIZED"
-          ]
+          "enum": ["UI_INVALID", "UI_STALE", "UI_CLOSED", "UI_COMMAND_CONFLICT", "UI_UNAUTHORIZED"]
         },
         "message": {
           "type": "string",
@@ -632,12 +513,7 @@
     "UiFailure": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "code",
-        "message",
-        "retryable",
-        "outcomeUnknown"
-      ],
+      "required": ["code", "message", "retryable", "outcomeUnknown"],
       "properties": {
         "code": {
           "type": "string",
@@ -736,24 +612,13 @@
     "UiSurfaceRecord": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "surface",
-        "status",
-        "createdSeq",
-        "updatedSeq",
-        "owner",
-        "lane",
-        "taskId"
-      ],
+      "required": ["surface", "status", "createdSeq", "updatedSeq", "owner", "lane", "taskId"],
       "properties": {
         "surface": {
           "$ref": "#/$defs/UiSurface"
         },
         "status": {
-          "enum": [
-            "open",
-            "closed"
-          ]
+          "enum": ["open", "closed"]
         },
         "createdSeq": {
           "type": "integer",
@@ -783,9 +648,7 @@
     "UiReadParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "sessionId"
-      ],
+      "required": ["sessionId"],
       "properties": {
         "sessionId": {
           "type": "string",
@@ -815,12 +678,7 @@
     "UiReadResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "sessionId",
-        "lastSeq",
-        "surfaces",
-        "actions"
-      ],
+      "required": ["sessionId", "lastSeq", "surfaces", "actions"],
       "properties": {
         "sessionId": {
           "type": "string",
@@ -857,9 +715,7 @@
     "UiRenderParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "surface"
-      ],
+      "required": ["surface"],
       "properties": {
         "surface": {
           "$ref": "#/$defs/UiSurface"
@@ -869,11 +725,7 @@
     "UiUpdateParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "surfaceId",
-        "expectedRevision",
-        "surface"
-      ],
+      "required": ["surfaceId", "expectedRevision", "surface"],
       "properties": {
         "surfaceId": {
           "$ref": "#/$defs/UiKey"
@@ -889,10 +741,7 @@
     "UiCloseParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "surfaceId",
-        "expectedRevision"
-      ],
+      "required": ["surfaceId", "expectedRevision"],
       "properties": {
         "surfaceId": {
           "$ref": "#/$defs/UiKey"

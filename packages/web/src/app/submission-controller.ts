@@ -1,4 +1,3 @@
-import type { AppSessionContext } from '../app.js'
 import {
   type ContentBlock,
   decodeSafeImages,
@@ -9,11 +8,12 @@ import {
   USER_MESSAGE_IMAGE_LIMITS,
   validateUserAttachments,
 } from '@agnes/protocol'
-import { type Session } from '@agnes/sdk/browser'
+import type { Session } from '@agnes/sdk/browser'
 import { yoloEnabled } from '@agnes/web-admin/permission-picker'
 import { permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import { PlanModeRequestError, submitPlanCommand } from '@agnes/web-conversation/plan-mode'
 import { canSubmitComposer } from '@agnes/web-conversation/presentation'
+import type { AppSessionContext } from '../app.js'
 
 export function createSubmissionController(
   context: Pick<

@@ -23,7 +23,11 @@ export interface FeedbackPorts {
     signal: AbortSignal,
   ): Promise<readonly { path: string; content: string }[]>
   /** Recover the stable, integrity-checked growth binding before invoking non-deterministic draft inference. */
-  recoverCandidate(sessionId: string, feedback: FeedbackItem, signal: AbortSignal): Promise<AuthoringCandidate | null>
+  recoverCandidate(
+    sessionId: string,
+    feedback: FeedbackItem,
+    signal: AbortSignal,
+  ): Promise<AuthoringCandidate | null>
   candidate(
     sessionId: string,
     feedback: FeedbackItem,

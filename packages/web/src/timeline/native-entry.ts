@@ -5,13 +5,13 @@ import { toolIcon } from '@agnes/web-conversation/tool-icon'
 import { createCostDetails } from '@agnes/web-conversation/usage'
 import { createConversationToolCard } from '@agnes/web-units'
 import { getSlotCardContext, mountSlotCard } from '../client-modules/timeline-slot.js'
-import { type TextRef, type ApprovalNode, type Entry } from './contracts.js'
+import type { ApprovalNode, Entry, TextRef } from './contracts.js'
 import {
-  APPROVAL_REASON_KEYS,
   APPROVAL_DECISION_KEYS,
   APPROVAL_LABEL_KEYS,
-  legacyUserContent,
+  APPROVAL_REASON_KEYS,
   assistantText,
+  legacyUserContent,
 } from './node-presentation.js'
 
 /** Update a text node in place so a selection never loses its owner during a stream update. */

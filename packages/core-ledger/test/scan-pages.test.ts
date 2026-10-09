@@ -1,7 +1,7 @@
 import { CoreError } from '@agnes/core-common/types'
+import { describe, expect, it } from 'vitest'
 import { scanAll, scanPages } from '../src/log/scan-pages.js'
 import { SCAN_PAGE_MAX, type ScanQuery } from '../src/log/storage.js'
-import { describe, expect, it } from 'vitest'
 
 type Row = { seq: number; type: string; lane: string }
 

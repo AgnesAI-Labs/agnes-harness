@@ -1,8 +1,8 @@
-import { readSessionEvents } from './ledger.js'
 import { createHash } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from './fixtures.js'
+import { readSessionEvents } from './ledger.js'
 import { chooseWorkspace, fresh, preferences, turn } from './ui.js'
 
 test('selects file and session references, records send-time versions and links the source', async ({

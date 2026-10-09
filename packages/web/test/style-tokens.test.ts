@@ -1,4 +1,3 @@
-import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 /**
  * `style.css` 的 token 门禁。
  *
@@ -17,6 +16,7 @@ import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
  */
 import { resolve } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 
 const packageDirectory = process.cwd().endsWith('/packages/web')
   ? process.cwd()

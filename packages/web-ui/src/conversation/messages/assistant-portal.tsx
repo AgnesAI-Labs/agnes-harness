@@ -2,10 +2,10 @@ import { MessagePrimitive, useAssistantState } from '@assistant-ui/react'
 import { useContext, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { UserMessageReferences } from '../reference-chips.js'
-import { ConversationMessageContext, fallbackT, ConversationMessageTargetContext } from './context.js'
+import { assistantMessageParts, userMessageParts } from './assistant-message.js'
+import { ConversationMessageContext, ConversationMessageTargetContext, fallbackT } from './context.js'
 import { nativeContent } from './message.js'
-import { UserMessageImages, UserMessageFiles } from './user-message.js'
-import { userMessageParts, assistantMessageParts } from './assistant-message.js'
+import { UserMessageFiles, UserMessageImages } from './user-message.js'
 
 // Adapt the v0.11.27 registry message shells while leaving Agnes turn actions in their existing owner.
 export function ConversationMessageView() {

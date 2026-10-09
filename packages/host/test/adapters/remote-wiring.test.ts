@@ -8,9 +8,9 @@ import {
   createLoopbackTransport,
   type RemoteTransport,
 } from '@agnes/host-infrastructure/adapters/remote-transport'
-import { openAdapters, sandboxHostServices, toSeamAdapters } from '../../src/runtime/adapters/index.js'
 import { remoteSandboxSeam } from '@agnes/sandbox-remote'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { openAdapters, sandboxHostServices, toSeamAdapters } from '../../src/runtime/adapters/index.js'
 
 // Toggled only by the close()-failure test below: everything else in this file must see the real
 // loopback transport's exec behave exactly as it always has.

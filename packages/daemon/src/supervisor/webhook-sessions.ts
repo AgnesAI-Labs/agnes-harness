@@ -2,7 +2,11 @@ import type { TriggerSessionInput } from '@agnes/daemon-admin/webhooks'
 import { createClient, memoryJournal, type NodeClient } from '@agnes/sdk'
 
 /** Use the same private local SDK path as chat, including workspace ownership and turn admission. */
-export function webhookSessions(socketPath: string, serverIdentity: { pid: number; processStartId: string }, enqueue: (value: TriggerSessionInput) => Promise<void>) {
+export function webhookSessions(
+  socketPath: string,
+  serverIdentity: { pid: number; processStartId: string },
+  enqueue: (value: TriggerSessionInput) => Promise<void>,
+) {
   const clients = new Set<NodeClient>()
   let closing = false
   const connect = () =>

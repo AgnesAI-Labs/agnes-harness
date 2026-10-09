@@ -1,13 +1,13 @@
 import { open } from 'node:fs/promises'
-import type { Provider, RequestBody, InferenceEvent, ModelRecord } from '@agnes/protocol'
+import { stampFor } from '@agnes/ai/testkit'
+import { replayRequestKey } from '@agnes/model-adapters'
+import type { InferenceEvent, ModelRecord, Provider, RequestBody } from '@agnes/protocol'
 import { validateAgainst } from '@agnes/protocol'
 import {
   InferenceEvent as EventSchema,
-  RequestBody as RequestSchema,
   ModelRecord as ModelSchema,
+  RequestBody as RequestSchema,
 } from '@agnes/protocol/gen/model'
-import { stampFor } from '@agnes/ai/testkit'
-import { replayRequestKey } from '@agnes/model-adapters'
 
 export interface RecordingOptions {
   /** Exact secret values to remove, including private business data in model text. */

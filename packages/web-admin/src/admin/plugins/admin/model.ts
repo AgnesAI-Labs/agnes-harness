@@ -5,9 +5,9 @@ import type {
   RuntimePinDescriptor,
 } from '@agnes/protocol'
 import type { PluginRuntimeState } from '@agnes/web-foundation/client-modules/runtime-status'
-import { type RuntimeStateView } from '@agnes/web-ui'
+import type { RuntimeStateView } from '@agnes/web-ui'
 import { AdminApiError } from '../api.js'
-import { type AdminError } from '../types.js'
+import type { AdminError } from '../types.js'
 
 export function safeMessage(error: unknown): AdminError {
   if (error instanceof AdminApiError) return error.details

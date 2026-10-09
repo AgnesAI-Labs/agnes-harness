@@ -1,8 +1,8 @@
-import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 /** @vitest-environment happy-dom */
 import { resolve } from 'node:path'
 import type { DiagnosticsWarning } from '@agnes/web-units'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import type { CollectedDiagnostics, collectDiagnostics } from '../src/diagnostics-bundle.js'
 import { createDiagnosticsDialog, type DiagnosticsDialogDeps, saveZip } from '../src/diagnostics-dialog.js'
 

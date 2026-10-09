@@ -1,5 +1,5 @@
-import { createPluginTestRegistration } from '@agnes/host/testkit'
 import { createPluginTestHost as mountAuthor } from '@agnes/host/author-testkit'
+import { createPluginTestRegistration } from '@agnes/host/testkit'
 import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
 import { createPluginTestHost } from '@agnes/plugin-runtime/testkit'
 import { Type } from '@sinclair/typebox'

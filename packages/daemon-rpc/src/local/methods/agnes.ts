@@ -1,4 +1,3 @@
-import { registerIntelligentUi } from './intelligent-ui.js'
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { ScheduleRejected } from '@agnes/base/schedule'
@@ -79,6 +78,7 @@ import { resolvePromptReferences } from '../references.js'
 import { registerSessionJobs, type SessionJobServices } from '../session-jobs.js'
 import { registerWorkspaceFiles } from '../workspace-files.js'
 import { type Feed, type LocalContext, legacyLedgerRpcError } from './acp.js'
+import { registerIntelligentUi } from './intelligent-ui.js'
 
 export type AuthKind = 'local' | 'jwt' | 'source-auth' | 'portal-identity' | 'surface'
 export type CredentialKind = 'local' | 'jwt' | 'portal-identity' | 'sso' | 'channel'

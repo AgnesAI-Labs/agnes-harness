@@ -1,5 +1,5 @@
-import { ToolReviewFact, validateAgainst } from '@agnes/protocol'
 import type { CostLedger, EventEnvelope, UISpan, UITurn, UITurnUsage } from '@agnes/protocol'
+import { ToolReviewFact, validateAgainst } from '@agnes/protocol'
 import { clipUtf16 as clip } from './clip.js'
 
 export const SUBAGENT_TOOL_NAMES = new Set(['subagent_fork', 'subagent_spawn'])

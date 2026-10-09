@@ -12,6 +12,14 @@ import {
   validateComposition,
 } from '@agnes/host-common/profile/composition'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import {
+  SessionCapabilitySet,
+  validateAgainst,
+  validatePreset,
+  validateProfileManifest,
+  validateResolvedProfile,
+} from '@agnes/protocol'
+import { afterEach, expect, it } from 'vitest'
 import { createCompositionAdmin, readBundleSelection } from '../../src/runtime/profile/bundle-selection.js'
 import {
   compositionAllowsTool,
@@ -21,14 +29,6 @@ import {
   capabilityEnabled,
   resolveSessionCapabilities,
 } from '../../src/runtime/profile/session-capabilities.js'
-import {
-  SessionCapabilitySet,
-  validateAgainst,
-  validatePreset,
-  validateProfileManifest,
-  validateResolvedProfile,
-} from '@agnes/protocol'
-import { afterEach, expect, it } from 'vitest'
 
 const env = {
   platform: { os: 'linux' as const, arch: 'x64', capabilities: {} },

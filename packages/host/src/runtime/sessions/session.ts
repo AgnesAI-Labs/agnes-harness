@@ -1,4 +1,3 @@
-import { attachIntelligentUiTrace } from './intelligent-ui-trace.js'
 import { createHash, randomUUID } from 'node:crypto'
 import {
   type ChildWorkspaceRuntimePort,
@@ -30,6 +29,7 @@ import type { Assembled } from '../assemble/assemble.js'
 import type { HostSession } from '../lifecycle/host.js'
 import { resolveSessionCapabilities } from '../profile/session-capabilities.js'
 import { bindDeferredInvocations } from './deferred-invocations.js'
+import { attachIntelligentUiTrace } from './intelligent-ui-trace.js'
 import { replaySwitchesOnOpen } from './session-switch.js'
 
 /**

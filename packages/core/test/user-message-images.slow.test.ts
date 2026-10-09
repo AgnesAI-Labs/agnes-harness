@@ -1,10 +1,10 @@
 import { sha256Hex } from '@agnes/core-common/request/hash'
 import type { ToolContext } from '@agnes/extension-api'
 import {
-  sha256Hex as uploadSessionHash,
   type ContentBlock,
   type ModelRecord,
   USER_MESSAGE_IMAGE_LIMITS,
+  sha256Hex as uploadSessionHash,
 } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'

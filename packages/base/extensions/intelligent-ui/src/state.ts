@@ -1,7 +1,7 @@
-import { UiActionReceipt } from '@agnes/protocol/gen/intelligent-ui'
-import type { EventEnvelope, JsonValue, UiActionParams, UiSurfaceRecord } from '@agnes/protocol'
-import { jcs, validateAgainst, type UiRefusal } from '@agnes/protocol'
 import type { DeferredToolInvocation, ProjectionDef } from '@agnes/extension-api'
+import type { EventEnvelope, JsonValue, UiActionParams, UiSurfaceRecord } from '@agnes/protocol'
+import { jcs, type UiRefusal, validateAgainst } from '@agnes/protocol'
+import { UiActionReceipt } from '@agnes/protocol/gen/intelligent-ui'
 
 export const UI_OWNER = 'agnes/intelligent-ui'
 export const UI_PREFIX = `x/${UI_OWNER}/`

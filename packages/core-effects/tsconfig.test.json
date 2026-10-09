@@ -4,9 +4,7 @@
     "outDir": "dist/test",
     "tsBuildInfoFile": "dist/tsconfig.test.tsbuildinfo"
   },
-  "include": [
-    "test/**/*.ts"
-  ],
+  "include": ["test/**/*.ts"],
   "references": [
     {
       "path": "."

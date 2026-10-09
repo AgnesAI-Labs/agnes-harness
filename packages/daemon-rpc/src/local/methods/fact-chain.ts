@@ -1,4 +1,3 @@
-import { appendIntelligentUiFactChain, intelligentUiFactTypes } from './intelligent-ui-fact-chain.js'
 import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { projectFactChain, type RequestTraceStore, type ScanRead } from '@agnes/host'
 import type {
@@ -10,6 +9,7 @@ import type {
 } from '@agnes/protocol'
 import { validateAgainst } from '@agnes/protocol'
 import { FactChainNode as NodeSchema } from '@agnes/protocol/gen/agnes-v1'
+import { appendIntelligentUiFactChain, intelligentUiFactTypes } from './intelligent-ui-fact-chain.js'
 
 const types = [
   ...intelligentUiFactTypes,

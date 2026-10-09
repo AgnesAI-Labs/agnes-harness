@@ -242,7 +242,10 @@ function invocationView(source: WorkspaceInvocationSource, scope: InvocationScop
         }
       : {}),
     ...(source.fs.authorizeRemove
-      ? { authorizeRemove: (path: string, opts?: { recursive?: boolean }) => scope.track(() => source.fs.authorizeRemove!(path, opts)) }
+      ? {
+          authorizeRemove: (path: string, opts?: { recursive?: boolean }) =>
+            scope.track(() => source.fs.authorizeRemove!(path, opts)),
+        }
       : {}),
     ...(source.fs.rm
       ? { rm: (path: string, opts?: { recursive?: boolean }) => scope.track(() => source.fs.rm!(path, opts)) }

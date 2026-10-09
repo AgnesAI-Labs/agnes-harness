@@ -19,11 +19,19 @@ export type {
   CompactionReplacement,
 } from './compaction-engine.js'
 export { createCompactionThreshold } from './compaction-engine.js'
+export * from './deferred-invocations.js'
 export * from './errors.js'
 export * from './extension.js'
+export * from './feedback.js'
 export { HOOK_TABLE } from './generated/hook-table.js'
 export { SLOT_TABLE } from './generated/slot-table.js'
 export * from './hooks.js'
+export type {
+  IntelligentUiExtensionPort,
+  IntelligentUiFactory,
+  IntelligentUiPorts,
+  IntelligentUiService,
+} from './intelligent-ui.js'
 export * from './loop.js'
 export * from './loop-events.js'
 export * from './loop-plugin.js'
@@ -32,20 +40,22 @@ export * from './memory.js'
 export * from './model-adapter.js'
 export * from './observability.js'
 export * from './persistence.js'
+export * from './plugin-config.js'
 export * from './plugin-extension.js'
 export * from './process.js'
 export * from './projections.js'
 export * from './provider-kind.js'
 export type {
   ReferenceCandidate,
-  ReferenceSearchResult,
-  ReferenceSelection,
   ReferenceContext,
   ReferenceLimits,
   ReferenceResolver,
   ReferenceResolverPort,
+  ReferenceSearchResult,
+  ReferenceSelection,
   ResolvedReference,
 } from './reference-resolver.js'
+export type { RemoteTransport } from './remote-transport.js'
 export * from './resources.js'
 export * from './sandbox-provider.js'
 export * from './search-provider.js'
@@ -65,17 +75,3 @@ export * from './tool-runtime.js'
 export * from './version.js'
 export * from './webhook-trigger.js'
 export * from './workspace-hooks.js'
-export * from './feedback.js'
-
-export * from './plugin-config.js'
-
-export type { RemoteTransport } from './remote-transport.js'
-
-export * from './deferred-invocations.js'
-
-export type {
-  IntelligentUiPorts,
-  IntelligentUiService,
-  IntelligentUiFactory,
-  IntelligentUiExtensionPort,
-} from './intelligent-ui.js'

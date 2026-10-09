@@ -1,8 +1,8 @@
-import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 /** @vitest-environment happy-dom */
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
 const packageDirectory = process.cwd().endsWith('/packages/web')

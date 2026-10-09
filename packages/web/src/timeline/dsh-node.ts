@@ -2,7 +2,7 @@ import type { UINode } from '@agnes/protocol'
 import { SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
 import { createAntdRoot } from '@agnes/web-ui'
 import { createElement, useLayoutEffect, useSyncExternalStore } from 'react'
-import { type Entry, type TimelineRendererOptions, type DshNodeMount } from './contracts.js'
+import type { DshNodeMount, Entry, TimelineRendererOptions } from './contracts.js'
 
 // 与 NativeDshChildren 的子槽位清单保持一致（那边带 entryKey，这里只关心名字），
 // 供「有没有人认领」判定使用；声明占位条目（key: '__agnes-native-child-declarations__'）

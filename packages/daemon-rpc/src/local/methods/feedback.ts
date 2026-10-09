@@ -1,6 +1,6 @@
 import type { PackageAdminAuthorityResolver } from '@agnes/daemon-admin/packages/index'
 import { requireLocalAdminAuthority } from '@agnes/daemon-admin/packages/index'
-import { connActor, type CallContext, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
+import { type CallContext, connActor, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { FeedbackPorts, FeedbackServiceFactory } from '@agnes/extension-api'
 import { createFeedbackService } from '@agnes/host'
 import { type Actor, rpcError } from '@agnes/protocol'

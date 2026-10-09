@@ -1,7 +1,7 @@
 import { canonicalJson } from '@agnes/core-common/request/hash'
 import type { Event } from '@agnes/core-common/types'
-import { describe, expect, it } from 'vitest'
 import { encodeLedgerState } from '@agnes/core-ledger/testkit/encode-ledger-state'
+import { describe, expect, it } from 'vitest'
 import { checkRelations } from '../src/log/relations.js'
 import { contextAnchorOf } from '../src/reduce/anchor.js'
 import { ChunkedMap } from '../src/reduce/chunked-map.js'
@@ -266,7 +266,14 @@ describe('reducer', () => {
     ])
     expect(cleared.taint.get('main')).toBe(false)
     seq = 0
-    const accepted = foldEvents([ev('user/message', { content: [{ type: 'text', text: 'external input' }] }, { origin: 'system', trust: 'untrusted' }), ev('turn/start', { turn: 1, trigger: 'follow_up', inputTainted: true })])
+    const accepted = foldEvents([
+      ev(
+        'user/message',
+        { content: [{ type: 'text', text: 'external input' }] },
+        { origin: 'system', trust: 'untrusted' },
+      ),
+      ev('turn/start', { turn: 1, trigger: 'follow_up', inputTainted: true }),
+    ])
     expect(accepted.taint.get('main')).toBe(true)
     // Trust is half the rule, and the half a fixture that always passes `trust: 'untrusted'` never
     // exercises: without it every tool result and every user message inside a turn taints the lane,

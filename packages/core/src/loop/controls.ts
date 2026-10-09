@@ -4,8 +4,8 @@ import type { Inbox } from '@agnes/core-ledger/reduce/shapes'
 import { type Actor, type ContentBlock, MAX_FRAME_BYTES } from '@agnes/protocol'
 import { validateUserMessageImages } from '../request/user-message-images.js'
 import { inboxEvent, inputMessageEvents } from '../step/inbox.js'
-import { applyChildControl, controlledChildTree } from './child-controls.js'
 import type { SessionImpl } from '../step/session.js'
+import { applyChildControl, controlledChildTree } from './child-controls.js'
 
 export type SessionControl = 'pause' | 'resume' | 'cancel' | 'interrupt' | 'child-stop' | 'child-continue'
 const PAUSE = 'x/core/pause-state'
@@ -255,7 +255,13 @@ export class SessionControls {
       const op = this.s.op()
       return this.s.d.log.append(
         [
-          inboxEvent(this.s.lane, actor, { items: inbox.items.filter((item) => item.kind !== 'steer').map((item) => item.target === 'next-step' ? { ...item, target: 'next-turn' as const } : item) }),
+          inboxEvent(this.s.lane, actor, {
+            items: inbox.items
+              .filter((item) => item.kind !== 'steer')
+              .map((item) =>
+                item.target === 'next-step' ? { ...item, target: 'next-turn' as const } : item,
+              ),
+          }),
           this.s.ev(PAUSE, { paused: false }, { actor, origin: 'principal', ignorable: true }),
           this.fact(action, 'requested', actor, { admissionId, returned }),
           ...(!op ? [this.fact(action, 'applied', actor, { admissionId })] : []),

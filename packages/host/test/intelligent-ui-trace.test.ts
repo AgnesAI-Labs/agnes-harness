@@ -1,5 +1,5 @@
-import { expect, it } from 'vitest'
 import type { EventEnvelope, UITurn } from '@agnes/protocol'
+import { expect, it } from 'vitest'
 import { appendUiTrace } from '../src/runtime/sessions/intelligent-ui-trace.js'
 
 it('decorates trace revisions and outcomes without changing cached turns or exposing form data', () => {

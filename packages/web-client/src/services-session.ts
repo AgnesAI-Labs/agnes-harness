@@ -1,10 +1,10 @@
+import { type Context, Service } from '@agnes/cordis'
 import type {
   HostAgnesClient,
   SessionClientHandle,
-  SessionProjection,
   SessionCommands,
+  SessionProjection,
 } from './service-contracts.js'
-import { type Context, Service } from '@agnes/cordis'
 
 export class SessionService extends Service {
   private currentSessionId: string | undefined

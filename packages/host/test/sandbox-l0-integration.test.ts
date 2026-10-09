@@ -45,14 +45,14 @@ import {
   type SessionWorkspaceRuntime,
   SessionWorkspaceRuntimeTable,
 } from '@agnes/host-infrastructure/session-workspace-runtime'
+import type { ModelRecord, RouteDecl } from '@agnes/protocol'
+import { windowsProcessStartTimeSync } from '@agnes/system-node'
+import { afterEach, describe, expect, it } from 'vitest'
 import { openAdapters, toSeamAdapters } from '../src/runtime/adapters/index.js'
 import { type AssembleDeps, type Assembled, assemble } from '../src/runtime/assemble/assemble.js'
 import { trustedHookCommands } from '../src/runtime/assemble/trusted-hooks.js'
 import { readConfigurationProfileInputs } from '../src/runtime/profile/inputs.js'
 import { createSession } from '../src/runtime/sessions/session.js'
-import type { ModelRecord, RouteDecl } from '@agnes/protocol'
-import { windowsProcessStartTimeSync } from '@agnes/system-node'
-import { afterEach, describe, expect, it } from 'vitest'
 import { attachTestSeamPlugins } from '../testkit/cordis-seams.js'
 
 /**

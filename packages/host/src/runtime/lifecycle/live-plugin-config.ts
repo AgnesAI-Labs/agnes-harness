@@ -1,7 +1,7 @@
+import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import type { PluginRow, RuntimeTarget } from '@agnes/plugin-runtime/host'
 import type { HostConvergenceReport } from './host-facade.js'
 import { assertHostPublication } from './host-facade.js'
-import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 
 type ConfigHost = {
   runtimeTargetSnapshot?(): RuntimeTarget

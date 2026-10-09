@@ -1,4 +1,3 @@
-import { createIntelligentUiAdapter } from '../sessions/intelligent-ui.js'
 import { lstatSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -200,9 +199,9 @@ import {
   withBuiltinCompactionEngines,
 } from '@agnes/host-providers/assemble/compaction-engines'
 import { bindModelContracts } from '@agnes/host-providers/assemble/contracts'
+import { DeferredInvocationsService } from '@agnes/host-providers/assemble/deferred-invocations'
 import { isolationInventory } from '@agnes/host-providers/assemble/isolation-inventory'
 import { readAdminLoopDefault } from '@agnes/host-providers/assemble/loop-selection'
-import { DeferredInvocationsService } from '@agnes/host-providers/assemble/deferred-invocations'
 import { installLoops } from '@agnes/host-providers/assemble/loops'
 import {
   installModelAdapters,
@@ -282,10 +281,6 @@ import {
   createApprovalGrantControlPlane,
   migrateApprovalGrants,
 } from '../approval/grants.js'
-import { childAgentCatalog, installChildAgents, withBuiltinChildAgents } from './child-agents.js'
-import { initStaticSeams } from './seams.js'
-import { trustedHookCommands } from './trusted-hooks.js'
-import type { AssembleDeps } from './assembly-deps.js'
 import { Rollback } from '../lifecycle/lifecycle.js'
 import {
   compositionSkillOwners,
@@ -299,13 +294,18 @@ import {
   resolveSessionCapabilities,
   type SessionCapabilitySet,
 } from '../profile/session-capabilities.js'
-import { authorizeServiceProcess } from './service-process-policy.js'
+import { createIntelligentUiAdapter } from '../sessions/intelligent-ui.js'
 import {
   applyTelemetryConsent,
   createSessionHookPort,
   readProfileTelemetryConsent,
   readTelemetryConsent,
 } from '../sessions/session-hooks.js'
+import type { AssembleDeps } from './assembly-deps.js'
+import { childAgentCatalog, installChildAgents, withBuiltinChildAgents } from './child-agents.js'
+import { initStaticSeams } from './seams.js'
+import { authorizeServiceProcess } from './service-process-policy.js'
+import { trustedHookCommands } from './trusted-hooks.js'
 
 /**
  * A raw module import, distinct from `PackageLoader`: `createManagedExtHost` evaluates an

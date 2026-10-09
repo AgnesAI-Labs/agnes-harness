@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest'
 import type {
   UiActionParams,
   UiActionReceipt,
   UiReadParams,
   UiReadResult,
 } from '@agnes/protocol/gen/intelligent-ui'
+import { describe, expect, it } from 'vitest'
 import { IntelligentUiClient } from '../../src/intelligent-ui/client.js'
 import type { IntelligentUiServer, UiCommandStorage } from '../../src/intelligent-ui/types.js'
 import { financeRecord, uiPage, uiReceipt } from './fixture.js'
@@ -184,7 +184,8 @@ describe('Intelligent UI session projection and commands', () => {
   it('buffers live events while reading consistent snapshot pages, then reads current facts', async () => {
     const server = new FakeServer()
     server.readOverride = async (params) => {
-      if (params.cursor) return { ...uiPage(financeRecord(), [uiReceipt('received', { seq: 9 })], 10), surfaces: [] }
+      if (params.cursor)
+        return { ...uiPage(financeRecord(), [uiReceipt('received', { seq: 9 })], 10), surfaces: [] }
       if (!server.attached) {
         server.onEvent?.({ seq: 11, type: 'x/agnes/intelligent-ui/surface.updated' })
         return { ...uiPage(financeRecord(), [uiReceipt('received', { seq: 9 })], 10), nextCursor: 'page-2' }

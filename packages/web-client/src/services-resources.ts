@@ -1,16 +1,16 @@
-import type {
-  HostAgnesClient,
-  ClientImageArtifact,
-  ClientDocumentArtifact,
-  ClientDocumentKind,
-  ClientImageResource,
-  ClientImageLoader,
-  ClientDocumentResource,
-  ClientDocumentLoader,
-} from './service-contracts.js'
 import { type Context, Service } from '@agnes/cordis'
 import type { ArtifactReadResult } from '@agnes/protocol'
 import { downloadArtifact } from './artifact-download.js'
+import type {
+  ClientDocumentArtifact,
+  ClientDocumentKind,
+  ClientDocumentLoader,
+  ClientDocumentResource,
+  ClientImageArtifact,
+  ClientImageLoader,
+  ClientImageResource,
+  HostAgnesClient,
+} from './service-contracts.js'
 import type { SessionService } from './services-session.js'
 
 const IMAGE_MIMES = new Set(['image/png', 'image/jpeg'])

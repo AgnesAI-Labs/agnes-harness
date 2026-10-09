@@ -5,7 +5,7 @@ import type {
   UiRowContext,
   UiSurface,
 } from '@agnes/protocol/gen/intelligent-ui'
-import { useCallback, useId, type ReactNode } from 'react'
+import { type ReactNode, useCallback, useId } from 'react'
 import { PluginSchemaFields } from '../plugin-schema-fields.js'
 import { Button } from '../ui/button.js'
 import { useUiText } from '../ui-locale.js'

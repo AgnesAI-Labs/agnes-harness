@@ -1,5 +1,5 @@
-import type { ClientCommand, CommandAuthorizer } from './service-contracts.js'
 import { type Context, Service } from '@agnes/cordis'
+import type { ClientCommand, CommandAuthorizer } from './service-contracts.js'
 
 export class CommandService extends Service {
   private readonly entries = new Map<string, Readonly<{ owner: string; command: ClientCommand }>>()

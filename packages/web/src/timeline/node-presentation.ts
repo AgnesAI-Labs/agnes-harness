@@ -1,6 +1,6 @@
 import type { UINode } from '@agnes/protocol'
 import type { Translate } from '@agnes/web-conversation/presentation'
-import { type ApprovalNode, type UserNode } from './contracts.js'
+import type { ApprovalNode, UserNode } from './contracts.js'
 
 export const APPROVAL_LABEL_KEYS: Record<ApprovalNode['state'], string> = {
   pending: 'timeline.approval.pending',

@@ -2,14 +2,14 @@ import type { Plugin } from '@agnes/cordis'
 import { createPluginTestHost as mount, type PluginTestOptions } from '@agnes/plugin-runtime/testkit'
 import { createPluginTestRegistration } from '../plugin-registration.js'
 
-export { driveLoop, runModelAdapter, scriptedModel } from '@agnes/plugin-runtime/testkit'
-export type { LoopTestOptions, ModelReply, ModelAdapterTestOptions } from '@agnes/plugin-runtime/testkit'
 export { fakeModel, fakeRequest, ScriptedProvider } from '@agnes/ai/testkit'
+export type { LoopTestOptions, ModelAdapterTestOptions, ModelReply } from '@agnes/plugin-runtime/testkit'
+export { driveLoop, runModelAdapter, scriptedModel } from '@agnes/plugin-runtime/testkit'
 export { createPluginTestRegistration } from '../plugin-registration.js'
-export { recordModelFixture, replayModelFixture } from './model-replay.js'
-export type { RecordingOptions, ModelFixture } from './model-replay.js'
+export type { FaultServer, ModelFault } from './fault-server.js'
 export { startModelFaultServer } from './fault-server.js'
-export type { ModelFault, FaultServer } from './fault-server.js'
+export type { ModelFixture, RecordingOptions } from './model-replay.js'
+export { recordModelFixture, replayModelFixture } from './model-replay.js'
 
 /** Small tool contract fixture. Full session authorization lives in createAuthorTestkit. */
 export function createPluginTestHost(
@@ -41,4 +41,4 @@ export async function createAuthorTestkit(
 ) {
   return (await import('./session.js')).createAuthorTestkit(...args)
 }
-export type { AuthorTestOptions, AuthorSession, AuthorTestkit, AuthorPluginVersion } from './session.js'
+export type { AuthorPluginVersion, AuthorSession, AuthorTestkit, AuthorTestOptions } from './session.js'

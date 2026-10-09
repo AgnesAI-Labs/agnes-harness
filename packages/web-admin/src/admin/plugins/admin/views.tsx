@@ -1,4 +1,3 @@
-import { PluginConfigTab } from '../config-tab.js'
 import type { PackageSource } from '@agnes/protocol'
 import {
   Button,
@@ -22,10 +21,11 @@ import { SettingsHub } from '../../../settings/hub.js'
 import { sessionStartUrl } from '../../../settings/runtime-panels.js'
 import { CandidateInbox } from '../candidates.js'
 import { CapabilityReview, FailureHelp, ProvenanceReview } from '../capability-review.js'
+import { PluginConfigTab } from '../config-tab.js'
 import { GenerationDrainSummary, KindFilter, PluginBadges, pluginFailureMessage } from '../control-panel.js'
 import { SOURCE_FORMATS, sourceProblem } from '../source-form.js'
 import { setDialog } from './dom.js'
-import { pinPurposeLabel, asRuntimeView } from './model.js'
+import { asRuntimeView, pinPurposeLabel } from './model.js'
 import type { PluginAdminViewContext } from './page.js'
 
 const SOURCE_TYPE_OPTIONS = Object.keys(SOURCE_FORMATS)

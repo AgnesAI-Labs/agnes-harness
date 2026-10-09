@@ -19,10 +19,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "operation",
-            "sessionId"
-          ]
+          "required": ["operation", "sessionId"]
         },
         {
           "additionalProperties": false,
@@ -57,14 +54,7 @@
               "type": "integer"
             }
           },
-          "required": [
-            "operation",
-            "sessionId",
-            "uploadId",
-            "name",
-            "mimeType",
-            "size"
-          ]
+          "required": ["operation", "sessionId", "uploadId", "name", "mimeType", "size"]
         },
         {
           "additionalProperties": false,
@@ -97,14 +87,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "operation",
-            "sessionId",
-            "uploadId",
-            "offset",
-            "data",
-            "sha256"
-          ]
+          "required": ["operation", "sessionId", "uploadId", "offset", "data", "sha256"]
         },
         {
           "additionalProperties": false,
@@ -128,12 +111,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "operation",
-            "sessionId",
-            "uploadId",
-            "sha256"
-          ]
+          "required": ["operation", "sessionId", "uploadId", "sha256"]
         },
         {
           "additionalProperties": false,
@@ -161,11 +139,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "operation",
-            "sessionId",
-            "uploadId"
-          ]
+          "required": ["operation", "sessionId", "uploadId"]
         }
       ]
     },
@@ -196,11 +170,7 @@
               }
             }
           },
-          "required": [
-            "maxBytes",
-            "chunkBytes",
-            "allowedMimeTypes"
-          ]
+          "required": ["maxBytes", "chunkBytes", "allowedMimeTypes"]
         },
         "offset": {
           "minimum": 0,
@@ -228,10 +198,7 @@
               "type": "string"
             }
           },
-          "required": [
-            "type",
-            "uri"
-          ]
+          "required": ["type", "uri"]
         }
       }
     },
@@ -465,11 +432,7 @@
     "SessionControlParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "sessionId",
-        "action",
-        "commandId"
-      ],
+      "required": ["sessionId", "action", "commandId"],
       "properties": {
         "sessionId": {
           "type": "string",
@@ -486,14 +449,7 @@
           "minimum": 1
         },
         "action": {
-          "enum": [
-            "pause",
-            "resume",
-            "cancel",
-            "interrupt",
-            "child-stop",
-            "child-continue"
-          ]
+          "enum": ["pause", "resume", "cancel", "interrupt", "child-stop", "child-continue"]
         },
         "itemId": {
           "type": "string",
@@ -570,15 +526,7 @@
     "SessionControlledChild": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "parentId",
-        "providerId",
-        "status",
-        "controls",
-        "durationMs",
-        "totalTokens"
-      ],
+      "required": ["id", "parentId", "providerId", "status", "controls", "durationMs", "totalTokens"],
       "properties": {
         "id": {
           "type": "string"
@@ -590,23 +538,12 @@
           "type": "string"
         },
         "status": {
-          "enum": [
-            "starting",
-            "running",
-            "idle",
-            "completed",
-            "failed",
-            "cancelled",
-            "interrupted"
-          ]
+          "enum": ["starting", "running", "idle", "completed", "failed", "cancelled", "interrupted"]
         },
         "controls": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "stop",
-            "continue"
-          ],
+          "required": ["stop", "continue"],
           "properties": {
             "stop": {
               "type": "boolean"
@@ -643,9 +580,7 @@
     "SessionControlsParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "sessionId"
-      ],
+      "required": ["sessionId"],
       "properties": {
         "sessionId": {
           "type": "string",
@@ -673,11 +608,7 @@
     "SessionControlStateResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "controls",
-        "paused",
-        "pending"
-      ],
+      "required": ["controls", "paused", "pending"],
       "properties": {
         "controls": {
           "type": "object",

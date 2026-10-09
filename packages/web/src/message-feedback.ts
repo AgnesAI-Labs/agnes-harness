@@ -1,9 +1,9 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import type { SessionService } from '@agnes/web-client'
 import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
+import { createAntdRoot } from '@agnes/web-ui'
 import { MessageFeedback } from '@agnes/web-units/message-feedback'
 import { createElement } from 'react'
-import { createAntdRoot } from '@agnes/web-ui'
 
 /** This root belongs to one persisted assistant node and retires with the timeline entry. */
 export function mountMessageFeedback(element: HTMLElement, session: SessionService | undefined) {

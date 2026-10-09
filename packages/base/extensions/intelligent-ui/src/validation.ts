@@ -1,17 +1,17 @@
-import { X_AGNES_UI_LIMITS } from '@agnes/protocol/gen/intelligent-ui'
+import type { IntelligentUiPorts } from '@agnes/extension-api'
 import {
   inspectJsonData,
+  type JsonValue,
   jcs,
   rpcError,
-  validateAgainst,
-  type JsonValue,
-  type UiActionParams,
   type UiSurface as Surface,
+  type UiActionParams,
+  validateAgainst,
 } from '@agnes/protocol'
-import type { IntelligentUiPorts } from '@agnes/extension-api'
+import { X_AGNES_UI_LIMITS } from '@agnes/protocol/gen/intelligent-ui'
 import { validIntelligentSurface } from '@agnes/protocol/intelligent-ui'
-import { Ajv2020 } from 'ajv/dist/2020.js'
 import type { TSchema } from '@sinclair/typebox'
+import { Ajv2020 } from 'ajv/dist/2020.js'
 
 const ajv = new Ajv2020({ strict: false, allErrors: false, validateFormats: false, addUsedSchema: false })
 export const json = (value: unknown): JsonValue => JSON.parse(jcs(value))

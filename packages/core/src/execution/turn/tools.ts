@@ -37,9 +37,9 @@ import type { ChainStep, SessionImpl, StepOutcome } from '../../step/session.js'
 import { summarizeCall } from '../../step/summarize-call.js'
 import { stepVerifyInput, toolVerifyInput } from '../../step/verify-input.js'
 import { resolveModel } from './inference.js'
-import { decideToolPolicy } from './policy-review.js'
 import { approveMemoryFile } from './memory-approval.js'
 import { approvalContinuation } from './parked.js'
+import { decideToolPolicy } from './policy-review.js'
 
 export type ExecOpts = {
   depth: number

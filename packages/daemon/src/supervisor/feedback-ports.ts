@@ -23,7 +23,10 @@ export function feedbackPorts(options: {
   }
 }): FeedbackPorts {
   const growthKey = (sessionKey: string, feedback: Parameters<FeedbackPorts['candidate']>[1]) =>
-    'feedback-' + sha256Hex(jcs([options.profile, options.authority.principalId, sessionKey, feedback.id, feedback.revision]))
+    'feedback-' +
+    sha256Hex(
+      jcs([options.profile, options.authority.principalId, sessionKey, feedback.id, feedback.revision]),
+    )
   const growthAuthority = { ...options.authority, clientId: 'feedback-growth' }
   return {
     now: () => new Date().toISOString(),
@@ -43,8 +46,13 @@ export function feedbackPorts(options: {
     },
     recoverCandidate: async (sessionKey, feedback, signal) => {
       signal.throwIfAborted()
-      if (!options.packages.candidateForCommand) throw rpcError('SEMANTIC_REJECTED', { reason: 'FEEDBACK_PROVENANCE_UNAVAILABLE' })
-      return options.packages.candidateForCommand(options.profile, growthKey(sessionKey, feedback), growthAuthority)
+      if (!options.packages.candidateForCommand)
+        throw rpcError('SEMANTIC_REJECTED', { reason: 'FEEDBACK_PROVENANCE_UNAVAILABLE' })
+      return options.packages.candidateForCommand(
+        options.profile,
+        growthKey(sessionKey, feedback),
+        growthAuthority,
+      )
     },
     candidate: async (sessionKey, feedback, files, signal) => {
       signal.throwIfAborted()

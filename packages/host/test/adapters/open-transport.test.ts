@@ -10,8 +10,8 @@ import {
   readNamedExports,
 } from '@agnes/host-extensions/assemble/packages'
 import { createLoader } from '@agnes/host-extensions/ext-host/loader'
-import { openAdapters } from '../../src/runtime/adapters/index.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { openAdapters } from '../../src/runtime/adapters/index.js'
 
 const dirs: string[] = []
 afterEach(() => {

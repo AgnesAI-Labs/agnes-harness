@@ -343,7 +343,11 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
   // turn/start seeds it from the accepted input, which is recorded before that row.
   if (
     (e.type === 'user/message' || e.type === 'tool/result') &&
-    (e.trust === 'untrusted' || (e.type === 'user/message' && (d?.content as { type?: string; reference?: unknown }[] | undefined)?.some((block) => block.type === 'text' && block.reference !== undefined))) &&
+    (e.trust === 'untrusted' ||
+      (e.type === 'user/message' &&
+        (d?.content as { type?: string; reference?: unknown }[] | undefined)?.some(
+          (block) => block.type === 'text' && block.reference !== undefined,
+        ))) &&
     s.openTurn.has(lane)
   )
     table('taint').set(lane, true)

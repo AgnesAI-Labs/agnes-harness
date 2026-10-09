@@ -1,5 +1,5 @@
-import { expect, it } from 'vitest'
 import type { EventEnvelope, FactChainResult } from '@agnes/protocol'
+import { expect, it } from 'vitest'
 import { appendIntelligentUiFactChain } from '../src/local/methods/intelligent-ui-fact-chain.js'
 
 const fact = (seq: number, name: string, data: unknown, origin = 'ext:agnes/intelligent-ui') =>

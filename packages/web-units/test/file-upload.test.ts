@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
-import { cancelFileUpload, uploadFile, type UploadProgress } from '../src/file-upload.js'
+import { cancelFileUpload, type UploadProgress, uploadFile } from '../src/file-upload.js'
 
 const limits = { maxBytes: 16, chunkBytes: 4, allowedMimeTypes: ['text/plain'] }
 const attachment = {

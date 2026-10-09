@@ -5,6 +5,7 @@ import type {
   PluginRuntimePhase,
   RuntimeErrorStage,
 } from '@agnes/web-foundation/client-modules/runtime-status'
+import { validateCatalogContract } from './catalog.js'
 import type {
   ClientModuleCache,
   ClientModuleLifecycleStep,
@@ -14,7 +15,6 @@ import type {
   PreparedClientStyles,
   ReadyClientModule,
 } from './contracts.js'
-import { validateCatalogContract } from './catalog.js'
 import { withTimeout } from './styles.js'
 
 export interface ReconcileLifecycleContext {

@@ -1,5 +1,5 @@
-import type { HostAgnesClient, ClientServiceCaller, ClientEffectCaller } from './service-contracts.js'
 import { type Context, Service } from '@agnes/cordis'
+import type { ClientEffectCaller, ClientServiceCaller, HostAgnesClient } from './service-contracts.js'
 
 export class AgnesClientService extends Service {
   constructor(

@@ -1,4 +1,3 @@
-import { ToolReviewFact, validateAgainst } from '@agnes/protocol'
 import type {
   ArtifactRef,
   EventEnvelope,
@@ -6,6 +5,7 @@ import type {
   FactChainNode,
   FactChainResult,
 } from '@agnes/protocol'
+import { ToolReviewFact, validateAgainst } from '@agnes/protocol'
 
 const object = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}

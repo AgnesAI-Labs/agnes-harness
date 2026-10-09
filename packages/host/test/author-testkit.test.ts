@@ -1,18 +1,18 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import type { Context, LoopPluginContext } from '@agnes/plugin-runtime'
-import { defineAgnesPlugin, defineLoop } from '@agnes/plugin-runtime'
 import { loopCheckpointCodec } from '@agnes/extension-api'
 import {
   createAuthorTestkit,
   createPluginTestHost,
+  fakeModel,
   recordModelFixture,
   replayModelFixture,
   ScriptedProvider,
-  fakeModel,
 } from '@agnes/host/author-testkit'
+import type { Context, LoopPluginContext } from '@agnes/plugin-runtime'
+import { defineAgnesPlugin, defineLoop } from '@agnes/plugin-runtime'
+import { describe, expect, it } from 'vitest'
 import { fixtureTool } from './fixtures/tool.js'
 
 function plugin(version: string, approval = false, wait?: (signal: AbortSignal) => Promise<void>) {

@@ -1,5 +1,5 @@
-import type { Client, Session } from '@agnes/sdk/browser'
 import type { UiActionReceipt, UiReadResult } from '@agnes/protocol/gen/intelligent-ui'
+import type { Client, Session } from '@agnes/sdk/browser'
 import type { IntelligentUiServer } from './types.js'
 
 export function intelligentUiServer(client: Client, session: Session): IntelligentUiServer {

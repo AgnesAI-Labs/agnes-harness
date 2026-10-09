@@ -1,8 +1,8 @@
-import { PluginConfigAuditStore } from './plugin-config-audit.js'
 import { types as utilTypes } from 'node:util'
 import type { RuntimeTargetArtifact, RuntimeTargetIdentity } from '@agnes/plugin-runtime/host'
 import { decodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { withoutPackageRows } from '../composite-desired.js'
+import { PluginConfigAuditStore } from './plugin-config-audit.js'
 import { ensure, type TableHandle } from './table.js'
 
 export type CompositeTargetReport = Readonly<{

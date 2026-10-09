@@ -25,9 +25,9 @@ const ctxOf = (o: Parameters<typeof fakeToolContext>[0] = {}) => {
 import { spillLocator } from '../../tools-core/src/guards/output.js'
 import { MAX_READ_BYTES, readTool } from '../../tools-core/src/tools/read.js'
 import { TOOLS_SEARCH } from '../src/index.js'
-import { ripgrepFindTool as findTool } from '../src/tools/ripgrep.js'
 import { grepTool } from '../src/tools/grep.js'
 import { lsTool } from '../src/tools/ls.js'
+import { ripgrepFindTool as findTool } from '../src/tools/ripgrep.js'
 import { globToRegExp, newWalkReport, walk } from '../src/tools/walk.js'
 
 function textOf(r: ToolResult): string {

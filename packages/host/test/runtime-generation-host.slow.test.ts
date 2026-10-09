@@ -6,7 +6,6 @@ import { ScriptedProvider } from '@agnes/ai/testkit'
 import type { PluginExtensionAPI } from '@agnes/extension-api'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
-import { createGenerationSkills } from '../src/runtime/generation/resources.js'
 import {
   hashDirectory,
   RuntimeGenerationSnapshotStore,
@@ -20,6 +19,7 @@ import {
   type SkillGenerationSnapshot,
 } from '@agnes/resource-control-runtime'
 import { expect, it } from 'vitest'
+import { createGenerationSkills } from '../src/runtime/generation/resources.js'
 import { createTestHost } from '../testkit/index.js'
 import { fixtureTool } from './fixtures/tool.js'
 

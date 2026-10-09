@@ -1,10 +1,10 @@
-import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
-import { appendFile, writeFile, cp, mkdir, readFile, rm } from 'node:fs/promises'
+import { appendFile, cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type BuildResult, build } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { buildConversationCss } from '../../web-ui/tools/build-conversation-css.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')

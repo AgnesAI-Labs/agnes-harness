@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { SettingsTextArea } from './settings-layout.js'
 import { PLUGIN_CONFIG_NAMESPACE, pluginConfigCatalog } from './locales/plugin-config.js'
+import { SettingsTextArea } from './settings-layout.js'
 import { useUiText } from './ui-locale.js'
 
 /** Keep malformed JSON typing locally, and block save until the whole draft is parseable. */

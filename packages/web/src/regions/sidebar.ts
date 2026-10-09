@@ -13,9 +13,9 @@ import { flushSync } from 'react-dom'
 import { renderSessionNavigation } from '../navigation.js'
 import {
   type EmptyStateRegionMount,
+  rootStableRegistry,
   SIDEBAR_DEPENDENCIES_BASE,
   SIDEBAR_SLOT,
-  rootStableRegistry,
 } from './contracts.js'
 
 export const DSH_SIDEBAR_CHILDREN = Object.freeze({

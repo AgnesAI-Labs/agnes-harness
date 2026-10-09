@@ -1,4 +1,4 @@
-import { type AdminContext } from '../types.js'
+import type { AdminContext } from '../types.js'
 
 const OPERATION_STORAGE_PREFIX = 'agnes-plugin-operation-ids:'
 export type PreviewMode = 'install' | 'update'

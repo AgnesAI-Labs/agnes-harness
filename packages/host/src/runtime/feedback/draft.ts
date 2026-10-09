@@ -91,8 +91,8 @@ export async function draftFeedbackSkill(
       !model ||
       !['127.0.0.1', '[::1]'].includes(url.hostname) ||
       !['http:', 'https:'].includes(url.protocol) ||
-      !!url.username ||
-      !!url.password
+      url.username ||
+      url.password
     )
       throw rpcError('SEMANTIC_REJECTED', { reason: 'FEEDBACK_LOCAL_MODEL_REQUIRED' })
     const route = { route: model.route, model: model.id }

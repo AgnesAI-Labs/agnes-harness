@@ -1,9 +1,9 @@
 import { SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
 import { createAntdRoot } from '@agnes/web-ui'
+import type { TracePanelOptions } from '@agnes/web-units'
 import { Trace, type TraceHandle } from '@agnes/web-units'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
-import type { TracePanelOptions } from '@agnes/web-units'
 import type { EmptyStateRegionMount } from './contracts.js'
 import { TRACE_SLOT } from './contracts.js'
 

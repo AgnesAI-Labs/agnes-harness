@@ -1,11 +1,11 @@
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import { defaultLoopFactory } from '@agnes/loop-default'
-import { describe, expect, it } from 'vitest'
 import type { Provider } from '@agnes/protocol'
+import { describe, expect, it } from 'vitest'
 import { Kernel } from '../src/kernel.js'
 import { createLoopContext } from '../src/loop/ports.js'
-import { model, setupWith, spawnChild } from './helpers/child-traces.js'
 import { ToolRegistry } from '../src/registry/tools.js'
+import { model, setupWith, spawnChild } from './helpers/child-traces.js'
 import { fakeProvider, sentFor, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { actor, openSession, readTool } from './helpers/open-session.js'
 

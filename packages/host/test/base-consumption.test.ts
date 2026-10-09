@@ -7,8 +7,8 @@ import { SEAM_NAMES } from '@agnes/core'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import type { LockState, ResolveEnv } from '@agnes/host-common/profile/types'
 import type { SeamInitContext as HostSeamInitContext } from '@agnes/host-extensions/assemble/packages'
-import { openAdapters, toSeamAdapters } from '../src/runtime/adapters/index.js'
 import { describe, expect, it } from 'vitest'
+import { openAdapters, toSeamAdapters } from '../src/runtime/adapters/index.js'
 
 // `@agnes/base` cannot import this package, so it restates the assembly context as a consumption
 // contract of its own. This line is the whole of what keeps the two spellings honest: the host's

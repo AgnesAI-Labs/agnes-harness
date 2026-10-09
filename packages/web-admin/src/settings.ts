@@ -25,11 +25,11 @@ import { createAccountPickers } from './provider-picker.js'
 import { accountNetworkFields } from './settings/account-network.js'
 import {
   configurationReason,
-  optionalElement,
-  readElements,
-  option,
   errorText,
   focusable,
+  option,
+  optionalElement,
+  readElements,
 } from './settings/dialog.js'
 
 export type SettingsControllerOptions = {

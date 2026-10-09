@@ -6,10 +6,10 @@ import { stampFor } from '@agnes/ai/testkit'
 import { testFsPolicy } from '@agnes/core/testkit'
 import type { ToolContext } from '@agnes/extension-api'
 import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
-import type { SessionRecovery } from '../src/runtime/sessions/session.js'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { SessionRecovery } from '../src/runtime/sessions/session.js'
 import { createTestHost, startTurn } from '../testkit/index.js'
 
 /**

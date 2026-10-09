@@ -1,13 +1,13 @@
 import { validateAgainst } from '@agnes/protocol'
 import {
+  type JsonValue,
+  type UiAction,
   UiActionParams,
   UiActionReceipt,
   UiReadResult,
-  X_AGNES_UI_LIMITS,
-  type JsonValue,
-  type UiAction,
   type UiRowContext,
   type UiSurfaceRecord,
+  X_AGNES_UI_LIMITS,
 } from '@agnes/protocol/gen/intelligent-ui'
 import { boundedUiJson, validIntelligentSurface } from '@agnes/web-ui'
 import type { IntelligentUiServer, UiCommandStorage } from './types.js'
@@ -199,7 +199,8 @@ export class IntelligentUiClient {
           surfaces.push(...page.surfaces)
           for (const receipt of page.actions) {
             const previous = receipts.find((item) => item.commandId === receipt.commandId)
-            if (previous && JSON.stringify(previous) !== JSON.stringify(receipt)) throw new Error('UI receipt changed within snapshot')
+            if (previous && JSON.stringify(previous) !== JSON.stringify(receipt))
+              throw new Error('UI receipt changed within snapshot')
             if (!previous) receipts.push(receipt)
           }
           if (

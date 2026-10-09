@@ -2,7 +2,7 @@ import { SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
 import { createAntdRoot } from '@agnes/web-ui'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
-import { type EmptyStateRegionMount, DSH_ROOT_CHILDREN } from './contracts.js'
+import { DSH_ROOT_CHILDREN, type EmptyStateRegionMount } from './contracts.js'
 
 export interface DshShellRegionMount extends EmptyStateRegionMount {}
 

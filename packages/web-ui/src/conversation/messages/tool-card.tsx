@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom'
 import type { Translate } from '../../locales/index.js'
 import { interactionToolPresentation } from '../interaction-result.js'
 import { useInteractionSnapshot } from '../markdown-snapshot.js'
-import { type ToolNode, fallbackT } from './context.js'
+import { fallbackT, type ToolNode } from './context.js'
 
 // A shell result ends with `[exit N]`. When the projection marks that call failed, N says why: a
 // nonzero exit is the command's own answer, and what it printed is its output, not an error report.

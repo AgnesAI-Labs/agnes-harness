@@ -1,10 +1,10 @@
-import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, type Page, test } from '@playwright/test'
 import { build } from 'esbuild'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 
 const root = resolve(import.meta.dirname, '../../..')
 const require = createRequire(import.meta.url)

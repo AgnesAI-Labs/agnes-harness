@@ -422,10 +422,16 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
             }
           : {}),
         ...(writeAuthority.authorizeRemove
-          ? { authorizeRemove: (path: string, opts?: { recursive?: boolean }) => withAccess(() => writeAuthority.authorizeRemove!(path, opts)) }
+          ? {
+              authorizeRemove: (path: string, opts?: { recursive?: boolean }) =>
+                withAccess(() => writeAuthority.authorizeRemove!(path, opts)),
+            }
           : {}),
         ...(writeAuthority.rm
-          ? { rm: (path: string, opts?: { recursive?: boolean }) => withAccess(() => writeAuthority.rm!(path, opts)) }
+          ? {
+              rm: (path: string, opts?: { recursive?: boolean }) =>
+                withAccess(() => writeAuthority.rm!(path, opts)),
+            }
           : {}),
         ...(runtime.fs.preflight
           ? {

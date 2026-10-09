@@ -1,6 +1,6 @@
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { AppServerParams, AppServerResult } from '@agnes/protocol'
 import type { FileUploadHandler } from './upload-route.js'
-import { type IncomingMessage, type ServerResponse } from 'node:http'
-import { type AppServerParams, type AppServerResult } from '@agnes/protocol'
 
 /** What a skin resolver answers with: a file to read, the bytes, or nothing. */
 export type SkinAssetResolution = string | Uint8Array | null

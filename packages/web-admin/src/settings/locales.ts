@@ -1,9 +1,9 @@
 import type { LocaleCatalog } from '@agnes/web-ui'
-import { shellCatalog } from './locales/shell.js'
-import { providersCatalog } from './locales/providers.js'
 import { knowledgeCatalog } from './locales/knowledge.js'
 import { operationsCatalog } from './locales/operations.js'
+import { providersCatalog } from './locales/providers.js'
 import { securityCatalog } from './locales/security.js'
+import { shellCatalog } from './locales/shell.js'
 
 export const SETTINGS_NAMESPACE = '@agnes/web/runtime-settings'
 

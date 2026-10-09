@@ -4,9 +4,7 @@
     "outDir": "dist/testkit",
     "tsBuildInfoFile": "dist/tsconfig.testkit.tsbuildinfo"
   },
-  "include": [
-    "testkit/**/*.ts"
-  ],
+  "include": ["testkit/**/*.ts"],
   "references": [
     {
       "path": "."

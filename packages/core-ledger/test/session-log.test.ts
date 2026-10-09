@@ -1,9 +1,9 @@
-import { CoreError, type EventInput } from '@agnes/core-common/types'
-import type { StorageAdapter } from '../src/log/storage.js'
 import { defaultIds } from '@agnes/core-common/ids'
+import { CoreError, type EventInput } from '@agnes/core-common/types'
 import { describe, expect, it } from 'vitest'
 import { MemoryStorage } from '../src/log/memory-storage.js'
 import { SessionLogImpl } from '../src/log/session-log.js'
+import type { StorageAdapter } from '../src/log/storage.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 const user = (text: string): EventInput => ({

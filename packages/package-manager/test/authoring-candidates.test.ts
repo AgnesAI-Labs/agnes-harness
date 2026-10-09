@@ -89,7 +89,10 @@ function setup(pass = true) {
 }
 async function review(s: ReturnType<typeof setup>, command = 'draft') {
   const d = await s.candidates.create(s.profile, files, 'owner', command, origin)
-  expect(s.candidates.forCommand(s.profile, command, 'owner')).toMatchObject({ candidateId: d.candidateId, origin })
+  expect(s.candidates.forCommand(s.profile, command, 'owner')).toMatchObject({
+    candidateId: d.candidateId,
+    origin,
+  })
   expect(s.candidates.forCommand(s.profile, 'absent-command', 'owner')).toBeNull()
   expect(() => s.candidates.forCommand(s.profile, command, 'other')).toThrow()
   expect(validatePackageAdminData('AuthoringCandidate', d).ok).toBe(true)

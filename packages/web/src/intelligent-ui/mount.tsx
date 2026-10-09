@@ -1,20 +1,20 @@
-import type { Client } from '@agnes/sdk/browser'
 import type { UiActionReceipt } from '@agnes/protocol/gen/intelligent-ui'
+import type { Client } from '@agnes/sdk/browser'
 import {
-  workbenchPanels,
   type LocaleService,
   type SessionService,
   type SlotRegistry,
+  workbenchPanels,
 } from '@agnes/web-client'
-import { createDocumentLocaleSource, intelligentUiCatalog, INTELLIGENT_UI_NAMESPACE } from '@agnes/web-ui'
+import { createDocumentLocaleSource, INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from '@agnes/web-ui'
 import { IntelligentUiClient } from './client.js'
-import { intelligentUiServer } from './server.js'
 import {
   IntelligentInline,
   IntelligentPanel,
   openIntelligentPanel,
   type UiPlacementBinding,
 } from './placements.js'
+import { intelligentUiServer } from './server.js'
 
 /** Two registrations, one session client. Mounting a placement never submits a command. */
 export function mountIntelligentUi(options: {

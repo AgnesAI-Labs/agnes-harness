@@ -13,10 +13,10 @@ import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { LoopPicker } from '../loop-picker.js'
 import {
-  type EmptyStateRegionMount,
+  COMPOSER_BAR_DSH_CHILDREN,
   COMPOSER_DEPENDENCIES,
   COMPOSER_SLOT,
-  COMPOSER_BAR_DSH_CHILDREN,
+  type EmptyStateRegionMount,
   rootStableRegistry,
 } from './contracts.js'
 import { mountDshShellRegion } from './shell.js'

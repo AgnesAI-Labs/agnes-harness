@@ -1,4 +1,4 @@
-import { PluginAdminPage, type PluginAdminOptions } from './admin/page.js'
+import { type PluginAdminOptions, PluginAdminPage } from './admin/page.js'
 
 export type PluginAdminMount = Readonly<{
   ready: Promise<void>

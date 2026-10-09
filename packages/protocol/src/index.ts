@@ -1,7 +1,7 @@
 // jcs is the shared strict RFC 8785 serializer for SDK/daemon signature bytes; it does not replace core request hashing.
 export { type ValidatedRequestMedia, validateRequestMedia } from './request-media.js'
-export { boundedUiJson, uiObject, validIntelligentSurface } from './ui-surface-validation.js'
 export { readSessionTitle, SESSION_TITLE_EVENT, SessionTitleRecord } from './session-title.js'
+export { boundedUiJson, uiObject, validIntelligentSurface } from './ui-surface-validation.js'
 
 // ── What belongs on the root export surface ──────────────────────────────────────────────────
 // This surface used to have no discernible rule. Only 8 of the 11 event data types were exported
@@ -30,8 +30,6 @@ export { readSessionTitle, SESSION_TITLE_EVENT, SessionTitleRecord } from './ses
 
 export type {
   Ack,
-  FileUploadParams,
-  FileUploadResultSchema,
   ApisListParams,
   ApisListResult,
   ApprovalDecideParams,
@@ -96,6 +94,8 @@ export type {
   FactChainPackage,
   FactChainParams,
   FactChainResult,
+  FileUploadParams,
+  FileUploadResultSchema,
   HarnessMeta,
   InitializeMeta,
   JobIdParams,
@@ -213,6 +213,31 @@ export type {
   SkinTokenValue,
 } from '../gen/ts/extension-manifest.js'
 export type { ServiceCapability } from '../gen/ts/extension-service.js'
+// Preset surface declarations; execution is supplied by the official Intelligent UI plugin.
+export type {
+  UiAction,
+  UiActionParams,
+  UiActionReceipt,
+  UiActionStatus,
+  UiArgument,
+  UiChartSeries,
+  UiCloseParams,
+  UiColumn,
+  UiComponent,
+  UiFailure,
+  UiJsonSchema,
+  UiKey,
+  UiPlacement,
+  UiReadParams,
+  UiReadResult,
+  UiRefusal,
+  UiRenderParams,
+  UiRevision,
+  UiRowContext,
+  UiSurface,
+  UiSurfaceRecord,
+  UiUpdateParams,
+} from '../gen/ts/intelligent-ui.js'
 export type { JobSpec, JobStatus, Schedule } from '../gen/ts/jobs.js'
 export type { Lockfile, PackageLock } from '../gen/ts/lockfile.js'
 export type {
@@ -304,6 +329,14 @@ export type {
   PackageUpdateParams,
   PackageWarning,
   PluginCapabilities,
+  PluginConfigAudit,
+  PluginConfigEntry,
+  PluginConfigGetParams,
+  PluginConfigSaveParams,
+  PluginConfigSaveResult,
+  PluginConfigSnapshot,
+  PluginConfigValidateParams,
+  PluginConfigValidation,
   PluginGenerationStatus,
   PluginPublicationReport,
   PluginPublicationStatusResult,
@@ -322,7 +355,6 @@ export type {
   SkinReadResult,
 } from '../gen/ts/package-admin.js'
 export type { PresetDoc } from '../gen/ts/preset.js'
-export { AutoReviewConfig, ToolReviewFact } from './auto-review.js'
 export type {
   ApprovalMode,
   ApprovalProfile,
@@ -494,6 +526,7 @@ export type {
 export * from './admin-session-selection.js'
 export * from './app-server.js'
 export * from './attachments.js'
+export { AutoReviewConfig, ToolReviewFact } from './auto-review.js'
 export * from './child-engine-document.js'
 export * from './codec/permission.js'
 export * from './codec/stop-reason.js'
@@ -502,6 +535,7 @@ export * from './constants.js'
 export { diagnosticRecords, observeDiagnostics, safeDiagnosticRecord } from './diagnostic-records.js'
 export { errorMessageKey, httpRpcError, normalizeRpcError } from './error-envelope.js'
 export * from './errors.js'
+export * from './file-upload.js'
 export * from './hooks.js'
 export { jcs } from './jcs.js'
 export { DEFAULT_JSON_DATA_MAX_BYTES, inspectJsonData } from './json-data.js'
@@ -522,6 +556,11 @@ export * from './methods.js'
 export { CURRENT_V, listMigrations, normalize, registerMigration, supportedVersions } from './migrate.js'
 export * from './model.js'
 export * from './package-admin.js'
+export {
+  compilePluginConfig,
+  PLUGIN_SECRET_REF_PATTERN,
+  redactPluginConfig,
+} from './plugin-config-validation.js'
 export { type PluginFailureHelp, pluginFailureHelp } from './plugin-failure-help.js'
 export { validateProjectionCapability, validateProjectionReadResult } from './projections.js'
 export * from './provider.js'
@@ -561,47 +600,3 @@ export {
   validateUserAttachments,
 } from './validate.js'
 export * from './worker-generation.js'
-export * from './file-upload.js'
-
-export type {
-  PluginConfigGetParams,
-  PluginConfigValidateParams,
-  PluginConfigSaveParams,
-  PluginConfigEntry,
-  PluginConfigAudit,
-  PluginConfigSnapshot,
-  PluginConfigValidation,
-  PluginConfigSaveResult,
-} from '../gen/ts/package-admin.js'
-
-export {
-  compilePluginConfig,
-  redactPluginConfig,
-  PLUGIN_SECRET_REF_PATTERN,
-} from './plugin-config-validation.js'
-
-// Preset surface declarations; execution is supplied by the official Intelligent UI plugin.
-export type {
-  UiKey,
-  UiRevision,
-  UiJsonSchema,
-  UiPlacement,
-  UiColumn,
-  UiChartSeries,
-  UiComponent,
-  UiArgument,
-  UiAction,
-  UiSurface,
-  UiRowContext,
-  UiActionParams,
-  UiActionStatus,
-  UiRefusal,
-  UiFailure,
-  UiActionReceipt,
-  UiSurfaceRecord,
-  UiReadParams,
-  UiReadResult,
-  UiRenderParams,
-  UiUpdateParams,
-  UiCloseParams,
-} from '../gen/ts/intelligent-ui.js'

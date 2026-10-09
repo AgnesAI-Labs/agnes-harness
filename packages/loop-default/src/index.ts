@@ -1,4 +1,3 @@
-import { drainDeferredToolInvocations } from '@agnes/plugin-runtime'
 import {
   DEFAULT_LOOP,
   type LoopCheckpoint,
@@ -10,6 +9,7 @@ import {
   type LoopStepOutcome,
   registerLoopPlugin,
 } from '@agnes/extension-api'
+import { drainDeferredToolInvocations } from '@agnes/plugin-runtime'
 
 /**
  * This stateless scheduler uses Core's recoverable ledger operations. Version 1 also accepts

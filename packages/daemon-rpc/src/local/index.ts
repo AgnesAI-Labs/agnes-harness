@@ -515,10 +515,17 @@ export function createLocalEndpoint(
       : {}),
   })
   registerDiagnostics(ep, {
-    authority: opts.packageAdmin?.authority ?? (cx.auth.config.transport === 'unix' ? localPackageAdminAuthority() : denyPackageAdminAuthority),
-    readOnly: (context) => configurationReadOnly(async () => opts.packageAdmin?.service.call(
-      '_agnes/v1/packages.list', { profile: host.profile.name }, localPackageAdminAuthority(['packages.read'])(context),
-    )),
+    authority:
+      opts.packageAdmin?.authority ??
+      (cx.auth.config.transport === 'unix' ? localPackageAdminAuthority() : denyPackageAdminAuthority),
+    readOnly: (context) =>
+      configurationReadOnly(async () =>
+        opts.packageAdmin?.service.call(
+          '_agnes/v1/packages.list',
+          { profile: host.profile.name },
+          localPackageAdminAuthority(['packages.read'])(context),
+        ),
+      ),
     requireSessionOwner: requireSessionOwner(cx),
     registry,
     profileHash: host.profile.hash,

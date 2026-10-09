@@ -5,8 +5,8 @@ import type { SeamInitContext } from '@agnes/base'
 import { seams } from '@agnes/base'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import type { LockState, ResolvedProfile, ResolveEnv } from '@agnes/host-common/profile/types'
-import { type AdapterBundle, openAdapters, toSeamAdapters } from '../src/runtime/adapters/index.js'
 import { afterEach, describe, expect, it } from 'vitest'
+import { type AdapterBundle, openAdapters, toSeamAdapters } from '../src/runtime/adapters/index.js'
 
 const env: ResolveEnv = {
   platform: { os: 'linux', arch: 'x64', capabilities: {} },

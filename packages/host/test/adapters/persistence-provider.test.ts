@@ -12,12 +12,12 @@ import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import type { LockState, ProfileFragment, ResolveEnv } from '@agnes/host-common/profile/types'
 import { readNamedExports } from '@agnes/host-extensions/assemble/packages'
 import { persistenceProviderRegistry } from '@agnes/host-infrastructure/adapters/storage-provider'
+import { afterAll, describe, expect, it } from 'vitest'
 import {
   openAdapters,
   openConfiguredPersistence,
   sqlitePersistenceProvider,
 } from '../../src/runtime/adapters/index.js'
-import { afterAll, describe, expect, it } from 'vitest'
 
 const env: ResolveEnv = {
   platform: { os: 'linux', arch: 'x64', capabilities: {} },

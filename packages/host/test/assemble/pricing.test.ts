@@ -6,9 +6,9 @@ import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import { MemoryPackageLoader, type PackageModule } from '@agnes/host-extensions/assemble/packages'
 import { type AuditEvent, type AuditSink, createMemoryAudit } from '@agnes/host-infrastructure/audit'
 import { CREDITS_PER_USD_LIMIT, readCreditsPerUsd } from '@agnes/host-providers/assemble/provider'
-import { type AssembleDeps, assemble } from '../../src/runtime/assemble/assemble.js'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
+import { type AssembleDeps, assemble } from '../../src/runtime/assemble/assemble.js'
 import { attachTestSeamPlugins } from '../../testkit/cordis-seams.js'
 
 /**

@@ -1,7 +1,11 @@
 import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { localPackageAdminAuthority, localWebSkinReadAuthority, denyPackageAdminAuthority } from '@agnes/daemon-admin/packages/index'
+import {
+  denyPackageAdminAuthority,
+  localPackageAdminAuthority,
+  localWebSkinReadAuthority,
+} from '@agnes/daemon-admin/packages/index'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { installDiagnosticJournal } from '@agnes/observability'
 import {
@@ -133,17 +137,26 @@ describe('diagnostics.export', () => {
     for (const deniedAuthority of [denyPackageAdminAuthority, localWebSkinReadAuthority]) {
       authority = deniedAuthority
       for (const params of [{}, { settings: { enabled: false } }, { test: true }])
-        expect(await call(ep, '_agnes/v1/admin.observability', params)).toHaveProperty('error.data.code', 'CAPABILITY_DENIED')
+        expect(await call(ep, '_agnes/v1/admin.observability', params)).toHaveProperty(
+          'error.data.code',
+          'CAPABILITY_DENIED',
+        )
     }
     authority = localPackageAdminAuthority(['packages.read'])
     expect((await call(ep, '_agnes/v1/admin.observability', {})).result).toBeDefined()
     for (const params of [{ settings: { enabled: false } }, { test: true }])
-      expect(await call(ep, '_agnes/v1/admin.observability', params)).toHaveProperty('error.data.code', 'CAPABILITY_DENIED')
+      expect(await call(ep, '_agnes/v1/admin.observability', params)).toHaveProperty(
+        'error.data.code',
+        'CAPABILITY_DENIED',
+      )
     authority = localPackageAdminAuthority()
     readOnly = true
     expect((await call(ep, '_agnes/v1/admin.observability', {})).result).toBeDefined()
     for (const params of [{ settings: { enabled: false } }, { test: true }])
-      expect(await call(ep, '_agnes/v1/admin.observability', params)).toHaveProperty('error.data.reason', 'E_ADMIN_READ_ONLY')
+      expect(await call(ep, '_agnes/v1/admin.observability', params)).toHaveProperty(
+        'error.data.reason',
+        'E_ADMIN_READ_ONLY',
+      )
     expect(() => statSync(join(home, 'observability.json'))).toThrow()
     ep.conn.authKind = 'jwt'
     expect(await call(ep, '_agnes/v1/admin.observability', {})).toHaveProperty(

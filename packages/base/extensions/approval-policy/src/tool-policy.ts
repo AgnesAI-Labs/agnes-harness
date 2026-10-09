@@ -4,10 +4,10 @@ import {
   type ToolPolicy,
   type ToolPolicyPluginContext,
 } from '@agnes/extension-api'
-import { selectAutoReviewSettings } from './settings.js'
-import { createAutoReviewPolicy } from './auto-review.js'
 import { decidePlanMode } from '../../plan-mode/src/policy.js'
 import { sandboxToolPolicies } from '../../sandbox/src/tool-policies.js'
+import { createAutoReviewPolicy } from './auto-review.js'
+import { selectAutoReviewSettings } from './settings.js'
 
 /** Plan mode sits in front of every shipped policy, including full-access. The fallback still owns
  * risk, taint, and preset denial. Human prompts and durable tickets stay on the approval seam. */

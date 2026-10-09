@@ -1,9 +1,9 @@
-import { type Context } from '@agnes/cordis'
-import { type ClientContext, type ModuleIdentity } from '@agnes/web-client'
-import {
-  type PluginRuntimeError,
-  type PluginRuntimePhase,
-  type PluginRuntimeState,
+import type { Context } from '@agnes/cordis'
+import type { ClientContext, ModuleIdentity } from '@agnes/web-client'
+import type {
+  PluginRuntimeError,
+  PluginRuntimePhase,
+  PluginRuntimeState,
 } from '@agnes/web-foundation/client-modules/runtime-status'
 
 /** 名册里的 ready 模块（WC3 modules 的最小子集）。 */

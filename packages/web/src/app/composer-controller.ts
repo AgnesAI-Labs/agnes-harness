@@ -1,4 +1,3 @@
-import type { AppSessionContext } from '../app.js'
 import { userImagePolicy } from '@agnes/protocol'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import type { ComposerView } from '@agnes/web-conversation/composer'
@@ -10,7 +9,8 @@ import {
   modelSelectLabel,
   shouldShowEmptyState,
 } from '@agnes/web-conversation/presentation'
-import { type WorkbenchContext } from '@agnes/web-conversation/workbench'
+import type { WorkbenchContext } from '@agnes/web-conversation/workbench'
+import type { AppSessionContext } from '../app.js'
 import { rememberWebComposer } from '../composer-memory.js'
 import { updateLoopPicker } from '../loop-picker.js'
 import { webView } from '../view.js'

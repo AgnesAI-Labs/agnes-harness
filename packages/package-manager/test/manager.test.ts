@@ -107,13 +107,16 @@ describe('PackageManager lifecycle', () => {
       join(legacy, 'package.json'),
       JSON.stringify({ name: 'acme/legacy', version: '1.0.0', license: 'MIT' }),
     )
-    writeFileSync(join(legacy, 'agnes.extension.json'), JSON.stringify({
-      id: 'acme/legacy',
-      version: '1.0.0',
-      apiRange: '^1.0',
-      entry: './index.js',
-      capabilities: { tools: { prefix: 'legacy_', names: ['legacy_echo'] } },
-    }))
+    writeFileSync(
+      join(legacy, 'agnes.extension.json'),
+      JSON.stringify({
+        id: 'acme/legacy',
+        version: '1.0.0',
+        apiRange: '^1.0',
+        entry: './index.js',
+        capabilities: { tools: { prefix: 'legacy_', names: ['legacy_echo'] } },
+      }),
+    )
     writeFileSync(join(legacy, 'index.js'), 'export default () => () => {}\n')
     await expect(denied.add(profileDir, `file:${legacy}`, { trust: 'verify' })).rejects.toThrow(
       /E_PACKAGE_BLOCKED/,

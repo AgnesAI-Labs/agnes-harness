@@ -10,12 +10,12 @@ import { Conversation, type ConversationChildContainers, type ConversationHandle
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import {
-  type EmptyStateRegionMount,
-  CONVERSATION_SLOT,
-  CONVERSATION_DSH_CHILDREN,
-  DSH_CONVERSATION_SESSION_CHILDREN,
   CONVERSATION_CHILD_SLOTS,
+  CONVERSATION_DSH_CHILDREN,
   CONVERSATION_HEADER_DSH_CHILDREN,
+  CONVERSATION_SLOT,
+  DSH_CONVERSATION_SESSION_CHILDREN,
+  type EmptyStateRegionMount,
 } from './contracts.js'
 import { mountDshShellRegion } from './shell.js'
 

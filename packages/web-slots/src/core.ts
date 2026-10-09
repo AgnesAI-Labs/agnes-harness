@@ -1,12 +1,12 @@
 import type {
+  ChainSelection,
+  LiveSlotNode,
+  RegisterOptions,
   SlotScope,
   SlotSpec,
-  ChainSelection,
-  StoreInstance,
   StoreDecl,
-  RegisterOptions,
   StoredEntry,
-  LiveSlotNode,
+  StoreInstance,
 } from './types.js'
 
 type EntryErrorListener = (

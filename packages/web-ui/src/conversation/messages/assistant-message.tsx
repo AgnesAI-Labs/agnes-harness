@@ -4,8 +4,8 @@ import { useInteractionSnapshot } from '../markdown-snapshot.js'
 import {
   type AssistantNode,
   type ConversationMarkdownState,
-  type ConversationMessagesProps,
   ConversationMessageContext,
+  type ConversationMessagesProps,
   fallbackT,
 } from './context.js'
 import { markdownState } from './markdown-state.js'

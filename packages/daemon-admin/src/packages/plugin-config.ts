@@ -3,14 +3,14 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ownsRow } from '@agnes/daemon-foundation/composite-desired'
 import type { CompositeTargetStore } from '@agnes/daemon-foundation/storage/composite-target-store'
-import { parseAgnesPluginEntries, type PackageManager } from '@agnes/package-manager'
+import { compilePluginConfig, DEFAULT_PLUGIN_CONFIG_RELOAD, redactPluginConfig } from '@agnes/extension-api'
+import { type PackageManager, parseAgnesPluginEntries } from '@agnes/package-manager'
 import {
   buildRuntimeTarget,
   decodeRuntimeTargetArtifact,
   encodeRuntimeTargetArtifact,
   type RuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
-import { compilePluginConfig, DEFAULT_PLUGIN_CONFIG_RELOAD, redactPluginConfig } from '@agnes/extension-api'
 import type {
   JsonValue,
   PluginConfigEntry,

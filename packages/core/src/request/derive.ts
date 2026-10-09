@@ -626,7 +626,8 @@ export function toMessage(node: SurfaceNode, nonce: string, envelopeCache: Envel
     const content: RequestMessage['content'] = []
     let fileIndex = 0
     for (const b of blocksOf(d.content)) {
-      if (b.type === 'text') content.push({ type: 'text', text: wrap(String(b.text), b.reference !== undefined) })
+      if (b.type === 'text')
+        content.push({ type: 'text', text: wrap(String(b.text), b.reference !== undefined) })
       else if (b.type === 'image') content.push(imageBlock(b))
       else if (b.type === 'resource_link' && uploadedAttachment(String(b.uri)))
         content.push({

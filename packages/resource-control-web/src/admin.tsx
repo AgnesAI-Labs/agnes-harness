@@ -30,13 +30,13 @@ import {
   type UiLocaleSource,
   unmountRegion,
 } from '@agnes/web-ui'
+import { $ } from './admin-dom.js'
 import { ResourceAdminApi, ResourceAdminApiError } from './api.js'
 import { RESOURCE_ADMIN_LOCALE_NAMESPACE, resourceAdminLocaleCatalog } from './locales/admin.js'
+import { createMcpForm, McpFormValidationError } from './mcp-form.js'
 import { watchMcpPanel } from './mcp-refresh.js'
 import { SKILL_LOCATION_HINTS } from './skill-copy.js'
 import type { ResourceAdminContext, ResourceAdminError } from './types.js'
-import { $ } from './admin-dom.js'
-import { createMcpForm, McpFormValidationError } from './mcp-form.js'
 
 let list!: HTMLElement
 let detail!: HTMLDialogElement

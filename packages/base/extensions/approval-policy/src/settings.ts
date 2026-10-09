@@ -1,8 +1,9 @@
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { createHash, randomUUID } from 'node:crypto'
+import type { ToolPolicySelection, ToolPolicySettingsContext } from '@agnes/extension-api'
 import { AutoReviewConfig, validateAgainst } from '@agnes/protocol'
-import type { ToolPolicySettingsContext, ToolPolicySelection } from '@agnes/extension-api'
+
 const profileHash = (profile: string) => createHash('sha256').update(JSON.stringify(profile)).digest('hex')
 
 /** Operator-owned settings; future rules change only through an explicit administrative save. */

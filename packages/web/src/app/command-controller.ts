@@ -1,7 +1,7 @@
-import type { AppSessionContext } from '../app.js'
+import type { ContentBlock } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
-import { type ContentBlock } from '@agnes/protocol'
-import { type Session } from '@agnes/sdk/browser'
+import type { Session } from '@agnes/sdk/browser'
+import type { AppSessionContext } from '../app.js'
 
 export function createCommandController(
   context: Pick<

@@ -1,8 +1,8 @@
-import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { execFileSync } from 'node:child_process'
 import { readdir, readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { beforeAll, expect, it } from 'vitest'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 
 const repository = resolve(import.meta.dirname, '../../..')
 const web = resolve(repository, 'packages/web')

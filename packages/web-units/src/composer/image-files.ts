@@ -4,7 +4,7 @@ import {
   USER_MESSAGE_ATTACHMENT_LIMITS,
   USER_MESSAGE_IMAGE_LIMITS,
 } from '@agnes/protocol-validation'
-import { type ComposerAttachmentBlock } from './contracts.js'
+import type { ComposerAttachmentBlock } from './contracts.js'
 
 export type ComposerAttachment = ComposerAttachmentBlock & {
   id: string

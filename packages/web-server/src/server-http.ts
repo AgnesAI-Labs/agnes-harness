@@ -1,4 +1,4 @@
-import { type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { httpRpcError } from '@agnes/protocol'
 import { HOST } from './server-assets.js'
 

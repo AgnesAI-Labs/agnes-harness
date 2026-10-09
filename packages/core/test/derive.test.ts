@@ -1609,10 +1609,25 @@ describe('the second attack battery', () => {
 
   it('wraps reference blocks even within a trusted principal message', () => {
     seq = 0
-    const surface = computeSurface([ev('user/message', { content: [
-      { type: 'text', text: 'human instruction' },
-      { type: 'text', text: 'external evidence', reference: { source: 'session', id: 's', label: 's', hash: 'a'.repeat(64), truncated: false } },
-    ] }, { origin: 'principal', trust: 'trusted' })], {})
+    const surface = computeSurface(
+      [
+        ev(
+          'user/message',
+          {
+            content: [
+              { type: 'text', text: 'human instruction' },
+              {
+                type: 'text',
+                text: 'external evidence',
+                reference: { source: 'session', id: 's', label: 's', hash: 'a'.repeat(64), truncated: false },
+              },
+            ],
+          },
+          { origin: 'principal', trust: 'trusted' },
+        ),
+      ],
+      {},
+    )
     const out = deriveRequest({ ...base(), surface, ...NO_RC })
     expect(textAt(out, 0, 0)).toBe('human instruction')
     expect(textAt(out, 0, 1)).toContain('<untrusted id=')

@@ -1,5 +1,5 @@
 export { IntelligentCatalog, type IntelligentCatalogProps } from './catalog.js'
 export { IntelligentChart } from './chart.js'
-export { boundedUiJson, validIntelligentSurface } from './validate.js'
 export { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
 export { IntelligentSurface, type IntelligentSurfaceProps } from './surface.js'
+export { boundedUiJson, validIntelligentSurface } from './validate.js'

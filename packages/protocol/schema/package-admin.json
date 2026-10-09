@@ -908,13 +908,7 @@
           "type": "boolean"
         },
         "sourceKind": {
-          "enum": [
-            "official-catalog",
-            "npm",
-            "git",
-            "local-folder",
-            "tarball"
-          ]
+          "enum": ["official-catalog", "npm", "git", "local-folder", "tarball"]
         },
         "resolvedLocation": {
           "type": "string",
@@ -933,38 +927,23 @@
           "maxLength": 2048
         },
         "verification": {
-          "enum": [
-            "unverified",
-            "official-ed25519",
-            "npm-sigstore"
-          ]
+          "enum": ["unverified", "official-ed25519", "npm-sigstore"]
         },
         "installedAt": {
           "type": "string",
           "format": "date-time"
         },
         "installer": {
-          "enum": [
-            "user",
-            "agent"
-          ]
+          "enum": ["user", "agent"]
         },
         "trustDecision": {
-          "enum": [
-            "pending",
-            "confirmed",
-            "revoked"
-          ]
+          "enum": ["pending", "confirmed", "revoked"]
         },
         "authoring": {
           "$ref": "#/$defs/AuthoringProvenance"
         }
       },
-      "required": [
-        "source",
-        "integrity",
-        "signatureVerified"
-      ]
+      "required": ["source", "integrity", "signatureVerified"]
     },
     "PackagePreview": {
       "type": "object",
@@ -3033,10 +3012,7 @@
           "maxLength": 131072
         }
       },
-      "required": [
-        "path",
-        "content"
-      ]
+      "required": ["path", "content"]
     },
     "AuthoringOrigin": {
       "type": "object",
@@ -3071,14 +3047,7 @@
           "maximum": 9007199254740991
         }
       },
-      "required": [
-        "sessionKey",
-        "toolUseId",
-        "packageId",
-        "snapshotId",
-        "rowId",
-        "turn"
-      ]
+      "required": ["sessionKey", "toolUseId", "packageId", "snapshotId", "rowId", "turn"]
     },
     "AuthoringTests": {
       "type": "object",
@@ -3089,10 +3058,7 @@
           "pattern": "^sha256-[a-f0-9]{64}$"
         },
         "state": {
-          "enum": [
-            "passed",
-            "failed"
-          ]
+          "enum": ["passed", "failed"]
         },
         "count": {
           "type": "integer",
@@ -3111,14 +3077,7 @@
           "maxLength": 64
         }
       },
-      "required": [
-        "hash",
-        "state",
-        "count",
-        "runner",
-        "output",
-        "completedAt"
-      ]
+      "required": ["hash", "state", "count", "runner", "output", "completedAt"]
     },
     "AuthoringCandidate": {
       "type": "object",
@@ -3204,11 +3163,7 @@
                 ]
               }
             },
-            "required": [
-              "path",
-              "before",
-              "after"
-            ]
+            "required": ["path", "before", "after"]
           }
         },
         "preview": {
@@ -3289,9 +3244,7 @@
           }
         }
       },
-      "required": [
-        "candidates"
-      ]
+      "required": ["candidates"]
     },
     "AuthoringCreateParams": {
       "type": "object",
@@ -3333,19 +3286,11 @@
                 "maxLength": 131072
               }
             },
-            "required": [
-              "path",
-              "content"
-            ]
+            "required": ["path", "content"]
           }
         }
       },
-      "required": [
-        "profile",
-        "clientId",
-        "commandId",
-        "files"
-      ]
+      "required": ["profile", "clientId", "commandId", "files"]
     },
     "AuthoringWriteParams": {
       "type": "object",
@@ -3395,21 +3340,11 @@
                 "maxLength": 131072
               }
             },
-            "required": [
-              "path",
-              "content"
-            ]
+            "required": ["path", "content"]
           }
         }
       },
-      "required": [
-        "profile",
-        "clientId",
-        "commandId",
-        "candidateId",
-        "expectedHash",
-        "files"
-      ]
+      "required": ["profile", "clientId", "commandId", "candidateId", "expectedHash", "files"]
     },
     "AuthoringTestParams": {
       "type": "object",
@@ -3442,13 +3377,7 @@
           "pattern": "^sha256-[a-f0-9]{64}$"
         }
       },
-      "required": [
-        "profile",
-        "clientId",
-        "commandId",
-        "candidateId",
-        "expectedHash"
-      ]
+      "required": ["profile", "clientId", "commandId", "candidateId", "expectedHash"]
     },
     "AuthoringSubmitParams": {
       "type": "object",
@@ -3481,13 +3410,7 @@
           "pattern": "^sha256-[a-f0-9]{64}$"
         }
       },
-      "required": [
-        "profile",
-        "clientId",
-        "commandId",
-        "candidateId",
-        "expectedHash"
-      ]
+      "required": ["profile", "clientId", "commandId", "candidateId", "expectedHash"]
     },
     "AuthoringApproveParams": {
       "type": "object",
@@ -3524,14 +3447,7 @@
           "pattern": "^sha256-[a-f0-9]{64}$"
         }
       },
-      "required": [
-        "profile",
-        "clientId",
-        "commandId",
-        "candidateId",
-        "expectedHash",
-        "reviewHash"
-      ]
+      "required": ["profile", "clientId", "commandId", "candidateId", "expectedHash", "reviewHash"]
     },
     "AuthoringRejectParams": {
       "type": "object",
@@ -3568,14 +3484,7 @@
           "pattern": "^sha256-[a-f0-9]{64}$"
         }
       },
-      "required": [
-        "profile",
-        "clientId",
-        "commandId",
-        "candidateId",
-        "expectedHash",
-        "reviewHash"
-      ]
+      "required": ["profile", "clientId", "commandId", "candidateId", "expectedHash", "reviewHash"]
     },
     "AuthoringShowParams": {
       "type": "object",
@@ -3592,10 +3501,7 @@
           "pattern": "^candidate-[a-f0-9]{32}$"
         }
       },
-      "required": [
-        "profile",
-        "candidateId"
-      ]
+      "required": ["profile", "candidateId"]
     },
     "AuthoringProvenance": {
       "type": "object",
@@ -3632,14 +3538,7 @@
           "maxLength": 512
         }
       },
-      "required": [
-        "candidateId",
-        "candidateHash",
-        "reviewHash",
-        "baseHash",
-        "origin",
-        "reviewer"
-      ]
+      "required": ["candidateId", "candidateHash", "reviewHash", "baseHash", "origin", "reviewer"]
     },
     "AuthoringCandidateSummary": {
       "type": "object",
@@ -3670,12 +3569,7 @@
           ]
         }
       },
-      "required": [
-        "candidateId",
-        "packageId",
-        "candidateHash",
-        "state"
-      ]
+      "required": ["candidateId", "packageId", "candidateHash", "state"]
     }
   }
 }

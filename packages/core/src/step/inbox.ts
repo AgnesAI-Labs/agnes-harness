@@ -21,17 +21,38 @@ export type EnqueueMsg = {
 
 /** Reference text is external evidence even when embedded in an authenticated human prompt. */
 export function inputTainted(item: Pick<InboxItem, 'content' | 'trust' | 'origin'>): boolean {
-  return item.origin === 'system' || item.trust === 'untrusted' || item.content.some((block) => block.type === 'text' && block.reference !== undefined)
+  return (
+    item.origin === 'system' ||
+    item.trust === 'untrusted' ||
+    item.content.some((block) => block.type === 'text' && block.reference !== undefined)
+  )
 }
 export function inputMessageEvents(item: InboxItem, lane: string): EventInput[] {
   const untrusted = item.origin === 'system' || item.trust === 'untrusted'
   const human = untrusted ? [] : item.content.filter((block) => !(block.type === 'text' && block.reference))
-  const external = untrusted ? item.content : item.content.filter((block) => block.type === 'text' && block.reference)
-  const message = (content: ContentBlock[], origin: 'principal' | 'system', trust: 'trusted' | 'untrusted'): EventInput => ({
-    type: 'user/message', origin, trust, actor: item.actor, lane,
-    data: { content, kind: item.kind ?? 'prompt', ...(item.titleLocale ? { titleLocale: item.titleLocale } : {}) },
+  const external = untrusted
+    ? item.content
+    : item.content.filter((block) => block.type === 'text' && block.reference)
+  const message = (
+    content: ContentBlock[],
+    origin: 'principal' | 'system',
+    trust: 'trusted' | 'untrusted',
+  ): EventInput => ({
+    type: 'user/message',
+    origin,
+    trust,
+    actor: item.actor,
+    lane,
+    data: {
+      content,
+      kind: item.kind ?? 'prompt',
+      ...(item.titleLocale ? { titleLocale: item.titleLocale } : {}),
+    },
   })
-  return [...(human.length ? [message(human, 'principal', 'trusted')] : []), ...(external.length ? [message(external, 'system', 'untrusted')] : [])]
+  return [
+    ...(human.length ? [message(human, 'principal', 'trusted')] : []),
+    ...(external.length ? [message(external, 'system', 'untrusted')] : []),
+  ]
 }
 
 export type InboxBudgetOverride = { itemId: string; creditsCap: number }

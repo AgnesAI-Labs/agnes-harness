@@ -1,16 +1,16 @@
-import { drainDeferredToolInvocations } from '@agnes/plugin-runtime'
+import { defaultLoopPlugin } from '@agnes/base'
 import { MemoryStorage, SessionLogImpl } from '@agnes/core'
 import { defaultIds } from '@agnes/core-common/ids'
-import {
-  type DeferredInvocationLedgerPort,
-  type DeferredInvocationReceipt,
-  type DeferredToolInvocation,
-  type LoopContext,
-  type LoopFactory,
-  type ToolResult,
+import type {
+  DeferredInvocationLedgerPort,
+  DeferredInvocationReceipt,
+  DeferredToolInvocation,
+  LoopContext,
+  LoopFactory,
+  ToolResult,
 } from '@agnes/extension-api'
 import { createDeferredInvocationQueue } from '@agnes/host-providers/assemble/deferred-invocations'
-import { defaultLoopPlugin } from '@agnes/base'
+import { drainDeferredToolInvocations } from '@agnes/plugin-runtime'
 import type { Actor, EventEnvelope } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 

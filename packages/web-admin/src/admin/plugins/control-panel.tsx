@@ -1,11 +1,11 @@
+export { BundlesPanel } from './bundles-panel.js'
 export {
-  PLUGIN_KINDS,
-  type PluginKind,
-  pluginStates,
-  PluginBadges,
   GenerationDrainSummary,
   KindFilter,
+  PLUGIN_KINDS,
+  PluginBadges,
+  type PluginKind,
   pluginFailureMessage,
+  pluginStates,
 } from './plugin-badges.js'
 export { SessionDefaultsPanel } from './session-defaults-panel.js'
-export { BundlesPanel } from './bundles-panel.js'

@@ -1,5 +1,5 @@
-import type { ContentBlock } from '../gen/ts/session-v1.js'
 import type { FileUploadParams, FileUploadResultSchema } from '../gen/ts/agnes-v1.js'
+import type { ContentBlock } from '../gen/ts/session-v1.js'
 
 export const FILE_UPLOAD_PATH = '/api/attachments/upload'
 export const FILE_UPLOAD_CHUNK_BYTES = 1024 * 1024

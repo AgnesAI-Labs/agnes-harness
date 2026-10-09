@@ -1,14 +1,14 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { expect, it } from 'vitest'
-import type { InferenceEvent } from '@agnes/protocol'
 import {
   fakeRequest,
-  ScriptedProvider,
   recordModelFixture,
   replayModelFixture,
+  ScriptedProvider,
 } from '@agnes/host/author-testkit'
+import type { InferenceEvent } from '@agnes/protocol'
+import { expect, it } from 'vitest'
 
 const drain = async (stream: AsyncIterable<unknown>) => {
   const events = []

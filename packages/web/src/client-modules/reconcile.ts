@@ -1,5 +1,3 @@
-import { createReconcileLifecycle } from './reconcile/lifecycle.js'
-
 import {
   normalizeRuntimeError,
   type PluginRuntimeError,
@@ -7,17 +5,18 @@ import {
   type RuntimeErrorStage,
   RuntimeStatusStore,
 } from '@agnes/web-foundation/client-modules/runtime-status'
-import {
-  type ReconcilerOptions,
-  type ClientReconciler,
-  type PackageState,
-  type ClientModuleLifecycleStep,
-  type ReadyClientModule,
-  type PreparedClientStyles,
-  type ClientRoster,
-} from './reconcile/contracts.js'
-import { prepareDocumentStyles } from './reconcile/styles.js'
 import { rowKey } from './reconcile/catalog.js'
+import type {
+  ClientModuleLifecycleStep,
+  ClientReconciler,
+  ClientRoster,
+  PackageState,
+  PreparedClientStyles,
+  ReadyClientModule,
+  ReconcilerOptions,
+} from './reconcile/contracts.js'
+import { createReconcileLifecycle } from './reconcile/lifecycle.js'
+import { prepareDocumentStyles } from './reconcile/styles.js'
 
 const DEFAULT_TIMEOUTS = { import: 15_000, styles: 15_000, apply: 15_000, dispose: 5_000 }
 
@@ -357,16 +356,18 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
   }
 }
 
-export { type ReadyClientModule } from './reconcile/contracts.js'
-export { type ClientModuleStatus } from './reconcile/contracts.js'
-export { type ClientRoster } from './reconcile/contracts.js'
-export { type RosterSource } from './reconcile/contracts.js'
-export { type ModuleImporter } from './reconcile/contracts.js'
-export { type ClientModuleLifecycleStep } from './reconcile/contracts.js'
-export { type ClientModuleCache } from './reconcile/contracts.js'
-export { type PreparedClientStyles } from './reconcile/contracts.js'
-export { type ClientStylePreparer } from './reconcile/contracts.js'
-export { type ReconcilerOptions } from './reconcile/contracts.js'
-export { type ClientReconciler } from './reconcile/contracts.js'
-export { type ClientModuleConfig } from './reconcile/contracts.js'
 export type { ClientContext } from '@agnes/web-client'
+export type {
+  ClientModuleCache,
+  ClientModuleConfig,
+  ClientModuleLifecycleStep,
+  ClientModuleStatus,
+  ClientReconciler,
+  ClientRoster,
+  ClientStylePreparer,
+  ModuleImporter,
+  PreparedClientStyles,
+  ReadyClientModule,
+  ReconcilerOptions,
+  RosterSource,
+} from './reconcile/contracts.js'

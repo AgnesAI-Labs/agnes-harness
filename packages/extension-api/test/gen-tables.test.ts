@@ -1,6 +1,6 @@
-import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { HOOK_EVENTS, HOOK_TABLE, THEME_TOKEN_NAMES } from '../src/index.js'
 import {
   extractThemeTokenNames,

@@ -4,7 +4,7 @@ import {
   isPublicDshSlot,
   isRuntimeSupportedDshSlot,
 } from '@agnes/web-client'
-import { type ReadyClientModule } from './contracts.js'
+import type { ReadyClientModule } from './contracts.js'
 
 export function rowKey(module: Pick<ReadyClientModule, 'packageId' | 'rowId'>): string {
   return module.rowId ?? module.packageId

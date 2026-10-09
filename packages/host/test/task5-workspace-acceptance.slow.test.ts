@@ -4,9 +4,9 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { seams as baseSeams } from '@agnes/base'
 import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
-import type { HostSession } from '../src/runtime/lifecycle/host.js'
 import type { InferenceEvent, JsonValue } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
+import type { HostSession } from '../src/runtime/lifecycle/host.js'
 import { createTestHost } from '../testkit/index.js'
 
 const dirs: string[] = []

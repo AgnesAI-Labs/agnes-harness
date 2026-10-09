@@ -1,4 +1,3 @@
-import { FeedbackAdminPanel } from './feedback.js'
 import type {
   PackageCatalogDescriptor,
   PackageInstalledDescriptor,
@@ -15,6 +14,7 @@ import { ChildEnginesPanel } from './child-engines.js'
 import { ContextPanel } from './context.js'
 import { DiagnosticsPanel } from './diagnostics.js'
 import { ExamplesPanel } from './examples.js'
+import { FeedbackAdminPanel } from './feedback.js'
 import { HistorySearchPanel } from './history.js'
 import { JobsPanel } from './jobs-panel.js'
 import { MemoryPanel } from './memory.js'

@@ -13,8 +13,8 @@ import {
   type ComposerView,
   downscaleImageFile,
 } from '../src/composer.js'
-import { webUnitsLocaleCatalog } from '../src/locales/index.js'
 import * as uploads from '../src/file-upload.js'
+import { webUnitsLocaleCatalog } from '../src/locales/index.js'
 
 let host: HTMLDivElement
 let root: Root

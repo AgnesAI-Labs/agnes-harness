@@ -34,12 +34,12 @@ import {
   unmountRegion,
 } from '@agnes/web-ui'
 import type { ReactNode } from 'react'
-import { type SettingsPage } from '../../../settings/hub.js'
+import type { SettingsPage } from '../../../settings/hub.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from '../../../settings/locales.js'
 import type { SchedulesApi } from '../../../settings/schedules.js'
 import { AdminApiError, PluginAdminApi } from '../api.js'
 import { CapabilityReview, ProvenanceReview } from '../capability-review.js'
-import { type PluginKind } from '../control-panel.js'
+import type { PluginKind } from '../control-panel.js'
 import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from '../locales/admin.js'
 import { SOURCE_FORMATS, sourceFromForm, sourceProblem } from '../source-form.js'
 import {
@@ -51,18 +51,18 @@ import {
   hasFeature,
   type PluginRuntimeSource,
 } from '../types.js'
-import { element, button, setDialog } from './dom.js'
-import { safeMessage, hasClientContribution, isClientOnly, sourceForCatalog } from './model.js'
+import { button, element, setDialog } from './dom.js'
+import { hasClientContribution, isClientOnly, safeMessage, sourceForCatalog } from './model.js'
 import {
   type PreviewMode,
-  type TrackedOperation,
-  operationStorageKey as storedOperationKey,
   operationRecords as readOperationRecords,
+  operationStorageKey as storedOperationKey,
+  type TrackedOperation,
 } from './operation-storage.js'
 import {
-  renderPluginView,
-  renderDetailPluginView,
   renderConfirmPluginView,
+  renderDetailPluginView,
+  renderPluginView,
   renderSourcePluginView,
 } from './views.js'
 

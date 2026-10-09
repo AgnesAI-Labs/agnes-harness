@@ -1,6 +1,6 @@
 import type { UINode, UISpan, UITurn } from '@agnes/protocol'
 import { type TraceMessageKey, traceLocale, traceText } from './trace-locale.js'
-import { type TraceMetric, type TraceTokenMetrics } from './trace-request-metrics.js'
+import type { TraceMetric, TraceTokenMetrics } from './trace-request-metrics.js'
 
 export const BADGE_KEY: Record<string, TraceMessageKey> = {
   user: 'trace.badge.user',

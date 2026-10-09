@@ -2,8 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
-import { trustedHookCommands } from '../src/runtime/assemble/trusted-hooks.js'
 import { afterEach, expect, it } from 'vitest'
+import { trustedHookCommands } from '../src/runtime/assemble/trusted-hooks.js'
 
 const dirs: string[] = []
 const fixture = () => {

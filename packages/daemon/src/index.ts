@@ -1,5 +1,4 @@
 export { runtimeDoctor } from '@agnes/daemon-rpc/local/methods/doctor'
-export { buildConfig, type DaemonConfig } from './supervisor/config.js'
 export * from './packages/index.js'
 export * from './resources/index.js'
 export type {
@@ -10,6 +9,7 @@ export type {
   JsonRpcResponse,
 } from './rpc.js'
 export { fail, isNotification, isRequest, isResponse, notify, ok } from './rpc.js'
+export { buildConfig, type DaemonConfig } from './supervisor/config.js'
 export {
   type DaemonControlCommandOptions,
   DaemonControlError,

@@ -13,7 +13,7 @@ import { flushSync } from 'react-dom'
 import type { ClaimResolver } from '../client-modules/boot.js'
 import { createTimelineRenderer } from '../timeline.js'
 import { TimelineNodeHost } from '../timeline-node-host.js'
-import { type EmptyStateRegionMount, TRANSCRIPT_SLOT, TRANSCRIPT_DEPENDENCIES } from './contracts.js'
+import { type EmptyStateRegionMount, TRANSCRIPT_DEPENDENCIES, TRANSCRIPT_SLOT } from './contracts.js'
 
 /** Render the transcript component behind a session-scoped, replaceable SlotOutlet. */
 export interface TranscriptRegionMount extends EmptyStateRegionMount, TranscriptHandle {}

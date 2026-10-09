@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type InputHTMLAttributes } from 'react'
-import { SettingsInput } from './settings-layout.js'
+import { type InputHTMLAttributes, useEffect, useRef, useState } from 'react'
 import { PLUGIN_CONFIG_NAMESPACE, pluginConfigCatalog } from './locales/plugin-config.js'
+import { SettingsInput } from './settings-layout.js'
 import { useUiText } from './ui-locale.js'
 
 /** Partial reference typing stays local; plaintext never enters the configuration draft. */

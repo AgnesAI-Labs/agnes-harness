@@ -1,7 +1,7 @@
 import type { McpServerDefinitionInput } from '@agnes/protocol'
-import { type LocaleTranslator } from '@agnes/web-ui'
-import { type McpFormFieldId, type McpFormFieldSnapshot, mcpFormIssues } from './mcp-form-validation.js'
+import type { LocaleTranslator } from '@agnes/web-ui'
 import { $ } from './admin-dom.js'
+import { type McpFormFieldId, type McpFormFieldSnapshot, mcpFormIssues } from './mcp-form-validation.js'
 
 export class McpFormValidationError extends Error {}
 

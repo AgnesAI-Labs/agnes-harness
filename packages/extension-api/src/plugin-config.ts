@@ -9,4 +9,4 @@ export interface PluginConfigContract {
 export type PluginConfigIssue = Readonly<{ path: string; code: string }>
 
 /** Validation implementation belongs to the protocol package shared by runtime consumers. */
-export { compilePluginConfig, redactPluginConfig, PLUGIN_SECRET_REF_PATTERN } from '@agnes/protocol'
+export { compilePluginConfig, PLUGIN_SECRET_REF_PATTERN, redactPluginConfig } from '@agnes/protocol'

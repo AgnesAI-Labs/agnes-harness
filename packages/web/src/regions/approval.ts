@@ -3,7 +3,7 @@ import { createAntdRoot } from '@agnes/web-ui'
 import { Approval, type ApprovalHandle, type ApprovalView } from '@agnes/web-units'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
-import { type EmptyStateRegionMount, APPROVAL_SLOT } from './contracts.js'
+import { APPROVAL_SLOT, type EmptyStateRegionMount } from './contracts.js'
 
 export interface ApprovalRegionMount extends EmptyStateRegionMount, ApprovalHandle {}
 

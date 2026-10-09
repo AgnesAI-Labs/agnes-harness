@@ -1,9 +1,13 @@
 import { presetDefaults } from '@agnes/core-common/step/preset'
+import {
+  buildToolContext,
+  type ChildHandle,
+  type ChildrenFactory,
+} from '@agnes/core-effects/effects/tool-context'
+import { SeamRuntime } from '@agnes/core-effects/effects/wrap'
 import type { PublicFetch } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeSeams } from '../helpers/fake-seams.js'
-import { buildToolContext, type ChildHandle, type ChildrenFactory } from '@agnes/core-effects/effects/tool-context'
-import { SeamRuntime } from '@agnes/core-effects/effects/wrap'
 
 function setup(
   seams = fakeSeams(),

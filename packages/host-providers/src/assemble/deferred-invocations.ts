@@ -10,7 +10,7 @@ import type {
 } from '@agnes/extension-api'
 import { providerSource } from '@agnes/host-common/assemble/provider-registry'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
-import { jcs, type JsonValue } from '@agnes/protocol'
+import { type JsonValue, jcs } from '@agnes/protocol'
 
 export const DEFERRED_INVOCATION_EVENT = 'x/agnes/deferred-invocations/state'
 export const DEFERRED_NOTIFICATION_EVENT = 'x/agnes/deferred-invocations/notified'

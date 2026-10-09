@@ -1,5 +1,5 @@
-import { uploadedAttachment } from '@agnes/protocol'
 import type { ContentBlock, UINode } from '@agnes/protocol'
+import { uploadedAttachment } from '@agnes/protocol'
 import { decodeSafeImage, USER_MESSAGE_IMAGE_LIMITS } from '@agnes/protocol-validation'
 import { Image } from 'antd'
 import { useEffect, useState } from 'react'

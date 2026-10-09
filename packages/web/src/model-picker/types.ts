@@ -1,4 +1,4 @@
-import { type ModelInputLimits, type ModelSettings, type ThinkingLevel } from '@agnes/protocol'
+import type { ModelInputLimits, ModelSettings, ThinkingLevel } from '@agnes/protocol'
 
 export type ModelPickerOption = {
   id: string

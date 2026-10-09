@@ -1,18 +1,13 @@
-import { mountMessageFeedback } from './message-feedback.js'
 import type { UINode, UITurn } from '@agnes/protocol'
 import { isConversationNode } from '@agnes/web-conversation/conversation-visibility'
 import type { Translate } from '@agnes/web-conversation/presentation'
 import { createTurnProjector } from '@agnes/web-conversation/turns'
-import {
-  type TimelineRendererOptions,
-  type TimelineRenderer,
-  type Entry,
-  type TimelineMeta,
-} from './timeline/contracts.js'
-import { fingerprint } from './timeline/node-presentation.js'
-import { saveTranscriptSelection, nearBottom, restoreTranscriptSelection } from './timeline/selection.js'
-import { createEntry } from './timeline/native-entry.js'
+import { mountMessageFeedback } from './message-feedback.js'
+import type { Entry, TimelineMeta, TimelineRenderer, TimelineRendererOptions } from './timeline/contracts.js'
 import { mountDshNode } from './timeline/dsh-node.js'
+import { createEntry } from './timeline/native-entry.js'
+import { fingerprint } from './timeline/node-presentation.js'
+import { nearBottom, restoreTranscriptSelection, saveTranscriptSelection } from './timeline/selection.js'
 
 export function createTimelineRenderer(options: TimelineRendererOptions): TimelineRenderer {
   const scrollContainer = options.scrollContainer ?? options.transcript
@@ -242,7 +237,5 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
   }
 }
 
-export { type TimelineRendererOptions } from './timeline/contracts.js'
-export { type TimelineMeta } from './timeline/contracts.js'
-export { type TimelineRenderer } from './timeline/contracts.js'
+export type { TimelineMeta, TimelineRenderer, TimelineRendererOptions } from './timeline/contracts.js'
 export { nearBottom } from './timeline/selection.js'

@@ -7,8 +7,8 @@ import type {
   ChildAgentStartOptions,
 } from '@agnes/extension-api'
 import { readProviderSelections } from '@agnes/host-providers/assemble/provider-selection'
-import { installChildAgents } from '../../src/runtime/assemble/child-agents.js'
 import { expect, it } from 'vitest'
+import { installChildAgents } from '../../src/runtime/assemble/child-agents.js'
 
 const signal = () => new AbortController().signal
 

@@ -1,5 +1,5 @@
 import { type ChangeEvent, createElement, useState } from 'react'
-import { type ComposerDependencies } from './contracts.js'
+import type { ComposerDependencies } from './contracts.js'
 
 export function QueuedInputEditor({
   text,

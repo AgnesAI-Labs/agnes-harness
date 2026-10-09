@@ -3,26 +3,26 @@ import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Plugin } from '@agnes/cordis'
-import type { UiActionParams, UiActionReceipt, UiReadParams, UiReadResult, RouteDecl } from '@agnes/protocol'
 import { ScriptedProvider } from '@agnes/ai/testkit'
-import { scanAll, type Event, type Provider } from '@agnes/core'
+import type { Plugin } from '@agnes/cordis'
+import { type Event, type Provider, scanAll } from '@agnes/core'
+import type { LoopPluginContext } from '@agnes/extension-api'
 import {
+  type LoopContext,
+  type LoopFactory,
+  type LoopStepOutcome,
   loopCheckpointCodec,
   loopShouldStop,
-  type LoopContext,
-  type LoopStepOutcome,
-  type LoopFactory,
+  registerLoopPlugin,
   type ToolResult,
 } from '@agnes/extension-api'
-import { registerLoopPlugin } from '@agnes/extension-api'
+import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import { developmentPluginRows, hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import { defineLoop } from '@agnes/plugin-runtime'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
-import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
-import type { LoopPluginContext } from '@agnes/extension-api'
-import { createTestHost, type TestHostOptions } from '../index.js'
+import type { RouteDecl, UiActionParams, UiActionReceipt, UiReadParams, UiReadResult } from '@agnes/protocol'
 import type { Host, HostSession } from '../../src/runtime/lifecycle/host.js'
+import { createTestHost, type TestHostOptions } from '../index.js'
 
 export interface AuthorPluginVersion {
   plugin: Plugin

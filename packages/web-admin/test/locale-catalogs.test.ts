@@ -1,8 +1,8 @@
-import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { expect, it } from 'vitest'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 
 function catalogFiles(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -52,9 +52,17 @@ it('keeps every exported frontend catalog paired across all frontend packages', 
     }
   expect([...discovered]).toEqual(
     expect.arrayContaining([
-      'computerUseCatalog', 'serverErrorCatalog', 'webLocaleCatalog', 'diagnosticsCatalog',
-      'appLocaleCatalog', 'composerLocaleCatalog', 'indexShellLocaleCatalog', 'sessionLocaleCatalog',
-      'settingsLocaleCatalog', 'timelineLocaleCatalog', 'pluginAdminShellLocaleCatalog',
+      'computerUseCatalog',
+      'serverErrorCatalog',
+      'webLocaleCatalog',
+      'diagnosticsCatalog',
+      'appLocaleCatalog',
+      'composerLocaleCatalog',
+      'indexShellLocaleCatalog',
+      'sessionLocaleCatalog',
+      'settingsLocaleCatalog',
+      'timelineLocaleCatalog',
+      'pluginAdminShellLocaleCatalog',
     ]),
   )
   expect(count).toBeGreaterThan(25)
