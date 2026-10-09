@@ -25,7 +25,7 @@ The tool starter declares `agnes.kinds: ["tool"]` and `agnes.capabilities: {}` s
 AGNES_PROFILE=local-dev agh web
 ```
 
-For a source checkout without an `agh` command, use `node packages/cli/dist/local/agnes.mjs` in its place, after the installation guide's one-time runtime build.
+For a source checkout without an `agh` command, use `node agnes.mjs` in its place, after the installation guide's one-time runtime build.
 
 Leave the daemon running. In another terminal with the same workspace, profile and home:
 

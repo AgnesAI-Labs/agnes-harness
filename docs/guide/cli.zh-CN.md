@@ -11,9 +11,9 @@ CLI 适合把 AGH 接到日常终端和脚本中；TUI 适合持续对话、检�
 ## 一次性输出
 
 ```sh
-node packages/cli/dist/local/agnes.mjs -p "解释当前项目"
-printf '%s\n' '请总结这段文本' | node packages/cli/dist/local/agnes.mjs -p
-node packages/cli/dist/local/agnes.mjs --mode json --chunks --meta "解释当前项目"
+node agnes.mjs -p "解释当前项目"
+printf '%s\n' '请总结这段文本' | node agnes.mjs -p
+node agnes.mjs --mode json --chunks --meta "解释当前项目"
 ```
 
 `--mode json` 自动选择 print 模式；JSON 输出适合程序消费，stderr 仍可能含运行时警告。检查进程退出码，不能把收到部分文本当成功。`--park` 支持让一次性调用在等待审批时停驻；不带可用审批交互的脚本不能自行批准危险操作。
@@ -23,7 +23,7 @@ node packages/cli/dist/local/agnes.mjs --mode json --chunks --meta "解释当前
 ## 交互式终端
 
 ```sh
-node packages/cli/dist/local/agnes.mjs
+node agnes.mjs
 ```
 
 输入 `/` 可查看当前菜单。常用操作：

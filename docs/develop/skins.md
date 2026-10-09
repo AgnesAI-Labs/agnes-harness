@@ -27,7 +27,7 @@ The current package format registers a plugin row through `package.json` and bin
   "type": "module",
   "exports": "./index.mjs",
   "agnes": {
-    "plugins": [{ "id": "ext:my-agh-skin/main", "export": "main" }],
+    "plugins": [{ "apiRange": "^1.4.0", "id": "ext:my-agh-skin/main", "export": "main" }],
     "clientDescriptors": [{ "rowId": "ext:my-agh-skin/main", "path": "./extensions/main/agnes.client.json" }]
   }
 }
@@ -74,7 +74,7 @@ Key rules:
 | --- | --- | --- |
 | `app` | `body` | All three |
 | `topbar` | Page `header` | All three |
-| `dialog` | `dialog` (9 in workbench / 4 in plugin management / 3 in Skills and MCP) | All three |
+| `dialog` | `dialog` | All three |
 | `sidebar` | `aside.sidebar` | Workbench |
 | `conversation` | Conversation wrapper | Workbench |
 | `trace` | Execution trace `aside` | Workbench |
@@ -86,8 +86,8 @@ Key rules:
 | `approval` | Approval area | Workbench |
 | `composer` | Input wrapper `form` | Workbench |
 | `composer-input` | Input `textarea` | Workbench |
-| `icon` | Interface icon `svg` (26 in workbench) | Workbench |
-| `settings-pane` | Settings section (6 in workbench) | Workbench |
+| `icon` | Interface icon `svg` | Workbench |
+| `settings-pane` | Settings section | Workbench |
 
 - Skins apply on **three pages**: workbench `/`, plugin management `/admin/plugins`, and Skills/MCP `/admin/resources`. Rules on `app`, `topbar`, and `dialog` therefore apply across these pages.
 - **Message-level internals are not part of the contract.** Renderers generate `turn-*`, `node-*`, and similar structures dynamically; their current availability does not guarantee stability.

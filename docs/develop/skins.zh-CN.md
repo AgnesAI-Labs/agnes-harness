@@ -25,7 +25,7 @@
   "type": "module",
   "exports": "./index.mjs",
   "agnes": {
-    "plugins": [{ "id": "ext:my-agh-skin/main", "export": "main" }],
+    "plugins": [{ "apiRange": "^1.4.0", "id": "ext:my-agh-skin/main", "export": "main" }],
     "clientDescriptors": [{ "rowId": "ext:my-agh-skin/main", "path": "./extensions/main/agnes.client.json" }]
   }
 }
@@ -71,7 +71,7 @@ Agnes 可以随时重命名它们；钩子则是版本化契约，改名会让�
 | --- | --- | --- |
 | `app` | `body` | 三页 |
 | `topbar` | 页头 `header` | 三页 |
-| `dialog` | `dialog`（工作台 9 个 / 插件管理 4 个 / 技能与 MCP 3 个） | 三页 |
+| `dialog` | `dialog` | 三页 |
 | `sidebar` | `aside.sidebar` | 工作台 |
 | `conversation` | 会话区外框 | 工作台 |
 | `trace` | 运行轨迹面板 `aside` | 工作台 |
@@ -83,8 +83,8 @@ Agnes 可以随时重命名它们；钩子则是版本化契约，改名会让�
 | `approval` | 审批区 | 工作台 |
 | `composer` | 输入框外框 `form` | 工作台 |
 | `composer-input` | 输入文本域 `textarea` | 工作台 |
-| `icon` | 界面图标 `svg`（工作台 26 个） | 工作台 |
-| `settings-pane` | 设置分页（工作台 6 个） | 工作台 |
+| `icon` | 界面图标 `svg` | 工作台 |
+| `settings-pane` | 设置分页 | 工作台 |
 
 - 皮肤在**三个页面**都会生效（工作台 `/`、插件管理 `/admin/plugins`、技能与 MCP `/admin/resources`），
   所以 `app` / `topbar` / `dialog` 上的规则在所有页面都适用。

@@ -140,16 +140,16 @@ Agent 起草的候选列表先显示类型（插件／技能）、版本、新�
 建议先按[安装指南](install.zh-CN.md)建立临时 AGH_HOME，从仓库根启动该实例。`file:` 相对路径由后台的工作区来源解析；复用不同 cwd 启动的 daemon 时应核对来源，最简单的是在隔离实例的启动目录操作。
 
 ```sh
-node packages/cli/dist/local/agnes.mjs package inspect file:./examples/packages/hot-tool-plugin
-node packages/cli/dist/local/agnes.mjs install file:./examples/packages/hot-tool-plugin --yes
+node agnes.mjs package inspect file:./examples/packages/hot-tool-plugin
+node agnes.mjs install file:./examples/packages/hot-tool-plugin --yes
 ```
 
 安装命令展示预览；不加 `--yes` 时需要交互终端，非 TTY 会提示用 `--yes` 重试。检查 package ID、版本、来源、integrity、capabilityHash、警告与 blockers；不能给有 blocker 的包直接授权。`package trust <id> --yes` 显示并信任当前已安装版本的两个哈希；仍可显式传入哈希，不匹配时显示 expected/given。`--yes` 不绕过 blockers 或哈希校验：
 
 ```sh
-node packages/cli/dist/local/agnes.mjs package trust @agnes-examples/hot-tool-plugin --yes
-node packages/cli/dist/local/agnes.mjs package enable @agnes-examples/hot-tool-plugin --yes
-node packages/cli/dist/local/agnes.mjs package status
+node agnes.mjs package trust @agnes-examples/hot-tool-plugin --yes
+node agnes.mjs package enable @agnes-examples/hot-tool-plugin --yes
+node agnes.mjs package status
 ```
 
 Web 对应“设置 → 插件 → 从来源安装 → 检查/安装 → 启用”。确认启用时会审核并绑定当前完整性摘要和能力摘要，校验成功后才继续激活；普通 Web 流程不再单独显示信任动作。已安装列表的开关只在插件实际运行时打开。服务依赖、策略拒绝或候选加载失败时，开关保持关闭，失败原因显示在当前行，可直接再次点击启用重试。
@@ -161,8 +161,8 @@ Web 对应“设置 → 插件 → 从来源安装 → 检查/安装 → 启用�
 可以用 `hot-service/v1` 与 `v2`，或 `client-panel/v1` 与 `v2` 演练。先安装并启用 v1；更新时选择同 ID 的 v2 来源，核对新摘要和能力变化，按界面提示完成审核与激活。观察 actual 和界面/服务值，而不只看操作进度为 100%。
 
 ```sh
-node packages/cli/dist/local/agnes.mjs package rollback PACKAGE_ID
-node packages/cli/dist/local/agnes.mjs package operation OPERATION_ID
+node agnes.mjs package rollback PACKAGE_ID
+node agnes.mjs package operation OPERATION_ID
 ```
 
 不携带 activation 的普通回滚会把目标设为未信任、禁用；shell 回滚后重新检查目标摘要，执行 trust、enable，再核对实际服务或界面。SDK 可携带当前安装/活动摘要与明确的目标信任决策进行 activation，不能省略相应校验。
@@ -172,10 +172,10 @@ node packages/cli/dist/local/agnes.mjs package operation OPERATION_ID
 ## 禁用、撤信任与删除
 
 ```sh
-node packages/cli/dist/local/agnes.mjs package disable PACKAGE_ID
-node packages/cli/dist/local/agnes.mjs package remove PACKAGE_ID
-node packages/cli/dist/local/agnes.mjs package cancel OPERATION_ID
-node packages/cli/dist/local/agnes.mjs packages pins inspect
+node agnes.mjs package disable PACKAGE_ID
+node agnes.mjs package remove PACKAGE_ID
+node agnes.mjs package cancel OPERATION_ID
+node agnes.mjs packages pins inspect
 ```
 
 撤信任保留在 Node SDK 中，供管理和恢复流程使用；普通 Web 页面不再显示这一动作，shell 也没有通用 `package untrust` 命令。禁用停止向新会话提供能力，已有会话保留其 generation 直到删除；删除处理安装状态与自有文件；正在被使用的快照可能有 pin，不能手动删除引用中的目录。`packages pins release PIN_ID` 是针对核验过的孤儿 pin 的显式清理动作，不用它绕开运行安全门。已有隔离演示验证禁用后三个示例包均可删除；仍需以目标平台和最终发行构建复验，具体基线见[验证记录](../maintainers/verification.zh-CN.md)。
@@ -186,7 +186,7 @@ node packages/cli/dist/local/agnes.mjs packages pins inspect
 
 每次包激活生成不可变的插件 generation。新会话绑定当前 generation；已有会话在休眠和 worker 重启后仍保留原包、版本、loop 与前端 bundle。禁用或卸载停止新的绑定，已有会话继续排空。关闭连接不会释放持久会话的 generation；会话删除后，由 Host 所有者调用 `releaseSessionGeneration(sessionKey)`，不再被会话引用的 generation 才会销毁并回收。
 
-存储、文件系统、sandbox 和平台后端仍需要重启。恢复时若固定快照缺失、包文件发生变化，或部署的 loop/adapter 配置不兼容，会明确失败，不会替换成当前 generation。私有 MCP 工厂或 Skills 视图也必须能够重建；原视图缺失时拒绝冷恢复。`Host.pluginGenerationStatus()` 和内部 worker 命令 `pluginGenerations.status` 向管理端提供 generation 引用数及 active/draining/restart-required/failed 插件状态。浏览器名册请求可携带 `sessionId`，加载该会话固定的 generation，资源通过不可变的 generation 路径提供。
+存储、文件系统、sandbox 和平台后端仍需要重启。恢复时若固定快照缺失、包文件发生变化，或部署的 loop/adapter 配置不兼容，会明确失败，不会替换成当前 generation。MCP 定义与技能是动态资源：冷恢复使用当前受信且启用的资源，并按固定的会话组合过滤；历史资源归档不代替动态集合。`Host.pluginGenerationStatus()` 和内部 worker 命令 `pluginGenerations.status` 向管理端提供 generation 引用数及 active/draining/restart-required/failed 插件状态。浏览器名册请求可携带 `sessionId`，加载该会话固定的 generation，资源通过不可变的 generation 路径提供。
 
 候选加载、依赖与激活超时仍可能导致激活失败，旧 generation 继续服务已绑定的会话。浏览器自行加载 bundle 名册，Host active 不等于浏览器已加载。
 

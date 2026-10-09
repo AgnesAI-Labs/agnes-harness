@@ -68,7 +68,7 @@ node --version
 corepack pnpm --version
 pnpm install --frozen-lockfile
 pnpm --filter @agnes/cli build:local
-node packages/cli/dist/local/agnes.mjs --help
+node agnes.mjs --help
 ```
 
 If `pnpm` is unavailable, substitute `corepack pnpm` in the following commands. There is no root `pnpm build` script. The CLI package's `build:local` creates the complete local distribution.
@@ -90,7 +90,7 @@ pnpm install --frozen-lockfile
 pnpm --filter @agnes/host build:native
 pnpm --filter @agnes/system-node build:native
 pnpm --filter @agnes/cli build:local
-node packages/cli/dist/local/agnes.mjs doctor
+node agnes.mjs doctor
 ```
 
 The PTY relay links `libutil`; the system helper uses Linux kernel interfaces and system OpenSSL 3 `libcrypto` for same-handle artifact hashing. Install OpenSSL development headers when building and keep the matching shared library installed when moving a runtime. Rebuild helpers after changing Node or architecture. An npm dependency install is not a substitute for these builds.
@@ -134,8 +134,8 @@ Use a separate absolute path for documentation experiments so you do not connect
 ```sh
 export AGH_HOME="$(mktemp -d /tmp/agh-docs.XXXXXX)"
 export AGNES_PROFILE=local-dev
-node packages/cli/dist/local/agnes.mjs daemon status
-node packages/cli/dist/local/agnes.mjs serve
+node agnes.mjs daemon status
+node agnes.mjs serve
 ```
 
 In PowerShell:

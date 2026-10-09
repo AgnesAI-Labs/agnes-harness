@@ -39,3 +39,5 @@
 运行时包的生产源码、测试和共享 testkit 使用独立的 TypeScript 项目；根 `typecheck` 覆盖三者及工具脚本。
 
 本地 RPC 经 `@agnes/daemon-admin/app-server` 认证并分派设置操作；daemon-admin 拥有组合、上下文、计划模式及历史的实现。Runtime doctor 的组合探测位于 `@agnes/daemon-admin/runtime-doctor`，本地 RPC 保留认证与分派。RPC 原有工厂出口保持兼容。本地 RPC 仅允许从 Base 导入具名公开拒绝标记 `ScheduleRejected`。MCP 命名使用 protocol 的可移植 `sha256Hex` 出口：UTF-8 编码（包括未配对代理项的替换）与现有后缀均保持不变。
+
+学习偏好：`packages/memory-file` 拥有官方文件提供器，`packages/extension-api/src/memory.ts` 拥有公共 SPI，`packages/web-admin/src/settings/memory.tsx` 拥有编辑器，`packages/base/src/memory` 拥有 remembering 技能。

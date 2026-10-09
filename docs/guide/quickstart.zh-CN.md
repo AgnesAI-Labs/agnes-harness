@@ -35,13 +35,13 @@ node agnes.mjs serve
 交互式配置：
 
 ```sh
-node packages/cli/dist/local/agnes.mjs config
+node agnes.mjs config
 ```
 
 配置好后，先在源码仓库根执行下面命令。`AGH_ENTRY` 保存入口绝对路径；以后切换到自己的项目目录，也可以继续用它运行：
 
 ```sh
-AGH_ENTRY="$PWD/packages/cli/dist/local/agnes.mjs"
+AGH_ENTRY="$PWD/agnes.mjs"
 node "$AGH_ENTRY" -p "只读概括当前项目"
 node "$AGH_ENTRY" sessions --json
 node "$AGH_ENTRY"

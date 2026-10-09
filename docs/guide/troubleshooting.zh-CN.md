@@ -9,11 +9,11 @@
 先记下当前 commit、Node 版本、命令、错误码与所用 home/profile；不输出整个环境或凭据。下面的诊断默认仍使用你选定的隔离 AGH_HOME。
 
 ```sh
-node packages/cli/dist/local/agnes.mjs --version
-node packages/cli/dist/local/agnes.mjs daemon status
-node packages/cli/dist/local/agnes.mjs doctor platform --json
-node packages/cli/dist/local/agnes.mjs doctor storage --json
-node packages/cli/dist/local/agnes.mjs doctor provider --json
+node agnes.mjs --version
+node agnes.mjs daemon status
+node agnes.mjs doctor platform --json
+node agnes.mjs doctor storage --json
+node agnes.mjs doctor provider --json
 ```
 
 `doctor storage` 会建立并清理临时探测数据库；它不修复现有数据。`doctor provider --probe` 则会调用模型，排错时不要无意添加。

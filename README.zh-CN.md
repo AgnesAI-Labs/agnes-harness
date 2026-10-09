@@ -2,254 +2,97 @@
 
 [English](README.md) | 简体中文
 
-<p align="center">
-  <img src="docs/assets/readme/banner.zh-CN.png" alt="Agnes Harness：面向前线交付工程（FDE）的插件化智能体框架。LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。" width="100%" />
-</p>
+**可托付的业务 Agent 平台。** 将业务 Agent 打包成插件，升级时让已有任务继续使用原版本，再通过人工审阅积累可复用的技能。
 
-<div align="center">
+AGH 是面向开发者与现场交付团队的开源开发者预览版。CLI、Web 和 SDK 共享一个本地 App Server，提供持久会话、审批与可检查的执行记录。
 
-### 以可信为根基，为真实世界而生。
+[快速开始](docs/guide/quickstart.zh-CN.md) · [为什么选择 AGH](docs/guide/why-agh.zh-CN.md) · [完整文档](docs/README.zh-CN.md) · [开发插件](docs/extend/quickstart.zh-CN.md)
 
-**把 AI 接入真实业务，让每一次交付沉淀为可复用的能力。**
+## 1. 业务 Agent 就是插件
 
-<img src="https://img.shields.io/badge/status-developer%20preview%20(pre--alpha)-f59e0b" alt="状态：开发者预览（pre-alpha）" />
-<img src="https://img.shields.io/badge/license-Apache--2.0-2F4F4F" alt="许可证：Apache-2.0" />
-<img src="https://img.shields.io/badge/node-%E2%89%A5%2024.10-339933" alt="Node.js 24.10 及以上" />
-<img src="https://img.shields.io/badge/local%20checks-macOS-3b8fff" alt="已记录的本地检查：macOS" />
+把业务 Agent Loop、工具、模型适配器、角色与技能组合成可安装的组合包。每个会话只获得所选能力，客服 Agent 的业务工具不会自动出现在无关的默认会话中。通过公开前端 API，还可以加入岗位工作台面板。
 
-[快速开始](docs/guide/quickstart.zh-CN.md) · [架构](#architecture) · [体验示例](docs/guide/demo.zh-CN.md) · [开发插件](docs/develop/plugins.zh-CN.md) · [完整文档](docs/README.zh-CN.md) · [MHS（即将开放）](docs/guide/mhs.zh-CN.md)
+![当前 Web 工作台的插件类型页面](docs/assets/readme/plugin-kinds-zh-CN-light.png)
 
-开发者预览（pre-alpha） · [源码构建](#从源码开始) · [Apache-2.0](LICENSE)
+[运行业务 Agent 演示](examples/demos/business-agent/README.zh-CN.md) · [查看 FDE 组合包](examples/fde/README.md)
 
-</div>
+## 2. 升级时，进行中的工作保留原版本
 
-准备好 Node.js 24.10+ 与 pnpm 10.34.5 后，在已克隆的仓库运行这三条命令。[环境准备](docs/guide/install.zh-CN.md)。
+新会话使用审阅后的新插件代码，已有会话在重启后仍保留原代码与界面版本。通过轨迹和执行证据查看模型请求、工具结果与恢复缺口。外部操作结果不确定时，必须先核对，再决定是否重新派发。
 
-```sh
-pnpm install --frozen-lockfile
-pnpm --filter @agnes/cli build:local
-node packages/cli/dist/local/agnes.mjs serve
-```
+![插件已停止向新会话提供能力，旧版本仍由已有会话使用](docs/assets/readme/plugin-old-version-zh-CN-light.png)
 
-<p align="center">
-  <img src="docs/assets/readme/trailer.zh-CN.webp" alt="动画介绍：大脑（LLM）、小脑（Jev）、记忆（Harness）与身体（MHS，经 MCP 连接设备）合为 Agnes Harness，一套执行底座支撑企业 FDE 交付与物理世界的 MHS 接入" width="100%" />
-</p>
+[运行热升级演示](examples/demos/hot-upgrade/README.zh-CN.md) · [阅读恢复规则](docs/guide/sessions.zh-CN.md)
 
-<p align="center">
-  <b>LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。</b><br />
-  <sub>同一套底座，支撑企业 FDE 交付与物理世界的 MHS 接入。<a href="#architecture">查看架构</a></sub>
-</p>
+## 3. 让 Agent 积累可复用技能
 
-把 AI 带进真实现场，难点往往不在模型本身，而在客户的业务系统、负责审批的人，以及每个现场都不一样的细节。Agnes Harness（AGH）把模型、工具、任务状态和业务界面连接在一起：**把现场差异写进插件，让 Harness 负责执行并留下记录，把验证过的能力带到下一个项目。**
+请 Agent 起草技能或插件、运行测试，再由人审阅文件与权限后发布。来源记录保留起草会话与人工审阅信息。文件记忆可以保存工作区偏好，Agent 的记忆访问默认关闭。
 
-<p align="center">
-  <img src="docs/assets/readme/hero.zh-CN.gif" alt="AGH 在真实项目中工作：Agent 读取退款规则与订单数据，运行命令前请求审批，实际验证结果，给出可核对的表格，并在轨迹视图中记录每一步" width="100%" />
-</p>
+![人工审阅 Agent 起草的插件候选](docs/assets/readme/candidate-review-zh-CN-light.png)
 
-<p align="center"><sub>读代码、运行命令前先审批、验证、作答，每一步都留痕。</sub></p>
+[运行技能成长演示](examples/demos/growing-skills/README.zh-CN.md) · [候选审阅](docs/extend/agent-built-plugins.zh-CN.md) · [记忆](docs/guide/memory.zh-CN.md)
 
-<details>
-<summary><kbd>目录</kbd></summary>
-
-- [AGH 是什么，不是什么](#agh-是什么不是什么)
-- [架构：大脑、小脑、记忆与身体](#architecture)
-- [在现场交付中，AGH 能帮上什么](#在现场交付中agh-能帮上什么)
-- [公开评测](#公开评测)
-- [适合谁](#适合谁)
-- [从示例开始](#从示例开始)
-- [从源码开始](#从源码开始)
-- [当前状态](#当前状态)
-- [常见问题](#常见问题)
-- [关注 AGH，把你的场景带进来](#关注-agh把你的场景带进来)
-- [开源许可](#开源许可)
-
-</details>
-
-## AGH 是什么，不是什么
-
-我们面向 Forward Deployed Engineering（FDE）：深入业务现场，把系统集成、使用体验和持续迭代做成可交付的软件。你可以用 CLI 和 Web 开始工作，用插件接入业务系统，用 Skills 沉淀任务方法，再把这些能力组合成自己的 Agent 应用。[了解 FDE 与应用场景 →](docs/guide/why-agh.zh-CN.md)
-
-为了帮你选对试用方式，先说清楚它不是什么：
-
-- **不是托管服务。** AGH 是开发者预览版，需要从源码构建，在你自己的环境中运行。
-- **不是任意插件代码的沙箱。** 普通后端插件作为受信代码在进程内运行；审批与命令沙箱作用于相应的受支持执行路径。详见[安全与信任](docs/guide/security.zh-CN.md)。
-- **不是经过认证的设备驱动。** MHS 设备接入以 MCP 为基础，即将开放；目前没有可供认证的公开 MHS 规范，实时控制与物理安全仍由设备控制器负责。
-- **还没有定型。** API、配置与插件接口仍在演进，可能出现破坏兼容性的变更。
-
-<a id="architecture"></a>
-<a id="为扩展而组织的运行基础"></a>
-
-## 架构：大脑、小脑、记忆与身体
-
-大脑、小脑、记忆与身体这组比喻表达 AGH 的产品愿景：把推理、结构化决策、持久任务上下文和物理能力组织到一起。下图展示四个角色在同一套运行时中的位置。
-
-![AGH 架构：LLM 是大脑、Jev 是小脑、Harness 是记忆、MHS 是身体，同一套运行时支撑企业 FDE 交付与 MHS 设备接入](docs/assets/architecture.zh-CN.svg)
-
-| 角色 | 在 AGH 中意味着什么 | 当前范围 |
-| --- | --- | --- |
-| **LLM / 大脑** | 理解请求、推理任务、提出行动建议 | 经 AI Provider 接入模型 |
-| **Jev / 小脑** | 路由、评分等结构化决策，协助协调执行 | 接入进行中；main 当前使用内置 Core 循环 |
-| **Harness / 记忆** | 保存会话历史、任务状态、执行记录，以及沉淀在 Skills 中的可复用方法 | 已有任务上下文与恢复机制；Harness 同时负责执行与治理 |
-| **MHS / 身体** | 连接设备能力，让任务读取物理状态、请求设备动作 | 通过基于 MCP 的适配器接入设备；AGH 接入文档与示例即将开放 |
-
-FDE 是交付方式，MHS 负责把设备接进来。两者使用同一套底座，FDE 的现场交付也可以包含设备场景。
-
-| 共享模块 | 当前怎样支撑 FDE | MHS 接入复用什么 |
-| --- | --- | --- |
-| **App Server / 统一接入** | 为 CLI、Web、SDK 提供共享会话、任务提交、事件推送与审批路由 | 任务入口、人工确认与状态展示 |
-| **Agent Loop / 执行循环** | 模型与工具执行、任务状态、事件记录、中断处理与恢复 | 高层设备任务编排与结果记录 |
-| **Sandbox / 执行约束** | 工具授权，以及适用的命令、文件、网络与进程约束 | 软件侧执行边界；运动控制、互锁与急停仍由设备控制器负责 |
-| **Plugins / 插件体系** | 后端工具与服务、Web 面板、Skills、hooks、MCP，由 Cordis 和包治理组织 | 基于 MCP 的设备适配器与设备操作界面的扩展入口；具体适配仍需开发与验证 |
-
-具体业务连接器与工作台通过这些扩展入口按现场需求构建。当前仓库没有已验证的通用 MHS 适配器或端到端设备示例。
-
-实际请求链路与源码归属见[架构说明](docs/develop/architecture.zh-CN.md)，深入实现可从[源码地图](docs/develop/source-map.zh-CN.md)开始。
-
-## 在现场交付中，AGH 能帮上什么
-
-### 1. 每个客户的业务系统都不一样
-
-Agent 需要调用你的订单查询、知识库、内部接口。如果把这些写进 Agent 本身，每接一个客户就得改一版。
-
-在 AGH 里，业务能力就是插件：通过[后端插件](docs/develop/backend.zh-CN.md)注册工具，或通过 [MCP](docs/guide/mcp.zh-CN.md) 连接已有服务。安装前会先展示版本、来源、完整性摘要、能力哈希和许可证；启用时绑定并校验这些哈希。之后 Agent 就能调用它，每次调用的输入和结构化输出都有记录。
-
-<p align="center">
-  <img src="docs/assets/readme/plugins.zh-CN.gif" alt="在 Web 工作台安装插件：检查来源，核对完整性、能力与许可，确认启用，随后 Agent 调用新工具 demo_text_stats，其输入与结构化输出都被记录" width="100%" />
-</p>
-
-### 2. 任务在 Web 上开始，在终端里继续
-
-分析人员在浏览器里发起任务，工程师在终端里接手。在工具之间来回复制上下文，历史和决策就丢了。
-
-CLI、Web 与 SDK 共享同一套后台会话。在终端用 `/resume <id>` 恢复 Web 上的会话，历史、工具记录和结论都在；在终端里追加的内容，回到 Web 同样能看到。详见[会话与恢复](docs/guide/sessions.zh-CN.md)。
-
-<p align="center">
-  <img src="docs/assets/readme/terminal.zh-CN.gif" alt="终端界面恢复在 Web 上开始的会话，显示历史、工具记录与结论表，回答追问；回到 Web，同一条对话已经更新" width="100%" />
-</p>
-
-### 3. "AI 改了什么？谁批准的？"
-
-在客户环境里，只有结果是不够的，还要说得清它是怎么得出来的。
-
-默认情况下，运行命令要先经你批准：仅允许这次、本会话允许或拒绝。轨迹视图按时间轴记录模型调用、工具与审批，逐步可查。包信任、工具审批、执行约束与会话记录，让集成有明确的控制点。详见[安全与信任](docs/guide/security.zh-CN.md)。
-
-<p align="center">
-  <img src="docs/assets/readme/trajectory.zh-CN.png" alt="轨迹视图：输入、模型与工具的时间轴，以及逐步记录，包括用户请求、文件读取、shell 命令及其审批记录和最终回答" width="100%" />
-</p>
-
-### 4. 不同岗位需要不同的界面
-
-客服主管和仓库操作员要的不是同一个界面。在 Web 工作台中加入[前端面板](docs/develop/frontend.zh-CN.md)，再通过[前后端联动插件](docs/develop/fullstack.zh-CN.md)以受控的服务调用连接后端。
-
-### 5. 下一个项目应该从上一个项目的终点出发
-
-用 [Skills](docs/guide/skills.zh-CN.md) 沉淀任务方法，把可复用的业务实现打包成插件，按受治理的[生命周期](docs/guide/packages.zh-CN.md)管理：安装、启用、更新、回滚与卸载。
-
-### 6. 现场还有设备
-
-从巡检到仪器协作，现场工作需要把设备状态、人的判断与业务流程连接起来。AGH 的设备接入方向以 MCP（Model Context Protocol）为基础，而不是厂商专属 SDK，让状态读取、动作请求和执行回执进入同一套任务流程。**MHS 接入文档与示例即将开放。**[了解设备接入方向 →](docs/guide/mhs.zh-CN.md)
-
-## 公开评测
-
-在公开的 [Agents' Last Exam（ALE）排行榜](https://agents-last-exam.org/leaderboard)上（评测对象是完整的 Agent 系统：模型 + Harness + 工具，任务来自真实的专业工作场景），Agnes Harness 搭配 Agnes 2.5 Pro Beta 的总通过率为 21.7%，总得分 42.7。
-
-<p align="center">
-  <img src="docs/assets/readme/ale-leaderboard.png" alt="Agents' Last Exam 中 Agnes Harness 搭配 Agnes 2.5 Pro Beta 的成绩：总通过率 21.7%，总得分 42.7%，Near-term 通过率 31.3%，Full-Spectrum 通过率 23.6%，ALE-CLI 通过率 25.7%、得分 50.2%；旁边是榜单上相近条目的节选，各条目的模型与设置不同" width="100%" />
-</p>
-
-<p align="center"><sub>成绩随模型版本、设置与工具配置而变化，以榜单最新数据为准。</sub></p>
-
-## 适合谁
-
-- **FDE 与解决方案工程师**：把 Agent 交付进客户的业务系统和流程
-- **插件开发者**：把业务工具、服务与界面打包复用
-- **需要过程可控的团队**：命令先审批、每一步有记录、插件包信任明确
-- **现场与实验室团队**：为设备场景提前准备，跟进 MHS 接入的开放
-
-如果你现在就需要托管服务、已签名的安装包或生产级承诺，AGH 暂时还不适合：它目前是开发者预览版。
-
-## 从示例开始
-
-仓库提供三个可运行示例，分别展示业务能力、专属界面与前后端联动。每个教程都包含源码入口、操作步骤和预期结果。
-
-| 示例 | 先看到什么 | 然后可以构建什么 |
-| --- | --- | --- |
-| [一个工具](docs/develop/backend.zh-CN.md) | 调用 `demo_text_stats`，得到字符数与词数 | 为 Agent 接入订单查询、数据检索等业务函数 |
-| [一个面板](docs/develop/frontend.zh-CN.md) | 在工作台侧栏加载自己的面板，更新版本 | 为岗位展示任务信息和业务状态 |
-| [一套联动](docs/develop/fullstack.zh-CN.md) | 面板读取后端服务结果，观察升级与回滚 | 把业务服务与操作界面组合成插件 |
-
-**先选一个示例，再换成你的业务逻辑。**[打开演示指南 →](docs/guide/demo.zh-CN.md)
-
-[运行三个产品演示 →](docs/guide/demos.zh-CN.md)
+截图使用当前界面与合成浏览器测试数据。可运行演示默认使用全新隔离 home 和确定性本地模型，不发送外部业务消息。只要持久会话仍引用旧代码，旧版本就会保留，包括闲置历史会话。
 
 ## 从源码开始
 
-当前为 **开发者预览（pre-alpha）**，通过源码构建体验。准备 Node.js 24.10+、pnpm 10.34.5，以及平台所需的原生构建工具，获取源码与完整步骤见[安装指南](docs/guide/install.zh-CN.md)。
-
-首次运行前阅读[安全与信任](docs/guide/security.zh-CN.md)，确认工作目录和授权范围。在源码仓库根目录运行：
+准备 Node.js **24.10+**、固定 pnpm **10.34.5** 与平台原生工具链（[安装指南](docs/guide/install.zh-CN.md)）。克隆仓库，在根目录运行：
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm --filter @agnes/cli build:local
-node packages/cli/dist/local/agnes.mjs serve
+node agnes.mjs serve
 ```
 
-打开终端打印的本机地址，配置模型，创建任务并确认工作目录。试着发出第一个请求：
+打开终端打印的本机地址。[首次运行指南](docs/guide/getting-started.zh-CN.md)带你配置账号、选择模型并创建会话，每一步都可跳过。模型测试和真实模型对话可能产生费用。没有密钥也可以体验[本地 Demo](docs/extend/quickstart.zh-CN.md)，或运行[三个产品演示](docs/guide/demos.zh-CN.md)。
 
-> 请只读取当前项目，说明它解决什么问题、主要目录如何组织；不要修改文件。
+第一个请求可以是：
 
-保持 Web 服务运行，另开一个终端并进入同一源码目录。CLI 使用同一后台与配置；如果设置过 `AGH_HOME` / `AGNES_PROFILE`，在新终端使用相同值：
+> 请只读取当前项目，说明主要目录的用途；不要修改文件或运行安装命令。
 
-```sh
-node packages/cli/dist/local/agnes.mjs -p "简要说明当前项目的用途"
-```
+保持 `serve` 运行。在使用相同 `AGH_HOME` 与 `AGNES_PROFILE` 的另一个终端运行 `node agnes.mjs` 打开 TUI，或运行 `node agnes.mjs sessions --json` 查找共享历史。完整步骤见[快速开始](docs/guide/quickstart.zh-CN.md)。
 
-跟随[首次运行](docs/guide/quickstart.zh-CN.md)查看结果、找到会话，并继续任务。没有模型账号，也可以运行[本地模拟模型演示](docs/guide/demo.zh-CN.md#不配置模型账号先跑通本地链路)，先体验插件与任务执行流程。
+## 架构与扩展入口
 
-完整文档提供[英文](docs/README.md)与[简体中文](docs/README.zh-CN.md)版本，每页都可以切换到同一主题的另一种语言。
+每个规范化 home 对应一个 App Server。Worker 承载组合后的插件版本，Core 负责持久事实、授权与恢复。官方默认 Agent Loop 是独立的 `@agnes/loop-default` 插件。存储、沙箱等后端仍需重启。插件代码固定到会话，MCP 定义与技能则是按会话组合过滤的动态资源。
 
-## 当前状态
+[架构](docs/develop/architecture.zh-CN.md) · [插件合同](docs/develop/architecture-plugins.zh-CN.md) · [App Server stdio](docs/reference/app-server.zh-CN.md) · [源码地图](docs/develop/source-map.zh-CN.md)
 
-AGH 当前为开发者预览。
+## 使用边界
 
-| 方面 | 状态 |
-| --- | --- |
-| Web 工作台、CLI 与终端界面、SDK 共享会话 | 开发者预览中可用 |
-| Agent 循环、工具审批、轨迹记录、恢复 | 可用 |
-| 插件：后端工具与服务、Web 面板、Skills、hooks、MCP | 可用，有已记录的限制 |
-| 命令沙箱与执行约束 | 取决于平台 |
-| 平台 | 已在 macOS + Node 24 上记录本地检查；Linux 与 Windows 需另行验收 |
-| Jev 结构化决策 | 接入中 |
-| MHS 设备接入（基于 MCP） | 即将开放 |
+- **外部副作用：** 恢复不承诺邮件、远程写入或设备动作的恰好一次执行。缺少回执时，结果可能仍不确定。
+- **受信代码：** 普通后端插件在进程内运行。能力审阅、来源校验、审批和命令/MCP 沙箱不隔离任意插件 JavaScript。
+- **预览发行：** 当前可从源码构建，没有公开 npm 发行、消费者安装程序或自动升级承诺。预览期间 API 与配置可能变化。
+- **平台：** macOS 和 Linux 已有持续维护的原生、进程与浏览器检查。Windows 尚未经完整端到端验收，也没有已验证的 L1 命令沙箱。Linux 暂不支持 Computer Use。
+- **实验能力：** Provider/Agent Loop API、子引擎、程序化 cell（尤其无状态 CPython）与 MHS 启发的设备接入需要按部署验证。设备示例是模拟器，不是认证硬件适配器。
 
-[支持范围与已知限制](docs/reference/limitations.zh-CN.md)帮助你选择试用环境；[验证与复现](docs/maintainers/verification.zh-CN.md)提供检查命令与验收范围。
+[支持范围](docs/reference/limitations.zh-CN.md) · [安全](docs/guide/security.zh-CN.md) · [验证](docs/maintainers/verification.zh-CN.md) · [网络部署](docs/guide/deployment.zh-CN.md)
 
-## 常见问题
+## 社区与许可
 
-**能用于生产环境吗？**
-暂时还不能。AGH 是开发者预览版，没有公开的包发布、安装程序或升级承诺。部署、审计与隔离要求需要在你自己的环境中验证。
+按适用许可证使用、研究与扩展 AGH。欢迎通过 Issues 提交问题与场景；代码和文档 PR 当前仅接受受邀开发者（[协作规则](CONTRIBUTING.md)）。安全问题按 [SECURITY.md](SECURITY.md) 私密报告。
 
-**插件运行在沙箱里吗？**
-普通后端插件作为受信代码在进程内运行，所以只安装你信任的插件包。审批与命令沙箱作用于相应的受支持执行路径，并不隔离任意插件代码。
+项目自有代码采用 [Apache-2.0](LICENSE)。第三方组件与改编示例保留各自声明，见 [NOTICE](NOTICE) 与[许可说明](docs/maintainers/provenance.zh-CN.md)。
 
-**可以用哪些模型？**
-模型经 AI Provider 接入，可用能力由各 Provider 的模型目录决定。本页演示使用 Agnes AI `agnes-3.0-flash` 录制；不同模型的质量与工具选择会有差异。
-
-**MHS 现在能控制设备吗？**
-还不能。MHS 接入文档与示例即将开放，以 MCP 为基础。在 AGH 中取消任务不等于设备已安全停止；互锁与急停由设备控制器负责。
-
-**接受外部 PR 吗？**
-当前代码与文档 PR 仅限受邀内部开发者。欢迎通过 Issues 提交普通问题与场景建议，详见[反馈与协作规则](docs/develop/contributing.zh-CN.md)。
-
-## 关注 AGH，把你的场景带进来
-
-如果你也在探索 AI 的现场交付，欢迎 **Star 收藏项目**，用 **Watch 关注更新**，或把 AGH 分享给正在做 Agent 应用和业务集成的开发者。
-
-- **试用与反馈**：跑通一个示例，分享使用体验；可通过 Issues 提交普通问题与场景建议。
-- **构建与复用**：按适用许可证，在自己的项目中开发插件、接入工具、打造工作台。
-
-安全问题请按[安全报告政策](SECURITY.md)私密提交。
-
-## 开源许可
-
-项目自有代码采用 [Apache License 2.0](LICENSE)。第三方组件、改编文件及部分示例保留各自的许可声明，详见 [NOTICE](NOTICE) 与[许可说明](docs/maintainers/provenance.zh-CN.md)。
+<!-- Preserve historical README links. -->
+<a id="architecture"></a>
+<a id="为扩展而组织的运行基础"></a>
+<a id="agnes-harness"></a>
+<a id="以可信为根基为真实世界而生"></a>
+<a id="agh-是什么不是什么"></a>
+<a id="架构大脑小脑记忆与身体"></a>
+<a id="在现场交付中agh-能帮上什么"></a>
+<a id="1-每个客户的业务系统都不一样"></a>
+<a id="2-任务在-web-上开始在终端里继续"></a>
+<a id="3-ai-改了什么谁批准的"></a>
+<a id="4-不同岗位需要不同的界面"></a>
+<a id="5-下一个项目应该从上一个项目的终点出发"></a>
+<a id="6-现场还有设备"></a>
+<a id="公开评测"></a>
+<a id="适合谁"></a>
+<a id="从示例开始"></a>
+<a id="从源码开始"></a>
+<a id="当前状态"></a>
+<a id="常见问题"></a>
+<a id="关注-agh把你的场景带进来"></a>
+<a id="开源许可"></a>

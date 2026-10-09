@@ -23,7 +23,7 @@ AGH 在 `@agnes/base` 中提供官方 `observability:otel` 插件，由 `@agnes/
 ```sh
 export AGH_OTEL_ENABLED=true
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
-node packages/cli/dist/local/agnes.mjs serve
+node agnes.mjs serve
 ```
 
 支持以下设置：
@@ -57,17 +57,17 @@ node packages/cli/dist/local/agnes.mjs serve
 ## 导出支持包
 
 ```sh
-node packages/cli/dist/local/agnes.mjs diagnostics export --out diagnostics.json
-node packages/cli/dist/local/agnes.mjs diagnostics export --session SESSION_ID --out diagnostics.json
+node agnes.mjs diagnostics export --out diagnostics.json
+node agnes.mjs diagnostics export --session SESSION_ID --out diagnostics.json
 ```
 
 需要通过本地 owner 连接访问 daemon；指定 session 时再次检查 owner 的会话权限。CLI 在本地以私有权限原子写入文件，输出路径不会传到服务器。
 
 有版本的包包含 AGH/Node/平台版本、可用的 profile/composition hash、generation 状态与计数、安全 doctor 状态、近期错误 ID、最后 100 条允许的审计元数据。指定会话只额外加入其哈希、最后序号和哈希后的 loop/generation pin。不包含对话账本、文件正文、凭据、异常消息、堆栈或原始 audit detail。worker 不可用时明确显示，导出不会启动 worker。
 
-App Server 方法 `_agnes/v1/diagnostics.export` 支持可选 `sessionId`、`limit`（1–500 条审计记录）、`diagnosticId`。边界规范化的错误进入 4096 条进程缓冲；CLI 和生产 daemon owner 在 `AGH_HOME/diagnostics/errors.jsonl` 持久化安全错误元数据，并回放启动前错误。导出合并 journal 与进程缓冲；按 `diagnosticId` 精确查询可找回已离开缓冲的历史记录。不会持久化异常正文。独立 SDK 嵌入若需要其进程自产错误跨重启查询，应通过公共 `observeDiagnostics` 合约安装持久 sink。sink 失败会标记 `diagnosticUnavailable`。
+App Server 方法 `_agnes/v1/diagnostics.export` 支持可选 `sessionId`、`limit`（1–500 条审计记录）、`diagnosticId`。边界规范化的错误进入 4096 条进程缓冲；CLI 和生产 daemon owner 在 `AGH_HOME/diagnostics/errors.jsonl` 持久化安全错误元数据，并回放启动前错误。导出合并 journal 与进程缓冲；按 `diagnosticId` 精确查询过滤保留的进程缓冲及有界近期日志，不扫描完整持久历史。不会持久化异常正文。独立 SDK 嵌入若需要其进程自产错误跨重启查询，应通过公共 `observeDiagnostics` 合约安装持久 sink。sink 失败会标记 `diagnosticUnavailable`。
 
-默认包含最后 4096 个错误，各 audit 文件最多读取末尾 1 MiB。journal 存在时，旧错误仍可按 ID 查询；删除 home 或 journal 会删除历史。公开提交前仍需检查：时间、版本、哈希、平台和运行数量可能透露部署元数据。
+进程缓冲最多保留 4096 条错误。日志读取的条目上限限于 1–1000，最多扫描最近 `limit × 4096` 字节；精确 ID 查询使用 limit 1。因此重启后旧 ID 可能不可用，即使日志行仍存在。审计文件另有末尾 1 MiB 读取上限。删除 home 或日志会丢失历史。公开提交前仍需审阅脱敏包：时间、版本、摘要、平台与运行计数可能暴露部署元数据。
 
 相关接口见[排障](troubleshooting.zh-CN.md)、[CLI 参考](../reference/cli.zh-CN.md)、[App Server](../reference/app-server.zh-CN.md)。
 

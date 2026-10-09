@@ -36,17 +36,13 @@ CLI 启动测试仍要求启动和创建会话成功。共享 CI 机器上的耗
 
 ```sh
 pnpm --filter @agnes/cli build:local
-node packages/cli/dist/local/agnes.mjs --help
+node agnes.mjs --help
 node --import tsx tools/public-docs/smoke.mjs
 ```
 
 smoke 使用隔离的临时 home、本机回环模型夹具与真实 CLI/daemon/worker，检查会话、默认助手、插件、Web 接口以及更新和清理；结束后停止自行启动的服务。它通过 HTTP/WebSocket 客户端访问 Web 接口，不代表真实浏览器视觉验收。
 
-维护中的 macOS 合并门禁使用 `pnpm e2e:web`。先单独运行
-`pnpm exec playwright install chromium` 缓存浏览器；门禁构建本地运行时，从仓库根目录启动真实
-`agnes.mjs serve`，使用隔离环境执行离线 CLI/SDK 验收并保存浏览器启动证据。
-[Web E2E 指南](../../tools/e2e-web/README.md) 说明构建复用、产物、零重试规则和
-**Web E2E gate** 必需状态。页面级验收及视觉基线等 UI 重构集成后再建立，本阶段不声称已覆盖这些内容。
+持续维护的 `pnpm e2e:web` 检查在 [CI](../../.github/workflows/e2e-web.yml) 的 macOS 与 Linux 上运行。它构建或校验可复用运行目录，从 `agnes.mjs serve` 启动隔离 daemon/Web，验证页面交互、持久化变更、语言/无障碍及经审阅的平台截图。Chromium 单独预装。[Web 检查指南](../../tools/e2e-web/README.md)维护 spec 清单、产物、零重试规则和基线审阅。合成场景覆盖不证明所有浏览器或部署均可用。
 
 构建到独立输出目录或执行 PowerShell 步骤见[安装指南](../guide/install.zh-CN.md)，手动体验见[演示指南](../guide/demo.zh-CN.md)。
 
@@ -56,17 +52,8 @@ smoke 使用隔离的临时 home、本机回环模型夹具与真实 CLI/daemon/
 
 发布说明摘要应链接到对应版本的 CI 或经过脱敏的验收结果。浏览器、真实模型、外部 MCP、物理设备和其他平台的结果分别记录；本地回环测试不能代替这些环境的验收。
 
-## 2026-09-24 源码候选验证
+<a id="2026-09-24-源码候选验证"></a>
 
-环境：macOS arm64、Node.js 24.20.0、pnpm 10.34.5，在独立源码目录与隔离的运行目录中验证。
+## 发行证据
 
-| 检查 | 结果 |
-| --- | --- |
-| 锁定依赖安装、两个原生 helper、完整本地构建 | 通过 |
-| 类型、生成一致性、文档链接与源码锚点 | 通过 |
-| Biome | 0 错误；保留 30 项警告与 15 项提示 |
-| 自动化测试 | 全仓首轮执行 18,682 项；其中 344 项跳过，16 项失败均已修复并通过定向回归 |
-| 仓库 guards 最终复测 | 544 项通过，2 项跳过 |
-| 真实本地进程 smoke | 19 个阶段通过 |
-
-测试采用一次全仓运行加相关回归，修复后没有再做一次整仓重跑。回归覆盖全部首轮失败项、Worker、Host 装配和文档示例；跳过项仍受平台或显式环境条件限制。真实浏览器、付费模型、外部服务、物理设备与其他平台不在本次验收范围。源码或构建环境变化后应重新验证。
+结果应引用与版本匹配的 CI 产物和发行说明；历史源码候选的计数不构成当前验收证据。真实模型结果与确定性测试分开记录，注明模型和账号环境，但不包含凭据。macOS/Linux CI 不隐含 Windows 或物理设备验收，见[发行检查](release.zh-CN.md)。

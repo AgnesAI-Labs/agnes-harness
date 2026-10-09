@@ -21,11 +21,11 @@ Outstanding effects are closed as unknown instead of being replayed, including n
 ## Find and resume a session
 
 ```sh
-node packages/cli/dist/local/agnes.mjs sessions --json
-node packages/cli/dist/local/agnes.mjs sessions show SESSION_ID
-node packages/cli/dist/local/agnes.mjs resume SESSION_ID -p "Continue explaining the unfinished parts"
-node packages/cli/dist/local/agnes.mjs -p --resume SESSION_ID "Continue our previous discussion"
-node packages/cli/dist/local/agnes.mjs -p --continue "Continue"
+node agnes.mjs sessions --json
+node agnes.mjs sessions show SESSION_ID
+node agnes.mjs resume SESSION_ID -p "Continue explaining the unfinished parts"
+node agnes.mjs -p --resume SESSION_ID "Continue our previous discussion"
+node agnes.mjs -p --continue "Continue"
 ```
 
 `--continue` and `--resume` are mutually exclusive. Use an explicit ID when precision matters to avoid resuming an unintended recent session. Check working directory, model, and permissions separately for new and resumed sessions. Switching a Web workspace does not transfer existing sessions to a different daemon.
@@ -41,10 +41,10 @@ Settings → History searches session titles and message text, filters by an exa
 ## Export and import
 
 ```sh
-node packages/cli/dist/local/agnes.mjs export SESSION_ID --format agnes -o session.jsonl
-node packages/cli/dist/local/agnes.mjs export SESSION_ID --format sharegpt -o training.json
-node packages/cli/dist/local/agnes.mjs export SESSION_ID --html -o session.html
-node packages/cli/dist/local/agnes.mjs import session.jsonl --from auto --key agnes:local:default:import:dm:docs-copy
+node agnes.mjs export SESSION_ID --format agnes -o session.jsonl
+node agnes.mjs export SESSION_ID --format sharegpt -o training.json
+node agnes.mjs export SESSION_ID --html -o session.html
+node agnes.mjs import session.jsonl --from auto --key agnes:local:default:import:dm:docs-copy
 ```
 
 The native import above uses a new session key. Choose a previously unused key for each trial. Omitting the key may point back to the original session; open or nonempty targets are rejected. Import is a one-shot path and does not support `--connect`. An imported session records its origin in its first event (`session/start` field `imported`: the source format, and for a native import the original session key); a Web diagnostics export of it carries an `imported` warning.

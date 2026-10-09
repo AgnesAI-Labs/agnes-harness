@@ -17,11 +17,11 @@
 ## 找到并继续会话
 
 ```sh
-node packages/cli/dist/local/agnes.mjs sessions --json
-node packages/cli/dist/local/agnes.mjs sessions show SESSION_ID
-node packages/cli/dist/local/agnes.mjs resume SESSION_ID -p "继续说明尚未完成的部分"
-node packages/cli/dist/local/agnes.mjs -p --resume SESSION_ID "接着上次的讨论"
-node packages/cli/dist/local/agnes.mjs -p --continue "继续"
+node agnes.mjs sessions --json
+node agnes.mjs sessions show SESSION_ID
+node agnes.mjs resume SESSION_ID -p "继续说明尚未完成的部分"
+node agnes.mjs -p --resume SESSION_ID "接着上次的讨论"
+node agnes.mjs -p --continue "继续"
 ```
 
 `--continue` 与 `--resume` 互斥。需要精确控制时使用明确 ID，避免恢复到不期望的最近会话。新建会话和恢复会话的工作目录、模型、权限需要分别核对；切换 Web 工作区不会把已有会话的所有权转移给另一个后台。
@@ -33,10 +33,10 @@ node packages/cli/dist/local/agnes.mjs -p --continue "继续"
 ## 导出与导入
 
 ```sh
-node packages/cli/dist/local/agnes.mjs export SESSION_ID --format agnes -o session.jsonl
-node packages/cli/dist/local/agnes.mjs export SESSION_ID --format sharegpt -o training.json
-node packages/cli/dist/local/agnes.mjs export SESSION_ID --html -o session.html
-node packages/cli/dist/local/agnes.mjs import session.jsonl --from auto --key agnes:local:default:import:dm:docs-copy
+node agnes.mjs export SESSION_ID --format agnes -o session.jsonl
+node agnes.mjs export SESSION_ID --format sharegpt -o training.json
+node agnes.mjs export SESSION_ID --html -o session.html
+node agnes.mjs import session.jsonl --from auto --key agnes:local:default:import:dm:docs-copy
 ```
 
 上例原生导入使用一个新的 session key；重复演练时换一个未使用的 key。省略 key 可能指回原会话，遇到已打开或非空目标会拒绝。import 是 one-shot 路径，不支持 `--connect`。导入的会话会在首条事件（`session/start` 的 `imported` 字段）记录来源格式，原生导入还会记录原会话 key；从 Web 导出它的诊断包时会带一条 `imported` 警告。

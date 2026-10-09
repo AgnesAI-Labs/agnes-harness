@@ -15,9 +15,9 @@ Examples assume the repository root as the working directory. From another direc
 ## One-shot output
 
 ```sh
-node packages/cli/dist/local/agnes.mjs -p "Explain this project"
-printf '%s\n' 'Summarize this text' | node packages/cli/dist/local/agnes.mjs -p
-node packages/cli/dist/local/agnes.mjs --mode json --chunks --meta "Explain this project"
+node agnes.mjs -p "Explain this project"
+printf '%s\n' 'Summarize this text' | node agnes.mjs -p
+node agnes.mjs --mode json --chunks --meta "Explain this project"
 ```
 
 `--mode json` automatically selects print mode. JSON output is suitable for programmatic consumption, but stderr may still contain runtime warnings. Check the exit code: partial text is not proof of success. `--park` lets a one-shot call wait for approval. A script without an available approval interaction cannot approve dangerous actions on its own.
@@ -29,7 +29,7 @@ By default, the CLI connects to or starts the shared local daemon. `--connect TA
 ## Interactive terminal
 
 ```sh
-node packages/cli/dist/local/agnes.mjs
+node agnes.mjs
 ```
 
 Type `/` to see the current menu. Common actions:

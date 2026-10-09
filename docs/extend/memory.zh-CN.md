@@ -6,6 +6,18 @@
 
 插件注入 `providers`，以 `ctx.providers.register(memoryKind, '@acme/memory', enterpriseMemory)` 注册。导入 `memoryKind`、`MemoryProvider`、`ProviderPluginContext` 均从 `@agnes/extension-api`，不要依赖 Core 私有路径。
 
+```ts
+import { memoryKind, type MemoryProvider, type ProviderPluginContext } from '@agnes/extension-api'
+
+export const enterpriseMemoryPlugin = {
+  inject: ['providers'],
+  apply(ctx: ProviderPluginContext) {
+    ctx.providers.register(memoryKind, '@acme/memory', enterpriseMemory)
+  },
+}
+declare const enterpriseMemory: MemoryProvider
+```
+
 实现 `open({ home, workspaceRoot, sessionKey })` 返回 `MemorySession`。`snapshot(turn)` 通过普通请求 section 贡献有预算的索引，同轮重复调用必须使用同一修订。实时关闭策略不再贡献内容，并拒绝 Agent 后续读写。`files(fallback, source, signal, approve)` 包装普通文件工具：工作区路径交给 fallback，记忆路径执行受限读取、验证与原子写入。可选 `revision(path)` 为快照读取标记修订。`inspect/configure/readFile/editFile` 是明确的人工管理方法，独立于 Agent 关闭权限；`inspect` 只返回元数据，不返回正文。
 
 包 `config.memory: { provider: "enterprise", version: "1.0.0" }` 替换默认实现。多个包同时选择记忆会拒绝；明确选择不存在或无效实现时 fail closed，不回退文件 provider。安装多个实现不代表同时使用多个 store。知识库仍是多个独立 MCP、工具、Skill、FDE 能力，可与所选记忆共存。

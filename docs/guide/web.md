@@ -13,14 +13,14 @@ The Web workbench brings tasks, history, and administration into one local inter
 ## Start and connect
 
 ```sh
-node packages/cli/dist/local/agnes.mjs serve
+node agnes.mjs serve
 ```
 
 Web listens on loopback. The current page does not accept or store a local connection token; the server checks connections against the Origin and Host fixed at startup. Do not interchange `localhost` and `127.0.0.1`. When changing the port, set a matching origin:
 
 ```sh
 export AGNES_WEB_ORIGIN=http://127.0.0.1:4180
-node packages/cli/dist/local/agnes.mjs serve --port 4180
+node agnes.mjs serve --port 4180
 ```
 
 If an existing daemon has a different Origin, startup refuses to reuse it. Check its tasks, explicitly stop that instance, and restart. This entry point is a local workbench; this guide does not provide a public deployment or reverse-proxy login setup.

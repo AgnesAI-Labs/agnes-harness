@@ -11,11 +11,11 @@ Identify whether the problem occurs during building, connection, model configura
 Record the current commit, Node version, command, error code, and home/profile. Do not dump the full environment or credentials. These commands continue to use your selected isolated AGH_HOME.
 
 ```sh
-node packages/cli/dist/local/agnes.mjs --version
-node packages/cli/dist/local/agnes.mjs daemon status
-node packages/cli/dist/local/agnes.mjs doctor platform --json
-node packages/cli/dist/local/agnes.mjs doctor storage --json
-node packages/cli/dist/local/agnes.mjs doctor provider --json
+node agnes.mjs --version
+node agnes.mjs daemon status
+node agnes.mjs doctor platform --json
+node agnes.mjs doctor storage --json
+node agnes.mjs doctor provider --json
 ```
 
 `doctor storage` creates and cleans up a temporary probe database; it does not repair existing data. `doctor provider --probe` calls a model, so do not add it unintentionally.

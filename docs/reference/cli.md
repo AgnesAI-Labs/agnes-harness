@@ -8,7 +8,7 @@ English | [简体中文](cli.zh-CN.md)
 
 Find commands by session execution, administration, or extensions. For an end-to-end sequence, read the [CLI / TUI guide](../guide/cli.md).
 
-`agh` below is shorthand. In a source distribution, run `node packages/cli/dist/local/agnes.mjs` instead. All entries assume this distribution method.
+`agh` below is shorthand. In a source distribution, run `node agnes.mjs` instead. All entries assume this distribution method.
 
 <a id="会话与运行"></a>
 
@@ -43,7 +43,7 @@ Print options `--park`, `--chunks`, and `--meta` control waiting and output. See
 | `agh daemon start\|status\|stop` | Explicit daemon lifecycle |
 | `agh serve [--home DIR] [--profile NAME] [--cwd DIR] [--port N]` | Local Web |
 | `agh profile list` / `inspect NAME --resolved` / `trust DEPLOY_DIR` | Configuration inspection and deployment trust |
-| `agh doctor [platform\|provider\|storage\|profile\|extensions\|daemon\|binary\|code-runtime] --json` | Diagnostics |
+| `agh doctor [platform\|network\|provider\|storage\|profile\|extensions\|daemon\|binary\|code-runtime] --json` | Diagnostics |
 | `agh doctor provider --probe` | Explicit minimal inference; may incur charges |
 | `agh doctor subagents [--repair] --json` | Subagent checks; repair changes state |
 | `agh consent DISABLED\|LOCAL\|ANON\|FULL` | Save a telemetry consent level; does not establish all external collection has been verified |
@@ -71,3 +71,20 @@ Authoritative syntax: [args/usage](../../packages/cli/src/args.ts), [package](..
 ## Diagnostics
 
 `agh diagnostics export [--session SESSION_ID] --out diagnostics.json` writes a redacted support bundle through the local owner connection. See [observability](../guide/observability.md) for its contents and limits.
+
+## Plugin authoring and shared App Server
+
+| Syntax | Purpose |
+| --- | --- |
+| `agh --new -p PROMPT` | Fresh session with current plugins; ordinary print mode may reuse the workspace session |
+| `agh tools [--session KEY] [--json]` | Inspect admitted tools and capability provenance |
+| `agh plugins add SOURCE [--yes]` / `pack FOLDER [OUTPUT]` | Reviewed acquisition; pack a distributable without executing its code |
+| `agh dev FOLDER` / `plugins reload [ID]` | Authorize local development / publish changed local code for new sessions |
+| `agh plugins candidates list\|show\|approve\|reject` | Read and review agent-authored candidates; approval/rejection binds candidate and review hashes |
+| `agh plugins provenance ID [--json]` | Read installation origin and trust evidence |
+| `agh plugins publication-status [--json]` | Read per-container convergence results |
+| `agh sessions migrate KEY [--json]` | Explicitly migrate a closed compatible session; refuses an open session |
+| `agh app-server --stdio` / `schema --out DIR` | Bridge to the shared daemon / export its generated contract without starting it |
+| `agh doctor --json` / `doctor --probe --json` | Local checks / explicit account probes, which may incur charges |
+
+See [candidate review](../extend/agent-built-plugins.md), [hot reload](../extend/hot-reload.md), [App Server](app-server.md) and [first run](../guide/getting-started.md) for complete flags and authority boundaries.

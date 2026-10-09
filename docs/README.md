@@ -4,11 +4,11 @@ English | [简体中文](README.zh-CN.md)
 
 <a id="agnes-harness-文档"></a>
 
-**From your first task to your own agent application.**
+**A trustworthy business-agent platform: installable agents, ongoing work and reviewed growth.**
 
 Run tasks through CLI and Web, connect business capabilities with plugins, capture methods in Skills, and build interfaces for the people doing the work. Choose a path below to get started.
 
-[Project home](../README.md) · [Why AGH](guide/why-agh.md) · [Try the examples](guide/demo.md) · [MHS (coming soon)](guide/mhs.md)
+[Project home](../README.md) · [Why AGH](guide/why-agh.md) · [Try the examples](guide/demo.md) · [Device integration (preview)](guide/mhs.md)
 
 <a id="选择你的起点"></a>
 
@@ -45,6 +45,12 @@ Still choosing? Try the [three examples](guide/demo.md), then use the [extension
 | [Sandbox providers](guide/sandbox-providers.md) | Select the process sandbox at startup and read declared capabilities |
 | [Observability and diagnostics](guide/observability.md) | Enable OTLP telemetry and export a redacted issue bundle |
 | [System prompts and request traces](guide/system-prompt-trace.md) | Customize a persona and inspect the local model request |
+| [Execution evidence](guide/fact-chain.md) | Follow requests, tools, artifacts and authoring sources, including gaps |
+| [Session workbench](guide/workbench.md) | File panels, workflow receipts and docks |
+| [Candidate review](extend/agent-built-plugins.md) | Review agent drafts, tests and permissions before publication |
+| [Provenance and MCP isolation](guide/security.md#package-provenance-and-source-policy) | Package sources, integrity and local MCP process boundaries |
+| [Network deployment and Linux](guide/deployment.md) | Outbound proxies, timeouts and Linux preparation |
+| [App Server stdio](reference/app-server.md) | Build a client on the shared backend |
 | [Troubleshooting](guide/troubleshooting.md) | Use error codes and runtime state to choose the next diagnostic step |
 
 <a id="构建与深入了解"></a>
@@ -60,7 +66,7 @@ Still choosing? Try the [three examples](guide/demo.md), then use the [extension
 
 ## Reading conventions
 
-AGH is a pre-alpha source preview. Unless stated otherwise, run commands from the source repository root using `node packages/cli/dist/local/agnes.mjs`. Replace uppercase placeholders such as `SESSION_ID` and `REVISION` with values returned by your instance. Versions such as `1.0.0` and `2.0.0` refer to example packages.
+AGH is a pre-alpha source preview. Unless stated otherwise, run commands from the source repository root using `node agnes.mjs`. Replace uppercase placeholders such as `SESSION_ID` and `REVISION` with values returned by your instance. Versions such as `1.0.0` and `2.0.0` refer to example packages.
 
 Documentation is maintained alongside the code. Choose the version that matches your runtime. Tutorials state prerequisites, steps, and expected results. See [verification and reproduction](maintainers/verification.md) for commands and coverage; record each release's actual results with its release notes.
 

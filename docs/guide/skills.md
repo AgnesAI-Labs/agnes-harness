@@ -30,8 +30,8 @@ The daemon watches Skill roots, including folders created after startup. New dis
 From the target project, use the CLI to register the current directory and print its workspaceId. Refresh is an optional immediate rescan, with confirmation; no manual workspace ID is needed:
 
 ```sh
-node /path/to/agnes-harness/packages/cli/dist/local/agnes.mjs skills refresh --yes
-node /path/to/agnes-harness/packages/cli/dist/local/agnes.mjs skills list
+node /path/to/agnes-harness/agnes.mjs skills refresh --yes
+node /path/to/agnes-harness/agnes.mjs skills list
 ```
 
 Use your actual built CLI path above, or `agh` when it is on PATH. To scope another registered workspace, pass `--workspace-id WORKSPACE_ID`. `skills list` prints resource IDs, revisions, trust, desired and actual state. Explicit trust changes remain available as `agh skills trust SKILL_RESOURCE_ID REVISION trusted --yes`; enable/disable uses `agh resources enable|disable SKILL_RESOURCE_ID --expected-revision REVISION --yes`. Without a TTY, mutations require `--yes`; it confirms the reviewed change without bypassing revision checks.

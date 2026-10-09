@@ -9,14 +9,14 @@ Web 工作台把任务、历史和管理操作放在一个本地界面中。首�
 ## 启动与连接
 
 ```sh
-node packages/cli/dist/local/agnes.mjs serve
+node agnes.mjs serve
 ```
 
 Web 监听本机回环地址。当前页面不接收或保存本地连接 token；服务按启动时固定的 Origin 与 Host 校验连接。`localhost` 与 `127.0.0.1` 不能随意互换。改端口时设置一致的来源：
 
 ```sh
 export AGNES_WEB_ORIGIN=http://127.0.0.1:4180
-node packages/cli/dist/local/agnes.mjs serve --port 4180
+node agnes.mjs serve --port 4180
 ```
 
 若旧后台使用不同 Origin，新启动会拒绝复用；先确认任务状态并显式停止该实例，再启动。它不是远程公开站点部署入口，也没有本文承诺的反向代理登录方案。

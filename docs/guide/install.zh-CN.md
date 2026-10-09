@@ -62,7 +62,7 @@ node --version
 corepack pnpm --version
 pnpm install --frozen-lockfile
 pnpm --filter @agnes/cli build:local
-node packages/cli/dist/local/agnes.mjs --help
+node agnes.mjs --help
 ```
 
 没有可用的 `pnpm` 命令时，把下文 `pnpm` 换成 `corepack pnpm`。根目录没有 `pnpm build` 脚本；完整运行目录由 CLI 包的 `build:local` 构建。
@@ -84,7 +84,7 @@ pnpm install --frozen-lockfile
 pnpm --filter @agnes/host build:native
 pnpm --filter @agnes/system-node build:native
 pnpm --filter @agnes/cli build:local
-node packages/cli/dist/local/agnes.mjs doctor
+node agnes.mjs doctor
 ```
 
 PTY relay 链接 `libutil`，system helper 使用 Linux 内核接口与系统 OpenSSL 3 `libcrypto`，从同一已打开文件句柄计算 artifact 摘要。构建时安装 OpenSSL 开发头文件，搬运运行目录时仍须安装匹配的共享库。更换 Node 或架构后须重建 helper，安装 npm 依赖不能替代原生构建。
@@ -124,8 +124,8 @@ headers 准备需要网络和包含 npm 的 Node 安装。升级 Node 后应重�
 ```sh
 export AGH_HOME="$(mktemp -d /tmp/agh-docs.XXXXXX)"
 export AGNES_PROFILE=local-dev
-node packages/cli/dist/local/agnes.mjs daemon status
-node packages/cli/dist/local/agnes.mjs serve
+node agnes.mjs daemon status
+node agnes.mjs serve
 ```
 
 PowerShell：

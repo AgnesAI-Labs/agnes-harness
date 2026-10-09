@@ -4,7 +4,7 @@ English | [简体中文](contracts-v0.1.zh-CN.md)
 
 [Plugin architecture](architecture-plugins.md) · [Author guide](../extend/README.md) · [Versions](../maintainers/versioning.md)
 
-This is the public contract inventory and readiness assessment for the first **product v0.1** tag. It describes the candidate on this branch, including construction lifecycle hardening and removal of default-provider shortcuts. The earlier documentation-only inventory used source revision `cbb0eefa99e0218e5c6fac6e87ab50c9a7f71eae`. Extension API remains **1.4.0**. This candidate does not declare a release or an unconditional provider freeze: the open items below still require acceptance.
+This page maintains the author-contract inventory for product v0.1. Extension API is **1.4.0**. Source, schemas and declared package exports define current behavior; pin the source revision. This inventory is not a release or a deployment acceptance report. Record release results with version-matched CI and acceptance evidence.
 
 ## Stability and compatibility policy
 
@@ -175,7 +175,7 @@ Source authorities: [SDK session creation](../../packages/sdk/src/client.ts), [N
 
 `@agnes/extension-api/testkit/persistence-contract` separately exports Vitest suites `persistenceContract`, `persistenceHostContract`, `persistenceSqliteContract`; supply isolated directory-backed factories. General testkit is usable without importing Vitest. `@agnes/plugin-runtime/testkit` re-exports provider runners and offers `driveLoop`, `scriptedModel`, `runModelAdapter`, `createPluginTestHost`, `createVerifiedTestRoot`. `driveLoop` shares the stop rule and accepts a real context; its default fake context deliberately refuses controlled ledger operations and cannot prove budget, authorization, cold durability or draining equivalence.
 
-The direct runtime export comparison at this revision found **63 root exports**, exactly matching `api-surface.json`; API constant, package version and changelog heading agree at `1.4.0`. The general testkit's 14 runtime exports match the list above. The snapshot remains unchanged. The following grouping accounts for every root runtime export; the linked source inventory above covers the accompanying public types.
+The current `api-surface.json` owns the root runtime export inventory; types and testkit subpaths require separate checks. Version-consistency tests maintain the API constant, package version and changelog. The grouping below illustrates principal exports, rather than proving exhaustive counts or compatibility. Memory, system-prompt and observability contracts are documented in their corresponding guides.
 
 | Runtime export group | Names |
 | --- | --- |
@@ -217,7 +217,7 @@ Public exposures needing continued review, retained without removal:
 
 ### Remaining open items
 
-Closed in this candidate: named provider error normalization with explicit consumer compatibility codes; cancellable async Loop/sandbox/persistence construction and late-result cleanup; official adapter create/credential parity; Core-free default compaction/policy dependencies. The receipt/association model is accepted for v0.1 as experimental.
+Before release, qualify the target backends and artifacts below; implementation inventory does not substitute for executed acceptance.
 
 1. Qualify non-settling real-provider work, cleanup failure and process shutdown across deployment backends. Cancellation remains cooperative; uninterruptible store I/O must drain (item 6).
 2. Qualify non-SQL full-Host durability/crash recovery, real sandbox enforcement and feature-specific conformance beyond fake/memory adapters (items 8–9).
@@ -226,8 +226,8 @@ Closed in this candidate: named provider error normalization with explicit consu
 
 ## Known limits and verification scope
 
-Recorded local development is macOS with Node 24; this closure used Node **24.20.0**, pnpm **10.34.5**. Linux and Windows need independent native build, sandbox, process, restart and installation acceptance. Seatbelt/bubblewrap/Windows capability reports must be measured in the deployment; a provider declaration is not proof of enforcement. Remote workspaces cannot select an alternative local sandbox provider. No running process/open file/store migration or arbitrary in-process plugin sandbox is promised.
+macOS and Linux have maintained native/process/browser gates and separate visual baselines. Windows end-to-end, signed installers, automatic upgrades and physical devices remain unqualified. Provider cancellation is cooperative; non-settling work and store I/O need backend-specific shutdown and durability acceptance. A declared sandbox capability is not proof of enforcement.
 
-The persistence ports now separate optional SQL from required Host capabilities. The [JSONL example](../../examples/persistence/README.md) implements the full Host ports and has [contract tests](../../examples/persistence/test/contract.test.ts) and [process recovery cases](../../examples/persistence/test/recovery.e2e.test.ts); the heavy process-recovery cases were not run in the focused checks. Its in-memory journal index targets small local deployments, without compression/compaction or network-filesystem/Windows durability acceptance. No complete production non-SQL backend is qualified by this task. Strict managed model egress, credential provenance and send-fence guarantees are outside this freeze. MCP prompts, resource-image mapping and session OAuth, plus configurable Skill roots/slash compatibility, remain bounded by the [MCP/Skills support matrix](../guide/mcp-skills-support.md). Generic ports and examples do not establish external engine, SSH/PTY, device or workflow product support. MHS/device integration remains unverified.
+The JSONL example supplies the full Host ports, contract tests and fresh-process recovery cases. It targets small local deployments with an in-memory index; network-filesystem, Windows durability and production scale need separate qualification. The [MCP/Skills matrix](../guide/mcp-skills-support.md) owns current resource limits, including session OAuth and prompt-template exclusions. Programmatic Python is experimental. Memory, request capture and telemetry have separate privacy/retention rules.
 
-The source remains a developer preview: package publication, public registry startup, third-party dependency resolution from release artifacts, real remote model credentials, full daemon/browser acceptance, platform isolation and heavy crash/restart suites were **not qualified by this closure**. Existing source tests are evidence of intended coverage only. Package typechecks, focused lifecycle/default algorithm/credential tests, required related tests, guards, documentation verification and targeted lint are recorded in the delivery report; final release owners must record actual broader results against the candidate revision. No version was bumped, tag created or package published.
+Run the [verification procedures](../maintainers/verification.md) for the intended revision and record actual results. Historical contract-closure runs do not establish current release acceptance. Public registry availability, clean external installation, real-model quality and deployment-specific plugins remain independent [release gates](../maintainers/release.md). No tag or package publication follows from this document.

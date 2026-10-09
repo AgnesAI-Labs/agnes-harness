@@ -68,7 +68,7 @@ packages:
       child-agent: { provider: 'in-process' }
 ```
 
-Existing top-level `loop: { id, version }`, `compaction: { engine }`, `persistence: { provider }`, `sandbox: { provider }`, model `provider.adapters`, and preset `tools.runtime` / `approval.policy` remain supported. Explicit top-level selections take precedence over package config. Multiple package selections for the same kind are refused. New root-profile keys are not introduced by this migration; canonical blocks use package config until the profile authoring layer exposes them directly.
+Existing top-level `loop: { id, version }`, `compaction: { engine }`, `persistence: { provider }`, `sandbox: { provider }`, model `provider.adapters`, and preset `tools.runtime` / `approval.policy` remain supported. Explicit top-level selections take precedence over package config. Multiple package selections for the same kind are refused. Canonical provider blocks use package config; only the documented top-level profile fields are accepted.
 
 `child-agent: { provider, version? }` selects the default for `childAgents.start(undefined, task, options)`. An explicit provider id still selects that provider. Omitting configuration keeps `in-process`; a missing configured provider fails instead of falling back. Existing in-process subagent tools retain their explicit in-process path. When fitted, `LoopContext.children` uses the parent-bound `ChildAgentSessionService` facade and configured provider selection. Providers register through `ctx.providers.register('child-agent', sourcePackage, provider)` or the compatible `ctx.childAgents.register(provider)` facade; both feed the same catalogs and own the same cleanup.
 
@@ -78,7 +78,7 @@ A versionless loop selection requires exactly one installed version. An explicit
 
 | Kind | Default | Replacement / lifecycle |
 | --- | --- | --- |
-| `loop` | `agnes.default@1.0.0`, Core | Select for new sessions; persisted id/version governs resume. Registrations reload with Cordis. |
+| `loop` | `agnes.default@1.0.0`, `@agnes/loop-default` | Select for new sessions; persisted id/version governs resume. Registrations reload with Cordis. |
 | `model-adapter` | API-specific adapters from `@agnes/ai` | Model-profile updates rebuild validated routes; unload disposes owned instances. |
 | `compaction` | `default`, Base | Generation scope: a new Host generation assembles its runner; existing sessions retain their code. |
 | `tool-runtime` | `default`, Core | Preset selection; session instances own scheduling and cancellation. |

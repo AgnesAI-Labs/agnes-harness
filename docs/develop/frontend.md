@@ -41,7 +41,7 @@ export function apply(ctx, config) {
 }
 ```
 
-For this singleton slot, a lower priority wins. The example replaces the built-in sidebar, which should return when the example is disabled. Choose a suitable slot for a production plugin. Do not assume unexposed regions can be replaced or depend on private Host DOM/CSS structure.
+For this singleton slot, a lower priority wins. The example replaces the built-in sidebar. After disabling it, a new session uses the built-in sidebar; a session pinned to the example retains its version. Choose a suitable slot for a production plugin. Do not assume unexposed regions can be replaced or depend on private Host DOM/CSS structure.
 
 `publicConfig` is public presentation metadata from package contents, not backend runtime configuration. Client entry/styles must be validated paths inside the package. They cannot escape the snapshot, import arbitrary local modules, or obtain connection credentials. Bundle React or third-party libraries into independently loadable browser artifacts when needed.
 
@@ -52,11 +52,11 @@ For this singleton slot, a lower priority wins. The example replaces the built-i
 Run from the repository root using an isolated instance:
 
 ```sh
-node packages/cli/dist/local/agnes.mjs package inspect file:./examples/packages/client-panel/v1
-node packages/cli/dist/local/agnes.mjs install file:./examples/packages/client-panel/v1
+node agnes.mjs package inspect file:./examples/packages/client-panel/v1
+node agnes.mjs install file:./examples/packages/client-panel/v1
 ```
 
-Trust and enable using hashes from the preview, then open Web for the same instance. You should see v1. Update to `file:./examples/packages/client-panel/v2` through Web management or TUI and check v2. Finally, disable it and confirm the built-in sidebar returns. Because this example may replace management navigation, keep a terminal ready to disable it through the shell.
+Trust and enable using hashes from the preview, then open Web for the same instance and create a new session. You should see v1. Update to `file:./examples/packages/client-panel/v2` through Web management or TUI, complete its trust/enable steps, and create another session to check v2. Return to the first session to check its retained v1. Finally, disable the package and create a new session to confirm the built-in sidebar returns. Because this example may replace management navigation, keep a terminal ready to disable it through the shell.
 
 Package desired=enabled, backend web row ready, and successful loading in this page are distinct stages. A closed browser, failed script/CSS fetch, unauthorized slot, or exception in apply can prevent frontend activation. Inspect per-row actual state as well as package enablement.
 

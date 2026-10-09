@@ -28,7 +28,7 @@ Old generations remain while any durable session references them. Close/hibernat
 
 ## What needs restart
 
-Persistence/storage providers, sandbox and other process backends stay `restart-required`. Package reload cannot replace them. Restore checks deployment compatibility and the persisted loop id/version. Missing snapshots, changed resource archives or incompatible deployments produce explicit `E_GENERATION_*` errors without substituting current code.
+Persistence/storage providers, sandbox and other process backends stay `restart-required`. Package reload cannot replace them. Restore checks deployment compatibility and the persisted loop id/version. Missing code snapshots, modified pinned package trees or incompatible deployments produce explicit `E_GENERATION_*` errors without substituting current code.
 
 MCP definitions, revisions and SecretRefs come from current resources on cold resume; secrets are resolved only when connecting. Deployment transport policy still applies. Resume uses pinned code and current Skills, and waits for initial MCP catalog synchronization with a bounded timeout (currently 20 seconds). Historical resource archives are evidence, not the live read source. Unchanged effective MCP configurations can share connections within the worker and opener/policy/credential boundary; connections are not shared across workers or credential scopes.
 

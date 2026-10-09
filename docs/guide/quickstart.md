@@ -41,13 +41,13 @@ This expresses your intent; approvals and policy determine the execution boundar
 Configure interactively:
 
 ```sh
-node packages/cli/dist/local/agnes.mjs config
+node agnes.mjs config
 ```
 
 Once configured, run the following from the repository root. `AGH_ENTRY` saves the absolute entry path so you can continue using it after changing to your own project directory:
 
 ```sh
-AGH_ENTRY="$PWD/packages/cli/dist/local/agnes.mjs"
+AGH_ENTRY="$PWD/agnes.mjs"
 node "$AGH_ENTRY" -p "Summarize this project without modifying files"
 node "$AGH_ENTRY" sessions --json
 node "$AGH_ENTRY"

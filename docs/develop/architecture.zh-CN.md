@@ -8,20 +8,14 @@ AGH 把任务运行放在共享后台，让 CLI、Web 与 SDK 围绕同一份会
 
 AGH 的客户端展示状态，daemon 管理会话与控制面，Host 组装运行环境，Core 推进模型与工具的执行循环。模型负责生成候选行为；工具授权、执行与持久状态不由模型文本决定。
 
-## 大脑、小脑、记忆与身体
+<a id="brain-cerebellum-memory-and-body"></a>
+<a id="大脑小脑记忆与身体"></a>
 
-**LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。** 这是一组描述产品愿景的角色比喻，总览图展示目标架构；下方请求链路图对应当前软件实现。
+## 业务 Agent 与运行时
 
-![AGH 架构与应用方向：四个角色在同一套运行时中，支撑企业 FDE 交付与 MHS 设备接入](../assets/architecture.zh-CN.svg)
+业务 Agent Loop、工具、模型适配器与角色通过插件替换，由 Host 组合。官方默认 Agent Loop 位于 [loop-default](../../packages/loop-default/src/index.ts)，只使用公开 LoopContext 端口；Core 负责授权、持久事实与恢复。[文件记忆](../guide/memory.zh-CN.md)保存学习到的偏好，账本保留执行历史。
 
-| 概念 | 职责与实现边界 |
-| --- | --- |
-| **LLM / 大脑** | [AI Provider 层](../../packages/ai/src)提供模型推理；Core 通过受控执行流程处理候选动作。 |
-| **Jev / 小脑** | 规划中的结构化决策接入，用于路由、评分和执行协调。main 使用内置 [Core loop](../../packages/core/src/step/session.ts)，没有 Jev 适配器或 Jev 驱动的 loop。[TypeSafe 的 Jev 说明](https://docs.typesafe.ai/introduction/coding-agents)介绍其结构化决策角色；AGH 的接入合同仍需实现与验证。 |
-| **Harness / 记忆** | [Core 事件记录](../../packages/core-ledger/src/log)、任务状态、共享会话与恢复机制保存任务上下文；[Skills](../guide/skills.zh-CN.md)沉淀可复用方法。Harness 同时承担执行与治理；这些记忆机制按现有合同保存事实与方法。 |
-| **MHS / 身体** | 规划中的设备能力接口，基于 MCP（Model Context Protocol）而非厂商专属 SDK 或 ROS 桥接：AGH 通过基于 MCP 的适配器组织状态读取、动作请求和回执。物理身体由设备及其控制器组成；AGH 的 [MHS 接入](../guide/mhs.zh-CN.md)仍处于探索阶段。 |
-
-Jev 的决策和 LLM 的候选动作都应经过后台授权与执行控制。会话记录和 Skills 提供上下文；权限由配置的策略与审批流程决定。
+Jev 仍是探索中的结构化决策接入，没有已安装的 Jev 适配器。[MHS](../guide/mhs.zh-CN.md)已有模拟 MCP 巡检组合包，不证明物理设备兼容性；这些方向与下方已实现的请求链路分开说明。
 
 ## 运行时请求链路
 
@@ -71,7 +65,7 @@ Seam 是必要执行位置的实现，例如审批、账本、沙箱；缺失必
 
 ## Runtime target 与热更新
 
-PackageManager 产生已核验快照和治理状态；runtime target 组合普通行、资源行与平台合成的客户端行。`web:` 行不在 Host 普通树执行。Host 在受限事务中协调可变行、依赖和实际状态，合格变更增量应用；静态边界、失败补偿或污染处理可能要求重建。
+PackageManager 产生已核验快照和治理状态；runtime target 组合普通行、资源行与平台合成的客户端行。`web:` 行不在 Host 普通树执行。代码发布产生供新会话绑定的版本；保留的会话继续使用原代码与配套客户端模块。在同一版本内，Host 通过受限事务协调合格的动态资源行、依赖和实际状态。基础后端变更要求重启；失败补偿或污染处理可能要求重建。
 
 这套机制支持符合条件的增量更新。其事务范围不覆盖外部业务效果；前端还有自己的名册对账与 fiber 清理，需要分别检查后端实际状态和页面加载结果。
 
@@ -101,6 +95,6 @@ FDE 是交付方式，MHS 是设备接入方向。FDE 交付可通过 AGH 已有
 
 普通后端插件作为受信进程内代码执行；一次工具审批或可用的命令沙箱不代表任意插件代码已被隔离。审批、沙箱等必要接缝由受信部署配置选择；普通扩展注册工具或 hook 不会获得替换它们的权限。详见[安全与信任](../guide/security.zh-CN.md)。
 
-MHS 适配器对应总览图中的设备分支，基于 MCP（Model Context Protocol）而非厂商专属 SDK 或 ROS 桥接；接入指南与示例[即将开放](../guide/mhs.zh-CN.md)。仅完成一次 MCP 连接本身不构成 MHS 兼容证明，因为目前没有可供认证的公开 MHS 规范；取消任务也不代表物理设备已安全停止。企业部署、审计、隔离与设备动作均需在实际环境中分别验证。
+MHS 适配器对应总览图中的设备分支，基于 MCP（Model Context Protocol）而非厂商专属 SDK 或 ROS 桥接；已有[模拟巡检组合包](../guide/mhs.zh-CN.md)，真实硬件适配仍需验证。仅完成一次 MCP 连接本身不构成 MHS 兼容证明，因为目前没有可供认证的公开 MHS 规范；取消任务也不代表物理设备已安全停止。企业部署、审计、隔离与设备动作均需在实际环境中分别验证。
 
 源码依据：[Host](../../packages/host-runtime/src/assemble.ts)、[Worker](../../packages/worker-runtime/src/main.ts)、[Core](../../packages/core/src)、[Daemon](../../packages/daemon-supervisor/src/supervisor/supervisor.ts)、[运行目标发布](../../packages/host-providers/src/runtime-target-publisher.ts)、[Web Context](../../packages/web/src/client-modules/boot.ts)。

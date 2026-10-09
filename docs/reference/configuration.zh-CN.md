@@ -39,13 +39,13 @@ builtin 模板是基础，用户 profile 与 Host configuration overlay 合并�
 | `seams` | 必要接缝实现归属；不是普通插件自由注册的接口 |
 | `provider` | package/adapters/routes/catalog/contract；route 名 `default` 是保留 sentinel |
 | `adapters` | storage/fs/exec/platform/secrets 选择 |
-| `persistence` | `{ provider: id }`。默认 `sqlite`，默认值不写入解析后的 profile。仅用户 profile 可设置。更改后需要重启。协议 schema 尚未列出该字段；Host 类型和用户 YAML 接受它。 |
+| `persistence` | `{ provider: id }`。默认 `sqlite`，默认值不写入解析后的 profile。仅用户 profile 可设置。更改后需要重启。协议 schema 与 Host 用户层校验均支持该字段。 |
 | `transports` | stdio/unix/ws-tls，远程配置另需证书与认证 |
-| `dataDir`、`cacheDir` | 数据/缓存位置；改变它们可能改变共享实例身份 |
+| `dataDir`, `cacheDir` | 数据/缓存位置；规范化 home 的运行中 daemon 拒绝不兼容的配置档或数据目录配置 |
 | `presets` | default 与 allowed；默认必须在允许集合中 |
 | `approvals.mode` | manual/smart/off |
 | `reconcile` | immediate/turn/step；maxWaitMs 仅适用 turn/step |
-| `policy.capabilityCeiling` | 能力上限；默认不含 services |
+| `policy.capabilityCeiling` | 能力上限；当前 local-dev 与 enterprise 模板包含 services |
 | `policy.workspacePackages` | deny 或 require-project-trust |
 | `computerUse` | 启用、应用访问范围、捕获与保留限制 |
 | `extensionIsolation` | 隔离请求与不可用处置，不能凭声明证明真实保护 |
@@ -70,7 +70,7 @@ API 客户端可通过 `_agnes/v1/session.setModel` 传入可选的 `thinking`�
 
 预设的 `tools.output_max_bytes`（整数，4096 到 1048576，默认 32768）决定模型最多能看到一条工具结果的多少，超过就由输出守卫截断：保留预算的前一半和最后八分之一，完整内容另存，被截断的结果会给出 `read` 与 `grep` 都认的 `artifact://…` 路径，用来读回其余部分；`read` 的分页也按同一上限。值越大，模型每条结果看到的越多，上下文和会话账本里留到压缩前的内容也越多，调大要慎重；调小最低到 4096。已经打开的会话沿用开始时解析的值。
 
-预设的 `tools.timeout_ms`（整数，至少 1000，默认 120000）是一次工具调用在被内核强制截止之前最多能跑多久，`tools.timeouts`（工具名到毫秒数的映射，每项至少 1000）为指名的工具覆盖这个值。随包的 `base` 预设设有 `timeouts.shell: 600000`。`shell` 工具在模型不传 `timeoutMs` 时按 `tools.timeout_ms` 运行；模型可以申请更长，直到 `shell` 的上限，超出的部分按上限截断，所以前台命令最长 600000，而 `tools.timeout_ms` 仍是默认值。内核会在自己的强制截止之前一小段宽限（2000 毫秒与上限十分之一中的较小者）就把上限告知工具，因此超时的命令由执行器杀死，模型拿到的是已捕获的输出和一行 `[timed out after Nms: ...]`，而不是"结果未知"。当前构建没有可用的 shell 后台作业，所以调大上限是让一条命令获得更多时间的唯一办法。更长的上限会让这一轮及其写者租约占用同样长的时间，调大要慎重。已经打开的会话沿用开始时解析的值。
+预设的 `tools.timeout_ms`（整数，至少 1000，默认 120000）约束普通工具调用，`tools.timeouts` 按工具名覆盖；随包 base 预设允许 `shell` 最长 600000 毫秒。Shell 的 `timeoutMs` 在已准入期限内选择前台等待时长，默认超时后转为后台作业；`background: true` 立即后台运行，`timeoutToBackground: false` 则请求终止。通过 `job_output` 核对返回的作业身份与实际状态；工具返回不证明后台进程已结束。取消与会话关闭会终止所属进程。已有会话保留解析后的预设，见[默认工具](default-tools.zh-CN.md)。
 
 使用 Agnes 中国官方网关时，若请求未覆盖额度，adapter 会明确将内置模型的目录额度 65536 作为 `max_tokens` 发送。[3.0 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-30-flash)、[2.5 Pro](https://agnes-ai.com/zh-Hans/docs/agnes-25-pro)和 [Pro Alpha](https://agnes-ai.com/zh-Hans/docs/agnes-25-pro-alpha) 的官方规格为 65536；[Pro Beta](https://agnes-ai.com/en/docs/agnes-25-pro-beta) 按 Pro 同系额度配置为 65536，尚未单独验证网关容量；[2.5 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-25-flash) 和 [2.0 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-20-flash) 的官方说明使用约数 65.5K，此处按 65536 配置。已废弃模型保留注册以兼容现有配置，其可用性取决于网关。请求中明确设置的额度仍优先。仅修改目录元数据不会设置底层 OpenAI 兼容流请求的额度。大文件仍应通过多次小型 write/edit 调用分段构建；默认额度不能保证任意大的单次调用都能完成。
 

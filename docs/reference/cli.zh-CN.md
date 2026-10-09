@@ -6,7 +6,7 @@
 
 按“会话运行 → 管理 → 扩展”查找命令。想看连续操作示例，先读[CLI / TUI 指南](../guide/cli.zh-CN.md)。
 
-下表的 `agh` 是阅读简写；源码分发实际执行为 `node packages/cli/dist/local/agnes.mjs`。以下均按源码分发方式使用。
+下表的 `agh` 是阅读简写；源码分发实际执行为 `node agnes.mjs`。以下均按源码分发方式使用。
 
 ## 会话与运行
 
@@ -37,7 +37,7 @@ Print 的 `--park`、`--chunks`、`--meta` 控制等待和输出；退出码见[
 | `agh daemon start\|status\|stop` | 显式后台生命周期 |
 | `agh serve [--home DIR] [--profile NAME] [--cwd DIR] [--port N]` | 本地 Web |
 | `agh profile list` / `inspect NAME --resolved` / `trust DEPLOY_DIR` | 配置检查与部署信任 |
-| `agh doctor [platform\|provider\|storage\|profile\|extensions\|daemon\|binary\|code-runtime] --json` | 诊断 |
+| `agh doctor [platform\|network\|provider\|storage\|profile\|extensions\|daemon\|binary\|code-runtime] --json` | 诊断 |
 | `agh doctor provider --probe` | 明确发起最小推理，可能计费 |
 | `agh doctor subagents [--repair] --json` | 子 agent 检查；repair 会修改状态 |
 | `agh consent DISABLED\|LOCAL\|ANON\|FULL` | 保存遥测同意档位；不等于已验证所有外部采集 |
@@ -63,3 +63,20 @@ Computer Use：`status`、`install [--upgrade]`、`restart`、`operation [ID]`�
 ## 诊断
 
 `agh diagnostics export [--session SESSION_ID] --out diagnostics.json` 通过本地 owner 连接写出脱敏支持包。内容与限制见[可观测性](../guide/observability.zh-CN.md)。
+
+## 插件开发与共享 App Server
+
+| 语法 | 用途 |
+| --- | --- |
+| `agh --new -p PROMPT` | 使用当前插件的新会话；普通打印模式可能复用工作区会话 |
+| `agh tools [--session KEY] [--json]` | 查看准入工具及能力来源 |
+| `agh plugins add SOURCE [--yes]` / `pack FOLDER [OUTPUT]` | 审阅后获取；不执行代码地打包分发 |
+| `agh dev FOLDER` / `plugins reload [ID]` | 授权本地开发 / 向新会话发布修改后的本地代码 |
+| `agh plugins candidates list\|show\|approve\|reject` | 读取与审阅 Agent 候选；批准/拒绝绑定候选与审阅摘要 |
+| `agh plugins provenance ID [--json]` | 读取安装来源及信任证据 |
+| `agh plugins publication-status [--json]` | 查看每个容器的发布收敛结果 |
+| `agh sessions migrate KEY [--json]` | 显式迁移已关闭且兼容的会话，拒绝打开中的会话 |
+| `agh app-server --stdio` / `schema --out DIR` | 桥接共享 daemon / 不启动服务地导出生成合同 |
+| `agh doctor --json` / `doctor --probe --json` | 本地检查 / 显式账号测试，可能产生费用 |
+
+完整参数与权限边界见[候选审阅](../extend/agent-built-plugins.zh-CN.md)、[热重载](../extend/hot-reload.zh-CN.md)、[App Server](app-server.zh-CN.md)和[首次运行](../guide/getting-started.zh-CN.md)。

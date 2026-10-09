@@ -4,7 +4,7 @@
 
 [插件架构](architecture-plugins.zh-CN.md) · [作者指南](../extend/README.zh-CN.md) · [版本规则](../maintainers/versioning.zh-CN.md)
 
-本文是首个**产品 v0.1** 标签的公开合同清单与就绪评估，描述本分支候选，包括构造生命周期加固与默认 provider 特例移除。此前仅文档清单对应源码 `cbb0eefa99e0218e5c6fac6e87ab50c9a7f71eae`。Extension API 保持 **1.4.0**。本候选不代表已发行，也不代表 provider 可以无条件冻结：下文未关闭项仍需验收。
+本文维护产品 v0.1 的作者合同清单，Extension API 为 **1.4.0**。源码、schema 与包出口共同定义当前行为；请固定源码版本。本文不代表已发行或完整部署验收，发行结果应引用对应版本的 CI 与验收记录。
 
 ## 稳定性与兼容政策
 
@@ -175,7 +175,7 @@ Bundle 父先于子、每次解析只应用一次；循环/未知 id 拒绝；�
 
 `@agnes/extension-api/testkit/persistence-contract` 独立导出 Vitest suites：`persistenceContract`、`persistenceHostContract`、`persistenceSqliteContract`，使用隔离目录 factory。General testkit 不需导入 Vitest。`@agnes/plugin-runtime/testkit` 重导出 provider runners，并提供 `driveLoop`、`scriptedModel`、`runModelAdapter`、`createPluginTestHost`、`createVerifiedTestRoot`。`driveLoop` 共用 stop rule，可接真实 context；默认 fake context 明确拒绝受控 ledger 操作，不能证明 budget/授权/cold durability/drain 等价。
 
-该版本直接运行时出口比较得到 **63 个根出口**，与 `api-surface.json` 精确一致；API 常量、包版本、changelog heading 均为 `1.4.0`。General testkit 的 14 个运行时出口与上述列表一致。快照新增 experimental 公共默认算法 `createCompactionThreshold` 与 `defaultToolPolicy`，Core/Base 共用；此未发行候选不升版本。下表覆盖全部根运行时出口，前述源码清单覆盖相应公开类型。
+根运行时出口以当前 `api-surface.json` 为准，类型与 testkit 子路径还需单独检查。API 常量、包版本与 changelog 按版本一致性检查维护。下表分组展示主要出口，不作为穷尽的数量或兼容证明。Memory、system-prompt 与 observability 合同分别见对应用户/作者指南。
 
 | 运行时出口组 | 名称 |
 | --- | --- |
@@ -217,7 +217,7 @@ AI 根出口另新增 experimental `createApiKeyProviderConfigs(): Promise<reado
 
 ### 剩余未关闭项
 
-本候选已关闭：具名 provider 错误统一并明确消费边界兼容码；Loop/sandbox/persistence 可取消异步构造与迟到清理；官方 adapter create/credential 等价；默认 compaction/policy 不依赖 Core。Receipt/association 模型已接受为 v0.1 experimental。
+发行前仍需对目标后端与产物执行下列验证；实现清单不替代实际验收。
 
 1. 对各部署后端验收不结束的真实 provider 工作、cleanup 失败与进程关闭。取消仍为协作式，不可中断 store I/O 必须排空（第 6 项）。
 2. 验收非 SQL 完整 Host 耐久性/崩溃恢复、真实 sandbox enforcement，以及 fake/memory 之外的功能专属 conformance（第 8–9 项）。
@@ -226,8 +226,8 @@ AI 根出口另新增 experimental `createApiKeyProviderConfigs(): Promise<reado
 
 ## 已知限制与验证范围
 
-已记录的本地开发为 macOS/Node 24；本次收尾使用 Node **24.20.0**、pnpm **10.34.5**。Linux/Windows 需独立 native build、sandbox/process/restart/installation 验收。Seatbelt/bubblewrap/Windows 能力报告须在部署环境实测，provider 声明不证明 enforcement。远程工作区不能选择另一个本地 sandbox provider。不承诺搬迁运行中 process、已打开 file/store，或隔离任意同进程插件。
+macOS 与 Linux 已有持续维护的原生、进程、浏览器检查与独立视觉基线。Windows 完整端到端、签名安装包、自动升级与物理设备仍未验证。Provider 取消需协作，无法结束的操作与存储 I/O 需要按后端验收关闭及持久性。沙箱能力声明不证明实际约束成立。
 
-Persistence 已将可选 SQL 与必需 Host 能力分开。[JSONL 示例](../../examples/persistence/README.md)实现完整 Host 端口，并有[合同测试](../../examples/persistence/test/contract.test.ts)与[进程恢复案例](../../examples/persistence/test/recovery.e2e.test.ts)；定向检查未执行 heavy 进程恢复案例。其内存 journal index 面向小型本地部署，无压缩/日志整理，也未验收网络文件系统/Windows 耐久性。本任务不证明完整生产 non-SQL backend 已具备资格。Strict managed model egress、credential provenance、send-fence 保证不属于本冻结。MCP prompts/resource-image mapping/session OAuth、可配 Skill roots/slash 兼容仍遵循 [MCP/Skills 支持矩阵](../guide/mcp-skills-support.zh-CN.md)。通用端口与示例不证明外部 engine、SSH/PTY、设备或 workflow 产品支持。MHS/设备集成仍未验证。
+JSONL 示例提供完整 Host 端口、合同测试与新进程恢复用例，面向采用内存索引的小规模本地部署；网络文件系统、Windows 持久性和生产规模需另验。[MCP/Skills 矩阵](../guide/mcp-skills-support.zh-CN.md)维护资源边界，包括会话 OAuth 与提示模板不支持项。程序化 Python 是实验能力；记忆、请求捕获和遥测各有隐私及保留规则。
 
-源码仍为 developer preview。本次收尾**未完成资格验证**包发布、公共 registry 启动、发行产物第三方依赖解析、真实远程模型凭据、完整 daemon/browser 验收、平台隔离、heavy crash/restart suites。现有源码测试仅证明预期覆盖。交付报告记录包 typecheck、定向生命周期/默认算法/凭据测试、必需 related tests、guards、文档验证与定向 lint；最终发行 owner 必须记录该候选 revision 的更广泛实测结果。本次不升版本、不创建 tag、不发布包。
+按目标修订执行[验证流程](../maintainers/verification.zh-CN.md)并记录实际结果。历史合同关闭运行不证明当前发行验收。公开 registry 可用性、仓外干净安装、真实模型质量与具体部署插件仍是独立[发行门槛](../maintainers/release.zh-CN.md)。本文不会创建标签或发布包。

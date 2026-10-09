@@ -2,11 +2,11 @@
 
 [English](README.md) | 简体中文
 
-**从第一个任务，到你的 Agent 应用。**
+**可托付的业务 Agent 平台：插件化业务、持续任务与经审阅的成长。**
 
 用 CLI 和 Web 跑通任务，用插件接入业务能力，用 Skills 积累方法，再为岗位打造自己的界面。从下面选择一条路径开始。
 
-[项目首页](../README.zh-CN.md) · [为什么选择 AGH](guide/why-agh.zh-CN.md) · [体验示例](guide/demo.zh-CN.md) · [MHS（即将开放）](guide/mhs.zh-CN.md)
+[项目首页](../README.zh-CN.md) · [为什么选择 AGH](guide/why-agh.zh-CN.md) · [体验示例](guide/demo.zh-CN.md) · [设备接入（预览）](guide/mhs.zh-CN.md)
 
 
 [三个产品演示](guide/demos.zh-CN.md)
@@ -39,6 +39,12 @@
 | [沙箱提供者](guide/sandbox-providers.zh-CN.md) | 在启动时选择进程沙箱，并阅读声明的能力 |
 | [可观测性与诊断](guide/observability.zh-CN.md) | 开启 OTLP 遥测并导出脱敏问题包 |
 | [系统提示词与请求轨迹](guide/system-prompt-trace.zh-CN.md) | 自定义角色并查看本地模型请求 |
+| [执行证据](guide/fact-chain.zh-CN.md) | 从请求、工具、产物与起草来源检查事实及缺口 |
+| [会话工作台](guide/workbench.zh-CN.md) | 文件面板、工作流回执与停靠面板 |
+| [候选审阅](extend/agent-built-plugins.zh-CN.md) | 核对 Agent 草稿、测试与权限后发布 |
+| [来源与 MCP 隔离](guide/security.zh-CN.md#package-provenance-and-source-policy) | 安装来源、完整性与本地 MCP 进程边界 |
+| [网络部署与 Linux](guide/deployment.zh-CN.md) | 出站代理、超时与 Linux 准备 |
+| [App Server stdio](reference/app-server.zh-CN.md) | 通过共享后台集成自己的客户端 |
 | [排错](guide/troubleshooting.zh-CN.md) | 从错误码和运行状态定位下一步 |
 
 ## 构建与深入了解
@@ -50,7 +56,7 @@
 
 ## 阅读约定
 
-当前为 pre-alpha 源码预览。命令默认从源码仓库根目录执行，构建入口为 `node packages/cli/dist/local/agnes.mjs`；`SESSION_ID`、`REVISION` 等大写参数需替换为当前实例返回的值。示例的 `1.0.0` / `2.0.0` 表示示例包版本。
+当前为 pre-alpha 源码预览。命令默认从源码仓库根目录执行，构建入口为 `node agnes.mjs`；`SESSION_ID`、`REVISION` 等大写参数需替换为当前实例返回的值。示例的 `1.0.0` / `2.0.0` 表示示例包版本。
 
 文档随源码维护，请选择与运行产物一致的版本。教程给出前提、步骤与预期结果；检查命令和验收范围见[验证与复现](maintainers/verification.zh-CN.md)，具体版本的执行结果随发布说明记录。
 

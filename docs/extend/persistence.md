@@ -23,13 +23,13 @@ Run `persistenceContract` and `persistenceHostContract` from `@agnes/extension-a
 Migration transfers session history through supported export/import. It does not copy provider files or grant authority to the destination. Quiesce the source, retain a backup of its complete home, and export each desired session with the source provider selected:
 
 ```sh
-AGH_HOME=/path/to/source-home node packages/cli/dist/local/agnes.mjs export SESSION_ID --format agnes -o session.jsonl
+AGH_HOME=/path/to/source-home node agnes.mjs export SESSION_ID --format agnes -o session.jsonl
 ```
 
 Stop the source process. Prepare a separate destination home, enable the target provider and configure it there. Import with a previously unused key:
 
 ```sh
-AGH_HOME=/path/to/destination-home node packages/cli/dist/local/agnes.mjs import session.jsonl --from auto --key agnes:local:default:import:dm:migrated
+AGH_HOME=/path/to/destination-home node agnes.mjs import session.jsonl --from auto --key agnes:local:default:import:dm:migrated
 ```
 
 Open the imported session, inspect its messages and import warnings, run a synthetic follow-up, stop and restart the destination, then verify that history persists. Keep the original export and source home until acceptance. To roll back, stop the destination and restart the retained source home with its original provider/configuration. Switching an id in the same directory is not migration.

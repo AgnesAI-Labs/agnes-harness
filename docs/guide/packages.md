@@ -148,16 +148,16 @@ The fixed local admin routes are `GET /admin/api/loops` (loops plus defaults/rev
 Use the [installation guide](install.md) to create a temporary AGH_HOME and start the instance from the repository root. The daemon resolves relative `file:` paths against its workspace source. If reusing a daemon started from a different cwd, check that source; working from an isolated instance's startup directory is the simplest option.
 
 ```sh
-node packages/cli/dist/local/agnes.mjs package inspect file:./examples/packages/hot-tool-plugin
-node packages/cli/dist/local/agnes.mjs install file:./examples/packages/hot-tool-plugin --yes
+node agnes.mjs package inspect file:./examples/packages/hot-tool-plugin
+node agnes.mjs install file:./examples/packages/hot-tool-plugin --yes
 ```
 
 Installation shows a preview. Without `--yes`, confirmation requires an interactive terminal; non-TTY callers get a reason and hint instead of silent cancellation. Check package ID, version, source, integrity, capabilityHash, warnings, and blockers. A blocked package cannot simply be authorized. `package trust <id> --yes` displays and trusts the current installed integrity/capability hashes. You may still provide both hashes explicitly; mismatches print expected and given values. `--yes` never overrides blockers or hash checks:
 
 ```sh
-node packages/cli/dist/local/agnes.mjs package trust @agnes-examples/hot-tool-plugin --yes
-node packages/cli/dist/local/agnes.mjs package enable @agnes-examples/hot-tool-plugin --yes
-node packages/cli/dist/local/agnes.mjs package status
+node agnes.mjs package trust @agnes-examples/hot-tool-plugin --yes
+node agnes.mjs package enable @agnes-examples/hot-tool-plugin --yes
+node agnes.mjs package status
 ```
 
 In Web, use Settings → Plugins → Install from source → Inspect/Install → Enable. The Enable confirmation reviews and binds the current integrity and capability hashes, then activates only after that check succeeds. There is no separate trust action in the normal Web flow. An installed package's switch is on only while the package is actually running. If a dependency, policy, or candidate-loading failure prevents that, the switch stays off and the failure reason appears in the same row; choose Enable again to retry.
@@ -171,8 +171,8 @@ The shell `package` command has no `update` subcommand. Use the installed packag
 Practice with `hot-service/v1` and `v2`, or `client-panel/v1` and `v2`. Install and enable v1, then select the v2 source with the same package ID. Check new hashes and capability changes, and follow the interface's review and activation prompts. Inspect actual state and interface/service values, rather than relying only on 100% operation progress.
 
 ```sh
-node packages/cli/dist/local/agnes.mjs package rollback PACKAGE_ID
-node packages/cli/dist/local/agnes.mjs package operation OPERATION_ID
+node agnes.mjs package rollback PACKAGE_ID
+node agnes.mjs package operation OPERATION_ID
 ```
 
 An ordinary rollback without activation leaves the target untrusted and disabled. After a shell rollback, inspect the target hashes, trust and enable it, then check the service or interface. SDK activation can include current installed/active hashes and an explicit trust decision for the target; these checks cannot be omitted.
@@ -184,10 +184,10 @@ Rollback depends on the retained previous version and current authorization. Ret
 ## Disable, revoke trust, and remove
 
 ```sh
-node packages/cli/dist/local/agnes.mjs package disable PACKAGE_ID
-node packages/cli/dist/local/agnes.mjs package remove PACKAGE_ID
-node packages/cli/dist/local/agnes.mjs package cancel OPERATION_ID
-node packages/cli/dist/local/agnes.mjs packages pins inspect
+node agnes.mjs package disable PACKAGE_ID
+node agnes.mjs package remove PACKAGE_ID
+node agnes.mjs package cancel OPERATION_ID
+node agnes.mjs packages pins inspect
 ```
 
 Trust revocation remains available through the Node SDK for administrative and recovery workflows; it is not shown as a normal Web action, and there is no general shell `package untrust` command. Disabling stops capabilities from being bound to new sessions; existing sessions retain their generation until deletion. Removal handles installation state and owned files, but in-use snapshots may retain pins. Do not manually delete referenced directories. `packages pins release PIN_ID` explicitly cleans up a verified orphan pin; it must not bypass runtime safety gates. An isolated demo has verified removal of all three example packages after disabling them. Revalidate the target platform and final distribution; see [verification](../maintainers/verification.md) for the recorded baseline.
@@ -200,7 +200,7 @@ Cancellation is a request: continue checking the operation after its receipt. An
 
 Each package activation creates an immutable plugin generation. New sessions bind the current generation; existing sessions retain their packages, versions, loop and frontend bundles through hibernation and worker restart. Disable or uninstall stops new bindings while existing sessions drain. Closing a connection does not release a saved session's generation. Once a session is deleted, the Host owner calls `releaseSessionGeneration(sessionKey)`; generations with no remaining session references are disposed and collected.
 
-Storage, filesystem, sandbox and platform backends require restart. Resume fails explicitly if the pinned snapshot is missing, its package files changed, or the deployment's loop/adapter configuration is incompatible. It never substitutes the current generation. Changed private MCP factories or Skills views must also remain reconstructible; a missing original view refuses cold resume. `Host.pluginGenerationStatus()` and the internal worker command `pluginGenerations.status` expose generation counts and active/draining/restart-required/failed plugin state for administration. Browser roster requests can supply `sessionId` to load that session's generation; assets use immutable generation routes.
+Storage, filesystem, sandbox and platform backends require restart. Resume fails explicitly if the pinned snapshot is missing, its package files changed, or the deployment's loop/adapter configuration is incompatible. It never substitutes the current generation. MCP definitions and Skills are live resources: cold resume uses current trusted/enabled resources, filtered by the pinned session composition. Historical resource archives do not replace that live set. `Host.pluginGenerationStatus()` and the internal worker command `pluginGenerations.status` expose generation counts and active/draining/restart-required/failed plugin state for administration. Browser roster requests can supply `sessionId` to load that session's generation; assets use immutable generation routes.
 
 Candidate loading, dependencies and activation timeouts can still cause an activation to fail. The prior generation continues serving its bound sessions. The browser loads its own bundle roster, so Host activation does not prove browser loading.
 

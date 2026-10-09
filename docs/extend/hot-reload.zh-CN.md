@@ -28,7 +28,7 @@ agh plugins reload --profile local-dev
 
 ## 哪些需要重启
 
-persistence/storage provider、sandbox 及其他进程基础后端仍标记 `restart-required`，不能被包重载替换。恢复检查部署兼容性与会话已持久化的 loop id/version。快照缺失、资源归档被修改或部署不兼容会产生明确的 `E_GENERATION_*` 错误，不会替换为当前代码。
+persistence/storage provider、sandbox 及其他进程基础后端仍标记 `restart-required`，不能被包重载替换。恢复检查部署兼容性与会话已持久化的 loop id/version。代码快照缺失、固定包目录被修改或部署不兼容会产生明确的 `E_GENERATION_*` 错误，不会替换为当前代码。
 
 冷恢复从当前资源取得 MCP 定义、revision 与 SecretRef，连接时才解析密钥，部署 transport 策略继续生效。恢复使用固定代码和当前 Skills，并在初始 MCP 目录同步时有界等待（目前 20 秒）。历史资源归档只作证据，不作为实时读取来源。不变的有效 MCP 配置可在同一 worker 与 opener/policy/credential 边界内共享连接，不跨 worker 或凭据范围共享。
 

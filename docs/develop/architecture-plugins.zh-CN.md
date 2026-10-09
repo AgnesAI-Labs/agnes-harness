@@ -68,7 +68,7 @@ packages:
       child-agent: { provider: 'in-process' }
 ```
 
-原有顶层 `loop: { id, version }`、`compaction: { engine }`、`persistence: { provider }`、`sandbox: { provider }`、模型 `provider.adapters`，以及 preset 的 `tools.runtime` / `approval.policy` 继续有效。显式顶层选择优先于包配置；同一类型由多个包选择时拒绝启动。本次迁移不添加新的根 profile 字段，统一配置先使用 package config，后续由 profile 作者层直接开放。
+原有顶层 `loop: { id, version }`、`compaction: { engine }`、`persistence: { provider }`、`sandbox: { provider }`、模型 `provider.adapters`，以及 preset 的 `tools.runtime` / `approval.policy` 继续有效。显式顶层选择优先于包配置；同一类型由多个包选择时拒绝启动。统一 provider 配置使用 package config，根 profile 只接受已经列入合同的字段。
 
 `child-agent: { provider, version? }` 选择 `childAgents.start(undefined, task, options)` 使用的默认 provider；显式传入 id 仍选择指定 provider。未配置时保留 `in-process`，配置的 provider 缺失时拒绝而不回退。既有进程内 subagent 工具保留显式进程内路径。可选 `LoopContext.children` 使用绑定父会话的 `ChildAgentSessionService` facade，并按配置选择 provider。作者可使用 `ctx.providers.register('child-agent', sourcePackage, provider)` 或兼容的 `ctx.childAgents.register(provider)`，两者共享目录与资源清理。
 
@@ -78,9 +78,9 @@ loop 省略版本时必须恰好安装一个版本。显式版本必须匹配；
 
 | 类型 | 默认实现 | 替换与生命周期 |
 | --- | --- | --- |
-| `loop` | Core 的 `agnes.default@1.0.0` | 新会话可选择；恢复遵循持久化 id/version；注册项随 Cordis 重载。 |
+| `loop` | `@agnes/loop-default` 的 `agnes.default@1.0.0` | 新会话可选择；恢复遵循持久化 id/version；注册项随 Cordis 重载。 |
 | `model-adapter` | `@agnes/ai` 提供的各 API 适配器 | 模型 profile 更新重建已校验路由；卸载释放所属实例。 |
-| `compaction` | Base 的 `default` | 注册可重载；已装配 runner 的选择需重启 Host。 |
+| `compaction` | Base 的 `default` | 新版本按插件版本代数装配 runner；已有会话保留原代码。 |
 | `tool-runtime` | Core 的 `default` | preset 选择；会话实例负责调度与取消。 |
 | `tool-policy` | Base approval policy 的 `default` | preset 选择；主体授权仍由 Core 决定。 |
 | `persistence` | Host 的 `sqlite` | 启动选择，变更需重启；不会迁移其他 provider 的文件。 |
@@ -90,6 +90,9 @@ loop 省略版本时必须恰好安装一个版本。显式版本必须匹配；
 ## 插件阶梯
 
 每一级都可以独立学习：**0 使用**——选择插件和 preset；**1 Skill**——编写 `SKILL.md`；**2 连接**——配置 MCP；**3 Tool**——编写 JS/TS 工具；**4 Panel**——添加客户端面板；**5 Brain**——替换模型适配器、压缩引擎或策略；**6 Loop**——提供完整 driver；**7 Bundle**——用配置组合以上能力。新手从工具与 Skill 起步，研究者替换算法，FDE 团队交付 bundle，内核贡献者维护端口与统一生命周期。
+
+<a id="pinned-code-live-resources"></a>
+
 
 ## 固定代码，动态资源
 

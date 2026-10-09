@@ -25,7 +25,7 @@ node templates/create-agh-plugin.mjs tool hello-tool .agh/plugins/hello-tool --l
 AGNES_PROFILE=local-dev agh web
 ```
 
-源码环境尚无 `agh` 命令时，按安装指南完成一次运行时构建，用 `node packages/cli/dist/local/agnes.mjs` 替代它。
+源码环境尚无 `agh` 命令时，按安装指南完成一次运行时构建，用 `node agnes.mjs` 替代它。
 
 保持 daemon 运行，在另一个使用相同工作区、profile 和 home 的终端执行：
 

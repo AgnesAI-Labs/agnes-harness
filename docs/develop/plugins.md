@@ -16,11 +16,9 @@ The default-enabled `@agnes/plugin-helper` can turn a request into an AGH tool, 
 
 > Create an AGH plugin that counts words in text, and install it in the current AGH instance.
 
-The helper reads the development guide and templates bundled with the current version, saves source under `.plugin-helper/<random-directory>` in the current workspace, and returns package identity, capabilities, and content hashes. After installation confirmation, AGH installs, trusts, and enables that code through the normal package-management flow. Inspect actual state under Settings → Plugin management → Installed. New capabilities become available at turn boundaries; check status and call the new tool in the next turn.
+The helper reads version-matched templates, saves a private candidate, runs explicitly approved author tests and submits the tested tree for human review. Inspect files, test results and permissions under Settings → Plugins → Candidates. Approval publishes that exact reviewed tree through normal package governance. New sessions gain plugin code; existing sessions keep their code version. Approved Skills refresh as live resources. See [candidate review](../extend/agent-built-plugins.md) for tools, hashes, update conflicts and refusal paths.
 
-Creating source does not install a plugin. Inspection validates package structure and declarations, and confirmation applies to the specific code identified by its hash. Enabling it runs JavaScript with local process privileges. Review the generated source before installation.
-
-The session helper currently supports self-contained text ESM tool/Skill plugins without external dependencies, and pure CSS/token skins. It does not overwrite an existing package with the same name or publish packages automatically. Skins can be selected in appearance settings, support light/dark modes, and revert to the default when disabled. The helper reads the `kind: skin` template without needing to locate source examples. For interactive frontend interfaces, services, dependency builds, or version updates, use the relevant tutorial and standard package workflow below. Disabling or removing the helper does not affect other installed plugins.
+Creating a candidate does not install, trust or enable it. Author tests execute trusted JavaScript, not isolated hostile code. The helper supports bounded self-contained text ESM tool/Skill packages and CSS/token skins; dependencies and richer interfaces follow the author workflow below. Disabling the helper does not remove published packages.
 
 For CSS and token customization, see [skin development](skins.md).
 
@@ -38,7 +36,7 @@ For CSS and token customization, see [skin development](skins.md).
 
 Choose the path closest to your need. [Plugin management](../guide/packages.md) covers the shared installation and trust flow, so each interface does not need its own backend infrastructure.
 
-See [MHS and devices](../guide/mhs.md) for the physical-device direction; integration documentation and examples are coming soon. The table covers existing software extension entry points.
+See [MHS and devices](../guide/mhs.md) for the physical-device direction; a simulated inspection bundle is available; hardware validation remains future work. The table covers existing software extension entry points.
 
 <a id="cordis-在其中做什么"></a>
 
@@ -100,24 +98,11 @@ Configure `provider.adapters` with the registration id or its enabled source pac
 
 The instance streams wire events; the existing AI facade continues to own stamps, tool-call recovery and usage accounting. Credentialed structural instances implement `bindCredential`; Host resolves secrets before inference. `dispose()` releases instance resources, and optional registration `cleanup()` releases shared resources. Both run when the owning plugin unloads. Duplicate ids and unavailable selections are refused.
 
-Admin integrations can call Host's `modelAdapterCatalog(root)` or the assembled `modelAdapterCatalog()` to read id, version, source package, API name and capabilities. The catalog exposes no configuration, credentials or executable factories. Adapter unload or replacement currently requires rebuilding the model profile; live session generation pinning is not provided by this contract.
+Admin integrations can call Host's `modelAdapterCatalog(root)` or the assembled `modelAdapterCatalog()` to read id, version, source package, API name and capabilities. The catalog exposes no configuration, credentials or executable factories. Adapter implementations stay pinned to each session’s code generation. Model routes, catalogs and credential configuration update across retained containers; in-flight requests retain their admitted settings. See [pinned code, live resources](architecture-plugins.md#pinned-code-live-resources).
 
 ## Persistence providers
 
-The session ledger and the per-owner package tables are one store. A provider implements that store and nothing else. The contract is [`definePersistenceProvider`](../../packages/extension-api/src/persistence.ts): `open({ dataDir })` returns `open`, `commit`, `renew`, `release`, `scan`, `registers`, `tables`, and `close`. Scan pages use `PERSISTENCE_SCAN_PAGE_MAX` (500). Register cells use `persistenceRegisterKey` and `isPersistenceTombstone`, the same spelling Core already uses.
-
-The built-in id is `sqlite` (`DEFAULT_PERSISTENCE_PROVIDER_ID`). Host uses it when `persistence.provider` is omitted. Set another id in the user profile:
-
-```yaml
-persistence:
-  provider: sqlite
-```
-
-`adapters.storage` is the older adapter name and does not select this provider. A workspace, local, flags, or managed layer cannot set `persistence`. Every provider's `state.effect` is `restart-required`. Host reads the id when it opens adapters. A plugin `apply()` runs after that and cannot replace the store of the current process.
-
-A package publishes the named export `persistenceProvider`. [`@agnes-examples/persistence-jsonl`](../../examples/persistence/src/index.ts) is a second provider, id `jsonl`, with an append-only event log. It does not migrate a SQLite ledger. Its package tables accept `CREATE TABLE`, `CREATE INDEX`, `INSERT`, and `SELECT`, and they are not the host SQL authorizer. Child control and crash reclaim stay on `sqlite`. The daemon's own job tables still open SQLite directly. There is no migration between providers.
-
-The protocol profile schema does not list `persistence` yet. Host profile types and a user `profile.yaml` accept it.
+A full Host provider implements ledger, metadata, child control, reclaim and integrity; SQL is optional. The built-in `sqlite` and [JSONL example](../../examples/persistence/) supply these ports. Select `persistence: { provider: jsonl }` in the user profile after installing its package. Missing required capabilities refuse startup; there is no fallback to SQLite for child control. Selection requires restart and does not migrate files. Use the [persistence author guide](../extend/persistence.md) for contracts, conformance and supported export/import migration.
 
 ## Child agent providers
 

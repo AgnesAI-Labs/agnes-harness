@@ -49,14 +49,14 @@ lines.on('line', (line) => {
   process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }) + '\n');
 });
 JS
-node packages/cli/dist/local/agnes.mjs mcp add hello-local --name hello-local --stdio node --arg "$AGH_HOME/hello-mcp.mjs" --yes
-MCP_REVISION=$(node packages/cli/dist/local/agnes.mjs mcp get hello-local | sed -n 's/.*revision=\([a-f0-9]*\).*/\1/p')
-node packages/cli/dist/local/agnes.mjs mcp trust hello-local --expected-revision "$MCP_REVISION" --yes
-MCP_REVISION=$(node packages/cli/dist/local/agnes.mjs mcp get hello-local | sed -n 's/.*revision=\([a-f0-9]*\).*/\1/p')
-node packages/cli/dist/local/agnes.mjs mcp enable hello-local --expected-revision "$MCP_REVISION" --yes
-node packages/cli/dist/local/agnes.mjs mcp status hello-local
-node packages/cli/dist/local/agnes.mjs mcp tools hello-local
-node packages/cli/dist/local/agnes.mjs mcp test hello-local --expected-revision "$MCP_REVISION" --yes
+node agnes.mjs mcp add hello-local --name hello-local --stdio node --arg "$AGH_HOME/hello-mcp.mjs" --yes
+MCP_REVISION=$(node agnes.mjs mcp get hello-local | sed -n 's/.*revision=\([a-f0-9]*\).*/\1/p')
+node agnes.mjs mcp trust hello-local --expected-revision "$MCP_REVISION" --yes
+MCP_REVISION=$(node agnes.mjs mcp get hello-local | sed -n 's/.*revision=\([a-f0-9]*\).*/\1/p')
+node agnes.mjs mcp enable hello-local --expected-revision "$MCP_REVISION" --yes
+node agnes.mjs mcp status hello-local
+node agnes.mjs mcp tools hello-local
+node agnes.mjs mcp test hello-local --expected-revision "$MCP_REVISION" --yes
 ```
 
 预期看到 `connection=ready`、`hello` 工具和 succeeded 测试。在已配置模型的会话中让代理调用 hello-local 的 hello。
@@ -68,18 +68,18 @@ local-dev 默认允许 PATH 上的 stdio `node`、`npx`、`python`、`python3`�
 Web 设置的 MCP 页面可查看服务、连接与工具目录。需要手动配置 stdio、HTTP 或 SSE 服务时，可使用命令行；`MCP_URL` 应是你已审核并可访问的 MCP endpoint，不是普通网页或模型 Base URL：
 
 ```sh
-node packages/cli/dist/local/agnes.mjs mcp add docs-tools --name docs-tools --http "$MCP_URL"
-node packages/cli/dist/local/agnes.mjs mcp get docs-tools
+node agnes.mjs mcp add docs-tools --name docs-tools --http "$MCP_URL"
+node agnes.mjs mcp get docs-tools
 ```
 
 创建后默认停用。Web 中审核地址/进程、凭据引用与工具范围后直接点击“启用”，无需单独处理信任状态。开关跟随你的启用请求：请求过启用它就保持打开，连接或策略检查失败也照样开着，错误码和原因显示在同一行。关掉开关就是撤回启用请求，也是移除该服务的前置条件。命令行仍显式暴露底层审核与启用步骤，因此需要记录当前 revision 并依次执行：
 
 ```sh
-node packages/cli/dist/local/agnes.mjs mcp trust docs-tools --expected-revision REVISION
-node packages/cli/dist/local/agnes.mjs mcp get docs-tools
-node packages/cli/dist/local/agnes.mjs mcp enable docs-tools --expected-revision REVISION
-node packages/cli/dist/local/agnes.mjs mcp status docs-tools
-node packages/cli/dist/local/agnes.mjs mcp tools docs-tools
+node agnes.mjs mcp trust docs-tools --expected-revision REVISION
+node agnes.mjs mcp get docs-tools
+node agnes.mjs mcp enable docs-tools --expected-revision REVISION
+node agnes.mjs mcp status docs-tools
+node agnes.mjs mcp tools docs-tools
 ```
 
 每次写操作前都以 `get` 的最新 revision 为准，不假定上一步不会修改它。revision 冲突意味着并行或在途变更，应重新读取，不能反复盲重试。
@@ -91,10 +91,10 @@ stdio 使用 `--stdio EXECUTABLE` 与重复的 `--arg VALUE`；不要把完整 s
 ## 调试、变更与清理
 
 ```sh
-node packages/cli/dist/local/agnes.mjs mcp test docs-tools --expected-revision REVISION
-node packages/cli/dist/local/agnes.mjs mcp reconnect docs-tools --expected-revision REVISION
-node packages/cli/dist/local/agnes.mjs mcp disable docs-tools --expected-revision REVISION
-node packages/cli/dist/local/agnes.mjs mcp remove docs-tools --expected-revision REVISION
+node agnes.mjs mcp test docs-tools --expected-revision REVISION
+node agnes.mjs mcp reconnect docs-tools --expected-revision REVISION
+node agnes.mjs mcp disable docs-tools --expected-revision REVISION
+node agnes.mjs mcp remove docs-tools --expected-revision REVISION
 ```
 
 `test/reconnect` 会真的连接目标，读取到目录不等于每个工具效果都已验证。更新用 `mcp update`，携带最新 revision 及完整的新定义，更新后重新审核信任。操作会返回 operation ID；超时后先用 `resources operation OPERATION_ID` 查询，可用 `resources cancel OPERATION_ID` 请求取消。

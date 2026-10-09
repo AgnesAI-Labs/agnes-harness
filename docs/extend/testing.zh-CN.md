@@ -58,4 +58,14 @@ console.log(result.events, result.checkpoint)
 
 作者测试通过只证明确定性依赖下的合同，不证明真实提供方、浏览器、MCP 服务器或操作系统隔离兼容。
 
+## 经 Host 验证提供器
+
+`@agnes/extension-api/testkit` 与 `@agnes/plugin-runtime/testkit` 导出 `loopConformance`、`modelAdapterConformance`、`compactionConformance`、`toolRuntimeConformance`、`toolPolicyConformance`、`persistenceConformance`、`sandboxConformance`、`childAgentConformance`，共用 `runProviderConformance(kind, options)`。
+
+在隔离的普通 Host 插件中捕获 `ctx.providers`，传入该端口、所有者包名、全新提供器与 `open(provider)`。Probe 走 Host 的公共服务/会话路径，返回 `start(signal)`、`close()`；loop/persistence 还需 `coldResume()`。每次操作返回 `{ ready, result }`：到达提供器时 ready 完成，排空后 result 完成。原生 API 返回取消结果而非抛出 AbortError 时，用 `isCancelledResult(result)` 校验；操作未结束就完成卸载会失败。
+
+[Host conformance](../../packages/host/test/assemble/provider-conformance.test.ts)覆盖模型、压缩、工具运行时和策略；[所属资源 probe](../../packages/host/test/assemble/provider-owned-conformance.test.ts)覆盖循环、持久化、沙箱、子代理，包括新 Host 冷恢复。
+
+持久化操作没有 `AbortSignal`，probe 可声明 `cancellation: 'unsupported'`，报告 `cancel-unsupported`，仍须在卸载时排空。用 `unloadStarted()` 在注销开始后释放受控调用，确认结束前 store 未关闭。其他类型必须通过取消检查。循环 probe 可通过 `Session.step()` 观察驱动调用，通过冷恢复的 `Session.run()` 检查回合及持久 checkpoint。生命周期 suite 不替代提供器专项可观察断言或 generation 升级测试。
+
 可选的 Vitest 持久化合约测试从 `@agnes/extension-api/testkit/persistence-contract` 单独导出。通用 testkit 可在 Node 测试运行器中导入，无需 Vitest。

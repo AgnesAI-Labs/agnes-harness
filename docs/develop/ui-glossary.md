@@ -15,7 +15,7 @@ Use these terms in labels, help, accessible names, confirmations and error messa
 | Agent Loop | Agent Loop | Session execution loop; never alternate between “Loop” and “循环” in Chinese labels |
 | Bundle | 组合包 | Named session composition |
 | Preset | 预设 | Named permission/configuration preset |
-| Plugin generation | 插件代际 | Immutable running code generation; package versions remain “version / 版本” |
+| Plugin generation | 插件版本代数 | Immutable running code generation; package versions remain “version / 版本” |
 | Credential reference | 凭据引用 | A reference to stored credentials; internal `secretRef` fields keep their API names |
 | New session | 新会话 | A session created after changing defaults or enabling a package |
 

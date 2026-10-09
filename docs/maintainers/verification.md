@@ -44,18 +44,13 @@ On Windows, tests that exercise symlink escapes require permission to create sym
 
 ```sh
 pnpm --filter @agnes/cli build:local
-node packages/cli/dist/local/agnes.mjs --help
+node agnes.mjs --help
 node --import tsx tools/public-docs/smoke.mjs
 ```
 
 The smoke test uses an isolated temporary home, a loopback model fixture, and real CLI/daemon/worker processes. It checks sessions, default helpers, plugins, Web interfaces, updates, and cleanup, then stops the services it started. It accesses Web through HTTP/WebSocket clients, which does not establish real-browser visual acceptance.
 
-The maintained macOS merge gate is `pnpm e2e:web`. Provision cached Chromium separately with
-`pnpm exec playwright install chromium`; the gate builds the local runtime, launches the real
-`agnes.mjs serve` from the repository root, and runs isolated offline CLI/SDK acceptance with
-browser startup evidence. See the [Web E2E guide](../../tools/e2e-web/README.md) for build reuse,
-artifacts, zero-retry policy and the **Web E2E gate** required status. Page-level acceptance and
-visual baselines await the integrated UI overhaul; this phase does not claim that coverage.
+The maintained `pnpm e2e:web` gate runs on macOS and Linux in [CI](../../.github/workflows/e2e-web.yml). It builds or validates a reusable runtime, starts real isolated daemon/Web processes from `agnes.mjs serve`, and executes page interactions, persisted mutations, locale/accessibility checks and reviewed platform-specific screenshots. Provision Chromium separately. The [Web gate guide](../../tools/e2e-web/README.md) owns the spec inventory, artifacts, zero-retry policy and baseline review. Fixture coverage establishes the selected scenarios, not every browser or deployment.
 
 See [installation](../guide/install.md) for separate output directories and PowerShell steps, or the [demo guide](../guide/demo.md) for manual exploration.
 
@@ -69,17 +64,6 @@ Release summaries should link to version-matched CI or redacted acceptance resul
 
 <a id="2026-09-24-源码候选验证"></a>
 
-## Source-candidate verification on 2026-09-24
+## Release evidence
 
-Environment: macOS arm64, Node.js 24.20.0, pnpm 10.34.5, with independent source and isolated runtime directories.
-
-| Check | Result |
-| --- | --- |
-| Locked dependency installation, two native helpers, complete local build | Passed |
-| Types, generated consistency, documentation links, source anchors | Passed |
-| Biome | 0 errors; 30 warnings and 15 informational diagnostics retained |
-| Automated tests | Initial full run: 18,682 tests; 344 skipped. All 16 failures were fixed and passed focused regression tests |
-| Final repository guard rerun | 544 passed, 2 skipped |
-| Real local process smoke | 19 stages passed |
-
-The strategy was one full run plus related regressions, without a second full-suite run after fixes. Regressions covered all initial failures, Worker, Host assembly, and documentation examples. Skips remain subject to platform or explicit environment conditions. Real browsers, paid models, external services, physical devices, and other platforms were outside this acceptance scope. Revalidate after source or build-environment changes.
+Use version-matched CI artifacts and release notes for results. Historical source-candidate counts are not current acceptance evidence. Keep real-model results separate from deterministic fixtures, and record exact model/account environment without credentials. No Windows or physical-device acceptance is implied by macOS/Linux CI. See [release checks](release.md).

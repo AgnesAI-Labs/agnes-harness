@@ -4,7 +4,7 @@
 
 [文档导航](../README.zh-CN.md) · [插件生命周期](../guide/packages.zh-CN.md)
 
-做完本教程，你会在工作台里看到自己的面板，完成一次版本更新，并确认停用后内置界面恢复。先理解生命周期，再把版本文字替换成岗位需要的内容。
+做完本教程，你会在工作台里看到自己的面板，完成一次版本更新，并确认停用后新会话使用内置界面、旧会话保留原版本。先理解生命周期，再把版本文字替换成岗位需要的内容。
 
 复用 [client-panel/v1](../../examples/packages/client-panel/v1/package.json)。它在已支持的 `ui:sidebar` 槽展示版本文字，v2 用于验证页面更新。它是浏览器贡献路径，不是普通 Host `ctx.extension()` 的 slot 注册。
 
@@ -46,11 +46,11 @@ export function apply(ctx, config) {
 从仓库根和独立实例运行：
 
 ```sh
-node packages/cli/dist/local/agnes.mjs package inspect file:./examples/packages/client-panel/v1
-node packages/cli/dist/local/agnes.mjs install file:./examples/packages/client-panel/v1
+node agnes.mjs package inspect file:./examples/packages/client-panel/v1
+node agnes.mjs install file:./examples/packages/client-panel/v1
 ```
 
-使用预览摘要完成 trust、enable，然后打开同一实例 Web。应看到 v1 字样。通过 Web 管理或 TUI 更新到 `file:./examples/packages/client-panel/v2`，检查 v2；最后 disable，确认内置侧栏恢复。示例可能替换管理导航，必要时保留终端使用 shell disable。
+使用预览摘要完成 trust、enable，然后打开同一实例 Web 并新建会话，应看到 v1 字样。通过 Web 管理或 TUI 更新到 `file:./examples/packages/client-panel/v2`，完成其信任与启用后再新建会话检查 v2；返回第一个会话核对保留的 v1。最后 disable，再新建会话确认内置侧栏恢复。示例可能替换管理导航，必要时保留终端使用 shell disable。
 
 包 desired=enabled、后端 web row ready 和本页面成功加载是不同阶段。浏览器未打开、脚本/CSS 读取失败、槽位越权或 apply 抛错都可能导致前端失败；查看逐行实际状态，不仅看包级 enabled。
 

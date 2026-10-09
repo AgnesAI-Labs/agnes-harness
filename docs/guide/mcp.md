@@ -53,14 +53,14 @@ lines.on('line', (line) => {
   process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }) + '\n');
 });
 JS
-node packages/cli/dist/local/agnes.mjs mcp add hello-local --name hello-local --stdio node --arg "$AGH_HOME/hello-mcp.mjs" --yes
-MCP_REVISION=$(node packages/cli/dist/local/agnes.mjs mcp get hello-local | sed -n 's/.*revision=\([a-f0-9]*\).*/\1/p')
-node packages/cli/dist/local/agnes.mjs mcp trust hello-local --expected-revision "$MCP_REVISION" --yes
-MCP_REVISION=$(node packages/cli/dist/local/agnes.mjs mcp get hello-local | sed -n 's/.*revision=\([a-f0-9]*\).*/\1/p')
-node packages/cli/dist/local/agnes.mjs mcp enable hello-local --expected-revision "$MCP_REVISION" --yes
-node packages/cli/dist/local/agnes.mjs mcp status hello-local
-node packages/cli/dist/local/agnes.mjs mcp tools hello-local
-node packages/cli/dist/local/agnes.mjs mcp test hello-local --expected-revision "$MCP_REVISION" --yes
+node agnes.mjs mcp add hello-local --name hello-local --stdio node --arg "$AGH_HOME/hello-mcp.mjs" --yes
+MCP_REVISION=$(node agnes.mjs mcp get hello-local | sed -n 's/.*revision=\([a-f0-9]*\).*/\1/p')
+node agnes.mjs mcp trust hello-local --expected-revision "$MCP_REVISION" --yes
+MCP_REVISION=$(node agnes.mjs mcp get hello-local | sed -n 's/.*revision=\([a-f0-9]*\).*/\1/p')
+node agnes.mjs mcp enable hello-local --expected-revision "$MCP_REVISION" --yes
+node agnes.mjs mcp status hello-local
+node agnes.mjs mcp tools hello-local
+node agnes.mjs mcp test hello-local --expected-revision "$MCP_REVISION" --yes
 ```
 
 Expect `connection=ready`, a `hello` tool, and a succeeded test. In a configured session ask the agent to call `hello` on `hello-local`.
@@ -74,18 +74,18 @@ Local-dev permits stdio `node`, `npx`, `python`, and `python3` on PATH, plus HTT
 The MCP settings page shows services, connection state, and tool catalogs. Use the CLI to configure stdio, HTTP, or SSE manually. `MCP_URL` must be a reviewed, reachable MCP endpoint, rather than a normal webpage or model Base URL:
 
 ```sh
-node packages/cli/dist/local/agnes.mjs mcp add docs-tools --name docs-tools --http "$MCP_URL"
-node packages/cli/dist/local/agnes.mjs mcp get docs-tools
+node agnes.mjs mcp add docs-tools --name docs-tools --http "$MCP_URL"
+node agnes.mjs mcp get docs-tools
 ```
 
 New services start disabled. In Web, review the endpoint/process, secret references, and tool scope, then choose Enable; there is no separate trust action. The switch follows your enable request: it stays on once you have asked for it, even when the connection or policy check fails, and the error code and reason appear in the same row. Turning it off withdraws the request, and is required before the server can be removed. The CLI exposes the underlying approval and enablement steps separately, so record the current revision and run:
 
 ```sh
-node packages/cli/dist/local/agnes.mjs mcp trust docs-tools --expected-revision REVISION
-node packages/cli/dist/local/agnes.mjs mcp get docs-tools
-node packages/cli/dist/local/agnes.mjs mcp enable docs-tools --expected-revision REVISION
-node packages/cli/dist/local/agnes.mjs mcp status docs-tools
-node packages/cli/dist/local/agnes.mjs mcp tools docs-tools
+node agnes.mjs mcp trust docs-tools --expected-revision REVISION
+node agnes.mjs mcp get docs-tools
+node agnes.mjs mcp enable docs-tools --expected-revision REVISION
+node agnes.mjs mcp status docs-tools
+node agnes.mjs mcp tools docs-tools
 ```
 
 Before each write, obtain the latest revision with `get`. Do not assume the previous operation left it unchanged. A revision conflict indicates a concurrent or in-flight change; read again instead of retrying blindly.
@@ -99,10 +99,10 @@ Use existing secret references: `--secret-env NAME=secret://namespace/name` for 
 ## Diagnose, change, and clean up
 
 ```sh
-node packages/cli/dist/local/agnes.mjs mcp test docs-tools --expected-revision REVISION
-node packages/cli/dist/local/agnes.mjs mcp reconnect docs-tools --expected-revision REVISION
-node packages/cli/dist/local/agnes.mjs mcp disable docs-tools --expected-revision REVISION
-node packages/cli/dist/local/agnes.mjs mcp remove docs-tools --expected-revision REVISION
+node agnes.mjs mcp test docs-tools --expected-revision REVISION
+node agnes.mjs mcp reconnect docs-tools --expected-revision REVISION
+node agnes.mjs mcp disable docs-tools --expected-revision REVISION
+node agnes.mjs mcp remove docs-tools --expected-revision REVISION
 ```
 
 `test/reconnect` actually connects to the target. Reading a catalog does not verify every tool's effects. Use `mcp update` with the latest revision and the complete new definition, then review trust again. Operations return an operation ID. After a timeout, query `resources operation OPERATION_ID`; request cancellation with `resources cancel OPERATION_ID` if applicable.

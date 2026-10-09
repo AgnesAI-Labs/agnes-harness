@@ -12,11 +12,9 @@
 
 > 帮我写一个 AGH 插件，统计文本字数，并安装到当前 AGH。
 
-助手先读取随版本分发的开发指南与模板，再把源码保存在当前工作区的 `.plugin-helper/<随机目录>` 中，并返回包身份、能力和内容摘要。确认安装后，AGH 通过同一套包管理流程安装、信任并启用这份代码；你可以在“设置 → 插件管理 → 已安装”查看实际状态。新能力在轮次边界生效，下一轮可查询状态并调用新工具验证结果。
+助手读取与版本匹配的模板，保存私有候选，经显式批准运行作者测试，再将测试通过的内容提交人工审阅。在“设置 → 插件 → 候选”核对文件、测试结果与权限。批准后按正常包治理发布这份精确内容。新会话获得插件代码，已有会话保留原版本；批准的技能作为动态资源刷新。[候选审阅指南](../extend/agent-built-plugins.zh-CN.md)说明工具、摘要、更新冲突与拒绝路径。
 
-创建源码本身不会安装插件。检查验证包结构与声明，安装确认针对该摘要的具体代码；启用插件会以本机进程权限执行 JavaScript。安装前可以审阅生成的源码。
-
-当前会话助手支持自包含、无外部依赖的文本 ESM 工具/Skill 插件，以及纯 CSS/token 皮肤，不覆盖已有同名包，也不自动发布。皮肤可在设置的外观选项中选择，支持浅色/深色，停用插件后恢复默认。创建皮肤时助手会读取 `kind: skin` 模板，无需定位源码示例。需要交互式前端界面、服务、依赖构建或版本更新时，继续使用下方对应教程与标准包管理流程。禁用或卸载助手不影响已安装的其他插件。
+创建候选不等于安装、信任或启用。作者测试执行受信 JavaScript，不隔离恶意代码。助手支持有上限的自包含文本 ESM 工具/技能包和 CSS/token 皮肤；依赖与复杂界面使用下方作者流程。禁用助手不会删除已发布的包。
 
 为工作台定制纯 CSS 与 token 外观，阅读[皮肤开发](skins.zh-CN.md)。
 
@@ -32,7 +30,7 @@
 
 选择最贴近需求的一条路径。包的安装和信任过程统一见[插件管理](../guide/packages.zh-CN.md)，无需为每种界面重新实现后台。
 
-物理设备接入的方向介绍见[MHS 与设备接入](../guide/mhs.zh-CN.md)，相关接入文档与示例即将开放；上表列出的是当前已有的软件扩展入口。
+物理设备接入的方向介绍见[MHS 与设备接入](../guide/mhs.zh-CN.md)，已有模拟巡检组合包，真实硬件仍需验证；上表列出的是当前已有的软件扩展入口。
 
 ## Cordis 在其中做什么
 
@@ -88,24 +86,11 @@ export const example = {
 
 实例输出 wire 事件；现有 AI facade 继续负责 stamp、工具调用恢复与用量计费。有凭据的结构化实例须实现 `bindCredential`，Host 在推理前解析密钥。实例的 `dispose()` 释放实例资源，可选的注册级 `cleanup()` 释放共享资源；插件卸载时均会执行。重复 id 与不可用的选择会被拒绝。
 
-管理端可调用 Host 的 `modelAdapterCatalog(root)` 或装配对象的 `modelAdapterCatalog()`，读取 id、版本、来源包、API 名和能力。目录不暴露配置、凭据或工厂。当前卸载或替换适配器后须重新装配模型配置；本合同不提供运行中会话的代际固定。
+管理端可调用 Host 的 `modelAdapterCatalog(root)` 或装配对象的 `modelAdapterCatalog()`，读取 id、版本、来源包、API 名和能力。目录不暴露配置、凭据或工厂。适配器实现固定到会话的代码版本；模型路由、目录与凭据配置在保留的容器间更新，在途请求保留准入时的设置。见[固定代码与动态资源](architecture-plugins.zh-CN.md#pinned-code-live-resources)。
 
 ## 持久化提供者
 
-会话账本和每个 owner 的包表是同一个存储。提供者只实现这个存储。[`definePersistenceProvider`](../../packages/extension-api/src/persistence.ts) 的 `open({ dataDir })` 返回 `open`、`commit`、`renew`、`release`、`scan`、`registers`、`tables` 和 `close`。扫描分页上限是 `PERSISTENCE_SCAN_PAGE_MAX`（500）。寄存器单元使用 `persistenceRegisterKey` 和 `isPersistenceTombstone`，与 Core 现有拼写相同。
-
-内置 id 是 `sqlite`（`DEFAULT_PERSISTENCE_PROVIDER_ID`）。配置省略 `persistence.provider` 时 Host 使用它。在用户 profile 中改 id：
-
-```yaml
-persistence:
-  provider: sqlite
-```
-
-`adapters.storage` 是原来的适配器名，不选择这个提供者。工作区、local、flags 和 managed 层不能设置 `persistence`。每个提供者的 `state.effect` 都是 `restart-required`。Host 在打开适配器时读取 id。插件的 `apply()` 发生在这之后，换不了当前进程已经打开的存储。
-
-包通过具名导出 `persistenceProvider` 发布实现。[`@agnes-examples/persistence-jsonl`](../../examples/persistence/src/index.ts) 是第二个提供者，id 为 `jsonl`，事件日志只追加。它不迁移 SQLite 账本。它的包表接受 `CREATE TABLE`、`CREATE INDEX`、`INSERT` 和 `SELECT`，不是 Host 的 SQL 授权器。子任务控制和崩溃回收仍在 `sqlite` 上。daemon 自己的任务表仍直接打开 SQLite。提供者之间没有迁移。
-
-协议里的 profile schema 还没有 `persistence`。Host 的 profile 类型和用户 `profile.yaml` 接受它。
+完整 Host 提供器实现账本、metadata、子任务控制、回收与完整性五个端口，SQL 可选。内置 `sqlite` 与 [JSONL 示例](../../examples/persistence/)均提供这些端口。安装包后在用户配置档选择 `persistence: { provider: jsonl }`。缺少必要能力会拒绝启动，子任务控制不会回退 SQLite。选择需要重启，不迁移文件。合同、一致性验证及受支持的导出/导入迁移见[持久化作者指南](../extend/persistence.zh-CN.md)。
 
 ## 子代理提供者
 

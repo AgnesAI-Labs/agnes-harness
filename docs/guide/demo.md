@@ -26,7 +26,7 @@ The automated demo uses a simulated local model to drive real product processes.
 
 ## Demo 1: give an agent a new capability
 
-Follow the [backend plugin tutorial](../develop/backend.md) to install, trust, and enable `hot-tool-plugin`. In a session with a configured model, ask it to call `demo_text_stats` on `hello world`.
+Follow the [backend plugin tutorial](../develop/backend.md) to install, trust, and enable `hot-tool-plugin`. In a new session created after enable, with a configured model, ask it to call `demo_text_stats` on `hello world`.
 
 Expected structured tool result:
 
@@ -42,7 +42,7 @@ Expand the tool record and check the name, input, and structured output of `demo
 
 ## Demo 2: adapt the workbench to a role
 
-Follow the [frontend panel tutorial](../develop/frontend.md) to load `client-panel/v1`. Web should show `Agnes client module demo · v1`. Update to v2 and check the version text; disable the package and confirm the built-in sidebar returns.
+Follow the [frontend panel tutorial](../develop/frontend.md) to load `client-panel/v1`. Web should show `Agnes client module demo · v1`. After updating, trusting, and enabling v2, create a new session to check its version text. Disable the package and create another session to confirm the built-in sidebar returns; retained sessions keep their original modules.
 
 This example occupies a singleton sidebar slot and replaces the built-in sidebar. Keep a terminal available so you can disable it if needed. The automated demo checks the roster, and component tests check mounting/unmounting. Inspect the appearance in a browser yourself.
 
@@ -52,9 +52,9 @@ This example occupies a singleton sidebar slot and replaces the built-in sidebar
 
 ## Demo 3: connect the interface to a backend service
 
-Follow the [full-stack tutorial](../develop/fullstack.md). In an isolated trial profile, configure service capability, install the combined package, and select a session first.
+Follow the [full-stack tutorial](../develop/fullstack.md). In an isolated trial profile, configure service capability, install, trust, and enable the combined package, then create a new session before refreshing the panel.
 
-The panel shows `backend 1.0.0` when it receives the backend query result. On update, check both frontend and backend versions. After an ordinary rollback, first observe the refused call, then verify the hashes, trust, and enable again. Old service calls should fail after removal.
+The panel shows `backend 1.0.0` when it receives the backend query result. After update and trust/enable, use a new session to check both frontend and backend versions. After rollback, verify the hashes and trust/enable the restored version before creating a new session. Disable/remove excludes the package from new bindings; retained sessions keep their pinned code, subject to current authorization.
 
 **Build on it:** Start with a read-only status page and gradually connect your business services. Writes need their own effects, command identity, and authorization design; do not reuse a read-only query declaration for them.
 
@@ -62,7 +62,7 @@ The panel shows `backend 1.0.0` when it receives the backend query result. On up
 
 ## Run locally without a model account
 
-Complete the [build prerequisites](install.md). Run from the source root; if the full build already exists, start with the second command. An isolated build has passed the demo, including plugin deletion; see [verification](../maintainers/verification.md) for its version and results. Rebuild and verify after source changes.
+Complete the [build prerequisites](install.md). Run from the source root; if the full build already exists, start with the second command. The script is an optional process probe; rebuild and verify against your checkout. Its profile-level roster and live service update checks do not demonstrate session-pinned upgrades. Use the [hot-upgrade demo](../../examples/demos/hot-upgrade/README.md) to check retained-session behavior.
 
 ```sh
 pnpm --filter @agnes/cli build:local

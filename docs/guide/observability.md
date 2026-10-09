@@ -23,7 +23,7 @@ Restart the daemon after changing this file or the environment. The administrato
 ```sh
 export AGH_OTEL_ENABLED=true
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
-node packages/cli/dist/local/agnes.mjs serve
+node agnes.mjs serve
 ```
 
 Supported settings:
@@ -57,17 +57,17 @@ Delivery uses a queue limited to 1024 records or 1 MiB, with one in-flight batch
 ## Export a support bundle
 
 ```sh
-node packages/cli/dist/local/agnes.mjs diagnostics export --out diagnostics.json
-node packages/cli/dist/local/agnes.mjs diagnostics export --session SESSION_ID --out diagnostics.json
+node agnes.mjs diagnostics export --out diagnostics.json
+node agnes.mjs diagnostics export --session SESSION_ID --out diagnostics.json
 ```
 
 The daemon must be reachable through the local owner connection. A selected session is checked against that owner's session authority. The CLI writes the file locally with private permissions and an atomic rename; an output path is never sent to the server.
 
 The versioned bundle contains AGH/Node/platform versions, profile and composition hashes when available, generation states/counts, safe doctor statuses, recent error IDs and the last 100 permitted audit metadata entries. Session exports add only its hash, last sequence and hashed loop/generation pins. It contains no conversation ledger, file contents, credentials, exception messages, stacks or raw audit detail. An unavailable worker is reported explicitly and exporting does not start one.
 
-App Server clients use `_agnes/v1/diagnostics.export` with optional `sessionId`, `limit` (1–500 audit entries) and `diagnosticId`. Errors normalized at the App Server boundary enter a 4096-record process buffer. CLI and production daemon owners persist safe error metadata in `AGH_HOME/diagnostics/errors.jsonl`, including early startup errors. Export merges the journal with the process buffer; an exact `diagnosticId` query searches historical records even after they leave the buffer. No exception payload is persisted. Independent SDK embeddings should install a durable sink with the public `observeDiagnostics` contract if they need restart-persistent diagnostics for errors generated in that process. A sink failure marks the error `diagnosticUnavailable`.
+App Server clients use `_agnes/v1/diagnostics.export` with optional `sessionId`, `limit` (1–500 audit entries) and `diagnosticId`. Errors normalized at the App Server boundary enter a 4096-record process buffer. CLI and production daemon owners persist safe error metadata in `AGH_HOME/diagnostics/errors.jsonl`, including early startup errors. Export merges the journal with the process buffer; an exact `diagnosticId` query filters the retained process buffer and a bounded recent journal window. It does not scan the complete durable history. No exception payload is persisted. Independent SDK embeddings should install a durable sink with the public `observeDiagnostics` contract if they need restart-persistent diagnostics for errors generated in that process. A sink failure marks the error `diagnosticUnavailable`.
 
-The default bundle includes the latest 4096 errors and reads at most the last 1 MiB of each audit file. Older errors remain available by exact ID while the journal exists. Deleting the home or its journal removes that history. Review even a redacted bundle before posting it publicly: timestamps, versions, hashes, platform and operational counts can reveal deployment metadata.
+The process buffer retains up to 4096 errors. Journal reads clamp record limits to 1–1000 and scan at most `limit × 4096` recent bytes; an exact-ID query uses limit 1. An older ID can therefore be unavailable after restart while its row still exists. Audit files are read within their separate last-1-MiB bound. Deleting the home or its journal removes that history. Review even a redacted bundle before posting it publicly: timestamps, versions, hashes, platform and operational counts can reveal deployment metadata.
 
 See [troubleshooting](troubleshooting.md), [CLI reference](../reference/cli.md) and [App Server](../reference/app-server.md) for related interfaces.
 

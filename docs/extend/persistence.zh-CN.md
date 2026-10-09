@@ -23,13 +23,13 @@
 通过受支持的导出/导入迁移会话历史。迁移不复制提供器文件，也不向目标授予权限。先让来源停止执行任务，备份完整 home，使用来源提供器导出所需会话：
 
 ```sh
-AGH_HOME=/path/to/source-home node packages/cli/dist/local/agnes.mjs export SESSION_ID --format agnes -o session.jsonl
+AGH_HOME=/path/to/source-home node agnes.mjs export SESSION_ID --format agnes -o session.jsonl
 ```
 
 停止来源进程。准备独立目标 home，在其中启用并配置目标提供器。使用未占用的新 key 导入：
 
 ```sh
-AGH_HOME=/path/to/destination-home node packages/cli/dist/local/agnes.mjs import session.jsonl --from auto --key agnes:local:default:import:dm:migrated
+AGH_HOME=/path/to/destination-home node agnes.mjs import session.jsonl --from auto --key agnes:local:default:import:dm:migrated
 ```
 
 打开导入会话，检查消息及导入警告，执行合成后续请求，停止并重启目标后核验历史。验收前保留来源 home 和导出文件。回退时停止目标，以原配置和提供器重启来源。在同一目录直接切换 id 不构成迁移。

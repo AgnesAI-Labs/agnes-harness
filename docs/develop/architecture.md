@@ -10,20 +10,13 @@ AGH runs tasks in a shared backend so CLI, Web, and SDK work with the same sessi
 
 Clients present state, the daemon manages sessions and the control plane, Host assembles the runtime, and Core advances the model/tool loop. Models propose actions; model text does not decide tool authorization, execution, or persistent state.
 
-## Brain, cerebellum, memory and body
+<a id="brain-cerebellum-memory-and-body"></a>
 
-**LLM is the brain, Jev is the cerebellum, Harness is the memory, and MHS is the body.** This is a role metaphor for the product vision, and the overview shows the target architecture; the request diagram below follows the existing software implementation.
+## Business agents and the runtime
 
-![AGH architecture and deployment paths: the four roles in one runtime that serves enterprise FDE delivery and MHS device integration](../assets/architecture.svg)
+Business Loops, tools, model adapters and personas are replaceable plugins composed by Host. The official default Loop lives in [loop-default](../../packages/loop-default/src/index.ts), using public LoopContext ports; Core owns authorization, durable facts and recovery. [File memory](../guide/memory.md) stores learned preferences, while the ledger retains execution history.
 
-| Concept | Responsibility and implementation boundary |
-| --- | --- |
-| **LLM / brain** | The [AI provider layer](../../packages/ai/src) supplies model inference. Core consumes proposed actions through the controlled execution flow. |
-| **Jev / cerebellum** | A planned structured-decision integration for routing, scoring, and execution coordination. Main uses the built-in [Core loop](../../packages/core/src/step/session.ts); it has no Jev adapter or Jev-driven loop. [TypeSafe's Jev guide](https://docs.typesafe.ai/introduction/coding-agents) explains its structured-decision role. AGH's integration contract still needs implementation and validation. |
-| **Harness / memory** | [Core event records](../../packages/core-ledger/src/log), task state, shared sessions, and recovery preserve task context. [Skills](../guide/skills.md) capture reusable methods. Harness also owns execution and governance; these memory mechanisms preserve facts and methods under their existing contracts. |
-| **MHS / body** | A planned device capability interface, built on MCP (Model Context Protocol) rather than a vendor-specific SDK or a ROS bridge: AGH would organize state reads, action requests, and receipts through MCP-based adapters. The physical body consists of devices and their controllers; AGH's [MHS integration](../guide/mhs.md) is exploratory. |
-
-Jev decisions and LLM proposals would still pass through backend authorization and execution controls. Session records and Skills contribute context; authority comes from the configured policy and approval flow.
+Jev remains an exploratory structured-decision integration, without an installed Jev adapter. [MHS](../guide/mhs.md) has a simulated MCP inspection bundle; it does not establish physical-device compatibility. These directions are distinct from the implemented request path below.
 
 ## Runtime request path
 
@@ -81,7 +74,7 @@ Trusted backend Cordis rows may contribute tools, hooks, and constrained service
 
 ## Runtime targets and hot updates
 
-PackageManager produces verified snapshots and governance state. A runtime target combines ordinary rows, resource rows, and platform-synthesized client rows. `web:` rows do not execute in Host's ordinary tree. Host reconciles mutable rows, dependencies, and actual state in constrained transactions, applying eligible changes incrementally. Static boundaries, failed compensation, or tainted state may require a rebuild.
+PackageManager produces verified snapshots and governance state. A runtime target combines ordinary rows, resource rows, and platform-synthesized client rows. `web:` rows do not execute in Host's ordinary tree. Code publication creates a generation for new session bindings; retained sessions keep their code and matching client modules. Within a generation, Host reconciles eligible live resource rows, dependencies, and actual state in constrained transactions. Base backend changes require restart; failed compensation or tainted state may require a rebuild.
 
 This supports incremental updates for eligible changes. Transactions do not cover external business effects. The frontend also reconciles its own roster and cleans up fibers, so inspect both backend actual state and page loading.
 
@@ -117,6 +110,6 @@ FDE is a delivery approach; MHS is a device integration direction. An FDE deploy
 
 Ordinary backend plugins execute as trusted in-process code. A tool approval or available command sandbox does not isolate arbitrary plugin code. Approvals, sandbox behavior, and other required seams are selected by trusted deployment configuration; ordinary extensions do not acquire the right to replace them by registering a tool or hook. See [security and trust](../guide/security.md).
 
-MHS adapters are the device branch in the overview, built on MCP (Model Context Protocol) rather than a vendor-specific SDK or a ROS bridge. Integration guides and examples are [coming soon](../guide/mhs.md); a bare MCP connection alone does not establish MHS compatibility, since no public MHS specification is open for certification. Task cancellation does not establish that a physical device stopped safely. Enterprise deployment, audit, isolation, and device actions each need validation in their actual environment.
+MHS adapters are the device branch in the overview, built on MCP (Model Context Protocol) rather than a vendor-specific SDK or a ROS bridge. A [simulated inspection bundle](../guide/mhs.md) is available; hardware adapters require validation; a bare MCP connection alone does not establish MHS compatibility, since no public MHS specification is open for certification. Task cancellation does not establish that a physical device stopped safely. Enterprise deployment, audit, isolation, and device actions each need validation in their actual environment.
 
 Source: [Host](../../packages/host-runtime/src/assemble.ts), [Worker](../../packages/worker-runtime/src/main.ts), [Core](../../packages/core/src), [Daemon](../../packages/daemon-supervisor/src/supervisor/supervisor.ts), [runtime-target publication](../../packages/host-providers/src/runtime-target-publisher.ts), [Web Context](../../packages/web/src/client-modules/boot.ts).

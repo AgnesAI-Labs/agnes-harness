@@ -26,8 +26,8 @@ daemon 会监视 Skill 根目录，也会发现启动后新建的文件夹。已
 在目标项目运行 CLI，会自动登记当前目录并打印 workspaceId。refresh 是可选的立即重扫，需要确认；无需手填工作区 ID：
 
 ```sh
-node /path/to/agnes-harness/packages/cli/dist/local/agnes.mjs skills refresh --yes
-node /path/to/agnes-harness/packages/cli/dist/local/agnes.mjs skills list
+node /path/to/agnes-harness/agnes.mjs skills refresh --yes
+node /path/to/agnes-harness/agnes.mjs skills list
 ```
 
 请替换上面的构建路径；PATH 中已有 `agh` 时可直接使用。指定另一个已登记工作区时加 `--workspace-id WORKSPACE_ID`。`skills list` 打印资源 ID、修订、信任、期望与实际状态。仍可显式执行 `agh skills trust SKILL_RESOURCE_ID REVISION trusted --yes`；启用/禁用用 `agh resources enable|disable SKILL_RESOURCE_ID --expected-revision REVISION --yes`。非 TTY 写操作必须加 `--yes`，只代替确认，不绕过修订校验。

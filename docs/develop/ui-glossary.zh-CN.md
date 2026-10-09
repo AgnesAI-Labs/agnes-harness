@@ -15,7 +15,7 @@
 | Agent Loop | Agent Loop | 会话执行流程，中文标签不交替使用“Loop”或“循环” |
 | Bundle | 组合包 | 命名的会话组合 |
 | Preset | 预设 | 命名的权限或配置预设 |
-| Plugin generation | 插件代际 | 不可变的运行代码代际；软件包版本仍称“版本” |
+| Plugin generation | 插件版本代数 | 不可变的运行代码代际；软件包版本仍称“版本” |
 | Credential reference | 凭据引用 | 对凭据库的引用；内部 `secretRef` 字段名不改动 |
 | New session | 新会话 | 修改默认值或启用插件后创建的会话 |
 
