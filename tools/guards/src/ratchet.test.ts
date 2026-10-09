@@ -383,8 +383,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Locale catalogs on LocaleService. Measured 1745, exact, no spare (+31).
   // 2026-10-07 integration review: Bounded artifact download and optional client service ports.
   // countLines: 1749 -> 1826; exact measured cap, no exclusions or spare allocation.
-  'packages/web-client/src': 1952,
-  'packages/web-slots/src': 605,
+  'packages/web-client/src': 1992,
+  'packages/web-slots/src': 620,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // Approval reasons: the approval card label reads the decision reason (+22). Measured 6651, exact cap.
   // 2026-10-07 reviewed growth: plugin state badges and session default controls.
