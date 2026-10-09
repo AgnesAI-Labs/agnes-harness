@@ -43,3 +43,5 @@
 学习偏好：`packages/memory-file` 拥有官方文件提供器，`packages/extension-api/src/memory.ts` 拥有公共 SPI，`packages/web-admin/src/settings/memory.tsx` 拥有编辑器，`packages/base/src/memory` 拥有 remembering 技能。
 
 MCP 传输健康回调：[implementation](../../packages/base/src/mcp/transport-health.ts) · [tests](../../packages/base/test/mcp/transport-health.test.ts)
+
+可关闭对话框 DOM 绑定：[web-ui](../../packages/web-ui/src/dom/dialog-binding.ts) · [tests](../../packages/web-ui/test/dialog-binding.test.ts)

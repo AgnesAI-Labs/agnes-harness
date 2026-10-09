@@ -82,7 +82,6 @@ const LAYER: Record<string, number> = {
   '@agnes/package-isolation': -1,
   '@agnes/system-node': -2, // OS primitives sit below infrastructure leaves and have no package dependencies.
   '@agnes/web-server': 1,
-  '@agnes/web-admin-frame': -1,
   '@agnes/protocol': 0,
   '@agnes/cli-tui': 4,
   '@agnes/resource-control-runtime': 6,

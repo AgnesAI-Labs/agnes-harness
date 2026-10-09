@@ -74,7 +74,7 @@
         <div class="dialog-actions"><button id="mcp-cancel" class="secondary-button" type="button" data-i18n="shell.form.cancel">Cancel</button><button class="primary-button" type="submit" data-i18n="shell.form.submit">Create and wait for confirmation</button></div>
       </form>
     </dialog>
-    <!-- 共享确认弹窗（@agnes/web-admin-frame 的 createConfirmController）。此前本页每个操作都弹
+    <!-- 共享确认弹窗（@agnes/web-ui 的 createConfirmController）。此前本页每个操作都弹
          原生 window.confirm，与本页其余样式不搭且无法展示结构化事实。同一份标记也存在于
          index.html 与 admin.html，由 admin-pane-contract.test.ts 断言三处都有。 -->
     <dialog data-agnes-region="dialog" id="admin-confirm" aria-labelledby="admin-confirm-title">

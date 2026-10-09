@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { bindAutoDismissDisclosure, bindDismissibleDialog } from '../src/binding.js'
+import { bindAutoDismissDisclosure, bindDismissibleDialog } from '../src/dom/dialog-binding.js'
 
 /** The admin panes own pending-state policy; this helper owns only when a modal may be dismissed. */
 function setup(canClose: () => boolean = () => true) {

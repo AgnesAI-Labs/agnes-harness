@@ -44,9 +44,6 @@
       "path": "packages/web-server"
     },
     {
-      "path": "packages/web-admin-frame"
-    },
-    {
       "path": "packages/resource-control-contracts"
     },
     {

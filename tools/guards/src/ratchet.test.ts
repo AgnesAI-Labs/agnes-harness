@@ -389,7 +389,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Approval reasons: the approval card label reads the decision reason (+22). Measured 6651, exact cap.
   // 2026-10-07 reviewed growth: plugin state badges and session default controls.
   // countLines: 6640 -> 6681 (+41); exact cap, no exclusions or spare allocation.
-  'packages/web-ui/src': 8909,
+  'packages/web-ui/src': 8947,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
@@ -600,7 +600,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // B1/main integration: +7 formatter lines around typed turn lookup and expressions; exact count.
   'packages/web/src/trace-panel': 1,
   // 2026-09-15/16 (admin-pages A5b): the popover placement and listbox key map moved to
-  // @agnes/web-admin-frame, so this file only keeps its own state machine and rendering.
+  // @agnes/web-ui, so this file only keeps its own state machine and rendering.
   // 2026-09-25 UI refactor: model options now render through the React region contract.
   // Re-measured with countLines(): 274, exact, no spare.
   // 2026-10-04 preview-path fixes: the leaf keyboard boundary follows the previewed model, the
@@ -2320,7 +2320,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-15 (admin-pages A2-A7): openAdminPane wiring in app.ts, the id/markup contract test's
   // supporting surface changes and the detail three-part split. Measured exact: 5963.
   // 2026-09-15/16 (admin-pages A5b): positionPopover + bindListboxKeys moved out of model-picker.ts
-  // into @agnes/web-admin-frame. Tightened to the new exact measurement: 5927.
+  // into @agnes/web-ui. Tightened to the new exact measurement: 5927.
   // 2026-09-16 (plugin-skin S7): src/skin.ts adds the skin preference logic — cache read/write/
   // clear, the one-shot ?skin= override, and mode-aware token application with precise clearing.
   // safeThemeStorage gained an optional removeItem without becoming stricter for existing callers.

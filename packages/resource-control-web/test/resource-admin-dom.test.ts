@@ -45,7 +45,7 @@ const requests: Array<{ path: string; body: Record<string, unknown> }> = []
 const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
 /**
  * Clicks a detail action. Every action confirms through the shared dialog
- * (@agnes/web-admin-frame), so the helper answers it: confirm by default, cancel when asked.
+ * (@agnes/web-ui), so the helper answers it: confirm by default, cancel when asked.
  */
 const action = (label: string, options: { confirm?: boolean } = {}) => {
   const control = [...document.querySelectorAll<HTMLButtonElement>('#resource-detail button')].find(

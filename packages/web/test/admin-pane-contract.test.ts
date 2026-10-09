@@ -63,7 +63,7 @@ it('embedded resource pane and resources.html carry the same surface ids', async
   const standalone = idsIn(read('resources.html'))
     .filter((id) => !STANDALONE_ONLY.has(id))
     .sort()
-  // #admin-confirm is the shared confirmation dialog (@agnes/web-admin-frame); it is host-level, so it
+  // #admin-confirm is the shared confirmation dialog (@agnes/web-ui); it is host-level, so it
   // is compared in both surfaces rather than belonging to one of them.
   // #resource-detail is a body-level modal in both hosts, and the Skills / MCP tabs sit in the
   // standalone page's toolbar but in the workbench's settings rail — same ids, different parent.

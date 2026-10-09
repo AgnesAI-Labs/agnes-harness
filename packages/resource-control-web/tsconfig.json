@@ -9,9 +9,14 @@
   "include": ["**/*.ts", "**/*.tsx"],
   "exclude": ["dist", "node_modules"],
   "references": [
-    { "path": "../../tsconfig.config.json" },
-    { "path": "../protocol" },
-    { "path": "../web-ui" },
-    { "path": "../web-admin-frame" }
+    {
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../web-ui"
+    }
   ]
 }

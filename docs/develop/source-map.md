@@ -45,3 +45,5 @@ Local RPC authenticates and dispatches settings operations through `@agnes/daemo
 Learned preferences: `packages/memory-file` owns the official file provider; `packages/extension-api/src/memory.ts` owns its public SPI, `packages/web-admin/src/settings/memory.tsx` its editor, and `packages/base/src/memory` the remembering Skill.
 
 MCP transport health: [implementation](../../packages/base/src/mcp/transport-health.ts) · [tests](../../packages/base/test/mcp/transport-health.test.ts)
+
+Dismissible dialog DOM bindings: [web-ui](../../packages/web-ui/src/dom/dialog-binding.ts) · [tests](../../packages/web-ui/test/dialog-binding.test.ts)
