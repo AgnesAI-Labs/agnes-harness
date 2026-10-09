@@ -132,7 +132,7 @@ it('lists only reported skill roots and explains optional user-agent imports', a
   expect([...host.querySelectorAll('.admin-empty-state-hints li')].map((item) => item.textContent)).toEqual([
     'Workspace: .agh/skills, .agents/skills, .claude/skills',
   ])
-  expect(host.querySelector('.resource-empty h2')?.textContent).toBe('No Skills found')
+  expect(host.querySelector('.resource-empty h3')?.textContent).toBe('No Skills found')
   expect(host.querySelector('.resource-roots > summary')?.textContent).toBe(
     'Checked 1 skill directory and found no skills.',
   )

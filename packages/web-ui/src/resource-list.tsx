@@ -1,3 +1,5 @@
+import { SettingsState, SettingsToolbar } from './settings-layout.js'
+import { Button } from './ui/button.js'
 import type { SkillDescriptor, SkillRootStatus } from '@agnes/protocol'
 import type { JSX } from 'react'
 import { RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog } from './locales/resource-list.js'
@@ -47,16 +49,27 @@ export function ResourceListContent({
 }): JSX.Element {
   const { t } = useUiText(RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog)
   if (loadState === 'loading' && !items.length) {
-    return <p className="plugin-empty">{t('loading')}</p>
+    return (
+      <SettingsState tone="loading" className="plugin-empty">
+        {t('loading')}
+      </SettingsState>
+    )
   }
   if (loadState === 'error') {
     return (
-      <p className="plugin-empty">
+      <SettingsState tone="error" className="plugin-empty">
         {t('error')}
-        <button type="button" className="secondary-button compact" data-resource-retry onClick={onRetry}>
-          {t('retry')}
-        </button>
-      </p>
+        <SettingsToolbar>
+          <Button
+            htmlType="button"
+            className="secondary-button compact"
+            data-resource-retry
+            onClick={onRetry}
+          >
+            {t('retry')}
+          </Button>
+        </SettingsToolbar>
+      </SettingsState>
     )
   }
   return (
@@ -93,14 +106,14 @@ export function ResourceListContent({
         />
       ))}
       {nextCursor && (
-        <button
-          type="button"
+        <Button
+          htmlType="button"
           className="secondary-button compact"
           aria-busy={loadingMore}
           onClick={onLoadMore}
         >
           {t('load-more')}
-        </button>
+        </Button>
       )}
     </>
   )
@@ -194,9 +207,9 @@ export function ResourceEmpty({
   footer?: string | undefined
 }): JSX.Element {
   return (
-    <div className="admin-empty-state resource-empty">
+    <SettingsState className="admin-empty-state resource-empty">
       <span className="agnes-mark admin-empty-state-mark" aria-hidden="true" />
-      <h2>{title}</h2>
+      <h3>{title}</h3>
       <p>{description}</p>
       {tab === 'skills' && hints?.length ? (
         <ul className="admin-empty-state-hints">
@@ -206,7 +219,7 @@ export function ResourceEmpty({
         </ul>
       ) : null}
       {footer && <p>{footer}</p>}
-    </div>
+    </SettingsState>
   )
 }
 
@@ -242,15 +255,15 @@ export function ResourceRow({
     >
       <div className="plugin-row-content">
         <h2 title={itemName}>
-          <button
-            type="button"
+          <Button
+            htmlType="button"
             className="plugin-details-button"
             aria-pressed={selected}
             aria-label={t('row.open-aria', { name: itemName })}
             onClick={() => onOpen(item)}
           >
             {itemName}
-          </button>
+          </Button>
         </h2>
         {item.kind === 'skill' ? (
           <>
@@ -272,12 +285,12 @@ export function ResourceRow({
           </>
         )}
         {item.lastSafeError && (
-          <p className="resource-safe-error">
+          <SettingsState tone="error" className="resource-safe-error">
             {t('row.safe-error', {
               code: item.lastSafeError.code,
               message: resourceFailureLabel(item.lastSafeError.code, t),
             })}
-          </p>
+          </SettingsState>
         )}
       </div>
       <StateSwitch

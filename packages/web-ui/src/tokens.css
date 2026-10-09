@@ -785,3 +785,41 @@ button {
   background: color-mix(in srgb, var(--agnes-bg-lightbox) 65%, transparent);
   backdrop-filter: blur(4px);
 }
+
+/* Resource surfaces keep their controller-owned layout and use shared states/actions. */
+.resource-empty.agnes-settings-state h3 {
+  margin: 0;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-md);
+}
+.resource-row .agnes-ui-button.plugin-details-button {
+  display: inline;
+  height: auto;
+  min-height: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+.resource-row .agnes-ui-button.plugin-details-button:hover {
+  background: transparent;
+  color: var(--agnes-text-emphasis);
+}
+.resource-operation {
+  flex-wrap: wrap;
+}
+#resource-detail .admin-detail-head,
+#resource-detail .plugin-detail-heading {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+#resource-detail .plugin-detail-heading {
+  align-items: flex-start;
+}

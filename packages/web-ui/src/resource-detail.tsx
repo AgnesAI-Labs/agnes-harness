@@ -1,3 +1,6 @@
+import { SettingsInput, SettingsState } from './settings-layout.js'
+import { Field } from './ui/field.js'
+import { Button } from './ui/button.js'
 import type { McpServerDescriptor, SkillDescriptor } from '@agnes/protocol'
 import type { JSX } from 'react'
 import { useState } from 'react'
@@ -64,14 +67,14 @@ function DetailHead({
       <p className="eyebrow">{kindLabel}</p>
       <div className="plugin-detail-heading">
         <h2>{title}</h2>
-        <button
-          type="button"
+        <Button
+          htmlType="button"
           className="secondary-button compact plugin-detail-close"
           aria-label={t('close.aria', { title })}
           onClick={onClose}
         >
           {t('close')}
-        </button>
+        </Button>
       </div>
       <p className="dialog-intro">{subtitle}</p>
     </div>
@@ -133,17 +136,16 @@ export function SkillDetailContent({
           </details>
         )}
         {skill.lastSafeError && (
-          <p className="resource-safe-error">
+          <SettingsState tone="error" className="resource-safe-error">
             {t('safe-error', {
               code: skill.lastSafeError.code,
               message: resourceFailureLabel(skill.lastSafeError.code, t),
             })}
-          </p>
+          </SettingsState>
         )}
         {skill.sourceIdentity.scope !== 'runtime' && !removing && (
-          <label>
-            {t('priority.label')}
-            <input
+          <Field label={t('priority.label')}>
+            <SettingsInput
               type="number"
               min={50}
               max={500}
@@ -153,41 +155,42 @@ export function SkillDetailContent({
               disabled={disabled}
               onChange={(event) => setPriority(event.currentTarget.value)}
             />
-          </label>
+          </Field>
         )}
         {skill.sourceIdentity.scope === 'runtime' && <p>{t('skill.plugin-managed')}</p>}
         {progress && (
           <div className="resource-operation">
             <span>{progress.text}</span>
             {progress.canCancel && (
-              <button
-                type="button"
+              <Button
+                htmlType="button"
                 className="secondary-button compact"
                 title={progress.cancelTitle}
                 onClick={progress.onCancel}
               >
                 {t('operation.cancel')}
-              </button>
+              </Button>
             )}
           </div>
         )}
       </div>
       <div className="admin-detail-actions">
         {actions.map((action) => (
-          <button
+          <Button
             key={action.label}
-            type="button"
+            htmlType="button"
             className={action.className ?? 'secondary-button compact'}
+            danger={action.className?.includes('danger-button')}
             disabled={action.disabled}
             title={action.title}
             onClick={() => onAction(action)}
           >
             {action.label}
-          </button>
+          </Button>
         ))}
         {skill.sourceIdentity.scope !== 'runtime' && !removing && (
-          <button
-            type="button"
+          <Button
+            htmlType="button"
             className="secondary-button compact"
             disabled={disabled}
             onClick={() => {
@@ -197,7 +200,7 @@ export function SkillDetailContent({
             }}
           >
             {t('priority.save')}
-          </button>
+          </Button>
         )}
       </div>
     </>
@@ -244,33 +247,33 @@ export function McpDetailContent({
       <div className="admin-detail-scroll">
         <FactList className="resource-facts" items={[[t('mcp.fact.source'), server.source]]} />
         {server.lastSafeError && (
-          <p className="resource-safe-error">
+          <SettingsState tone="error" className="resource-safe-error">
             {t('safe-error', {
               code: server.lastSafeError.code,
               message: resourceFailureLabel(server.lastSafeError.code, t),
             })}
-          </p>
+          </SettingsState>
         )}
         {!status && (
-          <button
-            type="button"
+          <Button
+            htmlType="button"
             className="secondary-button compact"
             disabled={disabled}
             onClick={() => void onStatus().then(setStatus)}
           >
             {t('mcp.status.show')}
-          </button>
+          </Button>
         )}
         {status && <FactList className="resource-facts" items={status} />}
         {!catalog && (
-          <button
-            type="button"
+          <Button
+            htmlType="button"
             className="secondary-button compact"
             disabled={disabled}
             onClick={() => void onTools().then(setCatalog)}
           >
             {t('mcp.tools.show')}
-          </button>
+          </Button>
         )}
         {catalog && (
           <details className="confirm-review-section" open>
@@ -280,8 +283,8 @@ export function McpDetailContent({
                 <p key={name}>{name}</p>
               ))}
               {catalog.nextCursor && (
-                <button
-                  type="button"
+                <Button
+                  htmlType="button"
                   className="secondary-button compact"
                   disabled={disabled}
                   onClick={() =>
@@ -294,7 +297,7 @@ export function McpDetailContent({
                   }
                 >
                   {t('mcp.tools.more')}
-                </button>
+                </Button>
               )}
             </div>
           </details>
@@ -303,34 +306,35 @@ export function McpDetailContent({
           <div className="resource-operation">
             <span>{progress.text}</span>
             {progress.canCancel && (
-              <button
-                type="button"
+              <Button
+                htmlType="button"
                 className="secondary-button compact"
                 title={progress.cancelTitle}
                 onClick={progress.onCancel}
               >
                 {t('operation.cancel')}
-              </button>
+              </Button>
             )}
           </div>
         )}
       </div>
       <div className="admin-detail-actions">
         {actions.map((action) => (
-          <button
+          <Button
             key={action.label}
-            type="button"
+            htmlType="button"
             className={action.className ?? 'secondary-button compact'}
+            danger={action.className?.includes('danger-button')}
             disabled={action.disabled}
             title={action.title}
             onClick={() => onAction(action)}
           >
             {action.label}
-          </button>
+          </Button>
         ))}
-        <button type="button" className="secondary-button compact" disabled={disabled} onClick={onEdit}>
+        <Button htmlType="button" className="secondary-button compact" disabled={disabled} onClick={onEdit}>
           {t('mcp.edit')}
-        </button>
+        </Button>
       </div>
     </>
   )

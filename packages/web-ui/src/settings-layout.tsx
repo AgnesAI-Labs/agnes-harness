@@ -69,10 +69,10 @@ export function SettingsState({
   return (
     <div
       {...props}
-      className="agnes-settings-state"
+      className={['agnes-settings-state', props.className].filter(Boolean).join(' ')}
       data-tone={tone}
-      role={tone === 'error' ? 'alert' : 'status'}
-      aria-live="polite"
+      role={props.role ?? (tone === 'error' ? 'alert' : 'status')}
+      aria-live={props['aria-live'] ?? 'polite'}
     >
       {children}
     </div>
