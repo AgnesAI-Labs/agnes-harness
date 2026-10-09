@@ -125,6 +125,63 @@ describe('doctor command aggregation', () => {
     expect(existsSync(join(cacheDir, 'jiti', '0'))).toBe(true)
   })
 
+  describe('host-backed sections without a configured provider', () => {
+    const unconfigured =
+      'no model provider is configured for this profile, so the host was not assembled and this check was not run; run `agh config` to add one'
+
+    it('report a setup step, not a failed build, on a clean home with the real assembly', async () => {
+      const d = deps()
+      delete d.createHostImpl
+      for (const name of ['provider', 'extensions', 'code-runtime'] as const) {
+        const result = await doctorCommand(parseArgs(['doctor', name]), d)
+        const expected =
+          name === 'provider'
+            ? ['no configured provider route selected; no credential or inference probe was run']
+            : [unconfigured]
+        expect(result.json).toEqual([{ name, status: 'warn', detail: expected }])
+        expect(result.exitCode).toBe(0)
+      }
+    })
+
+    it('keep a real assembly failure a failure and name only its error code', async () => {
+      const d = deps()
+      d.createHostImpl = async () => {
+        throw Object.assign(new Error('E_SEAM_INIT: cannot open /private/path/secret'), {
+          code: 'E_SEAM_INIT',
+        })
+      }
+      const extensions = await doctorCommand(parseArgs(['doctor', 'extensions']), d)
+      expect(extensions.json).toEqual([
+        { name: 'extensions', status: 'fail', detail: ['extension host assembly failed (E_SEAM_INIT)'] },
+      ])
+      expect(extensions.text).not.toContain('/private/path')
+      const codeRuntime = await doctorCommand(parseArgs(['doctor', 'code-runtime']), d)
+      expect(codeRuntime.json).toEqual([
+        { name: 'code-runtime', status: 'fail', detail: ['code runtime host assembly failed (E_SEAM_INIT)'] },
+      ])
+      expect(codeRuntime.exitCode).toBe(1)
+    })
+
+    it('print no code when the failure has none or an unexpected shape', async () => {
+      const d = deps()
+      for (const thrown of [
+        new Error('boom /private/path'),
+        Object.assign(new Error('x'), { code: 'not a stable code /private/path' }),
+        Object.assign(new Error('x'), { code: 'E_PRESET_UNRESOLVED', detail: { reason: 'other' } }),
+        'a thrown string',
+      ]) {
+        d.createHostImpl = async () => {
+          throw thrown
+        }
+        const result = await doctorCommand(parseArgs(['doctor', 'extensions']), d)
+        const detail = result.json[0]?.detail[0] ?? ''
+        expect(result.json[0]?.status).toBe('fail')
+        expect(detail).toMatch(/^extension host assembly failed( \(E_PRESET_UNRESOLVED\))?$/)
+        expect(result.text).not.toContain('/private/path')
+      }
+    })
+  })
+
   it('uses one real Host for extensions and reports an absent daemon as a warning', async () => {
     const d = deps()
     let hostBuilds = 0
