@@ -43,7 +43,12 @@ export function feedbackSkillFiles(input: unknown, feedback: FeedbackItem) {
             agnes: {
               kinds: ['skills'],
               plugins: [
-                { id: `skills:feedback-${name}`, export: 'main', apiRange: '^1.4.0', inject: ['skills'] },
+                {
+                  id: `ext:feedback-skill-${name}/main`,
+                  export: 'main',
+                  apiRange: '^1.4.0',
+                  inject: ['skills'],
+                },
               ],
             },
           },

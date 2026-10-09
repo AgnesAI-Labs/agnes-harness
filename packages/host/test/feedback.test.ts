@@ -429,6 +429,11 @@ it('uses only local scripted inference, rejects invalid drafts, and never execut
   baseUrl = 'http://127.0.0.1:12345/v1'
   const files = await draftFeedbackSkill(session, feedback, [], signal)
   expect(files.find((file) => file.path === 'SKILL.md')?.content).toContain('assistant ledger sequence 3')
+  const manifest = JSON.parse(files.find((file) => file.path === 'package.json')!.content)
+  expect(manifest.agnes).toMatchObject({
+    kinds: ['skills'],
+    plugins: [{ id: 'ext:feedback-skill-cite-evidence/main', inject: ['skills'] }],
+  })
   expect(requests).toHaveLength(1)
   expect(JSON.stringify(requests[0])).toContain('Cite evidence')
   doneReason = 'length'
