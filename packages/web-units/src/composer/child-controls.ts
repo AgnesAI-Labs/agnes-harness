@@ -4,7 +4,7 @@ import { type ComposerDependencies } from './contracts.js'
 
 export function ChildControlTree({
   children,
-  disabled,
+  disabled = false,
   control,
   t,
 }: {
@@ -42,7 +42,7 @@ export function ChildControlTree({
 
 export function ChildControlRow({
   child,
-  disabled,
+  disabled = false,
   control,
   t,
 }: {

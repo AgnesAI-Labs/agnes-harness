@@ -99,13 +99,6 @@ const pluginAdminCatalogs = {
   [ADMIN_LOCALE_NAMESPACE]: adminLocaleCatalog,
 } as const
 
-const SOURCE_TYPE_OPTIONS = Object.keys(SOURCE_FORMATS)
-  .filter((type) => type !== 'local')
-  .map((type) => ({
-    value: type,
-    label: type,
-  }))
-
 export class PluginAdminPage {
   viewContext() {
     const page = this

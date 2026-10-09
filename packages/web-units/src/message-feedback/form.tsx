@@ -1,11 +1,18 @@
 import type { FeedbackItem, FeedbackTarget } from '@agnes/protocol/gen/app-server'
-import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
 import { Button, Field, SettingsSelect, SettingsTextArea } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { feedbackRequest } from './api.js'
 import { feedbackCategories, useFeedbackText } from './locales.js'
 
-export function MessageFeedback({ sessionId, target }: { sessionId: string; target: FeedbackTarget }) {
+export function MessageFeedback({
+  sessionId,
+  target,
+  openEvidence,
+}: {
+  sessionId: string
+  target: FeedbackTarget
+  openEvidence(candidateId: string): void
+}) {
   const { t } = useFeedbackText()
   const [item, setItem] = useState<FeedbackItem>()
   const [rating, setRating] = useState<'up' | 'down'>('up')
@@ -165,19 +172,7 @@ export function MessageFeedback({ sessionId, target }: { sessionId: string; targ
         </Button>
       )}
       {item?.candidateId && (
-        <Button
-          data-testid="feedback-evidence"
-          onClick={() => {
-            if (
-              !factChainLinks.open({
-                sessionId,
-                laneId: 'main',
-                anchor: { kind: 'authoring', candidateId: item.candidateId ?? '' },
-              })
-            )
-              workbenchNavigation.open('facts')
-          }}
-        >
+        <Button data-testid="feedback-evidence" onClick={() => openEvidence(item.candidateId ?? '')}>
           {t('evidence')}
         </Button>
       )}

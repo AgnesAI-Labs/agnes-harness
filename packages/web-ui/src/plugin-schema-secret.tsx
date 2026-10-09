@@ -15,7 +15,7 @@ export function PluginSchemaSecret({
   path: string
   onChange(value: unknown): void
   onInvalid(path: string, invalid: boolean): void
-} & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'>) {
+} & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'onInvalid'>) {
   const { t } = useUiText(PLUGIN_CONFIG_NAMESPACE, pluginConfigCatalog)
   const encoded = typeof value === 'string' && value.startsWith('secret://') ? value : 'secret://'
   const published = useRef(encoded)

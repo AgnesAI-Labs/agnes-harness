@@ -105,12 +105,16 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
           .split(',')
           .map((value) => value.trim())
           .filter(Boolean)
+      const { eligibleTools: _tools, eligibleCategories: _categories, ...remaining } = config
+      const eligibleCategories = list(categories).map((category) => {
+        if (category !== 'read' && category !== 'write' && category !== 'external')
+          throw new Error('Invalid eligible category')
+        return category
+      })
       const next = {
-        ...config,
-        eligibleTools: tools.trim() ? list(tools) : undefined,
-        eligibleCategories: categories.trim()
-          ? (list(categories) as AutoReviewConfig['eligibleCategories'])
-          : undefined,
+        ...remaining,
+        ...(tools.trim() ? { eligibleTools: list(tools) } : {}),
+        ...(eligibleCategories.length ? { eligibleCategories } : {}),
       }
       setConfig(await reviewSettings(next))
       setMessage('saved')

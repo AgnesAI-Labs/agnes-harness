@@ -65,7 +65,7 @@ function CatalogComponent(props: IntelligentCatalogProps & { component: UiCompon
             htmlType="button"
             type={action.style === 'primary' ? 'primary' : 'default'}
             danger={action.style === 'danger'}
-            disabled={disabled || props.invalid}
+            disabled={disabled || props.invalid === true}
             data-testid={`ui-action-${id}`}
             onClick={() => props.onAction(action, row)}
           >

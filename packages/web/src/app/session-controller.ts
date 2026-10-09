@@ -117,25 +117,29 @@ export function createSessionController(
       }
       await previous?.detach()
       if (epoch !== context.selection) return
-      const permission: Parameters<Session['onPermissionRequest']>[0] = (request, context) =>
+      const permission: Parameters<Session['onPermissionRequest']>[0] = (request, permissionContext) =>
         new Promise<PermissionOutcome>((resolve) => {
           const pending = {
             request,
             afterSeq: Math.max(context.projection?.upto ?? 0, context.receipts.get(id)?.endSeq ?? 0),
             finish: (answer: PermissionOutcome) => {
-              context.signal.removeEventListener('abort', reject)
+              permissionContext.signal.removeEventListener('abort', reject)
               if (context.liveApproval === pending) context.liveApproval = undefined
               context.render()
-              resolve(context.signal.aborted ? { verdict: 'rejected' } : answer)
+              resolve(permissionContext.signal.aborted ? { verdict: 'rejected' } : answer)
             },
           }
           const reject = () => pending.finish({ verdict: 'rejected' })
-          if (context.signal.aborted || epoch !== context.selection || context.permissionMode === 'view') {
+          if (
+            permissionContext.signal.aborted ||
+            epoch !== context.selection ||
+            context.permissionMode === 'view'
+          ) {
             resolve({ verdict: 'rejected' })
             return
           }
           context.liveApproval = pending
-          context.signal.addEventListener('abort', reject, { once: true })
+          permissionContext.signal.addEventListener('abort', reject, { once: true })
           context.render()
         })
       const binding = options.created

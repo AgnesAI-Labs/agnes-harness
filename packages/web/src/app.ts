@@ -677,7 +677,7 @@ function element<K extends keyof HTMLElementTagNameMap>(id: string, tag: K): HTM
   return found as HTMLElementTagNameMap[K]
 }
 const button = (id: string) => element(id, 'button')
-const composerDraftKey = 'agnes-web-composer-draft'
+const composerDraftKey: string = 'agnes-web-composer-draft'
 // Keep image submissions below the daemon's WebSocket frame cap, including their JSON-RPC envelope.
 const savedComposerDraft = sessionStorage.getItem(composerDraftKey)
 const notice = element('notice', 'p')
@@ -1155,7 +1155,7 @@ function updateSidebar(): void {
   })
 }
 
-const SESSION_WATCH_STOP_TIMEOUT_MS = 3000
+const SESSION_WATCH_STOP_TIMEOUT_MS: number = 3000
 function stopWithTimeout(stop: (() => Promise<void>) | undefined): Promise<boolean> {
   return sessionController.stopWithTimeout(stop)
 }
@@ -1346,7 +1346,7 @@ function renderControls(): void {
 // 流式期间每个事件都会让轨迹面板全量走查一遍节点，长会话里比时间线本身还贵。
 // busy 时把面板喂食节流到 500ms（尾沿补一帧，喂的是最新视图）；终态与空闲路径
 // 立即刷，保证收尾状态不迟到。节流在 app 调用侧，region 挂载本身保持同步语义。
-const TRACE_THROTTLE_MS = 500
+const TRACE_THROTTLE_MS: number = 500
 let tracePaintedAt = 0
 let traceTrailing: ReturnType<typeof setTimeout> | undefined
 let tracePending:
@@ -1378,7 +1378,7 @@ function transcriptMeta(): {
   loadEarlier?: () => void
   sessionId?: string
   loop?: { id: string; version: string }
-  controlFacts?: SessionControlStateResult['facts']
+  controlFacts?: NonNullable<SessionControlStateResult['facts']>
 } {
   return turnController.transcriptMeta()
 }

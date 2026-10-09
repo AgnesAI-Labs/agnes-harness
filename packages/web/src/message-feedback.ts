@@ -1,5 +1,6 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import type { SessionService } from '@agnes/web-client'
+import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
 import { MessageFeedback } from '@agnes/web-units/message-feedback'
 import { createElement } from 'react'
 import { createAntdRoot } from '@agnes/web-ui'
@@ -32,6 +33,16 @@ export function mountMessageFeedback(element: HTMLElement, session: SessionServi
               key,
               sessionId,
               target: { messageSeq: node.seq, turn: turn.turn },
+              openEvidence(candidateId) {
+                if (
+                  !factChainLinks.open({
+                    sessionId,
+                    laneId: 'main',
+                    anchor: { kind: 'authoring', candidateId },
+                  })
+                )
+                  workbenchNavigation.open('facts')
+              },
             })
           : null,
       )

@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, type RefObject } from 'react'
 import {
-  type ComposerRegionOptions,
+  type ComposerProps,
   type ComposerView,
   type ComposerDependencies,
   type ModelPicker,
@@ -8,7 +8,7 @@ import {
   pickerState,
 } from './contracts.js'
 
-type ComposerOptions<K extends keyof ComposerRegionOptions> = { [P in K]-?: ComposerRegionOptions[P] }
+type ComposerOptions<K extends keyof ComposerProps> = { [P in K]: ComposerProps[P] }
 
 export function useComposerPickers({
   dependencies,

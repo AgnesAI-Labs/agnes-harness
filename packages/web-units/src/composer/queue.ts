@@ -1,8 +1,8 @@
 import { QueuedInputEditor } from './queue-editor.js'
 import { createElement, type RefObject } from 'react'
-import type { ComposerRegionOptions, ComposerView } from './contracts.js'
+import type { ComposerProps, ComposerView } from './contracts.js'
 
-type ComposerOptions<K extends keyof ComposerRegionOptions> = { [P in K]-?: ComposerRegionOptions[P] }
+type ComposerOptions<K extends keyof ComposerProps> = { [P in K]: ComposerProps[P] }
 
 export function renderComposerQueue({
   view,
@@ -16,8 +16,7 @@ export function renderComposerQueue({
   view: ComposerView
   prompt: RefObject<HTMLTextAreaElement>
 }) {
-  return
-  view.queue && (view.queue.items.length > 0 || view.queue.error)
+  return view.queue && (view.queue.items.length > 0 || view.queue.error)
     ? createElement(
         'section',
         { className: 'composer-queue', 'aria-label': dependencies.translate('composer.queue.label') },
@@ -69,7 +68,7 @@ export function renderComposerQueue({
                   ? createElement(QueuedInputEditor, {
                       key: item.itemId,
                       text: item.editText ?? item.preview,
-                      disabled: view.queue?.removeDisabled ?? view.queue?.disabled,
+                      disabled: view.queue?.removeDisabled ?? view.queue?.disabled ?? false,
                       save: (text: string) => onEditQueued(item.itemId, text),
                       t: dependencies.translate,
                       onError,

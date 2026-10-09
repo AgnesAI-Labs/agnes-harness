@@ -173,7 +173,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     view.children?.length && onChildControl
       ? createElement(ChildControlTree, {
           children: view.children,
-          disabled: view.childrenDisabled,
+          disabled: view.childrenDisabled === true,
           control: onChildControl,
           t: dependencies.translate,
         })
@@ -198,7 +198,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       },
       createElement(ReferencePicker, {
         textarea: prompt,
-        adapter: references,
+        ...(references ? { adapter: references } : {}),
         t: dependencies.translate,
         disabled: imageDisabled,
       }),

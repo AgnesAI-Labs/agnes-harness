@@ -23,10 +23,17 @@ import { sessionStartUrl } from '../../../settings/runtime-panels.js'
 import { CandidateInbox } from '../candidates.js'
 import { CapabilityReview, FailureHelp, ProvenanceReview } from '../capability-review.js'
 import { GenerationDrainSummary, KindFilter, PluginBadges, pluginFailureMessage } from '../control-panel.js'
-import { sourceProblem } from '../source-form.js'
+import { SOURCE_FORMATS, sourceProblem } from '../source-form.js'
 import { setDialog } from './dom.js'
 import { pinPurposeLabel, asRuntimeView } from './model.js'
 import type { PluginAdminViewContext } from './page.js'
+
+const SOURCE_TYPE_OPTIONS = Object.keys(SOURCE_FORMATS)
+  .filter((type) => type !== 'local')
+  .map((type) => ({
+    value: type,
+    label: type,
+  }))
 
 export function renderPluginView(this: PluginAdminViewContext): void {
   const { context, connection, error, loading, tree } = this.state
@@ -308,60 +315,65 @@ export function renderDetailPluginView(this: PluginAdminViewContext): void {
   renderRegion(
     this.detail,
     <UiLocaleProvider source={this.locale}>
-      <PluginConfigTab key={item.id} context={this.state.context!} id={item.id}
-        installed={this.tab === 'installed'} onClose={() => this.closeDetail()}>
-      <DetailContent
-        heading={item.id}
-        metadata={
-          <>
-            <PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.t} />
-            {'desired' in item && (
-              <>
-                <ProvenanceReview value={item.provenance} t={this.t} />
-                <CapabilityReview value={item.declaredCapabilities} t={this.t} />
-              </>
-            )}
-            {'desired' in item &&
-            (item.actual === 'failed' ||
-              item.blockers.length ||
-              this.runtimeState(item.id)?.phase === 'failed') ? (
-              <FailureHelp
-                reason={
-                  item.blockers.length
-                    ? 'capability blocked'
-                    : (this.runtimeState(item.id)?.error?.message ?? item.actualReason ?? '')
-                }
-                t={this.t}
-              />
-            ) : undefined}
-          </>
-        }
-        intro=""
-        version={this.t('version', { version: item.version })}
-        stateText={
-          'trusted' in item
-            ? undefined
-            : this.t('compatibility', { value: this.t(`compatibility.${item.compatibility}`) })
-        }
-        facts={facts}
-        blockerSections={[
-          {
-            title: this.t('blocker.current'),
-            items: ('blockers' in item ? item.blockers : []).map((blocker) =>
-              blockerText(blocker, this.adminT),
-            ),
-          },
-          {
-            title: this.t('blocker.operation'),
-            items: (this.state.error?.blockers ?? []).map((blocker) => blockerText(blocker, this.adminT)),
-          },
-        ]}
-        operations={this.detailOperations(item.id)}
-        lastOperationLabel={undefined}
-        actions={this.detailActions(item)}
+      <PluginConfigTab
+        key={item.id}
+        context={this.state.context!}
+        id={item.id}
+        installed={this.tab === 'installed'}
         onClose={() => this.closeDetail()}
-        onCancelOperation={(operationId, trigger) => void this.cancelOperation(operationId, trigger)}
-      />
+      >
+        <DetailContent
+          heading={item.id}
+          metadata={
+            <>
+              <PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.t} />
+              {'desired' in item && (
+                <>
+                  <ProvenanceReview value={item.provenance} t={this.t} />
+                  <CapabilityReview value={item.declaredCapabilities} t={this.t} />
+                </>
+              )}
+              {'desired' in item &&
+              (item.actual === 'failed' ||
+                item.blockers.length ||
+                this.runtimeState(item.id)?.phase === 'failed') ? (
+                <FailureHelp
+                  reason={
+                    item.blockers.length
+                      ? 'capability blocked'
+                      : (this.runtimeState(item.id)?.error?.message ?? item.actualReason ?? '')
+                  }
+                  t={this.t}
+                />
+              ) : undefined}
+            </>
+          }
+          intro=""
+          version={this.t('version', { version: item.version })}
+          stateText={
+            'trusted' in item
+              ? undefined
+              : this.t('compatibility', { value: this.t(`compatibility.${item.compatibility}`) })
+          }
+          facts={facts}
+          blockerSections={[
+            {
+              title: this.t('blocker.current'),
+              items: ('blockers' in item ? item.blockers : []).map((blocker) =>
+                blockerText(blocker, this.adminT),
+              ),
+            },
+            {
+              title: this.t('blocker.operation'),
+              items: (this.state.error?.blockers ?? []).map((blocker) => blockerText(blocker, this.adminT)),
+            },
+          ]}
+          operations={this.detailOperations(item.id)}
+          lastOperationLabel={undefined}
+          actions={this.detailActions(item)}
+          onClose={() => this.closeDetail()}
+          onCancelOperation={(operationId, trigger) => void this.cancelOperation(operationId, trigger)}
+        />
       </PluginConfigTab>
     </UiLocaleProvider>,
   )

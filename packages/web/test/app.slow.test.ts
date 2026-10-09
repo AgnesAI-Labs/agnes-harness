@@ -1931,7 +1931,7 @@ describe('web session selection', () => {
     }
     expect(
       Array.from(document.querySelectorAll('.composer-queue-preview'), (node) => node.textContent),
-    ).toEqual(['第二条提示词', ...steers])
+    ).toEqual(['第二条提示词', ...followUps])
     expect(titleList).toHaveBeenCalledTimes(reads)
     const composer = document.getElementById('prompt') as HTMLTextAreaElement
     composer.value = '尚未发送的草稿'
@@ -1990,7 +1990,7 @@ describe('web session selection', () => {
     expect(document.querySelector('.composer-queue-count')?.textContent).toBe('待执行 · 3')
     expect(
       Array.from(document.querySelectorAll('.composer-queue-preview'), (node) => node.textContent),
-    ).toEqual(['第二条提示词', ...steers.slice(1)])
+    ).toEqual(['第二条提示词', ...followUps.slice(1)])
     expect(composer.value).toBe('尚未发送的草稿')
     expect(running.cancel).toHaveBeenCalledTimes(1)
     expect(running.interrupt).toHaveBeenCalledTimes(2)

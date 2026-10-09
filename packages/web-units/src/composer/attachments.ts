@@ -7,12 +7,7 @@ import {
   validateUserAttachments,
 } from '@agnes/protocol-validation'
 import { type ClipboardEvent, type DragEvent, useCallback, useLayoutEffect, useRef, useState } from 'react'
-import type {
-  ComposerRegionOptions,
-  ComposerView,
-  ComposerAttachmentBlock,
-  ComposerImageBlock,
-} from './contracts.js'
+import type { ComposerProps, ComposerView, ComposerAttachmentBlock, ComposerImageBlock } from './contracts.js'
 import {
   type ComposerAttachment,
   MAX_IMAGE_BYTES,
@@ -25,7 +20,7 @@ import {
 } from './image-files.js'
 import { useComposerUploads } from '../composer-uploads.js'
 
-type ComposerOptions<K extends keyof ComposerRegionOptions> = { [P in K]-?: ComposerRegionOptions[P] }
+type ComposerOptions<K extends keyof ComposerProps> = { [P in K]: ComposerProps[P] }
 
 export function useComposerAttachments({
   view,

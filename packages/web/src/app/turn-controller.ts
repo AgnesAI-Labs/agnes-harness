@@ -276,7 +276,7 @@ export function createTurnController(
     loadEarlier?: () => void
     sessionId?: string
     loop?: { id: string; version: string }
-    controlFacts?: SessionControlStateResult['facts']
+    controlFacts?: NonNullable<SessionControlStateResult['facts']>
   } {
     const session = context.live
     const loop =
@@ -288,7 +288,7 @@ export function createTurnController(
           sessionId: context.current.id,
           ...(loop ? { loop } : {}),
           ...(context.sessionControls?.sessionId === context.current.id
-            ? { controlFacts: context.sessionControls.value.facts }
+            ? { controlFacts: context.sessionControls.value.facts ?? [] }
             : {}),
         }
       : {}

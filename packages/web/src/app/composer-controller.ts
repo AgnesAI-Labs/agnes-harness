@@ -158,7 +158,7 @@ export function createComposerController(
       },
       children:
         context.sessionControls?.sessionId === context.current?.id
-          ? context.sessionControls?.value.children
+          ? (context.sessionControls?.value.children ?? [])
           : [],
       childrenDisabled: !context.connected || context.sessionPending || context.stopping,
       controls: {
