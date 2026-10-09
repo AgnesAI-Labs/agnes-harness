@@ -15,6 +15,7 @@ export interface PluginRowInput {
   readonly entryRevision: string
   readonly extrasRevision: string
   readonly mountRevision: string
+  readonly configReload?: 'live' | 'next-session'
   readonly config?: unknown
   readonly inject?: readonly string[]
   readonly disabled?: boolean
@@ -88,6 +89,7 @@ export function createPluginRow(input: PluginRowInput): Readonly<EntryRow> {
     mountRevision: input.mountRevision,
     entryRevision: input.entryRevision,
     extrasRevision: input.extrasRevision,
+    ...(input.configReload === undefined ? {} : { configReload: input.configReload }),
     ...(input.config === undefined ? {} : { config: snapshotConfig(input.config) }),
   }
   return Object.freeze(row)

@@ -10,13 +10,39 @@
         "apiRange": "^1.4.0",
         "id": "ext:example/echo",
         "runtime": "in-process",
-        "default": true
+        "default": true,
+        "configSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string",
+              "default": "ok",
+              "minLength": 1,
+              "description": "Message exposed by the echo service."
+            }
+          }
+        },
+        "configReload": "live"
       },
       {
         "export": "echo",
         "apiRange": "^1.4.0",
         "id": "ext:example/echo-isolated",
-        "runtime": "isolated"
+        "runtime": "isolated",
+        "configSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string",
+              "default": "ok",
+              "minLength": 1,
+              "description": "Message exposed by the echo service."
+            }
+          }
+        },
+        "configReload": "live"
       }
     ]
   },

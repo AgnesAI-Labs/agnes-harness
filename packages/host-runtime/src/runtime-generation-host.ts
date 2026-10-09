@@ -1,3 +1,4 @@
+import { applyLivePluginConfig, overlayLivePluginConfig } from './live-plugin-config.js'
 import { createHash } from 'node:crypto'
 import { resolve as resolvePath } from 'node:path'
 import { providerRestartRequired } from '@agnes/extension-api'
@@ -204,7 +205,10 @@ export async function createRuntimeGenerationHost(
     initialBinding = (key) => bindGeneration(key, binding.id, initial)
     return current
   }
-  const build = async (snapshot: PluginGenerationSnapshot): Promise<LiveGeneration> => {
+  const build = async (
+    snapshot: PluginGenerationSnapshot,
+    refreshLiveConfig = true,
+  ): Promise<LiveGeneration> => {
     if (snapshot.compatibility !== compatibilityFor(profile))
       throw new Error(
         `E_GENERATION_INCOMPATIBLE: generation ${snapshot.id} needs its original loop/adapter deployment`,
@@ -214,7 +218,12 @@ export async function createRuntimeGenerationHost(
     const freshTarget = (current?.host ?? initial).runtimeTargetSnapshot?.() ?? pinnedTarget
     const target = buildCompleteRuntimeTarget({
       rows: [
-        ...targetRows(pinnedTarget).filter((row) => !liveResourceRow(row)),
+        ...(refreshLiveConfig
+          ? overlayLivePluginConfig(
+              targetRows(pinnedTarget).filter((row) => !liveResourceRow(row)),
+              freshTarget,
+            )
+          : targetRows(pinnedTarget).filter((row) => !liveResourceRow(row))),
         ...(current?.host ?? initial).extensionRows.current().filter((row) => liveResourceRow(row)),
       ],
       resources: freshTarget.resource.resources,
@@ -508,12 +517,17 @@ export async function createRuntimeGenerationHost(
       )
     }
   }
-  const publishTarget = async (
+  const publishTargetCore = async (
     target: RuntimeTarget,
     skills?: { input: SkillRuntimeInput | undefined },
     extensionRows?: readonly ReturnType<Host['extensionRows']['prepare']>[],
+    previousTarget?: RuntimeTarget,
   ) => {
     const head = await ensureCurrent()
+    const oldTarget =
+      previousTarget ??
+      head.host.runtimeTargetSnapshot?.() ??
+      decodeRuntimeTargetArtifact(head.snapshot.artifact)
     const extensionCodeChanged =
       extensionRows !== undefined &&
       JSON.stringify(head.host.extensionRows.current().filter((row) => !liveResourceRow(row))) !==
@@ -521,14 +535,10 @@ export async function createRuntimeGenerationHost(
     if (
       !skills &&
       !extensionCodeChanged &&
-      encodeRuntimeTargetArtifact(
-        head.host.runtimeTargetSnapshot?.() ?? decodeRuntimeTargetArtifact(head.snapshot.artifact),
-      ).digest === encodeRuntimeTargetArtifact(target).digest &&
+      encodeRuntimeTargetArtifact(oldTarget).digest === encodeRuntimeTargetArtifact(target).digest &&
       head.snapshot.compatibility === compatibilityFor(profile)
     )
       return head.host.ordinaryConvergence()
-    const oldTarget =
-      head.host.runtimeTargetSnapshot?.() ?? decodeRuntimeTargetArtifact(head.snapshot.artifact)
     // Backend facets are process configuration. A package generation cannot replace them live.
     for (const row of [...oldTarget.tree.rows, ...target.tree.rows])
       if (row.id === 'seam:sandbox' || row.id === 'seam:platform' || row.id.startsWith('adapter:')) {
@@ -608,7 +618,7 @@ export async function createRuntimeGenerationHost(
         const binding = bindings.get(head.host)
         if (binding) binding.id = snapshot.id
       } else {
-        current = await build(snapshot)
+        current = await build(snapshot, false)
       }
     } catch (error) {
       failures.set(snapshot.id, error instanceof Error ? error.message : String(error))
@@ -640,6 +650,21 @@ export async function createRuntimeGenerationHost(
           failures.set(id, `E_GENERATION_DISPOSE: ${String(error)}`)
     }
     return current.host.ordinaryConvergence()
+  }
+  const publishTarget: typeof publishTargetCore = async (target, skills, extensionRows) => {
+    const head = await ensureCurrent()
+    const previous =
+      head.host.runtimeTargetSnapshot?.() ?? decodeRuntimeTargetArtifact(head.snapshot.artifact)
+    const rollback = await applyLivePluginConfig(
+      [...live.values()].map((generation) => generation.host),
+      target,
+    )
+    try {
+      return await publishTargetCore(target, skills, extensionRows, previous)
+    } catch (error) {
+      await rollback()
+      throw error
+    }
   }
   const overrides: Partial<Host> = {
     kernel,

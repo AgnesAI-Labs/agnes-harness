@@ -77,6 +77,44 @@ Credential fields accept only the protocol's `secret://namespace/name` reference
 
 The runtime provider catalog intentionally contains descriptions and identities, not current private configuration. This frontend API does not manufacture current sandbox/persistence/compaction values or add a universal configuration writer. A provider's registered panel supplies its own supported administration adapter.
 
+
+## Configure any installed plugin
+
+Open **Settings → Plugins**, select an installed package, then open **Configuration**. Choose the plugin entry when a package declares several exports. Installation and trust remain separate from saving configuration; saving an inactive entry stores its values without enabling its code.
+
+Each `agnes.plugins` manifest entry can declare the public `PluginConfigContract` from `@agnes/extension-api`:
+
+```json
+{
+  "export": "businessAgent",
+  "id": "ext:acme/support",
+  "apiRange": "^1.4.0",
+  "configReload": "next-session",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["credential", "queues"],
+    "properties": {
+      "credential": { "type": "string", "format": "credential-reference" },
+      "queues": { "type": "array", "items": { "type": "string" }, "default": [] },
+      "region": { "enum": ["global", "cn"], "default": "global" }
+    }
+  }
+}
+```
+
+Schemas use synchronous JSON Schema 2020-12, standard formats and local references. Install/update compiles the schema and rejects invalid declarations, invalid supplied `config`, invalid defaults, remote references, async validators and unregistered formats/keywords. `x-*` keywords are annotations. Schema defaults are optional values the administrator explicitly chooses, never automatic server mutations. Omitted `configSchema` means `true`, with a JSON editor; omitted `configReload` uses the public `DEFAULT_PLUGIN_CONFIG_RELOAD` (`next-session`).
+
+The form renders objects, arrays, enums, `oneOf`/`anyOf` variant pickers, local nested/recursive references, additional-property key/value maps, descriptions and formats. Reference expansion stops at six levels. Combined assertions, tuples, unknown UI annotations and other constructs the form cannot faithfully project use a JSON editor for that subtree. All values, including unknown keys and unselected branch values, stay in the draft; editing them never strips data. The full validator still enforces `allOf`, conditionals, pattern properties, tuple schemas and other supported JSON Schema assertions. Errors name JSON Pointer field paths and codes without echoing values.
+
+Mark every secret field with `format: "credential-reference"`, `x-secret: true` or `writeOnly: true`. These fields require `secret://namespace/name` references, including through branches, references and additional-property maps. The UI accepts references; creation/replacement of the actual credential uses the credential store's separate write-only API. JSON fallback edits use the same secret constraints. Audit history redacts references and credential-shaped keys. Plugins resolve references through their authorized secret capability, rather than expecting resolved plaintext in configuration.
+
+Inline feedback and save both call the shared `compilePluginConfig` validator on the server. `_agnes/v1/plugins.config.get` returns `{ revision, entries, audit }`; `.validate` accepts `{ profile, id, rowId, value }` and returns `{ issues }`; `.save` additionally requires `expectedRevision`, `clientId` and `commandId`. Reads/validation require `packages.read`; saves require `packages.activate` and a server-established client identity. The SDK exposes `client.packages.config.get/validate/save`; the local Web relay uses `/admin/plugins/api/config/get`, `/validate` and `/save`.
+
+Save returns `{ ok, revision, reason, issues, reload }`, with `reason` equal to `saved`, `invalid`, `conflict` or `refused`. A stale revision never overwrites newer configuration; the UI retains the draft and offers reload. Schema failure or candidate-probe refusal leaves the previous desired configuration and audit history unchanged. Successful configuration values and audit facts (principal, time, row, revision, redacted before/after diff) commit with the desired target in one transaction. Persisted overrides survive disable/enable and are validated again against updated manifests. An incompatible override refuses publication rather than being silently reset.
+
+`live` applies at the runtime admission boundary to retained sessions using the same pinned code identity; a refused apply compensates changed containers. `next-session` preserves existing session configuration and supplies the new value to subsequent sessions. The tab explains the declared mode. Configuration does not replace pinned code or relax restart-only backend boundaries. The official observability plugin and the [third-party example](../../examples/third-party-plugin/package.json) demonstrate manifest schemas.
+
 ## Guardrails and verification
 
 `tools/guards/src/frontend-ui.test.ts` rejects literal copy at JSX/HTML display positions, accessible attributes, presentation props, DOM text writes and browser confirmations; locale-bound static HTML fallbacks are allowed. It also rejects layout styles in `packages/web/src` and direct rendering of built-in settings pages outside the registry. `ui-layer.test.ts` fences Ant Design, its private entry points and assistant-ui to web-ui. These source checks complement locale parity and real-screen unresolved-key tests; runtime/plugin-supplied data is not treated as application copy.

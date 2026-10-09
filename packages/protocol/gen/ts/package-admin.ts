@@ -9,6 +9,14 @@ export const JsonValue = Type.Recursive((This) => Type.Union([Type.Null(), Type.
 export type JsonValue = Static<typeof JsonValue>
 
 export const PackageAdminSchema = Type.Module({
+  "PluginConfigGetParams": Type.Object({ "profile": Type.String({ minLength: 1, maxLength: 512 }), "id": Type.String({ minLength: 1, maxLength: 512 }) }, { additionalProperties: false }),
+  "PluginConfigValidateParams": Type.Object({ "profile": Type.String({ minLength: 1, maxLength: 512 }), "id": Type.String({ minLength: 1, maxLength: 512 }), "rowId": Type.String({ minLength: 1, maxLength: 512 }), "value": JsonValue }, { additionalProperties: false }),
+  "PluginConfigSaveParams": Type.Object({ "profile": Type.String({ minLength: 1, maxLength: 512 }), "id": Type.String({ minLength: 1, maxLength: 512 }), "rowId": Type.String({ minLength: 1, maxLength: 512 }), "value": JsonValue, "expectedRevision": Type.String({ minLength: 1, maxLength: 512 }), "clientId": Type.String({ minLength: 1, maxLength: 512 }), "commandId": Type.String({ minLength: 1, maxLength: 512 }) }, { additionalProperties: false }),
+  "PluginConfigEntry": Type.Object({ "rowId": Type.String({ minLength: 1, maxLength: 512 }), "schema": JsonValue, "value": JsonValue, "reload": Type.Union([Type.Literal('live'), Type.Literal('next-session')]) }, { additionalProperties: false }),
+  "PluginConfigAudit": Type.Object({ "who": Type.String({ minLength: 1, maxLength: 512 }), "when": Type.String({ minLength: 1, maxLength: 512 }), "rowId": Type.String({ minLength: 1, maxLength: 512 }), "revision": Type.String({ minLength: 1, maxLength: 512 }), "before": JsonValue, "after": JsonValue }, { additionalProperties: false }),
+  "PluginConfigSnapshot": Type.Object({ "revision": Type.String({ minLength: 1, maxLength: 512 }), "entries": Type.Array(Type.Ref('PluginConfigEntry')), "audit": Type.Array(Type.Ref('PluginConfigAudit')) }, { additionalProperties: false }),
+  "PluginConfigValidation": Type.Object({ "issues": Type.Array(Type.Object({ "path": Type.String(), "code": Type.String({ minLength: 1, maxLength: 512 }) }, { additionalProperties: false })) }, { additionalProperties: false }),
+  "PluginConfigSaveResult": Type.Object({ "ok": Type.Boolean(), "revision": Type.String({ minLength: 1, maxLength: 512 }), "reason": Type.Union([Type.Literal('saved'), Type.Literal('invalid'), Type.Literal('conflict'), Type.Literal('refused')]), "issues": Type.Array(Type.Object({ "path": Type.String(), "code": Type.String({ minLength: 1, maxLength: 512 }) }, { additionalProperties: false })), "reload": Type.Union([Type.Literal('live'), Type.Literal('next-session')]) }, { additionalProperties: false }),
   "PluginPublicationReport": Type.Object({ "operation": Type.Union([Type.Literal('runtime-target'), Type.Literal('skills'), Type.Literal('models'), Type.Literal('extension-rows')]), "ok": Type.Boolean(), "recovery": Type.Literal('retry-same-input'), "containers": Type.Array(Type.Object({ "compositionHash": Type.String({ minLength: 1, maxLength: 256 }), "status": Type.Union([Type.Literal('applied'), Type.Literal('failed')]), "error": Type.Optional(Type.String({ maxLength: 512 })) }, { additionalProperties: false }), { maxItems: 4096 }) }, { additionalProperties: false }),
   "PluginPublicationStatusResult": Type.Object({ "publication": Type.Union([Type.Ref('PluginPublicationReport'), Type.Null()]) }, { additionalProperties: false }),
   "SessionGenerationMigrationParams": Type.Object({ "profile": Type.String({ minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9.-]{0,63}$" }), "clientId": Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$" }), "commandId": Type.String({ minLength: 1, maxLength: 128, pattern: "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$" }), "sessionId": Type.String({ minLength: 1, maxLength: 512 }) }, { additionalProperties: false }),
@@ -109,6 +117,22 @@ export const PackageAdminSchema = Type.Module({
   "ParametersSchema": Type.Object({ "type": Type.Literal('object'), "properties": Type.Record(Type.String(), JsonValue), "required": Type.Optional(Type.Array(Type.String())), "additionalProperties": Type.Literal(false), "description": Type.Optional(Type.String({ maxLength: 2048 })) }, { additionalProperties: false }),
 })
 
+export const PluginConfigGetParams = PackageAdminSchema.Import('PluginConfigGetParams')
+export type PluginConfigGetParams = Static<typeof PluginConfigGetParams>
+export const PluginConfigValidateParams = PackageAdminSchema.Import('PluginConfigValidateParams')
+export type PluginConfigValidateParams = Static<typeof PluginConfigValidateParams>
+export const PluginConfigSaveParams = PackageAdminSchema.Import('PluginConfigSaveParams')
+export type PluginConfigSaveParams = Static<typeof PluginConfigSaveParams>
+export const PluginConfigEntry = PackageAdminSchema.Import('PluginConfigEntry')
+export type PluginConfigEntry = Static<typeof PluginConfigEntry>
+export const PluginConfigAudit = PackageAdminSchema.Import('PluginConfigAudit')
+export type PluginConfigAudit = Static<typeof PluginConfigAudit>
+export const PluginConfigSnapshot = PackageAdminSchema.Import('PluginConfigSnapshot')
+export type PluginConfigSnapshot = Static<typeof PluginConfigSnapshot>
+export const PluginConfigValidation = PackageAdminSchema.Import('PluginConfigValidation')
+export type PluginConfigValidation = Static<typeof PluginConfigValidation>
+export const PluginConfigSaveResult = PackageAdminSchema.Import('PluginConfigSaveResult')
+export type PluginConfigSaveResult = Static<typeof PluginConfigSaveResult>
 export const PluginPublicationReport = PackageAdminSchema.Import('PluginPublicationReport')
 export type PluginPublicationReport = Static<typeof PluginPublicationReport>
 export const PluginPublicationStatusResult = PackageAdminSchema.Import('PluginPublicationStatusResult')

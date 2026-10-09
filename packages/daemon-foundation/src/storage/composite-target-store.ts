@@ -1,3 +1,4 @@
+import { PluginConfigAuditStore } from './plugin-config-audit.js'
 import { types as utilTypes } from 'node:util'
 import type { RuntimeTargetArtifact, RuntimeTargetIdentity } from '@agnes/plugin-runtime/host'
 import { decodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
@@ -88,6 +89,7 @@ type StoreRow = Record<(typeof ARTIFACT_COLUMNS)[number], unknown>
 export class CompositeTargetStore {
   readonly #table: TableHandle
   readonly #profile: string
+  readonly configAudit: PluginConfigAuditStore
   readonly #desiredListeners = new Set<(artifact: RuntimeTargetArtifact) => void>()
   readonly #reportListeners = new Set<(report: CompositeTargetReport) => void>()
 
@@ -115,6 +117,7 @@ export class CompositeTargetStore {
       transaction: <T>(fn: () => T) => capability.transaction(fn),
     }) as TableHandle
     this.#profile = profile
+    this.configAudit = new PluginConfigAuditStore(this.#table, profile)
     ensure(
       this.#table,
       `CREATE TABLE IF NOT EXISTS composite_targets (
@@ -181,6 +184,7 @@ export class CompositeTargetStore {
     const next = freezeArtifact(artifact)
     this.#table.transaction(() => {
       const current = this.#row()
+      this.configAudit.commit(parseArtifact(current.desired_json)?.digest, next.digest)
       const previous = current.desired_json
       const acknowledged = parseJson<CompositeTargetAck>(current.acknowledged_json)
       const keepAck = acknowledged?.digest === next.digest

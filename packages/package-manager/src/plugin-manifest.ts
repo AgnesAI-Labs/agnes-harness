@@ -1,4 +1,10 @@
-import { API_VERSION, ProviderError, satisfiesApiRange } from '@agnes/extension-api'
+import {
+  API_VERSION,
+  compilePluginConfig,
+  type PluginConfigContract,
+  ProviderError,
+  satisfiesApiRange,
+} from '@agnes/extension-api'
 
 export type AgnesPluginRuntime = 'in-process' | 'isolated'
 
@@ -16,7 +22,7 @@ export function isReservedPluginRowIdError(value: unknown): value is ReservedPlu
   return value instanceof ReservedPluginRowIdError
 }
 
-export interface AgnesPluginManifestEntry {
+export interface AgnesPluginManifestEntry extends PluginConfigContract {
   readonly export: string
   readonly id: string
   /** Required in package manifests; optional here for legacy embedding-created rows. */
@@ -39,6 +45,8 @@ const ENTRY_FIELDS = new Set([
   'id',
   'runtime',
   'config',
+  'configSchema',
+  'configReload',
   'default',
   'provide',
   'inject',
@@ -166,12 +174,27 @@ export function parseAgnesPluginEntries(
     const enabledByDefault = raw.default ?? true
     if (typeof enabledByDefault !== 'boolean') fail(`entry ${index} default`, 'must be boolean')
 
+    if (raw.configReload !== undefined && raw.configReload !== 'live' && raw.configReload !== 'next-session')
+      fail(`entry ${index} configReload`, 'must be live or next-session')
+    const configSchema =
+      raw.configSchema === undefined
+        ? undefined
+        : (freezeJson(raw.configSchema) as PluginConfigContract['configSchema'])
+    if (configSchema !== undefined) {
+      const validate = compilePluginConfig(configSchema)
+      if (raw.config !== undefined && validate(raw.config).length)
+        fail(`entry ${index} config`, 'does not satisfy configSchema (secret fields require references)')
+    }
     return Object.freeze({
       export: raw.export,
       apiRange: raw.apiRange,
       id,
       runtime,
       ...(raw.config === undefined ? {} : { config: freezeJson(raw.config) }),
+      ...(configSchema === undefined ? {} : { configSchema }),
+      ...(raw.configReload === undefined
+        ? {}
+        : { configReload: raw.configReload as NonNullable<PluginConfigContract['configReload']> }),
       default: enabledByDefault,
       ...(raw.provide === undefined ? {} : { provide: serviceNames(index, 'provide', raw.provide) }),
       ...(raw.inject === undefined ? {} : { inject: serviceNames(index, 'inject', raw.inject) }),
@@ -194,4 +217,9 @@ export function parseAgnesPluginKinds(value: unknown): readonly AgnesPluginKind[
   )
     throw new TypeError('invalid agnes.kinds: expected unique supported plugin kinds')
   return Object.freeze([...value]) as readonly AgnesPluginKind[]
+}
+
+/** Validate a persisted override against the installed author contract before publication. */
+export function validatePluginManifestConfig(entry: AgnesPluginManifestEntry, value: unknown) {
+  return compilePluginConfig(entry.configSchema ?? true)(value)
 }

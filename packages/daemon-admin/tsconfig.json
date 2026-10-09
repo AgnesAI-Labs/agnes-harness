@@ -10,6 +10,9 @@
       "path": "../../tsconfig.config.json"
     },
     {
+      "path": "../extension-api"
+    },
+    {
       "path": "../daemon-foundation"
     },
     {

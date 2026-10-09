@@ -119,6 +119,22 @@ describe('rebuildDesiredFromInventory', () => {
     })
     expect(next).toBeDefined()
     expect(next?.digest).not.toBe(previous('ext:acme/echo').digest)
+    const configured = rebuildDesiredFromInventory({
+      previous: next,
+      inventory: inventory([installed({ id: 'acme/echo', directory })]),
+      packageId: 'acme/echo',
+      operation: 'enable',
+      configuration: () => ({ message: 'saved' }),
+    })
+    expect(decodeRuntimeTargetArtifact(configured!).tree.rows[0]?.config).toEqual({ message: 'saved' })
+    const reenabled = rebuildDesiredFromInventory({
+      previous: configured,
+      inventory: inventory([installed({ id: 'acme/echo', directory })]),
+      packageId: 'acme/echo',
+      operation: 'enable',
+    })
+    expect(decodeRuntimeTargetArtifact(reenabled!).tree.rows[0]?.config).toEqual({ message: 'saved' })
+
     const dag = rebuildDesiredFromInventory({
       previous: undefined,
       inventory: inventory([

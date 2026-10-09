@@ -147,9 +147,9 @@
       "version": "3.0.1",
       "license": "MIT",
       "source": "https://github.com/ajv-validator/ajv-formats",
-      "purpose": "Standard format validation for MCP tool input schemas and protocol parity tests.",
+      "purpose": "Standard format validation for plugin configuration, MCP tool input schemas and protocol parity tests.",
       "rationale": "Provides RFC 3986 URI validation for external MCP schemas without maintaining a separate validator.",
-      "consumers": ["packages/base", "packages/protocol"]
+      "consumers": ["packages/base", "packages/extension-api", "packages/protocol"]
     },
     {
       "name": "dingtalk-stream",
@@ -255,10 +255,11 @@
       "version": "8.20.0",
       "license": "MIT",
       "source": "https://github.com/ajv-validator/ajv",
-      "purpose": "Compile Extension and MCP tool schemas at runtime and independently verify protocol conformance.",
+      "purpose": "Compile plugin configuration, Extension and MCP tool schemas at runtime and independently verify protocol conformance.",
       "rationale": "Reuse the established schema implementation; reject invalid or external references before callbacks run.",
       "consumers": [
         "packages/base",
+        "packages/extension-api",
         "packages/host",
         "packages/host-computer-use",
         "packages/host-extensions",

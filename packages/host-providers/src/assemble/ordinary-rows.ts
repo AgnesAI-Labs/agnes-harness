@@ -1,3 +1,4 @@
+import { compilePluginConfig } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import type { PackageModule } from '@agnes/host-extensions/assemble/packages'
@@ -77,6 +78,10 @@ export function buildOrdinaryRows(
           { detail: { package: packageId, row: declaration.id, reason: 'snapshot-unavailable' } },
         )
       }
+      if (config !== undefined && compilePluginConfig(declaration.configSchema ?? true)(config).length)
+        throw new HostError('E_EXT_LOAD', 'Invalid plugin configuration', {
+          detail: { row: declaration.id, reason: 'config-schema' },
+        })
       enabled = resolved.enabled && enabled
       const snapshotDigest = plugin.snapshotDigest ?? resolved.integrity
       const snapshotId = plugin.candidate?.snapshotId ?? resolved.integrity
@@ -91,6 +96,7 @@ export function buildOrdinaryRows(
         entryRevision: snapshotId,
         extrasRevision: 'none',
         mountRevision: 'host-ordinary-row:v1',
+        ...(declaration.configReload === undefined ? {} : { configReload: declaration.configReload }),
         ...(config === undefined ? {} : { config }),
         inject: Object.keys(entry.inject),
         provides: entry.provides,

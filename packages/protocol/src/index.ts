@@ -561,3 +561,14 @@ export {
 } from './validate.js'
 export * from './worker-generation.js'
 export * from './file-upload.js'
+
+export type {
+  PluginConfigGetParams,
+  PluginConfigValidateParams,
+  PluginConfigSaveParams,
+  PluginConfigEntry,
+  PluginConfigAudit,
+  PluginConfigSnapshot,
+  PluginConfigValidation,
+  PluginConfigSaveResult,
+} from '../gen/ts/package-admin.js'

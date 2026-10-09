@@ -46,6 +46,20 @@ describe('package.json agnes.plugins', () => {
     [[{ apiRange: '^1.4.0', export: 'main', runtime: 'worker' }], 'runtime'],
     [[{ apiRange: '^1.4.0', export: 'main', default: 'yes' }], 'default'],
     [[{ apiRange: '^1.4.0', export: 'main', extra: true }], 'unknown'],
+    [[{ apiRange: '^1.4.0', export: 'main', configReload: 'restart' }], 'configReload'],
+    [[{ apiRange: '^1.4.0', export: 'main', configSchema: { type: 'invalid' } }], 'JSON Schema'],
+    [[{ apiRange: '^1.4.0', export: 'main', configSchema: { type: 'integer' }, config: 'bad' }], 'config'],
+    [
+      [
+        {
+          apiRange: '^1.4.0',
+          export: 'main',
+          configSchema: { type: 'string', writeOnly: true },
+          config: 'synthetic-plaintext',
+        },
+      ],
+      'config',
+    ],
     [[{ apiRange: '^1.4.0', export: 'main', id: '../escape' }], 'id'],
   ])('rejects invalid input %j', (value, message) => {
     expect(() => parseAgnesPluginEntries('@acme/example', value)).toThrow(message)

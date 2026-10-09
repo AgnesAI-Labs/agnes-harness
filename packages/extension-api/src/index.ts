@@ -66,3 +66,5 @@ export * from './version.js'
 export * from './webhook-trigger.js'
 export * from './workspace-hooks.js'
 export * from './feedback.js'
+
+export * from './plugin-config.js'
