@@ -417,7 +417,14 @@ for (const t of TARGETS) {
   if (t.module === 'AppServerV1') {
     const methods = doc['x-methods'] as Record<string, { params: string; result: string }>
     src +=
-      '\nexport const ADMIN_METHODS = {\n' +
+      '\nexport const ADMIN_METHODS: {\n' +
+      Object.entries(methods)
+        .map(
+          ([name, spec]) =>
+            `  readonly ${JSON.stringify(name)}: {readonly kind:'request';readonly direction:'c2s';readonly params:typeof ${spec.params};readonly result:typeof ${spec.result}};`,
+        )
+        .join('\n') +
+      '\n} = {\n' +
       Object.entries(methods)
         .map(
           ([name, spec]) =>

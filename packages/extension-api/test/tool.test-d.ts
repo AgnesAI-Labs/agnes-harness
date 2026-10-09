@@ -120,7 +120,7 @@ describe('tool types', () => {
       }),
     })
   })
-  it('ToolMeta requires all eight keys (no optional markers)', () => {
+  it('ToolMeta requires all eight policy keys and permits optional paths', () => {
     expectTypeOf<keyof ToolMeta>().toEqualTypeOf<
       | 'isReadOnly'
       | 'isDestructive'
@@ -130,6 +130,7 @@ describe('tool types', () => {
       | 'costHint'
       | 'deferLoading'
       | 'requiresApproval'
+      | 'paths'
     >()
     // @ts-expect-error costHint 键不能省略——「声明无」也要显式写 undefined
     const m: ToolMeta = {

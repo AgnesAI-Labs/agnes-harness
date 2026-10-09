@@ -140,7 +140,23 @@ export type AdminFeedbackParams = Static<typeof AdminFeedbackParams>
 export const AdminFeedbackResult = AppServerV1.Import('AdminFeedbackResult')
 export type AdminFeedbackResult = Static<typeof AdminFeedbackResult>
 
-export const ADMIN_METHODS = {
+export const ADMIN_METHODS: {
+  readonly "_agnes/v1/admin.feedback": {readonly kind:'request';readonly direction:'c2s';readonly params:typeof AdminFeedbackParams;readonly result:typeof AdminFeedbackResult};
+  readonly "_agnes/v1/admin.bundles.get": {readonly kind:'request';readonly direction:'c2s';readonly params:typeof AdminEmpty;readonly result:typeof AdminBundlesResult};
+  readonly "_agnes/v1/admin.bundles.save": {readonly kind:'request';readonly direction:'c2s';readonly params:typeof AdminBundlesSave;readonly result:typeof AdminBundlesResult};
+  readonly "_agnes/v1/admin.composition.get": {readonly kind:'request';readonly direction:'c2s';readonly params:typeof AdminCompositionParams;readonly result:typeof AdminCompositionResult};
+  readonly "_agnes/v1/admin.search.get": {readonly kind:'request';readonly direction:'c2s';readonly params:typeof AdminEmpty;readonly result:typeof AdminSearchResult};
+  readonly "_agnes/v1/admin.search.save": {readonly kind:'request';readonly direction:'c2s';readonly params:typeof AdminSearchSave;readonly result:typeof AdminSearchResult};
+  readonly "_agnes/v1/admin.search.test": {readonly kind:'request';readonly direction:'c2s';readonly params:typeof AdminSearchTest;readonly result:typeof AdminSearchResult};
+  readonly "_agnes/v1/admin.context": {readonly kind:'request';readonly direction:'c2s';readonly params:typeof AdminContextParams;readonly result:typeof AdminContextResult};
+  readonly "_agnes/v1/admin.history.search": {readonly kind:'request';readonly direction:'c2s';readonly params:typeof AdminHistoryParams;readonly result:typeof AdminHistoryResult};
+  readonly "_agnes/v1/admin.plan": {readonly kind:'request';readonly direction:'c2s';readonly params:typeof AdminPlanParams;readonly result:typeof AdminPlanResult};
+  readonly "_agnes/v1/admin.mcp.oauth.save": {readonly kind:'request';readonly direction:'c2s';readonly params:typeof AdminMcpOAuthSave;readonly result:typeof AdminEmpty};
+  readonly "_agnes/v1/doctor.run": {readonly kind:'request';readonly direction:'c2s';readonly params:typeof DoctorParams;readonly result:typeof DoctorResult};
+  readonly "_agnes/v1/admin.memory": {readonly kind:'request';readonly direction:'c2s';readonly params:typeof AdminMemoryParams;readonly result:typeof AdminMemoryResult};
+  readonly "_agnes/v1/admin.observability": {readonly kind:'request';readonly direction:'c2s';readonly params:typeof AdminObservabilityParams;readonly result:typeof AdminObservabilityResult};
+  readonly "_agnes/v1/admin.triggers": {readonly kind:'request';readonly direction:'c2s';readonly params:typeof WebhookRequest;readonly result:typeof WebhookResult};
+} = {
   "_agnes/v1/admin.feedback": {kind:'request',direction:'c2s',params:AdminFeedbackParams,result:AdminFeedbackResult},
   "_agnes/v1/admin.bundles.get": {kind:'request',direction:'c2s',params:AdminEmpty,result:AdminBundlesResult},
   "_agnes/v1/admin.bundles.save": {kind:'request',direction:'c2s',params:AdminBundlesSave,result:AdminBundlesResult},
