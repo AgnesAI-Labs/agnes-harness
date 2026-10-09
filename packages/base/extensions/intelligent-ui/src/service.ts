@@ -125,7 +125,7 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
   const storeSurface = async (name: string, record: UiSurfaceRecord, value: UiState, reason?: string) => {
     // Projection byte budget includes current snapshots and a bounded receipt page.
     const surfaces = { ...value.surfaces, [record.surface.id]: record }
-    bounded(surfaces, X_AGNES_UI_LIMITS.projectionBytes - 65536, 20)
+    bounded(Object.fromEntries(Object.entries(surfaces).filter(([, item]) => item.status === 'open')), X_AGNES_UI_LIMITS.projectionBytes - 65536, 20)
     await append(name, { record, ...(reason ? { reason } : {}) }, record.updatedSeq || undefined)
     return (await state()).surfaces[record.surface.id]!
   }
@@ -371,7 +371,7 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
         signal.throwIfAborted()
         const value = await state(),
           all = Object.values(value.surfaces)
-            .filter((item) => !input.surfaceId || item.surface.id === input.surfaceId)
+            .filter((item) => input.surfaceId ? item.surface.id === input.surfaceId : item.status === 'open')
             .sort((a, b) => a.createdSeq - b.createdSeq)
         const offset = input.cursor ? Number(input.cursor) : 0
         if (!Number.isSafeInteger(offset) || offset < 0 || String(offset) !== (input.cursor ?? '0'))

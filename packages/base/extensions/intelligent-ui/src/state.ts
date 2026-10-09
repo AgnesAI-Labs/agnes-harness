@@ -153,7 +153,8 @@ export const uiProjection: ProjectionDef = {
     if (name.startsWith('surface.')) {
       const record = data.record as UiSurfaceRecord,
         old = next.surfaces[record.surface.id]
-      next.surfaces[record.surface.id] = {
+      if (record.status === 'closed') delete next.surfaces[record.surface.id]
+      else next.surfaces[record.surface.id] = {
         ...record,
         createdSeq: old?.createdSeq ?? event.seq,
         updatedSeq: event.seq,

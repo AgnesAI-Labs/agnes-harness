@@ -7,6 +7,7 @@ import type {
   DeferredToolInvocationQueue,
   IntelligentUiService,
 } from '@agnes/extension-api'
+import { validIntelligentSurface } from '@agnes/protocol/intelligent-ui'
 import { createIntelligentUiService } from '../src/service.js'
 import { uiProjection } from '../src/state.js'
 
@@ -240,7 +241,7 @@ describe('preset surface contract and ledger lifecycle', () => {
     await f.service().close({ surfaceId: 'reconcile', expectedRevision: 2 }, signal)
     expect(f.rows).toHaveLength(before)
     f.restart()
-    expect((await f.service().read({ sessionId: 'session' }, signal)).surfaces[0]).toMatchObject({
+    expect((await f.service().read({ sessionId: 'session', surfaceId: 'reconcile' }, signal)).surfaces[0]).toMatchObject({
       status: 'closed',
       surface: { revision: 2 },
     })
@@ -402,6 +403,20 @@ describe('preset surface contract and ledger lifecycle', () => {
     foreign.id = 'other'
     foreign.actions[0]!.paramsSchema = { $ref: 'https://bad.invalid/schema' }
     await expect(f.service().render({ surface: foreign }, signal)).rejects.toBeDefined()
+    const badSurfaces = [surface(), surface(), surface(), surface()]
+    badSurfaces[0]!.data.rows = [{ id: 'a' }]
+    badSurfaces[1]!.data.chart = [{ label: 1, amount: 12 }]
+    for (const [index, candidate] of badSurfaces.entries()) {
+      candidate.id = 'invalid' + index
+      const chart = candidate.components.find((item) => item.kind === 'chart')!
+      if (chart.kind !== 'chart') throw new Error('missing chart')
+      if (index >= 2) chart.chartType = 'pie'
+      if (index === 2) chart.series.push({ key: 'second', label: 'second' })
+      if (index === 3) candidate.data.chart = [{ label: 'a', amount: -1 }]
+      expect(validIntelligentSurface(candidate)).toBe(false)
+      await expect(f.service().render({ surface: candidate }, signal)).rejects.toBeDefined()
+    }
+    expect((await f.service().read({ sessionId: 'session' }, signal)).surfaces.map((item) => item.surface.id)).toEqual(['reconcile'])
     for (let i = 0; i < 30; i++)
       await f.service().action({ ...request('bad' + i), revision: 99 }, actor, signal)
     await expect(f.service().action(request('limit'), actor, signal)).rejects.toMatchObject({
@@ -409,6 +424,26 @@ describe('preset surface contract and ledger lifecycle', () => {
     })
     f.clock(161000)
     expect(await f.service().action(request('limit'), actor, signal)).toMatchObject({ status: 'received' })
+  })
+  it('releases closed view capacity while preserving historical identity after restart', async () => {
+    const f = fixture()
+    for (let i = 0; i < 20; i++) {
+      const view = surface()
+      view.id = 'view' + i
+      view.data.status = 'x'.repeat(28000)
+      await f.service().render({ surface: view }, signal)
+      await f.service().close({ surfaceId: view.id, expectedRevision: 1 }, signal)
+    }
+    f.restart()
+    let projected = uiProjection.init()
+    for (const row of f.rows) projected = uiProjection.apply(projected, row)
+    expect(projected).toMatchObject({ surfaces: {} })
+    expect((await f.service().read({ sessionId: 'session' }, signal)).surfaces).toEqual([])
+    expect((await f.service().read({ sessionId: 'session', surfaceId: 'view0' }, signal)).surfaces[0]?.status).toBe('closed')
+    const duplicate = surface(); duplicate.id = 'view0'
+    await expect(f.service().render({ surface: duplicate }, signal)).rejects.toMatchObject({ data: { code: 'UI_STALE' } })
+    await f.service().render({ surface: surface() }, signal)
+    expect((await f.service().read({ sessionId: 'session' }, signal)).surfaces).toHaveLength(1)
   })
   it('projection uses ledger provenance and sequence stamps rather than caller facts', async () => {
     const f = await opened()

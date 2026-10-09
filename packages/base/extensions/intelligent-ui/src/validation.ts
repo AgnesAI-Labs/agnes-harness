@@ -2,7 +2,6 @@ import {
   inspectJsonData,
   jcs,
   rpcError,
-  UiSurface,
   validateAgainst,
   X_AGNES_UI_LIMITS,
   type JsonValue,
@@ -10,10 +9,11 @@ import {
   type UiSurface as Surface,
 } from '@agnes/protocol'
 import type { IntelligentUiPorts } from '@agnes/extension-api'
-import Ajv from 'ajv'
+import { validIntelligentSurface } from '@agnes/protocol/intelligent-ui'
+import { Ajv2020 } from 'ajv/dist/2020.js'
 import type { TSchema } from '@sinclair/typebox'
 
-const ajv = new Ajv({ strict: false, allErrors: false, validateFormats: false, addUsedSchema: false })
+const ajv = new Ajv2020({ strict: false, allErrors: false, validateFormats: false, addUsedSchema: false })
 export const json = (value: unknown): JsonValue => JSON.parse(jcs(value))
 export function bounded(value: unknown, bytes: number, depth = X_AGNES_UI_LIMITS.jsonDepth): void {
   if (!inspectJsonData(value, bytes).ok) throw rpcError('INVALID_PARAMS', { reason: 'UI payload limit' })
@@ -52,9 +52,8 @@ export function accepts(schema: JsonValue, value: JsonValue): boolean {
 }
 export function validateSurface(surface: Surface, ports: IntelligentUiPorts): void {
   bounded(surface, X_AGNES_UI_LIMITS.surfaceBytes)
-  if (!validateAgainst(UiSurface, surface).ok) throw rpcError('INVALID_PARAMS')
-  const ids = new Set<string>(),
-    actionIds = new Set<string>()
+  if (!validIntelligentSurface(surface)) throw rpcError('INVALID_PARAMS')
+  const actionIds = new Set<string>()
   const catalog = new Map(ports.tools().map((tool) => [tool.name, tool]))
   for (const action of surface.actions) {
     if (
@@ -72,50 +71,9 @@ export function validateSurface(surface: Surface, ports: IntelligentUiPorts): vo
       if (dangerous.has(key)) throw rpcError('INVALID_PARAMS')
   }
   for (const component of surface.components) {
-    if (ids.has(component.id)) throw rpcError('INVALID_PARAMS', { reason: 'Duplicate UI component' })
-    ids.add(component.id)
-    if ('dataKey' in component && !Object.hasOwn(surface.data, component.dataKey))
-      throw rpcError('INVALID_PARAMS')
-    const refs =
-      'actionIds' in component
-        ? (component.actionIds ?? [])
-        : 'rowActionIds' in component
-          ? (component.rowActionIds ?? [])
-          : []
-    if (refs.some((id) => !actionIds.has(id))) throw rpcError('INVALID_PARAMS')
     if (component.kind === 'form') {
       safeSchema(component.schema)
-      accepts(component.schema, surface.data[component.dataKey]!) // defaults may be incomplete until user input
-    }
-    if (component.kind === 'table') {
-      const rows = surface.data[component.dataKey]
-      if (!Array.isArray(rows) || rows.length > X_AGNES_UI_LIMITS.tableRows) throw rpcError('INVALID_PARAMS')
-      const keys = new Set<string>()
-      for (const row of rows) {
-        if (!row || typeof row !== 'object' || Array.isArray(row)) throw rpcError('INVALID_PARAMS')
-        const key = row[component.rowKey]
-        if (typeof key !== 'string' || !key || key.length > 128 || keys.has(key))
-          throw rpcError('INVALID_PARAMS')
-        keys.add(key)
-      }
-    }
-    if (component.kind === 'chart') {
-      const points = surface.data[component.dataKey]
-      if (!Array.isArray(points) || points.length > X_AGNES_UI_LIMITS.chartPoints)
-        throw rpcError('INVALID_PARAMS')
-      for (const point of points) {
-        if (
-          !point ||
-          typeof point !== 'object' ||
-          Array.isArray(point) ||
-          !['string', 'number'].includes(typeof point[component.categoryKey]) ||
-          component.series.some((series) => typeof point[series.key] !== 'number')
-        )
-          throw rpcError('INVALID_PARAMS')
-      }
-    }
-    if (component.kind === 'text' || component.kind === 'status') {
-      if (typeof surface.data[component.dataKey] !== 'string') throw rpcError('INVALID_PARAMS')
+      accepts(component.schema, surface.data[component.dataKey]!) // incomplete defaults are allowed
     }
   }
 }

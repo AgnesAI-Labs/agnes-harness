@@ -176,3 +176,5 @@ Fact-chain 与 trace 展示 surface id/revision 和归属、received 命令/acto
 财务 Loop 使用 version 4／codec 4，通用排空 deferred 队列，并在完成 step 的边界领取 SC1。业务校验基于已经提交的 reconciliation checkpoint；成功后先把已处理交易 ID 记录到该 checkpoint，再报告队列完成。原 invocation 可以恢复缓存回执，另一个 command 不能重复模拟相同交易。opaque invocation ID 为 surfaceId、revision、commandId 的 SHA-256 绑定，符合现有 128 字符工具 ID 上限；Surface schema 形状完全未改。Fact-chain 新增有界 `plugin-fact` 元数据节点，展示修订、deferred 状态、action 结果和 SC1 投递，只按明确 seq/id 引用连接。Trace 在 Core 之外追加有界元数据 span，标签不包含表单数据或参数。
 
 公开 Host author testkit 为本试点提供 `AuthorSession.uiAction()`／`uiRead()`；`AuthorTestOptions.packageDirs`、`presets`、`preset` 显式指定隔离夹具的官方 manifest 和业务策略预设，不读取开发者 home 或凭证。
+
+后台与渲染器复用 `@agnes/protocol/intelligent-ui` 的 surface 验证，包含表格列和图表展示语义。默认读取开放视图；按 `surfaceId` 读取仍可获得关闭后的账本证据。关闭视图不占投影容量，也不允许复用 ID。
