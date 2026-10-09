@@ -1,5 +1,14 @@
+import { resolvePluginMetadata } from '@agnes/protocol'
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
-import { Badge, Button, SettingsCard, SettingsState } from '@agnes/web-ui'
+import {
+  Badge,
+  Button,
+  SettingsCard,
+  SettingsState,
+  useUiText,
+  PLUGIN_PRESENTATION_NAMESPACE,
+  pluginPresentationCatalog,
+} from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { sessionStartUrl } from './runtime-panels.js'
@@ -20,6 +29,7 @@ export function ExamplesPanel({
   onReview(item: PackageCatalogDescriptor): void
   onBundles(): void
 }) {
+  const { locale, t: purposeText } = useUiText(PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
   const [rows, setRows] = useState<PackageCatalogDescriptor[]>([])
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -72,8 +82,7 @@ export function ExamplesPanel({
       <div className="runtime-grid">
         {rows.map((row) => {
           const name = row.id.split('/').at(-1) ?? row.id
-          const labelKey = `example.name.${name}`
-          const label = t(labelKey)
+          const purpose = resolvePluginMetadata(row.metadata, locale)
           const current = installed.find((pkg) => pkg.id === row.id)
           const enabled = current?.desired === 'enabled'
           const available = enabled && current?.actual === 'running'
@@ -91,11 +100,11 @@ export function ExamplesPanel({
               className="runtime-card"
               data-testid={`example-${row.id}`}
             >
-              <h3>{label === labelKey ? row.id : label}</h3>
+              <h3>{purpose?.displayName ?? row.id}</h3>
               <small>
                 {row.id} · {row.version}
               </small>
-              <p>{t(row.id.startsWith('@agnes-fde/') ? 'example.summary.fde' : `example.summary.${name}`)}</p>
+              <p>{purpose?.summary ?? purposeText('noDescription')}</p>
               <section className="agnes-settings-actions" aria-label={t('exampleSummary')}>
                 {row.kinds?.map((kind) => (
                   <Badge key={kind}>{t(`kind.${kind}`)}</Badge>

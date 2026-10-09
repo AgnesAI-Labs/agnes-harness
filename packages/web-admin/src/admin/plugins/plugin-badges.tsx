@@ -1,15 +1,6 @@
 import type { PackageInstalledDescriptor, PluginGenerationStatus } from '@agnes/protocol'
 import type { PluginRuntimeState } from '@agnes/web-foundation/client-modules/runtime-status'
-import {
-  ADMIN_LIST_LOCALE_NAMESPACE,
-  adminListLocaleCatalog,
-  Badge,
-  Field,
-  Popover,
-  Select,
-  type StateTone,
-  useUiText,
-} from '@agnes/web-ui'
+import { Badge, Field, Popover, Select, type StateTone } from '@agnes/web-ui'
 import type { Plugin, Text } from './control-panel-types.js'
 
 export const PLUGIN_KINDS = ['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui', 'bundle'] as const
@@ -22,7 +13,7 @@ export function pluginStates(
 ): readonly { key: string; tone: StateTone }[] {
   if (!('desired' in item)) return []
   const states: { key: string; tone: StateTone }[] = [{ key: 'installed', tone: 'off' }]
-  if (item.desired === 'enabled') states.push({ key: 'enabled', tone: 'ok' })
+  states.push(item.desired === 'enabled' ? { key: 'enabled', tone: 'ok' } : { key: 'disabled', tone: 'off' })
   if (item.actual === 'running') states.push({ key: 'active', tone: 'ok' })
   if (item.draining === true) states.push({ key: 'draining', tone: 'warn' })
   if (item.actual === 'restart-required') states.push({ key: 'restart-required', tone: 'warn' })
@@ -72,12 +63,7 @@ export function GenerationDrainSummary({
   t: Text
   nameOf?: (id: string) => string
 }) {
-  const { t: names } = useUiText(ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog)
-  const displayName = (id: string) => {
-    const key = `row.name.${id}`
-    const name = names(key)
-    return name !== key ? name : (nameOf?.(id) ?? id.split('/').at(-1))
-  }
+  const displayName = (id: string) => nameOf?.(id) ?? id
   const plugins =
     status?.plugins.filter(
       (plugin) => plugin.drainingSessions > 0 && installed.some((item) => item.id === plugin.id),

@@ -95,7 +95,7 @@ it('previews without importing code or writing lock, then installs only disabled
   writeFileSync(join(sourceDir, 'index.ts'), `throw new Error('must not run')`)
   pkg({
     scripts: { postinstall: 'exit 99' },
-    agnes: { metadata: purpose, plugins: [{ apiRange: '^1.4.0', export: 'main' }] },
+    agnes: { metadata: purpose, plugins: [{ apiRange: '^1.4.0', export: 'main', metadata: purpose }] },
   })
   const before = lockBytes(),
     phases: number[] = []
@@ -114,6 +114,9 @@ it('previews without importing code or writing lock, then installs only disabled
   expect(entry.state).toMatchObject({ trusted: null, enabled: false })
   expect(entry.treeIntegrity).toBe(hashDirectory(packageDir(root, 'local-dev', preview.id), { exclude: [] }))
   expect(entry.contributions).toEqual(preview.contributions)
+  expect(preview.presentation?.rows).toEqual([
+    { id: 'ext:acme/pkg-a/main', metadata: purpose, settings: false },
+  ])
   expect(preview.metadata).toEqual(purpose)
   expect(entry.metadata).toEqual(purpose)
   expect(readLock(profile).packages[preview.id]?.metadata).toEqual(purpose)

@@ -1057,6 +1057,9 @@
         },
         "metadata": {
           "$ref": "extension-manifest.json#/$defs/PluginMetadata"
+        },
+        "presentation": {
+          "$ref": "#/$defs/PackagePresentation"
         }
       },
       "required": [
@@ -1335,6 +1338,9 @@
         },
         "metadata": {
           "$ref": "extension-manifest.json#/$defs/PluginMetadata"
+        },
+        "presentation": {
+          "$ref": "#/$defs/PackagePresentation"
         }
       },
       "required": [
@@ -1409,6 +1415,9 @@
         },
         "metadata": {
           "$ref": "extension-manifest.json#/$defs/PluginMetadata"
+        },
+        "presentation": {
+          "$ref": "#/$defs/PackagePresentation"
         }
       },
       "required": [
@@ -3713,6 +3722,44 @@
         }
       },
       "required": ["candidateId", "packageId", "candidateHash", "state"]
+    },
+    "PackagePresentation": {
+      "description": "Read-only display data derived from the installed public author contract; it grants no capabilities.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rows"],
+      "properties": {
+        "origin": {
+          "enum": ["official", "example", "local", "local-source", "third-party"]
+        },
+        "rows": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "settings"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "metadata": {
+                "$ref": "extension-manifest.json#/$defs/PluginMetadata"
+              },
+              "settings": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

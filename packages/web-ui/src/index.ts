@@ -109,3 +109,7 @@ export {
 export { Switch, type SwitchProps } from './ui/switch.js'
 export { Tabs, type TabsProps } from './ui/tabs.js'
 export * from './ui-locale.js'
+
+export * from './plugin-presentation.js'
+export * from './plugin-purpose.js'
+export { PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog } from './locales/plugin-presentation.js'

@@ -59,6 +59,12 @@ function validate(raw: unknown, sourceId: string, retrievedAt: string): CatalogS
     if (!checked.ok) return refuse()
     if (checked.value.metadata !== undefined && !validatePluginMetadata(checked.value.metadata).ok)
       return refuse()
+    if (
+      (checked.value.presentation?.rows ?? []).some(
+        (row) => row.metadata !== undefined && !validatePluginMetadata(row.metadata).ok,
+      )
+    )
+      return refuse()
     const parsed = parseSource(checked.value.source.ref)
     if (parsed.type !== checked.value.source.type) return refuse()
     const key = `${checked.value.id}@${checked.value.version}`

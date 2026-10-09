@@ -1,8 +1,12 @@
+import { resolvePluginMetadata } from '@agnes/protocol'
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor, PackageSource } from '@agnes/protocol'
 import { type JSX, type ReactNode, useState } from 'react'
 import { ADMIN_LOCALE_NAMESPACE, contributionText, type RuntimeStateView, sourceLabel } from './admin-text.js'
 import { adminLocaleCatalog } from './locales/admin.js'
 import { ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog } from './locales/admin-list.js'
+import { PluginPurposeBadges, PluginProvidesChips } from './plugin-purpose.js'
+import type { PluginPresentation } from './plugin-presentation.js'
+import { PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog } from './locales/plugin-presentation.js'
 import { SettingsDetails } from './settings-layout.js'
 import { Badge } from './ui/badge.js'
 import { Select } from './ui/select.js'
@@ -213,6 +217,7 @@ export function PluginList({
   loading,
   inventoryAuthoritative,
   query,
+  filtered = false,
   nextCursor,
   surfaceLinksOf,
   runtimeOf,
@@ -223,13 +228,14 @@ export function PluginList({
   onLoadMore,
   metadataOf,
   formatFailure,
-  presentationOf,
+  providesOf,
 }: {
   tab: AdminTab
   rows: readonly (PackageInstalledDescriptor | PackageCatalogDescriptor)[]
   loading: boolean
   inventoryAuthoritative: boolean
   query: string
+  filtered?: boolean
   nextCursor: string | null
   surfaceLinksOf(packageId: string): readonly SurfaceLinkItem[]
   runtimeOf(packageId: string): RuntimeStateView | undefined
@@ -239,13 +245,12 @@ export function PluginList({
   onToggleDesired(item: PackageInstalledDescriptor, next: boolean): void
   onLoadMore(): void
   formatFailure?(message: string, code?: string): string
-  presentationOf?(
-    item: PackageInstalledDescriptor | PackageCatalogDescriptor,
-  ): { name: string; description?: string } | undefined
+  providesOf?(item: PackageInstalledDescriptor | PackageCatalogDescriptor): PluginPresentation | undefined
   metadataOf?(item: PackageInstalledDescriptor | PackageCatalogDescriptor): ReactNode
 }): JSX.Element {
   const { t } = useUiText(ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog)
   const { t: adminText } = useUiText(ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
+  const { t: purposeText, locale } = useUiText(PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
   const [versions, setVersions] = useState<Record<string, string>>({})
   const groups = new Map<string, (PackageInstalledDescriptor | PackageCatalogDescriptor)[]>()
   for (const row of rows) {
@@ -257,13 +262,15 @@ export function PluginList({
   }
   if (!rows.length) {
     const title =
-      tab === 'installed'
-        ? inventoryAuthoritative
-          ? t('empty.installed')
-          : t('empty.installed-unknown')
-        : query
-          ? t('empty.query')
-          : t('empty.catalog')
+      query || filtered
+        ? t('empty.query')
+        : tab === 'installed'
+          ? inventoryAuthoritative
+            ? t('empty.installed')
+            : t('empty.installed-unknown')
+          : query
+            ? t('empty.query')
+            : t('empty.catalog')
     const copy =
       tab === 'installed'
         ? inventoryAuthoritative
@@ -289,12 +296,9 @@ export function PluginList({
           (row, index) => group.findIndex((entry) => entry.version === row.version) === index,
         )
         const runtime = runtimeOf(item.id)
-        const nameKey = `row.name.${item.id}`
-        const presentation = presentationOf?.(item)
-        const displayName = presentation?.name ?? (t(nameKey) === nameKey ? item.id : t(nameKey))
-        const descriptionKey = `row.description.${item.id}`
-        const description =
-          presentation?.description ?? (t(descriptionKey) === descriptionKey ? undefined : t(descriptionKey))
+        const purpose = resolvePluginMetadata(item.metadata, locale)
+        const displayName = purpose?.displayName ?? item.id
+        const description = purpose?.summary ?? purposeText('noDescription')
         const failureReason =
           tab === 'installed'
             ? (runtime?.error?.message ??
@@ -332,8 +336,10 @@ export function PluginList({
                   {displayName}
                 </button>
               </h2>
+              <p data-testid="plugin-summary">{description}</p>
+              <PluginPurposeBadges item={item} />
               {metadataOf?.(item)}
-              {description && <p>{description}</p>}
+              <PluginProvidesChips value={providesOf?.(item)} />
               {alternatives.length > 1 ? (
                 <SettingsDetails
                   title={t('row.versions', { version: item.version })}

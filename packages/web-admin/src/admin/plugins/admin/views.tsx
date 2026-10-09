@@ -1,4 +1,4 @@
-import type { PackageSource } from '@agnes/protocol'
+import { resolvePluginMetadata, type PackageSource } from '@agnes/protocol'
 import {
   Button,
   blockerText,
@@ -10,6 +10,10 @@ import {
   OrphanPins,
   operationLabel,
   PluginList,
+  PLUGIN_CATEGORIES,
+  PluginPurposeSections,
+  SettingsSelect,
+  SettingsDetails,
   renderRegion,
   SettingsInput,
   SettingsToolbar,
@@ -134,13 +138,12 @@ export function renderPluginView(this: PluginAdminViewContext): void {
           onPublished={() => this.refresh()}
         />
         <GenerationDrainSummary
-          nameOf={(id) => {
-            const key = `example.name.${id.split('/').at(-1)}`
-            const name = this.settingsText(key)
-            return /^@(agnes-example|agnes-fde|community)\//.test(id) && name !== key
-              ? name
-              : id.split('/').at(-1)!
-          }}
+          nameOf={(id) =>
+            resolvePluginMetadata(
+              this.state.installed.find((row) => row.id === id)?.metadata,
+              this.locale.getSnapshot(),
+            )?.displayName ?? id
+          }
           status={this.state.generations}
           installed={this.state.installed}
           t={this.t}
@@ -151,7 +154,7 @@ export function renderPluginView(this: PluginAdminViewContext): void {
               id="plugin-search"
               type="search"
               value={this.queryRaw}
-              placeholder={this.t(this.tab === 'installed' ? 'search.installed' : 'search.discover')}
+              placeholder={this.purposeText('search')}
               disabled={!context || !this.can('packages.read')}
               onChange={(event) => {
                 this.queryRaw = event.target.value
@@ -160,6 +163,25 @@ export function renderPluginView(this: PluginAdminViewContext): void {
                 else void this.loadCatalog()
               }}
             />
+          </Field>
+          <Field label={this.purposeText('category')} htmlFor="plugin-category">
+            <SettingsSelect
+              id="plugin-category"
+              data-testid="plugin-category-filter"
+              value={this.category}
+              onChange={(event) => {
+                this.category = event.target.value
+                this.render()
+              }}
+            >
+              <option value="">{this.purposeText('all')}</option>
+              {PLUGIN_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {this.purposeText(`category.${category}`)}
+                </option>
+              ))}
+              <option value="unclassified">{this.purposeText('unclassified')}</option>
+            </SettingsSelect>
           </Field>
           <KindFilter
             value={this.kind}
@@ -185,27 +207,19 @@ export function renderPluginView(this: PluginAdminViewContext): void {
           </Button>
         </SettingsToolbar>
         <PluginList
-          presentationOf={(item) => {
-            if (!/^@(agnes-example|agnes-fde|community)\//.test(item.id)) return undefined
-            const name = item.id.split('/').at(-1)
-            const key = `example.name.${name}`
-            const label = this.settingsText(key)
-            if (label === key) return undefined
-            const descriptionKey = item.id.startsWith('@agnes-fde/')
-              ? 'example.summary.fde'
-              : `example.summary.${name}`
-            const description = this.settingsText(descriptionKey)
-            return { name: label, ...(description === descriptionKey ? {} : { description }) }
-          }}
+          providesOf={(item) => this.presentationOf(item)}
           formatFailure={(message, code) => pluginFailureMessage(message, this.t, code)}
           metadataOf={(item) => <PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.t} />}
           tab={this.tab}
           rows={(this.tab === 'installed' ? this.filteredInstalled() : this.state.catalog).filter(
-            (item) => !this.kind || item.kinds?.includes(this.kind),
+            (item) =>
+              (!this.kind || item.kinds?.includes(this.kind)) &&
+              (!this.category || (item.metadata?.category ?? 'unclassified') === this.category),
           )}
           loading={loading}
           inventoryAuthoritative={this.state.inventoryAuthoritative}
           query={this.query}
+          filtered={!!this.kind || !!this.category}
           nextCursor={this.state.nextCursor}
           surfaceLinksOf={(packageId) => this.surfaceLinks(packageId)}
           runtimeOf={(packageId) => asRuntimeView(this.runtimeState(packageId))}
@@ -323,39 +337,63 @@ export function renderDetailPluginView(this: PluginAdminViewContext): void {
         onClose={() => this.closeDetail()}
       >
         <DetailContent
-          heading={item.id}
-          metadata={
-            <>
-              <PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.t} />
-              {'desired' in item && (
+          heading={resolvePluginMetadata(item.metadata, this.locale.getSnapshot())?.displayName ?? item.id}
+          content={
+            <PluginPurposeSections
+              item={item}
+              value={this.presentationOf(item)}
+              permissions={
                 <>
-                  <ProvenanceReview value={item.provenance} t={this.t} />
-                  <CapabilityReview value={item.declaredCapabilities} t={this.t} />
+                  <PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.t} />
+                  {'desired' in item && (
+                    <>
+                      <ProvenanceReview value={item.provenance} t={this.t} />
+                      <CapabilityReview value={item.declaredCapabilities} t={this.t} />
+                    </>
+                  )}
+                  {'desired' in item &&
+                  (item.actual === 'failed' ||
+                    item.blockers.length ||
+                    this.runtimeState(item.id)?.phase === 'failed') ? (
+                    <FailureHelp
+                      reason={
+                        item.blockers.length
+                          ? 'capability blocked'
+                          : (this.runtimeState(item.id)?.error?.message ?? item.actualReason ?? '')
+                      }
+                      t={this.t}
+                    />
+                  ) : undefined}
                 </>
-              )}
-              {'desired' in item &&
-              (item.actual === 'failed' ||
-                item.blockers.length ||
-                this.runtimeState(item.id)?.phase === 'failed') ? (
-                <FailureHelp
-                  reason={
-                    item.blockers.length
-                      ? 'capability blocked'
-                      : (this.runtimeState(item.id)?.error?.message ?? item.actualReason ?? '')
-                  }
-                  t={this.t}
-                />
-              ) : undefined}
-            </>
+              }
+              versions={
+                <>
+                  <p>{this.t('version', { version: item.version })}</p>
+                  <SettingsDetails title={this.purposeText('technical')}>
+                    <dl className="plugin-facts">
+                      {facts.map(([label, value]) => (
+                        <div key={label}>
+                          <dt>{label}</dt>
+                          <dd>{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </SettingsDetails>
+                </>
+              }
+            />
           }
-          intro=""
+          intro={
+            resolvePluginMetadata(item.metadata, this.locale.getSnapshot())?.summary ??
+            this.purposeText('noDescription')
+          }
           version={this.t('version', { version: item.version })}
           stateText={
             'trusted' in item
               ? undefined
               : this.t('compatibility', { value: this.t(`compatibility.${item.compatibility}`) })
           }
-          facts={facts}
+          facts={[]}
           blockerSections={[
             {
               title: this.t('blocker.current'),

@@ -969,3 +969,13 @@ select.agnes-settings-input {
 .agnes-intelligent-surface [data-testid="ui-confirmation"] p {
   margin: 0;
 }
+
+/* Author purpose and registration IDs remain readable on narrow settings surfaces. */
+.plugin-row-content,
+[data-testid="plugin-purpose-detail"] {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+[data-testid="plugin-provides"] {
+  flex-wrap: wrap;
+}

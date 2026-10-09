@@ -51,6 +51,7 @@ export function DetailContent({
   version,
   stateText,
   metadata,
+  content,
   facts,
   blockerSections,
   operations,
@@ -62,6 +63,7 @@ export function DetailContent({
   heading: string
   intro: string
   version: string | undefined
+  content?: ReactNode
   metadata?: ReactNode
   stateText: string | undefined
   facts: readonly (readonly [label: string, value: string])[]
@@ -94,6 +96,7 @@ export function DetailContent({
         <p>{intro}</p>
       </div>
       <div className="admin-detail-scroll">
+        {content}
         {facts.length > 0 && (
           <dl className="plugin-facts">
             {facts.map(([label, value]) => (

@@ -2,7 +2,9 @@
 
 [English](DESIGN.md) | 简体中文
 
-**状态：待审核提案。本次不实现协议、运行时或页面。**
+**状态：Phase A 已批准，简化 Phase B 已实现，等待统一验收。**
+
+Lead 于 2026-10-10 批准元数据契约与内容。本次实现可选公开契约、分类／搜索卡片、六个详情区块，仅用现有可读目录／注册信息和轻量 PackagePresentation 字段。证据等级、已观察事件、新增分页、依赖／反向依赖图和停用影响分析延期，现有 blockers／pins 继续保持权威。开发期间未运行构建、测试或截图。
 
 [扩展指南](../README.zh-CN.md) · [逐项双语文案](CONTENT.zh-CN.md)
 
@@ -74,51 +76,36 @@ metadata 整块可省略；存在时 displayName、summary、description、categ
 
 逐字段按当前语言覆盖→基础文案回退。metadata 缺失时显示完整 ID、已知 kind，以及 **作者未提供用途说明 / No description provided**；类别为未分类。不能猜测用途、调用模型补写或读私有 ID 表。已知 kind 技术筛选继续保留。
 
-package-manager 的 inspect 在安装前校验包与行 metadata，plugin-manifest 接受新字段，extension-api/manifest 复用共享 schema。catalog、preview、contribution summary、lock 与不可变 snapshot 携带已校验值。详情按确切快照展示，旧版本不读取新版本的文案。打包与创作候选保留公开 metadata。缺失合法，存在但非法则拒绝安装。
+package-manager 的 inspect 在安装前校验包与行 metadata，plugin-manifest 接受新字段，extension-api/manifest 复用共享 schema。catalog、preview、lock 与不可变 snapshot 携带已校验包 metadata；只读 presentation 携带行 metadata。详情按确切快照展示，旧版本不读取新版本的文案。打包与创作候选保留公开 metadata。缺失合法，存在但非法则拒绝安装。
 
-这是可选公开字段增量，不引入迁移与兼容垫片。类型、验证器和引用文档来自协议生成器。metadata 不改变权限、装载、信任或配置语义；文案变更自然改变包 integrity，仍走既有审核，metadata 不加入 capability hash 输入。提案在实现前保持明确的“待实现”标注。
+这是可选公开字段增量，不引入迁移与兼容垫片。类型、验证器和引用文档来自协议生成器。metadata 不改变权限、装载、信任或配置语义；文案变更自然改变包 integrity，仍走既有审核，metadata 不加入 capability hash 输入。双语作者指南记录已实现合同。
 
-## 派生事实与复用来源
+## 派生事实与复用来源（简化 Phase B）
 
-作者文案说明“为什么”，运行时事实说明“实际有什么、哪里生效”。先复用现有读 API；尚未公开的事实，在现有 plugin-tree 读响应中增加有界、只读 `presentation` 投影。不要把 UI 文案塞入 canonical PluginRow 或改变 target hash/generation 选择。
+预览、安装库存和目录 DTO 增加可选只读 `presentation`：rows 包含 ID、作者 metadata／扩展 source ID、configSchema 是否存在；展示 DTO 的 origin 由后端现有内置来源、bundled 目录或来源记录推导。package-manager 从确切库存目录读取公开声明，不导入代码，不改变 canonical PluginRow、target hash、能力哈希或启停决策。行用途与实际注册分开展示，没有第二个持久化目录。
 
-后端投影按 packageId、snapshotId、rowId 与 generation/target 身份关联，携带 metadata、可信来源、贡献、依赖引用与完整性。每项含贡献类型、稳定 ID、归属行、可选显示名、生效位置和证据（registered/configured/observed）。每个维度区分 known、unavailable、partial；“已确认空”不同于“未知”。沿用公开响应界限，每页最多 128 行/贡献项，超出则返回明确游标，不静默截断。浏览器事实只合并相同 roster revision/row/snapshot；新旧 generation 不按 package ID 混合。
+页面通过既有 runtime() 和 composition() 读取可选事实，再与现有 actualSlots 和 surfaceLinks 合成轻量内存展示模型。读取失败不阻止库存渲染；工具能力声明、events 权限和包 kinds 不作为注册证据。
 
-| 信息 | 当前事实源 | 规则 |
+| 信息 | 复用来源 | 展示规则 |
 | --- | --- | --- |
-| 工具 | ext-host/ports，Host generation 工具目录，带 ToolSource 的归属 | 只统计实际注册 ID；capabilities.tools.names 是声明 |
-| Loop、策略、适配器、记忆、压缩、存储、沙箱、子 Agent、引用、触发器 | host-common 的 ProviderRegistry / 公开 ProviderCatalogEntry | 复用 sourcePackage、kind、id/version、active、selectedFor、scope、restartRequired；包身份不足时补行/快照归属读字段 |
-| seam 与服务 | 经过 mount 核验的 provide/inject，Cordis 活服务和 ServiceRegistry | export 声明与 manifest 一致、注册成功后才算实际提供；空入口不虚构注册 |
-| 面板与工具卡片 | web-client SlotRegistry，当前 roster，以及已传给页面的 actualSlots | 只用活跃归属注册；注册成功和赢得位置后可见分别展示 |
-| 设置 | 公开 settingsSections，D3 config 读合同与 config-panel | 已注册设置入口与行配置表单分别展示；schema 不等于独立设置页 |
-| 命令与技能 | CommandService.list，当前 Skill 资源注册与 slash catalog | 普通命令不能冒充 slash；技能来自已选择的资源，不来自 kind |
-| 事件 | 活跃 hook、归属 projection 订阅、已观察到的 extension event 类型 | 区分监听与发出；事件是 append 而非预注册；events 权限不等于已经发出 |
-| 独立页面 | 现有 surfaceLinks 与部署 service grant | 可用挂载才显示打开链接；声明仅标 configured |
-| 依赖/被依赖 | 快照 npm dependencies，runtime tree 服务边，provider selection 与 composition 来源 | 分开包版本范围、必需服务、选中 provider；后端用完整清单求反向边，不用筛选结果 |
-| 停用影响/固定版本 | lifecycle 的 assertNoReferences，profile/generation/deployment 引用、durable pins | 提取并复用现有引用收集，按操作区分；当前 inventory blockers 为空不是无引用证明 |
-| 权限与信任 | CapabilityReview、ProvenanceReview、inventory | 作者文字不能证明官方来源、信任或停用安全 |
+| 工具 | composition 的 session toolGroups，由实际工具目录派生并保留 source | 按包／公开内置扩展 source 归属去重；可读会话 pin 与展示版本不同则排除 |
+| Loop、策略等 provider | RuntimeAdminSnapshot.providers／ProviderCatalogEntry | 按 sourcePackage 关联，展示 ID、选用与生命周期；已知 actual integrity 不同时不混入当前库存 |
+| 组合包 | 现有 runtime bundle catalog | 关联 sourcePackage，安装不代表选用 |
+| 界面／设置插槽 | 现有 actualSlots(packageId) | 用通用 slot 名推导聊天、工作台、设置、审批；不推断竞争插槽赢家 |
+| 配置 | 已校验插件行的 configSchema 是否存在 | 设置 chip 与说明；编辑仍在既有配置标签页，保留草稿 |
+| 随包技能／主题 | 已验证库存的贡献描述 | 展示可用资源／主题 ID，不声称已在会话选中 |
+| 独立页面 | 现有 surfaceLinks | 仅展示可读挂载页面与链接 |
+| 信任／版本 | 现有库存、权限与来源审核、generation、rollback | 复用状态、blockers 与 pins，不由作者文案改变权限 |
 
-生效位置通过通用贡献类型/slot 映射得到，不按插件 ID 写特例：工具/技能/slash→聊天；workbench slot→工作台；设置 section/config→设置；选定工具策略→审批；hook、Loop、压缩、记忆与遥测→后台执行并说明作用范围。模型适配器影响聊天，引用解析影响输入区，webhook 影响触发入口，skin 可在外观设置选择并在应用中生效。
+settingsSections 当前没有逐包归属，不能按 ID 猜测谁提供了全局设置页；仅展示带归属的设置插槽和配置支持。命令与事件的归属也不从文案推断。位置由通用贡献类型／slot 映射；会话选用与实际展示可不同。不可读时显示“当前暂不可读取注册信息”，不把缺失解释为零。
 
-实际注册不代表在所有会话都选中；展示“已提供，尚未选用”。未加载/停用插件展示“尚未确认”，声明放入权限或明确标 configured 的部分。不能为枚举而加载不受信任或停用代码。事件历史不可用时标未知，不能把权限 flag 当发出事件。
+本次不增加证据层、事件采集、分页、归属／快照采集设施或依赖／停用分析；已写入外部 hardening backlog。
 
-不新增持久化目录、第二份事件库或另一套运行时。后端在已发布 generation 上派生，浏览器在其活 registry 上派生。只有 provider/seam 的官方内置行也需要 metadata；既有 Providers 技术目录保留并共享用途卡片，避免只覆盖可安装包。
+## 来源、状态与既有阻塞
 
-## 来源、状态与停用影响
+来源与安装方式分开：官方／示例／第三方／本地编写，本地文件无法确认作者时显示“本地来源 · 作者未确认”。身份来自现有内置、随附目录与来源记录，不从包名或作者文案推测。来源 badge 与信任 badge 分开，示例继续有现有示例架入口。
 
-来源归属（官方/示例/第三方/本地创作）与安装方式（folder/npm/git/tarball）分开。官方身份来自 Host 内置行 provenance，示例来自可信的随附 catalog/source provenance，不凭 agnes/community 名称或作者字段判断。经审核的本地 candidate 可以证明本地创作，任意 folder 安装只能证明本地来源，显示“本地来源，作者未确认”。示例与官方默认插件分开筛选，信任另按确切 integrity/capability hash 展示。
-
-卡片保留期望启用、实际运行、浏览器失败与固定版本/保留会话。绿色开关不等于实际运行。离线/过期沿用现有提示和动作限制。
-
-停用提示不作绝对安全承诺，只说明事实：
-
-- **被…引用**：包/服务、配置/provider、部署阻塞，提供可追溯入口。
-- **旧会话仍保留此版本**：固定/绑定会话数；现有语义允许 draining 时，pin 不自动变成停用阻塞。
-- **需要重启**：来自实际 provider 生命周期或当前操作结果。
-- **未发现阻塞引用**：只用于完整、当前、针对该操作的后端引用结果，并说明新会话会失去的贡献。
-- **停用影响尚未确认**：不可用、部分或过期的事实，不显示零引用。
-
-从 lifecycle 检查提取只读引用收集，保留 disable/remove 各自策略。提交时后端仍重查，前端提示不能覆盖后端授权。不开批量停用、自动释放 pin 或连带删除依赖。
+卡片保留期望启用／停用、实际运行、浏览器失败与旧版本保留提示。绿色开关不等于实际运行。离线、过期提示和动作限制沿用既有规则。本次不新增“可安全停用”承诺、依赖图或影响分析，保留既有 blockers、generation 提示、rollback 与 pins 操作，后端检查仍是权威。
 
 ## 列表线框
 
@@ -126,18 +113,17 @@ package-manager 的 inspect 在安装前校验包与行 metadata，plugin-manife
 插件                                             [从来源安装]
 [已安装] [发现] [插件类型] [示例与 FDE]
 [搜索名称、用途、工具或技能________________________]
-[类别：全部 v] [来源：全部 v] [状态：全部 v] [kind v]
+[类别：全部 v] [kind v]
 
 客服分流示例                    示例 · Agent 执行       [已启用]
 对样例客服工单分类，并在记录模拟回复前请求批准。
 提供  [Loop 1] [工具 4] [策略 1] [技能 1] [面板 1]
-生效  聊天 · 工作台 · 审批流程
 运行中 · 已信任 · 2 个会话保留旧版本
 [详情]                                  [为新会话启用]
 
 执行进度检查                    官方 · Agent 执行
 发现重复写入和停滞的执行，并按配置限制要求修正或升级处理。
-提供  [验证器] [修正策略]        生效  后台执行
+提供  [当前可读的实际贡献类型]
 默认会话已选用                  [详情]
 
 vendor/plugin                   第三方 · 未分类
@@ -146,11 +132,11 @@ kind：tool · 提供内容尚未确认 · 已安装 · 未信任
 [详情]                                                [审核]
 ```
 
-上方数量只是线框占位，非该插件测量结果。使用类别筛选，不默认展开九个分组；来源与类别正交。多行包可展开，不重复展示已属于包的贡献行。来源“全部”作用于当前 tab，不另建汇总路由；没有包 inventory 的内置 provider 在 Providers 中也有相同用途卡片，并从已安装页提供跳转；仅有 manifest 的休眠条目不创建已安装状态。
+上方数量只是线框占位，非实际测量。分类与现有 kind 筛选作用于当前包列表。卡片展示包用途、来源、既有状态／信任 badge 与可读贡献数量。多行作者用途在“概览”展开区查看；仅有 manifest 不生成活跃卡片。
 
-搜索 ID、显示名、summary、两种已提供语言、真实工具/provider/Skill/命令 ID 和通用贡献标签，不区分大小写。关键词在可搜索字段间按 AND 匹配，类别/来源/状态/kind 也按 AND 组合。无结果提供清除筛选。已安装使用当前归一化 inventory，catalog 在现有离线后端查询中先搜索再分页，不能只筛首屏。未激活 catalog 项只搜索可核对的声明并标注声明。不开远程 marketplace，不因搜索加载插件。
+搜索按不区分大小写的短语匹配 ID、版本、显示名、summary、两种已提供语言、行用途、贡献 ID、可读注册 ID 与通用贡献标签。搜索、分类与 kind 按 AND 组合。目录查询在既有分页前搜索缓存描述中的双语 metadata 和行／贡献 ID；分类／kind 仍筛选已加载的目录行。本次不新增分页或远程浏览。
 
-标题按钮打开详情，开关与动作保持独立，不把交互控件嵌入整卡按钮。最多四个 provides chip 后加 +N，窄屏折行，整句对无障碍读取保留。375px 过滤器与卡片纵向排布，动作有完整标签，无横向滚动。ID/hash/长路径进入技术披露；错误、权限问题和用途缺失提示可见。
+标题按钮打开详情，既有开关／动作保持独立。提供内容 chip 使用共享间距折行，summary 完整可读，长 ID、hash 与来源路径在技术披露中。保留既有加载、空、恢复与失败状态。窄屏与浅深色可读性等待统一验收。
 
 ## 详情线框
 
@@ -158,20 +144,19 @@ kind：tool · 提供内容尚未确认 · 已安装 · 未信任
 客服分流示例                                          [关闭]
 示例 · Agent 执行 · 运行中 · 已信任
 概览 / 提供什么 / 在哪里生效 / 设置 /
-权限与信任 / 版本与固定 / 依赖关系
+权限与信任 / 版本与固定版本
 
 概览：用途短句、说明段落、明确模拟范围、文档链接
 提供什么：真实 Loop/工具/策略/技能/面板 ID，注册和选用范围
-在哪里生效：聊天、工作台、审批、设置；是否已注册、可见、选中
-设置：现有 D3 schema 表单与 configReload 提示，相关设置页入口
+在哪里生效：聊天、工作台、审批、设置；位置随选用与插槽展示而变化
+设置：配置支持说明；编辑保留在既有 D3 设置标签页
 权限与信任：复用 CapabilityReview 与 ProvenanceReview
 版本与固定：已安装/实际版本，绑定会话、固定版本与现有释放规则
-依赖关系：需要哪些包/服务/provider；哪些项目依赖它
-停用影响：当前预设引用此插件；旧会话保留其代码
+既有 blockers 与 pins 保留在用途区块下方。
 [为新会话停用]                 [移除]（沿用当前后端限制）
 ```
 
-七个语义区段使用详情内跳转导航，不新增七层嵌套 tab。保留 D3 的 Settings tab/form，设置跳转进入该表单；默认概览。权限、依赖不藏入技术披露。打开保留合理焦点，Escape 关闭后返回标题按钮，刷新不抢焦点、不覆盖未保存配置。只读模式展示解释与可用读链接。
+六个语义区块位于既有详情滚动区域，不新增区块跳转导航。保留 D3 的 Settings tab/form；概览在前，权限与信任可见，来源、integrity、浏览器插槽与回滚信息放在“版本与固定版本”的技术披露。打开保留合理焦点，Escape 关闭后返回标题按钮，刷新不抢焦点、不覆盖未保存配置。只读模式展示解释与可用读链接。
 
 ## 一致性、主题与证据
 
@@ -181,7 +166,7 @@ kind：tool · 提供内容尚未确认 · 已安装 · 未信任
 
 沿用 01-tokens.css 与 web-ui 的语义桥接：行内 --s8/--s12、区段 --s16/--s24、页面 --s24/--s32；输入面用 --agnes-input-surface，状态用双主题 --agnes-status-*，支持减少动态效果，不另建 palette。390px 是正式窄屏评审规格，线框的 375px 是额外目标。嵌入/独立页面共享标题、正文、动作节奏。
 
-通用界面、错误/空/未知状态均提供 en/zh-CN，使用稳定 test ID：plugin-category-filter、plugin-origin-filter、plugin-summary、plugin-provides、plugin-appearances、plugin-dependencies、plugin-disable-impact，加 package/row/version 属性。标签可见，控件键盘可用，焦点可辨，chip 为可读静态文本。浅深主题均应可读，停用状态不只用颜色表示。
+通用界面、错误/空/未知状态均提供 en/zh-CN，使用稳定 test ID：plugin-category-filter、plugin-summary、plugin-provides、plugin-appears-detail，加 package/row/version 属性。标签可见，控件键盘可用，焦点可辨，chip 为可读静态文本。浅深主题均应可读，停用状态不只用颜色表示。
 
 ## 依据源码描述当前页面
 
@@ -193,14 +178,8 @@ renderDetailPluginView 已展示来源、integrity、贡献概括、实际浏览
 
 开发期间禁止产品构建。Phase A 使用上述源码描述和线框，真实 before/after 截图统一留到预交接验收阶段：通过共享锁一次一个浏览器/页面，覆盖双语、浅深色、桌面与 390px。提案审核不以截图为前置条件。
 
-## 实施顺序与留待统一执行的验证
+## 简化实施与延期验收
 
-1. 共享 schema/type/校验与包、行、extension 解析；按确切快照传 metadata，更新双语作者文档。
-2. 把 CONTENT 中 37 个官方 manifest 与 56 个样例文件的双语文案写进作者清单；补齐普通官方 row、默认 Loop、provider 与四个官方辅助包；删除逐 ID 名称/描述和 regex 展示特例。
-3. 最小只读事实投影：实际注册、来源、完整依赖与被依赖、按操作的停用影响；保持 target/授权语义。
-4. 共享卡片/详情、搜索与组合筛选；保留候选、信任、固定版本、安装和 D3 配置流程。
-5. 扩展现有就近单元测试并写一个已注册 Web spec；本阶段只编写，不运行。真实 before/after 截图留至预交接验收，在锁内采集。
+新增 docs/extend/plugin-metadata 中英作者指南。公开元数据、安装验证、快照携带与双语内容已实现；两个逐 ID 文案表及示例架／旧版本提示中的消费已删除。多行包的作者用途在“概览”展开区展示，不声称实际注册。当前详情为概览／提供什么／在哪里出现／设置／权限与信任／版本与固定版本六个区块，保留原配置编辑标签页和生命周期控件。
 
-测试用例覆盖缺 metadata、zh 回退、空白/超长/未知字段/危险 URL 拒绝、第三方同合同、快照保留文案、无注册/停用不能虚构能力、浏览器版本不匹配、多行归属、注册与选用区分、命令不冒充 slash、事件权限不冒充 emission、反向依赖来自完整 inventory、过期/部分影响不能承诺无阻塞、summary/真实工具搜索和首屏以外 catalog 命中、AND 筛选、刷新保留未保存 D3 表单。Web spec 用合成数据与稳定 role/ID。
-
-提案/开发阶段不运行 tsc、Vitest、构建、Web spec、CI、guards。Phase A 证据只包括源码阅读、清单枚举与 diff 自审。实际执行结果留给统一验证，公开文档不能把提案写成已交付 API。
+已编写元数据／安装／本地化、实际来源注册／缺失与版本差异、目录双语搜索、通用卡片详情／纯文本安全单测，以及一份已注册 Web spec（分类／搜索、可配置项、双语详情、390px 键盘打开、配置草稿保留）；按要求未运行。仅运行允许的协议生成器与廉价格式化。真实浅色／深色前后截图、编译和运行行为留到统一交接验收。

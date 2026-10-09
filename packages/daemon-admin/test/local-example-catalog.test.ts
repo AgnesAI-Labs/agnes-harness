@@ -98,7 +98,20 @@ it('serves real local examples through daemon catalog and source inspection', as
     authority,
   )) as PackageCatalogPage
   expect(helpers.items).toHaveLength(1)
-  expect(helpers.items[0]).toMatchObject({ id: '@agnes/skill-helper', sourceId: 'builtin-plugins' })
+  expect(helpers.items[0]).toMatchObject({
+    id: '@agnes/skill-helper',
+    sourceId: 'builtin-plugins',
+    presentation: { origin: 'official' },
+    metadata: { summary: 'Helps create and import reusable Skills through reviewed requests.' },
+  })
+  for (const query of ['reviewed requests', '可复用技能']) {
+    const purposeMatches = (await service.call(
+      '_agnes/v1/packages.catalog.list',
+      { profile, query, limit: 50 },
+      authority,
+    )) as PackageCatalogPage
+    expect(purposeMatches.items.some((entry) => entry.id === '@agnes/skill-helper')).toBe(true)
+  }
 
   const page = (await service.call(
     '_agnes/v1/packages.catalog.list',
@@ -107,6 +120,8 @@ it('serves real local examples through daemon catalog and source inspection', as
   )) as PackageCatalogPage
   expect(page.items.map((item) => item.version)).toEqual(['1.0.0', '1.1.0'])
   expect(page.items.every((item) => item.source.ref.startsWith('file:./examples/packages/'))).toBe(true)
+  expect(page.items.every((item) => item.presentation?.origin === 'example')).toBe(true)
+  expect(page.items[0]?.metadata?.locales?.['zh-CN']?.summary).toContain('升级文本统计服务')
   const selected = await service.call(
     '_agnes/v1/packages.catalog.get',
     { profile, id: '@agnes-examples/hot-service', version: '1.1.0' },

@@ -92,6 +92,7 @@ const TARGETS: Array<{
           'AuthoringRejectParams',
           'AuthoringShowParams',
           'AuthoringProvenance',
+          'PackagePresentation',
           'PackagePreview',
           'PackageTrustDecision',
           'PackageActivationTrust',

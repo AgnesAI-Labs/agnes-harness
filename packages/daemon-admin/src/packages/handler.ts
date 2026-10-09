@@ -13,6 +13,8 @@ import type {
 } from '@agnes/package-manager'
 import {
   AuthoringCandidates,
+  bundledPluginSourceRoot,
+  bundledExampleSource,
   activeRuntimePinId,
   collectSkinRoster,
   parseSource,
@@ -313,6 +315,18 @@ function normalizeObservation(
   }
 }
 
+function packageOrigin(
+  source: PackageSource,
+  provenance?: PackageInstalledDescriptor['provenance'],
+  builtin = false,
+): NonNullable<NonNullable<PackageInstalledDescriptor['presentation']>['origin']> {
+  if (builtin || bundledPluginSourceRoot(source.ref) || provenance?.verification === 'official-ed25519')
+    return 'official'
+  if (bundledExampleSource(source.ref)) return 'example'
+  if (provenance?.authoring) return 'local'
+  return ['file', 'local', 'workspace', 'path'].includes(source.type) ? 'local-source' : 'third-party'
+}
+
 function projectPackage(
   row: InstalledPackage,
   observation: PackageActivationObservation,
@@ -348,6 +362,10 @@ function projectPackage(
         }
       : null,
     contributions: structuredClone([...row.contributions]),
+    presentation: {
+      rows: structuredClone(row.presentation?.rows ?? []),
+      origin: packageOrigin(row.entry.source, row.entry.provenance, row.entry.trust === 'builtin'),
+    },
     ...(row.entry.metadata ? { metadata: structuredClone(row.entry.metadata) } : {}),
     blockers: safeBlockers(row.blockers),
     ...(row.localFailure || observation.actual === 'failed' || row.blockers.length
@@ -398,6 +416,15 @@ function projectCatalogDescriptor(value: unknown): PackageCatalogDescriptor {
     ...entry,
     source: projectSource(entry.source),
     contributions: structuredClone(entry.contributions),
+    presentation: {
+      rows: structuredClone(entry.presentation?.rows ?? []),
+      origin:
+        entry.sourceId === 'official-examples' || entry.sourceId === 'local-examples'
+          ? 'example'
+          : entry.sourceId === 'builtin-plugins'
+            ? 'official'
+            : packageOrigin(entry.source),
+    },
     ...(entry.metadata ? { metadata: structuredClone(entry.metadata) } : {}),
   }
   if (!validatePackageAdminData('PackageCatalogDescriptor', projected).ok)
@@ -940,7 +967,31 @@ class Service implements PackageAdminService {
     const read = this.options.catalog ? await this.options.catalog.read({ offline: true }) : { entries: [] }
     const entries = sortCatalog(read.entries.map(projectCatalogDescriptor))
     const query = params.query?.toLowerCase()
-    const visible = query ? entries.filter((entry) => entry.id.toLowerCase().includes(query)) : entries
+    const visible = query
+      ? entries.filter((entry) => {
+          const metadata = entry.metadata
+          const text = [
+            entry.id,
+            metadata?.displayName,
+            metadata?.summary,
+            ...Object.values(metadata?.locales ?? {}).flatMap((value) => [value.displayName, value.summary]),
+            ...entry.contributions.map((value) => value.id),
+            ...(entry.presentation?.rows ?? []).flatMap((row) => [
+              row.id,
+              row.metadata?.displayName,
+              row.metadata?.summary,
+              ...Object.values(row.metadata?.locales ?? {}).flatMap((value) => [
+                value.displayName,
+                value.summary,
+              ]),
+            ]),
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+          return text.includes(query)
+        })
+      : entries
     const cursor = params.cursor
     const start = cursor ? visible.findIndex((entry) => `${entry.id}@${entry.version}` === cursor) + 1 : 0
     const limit = params.limit ?? 50

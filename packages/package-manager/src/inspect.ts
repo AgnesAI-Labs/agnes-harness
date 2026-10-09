@@ -26,6 +26,7 @@ import {
   parseAgnesPluginEntries,
   parseAgnesPluginKinds,
 } from './plugin-manifest.js'
+import { presentPluginRows } from './package-presentation.js'
 import { checkCancelled } from './ports.js'
 import { resolveSkins } from './skin-assets.js'
 import { type FetchedSource, hashDirectory, type PackageSource } from './sources.js'
@@ -353,6 +354,7 @@ export function inspectStaged(input: {
       ...(fetched.releasedAt ? { releasedAt: fetched.releasedAt } : {}),
     },
     contributions,
+    presentation: presentPluginRows(plugins),
     ...(displayMetadata?.ok ? { metadata: displayMetadata.value } : {}),
     ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }),
     ...(kinds === undefined ? {} : { kinds }),

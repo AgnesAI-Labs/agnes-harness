@@ -117,6 +117,7 @@ function descriptor(
     integrity,
     license: preview.license,
     contributions: preview.contributions,
+    ...(preview.presentation ? { presentation: preview.presentation } : {}),
     ...(preview.metadata ? { metadata: preview.metadata } : {}),
     ...(preview.kinds === undefined ? {} : { kinds: preview.kinds }),
     compatibility: 'supported' as const,

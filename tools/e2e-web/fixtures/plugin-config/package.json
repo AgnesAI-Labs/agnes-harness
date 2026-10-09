@@ -60,8 +60,34 @@
               }
             }
           }
+        },
+        "metadata": {
+          "displayName": "Queue coordinator",
+          "summary": "Coordinates sample work queues for a team.",
+          "description": "Demonstrates configurable work queues using a local service.",
+          "category": "collaboration",
+          "locales": {
+            "zh-CN": {
+              "displayName": "队列协作助手",
+              "summary": "协调团队的样例任务队列。",
+              "description": "通过本地服务演示可配置的任务队列。"
+            }
+          }
         }
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Queue coordinator",
+      "summary": "Coordinates sample work queues for a team.",
+      "description": "Demonstrates configurable work queues using a local service.",
+      "category": "collaboration",
+      "locales": {
+        "zh-CN": {
+          "displayName": "队列协作助手",
+          "summary": "协调团队的样例任务队列。",
+          "description": "通过本地服务演示可配置的任务队列。"
+        }
+      }
+    }
   }
 }

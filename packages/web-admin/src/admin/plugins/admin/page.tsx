@@ -1,4 +1,6 @@
 import type {
+  CompositionCapabilitySnapshot,
+  RuntimeAdminSnapshot,
   PackageCatalogDescriptor,
   PackageInstalledDescriptor,
   PackageOperation,
@@ -20,7 +22,8 @@ import {
   adminDialogsLocaleCatalog,
   adminListLocaleCatalog,
   adminLocaleCatalog,
-  contributionText,
+  PLUGIN_PRESENTATION_NAMESPACE,
+  pluginPresentationCatalog,
   createDocumentLocaleSource,
   createUiTranslator,
   type DetailActionSpec,
@@ -51,6 +54,7 @@ import {
   hasFeature,
   type PluginRuntimeSource,
 } from '../types.js'
+import { matchesPluginSearch, pluginPresentation } from './presentation.js'
 import { button, element, setDialog } from './dom.js'
 import { hasClientContribution, isClientOnly, safeMessage, sourceForCatalog } from './model.js'
 import {
@@ -97,6 +101,7 @@ const pluginAdminCatalogs = {
   [ADMIN_DIALOGS_LOCALE_NAMESPACE]: adminDialogsLocaleCatalog,
   [ADMIN_LIST_LOCALE_NAMESPACE]: adminListLocaleCatalog,
   [ADMIN_LOCALE_NAMESPACE]: adminLocaleCatalog,
+  [PLUGIN_PRESENTATION_NAMESPACE]: pluginPresentationCatalog,
 } as const
 
 export class PluginAdminPage {
@@ -132,6 +137,15 @@ export class PluginAdminPage {
       },
       set kind(value) {
         page.#kind = value
+      },
+      get category() {
+        return page.#category
+      },
+      set category(value: string) {
+        page.#category = value
+      },
+      get purposeText() {
+        return createUiTranslator(page.#locale, PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
       },
       get layout() {
         return page.#layout
@@ -255,6 +269,7 @@ export class PluginAdminPage {
       detailOperations: page.detailOperations.bind(page),
       errorMessage: page.errorMessage.bind(page),
       filteredInstalled: page.filteredInstalled.bind(page),
+      presentationOf: page.presentationOf.bind(page),
       hasDetail: page.hasDetail.bind(page),
       loadCatalog: page.loadCatalog.bind(page),
       noticeText: page.noticeText.bind(page),
@@ -323,6 +338,9 @@ export class PluginAdminPage {
     connection: 'loading',
   }
   #kind: PluginKind | '' = ''
+  #category = ''
+  #presentationRuntime: RuntimeAdminSnapshot | undefined
+  #presentationComposition: CompositionCapabilitySnapshot | undefined
   #api: PluginAdminApi | undefined
   #tab: 'installed' | 'discover' = 'installed'
   #query = ''
@@ -465,12 +483,16 @@ export class PluginAdminPage {
       // disable effects, while read-only catalog calls may remain available.
       this.#state = { ...this.#state, context }
       // Independent read models can load together. Optional feeds never block a valid inventory.
-      const [list, surfaceFeed, tree] = await Promise.all([
+      const [list, surfaceFeed, tree, runtimeCatalog, composition] = await Promise.all([
         this.#api.list(),
         this.#api.surfaceLinks().catch(() => undefined),
         this.#api.treeList().catch(() => undefined),
+        this.#api.runtime().catch(() => undefined),
+        this.#api.composition().catch(() => undefined),
       ])
       if (generation !== this.#generation) return
+      this.#presentationRuntime = runtimeCatalog
+      this.#presentationComposition = composition
       const surfaceLinks = surfaceFeed?.surfaces ?? []
       this.#state = {
         ...this.#state,
@@ -1220,12 +1242,28 @@ export class PluginAdminPage {
   }
 
   filteredInstalled(): readonly PackageInstalledDescriptor[] {
-    const query = this.#query.toLocaleLowerCase()
-    if (!query) return this.#state.installed
     return this.#state.installed.filter((item) =>
-      `${item.id} ${item.version} ${contributionText(item, this.#adminT)}`
-        .toLocaleLowerCase()
-        .includes(query),
+      matchesPluginSearch(item, this.#query, this.presentationOf(item), (kind) =>
+        createUiTranslator(
+          this.#locale,
+          PLUGIN_PRESENTATION_NAMESPACE,
+          pluginPresentationCatalog,
+        )(`provide.${kind}`),
+      ),
+    )
+  }
+
+  presentationOf(item: PackageInstalledDescriptor | PackageCatalogDescriptor) {
+    return pluginPresentation(
+      item,
+      this.#state.inventoryAuthoritative
+        ? {
+            runtime: this.#presentationRuntime,
+            composition: this.#presentationComposition,
+            slots: this.actualSlots?.(item.id),
+            surfaces: this.surfaceLinks(item.id),
+          }
+        : {},
     )
   }
 

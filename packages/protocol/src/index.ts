@@ -333,6 +333,7 @@ export type {
   PackagePinsInspectResult,
   PackagePinsReleaseParams,
   PackagePinsReleaseResult,
+  PackagePresentation,
   PackagePreview,
   PackageProvenance,
   PackageProvenanceParams,

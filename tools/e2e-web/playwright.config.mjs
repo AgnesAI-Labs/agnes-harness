@@ -19,6 +19,7 @@ export default defineConfig({
     'fact-chain.spec.ts',
     'runtime.spec.ts',
     'plugin-config.spec.ts',
+    'plugin-purpose.spec.ts',
     'ui-gate.spec.ts',
     'ui-flows.spec.ts',
     'first-run.spec.ts',

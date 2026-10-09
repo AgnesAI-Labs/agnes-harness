@@ -2,7 +2,13 @@
 import type { PackageCatalogDescriptor } from '@agnes/protocol'
 import { act, createElement } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { mountRegion, PluginList, UiLocaleProvider, type UiLocaleSource } from '../src/index.js'
+import {
+  mountRegion,
+  PluginList,
+  PluginPurposeSections,
+  UiLocaleProvider,
+  type UiLocaleSource,
+} from '../src/index.js'
 
 afterEach(() => {
   document.body.replaceChildren()
@@ -148,5 +154,124 @@ it('groups catalog versions and reviews the selected version without opening the
   expect(host.querySelector('.plugin-compatibility')?.textContent).toBe('Unsupported')
   host.querySelector<HTMLButtonElement>('.plugin-row > button')?.click()
   expect(chosen).toBe('2.0.0')
+  dispose()
+})
+
+const purposeRow: PackageCatalogDescriptor = {
+  id: '@acme/document-desk',
+  version: '1.0.0',
+  integrity: 'sha256-' + 'a'.repeat(64),
+  source: { type: 'npm', ref: 'npm:@acme/document-desk@1.0.0' },
+  sourceId: 'third-party',
+  license: 'MIT',
+  contributions: [],
+  compatibility: 'supported',
+  retrievedAt: '2026-10-10T00:00:00Z',
+  presentation: { origin: 'third-party', rows: [] },
+  metadata: {
+    displayName: 'Document desk',
+    summary: 'Search local reports.',
+    description: 'Read and search local reports.',
+    category: 'tools',
+    docsUrl: 'https://example.org/docs',
+    locales: { 'zh-CN': { displayName: '资料助手', summary: '检索本地报告。' } },
+  },
+}
+const purposeSource = (locale: 'en' | 'zh-CN'): UiLocaleSource => ({
+  getSnapshot: () => locale,
+  getVersion: () => 0,
+  subscribe: () => () => undefined,
+  t: (key) => key,
+  bind: () => (key) => key,
+})
+
+it.each(['en', 'zh-CN'] as const)(
+  'shows arbitrary author purpose, source and registered chips in %s',
+  (locale) => {
+    const host = document.createElement('div')
+    const dispose = mountRegion(
+      host,
+      createElement(
+        UiLocaleProvider,
+        { source: purposeSource(locale) },
+        createElement(PluginList, {
+          ...listProps,
+          tab: 'discover',
+          rows: [purposeRow],
+          providesOf: () => ({
+            provides: [{ kind: 'tool', id: 'read_report' }],
+            appearsIn: ['chat'],
+            available: true,
+          }),
+        }),
+      ),
+    )
+    expect(host.querySelector('.plugin-details-button')?.textContent).toBe(
+      locale === 'en' ? 'Document desk' : '资料助手',
+    )
+    expect(host.querySelector('[data-testid=plugin-summary]')?.textContent).toBe(
+      locale === 'en' ? 'Search local reports.' : '检索本地报告。',
+    )
+    expect(host.querySelector('[data-testid=plugin-purpose-badges]')?.textContent).toContain(
+      locale === 'en' ? 'Third-party' : '第三方',
+    )
+    expect(host.querySelector('[data-testid=plugin-provides]')?.textContent).toContain(
+      locale === 'en' ? 'Tools · 1' : '工具 · 1',
+    )
+    dispose()
+  },
+)
+
+it('renders metadata-free third-party packages cleanly without guessing official origin or executing text', () => {
+  const host = document.createElement('div')
+  const { metadata: _metadata, presentation: _presentation, ...plainRow } = purposeRow
+  const withoutPurpose = { ...plainRow, id: '@agnes/unverified' }
+  const dispose = mountRegion(
+    host,
+    createElement(PluginList, { ...listProps, tab: 'discover', rows: [withoutPurpose] }),
+  )
+  expect(host.querySelector('.plugin-details-button')?.textContent).toBe('@agnes/unverified')
+  expect(host.querySelector('[data-testid=plugin-summary]')?.textContent).toBe('No description provided')
+  expect(host.querySelector('[data-testid=plugin-purpose-badges]')?.textContent).toContain('Uncategorized')
+  expect(host.querySelector('[data-testid=plugin-purpose-badges]')?.textContent).toContain('Third-party')
+  dispose()
+  const escaped = mountRegion(
+    host,
+    createElement(PluginList, {
+      ...listProps,
+      tab: 'discover',
+      rows: [
+        { ...purposeRow, metadata: { ...purposeRow.metadata!, summary: '<img src=x onerror=alert(1)>' } },
+      ],
+    }),
+  )
+  expect(host.querySelector('[data-testid=plugin-summary]')?.textContent).toContain('<img')
+  expect(host.querySelector('img')).toBeNull()
+  escaped()
+})
+
+it('renders six purpose sections with localized fallback and an explicit safe documentation link', () => {
+  const host = document.createElement('div')
+  const dispose = mountRegion(
+    host,
+    createElement(
+      UiLocaleProvider,
+      { source: purposeSource('zh-CN') },
+      createElement(PluginPurposeSections, {
+        item: purposeRow,
+        value: { provides: [], appearsIn: [], available: false },
+        permissions: 'Permission review',
+        versions: 'Pinned versions',
+      }),
+    ),
+  )
+  for (const key of ['overview', 'provides', 'appears', 'settings', 'permissions', 'versions'])
+    expect(
+      host.querySelector(`[data-testid=plugin-${key}${key === 'overview' ? '' : '-detail'}]`),
+    ).not.toBeNull()
+  expect(host.querySelector('[data-testid=plugin-overview]')?.textContent).toContain(
+    'Read and search local reports.',
+  )
+  expect(host.querySelector('a')?.getAttribute('rel')).toBe('noopener noreferrer')
   dispose()
 })

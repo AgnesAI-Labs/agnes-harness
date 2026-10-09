@@ -1,6 +1,12 @@
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { type PackageBlocker, type PackageContributionSummary, validatePluginMetadata } from '@agnes/protocol'
+import {
+  type PackageBlocker,
+  type PackageContributionSummary,
+  type PackagePresentation,
+  validatePluginMetadata,
+} from '@agnes/protocol'
+import { readPackagePresentation } from './package-presentation.js'
 import { PackageError } from './errors.js'
 import { inspectStaged } from './inspect.js'
 import { canonical, capabilityHash, freezeData, readStaticJson, snapshotHash } from './integrity.js'
@@ -23,6 +29,7 @@ export type InstalledPackage = Readonly<{
   localReloadRequired?: boolean
   entry: LockEntry
   directory: string | null
+  presentation?: PackagePresentation
   capabilityHash: string
   trusted: boolean
   enabled: boolean
@@ -280,10 +287,19 @@ export function readInventory(
       throw new PackageError('E_WORKSPACE_UNTRUSTED', 'installed trust snapshot differs from lock', {
         detail: { id },
       })
+    let presentation: PackagePresentation | undefined
+    if (directory && existsSync(join(directory, 'package.json'))) {
+      try {
+        presentation = readPackagePresentation(directory, entry.trust === 'builtin')
+      } catch {
+        /* Supplementary author display data must not change activation/blocker semantics. */
+      }
+    }
     packages.push({
       id,
       entry: { ...entry, ...(provenance ? { provenance } : {}), ...(metadata ? { metadata } : {}) },
       directory,
+      ...(presentation ? { presentation } : {}),
       capabilityHash: hash,
       trusted,
       enabled: entry.state.enabled,
