@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { loopCheckpointCodec, registerLoopPlugin, registerToolPolicyPlugin } from '@agnes/extension-api'
 import {
+  defineAgnesPlugin,
+  defineLoop,
+  defineTool,
   drainDeferredToolInvocations,
-  loopCheckpointCodec,
-  registerLoopPlugin,
-  registerToolPolicyPlugin,
-} from '@agnes/extension-api'
-import { defineAgnesPlugin, defineLoop, defineTool, toolError } from '@agnes/plugin-runtime'
+  toolError,
+} from '@agnes/plugin-runtime'
 
 export const readMeta = {
   isReadOnly: true,
@@ -313,6 +314,13 @@ export function makeBundle({
           const stage = workflow[state.index]
           if (stage.inputStage) {
             if (ctx.turn.continuation() === 'checkpoint') {
+              // Claim the workflow's next-step receipt before the generic checkpoint consumes it.
+              await ctx.turn.endStep()
+              const input = await ctx.input.claim('next-step')
+              if (input) {
+                state.stageInput = input
+                await save()
+              }
               const boundary = await ctx.turn.checkpoint(signal)
               if (boundary.outcome !== 'running') return boundary
             }
