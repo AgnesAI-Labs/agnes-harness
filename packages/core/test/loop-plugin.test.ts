@@ -13,6 +13,7 @@ import {
   type ToolRuntime,
 } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
+import { createDagLoop } from '../../../examples/loops/dag-loop/index.mjs'
 import { Kernel } from '../src/kernel.js'
 import { LoopEventRegistry } from '../src/loop/events.js'
 import { createLoopContext, disposeLoopContext } from '../src/loop/ports.js'
@@ -966,5 +967,45 @@ it('recovers exact author tool content and metadata if the subsequent receipt ap
   } finally {
     disposeLoopContext(ctx)
     await f.session.close()
+  }
+})
+
+it.each([true, false])('bounds DAG plan repair and returns Core errors (repaired: %s)', async (repaired) => {
+  const loops = defaultLoops()
+  const dag = createDagLoop()
+  loops.register('@test/dag', dag)
+  const provider = fakeProvider([
+    textTurn('prefix instead of a plan'),
+    textTurn(repaired ? '[{"id":"read","tool":"read","args":{},"after":[]}]' : 'still invalid'),
+    ...(repaired ? [] : [textTurn('[{"id":"read","tool":"read","args":{},"after":[]}]')]),
+    textTurn('finished'),
+  ])
+  provider.models = () => [model]
+  const k = kernel(new MemoryStorage(), loops, { provider })
+  k.tools.add(readTool(), { source: 'test', trust: 'builtin' })
+  try {
+    const session = await k.session('dag-repair', { ...options, loop: dag })
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'read' }], actor })
+    const outcome = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect(outcome).toMatchObject(
+      repaired ? { reason: 'completed' } : { reason: 'error', error: { code: 'E_STEP_FAILED' } },
+    )
+    const rows = await session.scan({ fromSeq: 1, limit: 200 })
+    expect(rows.filter((row) => row.type === 'tool/result')).toHaveLength(repaired ? 1 : 0)
+    const attempts = rows.filter((row) => row.type === 'x/dag/planner')
+    expect(attempts).toHaveLength(2)
+    expect(attempts[0]?.data).toMatchObject({ reply: 'prefix instead of a plan', attempt: 1 })
+    if (repaired) expect(rows.find((row) => row.type === 'tool/call')!.seq).toBeGreaterThan(attempts[1]!.seq)
+    expect(provider.requests).toHaveLength(repaired ? 3 : 2)
+    expect(provider.requests[1]?.system).toContain('DAG model plan must begin with a JSON array')
+    if (!repaired) {
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'try a new task' }], actor })
+      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'completed',
+      )
+      expect(await session.scan({ type: 'tool/result', limit: 10 })).toHaveLength(1)
+    }
+  } finally {
+    await k.close()
   }
 })
