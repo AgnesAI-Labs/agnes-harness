@@ -729,9 +729,10 @@ export class KernelChildren implements ChildrenFactory {
             result = await child.run({ until: 'turn-end', signal: turnAbort.signal })
           }
           const text = await lastText()
+          // A human stop preserves the resident while its cancelled driver is being rebuilt.
           if (
             opts.resident &&
-            !child.ac.signal.aborted &&
+            (!child.ac.signal.aborted || this.humanStopped.has(record.childKey)) &&
             (result.reason === 'completed' || result.reason === 'aborted' || result.reason === 'interrupted')
           ) {
             state = 'ready'

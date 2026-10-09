@@ -55,6 +55,8 @@ test('human controls queue, interrupt, persist pause and stop/continue a child',
   await expect(composer).toHaveValue('return this to my draft')
   await page.reload()
   await expect(composer).toHaveValue('return this to my draft')
+  await expect(page.getByTestId('conversation-turn')).toHaveCount(beforeInterrupt + 1)
+  await expect(original).toHaveAttribute('data-status', 'cancelled')
   await turn(page, 'Recovered after human cancellation')
 
   await turn(page, 'call subagent_spawn {"task":"call e2e_wait_for_cancel {}","isolation":"shared"}')

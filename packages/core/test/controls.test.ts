@@ -2,13 +2,13 @@ import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import { defaultLoopFactory } from '@agnes/loop-default'
 import type { Provider } from '@agnes/protocol'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Kernel } from '../src/kernel.js'
 import { createLoopContext } from '../src/loop/ports.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { model, setupWith, spawnChild } from './helpers/child-traces.js'
+import { model, setupWith } from './helpers/child-traces.js'
 import { fakeProvider, sentFor, textTurn, toolTurn } from './helpers/fake-provider.js'
-import { actor, openSession, readTool } from './helpers/open-session.js'
+import { actor, openSession, readTool, testWorkspaceInvocation } from './helpers/open-session.js'
 
 const content = (text: string) => [{ type: 'text' as const, text }]
 const run = (session: Awaited<ReturnType<typeof openSession>>['session']) =>
@@ -240,53 +240,103 @@ describe('human Loop controls', () => {
     await session.close()
   })
 
-  it('stops a workflow child without completing its parent wait, and continues with a recorded message', async () => {
-    const entered = gate()
-    let calls = 0
-    const base = fakeProvider([textTurn('continued child')])
-    const provider: Provider = {
-      ...base,
-      models: () => [model()],
-      async *infer(request, options) {
-        if (calls++ === 0) {
-          yield sentFor(request)
+  it.each([
+    { resident: false, phase: 'model' },
+    { resident: true, phase: 'model' },
+    { resident: true, phase: 'tool' },
+  ])(
+    'stops and continues a child with a recorded message ($resident/$phase)',
+    async ({ resident, phase }) => {
+      const entered = gate()
+      let calls = 0
+      const base = fakeProvider([textTurn('continued child')])
+      const provider: Provider = {
+        ...base,
+        models: () => [model()],
+        async *infer(request, options) {
+          if (calls++ === 0) {
+            if (phase === 'tool') {
+              for (const event of toolTurn('read', {})) yield event.type === 'sent' ? sentFor(request) : event
+              return
+            }
+            yield sentFor(request)
+            entered.release()
+            await new Promise<void>((resolve) =>
+              options.signal.addEventListener('abort', () => resolve(), { once: true }),
+            )
+            throw new Error('cooperative model stop')
+          }
+          yield* base.infer(request, options)
+        },
+      }
+      const { k, parent } = await setupWith(provider, Kernel.create)
+      k.tools.add(
+        readTool(async (_args, ctx) => {
           entered.release()
-          await new Promise<void>((resolve) =>
-            options.signal.addEventListener('abort', () => resolve(), { once: true }),
+          return new Promise<never>((_resolve, reject) =>
+            ctx.signal.addEventListener('abort', () => reject(ctx.signal.reason), { once: true }),
           )
-          throw new Error('cooperative model stop')
-        }
-        yield* base.infer(request, options)
-      },
-    }
-    const { k, parent } = await setupWith(provider, Kernel.create)
-    const handle = await spawnChild(parent, 'task')
-    let completed = false
-    const waiting = handle.run('task').then((result) => {
-      completed = true
-      return result
-    })
-    await entered.wait
-    await parent.controls.apply('child-stop', actor, 'stop-child', undefined, { id: handle.key })
-    expect(completed).toBe(false)
-    expect((await parent.controls.state()).children.find((child) => child.id === handle.key)).toMatchObject({
-      status: 'interrupted',
-      controls: { continue: true },
-    })
-    await expect(
-      parent.controls.apply('child-stop', actor, 'foreign', undefined, { id: 'unowned' }),
-    ).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
-    await parent.controls.apply('child-continue', actor, 'continue-child', undefined, {
-      id: handle.key,
-      text: 'new task',
-    })
-    expect((await waiting).text).toBe('continued child')
-    const rows = await parent.scan({ type: 'x/core/control', limit: 20 })
-    expect(
-      rows.filter((row) => (row.data as { outcome?: string }).outcome === 'applied').map((row) => row.actor),
-    ).toEqual([actor, actor])
-    await k.close()
-  })
+        }),
+        { source: 'test', trust: 'builtin' },
+      )
+      const handle = await parent.d.children.createWithKind!('spawn', {
+        parent: parent.key,
+        cwd: '/w',
+        input: 'task',
+        resident,
+      })
+      const child = k.get(handle.key)!
+      child.d.workspaceInvocation = testWorkspaceInvocation()
+      if (resident) {
+        // Rebuilding a pinned driver can outlast the stopped run's final ledger writes.
+        const restart = child.restartLoopDriver.bind(child)
+        vi.spyOn(child, 'restartLoopDriver').mockImplementation(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10))
+          await restart()
+        })
+      }
+      let completed = false
+      const waiting = handle.run('task').then((result) => {
+        completed = true
+        return result
+      })
+      await entered.wait
+      await parent.controls.apply('child-stop', actor, 'stop-child', undefined, { id: handle.key })
+      if (!resident) expect(completed).toBe(false)
+      expect((await parent.controls.state()).children.find((child) => child.id === handle.key)).toMatchObject(
+        {
+          status: 'interrupted',
+          controls: { continue: true },
+        },
+      )
+      await expect(
+        parent.controls.apply('child-stop', actor, 'foreign', undefined, { id: 'unowned' }),
+      ).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
+      await parent.controls.apply('child-continue', actor, 'continue-child', undefined, {
+        id: handle.key,
+        text: 'new task',
+      })
+      if (resident) {
+        await waiting
+        await expect
+          .poll(
+            async () =>
+              (await parent.controls.state()).children.find((child) => child.id === handle.key)?.status,
+          )
+          .toBe('idle')
+        expect(
+          JSON.stringify(await k.get(handle.key)!.scan({ type: 'assistant/message', limit: 10 })),
+        ).toContain('continued child')
+      } else expect((await waiting).text).toBe('continued child')
+      const rows = await parent.scan({ type: 'x/core/control', limit: 20 })
+      expect(
+        rows
+          .filter((row) => (row.data as { outcome?: string }).outcome === 'applied')
+          .map((row) => row.actor),
+      ).toEqual([actor, actor])
+      await k.close()
+    },
+  )
 
   it.each(['steer', 'pause', 'interrupt'] as const)(
     'refuses unsupported %s on the pinned factory',

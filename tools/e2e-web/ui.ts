@@ -113,7 +113,9 @@ export async function send(page: Page, input: string) {
   await composer.fill(input)
   await composer.press('Enter')
   await expect(turns).toHaveCount(before + 1)
-  return turns.last()
+  const id = await turns.last().getAttribute('data-turn-id')
+  if (!id) throw new Error('New conversation turn is missing its identity')
+  return turns.and(page.locator(`[data-turn-id=${JSON.stringify(id)}]`))
 }
 
 export async function turn(page: Page, input: string) {
