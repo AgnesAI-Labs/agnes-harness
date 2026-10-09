@@ -100,50 +100,8 @@
   background: var(--agnes-bg-surface);
   overflow-wrap: anywhere;
 }
-.question-card fieldset {
-  min-inline-size: 0;
-  margin: 0 0 1rem;
-  padding: 0;
-  border: 0;
-}
-.question-card legend {
-  padding: 0;
-  margin-bottom: 0.5rem;
-  font-weight: 600;
-}
-.question-card label {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  padding-block: 0.375rem;
-}
-.question-card label:has(textarea) {
-  display: block;
-}
-.question-card textarea {
-  display: block;
-  width: 100%;
-  box-sizing: border-box;
-  min-height: 5rem;
-  margin-top: 0.375rem;
-  padding: 0.5rem;
-  color: var(--agnes-text-primary);
-  background: var(--agnes-bg-surface);
-  border: 1px solid var(--agnes-line-primary);
-  border-radius: var(--radius-md);
-  font: inherit;
-}
 .conversation-native-card a {
   color: var(--agnes-text-emphasis);
-}
-.question-card input:is([type="checkbox"], [type="radio"]) {
-  width: 1rem;
-  height: 1rem;
-  min-height: 0;
-  flex: 0 0 1rem;
-  margin: 0.125rem 0 0;
-  padding: 0;
-  accent-color: var(--agnes-brand-primary);
 }
 .history-search {
   display: grid;

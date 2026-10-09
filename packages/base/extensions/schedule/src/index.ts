@@ -1,20 +1,15 @@
 import { renderInteractionSurface, tableSurface } from '../../../src/interaction-surfaces.js'
 import { defineExtension } from '@agnes/extension-api'
-import { openScheduleCatalog, openSeamScheduleDb, type ScheduleCatalog } from './catalog.js'
+import {
+  openScheduleCatalog,
+  openSeamScheduleDb,
+  type ScheduleCatalog,
+  type ScheduleView,
+} from './catalog.js'
 import { createScheduleTools } from './tools.js'
 
 type ScheduleTable = Parameters<typeof openSeamScheduleDb>[0]
 export type ScheduleTableStore = { table(name: string): ScheduleTable }
-
-const cards = new Map<string, { sessionKey: string; target: string }>()
-
-function bind(toolUseId: string, sessionKey: string, target: string): void {
-  if (cards.size >= 200) {
-    const oldest = cards.keys().next().value
-    if (oldest !== undefined) cards.delete(oldest)
-  }
-  cards.set(toolUseId, { sessionKey, target })
-}
 
 function clip(value: string, max: number): string {
   return value.length <= max ? value : value.slice(0, max)
@@ -25,17 +20,22 @@ export function createScheduleExtension(tables?: ScheduleTableStore) {
     ? openScheduleCatalog(openSeamScheduleDb(tables.table('schedules')))
     : undefined
   return defineExtension((agnes) => {
-    const disposers = createScheduleTools(catalog, bind).map((tool) =>
+    const disposers = createScheduleTools(catalog).map((tool) =>
       agnes.registerTool({
         ...tool,
         async execute(args, ctx) {
           const result = await tool.execute(args, ctx)
-          const bound = cards.get(ctx.session.toolUseId)
-          if (!result.isError && catalog && bound?.sessionKey === ctx.session.key) {
+          const details = result.details as
+            | { id?: string; schedules?: ScheduleView[]; deleted?: boolean }
+            | undefined
+          const target =
+            details?.id ??
+            (details?.deleted && 'id' in args && typeof args.id === 'string' ? args.id : undefined)
+          if (catalog && details && (target || details.schedules)) {
+            const row = target ? catalog.read(target) : undefined
             const rows =
-              bound.target === '*'
-                ? catalog.list({ sessionKey: ctx.session.key }).filter((row) => row.status === 'active')
-                : [catalog.read(bound.target)].filter((row) => row !== undefined)
+              details.schedules?.filter((row) => row.status === 'active') ??
+              (row?.sessionKey === ctx.session.key ? [row] : [])
             if (rows.length)
               await renderInteractionSurface(
                 ctx,

@@ -217,13 +217,31 @@ for (const locale of ['zh-CN', 'en'])
         for (const call of calls) {
           await submitTurn(call)
         }
-        await expect(page.getByTestId('question-card')).toBeVisible()
-        await page.getByTestId('question-card').scrollIntoViewIfNeeded()
+        await expect(
+          page
+            .getByTestId('intelligent-ui-inline')
+            .locator('[data-testid^="ui-surface-"]')
+            .filter({ hasText: 'Questions / 问题' }),
+        ).toBeVisible()
+        await page
+          .getByTestId('intelligent-ui-inline')
+          .locator('[data-testid^="ui-surface-"]')
+          .filter({ hasText: 'Questions / 问题' })
+          .scrollIntoViewIfNeeded()
         await screen('active-session-cards')
         if (deliverable) {
-          await expect(page.getByTestId('deliverable-card')).toBeVisible()
-          await page.getByTestId('deliverable-card').scrollIntoViewIfNeeded()
-          await screen('deliverable-card')
+          await expect(
+            page
+              .getByTestId('intelligent-ui-inline')
+              .locator('[data-testid^="ui-surface-"]')
+              .filter({ hasText: 'Deliverables / 交付物' }),
+          ).toBeVisible()
+          await page
+            .getByTestId('intelligent-ui-inline')
+            .locator('[data-testid^="ui-surface-"]')
+            .filter({ hasText: 'Deliverables / 交付物' })
+            .scrollIntoViewIfNeeded()
+          await screen('deliverable-surface')
         }
         await expect(page.getByTestId('background-job-card')).toBeVisible()
 

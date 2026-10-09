@@ -194,6 +194,8 @@ Fact-chain 与 trace 展示 surface id/revision 和归属、received 命令/acto
 
 预设 question/table 迁移与经认证的文本客户端提交见下方“问答、表格与交付物 surface”。自定义 renderer 使用相同 surface 事实和动作路径，文本客户端展示声明的 fallback。业务答案仍不代表权限授予。
 
+第二阶段已将官方问答、表格与交付物列表迁移到同一个 surface/action 模型，删除旧 inline slot 格式与答案前缀解析。没有兼容 shim 或旧数据迁移；交互路径见下文。
+
 ## 实现验收
 
 扩展最近的有意义测试，覆盖状态表每项转换、规范化命令重复/冲突、非法 Schema/绑定、revision 改变、关闭 surface、归属/任务及工具缺失/不支持 Loop 拒绝、policy/approval/auto-review 拒绝、sandbox 失败、容量/限流接纳、并发命令、工具错误和安全/不安全重试、回执/投递崩溃缺口、待审批/未知效果下的重启恢复。包含 scripted-model 财务流程和共享 inline/panel 状态、刷新、重新确认的 Web spec。真实 daemon/worker 测试放在 `*.e2e.test.ts`；大 ledger/真实定时器测试放在 `*.slow.test.ts`。测试可观察的回执、事实、工具结果和 queued input，不固定内部调用次数。后台与渲染实现审阅完成后，才能声明此能力可用。

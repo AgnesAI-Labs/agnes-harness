@@ -15,7 +15,6 @@ export function RegisteredConversationCard({
   return Component ? <Component card={card} context={context} /> : null
 }
 for (const [id, kind, testId] of [
-  ['workflow-panel', 'workflow-run', 'workflow-run-card'],
   ['job', 'background-job', 'background-job-card'],
   ['child', 'child-agent', 'child-agent-card'],
   ['plan', 'plan', 'plan-card'],

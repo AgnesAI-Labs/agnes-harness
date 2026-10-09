@@ -96,10 +96,10 @@ C 原生控件；B 手写按钮/选择呈现；H 骨架/标题；S 尺度与字�
 | 卡片族 / `tool` | 会话 / 所属面板 | `packages/web-ui/src/conversation/messages/tool-card.tsx` | ConversationToolCard; ConversationCardLayout | 间距、字段或专用内容需视觉复核，保留行为 |
 | 卡片族 / `approval` | 会话 / 所属面板 | `packages/web-units/src/approval.ts` | React DOM; Approval actions | 手写动作/选择呈现需复用共享组件；空态、加载、错误或状态反馈需统一 |
 | 卡片族 / `goal` | 会话 / 所属面板 | `packages/web-conversation/src/goal-card.tsx` | ConversationCardLayout; Button; Badge | 间距、字段或专用内容需视觉复核，保留行为 |
-| 卡片族 / `workflow` | 会话 / 所属面板 | `packages/web-conversation/src/workflow-run-card.tsx` | ConversationCardLayout | 列表/表格/元数据需统一呈现；间距、字段或专用内容需视觉复核，保留行为 |
-| 卡片族 / `question` | 会话 / 所属面板 | `packages/web-conversation/src/default-tool-cards.tsx` | ConversationCardLayout; SettingsInput; SettingsTextArea; Button | 间距、字段或专用内容需视觉复核，保留行为 |
-| 卡片族 / `deliverable` | 会话 / 所属面板 | `packages/web-conversation/src/default-tool-cards.tsx` | ConversationCardLayout; document preview | 间距、字段或专用内容需视觉复核，保留行为 |
-| 卡片族 / `schedule` | 会话 / 所属面板 | `packages/web-conversation/src/default-tool-cards.tsx` | ConversationCardLayout; Button | 间距、字段或专用内容需视觉复核，保留行为 |
+| 卡片族 / `workflow` | 会话 / 工作台 | `packages/web-ui/src/intelligent-ui/catalog.tsx` | IntelligentCatalog | 预设 surface；共享草稿、revision 与回执 |
+| 卡片族 / `question` | 会话 / 工作台 | `packages/web-ui/src/intelligent-ui/form-fields.tsx` | IntelligentCatalog | 预设 surface；共享草稿、revision 与回执 |
+| 卡片族 / `deliverable` | 会话 / 工作台 | `packages/web-ui/src/intelligent-ui/catalog.tsx` | IntelligentCatalog | 预设 surface；共享草稿、revision 与回执 |
+| 卡片族 / `schedule` | 会话 / 工作台 | `packages/web-ui/src/intelligent-ui/catalog.tsx` | IntelligentCatalog | 预设 surface；共享草稿、revision 与回执 |
 | 卡片族 / `background-job` | 会话 / 所属面板 | `packages/web-conversation/src/conversation-registry.tsx` | ConversationCardLayout | 间距、字段或专用内容需视觉复核，保留行为 |
 | 卡片族 / `child-agent` | 会话 / 所属面板 | `packages/web-conversation/src/conversation-registry.tsx` | ConversationCardLayout | 间距、字段或专用内容需视觉复核，保留行为 |
 | 卡片族 / `plugin` | 会话 / 所属面板 | `packages/web-conversation/src/conversation-registry.tsx` | ConversationCardLayout | 间距、字段或专用内容需视觉复核，保留行为 |

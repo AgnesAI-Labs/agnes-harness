@@ -71,7 +71,12 @@ export function SurfaceFormFields(props: PluginSchemaFieldsProps) {
             </label>
           )
         return (
-          <fieldset key={key} disabled={props.disabled} data-testid={`ui-choice-${key}`}>
+          <fieldset
+            className="agnes-intelligent-choices"
+            key={key}
+            disabled={props.disabled}
+            data-testid={`ui-choice-${key}`}
+          >
             <legend>{String(field.title ?? key)}</legend>
             {choices.map((choice, index) => (
               <label key={choice}>

@@ -444,6 +444,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         () => {
           writeFileSync(join(dataDir, 'AGENTS.md'), 'LIVE_RULE_V2')
           return callTool('ask_user_question', {
+            timeoutMs: 25,
             questions: [{ id: 'choice', question: 'Choose a route', options: ['A', 'B'] }],
           })
         },
@@ -480,37 +481,57 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       expect(rows).toHaveLength(1)
       const row = rows[0]
       if (!row) throw new Error('missing persisted question')
-      const id = (row.data as { id: string }).id
-      expect(await prompt(`[question-answer ${id}] {"choice":"C"}`)).toMatchObject({ reason: 'completed' })
+      const service = session.intelligentUi
+      if (!service) throw new Error('missing Intelligent UI service')
+      const surface = (await service.read({ sessionId: session.key }, new AbortController().signal))
+        .surfaces[0]!
+      expect(surface).toMatchObject({ status: 'open', surface: { title: 'Questions / 问题' } })
+      // Optional timeout ends the tool wait, leaving the same form open for late input.
+      expect((row.data as { deadline: number }).deadline).toBeLessThanOrEqual(Date.now())
+      const submit = (commandId: string, choice: string, revision = surface.surface.revision) =>
+        service.action(
+          {
+            sessionId: session.key,
+            surfaceId: surface.surface.id,
+            revision,
+            actionId: 'submit',
+            commandId,
+            input: { answers: { choice } },
+            selection: {},
+          },
+          session.d.actor,
+          new AbortController().signal,
+        )
+      expect(await submit('invalid', 'C')).toMatchObject({ status: 'rejected' })
+      expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+        reason: 'completed',
+      })
       expect(provider.calls[2]?.system).toContain('LIVE_RULE_V2')
       expect(provider.calls[2]?.system).not.toContain('LIVE_RULE_V1')
-      const ui = await session.projectUI(undefined, { surface: 'web' })
-      expect(JSON.stringify(ui)).toContain('Choose a route')
-      expect(
-        ui.nodes.find((node) => node.kind === 'tool' && node.name === 'ask_user_question'),
-      ).toMatchObject({
-        slots: [
-          expect.objectContaining({
-            payload: expect.objectContaining({
-              question: {
-                id,
-                questions: [{ id: 'choice', question: 'Choose a route', options: ['A', 'B'] }],
-              },
-            }),
-          }),
-        ],
+      expect(await submit('late', 'B')).toMatchObject({ status: 'received' })
+      expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+        reason: 'completed',
       })
-      expect(await prompt(`[question-answer ${id}] {"choice":"B"}`)).toMatchObject({ reason: 'completed' })
       expect(JSON.stringify(provider.calls[3]?.messages)).toContain('choice')
-      const answers = await session.scan({ type: 'user/message', toSeq: session.lastSeq })
-      expect(JSON.stringify(answers)).toContain('question-answer')
+      const answerRows = await session.scan({ type: 'user/message', toSeq: session.lastSeq })
+      const answer = answerRows.find((event) => JSON.stringify(event.data).includes('submitted'))
+      expect(answer).toMatchObject({ origin: 'system', trust: 'untrusted', actor: session.d.actor })
+      expect(JSON.stringify(answer?.data)).toContain('B')
+      expect(
+        (
+          await service.read(
+            { sessionId: session.key, surfaceId: surface.surface.id },
+            new AbortController().signal,
+          )
+        ).surfaces[0]?.status,
+      ).toBe('closed')
     } finally {
       await host.close()
       vi.unstubAllEnvs()
     }
   })
 
-  it('presents an existing file as a persisted artifact card and refuses a missing file', async () => {
+  it('presents an existing file as a persisted surface and artifact and refuses a missing file', async () => {
     const dataDir = scratch()
     writeFileSync(join(dataDir, 'report.txt'), 'A synthetic report')
     const provider = new ScriptedProvider({
@@ -557,8 +578,13 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       const ui = await session.projectUI(undefined, { surface: 'web' })
       const update = await session.projectUIPatch(0, undefined, { surface: 'web' })
       expect(update.kind).toBe('patch')
-      expect(JSON.stringify(update)).toContain('deliverables')
-      expect(JSON.stringify(ui)).toContain('deliverables')
+      expect(JSON.stringify(update)).toContain('present')
+      const surfaces = await session.intelligentUi!.read(
+        { sessionId: session.key },
+        new AbortController().signal,
+      )
+      expect(surfaces.surfaces[0]?.surface).toMatchObject({ title: 'Deliverables / 交付物', actions: [] })
+      expect(JSON.stringify(surfaces)).toContain('report.txt')
       expect(JSON.stringify(ui)).toContain('report.txt')
       await prompt('Present missing file')
       expect(

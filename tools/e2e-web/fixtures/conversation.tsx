@@ -1,5 +1,5 @@
 import { Context } from '@agnes/cordis'
-import type { ContentBlock, UINode, UITurn } from '@agnes/protocol'
+import type { UINode, UITurn } from '@agnes/protocol'
 import { type ClientResourceService, LocaleService, type SessionService } from '@agnes/web-client'
 import { webLocaleCatalog } from '@agnes/web-foundation/locale-catalog'
 import { createAntdRoot, webUiLocaleCatalog } from '@agnes/web-ui'
@@ -32,76 +32,6 @@ const tool = (id: string, name: string, resultPreview?: string): Extract<UINode,
 const nodes: UINode[] = [
   { kind: 'user', id: 'user', seq: 1, content: [{ type: 'text', text: 'Review this delivery' }] },
   tool('read', 'read_file', 'Earlier process detail'),
-  {
-    ...tool('question', 'ask_user_question'),
-    slots: [
-      {
-        slot: 'tool.card.inline',
-        extId: 'interaction',
-        payload: {
-          title: 'Choose delivery',
-          question: {
-            id: 'delivery',
-            questions: [
-              {
-                id: 'route',
-                question: 'Delivery channel',
-                options: ['Web', 'CLI'],
-                multiple: true,
-                allowFreeText: true,
-              },
-            ],
-          },
-        },
-      },
-    ],
-  },
-  {
-    ...tool('file', 'present'),
-    slots: [
-      {
-        slot: 'tool.card.inline',
-        extId: 'present',
-        payload: {
-          title: 'Delivery',
-          deliverables: [
-            {
-              name: 'delivery-report.txt',
-              description: 'Synthetic report for browser layout acceptance',
-              lane: 'main',
-              ref: { sha256: 'a'.repeat(64), size: 6, mime: 'text/plain' },
-            },
-          ],
-        },
-      },
-    ],
-  },
-  {
-    ...tool('workflow', 'workflow_wait'),
-    slots: [
-      {
-        slot: 'tool.card.inline',
-        extId: 'agnes/workflow',
-        payload: {
-          title: 'Report workflow',
-          table: {
-            columns: ['Stage', 'Member', 'Status', 'Session', 'Run', 'Id', 'Integration'],
-            rows: [
-              [
-                'Draft',
-                'Writer',
-                'completed',
-                'child-worktree',
-                'completed',
-                'workflow-fixture',
-                'not-merged-by-workflow',
-              ],
-            ],
-          },
-        },
-      },
-    ],
-  },
   tool('job', 'job_output', 'job-fixture: running\nSynthetic captured output'),
   tool('child', 'subagent_list', 'child-fixture completed continuable'),
   { kind: 'assistant', id: 'final', seq: 3, text: 'Review the deliverable and choose a channel.' },
@@ -135,24 +65,15 @@ const resources = {
 } as unknown as ClientResourceService
 function Fixture() {
   const runtime = useConversationRuntime(store)
-  const [answer, setAnswer] = useState<ContentBlock[]>()
   const [plan, setPlan] = useState(true)
   const [decision, setDecision] = useState('')
-  const session = {
-    commands: {
-      async prompt(content: { type: 'text'; text: string }[]) {
-        setAnswer(content)
-        const next: UINode[] = [...nodes, { kind: 'user', id: 'answer', seq: 4, content }]
-        store.update({ sessionId: 'fixture-session', nodes: next, turns: [turn] })
-      },
-    },
-  } as unknown as SessionService
+  const session = {} as SessionService
   return (
     <main className="conversation-fixture">
       <div id="transcript-content">
         <AssistantRuntimeProvider runtime={runtime}>
           <WebConversationMessages
-            nodes={answer ? [...nodes, { kind: 'user', id: 'answer', seq: 4, content: answer }] : nodes}
+            nodes={nodes}
             turns={[turn]}
             locale={locale}
             session={session}

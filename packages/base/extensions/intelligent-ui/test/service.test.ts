@@ -10,6 +10,7 @@ import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { createIntelligentUiService } from '../src/service.js'
 import { uiProjection } from '../src/state.js'
+import { questionSurface } from '../../interaction/src/question.js'
 
 const actor: Actor = { id: 'operator', org: 'synthetic', role: 'owner', deptPath: [], attrs: {} }
 const signal = new AbortController().signal
@@ -100,6 +101,7 @@ const request = (commandId = 'one'): UiActionParams => ({
 })
 function fixture(
   components: readonly import('@agnes/protocol/gen/extension-manifest').UiComponentDeclaration[] = [],
+  collector = false,
 ) {
   const rows: EventEnvelope[] = [],
     calls = new Map<string, DeferredInvocationReceipt>(),
@@ -109,7 +111,8 @@ function fixture(
     now = 100000,
     lostWake = false,
     failDelivery = false,
-    failAdmission = false
+    failAdmission = false,
+    invocation: string | undefined
   const row = (name: string, data: unknown, origin = 'ext:agnes/intelligent-ui') => {
     const seq = rows.length + 1
     rows.push({
@@ -175,13 +178,32 @@ function fixture(
       components: () => components,
       scan: async () => rows,
       append: async (name, data) => row(name, data),
-      tools: () => (available ? [{ name: 'adjust', parameters }] : []),
-      invocationId: async () => undefined,
+      tools: () =>
+        available
+          ? [
+              {
+                name: collector ? 'ui_submit' : 'adjust',
+                parameters: collector
+                  ? Type.Object(
+                      {
+                        surfaceId: Type.String(),
+                        answers: Type.Record(
+                          Type.String(),
+                          Type.Union([Type.String(), Type.Array(Type.String())]),
+                        ),
+                      },
+                      { additionalProperties: false },
+                    )
+                  : parameters,
+              },
+            ]
+          : [],
+      invocationId: async (toolUseId) => (toolUseId === 'collector-call' ? invocation : undefined),
       now: () => now,
-      async deliver(key, _text, _actor, signal) {
+      async deliver(key, text, deliveredActor, signal) {
         signal.throwIfAborted()
         if (failDelivery) throw new Error('delivery interrupted')
-        if (!deliveries.has(key)) deliveries.set(key, row('inbox', { key }))
+        if (!deliveries.has(key)) deliveries.set(key, row('inbox', { key, text, actor: deliveredActor }))
         return deliveries.get(key)!
       },
     }))
@@ -189,6 +211,7 @@ function fixture(
   return {
     rows,
     calls,
+    bindInvocation: (id: string) => (invocation = id),
     deliveries,
     queue,
     restart,
@@ -562,6 +585,98 @@ describe('pinned custom component declarations', () => {
     await f.outcome('pending-approval')
     expect((await f.service().read({ sessionId: 'session' }, signal)).actions[0]?.status).toBe(
       'pending-approval',
+    )
+  })
+})
+
+describe('question collector on the ordinary surface path', () => {
+  const questions = [
+    { id: 'single', question: 'One', options: ['A', 'B'] },
+    { id: 'multi', question: 'Many', options: ['A', 'B'], multiple: true },
+    { id: 'text', question: 'Explain' },
+  ]
+  const submit = (
+    commandId: string,
+    answers: Record<string, string | string[]>,
+    revision = 1,
+  ): UiActionParams => ({
+    sessionId: 'session',
+    surfaceId: 'questions',
+    revision,
+    actionId: 'submit',
+    commandId,
+    input: { answers },
+    selection: {},
+  })
+  it('refuses model calls, validates every answer, and recovers a late successful answer without truncation', async () => {
+    const f = fixture([], true)
+    await f.service().render({ surface: questionSurface('questions', questions) }, signal)
+    const answers = { single: 'B', multi: ['A', 'B'], text: 'Long human answer '.repeat(300) }
+    await expect(
+      f.service().submittedInput('model-call', { surfaceId: 'questions', answers }, signal),
+    ).rejects.toMatchObject({ code: expect.any(Number) })
+    expect(
+      await f.service().action(submit('invalid', { ...answers, multi: ['C'] }), actor, signal),
+    ).toMatchObject({ status: 'rejected' })
+    f.clock(200000) // Optional question deadline is not an action expiry.
+    const admitted = await f.service().action(submit('late', answers), actor, signal)
+    expect(admitted).toMatchObject({ status: 'received' })
+    f.restart()
+    expect((await f.service().read({ sessionId: 'session' }, signal)).actions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ commandId: 'late', status: 'received' })]),
+    )
+    f.bindInvocation(admitted.invocationId!)
+    await f.outcome('executing')
+    await expect(
+      f
+        .service()
+        .submittedInput(
+          'collector-call',
+          { surfaceId: 'questions', answers: { ...answers, single: 'A' } },
+          signal,
+        ),
+    ).rejects.toMatchObject({ code: expect.any(Number) })
+    expect(
+      await f.service().submittedInput('collector-call', { surfaceId: 'questions', answers }, signal),
+    ).toEqual({ surfaceId: 'questions', answers })
+    await f.outcome('succeeded')
+    f.restart()
+    const recovered = await f.service().read({ sessionId: 'session', surfaceId: 'questions' }, signal)
+    expect(recovered.surfaces[0]?.status).toBe('closed')
+    const delivered = f.rows
+      .filter((row) => row.type.endsWith('/inbox'))
+      .find((row) => (row.data as { key: string }).key === 'ui-result:late')!
+    const payload = delivered.data as { text: string; actor: Actor }
+    expect(JSON.parse(payload.text.slice('Intelligent UI action result: '.length)).submitted).toEqual({
+      surfaceId: 'questions',
+      answers,
+    })
+    expect(payload.actor).toEqual(actor)
+    expect(f.deliveries.size).toBe(2) // Invalid refusal and successful answer, once each.
+  })
+  it('rejects stale answers and preserves an open form when ordinary policy refuses collection', async () => {
+    const f = fixture([], true),
+      form = questionSurface('questions', questions)
+    await f.service().render({ surface: form }, signal)
+    const replacement = { ...form, revision: 2 }
+    await f.service().update({ surfaceId: form.id, expectedRevision: 1, surface: replacement }, signal)
+    const answers = { single: 'A', multi: ['B'], text: 'Review' }
+    expect(await f.service().action(submit('stale', answers), actor, signal)).toMatchObject({
+      status: 'rejected',
+      refusal: { code: 'UI_STALE' },
+    })
+    await f.service().action(submit('refused', answers, 2), actor, signal)
+    await f.outcome('failed', {
+      code: 'CAPABILITY_DENIED',
+      message: 'Ordinary policy denied',
+      retryable: false,
+      outcomeUnknown: false,
+    })
+    f.restart()
+    const recovered = await f.service().read({ sessionId: 'session', surfaceId: form.id }, signal)
+    expect(recovered.surfaces[0]?.status).toBe('open')
+    expect(recovered.actions).toEqual(
+      expect.arrayContaining([expect.objectContaining({ commandId: 'refused', status: 'rejected' })]),
     )
   })
 })

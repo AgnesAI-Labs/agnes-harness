@@ -8,30 +8,11 @@ import { displayWidth } from '../terminal.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
 
-// The `tool.card.inline` payload shape (protocol's slots schema, `ToolCardInlinePayload`): a
-// title, an optional table, an optional chart whose series are `{ name, points: [{ x, y }] }` --
-// not the flatter `{ label, value }` shape an earlier illustrative draft assumed -- and optional
-// numbered actions.
+// Inline extension slots carry titles, charts and numbered actions; tables use surfaces.
 type InlinePayload = {
   title: string
-  table?: { columns: string[]; rows: string[][] }
   chart?: { kind: 'bar' | 'line'; series: Array<{ name: string; points: Array<{ x: string; y: number }> }> }
   actions?: Array<{ id: string; label: string }>
-}
-
-/** Fixed-width table: column widths from the widest cell in each column, cells joined by " | ". */
-export function renderTable(t: { columns: string[]; rows: string[][] }, width: number): string[] {
-  const header = t.columns.map((c) => escapeControl(c))
-  if (header.length === 0) return []
-  const body = t.rows.map((row) => row.map((cell) => escapeControl(cell)))
-  const all = [header, ...body]
-  const colWidths = header.map((_, i) => Math.max(...all.map((row) => displayWidth(row[i] ?? ''))))
-  return all.map((row) =>
-    padLine(
-      row.map((c, i) => c + ' '.repeat(Math.max(0, (colWidths[i] ?? 0) - displayWidth(c)))).join(' │ '),
-      width,
-    ),
-  )
 }
 
 /**
@@ -127,15 +108,11 @@ export class ToolCard implements Component {
         ),
       )
     // `tool.card.inline` has `multi` cardinality, so a tool result can carry several fills; every
-    // one of them contributes its own title/table/chart/actions block, in the order they arrive.
+    // one of them contributes its own title/chart/actions block, in the order they arrive.
     for (const fill of node.slots ?? []) {
       if (fill.slot !== 'tool.card.inline') continue
       const payload = fill.payload as InlinePayload
       body.push(new Text(ansi.bold(escapeControl(payload.title))))
-      if (payload.table) {
-        const table = payload.table
-        body.push({ render: (width: number) => renderTable(table, width), invalidate() {} })
-      }
       if (payload.chart?.kind === 'bar') {
         const series = payload.chart.series
         body.push({ render: (width: number) => renderBarChart(series, width), invalidate() {} })

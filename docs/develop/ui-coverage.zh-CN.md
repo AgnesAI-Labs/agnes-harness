@@ -50,9 +50,9 @@ node tools/e2e-web/serve-conversation-fixture.mjs
 AGH_WEB_URL=http://127.0.0.1:PORT AGH_CONVERSATION_FIXTURE_URL=http://127.0.0.1:PORT pnpm test:web-smoke conversation.spec.ts
 ```
 
-夹具使用生产组件及样式、合成 session/resource 端口，验证问题提交、下载、作业/子代理详情、过程折叠和计划允许/拒绝。真实 daemon demo 回合另外覆盖问题、交付物及作业卡片。组件夹具不能证明后端授权。
+对话夹具使用生产组件及样式、合成 session/resource 端口，验证作业/子代理详情、过程折叠和计划允许/拒绝。`question-surfaces.spec.ts` 使用生产 surface 表单覆盖共享草稿、提交、待执行恢复、陈旧 revision 与拒绝。真实 daemon demo 回合另外覆盖问答/交付物 surface 及作业卡片。组件夹具不能证明后端授权。
 
-稳定 ID：`question-card`、`question-field`、`question-option`、`question-free-text`、`question-submit`、`deliverable-card`、`deliverable-open`、`deliverable-download`、`background-job-card`、`child-agent-card`、`tool-detail-toggle`、`tool-detail-text`、`turn-process-toggle`、`plan-approval-card`、`approval-card`、`approval-preview`、`approval-action`。重复 ID 用 `[data-node-id]`、`[data-question-id]`、`[data-artifact-sha256]` 或 `[data-tool-name]` 限定。审批保留 `data-approval-action`，不按位置选择。
+稳定 ID：`ui-surface-<id>`、`ui-form-<id>`、`ui-action-<id>`、`ui-option-<field>-<index>`、`ui-free-<field>`、`background-job-card`、`child-agent-card`、`tool-detail-toggle`、`tool-detail-text`、`turn-process-toggle`、`plan-approval-card`、`approval-card`、`approval-preview`、`approval-action`。重复 ID 用 `[data-node-id]`、`[data-surface-id]` 或 `[data-tool-name]` 限定。审批保留 `data-approval-action`，不按位置选择。
 
 设置 `AGH_UI_AXE=1` 后，截图矩阵会检查中英文、浅深色的每个 1440 像素页面及弹窗的 WCAG A/AA 问题。递归语言键集检查还覆盖资源设置包。测试使用仓库锁定的 Playwright 和本机已安装的 Chromium。
 

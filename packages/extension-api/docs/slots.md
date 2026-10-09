@@ -6,7 +6,7 @@ Payloads must pass their schema and the 64 KiB JSON byte limit. Null from an aut
 
 | Slot | Cardinality | Order | Surfaces | Failure | Payload |
 |---|---|---|---|---|---|
-| `tool.card.inline` | multi | 100 | tui, web, channel | open | [ToolCardInlinePayload](../../protocol/schema/slots.json#/$defs/ToolCardInlinePayload): type: object; required: title; optional: question, deliverables, table, chart, actions |
+| `tool.card.inline` | multi | 100 | tui, web, channel | open | [ToolCardInlinePayload](../../protocol/schema/slots.json#/$defs/ToolCardInlinePayload): type: object; required: title; optional: chart, actions |
 | `sidebar.action` | multi | 200 | tui, web | open | [SidebarActionPayload](../../protocol/schema/slots.json#/$defs/SidebarActionPayload): type: object; required: id, label; optional: icon, disabled |
 | `status.line` | multi | 300 | tui, web, channel | open | [StatusLinePayload](../../protocol/schema/slots.json#/$defs/StatusLinePayload): type: object; required: text, level; optional: goal |
 | `notification` | multi | 400 | web, channel | open | [NotificationPayload](../../protocol/schema/slots.json#/$defs/NotificationPayload): type: object; required: title, body; optional: link |

@@ -222,6 +222,12 @@ export class Outbound {
     if (lane.session.uiRead) {
       try {
         const page = await lane.session.uiRead()
+        let cursor = page.nextCursor
+        while (cursor) {
+          const next = await lane.session.uiRead({ cursor })
+          page.surfaces.push(...next.surfaces)
+          cursor = next.nextCursor
+        }
         for (const record of page.surfaces)
           messages.push({
             id: `surface:${record.surface.id}`,

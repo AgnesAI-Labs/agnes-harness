@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { cp, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { answerPrefix } from '@agnes/protocol'
 import { command, complete, install, prompt, result, results, runtime, say, waitFor } from './runtime.mjs'
 
 const name = process.argv[2]
@@ -15,21 +15,34 @@ const bundle = '@agnes-fde/support-triage#support-triage'
 async function begin() {
   const session = await rt.session({ bundles: [bundle] })
   await prompt(session, 'Triage synthetic ticket T-100 and draft a reply.', 'parked')
-  assert.deepEqual((await session.capabilities()).loop.value, { id: 'fde.support-triage', version: '3.0.0' })
+  assert.deepEqual((await session.capabilities()).loop.value, { id: 'fde.support-triage', version: '4.0.0' })
   assert.equal((await result(session, 'fde_support_classify')).priority, 'urgent')
   return session
 }
 async function finish(session) {
-  // The question id is an opaque backend-issued token; send the supported answer format.
-  const timeline = await session.projectUI(undefined, { surface: 'web' })
-  const node = timeline.nodes.findLast((node) => node.kind === 'tool' && node.name === 'ask_user_question')
-  const id = node?.slots?.map((slot) => slot.payload?.question?.id).find(Boolean)
-  assert.ok(id)
+  const page = await session.uiRead()
+  const record = page.surfaces.findLast(
+    (record) =>
+      record.status === 'open' && record.surface.actions.some((action) => action.tool === 'ui_submit'),
+  )
+  assert.ok(record)
   assert.ok(
     await rt.confirm('Continue the synthetic workflow from its saved review question?'),
     'Workflow continuation declined',
   )
-  await prompt(session, answerPrefix(id) + JSON.stringify({ proceed: 'Proceed' }))
+  await session.uiAction({
+    surfaceId: record.surface.id,
+    revision: record.surface.revision,
+    actionId: 'submit',
+    commandId: randomUUID(),
+    input: { answers: { proceed: 'Proceed' } },
+    selection: {},
+  })
+  await waitFor(
+    () => result(session, 'fde_support_send').catch(() => null),
+    Boolean,
+    'Surface answer workflow',
+  )
   return result(session, 'fde_support_send')
 }
 try {

@@ -84,8 +84,6 @@ describe('protocol src boundary', () => {
         'RuntimeAdminSnapshot',
         'RuntimePublicationReport',
         'RuntimeSecurityStatus',
-        'answerPrefix',
-        'parseAnswer',
         'parseSessionBundles',
         'isAdminLoop',
         'isAdminModelAdapter',

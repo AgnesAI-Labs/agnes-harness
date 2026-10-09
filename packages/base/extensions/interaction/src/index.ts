@@ -20,7 +20,7 @@ function bounded(questions: Question[], submissions: State['submissions'] = {}):
 }
 export const questionProjection: ProjectionDef<State> = {
   name: 'questions',
-  stateVersion: 1,
+  stateVersion: 2,
   stateSchema: {
     type: 'object',
     required: ['questions', 'submissions'],
@@ -29,7 +29,7 @@ export const questionProjection: ProjectionDef<State> = {
   },
   init: () => ({ questions: [], submissions: {} }),
   apply(state, event) {
-    if (event.type === 'x/agnes/interaction/requested') {
+    if (event.type === 'x/agnes/interaction/requested' && event.origin === 'ext:agnes/interaction') {
       const question = event.data as Question
       if (state.questions.some((q) => q.id === question.id)) return state as State
       const questions = [...state.questions.slice(-31), question]
@@ -119,12 +119,15 @@ export default defineExtension((agnes) => {
           }
           while (Date.now() < deadline) {
             ctx.signal.throwIfAborted()
-            const answer = (await read(ctx)).questions.find((q) => q.id === id)?.answer
+            const latest = await read(ctx)
+            const answer = latest.questions.find((q) => q.id === id)?.answer
             if (answer)
               return {
                 content: [{ type: 'text', text: JSON.stringify(answer) }],
                 details: { questionId: id, answers: answer },
               }
+            if (Object.values(latest.submissions).some((item) => item.surfaceId === interactionSurfaceId(id)))
+              break
             await delay(Math.min(100, deadline - Date.now()), undefined, { signal: ctx.signal })
           }
           return {
@@ -136,7 +139,7 @@ ${args.questions.map((q) => `${q.question}${q.options ? '\n' + q.options.map((o,
 [Open questions](/?session=${encodeURIComponent(ctx.session.key)}&surface=${interactionSurfaceId(id)})`,
               },
             ],
-            details: { questionId: id, status: 'pending', deadline },
+            details: { questionId: id, surfaceId: interactionSurfaceId(id), status: 'pending', deadline },
           }
         },
       }),

@@ -475,7 +475,9 @@ for (const t of TARGETS) {
 // The three generated Markdown pages are part of the same contract as the generated modules: a
 // stale page is as wrong as a stale module, and it is the only place the declaration tables are
 // readable as prose.
-dirty += writeDocs(check)
 const { writeAppServerArtifacts } = await import('./gen-app-server.js')
 dirty += writeAppServerArtifacts(pkg, check)
+// Load extension author documentation only after schema artifacts are emitted.
+// Its protocol imports must not influence schema registration/identity ordering.
+dirty += await writeDocs(check)
 if (check && dirty) process.exit(1)

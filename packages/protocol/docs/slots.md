@@ -6,7 +6,7 @@ One slot payload is capped at 65536 bytes. The cap is published here and enforce
 
 | slot | cardinality | order | surfaces | trigger | failPolicy | payload fields |
 |---|---|---|---|---|---|---|
-| `tool.card.inline` | multi | 100 | tui / web / channel | tool_result / tool_call | open | `question?`, `deliverables?`, `title`, `table?`, `chart?`, `actions?` |
+| `tool.card.inline` | multi | 100 | tui / web / channel | tool_result / tool_call | open | `title`, `chart?`, `actions?` |
 | `sidebar.action` | multi | 200 | tui / web | turn_end / tick | open | `id`, `label`, `icon?`, `disabled?` |
 | `status.line` | multi | 300 | tui / web / channel | tick | open | `goal?`, `text`, `level` |
 | `notification` | multi | 400 | web / channel | turn_end | open | `title`, `body`, `link?` |

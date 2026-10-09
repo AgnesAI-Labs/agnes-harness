@@ -195,6 +195,8 @@ When a ready, reviewed pinned module cannot be found, its import/render fails, o
 
 The preset question/table migration and authenticated text-client submission are described in “Question, table and deliverable surfaces” below. Custom renderers use the same surface facts and action flow; text clients display their declared fallback. Business answers remain distinct from permission grants.
 
+Phase 2 uses the same surface/action model for official questions, tables and deliverable lists. The old inline slot formats and answer-prefix parser have been removed. There are no compatibility shims or old-data migration. See the interaction paths below.
+
 ## Implementation acceptance
 
 Extend the nearest meaningful suites to cover every state-table transition, canonical command duplication/conflicts, invalid schemas/bindings, changed revision, closed surfaces, owner/task and missing tool/unsupported Loop refusals, policy/approval/auto-review denial, sandbox failures, capacity/rate admission, concurrent commands, tool errors and safe/unsafe retry, receipt/delivery crash gaps and restart with pending approval/unknown effect. Include a scripted-model finance workflow and a Web spec for shared inline/panel state, reload and re-confirmation. Real daemon/worker tests belong in `*.e2e.test.ts`; large-ledger/real-timer tests belong in `*.slow.test.ts`. Test observable receipts, facts, tool outcomes and queued inputs, not private call counts. Backend and renderer implementation must be reviewed before claiming this capability is available.

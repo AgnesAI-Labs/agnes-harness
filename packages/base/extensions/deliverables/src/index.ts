@@ -49,7 +49,7 @@ export default defineExtension((agnes) => {
       defineTool({
         name: 'present',
         description:
-          'Register existing workspace files as deliverables. Copies the files into session artifacts for durable open/download cards. Does not create files. Each file must be readable, regular and at most 32 MiB; the total per call is also limited to 32 MiB.',
+          'Register existing workspace files as deliverables. Copies the files into session artifacts for durable surface lists and authorized artifact reads. Does not create files. Each file must be readable, regular and at most 32 MiB; the total per call is also limited to 32 MiB.',
         parameters: Type.Object(
           {
             files: Type.Array(
@@ -90,7 +90,7 @@ export default defineExtension((agnes) => {
                 ),
               ).length > 60000
             )
-              throw new Error('deliverables exceed the card payload limit')
+              throw new Error('deliverables exceed the surface payload limit')
             const existing = previous.value.presented[ctx.session.toolUseId]
             const files: Deliverable[] = existing ?? []
             if (!existing) {

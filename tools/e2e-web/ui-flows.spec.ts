@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { AGH_DIR } from '@agnes/protocol'
+import { AGH_DIR, type ArtifactReadResult } from '@agnes/protocol'
 import type { Page } from '@playwright/test'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { expect, test } from './fixtures.js'
@@ -22,6 +22,26 @@ async function current(page: Page, runtime: Runtime) {
   const session = await client.session.load(id, { cwd: runtime.workspace })
   await session.attach()
   return session
+}
+function surfaceCard(page: Page, title: string) {
+  return page
+    .getByTestId('intelligent-ui-inline')
+    .locator('[data-testid^="ui-surface-"]')
+    .filter({ hasText: title })
+}
+async function artifactText(page: Page, runtime: Runtime) {
+  const session = await current(page, runtime)
+  const presented = await toolResult(session, 'present')
+  const block = presented?.content.find((item) => item.type === 'ref')
+  if (!block || block.type !== 'ref') throw new Error('Present must retain an artifact reference')
+  const client = await runtime.connect()
+  const result = await client.call<ArtifactReadResult>('_agnes/v1/artifact.read', {
+    sessionId: session.id,
+    laneId: 'main',
+    artifact: block.ref,
+  })
+  if (!result.ok) throw new Error('Authorized artifact read failed')
+  return Buffer.from(result.base64, 'base64').toString('utf8')
 }
 async function quality(page: Page, info: Parameters<typeof accessible>[1], name: string) {
   await translated(page)
@@ -207,12 +227,11 @@ test('UI ask, plan approval, deliverable, child and goal cards perform their act
     page,
     'call ask_user_question {"questions":[{"id":"channel","question":"Choose a delivery channel","options":["Web","Email"],"allowFreeText":true}]}',
   )
-  const question = page.getByTestId('question-card')
-  await expect(question.getByTestId('question-submit')).toBeDisabled()
+  const question = surfaceCard(page, 'Questions / 问题')
   await question.getByRole('radio', { name: 'Web', exact: true }).check()
   await quality(page, info, 'ask-card')
-  await question.getByTestId('question-submit').click()
-  await expect(question.getByTestId('question-submit')).toHaveText('Answered')
+  await question.getByTestId('ui-action-submit').click()
+  await expect(question.getByTestId('ui-action-submit')).toBeDisabled()
   await expect(question.getByRole('radio', { name: 'Web', exact: true })).toBeDisabled()
   await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed')
   const composer = page.getByRole('textbox', { name: 'Task content', exact: true })
@@ -244,14 +263,10 @@ test('UI ask, plan approval, deliverable, child and goal cards perform their act
     page,
     `call present ${JSON.stringify({ files: [{ path: resolve(runtime.workspace, 'report.md') }] })}`,
   )
-  const card = page.getByTestId('deliverable-card')
-  const downloading = page.waitForEvent('download')
-  await card.getByTestId('deliverable-download').click()
-  const download = await downloading
-  const path = await download.path()
-  if (!path) throw new Error('Authorized deliverable must produce a downloaded file')
-  expect(await readFile(path, 'utf8')).toContain('Synthetic delivery')
-  await quality(page, info, 'deliverable-card')
+  const card = surfaceCard(page, 'Deliverables / 交付物')
+  await expect(card).toContainText('report.md')
+  expect(await artifactText(page, runtime)).toContain('Synthetic delivery')
+  await quality(page, info, 'deliverable-surface')
   await turn(
     page,
     `call subagent_spawn ${JSON.stringify({ task: 'call read {"path":"report.md"}', isolation: 'shared' })}`,
@@ -294,7 +309,7 @@ test('UI background jobs, interactive terminal and schedule cards persist observ
     page,
     'call schedule_create {"title":"E2E tool reminder","prompt":"Inspect delivery","selector":{"every_seconds":86400}}',
   )
-  await expect(page.getByTestId('reminder-card')).toContainText('E2E tool reminder')
+  await expect(surfaceCard(page, 'Reminder / 提醒')).toContainText('E2E tool reminder')
   await quality(page, info, 'schedule-card')
   await settings(page)
   await section(page, 'jobs')
@@ -540,7 +555,7 @@ test('UI FDE bundle selection runs and restores its durable deliverable', async 
   const session = await current(page, runtime)
   expect(await session.capabilities()).toMatchObject({
     bundles: ['@agnes-fde/knowledge-qa#knowledge-qa'],
-    loop: { value: { id: 'fde.knowledge-qa', version: '3.0.0' } },
+    loop: { value: { id: 'fde.knowledge-qa', version: '4.0.0' } },
   })
   expect(JSON.stringify(await toolResult(session, 'present'))).toContain('report.md')
   expect(JSON.stringify(await toolResult(session, 'write'))).toContain('fde-output/knowledge-qa/')
@@ -553,15 +568,9 @@ test('UI FDE bundle selection runs and restores its durable deliverable', async 
     throw new Error('FDE write must have a persisted output path')
   expect(await readFile(join(runtime.workspace, args.path), 'utf8')).toContain('Source-backed answer')
   await info.attach('fde-projection.json', { body: JSON.stringify(output), contentType: 'application/json' })
-  const card = page.getByTestId('deliverable-card')
+  const card = surfaceCard(page, 'Deliverables / 交付物')
   await expect(card).toContainText('report.md')
-  const download = page.waitForEvent('download')
-  await card.getByTestId('deliverable-download').click()
-  const file = await download
-  expect(file.suggestedFilename()).toBe('report.md')
-  const path = info.outputPath('report.md')
-  await file.saveAs(path)
-  expect(await readFile(path, 'utf8')).toContain('Source-backed answer')
+  expect(await artifactText(page, runtime)).toContain('Source-backed answer')
   const url = page.url()
   await page.goto('about:blank')
   await runtime.restart()
@@ -574,7 +583,7 @@ test('UI FDE bundle selection runs and restores its durable deliverable', async 
   const restored = await current(page, runtime)
   expect(await restored.capabilities()).toMatchObject({
     bundles: ['@agnes-fde/knowledge-qa#knowledge-qa'],
-    loop: { value: { id: 'fde.knowledge-qa', version: '3.0.0' } },
+    loop: { value: { id: 'fde.knowledge-qa', version: '4.0.0' } },
   })
   await turn(page, 'Who reviews refund requests?')
   expect(JSON.stringify(await toolResult(restored, 'present'))).toContain('report.md')

@@ -699,6 +699,12 @@ export class TuiApp {
     this.readingSurfaces = session
     try {
       const page = await session.uiRead()
+      let cursor = page.nextCursor
+      while (cursor) {
+        const next = await session.uiRead({ cursor })
+        page.surfaces.push(...next.surfaces)
+        cursor = next.nextCursor
+      }
       if (this.stopped || this.closedNotice || session !== this.o.session) return
       if (page.lastSeq < this.surfaceWatermark) {
         this.surfaceReadAgain = true

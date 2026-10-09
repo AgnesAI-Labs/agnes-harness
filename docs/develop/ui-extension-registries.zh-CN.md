@@ -29,7 +29,7 @@ const disposeCard = conversationCards.register({
 })
 ```
 
-使用 ConversationCardLayout 作为卡片表面、SettingsState 作为状态反馈。卡片状态为 ready、loading、empty、error、disabled。沿用稳定 test id 与有意义的 form/article/log 角色；已有 question-card、deliverable-card、background-job-card、child-agent-card、workflow-run-card、goal-bar、reminder-card 均保留。
+使用 ConversationCardLayout 作为卡片表面、SettingsState 作为状态反馈。卡片状态为 ready、loading、empty、error、disabled。沿用稳定 test id 与有意义的 form/article/log 角色；后台任务、子 Agent 与目标卡片保留原 ID。官方问答、交付物列表与工作流/提醒表格使用 [Intelligent UI catalog](intelligent-ui-web.zh-CN.md) 的 surface/form/action ID。
 
 register 返回幂等且绑定该注册项身份的卸载函数，须绑定到客户端模块的 effect 或销毁作用域。旧卸载函数不会删除后来使用同一 ID 的注册项。subscribe、getSnapshot 支持响应式宿主；entries 返回排序后的注册项；get 按 ID 查询。选中页面卸载后回到第一个内置分类。UI 注册项必须与已安装客户端模块的生命周期一致。
 

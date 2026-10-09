@@ -43,30 +43,24 @@ function named(tools: ReturnType<typeof createScheduleTools>, name: string) {
 }
 
 it('refuses a delegated session and a missing catalog', async () => {
-  const tools = createScheduleTools(catalog(), () => {})
+  const tools = createScheduleTools(catalog())
   const delegated = await named(tools, 'schedule_create').execute({}, session('sess', 1))
   expect(delegated.details).toEqual({ code: 'subagent_session' })
-  const missing = named(
-    createScheduleTools(undefined, () => {}),
-    'schedule_list',
-  )
+  const missing = named(createScheduleTools(undefined), 'schedule_list')
   expect((await missing.execute({}, session('sess'))).details).toEqual({ code: 'internal_error' })
   expect(tools.map((tool) => tool.meta.replay)).toEqual(['never', 'safe', 'never', 'idempotent'])
 })
 
 it('creates, lists, and archives only the calling session', async () => {
-  const bound: string[] = []
-  const tools = createScheduleTools(catalog(), (_id, _session, target) => bound.push(target))
+  const tools = createScheduleTools(catalog())
   const byName = (name: string) => named(tools, name)
   const created = await byName('schedule_create').execute(
     { title: 'Standup', prompt: 'Check mail', selector: { daily: { time: '09:00', timeZone: 'UTC' } } },
     session('sess'),
   )
   const id = (created.details as { id: string }).id
-  expect(bound).toEqual([id])
   const listed = await byName('schedule_list').execute({}, session('sess'))
   expect(listed.details).toMatchObject({ schedules: [{ id, title: 'Standup' }] })
-  expect(bound).toEqual([id, '*'])
   const foreign = await byName('schedule_delete').execute({ id }, session('other'))
   expect(foreign.details).toEqual({ deleted: false })
   const removed = await byName('schedule_delete').execute({ id }, session('sess'))
@@ -76,7 +70,7 @@ it('creates, lists, and archives only the calling session', async () => {
 })
 
 it('rejects after_seconds when updating', async () => {
-  const tools = createScheduleTools(catalog(), () => {})
+  const tools = createScheduleTools(catalog())
   const byName = (name: string) => named(tools, name)
   const created = await byName('schedule_create').execute(
     { title: 'Standup', prompt: 'Check mail', selector: { after_seconds: 120 } },

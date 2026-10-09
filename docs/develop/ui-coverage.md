@@ -86,7 +86,7 @@ Session creation SDK adds `bundles?: readonly string[]`, carried through ACP `ai
 
 The runtime admin catalog adds optional `security: RuntimeSecurityStatus`, aggregated across composition containers and code generations. It exposes the most recent platform probe, allowed presets’ normalized sandbox/approval/network requirements and workspace enforcement snapshots; no seams, factories, execution authority, config or credentials.
 
-Conversation fixtures use production components/styles and synthetic session/resource ports. Real-daemon demo turns additionally exercise question, deliverable and job cards. Fixture tests verify disclosures, submission, download and plan allow/reject presentation; they do not establish backend authorization. Each delivery report records actual commands/results.
+Conversation fixtures use production components/styles and synthetic session/resource ports. Real-daemon demo turns additionally exercise question/deliverable surfaces and job cards. The conversation fixture verifies job/child disclosures and plan allow/reject presentation; `question-surfaces.spec.ts` mounts production surface forms to cover shared drafts, submissions, pending recovery, stale revisions and refusals; they do not establish backend authorization. Each delivery report records actual commands/results.
 
 ## Conversation layout acceptance
 
@@ -99,7 +99,7 @@ node tools/e2e-web/serve-conversation-fixture.mjs
 AGH_WEB_URL=http://127.0.0.1:PORT AGH_CONVERSATION_FIXTURE_URL=http://127.0.0.1:PORT pnpm test:web-smoke conversation.spec.ts
 ```
 
-Stable IDs: `question-card`, `question-field`, `question-option`, `question-free-text`, `question-submit`, `deliverable-card`, `deliverable-open`, `deliverable-download`, `background-job-card`, `child-agent-card`, `tool-detail-toggle`, `tool-detail-text`, `turn-process-toggle`, `plan-approval-card`, `approval-card`, `approval-preview`, `approval-action`. Scope repeated IDs by `[data-node-id]`, `[data-question-id]`, `[data-artifact-sha256]` or `[data-tool-name]`. Approval actions retain their backend identity in `data-approval-action`; never select by position. The native job and child surfaces show existing tool results rather than introducing a new management protocol.
+Stable IDs: `ui-surface-<id>`, `ui-form-<id>`, `ui-action-<id>`, `ui-option-<field>-<index>`, `ui-free-<field>`, `background-job-card`, `child-agent-card`, `tool-detail-toggle`, `tool-detail-text`, `turn-process-toggle`, `plan-approval-card`, `approval-card`, `approval-preview`, `approval-action`. Scope repeated IDs by `[data-node-id]`, `[data-surface-id]` or `[data-tool-name]`. Approval actions retain their backend identity in `data-approval-action`; never select by position. The native job and child surfaces show existing tool results rather than introducing a new management protocol.
 
 Additive shared presentation contracts: `ConversationMessagesProps.keepNodeVisible?: (node: UINode) => boolean` and `ApprovalView.kind?: 'plan'`. Existing consumers keep their default process-folding behavior. No protocol, provider or authorization API changed.
 

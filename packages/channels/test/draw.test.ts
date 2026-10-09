@@ -204,9 +204,18 @@ it('renders numbered surface choices with an authenticated Web fallback and no p
     createdSeq: 1,
     updatedSeq: 1,
   }
+  record.surface.components.push({
+    id: 'custom',
+    kind: 'example/review@1',
+    dataKey: 'custom',
+    fallback: 'Review the preset form',
+    actionIds: [],
+  })
+  record.surface.data.custom = {}
   const message = drawSurfaceMessage(record, 'session x', 'https://web.example/')
   expect(JSON.stringify(message)).toContain('1. A')
   expect(JSON.stringify(message)).toContain('2. B')
+  expect(JSON.stringify(message)).toContain('Review the preset form')
   expect(JSON.stringify(message)).toContain('https://web.example/?session=session%20x&surface=questions')
   expect(JSON.stringify(message)).toContain('认证 Web')
   expect(message.blocks).toHaveLength(1)

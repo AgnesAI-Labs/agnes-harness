@@ -11,42 +11,11 @@ for (const locale of ['en', 'zh-CN'])
       page.on('pageerror', (error) => errors.push(error.message))
       await page.setViewportSize({ width, height: 900 })
       await page.goto(`${fixtureUrl}/?locale=${locale}`)
-      for (const id of [
-        'question-card',
-        'deliverable-card',
-        'background-job-card',
-        'child-agent-card',
-        'workflow-run-card',
-        'plan-approval-card',
-      ])
+      for (const id of ['background-job-card', 'child-agent-card', 'plan-approval-card'])
         await expect(page.getByTestId(id)).toBeVisible()
       await expect(page.locator('.turn-process')).not.toHaveAttribute('open', '')
       await page.getByTestId('turn-process-toggle').click()
       await page.getByTestId('turn-process-toggle').click()
-      await expect(page.getByTestId('question-card')).toBeVisible()
-      await page.getByTestId('workflow-stage').locator('summary').click()
-      await expect(page.getByTestId('workflow-integration')).toContainText(
-        locale === 'en' ? 'has not merged' : '未将其合并到主工作区',
-      )
-      await expect(page.getByTestId('workflow-child-session')).toHaveAttribute(
-        'href',
-        '?session=child-worktree',
-      )
-      await page
-        .getByTestId('workflow-run-card')
-        .screenshot({ path: test.info().outputPath(`workflow-${locale}-${width}.png`) })
-      const option = page.locator('[data-testid="question-option"][value="Web"]')
-      expect((await option.boundingBox())?.width).toBeLessThan(24)
-      await option.check()
-      await page.getByTestId('question-free-text').fill('email')
-      await page.getByTestId('question-submit').click()
-      await expect(page.getByTestId('question-submit')).toBeDisabled()
-      await expect(page.getByTestId('question-submit')).toHaveText(locale === 'en' ? 'Answered' : '已回答')
-      await expect(page.getByTestId('deliverable-open')).toHaveAttribute('target', '_blank')
-      const downloadEvent = page.waitForEvent('download')
-      await page.getByTestId('deliverable-download').click()
-      const download = await downloadEvent
-      expect(download.suggestedFilename()).toBe('delivery-report.txt')
       for (const id of ['background-job-card', 'child-agent-card']) {
         const card = page.getByTestId(id)
         await card.getByTestId('tool-detail-toggle').click()

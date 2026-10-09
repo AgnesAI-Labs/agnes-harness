@@ -584,7 +584,6 @@ export {
 export { type PluginFailureHelp, pluginFailureHelp } from './plugin-failure-help.js'
 export { validateProjectionCapability, validateProjectionReadResult } from './projections.js'
 export * from './provider.js'
-export { answerPrefix, parseAnswer, type QuestionAnswers } from './question-answer.js'
 export {
   type ReferenceCandidate,
   type ReferenceSearchResult,

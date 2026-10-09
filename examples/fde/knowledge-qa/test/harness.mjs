@@ -2,11 +2,29 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { resolveToolCallPolicy } from '@agnes/extension-api'
 import { createPluginTestHost, driveLoop } from '@agnes/host/author-testkit'
-import { answerPrefix } from '@agnes/protocol'
 import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/resource-control-runtime'
 import { Type } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
 import { readMeta, writeMeta } from '../runtime.mjs'
+
+/** Synthetic authenticated action and its original successful queue receipt, for Loop tests. */
+export function surfaceAnswerInput(surfaceId, answer) {
+  const receipt = {
+    surfaceId,
+    commandId: 'fixture-answer',
+    invocationId: 'fixture-invocation',
+    status: 'succeeded',
+    resultSeq: 3,
+  }
+  return {
+    kind: 'follow_up',
+    origin: 'system',
+    trust: 'untrusted',
+    commandId: 'ui-result:fixture-answer',
+    content: [{ type: 'text', text: 'Intelligent UI action result: ' + JSON.stringify(receipt) }],
+    fixtureAnswers: { proceed: answer },
+  }
+}
 
 /** Script official public tool-port results; no copies of official runtime implementations. */
 function officialFixtures({ searchUnavailable = false, planState } = {}) {
@@ -38,7 +56,7 @@ function officialFixtures({ searchUnavailable = false, planState } = {}) {
         { minItems: 1, maxItems: 4 },
       ),
     }),
-    () => output('Waiting for your answer.', { questionId: `question-${calls.length}`, status: 'pending' }),
+    () => output('Waiting for your answer.', { surfaceId: `question-${calls.length}`, status: 'pending' }),
   )
   add('read', object({ path: Type.String() }), ({ path }) => {
     if (!files.has(path)) return { ...output('read failed: ENOENT'), isError: true }
@@ -126,6 +144,7 @@ export async function runWorkflow(
     extraTools = [],
     answer = 'Proceed',
     stopAtQuestion = false,
+    receiptAvailable = true,
     searchUnavailable = false,
     planMode = false,
     approvePlan = true,
@@ -223,6 +242,34 @@ export async function runWorkflow(
     const drive = async (saved, text) => {
       const decorate = (ctx) => ({
         ...ctx,
+        deferredInvocations: {
+          sessionKey: ctx.sessionKey,
+          lane: ctx.lane,
+          notify: async () => {},
+          next: async () => null,
+          read: async (id) =>
+            receiptAvailable && typeof text === 'object' && text.fixtureAnswers && id === 'fixture-invocation'
+              ? {
+                  state: 'succeeded',
+                  seq: 4,
+                  resultSeq: 3,
+                  invocation: {
+                    id,
+                    source: 'agnes/intelligent-ui',
+                    sessionKey: ctx.sessionKey,
+                    lane: ctx.lane,
+                    actor: { id: 'test', org: 'test', role: 'owner', deptPath: [], attrs: {} },
+                    tool: 'ui_submit',
+                    args: {
+                      surfaceId: JSON.parse(
+                        text.content[0].text.slice('Intelligent UI action result: '.length),
+                      ).surfaceId,
+                      answers: text.fixtureAnswers,
+                    },
+                  },
+                }
+              : null,
+        },
         input: {
           ...ctx.input,
           resumeParked: async () => (parkedCall ? 'opened' : 'waiting'),
@@ -245,18 +292,18 @@ export async function runWorkflow(
           },
         },
       })
-      const drivenFactory = parkTool
-        ? {
-            ...factory,
-            create: (ctx) => factory.create(decorate(ctx)),
-            resume: (ctx, checkpoint) => factory.resume(decorate(ctx), checkpoint),
-          }
-        : factory
+      const drivenFactory = {
+        ...factory,
+        create: (ctx) => factory.create(decorate(ctx)),
+        resume: (ctx, checkpoint) => factory.resume(decorate(ctx), checkpoint),
+      }
       const run = await driveLoop(drivenFactory, {
         until: 'idle',
         checkpoint: saved,
         turnView,
-        inputs: saved?.state.approvalWaiting ? [] : [{ content: [{ type: 'text', text }] }],
+        inputs: saved?.state.approvalWaiting
+          ? []
+          : [typeof text === 'object' ? text : { content: [{ type: 'text', text }] }],
         replies:
           replies ??
           Array.from({ length: 3 }, () => [
@@ -272,7 +319,7 @@ export async function runWorkflow(
     if (!stopAtApproval && run.checkpoint.state.approvalWaiting) run = await drive(run.checkpoint, input)
     if (!stopAtQuestion && run.checkpoint.state.waiting) {
       const waiting = run.checkpoint.state.waiting
-      run = await drive(run.checkpoint, answerPrefix(waiting.id) + JSON.stringify({ proceed: answer }))
+      run = await drive(run.checkpoint, surfaceAnswerInput(waiting.id, answer))
     }
     if (!stopAtApproval && run.checkpoint.state.approvalWaiting) run = await drive(run.checkpoint, input)
     return {

@@ -23,6 +23,7 @@ it('continues immediately or at the durable deadline, accepts late answers and c
       append: async (_name: string, data: unknown) => {
         state = questionProjection.apply(state, {
           type: 'x/agnes/interaction/requested',
+          origin: 'ext:agnes/interaction',
           data,
         } as unknown as Parameters<typeof questionProjection.apply>[1])
         return 1
@@ -39,7 +40,7 @@ it('continues immediately or at the durable deadline, accepts late answers and c
         status: 'available' as const,
         name: 'questions',
         asOfSeq: 1,
-        stateVersion: 1,
+        stateVersion: 2,
         value: state,
       }),
     },
@@ -89,6 +90,24 @@ it('continues immediately or at the durable deadline, accepts late answers and c
   await vi.waitFor(() => expect(state.questions.length).toBe(1))
   accept()
   expect(await waiting).toMatchObject({ details: { answers: { pick: 'Late' } } })
+  state = questionProjection.init()
+  const queued = tool.execute({ questions: [{ id: 'pick', question: 'Pick' }], timeoutMs: 60000 }, ctx)
+  await vi.waitFor(() => expect(state.questions.length).toBe(1))
+  state = questionProjection.apply(state, {
+    type: 'x/agnes/intelligent-ui/action.received',
+    origin: 'ext:agnes/intelligent-ui',
+    data: {
+      record: {
+        request: { commandId: 'queued' },
+        invocation: {
+          tool: 'ui_submit',
+          args: { surfaceId: interactionSurfaceId('q'), answers: { pick: 'Queued' } },
+        },
+      },
+    },
+  } as unknown as Parameters<typeof questionProjection.apply>[1])
+  expect(await queued).toMatchObject({ details: { status: 'pending' } })
+  expect(state.questions[0]?.answer).toBeNull() // The safe Loop boundary must execute the collector first.
   state = questionProjection.init()
   const abort = new AbortController()
   const aborted = { ...ctx, signal: abort.signal }

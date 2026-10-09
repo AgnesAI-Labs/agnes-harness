@@ -29,7 +29,7 @@ const disposeCard = conversationCards.register({
 })
 ```
 
-Use `ConversationCardLayout` for the surface and `SettingsState` for feedback. Card state is `ready`, `loading`, `empty`, `error` or `disabled`. Keep stable `<kind>-card` test IDs and meaningful form/article/log roles; existing IDs such as `question-card`, `deliverable-card`, `background-job-card`, `child-agent-card`, `workflow-run-card`, `goal-bar` and `reminder-card` remain stable.
+Use `ConversationCardLayout` for the surface and `SettingsState` for feedback. Card state is `ready`, `loading`, `empty`, `error` or `disabled`. Keep stable `<kind>-card` test IDs and meaningful form/article/log roles; job, child-agent and goal cards retain their IDs. Official questions, deliverable lists and workflow/reminder tables use the [Intelligent UI catalog](intelligent-ui-web.md) and its surface/form/action IDs.
 
 Registration returns an idempotent, identity-bound disposer. Bind it to the client module's effect/disposal scope; disposing an old registration cannot remove a later registration with the same ID. `subscribe` and `getSnapshot` support reactive hosts; `entries` returns registrations in render order, and `get` resolves an ID. Disposed selected sections fall back to the first built-in section. UI registration lifetimes must follow the installed module lifetime.
 

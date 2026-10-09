@@ -94,6 +94,7 @@ export function createIntelligentUiAdapter(
         const rows = await scanAll((q) => session.scan(q), {
           type: 'x/core/loop-effect',
           lane: session.lane,
+          fromSeq: (session.d.log.parent?.boundarySeq ?? 0) + 1,
           toSeq: session.lastSeq,
         })
         const row = rows.find(

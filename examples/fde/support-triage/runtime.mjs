@@ -1,8 +1,53 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { loopCheckpointCodec, registerLoopPlugin, registerToolPolicyPlugin } from '@agnes/extension-api'
-import { defineAgnesPlugin, defineLoop, defineTool, toolError } from '@agnes/plugin-runtime'
-import { parseAnswer } from '@agnes/protocol'
+import {
+  drainDeferredToolInvocations,
+  defineAgnesPlugin,
+  defineLoop,
+  defineTool,
+  toolError,
+} from '@agnes/plugin-runtime'
+
+/** Only a backend-linked successful collector receipt can continue a business review. */
+async function submittedAnswers(ctx, input, surfaceId, signal) {
+  if (input.kind !== 'follow_up' || input.trust !== 'untrusted') return undefined
+  const prefix = 'Intelligent UI action result: '
+  const content = input.content
+    .filter((b) => b.type === 'text')
+    .map((b) => b.text)
+    .join('\n')
+  if (!content.startsWith(prefix)) return undefined
+  let receipt
+  try {
+    receipt = JSON.parse(content.slice(prefix.length))
+  } catch {
+    return undefined
+  }
+  if (
+    receipt.status !== 'succeeded' ||
+    receipt.surfaceId !== surfaceId ||
+    typeof receipt.invocationId !== 'string'
+  )
+    return undefined
+  const original = await ctx.deferredInvocations?.read(receipt.invocationId, signal)
+  if (
+    original?.state !== 'succeeded' ||
+    original.resultSeq !== receipt.resultSeq ||
+    original.invocation.source !== 'agnes/intelligent-ui' ||
+    original.invocation.tool !== 'ui_submit' ||
+    original.invocation.sessionKey !== ctx.sessionKey ||
+    original.invocation.lane !== ctx.lane ||
+    original.invocation.actor.id !== input.actor.id ||
+    original.invocation.actor.org !== input.actor.org ||
+    original.invocation.args?.surfaceId !== surfaceId
+  )
+    return undefined
+  const answers = original.invocation.args.answers
+  return answers && Object.keys(answers).length === 1 && ['Proceed', 'Cancel'].includes(answers.proceed)
+    ? answers
+    : undefined
+}
 
 export const readMeta = {
   isReadOnly: true,
@@ -110,9 +155,11 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
   const outputPath = new RegExp(`^fde-output/${name}/[a-f0-9]{64}/[0-9]+-report\\.(md|html)$`)
   const policy = {
     id: `fde.${name}`,
-    version: '3.0.0',
+    version: '4.0.0',
     decide(input, signal) {
       signal.throwIfAborted()
+      if (['ui_render', 'ui_update', 'ui_close', 'ui_submit'].includes(input.call?.name))
+        return { effect: 'allow', reason: 'Session presentation and authenticated answer collection only' }
       if (input.call?.name === 'exit_plan_mode')
         return { effect: 'ask', reason: 'Approve the workflow plan through the official ticket' }
       if (input.call?.name === 'write' && outputPath.test(input.call.args?.path ?? ''))
@@ -156,7 +203,7 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
   ]
   function createFactory(settings = {}) {
     settings = validateSettings(settings)
-    const codec = loopCheckpointCodec(3, (state) => {
+    const codec = loopCheckpointCodec(4, (state) => {
       if (
         !state ||
         state.workflow !== name ||
@@ -268,17 +315,27 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
             return { outcome: 'turn-ended', phase: 'unknown', reason: 'blocked' }
           }
           if (state.waiting) {
-            const input = await ctx.input.accept()
-            if (!input) return { outcome: 'parked', phase: 'waiting-for-answer', reason: 'parked' }
-            const answers = parseAnswer(
-              state.waiting.id,
-              state.waiting.questions,
-              input.content
-                .filter((b) => b.type === 'text')
-                .map((b) => b.text)
-                .join('\n'),
-            )
-            if (!answers || input.trust !== 'trusted') return await park()
+            if (ctx.turn.continuation() === 'checkpoint') {
+              const boundary = await ctx.turn.checkpoint(signal)
+              if (boundary.outcome !== 'running') return boundary
+            }
+            const deferred = await drainDeferredToolInvocations(ctx, signal)
+            if (deferred) return deferred
+            if (ctx.turn.continuation() === 'tools') return await ctx.tools.drain(signal)
+            if (!state.waiting.input) {
+              if (ctx.turn.continuation()) await ctx.turn.endStep()
+              const input = ctx.turn.continuation()
+                ? await ctx.input.claim('next-step')
+                : await ctx.input.accept()
+              if (!input) return await park()
+              state.waiting.input = input
+              await save()
+              if (ctx.turn.continuation() === 'checkpoint')
+                return { outcome: 'running', phase: 'answer-input' }
+            }
+            const answers = await submittedAnswers(ctx, state.waiting.input, state.waiting.id, signal)
+            delete state.waiting.input
+            if (!answers) return await park()
             state.waiting = null
             if (answers.proceed !== 'Proceed') {
               // A cancelled workflow cannot be reopened at its action stage.
@@ -321,9 +378,9 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
                 await ctx.tools.execute({ name: 'ask_user_question', args: { questions } }, signal),
               )
               // Never mistake the tool's waiting message for permission to execute an action.
-              if (output.details?.status !== 'pending' || typeof output.details?.questionId !== 'string')
+              if (output.details?.status !== 'pending' || typeof output.details?.surfaceId !== 'string')
                 throw new Error('Official question did not return a persisted pending request')
-              state.waiting = { id: output.details.questionId, questions }
+              state.waiting = { id: output.details.surfaceId, questions }
               state.pending = false
               return await park()
             }
@@ -399,8 +456,8 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
     }
     return defineLoop({
       id: `fde.${name}`,
-      version: '3.0.0',
-      capabilities: ['tools', 'model', 'checkpoint'],
+      version: '4.0.0',
+      capabilities: ['tools', 'model', 'checkpoint', 'deferred-invocations'],
       codec,
       create: (ctx) => driver(ctx, initial()),
       resume: (ctx, saved) => driver(ctx, codec.decode(saved)),

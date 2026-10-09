@@ -75,12 +75,14 @@ export function renderProjectionsDoc(): string {
   )
 }
 
-/** Writes the three pages, or counts how many are stale when `check` is set. */
-export function writeDocs(check: boolean): number {
+/** Writes protocol references and the shared extension slot reference. */
+export async function writeDocs(check: boolean): Promise<number> {
+  const { generateAll: generateExtensionDocs } = await import('../../extension-api/tools/gen-docs-core.js')
   const outDir = join(pkg, 'docs')
   const files: Array<[string, string]> = [
     ['hooks.md', renderHooksDoc()],
     ['slots.md', renderSlotsDoc()],
+    ['../../extension-api/docs/slots.md', generateExtensionDocs()['slots.md']!],
     ['tools-meta.md', renderToolsMetaDoc()],
     ['projections.md', renderProjectionsDoc()],
   ]

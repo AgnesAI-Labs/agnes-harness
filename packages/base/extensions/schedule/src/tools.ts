@@ -57,7 +57,6 @@ function jsonResult(value: unknown): ToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(value) }], details }
 }
 
-type Binder = (toolUseId: string, sessionKey: string, target: string) => void
 type ToolSession = { key: string; depth?: number; toolUseId?: string }
 
 function refused(session: ToolSession) {
@@ -69,7 +68,7 @@ function failed(error: unknown) {
   return jsonResult({ code: 'internal_error' })
 }
 
-export function createScheduleTools(catalog: ScheduleCatalog | undefined, bind: Binder) {
+export function createScheduleTools(catalog: ScheduleCatalog | undefined) {
   const write = (name: 'schedule_create' | 'schedule_update', description: string, includeAfter: boolean) =>
     defineTool({
       name,
@@ -94,7 +93,6 @@ export function createScheduleTools(catalog: ScheduleCatalog | undefined, bind: 
             name === 'schedule_update' && input.id
               ? catalog.update({ ...input, id: input.id })
               : catalog.create(input)
-          if ('id' in value && ctx.session.toolUseId) bind(ctx.session.toolUseId, ctx.session.key, value.id)
           return jsonResult(value)
         } catch (error) {
           return failed(error)
@@ -117,7 +115,6 @@ export function createScheduleTools(catalog: ScheduleCatalog | undefined, bind: 
         if (blocked) return blocked
         if (!catalog) return jsonResult({ code: 'internal_error' })
         const schedules = catalog.list({ sessionKey: ctx.session.key })
-        if (ctx.session.toolUseId) bind(ctx.session.toolUseId, ctx.session.key, '*')
         return jsonResult({ schedules })
       },
     }),
@@ -139,7 +136,6 @@ export function createScheduleTools(catalog: ScheduleCatalog | undefined, bind: 
         const row = catalog.read(args.id)
         if (row && row.sessionKey !== ctx.session.key) return jsonResult({ deleted: false })
         const value = catalog.archive(args.id)
-        if (ctx.session.toolUseId) bind(ctx.session.toolUseId, ctx.session.key, args.id)
         return jsonResult(value)
       },
     }),

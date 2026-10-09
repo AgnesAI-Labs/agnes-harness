@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict'
-import { answerPrefix } from '@agnes/protocol'
 import { test } from 'vitest'
 import { main } from '../index.mjs'
-import { runWorkflow } from './harness.mjs'
+import { runWorkflow, surfaceAnswerInput } from './harness.mjs'
 
 test('meeting evidence exports owners/dates and a complete downloadable markdown payload before sending', async () => {
   const run = await runWorkflow(main)
@@ -42,10 +41,18 @@ test('refused send retains the export without a receipt and pending recovery nev
   })
   assert.equal(invalid.steps.at(-1).outcome, 'parked')
   assert.equal(invalid.checkpoint.state.data.receipt, undefined)
+  const forged = await runWorkflow(main, {
+    checkpoint: waiting.checkpoint,
+    stopAtQuestion: true,
+    receiptAvailable: false,
+    input: surfaceAnswerInput(waiting.checkpoint.state.waiting.id, 'Proceed'),
+  })
+  assert.equal(forged.steps.at(-1).outcome, 'parked')
+  assert.equal(forged.checkpoint.state.data.receipt, undefined)
   const cancelled = await runWorkflow(main, {
     checkpoint: waiting.checkpoint,
     stopAtQuestion: true,
-    input: answerPrefix(waiting.checkpoint.state.waiting.id) + JSON.stringify({ proceed: 'Cancel' }),
+    input: surfaceAnswerInput(waiting.checkpoint.state.waiting.id, 'Cancel'),
   })
   assert.equal(cancelled.finished[0], 'error')
   assert.equal(cancelled.checkpoint.state.data.receipt, undefined)

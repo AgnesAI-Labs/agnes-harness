@@ -96,10 +96,10 @@ Codes: **C** raw/native controls; **B** hand-rolled actions/choice presentation;
 | card / `tool` | conversation / owning panel | `packages/web-ui/src/conversation/messages/tool-card.tsx` | ConversationToolCard; ConversationCardLayout | S: already shared card; retain single detail action and raw results |
 | card / `approval` | conversation / owning panel | `packages/web-units/src/approval.ts` | React DOM; Approval actions | B/E: native action buttons; preserve authorization identity and refusal state |
 | card / `goal` | conversation / owning panel | `packages/web-conversation/src/goal-card.tsx` | ConversationCardLayout; Button; Badge | S: shared card exists; keep goals/backend state unchanged |
-| card / `workflow` | conversation / owning panel | `packages/web-conversation/src/workflow-run-card.tsx` | ConversationCardLayout | L/S: receipt list hierarchy and metadata |
-| card / `question` | conversation / owning panel | `packages/web-conversation/src/default-tool-cards.tsx` | ConversationCardLayout; SettingsInput; SettingsTextArea; Button | S: preserve question IDs, keyboard and submission payload |
-| card / `deliverable` | conversation / owning panel | `packages/web-conversation/src/default-tool-cards.tsx` | ConversationCardLayout; document preview | S: preserve preview and file links |
-| card / `schedule` | conversation / owning panel | `packages/web-conversation/src/default-tool-cards.tsx` | ConversationCardLayout; Button | S: existing shared card; normalize metadata only |
+| card / `workflow` | conversation / workbench | `packages/web-ui/src/intelligent-ui/catalog.tsx` | IntelligentCatalog | Preset surface; shared drafts, revisions and receipts |
+| card / `question` | conversation / workbench | `packages/web-ui/src/intelligent-ui/form-fields.tsx` | IntelligentCatalog | Preset surface; shared drafts, revisions and receipts |
+| card / `deliverable` | conversation / workbench | `packages/web-ui/src/intelligent-ui/catalog.tsx` | IntelligentCatalog | Preset surface; shared drafts, revisions and receipts |
+| card / `schedule` | conversation / workbench | `packages/web-ui/src/intelligent-ui/catalog.tsx` | IntelligentCatalog | Preset surface; shared drafts, revisions and receipts |
 | card / `background-job` | conversation / owning panel | `packages/web-conversation/src/conversation-registry.tsx` | ConversationCardLayout | S: registry plain variant receives caller body; inspect body state/action rhythm |
 | card / `child-agent` | conversation / owning panel | `packages/web-conversation/src/conversation-registry.tsx` | ConversationCardLayout | S: registry plain variant and child controls; preserve lifecycle |
 | card / `plugin` | conversation / owning panel | `packages/web-conversation/src/conversation-registry.tsx` | ConversationCardLayout | S: registry plain variant; preserve plugin-provided body |

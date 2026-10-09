@@ -4784,7 +4784,6 @@ const HOOKS_SAMPLES: Record<string, Sample> = {
 
 const toolCardOk: Json = {
   title: 'monthly sales',
-  table: { columns: ['region', 'amount'], rows: [['east', '1,200']] },
   actions: [{ id: 'export', label: 'Export' }],
 }
 
@@ -4823,7 +4822,6 @@ const SLOTS_SAMPLES: Record<string, Sample> = {
     invalid: [
       { ...toolCardOk, chart: { kind: 'pie', series: [] } }, // enum: bar and line only
       { ...toolCardOk, actions: [{ id: 'Bad Id', label: 'y' }] }, // pattern: lower-case, no spaces
-      { ...toolCardOk, table: { columns: ['a'] } }, // the nested table is missing rows
       { title: rep(257) }, // boundary: one over maxLength:256
       { ...toolCardOk, actions: Array.from({ length: 9 }, () => ({ id: 'a', label: 'b' })) }, // boundary: one over maxItems:8
     ],

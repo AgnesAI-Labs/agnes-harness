@@ -61,6 +61,7 @@ export function surfaceText(surface: UiSurface): string {
           for (const [index, label] of (choices(field) ?? []).entries()) lines.push(`${index + 1}. ${label}`)
         }
     } else if (component.kind === 'chart') lines.push(JSON.stringify(surface.data[component.dataKey]))
+    else if ('fallback' in component) lines.push(component.fallback)
   }
   return lines.join('\n')
 }
