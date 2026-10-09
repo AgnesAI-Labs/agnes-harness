@@ -1766,7 +1766,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 5443 -> 5447; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Typed search, history, context and child-engine administration methods.
   // countLines: 5447 -> 5456; exact cap, no exclusions or spare allocation.
-  'packages/sdk/src': 5740,
+  'packages/sdk/src': 5880,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 192,
   'packages/sdk/src/surface.browser': 1,

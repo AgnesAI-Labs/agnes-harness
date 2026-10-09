@@ -3,7 +3,6 @@
 // queueMicrotask, setTimeout and AbortSignal only. The stdio and unix transports will
 // be wired into the node entry point alone.
 
-import { isResourceControlMethod } from '@agnes/resource-control-client-node'
 import type { AuthOption } from './auth.js'
 import {
   Client as BaseClient,
@@ -11,6 +10,7 @@ import {
   type CreateClientOptions,
   type TransportOption,
 } from './client.js'
+import { isResourceControlMethod } from './control-plane-methods.js'
 import { Unsupported } from './errors.js'
 import { localStorageJournal } from './journal-local-storage.js'
 import { wsTransport } from './transport/ws.js'

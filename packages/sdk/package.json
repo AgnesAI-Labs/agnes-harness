@@ -21,7 +21,6 @@
   },
   "dependencies": {
     "@agnes/protocol": "workspace:*",
-    "@agnes/resource-control-client-node": "workspace:*",
     "@agnes/system-node": "workspace:*",
     "ws": "8.21.3"
   },

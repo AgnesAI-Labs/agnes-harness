@@ -59,9 +59,6 @@
       "path": "packages/resource-control-web"
     },
     {
-      "path": "packages/resource-control-client-node"
-    },
-    {
       "path": "packages/resource-control-cli"
     },
     {

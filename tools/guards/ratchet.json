@@ -13,7 +13,7 @@
   "packages/cli/src/tui": 38,
   "packages/cli-tui/src": 4907,
   "packages/extension-api/src": 2748,
-  "packages/sdk/src": 5740,
+  "packages/sdk/src": 5880,
   "packages/sdk/src/extensions.node": 21,
   "packages/sdk/src/package-admin.node": 192,
   "packages/sdk/src/surface.browser": 1,

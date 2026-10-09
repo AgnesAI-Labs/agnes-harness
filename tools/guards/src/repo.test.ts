@@ -56,7 +56,6 @@ describe('repo', () => {
       '@agnes/protocol',
       '@agnes/protocol-validation',
       '@agnes/resource-control-cli',
-      '@agnes/resource-control-client-node',
       '@agnes/resource-control-contracts',
       '@agnes/resource-control-daemon',
       '@agnes/resource-control-runtime',

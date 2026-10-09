@@ -111,7 +111,7 @@
     "includes": ["deleteSkillEntrySync(node)", "if (input.validateOnly) return", "stat.nlink !== 1"]
   },
   {
-    "path": "packages/resource-control-client-node/src/resource-control.ts",
+    "path": "packages/sdk/src/resource-control.node.ts",
     "includes": [
       "prioritySet(params: SkillPrioritySetParams)",
       "client.call('_agnes/v1/skills.remove', params)"

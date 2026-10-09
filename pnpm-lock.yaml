@@ -1306,12 +1306,6 @@ importers:
         specifier: workspace:*
         version: link:../sdk
 
-  packages/resource-control-client-node:
-    dependencies:
-      '@agnes/protocol':
-        specifier: workspace:*
-        version: link:../protocol
-
   packages/resource-control-contracts:
     dependencies:
       '@sinclair/typebox':
@@ -1414,9 +1408,6 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
-      '@agnes/resource-control-client-node':
-        specifier: workspace:*
-        version: link:../resource-control-client-node
       '@agnes/system-node':
         specifier: workspace:*
         version: link:../system-node
