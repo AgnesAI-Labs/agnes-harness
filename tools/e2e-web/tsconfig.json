@@ -28,7 +28,17 @@
     "quality.ts",
     "i18n.ts",
     "../acceptance/provider-fixture.ts",
-    "observability.spec.ts"
+    "observability.spec.ts",
+    "human-controls.spec.ts",
+    "references.spec.ts",
+    "intelligent-ui.spec.ts",
+    "feedback.spec.ts",
+    "auto-review.spec.ts",
+    "memory.spec.ts",
+    "webhooks.spec.ts",
+    "fact-chain.spec.ts",
+    "plugin-config.spec.ts",
+    "../../packages/web-ui/test/button-contrast.spec.ts"
   ],
   "exclude": ["fixtures/**"],
   "references": [
