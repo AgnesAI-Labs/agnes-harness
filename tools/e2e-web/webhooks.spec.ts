@@ -71,9 +71,8 @@ test('signed business event creates a policy-bound root session', async ({
       { timeout: 30000 },
     )
     .toContain('Synthetic signed issue')
-  const messages = (await readSessionEvents(session))
-    .filter((row) => row.type === 'user/message')
-    .slice(0, 100)
+  const events = await readSessionEvents(session)
+  const messages = events.filter((row) => row.type === 'user/message').slice(0, 100)
   expect(messages[0]).toMatchObject({
     origin: 'system',
     trust: 'untrusted',
@@ -90,10 +89,6 @@ test('signed business event creates a policy-bound root session', async ({
     timeout: 30000,
   })
   await expect(page.getByTestId('conversation-turn')).toContainText('UNTRUSTED')
-  const loaded = await client.call<{ modes?: { currentModeId: string } }>('session/load', {
-    sessionId: result.delivery.sessionId,
-    cwd,
-    mcpServers: [],
-  })
-  expect(loaded.modes?.currentModeId).toBe('read-only')
+  const start = events.find((row) => row.type === 'session/start')
+  expect(start?.data).toMatchObject({ preset: 'read-only' })
 })
