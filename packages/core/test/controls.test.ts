@@ -67,7 +67,13 @@ describe('human Loop controls', () => {
         expect.objectContaining({ outcome: 'delivered', itemId: first.itemId }),
       ]),
     )
-    expect((await session.controls.state()).pending).toEqual([expect.objectContaining({ target: 'next-turn', kind: 'follow_up', content: content('Intelligent UI action result: succeeded') })])
+    expect((await session.controls.state()).pending).toEqual([
+      expect.objectContaining({
+        target: 'next-turn',
+        kind: 'follow_up',
+        content: content('Intelligent UI action result: succeeded'),
+      }),
+    ])
     await expect(
       session.controls.edit(first.itemId, content('too late'), actor, 'late-edit'),
     ).rejects.toMatchObject({ code: 'E_RELATION' })
@@ -166,7 +172,14 @@ describe('human Loop controls', () => {
     await session.enqueue('next-turn', { content: content('go'), actor })
     await session.step()
     await session.enqueue('next-step', { content: content('return this'), actor })
-    await session.enqueue('next-step', { content: content('Intelligent UI action result: succeeded'), actor, kind: 'follow_up', trust: 'untrusted', origin: 'system', commandId: 'ui-result:one' })
+    await session.enqueue('next-step', {
+      content: content('Intelligent UI action result: succeeded'),
+      actor,
+      kind: 'follow_up',
+      trust: 'untrusted',
+      origin: 'system',
+      commandId: 'ui-result:one',
+    })
     await session.controls.apply('cancel', actor, 'cancel')
     expect(session.op()).toBeNull()
     expect((await log.scan({ type: 'turn/end', limit: 1 }))[0]?.data).toMatchObject({ reason: 'aborted' })
@@ -182,7 +195,9 @@ describe('human Loop controls', () => {
     await run(session)
     expect((await session.controls.state()).pending).toEqual([])
     const messages = await log.scan({ type: 'user/message', limit: 100 })
-    expect(messages.filter((row) => JSON.stringify(row.data).includes('Intelligent UI action result: succeeded'))).toHaveLength(1)
+    expect(
+      messages.filter((row) => JSON.stringify(row.data).includes('Intelligent UI action result: succeeded')),
+    ).toHaveLength(1)
     await session.close()
   })
 
@@ -192,10 +207,10 @@ describe('human Loop controls', () => {
     const base = fakeProvider([textTurn('answer')])
     const provider: Provider = {
       ...base,
-      async *infer(request) {
+      async *infer(request, options) {
         entered.release()
         await done.wait
-        yield* base.infer(request, { signal: new AbortController().signal })
+        yield* base.infer(request, options)
       },
     }
     const { session, log } = await openSession({ provider })

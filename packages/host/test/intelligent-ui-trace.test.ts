@@ -9,10 +9,16 @@ it('decorates trace revisions and outcomes without changing cached turns or expo
     endSeq: 20,
     trace: { id: 'root', children: [] },
   } as unknown as UITurn
-  const rows = [
+  const base = {
+    ts: '2026-10-09T00:00:00Z',
+    actor: { id: 'fixture', org: '', role: '', deptPath: [], attrs: {} },
+    trust: 'trusted' as const,
+  }
+  const rows: EventEnvelope[] = [
     {
       seq: 2,
-      ts: '2026-10-09T00:00:00Z',
+      id: '00000000000000000000000002',
+      ...base,
       origin: 'ext:agnes/intelligent-ui',
       type: 'x/agnes/intelligent-ui/surface.updated',
       data: {
@@ -21,19 +27,29 @@ it('decorates trace revisions and outcomes without changing cached turns or expo
     },
     {
       seq: 3,
-      ts: '2026-10-09T00:00:00Z',
+      id: '00000000000000000000000003',
+      ...base,
       origin: 'ext:agnes/intelligent-ui',
       type: 'x/agnes/intelligent-ui/action.failed',
       data: { receipt: { revision: 2 } },
     },
-    { seq: 4, origin: 'model', type: 'x/agnes/intelligent-ui/action.succeeded', data: {} },
+    {
+      ...base,
+      id: '00000000000000000000000004',
+      seq: 4,
+      origin: 'model',
+      type: 'x/agnes/intelligent-ui/action.succeeded',
+      data: {},
+    },
     {
       seq: 30,
+      id: '00000000000000000000000030',
+      ...base,
       origin: 'ext:agnes/intelligent-ui',
       type: 'x/agnes/intelligent-ui/action.succeeded',
       data: {},
     },
-  ] as EventEnvelope[]
+  ]
   const result = appendUiTrace([turn], rows)
   expect(result[0]!.trace!.children.map((span) => [span.name, span.status])).toEqual([
     ['surface.updated · r2 · Review', 'completed'],

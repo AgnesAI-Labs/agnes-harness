@@ -116,7 +116,7 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
               return bag.add(ports.intelligentUi!.register(factory, toolMeta))
             },
             session(ref: import('@agnes/extension-api').SessionRef) {
-              alive('execute')
+              alive()
               return ports.intelligentUi!.get(ref, m.id)
             },
           }),

@@ -9,7 +9,7 @@ import {
 } from '@agnes/extension-api'
 import { type Actor, type EventEnvelope, rpcError, validateMethod } from '@agnes/protocol'
 
-const refuse = (reason: string): never => {
+function refuse(reason: string): never {
   throw rpcError('SEMANTIC_REJECTED', { reason })
 }
 const turnRange = (rows: readonly EventEnvelope[], turn: number | null) => {
@@ -203,13 +203,21 @@ export const createFeedbackService = (ports: FeedbackPorts): FeedbackService => 
                   row.seq >= range.start.seq && row.seq <= range.end.seq && row.lane === range.start.lane,
               )
             : []
-          if (!evidence.some((row) => row.seq === source.target.messageSeq && row.type === 'assistant/message'))
+          if (
+            !evidence.some((row) => row.seq === source.target.messageSeq && row.type === 'assistant/message')
+          )
             refuse('FEEDBACK_EVIDENCE_UNAVAILABLE')
           const files = await ports.draft(sessionId, source, evidence, signal)
           signal.throwIfAborted()
           candidate = await ports.candidate(sessionId, source, files, signal)
         }
-        if (candidate.origin.sessionKey !== sessionId || candidate.origin.feedbackId !== source.id || candidate.origin.feedbackRevision !== source.revision || candidate.origin.messageSeq !== source.target.messageSeq) refuse('FEEDBACK_CORRUPT')
+        if (
+          candidate.origin.sessionKey !== sessionId ||
+          candidate.origin.feedbackId !== source.id ||
+          candidate.origin.feedbackRevision !== source.revision ||
+          candidate.origin.messageSeq !== source.target.messageSeq
+        )
+          refuse('FEEDBACK_CORRUPT')
         // Once creation succeeds, retain its ledger link even if the caller cancels.
         await ports.append(
           sessionId,

@@ -3141,7 +3141,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       },
       observeSession,
       ...(observability ? { observability } : {}),
-      referenceLimits: deps.referenceLimits,
+      ...(deps.referenceLimits ? { referenceLimits: deps.referenceLimits } : {}),
       providers: { catalog: () => pluginTree.root.providers.catalog() },
       modelAdapterCatalog: () => modelAdapterCatalog(pluginTree.root),
       sessionPresetDefault: async () => (await sessionConfiguration.sessionDefaults()).defaults.preset,

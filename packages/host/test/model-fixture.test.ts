@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
+import type { InferenceEvent } from '@agnes/protocol'
 import {
   fakeRequest,
   ScriptedProvider,
@@ -104,7 +105,7 @@ it('preserves failure prefixes, refuses abandoned recordings, and requires every
     await expect(drain(recorder.provider.infer(fakeRequest(), input()))).rejects.toThrow('synthetic failure')
     await recorder.close()
     const replay = await replayModelFixture(file)
-    const seen = []
+    const seen: InferenceEvent[] = []
     await expect(
       (async () => {
         for await (const event of replay.provider.infer(fakeRequest(), input())) seen.push(event)

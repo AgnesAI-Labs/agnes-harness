@@ -60,7 +60,8 @@ it('persists feedback revisions and withdrawal in the ledger, restores them, and
   ])
   let candidate: AuthoringCandidate | undefined
   const candidates = new Map<string, AuthoringCandidate>()
-  let failLink = false, drafts = 0
+  let failLink = false,
+    drafts = 0
   const ports: FeedbackPorts = {
     sessions: async () => ({ ids: ['s'], truncated: false }),
     scan: (_id, types) => log.scan({ type: [...types], order: 'asc', limit: 100 }),
@@ -85,7 +86,13 @@ it('persists feedback revisions and withdrawal in the ledger, restores them, and
       let id = 0
       return () => `feedback-${++id}`
     })(),
-    recoverCandidate: async (id, item) => [...candidates.values()].find((value) => value.origin.sessionKey === id && value.origin.feedbackId === item.id && value.origin.feedbackRevision === item.revision) ?? null,
+    recoverCandidate: async (id, item) =>
+      [...candidates.values()].find(
+        (value) =>
+          value.origin.sessionKey === id &&
+          value.origin.feedbackId === item.id &&
+          value.origin.feedbackRevision === item.revision,
+      ) ?? null,
     draft: async (_id, item, evidence) => {
       drafts++
       expect(evidence.map((e) => e.seq)).toEqual([1, 2, 3, 4])
@@ -203,7 +210,13 @@ it('persists feedback revisions and withdrawal in the ledger, restores them, and
     await expect(service.execute(request, author, signal)).rejects.toMatchObject({ data: { reason } })
   }
   failLink = true
-  await expect(service.execute({ action: 'generate', sessionId: 's', id: 'feedback-1', expectedRevision: 5 }, actor, signal)).rejects.toThrow('ledger link interrupted')
+  await expect(
+    service.execute(
+      { action: 'generate', sessionId: 's', id: 'feedback-1', expectedRevision: 5 },
+      actor,
+      signal,
+    ),
+  ).rejects.toThrow('ledger link interrupted')
   expect(candidates.size).toBe(1)
   expect(drafts).toBe(1)
   service = createFeedbackService(ports)
@@ -406,7 +419,7 @@ it('uses only local scripted inference, rejects invalid drafts, and never execut
   }
   // A narrow fixture deliberately has no turn, tool, memory-edit or package-publication methods.
   const session = {
-    preset: { model: { route: { primary: { route: 'local', model: 'script' } } } },
+    preset: { model: { route: { primary: 'local' }, id: { primary: 'script' } } },
     d: { provider, contract: { contract_id: null, parser_version: '1' } },
   } as unknown as HostSession
   await expect(draftFeedbackSkill(session, feedback, [], signal)).rejects.toMatchObject({

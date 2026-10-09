@@ -53,7 +53,10 @@ describe('resolved approval mode', () => {
       const error = await refused({
         builtin: 'local-dev',
         lock: { ...lock, workspace },
-        workspaceOverlay: { approvals: { mode } },
+        // Deliberately malformed repository input must still be refused at runtime.
+        workspaceOverlay: { approvals: { mode } } as unknown as NonNullable<
+          ProfileInputs['workspaceOverlay']
+        >,
       })
       expect(error).toMatchObject({
         code: 'E_PROFILE_FRAGMENT_KEY',

@@ -21,10 +21,7 @@
     "testkit/record-transitions.ts",
     "testkit/tool-heavy-ledger.ts"
   ],
-  "exclude": [
-    "dist",
-    "node_modules"
-  ],
+  "exclude": ["dist", "node_modules"],
   "references": [
     {
       "path": "."
@@ -34,6 +31,9 @@
     },
     {
       "path": "../core-ledger/tsconfig.testkit.json"
+    },
+    {
+      "path": "../loop-default"
     }
   ]
 }

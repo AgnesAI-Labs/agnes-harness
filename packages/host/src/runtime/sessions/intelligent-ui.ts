@@ -76,7 +76,7 @@ export function createIntelligentUiAdapter(
           registration.meta,
         )
       },
-      tools: () => session.d.tools.list(),
+      tools: () => session.currentTools().list(),
       deliver: (key, text, actor, signal) =>
         enqueueSessionInputOnce(
           session,

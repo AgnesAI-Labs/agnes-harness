@@ -119,6 +119,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
     const source: RuntimePluginSnapshot = {
       snapshot: {
         packageId: id,
+        profile: 'local-dev',
         version: next.version,
         directory: folder,
         snapshotId: integrity,

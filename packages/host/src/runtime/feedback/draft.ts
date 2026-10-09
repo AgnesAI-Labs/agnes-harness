@@ -76,8 +76,11 @@ export async function draftFeedbackSkill(
   const work = async () => {
     signal.throwIfAborted()
     if (session.closingOrClosed) throw rpcError('SEMANTIC_REJECTED', { reason: 'FEEDBACK_SESSION_CLOSED' })
-    const route = session.preset.model.route.primary
-    const model = session.d.provider.models().find((m) => m.route === route.route && m.id === route.model)
+    const routeId = session.preset.model.route.primary
+    const modelId = session.preset.model.id.primary
+    const model = session.d.provider
+      .models()
+      .find((m) => m.route === routeId && (modelId ? m.id === modelId : m.slot === 'primary'))
     let url: URL
     try {
       url = new URL(model?.baseUrl ?? '')
@@ -92,6 +95,7 @@ export async function draftFeedbackSkill(
       !!url.password
     )
       throw rpcError('SEMANTIC_REJECTED', { reason: 'FEEDBACK_LOCAL_MODEL_REQUIRED' })
+    const route = { route: model.route, model: model.id }
     const controller = new AbortController()
     const abort = () => controller.abort()
     signal.addEventListener('abort', abort, { once: true })
