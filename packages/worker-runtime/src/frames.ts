@@ -26,6 +26,7 @@ export type SessionMethod =
   | 'projectUIHistory'
   | 'toolCatalog'
   | 'readToolDetail'
+  | 'feedback.draft'
   | 'workspaceFiles'
   | 'workspaceChanges'
   | 'append'

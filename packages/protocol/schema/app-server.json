@@ -1459,9 +1459,299 @@
       },
       "required": [],
       "additionalProperties": false
+    },
+    "FeedbackTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "messageSeq": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "turn": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": ["messageSeq", "turn"]
+    },
+    "FeedbackItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "target": {
+          "$ref": "#/$defs/FeedbackTarget"
+        },
+        "rating": {
+          "enum": ["up", "down"]
+        },
+        "category": {
+          "enum": ["", "accuracy", "instruction", "style", "tools", "do-again", "other"]
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "actor": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "updatedAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "withdrawn": {
+          "type": "boolean"
+        },
+        "candidateId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 512
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "candidateHash": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 512
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "sessionId",
+        "target",
+        "rating",
+        "category",
+        "note",
+        "actor",
+        "createdAt",
+        "updatedAt",
+        "revision",
+        "withdrawn",
+        "candidateId",
+        "candidateHash"
+      ]
+    },
+    "FeedbackGrowth": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "feedbackId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "feedbackRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "messageSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "candidateId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "candidateHash": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "reviewHash": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 512
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "reviewer": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 512
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "packageId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 512
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "feedbackId",
+        "feedbackRevision",
+        "messageSeq",
+        "candidateId",
+        "candidateHash",
+        "reviewHash",
+        "state",
+        "reviewer",
+        "packageId",
+        "version"
+      ]
+    },
+    "AdminFeedbackParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": ["list", "put", "withdraw", "generate"]
+        },
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "target": {
+          "$ref": "#/$defs/FeedbackTarget"
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "expectedRevision": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rating": {
+          "enum": ["up", "down"]
+        },
+        "category": {
+          "enum": ["", "accuracy", "instruction", "style", "tools", "do-again", "other"]
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "hasCandidate": {
+          "type": "boolean"
+        }
+      },
+      "required": ["action"]
+    },
+    "AdminFeedbackResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FeedbackItem"
+          },
+          "maxItems": 4096
+        },
+        "growth": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FeedbackGrowth"
+          },
+          "maxItems": 4096
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "up": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "down": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "withdrawn": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "withCandidate": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": ["up", "down", "withdrawn", "withCandidate"]
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "required": ["items", "growth", "counts", "truncated"]
     }
   },
   "x-methods": {
+    "_agnes/v1/admin.feedback": { "params": "AdminFeedbackParams", "result": "AdminFeedbackResult" },
     "_agnes/v1/admin.bundles.get": {
       "params": "AdminEmpty",
       "result": "AdminBundlesResult"

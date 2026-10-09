@@ -1,5 +1,6 @@
 import {
   assertHostPublication,
+  draftFeedbackSkill,
   type Host,
   type HostSession,
   manageMemory,
@@ -285,6 +286,22 @@ export async function handleCommand(
 ): Promise<unknown> {
   const p = cmd.params
   switch (cmd.method) {
+    case 'feedback.draft': {
+      const runId = String(p.runId)
+      if (!runId.startsWith('feedback:') || o.aborts.has(runId)) throw new Error('Invalid feedback draft id')
+      const abort = new AbortController()
+      o.aborts.set(runId, abort)
+      try {
+        return await draftFeedbackSkill(
+          session,
+          p.feedback as import('@agnes/extension-api').FeedbackItem,
+          p.evidence as import('@agnes/protocol').EventEnvelope[],
+          AbortSignal.any([abort.signal, AbortSignal.timeout(30_000)]),
+        )
+      } finally {
+        if (o.aborts.get(runId) === abort) o.aborts.delete(runId)
+      }
+    }
     case 'workspaceChanges':
       return sessionWorkspaceChanges(session, p as Parameters<typeof sessionWorkspaceChanges>[1])
     case 'workspaceFiles':

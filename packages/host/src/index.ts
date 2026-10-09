@@ -522,3 +522,6 @@ export {
 export { readProfileTelemetryConsent } from '@agnes/host-runtime/session-hooks'
 export { loadSessionTitle } from '@agnes/host-runtime/session-title'
 export type { CapabilityReason, SessionCapability, SessionCapabilitySet } from '@agnes/protocol'
+
+export { createFeedbackService } from '@agnes/host-runtime/feedback'
+export { draftFeedbackSkill, feedbackSkillFiles } from '@agnes/host-runtime/feedback-draft'

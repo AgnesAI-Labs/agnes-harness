@@ -31,7 +31,8 @@
     "./local/methods/admin": "./src/local/methods/admin.ts",
     "./local/methods/doctor": "./src/local/methods/doctor.ts",
     "./local/methods/prompt-trace": "./src/local/methods/prompt-trace.ts",
-    "./local/methods/fact-chain": "./src/local/methods/fact-chain.ts"
+    "./local/methods/fact-chain": "./src/local/methods/fact-chain.ts",
+    "./local/methods/feedback": "./src/local/methods/feedback.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

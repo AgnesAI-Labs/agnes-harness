@@ -20,12 +20,16 @@ export function contextAdmin(
   observability?: (
     input: AppServerParams<'_agnes/v1/admin.observability'>,
   ) => Promise<AppServerResult<'_agnes/v1/admin.observability'>>,
+  feedback?: (
+    input: AppServerParams<'_agnes/v1/admin.feedback'>,
+  ) => Promise<AppServerResult<'_agnes/v1/admin.feedback'>>,
 ) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
     const url = new URL(request.url ?? '/', origin)
+    const isFeedback = url.pathname === '/api/feedback' && feedback !== undefined
     const isMemory = url.pathname === '/api/memory' && memory !== undefined
     const isObservability = url.pathname === '/api/observability' && observability !== undefined
-    if (url.pathname !== '/api/context' && !isMemory && !isObservability) return false
+    if (url.pathname !== '/api/context' && !isMemory && !isObservability && !isFeedback) return false
     const reply = (status: number, data: unknown) => {
       response.writeHead(status, {
         'Content-Type': 'application/json',
@@ -58,19 +62,23 @@ export function contextAdmin(
       const input: unknown = JSON.parse(
         new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)),
       )
-      const method = isObservability
-        ? '_agnes/v1/admin.observability'
-        : isMemory
-          ? '_agnes/v1/admin.memory'
-          : '_agnes/v1/admin.context'
+      const method = isFeedback
+        ? '_agnes/v1/admin.feedback'
+        : isObservability
+          ? '_agnes/v1/admin.observability'
+          : isMemory
+            ? '_agnes/v1/admin.memory'
+            : '_agnes/v1/admin.context'
       if (!validateMethod(method, 'params', input).ok) throw new Error('request')
       reply(
         200,
-        isObservability
-          ? await observability!(input as AppServerParams<'_agnes/v1/admin.observability'>)
-          : isMemory
-            ? await memory!(input as AppServerParams<'_agnes/v1/admin.memory'>)
-            : await invoke(input as AppServerParams<'_agnes/v1/admin.context'>),
+        isFeedback
+          ? await feedback!(input as AppServerParams<'_agnes/v1/admin.feedback'>)
+          : isObservability
+            ? await observability!(input as AppServerParams<'_agnes/v1/admin.observability'>)
+            : isMemory
+              ? await memory!(input as AppServerParams<'_agnes/v1/admin.memory'>)
+              : await invoke(input as AppServerParams<'_agnes/v1/admin.context'>),
       )
     } catch (error) {
       const rpc = (error as { rpc?: RpcError })?.rpc

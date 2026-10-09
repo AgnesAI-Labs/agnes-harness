@@ -209,7 +209,7 @@ export function createObservability(
       }
     },
     observe(key, event: Readonly<EventEnvelope>) {
-      if (!config.enabled || closed) return
+      if (!config.enabled || closed || event.type.startsWith('x/feedback/')) return
       const s = state(key)
       if (!s || event.seq <= s.lastSeq) return
       s.lastSeq = event.seq
@@ -325,7 +325,7 @@ export function createObservability(
     },
     lifecycle(component, phase, queueDepth, id) {
       const identity = `${component}:${id ?? 'process'}`
-      if (!config.enabled || closed) return
+      if (!config.enabled || closed || event.type.startsWith('x/feedback/')) return
       if (phase === 'start') {
         end(processes.get(identity), true)
         processes.set(

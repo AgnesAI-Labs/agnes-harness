@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { PreviewSnapshotEntry } from '@agnes/daemon-foundation/registry'
 import type { WorkspaceBindingEnvelope } from '@agnes/daemon-foundation/storage/workspaces'
 import type { Actor, EventEnvelope } from '@agnes/protocol'
@@ -67,6 +68,33 @@ export class RemoteSession {
     if (!e.register) return
     const dataKey = (e.data as { key?: string } | null)?.key ?? ''
     this.latestCache.set(`${e.register}/${dataKey}`, e.data)
+  }
+
+  async draftFeedback(
+    feedback: import('@agnes/extension-api').FeedbackItem,
+    evidence: readonly EventEnvelope[],
+    signal: AbortSignal,
+  ): Promise<readonly { path: string; content: string }[]> {
+    signal.throwIfAborted()
+    const runId = `feedback:${randomUUID()}`
+    const release = this.beginActivity()
+    const abort = () => {
+      void this.link.command('cancel', { runId }).catch(() => undefined)
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    try {
+      const files = await this.link.command(
+        'feedback.draft',
+        { feedback, evidence, runId },
+        { timeoutMs: 35_000 },
+      )
+      signal.throwIfAborted()
+      return files as readonly { path: string; content: string }[]
+    } finally {
+      signal.removeEventListener('abort', abort)
+      abort()
+      release()
+    }
   }
 
   workspaceChanges(input: {

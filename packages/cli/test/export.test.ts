@@ -294,7 +294,31 @@ describe('export', () => {
         content: [{ type: 'text', text: 'mail alice@example.com' }],
       },
     }
-    const events = [user, cut, { ...assistant, seq: 3 }]
+    const events = [
+      user,
+      cut,
+      { ...assistant, seq: 3 },
+      {
+        ...user,
+        seq: 4,
+        type: 'x/feedback/item',
+        ignorable: true,
+        data: { id: 'feedback-1', note: 'Cite evidence', rating: 'down', target: { messageSeq: 3, turn: 1 } },
+      } as EventEnvelope,
+      {
+        ...user,
+        seq: 5,
+        type: 'x/feedback/growth',
+        ignorable: true,
+        data: {
+          feedbackId: 'feedback-1',
+          feedbackRevision: 4,
+          messageSeq: 3,
+          candidateId: 'candidate-local',
+          candidateHash: 'sha256-' + 'a'.repeat(64),
+        },
+      } as EventEnvelope,
+    ]
     const exported = async (argv: string[]) => {
       const ep = endpoint(events)
       const client = await clientFor(ep)
@@ -315,7 +339,9 @@ describe('export', () => {
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line) as EventEnvelope)
-    expect(rows.map((row) => row.seq)).toEqual([1, 2, 3])
+    expect(rows.map((row) => row.seq)).toEqual([1, 2, 3, 4, 5])
+    expect(rows.slice(3).map((row) => row.type)).toEqual(['x/feedback/item', 'x/feedback/growth'])
+    expect(rows[3]?.data).toMatchObject({ id: 'feedback-1', rating: 'down', note: 'Cite evidence' })
     expect(redacted.output).not.toContain('alice@example.com')
     expect((await exported(['--raw'])).output).toContain('alice@example.com')
   })

@@ -1,3 +1,6 @@
+import { runQueued } from '@agnes/daemon-rpc/local/command-queue'
+import { registerFeedback } from '@agnes/daemon-rpc/local/methods/feedback'
+import { feedbackPorts } from './feedback-ports.js'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -673,6 +676,8 @@ async function persistResolvedProfile(file: string, profile: ResolvedProfile): P
 }
 
 export type StartSupervisorOptions = {
+  feedbackServiceFactory?: import('@agnes/extension-api').FeedbackServiceFactory
+
   config: DaemonConfig
   profile: ResolvedProfile
   /** `join(home, 'profiles', profile.name)`. Not derivable from `profile.dataDir`: a profile's
@@ -2055,6 +2060,64 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         ...(o.configuration ? { configuration: o.configuration } : {}),
         connection: async () => true,
       })
+      if (effectivePackageAdmin)
+        registerFeedback(ep, {
+          ...(o.feedbackServiceFactory ? { factory: o.feedbackServiceFactory } : {}),
+          authority:
+            transport === 'unix'
+              ? (effectivePackageAdmin.unixAuthority ?? localPackageAdminAuthority())
+              : (effectivePackageAdmin.webAuthority ?? denyPackageAdminAuthority),
+          owner: (id, context) => requireSessionOwner(cx)('feedback', id, context),
+          actor: async (id, context) => {
+            if (!cx.resolveActor) throw rpcError('CAPABILITY_DENIED')
+            return cx.resolveActor(context.conn.credential, 'session', id)
+          },
+          serialize: (id, signal, work) => runQueued(cx.commandQueue, id, signal, work),
+          ports: (context) => {
+            const authority = (
+              transport === 'unix'
+                ? (effectivePackageAdmin!.unixAuthority ?? localPackageAdminAuthority())
+                : (effectivePackageAdmin!.webAuthority ?? denyPackageAdminAuthority)
+            )(context)
+            if (!authority) throw rpcError('CAPABILITY_DENIED')
+            return feedbackPorts({
+              context,
+              profile: o.profile.name,
+              authority,
+              packages: effectivePackageAdmin!.service,
+              ids: sessionOwnership.activeSessionIds(context.conn.principalId),
+              session: (id) => registry.require(id).session,
+              scan: async (id, types) => {
+                requireSessionOwner(cx)('feedback', id, context)
+                const scan =
+                  o.sessionFactRead?.(id) ??
+                  ((
+                    query: Parameters<
+                      import('@agnes/host').ScanRead<import('@agnes/protocol').EventEnvelope>
+                    >[0],
+                  ) => registry.require(id).session.scan(query))
+                const rows: import('@agnes/protocol').EventEnvelope[] = []
+                let fromSeq = 1,
+                  bytes = 0
+                while (rows.length <= 4096) {
+                  const page = await scan({
+                    type: [...types],
+                    order: 'asc',
+                    fromSeq,
+                    limit: Math.min(100, 4097 - rows.length),
+                  })
+                  bytes += Buffer.byteLength(JSON.stringify(page), 'utf8')
+                  if (bytes > 4 * 1024 * 1024)
+                    throw rpcError('SEMANTIC_REJECTED', { reason: 'FEEDBACK_READ_LIMIT' })
+                  rows.push(...page)
+                  if (rows.length <= 4096 && page.length < 100) return rows
+                  fromSeq = page.at(-1)!.seq + 1
+                }
+                throw rpcError('SEMANTIC_REJECTED', { reason: 'FEEDBACK_READ_LIMIT' })
+              },
+            })
+          },
+        })
       registerFactChain(ep, {
         requireSessionOwner: requireSessionOwner(cx),
         scan: o.sessionFactRead ?? ((key) => (query) => cx.registry.require(key).session.scan(query)),

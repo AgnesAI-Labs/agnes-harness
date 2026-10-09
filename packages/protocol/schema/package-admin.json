@@ -2838,6 +2838,9 @@
           "type": "string",
           "maxLength": 512
         },
+        "feedbackId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "feedbackRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "messageSeq": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "turn": {
           "type": "integer",
           "minimum": 0,

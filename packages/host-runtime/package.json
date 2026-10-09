@@ -28,7 +28,9 @@
     "./session-title": "./src/session-title.ts",
     "./session": "./src/session.ts",
     "./memory-admin": "./src/memory-admin.ts",
-    "./fact-chain-binding": "./src/fact-chain-binding.ts"
+    "./fact-chain-binding": "./src/fact-chain-binding.ts",
+    "./feedback": "./src/feedback.ts",
+    "./feedback-draft": "./src/feedback-draft.ts"
   },
   "scripts": {
     "typecheck": "tsc -b"

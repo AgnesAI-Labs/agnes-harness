@@ -2365,6 +2365,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       const stop = session.onAppended((events) => {
         for (const event of events) {
           try {
+            if (event.type.startsWith('x/feedback/')) continue
             observability.observe(key, session.d.memory ? memoryPrivateEvent(event) : event)
           } catch {
             /* Passive observation. */

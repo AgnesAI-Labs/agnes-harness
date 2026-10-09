@@ -89,6 +89,8 @@ it.each([false, true])(
       event('turn/end', { reason: 'error' })
       event('turn/start', { turn: 2 })
       event('turn/end', { reason: 'aborted' })
+      event('x/feedback/item', { note: 'LOCAL_FEEDBACK_ONLY', actor: 'LOCAL_FEEDBACK_ACTOR' })
+      event('x/feedback/growth', { candidateId: 'LOCAL_FEEDBACK_CANDIDATE' })
       provider.lifecycle('daemon', 'start')
       provider.lifecycle('worker', 'start', undefined, 'worker')
       provider.lifecycle('worker', 'restart', undefined, 'worker')
@@ -99,6 +101,10 @@ it.each([false, true])(
       if (memoryPrivate) expect(payload).not.toContain('explicitly shared')
       else expect(payload).toContain('explicitly shared')
       for (const secret of [
+        'LOCAL_FEEDBACK_ONLY',
+        'LOCAL_FEEDBACK_ACTOR',
+        'LOCAL_FEEDBACK_CANDIDATE',
+        'x/feedback/',
         'synthetic-credential',
         'synthetic-key',
         'synthetic-session',

@@ -27,6 +27,9 @@ const origin = {
   packageId: '@agnes/base',
   snapshotId: 'builtin',
   rowId: 'ext:creator/main',
+  feedbackId: 'feedback-1',
+  feedbackRevision: 17,
+  messageSeq: 12,
 }
 const files = [
   {
@@ -93,6 +96,7 @@ async function review(s: ReturnType<typeof setup>, command = 'draft') {
 it('keeps drafts outside discovery and binds tests, diffs, capabilities and provenance to one review; editing invalidates the old decision', async () => {
   const s = setup()
   const r = await review(s)
+  expect(r.origin).toMatchObject({ feedbackId: 'feedback-1', feedbackRevision: 17, messageSeq: 12 })
   expect(discoverLocalPlugins(localPluginRoots(join(s.root, 'home'), join(s.root, 'workspace')))).toEqual([])
   expect((await s.manager.inventory(s.profile)).packages).toEqual([])
   await expect(

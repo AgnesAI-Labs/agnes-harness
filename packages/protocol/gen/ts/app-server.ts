@@ -44,6 +44,11 @@ export const AppServerV1 = Type.Module({
   "WebhookSnapshot": Type.Object({ "config": Type.Ref('WebhookConfig'), "rules": Type.Array(Type.Ref('WebhookRule'), { maxItems: 128 }), "deliveries": Type.Array(Type.Ref('WebhookDelivery'), { maxItems: 200 }), "secretRefs": Type.Array(Type.String({ minLength: 1, maxLength: 256, pattern: "^secret://[a-z0-9-]+/[a-z0-9._-]+$" }), { maxItems: 4096 }) }, { additionalProperties: false }),
   "WebhookRequest": Type.Object({ "action": Type.Union([Type.Literal('list'), Type.Literal('configure'), Type.Literal('upsert'), Type.Literal('delete'), Type.Literal('test'), Type.Literal('deliver')]), "config": Type.Optional(Type.Ref('WebhookConfig')), "rule": Type.Optional(Type.Ref('WebhookRule')), "ruleId": Type.Optional(Type.String({ minLength: 1, maxLength: 64 })), "payload": Type.Optional(JsonValue), "body": Type.Optional(Type.String({ maxLength: 1400000 })), "headers": Type.Optional(Type.Record(Type.String(), Type.String({ maxLength: 1024 }))), "tooLarge": Type.Optional(Type.Boolean()) }, { additionalProperties: false }),
   "WebhookResult": Type.Object({ "snapshot": Type.Optional(Type.Ref('WebhookSnapshot')), "delivery": Type.Optional(Type.Ref('WebhookDelivery')) }, { additionalProperties: false }),
+  "FeedbackTarget": Type.Object({ "messageSeq": Type.Union([Type.Integer({ minimum: 1, maximum: 9007199254740991 }), Type.Null()]), "turn": Type.Union([Type.Integer({ minimum: 1, maximum: 9007199254740991 }), Type.Null()]) }, { additionalProperties: false }),
+  "FeedbackItem": Type.Object({ "id": Type.String({ maxLength: 512 }), "sessionId": Type.String({ maxLength: 512 }), "target": Type.Ref('FeedbackTarget'), "rating": Type.Union([Type.Literal('up'), Type.Literal('down')]), "category": Type.Union([Type.Literal(''), Type.Literal('accuracy'), Type.Literal('instruction'), Type.Literal('style'), Type.Literal('tools'), Type.Literal('do-again'), Type.Literal('other')]), "note": Type.String({ maxLength: 4000 }), "actor": Type.String({ maxLength: 512 }), "createdAt": Type.String({ maxLength: 64 }), "updatedAt": Type.String({ maxLength: 64 }), "revision": Type.Integer({ minimum: 1, maximum: 9007199254740991 }), "withdrawn": Type.Boolean(), "candidateId": Type.Union([Type.String({ maxLength: 512 }), Type.Null()]), "candidateHash": Type.Union([Type.String({ maxLength: 512 }), Type.Null()]) }, { additionalProperties: false }),
+  "FeedbackGrowth": Type.Object({ "feedbackId": Type.String({ maxLength: 512 }), "feedbackRevision": Type.Integer({ minimum: 1, maximum: 9007199254740991 }), "messageSeq": Type.Integer({ minimum: 1, maximum: 9007199254740991 }), "candidateId": Type.String({ maxLength: 512 }), "candidateHash": Type.String({ maxLength: 512 }), "reviewHash": Type.Union([Type.String({ maxLength: 512 }), Type.Null()]), "state": Type.String({ maxLength: 512 }), "reviewer": Type.Union([Type.String({ maxLength: 512 }), Type.Null()]), "packageId": Type.String({ maxLength: 512 }), "version": Type.Union([Type.String({ maxLength: 512 }), Type.Null()]) }, { additionalProperties: false }),
+  "AdminFeedbackParams": Type.Object({ "action": Type.Union([Type.Literal('list'), Type.Literal('put'), Type.Literal('withdraw'), Type.Literal('generate')]), "sessionId": Type.Optional(Type.String({ maxLength: 512 })), "target": Type.Optional(Type.Ref('FeedbackTarget')), "id": Type.Optional(Type.String({ maxLength: 512 })), "expectedRevision": Type.Optional(Type.Union([Type.Integer({ minimum: 1, maximum: 9007199254740991 }), Type.Null()])), "rating": Type.Optional(Type.Union([Type.Literal('up'), Type.Literal('down')])), "category": Type.Optional(Type.Union([Type.Literal(''), Type.Literal('accuracy'), Type.Literal('instruction'), Type.Literal('style'), Type.Literal('tools'), Type.Literal('do-again'), Type.Literal('other')])), "note": Type.Optional(Type.String({ maxLength: 4000 })), "hasCandidate": Type.Optional(Type.Boolean()) }, { additionalProperties: false }),
+  "AdminFeedbackResult": Type.Object({ "items": Type.Array(Type.Ref('FeedbackItem'), { maxItems: 4096 }), "growth": Type.Array(Type.Ref('FeedbackGrowth'), { maxItems: 4096 }), "counts": Type.Object({ "up": Type.Integer({ minimum: 0 }), "down": Type.Integer({ minimum: 0 }), "withdrawn": Type.Integer({ minimum: 0 }), "withCandidate": Type.Integer({ minimum: 0 }) }, { additionalProperties: false }), "truncated": Type.Boolean() }, { additionalProperties: false }),
 })
 
 export const AppServerErrorCause = AppServerV1.Import('AppServerErrorCause')
@@ -124,8 +129,19 @@ export const WebhookRequest = AppServerV1.Import('WebhookRequest')
 export type WebhookRequest = Static<typeof WebhookRequest>
 export const WebhookResult = AppServerV1.Import('WebhookResult')
 export type WebhookResult = Static<typeof WebhookResult>
+export const FeedbackTarget = AppServerV1.Import('FeedbackTarget')
+export type FeedbackTarget = Static<typeof FeedbackTarget>
+export const FeedbackItem = AppServerV1.Import('FeedbackItem')
+export type FeedbackItem = Static<typeof FeedbackItem>
+export const FeedbackGrowth = AppServerV1.Import('FeedbackGrowth')
+export type FeedbackGrowth = Static<typeof FeedbackGrowth>
+export const AdminFeedbackParams = AppServerV1.Import('AdminFeedbackParams')
+export type AdminFeedbackParams = Static<typeof AdminFeedbackParams>
+export const AdminFeedbackResult = AppServerV1.Import('AdminFeedbackResult')
+export type AdminFeedbackResult = Static<typeof AdminFeedbackResult>
 
 export const ADMIN_METHODS = {
+  "_agnes/v1/admin.feedback": {kind:'request',direction:'c2s',params:AdminFeedbackParams,result:AdminFeedbackResult},
   "_agnes/v1/admin.bundles.get": {kind:'request',direction:'c2s',params:AdminEmpty,result:AdminBundlesResult},
   "_agnes/v1/admin.bundles.save": {kind:'request',direction:'c2s',params:AdminBundlesSave,result:AdminBundlesResult},
   "_agnes/v1/admin.composition.get": {kind:'request',direction:'c2s',params:AdminCompositionParams,result:AdminCompositionResult},

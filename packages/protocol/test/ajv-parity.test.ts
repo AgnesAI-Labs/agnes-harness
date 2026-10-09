@@ -6731,6 +6731,11 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/admin.feedback': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminFeedbackParams',
+    result: 'AdminFeedbackResult',
+  },
   '_agnes/v1/session.control': {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
     params: 'SessionControlParams',
@@ -7442,6 +7447,10 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/admin.feedback': {
+    valid: { action: 'list' },
+    invalid: [{ action: 'send' }, { action: 'put', rating: 'bad' }],
+  },
   '_agnes/v1/session.control': {
     valid: { sessionId: 'owned', action: 'pause', commandId: 'c' },
     invalid: [
