@@ -16,6 +16,7 @@ import {
   verifyLockIntegrity,
 } from '@agnes/host'
 import type { AgnesPluginManifestEntry } from '@agnes/package-manager'
+import { AGNES_BASE_PLUGIN_METADATA } from './base-plugin-metadata.js'
 
 declare const AGNES_BASE_EXTENSION_MANIFESTS: NonNullable<PackageModule['embeddedExtensions']> | undefined
 declare const AGNES_CODE_EXTENSION_MANIFESTS: NonNullable<PackageModule['embeddedExtensions']> | undefined
@@ -241,7 +242,10 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         apiRange: '^1.4.0',
       },
     ] satisfies readonly Readonly<AgnesPluginManifestEntry>[]
-  ).map((entry) => Object.freeze(entry)),
+  ).map((entry) => {
+    const metadata = AGNES_BASE_PLUGIN_METADATA[entry.id]
+    return Object.freeze({ ...entry, ...(metadata === undefined ? {} : { metadata }) })
+  }),
 )
 
 export const AGNES_CODE_PLUGIN_DECLARATIONS = Object.freeze([
