@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { lstatSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
-import { HOME_LAYOUT_VERSION, inspectHome } from './home-layout.js'
+import { basename, dirname, join, resolve } from 'node:path'
+import { withConfigurationLock } from './configuration-lock.js'
+import { HOME_LAYOUT_VERSION, homeLayout, inspectHome } from './home-layout.js'
 
 const MARKER = 'home-layout.json'
 const homeFault = (code: string) => Object.assign(new Error(code), { code })
@@ -44,4 +45,16 @@ export function initializeHome(home: string, profile = 'local-dev') {
     directory(path, resolve(home))
   if (info.version === null) publishMarker(home)
   return inspectHome(home, profile)
+}
+
+/** Serialize process startup before the marker and private directories are published. */
+export async function initializeHomeLocked(home: string, profile = 'local-dev') {
+  homeLayout(home, profile)
+  const canonicalHome = resolve(home)
+  // Keep the lock outside a fresh home so inspection cannot mistake it for unknown user data.
+  directory(dirname(canonicalHome))
+  return withConfigurationLock(
+    join(dirname(canonicalHome), `.${basename(canonicalHome)}.initialize.sqlite`),
+    async () => initializeHome(canonicalHome, profile),
+  )
 }

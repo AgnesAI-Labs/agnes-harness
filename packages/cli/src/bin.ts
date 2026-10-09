@@ -419,7 +419,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
   const production = Object.keys(boot).length === 0
   let diagnosticHome = home
   if (production && p.command !== 'doctor') {
-    const { initializeHome } = await import('@agnes/host')
+    const { initializeHomeLocked } = await import('@agnes/host')
     const { startupFailure } = await import('./commands/first-run-locales.js')
     try {
       let profile = p.profile ?? 'local-dev'
@@ -430,7 +430,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         profile = web.profile ?? profile
       }
       // Publish the layout before the diagnostic journal becomes the first home writer.
-      initializeHome(diagnosticHome, profile)
+      await initializeHomeLocked(diagnosticHome, profile)
     } catch (error) {
       const message = startupFailure(error, io.env)
       if (!message) throw error

@@ -13,7 +13,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { isHostError } from '../src/errors.js'
-import { initializeHome } from '../src/home-initialize.js'
+import { initializeHome, initializeHomeLocked } from '../src/home-initialize.js'
 import { homeLayout, inspectHome } from '../src/home-layout.js'
 import {
   agnesHome,
@@ -220,7 +220,7 @@ describe('ownStateRoots', () => {
 })
 
 describe('versioned home layout', () => {
-  it('inspects a fresh home without writes and initializes private paths with a stable marker', () => {
+  it('inspects a fresh home without writes and initializes private paths with a stable marker', async () => {
     const home = join(scratch(), 'fresh')
     expect(inspectHome(home)).toMatchObject({ state: 'fresh', version: null })
     expect(existsSync(home)).toBe(false)
@@ -229,6 +229,13 @@ describe('versioned home layout', () => {
     expect(initializeHome(home).instanceId).toBe(info.instanceId)
     expect(info.instanceId).toMatch(/^[a-f0-9-]{36}$/)
     expect(initializeHome(home + '/').instanceId).toBe(info.instanceId)
+    await expect(initializeHomeLocked('relative-home')).rejects.toThrow('E_HOME_INVALID')
+    const concurrentHome = join(scratch(), 'concurrent')
+    const initializations = await Promise.all(
+      ['local-dev', 'other'].map((profile) => initializeHomeLocked(concurrentHome, profile)),
+    )
+    expect(initializations.every((result) => result.instanceId === initializations[0]?.instanceId)).toBe(true)
+    expect(initializations.map((result) => result.state)).toEqual(['current', 'current'])
     if (process.platform !== 'win32') {
       expect(lstatSync(home).mode & 0o777).toBe(0o700)
       expect(lstatSync(join(home, 'home-layout.json')).mode & 0o777).toBe(0o600)
