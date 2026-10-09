@@ -5,6 +5,8 @@ export async function observabilityRequest(
   input: AdminObservabilityParams = {},
   signal?: AbortSignal,
 ): Promise<AdminObservabilityResult> {
+  if (!validateMethod('_agnes/v1/admin.observability', 'params', input).ok)
+    throw new Error('Exporter settings unavailable')
   const response = await fetch('/api/observability', {
     method: 'POST',
     credentials: 'same-origin',

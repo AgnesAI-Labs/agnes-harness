@@ -30,9 +30,9 @@ batchMs 和 timeoutMs 为 10–30000 毫秒，queueSize 为 1–16384 条，batc
 
 提交后的公开事件产生 session → turn → step → model/tool spans，每个 ledger 事件另有相关联的 OTLP logs（类型、序号、时间）。Resource 包含 service/version、哈希 workspace/session/pin 和 Host 提供的 generation ID；保留子代理和 daemon/worker 生命周期 spans，以及 duration/token/tool/queue metrics。通过公开 observabilityKind 可替换导出器；bindSession(key, resource) 接收身份和私有根，可选 health() 查询发送健康。Core 不执行网络导出。
 
-默认 metadata 只传元数据。content 显式开启有界用户、助手、工具内容。凭据字段、已知 secret 格式、引用的 header 值以及涉及私有状态根的内容被删除或脱敏。启用 memory 的会话只传结构事件；导出器不读取私有文件。内容仍可能含业务机密，开启前需授权目标端点。
+默认 metadata 只传元数据。content 显式开启有界用户、助手、工具内容。凭据字段、已知 secret 格式、引用的 header 值、凭据环境变量值以及涉及私有状态根的内容被删除或脱敏。工具调用提及私有根时，该会话和子会话的后续内容整体省略，包括不再携带路径的结果。过大或过深的内容整体省略，不截断序列化。启用 memory 的会话只传结构事件；导出器不读取私有文件。内容仍可能含业务机密，开启前需授权目标端点。
 
-同进程同 home 的代际租约共享 session 序号水位、活动 spans 和发送队列。重叠的代际切换保留在途请求，不重放已接纳事件。排队记录沿用捕获时的端点与隐私策略，关闭只停止新的捕获；最后租约释放时排空。此机制为尽力遥测：进程崩溃丢失内存队列，网络回执不明确时重试可能导致 collector 重复。不能代替持久 ledger，不实现 feedback 授权前缀上传。不同 OS 进程使用独立管线。
+同进程同 home 的代际租约共享 session 序号水位、活动 spans 和发送队列。重叠的代际切换保留在途请求，不重放已接纳事件。排队记录沿用捕获时的端点与隐私策略，关闭只停止新的捕获；活配置变化会清除尚未入队 span 的内容；最后租约释放时排空。此机制为尽力遥测：进程崩溃丢失内存队列，网络回执不明确时重试可能导致 collector 重复。不能代替持久 ledger，不实现 feedback 授权前缀上传。不同 OS 进程使用独立管线。
 
 ## 导出支持包
 

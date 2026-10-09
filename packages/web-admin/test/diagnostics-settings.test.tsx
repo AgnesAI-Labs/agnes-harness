@@ -72,6 +72,9 @@ it.each([false, true])(
     expect(errorCode.textContent).toBe('-32602')
     expect(errorCode.closest<HTMLDetailsElement>('details')?.open).toBe(false)
     expect(host.querySelector('[data-testid="otlp-privacy"]')).not.toBeNull()
+    expect(host.querySelector('[data-testid="otlp-worker"]')?.textContent).toContain(
+      'No Worker is currently running',
+    )
     expect(host.querySelector<HTMLDetailsElement>('[data-testid="diagnostics-runtime-details"]')?.open).toBe(
       false,
     )

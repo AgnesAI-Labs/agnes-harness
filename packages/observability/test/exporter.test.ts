@@ -43,7 +43,7 @@ it('exports the session turn step model/tool tree and correlated metadata logs',
       event(3, 'user/message', { content: 'private-prompt' }),
       event(4, 'request/header', { model: 'local' }),
       event(5, 'assistant/message', { content: 'private-output' }),
-      event(6, 'tool/call', { name: 'test', toolUseId: 'call' }),
+      event(6, 'tool/call', { name: 'test', toolUseId: 'call', args: { text: 'private-args' } }),
       event(7, 'tool/result', { toolUseId: 'call', content: 'private-result' }),
       event(8, 'step/end', { turn: 1, step: 1 }),
       event(9, 'turn/end', { reason: 'completed' }),
@@ -60,7 +60,13 @@ it('exports the session turn step model/tool tree and correlated metadata logs',
     expect(logs).toHaveLength(events.length)
     expect(logs.every((row) => row.traceId === span('session').traceId)).toBe(true)
     const wire = JSON.stringify(collector.requests)
-    for (const secret of ['private-prompt', 'private-output', 'private-result', '/synthetic/workspace'])
+    for (const secret of [
+      'private-prompt',
+      'private-output',
+      'private-result',
+      'private-args',
+      '/synthetic/workspace',
+    ])
       expect(wire).not.toContain(secret)
     expect(wire).toContain('generation-2')
     expect(wire).toContain('agh.pin.id')
@@ -72,30 +78,68 @@ it('exports the session turn step model/tool tree and correlated metadata logs',
 
 it('scrubs credential fields, referenced secrets and private roots even with content opt-in', async () => {
   const collector = await memoryCollector()
-  process.env.AGH_TEST_OTLP_SECRET = 'synthetic-header-secret'
+  vi.stubEnv('AGH_TEST_OTLP_SECRET', 'synthetic-header-secret')
+  vi.stubEnv('AGH_TEST_PROVIDER_API_KEY', 'synthetic-provider-secret')
   const provider = createObservability({
     enabled: true,
     endpoint: collector.endpoint,
     redaction: 'content',
     headers: { authorization: { secretRef: 'env:AGH_TEST_OTLP_SECRET' } },
   })
-  const release = provider.bindSession('s', { privateRoots: ['/private/state'] })
+  const release = provider.bindSession('s', {
+    workspace: '/public/workspace',
+    privateRoots: ['/private/state', 'C:\\private\\state'],
+  })
   try {
     provider.observe(
       's',
       event(1, 'user/message', {
-        content: { text: 'public text', password: 'hidden-password', echo: 'synthetic-header-secret' },
+        content: {
+          text: 'public text',
+          password: 'hidden-password',
+          echo: 'synthetic-header-secret',
+          providerEcho: 'synthetic-provider-secret',
+          prose: 'Bearer short-credential',
+        },
       }),
     )
-    provider.observe('s', event(2, 'assistant/message', { content: 'read /private/state/secret' }))
+    provider.observe(
+      's',
+      event(2, 'tool/call', { name: 'test', toolUseId: 'safe', args: { text: 'public args' } }),
+    )
+    provider.observe('s', event(3, 'tool/result', { toolUseId: 'safe', content: 'public result' }))
+    provider.child('s', 'child', 'start')
+    const releaseChild = provider.bindSession('child')
+    provider.observe(
+      's',
+      event(4, 'tool/call', {
+        name: 'read',
+        toolUseId: 'private',
+        args: { path: 'C:\\PRIVATE\\state\\config' },
+      }),
+    )
+    provider.observe('s', event(5, 'tool/result', { toolUseId: 'private', content: 'private-file-body' }))
+    provider.observe('s', event(6, 'assistant/message', { content: 'echo private-file-body' }))
+    provider.observe('child', event(1, 'user/message', { content: 'child echo private-file-body' }))
+    provider.child('s', 'child', 'end')
+    releaseChild()
     release()
     await provider.dispose()
     const wire = JSON.stringify(collector.requests)
     expect(wire).toContain('public text')
-    for (const value of ['hidden-password', 'synthetic-header-secret', '/private/state'])
+    expect(wire).toContain('public args')
+    expect(wire).toContain('public result')
+    for (const value of [
+      'hidden-password',
+      'synthetic-header-secret',
+      'synthetic-provider-secret',
+      'short-credential',
+      '/private/state',
+      'private-file-body',
+    ])
       expect(wire).not.toContain(value)
   } finally {
-    delete process.env.AGH_TEST_OTLP_SECRET
+    vi.unstubAllEnvs()
     await provider.dispose()
     await collector.close()
   }
@@ -113,9 +157,11 @@ it('bounds in-flight delivery, retains retryable failures and flushes after reco
   })
   try {
     transport.add('logs', { body: { stringValue: 'first' } })
-    await transport.flush()
+    const pending = transport.flush()
     transport.add('logs', { body: { stringValue: 'second' } })
     transport.add('logs', { body: { stringValue: 'overflow' } })
+    expect(transport.health()).toMatchObject({ queued: 2, dropped: 1 })
+    await pending
     expect(transport.health()).toMatchObject({ status: 'backoff', queued: 2, dropped: 1 })
     collector.refuse(200)
     const now = Date.now()
@@ -137,7 +183,7 @@ it('keeps a held batch and session watermark through a generation lease switch',
   const home = await mkdtemp(join(tmpdir(), 'agh-otlp-upgrade-'))
   await writeFile(
     join(home, 'observability.json'),
-    JSON.stringify({ enabled: true, endpoint: collector.endpoint }),
+    JSON.stringify({ enabled: true, endpoint: collector.endpoint, redaction: 'content' }),
   )
   let resume!: () => void
   collector.hold(
@@ -146,23 +192,30 @@ it('keeps a held batch and session watermark through a generation lease switch',
     }),
   )
   const old = acquireObservability(home)
-  const oldRelease = old.bindSession('s')
+  const oldRelease = old.bindSession('s', { generation: 'generation-1', privateRoots: ['/private/state'] })
   old.observe('s', event(1, 'turn/start', { turn: 1 }))
+  old.observe('s', event(2, 'user/message', { content: 'old-approved-content' }))
   const pending = old.flush()
-  const next = acquireObservability(home, { endpoint: nextCollector.endpoint })
-  const nextRelease = next.bindSession('s')
+  const next = acquireObservability(home, { endpoint: nextCollector.endpoint, redaction: 'metadata' })
+  const nextRelease = next.bindSession('s', { generation: 'generation-2' })
   try {
     await old.dispose()
-    next.observe('s', event(1, 'turn/start', { turn: 1 }))
-    next.observe('s', event(2, 'turn/end', { reason: 'completed' }))
+    next.observe('s', event(2, 'user/message', { content: 'old-approved-content' }))
+    next.observe('s', event(3, 'user/message', { content: 'new-private-content' }))
+    next.observe('s', event(4, 'turn/end', { reason: 'completed' }))
     oldRelease()
     nextRelease()
     resume()
     await pending
     await next.dispose()
-    expect(records(collector, 'Logs')).toHaveLength(1)
-    expect(records(nextCollector, 'Logs')).toHaveLength(1)
+    expect(records(collector, 'Logs')).toHaveLength(2)
+    expect(JSON.stringify(collector.requests)).toContain('old-approved-content')
+    expect(records(nextCollector, 'Logs')).toHaveLength(2)
     expect(records(nextCollector, 'Spans').filter((row) => row.name === 'turn')).toHaveLength(1)
+    const wire = JSON.stringify(nextCollector.requests)
+    expect(wire).toContain('generation-1')
+    for (const marker of ['old-approved-content', 'new-private-content', 'generation-2'])
+      expect(wire).not.toContain(marker)
   } finally {
     resume()
     await old.dispose()
@@ -182,8 +235,12 @@ it('counts partial rejection and discards queued records under the shutdown disc
     shutdownPolicy: 'discard',
   })
   try {
-    transport.add('logs', { body: { stringValue: 'one' } })
+    const resource = { 'agh.generation.id': 'captured-generation' }
+    transport.add('logs', { body: { stringValue: 'one' } }, resource)
+    resource['agh.generation.id'] = 'later-generation'
     await transport.flush()
+    expect(JSON.stringify(collector.requests)).toContain('captured-generation')
+    expect(JSON.stringify(collector.requests)).not.toContain('later-generation')
     expect(transport.health()).toMatchObject({ status: 'rejected', dropped: 1 })
     transport.add('logs', { body: { stringValue: 'two' } })
     await transport.dispose()

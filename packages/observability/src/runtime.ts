@@ -15,6 +15,7 @@ type Runtime = {
   timer: ReturnType<typeof setInterval>
   config: string
   explicit: Partial<ObservabilityConfig>
+  revision: number
   closing?: Promise<void>
 }
 const globals = globalThis as typeof globalThis & { [key]?: Map<string, Runtime> }
@@ -36,17 +37,21 @@ export function acquireObservability(
       refs: 0,
       config: JSON.stringify(config),
       explicit,
+      revision: 0,
       timer: setInterval(async () => {
         if (reading) return
         reading = true
+        const revision = runtime!.revision
         try {
           const next = await readObservabilityConfig(home, runtime!.explicit),
             identity = JSON.stringify(next)
+          if (runtimes.get(home) !== runtime || runtime!.revision !== revision) return
           if (runtime!.config !== identity) {
             provider.configure(next)
             runtime!.config = identity
           }
         } catch {
+          if (runtimes.get(home) !== runtime || runtime!.revision !== revision) return
           provider.configure({ enabled: false })
           runtime!.config = ''
           /* Invalid live configuration stops capture until a valid snapshot is available. */
@@ -62,6 +67,7 @@ export function acquireObservability(
     runtime.provider.configure(next)
     runtime.config = JSON.stringify(next)
     runtime.explicit = explicit
+    runtime.revision = (runtime.revision ?? 0) + 1
   }
   const owner = runtime
   owner.refs++
@@ -96,5 +102,6 @@ export function configureExporter(home: string, config: ObservabilityConfig): vo
     runtime.provider.configure(config)
     runtime.explicit = {}
     runtime.config = JSON.stringify(config)
+    runtime.revision = (runtime.revision ?? 0) + 1
   }
 }

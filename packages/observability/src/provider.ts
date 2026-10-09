@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto'
-import { looksLikeSecret } from '@agnes/error-sanitization'
 import type { ObservabilityProvider, ObservabilitySession } from '@agnes/extension-api'
 import type { EventEnvelope } from '@agnes/protocol'
-import { type ObservabilityConfig, resolveHeaders, validateObservability } from './config.js'
+import { type ObservabilityConfig, validateObservability } from './config.js'
+import { exportContent } from './content.js'
 import { OtlpTransport, type Resource } from './transport.js'
 
 type Attributes = Record<string, string | number | boolean>
@@ -28,6 +28,7 @@ type SessionState = {
   tools: Map<string, Span>
   lastSeq: number
   refs: number
+  privateContent: boolean
 }
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex')
 const nanos = (ms = Date.now()): string => String(BigInt(Math.max(0, Math.floor(ms))) * 1_000_000n)
@@ -41,46 +42,9 @@ const attributes = (values: Attributes): Span['attributes'] =>
           ? { boolValue: value }
           : { stringValue: value },
   }))
-function content(value: unknown, config: ObservabilityConfig, roots: readonly string[]): string {
-  // Bounds the hot path before parsing/string scrubbing; never recursively scans files.
-  const pending: Array<{ value: unknown; depth: number }> = [{ value, depth: 0 }]
-  let nodes = 0,
-    chars = 0
-  while (pending.length) {
-    const entry = pending.pop()!
-    if (++nodes > 256 || entry.depth > 8) return '<omitted>'
-    if (typeof entry.value === 'string') {
-      chars += entry.value.length
-      if (chars > 16384) return '<omitted>'
-    } else if (entry.value && typeof entry.value === 'object') {
-      for (const child in entry.value) {
-        if (pending.length + nodes > 256) return '<omitted>'
-        pending.push({ value: (entry.value as Record<string, unknown>)[child], depth: entry.depth + 1 })
-      }
-    }
-  }
-  let json: string
-  try {
-    json = JSON.stringify(value) ?? 'null'
-  } catch {
-    return '<omitted>'
-  }
-  if (json.length > 16384 || roots.some((root) => root && json.includes(root))) return '<omitted>'
-  let secrets: string[]
-  try {
-    secrets = Object.values(resolveHeaders(config))
-  } catch {
-    return '<omitted>'
-  }
-  return JSON.stringify(JSON.parse(json), (key, item: unknown) => {
-    if (/secret|password|authorization|credential|api.?key|cookie|token/i.test(key)) return '<redacted>'
-    if (
-      typeof item === 'string' &&
-      (looksLikeSecret(item) || secrets.some((secret) => item.includes(secret)))
-    )
-      return '<redacted>'
-    return item
-  }).slice(0, 4096)
+const putContent = (span: Span, value: string): void => {
+  span.attributes = span.attributes.filter((row) => row.key !== 'agh.content')
+  span.attributes.push(...attributes({ 'agh.content': value }))
 }
 /** No payload leaves this provider unless an explicit administrator enables content export. */
 export function createObservability(
@@ -106,7 +70,7 @@ export function createObservability(
   const end = (span: Span | undefined, failed = false, ms = Date.now()): void => {
     if (!span) return
     const { resource, ...wireSpan } = span
-    transport?.add(
+    transport.add(
       'traces',
       {
         ...wireSpan,
@@ -129,7 +93,7 @@ export function createObservability(
       timeUnixNano: nanos(),
       ...(kind === 'histogram' ? { count: '1', sum: value, bucketCounts: ['1'] } : { asDouble: value }),
     }
-    transport?.add('metrics', {
+    transport.add('metrics', {
       name,
       unit: name.endsWith('duration') ? 'ms' : '1',
       [kind]: {
@@ -146,10 +110,14 @@ export function createObservability(
     if (!found && sessions.size < 512) {
       found = {
         context: {},
-        root: start('session', children.get(key), { 'session.id': hash(key) }),
+        root: {
+          ...start('session', children.get(key), { 'session.id': hash(key) }),
+          resource: { 'session.id': hash(key) },
+        },
         tools: new Map(),
         lastSeq: 0,
         refs: 0,
+        privateContent: false,
       }
       sessions.set(key, found)
     }
@@ -179,7 +147,7 @@ export function createObservability(
     sessions.clear()
     children.clear()
     processes.clear()
-    await transport?.dispose()
+    await transport.dispose()
   }
   const provider: ObservabilityProvider & { configure(config: ObservabilityConfig): void } = {
     id: 'agnes.otel',
@@ -188,14 +156,20 @@ export function createObservability(
       const s = state(key)
       if (s) {
         s.refs++
-        s.context = context
-        s.root.resource = {
-          'session.id': hash(key),
-          ...(context.workspace ? { 'agh.workspace.id': hash(context.workspace) } : {}),
-          ...(context.generation ? { 'agh.generation.id': context.generation } : {}),
-          ...(context.pin ? { 'agh.pin.id': hash(context.pin) } : {}),
-          ...(context.version ? { 'service.version': context.version } : {}),
+        // An overlap must retain the pinned session identity and every private root.
+        s.context = {
+          ...context,
+          ...s.context,
+          privateRoots: [...new Set([...(s.context.privateRoots ?? []), ...(context.privateRoots ?? [])])],
         }
+        s.root.resource ??= {}
+        Object.assign(s.root.resource, {
+          'session.id': hash(key),
+          ...(s.context.workspace ? { 'agh.workspace.id': hash(s.context.workspace) } : {}),
+          ...(s.context.generation ? { 'agh.generation.id': s.context.generation } : {}),
+          ...(s.context.pin ? { 'agh.pin.id': hash(s.context.pin) } : {}),
+          ...(s.context.version ? { 'service.version': s.context.version } : {}),
+        })
       }
       let released = false
       return () => {
@@ -205,13 +179,16 @@ export function createObservability(
         finishTurn(s, true, Date.now())
         end(s.root)
         sessions.delete(key)
-        children.delete(key)
       }
     },
     observe(key, event: Readonly<EventEnvelope>) {
       if (!config.enabled || closed || event.type.startsWith('x/feedback/')) return
       const s = state(key)
-      if (!s || event.seq <= s.lastSeq) return
+      if (!s) {
+        transport.dropped++
+        return
+      }
+      if (event.seq <= s.lastSeq) return
       s.lastSeq = event.seq
       const d = (
         event.data && typeof event.data === 'object' && !Array.isArray(event.data) ? event.data : {}
@@ -219,8 +196,22 @@ export function createObservability(
       const ms = Date.parse(event.ts)
       if (!Number.isFinite(ms)) return
       const parent = () => s.step ?? s.turn ?? s.root
-      const scrub = (value: unknown) => content(value, config, s.context.privateRoots ?? [])
-      const previousSpan = s.model ?? s.tools.get(String(d.toolUseId)) ?? parent()
+      const scrub = (value: unknown) => {
+        if (s.privateContent) return '<omitted>'
+        const copy = exportContent(value, config, s.context)
+        if (copy === '<omitted>')
+          for (const running of sessions.values())
+            if (running.root.traceId === s.root.traceId) running.privateContent = true
+        return copy
+      }
+      const previousSpan =
+        event.type === 'tool/result'
+          ? (s.tools.get(String(d.toolUseId)) ?? parent())
+          : event.type === 'turn/end'
+            ? (s.turn ?? s.root)
+            : event.type === 'step/end'
+              ? (s.step ?? s.turn ?? s.root)
+              : (s.model ?? parent())
       switch (event.type) {
         case 'turn/start':
           finishTurn(s, true, ms)
@@ -239,16 +230,17 @@ export function createObservability(
           s.model = start('model', parent(), { 'model.id': hash(String(d.model ?? 'unknown')) }, ms)
           break
         case 'assistant/message':
-          if (s.model && config.redaction === 'content')
-            s.model.attributes.push(...attributes({ 'agh.content': scrub(d.content) }))
+          if (s.model && config.redaction === 'content') putContent(s.model, scrub(d.content))
           end(s.model, false, ms)
           s.model = undefined
           break
         case 'user/message':
-          if (config.redaction === 'content')
-            parent().attributes.push(...attributes({ 'agh.content': scrub(d.content) }))
+          if (config.redaction === 'content') putContent(parent(), scrub(d.content))
           break
         case 'tool/call':
+          // A result can echo private file contents without repeating its source path.
+          if (scrub(d.args) === '<omitted>') s.privateContent = true
+          end(s.tools.get(String(d.toolUseId)), true, ms)
           if (s.tools.size < 256)
             s.tools.set(
               String(d.toolUseId),
@@ -259,12 +251,12 @@ export function createObservability(
                 ms,
               ),
             )
+          else transport.dropped++
           break
         case 'tool/result': {
           const span = s.tools.get(String(d.toolUseId))
           if (!span) break
-          if (config.redaction === 'content')
-            span.attributes.push(...attributes({ 'agh.content': scrub(d.content) }))
+          if (config.redaction === 'content') putContent(span, scrub(d.content))
           end(span, d.isError === true, ms)
           metric('agh.tool.duration', ms - Number(BigInt(span.startTimeUnixNano) / 1_000_000n), 'histogram')
           metric('agh.tool.calls', 1, 'sum', { error: d.isError === true })
@@ -299,7 +291,7 @@ export function createObservability(
             'agh.ledger.seq': event.seq,
             ...(config.redaction === 'content' &&
             ['user/message', 'assistant/message', 'tool/call', 'tool/result'].includes(event.type)
-              ? { 'agh.content': scrub(d.content ?? d.input) }
+              ? { 'agh.content': scrub(d.content ?? d.args) }
               : {}),
           }),
         },
@@ -307,15 +299,17 @@ export function createObservability(
       )
     },
     child(parent, child, phase, failed) {
+      if (!config.enabled || closed) return
       const s = state(parent)
       if (!s) return
       if (phase === 'start' && !children.has(child) && children.size < 512) {
         const span = start('child', s.turn ?? s.root, { 'child.id': hash(child) })
         children.set(child, span)
-        const running = sessions.get(child)
+        const running = state(child)
         if (running) {
           running.root.traceId = span.traceId
           running.root.parentSpanId = span.spanId
+          running.privateContent ||= s.privateContent
         }
       } else if (phase === 'end') {
         const span = children.get(child)
@@ -328,6 +322,10 @@ export function createObservability(
       if (!config.enabled || closed) return
       if (phase === 'start') {
         end(processes.get(identity), true)
+        if (!processes.has(identity) && processes.size >= 512) {
+          transport.dropped++
+          return
+        }
         processes.set(
           identity,
           start(component, processes.get('daemon:process'), id ? { 'worker.id': hash(id) } : {}),
@@ -351,14 +349,21 @@ export function createObservability(
       return span ? { traceId: span.traceId, spanId: span.spanId } : undefined
     },
     configure(next) {
-      config = validateObservability(next)
+      const validated = validateObservability(next)
+      // Open spans have not been queued yet. They cannot carry old consent to a new destination.
+      for (const s of sessions.values()) {
+        for (const span of [s.root, s.turn, s.step, s.model, ...s.tools.values()])
+          if (span) span.attributes = span.attributes.filter((row) => row.key !== 'agh.content')
+        if (config.enabled !== validated.enabled) {
+          s.turn = s.step = s.model = undefined
+          s.tools.clear()
+        }
+      }
+      config = validated
       transport.configure(config)
     },
-    health: () =>
-      config.enabled
-        ? transport.health()
-        : { status: 'disabled', queued: 0, dropped: transport.dropped, failures: transport.failures },
-    flush: () => transport?.flush() ?? Promise.resolve(),
+    health: () => (config.enabled ? transport.health() : { ...transport.health(), status: 'disabled' }),
+    flush: () => transport.flush(),
     dispose() {
       disposal ??= shutdown()
       return disposal

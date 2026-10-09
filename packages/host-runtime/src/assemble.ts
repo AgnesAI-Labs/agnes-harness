@@ -2360,7 +2360,16 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       const release = observability.bindSession(key, {
         workspace: session.d.cwd,
         ...(generation ? { generation, pin: generation } : { pin: profile.hash }),
-        privateRoots: [deps.homeDir ?? dirname(dirname(deps.profileDir))],
+        privateRoots: [
+          deps.homeDir ?? dirname(dirname(deps.profileDir)),
+          ...privateStateRoots({
+            home: deps.homeDir ?? dirname(dirname(deps.profileDir)),
+            dataDir,
+            workspace: session.d.cwd,
+            profileDir: deps.profileDir,
+            ...(profile.adapters.secrets.path ? { secretsDir: profile.adapters.secrets.path } : {}),
+          }),
+        ],
       })
       const stop = session.onAppended((events) => {
         for (const event of events) {

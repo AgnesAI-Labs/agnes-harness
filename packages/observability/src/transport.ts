@@ -1,6 +1,6 @@
 import type { ObservabilityHealth } from '@agnes/extension-api'
 import { deploymentFetch } from '@agnes/system-node/deployment-network'
-import { type ObservabilityConfig, resolveHeaders } from './config.js'
+import { type ObservabilityConfig, resolveHeaders, validateObservability } from './config.js'
 import { aggregateMetrics } from './metrics.js'
 
 export type Resource = Record<string, string>
@@ -18,7 +18,8 @@ export class OtlpTransport {
   private closed = false
   private closing: Promise<void> | undefined
   private readonly abort = new AbortController()
-  private readonly timer: ReturnType<typeof setInterval>
+  private timer: ReturnType<typeof setInterval> | undefined
+  private scheduled = false
   private retryAt = 0
   private attempts = 0
   private lastExportAt: string | undefined
@@ -26,11 +27,19 @@ export class OtlpTransport {
   dropped = 0
   failures = 0
   constructor(private config: ObservabilityConfig) {
-    this.timer = setInterval(() => void this.flush(false), 10)
-    this.timer.unref()
+    this.config = validateObservability(config)
+    this.schedule()
   }
   configure(config: ObservabilityConfig): void {
-    this.config = config
+    this.config = validateObservability(config)
+    this.schedule()
+  }
+  private schedule(): void {
+    clearInterval(this.timer)
+    this.timer = undefined
+    if (this.closed || (!this.config.enabled && !this.queue.length)) return
+    this.timer = setInterval(() => void this.flush(false), Math.min(this.config.batchMs ?? 1000, 1000))
+    this.timer.unref()
   }
   health(): ObservabilityHealth {
     return {
@@ -42,20 +51,30 @@ export class OtlpTransport {
     }
   }
   add(signal: Signal, value: unknown, resource: Resource = {}): void {
-    if (this.closed || !this.config.enabled) return
+    if (this.closed || this.closing || !this.config.enabled) return
     const size = Buffer.byteLength(JSON.stringify([value, resource])) + 512
     if (this.queue.length >= (this.config.queueSize ?? 1024) || this.bytes + size > 1024 * 1024) {
       this.dropped++
       return
     }
-    this.queue.push({ signal, value, resource, size, config: this.config })
+    this.queue.push({ signal, value, resource: { ...resource }, size, config: this.config })
     this.bytes += size
+    if (
+      !this.scheduled &&
+      this.queue.length >= (this.config.batchSize ?? Math.min(256, this.config.queueSize ?? 1024))
+    ) {
+      this.scheduled = true
+      queueMicrotask(() => {
+        this.scheduled = false
+        void this.flush(false)
+      })
+    }
   }
   flush(force = true): Promise<void> {
     if (this.closed || Date.now() < this.retryAt) return Promise.resolve()
     if (
       !force &&
-      this.queue.length < (this.config.batchSize ?? 256) &&
+      this.queue.length < (this.config.batchSize ?? Math.min(256, this.config.queueSize ?? 1024)) &&
       Date.now() - this.lastFlush < (this.config.batchMs ?? 1000)
     )
       return Promise.resolve()
@@ -75,7 +94,7 @@ export class OtlpTransport {
           row.signal !== first.signal ||
           row.config !== first.config ||
           JSON.stringify(row.resource) !== JSON.stringify(first.resource) ||
-          rows.length >= (first.config.batchSize ?? 256)
+          rows.length >= (first.config.batchSize ?? Math.min(256, first.config.queueSize ?? 1024))
         )
           break
         rows.push(row)
@@ -127,6 +146,7 @@ export class OtlpTransport {
       this.attempts = 0
       this.retryAt = 0
     }
+    if (!this.config.enabled) this.schedule()
   }
   private async send(row: Row, body: string, count: number): Promise<number | 'retry'> {
     try {

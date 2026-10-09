@@ -22,6 +22,16 @@ test('OTLP settings save and collector connection test in both languages', async
       await page.getByTestId('otlp-redaction').selectOption('content')
       await expect(page.getByTestId('otlp-privacy')).toBeVisible()
       await page.getByTestId('otlp-redaction').selectOption('metadata')
+      await page.getByTestId('otlp-limits-toggle').click()
+      await page.getByTestId('otlp-headers').fill('{"authorization":"synthetic-plaintext"}')
+      await page.getByTestId('otlp-save').click()
+      await expect(page.getByTestId('otlp-error')).toBeVisible()
+      await expect(page.getByTestId('otlp-error')).not.toContainText('synthetic-plaintext')
+      await page.getByTestId('otlp-refresh').click()
+      await expect(card).toHaveAttribute('aria-busy', 'false')
+      await expect(page.getByTestId('otlp-error')).toHaveCount(0)
+      await page.getByTestId('otlp-headers').fill('{}')
+      await page.getByTestId('otlp-limits-toggle').click()
       await page.getByTestId('otlp-save').click()
       await expect(page.getByTestId('otlp-notice')).toContainText(
         locale === 'en' ? 'Settings saved' : '设置已保存',
