@@ -41,6 +41,13 @@ if (!args.includes('--list')) {
   if (types !== 0) process.exit(types)
   const quality = await run('pnpm', ['exec', 'vitest', 'run', 'tools/e2e-web/i18n.test.ts', '--maxWorkers=1'])
   if (quality !== 0) process.exit(quality)
+  const components = await run(process.execPath, [
+    require.resolve('@playwright/test/cli'),
+    'test',
+    '--config',
+    'tools/e2e-web/playwright.components.config.mjs',
+  ])
+  if (components !== 0) process.exit(components)
 }
 process.exitCode = await run(
   process.execPath,

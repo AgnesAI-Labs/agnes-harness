@@ -19,12 +19,19 @@ export async function settled(page: Page) {
     )
     .toBe(0)
   await page.evaluate(() => document.fonts.ready.then(() => undefined))
+  // Ant stages entrance classes before creating an animation on a later frame. Wait for
+  // that preparation too; an empty getAnimations() result alone can race the fade-in.
   // Poll active finite effects: Animation.finished can remain pending for paused effects.
   await expect
     .poll(
       () =>
-        page.evaluate(() =>
-          document
+        page.evaluate(() => ({
+          preparing: Array.from(document.querySelectorAll('[class]')).some((element) =>
+            Array.from(element.classList).some((name) =>
+              /^ant-.*-(?:appear|enter|leave)(?:-(?:prepare|start|active))?$/.test(name),
+            ),
+          ),
+          animations: document
             .getAnimations()
             .filter(
               (animation) =>
@@ -35,10 +42,10 @@ export async function settled(page: Page) {
               currentTime: animation.currentTime,
               endTime: animation.effect?.getComputedTiming().endTime,
             })),
-        ),
+        })),
       { message: 'Finite UI motion settles before accessibility and visual checks' },
     )
-    .toEqual([])
+    .toEqual({ preparing: false, animations: [] })
 }
 export async function translated(page: Page) {
   await settled(page)

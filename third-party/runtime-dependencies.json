@@ -14,7 +14,8 @@
         "packages/daemon-admin",
         "packages/package-manager",
         "packages/sdk",
-        "packages/web"
+        "packages/web",
+        "packages/web-ui"
       ]
     },
     {
