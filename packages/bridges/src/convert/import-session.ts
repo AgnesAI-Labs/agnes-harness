@@ -1,4 +1,10 @@
-import { type EventEnvelope, isEventType, type JsonValue, validateEvent } from '@agnes/protocol'
+import {
+  describeValidationErrors,
+  type EventEnvelope,
+  isEventType,
+  type JsonValue,
+  validateEvent,
+} from '@agnes/protocol'
 import { detectSource } from './detect.js'
 import { EnvelopeBuilder } from './envelope.js'
 import { importClaudeCode, readClaudeCodeHeader } from './import/claude-code.js'
@@ -35,7 +41,7 @@ function passThroughAgnes(rows: JsonlRow[], report: Tolerance): EventEnvelope[] 
         line,
         typeof type === 'string' && !isEventType(type)
           ? `${OLDER_EXPORT_FORMAT}: row type ${JSON.stringify(type.slice(0, 64))} is not one this build reads`
-          : `invalid agnes event: ${result.errors[0]?.message ?? 'unknown'}`,
+          : `invalid agnes event: ${describeValidationErrors(result.errors)}`,
       )
       continue
     }

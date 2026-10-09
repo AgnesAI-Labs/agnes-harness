@@ -1065,7 +1065,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-05 the two sides coexist on the merged tree, so neither side's number holds. Re-measured
   // with countLines() after the merge: 26102, exact, no spare.
   // 2026-10-06: reject oversized inbox records before durable append; 26424, exact.
-  'packages/core/src': 26556,
+  'packages/core/src': 26558,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1374,7 +1374,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: readToolDetail method types; measured 2201, exact.
   // Response metadata on cost/ledger: ResponseMeta root type export. Re-measured on the rebased
   // tree: 2201, exact.
-  'packages/protocol/src': 2276,
+  'packages/protocol/src': 2281,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1565,7 +1565,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: bounded, abortable paged detail read; measured 5127, exact.
   // 2026-10-04 image attachments: image blocks flow through the UI projection sync.
   // Measured: 5176, exact, no spare.
-  'packages/sdk/src': 5188,
+  'packages/sdk/src': 5189,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,

@@ -160,6 +160,7 @@ describe('protocol src boundary', () => {
         'ULID_PATTERN',
         'WEB_CLIENT_MODULE_SLOT_NAMES',
         'checkSequence',
+        'describeValidationErrors',
         'fromAcpOptionKind',
         'getHarnessMeta',
         'isDateTime',

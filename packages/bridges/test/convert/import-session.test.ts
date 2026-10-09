@@ -38,6 +38,23 @@ describe('importSession', () => {
     expect(result.report.skipped).toHaveLength(1)
   })
 
+  it('says which field made a native row invalid', () => {
+    const own = importSession(fixture('pi/branching.jsonl'), { ...options, from: 'pi' }).events
+    const message = own.find((event) => event.type === 'user/message')
+    if (!message) throw new Error('fixture has no user message')
+    const broken = {
+      ...message,
+      seq: own.length + 1,
+      data: { ...(message.data as object), content: 'not a list' },
+    }
+    const bytes = new TextEncoder().encode(
+      `${own.map((event) => JSON.stringify(event)).join('\n')}\n${JSON.stringify(broken)}\n`,
+    )
+    const { report } = importSession(bytes)
+    expect(report.skipped).toHaveLength(1)
+    expect(JSON.stringify(report.skipped[0])).toMatch(/invalid agnes event: \/data\/content /)
+  })
+
   it('tolerates bad body lines but refuses unknown and headerless files', () => {
     const text = fixture('claude-code/basic.jsonl').toString('utf8')
     const damaged = text.replace(/\n/g, (match, offset) => (offset % 3 === 0 ? '\nnot-json\n' : match))
