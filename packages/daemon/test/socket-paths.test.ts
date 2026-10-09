@@ -15,7 +15,7 @@ import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildConfig } from '../src/config.js'
+import { buildConfig } from '../src/supervisor/config.js'
 import { listenUnix } from '../src/supervisor/socket.js'
 import { prepareDaemonSocketPaths, validateSocketPath } from '../src/supervisor/socket-paths.js'
 

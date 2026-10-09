@@ -124,7 +124,7 @@
       "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/ws",
       "purpose": "TypeScript declarations for the ws transport library.",
       "rationale": "Keeps daemon tests and SDK transport code checked against the installed ws API.",
-      "consumers": ["packages/daemon", "packages/daemon-rpc", "packages/sdk", "packages/daemon-supervisor"]
+      "consumers": ["packages/daemon", "packages/daemon-rpc", "packages/sdk"]
     },
     {
       "name": "@xterm/headless",

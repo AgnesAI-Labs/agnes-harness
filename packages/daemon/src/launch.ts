@@ -6,7 +6,7 @@ import {
   type StartSupervisorOptions,
   startSupervisor as start,
   startProductionSupervisor as startProduction,
-} from '@agnes/daemon-supervisor/supervisor/supervisor'
+} from './supervisor/runtime.js'
 
 function defaultWorkerEntry(): string {
   return fileURLToPath(new URL('./worker/main.js', import.meta.url))

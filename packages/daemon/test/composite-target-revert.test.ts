@@ -1,7 +1,7 @@
 import { buildRuntimeTarget, createPluginRow, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { describe, expect, it } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
-import { createTargetReverter } from '../src/composite-target-revert.js'
+import { createTargetReverter } from '../src/supervisor/publication/composite-target-revert.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
 
 const revision = 'd'.repeat(64)

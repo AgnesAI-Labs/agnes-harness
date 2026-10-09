@@ -273,12 +273,12 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon-rpc/src/local/methods/extensions': 199,
   'packages/daemon-rpc/src/local/auth': 341,
   'packages/daemon-rpc/src': 7608,
-  'packages/daemon-supervisor/src/supervisor/startup': 18,
-  'packages/daemon-supervisor/src/supervisor/discovery': 446,
-  'packages/daemon-supervisor/src/supervisor/scope': 254,
-  'packages/daemon-supervisor/src/supervisor/configuration': 45,
-  'packages/daemon-supervisor/src/supervisor/service-worker': 103,
-  'packages/daemon-supervisor/src': 10460,
+  'packages/daemon/src/supervisor/startup': 18,
+  'packages/daemon/src/supervisor/discovery': 446,
+  'packages/daemon/src/supervisor/scope': 254,
+  'packages/daemon/src/supervisor/configuration': 45,
+  'packages/daemon/src/supervisor/service-worker': 103,
+  'packages/daemon/src/supervisor': 10465,
   'packages/daemon-admin/src/packages/project': 43,
   'packages/daemon-admin/src/packages/permissions': 97,
   'packages/daemon-admin/src/packages/operations': 416,
@@ -825,11 +825,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 215 -> 229; exact cap, no exclusions or spare allocation.
   // Acceptance review: Resolve persisted child-engine settings for the session composition before worker publication.
   // countLines: 229 -> 247; exact cap, no exclusions or spare allocation.
-  'packages/daemon/src/supervisor/scope': 1,
   // 2026-09-26: bounded EBUSY retry preserves Windows discovery validation during concurrent boot.
   // Measured 436, exact.
-  'packages/daemon/src/supervisor/discovery': 1,
-  'packages/daemon/src/supervisor/startup': 1,
   'packages/web/src/serve': 1,
   // 2026-09-12 unified App Server: shared configuration, authenticated RPC, session metadata
   // and immutable per-session profile snapshots. Exact measured totals; new components also
@@ -844,7 +841,6 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 1230 -> 1286 (+56); exact cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Persist child-engine settings and validated context/search configuration.
   // countLines: 1286 -> 1349; exact cap, no exclusions or spare allocation.
-  'packages/daemon/src/supervisor/configuration': 1,
   // S5 service workers reload the profile hash and its immutable snapshot path as one value.
 
   // 2026-09-09: raised from 5000 by the project owner. The kernel's I1 slice alone
@@ -2135,7 +2131,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 27898 -> 28105; exact cap, no exclusions or spare allocation.
   // Acceptance review: Persist child-engine settings through publication and recover legacy default loop pins when listing sessions.
   // countLines: 28105 -> 28157; exact cap, no exclusions or spare allocation.
-  'packages/daemon/src': 257,
+  'packages/daemon/src': 10676,
 
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2214,7 +2210,6 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon/src/local/auth': 1,
   // CORDIS-C1b Task 6 binds public service calls to durable session ownership.
   'packages/daemon/src/local/methods/extensions': 1,
-  'packages/daemon/src/supervisor/service-worker': 1,
   // Includes the independently reviewed F6 deployment transaction from the activation lane.
   // 2026-09-16 (surface-boot-wiring plan, Tasks 2-5): deploy-dir.ts (resolveDeployDir),
   // deployment-policy.ts (buildDeploymentPolicy, defaulting every sourceId's grant ceiling to []

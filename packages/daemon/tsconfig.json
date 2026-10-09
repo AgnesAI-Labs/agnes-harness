@@ -64,7 +64,16 @@
       "path": "../daemon-rpc"
     },
     {
-      "path": "../daemon-supervisor"
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../host"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../observability"
     }
   ]
 }

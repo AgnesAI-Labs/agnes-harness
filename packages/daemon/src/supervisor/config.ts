@@ -1,6 +1,6 @@
 import type { ResolvedProfile } from '@agnes/host'
 import { MAX_FRAME_BYTES } from '@agnes/protocol'
-import { daemonSocketPaths } from './supervisor/socket-paths.js'
+import { daemonSocketPaths } from './socket-paths.js'
 
 export type DaemonLimits = {
   maxWorkers: number

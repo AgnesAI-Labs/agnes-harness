@@ -464,9 +464,6 @@ importers:
       '@agnes/daemon-rpc':
         specifier: workspace:*
         version: link:../daemon-rpc
-      '@agnes/daemon-supervisor':
-        specifier: workspace:*
-        version: link:../daemon-supervisor
       '@agnes/daemon-surfaces':
         specifier: workspace:*
         version: link:../daemon-surfaces
@@ -476,6 +473,9 @@ importers:
       '@agnes/host':
         specifier: workspace:*
         version: link:../host
+      '@agnes/observability':
+        specifier: workspace:*
+        version: link:../observability
       '@agnes/package-manager':
         specifier: workspace:*
         version: link:../package-manager
@@ -497,6 +497,9 @@ importers:
       '@agnes/resource-control-worker':
         specifier: workspace:*
         version: link:../resource-control-worker
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       '@agnes/system-node':
         specifier: workspace:*
         version: link:../system-node
@@ -516,9 +519,6 @@ importers:
       '@agnes/code':
         specifier: workspace:*
         version: link:../code
-      '@agnes/sdk':
-        specifier: workspace:*
-        version: link:../sdk
       '@agnes/web-server':
         specifier: workspace:*
         version: link:../web-server
@@ -647,67 +647,6 @@ importers:
       ws:
         specifier: 8.21.3
         version: 8.21.3
-
-  packages/daemon-supervisor:
-    dependencies:
-      '@agnes/sdk':
-        specifier: workspace:*
-        version: link:../sdk
-      '@agnes/base':
-        specifier: workspace:*
-        version: link:../base
-      '@agnes/daemon-admin':
-        specifier: workspace:*
-        version: link:../daemon-admin
-      '@agnes/daemon-foundation':
-        specifier: workspace:*
-        version: link:../daemon-foundation
-      '@agnes/daemon-rpc':
-        specifier: workspace:*
-        version: link:../daemon-rpc
-      '@agnes/daemon-surfaces':
-        specifier: workspace:*
-        version: link:../daemon-surfaces
-      '@agnes/host':
-        specifier: workspace:*
-        version: link:../host
-      '@agnes/observability':
-        specifier: workspace:*
-        version: link:../observability
-      '@agnes/package-manager':
-        specifier: workspace:*
-        version: link:../package-manager
-      '@agnes/plugin-runtime':
-        specifier: workspace:*
-        version: link:../plugin-runtime
-      '@agnes/protocol':
-        specifier: workspace:*
-        version: link:../protocol
-      '@agnes/resource-control-daemon':
-        specifier: workspace:*
-        version: link:../resource-control-daemon
-      '@agnes/resource-control-runtime':
-        specifier: workspace:*
-        version: link:../resource-control-runtime
-      '@agnes/resource-control-store':
-        specifier: workspace:*
-        version: link:../resource-control-store
-      '@agnes/resource-control-worker':
-        specifier: workspace:*
-        version: link:../resource-control-worker
-      '@agnes/system-node':
-        specifier: workspace:*
-        version: link:../system-node
-      '@agnes/worker-runtime':
-        specifier: workspace:*
-        version: link:../worker-runtime
-      ws:
-        specifier: 8.21.3
-        version: 8.21.3
-    devDependencies:
-      '@types/ws':
-        specifier: 8.18.1
-        version: 8.18.1
 
   packages/daemon-surfaces:
     dependencies:

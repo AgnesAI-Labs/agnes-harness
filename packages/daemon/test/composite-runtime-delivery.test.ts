@@ -1,7 +1,10 @@
 import { buildRuntimeTarget, createPluginRow, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { describe, expect, it } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
-import { CompositeRuntimeDelivery, deliverDesiredToWorkers } from '../src/composite-runtime-delivery.js'
+import {
+  CompositeRuntimeDelivery,
+  deliverDesiredToWorkers,
+} from '../src/supervisor/publication/composite-runtime-delivery.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
 
 const revision = 'e'.repeat(64)

@@ -9,15 +9,15 @@ const state = vi.hoisted(() => ({
   close: undefined as (() => Promise<void>) | undefined,
   file: undefined as string | undefined,
 }))
-vi.mock('@agnes/daemon-supervisor/supervisor/lifecycle', async (original) => ({
-  ...(await original<typeof import('@agnes/daemon-supervisor/supervisor/lifecycle')>()),
+vi.mock('../src/supervisor/lifecycle.js', async (original) => ({
+  ...(await original<typeof import('../src/supervisor/lifecycle.js')>()),
   installSignals: (close: () => Promise<void>) => {
     state.close = close
     return () => {}
   },
 }))
-vi.mock('@agnes/daemon-supervisor/supervisor/stop-request', async (original) => ({
-  ...(await original<typeof import('@agnes/daemon-supervisor/supervisor/stop-request')>()),
+vi.mock('../src/supervisor/stop-request.js', async (original) => ({
+  ...(await original<typeof import('../src/supervisor/stop-request.js')>()),
   watchWindowsStopRequest: () => () => {},
 }))
 vi.mock('@agnes/host', async (original) => {

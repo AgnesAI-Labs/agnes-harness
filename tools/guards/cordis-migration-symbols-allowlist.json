@@ -32,7 +32,7 @@
       "packages/worker-runtime/src/runtime-target-slot.ts": 3
     },
     "c2_runtime_stale_frame": {
-      "packages/daemon-supervisor/src/supervisor/worker-link.ts": 1,
+      "packages/daemon/src/supervisor/worker-link.ts": 1,
       "packages/protocol/gen/ts/worker.ts": 1,
       "packages/protocol/schema/worker.json": 1
     },

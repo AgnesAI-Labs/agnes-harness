@@ -254,9 +254,6 @@
       "path": "packages/daemon-rpc/tsconfig.test.json"
     },
     {
-      "path": "packages/daemon-supervisor"
-    },
-    {
       "path": "packages/web-foundation"
     },
     {

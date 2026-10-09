@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { deferPackageActivation } from '../src/deferred-package-activation.js'
+import { deferPackageActivation } from '../src/supervisor/publication/deferred-package-activation.js'
 import type { PackageActivationAdapter } from '../src/packages/index.js'
 
 const input = {

@@ -3,8 +3,8 @@ import { activeRuntimePinId } from '@agnes/package-manager'
 import { buildRuntimeTarget, createPluginRow, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { describe, expect, it, vi } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
-import { createCompositeTargetActivation } from '../src/composite-target-activation.js'
-import { createRuntimePinCoordinator } from '../src/runtime-pin-coordinator.js'
+import { createCompositeTargetActivation } from '../src/supervisor/publication/composite-target-activation.js'
+import { createRuntimePinCoordinator } from '../src/supervisor/publication/runtime-pin-coordinator.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
 
 const integrity = `sha256-${'a'.repeat(64)}`

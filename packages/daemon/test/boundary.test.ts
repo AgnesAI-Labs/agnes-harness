@@ -28,6 +28,7 @@ describe('daemon/local boundary', () => {
   it.each([
     ["import { run } from '@agnes/core/session'", true],
     ["import type { Session } from '@agnes/core-ledger'", true],
+    ["import { startSupervisor } from '@agnes/daemon/supervisor/runtime'", true],
     ["export { applyPlanCommand } from '@agnes/base/plan-mode'", true],
     ["const base = await import('@agnes/base/search')", true],
     ["const base = require('@agnes/base')", true],
@@ -116,7 +117,7 @@ function forbiddenImports(source: string): string[] {
       refused.push(value)
     } else if (
       /^@agnes\/(?:core(?:-[\w-]+)?|sdk|ai)(?:\/|$)/.test(value) ||
-      /^@agnes\/daemon-supervisor(?:\/|$)/.test(value) ||
+      /^@agnes\/daemon\/supervisor(?:\/|$)/.test(value) ||
       /^(?:\.\.\/)+(?:supervisor|worker)(?:\/|$)/.test(value) ||
       /^node:(?:net|child_process)(?:\/|$)/.test(value)
     )

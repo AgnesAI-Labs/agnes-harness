@@ -112,7 +112,8 @@
     "@agnes/daemon-surfaces",
     "@agnes/daemon-admin",
     "@agnes/daemon-rpc",
-    "@agnes/daemon-supervisor"
+    "@agnes/observability",
+    "@agnes/sdk"
   ],
   "@agnes/cli": [
     "@agnes/system-node",
@@ -275,25 +276,6 @@
     "@agnes/worker-runtime",
     "@agnes/observability",
     "@agnes/extension-api"
-  ],
-  "@agnes/daemon-supervisor": [
-    "@agnes/base",
-    "@agnes/daemon-admin",
-    "@agnes/daemon-foundation",
-    "@agnes/daemon-rpc",
-    "@agnes/daemon-surfaces",
-    "@agnes/host",
-    "@agnes/package-manager",
-    "@agnes/plugin-runtime",
-    "@agnes/protocol",
-    "@agnes/resource-control-daemon",
-    "@agnes/resource-control-runtime",
-    "@agnes/resource-control-store",
-    "@agnes/resource-control-worker",
-    "@agnes/system-node",
-    "@agnes/worker-runtime",
-    "@agnes/observability",
-    "@agnes/sdk"
   ],
   "@agnes/web-foundation": ["@agnes/base", "@agnes/web-client", "@agnes/web-ui", "@agnes/web-units"],
   "@agnes/web-admin": [

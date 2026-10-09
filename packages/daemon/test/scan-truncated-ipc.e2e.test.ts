@@ -14,7 +14,7 @@ import {
 import { createTestHost } from '@agnes/host/testkit'
 import { expect, it } from 'vitest'
 import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
-import { type DaemonConfig, DEFAULT_LIMITS } from '../src/config.js'
+import { type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
 import { RemoteSession } from '../src/supervisor/remote-session.js'
 import { listenUnix } from '../src/supervisor/socket.js'
 import { WorkerPool } from '../src/supervisor/worker-pool.js'

@@ -8,7 +8,7 @@ import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import {
   createCompositeReferenceFacts,
   createCompositeTargetActivation,
-} from '../src/composite-target-activation.js'
+} from '../src/supervisor/publication/composite-target-activation.js'
 import { createPackageAdminService } from '../src/packages/handler.js'
 import { FilePackageOperationStore } from '../src/packages/operations.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'

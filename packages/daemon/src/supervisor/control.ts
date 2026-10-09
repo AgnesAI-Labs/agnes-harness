@@ -1,6 +1,6 @@
 import { connect } from 'node:net'
 import { defaultProcessIdentity, type ProcessIdentity } from '@agnes/host'
-import type { Args } from '../config.js'
+import type { Args } from './config.js'
 import { DaemonDiscoveryError, type DaemonDiscoveryReadOptions, readDaemonDiscovery } from './discovery.js'
 import { resolveOwnerIdentity } from './owner-identity.js'
 import { type Owner, readOwner } from './owner-record.js'

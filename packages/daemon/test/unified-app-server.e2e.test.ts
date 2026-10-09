@@ -7,7 +7,7 @@ import { createConfigurationService, createPlatform, resolveProfile } from '@agn
 import { createClient, memoryJournal, wsTransport } from '@agnes/sdk'
 import { createPrivateDirectorySync, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
-import { buildConfig } from '../src/config.js'
+import { buildConfig } from '../src/supervisor/config.js'
 import { startProductionSupervisor } from '../src/supervisor/supervisor.js'
 import { localSdkTransport } from './local-socket-path.js'
 

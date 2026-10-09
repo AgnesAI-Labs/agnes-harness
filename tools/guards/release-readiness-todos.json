@@ -26,7 +26,6 @@
         "@agnes/daemon-admin",
         "@agnes/daemon-foundation",
         "@agnes/daemon-rpc",
-        "@agnes/daemon-supervisor",
         "@agnes/daemon-surfaces",
         "@agnes/error-sanitization",
         "@agnes/extension-api",

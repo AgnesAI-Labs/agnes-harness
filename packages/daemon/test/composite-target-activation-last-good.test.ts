@@ -6,7 +6,7 @@ import {
 } from '@agnes/plugin-runtime/host'
 import { describe, expect, it } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
-import { createCompositeTargetActivation } from '../src/composite-target-activation.js'
+import { createCompositeTargetActivation } from '../src/supervisor/publication/composite-target-activation.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
 
 const revision = 'b'.repeat(64)

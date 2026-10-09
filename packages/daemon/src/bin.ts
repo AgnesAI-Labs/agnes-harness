@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { parseArgs } from './config.js'
+import { parseArgs } from './supervisor/config.js'
 import { runDaemonControl } from './supervisor/control.js'
 import { runAgnesd } from './supervisor/supervisor.js'
 

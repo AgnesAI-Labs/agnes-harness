@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { buildConfig, DEFAULT_LIMITS, parseArgs } from '../src/config.js'
+import { buildConfig, DEFAULT_LIMITS, parseArgs } from '../src/supervisor/config.js'
 
 describe('agnesd config', () => {
   it('parses argv and subcommands', () => {

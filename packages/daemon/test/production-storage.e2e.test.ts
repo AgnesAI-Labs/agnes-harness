@@ -26,7 +26,7 @@ import {
 } from '@agnes/host'
 import { hasPrivateDaclSync } from '@agnes/system-node'
 import { describe, expect, it } from 'vitest'
-import { buildConfig, type DaemonConfig, DEFAULT_LIMITS } from '../src/config.js'
+import { buildConfig, type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
 import { MemoryTickets } from '../src/storage/lister.js'
 import { encodeFrame, JsonlDecoder } from '../src/supervisor/framing.js'
 import {

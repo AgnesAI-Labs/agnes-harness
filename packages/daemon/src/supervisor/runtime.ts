@@ -197,17 +197,20 @@ import {
 } from '@agnes/resource-control-daemon'
 import { type ActivationLinkPool, notifyLiveSessionWorkers } from '@agnes/resource-control-runtime'
 import { renameWriteThrough, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
-import { CompositeRuntimeDelivery, deliverDesiredToWorkers } from '../composite-runtime-delivery.js'
+import {
+  CompositeRuntimeDelivery,
+  deliverDesiredToWorkers,
+} from './publication/composite-runtime-delivery.js'
 import {
   createCompositeReferenceFacts,
   createCompositeRuntimePins,
   createCompositeTargetActivation,
-} from '../composite-target-activation.js'
-import { createTargetReverter } from '../composite-target-revert.js'
-import { type Args, buildConfig, type DaemonConfig } from '../config.js'
-import { deferPackageActivation } from '../deferred-package-activation.js'
-import { createRuntimePinCoordinator } from '../runtime-pin-coordinator.js'
-import { publishProbedRuntimeTarget } from '../runtime-target-publisher.js'
+} from './publication/composite-target-activation.js'
+import { createTargetReverter } from './publication/composite-target-revert.js'
+import { type Args, buildConfig, type DaemonConfig } from './config.js'
+import { deferPackageActivation } from './publication/deferred-package-activation.js'
+import { createRuntimePinCoordinator } from './publication/runtime-pin-coordinator.js'
+import { publishProbedRuntimeTarget } from './publication/runtime-target-publisher.js'
 import {
   artifactMediaReadReply,
   composeDefaultProductionProjectedArtifactRead,

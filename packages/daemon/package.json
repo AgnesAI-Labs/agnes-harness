@@ -37,12 +37,12 @@
     "@agnes/daemon-surfaces": "workspace:*",
     "@agnes/daemon-admin": "workspace:*",
     "@agnes/daemon-rpc": "workspace:*",
-    "@agnes/daemon-supervisor": "workspace:*"
+    "@agnes/observability": "workspace:*",
+    "@agnes/sdk": "workspace:*"
   },
   "devDependencies": {
     "@agnes/ai": "workspace:*",
     "@agnes/code": "workspace:*",
-    "@agnes/sdk": "workspace:*",
     "@agnes/web-server": "workspace:*",
     "@types/ws": "8.18.1"
   },

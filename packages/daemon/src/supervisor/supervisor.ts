@@ -1,2 +1,2 @@
-export * from '@agnes/daemon-supervisor/supervisor/supervisor'
+export * from './runtime.js'
 export { runAgnesd, startProductionSupervisor, startSupervisor } from '../launch.js'
