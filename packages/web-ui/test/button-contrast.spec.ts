@@ -40,6 +40,8 @@ test.beforeAll(async () => {
             createElement('button', { key: className, className }, 'Native ' + className)),
           createElement('div', { className: 'workbench-panel-tabs', role: 'tablist' },
             createElement(Button, { type: 'text', role: 'tab', 'aria-selected': true }, 'Selected panel')),
+          createElement('div', null,
+            createElement(Button, { id: 'agent-chip', className: 'composer-agent' }, 'Agent Default agent')),
           createElement('fieldset', { className: 'appearance-options' },
             createElement('legend', null, 'Palette'),
             ...[true, false].map((checked, key) => createElement('label', { className: 'appearance-option', key },
@@ -93,11 +95,21 @@ for (const theme of ['light', 'dark'])
       nodeId: documentNode.nodeId,
       selector: 'button, .appearance-option',
     })
-    expect(nodeIds).toHaveLength(35)
+    expect(nodeIds).toHaveLength(36)
+    const agentSize = () =>
+      page.locator('#agent-chip').evaluate((button) => {
+        const { width, height } = button.getBoundingClientRect()
+        return { width, height }
+      })
+    const restingAgentSize = await agentSize()
     for (const state of [[], ['hover'], ['hover', 'active'], ['focus', 'focus-visible']]) {
       for (const nodeId of nodeIds)
         await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: state })
       await page.evaluate(() => Promise.all(document.getAnimations().map((animation) => animation.finished)))
+      // A hover border must not wrap the composer toolbar and move a button away from the pointer.
+      expect(await agentSize(), `${theme}/${state.join('+') || 'normal'} Agent geometry`).toEqual(
+        restingAgentSize,
+      )
       await readable(page, `${theme}/${state.join('+') || 'normal'}`)
     }
     for (const nodeId of nodeIds)

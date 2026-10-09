@@ -6824,8 +6824,8 @@ body.admin-page {
   align-items: center;
   gap: 0.375rem;
   height: 2rem;
-  padding: 0 0.5rem;
-  border: 0;
+  padding: 0 calc(0.5rem - 1px);
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--agnes-text-secondary);
