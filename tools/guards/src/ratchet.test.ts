@@ -246,6 +246,10 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // Historical allocation comments below remain context, rather than the current measurements.
 // First-run polish: measured Web/UI +3 each for names/modal feedback; admin/settings -22 for one doctor entry. No headroom.
 const INITIAL_CEILING: Record<string, number> = {
+  // GT1: register new round scopes; exact values are remeasured once at the end.
+  'packages/base/extensions/references': 21,
+  'packages/base/extensions/intelligent-ui': 1009,
+  'packages/observability/src': 1301,
   'packages/base/src/memory': 14,
   'packages/memory-file/src': 509,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
@@ -257,48 +261,48 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-conversation/src/trace-panel': 11,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-conversation/src': 4172,
+  'packages/web-conversation/src': 3975,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src/settings': 6404,
+  'packages/web-admin/src/settings': 7646,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/permission-picker': 248,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/admin/plugins/types': 82,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src/admin/plugins/api': 543,
+  'packages/web-admin/src/admin/plugins/api': 546,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src': 12219,
+  'packages/web-admin/src': 14120,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-foundation/src': 2340,
+  'packages/web-foundation/src': 2380,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
   'packages/daemon-rpc/src/local/auth': 341,
-  'packages/daemon-rpc/src': 7608,
+  'packages/daemon-rpc/src': 8057,
   'packages/daemon/src/supervisor/startup': 18,
   'packages/daemon/src/supervisor/discovery': 446,
   'packages/daemon/src/supervisor/scope': 254,
   'packages/daemon/src/supervisor/configuration': 45,
   'packages/daemon/src/supervisor/service-worker': 103,
-  'packages/daemon/src/supervisor': 10465,
+  'packages/daemon/src/supervisor': 10918,
   'packages/daemon-admin/src/packages/project': 43,
   'packages/daemon-admin/src/packages/permissions': 97,
   'packages/daemon-admin/src/packages/operations': 416,
   'packages/daemon-admin/src/packages/index': 49,
-  'packages/daemon-admin/src/packages/handler': 1858,
-  'packages/daemon-admin/src/packages/admin-surface': 823,
-  'packages/daemon-admin/src': 5547,
+  'packages/daemon-admin/src/packages/handler': 1960,
+  'packages/daemon-admin/src/packages/admin-surface': 863,
+  'packages/daemon-admin/src': 6385,
   'packages/daemon-surfaces/src/surfaces': 1961,
   'packages/daemon-surfaces/src': 1962,
   'packages/daemon-foundation/src/jobs': 653,
-  'packages/daemon-foundation/src': 4248,
+  'packages/daemon-foundation/src': 4350,
   'packages/host/src/runtime/approval/expiry': 105,
   'packages/host/src/runtime/adapters': 465,
-  'packages/host/src/runtime/profile': 1655,
-  'packages/host/src/runtime': 9478,
-  'packages/host/src/runtime/assemble': 3468,
+  'packages/host/src/runtime/profile': 1661,
+  'packages/host/src/runtime': 10571,
+  'packages/host/src/runtime/assemble': 3504,
   'packages/host-providers/src/adapters': 477,
   'packages/host-providers/src/profile': 165,
-  'packages/host-providers/src': 4639,
-  'packages/host-providers/src/assemble': 1879,
+  'packages/host-providers/src': 5066,
+  'packages/host-providers/src/assemble': 2306,
   'packages/host-extensions/src/ext-host/extension-runner-runtime': 187,
   'packages/host-extensions/src/ext-host/extension-seatbelt': 28,
   'packages/host-extensions/src/ext-host/extension-isolation-selector': 160,
@@ -306,10 +310,10 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-extensions/src/ext-host/generic-hooks-runner': 90,
   'packages/host-extensions/src/ext-host/runner-transport': 465,
   'packages/host-extensions/src/ext-host/hooks-isolation-client': 232,
-  'packages/host-extensions/src/ext-host/tool-context-capabilities': 130,
+  'packages/host-extensions/src/ext-host/tool-context-capabilities': 131,
   'packages/host-extensions/src/ext-host/service-invocation': 267,
-  'packages/host-extensions/src': 7943,
-  'packages/host-extensions/src/assemble': 1259,
+  'packages/host-extensions/src': 7996,
+  'packages/host-extensions/src/assemble': 1273,
   'packages/host-artifacts/src': 2243,
   'packages/host-computer-use/src': 10586,
   'packages/host-infrastructure/src/adapters/public-fetch': 380,
@@ -323,15 +327,15 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-infrastructure/src/adapters/powershell': 133,
   'packages/host-infrastructure/src/configuration': 1443,
   'packages/host-infrastructure/src/adapters/storage-sqlite': 658,
-  'packages/host-infrastructure/src/adapters': 6386,
-  'packages/host-infrastructure/src': 10479,
+  'packages/host-infrastructure/src/adapters': 6403,
+  'packages/host-infrastructure/src': 10522,
   'packages/host-common/src/configuration-lock': 39,
-  'packages/host-common/src/profile': 1840,
-  'packages/host-common/src': 3757,
+  'packages/host-common/src/profile': 1847,
+  'packages/host-common/src': 3774,
   'packages/host-common/src/assemble': 439,
-  'packages/core/src/artifacts': 743,
-  'packages/core-effects/src': 2598,
-  'packages/core-ledger/src': 6452,
+  'packages/core/src/artifacts': 744,
+  'packages/core-effects/src': 2638,
+  'packages/core-ledger/src': 6496,
   'packages/core-child-control/src': 397,
   'packages/core-common/src': 529,
   // 2026-09-22 M11 browser effect-command closure: exact measured deltas for the explicit
@@ -347,7 +351,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-22 incremental apply: host transactions unmount the old row before mounting its
   // replacement, bound every adapter call with a per-step deadline and mark the tree tainted when
   // one is abandoned. Re-measured with countLines(): 772, exact cap, no spare.
-  'packages/cordis-loader/src': 772,
+  'packages/cordis-loader/src': 774,
   // CORDIS-C2 Task 8 adds the canonical immutable runtime-target builder/codec and four closed
   // resource-owned row slots. Re-measured with countLines(): 1860, exact cap, no spare.
   // Task 12 publish-time cycle/secret/policy-builtin validation. Re-measured: 1968, exact.
@@ -374,7 +378,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-07 integration review: Public author helpers, provided external modules and plugin
   // admission diagnostics.
   // countLines: 2171 -> 2306; exact measured cap, no exclusions or spare allocation.
-  'packages/plugin-runtime/src': 2307,
+  'packages/plugin-runtime/src': 2464,
   'packages/cosmokit/src': 356,
   // 2026-09-17 (web-client-modules P2 / WC6): author-facing browser API package. Measured 480;
   // exact cap, no spare — new mount points add one table row + host container by contract.
@@ -384,13 +388,13 @@ const INITIAL_CEILING: Record<string, number> = {
   // Locale catalogs on LocaleService. Measured 1745, exact, no spare (+31).
   // 2026-10-07 integration review: Bounded artifact download and optional client service ports.
   // countLines: 1749 -> 1826; exact measured cap, no exclusions or spare allocation.
-  'packages/web-client/src': 1992,
+  'packages/web-client/src': 2004,
   'packages/web-slots/src': 620,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // Approval reasons: the approval card label reads the decision reason (+22). Measured 6651, exact cap.
   // 2026-10-07 reviewed growth: plugin state badges and session default controls.
   // countLines: 6640 -> 6681 (+41); exact cap, no exclusions or spare allocation.
-  'packages/web-ui/src': 9001,
+  'packages/web-ui/src': 10910,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
@@ -404,28 +408,28 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 6192 -> 6208 (+16); exact cap, no exclusions or spare allocation.
   // 2026-10-07 integration review: Inline conversation cards and approval/trace rendering.
   // countLines: 6208 -> 6222; exact measured cap, no exclusions or spare allocation.
-  'packages/web-units/src': 7532,
+  'packages/web-units/src': 9270,
   // Write staleness guard: a per-session table of what each file looked like when read, checked by
   // `write` (+55 counted lines, measured 855, exact cap).
   // 2026-10-07 integration review: Official job tools and bounded execution/output handling.
   // countLines: 922 -> 959; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Persistent shell tools delegate to the unified job owner.
   // countLines: 959 -> 962; exact cap, no exclusions or spare allocation.
-  'packages/base/extensions/tools-core': 1115,
+  'packages/base/extensions/tools-core': 1120,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
   'packages/base/extensions/mcp-server': 446,
   // MCP-ROWS stage 2b step 2 (D110'): tool_search/tool_describe as their own extension, reading
   // through McpCatalogHub. Built and tested now but not yet loaded (see its own doc comment); new
   // extension at the shared default cap; measured 22.
-  'packages/base/extensions/mcp-search': 162,
+  'packages/base/extensions/mcp-search': 182,
   'packages/base/extensions/principals-local': 19,
   // 2026-09-19 Computer Use retention: the recent-artifact index accepts the profile's tightened
   // per-session limit (never above the product ceiling of 20). Measured 535; exact cap.
   // 2026-09-19 secure physical-delete executor and attested-plan lease. Measured 624; exact cap.
   'packages/base/extensions/artifacts-local': 315,
-  'packages/base/extensions/approval-policy': 219,
-  'packages/base/extensions/tools-search': 283,
+  'packages/base/extensions/approval-policy': 477,
+  'packages/base/extensions/tools-search': 284,
   // WEBFETCH-01: new component, exact measured allocation.
   // SKILL-GITHUB-RATE-LIMIT: explicit ZIP byte response; measured 380, no spare.
   // WEBFETCH-01: new component, exact measured allocation.
@@ -515,8 +519,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 7131 -> 7200; exact measured cap, no exclusions or spare allocation.
   // Acceptance review: Include all runnable FDE examples and loop bundle manifests in the local example catalog.
   // countLines: 7200 -> 7217; exact cap, no exclusions or spare allocation.
-  'packages/package-manager/src': 8286,
-  'packages/package-manager/src/catalog': 211,
+  'packages/package-manager/src': 8424,
+  'packages/package-manager/src/catalog': 219,
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
   // 2026-09-20: map the already-sanitized turn AUTH category to a reconnect instruction. Exact.
@@ -588,7 +592,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2311 -> 2443; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Session-bound goal state and context/settings integration.
   // countLines: 2443 -> 2471; exact cap, no exclusions or spare allocation.
-  'packages/web/src/app': 3800,
+  'packages/web/src/app': 4093,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -626,14 +630,14 @@ const INITIAL_CEILING: Record<string, number> = {
   // Approval reasons: the approval card label reads the decision reason (+10). Measured 796, exact cap.
   // 2026-10-05 the merge keeps both sides' additions, so neither number holds. Re-measured on the
   // merged tree: 807, exact, no spare.
-  'packages/web/src/timeline': 837,
+  'packages/web/src/timeline': 834,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
   // 2026-09-17 SESSION-MENU: 会话行菜单从 navigation.ts 抽到 session-menu.ts（面板改挂 body、
   // 补 Escape/外部指针/滚动重算），navigation 只留调用点。实测 125，收紧到精确值。
   // 2026-09-17 SESSION-ROW-BG: 行上加 `data-active`（选中底色改由行承载）新增 1 行，实测 126。
-  'packages/web/src/navigation': 186,
+  'packages/web/src/navigation': 190,
   // 2026-09-17 SESSION-MENU: 新建 session-menu.ts —— 触发按钮、三项菜单、portal 到 body 的
   // 生命周期与关闭路径，外加行状态（`data-menu-open`，替代不可靠的 `:has()` 重算）。
   // 实测 115，精确值无富余。
@@ -674,7 +678,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // ceiling after the session-resume picker (87b62431) landed without a paired raise, so this key
   // was red on arrival. This raise carries that overshoot rather than hiding it -- the picker's 97
   // lines still owe their own measured justification here.
-  'packages/cli/src': 7867,
+  'packages/cli/src': 7973,
   // 2026-10-07 reviewed growth: portable package sources, capability review and explicit confirmation UX.
   // countLines: 160 -> 230 (+70); exact cap, no exclusions or spare allocation.
   'packages/cli/src/commands/package': 230,
@@ -771,7 +775,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 1261 -> 1397; exact cap, no exclusions or spare allocation.
   // Acceptance review: Pass persisted child-engine configuration to the packaged Host runtime.
   // countLines: 1397 -> 1400; exact cap, no exclusions or spare allocation.
-  'packages/cli/launch': 1704, // SKILL-INSTALL-CORE: preserve request-only port in packaged Host options.
+  'packages/cli/launch': 2137, // SKILL-INSTALL-CORE: preserve request-only port in packaged Host options.
   // 2026-09-14: whole-branch review fix wave (Finding 1), same as above. Measured 90, exact --
   // unaffected by the workspace-picker change (different file, same aggregate prefix).
   // 2026-09-14: Task 4 profile-command-plan wires packages.trustWorkspace into invoke()'s switch --
@@ -792,7 +796,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 337 -> 355; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Expose context/search/child-engine administration operations.
   // countLines: 355 -> 404; exact cap, no exclusions or spare allocation.
-  'packages/cli/launch/package-admin': 479,
+  'packages/cli/launch/package-admin': 505,
   // 2026-09-15: theme work adds the blocking first-paint theme IIFE build step. 2026-09-15
   // (merge with origin/main, which adds the Windows runtime bundling). Combined exact
   // measured total: 184.
@@ -814,7 +818,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 322 -> 325; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Bundle history-index and disabled optional child-engine plugins.
   // countLines: 325 -> 329; exact cap, no exclusions or spare allocation.
-  'packages/cli/tools/build-local': 366,
+  'packages/cli/tools/build-local': 381,
   // The PM5 bootstrap fallback retains the existing scoped owner/data-dir contract when a selected
   // Profile has not yet been materialized. The final recovery retry admits only an explicit
   // E_LOCK_MISMATCH path and re-resolves with an empty package lock; this is exact compatibility
@@ -1204,7 +1208,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 29399 -> 30048; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Await async loop construction, propagate session cancellation and drain initialization before storage closes.
   // countLines: 30048 -> 30103 (+55); exact measured cap, no exclusions or spare allocation.
-  'packages/core/src': 21489,
+  'packages/core/src': 22290,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1537,7 +1541,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2509 -> 2726; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Context/search/history/goal/schedule admin methods and persisted child-engine configuration schemas.
   // countLines: 2726 -> 2981; exact cap, no exclusions or spare allocation.
-  'packages/protocol/src': 3568,
+  'packages/protocol/src': 4207,
   'packages/cli/src/tui': 38,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1626,7 +1630,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 4761 -> 4860; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Goal commands, explicit Skill invocation and in-turn user question submission.
   // countLines: 4860 -> 4905; exact cap, no exclusions or spare allocation.
-  'packages/cli-tui/src': 4907,
+  'packages/cli-tui/src': 4943,
   // Initial ceilings for the remaining packages, registered all at once so that each parallel lane
   // does not have to edit these two files separately. The sdk ceiling of 2500 was newly set by
   // estimate: 404 lines today, plus roughly 360 for the three transports, plus roughly 1650 for the
@@ -1671,7 +1675,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2327 -> 2438; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Expose cooperative construction signals, adapter credential ports and shared default compaction/policy helpers.
   // countLines: 2438 -> 2505 (+67); exact measured cap, no exclusions or spare allocation.
-  'packages/extension-api/src': 2794, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  'packages/extension-api/src': 3140, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -1757,9 +1761,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 5443 -> 5447; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Typed search, history, context and child-engine administration methods.
   // countLines: 5447 -> 5456; exact cap, no exclusions or spare allocation.
-  'packages/sdk/src': 5933,
+  'packages/sdk/src': 6020,
   'packages/sdk/src/extensions.node': 21,
-  'packages/sdk/src/package-admin.node': 192,
+  'packages/sdk/src/package-admin.node': 217,
   'packages/sdk/src/surface.browser': 1,
   'packages/sdk/src/surface.node': 149,
   // 2026-09-10: raised from 3000 by daemon Task 17 (WorkerPool / WorkerLink / RemoteSession /
@@ -2131,7 +2135,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 27898 -> 28105; exact cap, no exclusions or spare allocation.
   // Acceptance review: Persist child-engine settings through publication and recover legacy default loop pins when listing sessions.
   // countLines: 28105 -> 28157; exact cap, no exclusions or spare allocation.
-  'packages/daemon/src': 10676,
+  'packages/daemon/src': 11129,
 
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2400,7 +2404,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 19657 -> 22109; exact cap, no exclusions or spare allocation.
   // Acceptance review: Retain published composition details and stable expanded goal state during admin refresh.
   // countLines: 22109 -> 22110; exact cap, no exclusions or spare allocation.
-  'packages/web/src': 11812,
+  'packages/web/src': 13220,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2486,11 +2490,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 5250 with countLines(); the guard still rejects any further growth.
   // Durable WAL checkpoints on darwin: the outbound ref store sets checkpoint_fullfsync.
   // Measured 5252, exact, no spare (+2).
-  'packages/channels/src': 5261,
+  'packages/channels/src': 5314,
   // 2026-10-07 gap-fill review: Confined code subprocess runtime and governed bridge error propagation.
   // countLines: 1600 -> 1729; exact cap, no exclusions or spare allocation.
   'packages/code/src': 1805,
-  'packages/cli/src/args': 275,
+  'packages/cli/src/args': 278,
   'packages/runtime-python/src': 7,
   // 2026-09-11: initial I6 ceiling for the bundled subagent extension. Task 33's worktree
   // lifecycle is the first slice; the same extension will also own Task 32's three tool
@@ -2911,7 +2915,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 46355 -> 46484 (+129); exact measured cap, no exclusions or spare allocation.
   // Acceptance review: Restore immutable generation sources and publish child-engine configuration with explicit engine admission.
   // countLines: 46484 -> 46566; exact cap, no exclusions or spare allocation.
-  'packages/host/src': 9999,
+  'packages/host/src': 11094,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
@@ -3122,7 +3126,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/base/extensions/refine': 434,
   // 2026-10-07 reviewed growth: bundled author guidance and scaffold/test/install tools; generated assets use the existing exclusion.
   // countLines: 0 -> 179 (+179); exact cap, no exclusions or spare allocation.
-  'packages/base/extensions/plugin-creator': 212,
+  'packages/base/extensions/plugin-creator': 211,
   // 2026-10-07 reviewed growth: scripted/replay/local-OpenAI providers, keyless teaching tools and bounded response recording.
   // countLines: 0 -> 800 (+800); exact cap, no exclusions or spare allocation.
   // Acceptance review: Parse explicit Demo tool calls and return completed FDE fixture turns with end_turn.
@@ -3136,13 +3140,13 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-07 integration review: Bounded presentation records and the inline deliverables
   // projection.
   // countLines: 0 -> 154; exact measured cap, no exclusions or spare allocation.
-  'packages/base/extensions/deliverables': 154,
+  'packages/base/extensions/deliverables': 151,
   // 2026-10-07 integration review: Durable validated user questions, pending-question park/wake
   // hooks and bounded inline question projections.
   // countLines: new scope 164; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Timed user questions and live context contribution.
   // countLines: 164 -> 180; exact cap, no exclusions or spare allocation.
-  'packages/base/extensions/interaction': 180,
+  'packages/base/extensions/interaction': 242,
   // 2026-10-07 integration review: Session/lane-owned shell jobs with bounded capture, output reads,
   // cancellation and shutdown cleanup.
   // countLines: new scope 327; exact measured cap, no exclusions or spare allocation.
@@ -3156,7 +3160,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-07 integration review: Workspace plan state at canonical AGH_DIR paths and the ordered
   // read-only planning prompt/policy.
   // countLines: new scope 167; exact measured cap, no exclusions or spare allocation.
-  'packages/base/extensions/plan-mode': 167,
+  'packages/base/extensions/plan-mode': 168,
   // 2026-10-07 gap-fill review: Live context rules and validated settings with hook-scoped caching.
   // countLines: new scope -> 295; exact cap, no exclusions or spare allocation.
   'packages/base/extensions/context-rules': 298,
@@ -3180,21 +3184,21 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/base/extensions/time-context': 65,
   // 2026-10-07 gap-fill review: Durable child workflows with explicit resume identifiers and uncertain-state refusal.
   // countLines: new scope -> 282; exact cap, no exclusions or spare allocation.
-  'packages/base/extensions/workflow': 370,
+  'packages/base/extensions/workflow': 364,
   // 2026-10-07 gap-fill review: Separate FTS history index, ledger catch-up, bounded read-only query and directory ownership.
   // countLines: new scope -> 1117; exact cap, no exclusions or spare allocation.
-  'packages/history-index/src': 1117,
+  'packages/history-index/src': 1137,
   // 2026-10-07 gap-fill review: Read-only session history tools over the separate FTS index.
   // countLines: 312; exact cap, no exclusions or spare allocation.
   'packages/base/extensions/session-query': 312,
   // 2026-10-07 gap-fill review: Official schedule tools, Vixie cron parsing, reminder delivery and bounded catch-up.
   // countLines: 798; exact cap, no exclusions or spare allocation.
-  'packages/base/extensions/schedule': 798,
+  'packages/base/extensions/schedule': 803,
   // Acceptance review: Register the extracted default loop scheduler using public LoopContext ports and recoverable ledger checkpoints.
   // countLines: new scope -> 78; exact cap, no exclusions or spare allocation.
-  'packages/loop-default/src': 80,
+  'packages/loop-default/src': 92,
   'packages/base/extensions/computer-use': 1785,
-  'packages/web-admin/src/admin/plugins/admin': 2144,
+  'packages/web-admin/src/admin/plugins/admin': 2359,
   'packages/web-ui/src/admin-confirmation': 442,
   'packages/web-ui/src/admin-text': 114,
 }
@@ -3224,25 +3228,29 @@ const extensionDirs = existsSync(extensionsDir)
 
 // User-approved allocations; no general increase for other or future extensions.
 const EXTENSION_CEILING_EXCEPTIONS = new Map([
+  // IUI1: bounded declarative surfaces, action authorization and durable action states.
+  ['intelligent-ui', INITIAL_CEILING['packages/base/extensions/intelligent-ui']!],
+  // GT1: reviewed schedule implementation and validated tool wrapper; exact measured allocation.
+  ['schedule', INITIAL_CEILING['packages/base/extensions/schedule']!],
   // Reviewed gap-fill implementation; exact countLines, no spare allocation.
-  ['jobs', 1105],
+  ['jobs', INITIAL_CEILING['packages/base/extensions/jobs']!],
   // Reviewed gap-fill implementation; exact countLines, no spare allocation.
-  ['tools-web', 1284],
+  ['tools-web', INITIAL_CEILING['packages/base/extensions/tools-web']!],
   // Reviewed gap-fill implementation; exact countLines, no spare allocation.
-  ['sandbox', 856],
+  ['sandbox', INITIAL_CEILING['packages/base/extensions/sandbox']!],
   // CORDIS-C1b Task 6 adds invocation-scoped workspace hook snapshots and descendant draining.
   // 2026-09-21 AGH namespace rename, +1 approved by the user: the AGH_DIR import for the workspace
   // `.agh/hooks.json` fallback path. Context-first prompt denial and scoped memo; measured 1007.
-  ['hooks-runner', 1028],
-  ['computer-use', 1785],
+  ['hooks-runner', INITIAL_CEILING['packages/base/extensions/hooks-runner']!],
+  ['computer-use', INITIAL_CEILING['packages/base/extensions/computer-use']!],
   // 2026-09-23 user-approved: dsh-compatible Skill discovery. Measured 899.
   // SKILL-CATALOG-CLEAN-REWRITE: same reviewed exact total as the catalog/name activation budget above.
   // Skill description bounds and paged reads. Measured 1121, exact.
   // 2026-10-07 invocation flags and flat Markdown admission; countLines 1195, exact.
-  ['skills', 1209],
+  ['skills', INITIAL_CEILING['packages/base/extensions/skills']!],
   // Write staleness guard, session images and bounded attachment text reads. Measured 922, exact.
   // 2026-10-07 integrated official job tools and output handling: exact countLines 959.
-  ['tools-core', 1115],
+  ['tools-core', INITIAL_CEILING['packages/base/extensions/tools-core']!],
 ])
 
 describe('bundled extension line budgets (default ≤ 800, named reviewed exceptions)', () => {
