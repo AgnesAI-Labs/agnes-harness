@@ -6,6 +6,7 @@ import {
   SettingsSelect,
   SettingsState,
   SettingsTextArea,
+  SettingsToolbar,
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
@@ -175,27 +176,29 @@ export function JobsPanel({
               <option value="pwsh">{t('shell.pwsh')}</option>
             </SettingsSelect>
           </Field>
-          <Button
-            data-testid="terminal-open"
-            disabled={busy || !!jobId || !sessionId.trim()}
-            onClick={() => void control({ operation: 'open', shell })}
-          >
-            {t('open')}
-          </Button>
-          <Button
-            data-testid="terminal-interrupt"
-            disabled={busy || !jobId}
-            onClick={() => void control({ operation: 'signal', jobId, signal: 'SIGINT' })}
-          >
-            {t('interrupt')}
-          </Button>
-          <Button
-            data-testid="terminal-close"
-            disabled={busy || !jobId}
-            onClick={() => void control({ operation: 'kill', jobId })}
-          >
-            {t('close')}
-          </Button>
+          <SettingsToolbar>
+            <Button
+              data-testid="terminal-open"
+              disabled={busy || !!jobId || !sessionId.trim()}
+              onClick={() => void control({ operation: 'open', shell })}
+            >
+              {t('open')}
+            </Button>
+            <Button
+              data-testid="terminal-interrupt"
+              disabled={busy || !jobId}
+              onClick={() => void control({ operation: 'signal', jobId, signal: 'SIGINT' })}
+            >
+              {t('interrupt')}
+            </Button>
+            <Button
+              data-testid="terminal-close"
+              disabled={busy || !jobId}
+              onClick={() => void control({ operation: 'kill', jobId })}
+            >
+              {t('close')}
+            </Button>
+          </SettingsToolbar>
           <SettingsTextArea
             readOnly
             rows={30}

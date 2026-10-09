@@ -52,6 +52,11 @@ it('filters history and pages without searching before submit', async () => {
   const search = vi.fn(async () => pages.shift() ?? { items: [] })
   const host = await mount(search)
   expect(search).not.toHaveBeenCalled()
+  for (const id of ['query', 'title', 'workspace']) {
+    const input = host.querySelector<HTMLInputElement>(`#history-search-${id}`)
+    expect(host.querySelector<HTMLLabelElement>(`label[for="history-search-${id}"]`)?.control).toBe(input)
+    expect(input?.form).toBe(host.querySelector('[data-testid="history-search-form"]'))
+  }
   setInput(host, 'history-search-query', 'alpha bridge')
   setInput(host, 'history-search-title', 'Bridge')
   setInput(host, 'history-search-workspace', '/work/a')

@@ -7,6 +7,7 @@ import {
   SettingsInput,
   SettingsSelect,
   SettingsState,
+  SettingsToolbar,
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
@@ -170,23 +171,29 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
       <p>
         {t('overrides')}: {config.overrides?.length ?? 0}
       </p>
-      <Button
-        data-testid="auto-review-clear-overrides"
-        disabled={!canSave || busy || !config.overrides?.length}
-        onClick={() => update({ overrides: [] })}
-      >
-        {t('clear')}
-      </Button>
-      <Button
-        data-testid="auto-review-save"
-        disabled={!canSave || !loaded || busy}
-        loading={busy}
-        onClick={() => void save()}
-      >
-        {t('save')}
-      </Button>
+      <SettingsToolbar>
+        <Button
+          data-testid="auto-review-clear-overrides"
+          disabled={!canSave || busy || !config.overrides?.length}
+          onClick={() => update({ overrides: [] })}
+        >
+          {t('clear')}
+        </Button>
+        <Button
+          data-testid="auto-review-save"
+          disabled={!canSave || !loaded || busy}
+          loading={busy}
+          onClick={() => void save()}
+        >
+          {t('save')}
+        </Button>
+      </SettingsToolbar>
       {message && (
-        <SettingsState role={message === 'failed' ? 'alert' : 'status'} data-testid="auto-review-status">
+        <SettingsState
+          tone={message === 'failed' ? 'error' : 'success'}
+          role={message === 'failed' ? 'alert' : 'status'}
+          data-testid="auto-review-status"
+        >
           {t(message)}
         </SettingsState>
       )}

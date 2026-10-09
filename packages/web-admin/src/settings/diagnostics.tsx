@@ -125,7 +125,14 @@ export function DiagnosticsPanel({
           {appServerErrorMessage(failure, locale) ?? t('unavailable')}
         </SettingsState>
       )}
-      {notice && <SettingsState data-testid="diagnostics-notice">{t(notice)}</SettingsState>}
+      {notice && (
+        <SettingsState
+          tone={notice === 'invalid' || notice === 'copyFailed' ? 'error' : 'success'}
+          data-testid="diagnostics-notice"
+        >
+          {t(notice)}
+        </SettingsState>
+      )}
       <SettingsCard title={t('recent')} data-testid="diagnostics-errors" aria-busy={busy}>
         <form
           onSubmit={(event) => {

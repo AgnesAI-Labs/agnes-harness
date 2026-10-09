@@ -54,6 +54,7 @@ export const feedbackCatalog: LocaleCatalog = {
     refresh: 'Refresh feedback',
     counts:
       'Feedback: {up} positive · {down} negative · {withCandidate} linked to candidates · {withdrawn} withdrawn',
+    loading: 'Loading feedback…',
     empty: 'No feedback yet.',
     truncated: 'This view reached its local history limit.',
     'category.': 'Uncategorized',
@@ -103,6 +104,7 @@ export const feedbackCatalog: LocaleCatalog = {
     no: '否',
     refresh: '刷新反馈',
     counts: '反馈：{up} 赞 · {down} 踩 · {withCandidate} 关联候选 · {withdrawn} 已撤回',
+    loading: '正在读取反馈…',
     empty: '暂无反馈。',
     truncated: '此视图已达到本地历史读取上限。',
     'category.': '未分类',

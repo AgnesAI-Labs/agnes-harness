@@ -9,6 +9,7 @@ import {
   SettingsDetails,
   SettingsState,
   SettingsTextArea,
+  SettingsToolbar,
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
@@ -101,11 +102,11 @@ export function SystemPromptPanel({
         </SettingsState>
       )}
       {saved && (
-        <SettingsState role="status" data-testid="system-prompt-saved">
+        <SettingsState tone="success" role="status" data-testid="system-prompt-saved">
           {t('saved')}
         </SettingsState>
       )}
-      {busy && !snapshot && <SettingsState>{t('loading')}</SettingsState>}
+      {busy && !snapshot && <SettingsState tone="loading">{t('loading')}</SettingsState>}
       <div className="system-prompt-layout">
         <SettingsCard title={t('custom')} data-testid="system-prompt-editor" aria-busy={busy}>
           {(['personaPrefix', 'personaSuffix', 'replyStyle'] as const).map((name, index) => (
@@ -151,20 +152,22 @@ export function SystemPromptPanel({
               onChange={(event) => setConfirmed(event.currentTarget.checked)}
             />
           </SettingsDetails>
-          <Button
-            data-testid="system-prompt-save"
-            disabled={!canSave || busy || overrideConflict || (!!config.fullOverride && !confirmed)}
-            onClick={() => void save()}
-          >
-            {t('save')}
-          </Button>{' '}
-          <Button
-            data-testid="system-prompt-reset"
-            disabled={!canSave || busy}
-            onClick={() => void save(true)}
-          >
-            {t('reset')}
-          </Button>
+          <SettingsToolbar>
+            <Button
+              data-testid="system-prompt-save"
+              disabled={!canSave || busy || overrideConflict || (!!config.fullOverride && !confirmed)}
+              onClick={() => void save()}
+            >
+              {t('save')}
+            </Button>
+            <Button
+              data-testid="system-prompt-reset"
+              disabled={!canSave || busy}
+              onClick={() => void save(true)}
+            >
+              {t('reset')}
+            </Button>
+          </SettingsToolbar>
         </SettingsCard>
         <SettingsCard title={t('preview')} data-testid="system-prompt-preview">
           <p>{t('sources')}</p>

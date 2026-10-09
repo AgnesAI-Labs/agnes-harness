@@ -1,4 +1,4 @@
-import { Button, Field, SettingsCard, SettingsInput, SettingsState } from '@agnes/web-ui'
+import { Button, Field, SettingsCard, SettingsInput, SettingsState, SettingsToolbar } from '@agnes/web-ui'
 import { type FormEvent, useState } from 'react'
 
 export type HistoryHit = {
@@ -91,25 +91,39 @@ export function HistorySearchPanel({
     <SettingsCard>
       <form className="history-search" data-testid="history-search-form" onSubmit={onSubmit}>
         <p>{t('historyHelp')}</p>
-        <Field htmlFor="history-search-query" label={t('historyQuery')}></Field>
-        <SettingsInput id="history-search-query" data-testid="history-search-query" name="query" />
-        <Field htmlFor="history-search-title" label={t('historyTitle')}></Field>
-        <SettingsInput id="history-search-title" data-testid="history-search-title" name="title" />
-        <Field htmlFor="history-search-workspace" label={t('historyWorkspace')}></Field>
-        <SettingsInput
-          id="history-search-workspace"
-          data-testid="history-search-workspace"
-          name="workspace"
-        />
-        <Button htmlType="submit" data-testid="history-search-submit" disabled={busy}>
-          {t('historySubmit')}
-        </Button>
-        <p data-testid="history-search-status" role={status === 'error' ? 'alert' : 'status'}>
+        <SettingsToolbar>
+          <Field htmlFor="history-search-query" label={t('historyQuery')}>
+            <SettingsInput id="history-search-query" data-testid="history-search-query" name="query" />
+          </Field>
+          <Field htmlFor="history-search-title" label={t('historyTitle')}>
+            <SettingsInput id="history-search-title" data-testid="history-search-title" name="title" />
+          </Field>
+          <Field htmlFor="history-search-workspace" label={t('historyWorkspace')}>
+            <SettingsInput
+              id="history-search-workspace"
+              data-testid="history-search-workspace"
+              name="workspace"
+            />
+          </Field>
+          <Button htmlType="submit" data-testid="history-search-submit" disabled={busy}>
+            {t('historySubmit')}
+          </Button>
+        </SettingsToolbar>
+        <SettingsState
+          hidden={status === 'idle'}
+          tone={status === 'error' ? 'error' : 'empty'}
+          data-testid="history-search-status"
+          role={status === 'error' ? 'alert' : 'status'}
+        >
           {status === 'empty' ? t('historyEmpty') : status === 'error' ? t('historyUnavailable') : ''}
-        </p>
+        </SettingsState>
         <ul className="agnes-settings-list" data-testid="history-search-results">
           {page?.items.map((item) => (
-            <li key={`${item.sessionId}:${item.seq ?? ''}:${item.ts}`} data-testid="history-hit">
+            <li
+              className="agnes-settings-row"
+              key={`${item.sessionId}:${item.seq ?? ''}:${item.ts}`}
+              data-testid="history-hit"
+            >
               <span>{item.title || item.sessionId}</span>
               <span>{item.workspace}</span>
               <span>{item.snippet}</span>
@@ -126,7 +140,7 @@ export function HistorySearchPanel({
             {t('historyNext')}
           </Button>
         )}
-        {page?.truncated && <SettingsState tone="success">{t('historyCapped')}</SettingsState>}
+        {page?.truncated && <SettingsState>{t('historyCapped')}</SettingsState>}
       </form>
     </SettingsCard>
   )

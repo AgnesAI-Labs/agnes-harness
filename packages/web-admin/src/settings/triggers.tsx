@@ -138,7 +138,20 @@ export function TriggersPanel({ canSave }: { canSave: boolean }) {
         </SettingsState>
       )}
       {notice && (
-        <SettingsState role="status" data-testid="triggers-notice">
+        <SettingsState
+          tone={
+            notice === 'saved' || notice === 'accepted'
+              ? 'success'
+              : notice === 'pending' ||
+                  notice === 'disabled' ||
+                  notice === 'duplicate' ||
+                  notice === 'no-rule'
+                ? 'empty'
+                : 'error'
+          }
+          role="status"
+          data-testid="triggers-notice"
+        >
           {t(notice)}
         </SettingsState>
       )}
@@ -194,29 +207,31 @@ export function TriggersPanel({ canSave }: { canSave: boolean }) {
       <h3>{t('rules')}</h3>
       <ul className="agnes-settings-list">
         {snapshot?.rules.map((item) => (
-          <li key={item.id} data-testid="trigger-row">
+          <li className="agnes-settings-row" key={item.id} data-testid="trigger-row">
             <span>
               {item.id} · {item.provider} · {item.event} · {item.workspace}
             </span>
-            <Button
-              data-testid={`trigger-edit-${item.id}`}
-              disabled={busy}
-              onClick={() => {
-                setRule(item)
-                setEditing(true)
-                setFilters(JSON.stringify(item.filters, null, 2))
-                setBundles(item.bundles.join(', '))
-              }}
-            >
-              {t('edit')}
-            </Button>
-            <Button
-              data-testid={`trigger-delete-${item.id}`}
-              disabled={!canSave || busy}
-              onClick={() => void request({ action: 'delete', ruleId: item.id })}
-            >
-              {t('remove')}
-            </Button>
+            <SettingsToolbar>
+              <Button
+                data-testid={`trigger-edit-${item.id}`}
+                disabled={busy}
+                onClick={() => {
+                  setRule(item)
+                  setEditing(true)
+                  setFilters(JSON.stringify(item.filters, null, 2))
+                  setBundles(item.bundles.join(', '))
+                }}
+              >
+                {t('edit')}
+              </Button>
+              <Button
+                data-testid={`trigger-delete-${item.id}`}
+                disabled={!canSave || busy}
+                onClick={() => void request({ action: 'delete', ruleId: item.id })}
+              >
+                {t('remove')}
+              </Button>
+            </SettingsToolbar>
           </li>
         ))}
       </ul>
@@ -410,10 +425,10 @@ export function TriggersPanel({ canSave }: { canSave: boolean }) {
       <Button data-testid="triggers-refresh" disabled={busy} onClick={() => void request({ action: 'list' })}>
         {t('refresh')}
       </Button>
-      {snapshot?.deliveries.length === 0 && <p>{t('empty')}</p>}
+      {snapshot?.deliveries.length === 0 && <SettingsState>{t('empty')}</SettingsState>}
       <ul className="agnes-settings-list">
         {snapshot?.deliveries.map((item) => (
-          <li key={item.id} data-testid="trigger-delivery">
+          <li className="agnes-settings-row" key={item.id} data-testid="trigger-delivery">
             <span>
               {new Date(item.at).toLocaleString()} · {item.ruleId} · {t(item.status)}
             </span>

@@ -83,7 +83,7 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
         </SettingsState>
       )}
       {saved && (
-        <SettingsState role="status" data-testid="memory-saved">
+        <SettingsState tone="success" role="status" data-testid="memory-saved">
           {t('saved')}
         </SettingsState>
       )}

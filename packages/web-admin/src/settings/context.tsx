@@ -249,7 +249,7 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
       <p>{t('contextScopeHelp')}</p>
       {snapshot?.rules && (
         <div data-testid="context-rule-files">
-          {!snapshot.rules.files.length && <p>{t('contextNoRules')}</p>}
+          {!snapshot.rules.files.length && <SettingsState>{t('contextNoRules')}</SettingsState>}
           {snapshot.rules.files.map((file) => (
             <details key={file.path}>
               <summary>
@@ -259,7 +259,7 @@ export function ContextPanel({ canSave }: { canSave: boolean }) {
             </details>
           ))}
           {snapshot.rules.skipped.length > 0 && (
-            <SettingsState tone="success">
+            <SettingsState>
               {t('contextSkipped')}: {snapshot.rules.skipped.join(', ')}
             </SettingsState>
           )}

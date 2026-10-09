@@ -82,7 +82,11 @@ export function ObservabilityPanel({ canSave = true }: { canSave?: boolean }) {
         </SettingsState>
       )}
       {notice && (
-        <SettingsState role="status" data-testid="otlp-notice">
+        <SettingsState
+          tone={notice === 'failed' ? 'error' : 'success'}
+          role="status"
+          data-testid="otlp-notice"
+        >
           {t(notice)}
         </SettingsState>
       )}

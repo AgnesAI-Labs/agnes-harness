@@ -4,7 +4,14 @@ import {
   childEngineSettingsError,
   DISABLED_CHILD_ENGINES,
 } from '@agnes/base/child-engines'
-import { Button, configIssues, SchemaConfigFields, SchemaControl, SettingsCard } from '@agnes/web-ui'
+import {
+  Button,
+  configIssues,
+  SchemaConfigFields,
+  SchemaControl,
+  SettingsCard,
+  SettingsState,
+} from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import { childEngineConfigSchema } from './config-schemas.js'
 
@@ -154,12 +161,13 @@ export function ChildEnginesPanel({
       })}
       <p>{t('engine.restart')}</p>
       {status && (
-        <p
+        <SettingsState
+          tone={status === 'engine.saved' || status === 'engine.savedRestart' ? 'success' : 'error'}
           role={status === 'engine.saved' || status === 'engine.savedRestart' ? 'status' : 'alert'}
           data-testid="child-engine-status"
         >
           {t(status)}
-        </p>
+        </SettingsState>
       )}
       {saved && (
         <section aria-label={t('engine.document')}>
