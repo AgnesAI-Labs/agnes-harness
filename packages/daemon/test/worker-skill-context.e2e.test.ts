@@ -19,7 +19,7 @@ const roots: string[] = []
 // MCP resources, plugin authoring, workflows, PTYs, history, reminders, goals, child-model
 // discovery and bounded questions.
 // Includes the reviewed workspace read and Host-owned candidate authoring contracts.
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = 'eb3f50532278bbc19e0f72a7134a69bce68709822d9ca2397a672e2f764e5fae'
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '2925bc45c75fc34b4402a34d6bd1a1d0ee3c96cad1fb182fc0101c7676e03fa0'
 const expectedToolNames = [
   'ask_user_question',
   'compact',

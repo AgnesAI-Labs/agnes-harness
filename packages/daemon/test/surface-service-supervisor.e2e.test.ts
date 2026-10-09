@@ -47,6 +47,7 @@ function profile(dataDir: string): ResolvedProfile {
     name: 'local-dev',
     dataDir,
     cacheDir: join(dataDir, 'cache'),
+    approvals: { mode: 'manual' },
     computerUse: DEFAULT_COMPUTER_USE,
   } as unknown as Omit<ResolvedProfile, 'hash'>
   return { ...body, hash: `sha256-${sha256hex(canonicalJson(hashInput(body)))}` }

@@ -82,6 +82,7 @@ function buildProfile(dataDir: string): ResolvedProfile {
     name: 'local-dev',
     dataDir,
     seams: { principals: '@agnes/base' },
+    approvals: { mode: 'manual' },
     computerUse: DEFAULT_COMPUTER_USE,
     presets: { default: 'standard', allowed: ['standard'] },
     provider: {
@@ -967,7 +968,7 @@ describe('agnesd supervisor: ACP subscriptions follow the connection', () => {
       const selected = queue.find((item) => item.preview === 'queue-C')
       if (!selected) throw new Error('missing selected input')
       await session.sendNow(selected.itemId, { commandId: 'send-C' })
-      await expect(active).resolves.toMatchObject({ reason: 'aborted' })
+      await expect(active).resolves.toMatchObject({ reason: 'interrupted' })
       await vi.waitFor(
         async () => {
           const timeline = await session.projectUI()

@@ -47,6 +47,7 @@ function profile(dataDir: string): ResolvedProfile {
     name: 'local-dev',
     dataDir,
     transports: [],
+    approvals: { mode: 'manual' },
     computerUse: DEFAULT_COMPUTER_USE,
     presets: { default: 'standard', allowed: ['standard'] },
   } as unknown as Omit<ResolvedProfile, 'hash'>
@@ -900,8 +901,8 @@ describe('production supervisor storage', () => {
         JSON.stringify({
           enabled: false,
           redaction: 'content',
-          endpoint: 'https://collector.example:4318/private?token=synthetic-secret',
-          headers: { Authorization: 'synthetic-secret' },
+          endpoint: 'https://collector.example:4318/private/synthetic-secret',
+          headers: { Authorization: { secretRef: 'env:SYNTHETIC_SECRET' } },
         }),
       )
       const store = { table: () => ({}) }
