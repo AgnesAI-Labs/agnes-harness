@@ -284,6 +284,7 @@ test('UI background jobs, interactive terminal and schedule cards persist observ
   await open(page, runtime)
   await turn(page, 'call shell {"command":"printf E2E_JOB_OK","background":true}')
   const session = await current(page, runtime)
+  await toolResult(session, 'shell')
   await turn(page, 'call job_list {}')
   await expect(page.getByTestId('background-job-card').first()).toBeVisible()
   await quality(page, info, 'background-job-card')
