@@ -135,9 +135,6 @@ importers:
       '@agnes/loop-default':
         specifier: workspace:*
         version: link:../loop-default
-      '@agnes/mcp-transport-health':
-        specifier: workspace:*
-        version: link:../mcp-transport-health
       '@agnes/memory-file':
         specifier: workspace:*
         version: link:../memory-file
@@ -1145,8 +1142,6 @@ importers:
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
-
-  packages/mcp-transport-health: {}
 
   packages/memory-file:
     dependencies:

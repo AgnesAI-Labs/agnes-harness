@@ -44,7 +44,7 @@
   "packages/base/extensions/subagent": 789,
   "packages/base/extensions/skills": 1209,
   "packages/base/extensions/hooks-runner": 1028,
-  "packages/base/src/mcp": 1559,
+  "packages/base/src/mcp": 1601,
   "packages/base/extensions/computer-use": 1785,
   "packages/base/extensions/privacy": 369,
   "packages/host/src": 524,

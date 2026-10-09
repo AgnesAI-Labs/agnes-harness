@@ -2562,7 +2562,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 1401 -> 1571; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Portable metadata-backed MCP tool indexing for non-SQL persistence.
   // countLines: 1571 -> 1601; exact cap, no exclusions or spare allocation.
-  'packages/base/src/mcp': 1559,
+  'packages/base/src/mcp': 1601,
   // 2026-09-12: I7 Base Tasks 34/35 introduce the privacy extension. Its first slice measures 214
   // counted lines; the universal fixed extension ceiling remains 800 rather than growing Base.
   'packages/base/extensions/privacy': 369,

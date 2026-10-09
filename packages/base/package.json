@@ -179,7 +179,6 @@
     "@agnes/core": "workspace:*",
     "@agnes/history-index": "workspace:*",
     "@agnes/loop-default": "workspace:*",
-    "@agnes/mcp-transport-health": "workspace:*",
     "@agnes/observability": "workspace:*",
     "@agnes/plugin-runtime": "workspace:*",
     "@agnes/protocol": "workspace:*",

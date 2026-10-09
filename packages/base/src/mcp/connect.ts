@@ -1,4 +1,3 @@
-import { type CloseObservableTransport, observeTransportDisconnect } from '@agnes/mcp-transport-health'
 import { deploymentFetch } from '@agnes/system-node/deployment-network'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 // SSEClientTransport is the legacy pre-2025-03-26 MCP SSE transport. The SDK marks it @deprecated in
@@ -26,6 +25,7 @@ import {
   readRemoteResourceContent,
   readRemoteResourceTemplate,
 } from './resources.js'
+import { type CloseObservableTransport, observeTransportDisconnect } from './transport-health.js'
 
 type SdkTool = {
   name: string

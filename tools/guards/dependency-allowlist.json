@@ -67,14 +67,12 @@
     "@agnes/core",
     "@agnes/plugin-runtime",
     "@agnes/ai",
-    "@agnes/mcp-transport-health",
     "@agnes/system-node",
     "@agnes/loop-default",
     "@agnes/history-index",
     "@agnes/observability",
     "@agnes/memory-file"
   ],
-  "@agnes/mcp-transport-health": [],
   "@agnes/code": ["@agnes/protocol", "@agnes/extension-api", "@agnes/core", "@agnes/base"],
   "@agnes/runtime-python": ["@agnes/code", "@agnes/protocol"],
   "@agnes/host": [

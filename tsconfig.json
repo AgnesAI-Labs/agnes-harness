@@ -104,9 +104,6 @@
       "path": "packages/bridges"
     },
     {
-      "path": "packages/mcp-transport-health"
-    },
-    {
       "path": "packages/base"
     },
     {
