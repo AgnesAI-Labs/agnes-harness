@@ -14,6 +14,14 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'settings.config.credentialRequired': 'An API key is required. Enter the key and retry.',
     'settings.config.credentialPermissions':
       'Credential storage permissions are invalid. Ensure AGH_HOME and its secrets/auth directories belong to the current user, with directories 0700 and files 0600. Check data/audit/configuration.jsonl for the affected path.',
+    'settings.config.credentialPermissionsDetail': '{target} has mode {actual}; it must be {expected}.',
+    'settings.config.credentialTarget.home': 'AGH_HOME',
+    'settings.config.credentialTarget.secrets': 'AGH_HOME/secrets',
+    'settings.config.credentialTarget.auth': 'AGH_HOME/auth',
+    'settings.config.credentialTarget.locks': 'AGH_HOME/locks',
+    'settings.config.credentialTarget.provider':
+      'A provider directory under AGH_HOME/secrets or AGH_HOME/auth',
+    'settings.config.credentialTarget.file': 'A credential file under AGH_HOME',
     'settings.config.credentialNoSpace':
       'Credential storage has no free space. Free disk space in AGH_HOME and retry.',
     'settings.config.credentialReadOnly':
@@ -164,6 +172,13 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'settings.config.credentialRequired': '需要 API key，请输入密钥后重试。',
     'settings.config.credentialPermissions':
       '凭据存储权限不符合要求。请确认 AGH_HOME 及 secrets/auth 目录属于当前用户，目录权限为 0700、文件权限为 0600；具体路径见 data/audit/configuration.jsonl。',
+    'settings.config.credentialPermissionsDetail': '{target} 当前权限为 {actual}，需要为 {expected}。',
+    'settings.config.credentialTarget.home': 'AGH_HOME',
+    'settings.config.credentialTarget.secrets': 'AGH_HOME/secrets',
+    'settings.config.credentialTarget.auth': 'AGH_HOME/auth',
+    'settings.config.credentialTarget.locks': 'AGH_HOME/locks',
+    'settings.config.credentialTarget.provider': 'AGH_HOME/secrets 或 AGH_HOME/auth 下的 Provider 目录',
+    'settings.config.credentialTarget.file': 'AGH_HOME 下的凭据文件',
     'settings.config.credentialNoSpace': '凭据存储所在磁盘空间不足。请释放 AGH_HOME 所在磁盘的空间后重试。',
     'settings.config.credentialReadOnly':
       '凭据存储位于只读文件系统。请将 AGH_HOME 移至可写的本地目录并重启。',

@@ -65,13 +65,46 @@ const CONFIGURATION_REASON_KEYS: Readonly<Record<string, string>> = {
   CONFIG_INVALID_STATE: 'settings.config.invalidState',
 }
 
+const PERMISSION_TARGET_KEYS: Record<string, string> = {
+  home: 'settings.config.credentialTarget.home',
+  secrets: 'settings.config.credentialTarget.secrets',
+  auth: 'settings.config.credentialTarget.auth',
+  locks: 'settings.config.credentialTarget.locks',
+  provider: 'settings.config.credentialTarget.provider',
+  file: 'settings.config.credentialTarget.file',
+}
+
+/** The permission failure's part and modes, when the daemon sent them in the expected shape. */
+function permissionDetail(data: object, t: (key: string) => string): string | undefined {
+  const detail =
+    'detail' in data && data.detail !== null && typeof data.detail === 'object' ? data.detail : undefined
+  if (!detail) return undefined
+  const { target, actualMode, expectedMode } = detail as Record<string, unknown>
+  const targetKey = typeof target === 'string' ? PERMISSION_TARGET_KEYS[target] : undefined
+  if (
+    targetKey === undefined ||
+    typeof actualMode !== 'string' ||
+    typeof expectedMode !== 'string' ||
+    !/^[0-7]{4}$/.test(actualMode) ||
+    !/^[0-7]{4}$/.test(expectedMode)
+  )
+    return undefined
+  return t('settings.config.credentialPermissionsDetail')
+    .replace('{target}', t(targetKey))
+    .replace('{actual}', actualMode)
+    .replace('{expected}', expectedMode)
+}
+
 function configurationReason(error: unknown, t: (key: string) => string = tr): string | undefined {
   if (error === null || typeof error !== 'object') return undefined
   const data =
     'data' in error && error.data !== null && typeof error.data === 'object' ? error.data : undefined
   const reason = data && 'reason' in data && typeof data.reason === 'string' ? data.reason : undefined
   const key = reason === undefined ? undefined : CONFIGURATION_REASON_KEYS[reason]
-  return key === undefined ? undefined : t(key)
+  if (key === undefined) return undefined
+  const text = t(key)
+  const detail = reason === 'CONFIG_CREDENTIAL_PERMISSIONS' && data ? permissionDetail(data, t) : undefined
+  return detail ? `${detail} ${text}` : text
 }
 
 type SettingsElements = {
