@@ -1,5 +1,3 @@
-import { SettingsState, SettingsToolbar } from '../settings-layout.js'
-import { Badge } from '../ui/badge.js'
 import type {
   JsonValue,
   UiAction,
@@ -8,6 +6,8 @@ import type {
   UiSurfaceRecord,
 } from '@agnes/protocol/gen/intelligent-ui'
 import { type ReactNode, useId } from 'react'
+import { SettingsState, SettingsToolbar } from '../settings-layout.js'
+import { Badge } from '../ui/badge.js'
 import { Button } from '../ui/button.js'
 import { useUiText } from '../ui-locale.js'
 import { IntelligentCatalog, type IntelligentCatalogProps } from './catalog.js'
@@ -129,10 +129,14 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
             evidence={
               props.onEvidence ? (
                 <Button htmlType="button" onClick={() => props.onEvidence?.(receipt.seq)}>
-                  #{receipt.seq}
+                  {'#'}
+                  {receipt.seq}
                 </Button>
               ) : (
-                <span>#{receipt.seq}</span>
+                <span>
+                  {'#'}
+                  {receipt.seq}
+                </span>
               )
             }
           />

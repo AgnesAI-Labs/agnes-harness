@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { repoRoot } from './repo.js'
-import { findings, type ScanFinding, scanCalls, scanRepo } from './scan-paging.js'
+import { findings, type ScanFinding, scanCalls, scanRepo, tokenize } from './scan-paging.js'
 
 // A ledger scan returns at most 500 rows and says nothing when it stops there. A call in package
 // source or a testkit must either carry a limit it pages by (never above 500) or read one exact seq;
@@ -70,6 +70,10 @@ describe('scan paging guard: fixtures', () => {
   it('leaves a query passed through by name to the run-time check', () => {
     expect(rules('return this.d.log.scan(q)')).toEqual([])
     expect(scanCalls('return this.d.log.scan(q)')).toHaveLength(1)
+  })
+
+  it('refuses a stalled scanner instead of exhausting memory', () => {
+    expect(() => tokenize('<span>#{receipt.seq}</span>')).toThrow('Scanner did not advance')
   })
 })
 
