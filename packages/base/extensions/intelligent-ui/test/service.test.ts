@@ -241,7 +241,9 @@ describe('preset surface contract and ledger lifecycle', () => {
     await f.service().close({ surfaceId: 'reconcile', expectedRevision: 2 }, signal)
     expect(f.rows).toHaveLength(before)
     f.restart()
-    expect((await f.service().read({ sessionId: 'session', surfaceId: 'reconcile' }, signal)).surfaces[0]).toMatchObject({
+    expect(
+      (await f.service().read({ sessionId: 'session', surfaceId: 'reconcile' }, signal)).surfaces[0],
+    ).toMatchObject({
       status: 'closed',
       surface: { revision: 2 },
     })
@@ -416,7 +418,9 @@ describe('preset surface contract and ledger lifecycle', () => {
       expect(validIntelligentSurface(candidate)).toBe(false)
       await expect(f.service().render({ surface: candidate }, signal)).rejects.toBeDefined()
     }
-    expect((await f.service().read({ sessionId: 'session' }, signal)).surfaces.map((item) => item.surface.id)).toEqual(['reconcile'])
+    expect(
+      (await f.service().read({ sessionId: 'session' }, signal)).surfaces.map((item) => item.surface.id),
+    ).toEqual(['reconcile'])
     for (let i = 0; i < 30; i++)
       await f.service().action({ ...request('bad' + i), revision: 99 }, actor, signal)
     await expect(f.service().action(request('limit'), actor, signal)).rejects.toMatchObject({
@@ -427,22 +431,30 @@ describe('preset surface contract and ledger lifecycle', () => {
   })
   it('binds cursor pages to a snapshot, filters and expiry without repeating receipts', async () => {
     const f = await opened()
-    const second = surface(); second.id = 'second'
+    const second = surface()
+    second.id = 'second'
     await f.service().render({ surface: second }, signal)
     await f.service().action(request(), actor, signal)
     const first = await f.service().read({ sessionId: 'session', limit: 1 }, signal)
     expect(first.nextCursor).toBeDefined()
+    if (!first.nextCursor) throw new Error('Expected a next-page cursor')
     expect(first.actions).toHaveLength(1)
-    const updated = surface(); updated.id = 'second'; updated.revision = 2
+    const updated = surface()
+    updated.id = 'second'
+    updated.revision = 2
     await f.service().update({ surfaceId: 'second', expectedRevision: 1, surface: updated }, signal)
     const next = await f.service().read({ sessionId: 'session', limit: 1, cursor: first.nextCursor }, signal)
     expect(next.lastSeq).toBe(first.lastSeq)
     expect(next.surfaces[0]?.surface.revision).toBe(1)
     expect(next.actions).toEqual([])
     for (const params of [{ surfaceId: 'second' }, { limit: 2 }, { cursor: first.nextCursor + 'x' }])
-      await expect(f.service().read({ sessionId: 'session', limit: 1, cursor: first.nextCursor, ...params }, signal)).rejects.toMatchObject({ data: { code: 'INVALID_PARAMS' } })
+      await expect(
+        f.service().read({ sessionId: 'session', limit: 1, cursor: first.nextCursor, ...params }, signal),
+      ).rejects.toMatchObject({ data: { code: 'INVALID_PARAMS' } })
     f.clock(161000)
-    await expect(f.service().read({ sessionId: 'session', limit: 1, cursor: first.nextCursor }, signal)).rejects.toMatchObject({ data: { code: 'INVALID_PARAMS' } })
+    await expect(
+      f.service().read({ sessionId: 'session', limit: 1, cursor: first.nextCursor }, signal),
+    ).rejects.toMatchObject({ data: { code: 'INVALID_PARAMS' } })
   })
   it('releases closed view capacity while preserving historical identity after restart', async () => {
     const f = fixture()
@@ -458,9 +470,14 @@ describe('preset surface contract and ledger lifecycle', () => {
     for (const row of f.rows) projected = uiProjection.apply(projected, row)
     expect(projected).toMatchObject({ surfaces: {} })
     expect((await f.service().read({ sessionId: 'session' }, signal)).surfaces).toEqual([])
-    expect((await f.service().read({ sessionId: 'session', surfaceId: 'view0' }, signal)).surfaces[0]?.status).toBe('closed')
-    const duplicate = surface(); duplicate.id = 'view0'
-    await expect(f.service().render({ surface: duplicate }, signal)).rejects.toMatchObject({ data: { code: 'UI_STALE' } })
+    expect(
+      (await f.service().read({ sessionId: 'session', surfaceId: 'view0' }, signal)).surfaces[0]?.status,
+    ).toBe('closed')
+    const duplicate = surface()
+    duplicate.id = 'view0'
+    await expect(f.service().render({ surface: duplicate }, signal)).rejects.toMatchObject({
+      data: { code: 'UI_STALE' },
+    })
     await f.service().render({ surface: surface() }, signal)
     expect((await f.service().read({ sessionId: 'session' }, signal)).surfaces).toHaveLength(1)
   })

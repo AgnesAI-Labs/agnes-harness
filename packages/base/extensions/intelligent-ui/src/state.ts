@@ -1,5 +1,6 @@
+import { UiActionReceipt } from '@agnes/protocol/gen/intelligent-ui'
 import type { EventEnvelope, JsonValue, UiActionParams, UiSurfaceRecord } from '@agnes/protocol'
-import { jcs, validateAgainst, UiActionReceipt, type UiRefusal } from '@agnes/protocol'
+import { jcs, validateAgainst, type UiRefusal } from '@agnes/protocol'
 import type { DeferredToolInvocation, ProjectionDef } from '@agnes/extension-api'
 
 export const UI_OWNER = 'agnes/intelligent-ui'
@@ -154,11 +155,12 @@ export const uiProjection: ProjectionDef = {
       const record = data.record as UiSurfaceRecord,
         old = next.surfaces[record.surface.id]
       if (record.status === 'closed') delete next.surfaces[record.surface.id]
-      else next.surfaces[record.surface.id] = {
-        ...record,
-        createdSeq: old?.createdSeq ?? event.seq,
-        updatedSeq: event.seq,
-      }
+      else
+        next.surfaces[record.surface.id] = {
+          ...record,
+          createdSeq: old?.createdSeq ?? event.seq,
+          updatedSeq: event.seq,
+        }
     } else {
       const receipt = data.receipt ?? (data.record as ActionRecord | undefined)?.receipt
       if (receipt)

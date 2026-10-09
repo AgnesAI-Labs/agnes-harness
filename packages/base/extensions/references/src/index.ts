@@ -1,5 +1,5 @@
-import type { ReferenceResolver } from '@agnes/extension-api'
-import { definePlugin, defineProvider } from '@agnes/plugin-runtime'
+import type { ProviderPluginContext, ReferenceResolver } from '@agnes/extension-api'
+import { defineProvider } from '@agnes/plugin-runtime'
 
 export const fileReferenceResolver = defineProvider('reference-resolver', {
   id: 'file',
@@ -14,10 +14,10 @@ export const sessionReferenceResolver = defineProvider('reference-resolver', {
   resolve: (id, context) => context.sessions.read(id),
 } satisfies ReferenceResolver)
 
-export const referenceResolversPlugin = definePlugin({
+export const referenceResolversPlugin = {
   inject: { providers: { required: true } },
-  apply(ctx) {
+  apply(ctx: ProviderPluginContext) {
     ctx.providers.register('reference-resolver', '@agnes/base', fileReferenceResolver)
     ctx.providers.register('reference-resolver', '@agnes/base', sessionReferenceResolver)
   },
-})
+}

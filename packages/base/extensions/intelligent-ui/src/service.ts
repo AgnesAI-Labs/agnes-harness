@@ -1,15 +1,17 @@
-import { createHash, createHmac, randomBytes } from 'node:crypto'
-import type { DeferredInvocationReceipt, IntelligentUiFactory } from '@agnes/extension-api'
 import {
-  jcs,
-  rpcError,
   UiActionParams,
   UiCloseParams,
   UiReadParams,
   UiRenderParams,
   UiUpdateParams,
-  validateAgainst,
   X_AGNES_UI_LIMITS,
+} from '@agnes/protocol/gen/intelligent-ui'
+import { createHash, createHmac, randomBytes } from 'node:crypto'
+import type { DeferredInvocationReceipt, IntelligentUiFactory } from '@agnes/extension-api'
+import {
+  jcs,
+  rpcError,
+  validateAgainst,
   type UiActionReceipt,
   type UiRefusal,
   type UiSurfaceRecord,
@@ -126,7 +128,11 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
   const storeSurface = async (name: string, record: UiSurfaceRecord, value: UiState, reason?: string) => {
     // Projection byte budget includes current snapshots and a bounded receipt page.
     const surfaces = { ...value.surfaces, [record.surface.id]: record }
-    bounded(Object.fromEntries(Object.entries(surfaces).filter(([, item]) => item.status === 'open')), X_AGNES_UI_LIMITS.projectionBytes - 65536, 20)
+    bounded(
+      Object.fromEntries(Object.entries(surfaces).filter(([, item]) => item.status === 'open')),
+      X_AGNES_UI_LIMITS.projectionBytes - 65536,
+      20,
+    )
     await append(name, { record, ...(reason ? { reason } : {}) }, record.updatedSeq || undefined)
     return (await state()).surfaces[record.surface.id]!
   }
@@ -370,35 +376,83 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
       await ports.queue.notify(signal)
       return serial(async () => {
         signal.throwIfAborted()
-        const filter = createHash('sha256').update(jcs({ surfaceId: input.surfaceId ?? null, commandId: input.commandId ?? null, limit: input.limit ?? 16 })).digest('hex')
-        let watermark = ports.lastSeq, offset = 0, expires = ports.now() + 60000
+        const filter = createHash('sha256')
+          .update(
+            jcs({
+              surfaceId: input.surfaceId ?? null,
+              commandId: input.commandId ?? null,
+              limit: input.limit ?? 16,
+            }),
+          )
+          .digest('hex')
+        let watermark = ports.lastSeq,
+          offset = 0,
+          expires = ports.now() + 60000
         if (input.cursor) {
           const [body, signature, extra] = input.cursor.split('.')
-          if (!body || !signature || extra || createHmac('sha256', cursorSecret).update(body).digest('base64url') !== signature)
+          if (
+            !body ||
+            !signature ||
+            extra ||
+            createHmac('sha256', cursorSecret).update(body).digest('base64url') !== signature
+          )
             throw rpcError('INVALID_PARAMS', { reason: 'UI cursor invalid' })
-          const cursor = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as { w: number; o: number; e: number; f: string }
-          if (!Number.isSafeInteger(cursor.w) || cursor.w < 0 || cursor.w > ports.lastSeq || !Number.isSafeInteger(cursor.o) || cursor.o < 1 || !Number.isSafeInteger(cursor.e) || cursor.e <= ports.now() || cursor.f !== filter)
+          const cursor = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as {
+            w: number
+            o: number
+            e: number
+            f: string
+          }
+          if (
+            !Number.isSafeInteger(cursor.w) ||
+            cursor.w < 0 ||
+            cursor.w > ports.lastSeq ||
+            !Number.isSafeInteger(cursor.o) ||
+            cursor.o < 1 ||
+            !Number.isSafeInteger(cursor.e) ||
+            cursor.e <= ports.now() ||
+            cursor.f !== filter
+          )
             throw rpcError('INVALID_PARAMS', { reason: 'UI cursor expired or filter changed' })
-          watermark = cursor.w; offset = cursor.o; expires = cursor.e
+          watermark = cursor.w
+          offset = cursor.o
+          expires = cursor.e
         }
         const value = await state(watermark),
           all = Object.values(value.surfaces)
-            .filter((item) => input.surfaceId ? item.surface.id === input.surfaceId : item.status === 'open')
+            .filter((item) =>
+              input.surfaceId ? item.surface.id === input.surfaceId : item.status === 'open',
+            )
             .sort((a, b) => a.createdSeq - b.createdSeq)
         const limit = input.limit ?? 16,
           surfaces = all.slice(offset, offset + limit)
         // One bounded receipt page per snapshot, never duplicated on subsequent surface pages.
-        const actions = offset ? [] : Object.values(value.actions)
-          .filter((item) => (!input.commandId || item.request.commandId === input.commandId) && (!input.surfaceId || item.request.surfaceId === input.surfaceId))
-          .sort((a, b) => Number(unfinished(b)) - Number(unfinished(a)) || b.receipt.seq - a.receipt.seq)
-          .slice(0, 64).map((item) => item.receipt)
+        const actions = offset
+          ? []
+          : Object.values(value.actions)
+              .filter(
+                (item) =>
+                  (!input.commandId || item.request.commandId === input.commandId) &&
+                  (!input.surfaceId || item.request.surfaceId === input.surfaceId),
+              )
+              .sort((a, b) => Number(unfinished(b)) - Number(unfinished(a)) || b.receipt.seq - a.receipt.seq)
+              .slice(0, 64)
+              .map((item) => item.receipt)
         while (Buffer.byteLength(JSON.stringify(actions)) > 64512 && actions.length) actions.pop()
-        const next = offset + limit < all.length ? Buffer.from(jcs({ w: watermark, o: offset + limit, e: expires, f: filter })).toString('base64url') : undefined
+        const next =
+          offset + limit < all.length
+            ? Buffer.from(jcs({ w: watermark, o: offset + limit, e: expires, f: filter })).toString(
+                'base64url',
+              )
+            : undefined
         const result = {
           sessionId: ports.session.key,
           lastSeq: watermark,
-          surfaces, actions,
-          ...(next ? { nextCursor: next + '.' + createHmac('sha256', cursorSecret).update(next).digest('base64url') } : {}),
+          surfaces,
+          actions,
+          ...(next
+            ? { nextCursor: next + '.' + createHmac('sha256', cursorSecret).update(next).digest('base64url') }
+            : {}),
         }
         bounded(result, X_AGNES_UI_LIMITS.projectionBytes, 20)
         return result

@@ -1,5 +1,5 @@
 import { defineExtension, defineTool } from '@agnes/extension-api'
-import { UiCloseParams, UiRenderParams, UiUpdateParams } from '@agnes/protocol'
+import { UiCloseParams, UiRenderParams, UiUpdateParams } from '@agnes/protocol/gen/intelligent-ui'
 import { createIntelligentUiService } from './service.js'
 import { uiProjection } from './state.js'
 

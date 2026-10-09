@@ -1,9 +1,9 @@
+import { X_AGNES_UI_LIMITS } from '@agnes/protocol/gen/intelligent-ui'
 import {
   inspectJsonData,
   jcs,
   rpcError,
   validateAgainst,
-  X_AGNES_UI_LIMITS,
   type JsonValue,
   type UiActionParams,
   type UiSurface as Surface,
@@ -15,7 +15,7 @@ import type { TSchema } from '@sinclair/typebox'
 
 const ajv = new Ajv2020({ strict: false, allErrors: false, validateFormats: false, addUsedSchema: false })
 export const json = (value: unknown): JsonValue => JSON.parse(jcs(value))
-export function bounded(value: unknown, bytes: number, depth = X_AGNES_UI_LIMITS.jsonDepth): void {
+export function bounded(value: unknown, bytes: number, depth: number = X_AGNES_UI_LIMITS.jsonDepth): void {
   if (!inspectJsonData(value, bytes).ok) throw rpcError('INVALID_PARAMS', { reason: 'UI payload limit' })
   const walk = (v: unknown, n: number) => {
     if (n > depth) throw rpcError('INVALID_PARAMS', { reason: 'UI nesting limit' })
