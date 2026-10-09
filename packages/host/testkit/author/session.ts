@@ -6,13 +6,14 @@ import { join } from 'node:path'
 import type { Plugin } from '@agnes/cordis'
 import type { UiActionParams, UiActionReceipt, UiReadParams, UiReadResult, RouteDecl } from '@agnes/protocol'
 import { ScriptedProvider } from '@agnes/ai/testkit'
-import { scanAll, type Event, type Provider, type ToolResult } from '@agnes/core'
+import { scanAll, type Event, type Provider } from '@agnes/core'
 import {
   loopCheckpointCodec,
   loopShouldStop,
   type LoopContext,
   type LoopStepOutcome,
   type LoopFactory,
+  type ToolResult,
 } from '@agnes/extension-api'
 import { registerLoopPlugin } from '@agnes/extension-api'
 import { developmentPluginRows, hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
