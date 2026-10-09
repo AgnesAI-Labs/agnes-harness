@@ -129,6 +129,11 @@
     "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
     "observedMaxMs": 6917
   },
+  "packages/host-infrastructure/test/fs-enforcement.e2e.test.ts": {
+    "previous": "packages/host-infrastructure/test/fs-enforcement.test.ts",
+    "reason": "Real Python/readlink subprocesses for canonicalizing the remote filesystem denial matrix.",
+    "observedMaxMs": 2104
+  },
   "packages/host-providers/test/codex-oauth.e2e.test.ts": {
     "previous": "packages/host-providers/test/codex-oauth.test.ts",
     "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
@@ -179,6 +184,11 @@
     "reason": "Disk-backed full Host/profile/plugin composition and cold runtime assembly.",
     "observedMaxMs": 2496
   },
+  "packages/host/test/default-provider.slow.test.ts": {
+    "previous": "packages/host/test/default-provider.test.ts",
+    "reason": "Production Host assembly, credential files and four real local HTTP model exchanges.",
+    "observedMaxMs": 2358
+  },
   "packages/host/test/ext-host/base-tools.slow.test.ts": {
     "previous": "packages/host/test/ext-host/base-tools.test.ts",
     "reason": "Real Host upload socket and shutdown deadline.",
@@ -193,6 +203,11 @@
     "previous": "packages/host/test/profile/composition-runtime.test.ts",
     "reason": "Disk-backed full Host/profile/plugin composition and cold runtime assembly.",
     "observedMaxMs": 3569
+  },
+  "packages/host/test/runtime-generation-host.slow.test.ts": {
+    "previous": "packages/host/test/runtime-generation-host.test.ts",
+    "reason": "Full Host boot, persisted code/resource generations, shutdown and cold replay.",
+    "observedMaxMs": 2112
   },
   "packages/host/test/session-title.slow.test.ts": {
     "previous": "packages/host/test/session-title.test.ts",
