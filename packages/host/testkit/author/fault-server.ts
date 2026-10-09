@@ -40,6 +40,7 @@ export async function startModelFaultServer(script: readonly ModelFault[]): Prom
   }
   const requests: { attempt: number; kind: ModelFault['kind'] | 'exhausted' }[] = []
   const active = new Set<AbortController>()
+  const work = new Set<Promise<void>>()
   let cursor = 0
   let closing: Promise<void> | undefined
   const server = createServer((request, response) => {
@@ -51,7 +52,7 @@ export async function startModelFaultServer(script: readonly ModelFault[]): Prom
     active.add(controller)
     const closed = () => controller.abort()
     response.once('close', closed)
-    void (async () => {
+    const task = (async () => {
       try {
         if (!fault) {
           response.writeHead(500, { 'content-type': 'application/json' })
@@ -89,6 +90,8 @@ export async function startModelFaultServer(script: readonly ModelFault[]): Prom
         active.delete(controller)
       }
     })()
+    work.add(task)
+    void task.finally(() => work.delete(task))
   })
   try {
     await new Promise<void>((resolve, reject) => {
@@ -115,6 +118,8 @@ export async function startModelFaultServer(script: readonly ModelFault[]): Prom
         for (const controller of active) controller.abort()
         server.close((error) => (error ? reject(error) : resolve()))
         server.closeAllConnections()
+      }).then(async () => {
+        await Promise.allSettled([...work])
       })
       return closing
     },

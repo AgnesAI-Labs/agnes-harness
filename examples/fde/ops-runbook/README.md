@@ -72,3 +72,5 @@ npm test
 ```
 
 Tests drive public loop/tool contracts with fixed model replies and check results and refusal boundaries. The runbook test supplies a fake exec port; it does not verify OS sandbox confinement. See [external verification](../README.md#verification) for the repository harness command.
+
+Author tests use the single `@agnes/host/author-testkit` entry with explicit offline service/tool fixtures. After installing preview dependencies, run `agh plugin test .`. See [Test your plugin](../../../docs/extend/testing.md) for durable Host approvals, generation pins, recorded model replay and HTTP/SSE fault scripts.

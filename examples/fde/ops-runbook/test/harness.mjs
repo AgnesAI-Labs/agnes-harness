@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { resolveToolCallPolicy } from '@agnes/extension-api'
-import { createPluginTestRegistration } from '@agnes/host/testkit'
-import { createPluginTestHost, driveLoop } from '@agnes/plugin-runtime/testkit'
+import { createPluginTestHost, driveLoop } from '@agnes/host/author-testkit'
 import { answerPrefix } from '@agnes/protocol'
 import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/resource-control-runtime'
 import { Type } from '@sinclair/typebox'
@@ -163,18 +162,13 @@ export async function runWorkflow(
       }
     },
   })
-  const registration = createPluginTestRegistration()
   const host = await createPluginTestHost(main, {
     context,
     config,
-    registration: {
-      ...registration,
-      install(root, origins) {
-        registration.install(root, origins)
-        root.provide('loops', registry(loops))
-        root.provide('toolPolicies', registry(policies))
-        root.provide('skills', createSkillCordisService(skills))
-      },
+    services: {
+      loops: registry(loops),
+      toolPolicies: registry(policies),
+      skills: createSkillCordisService(skills),
     },
   })
   const fixtures = officialFixtures({ searchUnavailable, planState })

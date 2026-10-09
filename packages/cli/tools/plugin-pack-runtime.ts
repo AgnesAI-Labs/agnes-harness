@@ -2,12 +2,16 @@ import { cp, mkdir, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { BuildOptions } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { namespaces } from './authoring-sdk.js'
 import { copyImageRuntime } from './image-runtime.js'
 
 /** esbuild's JS launcher and platform binary must remain together; its API cannot be bundled. */
-export async function copyPluginPackRuntime(outputDirectory: string): Promise<void> {
+export async function copyPluginPackRuntime(
+  outputDirectory: string,
+  runtime: Pick<BuildOptions, 'define' | 'plugins'>,
+): Promise<void> {
   await copyImageRuntime(outputDirectory)
   const require = createRequire(import.meta.url)
   const { build } = require('esbuild') as typeof import('esbuild')
@@ -17,6 +21,7 @@ export async function copyPluginPackRuntime(outputDirectory: string): Promise<vo
     legalComments: 'eof',
     entryPoints: [join(dirname(fileURLToPath(import.meta.url)), 'authoring-sdk.ts')],
     outfile: join(outputDirectory, 'authoring-sdk.mjs'),
+    ...runtime,
     bundle: true,
     platform: 'node',
     format: 'esm',

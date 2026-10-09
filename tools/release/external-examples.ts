@@ -131,6 +131,7 @@ export async function validateExample(directory: string): Promise<void> {
 
 function compiledExports(value: unknown): unknown {
   if (typeof value === 'string') {
+    if (value.startsWith('./dist/') || value.endsWith('.mjs')) return value
     if (!value.endsWith('.ts')) throw new Error(`Unsupported source export: ${value}`)
     const base = value.slice(2, -3)
     return { types: `./dist/${base}.d.ts`, import: `./dist/${base}.js`, default: `./dist/${base}.js` }
@@ -222,6 +223,7 @@ async function packAuthors(root: string, env: NodeJS.ProcessEnv): Promise<string
       join(repo, 'node_modules/typescript/bin/tsc'),
       '-b',
       ...authorPackages.map((leaf) => join(repo, 'packages', leaf)),
+      join(repo, 'packages/plugin-runtime/tsconfig.testkit.json'),
     ],
     repo,
   )
@@ -234,7 +236,24 @@ async function packAuthors(root: string, env: NodeJS.ProcessEnv): Promise<string
       recursive: true,
       filter: (path) => !/\.(?:test|slow|e2e)\./.test(path) && !path.endsWith('.tsbuildinfo'),
     })
+    if (name === '@agnes/plugin-runtime') {
+      // Its dedicated testkit project nests the public sources under outDir/testkit.
+      // Overlay them at the source-shaped export path; ../src stays the production API.
+      await cp(join(directory, 'dist/testkit/testkit'), join(stage, 'dist/testkit'), {
+        recursive: true,
+        filter: (path) => !/\.(?:test|slow|e2e)\./.test(path),
+      })
+      await rm(join(stage, 'dist/testkit/testkit'), { recursive: true, force: true })
+    }
     if (name === '@agnes/protocol') await portableProtocolFacade(join(stage, 'dist'))
+    for (const target of Object.values(
+      typeof manifest.exports === 'string' ? { '.': manifest.exports } : manifest.exports,
+    )) {
+      if (typeof target === 'string' && target.endsWith('.mjs')) {
+        await mkdir(dirname(join(stage, target)), { recursive: true })
+        await copyFile(join(directory, target), join(stage, target))
+      }
+    }
     const dependencies = Object.fromEntries(
       Object.entries(manifest.dependencies ?? {}).map(([name, version]) => [
         name,
@@ -253,7 +272,7 @@ async function packAuthors(root: string, env: NodeJS.ProcessEnv): Promise<string
           peerDependencies: manifest.peerDependencies,
           peerDependenciesMeta: manifest.peerDependenciesMeta,
           license: manifest.license,
-          files: ['dist', 'LICENSE', 'NOTICE', 'VENDORED.md'],
+          files: ['dist', 'runtime', 'LICENSE', 'NOTICE', 'VENDORED.md'],
         },
         null,
         2,
@@ -262,8 +281,8 @@ async function packAuthors(root: string, env: NodeJS.ProcessEnv): Promise<string
     await notices(directory, stage)
     tarballs.push(await pack(stage, root, env))
   }
-  // Authors explicitly import this production Host registration bridge. Bundle
-  // only that exported entry so author tests need neither native storage nor Host internals.
+  // Bundle the author facade and registration bridge, including the lazily loaded
+  // full Host fixture. Embed the same reviewed runtime assets as the CLI bundle.
   const host = join(root, 'packages', 'host-testkit')
   await mkdir(host, { recursive: true })
   const registryDependencies = new Map<string, string>()
@@ -274,8 +293,33 @@ async function packAuthors(root: string, env: NodeJS.ProcessEnv): Promise<string
   }
   const { build } = createRequire(join(repo, 'packages/cli/package.json'))('esbuild')
   const result = await build({
-    entryPoints: [join(repo, 'packages/host/testkit/plugin-registration.ts')],
-    outfile: join(host, 'plugin-registration.js'),
+    entryPoints: {
+      'plugin-registration': join(repo, 'packages/host/testkit/plugin-registration.ts'),
+      'author-testkit': join(repo, 'packages/host/testkit/author/index.ts'),
+    },
+    outdir: host,
+    splitting: true,
+    define: {
+      AGNES_PROFILE_TEMPLATE_TEXTS: JSON.stringify(
+        Object.fromEntries(
+          await Promise.all(
+            ['local-dev', 'enterprise'].map(async (name) => [
+              name,
+              await readFile(join(repo, 'packages/host-common/templates', `${name}.yaml`), 'utf8'),
+            ]),
+          ),
+        ),
+      ),
+      AGNES_BASE_PRESET_TEXT: JSON.stringify(
+        await readFile(join(repo, 'packages/base/presets/base.yaml'), 'utf8'),
+      ),
+      AGNES_CC_HOOK_MAP_TEXT: JSON.stringify(
+        await readFile(
+          join(repo, 'packages/base/extensions/hooks-runner/generated/cc-hook-map.json'),
+          'utf8',
+        ),
+      ),
+    },
     bundle: true,
     platform: 'node',
     format: 'esm',
@@ -284,9 +328,10 @@ async function packAuthors(root: string, env: NodeJS.ProcessEnv): Promise<string
     metafile: true,
   })
   const dependencies: Record<string, string> = {}
+  const bundledOutputs = new Set(Object.keys(result.metafile.outputs).map((path) => resolve(path)))
   for (const output of Object.values(result.metafile.outputs) as { imports: { path: string }[] }[]) {
     for (const item of output.imports) {
-      if (isBuiltin(item.path)) continue
+      if (isBuiltin(item.path) || bundledOutputs.has(resolve(item.path))) continue
       const name = item.path.startsWith('@')
         ? item.path.split('/').slice(0, 2).join('/')
         : item.path.split('/')[0]!
@@ -303,6 +348,7 @@ async function packAuthors(root: string, env: NodeJS.ProcessEnv): Promise<string
         version: packages.get('@agnes/host')!.manifest.version,
         type: 'module',
         exports: {
+          './author-testkit': './author-testkit.js',
           './testkit': './plugin-registration.js',
           './testkit/plugin-registration': './plugin-registration.js',
         },

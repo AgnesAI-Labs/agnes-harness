@@ -45,11 +45,10 @@ it('force-closes delayed connections and rejects invalid timer/status scripts', 
   await expect(startModelFaultServer([{ kind: 'http', status: 429, latencyMs: -1 }])).rejects.toThrow('timer')
   await expect(startModelFaultServer([{ kind: 'http', status: 999 }])).rejects.toThrow('status')
   const server = await startModelFaultServer([
-    { kind: 'sse', chunks: [], chunkDelayMs: 60000, latencyMs: 60000 },
+    { kind: 'sse', chunks: [{ delayed: true }], chunkDelayMs: 60000 },
   ])
-  const controller = new AbortController()
-  const request = fetch(server.baseUrl, { signal: controller.signal }).catch((error: unknown) => error)
-  controller.abort()
+  const response = await fetch(server.baseUrl)
+  const body = response.text().catch((error: unknown) => error)
   await server.close()
-  expect(await request).toBeInstanceOf(Error)
+  expect(await body).toBeInstanceOf(Error)
 })

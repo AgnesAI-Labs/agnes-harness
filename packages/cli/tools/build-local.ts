@@ -330,12 +330,12 @@ async function buildLocal(out: string, nativeOutput?: string, versionOverride?: 
   await copyRipgrep(out)
   await copyBundledPlugins(out)
   await copyBundledExamples(out)
-  await copyPluginPackRuntime(out)
   const packageJson = JSON.parse(await readFile(join(cliRoot, 'package.json'), 'utf8')) as {
     version?: unknown
   }
   const version = versionOverride ?? (typeof packageJson.version === 'string' ? packageJson.version : '0.0.0')
   const defines = await runtimeDefines(version)
+  await copyPluginPackRuntime(out, { define: defines, plugins: [bundleJitiTransform] })
 
   // This is the normal package executable. SEA keeps its own build path and embedded-manifest
   // defines; sharing the source entry here keeps command routing and trusted loader behavior equal.

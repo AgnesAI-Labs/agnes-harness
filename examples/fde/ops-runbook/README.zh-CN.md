@@ -72,3 +72,5 @@ npm test
 ```
 
 测试以固定模型回复驱动公开 loop/tool 契约，核对结果与拒绝边界。运维测试注入模拟执行端口，不证明操作系统沙箱隔离。仓库中的外部验证命令见[索引](../README.zh-CN.md#验证)。
+
+作者测试统一使用 `@agnes/host/author-testkit`，明确注入离线服务和工具 fixture。准备好预览版依赖后运行 `agh plugin test .`；真实 Host 审批、generation pin、模型录制回放和 HTTP/SSE 故障脚本见[测试你的插件](../../../docs/extend/testing.zh-CN.md)。

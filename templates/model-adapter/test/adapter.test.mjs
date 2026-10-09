@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { runModelAdapter } from '@agnes/plugin-runtime/testkit'
+import { runModelAdapter } from '@agnes/host/author-testkit'
 import { adapter } from '../dist/index.js'
 
 test('catalog and deterministic stream, including cancellation', async () => {

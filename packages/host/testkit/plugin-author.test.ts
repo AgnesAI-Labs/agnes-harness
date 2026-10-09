@@ -1,4 +1,5 @@
 import { createPluginTestRegistration } from '@agnes/host/testkit'
+import { createPluginTestHost as mountAuthor } from '@agnes/host/author-testkit'
 import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
 import { createPluginTestHost } from '@agnes/plugin-runtime/testkit'
 import { Type } from '@sinclair/typebox'
@@ -80,6 +81,26 @@ describe('plugin author host', () => {
         { registration: createPluginTestRegistration() },
       ),
     ).rejects.toThrow()
+    expect(cleaned).toBe(true)
+    cleaned = false
+    const bridge = createPluginTestRegistration()
+    await expect(
+      mountAuthor(
+        { apply() {} },
+        {
+          registration: {
+            ...bridge,
+            install(root, origins) {
+              bridge.install(root, origins)
+              root.effect(() => () => {
+                cleaned = true
+              })
+              throw new Error('Service installation failed')
+            },
+          },
+        },
+      ),
+    ).rejects.toThrow('Service installation failed')
     expect(cleaned).toBe(true)
   })
 })

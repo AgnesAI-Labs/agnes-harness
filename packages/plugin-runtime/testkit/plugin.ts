@@ -18,7 +18,6 @@ export async function createPluginTestHost(plugin: Plugin, options: PluginTestOp
   const registration = options?.registration
   if (!registration) throw new TypeError('Plugin test registration required')
   const world = createVerifiedTestRoot()
-  registration.install(world.root, world.origins)
   const entry = normalizePluginExport(plugin)
   const snapshot = world.fixtures.snapshot({
     packageId: '@test/plugin',
@@ -49,11 +48,15 @@ export async function createPluginTestHost(plugin: Plugin, options: PluginTestOp
   const controller = new AbortController()
   let disposed = false
   try {
+    registration.install(world.root, world.origins)
     await world.apply([row])
     registration.assertLoaded()
   } catch (error) {
-    await world.apply([])
-    await world.root.fiber.dispose()
+    try {
+      await world.apply([])
+    } finally {
+      await world.root.fiber.dispose()
+    }
     throw error
   }
   const unavailable = () => {

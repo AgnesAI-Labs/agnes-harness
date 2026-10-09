@@ -89,3 +89,5 @@ npm test
 ```
 
 Own tests cover public loop/tool/policy contracts, fixture outcomes and the key refusal boundary. The [external harness](../README.md#verification) installs and tests this example outside the repository. These checks do not establish live-model quality, browser interaction or customer-system acceptance.
+
+Author tests use the single `@agnes/host/author-testkit` entry with explicit offline service/tool fixtures. After installing preview dependencies, run `agh plugin test .`. See [Test your plugin](../../../docs/extend/testing.md) for durable Host approvals, generation pins, recorded model replay and HTTP/SSE fault scripts.

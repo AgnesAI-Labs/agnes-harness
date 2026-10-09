@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-[Documentation](../README.md) · [Five-minute quickstart](quickstart.md) · [Testing](testing.md)
+[Documentation](../README.md) · [Five-minute quickstart](quickstart.md) · [Test your plugin](testing.md)
 
 [Tool runtime and policies](tool-runtime.md) · [Loop events](loop-events.md)
 

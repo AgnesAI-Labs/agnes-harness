@@ -1,19 +1,29 @@
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Context, LoopPluginContext } from '@agnes/plugin-runtime'
 import { defineAgnesPlugin, defineLoop } from '@agnes/plugin-runtime'
 import { loopCheckpointCodec } from '@agnes/extension-api'
-import { createAuthorTestkit, createPluginTestHost } from '@agnes/host/author-testkit'
+import {
+  createAuthorTestkit,
+  createPluginTestHost,
+  recordModelFixture,
+  replayModelFixture,
+  ScriptedProvider,
+  fakeModel,
+} from '@agnes/host/author-testkit'
 import { fixtureTool } from './fixtures/tool.js'
 
-function plugin(version: string, approval = false, wait?: () => Promise<void>) {
+function plugin(version: string, approval = false, wait?: (signal: AbortSignal) => Promise<void>) {
   return defineAgnesPlugin({
     inject: ['extension'],
     apply(ctx: Context) {
       ctx.extension().registerTool({
         ...fixtureTool('version'),
         meta: { ...fixtureTool('version').meta, requiresApproval: approval ? 'always' : 'never' },
-        async execute() {
-          await wait?.()
+        async execute(_args, ctx) {
+          await wait?.(ctx.signal)
           return { content: [{ type: 'text', text: version }], structured: { version } }
         },
       })
@@ -88,12 +98,148 @@ describe('public author testkit', () => {
       expect(generation).not.toBe(pin)
       expect((await fresh.invoke('version', {})).structured).toEqual({ version: '2' })
       await expect(kit.reload({ plugin: plugin('3'), version: '2.0.0' })).rejects.toThrow('new')
+      await expect(
+        kit.reload({
+          plugin: {
+            apply() {
+              throw new Error('Broken candidate')
+            },
+          },
+          version: '3.0.0',
+        }),
+      ).rejects.toThrow()
+      const retained = await kit.openSession()
+      retained.assertPinned(generation)
+      expect((await retained.invoke('version', {})).structured).toEqual({ version: '2' })
     } finally {
       release()
       await kit.dispose()
     }
     await expect(kit.openSession()).rejects.toThrow('disposed')
     await kit.dispose()
+  })
+
+  it('drains a cancelled invocation and permits another turn on the pinned session', async () => {
+    let entered!: () => void
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let first = true
+    const kit = await createAuthorTestkit({
+      version: '1.0.0',
+      plugin: plugin('1', false, async (signal) => {
+        if (!first) return
+        first = false
+        entered()
+        await new Promise<void>((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+          if (signal.aborted) reject(signal.reason)
+        })
+      }),
+    })
+    try {
+      const session = await kit.openSession()
+      const pin = session.generation!
+      const controller = new AbortController()
+      const pending = session.invoke('version', {}, controller.signal)
+      const stopped = expect(pending).rejects.toThrow()
+      await ready
+      controller.abort(new Error('Stopped by author'))
+      await stopped
+      expect((await session.invoke('version', {})).structured).toEqual({ version: '1' })
+      session.assertPinned(pin)
+    } finally {
+      await kit.dispose()
+    }
+  })
+
+  it('records and replays a business Loop through Host with a supplied model catalogue', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'agh-author-model-'))
+    const file = join(directory, 'model.json')
+    const codec = loopCheckpointCodec(1, (state) => state)
+    const loop = defineLoop({
+      id: 'author.model',
+      version: '1.0.0',
+      capabilities: ['model'],
+      codec,
+      create(ctx) {
+        return {
+          async step(signal) {
+            if (!(await ctx.input.accept())) return { outcome: 'idle' }
+            const request = await ctx.prepareRequest({
+              system: 'synthetic-model-test',
+              messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+            })
+            const events = await ctx.model.complete(request, signal)
+            expect(events).toContainEqual({ type: 'text_delta', delta: 'offline answer' })
+            await ctx.checkpoints.write(codec.encode(null))
+            await ctx.events.finish('completed')
+            return { outcome: 'turn-ended', reason: 'completed' }
+          },
+          checkpoint: () => codec.encode(null),
+          cancel() {},
+          dispose() {},
+        }
+      },
+      resume() {
+        throw new Error('Not used')
+      },
+    })
+    const main = {
+      inject: ['loops'],
+      apply(ctx: LoopPluginContext) {
+        ctx.effect(() => ctx.loops.register('@author/plugin', loop))
+      },
+    }
+    try {
+      const recorder = await recordModelFixture(
+        new ScriptedProvider({
+          models: [fakeModel({ id: 'recorded-model', route: 'recorded-route' })],
+          scripts: [
+            [
+              { type: 'text_delta', delta: 'offline answer' },
+              { type: 'done', reason: 'stop' },
+            ],
+          ],
+          onExhausted: 'error',
+        }),
+        file,
+      )
+      try {
+        const kit = await createAuthorTestkit({
+          plugin: main,
+          version: '1.0.0',
+          loop,
+          provider: recorder.provider,
+        })
+        try {
+          const session = await kit.openSession()
+          await session.enqueue('hello')
+          expect(await session.drive(1)).toHaveLength(1)
+        } finally {
+          await kit.dispose()
+        }
+      } finally {
+        await recorder.close()
+      }
+      const replay = await replayModelFixture(file)
+      const kit = await createAuthorTestkit({
+        plugin: main,
+        version: '1.0.0',
+        loop,
+        provider: replay.provider,
+      })
+      try {
+        const session = await kit.openSession()
+        await session.enqueue('hello')
+        expect(await session.drive(1)).toHaveLength(1)
+        replay.assertConsumed()
+      } finally {
+        await kit.dispose()
+      }
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
   })
 
   it('drives a registered independent Loop for bounded steps and persists its facts', async () => {

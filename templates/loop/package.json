@@ -24,7 +24,8 @@
   "devDependencies": {
     "typescript": "7.0.2",
     "@types/node": "26.4.1",
-    "tsx": "4.23.13"
+    "tsx": "4.23.13",
+    "@agnes/host": "0.0.0"
   },
   "agnes": {
     "plugins": [

@@ -28,6 +28,7 @@ export const runAuthoringTests: AuthoringTestRunner = async (directory, files, s
     ),
     '@agnes/plugin-runtime/testkit': [],
     '@agnes/host/testkit': ['createPluginTestRegistration'],
+    '@agnes/host/author-testkit': [],
   }
   const sdkExports = join(dirname(sdk), 'authoring-sdk-exports.json')
   if (existsSync(sdk)) {

@@ -31,10 +31,11 @@ export interface ModelFixture {
 }
 const sensitive =
   /^(?:authorization|proxy-authorization|cookie|set-cookie|api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|credential)$/i
-const identities = /^(?:id|sessionKey|toolUseId|invocationId|effectId|parentEffectId|requestId)$/
+const identities = /^(?:sessionKey|toolUseId|invocationId|effectId|parentEffectId|requestId|jobId)$/
 
 /** One normalizer per session preserves tool-call/result links over multiple requests. */
 function normalizer(options: RecordingOptions, normalizeIds = true, ids = new Map<string, string>()) {
+  let identityNumber = 0
   const secrets = [...(options.secrets ?? [])].filter(Boolean).sort((a, b) => b.length - a.length)
   const text = (source: string) => {
     let value = source
@@ -46,14 +47,19 @@ function normalizer(options: RecordingOptions, normalizeIds = true, ids = new Ma
       .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi, '$1[REDACTED]@')
     return options.redactText?.(value) ?? value
   }
-  function clean(value: unknown, key = ''): unknown {
-    if (sensitive.test(key) || key === 'data') return '[REDACTED]'
+  const isIdentity = (key: string, parent: string, business: boolean) =>
+    !business && (identities.test(key) || (key === 'id' && parent === 'response'))
+  const isBusiness = (key: string) =>
+    ['args', 'structured', 'parameters', 'schema', 'compat', 'metadata'].includes(key)
+  function clean(value: unknown, key = '', parent = '', business = false): unknown {
+    if (sensitive.test(key)) return '[REDACTED]'
+    business ||= isBusiness(key)
     if (typeof value === 'string') {
-      if (normalizeIds && identities.test(key)) {
+      if (normalizeIds && isIdentity(key, parent, business)) {
         const identity = key === 'sessionKey' ? 'session' : 'id'
         const existing = ids.get(value)
         if (existing) return existing
-        const normalized = `${identity}-${ids.size + 1}`
+        const normalized = `${identity}-${++identityNumber}`
         ids.set(value, normalized)
         return normalized
       }
@@ -61,17 +67,38 @@ function normalizer(options: RecordingOptions, normalizeIds = true, ids = new Ma
       if (key === 'baseUrl') return 'http://127.0.0.1:1'
       return text(value)
     }
-    if (Array.isArray(value)) return value.map((item) => clean(item))
+    if (Array.isArray(value)) return value.map((item) => clean(item, '', key, business))
     if (value && typeof value === 'object')
       return Object.fromEntries(
         Object.entries(value)
           .filter(([name]) => !sensitive.test(name) && !['headers', 'headerNames', 'timing'].includes(name))
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([name, item]) => [name, clean(item, name)]),
+          .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+          .map(([name, item]) => [
+            name,
+            name === 'data' &&
+            !business &&
+            ['image', 'file', 'media'].includes((value as { type?: string }).type ?? '')
+              ? '[REDACTED]'
+              : clean(item, name, key, business),
+          ]),
       )
     return value
   }
-  return clean
+  return Object.assign(clean, {
+    /** Replay outputs already carry fixture aliases; subsequent requests must retain their links. */
+    remember: function remember(value: unknown, key = '', parent = '', business = false): void {
+      business ||= isBusiness(key)
+      if (typeof value === 'string' && isIdentity(key, parent, business)) {
+        ids.set(value, value)
+        const ordinal = /^(?:id|session)-(\d+)$/.exec(value)
+        if (ordinal) identityNumber = Math.max(identityNumber, Number(ordinal[1]))
+      } else if (Array.isArray(value)) {
+        for (const item of value) remember(item, '', key, business)
+      } else if (value && typeof value === 'object') {
+        for (const [name, item] of Object.entries(value)) remember(item, name, key, business)
+      }
+    },
+  })
 }
 function validFixture(value: unknown): asserts value is ModelFixture {
   if (!value || typeof value !== 'object') throw new Error('Invalid model fixture')
@@ -116,6 +143,7 @@ export async function recordModelFixture(inner: Provider, file: string, options:
   >()
   const exchanges: Exchange[] = []
   let closed = false
+  let closing: Promise<void> | undefined
   let active = 0
   const provider: Provider = {
     models: () => inner.models(),
@@ -124,16 +152,23 @@ export async function recordModelFixture(inner: Provider, file: string, options:
       input.signal.throwIfAborted()
       let state = sessions.get(request.sessionKey)
       if (!state) {
-        state = { name: `session-${sessions.size + 1}`, cursor: 0, clean: normalizer(options), busy: false }
+        const name = `session-${sessions.size + 1}`
+        state = {
+          name,
+          cursor: 0,
+          clean: normalizer(options, true, new Map([[request.sessionKey, name]])),
+          busy: false,
+        }
         sessions.set(request.sessionKey, state)
       }
       if (state.busy) throw new Error('Concurrent model calls in one recorded session')
+      const normalized = state.clean(request) as RequestBody
       state.busy = true
       active++
       const row: Exchange = {
         session: state.name,
         index: state.cursor++,
-        request: state.clean(request) as RequestBody,
+        request: normalized,
         events: [],
         accepted: false,
         complete: false,
@@ -162,20 +197,23 @@ export async function recordModelFixture(inner: Provider, file: string, options:
   return {
     provider,
     async close() {
-      if (closed) return
+      if (closing) return closing
       if (active) throw new Error('Drain model streams before closing the recorder')
       closed = true
-      try {
-        const clean = normalizer(options, false)
-        const fixture: ModelFixture = {
-          schemaVersion: 1,
-          models: clean(inner.models()) as ModelRecord[],
-          exchanges,
+      closing = (async () => {
+        try {
+          const clean = normalizer(options, false)
+          const fixture: ModelFixture = {
+            schemaVersion: 1,
+            models: clean(inner.models()) as ModelRecord[],
+            exchanges,
+          }
+          await handle.writeFile(JSON.stringify(fixture, null, 2) + '\n')
+        } finally {
+          await handle.close()
         }
-        await handle.writeFile(JSON.stringify(fixture, null, 2) + '\n')
-      } finally {
-        await handle.close()
-      }
+      })()
+      return closing
     },
   }
 }
@@ -206,7 +244,13 @@ export async function replayModelFixture(file: string, options: RecordingOptions
   )
   const bound = new Map<
     string,
-    { script: Exchange[]; cursor: number; clean: ReturnType<typeof normalizer>; busy: boolean }
+    {
+      script: Exchange[]
+      cursor: number
+      clean: ReturnType<typeof normalizer>
+      busy: boolean
+      abandoned: boolean
+    }
   >()
   const provider: Provider = {
     models: () => structuredClone(fixture.models),
@@ -216,25 +260,37 @@ export async function replayModelFixture(file: string, options: RecordingOptions
       if (!state) {
         const script = scripts[bound.size]
         if (!script) throw new Error('Unrecorded model session')
-        state = { script, cursor: 0, clean: normalizer(options), busy: false }
+        state = {
+          script,
+          cursor: 0,
+          clean: normalizer(options, true, new Map([[request.sessionKey, script[0]!.session]])),
+          busy: false,
+          abandoned: false,
+        }
         bound.set(request.sessionKey, state)
       }
       if (state.busy) throw new Error('Concurrent model replay in one session')
+      if (state.abandoned) throw new Error('Model replay stream abandoned')
       const row = state.script[state.cursor]
       if (!row) throw new Error('Model fixture exhausted')
       const normalized = state.clean(request) as RequestBody
       if (replayRequestKey(normalized) !== replayRequestKey(row.request))
         throw new Error('Model replay request mismatch')
+      state.clean.remember(row.events)
       state.cursor++
       state.busy = true
+      let drained = false
       try {
         if (row.accepted) yield { type: 'sent', stamp: stampFor(request) }
         for (const event of row.events) {
           input.signal.throwIfAborted()
           yield structuredClone(event)
         }
+        input.signal.throwIfAborted()
+        drained = true
         if (row.failure !== undefined) throw new Error(row.failure)
       } finally {
+        state.abandoned = !drained
         state.busy = false
       }
     },
@@ -244,7 +300,9 @@ export async function replayModelFixture(file: string, options: RecordingOptions
     assertConsumed() {
       if (
         bound.size !== scripts.length ||
-        [...bound.values()].some((state) => state.busy || state.cursor !== state.script.length)
+        [...bound.values()].some(
+          (state) => state.busy || state.abandoned || state.cursor !== state.script.length,
+        )
       )
         throw new Error('Model fixture not fully consumed')
     },

@@ -22,6 +22,7 @@ export type Command =
   | 'diagnostics'
   | 'computer-use'
   | 'profile'
+  | 'plugin'
   | 'plugins'
   | 'package'
   | 'packages'

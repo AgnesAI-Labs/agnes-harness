@@ -4,6 +4,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Plugin } from '@agnes/cordis'
+import type { RouteDecl } from '@agnes/protocol'
+import { ScriptedProvider } from '@agnes/ai/testkit'
 import { scanAll, type Event, type Provider, type ToolResult } from '@agnes/core'
 import {
   loopCheckpointCodec,
@@ -69,6 +71,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
   const results = new Map<string, ToolResult>()
   let host: Host | undefined
   let disposed = false
+  let disposal: Promise<void> | undefined
   let sessionNumber = 0
   let mutation = false
   const check = () => {
@@ -153,19 +156,59 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
   })
   try {
     const first = await snapshot(options)
+    const models = options.provider?.models()
+    const primary = models?.[0]
+    if (models && !primary) throw new Error('Author model provider needs a nonempty catalogue')
+    const routes = new Map<string, RouteDecl>()
+    for (const model of models ?? []) {
+      const route = routes.get(model.route) ?? {
+        route: model.route,
+        api: model.api,
+        baseUrl: model.baseUrl,
+        models: [],
+      }
+      route.models!.push(model)
+      routes.set(model.route, route)
+    }
     host = (
       await createTestHost({
         dataDir: directory,
         disableSessionTitle: true,
-        ...(options.provider ? { provider: options.provider } : { script: options.replies ?? [] }),
+        env: {},
+        provider:
+          options.provider ??
+          ((profile) =>
+            new ScriptedProvider({
+              models: profile.provider.routes?.flatMap((route) => route.models ?? []) ?? [],
+              scripts: options.replies ?? [],
+              onExhausted: 'error',
+            })),
         ...(options.seams ? { seams: options.seams } : {}),
         approval: async (request) => {
           const answer = await (options.approval?.(request) ?? Promise.resolve('rejected' as const))
           return answer
         },
         profileInputs: {
-          user: { name: 'local-dev', composition: {}, packages: [{ id, source: 'author-fixture' }] },
+          user: {
+            name: 'local-dev',
+            composition: {},
+            packages: [{ id, source: 'author-fixture' }],
+            ...(primary
+              ? { provider: { package: '@agnes/ai', adapters: ['@agnes/ai'], routes: [...routes.values()] } }
+              : {}),
+          },
         },
+        ...(primary
+          ? {
+              presets: {
+                standard: {
+                  name: 'standard',
+                  extends: 'base',
+                  model: { route: { primary: primary.route }, id: { primary: primary.id } },
+                },
+              },
+            }
+          : {}),
         lock: {
           packages: Object.fromEntries([
             ...['@agnes/ai', '@agnes/base', '@agnes/code'].map((name) => [
@@ -247,6 +290,8 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
           let cancellation: Promise<unknown> | undefined
           const abort = () => {
             cancellation = session.abort()
+            // Attach a handler immediately; cleanup below still propagates the error.
+            void cancellation.catch(() => undefined)
           }
           signal.addEventListener('abort', abort, { once: true })
           try {
@@ -262,7 +307,11 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
           } finally {
             signal.removeEventListener('abort', abort)
             try {
-              await cancellation
+              if (cancellation) {
+                await cancellation
+                await session.drainCancelledTurn()
+                await session.restartLoopDriver()
+              }
             } finally {
               active = false
             }
@@ -274,7 +323,15 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
           loop: session.loop,
           async enqueue(text) {
             ready()
-            await session.enqueue('next-turn', { content: [{ type: 'text', text }], actor: session.d.actor })
+            active = true
+            try {
+              await session.enqueue('next-turn', {
+                content: [{ type: 'text', text }],
+                actor: session.d.actor,
+              })
+            } finally {
+              active = false
+            }
           },
           drive,
           async invoke(name, args, signal) {
@@ -379,16 +436,25 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
           mutation = false
         }
       },
-      async dispose() {
-        if (disposed) return
+      dispose() {
+        if (disposal) return disposal
         disposed = true
-        await owner.close()
-        await rm(directory, { recursive: true, force: true })
+        disposal = (async () => {
+          try {
+            await owner.close()
+          } finally {
+            await rm(directory, { recursive: true, force: true })
+          }
+        })()
+        return disposal
       },
     }
   } catch (error) {
-    await host?.close()
-    await rm(directory, { recursive: true, force: true })
+    try {
+      await host?.close()
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
     throw error
   }
 }

@@ -89,3 +89,5 @@ npm test
 ```
 
 测试覆盖公开 loop/tool/policy 契约、夹具结果与关键拒绝边界。[外部验证器](../README.zh-CN.md#验证)在仓库外安装并测试。本验证不代表真实模型质量、浏览器交互或客户系统验收。
+
+作者测试统一使用 `@agnes/host/author-testkit`，明确注入离线服务和工具 fixture。准备好预览版依赖后运行 `agh plugin test .`；真实 Host 审批、generation pin、模型录制回放和 HTTP/SSE 故障脚本见[测试你的插件](../../../docs/extend/testing.zh-CN.md)。

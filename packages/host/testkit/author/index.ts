@@ -16,9 +16,23 @@ export function createPluginTestHost(
   plugin: Plugin,
   options: Omit<PluginTestOptions, 'registration'> & {
     registration?: PluginTestOptions['registration']
+    /** Explicit public service doubles for lightweight Loop/Skills/Policy contract tests. */
+    services?: Readonly<Record<string, unknown>>
   } = {},
 ) {
-  return mount(plugin, { ...options, registration: options.registration ?? createPluginTestRegistration() })
+  const { services, ...input } = options
+  const bridge = input.registration ?? createPluginTestRegistration()
+  return mount(plugin, {
+    ...input,
+    registration: {
+      tools: bridge.tools,
+      assertLoaded: () => bridge.assertLoaded(),
+      install(root, origins) {
+        bridge.install(root, origins)
+        for (const [name, service] of Object.entries(services ?? {})) root.provide(name, service)
+      },
+    },
+  })
 }
 
 /** Load the full Host only when a test needs durable sessions and runtime generations. */

@@ -1,64 +1,136 @@
-# Test a plugin without a paid model
+# Test your plugin
 
 English | [简体中文](testing.zh-CN.md)
 
 [Author kit](README.md) · [Quickstart](quickstart.md)
 
-Generated packages use Node's test runner: run `npm run build`, then `npm test`. These helpers are exported from `@agnes/plugin-runtime/testkit`; tool registration tests also need matching `@agnes/host`.
+Business agents can ship as plugins with offline, repeatable author tests. Import the helpers from **`@agnes/host/author-testkit`**. The preview SDK is source-only; link matching packages with [the quickstart](quickstart.md) before running tests. No model account or API key is needed for scripted or replay tests.
 
-## Tools through real registration
+## Run your package's tests
+
+```sh
+npm run build                       # distribution starters; source starters can skip this
+agh plugin test .
+agh plugin test ./my-plugin -- --test-name-pattern approval
+```
+
+`agh plugin test [folder] [-- <runner arguments>]` is a thin wrapper around the package's existing `scripts.test` using installed Node/npm and test dependencies. It propagates the runner's exit code, streams output, uses a temporary home, strips inherited credentials and Node injection options, and disables npm downloads and pre/post test lifecycle scripts. It does not install dependencies or start the backend. Arguments after `--` belong to your runner. The [starters](../../templates/) use Node's test runner; the [knowledge QA](../../examples/fde/knowledge-qa/) and [ops runbook](../../examples/fde/ops-runbook/) examples use Vitest.
+
+## Mount and invoke a tool
 
 ```js
-import { createPluginTestHost } from '@agnes/plugin-runtime/testkit'
-import { createPluginTestRegistration } from '@agnes/host/testkit'
+import { createPluginTestHost } from '@agnes/host/author-testkit'
 import { main } from './dist/index.js'
 
-const host = await createPluginTestHost(main, { registration: createPluginTestRegistration() })
+const fixture = await createPluginTestHost(main)
 try {
-  console.log((await host.invoke('plugin_hello_tool', { message: 'hello' })).structured)
+  const result = await fixture.invoke('plugin_hello_tool', { message: 'hello' })
+  console.log(result.structured)
 } finally {
-  await host.dispose()
+  await fixture.dispose()
 }
 ```
 
-This mounts a verified third-party row, invokes the production Host `ctx.extension()` registration bridge, validates arguments and calls the registered tool. Unloading releases the row, registrations and plugin effects. Duplicate registration and loading failures reject creation.
+This lightweight fixture mounts a verified third-party row through the production Host registration bridge, validates arguments and releases registrations and plugin effects on disposal. Missing I/O refuses access. Pass explicit `context` tool ports or `services` public service doubles when testing a business Loop's dependencies. `invoke(name, args, signal)` supports cooperative cancellation. Duplicate registrations and failed mounts reject creation.
 
-I/O defaults to refusal. Supply `context` with explicit fake filesystem/network ports when needed. `invoke(name, args, signal)` supports cancellation; disposal aborts active call signals, which tools must cooperate with. These helpers do not implement session approvals, replay, ledger persistence or OS sandboxing. Hook registration can be checked, but hook dispatch is not simulated.
+For durable policy, approvals and ledger facts, use the full session fixture below. The lightweight fixture invokes the tool directly and does not manufacture session approvals or ledger events.
 
-## Scripted loop replies
+## Real sessions, approvals, ledger and upgrades
 
 ```js
-import { driveLoop } from '@agnes/plugin-runtime/testkit'
-import { loop } from './dist/index.js'
+import assert from 'node:assert/strict'
+import { createAuthorTestkit } from '@agnes/host/author-testkit'
+import { main as v1 } from './v1.js'
+import { main as v2 } from './v2.js'
 
-const result = await driveLoop(loop, {
-  inputs: [{ content: [{ type: 'text', text: 'hello' }] }],
-  replies: [[
-    { type: 'text_delta', delta: 'Hello!' },
-    { type: 'done', reason: 'stop' },
-  ]],
+const kit = await createAuthorTestkit({
+  plugin: v1,
+  version: '1.0.0',
+  approval: async () => 'rejected',
 })
-console.log(result.events, result.checkpoint)
+try {
+  const old = await kit.openSession()
+  const pin = old.generation
+  await old.invoke('business_write', { value: 'synthetic' })
+  await old.assertApproval('rejected')
+  await old.assertRefused('business_write')
+  console.log(await old.facts(), await old.effects())
+
+  const head = await kit.reload({ plugin: v2, version: '2.0.0' })
+  old.assertPinned(pin)
+  const fresh = await kit.openSession()
+  fresh.assertPinned(head)
+  assert.notEqual(head, pin)
+} finally {
+  await kit.dispose()
+}
 ```
 
-`driveLoop` creates or resumes the actual driver, captures model requests/events and disposes it on completion or failure. Pass `checkpoint` to test resume and unsupported codec versions. It uses the production `loopShouldStop` outcome rule with `until` (default `turn-end`); `phase`, reason alone and `events.finish` alone do not stop the driver. Unfinished loops exceeding `maxSteps` (default 20) and exhausted model scripts fail.
+The full fixture assembles a real Host/Core with isolated SQLite ledgers and normal runtime generations. The default `author.invoke` Loop invokes tools through Core's policy, approval and effect path. Approval defaults to `rejected`; supply `allowed-once`, `allowed-session` or another supported verdict explicitly. `assertApproval` reads durable approval facts. `assertRefused` checks the last matching tool call's error result and absence of an execution intent, so a tool that executes and then returns an error is not a refusal.
 
-Supply `tools.execute` through a plugin test host's `invoke` to exercise tools; the default fake batch delegates to individual executions. The [loop test](../../packages/plugin-runtime/testkit/loop.test.ts) drives scripted model replies into a real Host-registered tool. Missing tool ports refuse execution. A `parked` outcome stops scheduling; the fake wait returns for queued input or cancellation and its wake is a no-op. Supply a real Core `context` for durable waits, approvals, ledger operations and recovery; see the [v0.1 contract inventory](../develop/contracts-v0.1.md).
+To exercise your registered business Loop, open `kit.openSession({ loop: { id: 'acme.business', version: '1.0.0' } })`, call `session.enqueue('synthetic request')`, then `session.drive(5)`. This advances at most five public Loop edges and stops at idle, parked or turn-end. You can continue with another `drive(N)` and inspect `facts()`/`effects()`. Pass an AbortSignal for cancellation. Open a separate default session for `invoke`.
 
-`scriptedModel(replies)` is available separately for your scheduler. Its `requests` and `remaining` expose missing or extra model interactions.
+`reload` requires a new version and publishes a new production Host generation. Existing sessions retain their code and Loop pin; new sessions adopt the published generation. Test the observed tool results as well as the pin, including a reload while a tool is running. A failed candidate must leave the prior generation usable. The fixture supplies imported author modules through a controlled importer and hashed synthetic snapshot files, including generation archives. It tests registration and pin behavior; source loading, bundling and package installation are separate release checks. The testkit uses test seams for sandbox/network and never provides OS isolation for arbitrary plugin code.
 
-## Adapter instances
+## Record once, replay offline
 
-`runModelAdapter(adapter, { config, route, request, signal })` creates an actual instance, captures stream events and route/model catalogs, and disposes it in `finally`. `mode: 'complete'` uses the optional complete method and refuses if absent. Registration-wide `cleanup` remains owned by the registration service, rather than running per request.
+```js
+import { recordModelFixture, replayModelFixture, ScriptedProvider, fakeRequest } from '@agnes/host/author-testkit'
 
-The [adapter starter test](../../templates/model-adapter/test/adapter.test.mjs) uses `fakeModel`/`fakeRequest` from `@agnes/ai/testkit` without network I/O. Add provider-specific request/response fixtures when replacing its deterministic reply. Check cancellation, errors and disposal.
+const scripted = new ScriptedProvider({ scripts: [[
+  { type: 'text_delta', delta: 'Reviewed the synthetic account.' },
+  { type: 'done', reason: 'stop' },
+]] })
+const recorder = await recordModelFixture(scripted, './model.fixture.json', {
+  secrets: ['synthetic-private-value'],
+})
+try {
+  for await (const event of recorder.provider.infer(fakeRequest(), {
+    signal: new AbortController().signal, toolNames: [],
+  })) console.log(event.type)
+} finally {
+  await recorder.close()
+}
 
-## Verification scope
+const replay = await replayModelFixture('./model.fixture.json')
+for await (const event of replay.provider.infer(fakeRequest(), {
+  signal: new AbortController().signal, toolNames: [],
+})) console.log(event.type)
+replay.assertConsumed()
+```
 
-Extend the nearest test when behavior changes. Cover valid input, schema errors, business refusal, cancellation, cleanup and resume as applicable. The panel test checks descriptor/slot/render behavior; browser mounting needs separate verification. MCP bundle tests check packaged assets and Skill registration; real server connectivity needs separate verification.
+Wrap a configured real `Provider` in the same way when you deliberately record a live exchange. The recorder does not obtain or persist keys. Files are exclusive (existing fixtures are never overwritten) and private (`0600`). Request/response headers, sensitive fields, common credential text and binary payloads are removed or redacted; session/tool/request IDs become deterministic aliases. Pass `secrets` and/or `redactText` for private values in free text, and inspect the fixture before sharing it. Use the same redaction options when replay input contains those private values.
 
-Author test success establishes contracts with deterministic dependencies. It does not prove compatibility with real providers, browsers, MCP servers or OS sandboxes.
+Replay matches normalized input, preserves event order and failure prefixes, and regenerates `sent` stamps for live requests. It refuses changed requests, exhausted scripts, extra sessions, invalid schemas and abandoned recordings. Each new live session claims the next recorded session script at its first model call. `assertConsumed()` checks every script and invocation. It performs no model network calls. Supply `replay.provider` to `createAuthorTestkit({ plugin, version, provider: replay.provider })` to drive a business Loop against the recording. The full fixture uses the supplied provider's catalogue and selects its first model by default; empty catalogues are refused.
 
+## Program HTTP/SSE faults
+
+```js
+import { startModelFaultServer } from '@agnes/host/author-testkit'
+
+const server = await startModelFaultServer([
+  { kind: 'http', status: 429, retryAfterMs: 1000 },
+  { kind: 'http', status: 503, latencyMs: 20 },
+  { kind: 'truncated', chunks: [{ choices: [{ delta: { content: 'partial' } }] }] },
+  { kind: 'malformed', raw: 'data: {broken-json\n\n' },
+  { kind: 'sse', chunks: [{ choices: [{ delta: { content: 'recovered' } }] }], chunkDelayMs: 5 },
+])
+try {
+  // Point your adapter at server.baseUrl + '/v1'; each HTTP attempt consumes an entry.
+  // Drive your adapter, assert its errors/recovery and then:
+  server.assertConsumed()
+} finally {
+  await server.close()
+}
+```
+
+The server binds only `127.0.0.1` on an ephemeral port. `latencyMs` delays headers; `chunkDelayMs` paces SSE data. Successful SSE ends with `[DONE]`, truncated SSE omits it (`reset: true` destroys the connection), and malformed SSE sends raw text. HTTP status/body and Retry-After are programmable. No request headers or bodies are retained. Script exhaustion returns HTTP 500 with `FIXTURE_EXHAUSTED`; consumption assertions catch extra or missing attempts. `close()` aborts delays and closes active connections, and is safe to repeat.
+
+## Smaller Loop and adapter contracts
+
+`driveLoop`, `scriptedModel` and `runModelAdapter` remain available from the same author entry. `driveLoop(factory, { inputs, replies, checkpoint, maxSteps })` creates/resumes a driver and captures requests, emitted events and checkpoints, then disposes it. `maxSteps` exhaustion fails. Missing controlled ledger ports refuse access; use the full session fixture for approvals, recovery and durable effects. `scriptedModel` exposes `requests` and `remaining`.
+
+`runModelAdapter` creates a real adapter instance, captures catalog/events and disposes it in `finally`. The [adapter starter](../../templates/model-adapter/test/adapter.test.mjs) tests this contract. Add provider-specific fixtures and fault scripts when replacing its deterministic reply. Browser mounting, MCP connectivity, real providers and platform sandboxes need their corresponding integration checks.
 
 ## Provider conformance against Host
 

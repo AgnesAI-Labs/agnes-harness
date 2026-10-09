@@ -46,7 +46,7 @@ cd "$AGH_SOURCE"
 nice -n 10 pnpm exec tsc -b packages/plugin-runtime packages/protocol packages/resource-control-runtime
 node templates/link-local.mjs "$AGH_PLUGIN"
 npm --prefix "$AGH_PLUGIN" run build
-npm --prefix "$AGH_PLUGIN" test
+agh plugin test "$AGH_PLUGIN"
 \`\`\`
 
 The linker is safe to repeat and uses the checkout's dependencies and built declarations. Edit \`agnes.kinds\` and \`agnes.capabilities\` when you add functionality or side effects. See the [extension quickstart](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/docs/extend/quickstart.md).

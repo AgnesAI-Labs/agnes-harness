@@ -399,6 +399,16 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     return ExitCode.OK
   }
 
+  if (p.command === 'plugin') {
+    try {
+      const { runPluginTests } = await import('./commands/plugin-test.js')
+      return await runPluginTests(p.rest, io)
+    } catch (error) {
+      io.stderr.write(`${error instanceof Error ? error.message : 'Plugin tests failed'}\n`)
+      return error instanceof UsageError ? ExitCode.USAGE : ExitCode.ERROR
+    }
+  }
+
   let ladderInstalled = false
   const eph = p.ephemeral ? ephemeralHome(io, () => ladderInstalled) : undefined
   const home = eph?.home ?? resolveHome(io.env)

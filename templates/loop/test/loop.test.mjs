@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { driveLoop } from '@agnes/plugin-runtime/testkit'
+import { driveLoop } from '@agnes/host/author-testkit'
 import { loop } from '../dist/index.js'
 
 test('scripted model, checkpoint resume and unsupported codec', async () => {
