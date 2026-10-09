@@ -116,11 +116,11 @@ async function reopenWithAsked(
 }
 
 describe('parked approval callbacks', () => {
-  it('releases one workspace lease for park and one for callback resume', async () => {
+  it('releases admission and park workspace leases, then the callback resume lease', async () => {
     const h = await parked()
-    expect(h.invocationCounts()).toEqual({ acquires: 1, releases: 1 })
-    await h.session.resumeApproval(h.ticket, 'rejected', approver)
     expect(h.invocationCounts()).toEqual({ acquires: 2, releases: 2 })
+    await h.session.resumeApproval(h.ticket, 'rejected', approver)
+    expect(h.invocationCounts()).toEqual({ acquires: 3, releases: 3 })
   })
 
   it('accepts only a verdict offered by the persisted request', async () => {

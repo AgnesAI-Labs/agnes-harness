@@ -59,7 +59,7 @@ const withTool = (t: unknown) => {
 }
 
 describe('tools phase', () => {
-  it('holds one workspace invocation around context creation and every real tool capability', async () => {
+  it('holds one live workspace invocation after admission around every real tool capability', async () => {
     const events: string[] = []
     let finishHeldRead!: () => void
     let heldReadStarted!: () => void
@@ -188,8 +188,8 @@ describe('tools phase', () => {
     })
     await heldStarted
     await Promise.resolve()
-    expect(acquisitions).toBe(1)
-    expect(events.indexOf('acquire')).toBeLessThan(events.indexOf('tool.context'))
+    expect(acquisitions).toBe(2)
+    expect(events.lastIndexOf('acquire')).toBeLessThan(events.indexOf('tool.context'))
     expect(events).toEqual(
       expect.arrayContaining([
         'fs.read:read',
@@ -204,12 +204,12 @@ describe('tools phase', () => {
       ]),
     )
     expect(settled).toBe(false)
-    expect(release).not.toHaveBeenCalled()
+    expect(release).toHaveBeenCalledOnce()
     for (const operation of Object.values(fallbackFs)) expect(operation).not.toHaveBeenCalled()
 
     finishHeldRead()
     await expect(running).resolves.toEqual({ phase: 'checkpoint' })
-    expect(release).toHaveBeenCalledOnce()
+    expect(release).toHaveBeenCalledTimes(2)
     expect(events.at(-1)).toBe('release')
   })
 
@@ -295,7 +295,7 @@ describe('tools phase', () => {
     await opened.session.acceptInput()
     await opened.session.runInference()
     await expect(opened.session.runToolsPhase()).resolves.toEqual({ phase: 'checkpoint' })
-    expect(releases).toBe(1)
+    expect(releases).toBe(2)
     await expect(cached.fs.stat('.')).rejects.toThrow('E_WORKSPACE_CLOSED')
     await expect(cached.exec(['echo'])).rejects.toThrow('E_WORKSPACE_CLOSED')
     await expect(cached.sandbox.confine(['echo'])).rejects.toThrow('E_WORKSPACE_CLOSED')

@@ -67,13 +67,7 @@ describe('human Loop controls', () => {
         expect.objectContaining({ outcome: 'delivered', itemId: first.itemId }),
       ]),
     )
-    expect((await session.controls.state()).pending).toEqual([
-      expect.objectContaining({
-        target: 'next-turn',
-        kind: 'follow_up',
-        content: content('Intelligent UI action result: succeeded'),
-      }),
-    ])
+    expect((await session.controls.state()).pending).toEqual([])
     await expect(
       session.controls.edit(first.itemId, content('too late'), actor, 'late-edit'),
     ).rejects.toMatchObject({ code: 'E_RELATION' })
@@ -183,7 +177,13 @@ describe('human Loop controls', () => {
     await session.controls.apply('cancel', actor, 'cancel')
     expect(session.op()).toBeNull()
     expect((await log.scan({ type: 'turn/end', limit: 1 }))[0]?.data).toMatchObject({ reason: 'aborted' })
-    expect((await session.controls.state()).pending).toEqual([])
+    expect((await session.controls.state()).pending).toEqual([
+      expect.objectContaining({
+        target: 'next-turn',
+        kind: 'follow_up',
+        content: content('Intelligent UI action result: succeeded'),
+      }),
+    ])
     expect(await facts(log)).toContainEqual(
       expect.objectContaining({
         action: 'cancel',
