@@ -59,11 +59,6 @@
               "type": "string",
               "format": "uri"
             },
-            "includeContent": {
-              "type": "boolean",
-              "default": false,
-              "description": "Include model and tool content in telemetry."
-            },
             "batchMs": {
               "type": "integer",
               "minimum": 10,
@@ -75,6 +70,65 @@
               "minimum": 10,
               "maximum": 30000,
               "default": 3000
+            },
+            "logsEndpoint": {
+              "type": "string",
+              "format": "uri"
+            },
+            "redaction": {
+              "enum": [
+                "metadata",
+                "content"
+              ],
+              "default": "metadata",
+              "description": "Choose metadata-only or content telemetry."
+            },
+            "batchSize": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16384
+            },
+            "queueSize": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16384,
+              "default": 1024
+            },
+            "shutdownPolicy": {
+              "enum": [
+                "flush",
+                "discard"
+              ],
+              "default": "flush"
+            },
+            "headers": {
+              "type": "object",
+              "maxProperties": 16,
+              "description": "OTLP headers use environment secret references; header values are never stored here.",
+              "propertyNames": {
+                "pattern": "^[a-zA-Z0-9-]{1,128}$",
+                "not": {
+                  "enum": [
+                    "content-type",
+                    "host",
+                    "content-length"
+                  ]
+                }
+              },
+              "additionalProperties": {
+                "type": "object",
+                "required": [
+                  "secretRef"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "secretRef": {
+                    "type": "string",
+                    "pattern": "^env:[A-Z_][A-Z0-9_]{0,123}$",
+                    "description": "Environment secret reference, for example env:OTLP_TOKEN."
+                  }
+                }
+              }
             }
           }
         }

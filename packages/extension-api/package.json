@@ -17,9 +17,7 @@
     "release:check": "tsx tools/release-check.ts"
   },
   "dependencies": {
-    "@agnes/protocol": "workspace:*",
-    "ajv": "8.20.0",
-    "ajv-formats": "3.0.1"
+    "@agnes/protocol": "workspace:*"
   },
   "peerDependencies": {
     "@sinclair/typebox": ">=0.34"

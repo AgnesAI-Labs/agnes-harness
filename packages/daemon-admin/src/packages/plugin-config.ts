@@ -110,17 +110,21 @@ export class PluginConfiguration {
     const prior = store?.desired()
     if (!store || !prior || prior.digest !== input.expectedRevision) return result('conflict')
     const target = decodeRuntimeTargetArtifact(prior)
-    const currentRow = target.tree.rows.find((row) => row.id === entry.rowId)
+    const resourceRows = Object.values(target.resource.rows).flatMap((row) => (row ? [row] : []))
+    const allRows = [...target.tree.rows, ...resourceRows]
+    const currentRow = allRows.find((row) => row.id === entry.rowId)
     if (currentRow && !ownsRow(currentRow.plugin, input.id)) return result('refused')
     if (JSON.stringify(entry.value) === JSON.stringify(input.value)) return result('saved')
-    const rows = target.tree.rows.map((row) =>
+    const rows = allRows.map((row) =>
       row.id === entry.rowId ? { ...row, config: input.value, configReload: entry.reload } : row,
     )
     const next = encodeRuntimeTargetArtifact(
       buildRuntimeTarget({
-        rows: [...rows, ...Object.values(target.resource.rows).flatMap((row) => (row ? [row] : []))],
+        rows,
         resources: target.resource.resources,
-        resourceRevision: target.resource.target.resourceRevision,
+        resourceRevision: resourceRows.some((row) => row.id === entry.rowId)
+          ? digest({ previous: target.resource.target.resourceRevision, rows })
+          : target.resource.target.resourceRevision,
         compositeRevision: digest({
           previous: prior.digest,
           tree: rows,

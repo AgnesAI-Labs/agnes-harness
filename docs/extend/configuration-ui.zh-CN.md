@@ -122,3 +122,5 @@ Schema 使用同步 JSON Schema 2020-12、标准 format 和本地引用。安装
 迁移表单保留控件、DOM/test ID 和 locale 目录；验证实际保存 payload、失败与只读路径。将中英、明暗、1440×900 / 1280×800 与已验收 UI 对照，不无理由修改其他任务的视觉基线。
 
 适配器可抛出公开 App Server 错误 envelope（包括携带 `data.messageKey` 的 SDK 错误）。共享表单通过 `appServerErrorMessage` 提供安全、随语言切换的反馈；未知错误使用通用翻译并保留草稿。HTTP 适配器传递响应的 `error` 对象，不显示原始异常文案。
+
+插件配置验证器实现在 `@agnes/protocol`；`@agnes/extension-api` 仅保留公开声明、默认值和薄导出。官方 observability 插件的 header 配置继续使用现有 `env:NAME` 密钥引用合同（不存明文 header），schema 同时声明这些引用及遥测选项。
