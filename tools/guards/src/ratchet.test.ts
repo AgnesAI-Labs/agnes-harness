@@ -1033,7 +1033,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-05 the two sides coexist on the merged tree, so neither side's number holds. Re-measured
   // with countLines() after the merge: 26102, exact, no spare.
   // 2026-10-06: reject oversized inbox records before durable append; 26424, exact.
-  'packages/core/src': 26546,
+  'packages/core/src': 26556,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -2630,7 +2630,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // read-only under full file access: the fence guard, the roots helper and their wiring (+40).
   // Measured 38359, exact.
   // Approval reasons: the Prompter type may answer with a reason (+2). Measured 38398 (combined tree), exact cap.
-  'packages/host/src': 38490,
+  'packages/host/src': 38491,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

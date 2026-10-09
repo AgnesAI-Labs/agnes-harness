@@ -324,6 +324,75 @@ describe('Kernel default children', () => {
     await k.close()
   })
 
+  it('records the resolved preset hash on session/start and hands it to fork and spawn children', async () => {
+    const storage = new MemoryStorage()
+    const hash = `sha256-${'a'.repeat(64)}`
+    const startOf = async (key: string) =>
+      (await storage.scan(key, { type: 'session/start', limit: 20 })).find(
+        (row) => (row.data as { key?: string }).key === key,
+      )?.data
+    const k = base({ storage, preset: childPreset })
+    const parent = await k.session('parent', {
+      ...sessionOpts,
+      preset: childPreset,
+      resolvedPresetHash: hash,
+    })
+    expect(await startOf('parent')).toMatchObject({ resolvedProfileHash: 'h1', resolvedPresetHash: hash })
+    for (const kind of ['fork', 'spawn'] as const) {
+      const create = parent.d.children.createWithKind
+      if (!create) throw new Error('child factory has no kind selector')
+      const child = await create.call(parent.d.children, kind, {
+        parent: parent.key,
+        cwd: '/w',
+        input: `${kind} task`,
+      })
+      expect(await startOf(child.key)).toMatchObject({ resolvedPresetHash: hash })
+    }
+    await k.close()
+  })
+
+  it('leaves the preset hash off session/start when the caller has none', async () => {
+    const storage = new MemoryStorage()
+    const k = base({ storage })
+    await k.session('plain', sessionOpts)
+    const start = (await storage.scan('plain', { type: 'session/start', limit: 1 }))[0]
+    expect(start?.data).not.toHaveProperty('resolvedPresetHash')
+    await k.close()
+  })
+
+  it('does not hand the parent preset hash to a child that runs another model', async () => {
+    const storage = new MemoryStorage()
+    const hash = `sha256-${'b'.repeat(64)}`
+    const provider = fakeProvider([textTurn('done')])
+    Object.assign(provider, {
+      models: () => [modelRecord('ds', 'deepseek-v4-pro', 'fast'), modelRecord('anthropic', 'claude/sonnet')],
+    })
+    const k = base({ storage, provider, preset: childPreset })
+    const parent = await k.session('parent', {
+      ...sessionOpts,
+      resolvedPresetHash: hash,
+      preset: {
+        ...childPreset,
+        model: {
+          ...presetDefaults().model,
+          route: { primary: 'ds', fast: 'ds' },
+          id: { primary: 'deepseek-v4-pro', fast: 'deepseek-v4-pro' },
+        },
+      },
+    })
+    const child = await parent.d.children.create({
+      parent: parent.key,
+      cwd: '/w',
+      model: 'anthropic/claude/sonnet',
+      input: 'other model',
+    })
+    const start = (await storage.scan(child.key, { type: 'session/start', limit: 20 })).find(
+      (row) => (row.data as { key?: string }).key === child.key,
+    )
+    expect(start?.data).not.toHaveProperty('resolvedPresetHash')
+    await k.close()
+  })
+
   it('resolves child model selectors from a slot, model id, or route/model pair', async () => {
     const provider = fakeProvider([textTurn('by id'), textTurn('by slot'), textTurn('by pair')])
     Object.assign(provider, {
