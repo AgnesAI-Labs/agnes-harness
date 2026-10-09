@@ -254,3 +254,40 @@ it('leaves the default scheduler unchanged without a producing plugin and ignore
     await f.close()
   }
 })
+
+it('settles an original rejected approval after restart even when no turn reopens', async () => {
+  const f = await fixture()
+  try {
+    const queue = f.queue()
+    await queue.enqueue(call, signal)
+    await drainDeferredToolInvocations(f.ctx(queue, true), signal)
+    await f.restart()
+    const restored = f.queue(),
+      context = f.ctx(restored)
+    const result = {
+      content: [{ type: 'text' as const, text: 'Denied' }],
+      isError: true,
+      details: { code: 'APPROVAL_REJECTED' },
+    }
+    Object.assign(context, {
+      turn: { continuation: () => null, cancelled: () => false },
+      input: {
+        resumeParked: async () => {
+          const resultSeq = await f.ports.append('x/test/tool-receipt', { invocationId: call.id }, actor)
+          f.effects.set(call.id, { resultSeq, result, approvalId: 'ticket-original' })
+          return 'blocked'
+        },
+      },
+    })
+    await drainDeferredToolInvocations(context, signal)
+    expect(await restored.read(call.id, signal)).toMatchObject({
+      state: 'failed',
+      approvalId: 'ticket-original',
+      error: { code: 'APPROVAL_REJECTED', outcomeUnknown: false },
+    })
+    expect(f.executed).toEqual([])
+    expect(f.changed.at(-1)).toMatchObject({ state: 'failed' })
+  } finally {
+    await f.close()
+  }
+})

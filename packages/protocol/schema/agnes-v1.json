@@ -7714,6 +7714,23 @@
               "maxLength": 128
             }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "kind", "seq", "namespace", "event", "label", "state", "surfaceId", "revision"],
+          "properties": {
+            "id": { "type": "string", "maxLength": 1024 },
+            "kind": { "const": "plugin-fact" },
+            "seq": { "type": "integer", "minimum": 1 },
+            "namespace": { "type": "string", "maxLength": 256 },
+            "event": { "type": "string", "maxLength": 128 },
+            "label": { "type": "string", "maxLength": 256 },
+            "state": { "type": "string", "maxLength": 64 },
+            "surfaceId": { "type": "string", "maxLength": 128 },
+            "revision": { "type": "integer", "minimum": 1 },
+            "commandId": { "type": "string", "maxLength": 128 }
+          }
         }
       ]
     },

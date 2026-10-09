@@ -33,7 +33,7 @@ export default defineExtension((agnes) => {
             content: [
               {
                 type: 'text',
-                text: `${record.surface.title} — ${record.surface.components.length} components. [Open workbench](/sessions/${encodeURIComponent(ctx.session.key)}?surface=${encodeURIComponent(record.surface.id)}).`,
+                text: `${record.surface.title} — ${record.surface.components.length} components. [Open review](/?session=${encodeURIComponent(ctx.session.key)}&surface=${encodeURIComponent(record.surface.id)}).`,
               },
             ],
             details: { surface: record.surface },

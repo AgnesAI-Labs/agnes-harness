@@ -1028,3 +1028,35 @@ describe('trace panel', () => {
     expect(root.textContent).toContain('Turns 1')
   })
 })
+
+it('shows projected business UI revisions and action outcomes in the ordinary trace list', () => {
+  const business = {
+    ...sampleTrace,
+    children: [
+      ...sampleTrace.children,
+      {
+        id: 'ui-fact:8',
+        kind: 'other' as const,
+        name: 'surface.updated · r2 · Finance',
+        status: 'completed' as const,
+        startSeq: 8,
+        startedAt: sampleTrace.startedAt,
+        children: [],
+      },
+      {
+        id: 'ui-fact:9',
+        kind: 'other' as const,
+        name: 'action.failed · r2',
+        status: 'failed' as const,
+        startSeq: 9,
+        startedAt: sampleTrace.startedAt,
+        children: [],
+      },
+    ],
+  }
+  const rows = traceRowBuilder.build(nodes, [turn(business)])
+  expect(rows.filter((row) => row.kind === 'ui').map((row) => [row.preview, row.statusCode])).toEqual([
+    ['Review updated · r2 · Finance', 'completed'],
+    ['Action failed · r2', 'failed'],
+  ])
+})

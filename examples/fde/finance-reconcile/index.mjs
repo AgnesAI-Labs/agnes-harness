@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { actionOutcome, guardAdjustment, recordAdjustment, reviewSurface } from './surface.mjs'
 import { Type } from '@sinclair/typebox'
 import { makeBundle, modelText, tool, value, writeMeta } from './runtime.mjs'
 
@@ -9,7 +10,10 @@ const row = Type.Object({
   currency: Type.Literal('USD'),
   description: Type.String(),
 })
-const proposal = Type.Object({ id: Type.String(), amountCents: Type.Integer(), reason: Type.String() })
+const proposal = Type.Object(
+  { id: Type.String(), amountCents: Type.Integer(), reason: Type.String({ minLength: 1, maxLength: 256 }) },
+  { additionalProperties: false },
+)
 function ledger(file) {
   const [header, ...lines] = readFileSync(new URL(`./fixtures/${file}`, import.meta.url), 'utf8')
     .trim()
@@ -99,12 +103,31 @@ export const tools = [
       }
     },
   ),
-  // Official ask_user_question collects the business choice; policy separately owns posting permission.
+  // Preset UI collects the business choice; policy separately owns tool authorization.
   tool(
     'fde_finance_approve',
     'Approve simulated balanced adjusting entries against a review suspense account; never post to a real ledger.',
-    Type.Object({ proposals: Type.Array(proposal) }),
+    Type.Object(
+      { proposals: Type.Array(proposal, { minItems: 1, maxItems: 1000 }) },
+      { additionalProperties: false },
+    ),
     ({ proposals }) => {
+      const banks = keyed(ledger('bank.csv')),
+        books = keyed(ledger('book.csv')),
+        seen = new Set()
+      for (const item of proposals) {
+        const bank = banks.get(item.id),
+          book = books.get(item.id)
+        if (
+          !bank ||
+          (book && bank.date !== book.date) ||
+          seen.has(item.id) ||
+          item.amountCents !== bank.amountCents - (book?.amountCents ?? 0) ||
+          !item.reason.trim()
+        )
+          throw new Error('Adjustment does not match the immutable synthetic evidence')
+        seen.add(item.id)
+      }
       const entries = proposals.map((item) => {
         if (!Number.isSafeInteger(item.amountCents) || item.amountCents === 0)
           throw new Error('Invalid adjustment')
@@ -151,16 +174,49 @@ const stages = [
     },
   },
   {
-    name: 'confirm-adjustments',
-    confirm: (state) =>
-      `Approve these simulated USD-cent adjusting entries without posting? ${JSON.stringify(state.data.report.proposals)}`,
+    name: 'show-differences',
     async run(ctx, state, signal) {
-      return value(
-        await ctx.tools.execute(
-          { name: tools[2].name, args: { proposals: state.data.report.proposals } },
-          signal,
-        ),
+      const surface = reviewSurface(`finance-${state.outputKey.slice(0, 32)}`, state.data.report)
+      const output = await ctx.tools.execute({ name: 'ui_render', args: { surface } }, signal)
+      if (output.isError) throw new Error('Unable to render reconciliation review')
+      return { surface }
+    },
+  },
+  {
+    name: 'await-adjustment',
+    inputStage: true,
+    async run(ctx, state, signal) {
+      const outcome = await actionOutcome(ctx, state, signal)
+      if (!outcome) return { waitingForInput: true }
+      if (outcome.state === 'failed') {
+        if (outcome.error?.outcomeUnknown)
+          throw new Error('Adjustment outcome unknown; reconcile the original receipt before continuing')
+        return { waitingForInput: true }
+      }
+      const { receipt } = value(outcome.result)
+      if (!receipt || receipt.posted !== false || receipt.status !== 'simulated-approved')
+        throw new Error('Unexpected adjustment receipt')
+      const commentary = await modelText(
+        ctx,
+        'Explain the authorized simulation receipt and remaining unresolved rows. No real ledger was posted.',
+        { receipt, unresolved: state.data.report.unresolved },
+        signal,
       )
+      const surface = reviewSurface(
+        state.data.surface.id,
+        state.data.report,
+        state.data.surface.revision + 1,
+        receipt,
+      )
+      const output = await ctx.tools.execute(
+        {
+          name: 'ui_update',
+          args: { surfaceId: surface.id, expectedRevision: state.data.surface.revision, surface },
+        },
+        signal,
+      )
+      if (output.isError) throw new Error('Unable to update reconciliation review')
+      return { receipt, surface, commentary }
     },
   },
 ]
@@ -168,4 +224,6 @@ export const { main, factory, createFactory, policy } = makeBundle({
   name: 'finance-reconcile',
   tools,
   stages,
+  guardToolCall: guardAdjustment,
+  recordToolResult: recordAdjustment,
 })

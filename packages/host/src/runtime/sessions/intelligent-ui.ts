@@ -92,6 +92,7 @@ export function createIntelligentUiAdapter(
     return service
   }
   return {
+    enabled: () => current !== undefined,
     get,
     register(factory: IntelligentUiFactory, meta: RegMeta) {
       if (current) throw new Error('Intelligent UI runtime already registered')

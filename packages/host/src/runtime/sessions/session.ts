@@ -1,3 +1,4 @@
+import { attachIntelligentUiTrace } from './intelligent-ui-trace.js'
 import { createHash, randomUUID } from 'node:crypto'
 import {
   type ChildWorkspaceRuntimePort,
@@ -424,6 +425,7 @@ export async function createSession(
     seams: { ...opts.seams, sandbox: guardedSandbox },
   })
   const releaseDeferred = bindDeferredInvocations(a, session)
+  attachIntelligentUiTrace(session, a.intelligentUi.enabled)
   Object.defineProperty(session, 'intelligentUi', {
     get: () =>
       a.intelligentUi.get({

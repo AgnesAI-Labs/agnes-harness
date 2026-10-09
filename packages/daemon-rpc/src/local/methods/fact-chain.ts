@@ -1,3 +1,4 @@
+import { appendIntelligentUiFactChain, intelligentUiFactTypes } from './intelligent-ui-fact-chain.js'
 import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { projectFactChain, type RequestTraceStore, type ScanRead } from '@agnes/host'
 import type {
@@ -11,6 +12,9 @@ import { validateAgainst } from '@agnes/protocol'
 import { FactChainNode as NodeSchema } from '@agnes/protocol/gen/agnes-v1'
 
 const types = [
+  ...intelligentUiFactTypes,
+  'x/agnes/deferred-invocations/state',
+  'inbox',
   'request/sent',
   'request/header',
   'tool/call',
@@ -103,6 +107,7 @@ export function registerFactChain(
     })
     // Missing anchors disclose no captured request, composition, package or candidate metadata.
     if (!result.nodes.length) return result
+    appendIntelligentUiFactChain(result, rows)
     for (const node of [...result.nodes]) {
       if (node.kind !== 'request') continue
       try {

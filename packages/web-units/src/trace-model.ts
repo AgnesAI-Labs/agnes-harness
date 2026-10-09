@@ -310,7 +310,31 @@ export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[
     rowCache.set(node, { locale, turn, span, row })
     rows.push(row)
   }
-  return rows
+  for (const turn of turns) {
+    const visit = (span: UISpan) => {
+      if (span.kind === 'other' && span.id.startsWith('ui-fact:'))
+        rows.push({
+          id: span.id,
+          seq: span.startSeq,
+          turn: turn.turn,
+          kind: 'ui',
+          badge: traceText('trace.badge.ui'),
+          preview: span.name
+            .split(' · ')
+            .map((part, index) => (index === 0 ? traceText(('trace.ui.' + part) as TraceMessageKey) : part))
+            .join(' · '),
+          raw: JSON.stringify(span, null, 2),
+          source: 'agnes/intelligent-ui',
+          status: traceText(STATUS_KEY[span.status] ?? 'trace.status.completed'),
+          statusCode: span.status,
+          startedAt: span.startedAt,
+          durationMs: span.durationMs,
+        })
+      for (const child of span.children) visit(child)
+    }
+    if (turn.trace) visit(turn.trace)
+  }
+  return rows.sort((a, b) => a.seq - b.seq)
 }
 
 /** Called through this object so a test can count how often the list is rebuilt. */

@@ -31,7 +31,7 @@ agh serve
 
 在本目录执行 `npm pack`，通过 `agh plugins add ./NAME.tgz` 安装分发包。运行文件、夹具、Skill 和可选面板一同打包，没有工作区或相邻示例导入。
 
-先交付草稿，再由官方问题卡暂停流程。无交互运行在问题或不可用的工具权限边界停止。在 Web/TUI 回答，再按需批准动作权限；取消不会记录动作回执。
+同一 preset surface 在对话与工作台展示差异表、金额图和调整表单。审阅后点击 **确认调整**，后台再通过原工具路径申请模拟调整权限。刷新恢复同一个审阅状态和待审批回执；无交互运行在此边界等待。TUI／渠道展示文本摘要与工作台链接。
 
 Web：打开 serve 地址，进入 **Admin → Plugins → Bundles**，选择 `@agnes-fde/finance-reconcile#finance-reconcile`，保存并按提示重启 Host。新建会话，选择 `finance-reconcile` 预设与 Demo 模型，粘贴 `fixtures/prompt.txt`。旧会话保留固定 loop。查看依据与轨迹。
 
@@ -55,13 +55,13 @@ loop 调用 Core 的公开 `prepareRequest()`；Core 解析会话主模型、契
 
 ## 官方工具与输出
 
-已安装的 standard 预设提供[官方工具](../../../docs/reference/default-tools.zh-CN.md)，本 bundle 只注册业务连接器和格式器。动作前 `ask_user_question` 提供 Proceed/Cancel 选择，保存问题标识并暂停。只有经校验的普通用户答案才能继续，无效答案保持等待；业务选择不授予工具权限。
+已安装的 standard 预设提供[官方工具](../../../docs/reference/default-tools.zh-CN.md)和 `agnes/intelligent-ui`。业务插件通过 `ui_render` 声明审阅界面，按钮映射到原 `fde_finance_approve`。业务确认不授予工具权限。默认 Loop 与财务 Loop 使用同一个公开 deferred-invocation 合同；终态结果通过 SC1 到达 Agent，再由 `ui_update` 标记已处理行，保留未解决交易。
 
-官方 `write` 在 `fde-output/finance-reconcile/<run-hash>/` 生成报告，`present` 复制为会话制品，使用标准打开/下载卡。问题前先交付草稿，完成后交付最终结果。策略仅允许此受限路径的报告写入，官方已读/过期版本保护继续生效；只读依据流程仍拒绝其他源数据写入。输出相对于会话工作区，manifest 声明了相应读写范围。
+官方 `write` 在 `fde-output/finance-reconcile/<run-hash>/` 生成报告，`present` 将最终结果复制为会话制品，使用标准打开／下载卡。策略仅允许此受限路径的报告写入，已读／过期版本保护继续生效。输出相对于会话工作区，manifest 声明相应读写范围。
 
-Loop **3.0.0** 使用 checkpoint codec **3** 保存待答问题。升级后新建会话，旧 codec 1/2 会被拒绝，不会自动重放。模型选择来自预设 primary 路由。快速测试使用官方工具端口、模型和制品回执的脚本夹具，不验证真实问题投影、下载、搜索服务或后台进程隔离。
+Loop **4.0.0** 使用 checkpoint codec **4** 保存业务依据、SC1 输入和已处理交易 ID。升级后新建会话，旧 codec 被拒绝。工具 dispatch 前，业务校验核对已提交建议、精确金额、唯一 ID 和已处理行。模型选择来自预设 primary 路由。已编写真实隔离 Host、原审批路径、UI 插件与脚本模型的测试；本开发窗口按规则未运行。
 
-在 Web/TUI 中先输入 `/plan on`，再提交**新任务**，启用官方计划模式。Loop 从公开提示区识别计划模式，以 `exit_plan_mode` 提交固定业务步骤；官方审批卡片获准后才运行连接器、报告或命令。拒绝计划会停止流程，未启用时跳过此关卡。示例策略保留默认策略的计划模式拒绝结果。计划获准不替代后续业务问题或工具权限；单个原生工具票据通过公开续跑端口和原调用回执恢复，未知回执会阻止重放。
+在 Web/TUI 中先输入 `/plan on`，再提交**新任务**，启用官方计划模式。Loop 从公开提示区识别计划模式，以 `exit_plan_mode` 提交固定业务步骤；官方审批卡片获准后才运行连接器、报告或命令。拒绝计划会停止流程，未启用时跳过此关卡。示例策略保留默认策略的计划模式拒绝结果。计划获准不替代后续 UI 确认或工具权限；单个原生工具票据通过公开续跑端口和原调用回执恢复，未知回执会阻止重放。
 
 ## 快速测试
 

@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Plugin } from '@agnes/cordis'
-import type { RouteDecl } from '@agnes/protocol'
+import type { UiActionParams, UiActionReceipt, UiReadParams, UiReadResult, RouteDecl } from '@agnes/protocol'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { scanAll, type Event, type Provider, type ToolResult } from '@agnes/core'
 import {
@@ -37,6 +37,10 @@ export interface AuthorTestOptions extends AuthorPluginVersion {
   approval?: TestHostOptions['approval']
   /** Explicit test seam overrides; no credentials or user home are loaded. */
   seams?: TestHostOptions['seams']
+  /** Explicit source directories for installed official plugin manifests in isolated fixtures. */
+  packageDirs?: TestHostOptions['packageDirs']
+  presets?: TestHostOptions['presets']
+  preset?: string
 }
 export interface AuthorSession {
   readonly key: string
@@ -47,6 +51,8 @@ export interface AuthorSession {
   drive(steps: number, signal?: AbortSignal): Promise<LoopStepOutcome[]>
   /** Uses a Core-controlled tool Loop, with policy, approval and durable effects. */
   invoke(name: string, args: unknown, signal?: AbortSignal): Promise<ToolResult>
+  uiAction(input: Omit<UiActionParams, 'sessionId'>): Promise<UiActionReceipt>
+  uiRead(input?: Omit<UiReadParams, 'sessionId'>): Promise<UiReadResult>
   facts(): Promise<Event[]>
   effects(): Promise<Event[]>
   assertApproval(verdict: string): Promise<void>
@@ -172,6 +178,9 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
     }
     host = (
       await createTestHost({
+        ...(options.presets
+          ? { presets: options.presets, allowed: ['standard', ...Object.keys(options.presets)] }
+          : {}),
         dataDir: directory,
         disableSessionTitle: true,
         env: {},
@@ -201,6 +210,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
         ...(primary
           ? {
               presets: {
+                ...options.presets,
                 standard: {
                   name: 'standard',
                   extends: 'base',
@@ -226,7 +236,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
             ],
           ]),
         },
-        packageDirs: { [id]: first.snapshot.directory },
+        packageDirs: { ...options.packageDirs, [id]: first.snapshot.directory },
         runtimePluginSnapshots: [first],
         runtimePluginCatalogue: [first],
         runtimePluginSources: async () => sources,
@@ -272,6 +282,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
         const session = await owner.createSession({
           key: input.key ?? `author-${++sessionNumber}`,
           cwd: directory,
+          ...(options.preset ? { preset: options.preset } : {}),
           loop: input.loop ?? options.loop ?? invocationLoop,
         })
         let active = false
@@ -353,6 +364,33 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
               const result = results.get(session.key)
               if (!result) throw new Error('Tool did not complete; inspect the parked ledger facts')
               return structuredClone(result)
+            } finally {
+              active = false
+            }
+          },
+          async uiAction(input) {
+            ready()
+            if (!session.intelligentUi) throw new Error('Intelligent UI plugin unavailable')
+            active = true
+            try {
+              return await session.intelligentUi.action(
+                { ...input, sessionId: session.key },
+                session.d.actor,
+                new AbortController().signal,
+              )
+            } finally {
+              active = false
+            }
+          },
+          async uiRead(input = {}) {
+            ready()
+            if (!session.intelligentUi) throw new Error('Intelligent UI plugin unavailable')
+            active = true
+            try {
+              return await session.intelligentUi.read(
+                { ...input, sessionId: session.key },
+                new AbortController().signal,
+              )
             } finally {
               active = false
             }

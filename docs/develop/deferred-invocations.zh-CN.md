@@ -26,3 +26,5 @@ Host 用 `withDeferredToolInvocations(factory, resolve)` 添加可选 `LoopConte
 `DeferredToolInvocationQueue` 提供 `enqueue`、`next`、`read`、比较并写入的 `transition`、`notify`。`DeferredInvocationLedgerPort` 提供有界会话 ledger scan/append、原结果查询和去重 SC1 唤醒。这些是 Host 适配器，不是权限 API。实现保持单写者顺序、最多八个未结束 invocation、32 KiB invocation envelope、session/lane 范围、重启后仍基于 ledger 的命令身份。未知生产方或缺失效果证据默认拒绝。队列通知重试独立于展示/投影缓存保留策略。后台业务回执可以设置更严格的限制。
 
 Host 适配器使用现有会话 lease 和公开 scan/append/enqueue 接口。关闭会话释放其队列绑定。锁定会话保留生产方 generation。不新增 worker 定时器、数据库或 Core 程序计数器变更。生产方必须能根据自身持久接纳事实修复 enqueue，并通过既有 queued-input 路径投递结果；不能把入队成功当成业务执行成功。
+
+通用 drain 在没有活动 turn 且该 invocation 有原审批 ticket 时，通过公开 `input.resumeParked` 恢复该 ticket。拒绝审批可能只补记 tool/result 而不打开 turn；drain 仍会读取原工具回执、写 failed 并通知生产方。普通输入和非队列审批仍由 Loop 自己处理，queue 不领取它们。

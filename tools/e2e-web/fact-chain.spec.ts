@@ -87,3 +87,70 @@ for (const locale of ['en', 'zh-CN'])
       await page.getByTestId('workbench-tab-facts').press('Escape')
       await expect(page.getByTestId('deliverable-fact-chain').last()).toBeFocused()
     })
+
+for (const locale of ['en', 'zh-CN'])
+  test(`preset UI action records appear in execution evidence and trace (${locale})`, async ({
+    page,
+    runtime,
+  }) => {
+    await preferences(page, locale, 'light')
+    await page.goto(runtime.url)
+    await chooseWorkspace(page, runtime, locale)
+    await fresh(page, locale)
+    const surface = {
+      id: 'evidence-review',
+      revision: 1,
+      title: 'Review report',
+      placement: { inline: true, workbench: true },
+      components: [
+        { id: 'status', kind: 'text', dataKey: 'status' },
+        { id: 'buttons', kind: 'button-group', actionIds: ['read-report'] },
+      ],
+      data: { status: 'Read synthetic evidence before continuing.' },
+      actions: [
+        {
+          id: 'read-report',
+          label: 'Read report',
+          tool: 'read',
+          argsTemplate: { path: { literal: 'report.md' } },
+          paramsSchema: {
+            type: 'object',
+            required: ['path'],
+            properties: { path: { type: 'string' } },
+            additionalProperties: false,
+          },
+        },
+      ],
+    }
+    const composer = page.getByRole('textbox', {
+      name: locale === 'en' ? 'Task content' : '任务内容',
+      exact: true,
+    })
+    await composer.fill('call ui_render ' + JSON.stringify({ surface }))
+    await composer.press('Enter')
+    const card = page.getByTestId('intelligent-ui-inline')
+    await expect(card.getByTestId('ui-surface-evidence-review')).toHaveAttribute('data-revision', '1')
+    await card.getByTestId('ui-action-read-report').click()
+    await expect(card.locator('[data-status="succeeded"]')).toBeVisible()
+    await page.getByTestId('conversation-turn').last().getByTestId('turn-process-toggle').click()
+    await page.getByTestId('tool-fact-chain').last().click()
+    const facts = page.getByTestId('fact-chain')
+    await expect(
+      facts
+        .getByTestId('ui-fact-chain-node')
+        .filter({ hasText: locale === 'en' ? 'Action succeeded' : '动作成功' }),
+    ).toBeVisible()
+    await expect(
+      facts
+        .getByTestId('ui-fact-chain-node')
+        .filter({ hasText: locale === 'en' ? 'Revision 1' : '修订 1' })
+        .first(),
+    ).toBeVisible()
+    await page.locator('#view-trace').click()
+    await expect(
+      page
+        .locator('.trace-row')
+        .filter({ hasText: locale === 'en' ? 'Action succeeded' : '动作成功' })
+        .first(),
+    ).toBeVisible()
+  })

@@ -103,6 +103,12 @@ export function FactChainPanel({ context }: { context: UiExtensionContext }) {
                     })}
                   </ul>
                 )}
+                {node.kind === 'plugin-fact' && (
+                  <p data-testid="ui-fact-chain-node">
+                    {node.label} · {t('facts.uiRevision', { revision: node.revision })} ·{' '}
+                    {t(`facts.ui.${node.event}`)}
+                  </p>
+                )}
                 {node.kind === 'request' && <p>{node.model}</p>}
                 {node.kind === 'invocation' && (
                   <p>

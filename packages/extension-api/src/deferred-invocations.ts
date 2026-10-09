@@ -89,14 +89,22 @@ export async function drainDeferredToolInvocations(
   const call = previous.invocation
   if (call.sessionKey !== ctx.sessionKey || call.lane !== ctx.lane)
     throw new Error('Deferred invocation belongs to another session or lane')
-  const continuation = ctx.turn.continuation()
-  if (!continuation) {
+  let continuation = ctx.turn.continuation()
+  if (!continuation && previous.approvalId) {
+    // Approval rejection can settle the original receipt without reopening a turn.
+    const resumed = await ctx.input.resumeParked()
+    if (resumed === 'waiting' || resumed === false)
+      return { outcome: 'parked', phase: 'deferred-tool-approval', reason: 'parked' }
+    continuation = ctx.turn.continuation()
+  }
+  if (!continuation && (await ctx.effects.status(call.id)).status !== 'responded') {
     if (receiptPending(previous) && !previous.approvalId) await queue.enqueue(call, signal)
     return null
   }
   if (ctx.turn.cancelled() || signal.aborted) return null
   if (previous.state === 'queued' && continuation !== 'model' && continuation !== 'failure') return null
-  if (previous.state !== 'queued' && !['model', 'tools', 'failure'].includes(continuation)) return null
+  if (continuation && previous.state !== 'queued' && !['model', 'tools', 'failure'].includes(continuation))
+    return null
   let receipt = previous
   const set = async (
     state: DeferredInvocationState,
@@ -139,7 +147,7 @@ export async function drainDeferredToolInvocations(
         await ctx.tools.execute({ invocationId: call.id, name: call.tool, args: call.args }, signal),
       )
     } else if (receipt.state === 'pending-approval' || receipt.approvalId !== undefined) {
-      // Default/custom Loops reopen the original parked turn before entering this boundary.
+      // Resume the original ticket; never create a replacement approval or tool call.
       if (receipt.state === 'pending-approval') await set('executing')
       await complete(await ctx.tools.resume(call.id, signal))
     } else if (effect.status === 'may-have-sent') {

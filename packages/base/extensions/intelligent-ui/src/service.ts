@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { DeferredInvocationReceipt, IntelligentUiFactory } from '@agnes/extension-api'
 import {
   jcs,
@@ -330,7 +331,13 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
           )
         }
         const action = surface.surface.actions.find((item) => item.id === request.actionId)!
-        const id = `ui:${request.commandId}`
+        const id =
+          'ui:' +
+          createHash('sha256')
+            .update(
+              jcs({ surfaceId: request.surfaceId, revision: request.revision, commandId: request.commandId }),
+            )
+            .digest('hex')
         record.taskId = surface.taskId
         record.surfaceSeq = surface.updatedSeq
         record.receipt.invocationId = id

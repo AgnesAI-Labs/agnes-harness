@@ -1,8 +1,12 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { loopCheckpointCodec, registerLoopPlugin, registerToolPolicyPlugin } from '@agnes/extension-api'
+import {
+  drainDeferredToolInvocations,
+  loopCheckpointCodec,
+  registerLoopPlugin,
+  registerToolPolicyPlugin,
+} from '@agnes/extension-api'
 import { defineAgnesPlugin, defineLoop, defineTool, toolError } from '@agnes/plugin-runtime'
-import { parseAnswer } from '@agnes/protocol'
 
 export const readMeta = {
   isReadOnly: true,
@@ -105,12 +109,20 @@ async function publish(ctx, state, name, signal) {
 }
 
 /** Included in every tarball; official tools are supplied by the installed standard preset. */
-export function makeBundle({ name, tools, stages, readOnly = false, validateSettings = () => ({}) }) {
+export function makeBundle({
+  name,
+  tools,
+  stages,
+  readOnly = false,
+  validateSettings = () => ({}),
+  guardToolCall = () => {},
+  recordToolResult = () => false,
+}) {
   const source = `@agnes-fde/${name}`
   const outputPath = new RegExp(`^fde-output/${name}/[a-f0-9]{64}/[0-9]+-report\\.(md|html)$`)
   const policy = {
     id: `fde.${name}`,
-    version: '3.0.0',
+    version: '4.0.0',
     decide(input, signal) {
       signal.throwIfAborted()
       if (input.call?.name === 'exit_plan_mode')
@@ -119,6 +131,11 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
         return {
           effect: 'allow',
           reason: 'Generated report output only; official write enforces observation',
+        }
+      if (['ui_render', 'ui_update', 'ui_close'].includes(input.call?.name) && !input.policy.isDestructive)
+        return {
+          effect: 'allow',
+          reason: 'Declare preset business UI; its actions require separate tool authorization',
         }
       if (readOnly && (!input.policy.isReadOnly || input.policy.isDestructive))
         return { effect: 'deny', reason: 'Business evidence is read-only' }
@@ -134,7 +151,7 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
     name +
     ' workflow plan\n\n' +
     stages.map((stage, i) => i + 1 + '. ' + stage.name).join('\n') +
-    '\n\nPresent generated reports. Keep source evidence read-only where configured. Business actions require a separate Proceed/Cancel answer and backend tool permission; unknown effects are never replayed.'
+    '\n\nPresent generated reports. Keep source evidence read-only where configured. Business actions require a UI confirmation and backend tool permission; unknown effects are never replayed.'
   const workflow = [
     {
       name: 'approve-plan',
@@ -156,7 +173,7 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
   ]
   function createFactory(settings = {}) {
     settings = validateSettings(settings)
-    const codec = loopCheckpointCodec(3, (state) => {
+    const codec = loopCheckpointCodec(4, (state) => {
       if (
         !state ||
         state.workflow !== name ||
@@ -167,6 +184,8 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
         typeof state.data !== 'object' ||
         typeof state.input !== 'string' ||
         typeof state.pending !== 'boolean' ||
+        (state.stageInput !== null &&
+          (typeof state.stageInput?.id !== 'string' || !Array.isArray(state.stageInput.content))) ||
         typeof state.approvalWaiting !== 'boolean' ||
         (state.explanation !== null && typeof state.explanation !== 'string') ||
         (state.approvalCall !== null &&
@@ -177,24 +196,11 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
         (state.approvalWaiting && (!state.pending || !state.approvalCall)) ||
         !state.settings ||
         typeof state.settings !== 'object' ||
-        !Number.isInteger(state.confirmed) ||
-        state.confirmed < -1 ||
-        state.confirmed >= workflow.length ||
         typeof state.outputKey !== 'string' ||
         (state.outputKey && !/^[a-f0-9]{64}$/.test(state.outputKey)) ||
         state.stageCount !== workflow.length
       )
         throw new Error('Invalid business checkpoint')
-      if (
-        state.waiting &&
-        (typeof state.waiting.id !== 'string' ||
-          !state.waiting.id ||
-          state.waiting.questions?.length !== 1 ||
-          state.waiting.questions[0].id !== 'proceed' ||
-          typeof state.waiting.questions[0].question !== 'string' ||
-          JSON.stringify(state.waiting.questions[0].options) !== JSON.stringify(['Proceed', 'Cancel']))
-      )
-        throw new Error('Invalid pending question')
       validateSettings(state.settings)
       return state
     })
@@ -205,12 +211,11 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
       data: {},
       input: '',
       settings,
+      stageInput: null,
       pending: false,
       approvalWaiting: false,
       approvalCall: null,
       explanation: null,
-      waiting: null,
-      confirmed: -1,
       outputKey: '',
     })
     function driver(ctx, saved) {
@@ -218,11 +223,30 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
         closed = false,
         ended = false
       const save = () => ctx.checkpoints.write(codec.encode(state))
-      async function park() {
-        await save()
-        await ctx.events.finish('parked')
-        return { outcome: 'parked', phase: 'waiting-for-answer', reason: 'parked' }
-      }
+      // Business validation consumes this Loop's durable checkpoint, irrespective of producer.
+      const businessCtx = Object.create(ctx)
+      Object.defineProperty(businessCtx, 'tools', {
+        value: {
+          ...ctx.tools,
+          async execute(call, signal) {
+            guardToolCall(call, state)
+            const output = await ctx.tools.execute(call, signal)
+            if (recordToolResult(call, output, state)) await save()
+            return output
+          },
+          async resume(id, signal) {
+            const original = await ctx.deferredInvocations?.read(id, signal)
+            const call = original
+              ? { invocationId: id, name: original.invocation.tool, args: original.invocation.args }
+              : state.approvalCall
+            if (!call) throw new Error('Original business invocation unavailable')
+            guardToolCall(call, state)
+            const output = await ctx.tools.resume(id, signal)
+            if (recordToolResult(call, output, state)) await save()
+            return output
+          },
+        },
+      })
       return {
         checkpoint: () => codec.encode(state),
         cancel() {
@@ -239,6 +263,9 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
             state = initial()
             ended = false
           }
+          // Every producer uses the same public queue; this Loop knows no UI execution helper.
+          const deferred = await drainDeferredToolInvocations(businessCtx, signal)
+          if (deferred) return deferred
           if (state.approvalWaiting) {
             const continuation = await ctx.input.resumeParked()
             if (continuation === 'waiting' || continuation === false)
@@ -267,32 +294,6 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
             })
             return { outcome: 'turn-ended', phase: 'unknown', reason: 'blocked' }
           }
-          if (state.waiting) {
-            const input = await ctx.input.accept()
-            if (!input) return { outcome: 'parked', phase: 'waiting-for-answer', reason: 'parked' }
-            const answers = parseAnswer(
-              state.waiting.id,
-              state.waiting.questions,
-              input.content
-                .filter((b) => b.type === 'text')
-                .map((b) => b.text)
-                .join('\n'),
-            )
-            if (!answers || input.trust !== 'trusted') return await park()
-            state.waiting = null
-            if (answers.proceed !== 'Proceed') {
-              // A cancelled workflow cannot be reopened at its action stage.
-              state.pending = true
-              await save()
-              await ctx.events.finish('error', {
-                code: 'FDE_CANCELLED',
-                message: 'The person cancelled the business action',
-              })
-              return { outcome: 'turn-ended', phase: 'cancelled', reason: 'error' }
-            }
-            state.confirmed = state.index
-            await save()
-          }
           if (!state.input) {
             const input = await ctx.input.accept()
             if (!input) return { outcome: 'idle', phase: 'idle' }
@@ -310,24 +311,33 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
             return { outcome: 'turn-ended', phase: 'done', reason: 'completed' }
           }
           const stage = workflow[state.index]
+          if (stage.inputStage) {
+            if (ctx.turn.continuation() === 'checkpoint') {
+              const boundary = await ctx.turn.checkpoint(signal)
+              if (boundary.outcome !== 'running') return boundary
+            }
+            const deferred = await drainDeferredToolInvocations(businessCtx, signal)
+            if (deferred) return deferred
+            if (ctx.turn.continuation() === 'tools') return await ctx.tools.drain(signal)
+            if (!state.stageInput) {
+              if (ctx.turn.continuation()) await ctx.turn.endStep()
+              const input = ctx.turn.continuation()
+                ? await ctx.input.claim('next-step')
+                : await ctx.input.accept()
+              if (!input) {
+                if (ctx.turn.continuation()) await ctx.events.finish('parked')
+                return { outcome: 'parked', phase: 'waiting-for-action', reason: 'parked' }
+              }
+              state.stageInput = input
+              await save()
+              if (ctx.turn.continuation() === 'checkpoint')
+                return { outcome: 'running', phase: 'action-input' }
+            }
+          }
           state.pending = true
           await save()
           try {
-            const question = stage.confirm?.(state)
-            if (question && state.confirmed !== state.index) {
-              state.data.draftDeliverables = await publish(ctx, state, name, signal)
-              const questions = [{ id: 'proceed', question, options: ['Proceed', 'Cancel'] }]
-              const output = checked(
-                await ctx.tools.execute({ name: 'ask_user_question', args: { questions } }, signal),
-              )
-              // Never mistake the tool's waiting message for permission to execute an action.
-              if (output.details?.status !== 'pending' || typeof output.details?.questionId !== 'string')
-                throw new Error('Official question did not return a persisted pending request')
-              state.waiting = { id: output.details.questionId, questions }
-              state.pending = false
-              return await park()
-            }
-            const needsApproval = stage.approval || (question && state.confirmed === state.index)
+            const needsApproval = stage.approval === true
             const activePlan = (await ctx.turn.view())?.prompt.sections.some(
               (section) => section.id === 'plan-mode',
             )
@@ -369,6 +379,13 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
               : ctx
             const data = await stage.run(stageCtx, state, signal)
             signal.throwIfAborted()
+            if (data.waitingForInput) {
+              state.stageInput = null
+              state.pending = false
+              await save()
+              return { outcome: 'running', phase: 'waiting-for-action' }
+            }
+            state.stageInput = null
             state.data = { ...state.data, ...data }
             state.index++
             state.pending = false
@@ -399,8 +416,9 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
     }
     return defineLoop({
       id: `fde.${name}`,
-      version: '3.0.0',
-      capabilities: ['tools', 'model', 'checkpoint'],
+      version: '4.0.0',
+      capabilities: ['tools', 'model', 'checkpoint', 'deferred-invocations'],
+      controls: { steer: true },
       codec,
       create: (ctx) => driver(ctx, initial()),
       resume: (ctx, saved) => driver(ctx, codec.decode(saved)),
