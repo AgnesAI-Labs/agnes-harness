@@ -22,6 +22,7 @@ describe('prompt section order table', () => {
     expect(PROMPT_SECTIONS.map((s) => [s.id, s.order])).toEqual([
       ['persona', 100],
       ['environment', 110],
+      ['workflow:receipts', 113],
       ['agents-md', 120],
       ['coding-doctrine', 130],
       ['code-doctrine', 140],
@@ -49,6 +50,7 @@ describe('prompt section order table', () => {
   it('records who supplies each section, and registers the other packages only to reserve an order', () => {
     const byOwner = (owner: string) => PROMPT_SECTIONS.filter((s) => s.owner === owner).map((s) => s.id)
     expect(byOwner('base')).toEqual([
+      'workflow:receipts',
       'agents-md',
       'skills',
       'plan-mode',
