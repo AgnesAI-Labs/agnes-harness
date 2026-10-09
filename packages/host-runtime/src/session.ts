@@ -403,6 +403,7 @@ export async function createSession(
     actor,
     preset: view,
     resolvedProfileHash: profile.hash,
+    resolvedPresetHash: preset.hash,
     cwd,
     writerRunId: opts.writerRunId ?? randomUUID(),
     ...(opts.parent ? { parent: opts.parent } : {}),

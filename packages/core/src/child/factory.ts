@@ -574,6 +574,10 @@ export class KernelChildren implements ChildrenFactory {
       ...(filter ? { toolFilter: filter } : {}),
       actor: parent.d.actor,
       resolvedProfileHash: parent.d.resolvedProfileHash,
+      // A model override makes the child's preset a derivative, so it must not claim the parent's recipe.
+      ...(!modelTarget && parent.d.resolvedPresetHash
+        ? { resolvedPresetHash: parent.d.resolvedPresetHash }
+        : {}),
       preset: childPreset,
       parent: {
         key: parent.key,

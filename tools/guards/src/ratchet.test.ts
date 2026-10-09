@@ -292,7 +292,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-runtime/src/approval-expiry': 105,
   'packages/host-runtime/src/adapters': 465,
   'packages/host-runtime/src/profile': 1655,
-  'packages/host-runtime/src': 9478,
+  'packages/host-runtime/src': 9479,
   'packages/host-runtime/src/assemble': 3358,
   'packages/host-providers/src/adapters': 477,
   'packages/host-providers/src/profile': 165,
@@ -330,7 +330,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-common/src/assemble': 439,
   'packages/core-artifacts/src': 744,
   'packages/core-effects/src': 2621,
-  'packages/core-ledger/src': 6452,
+  'packages/core-ledger/src': 6454,
   'packages/core-child-control/src': 397,
   'packages/core-common/src': 529,
   // 2026-09-22 M11 browser effect-command closure: exact measured deltas for the explicit
@@ -1213,7 +1213,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 29399 -> 30048; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Await async loop construction, propagate session cancellation and drain initialization before storage closes.
   // countLines: 30048 -> 30103 (+55); exact measured cap, no exclusions or spare allocation.
-  'packages/core/src': 20710,
+  'packages/core/src': 20718,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.

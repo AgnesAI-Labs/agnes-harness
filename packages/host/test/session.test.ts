@@ -77,6 +77,34 @@ describe('createSession', () => {
     expect(start?.actor).toMatchObject({ role: 'owner', org: 'local' })
     await host.close()
   })
+  it('records the hash of the resolved preset document, apart from the profile hash', async () => {
+    const dataDir = tmp()
+    const { host } = await createTestHost({
+      dataDir,
+      presets: { l1: { name: 'l1', extends: 'standard', sandbox: { required: true } } },
+      allowed: ['standard', 'l1'],
+    })
+    const hashOf = async (preset?: string) => {
+      const s = await host.createSession({
+        cwd: dataDir,
+        ...(preset ? { preset } : {}),
+        key: `k-${preset ?? 'default'}`,
+      })
+      const data = (await s.scan({ type: 'session/start', limit: 1 }))[0]?.data as {
+        resolvedPresetHash?: string
+        resolvedProfileHash: string
+      }
+      return data
+    }
+    const standard = await hashOf()
+    const l1 = await hashOf('l1')
+    expect(standard.resolvedPresetHash).toBe(host.validatePresetSwitch('standard').hash)
+    expect(l1.resolvedPresetHash).toBe(host.validatePresetSwitch('l1').hash)
+    expect(standard.resolvedPresetHash).toMatch(/^sha256-[0-9a-f]{64}$/)
+    expect(standard.resolvedPresetHash).not.toBe(l1.resolvedPresetHash)
+    expect(standard.resolvedPresetHash).not.toBe(standard.resolvedProfileHash)
+    await host.close()
+  })
   // The view the session runs on must not carry the sentinel: core's resolveModel reads
   // preset.model.route[slot], and a view still saying `default` writes a request/header naming a
   // route no adapter serves.
