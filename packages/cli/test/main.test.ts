@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
@@ -429,7 +429,10 @@ describe('main', () => {
     expect(code, h.err()).toBe(0)
     expect(h.out()).toBe('main says hi\n')
     expect(dataDirs).toEqual([join(legacy, 'data')])
-    expect(existsSync(join(dir, '.agh'))).toBe(false)
+    // Linux prepares an empty workspace sandbox anchor; it must not become a second home.
+    expect(existsSync(join(dir, '.agh', 'data'))).toBe(false)
+    expect(existsSync(join(dir, '.agh', 'config'))).toBe(false)
+    if (existsSync(join(dir, '.agh'))) expect(readdirSync(join(dir, '.agh'))).toEqual([])
     const notices = warn.mock.calls.filter(
       ([, options]) => (options as { code?: string })?.code === 'AGH_DEP_AGNES_HOME',
     )
