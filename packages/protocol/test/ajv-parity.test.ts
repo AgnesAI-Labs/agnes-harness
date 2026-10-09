@@ -333,6 +333,8 @@ const AGNES_DEFS: Record<string, TSchema> = {
 
   FileUploadParams: AgnesGen.FileUploadParams,
   FileUploadResultSchema: AgnesGen.FileUploadResultSchema,
+  SessionReferenceSearchParams: AgnesGen.SessionReferenceSearchParams,
+  SessionReferenceSearchResult: AgnesGen.SessionReferenceSearchResult,
   FactChainAnchor: AgnesGen.FactChainAnchor,
   FactChainParams: AgnesGen.FactChainParams,
   FactChainPackage: AgnesGen.FactChainPackage,
@@ -1303,6 +1305,11 @@ const SESSION_SAMPLES: Record<string, Sample> = {
   ContentBlock: {
     valid: userMessageContent0[0],
     invalid: [
+      {
+        type: 'text',
+        text: 'data',
+        reference: { source: 'file', id: 'a', label: 'a', hash: 'invalid', truncated: false },
+      },
       { type: 'bogus' }, // matches none of the three discriminated-union branches
       { type: 'text', text: rep(1048577) }, // boundary: maxLength:1048576
       { type: 'image', data: 'x', mimeType: rep(129) }, // boundary: maxLength:128
@@ -1881,6 +1888,19 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'bounded byte progress and closed result',
     valid: { offset: 0 },
     invalid: [{ offset: -1 }, { offset: '0' }, { unknown: true }],
+  },
+  SessionReferenceSearchParams: {
+    valid: { sessionId: 'owned', query: 'file a' },
+    invalid: [{ sessionId: 'owned' }, { sessionId: '', query: '' }, { sessionId: 'owned', query: rep(257) }],
+    note: 'Owned-session reference search is bounded',
+  },
+  SessionReferenceSearchResult: {
+    valid: { items: [{ source: 'file', id: 'a', label: 'a' }], truncated: false },
+    invalid: [
+      { items: [], truncated: 'no' },
+      { items: Array(41).fill({ source: 'file', id: 'a', label: 'a' }), truncated: false },
+    ],
+    note: 'Bounded source locators do not grant content access',
   },
   FactChainAnchor: {
     valid: { kind: 'tool', toolUseId: 'tool-1' },
@@ -6777,6 +6797,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'FileUploadParams',
     result: 'FileUploadResultSchema',
   },
+  '_agnes/v1/session.references.search': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'SessionReferenceSearchParams',
+    result: 'SessionReferenceSearchResult',
+  },
   '_agnes/v1/session.factChain': {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
     params: 'FactChainParams',
@@ -7496,6 +7521,11 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [{ action: 'unknown' }, { action: 'upsert', rule: { secretRef: 'plain-text-secret' } }],
   },
   '_agnes/v1/session.fileUpload': AGNES_SAMPLES.FileUploadParams as Sample,
+  '_agnes/v1/session.references.search': {
+    note: 'Reference locators and bounded search results',
+    valid: { sessionId: 'owned', query: 'file a' },
+    invalid: [{ sessionId: 'owned' }, { sessionId: 'owned', query: 'x'.repeat(257) }],
+  },
   '_agnes/v1/session.factChain': {
     valid: { sessionId: 'owned', laneId: 'main', anchor: { kind: 'tool', toolUseId: 'tool-1' } },
     invalid: [
@@ -8169,6 +8199,11 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.jobs.control': AGNES_SAMPLES.SessionJobsControlResult as Sample,
   '_agnes/v1/session.workspace.changes': AGNES_SAMPLES.SessionWorkspaceChangesResult as Sample,
   '_agnes/v1/session.workspace.list': AGNES_SAMPLES.SessionWorkspaceListResult as Sample,
+  '_agnes/v1/session.references.search': {
+    note: 'Reference locators and bounded search results',
+    valid: { items: [{ source: 'file', id: 'a', label: 'a' }], truncated: false },
+    invalid: [{ items: [], truncated: 'no' }],
+  },
   '_agnes/v1/session.workspace.read': AGNES_SAMPLES.SessionWorkspaceReadResult as Sample,
 
   '_agnes/v1/session.rename': AGNES_SAMPLES.SessionPreferences as Sample,

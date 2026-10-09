@@ -524,6 +524,12 @@ export { type PluginFailureHelp, pluginFailureHelp } from './plugin-failure-help
 export { validateProjectionCapability, validateProjectionReadResult } from './projections.js'
 export * from './provider.js'
 export { answerPrefix, parseAnswer, type QuestionAnswers } from './question-answer.js'
+export {
+  type ReferenceCandidate,
+  type ReferenceSearchResult,
+  type ReferenceSelection,
+  validateReferenceSelections,
+} from './references.js'
 export * from './resource-control.js'
 export * from './runtime-admin.js'
 export * from './runtime-target-artifact.js'

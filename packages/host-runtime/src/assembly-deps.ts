@@ -22,6 +22,7 @@ export type HostPaths = { dataDir: string; profileDir: string; workspaceRoot: st
 
 export type AssembleDeps = HostPaths &
   TrajectoryAssemblyOptions & {
+    referenceLimits?: Partial<import('@agnes/extension-api').ReferenceLimits>
     homeDir?: string
     loader: PackageLoader
     packageDirs?: Map<string, string>

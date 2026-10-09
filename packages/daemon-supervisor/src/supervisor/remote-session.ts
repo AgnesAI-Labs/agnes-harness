@@ -105,6 +105,10 @@ export class RemoteSession {
     return this.link.command('workspaceChanges', input)
   }
 
+  references(operation: 'search' | 'resolve', input: unknown): Promise<unknown> {
+    return this.link.command('references', { operation, input })
+  }
+
   workspaceFiles(operation: 'list' | 'read', path: string): Promise<unknown> {
     return this.link.command('workspaceFiles', { operation, path })
   }

@@ -74,6 +74,7 @@ import { commandAdmissionId, commandBinding } from '../command-binding.js'
 import { runQueued } from '../command-queue.js'
 import { createBlockedComputerUseControlPlane } from '../computer-use-control.js'
 import { registerFileUpload } from '../file-upload.js'
+import { resolvePromptReferences } from '../references.js'
 import { registerSessionJobs, type SessionJobServices } from '../session-jobs.js'
 import { registerWorkspaceFiles } from '../workspace-files.js'
 import { type Feed, type LocalContext, legacyLedgerRpcError } from './acp.js'
@@ -1639,7 +1640,11 @@ export function registerAgnes(
           return await invocation.run(async () => {
             const seq = await entry.session
               .enqueue(kind === 'steer' ? 'next-step' : 'next-turn', {
-                content: payload.content as never,
+                content: await resolvePromptReferences(
+                  entry.session,
+                  payload.content as never,
+                  payload.references,
+                ),
                 actor: connActor(c.conn),
                 kind: kind === 'steer' ? 'steer' : 'follow_up',
                 commandId,
@@ -1901,7 +1906,13 @@ export function registerAgnes(
     params: unknown,
     c: CallContext,
   ): Promise<{ seq: number }> => {
-    const p = params as { sessionId: string; content: unknown[]; commandId: string; generation?: number }
+    const p = params as {
+      sessionId: string
+      content: unknown[]
+      commandId: string
+      generation?: number
+      references?: unknown[]
+    }
     const { commandId: _commandId, generation: _generation, ...payload } = p
     const a = await submit(c.conn.clientId, p.commandId, kind, payload, c, p.generation)
     if (a.status === 'uncertain') throw rpcError('INTERNAL_ERROR', { code: 'UNCERTAIN' })

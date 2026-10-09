@@ -1,3 +1,4 @@
+import type { ReferenceSearchResult, ReferenceSelection } from '@agnes/protocol'
 import { PermissionGate, type PermissionHandler, type PermissionRequest } from './permission.js'
 
 export type { PermissionOption, PermissionOutcome, PermissionRequest } from './permission.js'
@@ -540,6 +541,13 @@ export class Session {
     })
   }
 
+  searchReferences(query: string): Promise<ReferenceSearchResult> {
+    return this.client.call<ReferenceSearchResult>('_agnes/v1/session.references.search', {
+      sessionId: this.id,
+      query,
+    })
+  }
+
   workspaceRead(path: string): Promise<SessionWorkspaceReadResult> {
     return this.client.call<SessionWorkspaceReadResult>('_agnes/v1/session.workspace.read', {
       sessionId: this.id,
@@ -703,7 +711,11 @@ export class Session {
 
   async prompt(
     input: ContentBlock[] | string,
-    opts: { signal?: AbortSignal; titleLocale?: 'en' | 'zh-CN' } = {},
+    opts: {
+      signal?: AbortSignal
+      titleLocale?: 'en' | 'zh-CN'
+      references?: readonly ReferenceSelection[]
+    } = {},
   ): Promise<TurnResult> {
     // Captured by identity: the outcome of *this* turn is only the record that was
     // installed while the request was in flight, never one left over from a past turn.
@@ -717,7 +729,7 @@ export class Session {
     }
     opts.signal?.addEventListener('abort', onAbort, { once: true })
     try {
-      return await this.requestPrompt(input, before, false, opts.titleLocale)
+      return await this.requestPrompt(input, before, false, opts.titleLocale, opts.references)
     } finally {
       opts.signal?.removeEventListener('abort', onAbort)
     }
@@ -728,6 +740,7 @@ export class Session {
     before: TurnEndRecord | null,
     restored = false,
     titleLocale?: 'en' | 'zh-CN',
+    references?: readonly ReferenceSelection[],
   ): Promise<TurnResult> {
     try {
       // No deadline: a turn is bounded by the transport's liveness, not by a stopwatch.
@@ -736,7 +749,16 @@ export class Session {
         {
           sessionId: this.id,
           prompt: toAcpPrompt(toContentBlocks(input)),
-          ...(titleLocale ? { _meta: { 'ai.agnes.harness': { titleLocale } } } : {}),
+          ...(titleLocale || references?.length
+            ? {
+                _meta: {
+                  'ai.agnes.harness': {
+                    ...(titleLocale ? { titleLocale } : {}),
+                    ...(references?.length ? { references } : {}),
+                  },
+                },
+              }
+            : {}),
         },
         { timeoutMs: null },
       )
@@ -760,7 +782,7 @@ export class Session {
       // exactly once. No other failure is safe to replay here.
       if (!restored && this.workspace && this.isSessionNotFound(e)) {
         await this.restoreAfterReclaim()
-        return this.requestPrompt(input, before, true, titleLocale)
+        return this.requestPrompt(input, before, true, titleLocale, references)
       }
       // The request itself failing to the transport dropping, not to a cancel or a
       // protocol error, is the one case with anything to wait for: the daemon may already
@@ -810,7 +832,10 @@ export class Session {
     })
   }
 
-  steer(input: ContentBlock[] | string, opts: { commandId?: string } = {}): Promise<number> {
+  steer(
+    input: ContentBlock[] | string,
+    opts: { commandId?: string; references?: readonly ReferenceSelection[] } = {},
+  ): Promise<number> {
     return this.write('steer', input, opts)
   }
 
@@ -854,7 +879,10 @@ export class Session {
     )
   }
 
-  followUp(input: ContentBlock[] | string, opts: { commandId?: string } = {}): Promise<number> {
+  followUp(
+    input: ContentBlock[] | string,
+    opts: { commandId?: string; references?: readonly ReferenceSelection[] } = {},
+  ): Promise<number> {
     return this.write('followUp', input, opts)
   }
 
@@ -891,13 +919,17 @@ export class Session {
   private write(
     kind: 'steer' | 'followUp',
     input: ContentBlock[] | string,
-    opts: { commandId?: string },
+    opts: { commandId?: string; references?: readonly ReferenceSelection[] },
   ): Promise<number> {
     return submitCommand(
       this.client,
       this.id,
       kind,
-      { sessionId: this.id, content: toContentBlocks(input) },
+      {
+        sessionId: this.id,
+        content: toContentBlocks(input),
+        ...(opts.references?.length ? { references: opts.references } : {}),
+      },
       opts.commandId,
     )
   }

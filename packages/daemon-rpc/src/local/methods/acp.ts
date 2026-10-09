@@ -37,6 +37,7 @@ import { type CommandQueue, runQueued } from '../command-queue.js'
 import { createFollowUpRunner } from '../follow-up-runner.js'
 import { toSessionUpdate } from '../project.js'
 import type { PrompterRouter } from '../prompter.js'
+import { resolvePromptReferences } from '../references.js'
 import { reserveOwnedSession, SessionAdmissionDenied } from '../session-admission.js'
 import type { SessionEntry } from '../sessions.js'
 // A value import from agnes.ts, not a runtime cycle: agnes.ts's own import of `Feed`/`LocalContext`
@@ -678,6 +679,12 @@ export function registerAcp(
       await runQueued(cx.commandQueue, p.sessionId, abort.signal, async () => {
         const invocation = await queued.start()
         try {
+          content = await resolvePromptReferences(
+            entry.session,
+            content,
+            pocket(params).references,
+            abort.signal,
+          )
           const commandId = randomUUID()
           await entry.session.enqueue('next-turn', {
             content,

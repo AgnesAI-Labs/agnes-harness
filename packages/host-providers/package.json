@@ -32,7 +32,10 @@
     "./runtime-target-builder": "./src/runtime-target-builder.ts",
     "./runtime-target-publisher": "./src/runtime-target-publisher.ts",
     "./runtime-target-report": "./src/runtime-target-report.ts",
-    "./runtime-target-resource-bootstrap": "./src/runtime-target-resource-bootstrap.ts"
+    "./runtime-target-resource-bootstrap": "./src/runtime-target-resource-bootstrap.ts",
+    "./assemble/reference-resolvers": "./src/assemble/reference-resolvers.ts",
+    "./assemble/reference-text": "./src/assemble/reference-text.ts",
+    "./assemble/reference-history": "./src/assemble/reference-history.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",
@@ -49,7 +52,8 @@
     "@agnes/model-adapters": "workspace:*",
     "@agnes/package-manager": "workspace:*",
     "@agnes/plugin-runtime": "workspace:*",
-    "@agnes/protocol": "workspace:*"
+    "@agnes/protocol": "workspace:*",
+    "@agnes/history-index": "workspace:*"
   },
   "license": "Apache-2.0 AND MIT",
   "devDependencies": {

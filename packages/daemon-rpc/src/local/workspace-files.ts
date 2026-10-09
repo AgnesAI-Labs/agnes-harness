@@ -1,6 +1,7 @@
 import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { HostSession } from '@agnes/host'
 import { sessionWorkspaceChanges, sessionWorkspaceFiles } from '@agnes/worker-runtime'
+import { callReferences } from './references.js'
 
 export {
   compileIgnore,
@@ -16,6 +17,11 @@ export function registerWorkspaceFiles(
   cx: SessionSource,
   requireOwner: (method: string, sessionId: string, call: CallContext) => void,
 ): void {
+  ep.register('_agnes/v1/session.references.search', async (params, call) => {
+    const p = params as { sessionId: string; query: string }
+    requireOwner('session.references.search', p.sessionId, call)
+    return callReferences(cx.registry.require(p.sessionId).session, 'search', p.query)
+  })
   ep.register('_agnes/v1/session.workspace.changes', async (params, call) => {
     const p = params as {
       sessionId: string

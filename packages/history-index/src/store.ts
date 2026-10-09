@@ -306,6 +306,28 @@ export class HistoryIndex {
     return this.search(request, limit, offset)
   }
 
+  /** Bounded recent excerpt. Authorization is rechecked even when the requested id was a search hit. */
+  referenceExcerpt(
+    access: HistoryAccess,
+    sessionId: string,
+  ): { title: string; text: string; truncated: boolean } {
+    this.live()
+    this.requireSession(access, sessionId)
+    const session = this.session(sessionId)
+    if (!session) throw new HistoryIndexError('NOT_FOUND')
+    const rows = this.db
+      .prepare(
+        `SELECT seq, type, text, truncated FROM docs WHERE session_id = ? AND seq >= 1 AND type IN ('user/message', 'assistant/message') ORDER BY seq DESC LIMIT 25`,
+      )
+      .all(sessionId) as Array<{ seq: number; type: string; text: string; truncated: number }>
+    const retained = rows.slice(0, 24).reverse()
+    return {
+      title: session.title || sessionId,
+      text: retained.map((row) => `#${row.seq} ${row.type}\n${row.text}`).join('\n\n'),
+      truncated: rows.length > 24 || retained.some((row) => row.truncated !== 0),
+    }
+  }
+
   readEvent(
     access: HistoryAccess,
     sessionId: string,

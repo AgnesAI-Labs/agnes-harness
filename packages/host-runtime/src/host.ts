@@ -59,7 +59,12 @@ import { createTitleQueue, startSessionTitle } from './session-title.js'
 
 // core does not export a type named `Session`; it exports SessionImpl and SessionLogImpl. Taking the
 // return type instead of pinning a name means a rename over there is not a break over here.
-export type HostSession = Awaited<ReturnType<Kernel['session']>> & { readonly pluginGenerationId?: string }
+export type HostSession = Awaited<ReturnType<Kernel['session']>> & {
+  readonly pluginGenerationId?: string
+  readonly referenceResolvers?: import('@agnes/extension-api').ReferenceResolverPort
+  readonly referenceSessions?: import('@agnes/extension-api').ReferenceContext['sessions']
+  readonly referenceLimits?: import('@agnes/extension-api').ReferenceLimits
+}
 export type HostOptions = Omit<AssembleDeps, 'audit' | 'loader'> & {
   audit?: AuditSink
   loader?: PackageLoader

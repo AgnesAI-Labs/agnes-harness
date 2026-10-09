@@ -5,7 +5,7 @@ import { lstat, realpath, stat } from 'node:fs/promises'
 import { devNull, homedir } from 'node:os'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { HostSession } from '@agnes/host'
-import { AGH_DIR, type RpcError, rpcError } from '@agnes/protocol'
+import { AGH_DIR, type RpcError, rpcError, WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import { listCanonicalDirectorySync, openCanonicalFileSync } from '@agnes/system-node'
 
 /** Workbench reads stop at 1 MiB. Larger files report their size and omit text. */
@@ -200,7 +200,11 @@ function relativeToBase(base: string, rel: string): string | undefined {
 
 /** Last matching rule wins. `.gitignore` and `.aghignore` themselves stay visible. */
 export function ignoredBy(rel: string, isDir: boolean, files: readonly IgnoreFile[]): boolean {
-  if (rel.split('/').includes('.git')) return true
+  if (
+    rel.split('/').includes('.git') ||
+    WORKSPACE_SECRET_DIRS.some((path) => rel === path || rel.startsWith(`${path}/`))
+  )
+    return true
   const baseName = rel.split('/').at(-1) ?? rel
   if (baseName === '.gitignore' || baseName === '.aghignore') return false
   let ignored = false
@@ -225,21 +229,39 @@ async function readInsideText(
   rel: string,
   name: string,
   authority: WorkspaceAuthority,
+  strict = false,
 ): Promise<string | undefined> {
   const abs = rel === '' ? join(root, name) : join(root, rel, name)
   try {
     const link = await lstat(abs)
     if (!link.isFile() && !link.isSymbolicLink()) return undefined
-    if (link.isSymbolicLink()) return undefined
+    if (link.isSymbolicLink()) {
+      if (strict) throw denied()
+      return undefined
+    }
     const result = await readWorkspace(root, rel === '' ? name : `${rel}/${name}`, authority)
-    if (result.binary || result.truncated || result.size > MAX_IGNORE_BYTES) return undefined
+    if (result.binary || result.truncated || result.size > MAX_IGNORE_BYTES) {
+      if (strict) throw denied()
+      return undefined
+    }
     return result.text
-  } catch {
+  } catch (error) {
+    if (
+      strict &&
+      (error as NodeJS.ErrnoException).code !== 'ENOENT' &&
+      (error as RpcError).data?.code !== 'WORKSPACE_PATH_NOT_FOUND'
+    )
+      throw error
     return undefined
   }
 }
 
-async function ignoreFiles(root: string, rel: string, authority: WorkspaceAuthority): Promise<IgnoreFile[]> {
+async function ignoreFiles(
+  root: string,
+  rel: string,
+  authority: WorkspaceAuthority,
+  strict = false,
+): Promise<IgnoreFile[]> {
   const chain = ['']
   if (rel !== '') {
     const parts = rel.split('/')
@@ -248,7 +270,7 @@ async function ignoreFiles(root: string, rel: string, authority: WorkspaceAuthor
   const files: IgnoreFile[] = []
   for (const base of chain) {
     for (const name of ['.gitignore', '.aghignore']) {
-      const text = await readInsideText(root, base, name, authority)
+      const text = await readInsideText(root, base, name, authority, strict)
       if (text !== undefined) files.push(compileIgnore(base, text))
     }
   }
@@ -408,14 +430,18 @@ export async function listWorkspace(
   cwd: string,
   requested: string,
   authority: WorkspaceAuthority,
+  includeGit = true,
+  strictIgnore = false,
 ): Promise<WorkspaceList> {
   const rel = normalizeWorkspacePath(requested)
   const root = await canonicalRoot(cwd)
   const dirAbs = await resolveInside(root, rel, authority)
   const info = await stat(dirAbs)
   if (!info.isDirectory()) throw invalid()
-  const files = await ignoreFiles(root, rel, authority)
-  const gitState = await gitStatus(root, authority)
+  const files = await ignoreFiles(root, rel, authority, strictIgnore)
+  const gitState: GitStatus = includeGit
+    ? await gitStatus(root, authority)
+    : { marks: new Map(), status: 'unavailable' }
   const marks = gitState.marks
   const listed = listCanonicalDirectorySync(dirAbs)
   const names = listed
@@ -525,4 +551,65 @@ export async function sessionWorkspaceFiles(session: HostSession, operation: 'li
   return session.d.workspacePublication
     ? session.d.workspacePublication.workspace(() => ({ port, handler: invoke }))
     : port.run(invoke)
+}
+
+/** Reference exact read: ignore and current sandbox authority apply again at send, not only search. */
+export async function readWorkspaceReference(
+  cwd: string,
+  requested: string,
+  authority: WorkspaceAuthority,
+  maxSourceBytes: number,
+) {
+  const rel = normalizeWorkspacePath(requested)
+  if (!rel) throw invalid()
+  const root = await canonicalRoot(cwd)
+  const files = await ignoreFiles(root, rel.split('/').slice(0, -1).join('/'), authority, true)
+  if (hiddenFromTree(rel, files)) throw denied()
+  const abs = await resolveInside(root, rel, authority)
+  const expected = await stat(abs)
+  let fd: number
+  try {
+    fd = openCanonicalFileSync(abs)
+  } catch {
+    throw denied()
+  }
+  try {
+    const info = fstatSync(fd)
+    if (!info.isFile() || info.dev !== expected.dev || info.ino !== expected.ino) throw denied()
+    if (info.size > maxSourceBytes) throw new Error('Reference exceeds source read limit.')
+    const chunks: Buffer[] = []
+    const hash = createHash('sha256')
+    let size = 0
+    for (;;) {
+      const chunk = Buffer.alloc(Math.min(65536, maxSourceBytes - size + 1))
+      const count = readSync(fd, chunk, 0, chunk.length, size)
+      if (count === 0) break
+      size += count
+      if (size > maxSourceBytes) throw new Error('Reference exceeds source read limit.')
+      const bytes = chunk.subarray(0, count)
+      if (bytes.some((byte) => byte === 0 || byte < 9 || (byte > 13 && byte < 32)))
+        throw new Error('Binary references are refused.')
+      hash.update(bytes)
+      chunks.push(bytes)
+    }
+    const after = fstatSync(fd)
+    const checked = await stat(await resolveInside(root, rel, authority))
+    if (
+      info.size !== after.size ||
+      info.mtimeMs !== after.mtimeMs ||
+      info.ctimeMs !== after.ctimeMs ||
+      checked.dev !== info.dev ||
+      checked.ino !== info.ino
+    )
+      throw denied()
+    let text: string
+    try {
+      text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks))
+    } catch {
+      throw new Error('Binary references are refused.')
+    }
+    return { label: rel, text, hash: hash.digest('hex'), truncated: false }
+  } finally {
+    closeSync(fd)
+  }
 }

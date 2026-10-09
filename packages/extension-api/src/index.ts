@@ -36,6 +36,16 @@ export * from './plugin-extension.js'
 export * from './process.js'
 export * from './projections.js'
 export * from './provider-kind.js'
+export type {
+  ReferenceCandidate,
+  ReferenceSearchResult,
+  ReferenceSelection,
+  ReferenceContext,
+  ReferenceLimits,
+  ReferenceResolver,
+  ReferenceResolverPort,
+  ResolvedReference,
+} from './reference-resolver.js'
 export * from './resources.js'
 export * from './sandbox-provider.js'
 export * from './search-provider.js'

@@ -113,6 +113,7 @@ export type MethodName =
   | '_agnes/v1/session.jobs.control'
   | '_agnes/v1/session.workspace.list'
   | '_agnes/v1/session.fileUpload'
+  | '_agnes/v1/session.references.search'
   | '_agnes/v1/session.workspace.read'
   | '_agnes/v1/session.workspace.changes'
   | '_agnes/v1/session.readToolDetail'
@@ -296,6 +297,10 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     A.SessionWorkspaceListResult,
   ),
   '_agnes/v1/session.fileUpload': clientRequest(A.FileUploadParams, A.FileUploadResultSchema),
+  '_agnes/v1/session.references.search': clientRequest(
+    A.SessionReferenceSearchParams,
+    A.SessionReferenceSearchResult,
+  ),
   '_agnes/v1/session.workspace.read': clientRequest(
     A.SessionWorkspaceReadParams,
     A.SessionWorkspaceReadResult,

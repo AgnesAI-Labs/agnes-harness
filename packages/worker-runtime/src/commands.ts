@@ -27,6 +27,7 @@ import {
 import { sessionFileUpload } from './file-upload.js'
 import type { SessionCommandFrame, WorkerCommandFrame } from './frames.js'
 import type { McpRowRuntime } from './mcp-row-runtime.js'
+import { sessionReferences } from './references.js'
 import { readToolDetailPage } from './tool-detail.js'
 import { sessionWorkspaceChanges } from './workspace-changes.js'
 import { sessionWorkspaceFiles } from './workspace-files.js'
@@ -305,6 +306,10 @@ export async function handleCommand(
     }
     case 'fileUpload':
       return sessionFileUpload(session, p as import('@agnes/protocol').FileUploadRequest)
+    case 'references':
+      if (p.operation !== 'search' && p.operation !== 'resolve')
+        throw new Error('Invalid reference operation')
+      return sessionReferences(session, p.operation, p.input as never)
     case 'workspaceChanges':
       return sessionWorkspaceChanges(session, p as Parameters<typeof sessionWorkspaceChanges>[1])
     case 'workspaceFiles':

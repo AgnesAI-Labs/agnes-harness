@@ -617,6 +617,27 @@
         "generation": {
           "type": "integer",
           "minimum": 1
+        },
+        "references": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "id"],
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            }
+          }
         }
       }
     },
@@ -7644,6 +7665,61 @@
           "items": {
             "$ref": "#/$defs/FactChainGap"
           }
+        }
+      }
+    },
+    "SessionReferenceSearchParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "query"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "query": {
+          "type": "string",
+          "maxLength": 256
+        }
+      }
+    },
+    "SessionReferenceSearchResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items", "truncated"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 40,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "id", "label"],
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 4096
+              }
+            }
+          }
+        },
+        "truncated": {
+          "type": "boolean"
         }
       }
     }

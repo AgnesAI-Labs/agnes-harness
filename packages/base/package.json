@@ -136,6 +136,16 @@
         "runtime": "in-process",
         "default": true,
         "apiRange": "^1.4.0"
+      },
+      {
+        "id": "reference-resolvers:default",
+        "export": "referenceResolversPlugin",
+        "inject": [
+          "providers"
+        ],
+        "runtime": "in-process",
+        "default": true,
+        "apiRange": "^1.4.0"
       }
     ],
     "extensions": [

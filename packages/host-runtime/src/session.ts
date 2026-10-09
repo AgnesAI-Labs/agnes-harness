@@ -21,6 +21,8 @@ import type {
   SessionWorkspaceRuntimeTable,
 } from '@agnes/host-infrastructure/session-workspace-runtime'
 import { SystemPromptSettingsStore } from '@agnes/host-infrastructure/system-prompt-settings'
+import { referenceHistory } from '@agnes/host-providers/assemble/reference-history'
+import { referenceLimits } from '@agnes/host-providers/assemble/reference-text'
 import { materializeRoutes, pinPresetRoutes } from '@agnes/host-providers/assemble/routes'
 import type { Actor, LoopSelection, SessionStart } from '@agnes/protocol'
 import type { Assembled } from './assemble.js'
@@ -476,5 +478,10 @@ export async function createSession(
     const explicit = await session.scan({ type: 'x/core/yolo-switch', order: 'desc', limit: 1 })
     if (explicit.length === 0) await session.setYolo(true, actor)
   }
+  Object.assign(session, {
+    referenceResolvers: a.pluginTree.root.referenceResolvers,
+    referenceSessions: referenceHistory(profile.dataDir, key, cwd, referenceLimits(a.referenceLimits)),
+    referenceLimits: referenceLimits(a.referenceLimits),
+  })
   return session
 }

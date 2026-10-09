@@ -235,7 +235,8 @@ describe('Session', () => {
         titleLocale === 'zh-CN'
           ? [{ type: 'file' as const, name: '资料.txt', mimeType: 'text/plain', data: 'aGVsbG8=' }]
           : 'hello'
-      const r = await s.prompt(input, titleLocale ? { titleLocale } : {})
+      const references = [{ source: 'file', id: 'notes.txt' }]
+      const r = await s.prompt(input, { ...(titleLocale ? { titleLocale } : {}), references })
 
       expect(r).toEqual({
         stopReason: 'end_turn',
@@ -258,7 +259,7 @@ describe('Session', () => {
                 },
               ]
             : [{ type: 'text', text: 'hello' }],
-        ...(titleLocale ? { _meta: { 'ai.agnes.harness': { titleLocale } } } : {}),
+        _meta: { 'ai.agnes.harness': { ...(titleLocale ? { titleLocale } : {}), references } },
       })
     },
   )
@@ -550,7 +551,14 @@ describe('Session', () => {
     const s = await c.session.new({ cwd: '/w' })
 
     expect(await s.steer('now')).toBe(41)
-    expect(await s.followUp([{ type: 'text', text: 'later' }])).toBe(42)
+    expect(
+      await s.followUp([{ type: 'text', text: 'later' }], {
+        references: [{ source: 'file', id: 'notes.txt' }],
+      }),
+    ).toBe(42)
+    expect(f.calls.filter((x) => x.method === '_agnes/v1/submit')[1]?.params).toMatchObject({
+      payload: { references: [{ source: 'file', id: 'notes.txt' }] },
+    })
     expect(await s.compact('keep decisions')).toBe(43)
     expect(await s.sendNow('queued-C')).toBe(43)
     expect(await s.removeQueued('queued-D')).toBe(43)

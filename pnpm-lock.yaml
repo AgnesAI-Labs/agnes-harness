@@ -1025,6 +1025,9 @@ importers:
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
+      '@agnes/history-index':
+        specifier: workspace:*
+        version: link:../history-index
       '@agnes/host-common':
         specifier: workspace:*
         version: link:../host-common

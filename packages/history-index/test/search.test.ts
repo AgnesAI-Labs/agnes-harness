@@ -221,6 +221,9 @@ describe('history index', () => {
   it('reads an authorized event and marks an unauthorized parent without its id', () => {
     const { index, access } = openSeed()
     const read = index.readEvent(access, 'self', 3, 1, 0)
+    expect(index.referenceExcerpt(access, 'peer').text).toContain('alpha bridge repair extra')
+    for (const id of ['other-owner', 'away', 'missing'])
+      expect(() => index.referenceExcerpt(access, id)).toThrowError(HISTORY_DENIED())
     expect(read.event.sources).toEqual([2])
     expect(read.before.map((event) => event.seq)).toEqual([2])
     expect(read.event.body).toContain('follow the bridge')

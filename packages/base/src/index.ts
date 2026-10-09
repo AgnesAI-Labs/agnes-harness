@@ -354,4 +354,5 @@ export {
   readContextConfig,
   writeContextConfig,
 } from '../extensions/context-rules/src/index.js'
+export { referenceResolversPlugin } from '../extensions/references/src/index.js'
 export { rememberingPlugin } from './memory/index.js'

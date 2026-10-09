@@ -65,7 +65,22 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["type", "text"],
-          "properties": { "type": { "const": "text" }, "text": { "type": "string", "maxLength": 1048576 } }
+          "properties": {
+            "type": { "const": "text" },
+            "text": { "type": "string", "maxLength": 1048576 },
+            "reference": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source", "id", "label", "hash", "truncated"],
+              "properties": {
+                "source": { "type": "string", "minLength": 1, "maxLength": 128 },
+                "id": { "type": "string", "minLength": 1, "maxLength": 4096 },
+                "label": { "type": "string", "maxLength": 4096 },
+                "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                "truncated": { "type": "boolean" }
+              }
+            }
+          }
         },
         {
           "type": "object",

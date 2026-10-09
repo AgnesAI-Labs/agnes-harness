@@ -222,6 +222,7 @@ import {
   providerConfigurationScopes,
   readProviderSelections,
 } from '@agnes/host-providers/assemble/provider-selection'
+import { installReferenceResolvers } from '@agnes/host-providers/assemble/reference-resolvers'
 import {
   materializeRoutes,
   pinPresetRoutes,
@@ -346,6 +347,7 @@ export type OrdinaryReconciliationLifecycle = Readonly<{
 /** Where this host lives on disk. Every one is required: none of them has a safe default. */
 export type { AssembleDeps, HostPaths } from './assembly-deps.js'
 export type Assembled = {
+  referenceLimits?: Partial<import('@agnes/extension-api').ReferenceLimits>
   activationBarrier: ReturnType<typeof createExtensionActivationBarrier>
   approvalGrants: ApprovalGrantManagement
   callService: ReturnType<typeof serviceInvoker>['call']
@@ -1151,6 +1153,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             rowServices.installRoot(root, origins)
             installModelAdapters(root, origins)
             installLoops(root, origins)
+            installReferenceResolvers(root)
             const promptRegistry: import('@agnes/host-common/assemble/provider-registry').ProviderRegistry<SystemPromptProvider> =
               installProviderRegistry(root, systemPromptKind, (owner, source, provider) =>
                 promptRegistry.register(source, provider, owner),
@@ -3119,6 +3122,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       },
       observeSession,
       ...(observability ? { observability } : {}),
+      referenceLimits: deps.referenceLimits,
       providers: { catalog: () => pluginTree.root.providers.catalog() },
       modelAdapterCatalog: () => modelAdapterCatalog(pluginTree.root),
       sessionPresetDefault: async () => (await sessionConfiguration.sessionDefaults()).defaults.preset,

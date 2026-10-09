@@ -232,6 +232,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/session.jobs.read',
         '_agnes/v1/session.jobs.control',
         '_agnes/v1/session.workspace.list',
+        '_agnes/v1/session.references.search',
         '_agnes/v1/session.workspace.read',
         '_agnes/v1/session.workspace.changes',
         '_agnes/v1/sessionSelection.defaults.get',
