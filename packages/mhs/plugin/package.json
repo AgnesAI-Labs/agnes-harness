@@ -1,0 +1,26 @@
+{
+  "name": "@agnes/mhs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AgnesHub: the Agnes MHS hub devices connect to, as an Agnes plugin. Build with pnpm --filter @agnes/mhs build:plugin before installing.",
+  "license": "Apache-2.0",
+  "exports": "./dist/hub.mjs",
+  "agnes": {
+    "plugins": [
+      {
+        "export": "hub",
+        "id": "ext:mhs/hub",
+        "inject": [
+          "extension"
+        ]
+      }
+    ],
+    "clientDescriptors": [
+      {
+        "rowId": "ext:mhs/hub",
+        "path": "./client/agnes.client.json"
+      }
+    ]
+  }
+}

@@ -10,6 +10,7 @@
   "@agnes/resource-control-contracts": [],
   "@agnes/protocol": ["@agnes/resource-control-contracts", "@agnes/protocol-validation"],
   "@agnes/protocol-validation": [],
+  "@agnes/mhs": ["@agnes/protocol"],
   "@agnes/error-sanitization": [],
   "@agnes/package-isolation": ["@agnes/system-node"],
   "@agnes/web-server": [],

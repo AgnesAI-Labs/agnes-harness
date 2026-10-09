@@ -81,6 +81,7 @@
       "purpose": "Type declarations for React 18 used by the web workbench and the web-client module author API.",
       "rationale": "Type-only companion of the pinned react dependency; same version line.",
       "consumers": [
+        "packages/mhs",
         "packages/resource-control-web",
         "packages/web",
         "packages/web-client",
@@ -95,7 +96,13 @@
       "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react-dom",
       "purpose": "Type declarations for react-dom 18 used by the web workbench and web-client.",
       "rationale": "Type-only companion of the pinned react-dom dependency; same version line.",
-      "consumers": ["packages/web", "packages/web-client", "packages/web-ui", "packages/web-units"]
+      "consumers": [
+        "packages/mhs",
+        "packages/web",
+        "packages/web-client",
+        "packages/web-ui",
+        "packages/web-units"
+      ]
     },
     {
       "name": "@types/turndown",
@@ -113,7 +120,7 @@
       "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/ws",
       "purpose": "TypeScript declarations for the ws transport library.",
       "rationale": "Keeps daemon tests and SDK transport code checked against the installed ws API.",
-      "consumers": ["packages/daemon", "packages/sdk"]
+      "consumers": ["packages/daemon", "packages/mhs", "packages/sdk"]
     },
     {
       "name": "@xterm/headless",
@@ -131,7 +138,7 @@
       "source": "https://github.com/evanw/esbuild",
       "purpose": "SDK browser checks, the Web client bundle and the isolated hooks-runner bundle.",
       "rationale": "Provides one fast bundler for browser compatibility and deterministic self-contained runtime artifacts.",
-      "consumers": ["packages/base", "packages/cli", "packages/sdk", "packages/web"]
+      "consumers": ["packages/base", "packages/cli", "packages/mhs", "packages/sdk", "packages/web"]
     },
     {
       "name": "react-dom",
@@ -140,7 +147,13 @@
       "source": "https://github.com/facebook/react/tree/main/packages/react-dom",
       "purpose": "DOM renderer for the web workbench and client module mount points; bundled into /vendor/* shared-singleton chunks.",
       "rationale": "Same pin line as react (WC5).",
-      "consumers": ["packages/web", "packages/web-client", "packages/web-ui", "packages/web-units"]
+      "consumers": [
+        "packages/mhs",
+        "packages/web",
+        "packages/web-client",
+        "packages/web-ui",
+        "packages/web-units"
+      ]
     },
     {
       "name": "tsx",

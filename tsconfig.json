@@ -35,6 +35,9 @@
       "path": "packages/protocol-validation"
     },
     {
+      "path": "packages/mhs"
+    },
+    {
       "path": "packages/package-admin-client-node"
     },
     {
