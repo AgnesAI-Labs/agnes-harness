@@ -72,7 +72,7 @@ it('uses normal read/write/edit and approval, injects the next revision, and clo
               apiRange: '^1.4.0',
               default: true,
               runtime: 'in-process',
-              config: { enabled: true, includeContent: true, endpoint: collector.endpoint },
+              config: { enabled: true, redaction: 'content', endpoint: collector.endpoint },
             },
             entry: normalizePluginExport(observabilityPlugin),
           },

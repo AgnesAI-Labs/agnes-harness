@@ -419,7 +419,7 @@ export async function approveAndExecute(
             s,
             call.toolUseId,
             'E_FS_DENIED',
-            'Invalid declared workspace path',
+            'E_FS_DENIED: Invalid declared workspace path',
             decisionId,
           ),
         }
@@ -429,9 +429,28 @@ export async function approveAndExecute(
         if (!s.d.workspaceInvocation) throw new Error('Workspace path preflight unavailable')
         await s.d.workspaceInvocation.run(async (view) => {
           const fs = view.fs()
-          if (fs.preflight) await fs.preflight(target, path.access)
-          else if (path.access === 'read') await fs.stat(target)
-          else throw new Error('Workspace write preflight unavailable')
+          const preflight = async (target: string) => {
+            if (fs.preflight) await fs.preflight(target, path.access)
+            else if (path.access === 'read') await fs.stat(target)
+            else throw new Error('Workspace write preflight unavailable')
+          }
+          if (s.d.memory) {
+            // Use the same provider-owned file boundary as execution. Metadata inspection cannot
+            // approve a memory write; the actual mutation still requires its bound proposal.
+            const files = s.d.memory.files(
+              {
+                ...fs,
+                stat: async (target) => {
+                  await preflight(target)
+                  return fs.stat(target)
+                },
+              },
+              { sessionKey: s.key, turn: op.meta.turn, toolUseId: call.toolUseId },
+              o.signal ?? s.ac.signal,
+              async () => false,
+            )
+            await files.stat(target)
+          } else await preflight(target)
         })
       } catch (error) {
         if ((error as { code?: string }).code !== 'ENOENT')
@@ -440,7 +459,7 @@ export async function approveAndExecute(
               s,
               call.toolUseId,
               'E_FS_DENIED',
-              'Filesystem policy refuses this path',
+              'E_FS_DENIED: Filesystem path denied by policy',
               decisionId,
             ),
           }

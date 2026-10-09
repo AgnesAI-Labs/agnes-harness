@@ -357,7 +357,7 @@ describe('subagents in a workspace-bound Host session', () => {
       expect(outsideWrite?.isError).toBe(true)
       expect(textOf(outsideWrite)).toContain('E_FS_DENIED')
       if (!fullAccess) {
-        expect(textOf(parentWrite)).toContain('write failed before writing:')
+        expect(textOf(parentWrite)).toContain('E_FS_DENIED')
         expect(textOf(outsideWrite)).toBe(textOf(parentWrite))
         expect(outsideWrite?.code).toBe(parentWrite?.code)
       }
