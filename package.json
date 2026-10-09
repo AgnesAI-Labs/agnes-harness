@@ -17,6 +17,7 @@
     "test:all": "vitest run --maxWorkers=1",
     "test:story": "node tools/ci/run-story-fixtures.mjs",
     "typecheck": "tsc -b",
+    "guards:remeasure": "tsx tools/guards/remeasure.ts",
     "lint": "biome check .",
     "gen:check": "pnpm -r --if-present run gen:check",
     "bench:cu-artifact-gc": "tsx tools/bench-cu-artifact-gc.ts",
