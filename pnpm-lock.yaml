@@ -341,9 +341,6 @@ importers:
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
-      '@agnes/host':
-        specifier: workspace:*
-        version: link:../host
       '@agnes/host-infrastructure':
         specifier: workspace:*
         version: link:../host-infrastructure
@@ -851,10 +848,6 @@ importers:
       '@agnes/system-node':
         specifier: workspace:*
         version: link:../system-node
-    devDependencies:
-      '@agnes/host':
-        specifier: workspace:*
-        version: link:../host
 
   packages/host-common:
     dependencies:
@@ -879,22 +872,6 @@ importers:
       yaml:
         specifier: 2.9.0
         version: 2.9.0
-    devDependencies:
-      '@agnes/base':
-        specifier: workspace:*
-        version: link:../base
-      '@agnes/code':
-        specifier: workspace:*
-        version: link:../code
-      '@agnes/host':
-        specifier: workspace:*
-        version: link:../host
-      '@agnes/host-infrastructure':
-        specifier: workspace:*
-        version: link:../host-infrastructure
-      '@agnes/host-providers':
-        specifier: workspace:*
-        version: link:../host-providers
 
   packages/host-computer-use:
     dependencies:
@@ -932,9 +909,6 @@ importers:
       '@agnes/base':
         specifier: workspace:*
         version: link:../base
-      '@agnes/host':
-        specifier: workspace:*
-        version: link:../host
 
   packages/host-extensions:
     dependencies:
@@ -984,9 +958,6 @@ importers:
       '@agnes/base':
         specifier: workspace:*
         version: link:../base
-      '@agnes/host':
-        specifier: workspace:*
-        version: link:../host
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33
@@ -1030,9 +1001,6 @@ importers:
       '@agnes/base':
         specifier: workspace:*
         version: link:../base
-      '@agnes/host':
-        specifier: workspace:*
-        version: link:../host
 
   packages/host-providers:
     dependencies:
@@ -1070,9 +1038,6 @@ importers:
         specifier: workspace:*
         version: link:../protocol
     devDependencies:
-      '@agnes/host':
-        specifier: workspace:*
-        version: link:../host
       '@agnes/resource-control-runtime':
         specifier: workspace:*
         version: link:../resource-control-runtime

@@ -1,9 +1,9 @@
 import { presets as basePresets, seams } from '@agnes/base'
 import { fakeSeamInit } from '@agnes/base/testkit'
+import { loadAllPresets } from '@agnes/code'
 import { type ApprovalRequest, readPreset } from '@agnes/core'
 import { resolvePreset } from '@agnes/host'
 import { describe, expect, it } from 'vitest'
-import { loadAllPresets } from '../src/presets/load.js'
 
 const docs = { ...basePresets, ...loadAllPresets() }
 const approvalPolicy = seams.approval

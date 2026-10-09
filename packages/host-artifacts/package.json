@@ -29,8 +29,5 @@
     "@agnes/protocol": "workspace:*",
     "@agnes/system-node": "workspace:*"
   },
-  "license": "Apache-2.0 AND MIT",
-  "devDependencies": {
-    "@agnes/host": "workspace:*"
-  }
+  "license": "Apache-2.0 AND MIT"
 }
