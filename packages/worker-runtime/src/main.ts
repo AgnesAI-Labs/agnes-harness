@@ -80,8 +80,8 @@ import {
 import { createMcpRowRuntime } from './mcp-row-runtime.js'
 import {
   createRuntimeTargetSlot,
-  runtimeTargetFailureMessage,
   type RuntimeTargetApplyPort,
+  runtimeTargetFailureMessage,
 } from './runtime-target-slot.js'
 import { createWorkerServiceAuthority } from './service-authority.js'
 import { SharedSessionChannel } from './shared-session-channel.js'

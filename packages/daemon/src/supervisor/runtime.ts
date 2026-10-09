@@ -1644,7 +1644,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
                           )
                             throw new Error('E_RUNTIME_TARGET_OUTCOME_UNKNOWN')
                         }
-                        let receipt
+                        let receipt: Awaited<ReturnType<CompositeRuntimeDelivery['applyBeforeCommit']>>
                         try {
                           receipt = await runtimeDelivery.applyBeforeCommit(worker.generation, target, () =>
                             link.offerRuntimeTarget(target),
