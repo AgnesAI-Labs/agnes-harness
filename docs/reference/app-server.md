@@ -74,3 +74,5 @@ The local App Server owner, launcher lock and discovery live under `<AGH_HOME>/d
 ## Session jobs
 
 `_agnes/v1/session.jobs.read({sessionId, jobId?})` returns a bounded job snapshot. `_agnes/v1/session.jobs.control({sessionId, commandId, operation, ...})` routes terminal effects through the existing service command journal. Both enforce session ownership. Control rejects another session's job and agent-owned jobs. Open and input honor the session permission policy; open uses the admitted cwd and fitted sandbox. Dock closure and session detachment never terminate jobs. See [workbench panels](../extend/workbench-panels.md).
+
+`_agnes/v1/admin.feedback`: `list`, `put`, `withdraw`, `generate`. [Feedback service](../extend/feedback.md).

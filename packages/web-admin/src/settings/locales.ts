@@ -9,6 +9,7 @@ export const SETTINGS_NAMESPACE = '@agnes/web/runtime-settings'
 
 export const settingsCatalog: LocaleCatalog = {
   en: {
+    feedback: 'Feedback',
     ...shellCatalog.en,
     ...providersCatalog.en,
     ...knowledgeCatalog.en,
@@ -16,6 +17,7 @@ export const settingsCatalog: LocaleCatalog = {
     ...securityCatalog.en,
   },
   'zh-CN': {
+    feedback: '反馈',
     ...shellCatalog['zh-CN'],
     ...providersCatalog['zh-CN'],
     ...knowledgeCatalog['zh-CN'],

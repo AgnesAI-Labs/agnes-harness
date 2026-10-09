@@ -1,3 +1,4 @@
+import { FeedbackAdminPanel } from './feedback.js'
 import type {
   PackageCatalogDescriptor,
   PackageInstalledDescriptor,
@@ -96,6 +97,7 @@ const definitions: readonly [
       </>
     ),
   ],
+  ['history', 'feedback', 82, () => <FeedbackAdminPanel />],
   ['agent', 'memory', 14, (c) => <MemoryPanel canSave={c.canSave} />],
   ['agent', 'system-prompt', 13, (c) => <SystemPromptPanel canSave={c.canSave} />],
   ['agent', 'engines', 12, (c, t) => <ChildEnginesPanel api={c.api} canSave={c.canSave} t={t} />],

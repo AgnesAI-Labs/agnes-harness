@@ -1,3 +1,4 @@
+import { mountMessageFeedback } from './message-feedback.js'
 import type { UINode, UITurn } from '@agnes/protocol'
 import {
   type ClientResourceService,
@@ -49,6 +50,8 @@ type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 type TextRef = { element: HTMLElement; node: Text; value: string }
 
 type Entry = {
+  messageFeedback?: ReturnType<typeof mountMessageFeedback>
+
   kind: UINode['kind']
   element: HTMLElement
   thinking?: HTMLDetailsElement
@@ -802,10 +805,13 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
       const nextFingerprint = fingerprintOf(node)
       let entry = old
       if (!entry || entry.kind !== node.kind) {
+        old?.messageFeedback?.dispose()
         old?.dispose?.()
         old?.dshNode?.dispose()
         old?.element.remove()
         entry = createEntry(node, t, nextFingerprint)
+        if (node.kind === 'assistant')
+          entry.messageFeedback = mountMessageFeedback(entry.element, options.session)
         entry.dshNode = mountDshNode(entry, node, options)
         entries.set(node.id, entry)
         changed = true
@@ -815,10 +821,12 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
         entry.fingerprint = nextFingerprint
         changed = true
       }
+      entry.messageFeedback?.update(node, turns)
       entry.element.dataset.nodeId = node.id
     }
     for (const [id, entry] of entries) {
       if (nextIds.has(id)) continue
+      entry.messageFeedback?.dispose()
       entry.dispose?.()
       entry.dshNode?.dispose()
       entry.element.remove()
@@ -897,6 +905,7 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
 
   const reset = () => {
     for (const entry of entries.values()) {
+      entry.messageFeedback?.dispose()
       entry.dispose?.()
       entry.dshNode?.dispose()
     }

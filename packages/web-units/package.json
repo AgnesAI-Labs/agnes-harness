@@ -10,7 +10,8 @@
     "./diagnostics-zip": "./src/diagnostics-zip.ts",
     "./diagnostics-viewer": "./src/diagnostics-viewer.ts",
     "./diagnostics-locale": "./src/diagnostics-locale.ts",
-    "./trace-locale": "./src/trace-locale.ts"
+    "./trace-locale": "./src/trace-locale.ts",
+    "./message-feedback": "./src/message-feedback/index.ts"
   },
   "scripts": {
     "test": "vitest run",

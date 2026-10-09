@@ -5,6 +5,7 @@ export const workbenchLocaleCatalog: LocaleCatalog = {
     ...adminListLocaleCatalog.en,
     ...factChainCatalog.en,
 
+    'workbench.feedback.title': 'Session feedback',
     'workbench.changes.loading': 'Loading file changes…',
     'workbench.changes.title': 'Changes',
     'workbench.changes.refresh': 'Refresh changed files',
@@ -107,6 +108,7 @@ export const workbenchLocaleCatalog: LocaleCatalog = {
     'workbench.git.renamed': 'Renamed',
   },
   'zh-CN': {
+    'workbench.feedback.title': '会话反馈',
     ...adminListLocaleCatalog['zh-CN'],
     ...factChainCatalog['zh-CN'],
 

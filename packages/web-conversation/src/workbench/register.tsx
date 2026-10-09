@@ -1,3 +1,4 @@
+import { FeedbackPanel } from './feedback-panel.js'
 import { fileViewerActions, workbenchPanels } from '@agnes/web-client'
 import { ChangesPanel, ReviewFileAction } from './changes-panel.js'
 import { FactChainPanel } from './fact-chain-panel.js'
@@ -54,3 +55,12 @@ if (!workbenchPanels.get('changed-files'))
   })
 if (!fileViewerActions.get('review'))
   fileViewerActions.register({ id: 'review', order: 10, component: ReviewFileAction })
+
+if (!workbenchPanels.get('feedback'))
+  workbenchPanels.register({
+    id: 'feedback',
+    order: 45,
+    edge: 'right',
+    titleKey: 'workbench.feedback.title',
+    component: FeedbackPanel,
+  })

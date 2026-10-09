@@ -32,6 +32,7 @@ export async function section(page: Page, id: string) {
     schedules: 'jobs',
     triggers: 'jobs',
     archived: 'history',
+    feedback: 'history',
   }
   await page.getByTestId(`settings-nav-${first[id] ?? id}`).click()
   const tab = page.getByTestId(`settings-nav-${id}-tab`)

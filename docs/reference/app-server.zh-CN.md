@@ -74,3 +74,5 @@ ACP 初始化版本仍为 1，AGH 扩展仍使用 `_agnes/v1`。v1 客户端应�
 ## 会话进程任务
 
 `_agnes/v1/session.jobs.read({sessionId, jobId?})` 返回有上限的任务快照。`_agnes/v1/session.jobs.control({sessionId, commandId, operation, ...})` 经既有服务命令 journal 执行终端副作用。两者校验会话所有权；控制操作拒绝另一会话或 agent 所有的任务。打开终端和输入遵守会话权限策略；打开时使用已准入 cwd 与会话 sandbox。关闭 dock 和分离会话不会结束任务。见[工作台面板](../extend/workbench-panels.zh-CN.md)。
+
+`_agnes/v1/admin.feedback`: `list`, `put`, `withdraw`, `generate`. [反馈服务](../extend/feedback.zh-CN.md).

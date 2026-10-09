@@ -1,3 +1,4 @@
+import { FeedbackProvenance } from '@agnes/web-units/message-feedback'
 import type { FactChainAnchor, FactChainNode, FactChainResult } from '@agnes/protocol'
 import { validateMethod } from '@agnes/protocol'
 import type { UiExtensionContext } from '@agnes/web-client'
@@ -70,6 +71,10 @@ export function FactChainPanel({ context }: { context: UiExtensionContext }) {
         </Button>
       )}
       <p>{t('facts.readOnly')}</p>
+      <FeedbackProvenance
+        sessionId={session.id}
+        {...(anchor.kind === 'authoring' ? { candidateId: anchor.candidateId } : {})}
+      />
       {error ? (
         <div role="alert">
           <p>{error}</p>
