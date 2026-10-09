@@ -106,3 +106,5 @@ export {
   PLUGIN_FORM_MAX_DEPTH,
   type PluginSchema,
 } from './plugin-schema-model.js'
+
+export * from './intelligent-ui/index.js'

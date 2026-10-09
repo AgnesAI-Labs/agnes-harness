@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./assistant-ui": "./src/assistant-ui-vendor.ts",
-    "./tokens.css": "./src/tokens.css"
+    "./tokens.css": "./src/tokens.css",
+    "./intelligent-ui.css": "./src/intelligent-ui/styles.css"
   },
   "scripts": {
     "typecheck": "tsc -b"

@@ -1,0 +1,174 @@
+/** @vitest-environment happy-dom */
+Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true })
+import { act, createElement } from 'react'
+import { createRoot } from 'react-dom/client'
+import { describe, expect, it, vi } from 'vitest'
+import type { UiSurface } from '@agnes/protocol/gen/intelligent-ui'
+import { IntelligentCatalog, validIntelligentSurface } from '../src/intelligent-ui/index.js'
+
+const surface: UiSurface = {
+  id: 'finance',
+  revision: 1,
+  title: 'USD cents',
+  placement: { inline: true, workbench: true },
+  components: [
+    {
+      id: 'rows',
+      kind: 'table',
+      dataKey: 'rows',
+      rowKey: 'id',
+      columns: [
+        { key: 'id', label: 'Transaction' },
+        { key: 'amount', label: 'USD cents', format: 'currency' },
+      ],
+      selection: 'multiple',
+      rowActionIds: ['approve'],
+    },
+    {
+      id: 'form',
+      kind: 'form',
+      dataKey: 'draft',
+      schema: { type: 'object', properties: { reason: { type: 'string' } } },
+      actionIds: ['approve'],
+    },
+    {
+      id: 'chart',
+      kind: 'chart',
+      dataKey: 'rows',
+      chartType: 'bar',
+      categoryKey: 'id',
+      series: [{ key: 'amount', label: 'USD cents' }],
+    },
+    { id: 'buttons', kind: 'button-group', actionIds: ['approve'] },
+    { id: 'text', kind: 'text', dataKey: 'text' },
+    { id: 'status', kind: 'status', dataKey: 'text' },
+  ],
+  data: {
+    rows: [{ id: 'txn-1', amount: 250 }],
+    draft: { reason: 'Mismatch' },
+    text: '<script>inert</script>',
+  },
+  actions: [
+    { id: 'approve', label: 'Approve', tool: 'finance_approve', argsTemplate: {}, paramsSchema: true },
+  ],
+}
+
+describe('preset Intelligent UI catalog', () => {
+  it('renders all presets, submits only row identity and keeps content inert', async () => {
+    const host = document.createElement('div'),
+      root = createRoot(host)
+    const selection = vi.fn(),
+      action = vi.fn()
+    try {
+      await act(async () =>
+        root.render(
+          createElement(IntelligentCatalog, {
+            surface,
+            input: {},
+            selection: {},
+            disabled: false,
+            onInput: vi.fn(),
+            onSelection: selection,
+            onInvalid: vi.fn(),
+            onAction: action,
+          }),
+        ),
+      )
+      expect(host.querySelectorAll('[data-testid^="ui-component-"]')).toHaveLength(6)
+      expect(host.querySelector('script')).toBeNull()
+      expect(host.textContent).toContain('<script>inert</script>')
+      expect(host.textContent).toContain('250')
+      expect(host.querySelector('svg')?.getAttribute('role')).toBe('img')
+      await act(async () =>
+        host.querySelector<HTMLInputElement>('[data-testid="ui-select-rows-txn-1"]')!.click(),
+      )
+      expect(selection).toHaveBeenCalledWith('rows', ['txn-1'])
+      await act(async () =>
+        host.querySelector<HTMLButtonElement>('[data-testid="ui-action-approve"]')!.click(),
+      )
+      expect(action).toHaveBeenCalledWith(surface.actions[0], { tableId: 'rows', rowId: 'txn-1' })
+      await act(async () =>
+        root.render(
+          createElement(IntelligentCatalog, {
+            surface,
+            input: {},
+            selection: {},
+            disabled: true,
+            onInput: vi.fn(),
+            onSelection: selection,
+            onInvalid: vi.fn(),
+            onAction: action,
+          }),
+        ),
+      )
+      expect(host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.disabled).toBe(true)
+    } finally {
+      await act(async () => root.unmount())
+    }
+  })
+
+  it.each(['line', 'pie'] as const)('renders %s with accessible source values', async (chartType) => {
+    const chart = {
+      ...surface,
+      components: [
+        {
+          id: 'chart',
+          kind: 'chart' as const,
+          dataKey: 'rows',
+          chartType,
+          categoryKey: 'id',
+          series: [{ key: 'amount', label: 'USD cents' }],
+        },
+      ],
+    }
+    const host = document.createElement('div'),
+      root = createRoot(host)
+    try {
+      await act(async () =>
+        root.render(
+          createElement(IntelligentCatalog, {
+            surface: chart,
+            input: {},
+            selection: {},
+            disabled: false,
+            onInput: vi.fn(),
+            onSelection: vi.fn(),
+            onInvalid: vi.fn(),
+            onAction: vi.fn(),
+          }),
+        ),
+      )
+      expect(host.querySelector('svg title')?.textContent).toBe('USD cents')
+      expect(host.querySelector('table')?.textContent).toContain('txn-1')
+    } finally {
+      await act(async () => root.unmount())
+    }
+  })
+
+  it('refuses the entire surface for unsupported kinds, row errors, invalid chart and bounds', () => {
+    expect(validIntelligentSurface(surface)).toBe(true)
+    for (const bad of [
+      { ...surface, components: [{ id: 'html', kind: 'html', dataKey: 'text' }] },
+      {
+        ...surface,
+        data: {
+          ...surface.data,
+          rows: [
+            { id: 'txn-1', amount: 250 },
+            { id: 'txn-1', amount: 0 },
+          ],
+        },
+      },
+      { ...surface, data: { ...surface.data, rows: [{ id: 'txn-1' }] } },
+      { ...surface, data: { ...surface.data, rows: [{ id: 'txn-1', amount: Infinity }] } },
+      { ...surface, data: { ...surface.data, text: 'x'.repeat(32768) } },
+      {
+        ...surface,
+        components: [
+          { id: 'form', kind: 'form', dataKey: 'draft', schema: { $ref: 'https://untrusted.test/schema' } },
+        ],
+      },
+    ])
+      expect(validIntelligentSurface(bad)).toBe(false)
+  })
+})
