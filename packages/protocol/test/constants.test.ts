@@ -42,6 +42,9 @@ describe('constants', () => {
     expect(isEventType('user/message')).toBe(true)
     expect(isEventType('user/msg')).toBe(false)
     expect(EXT_EVENT_PATTERN.test('x/core/invariant')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/feedback/item')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/feedback/growth')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/feedback/forged')).toBe(false)
   })
   it('exposes namespace constants', () => {
     expect(META_KEY).toBe('ai.agnes.harness')

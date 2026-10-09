@@ -179,7 +179,7 @@
               ]
             },
             {
-              "pattern": "^x\\/(?:(?:core|agnes)\\/[a-z0-9-]+|host\\/session-title|[a-z0-9-]+\\/[a-z0-9-]+\\/[a-z0-9-]+)$"
+              "pattern": "^x\\/(?:(?:core|agnes)\\/[a-z0-9-]+|host\\/session-title|feedback\\/(?:item|growth)|[a-z0-9-]+\\/[a-z0-9-]+\\/[a-z0-9-]+)$"
             }
           ]
         },

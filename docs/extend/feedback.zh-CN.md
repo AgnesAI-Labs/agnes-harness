@@ -19,6 +19,8 @@ type FeedbackServiceFactory = (ports: FeedbackPorts) => FeedbackService
 
 可忽略事件 `x/feedback/item`、`x/feedback/growth` 的 envelope 包含平台写入的 actor 与时间。反馈保留作者、目标、创建/修改时间和撤回标记。成长关联保留 `feedbackId`、`feedbackRevision`、`messageSeq`、`candidateId`、`candidateHash`。`AuthoringOrigin` 新增可选 `feedbackId`、`feedbackRevision`、`messageSeq`；已有 review digest 包含 origin，将来源与评审快照绑定。发布仍需确切候选测试哈希与 reviewHash。
 
+协议明确保留这两个平台事件名，拒绝其他 `x/feedback/*` 名称；插件自己的事件继续使用已公开的扩展命名空间。
+
 参见[用户流程](../guide/feedback.zh-CN.md)与[候选评审](agent-built-plugins.zh-CN.md)。默认生成新 Skill；记忆仍走已有的显式差异审批流程。
 
 增长重试先按服务端绑定的 profile/principal/session/反馈 revision command key 恢复 candidate，再决定是否生成草稿。candidate 已保存但账本链接失败时，即使重连也补写同一份完整性校验后的 candidate 链接，不重新生成草稿。实现该流程的 provider 必须提供 `FeedbackPorts.recoverCandidate`。
