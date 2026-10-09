@@ -34,6 +34,36 @@ export type CredentialResolutionOptions = Readonly<{
   optionalRefs?: ReadonlySet<string>
 }>
 
+/**
+ * The only parts of a secret store's refusal that may travel with the assembly error: three fields,
+ * each limited to a short closed list of words the store itself uses. They say which rule refused
+ * (`reason`), which directory or file it was about (`part`) and which test a directory failed
+ * (`check`). The store's message and every other field stay out, as before, because this error is
+ * going to be logged.
+ */
+const REFUSAL_WORDS: Readonly<Record<string, ReadonlySet<string>>> = {
+  reason: new Set(['private-file', 'mode', 'schema', 'bad-ref']),
+  part: new Set(['store', 'namespace', 'file']),
+  check: new Set(['symlink', 'not-directory', 'not-private']),
+}
+
+function refusalWords(error: unknown): Record<string, string> {
+  const words: Record<string, string> = {}
+  try {
+    if (error === null || typeof error !== 'object') return words
+    const detail = Object.getOwnPropertyDescriptor(error, 'detail')?.value as unknown
+    if (detail === null || typeof detail !== 'object') return words
+    for (const [key, allowed] of Object.entries(REFUSAL_WORDS)) {
+      // Data properties only: a getter on a hostile object would run code of its choosing.
+      const value = Object.getOwnPropertyDescriptor(detail, key)?.value as unknown
+      if (typeof value === 'string' && allowed.has(value)) words[key] = value
+    }
+  } catch {
+    return {}
+  }
+  return words
+}
+
 export function resolveCredentials(
   adapters: WireAdapter[],
   secrets: (ref: string) => string,
@@ -42,22 +72,24 @@ export function resolveCredentials(
   for (const adapter of adapters) {
     for (const decl of adapter.routes()) {
       if (!decl.credentialRef) continue
-      const failure = new AiSetupError('SECRET_UNRESOLVED', {
-        route: decl.route,
-        ref: decl.credentialRef,
-      })
+      const failure = (cause: unknown = undefined) =>
+        new AiSetupError('SECRET_UNRESOLVED', {
+          route: decl.route,
+          ref: decl.credentialRef,
+          ...refusalWords(cause),
+        })
       let value: string
       try {
         value = secrets(decl.credentialRef)
-      } catch {
+      } catch (error) {
         if (options.optionalRefs?.has(decl.credentialRef)) continue
-        throw failure
+        throw failure(error)
       }
       // Empty, whitespace-only and invisible-only are the same outcome: nothing that can
       // authenticate a request.
       if (!isUsableCredential(value)) {
         if (options.optionalRefs?.has(decl.credentialRef)) continue
-        throw failure
+        throw failure()
       }
       adapter.bindCredential(decl.route, value)
     }
