@@ -4,12 +4,28 @@ import { type FakeToolContext, fakeToolContext } from '../../../testkit/tool-con
 
 // These cases are sized against an 8 KiB limit, so they ask for it explicitly rather than taking the
 // deployment default.
-const ctxOf = (o: Parameters<typeof fakeToolContext>[0] = {}) =>
-  fakeToolContext({ outputMaxBytes: 8192, ...o })
+const ctxOf = (o: Parameters<typeof fakeToolContext>[0] = {}) => {
+  const ctx = fakeToolContext({ outputMaxBytes: 8192, ...o })
+  // Model the external rg listing, leaving policy admission to the registered tool.
+  ctx.exec = async () => ({
+    code: 0,
+    stderr: '',
+    truncated: false,
+    stdout:
+      [...ctx.mem.files.keys()]
+        .filter(
+          (path) =>
+            !path.split('/').some((part) => ['node_modules', '.git', 'dist', '.agnes-tmp'].includes(part)),
+        )
+        .join('\0') + '\0',
+  })
+  return ctx
+}
 
 import { spillLocator } from '../../tools-core/src/guards/output.js'
 import { MAX_READ_BYTES, readTool } from '../../tools-core/src/tools/read.js'
-import { findTool } from '../src/tools/find.js'
+import { TOOLS_SEARCH } from '../src/index.js'
+import { ripgrepFindTool as findTool } from '../src/tools/ripgrep.js'
 import { grepTool } from '../src/tools/grep.js'
 import { lsTool } from '../src/tools/ls.js'
 import { globToRegExp, newWalkReport, walk } from '../src/tools/walk.js'
@@ -263,13 +279,17 @@ describe('find', () => {
   it('lists workspace-relative paths matching the glob', async () => {
     const ctx = ctxOf({ files })
     const r = await findTool.execute({ pattern: '**/*.ts' }, ctx)
-    expect(textOf(r).split('\n')).toEqual(['src/a.ts', 'src/sub/b.ts', '[not searched: node_modules]'])
+    expect(TOOLS_SEARCH).toContain(findTool)
+    expect(textOf(r).split('\n').slice(0, 2)).toEqual(['src/a.ts', 'src/sub/b.ts'])
+    expect(textOf(r)).toContain('node_modules')
   })
 
   it('says when it stopped at the result limit', async () => {
     const ctx = ctxOf({ files: { 'a.ts': '', 'b.ts': '', 'c.ts': '' } })
     const r = await findTool.execute({ pattern: '**/*.ts', limit: 2 }, ctx)
-    expect(textOf(r).split('\n')).toEqual(['a.ts', 'b.ts', '[limit 2 reached; there may be more]'])
+    expect(textOf(r).split('\n').slice(0, 2)).toEqual(['a.ts', 'b.ts'])
+    expect(textOf(r)).toContain('[limit 2 reached; full output stored at artifact://')
+    expect(r.content.some((part) => part.type === 'ref')).toBe(true)
   })
 
   it('defaults the result limit to 1000', async () => {
@@ -304,6 +324,12 @@ describe('search access scope', () => {
     }
     const ctx: ToolContext = {
       ...original,
+      exec: async () => ({
+        code: 0,
+        stderr: '',
+        truncated: false,
+        stdout: `${prefix}external.ts\0${prefix}nested/second.ts\0`,
+      }),
       fs: {
         ...original.fs,
         list: (input) => backing.fs.list(mapped(input)),
@@ -316,7 +342,12 @@ describe('search access scope', () => {
     const permitted = await tool.execute(args, full)
     expect.soft(permitted.isError).toBeUndefined()
     expect
-      .soft(textOf(permitted))
+      .soft(
+        textOf(permitted)
+          .split('\n')
+          .filter((line) => !line.startsWith('['))
+          .join('\n'),
+      )
       .toBe(
         tool.name === 'grep'
           ? 'external.ts:1:external match\nnested/second.ts:1:external match'

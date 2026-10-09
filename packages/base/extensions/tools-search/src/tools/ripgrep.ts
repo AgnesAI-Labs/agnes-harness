@@ -1,6 +1,7 @@
-import { basename, relative, resolve } from 'node:path'
+import { basename, relative } from 'node:path'
 import { defineTool, type ToolContext, type ToolResult } from '@agnes/extension-api'
 import { guardedResult, refBlock, spillLocator } from '../../../tools-core/src/guards/output.js'
+import { normalizeWorkspacePath } from '../../../tools-core/src/paths.js'
 import { MAX_ARTIFACT_READ_BYTES } from '../../../tools-core/src/tools/read.js'
 import { FindParams, GrepParams } from '../../../tools-core/src/tools/schemas.js'
 import { grepTool as artifactGrep } from './grep.js'
@@ -31,7 +32,7 @@ async function files(ctx: ToolContext, root: string): Promise<{ paths: string[];
   const paths: string[] = []
   let denied = 0
   for (const path of r.stdout.split('\0').filter(Boolean)) {
-    const abs = resolve(ctx.cwd, path)
+    const abs = normalizeWorkspacePath(path, ctx.cwd).abs
     if (!allowed(ctx, abs)) {
       denied++
       continue
@@ -90,7 +91,7 @@ export const ripgrepFindTool = defineTool({
   parameters: FindParams,
   meta: SEARCH_META,
   async execute(args, ctx) {
-    const root = resolve(ctx.cwd, args.path ?? ctx.cwd)
+    const root = normalizeWorkspacePath(args.path ?? ctx.cwd, ctx.cwd).abs
     const denied = searchPathError(ctx, 'find', root)
     if (denied) return denied
     try {
@@ -115,7 +116,7 @@ export const ripgrepGrepTool = defineTool({
   meta: SEARCH_META,
   async execute(args, ctx) {
     if (args.path?.startsWith('artifact://')) return artifactGrep.execute(args, ctx)
-    const root = resolve(ctx.cwd, args.path ?? ctx.cwd)
+    const root = normalizeWorkspacePath(args.path ?? ctx.cwd, ctx.cwd).abs
     const denied = searchPathError(ctx, 'grep', root)
     if (denied) return denied
     try {
