@@ -39,6 +39,7 @@ Still choosing? Try the [three examples](guide/demo.md), then use the [extension
 | [Programmatic tools and workflows](guide/code-workflows.md) | Run TypeScript cells and durable parallel child workflows |
 | [Sessions and recovery](guide/sessions.md) | Continue tasks, export records, and handle interruptions |
 | [Plugin lifecycle](guide/packages.md) | Install, trust, enable, update, and remove plugins |
+| [Webhook triggers](guide/webhooks.md) | Start normal business-agent sessions from authenticated business events |
 | [Headless runs and replay](guide/headless.md) | Stream JSONL events, compare fixed model replies and run batches |
 | [Use a local model](guide/local-model.md) | Configure local OpenAI-compatible endpoints and discovery |
 | [Security and trust](guide/security.md) | Choose a working directory and understand authorization and execution boundaries |

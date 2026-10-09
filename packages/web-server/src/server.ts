@@ -11,6 +11,7 @@ import {
 } from '@agnes/protocol'
 import { HISTORY_SEARCH_PATH, handleHistorySearch } from './history-route.js'
 import { VENDOR_ENTRY_NAMES } from './vendor-assets.js'
+import { webhookRoute } from './webhook-route.js'
 
 export const DEFAULT_WEB_PORT = 4177
 export const WORKSPACE_PICKER_PATH = '/api/workspace-picker'
@@ -163,6 +164,9 @@ export type WebServerOptions = {
   historySearch?: (
     input: AppServerParams<'_agnes/v1/admin.history.search'>,
   ) => Promise<AppServerResult<'_agnes/v1/admin.history.search'>>
+  triggers?: (
+    input: import('@agnes/protocol/gen/app-server').WebhookRequest,
+  ) => Promise<import('@agnes/protocol/gen/app-server').WebhookResult>
   planCommand?: (
     input: AppServerParams<'_agnes/v1/admin.plan'>,
   ) => Promise<AppServerResult<'_agnes/v1/admin.plan'>>
@@ -441,6 +445,7 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
       // prevent the ordinary page (and its normal roster invalidation channel) from starting.
     }
   }
+  const handleWebhook = options.triggers ? webhookRoute(expectedOrigin.origin, options.triggers) : undefined
   const server = createServer(async (request, response) => {
     try {
       const address = server.address()
@@ -450,6 +455,7 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         response.writeHead(403).end()
         return
       }
+      if (await handleWebhook?.(request, response)) return
       const requestUrl = new URL(request.url ?? '/', expectedOrigin)
       if (requestUrl.pathname === HISTORY_SEARCH_PATH) {
         const result = await handleHistorySearch({

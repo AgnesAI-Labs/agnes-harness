@@ -6,6 +6,7 @@ export default defineConfig({
   testDir: '.',
   testMatch: [
     'memory.spec.ts',
+    'webhooks.spec.ts',
     'diagnostics.spec.ts',
     'observability.spec.ts',
     'prompt-trace.spec.ts',

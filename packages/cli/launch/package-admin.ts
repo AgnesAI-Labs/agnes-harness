@@ -351,6 +351,8 @@ export function localPackageAdmin(
       await initialize()
       return client.request('_agnes/v1/doctor.run', {})
     },
+    triggers: (input: import('@agnes/protocol/gen/app-server').WebhookRequest) =>
+      client.request('_agnes/v1/admin.triggers', input),
     historySearch: (input: import('@agnes/protocol').AppServerParams<'_agnes/v1/admin.history.search'>) =>
       client.request('_agnes/v1/admin.history.search', input),
     planCommand: (input: import('@agnes/protocol').AppServerParams<'_agnes/v1/admin.plan'>) =>

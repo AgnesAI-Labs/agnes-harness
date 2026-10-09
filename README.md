@@ -12,6 +12,8 @@ AGH is an open-source developer preview for developers and field deployment team
 
 Package a business Loop, tools, model adapters, persona and Skills into an installable bundle. Each session gets its selected capabilities; a support agent's tools do not automatically appear in an unrelated default session. Add a workbench panel through the public frontend APIs.
 
+Drive the agent from business events too: opt-in [GitHub and generic webhook triggers](docs/guide/webhooks.md) start ordinary workspace sessions under the normal policy.
+
 ![Plugin kinds in the current Web workbench](docs/assets/readme/plugin-kinds-en-light.png)
 
 [Run the business-agent demo](examples/demos/business-agent/README.md) · [Browse FDE bundles](examples/fde/README.md)

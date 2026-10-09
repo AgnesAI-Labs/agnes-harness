@@ -12,6 +12,8 @@ AGH 是面向开发者与现场交付团队的开源开发者预览版。CLI、W
 
 把业务 Agent Loop、工具、模型适配器、角色与技能组合成可安装的组合包。每个会话只获得所选能力，客服 Agent 的业务工具不会自动出现在无关的默认会话中。通过公开前端 API，还可以加入岗位工作台面板。
 
+业务事件也能驱动 Agent：显式启用 [GitHub 与通用 Webhook 触发器](docs/guide/webhooks.zh-CN.md)，在工作区正常策略下启动普通会话。
+
 ![当前 Web 工作台的插件类型页面](docs/assets/readme/plugin-kinds-zh-CN-light.png)
 
 [运行业务 Agent 演示](examples/demos/business-agent/README.zh-CN.md) · [查看 FDE 组合包](examples/fde/README.md)

@@ -27,6 +27,7 @@ import {
 import { type SchedulesApi, SchedulesPage } from './schedules.js'
 import { SearchPanel } from './search.js'
 import { SystemPromptPanel } from './system-prompt.js'
+import { TriggersPanel } from './triggers.js'
 
 export type RuntimeSettingsContext = {
   api: PluginAdminApi | undefined
@@ -148,6 +149,7 @@ const definitions: readonly [
   ['tools', 'context', 51, (c) => <ContextPanel canSave={c.canSave} />],
   ['automation', 'jobs', 60, () => <JobsPanel />],
   ['automation', 'schedules', 61, (c, t) => <SchedulesPage api={c.schedules} t={t} />],
+  ['automation', 'triggers', 61.5, (c) => <TriggersPanel canSave={c.canSave} />],
   ['automation', 'terminal', 62, () => <JobsPanel terminal />],
   ['security', 'security', 70, (c, t) => c.snapshot && <SecurityPanel snapshot={c.snapshot} t={t} />],
   ['diagnostics', 'diagnostics', 75, () => <DiagnosticsPanel />],

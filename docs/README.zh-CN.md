@@ -33,6 +33,7 @@
 | [程序化工具与工作流](guide/code-workflows.zh-CN.md) | TypeScript cell 与持久并行子任务工作流 |
 | [会话与恢复](guide/sessions.zh-CN.md) | 继续任务、导出记录、处理中断 |
 | [插件生命周期](guide/packages.zh-CN.md) | 安装、信任、启用、更新与移除插件 |
+| [Webhook 触发器](guide/webhooks.zh-CN.md) | 通过认证的业务事件创建普通业务 Agent 会话 |
 | [无界面运行与回放](guide/headless.zh-CN.md) | JSONL 事件、固定模型回复比较和批量输入 |
 | [使用本地模型](guide/local-model.zh-CN.md) | 本地 OpenAI-compatible endpoint 和模型发现 |
 | [安全与信任](guide/security.zh-CN.md) | 选择工作目录，理解授权和执行边界 |

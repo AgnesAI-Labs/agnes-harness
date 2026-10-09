@@ -30,6 +30,7 @@ export async function section(page: Page, id: string) {
     context: 'search',
     terminal: 'jobs',
     schedules: 'jobs',
+    triggers: 'jobs',
     archived: 'history',
   }
   await page.getByTestId(`settings-nav-${first[id] ?? id}`).click()

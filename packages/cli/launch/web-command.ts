@@ -233,6 +233,7 @@ export async function runWebCommand(
     web = await makeServer({
       root: resources.webRoot,
       historySearch: adminHandler.historySearch,
+      triggers: adminHandler.triggers,
       planCommand: adminHandler.planCommand,
       wsUrl: backend.web.url,
       port,
