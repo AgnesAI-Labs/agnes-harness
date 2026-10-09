@@ -465,7 +465,9 @@ export async function createCompositionHost(
                   limits: profile.limits,
                 }).doc,
                 ...(adminLoop ? { admin: { composition: { loop: adminLoop } } } : {}),
-                ...(input.loop ? { session: { loop: input.loop } } : {}),
+                ...(input.loop
+                  ? { session: { loop: { id: input.loop.id, version: input.loop.version } } }
+                  : {}),
                 ...(input.bundles !== undefined ? { sessionBundles: input.bundles } : {}),
               },
             )

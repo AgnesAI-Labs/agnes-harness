@@ -149,7 +149,7 @@ export class ToolPoliciesService extends Service implements ToolPolicyRegistryPo
         ...policy,
         ...(policy.settings
           ? {
-              settings: (context: ToolPolicySettingsContext, signal: AbortSignal) =>
+              settings: async (context: ToolPolicySettingsContext, signal: AbortSignal) =>
                 lifetime.run((joined) => policy.settings!(context, joined), signal),
             }
           : {}),

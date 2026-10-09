@@ -400,7 +400,11 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
           const adminLoop = await a.sessionLoopDefault?.()
           const selection = a.compositionForPreset(
             name,
-            o.loop ? { loop: o.loop } : adminLoop ? { loop: adminLoop } : undefined,
+            o.loop
+              ? { loop: { id: o.loop.id, version: o.loop.version } }
+              : adminLoop
+                ? { loop: adminLoop }
+                : undefined,
           )
           assertCompositionCompatible(a.compositionForPreset(), selection)
           o = { ...o, loop: resolveSessionCapabilities({ composition: selection }).loop.value }

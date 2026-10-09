@@ -36,6 +36,7 @@ const identities = /^(?:sessionKey|toolUseId|invocationId|effectId|parentEffectI
 /** One normalizer per session preserves tool-call/result links over multiple requests. */
 function normalizer(options: RecordingOptions, normalizeIds = true, ids = new Map<string, string>()) {
   let identityNumber = 0
+  const envelopeNonces = new Map<string, string>()
   const secrets = [...(options.secrets ?? [])].filter(Boolean).sort((a, b) => b.length - a.length)
   const text = (source: string) => {
     let value = source
@@ -45,6 +46,18 @@ function normalizer(options: RecordingOptions, normalizeIds = true, ids = new Ma
       .replace(/\b(?:sk|pk)-[a-zA-Z0-9_-]{8,}/g, '[REDACTED]')
       .replace(/((?:api[_-]?key|password|secret|access[_-]?token)\s*[=:]\s*)[^\s,;]+/gi, '$1[REDACTED]')
       .replace(/(https?:\/\/)[^\s/@]+:[^\s/@]+@/gi, '$1[REDACTED]@')
+    if (normalizeIds)
+      value = value.replace(
+        /(<\/?untrusted id=")([a-f0-9]{32})(--\d+-\d+")/g,
+        (_match, open, nonce, close) => {
+          let alias = envelopeNonces.get(nonce)
+          if (!alias) {
+            alias = (envelopeNonces.size + 1).toString(16).padStart(32, '0')
+            envelopeNonces.set(nonce, alias)
+          }
+          return `${open}${alias}${close}`
+        },
+      )
     return options.redactText?.(value) ?? value
   }
   const isIdentity = (key: string, parent: string, business: boolean) =>
