@@ -321,7 +321,13 @@ export async function handleCommand(
         // A run cancelled while it waited for admission still reaches the core, with its signal
         // already aborted: the prompt it was sent for is queued, and the core ends that turn as
         // aborted without doing work. Answering here instead would leave it to run under the next one.
-        return await session.run({ until: (p.until as 'turn-end' | 'idle') ?? 'turn-end', signal: ac.signal })
+        const outcome = await session.run({
+          until: (p.until as 'turn-end' | 'idle') ?? 'turn-end',
+          signal: ac.signal,
+        })
+        return outcome.error?.code === 'AUTH'
+          ? { ...outcome, error: { ...outcome.error, modelRoute: session.preset.model.route.primary } }
+          : outcome
       } finally {
         releaseResources?.()
         if (o.aborts.get(runId) === ac) o.aborts.delete(runId)

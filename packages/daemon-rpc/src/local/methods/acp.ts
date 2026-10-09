@@ -699,6 +699,18 @@ export function registerAcp(
       completed = out.reason === 'completed'
       // Not before terminalQuiescence: the response is the turn's last word to this client.
       await feedFor(entry).pushed(out.lastSeq, { timeoutMs: cx.quiescenceWaitMs })
+      if (out.reason === 'error' && out.error?.code === 'AUTH') {
+        // The worker supplies account identity; only an in-process session owns a local preset.
+        const modelRoute =
+          (out.error as { modelRoute?: string }).modelRoute ?? entry.session.preset?.model.route.primary
+        throw rpcError('SEMANTIC_REJECTED', {
+          code: 'CONFIG_CREDENTIAL_REJECTED',
+          turnEnd: { reason: 'error' },
+          ...(modelRoute ? { modelRoute } : {}),
+          retryable: false,
+          error: { code: 'AUTH' },
+        })
+      }
       if (out.reason === 'error')
         throw rpcError('INTERNAL_ERROR', {
           code: 'TURN_ERROR',

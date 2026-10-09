@@ -152,6 +152,7 @@ const turnError = (error: unknown) => ({
 
 it('names the turn error code under a TURN_ERROR envelope, never its message', () => {
   expect(formatTuiErrorNotice(turnError({ code: 'AUTH', message: 'status=403' }))).toBe(AUTH_NOTICE)
+  expect(formatTuiErrorNotice({ data: { code: 'CONFIG_CREDENTIAL_REJECTED' } })).toBe(AUTH_NOTICE)
   expect(
     formatTuiErrorNotice(turnError({ code: 'RATE_LIMIT', message: 'upstream https://x.test/?k=private' })),
   ).toBe('Request failed (RATE_LIMIT).')

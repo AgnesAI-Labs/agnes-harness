@@ -7,12 +7,25 @@ export async function startProviderFixture(
   initialTool?: { name: string; args: Record<string, unknown> },
   model = 'deepseek-v4-flash',
 ) {
-  const apiKey = randomBytes(24).toString('hex')
+  let apiKey = randomBytes(24).toString('hex')
+  let rejectedInferenceRequests = 0
   const queuedTools = initialTool ? [initialTool] : []
   const requests: Array<{ model: string; messages: unknown[]; tools: string[] }> = []
   const server = createServer(async (request, response) => {
     if (request.headers.authorization !== `Bearer ${apiKey}`) {
-      response.writeHead(401).end('fixture authentication failed')
+      if (request.method === 'POST') {
+        const chunks: Buffer[] = []
+        for await (const chunk of request) chunks.push(Buffer.from(chunk))
+        const body = JSON.parse(Buffer.concat(chunks).toString())
+        // Title generation has no tool catalog and can race key rotation after a completed turn.
+        // Count primary turn attempts separately from those auxiliary requests.
+        if (Array.isArray(body.tools) && body.tools.length > 0) rejectedInferenceRequests++
+      }
+      response.writeHead(401, { 'content-type': 'application/json' }).end(
+        JSON.stringify({
+          error: { message: '401 fixture credential revoked', type: 'authentication_error' },
+        }),
+      )
       return
     }
     if (request.method === 'GET' && request.url === '/v1/models') {
@@ -70,7 +83,15 @@ export async function startProviderFixture(
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('fixture listener unavailable')
   return {
-    apiKey,
+    get apiKey() {
+      return apiKey
+    },
+    get rejectedInferenceRequests() {
+      return rejectedInferenceRequests
+    },
+    rotateKey() {
+      apiKey = randomBytes(24).toString('hex')
+    },
     baseUrl: `http://127.0.0.1:${address.port}/v1`,
     requests,
     queueTool: (tool: { name: string; args: Record<string, unknown> }) => queuedTools.push(tool),

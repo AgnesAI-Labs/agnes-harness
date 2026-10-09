@@ -110,8 +110,8 @@ export function formatTuiErrorNotice(error?: unknown): string {
     if (!code) return 'Request failed. Try again.'
     let reason: unknown
     try {
-      if (code === 'TURN_ERROR') {
-        const turnCode = stableCode(data?.error?.code)
+      if (code === 'TURN_ERROR' || code === 'CONFIG_CREDENTIAL_REJECTED') {
+        const turnCode = code === 'CONFIG_CREDENTIAL_REJECTED' ? 'AUTH' : stableCode(data?.error?.code)
         if (turnCode) {
           const turnAction = TURN_ERROR_ACTIONS.get(turnCode)
           return turnAction ? `Request failed (${turnCode}): ${turnAction}` : `Request failed (${turnCode}).`

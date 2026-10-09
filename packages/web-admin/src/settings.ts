@@ -32,6 +32,7 @@ export type SettingsControllerOptions = {
 }
 
 export type SettingsController = {
+  openAccount(route?: string): Promise<void>
   open(): Promise<void>
   close(): void
   refreshLocale(): void
@@ -990,6 +991,11 @@ export function createSettingsController(options: SettingsControllerOptions): Se
 
   return {
     open,
+    async openAccount(route?: string) {
+      await open()
+      const account = configuration?.accounts?.find((row) => row.route === route)
+      if (account) editAccount(account.accountId)
+    },
     close,
     refreshLocale: () => {
       renderAccounts()
