@@ -15,7 +15,6 @@ describe('repo', () => {
       '@agnes/bridges',
       '@agnes/channels',
       '@agnes/cli',
-      '@agnes/cli-launch',
       '@agnes/cli-tui',
       '@agnes/code',
       '@agnes/cordis',

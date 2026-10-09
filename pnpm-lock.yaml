@@ -243,9 +243,6 @@ importers:
       '@agnes/bridges':
         specifier: workspace:*
         version: link:../bridges
-      '@agnes/cli-launch':
-        specifier: workspace:*
-        version: link:../cli-launch
       '@agnes/cli-tui':
         specifier: workspace:*
         version: link:../cli-tui
@@ -313,8 +310,6 @@ importers:
       postject:
         specifier: 1.0.0-alpha.6
         version: 1.0.0-alpha.6
-
-  packages/cli-launch: {}
 
   packages/cli-tui:
     dependencies:

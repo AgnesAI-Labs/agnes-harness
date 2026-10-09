@@ -10,7 +10,7 @@
 
 | 行为 | 主要源码 | 验证起点 |
 | --- | --- | --- |
-| 参数/启动/运行目录 | [cli](../../packages/cli/src)、[cli-launch](../../packages/cli-launch/src) | [CLI 参数](../../packages/cli/test/args.test.ts)、[共享本地验收](../../tools/acceptance/shared-local-delivery.test.ts) |
+| 参数/启动/运行目录 | [cli](../../packages/cli/src)、[启动资源](../../packages/cli/launch/resources.ts) | [CLI 参数](../../packages/cli/test/args.test.ts)、[共享本地验收](../../tools/acceptance/shared-local-delivery.test.ts) |
 | TUI | [cli-tui](../../packages/cli-tui/src) | [测试](../../packages/cli-tui/test) |
 | Web 展示与连接 | [web](../../packages/web/src)、[web-server](../../packages/web-server/src) | [Web 测试](../../packages/web/test) |
 | Web 外观与语言基础 | [web-foundation](../../packages/web-foundation/src) | [基础模块测试](../../packages/web-foundation/test) |

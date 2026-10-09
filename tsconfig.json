@@ -71,9 +71,6 @@
       "path": "packages/cli-tui"
     },
     {
-      "path": "packages/cli-launch"
-    },
-    {
       "path": "packages/resource-control-worker"
     },
     {

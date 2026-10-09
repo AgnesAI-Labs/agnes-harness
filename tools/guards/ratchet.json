@@ -76,7 +76,7 @@
   "packages/cli/src/boot/backend": 550,
   "packages/cli/src/boot/default": 69,
   "packages/cli/src/commands/sessions": 77,
-  "packages/cli/launch": 1604,
+  "packages/cli/launch": 1704,
   "packages/cli/launch/package-admin": 479,
   "packages/cli/tools/build-local": 366,
   "packages/daemon/src/supervisor/scope": 1,

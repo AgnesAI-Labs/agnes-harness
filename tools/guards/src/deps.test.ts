@@ -87,7 +87,6 @@ const LAYER: Record<string, number> = {
   '@agnes/protocol': 0,
   '@agnes/resource-control-client-node': 2,
   '@agnes/package-admin-client-node': 2,
-  '@agnes/cli-launch': 1,
   '@agnes/cli-tui': 4,
   '@agnes/resource-control-runtime': 6,
   '@agnes/resource-control-store': 6,

@@ -40,9 +40,6 @@
       "path": "../cli-tui"
     },
     {
-      "path": "../cli-launch"
-    },
-    {
       "path": "../host"
     },
     {
