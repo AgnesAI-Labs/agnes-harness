@@ -63,6 +63,7 @@ export interface AuthorSession {
 }
 export interface AuthorTestkit {
   openSession(options?: { key?: string; loop?: AuthorTestOptions['loop'] }): Promise<AuthorSession>
+  /** Returns the pin for the kit's default preset/Loop, using a transient session without driving it. */
   reload(next: AuthorPluginVersion): Promise<string>
   dispose(): Promise<void>
 }

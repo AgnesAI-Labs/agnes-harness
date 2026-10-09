@@ -67,7 +67,7 @@ try {
 
 验证插件注册的业务 Loop 时，调用 `kit.openSession({ loop: { id: 'acme.business', version: '1.0.0' } })`，再 `session.enqueue('合成请求')` 和 `session.drive(5)`。最多推进五条公共 Loop edge，遇到 idle、parked 或 turn-end 停止；可继续 `drive(N)` 并查看 `facts()`/`effects()`。传 AbortSignal 可取消。直接 `invoke` 使用另开的默认会话。
 
-`reload` 要求新版本，通过生产 Host 发布新 generation。已有会话保留代码和 Loop pin，新会话采用新 generation。除 pin 外还应断言可观察的工具结果，覆盖工具执行途中升级及候选失败后旧 generation 仍可用。fixture 通过受控 importer 注入已导入的作者模块，并生成带 hash 的合成 snapshot 文件及 generation 归档。它验证注册与 pin；源码 Loader 转译、打包和安装另行验证。sandbox/network 使用测试 seam，不能为任意插件代码提供操作系统隔离。
+`reload` 要求新版本，通过生产 Host 发布新 generation。已有会话保留代码和 Loop pin，新会话采用新 generation。返回值是 testkit 默认 preset 与 Loop 实际选择的 pin；`reload` 创建并关闭一个临时会话，不推进 Loop step，随后释放该会话的 pin。单次 `openSession` 显式选择其他 Loop 时，可能进入另一 composition。除 pin 外还应断言可观察的工具结果，覆盖工具执行途中升级及候选失败后旧 generation 仍可用。fixture 通过受控 importer 注入已导入的作者模块，并生成带 hash 的合成 snapshot 文件及 generation 归档。它验证注册与 pin；源码 Loader 转译、打包和安装另行验证。sandbox/network 使用测试 seam，不能为任意插件代码提供操作系统隔离。
 
 ## 录制一次，离线回放
 
