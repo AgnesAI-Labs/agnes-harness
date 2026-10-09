@@ -122,3 +122,5 @@ Runtime self-checks are the first block of Diagnostics, with no General sub-tab.
 ## File memory acceptance
 
 Agent → Memory offers off/ask/automatic access and a Markdown editor with exact revision checks, caps and last-writer metadata. `memory.spec.ts` exercises ordinary tool writes, new-session context, human edits, editor conflicts, off read/write/edit refusal and shell/symlink isolation through the real daemon and supported SDK. Four locale/theme cases use overview and editor baselines on each platform with axe and unresolved-key checks. Stable IDs: `memory-panel`, `memory-workspace`, `memory-mode`, `memory-open`, `memory-content`, `memory-save`, `memory-reload`, `memory-error`, `memory-size`, `memory-writer`. See [file memory](../guide/memory.md) for approval and privacy boundaries.
+
+Memory settings load independently of the runtime catalog. The capacity sentence uses locale-formatted KB and line limits; `memory-actions` groups save/reload in the shared responsive toolbar.

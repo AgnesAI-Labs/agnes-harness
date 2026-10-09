@@ -24,6 +24,7 @@ for (const locale of ['en', 'zh-CN'])
           exact: true,
         }),
       ).toBeVisible()
+      await expect(page.getByTestId('settings-page-memory').getByTestId('settings-refresh')).toHaveCount(0)
       await page.getByTestId('memory-workspace').selectOption(cwd)
       await expect(page.getByTestId('memory-mode')).toHaveValue('off')
       await page.getByTestId('memory-mode').selectOption('auto')
@@ -34,6 +35,22 @@ for (const locale of ['en', 'zh-CN'])
       const root = state.inspection!.root
       await page.getByTestId('memory-open').click()
       await expect(page.getByTestId('memory-content')).toBeVisible()
+      await expect(page.getByTestId('memory-mode')).toBeEnabled()
+      await expect(page.getByTestId('memory-size')).toHaveText(
+        locale === 'en' ? '0 KB used / 16 KB · Up to 200 lines' : '已用 0 KB / 16 KB · 最多 200 行',
+      )
+      const positions = await page
+        .getByTestId('memory-actions')
+        .getByRole('button')
+        .evaluateAll((buttons) =>
+          buttons.map((button) => ({
+            x: button.getBoundingClientRect().x,
+            y: button.getBoundingClientRect().y,
+          })),
+        )
+      expect(positions).toHaveLength(2)
+      expect(positions[1].x).toBeGreaterThan(positions[0].x)
+      expect(positions[1].y).toBe(positions[0].y)
       await translated(page)
       await accessible(page, info, 'memory-settings')
       await screen(page, info, `memory-${locale}-${theme}`, [

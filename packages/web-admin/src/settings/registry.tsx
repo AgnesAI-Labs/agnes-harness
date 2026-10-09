@@ -173,7 +173,7 @@ for (const [group, id, order, render] of definitions) {
           : `settings-shell.group.${group}`,
     navigationId: id === 'plugins' ? 'plugin-management' : `runtime-settings-${id}`,
     component: ({ context }) => render(context.data as RuntimeSettingsContext, context.t),
-    ...(id === 'diagnostics' ? { runtimeCatalog: false } : {}),
+    ...(id === 'diagnostics' || id === 'memory' ? { runtimeCatalog: false } : {}),
   }
   if (!settingsSections.get(id)) settingsSections.register(entry)
 }
