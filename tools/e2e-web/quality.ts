@@ -73,8 +73,9 @@ export async function accessible(page: Page, info: TestInfo, name: string) {
 }
 export async function screen(page: Page, info: TestInfo, name: string, mask: Locator[] = []) {
   await settled(page)
-  // Streaming pins to the bottom; the visual contract frames the completed tool row from its start.
-  if (name.startsWith('tool-row-')) {
+  // Streaming and previous pane focus can retain scroll offsets. Completed tool/session captures
+  // frame the first turn from its start, independently of earlier interactions or viewport changes.
+  if (name.startsWith('tool-row-') || name.startsWith('narrow-session-')) {
     await page.getByRole('region', { name: /^(Conversation|对话)$/, exact: true }).evaluate((viewport) => {
       const behavior = viewport.style.scrollBehavior
       viewport.style.scrollBehavior = 'auto'
