@@ -339,6 +339,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         'agnes/tools-search',
         'agnes/tools-web',
         'agnes/interaction',
+        'agnes/intelligent-ui',
         'agnes/goal',
         'agnes/deliverables',
         'agnes/jobs',
@@ -508,6 +509,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       })
       expect(provider.calls[2]?.system).toContain('LIVE_RULE_V2')
       expect(provider.calls[2]?.system).not.toContain('LIVE_RULE_V1')
+      expect((await service.read({ sessionId: session.key }, new AbortController().signal)).surfaces[0]?.status).toBe('open')
       expect(await submit('late', 'B')).toMatchObject({ status: 'received' })
       expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
         reason: 'completed',
@@ -952,7 +954,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     // mcp-search 2, computer-use 1, plugin-creator 6, exit_plan_mode, and the three stable MCP
     // resource tools, workflow and workflow_status, session-query 5, two goal tools, and the four
     // schedule reminders.
-    expect(host.kernel.tools.size).toBe(58)
+    expect(host.kernel.tools.size).toBe(62)
     for (const name of [
       'subagent_list',
       'subagent_send_message',

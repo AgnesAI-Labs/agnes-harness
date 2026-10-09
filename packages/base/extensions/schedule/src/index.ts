@@ -23,7 +23,7 @@ export function createScheduleExtension(tables?: ScheduleTableStore) {
     const disposers = createScheduleTools(catalog).map((tool) =>
       agnes.registerTool({
         ...tool,
-        async execute(args, ctx) {
+        async execute(args: Parameters<typeof tool.execute>[0], ctx) {
           const result = await tool.execute(args, ctx)
           const details = result.details as
             | { id?: string; schedules?: ScheduleView[]; deleted?: boolean }

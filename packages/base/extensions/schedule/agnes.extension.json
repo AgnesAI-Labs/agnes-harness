@@ -6,9 +6,17 @@
   "capabilities": {
     "tools": {
       "prefix": "",
-      "names": ["schedule_create", "schedule_list", "schedule_update", "schedule_delete"]
+      "names": [
+        "schedule_create",
+        "schedule_list",
+        "schedule_update",
+        "schedule_delete"
+      ]
     },
-    "slots": ["notification"]
+    "slots": [
+      "notification"
+    ],
+    "tools.invoke": true
   },
   "metadata": {
     "displayName": "Scheduled tasks",

@@ -6,7 +6,9 @@
   "capabilities": {
     "tools": {
       "prefix": "",
-      "names": ["ask_user_question"]
+      "names": [
+        "ask_user_question"
+      ]
     },
     "hooks": [],
     "events": true,
@@ -20,7 +22,8 @@
         ],
         "maxStateBytes": 262144
       }
-    ]
+    ],
+    "tools.invoke": true
   },
   "metadata": {
     "displayName": "User questions",

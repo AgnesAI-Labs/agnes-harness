@@ -68,11 +68,14 @@ const SUPPLIED: Record<string, string[]> = {
     'hook:compact',
     'hook:approval_request',
   ],
-  'agnes/interaction': [
-    'tool:ask_user_question',
-    'slot:tool.card.inline',
-    'projection:agnes/interaction/questions',
+  'agnes/intelligent-ui': [
+    'tool:ui_render',
+    'tool:ui_update',
+    'tool:ui_close',
+    'tool:ui_submit',
+    'projection:agnes/intelligent-ui/surfaces',
   ],
+  'agnes/interaction': ['tool:ask_user_question', 'projection:agnes/interaction/questions'],
   'agnes/goal': [
     'tool:goal_get',
     'tool:goal_update',
@@ -83,7 +86,7 @@ const SUPPLIED: Record<string, string[]> = {
     'slot:status.line',
     'projection:agnes/goal/goal',
   ],
-  'agnes/deliverables': ['tool:present', 'slot:tool.card.inline', 'projection:agnes/deliverables/presented'],
+  'agnes/deliverables': ['tool:present', 'projection:agnes/deliverables/presented'],
   'agnes/jobs': [
     'tool:job_list',
     'tool:job_output',
@@ -112,7 +115,6 @@ const SUPPLIED: Record<string, string[]> = {
     'tool:workflow',
     'tool:workflow_status',
     'hook:context',
-    'slot:tool.card.inline',
     'projection:agnes/workflow/runs',
   ],
   'agnes/session-query': [
@@ -128,7 +130,6 @@ const SUPPLIED: Record<string, string[]> = {
     'tool:schedule_list',
     'tool:schedule_update',
     'tool:schedule_delete',
-    'slot:tool.card.inline',
     'slot:notification',
   ],
 }
@@ -154,6 +155,7 @@ describe('the builtin extensions that moved to the shared row host', () => {
       'agnes/tools-search',
       'agnes/tools-web',
       'agnes/interaction',
+      'agnes/intelligent-ui',
       'agnes/goal',
       'agnes/deliverables',
       'agnes/jobs',
