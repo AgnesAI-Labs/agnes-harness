@@ -10,7 +10,7 @@ import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { zhT } from '@agnes/web-foundation/testkit/locale'
 import { unmountRegion } from '@agnes/web-ui'
 import { SettingsBuiltin, SettingsPaneBuiltin } from '@agnes/web-units'
-import { createElement } from 'react'
+import { act, createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -244,6 +244,61 @@ for (const outcome of ['success', 'failure'] as const) {
     }
   })
 }
+
+it.each(['success', 'failure'] as const)(
+  'keeps independent settings usable after leaving a pending catalog request (%s)',
+  async (outcome) => {
+    const host = document.createElement('div')
+    host.id = 'config-form'
+    host.dataset.runtimePage = 'providers'
+    document.body.append(host)
+    const root = createRoot(host)
+    let finish!: (snapshot: RuntimeAdminSnapshot) => void
+    let fail!: (error: Error) => void
+    const pending = new Promise<RuntimeAdminSnapshot>((resolve, reject) => {
+      finish = resolve
+      fail = reject
+    })
+    try {
+      flushSync(() =>
+        root.render(
+          createElement(SettingsHub, {
+            api: { runtime: () => pending } as PluginAdminApi,
+            canSave: false,
+            pluginText: zhT,
+            installed: [],
+            generations: undefined,
+            children: createElement('p', { 'data-testid': 'independent-content' }, 'Plugin discovery'),
+            onPage() {},
+            async onRefresh() {},
+            onReview() {},
+          }),
+        ),
+      )
+      expect(host.querySelector('[data-testid="settings-refresh"]')?.getAttribute('aria-busy')).toBe('true')
+      flushSync(() => document.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: 'discover' })))
+      expect(host.querySelector('[data-testid="settings-page-discover"]')).not.toBeNull()
+      expect(host.querySelector('[data-testid="settings-refresh"]')).toBeNull()
+      expect(host.querySelector('.agnes-settings-state')).toBeNull()
+      await act(async () => {
+        if (outcome === 'success')
+          finish({
+            providers: [],
+            presets: [],
+            localPluginFolders: { home: '/fixture/plugins', workspace: '/fixture/workspace' },
+          })
+        else fail(new Error('Synthetic runtime unavailable'))
+        await pending.catch(() => undefined)
+      })
+      expect(host.querySelector('[data-testid="independent-content"]')?.textContent).toBe('Plugin discovery')
+      expect(host.querySelector('.agnes-settings-state')).toBeNull()
+      expect(host.querySelector('[data-testid="settings-refresh"]')).toBeNull()
+    } finally {
+      flushSync(() => root.unmount())
+      host.remove()
+    }
+  },
+)
 
 it('loads registered diagnostics independently of the plugin catalog with one translated heading', async () => {
   const host = document.createElement('div')

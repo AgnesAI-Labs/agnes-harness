@@ -77,3 +77,5 @@ AGH_WEB_URL=http://127.0.0.1:PORT AGH_CONVERSATION_FIXTURE_URL=http://127.0.0.1:
 Agent → 记忆提供关闭/询问/自动模式、Markdown 编辑器、精确版本检查、上限与最后写入来源。`memory.spec.ts` 通过真实 daemon 与支持的 SDK 验证普通工具写入、新会话上下文、人工编辑、编辑器冲突、关闭后的 read/write/edit 拒绝及 shell/符号链接隔离。四组语言/主题使用两平台的概览和编辑器基线，并检查 axe 与未解析键。稳定 ID：`memory-panel`、`memory-workspace`、`memory-mode`、`memory-open`、`memory-content`、`memory-save`、`memory-reload`、`memory-error`、`memory-size`、`memory-writer`。审批与隐私边界见[文件记忆](../guide/memory.zh-CN.md)。
 
 记忆设置独立于运行目录加载。容量句子使用本地化数字、KB 与行上限；`memory-actions` 将保存/重新载入放在共享响应式操作栏。
+
+只有消费运行目录的设置页显示目录刷新操作；独立加载的设置沿用各自服务的状态。设置、搜索、记忆与 MCP 字段共用 `--agnes-input-surface`。既有 `ui-gate.spec.ts` 矩阵在字段一致性和空候选区块检查之外，还检查独立设置页的操作及 MCP 凭据引用提示的纯文本显示。

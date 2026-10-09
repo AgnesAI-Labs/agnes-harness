@@ -44,7 +44,7 @@ export const indexShellLocaleCatalog: LocaleCatalog = {
     'index-shell.mcpKicker': 'Managed connection',
     'index-shell.mcpHeading': 'Add an MCP server',
     'index-shell.mcpIntro':
-      'Only managed transports and existing <code>secret://</code> references are accepted. Secret values never enter this page.',
+      'Only managed transports and existing secret:// references are accepted. Secret values never enter this page.',
     'index-shell.mcpIdLabel': 'Server ID',
     'index-shell.mcpNameLabel': 'Display name',
     'index-shell.mcpTransportLabel': 'Transport',
@@ -100,7 +100,7 @@ export const indexShellLocaleCatalog: LocaleCatalog = {
     'index-shell.confirmSubmit': '确认',
     'index-shell.mcpKicker': '受控连接',
     'index-shell.mcpHeading': '添加 MCP 服务',
-    'index-shell.mcpIntro': '只可填写受控 transport 和已有 <code>secret://</code> 引用。密钥值不会进入本页。',
+    'index-shell.mcpIntro': '只可填写受控 transport 和已有 secret:// 引用。密钥值不会进入本页。',
     'index-shell.mcpIdLabel': '服务 ID',
     'index-shell.mcpNameLabel': '显示名称',
     'index-shell.mcpTransportLabel': '传输',

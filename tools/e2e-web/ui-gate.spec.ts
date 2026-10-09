@@ -17,6 +17,9 @@ const pages = [
   'skills',
   'mcp',
   'search',
+  'memory',
+  'system-prompt',
+  'diagnostics',
   'context',
   'jobs',
   'schedules',
@@ -111,6 +114,24 @@ for (const locale of ['en', 'zh-CN'])
             page.getByRole('heading', { name: heading[locale === 'en' ? 0 : 1], exact: true }),
           ).toBeVisible()
         else await expect(page.getByTestId(`settings-page-${id}`)).toBeVisible()
+        if (
+          [
+            'models',
+            'engines',
+            'discover',
+            'examples',
+            'search',
+            'memory',
+            'system-prompt',
+            'diagnostics',
+            'context',
+            'jobs',
+            'schedules',
+            'terminal',
+            'history',
+          ].includes(id)
+        )
+          await expect(page.getByTestId('settings-refresh')).toHaveCount(0)
         if (id === 'plugins') {
           await expect(page.getByTestId('plugin-candidates')).toHaveCount(0)
           fieldSurface = await page
@@ -129,6 +150,13 @@ for (const locale of ['en', 'zh-CN'])
           }
           await quality('settings-search', true)
         }
+        if (id === 'memory') {
+          await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
+          await page.getByTestId('memory-open').click()
+          await expect(page.getByTestId('memory-content')).toBeVisible()
+          for (const control of ['memory-workspace', 'memory-mode', 'memory-file', 'memory-content'])
+            await expect(page.getByTestId(control)).toHaveCSS('background-color', fieldSurface)
+        }
         if (id === 'mcp') {
           await page
             .locator('#resource-list article')
@@ -141,6 +169,8 @@ for (const locale of ['en', 'zh-CN'])
             .getByRole('button', { name: locale === 'en' ? 'Edit' : '编辑', exact: true })
             .click()
           await expect(page.locator('#mcp-dialog')).toBeVisible()
+          await expect(page.locator('#mcp-dialog .dialog-intro')).not.toContainText('<code>')
+          await expect(page.locator('#mcp-dialog .dialog-intro')).toContainText('secret://')
           await page.mouse.move(0, 0)
           for (const control of ['mcp-name', 'mcp-executable', 'mcp-args', 'mcp-secret', 'mcp-tools']) {
             await expect(page.locator(`#${control}`)).toHaveCSS('background-color', fieldSurface)
