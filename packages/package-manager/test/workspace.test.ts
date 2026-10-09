@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -83,6 +83,7 @@ describe('workspace trust primitives', () => {
     writeFileSync(join(outside, 'profile.yaml'), 'policy: {}\n')
     rmSync(join(deployDir, 'profile'), { recursive: true })
     symlinkSync(outside, join(deployDir, 'profile'), process.platform === 'win32' ? 'junction' : 'dir')
+    expect(realpathSync(join(deployDir, 'profile'))).toBe(realpathSync(outside))
     expect(() => readProfileFragment(deployDir, readDeployManifest(deployDir))).toThrow(/symbolic link/)
   })
 

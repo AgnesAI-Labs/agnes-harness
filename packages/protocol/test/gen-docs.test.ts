@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { renderHooksDoc, renderSlotsDoc, renderToolsMetaDoc } from '../tools/gen-docs.js'
 
@@ -14,8 +13,7 @@ describe('gen-docs', () => {
     ).toHaveLength(16)
   })
   // Independent of the renderer: the page must carry facts read out of the decision tables, not out
-  // of the renderer's own output. Without this, the staleness case below only ever proves the file
-  // matches whatever the renderer currently emits, however wrong that is.
+  // of the renderer's own output. Checked-in staleness is enforced separately by gen:check.
   it('slots.md carries the four slot names, their orders and the byte cap', () => {
     const md = renderSlotsDoc()
     for (const [slot, order] of [
@@ -44,13 +42,5 @@ describe('gen-docs', () => {
     // a table with nothing in the last cell and still pass a "contains the key" check.
     for (const line of md.split('\n').filter((l) => l.startsWith('| `')))
       expect(line.split('|').at(-2)?.trim().length, line).toBeGreaterThan(20)
-  })
-  // Staleness gate only: the checked-in files were written by these same render functions, so this
-  // can detect a forgotten `pnpm gen` and can never detect a wrong rendering. Named for what it does.
-  it('the checked-in docs are not stale', () => {
-    const base = new URL('../docs/', import.meta.url)
-    expect(readFileSync(new URL('hooks.md', base), 'utf8')).toBe(renderHooksDoc())
-    expect(readFileSync(new URL('slots.md', base), 'utf8')).toBe(renderSlotsDoc())
-    expect(readFileSync(new URL('tools-meta.md', base), 'utf8')).toBe(renderToolsMetaDoc())
   })
 })

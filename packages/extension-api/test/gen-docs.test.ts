@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { HOOK_EVENTS, HOOK_TABLE, SLOT_NAMES, SLOT_TABLE, TOOL_META_KEYS } from '../src/index.js'
 import {
@@ -53,9 +52,5 @@ describe('author documentation generation', () => {
   it('refuses missing source definitions or descriptions', () => {
     expect(() => schemaSummary({ $defs: {} }, 'hooks.json', 'Missing')).toThrow(/missing definition/)
     expect(() => renderToolsMetaDoc({ keys: ['a'], descriptions: {} })).toThrow(/missing/)
-  })
-  it('checked-in documents exactly match generation', () => {
-    for (const [file, fresh] of Object.entries(generateAll()))
-      expect(readFileSync(new URL(`../docs/${file}`, import.meta.url), 'utf8'), file).toBe(fresh)
   })
 })

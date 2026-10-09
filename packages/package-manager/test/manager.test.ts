@@ -100,6 +100,25 @@ describe('PackageManager lifecycle', () => {
       cwd: fixtures,
       ceiling: [],
     })
+    // Legacy extension manifests still declare a capability ceiling; Cordis rows do not.
+    const legacy = join(dataDir, 'legacy-extension')
+    mkdirSync(legacy)
+    writeFileSync(
+      join(legacy, 'package.json'),
+      JSON.stringify({ name: 'acme/legacy', version: '1.0.0', license: 'MIT' }),
+    )
+    writeFileSync(join(legacy, 'agnes.extension.json'), JSON.stringify({
+      id: 'acme/legacy',
+      version: '1.0.0',
+      apiRange: '^1.0',
+      entry: './index.js',
+      capabilities: { tools: { prefix: 'legacy_', names: ['legacy_echo'] } },
+    }))
+    writeFileSync(join(legacy, 'index.js'), 'export default () => () => {}\n')
+    await expect(denied.add(profileDir, `file:${legacy}`, { trust: 'verify' })).rejects.toThrow(
+      /E_PACKAGE_BLOCKED/,
+    )
+    expect(existsSync(packageDir(dataDir, 'local-dev', 'acme/legacy'))).toBe(false)
     await denied.add(profileDir, 'file:./pkg-a', { trust: 'verify' })
     expect(existsSync(packageDir(dataDir, 'local-dev', 'acme/pkg-a'))).toBe(true)
     await expect(denied.add(profileDir, 'workspace:extensions/pkg-a')).rejects.toThrow(/E_PACKAGE_TRUST/)

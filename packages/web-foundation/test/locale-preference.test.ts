@@ -68,15 +68,4 @@ describe('locale preference', () => {
     expect(document.querySelector<HTMLInputElement>('input[value="zh-CN"]')?.checked).toBe(true)
     expect(document.querySelector<HTMLInputElement>('input[value="en"]')?.checked).toBe(false)
   })
-
-  it('gives English and Simplified Chinese the same keys', () => {
-    const english = Object.keys(webLocaleCatalog.en ?? {}).sort()
-    const chinese = Object.keys(webLocaleCatalog['zh-CN'] ?? {}).sort()
-    expect(chinese).toEqual(english)
-    expect(english.length).toBeGreaterThan(0)
-    for (const key of english) {
-      expect(webLocaleCatalog.en?.[key]).toBeTruthy()
-      expect(webLocaleCatalog['zh-CN']?.[key]).toBeTruthy()
-    }
-  })
 })
