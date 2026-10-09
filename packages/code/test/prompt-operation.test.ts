@@ -114,12 +114,12 @@ describe('the prompt operation', () => {
     expect(second?.runtimeContext).toMatchObject({ environment: { date: '2026-12-25' } })
   })
 
-  it('states that the offered tool list is complete in the tail runtime context, not as a prompt section', () => {
+  it('states the offered-tool and discovery rules in the tail runtime context', () => {
     const op = createPromptOperation(deps)
     const some = op.contribute?.(ctxFor({ disclosed: ['read', 'write', 'grep'] }))
     expect(some?.promptSections?.map((s) => s.id)).not.toContain('tools-available')
     expect(some?.runtimeContext).toMatchObject({
-      tools: { complete: expect.stringContaining('complete set offered this turn') },
+      tools: { complete: expect.stringContaining('Use only tools offered in this request') },
     })
     const none = op.contribute?.(ctxFor({ disclosed: [] }))
     expect(none?.runtimeContext).toMatchObject({

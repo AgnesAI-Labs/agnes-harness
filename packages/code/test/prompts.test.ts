@@ -172,7 +172,7 @@ const PROMPT_TEXT: Record<string, string> = {
     'When you cannot do something, you say so plainly and stop; you never simulate a result.',
   ].join('\n'),
   'tools-available': [
-    "The tools named in this request's tools field are the complete set offered this turn. You have no others: no filesystem access, no command execution and no network access except through one of them. When a task needs something the list does not cover, say which capability is missing rather than describing what you would have done with it.",
+    'Use only tools offered in this request. When a capability is missing, use tool_search if offered, then tool_describe to load a matching deferred tool for subsequent requests. Discovery grants no execution permission. If discovery finds nothing, explain the missing capability. Filesystem, command and network access require the corresponding tools.',
   ].join('\n'),
   'tools-none': [
     'You have no tools on this request. The harness registered none, so you cannot read or write files, run commands, or reach the network. Answer from this conversation alone, and say plainly when a question needs a capability you do not have.',
@@ -246,7 +246,7 @@ describe('prompt text', () => {
 
   it('the tool templates never promise a capability the list does not carry', () => {
     expect(loadPrompt('tools-available')).not.toContain('{{')
-    expect(loadPrompt('tools-available')).toContain('complete set offered this turn')
+    expect(loadPrompt('tools-available')).toContain('Use only tools offered in this request')
     expect(loadPrompt('tools-none')).toContain('You have no tools on this request')
     expect(loadPrompt('tools-none')).not.toContain('{{')
   })
@@ -271,9 +271,12 @@ describe('prompt rendering', () => {
     for (const v of Object.values(facts)) expect(text, v).toContain(v)
   })
 
-  it('states that the offered tools are complete, without enumerating them', () => {
+  it('requires offered tools and discovers missing schemas without granting permission', () => {
     const text = renderTools(['read', 'shell'])
-    expect(text).toContain('complete set offered this turn')
+    expect(text).toContain('Use only tools offered in this request')
+    expect(text).toContain('tool_search if offered, then tool_describe')
+    expect(text).toContain('Discovery grants no execution permission.')
+    expect(text).toContain('Filesystem, command and network access require the corresponding tools.')
     expect(text).not.toContain('- read')
     expect(text).not.toContain('{{')
   })
@@ -281,7 +284,7 @@ describe('prompt rendering', () => {
   it('says there are none rather than saying the (empty) list is complete', () => {
     const text = renderTools([])
     expect(text).toContain('You have no tools on this request')
-    expect(text).not.toContain('complete set offered this turn')
+    expect(text).not.toContain('Use only tools offered in this request')
     expect(text).not.toContain('{{')
   })
 
