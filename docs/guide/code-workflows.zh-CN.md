@@ -6,6 +6,8 @@
 向模型展示 `run_code`，并提供工具参数的 TypeScript 类型声明。
 每个 cell 运行在所选 sandbox provider 管理的独立 Node 进程中，
 支持顶层 await 和 return；变量不会跨 cell 保留。
+cell 使用 Node 类型擦除，支持类型注解；enum、构造器参数属性等需要运行时转换的
+TypeScript 语法请改用普通 JavaScript 写法。
 
 ```ts
 return await tools.workflow({

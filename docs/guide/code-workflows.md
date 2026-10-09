@@ -8,6 +8,8 @@ SDK supplies TypeScript parameter declarations for available tools.
 
 Each cell runs in a fresh Node process owned by the selected sandbox provider.
 Top-level `await` and `return` are supported; variables do not survive cells.
+Cells use Node type stripping: type annotations are supported; runtime TypeScript
+features such as enums and parameter properties should use ordinary JavaScript equivalents.
 
 ```ts
 return await tools.workflow({

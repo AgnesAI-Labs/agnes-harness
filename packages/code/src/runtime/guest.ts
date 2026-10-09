@@ -38,7 +38,7 @@ process.stdin.on('end', async () => {
   const tools = Object.create(null);
   for (const name of request.names) tools[name] = (args = {}) => call(name, args);
   try {
-    const source = require('node:module').stripTypeScriptTypes('async function cell(tools) {\n' + request.program + '\n}', {mode: 'transform', disableExperimentalWarning: true});
+    const source = require('node:module').stripTypeScriptTypes('async function cell(tools) {\n' + request.program + '\n}', {mode: 'strip', disableExperimentalWarning: true});
     const fn = new Function(source + ';return cell')();
     const value = await fn(tools);
     if (value !== undefined) console.log(json(value));
