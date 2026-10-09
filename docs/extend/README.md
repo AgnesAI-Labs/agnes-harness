@@ -79,3 +79,5 @@ Drop a source plugin into the [local plugins folder](local-plugins.md), or [buil
 ## Proposals
 
 [Proposed plugin metadata and purpose cards](plugin-presentation/DESIGN.md) defines optional author-owned descriptions and runtime-derived contribution facts; it is not implemented yet.
+
+[Purpose metadata](plugin-metadata.md) defines optional localized plugin purpose text.

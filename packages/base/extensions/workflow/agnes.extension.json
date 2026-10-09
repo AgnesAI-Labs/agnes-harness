@@ -6,22 +6,14 @@
   "capabilities": {
     "tools": {
       "prefix": "",
-      "names": [
-        "workflow",
-        "workflow_status"
-      ]
+      "names": ["workflow", "workflow_status"]
     },
-    "hooks": [
-      "context"
-    ],
+    "hooks": ["context"],
     "slots": [],
     "projections": [
       {
         "name": "runs",
-        "inputEventTypes": [
-          "x/agnes/workflow/run",
-          "x/agnes/workflow/view"
-        ],
+        "inputEventTypes": ["x/agnes/workflow/run", "x/agnes/workflow/view"],
         "maxStateBytes": 262144
       }
     ],
@@ -30,5 +22,18 @@
     "network": [],
     "tools.invoke": true,
     "subagent": true
+  },
+  "metadata": {
+    "displayName": "Coordinated workflows",
+    "summary": "Lets the agent run multi-step tool and child-agent workflows and inspect their progress.",
+    "description": "Lets the agent run multi-step tool and child-agent workflows and inspect their progress.",
+    "category": "collaboration",
+    "locales": {
+      "zh-CN": {
+        "displayName": "协同工作流",
+        "summary": "让 Agent 执行由工具和子 Agent 组成的多步骤工作流，并查看进度。",
+        "description": "让 Agent 执行由工具和子 Agent 组成的多步骤工作流，并查看进度。"
+      }
+    }
   }
 }

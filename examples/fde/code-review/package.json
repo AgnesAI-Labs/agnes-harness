@@ -57,7 +57,20 @@
           "toolPolicies",
           "skills"
         ],
-        "apiRange": "^1.4.0"
+        "apiRange": "^1.4.0",
+        "metadata": {
+          "displayName": "Code review example",
+          "summary": "Reviews a synthetic patch for selected risks and prepares an evidence-linked report for a maintainer.",
+          "description": "Reviews a synthetic patch for selected risks and prepares an evidence-linked report for a maintainer.",
+          "category": "developer",
+          "locales": {
+            "zh-CN": {
+              "displayName": "代码审查示例",
+              "summary": "检查模拟补丁中的特定风险，为维护者生成附带证据的审查报告。",
+              "description": "检查模拟补丁中的特定风险，为维护者生成附带证据的审查报告。"
+            }
+          }
+        }
       }
     ],
     "bundles": {
@@ -87,6 +100,19 @@
               }
             }
           }
+        }
+      }
+    },
+    "metadata": {
+      "displayName": "Code review example",
+      "summary": "Reviews a synthetic patch for selected risks and prepares an evidence-linked report for a maintainer.",
+      "description": "Reviews a synthetic patch for selected risks and prepares an evidence-linked report for a maintainer.",
+      "category": "developer",
+      "locales": {
+        "zh-CN": {
+          "displayName": "代码审查示例",
+          "summary": "检查模拟补丁中的特定风险，为维护者生成附带证据的审查报告。",
+          "description": "检查模拟补丁中的特定风险，为维护者生成附带证据的审查报告。"
         }
       }
     }

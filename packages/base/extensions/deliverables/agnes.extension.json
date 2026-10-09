@@ -6,9 +6,7 @@
   "capabilities": {
     "tools": {
       "prefix": "",
-      "names": [
-        "present"
-      ]
+      "names": ["present"]
     },
     "events": true,
     "artifacts": true,
@@ -16,11 +14,22 @@
     "projections": [
       {
         "name": "presented",
-        "inputEventTypes": [
-          "x/agnes/deliverables/presented"
-        ],
+        "inputEventTypes": ["x/agnes/deliverables/presented"],
         "maxStateBytes": 262144
       }
     ]
+  },
+  "metadata": {
+    "displayName": "Deliverables",
+    "summary": "Makes the agent's output files available to open or download from the conversation.",
+    "description": "Makes the agent's output files available to open or download from the conversation.",
+    "category": "ui",
+    "locales": {
+      "zh-CN": {
+        "displayName": "交付成果",
+        "summary": "把 Agent 生成的文件呈现在对话中，方便打开或下载。",
+        "description": "把 Agent 生成的文件呈现在对话中，方便打开或下载。"
+      }
+    }
   }
 }

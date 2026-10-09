@@ -4,11 +4,27 @@
   "apiRange": "^1.0",
   "entry": "./src/index.ts",
   "capabilities": {
-    "tools": { "prefix": "tool_", "names": ["tool_search", "tool_describe"] },
+    "tools": {
+      "prefix": "tool_",
+      "names": ["tool_search", "tool_describe"]
+    },
     "hooks": [],
     "slots": [],
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "Tool discovery",
+    "summary": "Helps the agent find connected MCP tools and inspect their inputs before use.",
+    "description": "Helps the agent find connected MCP tools and inspect their inputs before use.",
+    "category": "integrations",
+    "locales": {
+      "zh-CN": {
+        "displayName": "工具发现",
+        "summary": "帮助 Agent 找到已连接的 MCP 工具，并在使用前查看输入要求。",
+        "description": "帮助 Agent 找到已连接的 MCP 工具，并在使用前查看输入要求。"
+      }
+    }
   }
 }

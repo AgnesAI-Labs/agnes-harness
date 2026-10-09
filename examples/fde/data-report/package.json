@@ -57,7 +57,20 @@
           "loops",
           "toolPolicies",
           "skills"
-        ]
+        ],
+        "metadata": {
+          "displayName": "Data report example",
+          "summary": "Turns a sample CSV into calculated figures, charts and shareable reports.",
+          "description": "Turns a sample CSV into calculated figures, charts and shareable reports.",
+          "category": "tools",
+          "locales": {
+            "zh-CN": {
+              "displayName": "数据报告示例",
+              "summary": "把样例 CSV 转成计算结果、图表和可分享的报告。",
+              "description": "把样例 CSV 转成计算结果、图表和可分享的报告。"
+            }
+          }
+        }
       }
     ],
     "bundles": {
@@ -87,6 +100,19 @@
               }
             }
           }
+        }
+      }
+    },
+    "metadata": {
+      "displayName": "Data report example",
+      "summary": "Turns a sample CSV into calculated figures, charts and shareable reports.",
+      "description": "Turns a sample CSV into calculated figures, charts and shareable reports.",
+      "category": "tools",
+      "locales": {
+        "zh-CN": {
+          "displayName": "数据报告示例",
+          "summary": "把样例 CSV 转成计算结果、图表和可分享的报告。",
+          "description": "把样例 CSV 转成计算结果、图表和可分享的报告。"
         }
       }
     }

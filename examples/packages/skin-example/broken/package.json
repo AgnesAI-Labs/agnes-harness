@@ -6,6 +6,19 @@
   "agnes": {
     "extensions": [
       "./extensions/main"
-    ]
+    ],
+    "metadata": {
+      "displayName": "Appearance example (failure fixture)",
+      "summary": "Deliberately fails appearance example validation or loading to demonstrate refusal and recovery.",
+      "description": "Deliberately fails appearance example validation or loading to demonstrate refusal and recovery.",
+      "category": "ui",
+      "locales": {
+        "zh-CN": {
+          "displayName": "外观示例（失败测试包）",
+          "summary": "故意使外观示例的校验或加载失败，用于演示拒绝和恢复。",
+          "description": "故意使外观示例的校验或加载失败，用于演示拒绝和恢复。"
+        }
+      }
+    }
   }
 }

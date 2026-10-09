@@ -23,6 +23,8 @@ const IMPORT_FORMAT_REGISTRY = "import { FormatRegistry } from '@sinclair/typebo
 // ajv-formats accepts and `new URL()` rejects. Recorded and deliberately not fixed: an acceptable
 // simplification, not the class of hole this check exists to close.
 const FORMAT_CHECKERS: Record<string, string> = {
+  'agnes-plugin-docs-url':
+    "(value) => { try { const url = new URL(value); return value === value.trim() && !/[\\x00-\\x20\\x7f-\\x9f]/.test(value) && value.startsWith('https://') && url.protocol === 'https:' && url.username === '' && url.password === ''; } catch { return false; } }",
   // Matches PackageManager's existing URL parser, including IPv6 and normalized numeric ports.
   'agnes-git-source':
     "(value) => { try { const url = new URL(value.slice(4)); return value.startsWith('git:') && url.protocol === 'https:' && url.username === '' && url.password === '' && url.search === '' && (!url.hash || /^#[A-Za-z0-9._/-]+$/.test(url.hash)); } catch { return false; } }",

@@ -549,21 +549,34 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "kind": { "const": "client" },
-            "id": { "type": "string", "pattern": "^plugin/[0-9a-f]{16}$" },
-            "rowId": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "kind": {
+              "const": "client"
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^plugin/[0-9a-f]{16}$"
+            },
+            "rowId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
             "path": {
               "type": "string",
               "minLength": 1,
               "maxLength": 512,
               "pattern": "^\\./(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+(?:/(?!\\.{1,2}(?:/|$))[^/\\\\\\x00:]+)*$"
             },
-            "client": { "$ref": "extension-manifest.json#/$defs/ClientContribution" },
+            "client": {
+              "$ref": "extension-manifest.json#/$defs/ClientContribution"
+            },
             "skins": {
               "type": "array",
               "minItems": 1,
               "maxItems": 16,
-              "items": { "$ref": "extension-manifest.json#/$defs/SkinContribution" }
+              "items": {
+                "$ref": "extension-manifest.json#/$defs/SkinContribution"
+              }
             }
           },
           "required": ["kind", "id", "rowId", "path", "client"]
@@ -572,9 +585,18 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "kind": { "const": "client" },
-            "id": { "type": "string", "pattern": "^plugin/[0-9a-f]{16}$" },
-            "rowId": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "kind": {
+              "const": "client"
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^plugin/[0-9a-f]{16}$"
+            },
+            "rowId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
             "path": {
               "type": "string",
               "minLength": 1,
@@ -585,7 +607,9 @@
               "type": "array",
               "minItems": 1,
               "maxItems": 16,
-              "items": { "$ref": "extension-manifest.json#/$defs/SkinContribution" }
+              "items": {
+                "$ref": "extension-manifest.json#/$defs/SkinContribution"
+              }
             }
           },
           "required": ["kind", "id", "rowId", "path", "skins"]
@@ -951,7 +975,9 @@
       "properties": {
         "kinds": {
           "type": "array",
-          "items": { "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle"] },
+          "items": {
+            "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle"]
+          },
           "uniqueItems": true,
           "maxItems": 6
         },
@@ -1028,6 +1054,9 @@
         },
         "declaredCapabilities": {
           "$ref": "#/$defs/PluginCapabilities"
+        },
+        "metadata": {
+          "$ref": "extension-manifest.json#/$defs/PluginMetadata"
         }
       },
       "required": [
@@ -1193,13 +1222,23 @@
       "properties": {
         "kinds": {
           "type": "array",
-          "items": { "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle"] },
+          "items": {
+            "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle"]
+          },
           "uniqueItems": true,
           "maxItems": 6
         },
-        "draining": { "type": "boolean" },
-        "boundSessions": { "type": "integer", "minimum": 0 },
-        "drainingSessions": { "type": "integer", "minimum": 0 },
+        "draining": {
+          "type": "boolean"
+        },
+        "boundSessions": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "drainingSessions": {
+          "type": "integer",
+          "minimum": 0
+        },
         "id": {
           "type": "string",
           "minLength": 1,
@@ -1293,6 +1332,9 @@
         },
         "provenance": {
           "$ref": "#/$defs/PackageProvenance"
+        },
+        "metadata": {
+          "$ref": "extension-manifest.json#/$defs/PluginMetadata"
         }
       },
       "required": [
@@ -1313,7 +1355,9 @@
       "properties": {
         "kinds": {
           "type": "array",
-          "items": { "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle"] },
+          "items": {
+            "enum": ["tool", "loop", "model-adapter", "mcp", "skills", "ui", "bundle"]
+          },
           "uniqueItems": true,
           "maxItems": 6
         },
@@ -1362,6 +1406,9 @@
         "retrievedAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "metadata": {
+          "$ref": "extension-manifest.json#/$defs/PluginMetadata"
         }
       },
       "required": [
@@ -1632,7 +1679,9 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "generations": { "$ref": "#/$defs/PluginGenerationStatus" },
+        "generations": {
+          "$ref": "#/$defs/PluginGenerationStatus"
+        },
         "packages": {
           "type": "array",
           "items": {
@@ -2440,11 +2489,17 @@
               "publicConfig": {
                 "description": "Explicitly public package-authored browser metadata. It is immutable manifest data, never runtime row config, credentials, secret references or artifact data.",
                 "type": "object",
-                "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+                "additionalProperties": {
+                  "$ref": "session-v1.json#/$defs/JsonValue"
+                }
               },
               "intelligentComponents": {
-                "type": "array", "minItems": 1, "maxItems": 16,
-                "items": { "$ref": "extension-manifest.json#/$defs/UiComponentDeclaration" }
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "items": {
+                  "$ref": "extension-manifest.json#/$defs/UiComponentDeclaration"
+                }
               }
             }
           }
@@ -2611,11 +2666,17 @@
         "publicConfig": {
           "description": "Explicitly public package-authored client configuration. It is a narrow manifest projection, never runtime row config, credentials, secret references or artifact data.",
           "type": "object",
-          "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+          "additionalProperties": {
+            "$ref": "session-v1.json#/$defs/JsonValue"
+          }
         },
         "intelligentComponents": {
-          "type": "array", "minItems": 1, "maxItems": 16,
-          "items": { "$ref": "extension-manifest.json#/$defs/UiComponentDeclaration" }
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "extension-manifest.json#/$defs/UiComponentDeclaration"
+          }
         }
       }
     },
@@ -2720,7 +2781,9 @@
         },
         "input": {
           "type": "object",
-          "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+          "additionalProperties": {
+            "$ref": "session-v1.json#/$defs/JsonValue"
+          }
         }
       }
     },
@@ -2746,7 +2809,11 @@
           "maxLength": 256,
           "pattern": "^web:[^\\x00]{1,251}$"
         },
-        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
         "service": {
           "type": "string",
           "minLength": 1,
@@ -2761,7 +2828,9 @@
         },
         "input": {
           "type": "object",
-          "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+          "additionalProperties": {
+            "$ref": "session-v1.json#/$defs/JsonValue"
+          }
         }
       }
     },
@@ -2775,22 +2844,36 @@
       "additionalProperties": false,
       "required": ["encoding", "canonicalBase64", "digest", "identity"],
       "properties": {
-        "encoding": { "const": "base64" },
+        "encoding": {
+          "const": "base64"
+        },
         "canonicalBase64": {
           "type": "string",
           "minLength": 4,
           "maxLength": 16776788,
           "pattern": "^[A-Za-z0-9+/]+={0,2}$"
         },
-        "digest": { "type": "string", "pattern": "^sha256-[0-9a-f]{64}$" },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256-[0-9a-f]{64}$"
+        },
         "identity": {
           "type": "object",
           "additionalProperties": false,
           "required": ["treeHash", "resourceRevision", "compositeRevision"],
           "properties": {
-            "treeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-            "resourceRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-            "compositeRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            "treeHash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "resourceRevision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "compositeRevision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
           }
         }
       }
@@ -2824,7 +2907,9 @@
           "maxLength": 128,
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
         },
-        "artifact": { "$ref": "#/$defs/PluginTreeArtifact" }
+        "artifact": {
+          "$ref": "#/$defs/PluginTreeArtifact"
+        }
       }
     },
     "PluginTreeRollbackParams": {
@@ -2857,23 +2942,51 @@
       "additionalProperties": false,
       "required": ["actual", "pending"],
       "properties": {
-        "actual": { "type": "boolean" },
-        "pending": { "type": "boolean" },
-        "desiredDigest": { "type": "string", "pattern": "^sha256-[0-9a-f]{64}$" },
-        "reportOk": { "type": "boolean" },
-        "failurePhase": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "workerGeneration": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "actual": {
+          "type": "boolean"
+        },
+        "pending": {
+          "type": "boolean"
+        },
+        "desiredDigest": {
+          "type": "string",
+          "pattern": "^sha256-[0-9a-f]{64}$"
+        },
+        "reportOk": {
+          "type": "boolean"
+        },
+        "failurePhase": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "workerGeneration": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
         "identity": {
           "type": "object",
           "additionalProperties": false,
           "required": ["treeHash", "resourceRevision", "compositeRevision"],
           "properties": {
-            "treeHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-            "resourceRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-            "compositeRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            "treeHash": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "resourceRevision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "compositeRevision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
           }
         },
-        "desired": { "$ref": "#/$defs/PluginTreeArtifact" }
+        "desired": {
+          "$ref": "#/$defs/PluginTreeArtifact"
+        }
       }
     },
     "PluginTreeApplyResult": {
@@ -2881,8 +2994,13 @@
       "additionalProperties": false,
       "required": ["desiredDigest", "pending"],
       "properties": {
-        "desiredDigest": { "type": "string", "pattern": "^sha256-[0-9a-f]{64}$" },
-        "pending": { "type": "boolean" }
+        "desiredDigest": {
+          "type": "string",
+          "pattern": "^sha256-[0-9a-f]{64}$"
+        },
+        "pending": {
+          "type": "boolean"
+        }
       }
     },
     "PluginTreeRollbackResult": {
@@ -2890,8 +3008,13 @@
       "additionalProperties": false,
       "required": ["rolledBack"],
       "properties": {
-        "rolledBack": { "type": "boolean" },
-        "desiredDigest": { "type": "string", "pattern": "^sha256-[0-9a-f]{64}$" }
+        "rolledBack": {
+          "type": "boolean"
+        },
+        "desiredDigest": {
+          "type": "string",
+          "pattern": "^sha256-[0-9a-f]{64}$"
+        }
       }
     },
     "PluginCapabilities": {
@@ -3046,9 +3169,21 @@
           "type": "string",
           "maxLength": 512
         },
-        "feedbackId": { "type": "string", "minLength": 1, "maxLength": 512 },
-        "feedbackRevision": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
-        "messageSeq": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "feedbackId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "feedbackRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "messageSeq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
         "turn": {
           "type": "integer",
           "minimum": 0,

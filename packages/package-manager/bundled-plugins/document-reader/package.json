@@ -22,9 +22,35 @@
         "id": "ext:document-reader/main",
         "inject": [
           "extension"
-        ]
+        ],
+        "metadata": {
+          "displayName": "Attachment reader",
+          "summary": "Reads PDF, Word, image text and ZIP attachments offline.",
+          "description": "Reads PDF, Word, image text and ZIP attachments offline.",
+          "category": "tools",
+          "locales": {
+            "zh-CN": {
+              "displayName": "附件读取",
+              "summary": "离线读取 PDF、Word、图片文字和 ZIP 附件。",
+              "description": "离线读取 PDF、Word、图片文字和 ZIP 附件。"
+            }
+          }
+        }
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Attachment reader",
+      "summary": "Reads PDF, Word, image text and ZIP attachments offline.",
+      "description": "Reads PDF, Word, image text and ZIP attachments offline.",
+      "category": "tools",
+      "locales": {
+        "zh-CN": {
+          "displayName": "附件读取",
+          "summary": "离线读取 PDF、Word、图片文字和 ZIP 附件。",
+          "description": "离线读取 PDF、Word、图片文字和 ZIP 附件。"
+        }
+      }
+    }
   },
   "devDependencies": {
     "@hyzyla/pdfium": "2.1.13",

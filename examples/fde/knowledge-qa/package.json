@@ -57,7 +57,20 @@
           "toolPolicies",
           "skills"
         ],
-        "apiRange": "^1.4.0"
+        "apiRange": "^1.4.0",
+        "metadata": {
+          "displayName": "Knowledge answer example",
+          "summary": "Searches local sample documents and drafts an answer with source citations.",
+          "description": "Searches local sample documents and drafts an answer with source citations.",
+          "category": "memory-context",
+          "locales": {
+            "zh-CN": {
+              "displayName": "知识问答示例",
+              "summary": "检索本地样例文档，并起草带来源引用的回答。",
+              "description": "检索本地样例文档，并起草带来源引用的回答。"
+            }
+          }
+        }
       }
     ],
     "bundles": {
@@ -87,6 +100,19 @@
               }
             }
           }
+        }
+      }
+    },
+    "metadata": {
+      "displayName": "Knowledge answer example",
+      "summary": "Searches local sample documents and drafts an answer with source citations.",
+      "description": "Searches local sample documents and drafts an answer with source citations.",
+      "category": "memory-context",
+      "locales": {
+        "zh-CN": {
+          "displayName": "知识问答示例",
+          "summary": "检索本地样例文档，并起草带来源引用的回答。",
+          "description": "检索本地样例文档，并起草带来源引用的回答。"
         }
       }
     }

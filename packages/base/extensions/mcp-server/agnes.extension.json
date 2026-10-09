@@ -9,5 +9,18 @@
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "MCP connections",
+    "summary": "Connects configured MCP servers and manages their tools, resources and reconnections.",
+    "description": "Connects configured MCP servers and manages their tools, resources and reconnections.",
+    "category": "integrations",
+    "locales": {
+      "zh-CN": {
+        "displayName": "MCP 连接",
+        "summary": "连接已配置的 MCP 服务，管理其工具、资源和断线重连。",
+        "description": "连接已配置的 MCP 服务，管理其工具、资源和断线重连。"
+      }
+    }
   }
 }

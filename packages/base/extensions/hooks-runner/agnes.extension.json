@@ -25,5 +25,18 @@
   },
   "runtime": {
     "supports": ["in-process", "isolated"]
+  },
+  "metadata": {
+    "displayName": "Workflow hooks",
+    "summary": "Runs configured commands or HTTP hooks at selected stages of an agent task.",
+    "description": "Runs configured commands or HTTP hooks at selected stages of an agent task.",
+    "category": "integrations",
+    "locales": {
+      "zh-CN": {
+        "displayName": "工作流钩子",
+        "summary": "在任务的指定阶段执行已配置的命令或 HTTP 钩子。",
+        "description": "在任务的指定阶段执行已配置的命令或 HTTP 钩子。"
+      }
+    }
   }
 }

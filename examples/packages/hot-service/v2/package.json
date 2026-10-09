@@ -14,8 +14,34 @@
         },
         "provide": [
           "demoTextStats"
-        ]
+        ],
+        "metadata": {
+          "displayName": "Upgradable text service",
+          "summary": "Demonstrates upgrading a text-statistics service while earlier sessions retain their version.",
+          "description": "Demonstrates upgrading a text-statistics service while earlier sessions retain their version.",
+          "category": "developer",
+          "locales": {
+            "zh-CN": {
+              "displayName": "可升级文本服务",
+              "summary": "演示升级文本统计服务，同时让较早会话保留原版本。",
+              "description": "演示升级文本统计服务，同时让较早会话保留原版本。"
+            }
+          }
+        }
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Upgradable text service",
+      "summary": "Demonstrates upgrading a text-statistics service while earlier sessions retain their version.",
+      "description": "Demonstrates upgrading a text-statistics service while earlier sessions retain their version.",
+      "category": "developer",
+      "locales": {
+        "zh-CN": {
+          "displayName": "可升级文本服务",
+          "summary": "演示升级文本统计服务，同时让较早会话保留原版本。",
+          "description": "演示升级文本统计服务，同时让较早会话保留原版本。"
+        }
+      }
+    }
   }
 }

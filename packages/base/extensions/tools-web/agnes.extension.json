@@ -4,9 +4,25 @@
   "apiRange": "^1.1",
   "entry": "./src/index.ts",
   "capabilities": {
-    "tools": { "prefix": "", "names": ["web_fetch", "web_search"] },
+    "tools": {
+      "prefix": "",
+      "names": ["web_fetch", "web_search"]
+    },
     "network": [],
     "network.publicRead": true,
     "artifacts": true
+  },
+  "metadata": {
+    "displayName": "Web research",
+    "summary": "Lets the agent search the web and fetch readable page content.",
+    "description": "Lets the agent search the web and fetch readable page content.",
+    "category": "tools",
+    "locales": {
+      "zh-CN": {
+        "displayName": "网页检索",
+        "summary": "让 Agent 搜索网页并获取可读的页面内容。",
+        "description": "让 Agent 搜索网页并获取可读的页面内容。"
+      }
+    }
   }
 }

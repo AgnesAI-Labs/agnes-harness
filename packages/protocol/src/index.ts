@@ -225,6 +225,9 @@ export type {
   ClientContribution,
   UiComponentDeclaration,
   ExtensionManifest,
+  PluginMetadata,
+  PluginMetadataLocale,
+  PluginCategory,
   SkinContribution,
   SkinTokenValue,
 } from '../gen/ts/extension-manifest.js'

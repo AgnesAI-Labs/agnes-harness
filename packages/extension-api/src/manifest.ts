@@ -9,7 +9,13 @@ import { parseSemver } from './api-range.js'
 import { ExtensionError } from './errors.js'
 import { THEME_TOKENS } from './generated/theme-tokens.js'
 
-export type { Capabilities as ExtensionCapabilities, ExtensionManifest } from '@agnes/protocol'
+export type {
+  Capabilities as ExtensionCapabilities,
+  ExtensionManifest,
+  PluginMetadata,
+  PluginMetadataLocale,
+  PluginCategory,
+} from '@agnes/protocol'
 export type { ThemeTokenName } from './generated/theme-tokens.js'
 export { THEME_TOKEN_NAMES } from './generated/theme-tokens.js'
 

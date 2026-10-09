@@ -21,5 +21,18 @@
     },
     "hooks": ["shutdown", "context"],
     "artifacts": true
+  },
+  "metadata": {
+    "displayName": "Background jobs",
+    "summary": "Lets the agent inspect and control background commands and interactive terminals.",
+    "description": "Lets the agent inspect and control background commands and interactive terminals.",
+    "category": "tools",
+    "locales": {
+      "zh-CN": {
+        "displayName": "后台任务",
+        "summary": "让 Agent 查看和控制后台命令及交互终端。",
+        "description": "让 Agent 查看和控制后台命令及交互终端。"
+      }
+    }
   }
 }

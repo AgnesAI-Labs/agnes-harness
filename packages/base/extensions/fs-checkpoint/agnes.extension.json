@@ -9,5 +9,18 @@
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "File checkpoints",
+    "summary": "Saves file checkpoints so supported workspace changes can be inspected and rewound.",
+    "description": "Saves file checkpoints so supported workspace changes can be inspected and rewound.",
+    "category": "safety-approval",
+    "locales": {
+      "zh-CN": {
+        "displayName": "文件检查点",
+        "summary": "保存文件检查点，便于检查和回退受支持的工作区改动。",
+        "description": "保存文件检查点，便于检查和回退受支持的工作区改动。"
+      }
+    }
   }
 }

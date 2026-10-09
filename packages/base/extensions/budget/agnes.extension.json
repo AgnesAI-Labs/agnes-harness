@@ -9,5 +9,18 @@
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "Usage accounting",
+    "summary": "Records model usage and cost estimates to help track a task's spending.",
+    "description": "Records model usage and cost estimates to help track a task's spending.",
+    "category": "observability",
+    "locales": {
+      "zh-CN": {
+        "displayName": "用量记录",
+        "summary": "记录模型用量与费用估算，帮助掌握任务开销。",
+        "description": "记录模型用量与费用估算，帮助掌握任务开销。"
+      }
+    }
   }
 }

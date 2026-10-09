@@ -1,4 +1,4 @@
-import { inspectJsonData, validateAgainst } from '@agnes/protocol'
+import { inspectJsonData, validateAgainst, validatePluginMetadata } from '@agnes/protocol'
 import { PackageCatalogDescriptor } from '@agnes/protocol/gen/package-admin'
 import { PackageError } from './errors.js'
 import { checkCancelled } from './ports.js'
@@ -57,6 +57,8 @@ function validate(raw: unknown, sourceId: string, retrievedAt: string): CatalogS
     const row = { ...value, sourceId, retrievedAt }
     const checked = validateAgainst<PackageCatalogDescriptor>(PackageCatalogDescriptor, row)
     if (!checked.ok) return refuse()
+    if (checked.value.metadata !== undefined && !validatePluginMetadata(checked.value.metadata).ok)
+      return refuse()
     const parsed = parseSource(checked.value.source.ref)
     if (parsed.type !== checked.value.source.type) return refuse()
     const key = `${checked.value.id}@${checked.value.version}`

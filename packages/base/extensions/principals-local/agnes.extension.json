@@ -9,5 +9,18 @@
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "Local machine owner",
+    "summary": "Treats callers as one local machine owner for single-user deployments.",
+    "description": "Treats callers as one local machine owner for single-user deployments.",
+    "category": "safety-approval",
+    "locales": {
+      "zh-CN": {
+        "displayName": "本机所有者",
+        "summary": "在单用户部署中，将调用方统一视为本机所有者。",
+        "description": "在单用户部署中，将调用方统一视为本机所有者。"
+      }
+    }
   }
 }

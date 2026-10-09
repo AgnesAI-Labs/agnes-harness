@@ -9,5 +9,18 @@
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "Approval rules",
+    "summary": "Decides which tool actions need approval under the selected session policy.",
+    "description": "Decides which tool actions need approval under the selected session policy.",
+    "category": "safety-approval",
+    "locales": {
+      "zh-CN": {
+        "displayName": "审批规则",
+        "summary": "按会话策略判断哪些工具操作需要先获得批准。",
+        "description": "按会话策略判断哪些工具操作需要先获得批准。"
+      }
+    }
   }
 }

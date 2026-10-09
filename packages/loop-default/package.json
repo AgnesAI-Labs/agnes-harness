@@ -16,9 +16,35 @@
         ],
         "runtime": "in-process",
         "default": true,
-        "apiRange": "^1.4.0"
+        "apiRange": "^1.4.0",
+        "metadata": {
+          "displayName": "Default Agent Loop",
+          "summary": "Runs the default agent workflow through model calls, tools, approvals and continuation.",
+          "description": "Runs the default agent workflow through model calls, tools, approvals and continuation.",
+          "category": "agent-loop",
+          "locales": {
+            "zh-CN": {
+              "displayName": "默认 Agent Loop",
+              "summary": "通过模型调用、工具、审批与续接执行默认 Agent 工作流。",
+              "description": "通过模型调用、工具、审批与续接执行默认 Agent 工作流。"
+            }
+          }
+        }
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Default Agent Loop",
+      "summary": "Runs the default agent workflow through model calls, tools, approvals and continuation.",
+      "description": "Runs the default agent workflow through model calls, tools, approvals and continuation.",
+      "category": "agent-loop",
+      "locales": {
+        "zh-CN": {
+          "displayName": "默认 Agent Loop",
+          "summary": "通过模型调用、工具、审批与续接执行默认 Agent 工作流。",
+          "description": "通过模型调用、工具、审批与续接执行默认 Agent 工作流。"
+        }
+      }
+    }
   },
   "dependencies": {
     "@agnes/extension-api": "workspace:*",

@@ -7,6 +7,7 @@ import {
   type PackageContributionSummary,
   type PackagePreview,
   validatePackageAdminData,
+  validatePluginMetadata,
   validateSurfacePackageMetadata,
 } from '@agnes/protocol'
 import { normalizeClientContribution, resolveClientAssets } from './client-assets.js'
@@ -151,6 +152,7 @@ export function inspectStaged(input: {
     Object.keys(agnes).some(
       (k) =>
         ![
+          'metadata',
           'extensions',
           'contributions',
           'plugins',
@@ -165,6 +167,9 @@ export function inspectStaged(input: {
   )
     invalid('agnes-metadata')
   const metadata = agnes as Record<string, unknown>
+  const displayMetadata =
+    metadata.metadata === undefined ? undefined : validatePluginMetadata(metadata.metadata)
+  if (displayMetadata && !displayMetadata.ok) invalid('plugin-metadata')
   const bundles = metadata.bundles
   if (
     bundles !== undefined &&
@@ -348,6 +353,7 @@ export function inspectStaged(input: {
       ...(fetched.releasedAt ? { releasedAt: fetched.releasedAt } : {}),
     },
     contributions,
+    ...(displayMetadata?.ok ? { metadata: displayMetadata.value } : {}),
     ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }),
     ...(kinds === undefined ? {} : { kinds }),
     dependencies,

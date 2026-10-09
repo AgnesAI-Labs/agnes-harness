@@ -4,11 +4,27 @@
   "apiRange": "^1.0",
   "entry": "./src/index.ts",
   "capabilities": {
-    "tools": { "prefix": "", "names": ["compact"] },
+    "tools": {
+      "prefix": "",
+      "names": ["compact"]
+    },
     "hooks": [],
     "slots": [],
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "Conversation compaction",
+    "summary": "Lets the agent shorten a long conversation to make room for continuing work.",
+    "description": "Lets the agent shorten a long conversation to make room for continuing work.",
+    "category": "memory-context",
+    "locales": {
+      "zh-CN": {
+        "displayName": "对话压缩",
+        "summary": "让 Agent 压缩过长的对话，为继续处理任务腾出上下文空间。",
+        "description": "让 Agent 压缩过长的对话，为继续处理任务腾出上下文空间。"
+      }
+    }
   }
 }

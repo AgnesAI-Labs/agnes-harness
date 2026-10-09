@@ -38,6 +38,19 @@
         ],
         "config": {
           "prefix": "Echo: "
+        },
+        "metadata": {
+          "displayName": "Tool result panel",
+          "summary": "Demonstrates an echo tool with an interactive result panel.",
+          "description": "Demonstrates an echo tool with an interactive result panel.",
+          "category": "ui",
+          "locales": {
+            "zh-CN": {
+              "displayName": "工具结果面板",
+              "summary": "演示一个回声工具及其交互结果面板。",
+              "description": "演示一个回声工具及其交互结果面板。"
+            }
+          }
         }
       }
     ],
@@ -50,7 +63,20 @@
     "kinds": [
       "tool",
       "ui"
-    ]
+    ],
+    "metadata": {
+      "displayName": "Tool result panel",
+      "summary": "Demonstrates an echo tool with an interactive result panel.",
+      "description": "Demonstrates an echo tool with an interactive result panel.",
+      "category": "ui",
+      "locales": {
+        "zh-CN": {
+          "displayName": "工具结果面板",
+          "summary": "演示一个回声工具及其交互结果面板。",
+          "description": "演示一个回声工具及其交互结果面板。"
+        }
+      }
+    }
   },
   "peerDependencies": {
     "react": "18.3.1"

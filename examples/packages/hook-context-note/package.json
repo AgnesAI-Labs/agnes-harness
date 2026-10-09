@@ -12,8 +12,34 @@
         "id": "ext:agnes-examples/hook-context-note",
         "inject": [
           "extension"
-        ]
+        ],
+        "metadata": {
+          "displayName": "Context hook example",
+          "summary": "Demonstrates adding a context note through a plugin-owned observation hook.",
+          "description": "Demonstrates adding a context note through a plugin-owned observation hook.",
+          "category": "developer",
+          "locales": {
+            "zh-CN": {
+              "displayName": "上下文钩子示例",
+              "summary": "演示通过归属插件的观察钩子加入上下文说明。",
+              "description": "演示通过归属插件的观察钩子加入上下文说明。"
+            }
+          }
+        }
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Context hook example",
+      "summary": "Demonstrates adding a context note through a plugin-owned observation hook.",
+      "description": "Demonstrates adding a context note through a plugin-owned observation hook.",
+      "category": "developer",
+      "locales": {
+        "zh-CN": {
+          "displayName": "上下文钩子示例",
+          "summary": "演示通过归属插件的观察钩子加入上下文说明。",
+          "description": "演示通过归属插件的观察钩子加入上下文说明。"
+        }
+      }
+    }
   }
 }

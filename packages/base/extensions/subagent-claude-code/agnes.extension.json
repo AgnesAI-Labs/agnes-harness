@@ -9,5 +9,18 @@
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "Claude Code child agents",
+    "summary": "Uses a configured Claude Code process to handle delegated coding tasks.",
+    "description": "Uses a configured Claude Code process to handle delegated coding tasks.",
+    "category": "collaboration",
+    "locales": {
+      "zh-CN": {
+        "displayName": "Claude Code 子 Agent",
+        "summary": "使用已配置的 Claude Code 进程处理分派的编程任务。",
+        "description": "使用已配置的 Claude Code 进程处理分派的编程任务。"
+      }
+    }
   }
 }

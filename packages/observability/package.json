@@ -16,5 +16,20 @@
   },
   "scripts": {
     "typecheck": "tsc -b"
+  },
+  "agnes": {
+    "metadata": {
+      "displayName": "Task telemetry",
+      "summary": "Exports configured task telemetry to help operators diagnose execution and usage.",
+      "description": "Exports configured task telemetry to help operators diagnose execution and usage.",
+      "category": "observability",
+      "locales": {
+        "zh-CN": {
+          "displayName": "任务遥测",
+          "summary": "导出已配置的任务遥测，帮助运维人员诊断执行与用量。",
+          "description": "导出已配置的任务遥测，帮助运维人员诊断执行与用量。"
+        }
+      }
+    }
   }
 }

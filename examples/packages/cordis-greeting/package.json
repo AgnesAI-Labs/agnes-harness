@@ -24,9 +24,35 @@
         },
         "provide": [
           "demoGreeting"
-        ]
+        ],
+        "metadata": {
+          "displayName": "Greeting service example",
+          "summary": "Demonstrates a configurable greeting service with automatic cleanup when its plugin unloads.",
+          "description": "Demonstrates a configurable greeting service with automatic cleanup when its plugin unloads.",
+          "category": "developer",
+          "locales": {
+            "zh-CN": {
+              "displayName": "问候服务示例",
+              "summary": "演示可配置的问候服务，以及插件卸载时的自动清理。",
+              "description": "演示可配置的问候服务，以及插件卸载时的自动清理。"
+            }
+          }
+        }
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Greeting service example",
+      "summary": "Demonstrates a configurable greeting service with automatic cleanup when its plugin unloads.",
+      "description": "Demonstrates a configurable greeting service with automatic cleanup when its plugin unloads.",
+      "category": "developer",
+      "locales": {
+        "zh-CN": {
+          "displayName": "问候服务示例",
+          "summary": "演示可配置的问候服务，以及插件卸载时的自动清理。",
+          "description": "演示可配置的问候服务，以及插件卸载时的自动清理。"
+        }
+      }
+    }
   },
   "license": "Apache-2.0"
 }

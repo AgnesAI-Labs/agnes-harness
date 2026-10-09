@@ -11,5 +11,20 @@
   "dependencies": {
     "@agnes/extension-api": "workspace:*"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "agnes": {
+    "metadata": {
+      "displayName": "Docker command sandbox",
+      "summary": "Runs commands in a Docker container and refuses execution when Docker is unavailable.",
+      "description": "Runs commands in a Docker container and refuses execution when Docker is unavailable.",
+      "category": "safety-approval",
+      "locales": {
+        "zh-CN": {
+          "displayName": "Docker 命令沙箱",
+          "summary": "在 Docker 容器中运行命令，并在 Docker 不可用时拒绝执行。",
+          "description": "在 Docker 容器中运行命令，并在 Docker 不可用时拒绝执行。"
+        }
+      }
+    }
+  }
 }

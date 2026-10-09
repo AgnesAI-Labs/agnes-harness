@@ -26,7 +26,20 @@
         "inject": [
           "toolPolicies"
         ],
-        "runtime": "in-process"
+        "runtime": "in-process",
+        "metadata": {
+          "displayName": "Approval rules",
+          "summary": "Decides which tool actions need approval under the selected session policy.",
+          "description": "Decides which tool actions need approval under the selected session policy.",
+          "category": "safety-approval",
+          "locales": {
+            "zh-CN": {
+              "displayName": "审批规则",
+              "summary": "按会话策略判断哪些工具操作需要先获得批准。",
+              "description": "按会话策略判断哪些工具操作需要先获得批准。"
+            }
+          }
+        }
       },
       {
         "id": "observability:otel",
@@ -132,47 +145,164 @@
               }
             }
           }
+        },
+        "metadata": {
+          "displayName": "Task telemetry",
+          "summary": "Exports configured task telemetry to help operators diagnose execution and usage.",
+          "description": "Exports configured task telemetry to help operators diagnose execution and usage.",
+          "category": "observability",
+          "locales": {
+            "zh-CN": {
+              "displayName": "任务遥测",
+              "summary": "导出已配置的任务遥测，帮助运维人员诊断执行与用量。",
+              "description": "导出已配置的任务遥测，帮助运维人员诊断执行与用量。"
+            }
+          }
         }
       },
       {
         "export": "approvalPlugin",
         "apiRange": "^1.4.0",
-        "id": "seam:approval"
+        "id": "seam:approval",
+        "metadata": {
+          "displayName": "Approval rules",
+          "summary": "Decides which tool actions need approval under the selected session policy.",
+          "description": "Decides which tool actions need approval under the selected session policy.",
+          "category": "safety-approval",
+          "locales": {
+            "zh-CN": {
+              "displayName": "审批规则",
+              "summary": "按会话策略判断哪些工具操作需要先获得批准。",
+              "description": "按会话策略判断哪些工具操作需要先获得批准。"
+            }
+          }
+        }
       },
       {
         "export": "principalsPlugin",
         "apiRange": "^1.4.0",
-        "id": "seam:principals"
+        "id": "seam:principals",
+        "metadata": {
+          "displayName": "Local machine owner",
+          "summary": "Treats callers as one local machine owner for single-user deployments.",
+          "description": "Treats callers as one local machine owner for single-user deployments.",
+          "category": "safety-approval",
+          "locales": {
+            "zh-CN": {
+              "displayName": "本机所有者",
+              "summary": "在单用户部署中，将调用方统一视为本机所有者。",
+              "description": "在单用户部署中，将调用方统一视为本机所有者。"
+            }
+          }
+        }
       },
       {
         "export": "artifactsPlugin",
         "apiRange": "^1.4.0",
-        "id": "seam:artifacts"
+        "id": "seam:artifacts",
+        "metadata": {
+          "displayName": "Local artifacts",
+          "summary": "Stores tool outputs and attachments locally so they can be retrieved later.",
+          "description": "Stores tool outputs and attachments locally so they can be retrieved later.",
+          "category": "developer",
+          "locales": {
+            "zh-CN": {
+              "displayName": "本地附件存储",
+              "summary": "在本地保存工具产物和附件，便于之后查看与取回。",
+              "description": "在本地保存工具产物和附件，便于之后查看与取回。"
+            }
+          }
+        }
       },
       {
         "export": "checkpointPlugin",
         "apiRange": "^1.4.0",
-        "id": "seam:checkpoint"
+        "id": "seam:checkpoint",
+        "metadata": {
+          "displayName": "File checkpoints",
+          "summary": "Saves file checkpoints so supported workspace changes can be inspected and rewound.",
+          "description": "Saves file checkpoints so supported workspace changes can be inspected and rewound.",
+          "category": "safety-approval",
+          "locales": {
+            "zh-CN": {
+              "displayName": "文件检查点",
+              "summary": "保存文件检查点，便于检查和回退受支持的工作区改动。",
+              "description": "保存文件检查点，便于检查和回退受支持的工作区改动。"
+            }
+          }
+        }
       },
       {
         "export": "ledgerPlugin",
         "apiRange": "^1.4.0",
-        "id": "seam:ledger"
+        "id": "seam:ledger",
+        "metadata": {
+          "displayName": "Usage accounting",
+          "summary": "Records model usage and cost estimates to help track a task's spending.",
+          "description": "Records model usage and cost estimates to help track a task's spending.",
+          "category": "observability",
+          "locales": {
+            "zh-CN": {
+              "displayName": "用量记录",
+              "summary": "记录模型用量与费用估算，帮助掌握任务开销。",
+              "description": "记录模型用量与费用估算，帮助掌握任务开销。"
+            }
+          }
+        }
       },
       {
         "export": "verifierPlugin",
         "apiRange": "^1.4.0",
-        "id": "seam:verifier"
+        "id": "seam:verifier",
+        "metadata": {
+          "displayName": "Progress checks",
+          "summary": "Detects repeated writes and stalled work, then requests revision or escalation within configured limits.",
+          "description": "Detects repeated writes and stalled work, then requests revision or escalation within configured limits.",
+          "category": "agent-loop",
+          "locales": {
+            "zh-CN": {
+              "displayName": "执行进度检查",
+              "summary": "发现重复写入和停滞的执行，并按配置限制要求修正或升级处理。",
+              "description": "发现重复写入和停滞的执行，并按配置限制要求修正或升级处理。"
+            }
+          }
+        }
       },
       {
         "export": "repairPlugin",
         "apiRange": "^1.4.0",
-        "id": "seam:repair"
+        "id": "seam:repair",
+        "metadata": {
+          "displayName": "Progress checks",
+          "summary": "Detects repeated writes and stalled work, then requests revision or escalation within configured limits.",
+          "description": "Detects repeated writes and stalled work, then requests revision or escalation within configured limits.",
+          "category": "agent-loop",
+          "locales": {
+            "zh-CN": {
+              "displayName": "执行进度检查",
+              "summary": "发现重复写入和停滞的执行，并按配置限制要求修正或升级处理。",
+              "description": "发现重复写入和停滞的执行，并按配置限制要求修正或升级处理。"
+            }
+          }
+        }
       },
       {
         "export": "harnessPlugin",
         "apiRange": "^1.4.0",
-        "id": "seam:harness"
+        "id": "seam:harness",
+        "metadata": {
+          "displayName": "Reviewed improvements",
+          "summary": "Lets the agent propose evidence-backed changes to prompts, memory, Skills and child-agent definitions.",
+          "description": "Lets the agent propose evidence-backed changes to prompts, memory, Skills and child-agent definitions.",
+          "category": "memory-context",
+          "locales": {
+            "zh-CN": {
+              "displayName": "改进提案",
+              "summary": "让 Agent 根据执行证据提出提示、记忆、技能和子 Agent 定义的改进建议。",
+              "description": "让 Agent 根据执行证据提出提示、记忆、技能和子 Agent 定义的改进建议。"
+            }
+          }
+        }
       },
       {
         "export": "defaultLoopPlugin",
@@ -182,7 +312,20 @@
         ],
         "runtime": "in-process",
         "default": true,
-        "apiRange": "^1.4.0"
+        "apiRange": "^1.4.0",
+        "metadata": {
+          "displayName": "Default Agent Loop",
+          "summary": "Runs the default agent workflow through model calls, tools, approvals and continuation.",
+          "description": "Runs the default agent workflow through model calls, tools, approvals and continuation.",
+          "category": "agent-loop",
+          "locales": {
+            "zh-CN": {
+              "displayName": "默认 Agent Loop",
+              "summary": "通过模型调用、工具、审批与续接执行默认 Agent 工作流。",
+              "description": "通过模型调用、工具、审批与续接执行默认 Agent 工作流。"
+            }
+          }
+        }
       },
       {
         "export": "codexChildAgentsPlugin",
@@ -192,7 +335,20 @@
         ],
         "runtime": "in-process",
         "default": false,
-        "apiRange": "^1.4.0"
+        "apiRange": "^1.4.0",
+        "metadata": {
+          "displayName": "Codex child agents",
+          "summary": "Uses a configured Codex process to handle delegated coding tasks.",
+          "description": "Uses a configured Codex process to handle delegated coding tasks.",
+          "category": "collaboration",
+          "locales": {
+            "zh-CN": {
+              "displayName": "Codex 子 Agent",
+              "summary": "使用已配置的 Codex 进程处理分派的编程任务。",
+              "description": "使用已配置的 Codex 进程处理分派的编程任务。"
+            }
+          }
+        }
       },
       {
         "export": "claudeCodeChildAgentsPlugin",
@@ -202,7 +358,20 @@
         ],
         "runtime": "in-process",
         "default": false,
-        "apiRange": "^1.4.0"
+        "apiRange": "^1.4.0",
+        "metadata": {
+          "displayName": "Claude Code child agents",
+          "summary": "Uses a configured Claude Code process to handle delegated coding tasks.",
+          "description": "Uses a configured Claude Code process to handle delegated coding tasks.",
+          "category": "collaboration",
+          "locales": {
+            "zh-CN": {
+              "displayName": "Claude Code 子 Agent",
+              "summary": "使用已配置的 Claude Code 进程处理分派的编程任务。",
+              "description": "使用已配置的 Claude Code 进程处理分派的编程任务。"
+            }
+          }
+        }
       },
       {
         "export": "sdkChildAgentsPlugin",
@@ -212,7 +381,20 @@
         ],
         "runtime": "in-process",
         "default": false,
-        "apiRange": "^1.4.0"
+        "apiRange": "^1.4.0",
+        "metadata": {
+          "displayName": "Built-in child agents",
+          "summary": "Runs delegated tasks in child sessions through AGH's built-in agent engine.",
+          "description": "Runs delegated tasks in child sessions through AGH's built-in agent engine.",
+          "category": "collaboration",
+          "locales": {
+            "zh-CN": {
+              "displayName": "内置子 Agent",
+              "summary": "通过 AGH 内置 Agent 引擎，在子会话中执行分派的任务。",
+              "description": "通过 AGH 内置 Agent 引擎，在子会话中执行分派的任务。"
+            }
+          }
+        }
       },
       {
         "id": "memory:file",
@@ -222,7 +404,20 @@
         ],
         "runtime": "in-process",
         "default": true,
-        "apiRange": "^1.4.0"
+        "apiRange": "^1.4.0",
+        "metadata": {
+          "displayName": "Workspace memory",
+          "summary": "Keeps reviewed workspace preferences in local files for later sessions, with agent access off by default.",
+          "description": "Keeps reviewed workspace preferences in local files for later sessions, with agent access off by default.",
+          "category": "memory-context",
+          "locales": {
+            "zh-CN": {
+              "displayName": "工作区记忆",
+              "summary": "在本地文件中保留经审核的工作区偏好供后续会话使用，默认关闭 Agent 访问。",
+              "description": "在本地文件中保留经审核的工作区偏好供后续会话使用，默认关闭 Agent 访问。"
+            }
+          }
+        }
       },
       {
         "id": "skills:remembering",
@@ -232,7 +427,20 @@
         ],
         "runtime": "in-process",
         "default": true,
-        "apiRange": "^1.4.0"
+        "apiRange": "^1.4.0",
+        "metadata": {
+          "displayName": "Remembering playbook",
+          "summary": "Supplies a reusable playbook for reviewing and recording workspace preferences.",
+          "description": "Supplies a reusable playbook for reviewing and recording workspace preferences.",
+          "category": "memory-context",
+          "locales": {
+            "zh-CN": {
+              "displayName": "偏好记忆手册",
+              "summary": "提供用于审核和记录工作区偏好的可复用操作手册。",
+              "description": "提供用于审核和记录工作区偏好的可复用操作手册。"
+            }
+          }
+        }
       },
       {
         "id": "reference-resolvers:default",
@@ -242,7 +450,20 @@
         ],
         "runtime": "in-process",
         "default": true,
-        "apiRange": "^1.4.0"
+        "apiRange": "^1.4.0",
+        "metadata": {
+          "displayName": "Conversation references",
+          "summary": "Resolves supported file and session references attached to a conversation.",
+          "description": "Resolves supported file and session references attached to a conversation.",
+          "category": "memory-context",
+          "locales": {
+            "zh-CN": {
+              "displayName": "对话引用",
+              "summary": "解析对话中附带的受支持文件与会话引用。",
+              "description": "解析对话中附带的受支持文件与会话引用。"
+            }
+          }
+        }
       }
     ],
     "extensions": [
@@ -271,7 +492,20 @@
       "./extensions/time-context",
       "./extensions/schedule",
       "./extensions/intelligent-ui"
-    ]
+    ],
+    "metadata": {
+      "displayName": "AGH essentials",
+      "summary": "Supplies the default tools and runtime services used by AGH agents.",
+      "description": "Supplies the default tools and runtime services used by AGH agents.",
+      "category": "developer",
+      "locales": {
+        "zh-CN": {
+          "displayName": "AGH 基础能力",
+          "summary": "提供 AGH Agent 使用的默认工具与运行时服务。",
+          "description": "提供 AGH Agent 使用的默认工具与运行时服务。"
+        }
+      }
+    }
   },
   "scripts": {
     "test": "vitest run",

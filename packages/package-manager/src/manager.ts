@@ -579,6 +579,8 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         )
         entry.treeIntegrity = checked.treeIntegrity
         entry.contributions = checked.preview.contributions
+        if (checked.preview.metadata) entry.metadata = checked.preview.metadata
+        else delete entry.metadata
         if (checked.preview.declaredCapabilities !== undefined)
           entry.declaredCapabilities = checked.preview.declaredCapabilities
         const capabilityChanged = current && capabilityHash(current) !== capabilityHash(entry)
@@ -865,6 +867,8 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               current,
             )
             entry.contributions = preview.contributions
+            if (preview.metadata) entry.metadata = preview.metadata
+            else delete entry.metadata
             if (preview.declaredCapabilities !== undefined)
               entry.declaredCapabilities = preview.declaredCapabilities
             else delete entry.declaredCapabilities
@@ -981,6 +985,8 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               undefined,
             )
             entry.contributions = preview.contributions
+            if (preview.metadata) entry.metadata = preview.metadata
+            else delete entry.metadata
             if (preview.declaredCapabilities !== undefined)
               entry.declaredCapabilities = preview.declaredCapabilities
             else delete entry.declaredCapabilities

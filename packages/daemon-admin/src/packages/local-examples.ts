@@ -26,6 +26,7 @@ function helperEntry(helper: (typeof BUNDLED_HELPERS)[number]) {
     integrity: hashDirectory(directory),
     license: pkg.license,
     contributions: [],
+    ...(pkg.agnes?.metadata ? { metadata: pkg.agnes.metadata } : {}),
     compatibility: 'supported' as const,
   }
 }

@@ -64,7 +64,20 @@
           "loops",
           "toolPolicies",
           "skills"
-        ]
+        ],
+        "metadata": {
+          "displayName": "Device inspection simulator",
+          "summary": "Checks simulated device state and prepares a constrained adjustment for human approval, with preview mode on by default.",
+          "description": "Checks simulated device state and prepares a constrained adjustment for human approval, with preview mode on by default.",
+          "category": "integrations",
+          "locales": {
+            "zh-CN": {
+              "displayName": "设备巡检模拟器",
+              "summary": "检查模拟设备状态并准备受限调整供人工批准，默认仅预览。",
+              "description": "检查模拟设备状态并准备受限调整供人工批准，默认仅预览。"
+            }
+          }
+        }
       }
     ],
     "bundles": {
@@ -94,6 +107,19 @@
               }
             }
           }
+        }
+      }
+    },
+    "metadata": {
+      "displayName": "Device inspection simulator",
+      "summary": "Checks simulated device state and prepares a constrained adjustment for human approval, with preview mode on by default.",
+      "description": "Checks simulated device state and prepares a constrained adjustment for human approval, with preview mode on by default.",
+      "category": "integrations",
+      "locales": {
+        "zh-CN": {
+          "displayName": "设备巡检模拟器",
+          "summary": "检查模拟设备状态并准备受限调整供人工批准，默认仅预览。",
+          "description": "检查模拟设备状态并准备受限调整供人工批准，默认仅预览。"
         }
       }
     }

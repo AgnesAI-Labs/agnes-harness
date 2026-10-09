@@ -4,12 +4,28 @@
   "apiRange": "^1.0",
   "entry": "./src/index.ts",
   "capabilities": {
-    "tools": { "prefix": "", "names": ["read", "write", "edit", "shell", "todo"] },
+    "tools": {
+      "prefix": "",
+      "names": ["read", "write", "edit", "shell", "todo"]
+    },
     "hooks": ["shutdown"],
     "slots": [],
     "events": true,
     "resources": [],
     "network": [],
     "artifacts": true
+  },
+  "metadata": {
+    "displayName": "Files and commands",
+    "summary": "Lets the agent read and edit files, run shell commands and maintain a task list.",
+    "description": "Lets the agent read and edit files, run shell commands and maintain a task list.",
+    "category": "tools",
+    "locales": {
+      "zh-CN": {
+        "displayName": "文件与命令",
+        "summary": "让 Agent 读写文件、执行 shell 命令并维护任务清单。",
+        "description": "让 Agent 读写文件、执行 shell 命令并维护任务清单。"
+      }
+    }
   }
 }

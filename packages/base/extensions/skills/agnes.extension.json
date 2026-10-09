@@ -13,5 +13,18 @@
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "Reusable playbooks",
+    "summary": "Lets the agent discover and read reusable Skills and their supporting files.",
+    "description": "Lets the agent discover and read reusable Skills and their supporting files.",
+    "category": "memory-context",
+    "locales": {
+      "zh-CN": {
+        "displayName": "可复用操作手册",
+        "summary": "让 Agent 发现和读取可复用技能及其配套文件。",
+        "description": "让 Agent 发现和读取可复用技能及其配套文件。"
+      }
+    }
   }
 }

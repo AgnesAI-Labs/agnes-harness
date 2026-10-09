@@ -11,5 +11,20 @@
   "dependencies": {
     "@agnes/protocol": "workspace:*",
     "@agnes/sdk": "workspace:*"
+  },
+  "agnes": {
+    "metadata": {
+      "displayName": "Product demonstrations",
+      "summary": "Runs isolated examples of business agents, retained versions and human-reviewed plugin growth.",
+      "description": "Runs isolated examples of business agents, retained versions and human-reviewed plugin growth.",
+      "category": "developer",
+      "locales": {
+        "zh-CN": {
+          "displayName": "产品演示",
+          "summary": "运行隔离的业务 Agent、旧版本保留和人工审核插件成长示例。",
+          "description": "运行隔离的业务 Agent、旧版本保留和人工审核插件成长示例。"
+        }
+      }
+    }
   }
 }

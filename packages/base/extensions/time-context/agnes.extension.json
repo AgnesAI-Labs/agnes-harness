@@ -12,5 +12,18 @@
         "maxStateBytes": 65536
       }
     ]
+  },
+  "metadata": {
+    "displayName": "Current time context",
+    "summary": "Includes the current time and timezone so the agent can interpret time-sensitive requests.",
+    "description": "Includes the current time and timezone so the agent can interpret time-sensitive requests.",
+    "category": "memory-context",
+    "locales": {
+      "zh-CN": {
+        "displayName": "当前时间上下文",
+        "summary": "带入当前时间与时区，帮助 Agent 理解与时间相关的请求。",
+        "description": "带入当前时间与时区，帮助 Agent 理解与时间相关的请求。"
+      }
+    }
   }
 }

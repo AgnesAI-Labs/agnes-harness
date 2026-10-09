@@ -60,7 +60,20 @@
           "loops",
           "toolPolicies",
           "skills"
-        ]
+        ],
+        "metadata": {
+          "displayName": "Operations runbook example",
+          "summary": "Reviews sample incidents, runs bounded diagnostics and requests approval before a simulated remediation.",
+          "description": "Reviews sample incidents, runs bounded diagnostics and requests approval before a simulated remediation.",
+          "category": "tools",
+          "locales": {
+            "zh-CN": {
+              "displayName": "运维手册示例",
+              "summary": "检查样例事件、执行受限诊断，并在模拟修复前请求批准。",
+              "description": "检查样例事件、执行受限诊断，并在模拟修复前请求批准。"
+            }
+          }
+        }
       }
     ],
     "bundles": {
@@ -93,6 +106,19 @@
               }
             }
           }
+        }
+      }
+    },
+    "metadata": {
+      "displayName": "Operations runbook example",
+      "summary": "Reviews sample incidents, runs bounded diagnostics and requests approval before a simulated remediation.",
+      "description": "Reviews sample incidents, runs bounded diagnostics and requests approval before a simulated remediation.",
+      "category": "tools",
+      "locales": {
+        "zh-CN": {
+          "displayName": "运维手册示例",
+          "summary": "检查样例事件、执行受限诊断，并在模拟修复前请求批准。",
+          "description": "检查样例事件、执行受限诊断，并在模拟修复前请求批准。"
         }
       }
     }

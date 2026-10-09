@@ -22,8 +22,34 @@
         "id": "ext:plugin-helper/main",
         "inject": [
           "extension"
-        ]
+        ],
+        "metadata": {
+          "displayName": "Plugin helper",
+          "summary": "Helps create, inspect and install plugins through reviewed requests.",
+          "description": "Helps create, inspect and install plugins through reviewed requests.",
+          "category": "developer",
+          "locales": {
+            "zh-CN": {
+              "displayName": "插件助手",
+              "summary": "通过审核后的请求帮助创建、检查和安装插件。",
+              "description": "通过审核后的请求帮助创建、检查和安装插件。"
+            }
+          }
+        }
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Plugin helper",
+      "summary": "Helps create, inspect and install plugins through reviewed requests.",
+      "description": "Helps create, inspect and install plugins through reviewed requests.",
+      "category": "developer",
+      "locales": {
+        "zh-CN": {
+          "displayName": "插件助手",
+          "summary": "通过审核后的请求帮助创建、检查和安装插件。",
+          "description": "通过审核后的请求帮助创建、检查和安装插件。"
+        }
+      }
+    }
   }
 }

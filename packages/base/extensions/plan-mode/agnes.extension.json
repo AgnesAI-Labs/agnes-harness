@@ -4,11 +4,27 @@
   "apiRange": "^1.0",
   "entry": "./src/index.ts",
   "capabilities": {
-    "tools": { "prefix": "", "names": ["exit_plan_mode"] },
+    "tools": {
+      "prefix": "",
+      "names": ["exit_plan_mode"]
+    },
     "hooks": ["context", "approval_request"],
     "slots": [],
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "Plan approval",
+    "summary": "Lets the agent prepare a plan and request approval before leaving plan mode.",
+    "description": "Lets the agent prepare a plan and request approval before leaving plan mode.",
+    "category": "safety-approval",
+    "locales": {
+      "zh-CN": {
+        "displayName": "计划审批",
+        "summary": "让 Agent 先制定计划，并在退出计划模式前请求批准。",
+        "description": "让 Agent 先制定计划，并在退出计划模式前请求批准。"
+      }
+    }
   }
 }

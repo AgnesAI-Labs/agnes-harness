@@ -58,7 +58,20 @@
           "toolPolicies",
           "skills"
         ],
-        "apiRange": "^1.4.0"
+        "apiRange": "^1.4.0",
+        "metadata": {
+          "displayName": "Ledger reconciliation example",
+          "summary": "Compares sample bank and book ledgers, then prepares balanced simulated adjustments for approval.",
+          "description": "Compares sample bank and book ledgers, then prepares balanced simulated adjustments for approval.",
+          "category": "tools",
+          "locales": {
+            "zh-CN": {
+              "displayName": "账目核对示例",
+              "summary": "核对样例银行账与账簿，准备平衡的模拟调整分录供批准。",
+              "description": "核对样例银行账与账簿，准备平衡的模拟调整分录供批准。"
+            }
+          }
+        }
       }
     ],
     "bundles": {
@@ -96,7 +109,20 @@
         "rowId": "ext:@agnes-fde/finance-reconcile/main",
         "path": "./client/agnes.client.json"
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Ledger reconciliation example",
+      "summary": "Compares sample bank and book ledgers, then prepares balanced simulated adjustments for approval.",
+      "description": "Compares sample bank and book ledgers, then prepares balanced simulated adjustments for approval.",
+      "category": "tools",
+      "locales": {
+        "zh-CN": {
+          "displayName": "账目核对示例",
+          "summary": "核对样例银行账与账簿，准备平衡的模拟调整分录供批准。",
+          "description": "核对样例银行账与账簿，准备平衡的模拟调整分录供批准。"
+        }
+      }
+    }
   },
   "devDependencies": {
     "@agnes/host": "0.0.0",

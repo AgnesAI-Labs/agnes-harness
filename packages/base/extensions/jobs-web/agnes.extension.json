@@ -118,5 +118,18 @@
       }
     ],
     "hooks": ["shutdown"]
+  },
+  "metadata": {
+    "displayName": "Jobs and terminal controls",
+    "summary": "Connects Web job and terminal controls to the session's background processes.",
+    "description": "Connects Web job and terminal controls to the session's background processes.",
+    "category": "ui",
+    "locales": {
+      "zh-CN": {
+        "displayName": "任务与终端控制",
+        "summary": "把 Web 中的任务与终端控件连接到会话的后台进程。",
+        "description": "把 Web 中的任务与终端控件连接到会话的后台进程。"
+      }
+    }
   }
 }

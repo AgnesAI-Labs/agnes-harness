@@ -9,5 +9,18 @@
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "Built-in child agents",
+    "summary": "Runs delegated tasks in child sessions through AGH's built-in agent engine.",
+    "description": "Runs delegated tasks in child sessions through AGH's built-in agent engine.",
+    "category": "collaboration",
+    "locales": {
+      "zh-CN": {
+        "displayName": "内置子 Agent",
+        "summary": "通过 AGH 内置 Agent 引擎，在子会话中执行分派的任务。",
+        "description": "通过 AGH 内置 Agent 引擎，在子会话中执行分派的任务。"
+      }
+    }
   }
 }

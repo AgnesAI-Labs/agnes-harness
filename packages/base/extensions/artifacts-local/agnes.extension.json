@@ -9,5 +9,18 @@
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "Local artifacts",
+    "summary": "Stores tool outputs and attachments locally so they can be retrieved later.",
+    "description": "Stores tool outputs and attachments locally so they can be retrieved later.",
+    "category": "developer",
+    "locales": {
+      "zh-CN": {
+        "displayName": "本地附件存储",
+        "summary": "在本地保存工具产物和附件，便于之后查看与取回。",
+        "description": "在本地保存工具产物和附件，便于之后查看与取回。"
+      }
+    }
   }
 }

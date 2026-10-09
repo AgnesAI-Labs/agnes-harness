@@ -20,5 +20,18 @@
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "Plugin drafting",
+    "summary": "Helps the agent draft and test plugins, then submit them for review and installation.",
+    "description": "Helps the agent draft and test plugins, then submit them for review and installation.",
+    "category": "developer",
+    "locales": {
+      "zh-CN": {
+        "displayName": "插件编写",
+        "summary": "帮助 Agent 编写、测试插件，并提交审核与安装。",
+        "description": "帮助 Agent 编写、测试插件，并提交审核与安装。"
+      }
+    }
   }
 }

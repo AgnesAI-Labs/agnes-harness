@@ -37,12 +37,38 @@
         "id": "ext:@community/mcp-skills/main",
         "inject": [
           "skills"
-        ]
+        ],
+        "metadata": {
+          "displayName": "MCP and Skills example",
+          "summary": "Demonstrates a local MCP tool and reference resource used with a packaged Skill.",
+          "description": "Demonstrates a local MCP tool and reference resource used with a packaged Skill.",
+          "category": "integrations",
+          "locales": {
+            "zh-CN": {
+              "displayName": "MCP 与技能示例",
+              "summary": "演示本地 MCP 工具和参考资源如何与随包技能配合使用。",
+              "description": "演示本地 MCP 工具和参考资源如何与随包技能配合使用。"
+            }
+          }
+        }
       }
     ],
     "kinds": [
       "mcp",
       "skills"
-    ]
+    ],
+    "metadata": {
+      "displayName": "MCP and Skills example",
+      "summary": "Demonstrates a local MCP tool and reference resource used with a packaged Skill.",
+      "description": "Demonstrates a local MCP tool and reference resource used with a packaged Skill.",
+      "category": "integrations",
+      "locales": {
+        "zh-CN": {
+          "displayName": "MCP 与技能示例",
+          "summary": "演示本地 MCP 工具和参考资源如何与随包技能配合使用。",
+          "description": "演示本地 MCP 工具和参考资源如何与随包技能配合使用。"
+        }
+      }
+    }
   }
 }

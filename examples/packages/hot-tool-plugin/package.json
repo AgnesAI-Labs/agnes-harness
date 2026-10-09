@@ -12,8 +12,34 @@
         "id": "ext:agnes-examples/hot-tool-plugin",
         "inject": [
           "extension"
-        ]
+        ],
+        "metadata": {
+          "displayName": "Text statistics tool",
+          "summary": "Adds a sample text-statistics tool to demonstrate plugin installation and lifecycle.",
+          "description": "Adds a sample text-statistics tool to demonstrate plugin installation and lifecycle.",
+          "category": "tools",
+          "locales": {
+            "zh-CN": {
+              "displayName": "文本统计工具",
+              "summary": "加入样例文本统计工具，用于演示插件安装与生命周期。",
+              "description": "加入样例文本统计工具，用于演示插件安装与生命周期。"
+            }
+          }
+        }
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Text statistics tool",
+      "summary": "Adds a sample text-statistics tool to demonstrate plugin installation and lifecycle.",
+      "description": "Adds a sample text-statistics tool to demonstrate plugin installation and lifecycle.",
+      "category": "tools",
+      "locales": {
+        "zh-CN": {
+          "displayName": "文本统计工具",
+          "summary": "加入样例文本统计工具，用于演示插件安装与生命周期。",
+          "description": "加入样例文本统计工具，用于演示插件安装与生命周期。"
+        }
+      }
+    }
   }
 }

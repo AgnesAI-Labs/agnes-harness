@@ -3,6 +3,8 @@ import { lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, wr
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   type PackageBlocker,
+  type PluginMetadata,
+  validatePluginMetadata,
   type PackageContributionSummary,
   validatePackageAdminData,
 } from '@agnes/protocol'
@@ -43,6 +45,7 @@ export type RuntimeSnapshot = Readonly<{
   treeIntegrity: string
   capabilityHash: string
   directory: string
+  metadata?: PluginMetadata
   contributions: readonly PackageContributionSummary[]
 }>
 
@@ -80,6 +83,7 @@ type SnapshotRecord = {
   license: string
   releasedAt: string | null
   dependencies: Record<string, string>
+  metadata?: PluginMetadata
   contributions: PackageContributionSummary[]
   declaredCapabilities?: NonNullable<LockEntry['declaredCapabilities']>
 }
@@ -174,10 +178,12 @@ function validateRecord(raw: unknown): SnapshotRecord {
       'releasedAt',
       'dependencies',
       'contributions',
+      ...(value.metadata === undefined ? [] : ['metadata']),
       ...(value.declaredCapabilities === undefined ? [] : ['declaredCapabilities']),
     ]) ||
     (value.declaredCapabilities !== undefined &&
       !validatePackageAdminData('PluginCapabilities', value.declaredCapabilities).ok) ||
+    (value.metadata !== undefined && !validatePluginMetadata(value.metadata).ok) ||
     value.version !== 1 ||
     typeof value.snapshotId !== 'string' ||
     !SHA256.test(value.snapshotId) ||
@@ -318,6 +324,7 @@ function recordFromEntry(packageId: string, entry: LockEntry): SnapshotRecord {
     releasedAt: entry.releasedAt ?? null,
     dependencies: structuredClone(entry.dependencies),
     contributions: structuredClone(entry.contributions),
+    ...(entry.metadata ? { metadata: structuredClone(entry.metadata) } : {}),
     ...(entry.declaredCapabilities === undefined
       ? {}
       : { declaredCapabilities: structuredClone(entry.declaredCapabilities) }),
@@ -365,6 +372,7 @@ function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory
     capabilityHash: checkedRecord.capabilityHash,
     directory: actual,
     contributions: structuredClone(checkedRecord.contributions),
+    ...(checkedRecord.metadata ? { metadata: structuredClone(checkedRecord.metadata) } : {}),
   })
 }
 function contributionCeiling(record: SnapshotRecord): string[] {
@@ -385,6 +393,7 @@ function recordEntry(record: SnapshotRecord): LockEntry {
     dependencies: structuredClone(record.dependencies),
     previous: null,
     contributions: structuredClone(record.contributions),
+    ...(record.metadata ? { metadata: structuredClone(record.metadata) } : {}),
     ...(record.declaredCapabilities === undefined
       ? {}
       : { declaredCapabilities: structuredClone(record.declaredCapabilities) }),

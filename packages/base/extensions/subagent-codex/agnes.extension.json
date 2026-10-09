@@ -9,5 +9,18 @@
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "Codex child agents",
+    "summary": "Uses a configured Codex process to handle delegated coding tasks.",
+    "description": "Uses a configured Codex process to handle delegated coding tasks.",
+    "category": "collaboration",
+    "locales": {
+      "zh-CN": {
+        "displayName": "Codex 子 Agent",
+        "summary": "使用已配置的 Codex 进程处理分派的编程任务。",
+        "description": "使用已配置的 Codex 进程处理分派的编程任务。"
+      }
+    }
   }
 }

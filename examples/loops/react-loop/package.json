@@ -17,8 +17,34 @@
         "default": true,
         "inject": [
           "loops"
-        ]
+        ],
+        "metadata": {
+          "displayName": "Reasoning and tools Loop",
+          "summary": "Alternates model reasoning and tool calls to carry a task through successive steps.",
+          "description": "Alternates model reasoning and tool calls to carry a task through successive steps.",
+          "category": "agent-loop",
+          "locales": {
+            "zh-CN": {
+              "displayName": "推理与工具 Loop",
+              "summary": "交替执行模型推理与工具调用，逐步推进任务。",
+              "description": "交替执行模型推理与工具调用，逐步推进任务。"
+            }
+          }
+        }
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Reasoning and tools Loop",
+      "summary": "Alternates model reasoning and tool calls to carry a task through successive steps.",
+      "description": "Alternates model reasoning and tool calls to carry a task through successive steps.",
+      "category": "agent-loop",
+      "locales": {
+        "zh-CN": {
+          "displayName": "推理与工具 Loop",
+          "summary": "交替执行模型推理与工具调用，逐步推进任务。",
+          "description": "交替执行模型推理与工具调用，逐步推进任务。"
+        }
+      }
+    }
   }
 }

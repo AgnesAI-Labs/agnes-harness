@@ -4,12 +4,28 @@
   "apiRange": "^1.0",
   "entry": "./src/index.ts",
   "capabilities": {
-    "tools": { "prefix": "", "names": ["grep", "find", "ls"] },
+    "tools": {
+      "prefix": "",
+      "names": ["grep", "find", "ls"]
+    },
     "hooks": [],
     "slots": [],
     "events": false,
     "resources": [],
     "network": [],
     "artifacts": true
+  },
+  "metadata": {
+    "displayName": "Project file search",
+    "summary": "Lets the agent find project files and search their contents.",
+    "description": "Lets the agent find project files and search their contents.",
+    "category": "tools",
+    "locales": {
+      "zh-CN": {
+        "displayName": "项目文件搜索",
+        "summary": "让 Agent 查找项目文件并检索文件内容。",
+        "description": "让 Agent 查找项目文件并检索文件内容。"
+      }
+    }
   }
 }

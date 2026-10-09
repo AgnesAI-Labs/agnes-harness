@@ -13,5 +13,18 @@
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "MCP reference materials",
+    "summary": "Lets the agent list and read reference materials supplied by connected MCP servers.",
+    "description": "Lets the agent list and read reference materials supplied by connected MCP servers.",
+    "category": "integrations",
+    "locales": {
+      "zh-CN": {
+        "displayName": "MCP 参考资料",
+        "summary": "让 Agent 列出和读取已连接 MCP 服务提供的参考资料。",
+        "description": "让 Agent 列出和读取已连接 MCP 服务提供的参考资料。"
+      }
+    }
   }
 }

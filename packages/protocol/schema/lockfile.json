@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agnes.ai/schema/lockfile.json",
-  "title": "agnes-lock.json (\u89c4\u683c \u00a718.2.1)",
+  "title": "agnes-lock.json (规格 §18.2.1)",
   "$ref": "#/$defs/Lockfile",
   "$defs": {
     "PackageLock": {
@@ -213,6 +213,9 @@
                     },
                     "provenance": {
                       "$ref": "package-admin.json#/$defs/PackageProvenance"
+                    },
+                    "metadata": {
+                      "$ref": "extension-manifest.json#/$defs/PluginMetadata"
                     }
                   }
                 }
@@ -247,6 +250,9 @@
             },
             "provenance": {
               "$ref": "package-admin.json#/$defs/PackageProvenance"
+            },
+            "metadata": {
+              "$ref": "extension-manifest.json#/$defs/PluginMetadata"
             }
           }
         },
@@ -456,6 +462,9 @@
                     },
                     "provenance": {
                       "$ref": "package-admin.json#/$defs/PackageProvenance"
+                    },
+                    "metadata": {
+                      "$ref": "extension-manifest.json#/$defs/PluginMetadata"
                     }
                   }
                 }
@@ -490,6 +499,9 @@
             },
             "provenance": {
               "$ref": "package-admin.json#/$defs/PackageProvenance"
+            },
+            "metadata": {
+              "$ref": "extension-manifest.json#/$defs/PluginMetadata"
             }
           }
         }

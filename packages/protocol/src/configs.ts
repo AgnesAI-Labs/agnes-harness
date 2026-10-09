@@ -12,6 +12,33 @@ import { inspectJsonData } from './json-data.js'
 import { validateSurfacePackageMetadata } from './surfaces.js'
 import { type ValidationResult, validateAgainst } from './validate.js'
 
+/** Author-owned display text. The byte budget applies to each complete metadata block. */
+export function validatePluginMetadata(x: unknown): ValidationResult<EXTENSION_MANIFEST.PluginMetadata> {
+  const json = inspectJsonData(x, 24 * 1024)
+  if (!json.ok)
+    return {
+      ok: false,
+      errors: [{ path: '', code: 'OTHER', message: 'Plugin metadata must be bounded JSON data.' }],
+    }
+  return validateAgainst<EXTENSION_MANIFEST.PluginMetadata>(EXTENSION_MANIFEST.PluginMetadata, json.value)
+}
+
+/** Field-by-field locale fallback for author text; never infer a description from an ID. */
+export function resolvePluginMetadata(
+  metadata: EXTENSION_MANIFEST.PluginMetadata | undefined,
+  locale: 'en' | 'zh-CN',
+) {
+  if (!metadata) return undefined
+  const localized = metadata.locales?.[locale]
+  return {
+    displayName: localized?.displayName ?? metadata.displayName,
+    summary: localized?.summary ?? metadata.summary,
+    description: localized?.description ?? metadata.description,
+    category: metadata.category,
+    docsUrl: localized?.docsUrl ?? metadata.docsUrl,
+  }
+}
+
 /** Validate a document without merging inheritance or injecting consumer defaults. */
 export const validatePreset = (x: unknown): ValidationResult<P.PresetDoc> =>
   validateAgainst<P.PresetDoc>(P.PresetDoc, x)
@@ -33,6 +60,10 @@ export const validateLockfile = (x: unknown): ValidationResult<LOCKFILE.Lockfile
   if (!result.ok) return result
   for (const entry of Object.values(result.value.packages)) {
     for (const snapshot of [entry, entry.previous]) {
+      if (snapshot?.metadata !== undefined) {
+        const metadata = validatePluginMetadata(snapshot.metadata)
+        if (!metadata.ok) return metadata
+      }
       if (!snapshot?.surfaces) continue
       const checked = validateSurfacePackageMetadata({ surfaces: snapshot.surfaces })
       if (!checked.ok) return checked
@@ -49,6 +80,10 @@ export const validateExtensionManifest = (
     x,
   )
   if (!checked.ok) return checked
+  if (checked.value.metadata !== undefined) {
+    const metadata = validatePluginMetadata(checked.value.metadata)
+    if (!metadata.ok) return metadata
+  }
   for (const kind of ['services', 'projections'] as const) {
     const names = new Set<string>()
     for (const [index, projection] of (checked.value.capabilities[kind] ?? []).entries()) {

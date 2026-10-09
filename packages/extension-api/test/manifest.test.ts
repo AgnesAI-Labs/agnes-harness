@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { checkManifest, extEventType, isExtensionError, RESOURCE_KINDS } from '../src/index.js'
 
+const purpose = {
+  displayName: 'File search',
+  summary: 'Find project text.',
+  description: 'Find text in readable project files.',
+  category: 'tools' as const,
+  locales: { 'zh-CN': { displayName: '文件搜索', summary: '检索项目文本。' } },
+}
+
 const manifest = {
   id: 'agnes/example',
   version: '1.2.0',
@@ -29,6 +37,26 @@ describe('author manifest validation', () => {
     expect(Object.isFrozen(RESOURCE_KINDS)).toBe(true)
     expect(checkManifest({ ...manifest, capabilities: { network: [] } }).ok).toBe(true)
   })
+  it('accepts optional localized purpose and rejects unsafe or unbounded author text', () => {
+    expect(checkManifest({ ...manifest, metadata: purpose }).ok).toBe(true)
+    expect(checkManifest({ ...manifest, metadata: { ...purpose, displayName: '😀'.repeat(80) } }).ok).toBe(
+      true,
+    )
+    for (const metadata of [
+      { ...purpose, displayName: '😀'.repeat(81) },
+      { ...purpose, summary: ' x' },
+      { ...purpose, summary: 'line\nline' },
+      { ...purpose, description: 'x\u2028y' },
+      { ...purpose, summary: 'x'.repeat(241) },
+      { ...purpose, category: 'invented' },
+      { ...purpose, docsUrl: 'javascript:alert(1)' },
+      { ...purpose, docsUrl: 'https://user:pass@example.org/' },
+      { ...purpose, locales: { fr: { summary: 'Texte' } } },
+      { ...purpose, extra: true },
+    ])
+      expect(checkManifest({ ...manifest, metadata }).ok).toBe(false)
+  })
+
   it('rejects malformed capability values without throwing', () => {
     for (const capabilities of [
       null,

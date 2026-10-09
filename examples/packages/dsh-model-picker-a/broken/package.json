@@ -10,7 +10,20 @@
         "export": "main",
         "apiRange": "^1.4.0",
         "id": "ext:examples/dsh-model-picker-a/main",
-        "runtime": "in-process"
+        "runtime": "in-process",
+        "metadata": {
+          "displayName": "Primary model entry example (failure fixture)",
+          "summary": "Deliberately fails primary model entry example validation or loading to demonstrate refusal and recovery.",
+          "description": "Deliberately fails primary model entry example validation or loading to demonstrate refusal and recovery.",
+          "category": "ui",
+          "locales": {
+            "zh-CN": {
+              "displayName": "主模型入口示例（失败测试包）",
+              "summary": "故意使主模型入口示例的校验或加载失败，用于演示拒绝和恢复。",
+              "description": "故意使主模型入口示例的校验或加载失败，用于演示拒绝和恢复。"
+            }
+          }
+        }
       }
     ],
     "clientDescriptors": [
@@ -18,7 +31,20 @@
         "rowId": "ext:examples/dsh-model-picker-a/main",
         "path": "./extensions/main/agnes.client.json"
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Primary model entry example (failure fixture)",
+      "summary": "Deliberately fails primary model entry example validation or loading to demonstrate refusal and recovery.",
+      "description": "Deliberately fails primary model entry example validation or loading to demonstrate refusal and recovery.",
+      "category": "ui",
+      "locales": {
+        "zh-CN": {
+          "displayName": "主模型入口示例（失败测试包）",
+          "summary": "故意使主模型入口示例的校验或加载失败，用于演示拒绝和恢复。",
+          "description": "故意使主模型入口示例的校验或加载失败，用于演示拒绝和恢复。"
+        }
+      }
+    }
   },
   "exports": "./index.mjs"
 }

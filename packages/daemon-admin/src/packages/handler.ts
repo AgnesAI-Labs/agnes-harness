@@ -348,6 +348,7 @@ function projectPackage(
         }
       : null,
     contributions: structuredClone([...row.contributions]),
+    ...(row.entry.metadata ? { metadata: structuredClone(row.entry.metadata) } : {}),
     blockers: safeBlockers(row.blockers),
     ...(row.localFailure || observation.actual === 'failed' || row.blockers.length
       ? {
@@ -397,6 +398,7 @@ function projectCatalogDescriptor(value: unknown): PackageCatalogDescriptor {
     ...entry,
     source: projectSource(entry.source),
     contributions: structuredClone(entry.contributions),
+    ...(entry.metadata ? { metadata: structuredClone(entry.metadata) } : {}),
   }
   if (!validatePackageAdminData('PackageCatalogDescriptor', projected).ok)
     throw rpcError('SEMANTIC_REJECTED', { reason: 'E_PACKAGE_STATE' })

@@ -9,5 +9,18 @@
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "Execution boundaries",
+    "summary": "Supplies the default policy for checking command execution against configured isolation boundaries.",
+    "description": "Supplies the default policy for checking command execution against configured isolation boundaries.",
+    "category": "safety-approval",
+    "locales": {
+      "zh-CN": {
+        "displayName": "执行边界",
+        "summary": "提供默认策略，按配置的隔离边界检查命令执行。",
+        "description": "提供默认策略，按配置的隔离边界检查命令执行。"
+      }
+    }
   }
 }

@@ -34,8 +34,34 @@
         ],
         "config": {
           "keepTurns": 4
+        },
+        "metadata": {
+          "displayName": "Recent conversation window",
+          "summary": "Keeps recent turns and pinned context while dropping older context without a model call.",
+          "description": "Keeps recent turns and pinned context while dropping older context without a model call.",
+          "category": "memory-context",
+          "locales": {
+            "zh-CN": {
+              "displayName": "近期对话窗口",
+              "summary": "保留近期对话与固定上下文，无需调用模型即可移除较早的上下文。",
+              "description": "保留近期对话与固定上下文，无需调用模型即可移除较早的上下文。"
+            }
+          }
         }
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Recent conversation window",
+      "summary": "Keeps recent turns and pinned context while dropping older context without a model call.",
+      "description": "Keeps recent turns and pinned context while dropping older context without a model call.",
+      "category": "memory-context",
+      "locales": {
+        "zh-CN": {
+          "displayName": "近期对话窗口",
+          "summary": "保留近期对话与固定上下文，无需调用模型即可移除较早的上下文。",
+          "description": "保留近期对话与固定上下文，无需调用模型即可移除较早的上下文。"
+        }
+      }
+    }
   }
 }

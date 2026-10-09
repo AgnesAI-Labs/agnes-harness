@@ -59,7 +59,20 @@
           "loops",
           "toolPolicies",
           "skills"
-        ]
+        ],
+        "metadata": {
+          "displayName": "Support triage example",
+          "summary": "Classifies sample support tickets and requests approval before recording a simulated reply.",
+          "description": "Classifies sample support tickets and requests approval before recording a simulated reply.",
+          "category": "agent-loop",
+          "locales": {
+            "zh-CN": {
+              "displayName": "客服分流示例",
+              "summary": "对样例客服工单分类，并在记录模拟回复前请求批准。",
+              "description": "对样例客服工单分类，并在记录模拟回复前请求批准。"
+            }
+          }
+        }
       }
     ],
     "bundles": {
@@ -97,7 +110,20 @@
         "rowId": "ext:@agnes-fde/support-triage/main",
         "path": "./client/agnes.client.json"
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Support triage example",
+      "summary": "Classifies sample support tickets and requests approval before recording a simulated reply.",
+      "description": "Classifies sample support tickets and requests approval before recording a simulated reply.",
+      "category": "agent-loop",
+      "locales": {
+        "zh-CN": {
+          "displayName": "客服分流示例",
+          "summary": "对样例客服工单分类，并在记录模拟回复前请求批准。",
+          "description": "对样例客服工单分类，并在记录模拟回复前请求批准。"
+        }
+      }
+    }
   },
   "peerDependencies": {
     "react": "18.3.1"

@@ -49,6 +49,19 @@
           }
         }
       }
+    },
+    "metadata": {
+      "displayName": "Research bundle",
+      "summary": "Demonstrates a read-only research agent assembled from a task graph and profile presets.",
+      "description": "Demonstrates a read-only research agent assembled from a task graph and profile presets.",
+      "category": "agent-loop",
+      "locales": {
+        "zh-CN": {
+          "displayName": "研究组合包",
+          "summary": "演示如何用任务图和配置预设组合一个只读研究 Agent。",
+          "description": "演示如何用任务图和配置预设组合一个只读研究 Agent。"
+        }
+      }
     }
   }
 }

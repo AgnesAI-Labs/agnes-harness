@@ -23,7 +23,20 @@
             }
           }
         },
-        "configReload": "live"
+        "configReload": "live",
+        "metadata": {
+          "displayName": "Echo service example",
+          "summary": "Demonstrates a configurable echo service in both in-process and isolated plugin rows.",
+          "description": "Demonstrates a configurable echo service in both in-process and isolated plugin rows.",
+          "category": "developer",
+          "locales": {
+            "zh-CN": {
+              "displayName": "回声服务示例",
+              "summary": "演示在进程内与隔离插件行中运行可配置的回声服务。",
+              "description": "演示在进程内与隔离插件行中运行可配置的回声服务。"
+            }
+          }
+        }
       },
       {
         "export": "echo",
@@ -42,9 +55,35 @@
             }
           }
         },
-        "configReload": "live"
+        "configReload": "live",
+        "metadata": {
+          "displayName": "Echo service example",
+          "summary": "Demonstrates a configurable echo service in both in-process and isolated plugin rows.",
+          "description": "Demonstrates a configurable echo service in both in-process and isolated plugin rows.",
+          "category": "developer",
+          "locales": {
+            "zh-CN": {
+              "displayName": "回声服务示例",
+              "summary": "演示在进程内与隔离插件行中运行可配置的回声服务。",
+              "description": "演示在进程内与隔离插件行中运行可配置的回声服务。"
+            }
+          }
+        }
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Echo service example",
+      "summary": "Demonstrates a configurable echo service in both in-process and isolated plugin rows.",
+      "description": "Demonstrates a configurable echo service in both in-process and isolated plugin rows.",
+      "category": "developer",
+      "locales": {
+        "zh-CN": {
+          "displayName": "回声服务示例",
+          "summary": "演示在进程内与隔离插件行中运行可配置的回声服务。",
+          "description": "演示在进程内与隔离插件行中运行可配置的回声服务。"
+        }
+      }
+    }
   },
   "license": "Apache-2.0"
 }

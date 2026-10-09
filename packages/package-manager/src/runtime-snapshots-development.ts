@@ -40,6 +40,7 @@ export function readDevelopmentPlugin(directory: string, profile: string): Runti
       version: preview.version,
       capabilityHash: preview.capabilityHash,
       contributions: preview.contributions,
+      ...(preview.metadata ? { metadata: preview.metadata } : {}),
     },
   }
 }

@@ -12,5 +12,18 @@
         "maxStateBytes": 65536
       }
     ]
+  },
+  "metadata": {
+    "displayName": "Workspace instructions",
+    "summary": "Includes relevant workspace instructions when the agent works with project files.",
+    "description": "Includes relevant workspace instructions when the agent works with project files.",
+    "category": "memory-context",
+    "locales": {
+      "zh-CN": {
+        "displayName": "工作区规则",
+        "summary": "在 Agent 处理项目文件时带入相关工作区规则。",
+        "description": "在 Agent 处理项目文件时带入相关工作区规则。"
+      }
+    }
   }
 }

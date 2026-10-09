@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { parseAgnesPluginEntries, parseAgnesPluginKinds } from '../src/plugin-manifest.js'
 
+const purpose = {
+  displayName: 'File search',
+  summary: 'Find project text.',
+  description: 'Find text in readable project files.',
+  category: 'tools' as const,
+  locales: { 'zh-CN': { displayName: '文件搜索', summary: '检索项目文本。' } },
+}
+
 describe('package.json agnes.plugins', () => {
   it('normalizes the author shape with a required contract range and freezes the result', () => {
     const entries = parseAgnesPluginEntries('@acme/example', [
@@ -63,6 +71,20 @@ describe('package.json agnes.plugins', () => {
     [[{ apiRange: '^1.4.0', export: 'main', id: '../escape' }], 'id'],
   ])('rejects invalid input %j', (value, message) => {
     expect(() => parseAgnesPluginEntries('@acme/example', value)).toThrow(message)
+  })
+
+  it('preserves localized row purpose in a frozen independent author snapshot', () => {
+    const [row] = parseAgnesPluginEntries('@acme/example', [
+      { export: 'main', apiRange: '^1.4.0', metadata: purpose },
+    ])
+    expect(row?.metadata).toEqual(purpose)
+    expect(row?.metadata).not.toBe(purpose)
+    expect(Object.isFrozen(row?.metadata?.locales?.['zh-CN'])).toBe(true)
+    expect(() =>
+      parseAgnesPluginEntries('@acme/example', [
+        { export: 'main', apiRange: '^1.4.0', metadata: { ...purpose, category: 'invented' } },
+      ]),
+    ).toThrow('metadata')
   })
 
   it('rejects duplicate normalized ids', () => {

@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
-import type { PackageBlocker, PackageContributionSummary } from '@agnes/protocol'
+import { join, resolve } from 'node:path'
+import { type PackageBlocker, type PackageContributionSummary, validatePluginMetadata } from '@agnes/protocol'
 import { PackageError } from './errors.js'
 import { inspectStaged } from './inspect.js'
-import { canonical, capabilityHash, freezeData, snapshotHash } from './integrity.js'
+import { canonical, capabilityHash, freezeData, readStaticJson, snapshotHash } from './integrity.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
 import { capabilityPolicyBlockers, readPluginCapabilityPolicy } from './plugin-capabilities.js'
 import type { AgnesPluginKind } from './plugin-manifest.js'
@@ -137,6 +137,7 @@ export function verifyPackageDirectory(
     checked.preview.id !== id ||
     canonical(checked.preview.contributions) !== canonical(entry.contributions) ||
     canonical(checked.preview.dependencies) !== canonical(entry.dependencies) ||
+    canonical(checked.preview.metadata) !== canonical(entry.metadata) ||
     canonical(checked.preview.declaredCapabilities) !== canonical(entry.declaredCapabilities)
   )
     throw new PackageError('E_LOCK_MISMATCH', 'installed inventory metadata differs from lock', {
@@ -260,6 +261,16 @@ export function readInventory(
         ),
       )
     }
+    let metadata = entry.metadata
+    if (entry.trust === 'builtin' && directory && existsSync(join(directory, 'package.json'))) {
+      const pkg = readStaticJson(join(directory, 'package.json'))
+      const author = (pkg.agnes as { metadata?: unknown } | undefined)?.metadata
+      if (author !== undefined) {
+        const checked = validatePluginMetadata(author)
+        if (!checked.ok) throw new PackageError('E_EXT_LOAD', 'Invalid builtin plugin metadata')
+        metadata = checked.value
+      }
+    }
     const trusted =
       entry.trust === 'builtin' ||
       (entry.state.trusted !== null &&
@@ -271,7 +282,7 @@ export function readInventory(
       })
     packages.push({
       id,
-      entry: provenance ? { ...entry, provenance } : entry,
+      entry: { ...entry, ...(provenance ? { provenance } : {}), ...(metadata ? { metadata } : {}) },
       directory,
       capabilityHash: hash,
       trusted,

@@ -6,15 +6,21 @@
   "capabilities": {
     "tools": {
       "prefix": "",
-      "names": [
-        "schedule_create",
-        "schedule_list",
-        "schedule_update",
-        "schedule_delete"
-      ]
+      "names": ["schedule_create", "schedule_list", "schedule_update", "schedule_delete"]
     },
-    "slots": [
-      "notification"
-    ]
+    "slots": ["notification"]
+  },
+  "metadata": {
+    "displayName": "Scheduled tasks",
+    "summary": "Lets the agent create and manage tasks that run at scheduled times.",
+    "description": "Lets the agent create and manage tasks that run at scheduled times.",
+    "category": "integrations",
+    "locales": {
+      "zh-CN": {
+        "displayName": "定时任务",
+        "summary": "让 Agent 创建和管理按指定时间运行的任务。",
+        "description": "让 Agent 创建和管理按指定时间运行的任务。"
+      }
+    }
   }
 }

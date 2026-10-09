@@ -10,7 +10,20 @@
         "export": "main",
         "apiRange": "^1.4.0",
         "id": "ext:examples/dsh-model-picker-a/main",
-        "runtime": "in-process"
+        "runtime": "in-process",
+        "metadata": {
+          "displayName": "Primary model entry example",
+          "summary": "Demonstrates the preferred model-entry panel when multiple plugins compete for the same input slot.",
+          "description": "Demonstrates the preferred model-entry panel when multiple plugins compete for the same input slot.",
+          "category": "ui",
+          "locales": {
+            "zh-CN": {
+              "displayName": "主模型入口示例",
+              "summary": "演示多个插件竞争同一输入区位置时优先显示的模型入口面板。",
+              "description": "演示多个插件竞争同一输入区位置时优先显示的模型入口面板。"
+            }
+          }
+        }
       }
     ],
     "clientDescriptors": [
@@ -18,7 +31,20 @@
         "rowId": "ext:examples/dsh-model-picker-a/main",
         "path": "./extensions/main/agnes.client.json"
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Primary model entry example",
+      "summary": "Demonstrates the preferred model-entry panel when multiple plugins compete for the same input slot.",
+      "description": "Demonstrates the preferred model-entry panel when multiple plugins compete for the same input slot.",
+      "category": "ui",
+      "locales": {
+        "zh-CN": {
+          "displayName": "主模型入口示例",
+          "summary": "演示多个插件竞争同一输入区位置时优先显示的模型入口面板。",
+          "description": "演示多个插件竞争同一输入区位置时优先显示的模型入口面板。"
+        }
+      }
+    }
   },
   "exports": "./index.mjs"
 }

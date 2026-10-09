@@ -12,8 +12,34 @@
         "id": "ext:agnes/hooks-runner",
         "inject": [
           "extension"
-        ]
+        ],
+        "metadata": {
+          "displayName": "Hook replacement example",
+          "summary": "Demonstrates replacing the complete default hook row and refusing a marked sample tool call.",
+          "description": "Demonstrates replacing the complete default hook row and refusing a marked sample tool call.",
+          "category": "developer",
+          "locales": {
+            "zh-CN": {
+              "displayName": "钩子替换示例",
+              "summary": "演示替换整行默认钩子并拒绝一个带标记的样例工具调用。",
+              "description": "演示替换整行默认钩子并拒绝一个带标记的样例工具调用。"
+            }
+          }
+        }
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Hook replacement example",
+      "summary": "Demonstrates replacing the complete default hook row and refusing a marked sample tool call.",
+      "description": "Demonstrates replacing the complete default hook row and refusing a marked sample tool call.",
+      "category": "developer",
+      "locales": {
+        "zh-CN": {
+          "displayName": "钩子替换示例",
+          "summary": "演示替换整行默认钩子并拒绝一个带标记的样例工具调用。",
+          "description": "演示替换整行默认钩子并拒绝一个带标记的样例工具调用。"
+        }
+      }
+    }
   }
 }

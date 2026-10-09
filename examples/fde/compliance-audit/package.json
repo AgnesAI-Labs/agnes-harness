@@ -57,7 +57,20 @@
           "toolPolicies",
           "skills"
         ],
-        "apiRange": "^1.4.0"
+        "apiRange": "^1.4.0",
+        "metadata": {
+          "displayName": "Compliance evidence example",
+          "summary": "Checks local sample evidence against a checklist and reports gaps for human follow-up.",
+          "description": "Checks local sample evidence against a checklist and reports gaps for human follow-up.",
+          "category": "safety-approval",
+          "locales": {
+            "zh-CN": {
+              "displayName": "合规证据示例",
+              "summary": "按清单检查本地样例证据，列出需要人工跟进的缺项。",
+              "description": "按清单检查本地样例证据，列出需要人工跟进的缺项。"
+            }
+          }
+        }
       }
     ],
     "bundles": {
@@ -87,6 +100,19 @@
               }
             }
           }
+        }
+      }
+    },
+    "metadata": {
+      "displayName": "Compliance evidence example",
+      "summary": "Checks local sample evidence against a checklist and reports gaps for human follow-up.",
+      "description": "Checks local sample evidence against a checklist and reports gaps for human follow-up.",
+      "category": "safety-approval",
+      "locales": {
+        "zh-CN": {
+          "displayName": "合规证据示例",
+          "summary": "按清单检查本地样例证据，列出需要人工跟进的缺项。",
+          "description": "按清单检查本地样例证据，列出需要人工跟进的缺项。"
         }
       }
     }

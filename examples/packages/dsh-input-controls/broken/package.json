@@ -10,7 +10,20 @@
         "export": "main",
         "apiRange": "^1.4.0",
         "id": "ext:examples/dsh-input-controls/main",
-        "runtime": "in-process"
+        "runtime": "in-process",
+        "metadata": {
+          "displayName": "Composer controls example (failure fixture)",
+          "summary": "Deliberately fails composer controls example validation or loading to demonstrate refusal and recovery.",
+          "description": "Deliberately fails composer controls example validation or loading to demonstrate refusal and recovery.",
+          "category": "ui",
+          "locales": {
+            "zh-CN": {
+              "displayName": "输入区控件示例（失败测试包）",
+              "summary": "故意使输入区控件示例的校验或加载失败，用于演示拒绝和恢复。",
+              "description": "故意使输入区控件示例的校验或加载失败，用于演示拒绝和恢复。"
+            }
+          }
+        }
       }
     ],
     "clientDescriptors": [
@@ -18,7 +31,20 @@
         "rowId": "ext:examples/dsh-input-controls/main",
         "path": "./extensions/main/agnes.client.json"
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Composer controls example (failure fixture)",
+      "summary": "Deliberately fails composer controls example validation or loading to demonstrate refusal and recovery.",
+      "description": "Deliberately fails composer controls example validation or loading to demonstrate refusal and recovery.",
+      "category": "ui",
+      "locales": {
+        "zh-CN": {
+          "displayName": "输入区控件示例（失败测试包）",
+          "summary": "故意使输入区控件示例的校验或加载失败，用于演示拒绝和恢复。",
+          "description": "故意使输入区控件示例的校验或加载失败，用于演示拒绝和恢复。"
+        }
+      }
+    }
   },
   "exports": "./index.mjs"
 }

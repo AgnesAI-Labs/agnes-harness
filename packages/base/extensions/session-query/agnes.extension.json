@@ -19,5 +19,18 @@
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "Session history search",
+    "summary": "Lets the agent search readable session history and inspect the events behind a result.",
+    "description": "Lets the agent search readable session history and inspect the events behind a result.",
+    "category": "memory-context",
+    "locales": {
+      "zh-CN": {
+        "displayName": "会话历史检索",
+        "summary": "让 Agent 检索有权读取的会话历史，并查看结果对应的事件。",
+        "description": "让 Agent 检索有权读取的会话历史，并查看结果对应的事件。"
+      }
+    }
   }
 }

@@ -14,8 +14,34 @@
         },
         "provide": [
           "demoTextStats"
-        ]
+        ],
+        "metadata": {
+          "displayName": "Upgradable text service (failure fixture)",
+          "summary": "Deliberately fails upgradable text service validation or loading to demonstrate refusal and recovery.",
+          "description": "Deliberately fails upgradable text service validation or loading to demonstrate refusal and recovery.",
+          "category": "developer",
+          "locales": {
+            "zh-CN": {
+              "displayName": "可升级文本服务（失败测试包）",
+              "summary": "故意使可升级文本服务的校验或加载失败，用于演示拒绝和恢复。",
+              "description": "故意使可升级文本服务的校验或加载失败，用于演示拒绝和恢复。"
+            }
+          }
+        }
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Upgradable text service (failure fixture)",
+      "summary": "Deliberately fails upgradable text service validation or loading to demonstrate refusal and recovery.",
+      "description": "Deliberately fails upgradable text service validation or loading to demonstrate refusal and recovery.",
+      "category": "developer",
+      "locales": {
+        "zh-CN": {
+          "displayName": "可升级文本服务（失败测试包）",
+          "summary": "故意使可升级文本服务的校验或加载失败，用于演示拒绝和恢复。",
+          "description": "故意使可升级文本服务的校验或加载失败，用于演示拒绝和恢复。"
+        }
+      }
+    }
   }
 }

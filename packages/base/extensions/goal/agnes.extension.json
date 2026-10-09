@@ -4,7 +4,10 @@
   "apiRange": "^1.4",
   "entry": "./src/index.ts",
   "capabilities": {
-    "tools": { "prefix": "goal_", "names": ["goal_get", "goal_update"] },
+    "tools": {
+      "prefix": "goal_",
+      "names": ["goal_get", "goal_update"]
+    },
     "hooks": ["session_start", "before_step", "context", "turn_stopping"],
     "events": true,
     "slots": ["status.line"],
@@ -23,5 +26,18 @@
         "maxStateBytes": 65536
       }
     ]
+  },
+  "metadata": {
+    "displayName": "Task goals",
+    "summary": "Keeps an explicit task goal and its progress visible while the agent continues working.",
+    "description": "Keeps an explicit task goal and its progress visible while the agent continues working.",
+    "category": "agent-loop",
+    "locales": {
+      "zh-CN": {
+        "displayName": "任务目标",
+        "summary": "在 Agent 持续工作时跟踪明确的任务目标，并展示进度。",
+        "description": "在 Agent 持续工作时跟踪明确的任务目标，并展示进度。"
+      }
+    }
   }
 }

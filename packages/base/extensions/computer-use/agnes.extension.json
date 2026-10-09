@@ -4,12 +4,28 @@
   "apiRange": "^1.0",
   "entry": "./src/index.ts",
   "capabilities": {
-    "tools": { "prefix": "", "names": ["computer_use"] },
+    "tools": {
+      "prefix": "",
+      "names": ["computer_use"]
+    },
     "hooks": ["compact", "shutdown"],
     "slots": [],
     "events": false,
     "resources": [],
     "network": [],
     "artifacts": true
+  },
+  "metadata": {
+    "displayName": "Computer actions",
+    "summary": "Lets the agent inspect the screen and operate supported desktop applications.",
+    "description": "Lets the agent inspect the screen and operate supported desktop applications.",
+    "category": "tools",
+    "locales": {
+      "zh-CN": {
+        "displayName": "电脑操作",
+        "summary": "让 Agent 查看屏幕并操作受支持的桌面应用。",
+        "description": "让 Agent 查看屏幕并操作受支持的桌面应用。"
+      }
+    }
   }
 }

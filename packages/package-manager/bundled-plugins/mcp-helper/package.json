@@ -22,8 +22,34 @@
         "id": "ext:mcp-helper/main",
         "inject": [
           "extension"
-        ]
+        ],
+        "metadata": {
+          "displayName": "MCP connection helper",
+          "summary": "Helps connect MCP servers through reviewed requests.",
+          "description": "Helps connect MCP servers through reviewed requests.",
+          "category": "integrations",
+          "locales": {
+            "zh-CN": {
+              "displayName": "MCP 连接助手",
+              "summary": "通过审核后的请求帮助连接 MCP 服务。",
+              "description": "通过审核后的请求帮助连接 MCP 服务。"
+            }
+          }
+        }
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "MCP connection helper",
+      "summary": "Helps connect MCP servers through reviewed requests.",
+      "description": "Helps connect MCP servers through reviewed requests.",
+      "category": "integrations",
+      "locales": {
+        "zh-CN": {
+          "displayName": "MCP 连接助手",
+          "summary": "通过审核后的请求帮助连接 MCP 服务。",
+          "description": "通过审核后的请求帮助连接 MCP 服务。"
+        }
+      }
+    }
   }
 }

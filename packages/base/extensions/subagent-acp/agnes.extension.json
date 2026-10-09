@@ -9,5 +9,18 @@
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "ACP child agents",
+    "summary": "Connects an external ACP agent process to handle delegated tasks.",
+    "description": "Connects an external ACP agent process to handle delegated tasks.",
+    "category": "collaboration",
+    "locales": {
+      "zh-CN": {
+        "displayName": "ACP 子 Agent",
+        "summary": "连接外部 ACP Agent 进程来处理分派的任务。",
+        "description": "连接外部 ACP Agent 进程来处理分派的任务。"
+      }
+    }
   }
 }

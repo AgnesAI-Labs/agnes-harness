@@ -120,8 +120,8 @@ The 37 manifests are not the complete runtime inventory. Phase B must also annot
 | `packages/loop-default/package.json` | Agent Loop | Runs the default agent workflow through model calls, tools, approvals and continuation. | 通过模型调用、工具、审批与续接执行默认 Agent 工作流。 |
 | `packages/memory-file/package.json` | Memory & Context | Keeps reviewed workspace preferences in local files for later sessions, with agent access off by default. | 在本地文件中保留经审核的工作区偏好供后续会话使用，默认关闭 Agent 访问。 |
 | `packages/observability/package.json` | Observability | Exports configured task telemetry to help operators diagnose execution and usage. | 导出已配置的任务遥测，帮助运维人员诊断执行与用量。 |
-| `packages/document-reader/package.json` | Tools | Reads PDF, Word, image text and ZIP attachments offline. | 离线读取 PDF、Word、图片文字和 ZIP 附件。 |
-| `packages/mcp-helper/package.json` | Integrations | Helps connect MCP servers through reviewed requests. | 通过审核后的请求帮助连接 MCP 服务。 |
-| `packages/plugin-helper/package.json` | Developer | Helps create, inspect and install plugins through reviewed requests. | 通过审核后的请求帮助创建、检查和安装插件。 |
-| `packages/skill-helper/package.json` | Memory & Context | Helps create and import reusable Skills through reviewed requests. | 通过审核后的请求帮助创建和导入可复用技能。 |
+| `packages/package-manager/bundled-plugins/document-reader/package.json` | Tools | Reads PDF, Word, image text and ZIP attachments offline. | 离线读取 PDF、Word、图片文字和 ZIP 附件。 |
+| `packages/package-manager/bundled-plugins/mcp-helper/package.json` | Integrations | Helps connect MCP servers through reviewed requests. | 通过审核后的请求帮助连接 MCP 服务。 |
+| `packages/package-manager/bundled-plugins/plugin-helper/package.json` | Developer | Helps create, inspect and install plugins through reviewed requests. | 通过审核后的请求帮助创建、检查和安装插件。 |
+| `packages/package-manager/bundled-plugins/skill-helper/package.json` | Memory & Context | Helps create and import reusable Skills through reviewed requests. | 通过审核后的请求帮助创建和导入可复用技能。 |
 | `packages/base/package.json` (package overview) | Developer | Supplies the default tools and runtime services used by AGH agents. | 提供 AGH Agent 使用的默认工具与运行时服务。 |

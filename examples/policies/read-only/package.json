@@ -17,8 +17,34 @@
         "default": true,
         "inject": [
           "toolPolicies"
-        ]
+        ],
+        "metadata": {
+          "displayName": "Read-only policy",
+          "summary": "Allows read-only tools and refuses write or destructive tools, including in full-access sessions.",
+          "description": "Allows read-only tools and refuses write or destructive tools, including in full-access sessions.",
+          "category": "safety-approval",
+          "locales": {
+            "zh-CN": {
+              "displayName": "只读策略",
+              "summary": "允许只读工具，拒绝写入或破坏性工具，包括完全访问会话中的调用。",
+              "description": "允许只读工具，拒绝写入或破坏性工具，包括完全访问会话中的调用。"
+            }
+          }
+        }
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Read-only policy",
+      "summary": "Allows read-only tools and refuses write or destructive tools, including in full-access sessions.",
+      "description": "Allows read-only tools and refuses write or destructive tools, including in full-access sessions.",
+      "category": "safety-approval",
+      "locales": {
+        "zh-CN": {
+          "displayName": "只读策略",
+          "summary": "允许只读工具，拒绝写入或破坏性工具，包括完全访问会话中的调用。",
+          "description": "允许只读工具，拒绝写入或破坏性工具，包括完全访问会话中的调用。"
+        }
+      }
+    }
   }
 }

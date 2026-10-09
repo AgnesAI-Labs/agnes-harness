@@ -9,5 +9,18 @@
     "events": true,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "Telemetry consent",
+    "summary": "Controls supported trajectory exports using session consent and sensitive-text redaction.",
+    "description": "Controls supported trajectory exports using session consent and sensitive-text redaction.",
+    "category": "safety-approval",
+    "locales": {
+      "zh-CN": {
+        "displayName": "遥测授权",
+        "summary": "根据会话授权和敏感文本脱敏规则控制受支持的轨迹导出。",
+        "description": "根据会话授权和敏感文本脱敏规则控制受支持的轨迹导出。"
+      }
+    }
   }
 }

@@ -63,7 +63,20 @@
           "loops",
           "toolPolicies",
           "skills"
-        ]
+        ],
+        "metadata": {
+          "displayName": "CRM follow-up example",
+          "summary": "Uses sample customer health and tickets to draft a renewal note and record it in a local CRM simulator after approval.",
+          "description": "Uses sample customer health and tickets to draft a renewal note and record it in a local CRM simulator after approval.",
+          "category": "integrations",
+          "locales": {
+            "zh-CN": {
+              "displayName": "CRM 跟进示例",
+              "summary": "根据样例客户健康度与工单起草续约备注，经批准后写入本地 CRM 模拟器。",
+              "description": "根据样例客户健康度与工单起草续约备注，经批准后写入本地 CRM 模拟器。"
+            }
+          }
+        }
       }
     ],
     "bundles": {
@@ -93,6 +106,19 @@
               }
             }
           }
+        }
+      }
+    },
+    "metadata": {
+      "displayName": "CRM follow-up example",
+      "summary": "Uses sample customer health and tickets to draft a renewal note and record it in a local CRM simulator after approval.",
+      "description": "Uses sample customer health and tickets to draft a renewal note and record it in a local CRM simulator after approval.",
+      "category": "integrations",
+      "locales": {
+        "zh-CN": {
+          "displayName": "CRM 跟进示例",
+          "summary": "根据样例客户健康度与工单起草续约备注，经批准后写入本地 CRM 模拟器。",
+          "description": "根据样例客户健康度与工单起草续约备注，经批准后写入本地 CRM 模拟器。"
         }
       }
     }

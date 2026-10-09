@@ -9,7 +9,20 @@
         "export": "main",
         "apiRange": "^1.4.0",
         "id": "ext:examples/skins-builtin/main",
-        "runtime": "in-process"
+        "runtime": "in-process",
+        "metadata": {
+          "displayName": "Appearance presets",
+          "summary": "Provides four sample appearance presets, each with light and dark variants.",
+          "description": "Provides four sample appearance presets, each with light and dark variants.",
+          "category": "ui",
+          "locales": {
+            "zh-CN": {
+              "displayName": "外观预设",
+              "summary": "提供四套样例外观预设，每套均包含浅色和深色变体。",
+              "description": "提供四套样例外观预设，每套均包含浅色和深色变体。"
+            }
+          }
+        }
       }
     ],
     "clientDescriptors": [
@@ -17,7 +30,20 @@
         "rowId": "ext:examples/skins-builtin/main",
         "path": "./extensions/main/agnes.client.json"
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Appearance presets",
+      "summary": "Provides four sample appearance presets, each with light and dark variants.",
+      "description": "Provides four sample appearance presets, each with light and dark variants.",
+      "category": "ui",
+      "locales": {
+        "zh-CN": {
+          "displayName": "外观预设",
+          "summary": "提供四套样例外观预设，每套均包含浅色和深色变体。",
+          "description": "提供四套样例外观预设，每套均包含浅色和深色变体。"
+        }
+      }
+    }
   },
   "exports": "./index.mjs"
 }

@@ -10,7 +10,20 @@
         "export": "main",
         "apiRange": "^1.4.0",
         "id": "ext:examples/dsh-input-controls/main",
-        "runtime": "in-process"
+        "runtime": "in-process",
+        "metadata": {
+          "displayName": "Composer controls example",
+          "summary": "Demonstrates extra controls beside the chat input and their removal when disabled.",
+          "description": "Demonstrates extra controls beside the chat input and their removal when disabled.",
+          "category": "ui",
+          "locales": {
+            "zh-CN": {
+              "displayName": "输入区控件示例",
+              "summary": "演示聊天输入框旁的附加控件及其停用后的清理。",
+              "description": "演示聊天输入框旁的附加控件及其停用后的清理。"
+            }
+          }
+        }
       }
     ],
     "clientDescriptors": [
@@ -18,7 +31,20 @@
         "rowId": "ext:examples/dsh-input-controls/main",
         "path": "./extensions/main/agnes.client.json"
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Composer controls example",
+      "summary": "Demonstrates extra controls beside the chat input and their removal when disabled.",
+      "description": "Demonstrates extra controls beside the chat input and their removal when disabled.",
+      "category": "ui",
+      "locales": {
+        "zh-CN": {
+          "displayName": "输入区控件示例",
+          "summary": "演示聊天输入框旁的附加控件及其停用后的清理。",
+          "description": "演示聊天输入框旁的附加控件及其停用后的清理。"
+        }
+      }
+    }
   },
   "exports": "./index.mjs"
 }

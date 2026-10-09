@@ -9,7 +9,20 @@
         "export": "main",
         "apiRange": "^1.4.0",
         "id": "ext:examples/skin-example/main",
-        "runtime": "in-process"
+        "runtime": "in-process",
+        "metadata": {
+          "displayName": "Appearance example",
+          "summary": "Demonstrates a selectable appearance theme with light and dark variants.",
+          "description": "Demonstrates a selectable appearance theme with light and dark variants.",
+          "category": "ui",
+          "locales": {
+            "zh-CN": {
+              "displayName": "外观示例",
+              "summary": "演示可选外观主题及其浅色、深色变体。",
+              "description": "演示可选外观主题及其浅色、深色变体。"
+            }
+          }
+        }
       }
     ],
     "clientDescriptors": [
@@ -17,7 +30,20 @@
         "rowId": "ext:examples/skin-example/main",
         "path": "./extensions/main/agnes.client.json"
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Appearance example",
+      "summary": "Demonstrates a selectable appearance theme with light and dark variants.",
+      "description": "Demonstrates a selectable appearance theme with light and dark variants.",
+      "category": "ui",
+      "locales": {
+        "zh-CN": {
+          "displayName": "外观示例",
+          "summary": "演示可选外观主题及其浅色、深色变体。",
+          "description": "演示可选外观主题及其浅色、深色变体。"
+        }
+      }
+    }
   },
   "exports": "./index.mjs"
 }

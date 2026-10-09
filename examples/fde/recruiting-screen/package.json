@@ -57,7 +57,20 @@
           "toolPolicies",
           "skills"
         ],
-        "apiRange": "^1.4.0"
+        "apiRange": "^1.4.0",
+        "metadata": {
+          "displayName": "Recruiting review example",
+          "summary": "Scores synthetic applications against a fixed rubric and prepares a report for human review.",
+          "description": "Scores synthetic applications against a fixed rubric and prepares a report for human review.",
+          "category": "tools",
+          "locales": {
+            "zh-CN": {
+              "displayName": "招聘审核示例",
+              "summary": "按固定标准评估模拟申请材料，并生成供人工审核的报告。",
+              "description": "按固定标准评估模拟申请材料，并生成供人工审核的报告。"
+            }
+          }
+        }
       }
     ],
     "bundles": {
@@ -87,6 +100,19 @@
               }
             }
           }
+        }
+      }
+    },
+    "metadata": {
+      "displayName": "Recruiting review example",
+      "summary": "Scores synthetic applications against a fixed rubric and prepares a report for human review.",
+      "description": "Scores synthetic applications against a fixed rubric and prepares a report for human review.",
+      "category": "tools",
+      "locales": {
+        "zh-CN": {
+          "displayName": "招聘审核示例",
+          "summary": "按固定标准评估模拟申请材料，并生成供人工审核的报告。",
+          "description": "按固定标准评估模拟申请材料，并生成供人工审核的报告。"
         }
       }
     }

@@ -9,5 +9,18 @@
     "events": false,
     "resources": [],
     "network": []
+  },
+  "metadata": {
+    "displayName": "Progress checks",
+    "summary": "Detects repeated writes and stalled work, then requests revision or escalation within configured limits.",
+    "description": "Detects repeated writes and stalled work, then requests revision or escalation within configured limits.",
+    "category": "agent-loop",
+    "locales": {
+      "zh-CN": {
+        "displayName": "执行进度检查",
+        "summary": "发现重复写入和停滞的执行，并按配置限制要求修正或升级处理。",
+        "description": "发现重复写入和停滞的执行，并按配置限制要求修正或升级处理。"
+      }
+    }
   }
 }

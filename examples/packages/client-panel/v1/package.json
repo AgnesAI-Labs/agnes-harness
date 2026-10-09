@@ -10,7 +10,20 @@
         "export": "main",
         "apiRange": "^1.4.0",
         "id": "ext:examples/client-panel/main",
-        "runtime": "in-process"
+        "runtime": "in-process",
+        "metadata": {
+          "displayName": "Workbench panel example",
+          "summary": "Demonstrates a workbench panel loaded from a versioned browser plugin.",
+          "description": "Demonstrates a workbench panel loaded from a versioned browser plugin.",
+          "category": "ui",
+          "locales": {
+            "zh-CN": {
+              "displayName": "工作台面板示例",
+              "summary": "演示从版本化浏览器插件加载工作台面板。",
+              "description": "演示从版本化浏览器插件加载工作台面板。"
+            }
+          }
+        }
       }
     ],
     "clientDescriptors": [
@@ -18,7 +31,20 @@
         "rowId": "ext:examples/client-panel/main",
         "path": "./extensions/main/agnes.client.json"
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Workbench panel example",
+      "summary": "Demonstrates a workbench panel loaded from a versioned browser plugin.",
+      "description": "Demonstrates a workbench panel loaded from a versioned browser plugin.",
+      "category": "ui",
+      "locales": {
+        "zh-CN": {
+          "displayName": "工作台面板示例",
+          "summary": "演示从版本化浏览器插件加载工作台面板。",
+          "description": "演示从版本化浏览器插件加载工作台面板。"
+        }
+      }
+    }
   },
   "exports": "./index.mjs"
 }

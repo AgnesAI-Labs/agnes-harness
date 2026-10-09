@@ -11,7 +11,20 @@
         "export": "runtime",
         "apiRange": "^1.4.0",
         "id": "ext:examples/client-service-panel/runtime",
-        "runtime": "in-process"
+        "runtime": "in-process",
+        "metadata": {
+          "displayName": "Service-backed panel example",
+          "summary": "Demonstrates a workbench panel reading a plugin service through the restricted browser bridge.",
+          "description": "Demonstrates a workbench panel reading a plugin service through the restricted browser bridge.",
+          "category": "ui",
+          "locales": {
+            "zh-CN": {
+              "displayName": "服务面板示例",
+              "summary": "演示工作台面板如何通过受限浏览器桥接读取插件服务。",
+              "description": "演示工作台面板如何通过受限浏览器桥接读取插件服务。"
+            }
+          }
+        }
       }
     ],
     "clientDescriptors": [
@@ -19,6 +32,19 @@
         "rowId": "ext:examples/client-service-panel/runtime",
         "path": "./extensions/main/agnes.client.json"
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Service-backed panel example",
+      "summary": "Demonstrates a workbench panel reading a plugin service through the restricted browser bridge.",
+      "description": "Demonstrates a workbench panel reading a plugin service through the restricted browser bridge.",
+      "category": "ui",
+      "locales": {
+        "zh-CN": {
+          "displayName": "服务面板示例",
+          "summary": "演示工作台面板如何通过受限浏览器桥接读取插件服务。",
+          "description": "演示工作台面板如何通过受限浏览器桥接读取插件服务。"
+        }
+      }
+    }
   }
 }

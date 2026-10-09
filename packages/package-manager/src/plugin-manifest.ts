@@ -1,3 +1,4 @@
+import { type PluginMetadata, validatePluginMetadata } from '@agnes/protocol'
 import {
   API_VERSION,
   compilePluginConfig,
@@ -23,6 +24,7 @@ export function isReservedPluginRowIdError(value: unknown): value is ReservedPlu
 }
 
 export interface AgnesPluginManifestEntry extends PluginConfigContract {
+  readonly metadata?: PluginMetadata
   readonly export: string
   readonly id: string
   /** Required in package manifests; optional here for legacy embedding-created rows. */
@@ -40,6 +42,7 @@ export interface AgnesPluginManifestEntry extends PluginConfigContract {
 }
 
 const ENTRY_FIELDS = new Set([
+  'metadata',
   'export',
   'apiRange',
   'id',
@@ -185,7 +188,10 @@ export function parseAgnesPluginEntries(
       if (raw.config !== undefined && validate(raw.config).length)
         fail(`entry ${index} config`, 'does not satisfy configSchema (secret fields require references)')
     }
+    if (raw.metadata !== undefined && !validatePluginMetadata(raw.metadata).ok)
+      fail(`entry ${index} metadata`, 'must satisfy the public PluginMetadata contract')
     return Object.freeze({
+      ...(raw.metadata === undefined ? {} : { metadata: freezeJson(raw.metadata) as PluginMetadata }),
       export: raw.export,
       apiRange: raw.apiRange,
       id,

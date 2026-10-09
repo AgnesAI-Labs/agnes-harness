@@ -27,6 +27,14 @@ import {
   writeLock,
 } from '../src/index.js'
 
+const purpose = {
+  displayName: 'File search',
+  summary: 'Find project text.',
+  description: 'Find text in readable project files.',
+  category: 'tools' as const,
+  locales: { 'zh-CN': { displayName: '文件搜索', summary: '检索项目文本。' } },
+}
+
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 let root: string, profile: string, sourceDir: string
 const source = parseSource('file:./candidate')
@@ -85,7 +93,10 @@ afterEach(() => rmSync(root, { recursive: true, force: true }))
 
 it('previews without importing code or writing lock, then installs only disabled/untrusted with a checked tree', async () => {
   writeFileSync(join(sourceDir, 'index.ts'), `throw new Error('must not run')`)
-  pkg({ scripts: { postinstall: 'exit 99' } })
+  pkg({
+    scripts: { postinstall: 'exit 99' },
+    agnes: { metadata: purpose, plugins: [{ apiRange: '^1.4.0', export: 'main' }] },
+  })
   const before = lockBytes(),
     phases: number[] = []
   const m = manager(),
@@ -103,6 +114,9 @@ it('previews without importing code or writing lock, then installs only disabled
   expect(entry.state).toMatchObject({ trusted: null, enabled: false })
   expect(entry.treeIntegrity).toBe(hashDirectory(packageDir(root, 'local-dev', preview.id), { exclude: [] }))
   expect(entry.contributions).toEqual(preview.contributions)
+  expect(preview.metadata).toEqual(purpose)
+  expect(entry.metadata).toEqual(purpose)
+  expect(readLock(profile).packages[preview.id]?.metadata).toEqual(purpose)
   clean()
 })
 it('recognizes the static agnes.plugins declaration without importing plugin code', async () => {
@@ -117,6 +131,20 @@ it('recognizes the static agnes.plugins declaration without importing plugin cod
   const preview = await manager().inspect(profile, source)
   expect(preview.blockers).toEqual([])
   expect(preview.contributions).toEqual([])
+})
+
+it('refuses invalid present package purpose without installing or executing it', async () => {
+  pkg({
+    agnes: {
+      metadata: { ...purpose, docsUrl: 'http://example.org/' },
+      plugins: [{ apiRange: '^1.4.0', export: 'main' }],
+    },
+  })
+  const before = lockBytes()
+  await expect(manager().inspect(profile, source)).rejects.toMatchObject({
+    detail: { reason: 'plugin-metadata' },
+  })
+  expect(lockBytes()).toBe(before)
 })
 
 it('rejects a package that declares both executable loading formats', async () => {

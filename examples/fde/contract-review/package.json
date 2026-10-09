@@ -57,7 +57,20 @@
           "loops",
           "toolPolicies",
           "skills"
-        ]
+        ],
+        "metadata": {
+          "displayName": "Contract review example",
+          "summary": "Reviews sample contract clauses in parallel and prepares a risk draft for a qualified reviewer.",
+          "description": "Reviews sample contract clauses in parallel and prepares a risk draft for a qualified reviewer.",
+          "category": "tools",
+          "locales": {
+            "zh-CN": {
+              "displayName": "合同审查示例",
+              "summary": "并行检查样例合同条款，为专业审核者准备风险草稿。",
+              "description": "并行检查样例合同条款，为专业审核者准备风险草稿。"
+            }
+          }
+        }
       }
     ],
     "bundles": {
@@ -87,6 +100,19 @@
               }
             }
           }
+        }
+      }
+    },
+    "metadata": {
+      "displayName": "Contract review example",
+      "summary": "Reviews sample contract clauses in parallel and prepares a risk draft for a qualified reviewer.",
+      "description": "Reviews sample contract clauses in parallel and prepares a risk draft for a qualified reviewer.",
+      "category": "tools",
+      "locales": {
+        "zh-CN": {
+          "displayName": "合同审查示例",
+          "summary": "并行检查样例合同条款，为专业审核者准备风险草稿。",
+          "description": "并行检查样例合同条款，为专业审核者准备风险草稿。"
         }
       }
     }

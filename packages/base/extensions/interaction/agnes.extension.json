@@ -21,5 +21,18 @@
         "maxStateBytes": 262144
       }
     ]
+  },
+  "metadata": {
+    "displayName": "User questions",
+    "summary": "Lets the agent ask focused questions and continue with the user's answers.",
+    "description": "Lets the agent ask focused questions and continue with the user's answers.",
+    "category": "tools",
+    "locales": {
+      "zh-CN": {
+        "displayName": "向用户提问",
+        "summary": "让 Agent 提出明确的问题，并根据用户回答继续工作。",
+        "description": "让 Agent 提出明确的问题，并根据用户回答继续工作。"
+      }
+    }
   }
 }

@@ -59,7 +59,20 @@
           "toolPolicies",
           "skills"
         ],
-        "apiRange": "^1.4.0"
+        "apiRange": "^1.4.0",
+        "metadata": {
+          "displayName": "Meeting actions example",
+          "summary": "Turns a sample meeting transcript into action items and drafts tasks for approval before simulated creation.",
+          "description": "Turns a sample meeting transcript into action items and drafts tasks for approval before simulated creation.",
+          "category": "collaboration",
+          "locales": {
+            "zh-CN": {
+              "displayName": "会议行动项示例",
+              "summary": "把样例会议逐字稿转成行动项，起草任务并在模拟创建前请求批准。",
+              "description": "把样例会议逐字稿转成行动项，起草任务并在模拟创建前请求批准。"
+            }
+          }
+        }
       }
     ],
     "bundles": {
@@ -97,7 +110,20 @@
         "rowId": "ext:@agnes-fde/meeting-actions/main",
         "path": "./client/agnes.client.json"
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Meeting actions example",
+      "summary": "Turns a sample meeting transcript into action items and drafts tasks for approval before simulated creation.",
+      "description": "Turns a sample meeting transcript into action items and drafts tasks for approval before simulated creation.",
+      "category": "collaboration",
+      "locales": {
+        "zh-CN": {
+          "displayName": "会议行动项示例",
+          "summary": "把样例会议逐字稿转成行动项，起草任务并在模拟创建前请求批准。",
+          "description": "把样例会议逐字稿转成行动项，起草任务并在模拟创建前请求批准。"
+        }
+      }
+    }
   },
   "devDependencies": {
     "@agnes/host": "0.0.0",

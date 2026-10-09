@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agnes.ai/schema/extension-manifest.json",
-  "title": "agnes.extension.json (\u89c4\u683c \u00a719.3)",
+  "title": "agnes.extension.json (规格 §19.3)",
   "$ref": "#/$defs/ExtensionManifest",
   "$defs": {
     "Capabilities": {
@@ -143,8 +143,12 @@
             "additionalProperties": false,
             "required": ["light", "dark"],
             "properties": {
-              "light": { "$ref": "#/$defs/SkinTokenValue" },
-              "dark": { "$ref": "#/$defs/SkinTokenValue" }
+              "light": {
+                "$ref": "#/$defs/SkinTokenValue"
+              },
+              "dark": {
+                "$ref": "#/$defs/SkinTokenValue"
+              }
             }
           }
         }
@@ -234,11 +238,17 @@
         "publicConfig": {
           "description": "Optional browser-visible, package-authored JSON configuration. This is immutable manifest metadata only; runtime configuration, credentials, secret references and backend row config must never be placed here.",
           "type": "object",
-          "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+          "additionalProperties": {
+            "$ref": "session-v1.json#/$defs/JsonValue"
+          }
         },
         "intelligentComponents": {
-          "type": "array", "minItems": 1, "maxItems": 16,
-          "items": { "$ref": "#/$defs/UiComponentDeclaration" }
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/UiComponentDeclaration"
+          }
         }
       }
     },
@@ -273,9 +283,13 @@
             "skins": {
               "type": "array",
               "maxItems": 8,
-              "items": { "$ref": "#/$defs/SkinContribution" }
+              "items": {
+                "$ref": "#/$defs/SkinContribution"
+              }
             },
-            "client": { "$ref": "#/$defs/ClientContribution" }
+            "client": {
+              "$ref": "#/$defs/ClientContribution"
+            }
           }
         },
         "provides": {
@@ -309,6 +323,9 @@
             }
           },
           "required": ["supports"]
+        },
+        "metadata": {
+          "$ref": "#/$defs/PluginMetadata"
         }
       }
     },
@@ -324,13 +341,7 @@
     "UiComponentDeclaration": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "kind",
-        "propsSchema",
-        "maxPropsBytes",
-        "fallback",
-        "accessibility"
-      ],
+      "required": ["kind", "propsSchema", "maxPropsBytes", "fallback", "accessibility"],
       "properties": {
         "kind": {
           "type": "string",
@@ -364,10 +375,7 @@
         "accessibility": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "label",
-            "keyboard"
-          ],
+          "required": ["label", "keyboard"],
           "properties": {
             "label": {
               "type": "string",
@@ -380,6 +388,97 @@
           }
         }
       }
+    },
+    "PluginMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["displayName", "summary", "description", "category"],
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,80}(?<!\\s)$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 480,
+          "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,240}(?<!\\s)$"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2400,
+          "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,1200}(?<!\\s)$"
+        },
+        "docsUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "format": "agnes-plugin-docs-url",
+          "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,2048}(?<!\\s)$"
+        },
+        "category": {
+          "$ref": "#/$defs/PluginCategory"
+        },
+        "locales": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "en": {
+              "$ref": "#/$defs/PluginMetadataLocale"
+            },
+            "zh-CN": {
+              "$ref": "#/$defs/PluginMetadataLocale"
+            }
+          }
+        }
+      }
+    },
+    "PluginMetadataLocale": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160,
+          "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,80}(?<!\\s)$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 480,
+          "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,240}(?<!\\s)$"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2400,
+          "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,1200}(?<!\\s)$"
+        },
+        "docsUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "format": "agnes-plugin-docs-url",
+          "pattern": "^(?!\\s)(?![\\s\\S]*[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029])(?:(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF])|[^\\uD800-\\uDFFF]){1,2048}(?<!\\s)$"
+        }
+      }
+    },
+    "PluginCategory": {
+      "enum": [
+        "agent-loop",
+        "tools",
+        "safety-approval",
+        "memory-context",
+        "collaboration",
+        "integrations",
+        "observability",
+        "ui",
+        "developer"
+      ]
     }
   }
 }

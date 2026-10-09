@@ -22,8 +22,34 @@
         "id": "ext:skill-helper/main",
         "inject": [
           "extension"
-        ]
+        ],
+        "metadata": {
+          "displayName": "Skills helper",
+          "summary": "Helps create and import reusable Skills through reviewed requests.",
+          "description": "Helps create and import reusable Skills through reviewed requests.",
+          "category": "memory-context",
+          "locales": {
+            "zh-CN": {
+              "displayName": "技能助手",
+              "summary": "通过审核后的请求帮助创建和导入可复用技能。",
+              "description": "通过审核后的请求帮助创建和导入可复用技能。"
+            }
+          }
+        }
       }
-    ]
+    ],
+    "metadata": {
+      "displayName": "Skills helper",
+      "summary": "Helps create and import reusable Skills through reviewed requests.",
+      "description": "Helps create and import reusable Skills through reviewed requests.",
+      "category": "memory-context",
+      "locales": {
+        "zh-CN": {
+          "displayName": "技能助手",
+          "summary": "通过审核后的请求帮助创建和导入可复用技能。",
+          "description": "通过审核后的请求帮助创建和导入可复用技能。"
+        }
+      }
+    }
   }
 }
