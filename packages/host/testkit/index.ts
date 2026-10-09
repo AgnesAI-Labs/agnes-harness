@@ -43,6 +43,10 @@ export type { CapturedRequest, WireApi, WireReply } from './wire-capture.js'
 export { expectExtends, renderedParts, sharedPrefix, startWireCapture } from './wire-capture.js'
 export { ASSEMBLY_STEPS, type AssemblyStep }
 
+/** Reviewed descriptors embedded by the isolated author distribution. */
+declare const AGNES_BASE_EXTENSION_MANIFESTS: NonNullable<PackageModule['embeddedExtensions']> | undefined
+declare const AGNES_CODE_EXTENSION_MANIFESTS: NonNullable<PackageModule['embeddedExtensions']> | undefined
+
 const ROUTE: RouteDecl = {
   route: 'gw',
   api: 'openai-completions',
@@ -181,6 +185,7 @@ export type TestHostOptions = {
   mcpManage?: HostOptions['mcpManage']
   pluginManage?: HostOptions['pluginManage']
   skillResources?: SkillRuntimeInput
+  skillContribution?: HostOptions['skillContribution']
   // A seam with a close(), so a test can watch the teardown run instead of reading an audit line
   // that claims it did. It lands on the rollback stack like every other seam close.
   onSeamClose?: () => void
@@ -271,6 +276,9 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     seamsImpl.harness = { ...seamsImpl.harness, close: o.onSeamClose } as SeamImplementations['harness']
   const base: PackageModule = {
     id: '@agnes/base',
+    ...(typeof AGNES_BASE_EXTENSION_MANIFESTS === 'undefined'
+      ? {}
+      : { embeddedExtensions: AGNES_BASE_EXTENSION_MANIFESTS }),
     plugins: [
       {
         declaration: {
@@ -309,6 +317,9 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
   }
   const code: PackageModule = {
     id: '@agnes/code',
+    ...(typeof AGNES_CODE_EXTENSION_MANIFESTS === 'undefined'
+      ? {}
+      : { embeddedExtensions: AGNES_CODE_EXTENSION_MANIFESTS }),
     operations: {},
     presets: { standard: STANDARD_PRESET, ...(o.presets ?? {}) },
   }
@@ -396,6 +407,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     ...(o.mcpManage ? { mcpManage: o.mcpManage } : {}),
     ...(o.extensionIsolationServices ? { extensionIsolationServices: o.extensionIsolationServices } : {}),
     ...(o.skillResources ? { skillResources: o.skillResources } : {}),
+    ...(o.skillContribution ? { skillContribution: o.skillContribution } : {}),
     ...(o.restoreGenerationExtension ? { restoreGenerationExtension: o.restoreGenerationExtension } : {}),
     ...(o.trajectoryFetch ? { trajectoryFetch: o.trajectoryFetch } : {}),
     ...(o.trajectoryResolver ? { trajectoryResolver: o.trajectoryResolver } : {}),

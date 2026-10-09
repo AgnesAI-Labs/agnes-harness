@@ -191,8 +191,13 @@ describe('public author testkit', () => {
       },
     })
     const main = {
-      inject: ['loops'],
+      inject: ['loops', 'skills'],
       apply(ctx: LoopPluginContext) {
+        ctx.skills.register({
+          name: 'author-model',
+          description: 'Synthetic model instructions',
+          body: 'Offline business fixture',
+        })
         ctx.effect(() => ctx.loops.register('@author/plugin', loop))
       },
     }

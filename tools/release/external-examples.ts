@@ -203,6 +203,17 @@ async function portableProtocolFacade(directory: string): Promise<void> {
   }
 }
 
+async function extensionManifests(directory: string): Promise<readonly unknown[]> {
+  const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8')) as {
+    agnes?: { extensions?: readonly string[] }
+  }
+  return Promise.all(
+    (manifest.agnes?.extensions ?? []).map(async (path) =>
+      JSON.parse(await readFile(join(directory, path, 'agnes.extension.json'), 'utf8')),
+    ),
+  )
+}
+
 async function packAuthors(root: string, env: NodeJS.ProcessEnv): Promise<string[]> {
   const packages = await manifests()
   const needed = new Set<string>()
@@ -302,6 +313,8 @@ async function packAuthors(root: string, env: NodeJS.ProcessEnv): Promise<string
     outdir: host,
     splitting: true,
     define: {
+      AGNES_BASE_EXTENSION_MANIFESTS: JSON.stringify(await extensionManifests(join(repo, 'packages/base'))),
+      AGNES_CODE_EXTENSION_MANIFESTS: JSON.stringify(await extensionManifests(join(repo, 'packages/code'))),
       AGNES_PROFILE_TEMPLATE_TEXTS: JSON.stringify(
         Object.fromEntries(
           await Promise.all(
@@ -329,7 +342,10 @@ async function packAuthors(root: string, env: NodeJS.ProcessEnv): Promise<string
     external: [...needed, ...registryDependencies.keys()].flatMap((name) => [name, `${name}/*`]),
     metafile: true,
   })
-  const dependencies: Record<string, string> = {}
+  // The image tool loads sharp through createRequire, outside esbuild's import metadata.
+  const sharpVersion = registryDependencies.get('sharp')
+  if (!sharpVersion) throw new Error('Host test bridge requires the declared image decoder dependency')
+  const dependencies: Record<string, string> = { sharp: sharpVersion }
   const bundledOutputs = new Set(Object.keys(result.metafile.outputs).map((path) => resolve(path)))
   for (const output of Object.values(result.metafile.outputs) as { imports: { path: string }[] }[]) {
     for (const item of output.imports) {

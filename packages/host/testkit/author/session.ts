@@ -26,6 +26,7 @@ import {
 import { defineLoop } from '@agnes/plugin-runtime'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { RouteDecl, UiActionParams, UiActionReceipt, UiReadParams, UiReadResult } from '@agnes/protocol'
+import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/resource-control-runtime'
 import type { Host, HostSession } from '../../src/runtime/lifecycle/host.js'
 import { createTestHost, type TestHostOptions } from '../index.js'
 
@@ -187,6 +188,9 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
   })
   try {
     const first = await snapshot(options)
+    const skills = createSkillCandidateRegistry({
+      barrier: { quiesce: async (_id, publish) => publish({}) },
+    })
     const models = options.provider?.models()
     const primary = models?.[0]
     if (models && !primary) throw new Error('Author model provider needs a nonempty catalogue')
@@ -208,6 +212,8 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
           : {}),
         dataDir: directory,
         disableSessionTitle: true,
+        skillContribution: createSkillCordisService(skills),
+        skillResources: skills.snapshot(),
         env: {},
         provider:
           options.provider ??
