@@ -210,6 +210,14 @@ export class SeamRuntime {
     return answer.reason === undefined ? answer.verdict : answer
   }
 
+  async approvalToolAllowed(name: string, args: unknown): Promise<boolean> {
+    try {
+      return await this.withApproval((approval) => approval.checkTool?.(name, args) ?? Promise.resolve(true))
+    } catch {
+      return false
+    }
+  }
+
   async approvalGuard(req: ApprovalRequest, signal: AbortSignal): Promise<ApprovalGuardianDecision> {
     try {
       const value = await withTimeout(

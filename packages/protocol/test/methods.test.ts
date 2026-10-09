@@ -94,6 +94,8 @@ describe('methods (I1 set)', () => {
   it('lists the I1 methods with kind and direction', () => {
     expect(Object.keys(METHODS).sort()).toEqual(
       [
+        '_agnes/v1/autoReview.get',
+        '_agnes/v1/autoReview.save',
         '_agnes/v1/systemPrompt.get',
         '_agnes/v1/systemPrompt.save',
         '_agnes/v1/session.factChain',

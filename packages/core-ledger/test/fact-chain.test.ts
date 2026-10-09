@@ -88,6 +88,34 @@ it('accepts only explicit identities and full artifact references, with no time,
   expect(reused.gaps).toContainEqual({ at: null, reason: 'ambiguous-link' })
 })
 
+it('shows only schema-valid reviewer facts bound to this trusted tool call', () => {
+  const review = {
+    model: 'scripted-cheap',
+    promptHash: 'a'.repeat(64),
+    argsHash: 'b'.repeat(64),
+    scopeHash: 'c'.repeat(64),
+    decision: 'allow',
+    risk: 'low',
+    reason: 'Bounded write',
+    latencyMs: 2,
+    cost: 0.01,
+    costSource: 'estimated',
+    source: 'model',
+  }
+  for (const extra of [
+    { sourceEventSeqs: [1] },
+    { sourceEventSeqs: [99] },
+    { sourceEventSeqs: [1], origin: 'ext:forged', trust: 'untrusted' },
+  ] as Partial<EventEnvelope>[]) {
+    const result = project([call, row(2, 'x/approval/review', { toolUseId: 't1', review }, extra)])
+    const invocation = result.nodes.find((node) => node.kind === 'invocation')
+    expect(invocation?.kind === 'invocation' ? invocation.review : undefined).toEqual(
+      extra.origin === undefined && extra.sourceEventSeqs?.[0] === 1 ? review : undefined,
+    )
+    expect(validateMethod('_agnes/v1/session.factChain', 'result', result).ok).toBe(true)
+  }
+})
+
 it('links full tool-result references by their exact result sequence and reports reference truncation', () => {
   const events = [
     call,

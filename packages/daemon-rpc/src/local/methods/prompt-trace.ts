@@ -5,7 +5,7 @@ import {
 } from '@agnes/daemon-admin/packages/index'
 import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { Registry } from '@agnes/daemon-foundation/registry'
-import { RequestTraceStore, SystemPromptSettingsStore } from '@agnes/host'
+import { AutoReviewSettingsStore, RequestTraceStore, SystemPromptSettingsStore } from '@agnes/host'
 import {
   type ModelRequestClearParams,
   type ModelRequestParams,
@@ -22,6 +22,7 @@ export function registerPromptTrace(
   deps: {
     dataDir: string
     profile: string
+    reviewEnabled?: boolean
     authority: PackageAdminAuthorityResolver
     readOnly(context: CallContext): Promise<boolean>
     registry: Pick<Registry<SessionEntry>, 'require'>
@@ -31,6 +32,16 @@ export function registerPromptTrace(
 ) {
   const settings = new SystemPromptSettingsStore(deps.dataDir, deps.profile)
   const traces = new RequestTraceStore(deps.dataDir, deps.profile)
+  const reviewer = new AutoReviewSettingsStore(deps.dataDir, deps.profile, deps.reviewEnabled)
+  endpoint.register('_agnes/v1/autoReview.get', async (_params, context) => {
+    requireLocalAdminAuthority(context, deps.authority, false)
+    return reviewer.read()
+  })
+  endpoint.register('_agnes/v1/autoReview.save', async (params, context) => {
+    requireLocalAdminAuthority(context, deps.authority, true)
+    if (await deps.readOnly(context)) throw rpcError('SEMANTIC_REJECTED', { reason: 'E_ADMIN_READ_ONLY' })
+    return reviewer.save(params as import('@agnes/protocol').AutoReviewConfig)
+  })
   endpoint.register('_agnes/v1/systemPrompt.get', async (params, context) => {
     const { sessionId } = params as SystemPromptGetParams
     if (sessionId) {

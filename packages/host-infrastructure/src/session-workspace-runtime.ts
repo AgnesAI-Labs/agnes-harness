@@ -421,6 +421,12 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
               authorizeWrite: (path: string) => withAccess(() => authorizeWrite.call(writeAuthority, path)),
             }
           : {}),
+        ...(runtime.fs.preflight
+          ? {
+              preflight: (path: string, mode: 'read' | 'write') =>
+                withAccess(() => runtime.fs.preflight!(path, mode)),
+            }
+          : {}),
         read: (path, opts) =>
           withAccess(() =>
             runtime.fencedFs

@@ -287,6 +287,12 @@ export class Client {
   }
 
   /** Local profile defaults and owner-checked pinned session previews. */
+  readonly autoReview = {
+    get: (): Promise<import('@agnes/protocol').AutoReviewConfig> => this.call('_agnes/v1/autoReview.get', {}),
+    save: (
+      config: import('@agnes/protocol').AutoReviewConfig,
+    ): Promise<import('@agnes/protocol').AutoReviewConfig> => this.call('_agnes/v1/autoReview.save', config),
+  }
   readonly systemPrompt = {
     get: (
       input: import('@agnes/protocol').SystemPromptGetParams = {},

@@ -241,12 +241,24 @@ function invocationView(source: WorkspaceInvocationSource, scope: InvocationScop
           authorizeWrite: (path: string) => scope.track(() => source.fs.authorizeWrite!(path)),
         }
       : {}),
+    ...(source.fs.preflight
+      ? {
+          preflight: (path: string, mode: 'read' | 'write') =>
+            scope.track(() => source.fs.preflight!(path, mode)),
+        }
+      : {}),
     read: (path, opts) => scope.track(() => source.fs.read(path, opts)),
     write: (path, data) => scope.track(() => source.fs.write(path, data)),
     list: (path) => scope.track(() => source.fs.list(path)),
     stat: (path) => scope.track(() => source.fs.stat(path)),
   })
   const approval: ApprovalWorkspaceContext = Object.freeze({
+    ...(source.approval.checkTool
+      ? {
+          checkTool: (name: string, args: unknown) =>
+            scope.track(() => source.approval.checkTool!(name, args), { cancelOnAbort: true }),
+        }
+      : {}),
     ask: (request: ApprovalRequest) =>
       scope.track(() => source.approval.ask(request), { cancelOnAbort: true }),
     resume: (ticket: string, verdict: Verdict) =>

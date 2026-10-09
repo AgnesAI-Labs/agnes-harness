@@ -525,3 +525,4 @@ export type { CapabilityReason, SessionCapability, SessionCapabilitySet } from '
 
 export { createFeedbackService } from '@agnes/host-runtime/feedback'
 export { draftFeedbackSkill, feedbackSkillFiles } from '@agnes/host-runtime/feedback-draft'
+export { AutoReviewSettingsStore } from '@agnes/host-infrastructure/auto-review-settings'

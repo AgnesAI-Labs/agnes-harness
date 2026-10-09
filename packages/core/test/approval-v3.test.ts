@@ -1,6 +1,9 @@
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import { presetDefaults } from '@agnes/core-common/step/preset'
+import { ToolPolicyRegistry } from '@agnes/core-effects/effects/tool-providers'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
-import type { ToolDef } from '@agnes/extension-api'
-import type { ApprovalGrant } from '@agnes/protocol'
+import type { ToolDef, ToolPolicyRegistryPort } from '@agnes/extension-api'
+import type { ApprovalGrant, Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
@@ -58,14 +61,20 @@ async function atTools(o: {
   tail?: number
   seams?: ReturnType<typeof fakeSeams>
   approvalMode?: 'manual' | 'smart' | 'off'
+  toolPolicies?: ToolPolicyRegistryPort
+  provider?: Provider
+  preset?: import('@agnes/core-common/step/preset').PresetView
+  toolPolicySettings?: import('../src/step/session.js').SessionDeps['toolPolicySettings']
   profile?: string | null
   execute?: () => Promise<{ content: Array<{ type: 'text'; text: string }> }>
 }) {
   const calls = o.calls ?? 1
-  const provider = fakeProvider([
-    ...Array.from({ length: calls }, (_, i) => toolTurn('scoped_write', { value: String(i) })),
-    ...Array.from({ length: o.tail ?? 0 }, () => textTurn('done')),
-  ])
+  const provider =
+    o.provider ??
+    fakeProvider([
+      ...Array.from({ length: calls }, (_, i) => toolTurn('scoped_write', { value: String(i) })),
+      ...Array.from({ length: o.tail ?? 0 }, () => textTurn('done')),
+    ])
   const opened = await openSession({
     provider,
     registry: registryWith(
@@ -73,6 +82,9 @@ async function atTools(o: {
     ),
     ...(o.seams ? { seams: o.seams } : {}),
     ...(o.approvalMode ? { approvalMode: o.approvalMode } : {}),
+    ...(o.preset ? { preset: o.preset } : {}),
+    ...(o.toolPolicies ? { toolPolicies: o.toolPolicies } : {}),
+    ...(o.toolPolicySettings ? { toolPolicySettings: o.toolPolicySettings } : {}),
     resolvedProfileHash: o.profile === undefined ? profileHash : o.profile,
   })
   await opened.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
@@ -549,6 +561,167 @@ describe('v3 approval modes and grants', () => {
       expect({ guards, asks, executions }).toEqual({ guards: 0, asks: 1, executions: 1 })
     },
   )
+
+  it('persists scripted reviewer decisions before effects, keeps denials hard, and restores the same decision', async () => {
+    for (const decision of ['allow', 'deny', 'escalate'] as const) {
+      let asks = 0,
+        executions = 0
+      const policies = new ToolPolicyRegistry()
+      policies.register('test', {
+        id: 'scripted-review',
+        version: '1',
+        async decide(input) {
+          return {
+            effect: decision === 'allow' ? 'allow' : decision === 'deny' ? 'deny' : 'ask',
+            reason: 'Scripted reviewer reason',
+            review: {
+              model: 'scripted-cheap',
+              promptHash: 'a'.repeat(64),
+              argsHash: sha256Hex(canonicalJson(input.call.args)),
+              scopeHash: 'b'.repeat(64),
+              costSource: 'estimated',
+              decision,
+              risk: decision === 'allow' ? 'low' : 'medium',
+              reason: 'Scripted reviewer reason',
+              latencyMs: 1,
+              cost: 0.01,
+              source: 'model',
+            },
+          }
+        },
+      })
+      const original = await atTools({
+        scopes: ['tool:write'],
+        toolPolicies: policies,
+        toolPolicySettings: async () => ({ policy: 'scripted-review' }),
+        execute: async () => {
+          executions++
+          return { content: [{ type: 'text', text: 'done' }] }
+        },
+        seams: fakeSeams({
+          approval: {
+            ask: async (req) => {
+              asks++
+              expect(req.summary).toContain('Scripted reviewer reason')
+              return 'rejected'
+            },
+          },
+        }),
+      })
+      await original.session.runToolsPhase()
+      const events = await original.log.scan({ fromSeq: 1, toSeq: original.log.lastSeq })
+      const review = events.find((row) => row.type === 'x/approval/review')
+      expect(review?.data).toMatchObject({ review: { model: 'scripted-cheap', decision, cost: 0.01 } })
+      const result = events.find((row) => row.type === 'tool/result')
+      expect(review?.seq).toBeLessThan(result?.seq ?? 0)
+      expect(asks).toBe(decision === 'escalate' ? 1 : 0)
+      expect(executions).toBe(decision === 'allow' ? 1 : 0)
+      if (decision === 'allow' && review) {
+        const reopened = await openSession({
+          provider: fakeProvider([]),
+          toolPolicies: policies,
+          toolPolicySettings: async () => {
+            throw new Error('Must reuse the persisted review')
+          },
+          registry: registryWith(
+            scopedTool(['tool:write'], async () => {
+              executions++
+              return { content: [{ type: 'text', text: 'done' }] }
+            }),
+          ),
+          storage: MemoryStorage.fromEvents(
+            'k',
+            events.filter((row) => row.seq <= review.seq),
+            { opCells: original.opCellsBefore(review.seq + 1) },
+          ),
+          key: 'k',
+          writerRunId: 'review-recovery',
+        })
+        await reopened.session.resume()
+        await reopened.session.runToolsPhase()
+        expect(executions).toBe(2)
+      }
+    }
+    const blocked = await atTools({
+      scopes: ['tool:write'],
+      toolPolicySettings: async () => {
+        throw new Error('Hard deny must precede review')
+      },
+      seams: fakeSeams({ approval: { checkTool: async () => false } }),
+    })
+    await blocked.session.runToolsPhase()
+    expect((await blocked.log.scan({ type: 'tool/result', limit: 10 })).at(-1)?.data).toMatchObject({
+      code: 'POLICY_DENIED',
+    })
+  })
+
+  it('provides tool-free reviewer requests, records costs and shares the reservation budget across calls', async () => {
+    const provider = fakeProvider([
+      toolTurn('scoped_write', { value: '0' }),
+      textTurn('Bounded write'),
+      toolTurn('scoped_write', { value: '1' }),
+    ])
+    const policies = new ToolPolicyRegistry()
+    policies.register('test', {
+      id: 'budget-review',
+      version: '1',
+      async decide(input, signal, ports) {
+        const response = (await ports!.reserve(1))
+          ? await ports!.model({ slot: 'fast', prompt: 'Review the bounded write' }, signal)
+          : undefined
+        const decision = response ? ('allow' as const) : ('escalate' as const)
+        const reason = response?.text ?? 'Session reviewer budget exhausted'
+        return {
+          effect: response ? 'allow' : 'ask',
+          reason,
+          review: {
+            model: response?.model ?? 'fast',
+            promptHash: 'a'.repeat(64),
+            argsHash: sha256Hex(canonicalJson(input.call.args)),
+            scopeHash: 'b'.repeat(64),
+            decision,
+            risk: response ? 'low' : 'medium',
+            reason,
+            latencyMs: 1,
+            cost: response?.cost ?? 0,
+            costSource: response?.costSource ?? 'unavailable',
+            source: response ? 'model' : 'fallback',
+          },
+        }
+      },
+    })
+    const preset = presetDefaults()
+    preset.model.route.fast = 'cheap'
+    preset.model.id.fast = 'scripted-cheap'
+    const opened = await atTools({
+      provider,
+      preset,
+      scopes: ['tool:write'],
+      toolPolicies: policies,
+      toolPolicySettings: async () => ({ policy: 'budget-review' }),
+      seams: fakeSeams({ approval: { ask: async () => 'rejected' } }),
+    })
+    await opened.session.runToolsPhase()
+    await opened.session.runInference()
+    await opened.session.runToolsPhase()
+    const reviews = await opened.log.scan({ type: 'x/approval/review', limit: 10 })
+    expect(reviews.map((row) => (row.data as { review: { decision: string } }).review.decision)).toEqual([
+      'allow',
+      'escalate',
+    ])
+    expect(provider.requests.find((request) => request.model === 'scripted-cheap')).toMatchObject({
+      tools: [],
+      route: 'cheap',
+    })
+    expect(
+      (await opened.log.scan({ type: 'cost/ledger', limit: 10 })).some(
+        (row) =>
+          (row.data as { purpose: string; credits: number }).purpose === 'approval-guardian' &&
+          (row.data as { credits: number }).credits === 1,
+      ),
+    ).toBe(true)
+    expect(await opened.log.scan({ type: 'x/approval/reservation', limit: 10 })).toHaveLength(1)
+  })
 
   it('off mode bypasses asks but never overrides an authorization deny', async () => {
     let asks = 0

@@ -6,6 +6,8 @@ it('rejects raw admin and Extension Service calls from the browser client before
   await expect(client.call('_agnes/v1/packages.list', { profile: 'local-dev' })).rejects.toMatchObject({
     kind: 'unsupported',
   })
+  await expect(client.autoReview.get()).rejects.toMatchObject({ kind: 'unsupported' })
+  await expect(client.autoReview.save({ enabled: true })).rejects.toMatchObject({ kind: 'unsupported' })
   await expect(client.call('_agnes/v1/resources.list', { profile: 'local-dev' })).rejects.toMatchObject({
     kind: 'unsupported',
   })

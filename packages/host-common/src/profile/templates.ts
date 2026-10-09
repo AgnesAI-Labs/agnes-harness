@@ -100,10 +100,10 @@ export function checkTemplateShape(doc: unknown, name: string): asserts doc is R
     approvals !== undefined &&
     (typeof approvals !== 'object' ||
       approvals === null ||
-      !['manual', 'smart', 'off'].includes(String(approvals.mode)) ||
+      !['manual', 'smart', 'off', 'auto-review'].includes(String(approvals.mode)) ||
       Object.keys(approvals).some((key) => key !== 'mode'))
   )
-    bad('approvals must contain only mode manual, smart, or off')
+    bad('approvals must contain only mode manual, smart, off, or auto-review')
   const computerUse = m.computerUse as
     | {
         enabled?: unknown

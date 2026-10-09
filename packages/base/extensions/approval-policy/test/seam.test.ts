@@ -40,6 +40,11 @@ const withoutTool = (over: Partial<ApprovalRequest>): ApprovalRequest => {
 const EDIT_ALLOW = { tool: 'edit|write', argv: '/work/proj/(?:[^/]+/)*[^/]+', action: 'allow' }
 
 describe('approval-policy sync path', () => {
+  it('does not let an empty command table narrow full file access', async () => {
+    const seam = await approvalPolicy(fakeSeamInit({ preset: { approval: { command_policy: [] } } }))
+    expect(await seam.checkTool?.('read', { path: '/outside/workspace/file' })).toBe(true)
+  })
+
   it('allows by policy without asking anyone', async () => {
     const init = fakeSeamInit({ preset: { approval: { command_policy: [EDIT_ALLOW] } } })
     expect(await (await approvalPolicy(init)).ask(req())).toBe('allowed-once')
@@ -64,7 +69,10 @@ describe('approval-policy sync path', () => {
     const init = fakeSeamInit({
       preset: { approval: { command_policy: [{ tool: 'shell', argv: '^rm', action: 'deny' }] } },
     })
-    const verdict = await (await approvalPolicy(init)).ask(
+    const seam = await approvalPolicy(init)
+    expect(await seam.checkTool?.('shell', { command: 'rm -rf /' })).toBe(false)
+    expect(await seam.checkTool?.('shell', { command: 'pwd' })).toBe(true)
+    const verdict = await seam.ask(
       req({
         tool: {
           name: 'shell',

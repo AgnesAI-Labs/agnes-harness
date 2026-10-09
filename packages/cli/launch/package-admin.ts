@@ -229,6 +229,16 @@ export function localPackageAdmin(
       await initialize()
       return client.factChain(input)
     },
+    autoReview: {
+      get: async () => {
+        await initialize()
+        return client.autoReview.get()
+      },
+      save: async (config) => {
+        await initialize()
+        return client.autoReview.save(config)
+      },
+    },
     systemPrompt: {
       async get(input) {
         await initialize()

@@ -2154,6 +2154,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           ),
         dataDir: o.config.dataDir,
         profile: o.profile.name,
+        reviewEnabled: o.profile.approvals.mode === 'auto-review',
         registry: cx.registry,
         requireSessionOwner: requireSessionOwner(cx),
         preview: async (config) => {

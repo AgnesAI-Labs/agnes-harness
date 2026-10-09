@@ -29,6 +29,7 @@ export type FsBinding = { policy: FsPolicy; caseSensitive: boolean; readOnly?: b
 export type FencedFs = HostFs & {
   /** Check current write policy without truncating or allocating file bytes. */
   authorizeWrite?(path: string): Promise<void>
+  preflight(path: string, mode: 'read' | 'write'): Promise<void>
   resolveInside(path: string): Promise<string>
   /** Symlink resolution only - no policy decision. What the sandbox seam's compiler and session open ask for. */
   canonicalize(path: string, opts?: { base?: string }): Promise<string>
@@ -216,6 +217,10 @@ export function createFs(
   const fs: FencedFs = {
     async authorizeWrite(path) {
       await authorize(path, 'write')
+    },
+    async preflight(path, mode) {
+      if (mode === 'read') await authorizeRead(path)
+      else await authorize(path, mode)
     },
     resolveInside,
     async canonicalize(p, opts) {

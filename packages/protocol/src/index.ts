@@ -321,6 +321,7 @@ export type {
   SkinReadResult,
 } from '../gen/ts/package-admin.js'
 export type { PresetDoc } from '../gen/ts/preset.js'
+export { AutoReviewConfig, ToolReviewFact } from './auto-review.js'
 export type {
   ApprovalMode,
   ApprovalProfile,
