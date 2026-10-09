@@ -95,7 +95,7 @@ function SessionChangesPanel({ context, headerId }: { context: UiExtensionContex
       </svg>
     </Button>
   )
-  const selected = snapshot?.selected
+  const selected = snapshot?.selected?.path === path ? snapshot.selected : undefined
   return (
     <section
       className="workbench-changes"
@@ -138,7 +138,6 @@ function SessionChangesPanel({ context, headerId }: { context: UiExtensionContex
                   onClick={() => {
                     setPath(file.path)
                     setExpectedRevision(undefined)
-                    setSnapshot(undefined)
                   }}
                 >
                   <span>{file.path}</span>

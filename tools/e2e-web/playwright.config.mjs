@@ -14,6 +14,7 @@ export default defineConfig({
     'ui-flows.spec.ts',
     'first-run.spec.ts',
     'workbench.spec.ts',
+    'narrow.spec.ts',
   ],
   workers: 2,
   // Every spec owns a fresh home and daemon; spread long flows across both workers.

@@ -7,8 +7,8 @@ import {
 } from '@agnes/web-client'
 import type { WorkbenchContext } from '@agnes/web-conversation/workbench'
 import { Button, renderRegion, unmountRegion } from '@agnes/web-ui'
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { createPortal } from 'react-dom'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { createPortal, flushSync } from 'react-dom'
 
 type Layout = { rightOpen: boolean; bottomOpen: boolean; rightWidth: number; bottomHeight: number }
 const edges = ['right', 'bottom'] as const
@@ -35,7 +35,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   useSyncExternalStore(workbenchPanels.subscribe, workbenchPanels.getSnapshot)
   const [layout, setLayout] = useState(readLayout)
   const [factTarget, setFactTarget] = useState<FactChainParams>()
-  const returnFocus = useRef<HTMLElement | null>(null)
+  const returnFocus = useRef<Partial<Record<'right' | 'bottom', HTMLElement>>>({})
   const sessionId = (context.data as WorkbenchContext)?.session?.id
   const [selection, setSelection] = useState<unknown>()
   const [selected, setSelected] = useState({ right: 'files', bottom: 'terminal' })
@@ -51,12 +51,47 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   )
   const controls = useRef<HTMLDivElement>(null)
   const { t } = context
+  const workbench = context.data as WorkbenchContext
+  const rememberFocus = useCallback(
+    (edge: 'right' | 'bottom') => {
+      const active = document.activeElement
+      if (
+        active instanceof HTMLElement &&
+        active !== document.body &&
+        active !== document.documentElement &&
+        !surfaces[edge]?.contains(active)
+      )
+        returnFocus.current[edge] = active
+    },
+    [surfaces],
+  )
+  const restoreFocus = useCallback((edge: 'right' | 'bottom') => {
+    const target = returnFocus.current[edge]
+    if (target?.isConnected && target.getClientRects().length && !target.closest('[hidden], [inert]'))
+      target.focus()
+    else controls.current?.querySelector<HTMLButtonElement>(`[data-edge="${edge}"]`)?.focus()
+  }, [])
+  useEffect(() => {
+    const sheet = window.matchMedia('(max-width: 767px)')
+    const reconcile = () => {
+      if (!sheet.matches) return
+      setLayout((value) => {
+        if (!value.rightOpen || !value.bottomOpen) return value
+        return surfaces.bottom?.contains(document.activeElement)
+          ? { ...value, rightOpen: false }
+          : { ...value, bottomOpen: false }
+      })
+    }
+    reconcile()
+    sheet.addEventListener('change', reconcile)
+    return () => sheet.removeEventListener('change', reconcile)
+  }, [surfaces])
   useEffect(() => {
     setFactTarget(undefined)
     const openPanel = (id: string) => {
       const panel = workbenchPanels.get(id)
       if (!panel) return false
-      returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      rememberFocus(panel.edge)
       setSelected((value) => ({ ...value, [panel.edge]: id }))
       setLayout((value) => ({
         ...value,
@@ -78,7 +113,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       removeFacts()
       removePanel()
     }
-  }, [sessionId])
+  }, [sessionId, rememberFocus])
   useEffect(
     () => () => {
       surfaces.split?.classList.remove('workbench-right-open', 'workbench-bottom-open')
@@ -113,15 +148,21 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       if (event.key === 'Escape') {
         event.preventDefault()
         setLayout((value) => ({ ...value, [`${edge}Open`]: false }))
-        if (returnFocus.current?.isConnected) returnFocus.current.focus()
-        else controls.current?.querySelector<HTMLButtonElement>(`[data-edge="${edge}"]`)?.focus()
+        restoreFocus(edge)
       }
-      if (event.key === 'Tab' && window.innerWidth < 1280) {
+      if (event.key === 'Tab' && (edge === 'right' ? window.innerWidth < 1280 : window.innerWidth <= 767)) {
         const nodes = [
           ...(surfaces[edge]?.querySelectorAll<HTMLElement>(
-            'button:not([disabled]), input, textarea, [tabindex="0"]',
+            'button, input, textarea, select, summary, a[href], [tabindex]',
           ) ?? []),
-        ].filter((node) => node.tabIndex >= 0)
+        ].filter(
+          (node) =>
+            node.tabIndex >= 0 &&
+            !node.matches(':disabled') &&
+            !node.closest('[hidden], [inert]') &&
+            node.getClientRects().length > 0 &&
+            getComputedStyle(node).visibility !== 'hidden',
+        )
         const first = nodes[0],
           last = nodes.at(-1)
         if (event.shiftKey && document.activeElement === first) {
@@ -135,11 +176,12 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     }
     document.addEventListener('keydown', keyboard)
     return () => document.removeEventListener('keydown', keyboard)
-  }, [layout, surfaces])
+  }, [layout, surfaces, restoreFocus])
   const openPanel = (id: string, payload?: unknown) => {
     const panel = workbenchPanels.get(id)
     if (!panel) return
     const edge = panel.edge
+    rememberFocus(edge)
     setSelection(payload)
     setSelected((value) => ({ ...value, [edge]: id }))
     setLayout((value) => ({
@@ -153,8 +195,11 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   }
   const close = (edge: 'right' | 'bottom') => {
     setLayout((value) => ({ ...value, [`${edge}Open`]: false }))
-    if (returnFocus.current?.isConnected) returnFocus.current.focus()
-    else controls.current?.querySelector<HTMLButtonElement>(`[data-edge="${edge}"]`)?.focus()
+    restoreFocus(edge)
+  }
+  const leaveOverlay = (edge: 'right' | 'bottom') => {
+    if (edge === 'right' ? window.innerWidth < 1280 : window.innerWidth <= 767)
+      flushSync(() => setLayout((value) => ({ ...value, [`${edge}Open`]: false })))
   }
   const resize = (edge: 'right' | 'bottom', amount: number) =>
     setLayout((value) => ({
@@ -183,6 +228,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
               aria-expanded={open}
               aria-label={t(`workbench.${edge}`)}
               onClick={() => {
+                rememberFocus(edge)
                 setLayout((value) => ({
                   ...value,
                   [`${edge}Open`]: !open,
@@ -302,19 +348,35 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                     {Component && open && (
                       <Component
                         key={active.id}
-                        context={
-                          active.id === 'facts'
+                        context={{
+                          ...context,
+                          selection,
+                          openPanel,
+                          ...(context.openRecord
                             ? {
-                                ...context,
-                                selection,
-                                openPanel,
-                                data: {
-                                  ...(context.data as WorkbenchContext),
-                                  factChain: factTarget?.sessionId === sessionId ? factTarget : undefined,
+                                openRecord: (sessionId, callSeq, resultSeq) => {
+                                  leaveOverlay(edge)
+                                  return context.openRecord?.(sessionId, callSeq, resultSeq) ?? false
                                 },
                               }
-                            : { ...context, selection, openPanel }
-                        }
+                            : {}),
+                          data: {
+                            ...workbench,
+                            ...(workbench?.mention
+                              ? {
+                                  mention: (path: string) => {
+                                    leaveOverlay(edge)
+                                    workbench.mention(path)
+                                  },
+                                }
+                              : {}),
+                            ...(active.id === 'facts'
+                              ? {
+                                  factChain: factTarget?.sessionId === sessionId ? factTarget : undefined,
+                                }
+                              : {}),
+                          },
+                        }}
                         headerId={`workbench-header-actions-${edge}`}
                       />
                     )}

@@ -18,6 +18,8 @@ const dispose = workbenchPanels.register({
 
 原有 `workbench.panel` 插槽继续挂载在右侧面板中以保持兼容。新浏览器默认关闭停靠区。桌面宽度为 240–480 像素，小屏幕使用浮层。尺寸分隔条支持方向键，页签支持方向键及 Home/End，Escape 关闭面板。
 
+手机上同时只打开一个停靠区 sheet，缩小窗口时也保持此规则。浮层内 Tab 只经过可见且启用的控件，关闭后焦点返回打开入口。提及路径与记录导航先关闭浮层，再聚焦目标。平板中的行内终端不限制 Tab 离开。
+
 worker 在会话 workspace invocation 内执行 list/read，使用与工具一致的文件策略。native 逐层打开规范路径，拒绝链接并保留同一个经过校验的 descriptor 完成有上限的读取；native 不可用时拒绝操作。POSIX 使用 `openat`；Windows 持有真实目录句柄阻止替换并拒绝 reparse point（仅本地盘路径）。list revision 描述可见目录列表；read revision 是返回字节的 SHA-256，超大文件明确标为 `weak:mtime:size`。`observedAt` 是服务端读取时间，不保证后续预览仍然最新。Git 超时或溢出返回 `gitStatus: unavailable`，不能显示为干净状态。
 
 Git badge 由 Host 在已授权的规范工作区根下受控执行 `git status --porcelain=v1 -z`（500 ms、256 KiB）。固定 argv 禁用可选 index 写入、fsmonitor hook 与子模块遍历，环境忽略系统/全局 Git 配置。客户端只接收可见条目的 badge；list/read 仍拒绝 `.git`，链接或非目录 `.git` 元数据也会被拒绝，不返回 Git config、index、objects 或 stderr。

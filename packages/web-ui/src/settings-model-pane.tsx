@@ -31,7 +31,12 @@ export function SettingsModelPane({
               <h3>{t('settings-shell.accountsTitle')}</h3>
               <p>{t('settings-shell.accountsIntro')}</p>
             </div>
-            <Button id="config-add-account" className="secondary-button compact" htmlType="button">
+            <Button
+              id="config-add-account"
+              className="secondary-button compact"
+              htmlType="button"
+              aria-label={t('settings-shell.addAccount')}
+            >
               <svg className="icon" data-agnes-region="icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 5v14M5 12h14" />
               </svg>

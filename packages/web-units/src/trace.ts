@@ -3,6 +3,7 @@ import {
   createElement,
   type ForwardedRef,
   forwardRef,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   useCallback,
@@ -659,9 +660,24 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
   const currentSnapshot = useRef(snapshot)
   currentSnapshot.current = snapshot
   const selectRowRef = useRef<((id: string) => void) | undefined>(undefined)
+  const [compact, setCompact] = useState(() => window.matchMedia('(max-width: 900px)').matches)
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 900px)')
+    const update = () => setCompact(media.matches)
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
   const [query, setQuery] = useState('')
   const [kindFilter, setKindFilter] = useState('all')
   const [selected, setSelected] = useState<string | undefined>(undefined)
+  useEffect(() => {
+    if (!compact || !selected) return
+    const previous = document.activeElement
+    root.querySelector<HTMLButtonElement>('.trace-inspector-close')?.focus()
+    return () => {
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus()
+    }
+  }, [compact, selected, root])
   const [pane, setPane] = useState<InspectorPane>('overview')
   const [toolDetail, setToolDetail] = useState<ToolDetailState | undefined>(undefined)
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null)
@@ -1350,7 +1366,15 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
   const inspector = selectedRow
     ? createElement(
         'aside',
-        { className: 'trace-inspector' },
+        {
+          className: 'trace-inspector',
+          onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => {
+            if (compact && event.key === 'Escape' && !event.defaultPrevented) {
+              event.preventDefault()
+              closeInspector()
+            }
+          },
+        },
         createElement(
           'header',
           { className: 'trace-inspector-head' },
@@ -1819,10 +1843,10 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
                 const marker = cluster ? unit.domainEnd <= unit.domainStart : bar.marker
                 const targets = unit.members.filter((member) => member.targetId)
                 const title = cluster ? traceText('trace.cluster', { n: unit.count }) : bar.title
-                return createElement(targets.length ? 'button' : 'span', {
+                return createElement(targets.length && !compact ? 'button' : 'span', {
                   className: `trace-gantt-bar lane-${lane}${!cluster && bar.tone ? ` tone-${bar.tone}` : ''}${!cluster && bar.truncated ? ' truncated' : ''}${marker ? ' marker' : ''}${cluster ? ' cluster' : ''}`,
                   key: unit.key,
-                  ...(targets.length
+                  ...(targets.length && !compact
                     ? {
                         type: 'button',
                         'aria-label': title,

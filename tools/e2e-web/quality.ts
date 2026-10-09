@@ -101,9 +101,10 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
   const root = basename(process.cwd()).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const checkout = page.getByRole('button', { name: new RegExp(`^${root}(?: |$)`), includeHidden: true })
   // File read clocks vary by runtime; keep the localized label and normalize only its time.
-  const metadata = name.startsWith('workbench-')
-    ? page.locator('[data-testid="turn-metadata"], .workbench-file-preview > details > summary')
-    : page.getByTestId('turn-metadata')
+  const metadata =
+    name.startsWith('workbench-') || name.startsWith('narrow-workbench-')
+      ? page.locator('[data-testid="turn-metadata"], .workbench-file-preview > details > summary')
+      : page.getByTestId('turn-metadata')
   const disk = page.getByTestId('doctor-space')
   // Runtime free space changes independently of UI. Preserve its localized sentence and geometry.
   await disk.evaluateAll((rows) => {

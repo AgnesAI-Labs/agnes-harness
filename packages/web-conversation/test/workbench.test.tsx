@@ -233,6 +233,7 @@ it('orders rapid terminal input, drops unsent input on detach and restores read-
     type(['a', 'b', 'c', 'Enter'])
     await vi.waitFor(() => expect(releaseInput).toBeTypeOf('function'))
     expect(human.stdout).toBe('human output')
+    expect(host.querySelector('textarea')?.disabled).toBe(false)
     releaseHeldInput()
     await vi.waitFor(() => expect(human.stdout).toBe('human outputabc\r'))
     holdInput = true
@@ -322,6 +323,7 @@ it('renders kill receipts immediately and keeps a running tab until close is con
     await vi.waitFor(() => expect(host.querySelector('textarea')?.value).toContain('Live terminal output'))
     flushSync(() => (host.querySelector('[data-testid=terminal-kill]') as HTMLButtonElement).click())
     expect(host.querySelector('[role=status]')?.textContent).toBe('Running')
+    expect(host.querySelector('textarea')?.disabled).toBe(true)
     holdPolling = true
     confirm?.()
     await vi.waitFor(() => expect(host.querySelector('[role=status]')?.textContent).toBe('Killed'))
@@ -451,8 +453,12 @@ it('navigates from file review, renders a read-only diff and ignores results det
     flushSync(() => (host.querySelector('[data-testid=changes-provenance]') as HTMLButtonElement).click())
     expect(openFacts).not.toHaveBeenCalled()
     expect(host.textContent).toContain('could not be linked')
-    flushSync(() => (host.querySelector('[data-path="b.ts"]') as HTMLButtonElement).click())
+    const fileButton = host.querySelector('[data-path="b.ts"]') as HTMLButtonElement
+    fileButton.focus()
+    flushSync(() => fileButton.click())
     await vi.waitFor(() => expect(finishOld).toBeDefined())
+    expect(document.activeElement).toBe(fileButton)
+    expect(host.querySelector('pre')).toBeNull()
     const next = {
       id: 'next',
       workspaceChanges: async () => ({
