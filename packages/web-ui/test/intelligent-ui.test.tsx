@@ -60,7 +60,7 @@ describe('preset Intelligent UI catalog', () => {
     async (mode) => {
       const rendered = structuredClone(surface)
       const table = rendered.components[0]!
-      if (table.kind !== 'table') throw new Error('Missing table fixture')
+      if (table.kind !== 'table' || !('selection' in table)) throw new Error('Missing table fixture')
       table.selection = mode
       const host = document.createElement('div'),
         root = createRoot(host)

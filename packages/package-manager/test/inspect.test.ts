@@ -119,7 +119,9 @@ it('previews without importing code or writing lock, then installs only disabled
   ])
   expect(preview.metadata).toEqual(purpose)
   expect(entry.metadata).toEqual(purpose)
-  expect(readLock(profile).packages[preview.id]?.metadata).toEqual(purpose)
+  expect(
+    readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[preview.id]?.metadata,
+  ).toEqual(purpose)
   clean()
 })
 it('recognizes the static agnes.plugins declaration without importing plugin code', async () => {

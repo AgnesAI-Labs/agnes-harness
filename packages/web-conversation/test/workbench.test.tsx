@@ -154,7 +154,8 @@ it('clears fact records on session changes and ignores an old response while kee
     expect(host.querySelector('details')?.open).toBe(false)
     expect(host.querySelector('ol')?.textContent).not.toContain('a'.repeat(64))
     expect(host.querySelector('summary')?.textContent).toBe('技术详情')
-    expect(host.querySelector('ol')?.textContent).toContain('文档读取 · 0.1.2')
+    // Historical records without author presentation retain the public package-name fallback.
+    expect(host.querySelector('ol')?.textContent).toContain('document-reader \u00b7 0.1.2')
   } finally {
     unmountRegion(host)
     host.remove()

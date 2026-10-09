@@ -36,7 +36,10 @@ async function fixture(terminal: 'completed' | 'idle' = 'completed') {
     signal: ac.signal,
     progress: () => {},
     tools: {
-      invoke: async (_name: string, args: { task: string }) => {
+      invoke: async (name: string, args: Record<string, unknown>) => {
+        if (name === 'ui_render') return { content: [] }
+        expect(name).toBe('subagent_spawn')
+        if (typeof args.task !== 'string') throw new Error('Missing child task')
         tasks.push(args.task)
         return {
           content: [],
@@ -180,7 +183,10 @@ it('refuses unavailable persistence before spawning, and cancels accepted childr
   )
   expect(f.tasks).toEqual([])
   const uncertain = await fixture()
-  uncertain.ctx.tools.invoke = async () => {
+  const invoke = uncertain.ctx.tools.invoke
+  uncertain.ctx.tools.invoke = async (name, args, options) => {
+    if (name === 'ui_render') return invoke(name, args, options)
+    expect(name).toBe('subagent_spawn')
     throw new Error('creation reply was lost')
   }
   await uncertain.tools.get('workflow')!.execute({ name: 'uncertain', stages }, uncertain.ctx)

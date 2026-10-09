@@ -101,7 +101,9 @@ function checkContributionDetails(locale: 'en' | 'zh-CN', summary: string) {
   details.remove()
   expect(host.textContent).not.toContain('plugin/012345abcdef')
   expect(host.querySelector('.plugin-compatibility')?.textContent).toBe(summary)
-  expect(host.querySelector('.plugin-row-content > p:not(.plugin-source)')).toBeNull()
+  expect(host.querySelector('[data-testid=plugin-summary]')?.textContent).toBe(
+    locale === 'en' ? 'No description provided' : '\u4f5c\u8005\u672a\u63d0\u4f9b\u7528\u9014\u8bf4\u660e',
+  )
   dispose()
 }
 
@@ -200,7 +202,7 @@ it.each(['en', 'zh-CN'] as const)(
           rows: [purposeRow],
           providesOf: () => ({
             provides: [{ kind: 'tool', id: 'read_report' }],
-            appearsIn: ['chat'],
+            appearsIn: ['chat'] as const,
             available: true,
           }),
         }),

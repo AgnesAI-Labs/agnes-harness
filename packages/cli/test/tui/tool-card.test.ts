@@ -3,7 +3,7 @@ import { expect, it } from 'vitest'
 import { createAnsi } from '../../src/tui/ansi.js'
 import { collectSlots } from '../../src/tui/slots.js'
 import { displayWidth } from '../../src/tui/terminal.js'
-import { renderBarChart, renderTable, ToolCard } from '../../src/tui/views/tool-card.js'
+import { renderBarChart, ToolCard } from '../../src/tui/views/tool-card.js'
 
 const node: Extract<UINode, { kind: 'tool' }> = {
   kind: 'tool',
@@ -93,7 +93,7 @@ it('colors the compact state glyph and the expanded title status on a colour tie
   expect(plain.render(40).join('\n')).not.toContain('\x1b')
 })
 
-it('renders a tool.card.inline table/chart/actions block when the card is expanded', () => {
+it('renders a tool.card.inline chart/actions block when the card is expanded', () => {
   const acted: string[] = []
   const inline: Extract<UINode, { kind: 'tool' }> = {
     kind: 'tool',
@@ -110,13 +110,6 @@ it('renders a tool.card.inline table/chart/actions block when the card is expand
         requestSeq: 5,
         payload: {
           title: '本月销售',
-          table: {
-            columns: ['区', '额'],
-            rows: [
-              ['华东', '12'],
-              ['华北', '9'],
-            ],
-          },
           chart: {
             kind: 'bar',
             series: [
@@ -170,11 +163,7 @@ it('a collapsed card ignores digit keys; onAction is never called without expand
   expect(acted).toEqual([])
 })
 
-it('renderTable and renderBarChart against the real slots payload shape', () => {
-  expect(renderTable({ columns: ['a', 'b'], rows: [['1', '22']] }, 20).map((l) => l.trimEnd())).toEqual([
-    'a │ b',
-    '1 │ 22',
-  ])
+it('renderBarChart against the real slots payload shape', () => {
   // real chart series is `{ name, points: [{ x, y }] }`, not the flatter `{ label, value }` an
   // earlier illustrative draft assumed
   expect(

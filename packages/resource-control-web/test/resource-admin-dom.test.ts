@@ -424,7 +424,7 @@ it('uses the shared empty-state structure for Skill and MCP pages', async () => 
   await vi.waitFor(() => expect(byId('resource-list').querySelector('.admin-empty-state')).not.toBeNull())
 
   const skillsEmpty = byId('resource-list').querySelector<HTMLElement>('.admin-empty-state')
-  expect(skillsEmpty?.querySelector('h2')?.textContent).toBe('No Skills found')
+  expect(skillsEmpty?.querySelector('h3')?.textContent).toBe('No Skills found')
   expect(
     [...(skillsEmpty?.querySelectorAll('.admin-empty-state-hints li') ?? [])].map((item) => item.textContent),
   ).toEqual(['Agnes home: $AGH_HOME/skills'])
@@ -435,7 +435,7 @@ it('uses the shared empty-state structure for Skill and MCP pages', async () => 
   await vi.waitFor(() => expect(byId('resource-list').querySelector('.admin-empty-state')).not.toBeNull())
 
   const mcpEmpty = byId('resource-list').querySelector<HTMLElement>('.admin-empty-state')
-  expect(mcpEmpty?.querySelector('h2')?.textContent).toBe('No MCP services found')
+  expect(mcpEmpty?.querySelector('h3')?.textContent).toBe('No MCP services found')
   expect(mcpEmpty?.querySelector('.admin-empty-state-hints')).toBeNull()
 })
 

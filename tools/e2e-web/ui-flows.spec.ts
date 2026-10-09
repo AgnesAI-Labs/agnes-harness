@@ -32,13 +32,13 @@ function surfaceCard(page: Page, title: string) {
 async function artifactText(page: Page, runtime: Runtime) {
   const session = await current(page, runtime)
   const presented = await toolResult(session, 'present')
-  const block = presented?.content.find((item) => item.type === 'ref')
-  if (!block || block.type !== 'ref') throw new Error('Present must retain an artifact reference')
+  const artifact = presented?.artifactRefs?.[0]
+  if (!artifact) throw new Error('Present must retain an artifact reference')
   const client = await runtime.connect()
   const result = await client.call<ArtifactReadResult>('_agnes/v1/artifact.read', {
     sessionId: session.id,
     laneId: 'main',
-    artifact: block.ref,
+    artifact,
   })
   if (!result.ok) throw new Error('Authorized artifact read failed')
   return Buffer.from(result.base64, 'base64').toString('utf8')

@@ -41,6 +41,7 @@
     "webhooks.spec.ts",
     "fact-chain.spec.ts",
     "plugin-config.spec.ts",
+    "plugin-purpose.spec.ts",
     "../../packages/web-ui/test/button-contrast.spec.ts"
   ],
   "exclude": ["fixtures/**"],

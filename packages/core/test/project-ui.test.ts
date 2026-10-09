@@ -979,7 +979,13 @@ it('fills only supported surface triggers after real results, never pending tool
     {
       slot: 'tool.card.inline',
       extId: 'test/ext',
-      payload: { title: 'large card', table: { columns: ['x'], rows: [['x'.repeat(1024)]] } },
+      payload: {
+        title: 'large card',
+        chart: {
+          kind: 'bar',
+          series: [{ name: 'x', points: Array.from({ length: 16 }, () => ({ x: 'x'.repeat(64), y: 1 })) }],
+        },
+      },
     },
   ]
   const bounded = await session.projectUIOpening({ surface: 'tui', maxNodes: 100, maxBytes: 900 })
@@ -1044,7 +1050,10 @@ it('enforces the slot byte cap after schema validation with a valid payload cont
   await run(session)
   const large = {
     title: 'large',
-    table: { columns: ['x'], rows: Array.from({ length: 64 }, () => ['界'.repeat(400)]) },
+    chart: {
+      kind: 'bar',
+      series: [{ name: 'x', points: Array.from({ length: 1000 }, () => ({ x: '\u754c'.repeat(64), y: 1 })) }],
+    },
   }
   expect(validateSlotPayload('tool.card.inline', large).ok).toBe(true)
   expect(new TextEncoder().encode(JSON.stringify(large)).byteLength).toBeGreaterThan(65536)

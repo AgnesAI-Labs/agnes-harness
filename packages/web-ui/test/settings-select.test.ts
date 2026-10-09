@@ -69,7 +69,8 @@ it('materializes static fields without changing form values, constraints or boun
   expect([...select.options].map((option) => option.value)).toEqual(['stdio', 'http'])
   expect(select.querySelector('optgroup')?.label).toBe('Local')
   expect(draft.value).toBe('first\nsecond')
-  expect(draft.rows).toBe(3)
+  // happy-dom exposes rows as a string; the materializer must preserve the exact HTML constraint.
+  expect(draft.getAttribute('rows')).toBe('3')
   expect(new FormData(form).get('locale')).toBe('en')
   endpoint.value = 'https://changed.invalid'
   select.value = 'stdio'
