@@ -6,6 +6,7 @@ import { FILE_UPLOAD_PATH, httpRpcError, normalizeRpcError, type RpcError } from
 import { HISTORY_SEARCH_PATH, handleHistorySearch } from './history-route.js'
 import type { PluginRebuiltEvent, WebServer, WebServerOptions } from './server-types.js'
 import { handleFileUpload } from './upload-route.js'
+import { uiComponentFrame, UI_COMPONENT_MODULE_BYTES } from './ui-component-frame.js'
 import { webhookRoute } from './webhook-route.js'
 
 export { DEFAULT_WEB_PORT, PLAN_MODE_PATH, WORKSPACE_PICKER_PATH } from './server-assets.js'
@@ -465,6 +466,25 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
           return
         }
         const bytes = typeof resolved === 'string' ? await readFile(resolved) : Buffer.from(resolved)
+        if (new URL(request.url ?? '/', expectedOrigin).searchParams.get('agnes_ui_frame') === '1') {
+          if (
+            !['.js', '.mjs'].includes(extname(named).toLowerCase()) ||
+            bytes.length > UI_COMPONENT_MODULE_BYTES
+          ) {
+            response.writeHead(404).end()
+            return
+          }
+          const frame = uiComponentFrame(bytes.toString('utf8'))
+          response.writeHead(200, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Cache-Control': 'no-store',
+            'Content-Security-Policy': frame.csp,
+            'Referrer-Policy': 'no-referrer',
+            'X-Content-Type-Options': 'nosniff',
+          })
+          response.end(request.method === 'HEAD' ? undefined : frame.body)
+          return
+        }
         if (typeof resolved === 'string') await rememberPluginBuild(assetPath, resolved, bytes)
         response.writeHead(200, {
           'Content-Type': contentType,

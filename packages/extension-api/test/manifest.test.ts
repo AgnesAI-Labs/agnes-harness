@@ -218,3 +218,51 @@ describe('author manifest skin validation', () => {
       ).toBe(true)
   })
 })
+
+describe('reviewed Intelligent UI renderer manifest', () => {
+  const declaration = {
+    kind: 'agnes/example/diff@1',
+    propsSchema: { type: 'object', properties: { amount: { type: 'integer' } } },
+    maxPropsBytes: 256,
+    fallback: 'Use the table.',
+    accessibility: { label: 'Differences', keyboard: true },
+  }
+  const candidate = {
+    ...manifest,
+    capabilities: { ui: ['client'] },
+    contributes: { client: { entry: './diff.mjs', intelligentComponents: [declaration] } },
+  }
+  it('admits bounded local schemas and refuses foreign namespaces, unsafe schemas and missing accessibility', () => {
+    expect(checkManifest(candidate).ok).toBe(true)
+    for (const changed of [
+      { ...declaration, kind: 'other/example/diff@1' },
+      { ...declaration, kind: 'agnes/example/diff@0' },
+      { ...declaration, propsSchema: { $ref: 'https://example.test/schema' } },
+      { ...declaration, propsSchema: { type: 'unknown' } },
+      { ...declaration, propsSchema: { $async: true } },
+      { ...declaration, maxPropsBytes: 16385 },
+      { ...declaration, fallback: '' },
+      { ...declaration, accessibility: { label: 'Differences', keyboard: false } },
+    ])
+      expect(
+        checkManifest({
+          ...candidate,
+          contributes: { client: { ...candidate.contributes.client, intelligentComponents: [changed] } },
+        }).ok,
+      ).toBe(false)
+    expect(
+      checkManifest({
+        ...candidate,
+        contributes: { client: { ...candidate.contributes.client, slots: ['workbench.panel'] } },
+      }).ok,
+    ).toBe(false)
+    expect(
+      checkManifest({
+        ...candidate,
+        contributes: {
+          client: { ...candidate.contributes.client, intelligentComponents: [declaration, declaration] },
+        },
+      }).ok,
+    ).toBe(false)
+  })
+})

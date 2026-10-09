@@ -10,12 +10,14 @@ import {
   useUiText,
 } from '@agnes/web-ui'
 import { useCallback, useSyncExternalStore } from 'react'
+import { CustomUiHost, type CustomUiModuleSource } from './custom-host.js'
 import type { IntelligentUiClient } from './client.js'
 
 export interface UiPlacementBinding {
   subscribe(listener: () => void): () => void
   getSnapshot(): IntelligentUiClient | undefined
   getVersion(): number
+  customModules?: CustomUiModuleSource
   locale: UiLocaleSource
   expand(surfaceId: string, revision: number): void
   target(): { sessionId: string; surfaceId: string; revision: number } | undefined
@@ -126,8 +128,16 @@ export function BoundSurface({
     (component: string, path: string, invalid: boolean) => client.setInvalid(id, component, path, invalid),
     [client, id],
   )
+  const renderCustom = useCallback(
+    (props: import('@agnes/web-ui').CustomUiRenderProps) =>
+      binding.customModules ? (
+        <CustomUiHost {...props} sessionId={client.sessionId} source={binding.customModules} />
+      ) : null,
+    [binding.customModules, client.sessionId],
+  )
   return (
     <IntelligentSurface
+      {...(binding.customModules ? { renderCustom } : {})}
       record={record}
       placement={placement}
       input={draft.input}

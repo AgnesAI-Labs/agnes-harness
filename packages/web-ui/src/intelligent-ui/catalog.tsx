@@ -9,11 +9,13 @@ import { type ReactNode, useCallback, useId } from 'react'
 import { SurfaceFormFields } from './form-fields.js'
 import { Button } from '../ui/button.js'
 import { useUiText } from '../ui-locale.js'
+import { CustomUiComponent, type CustomUiRenderer } from './custom.js'
 import { IntelligentChart } from './chart.js'
 import { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
-import { uiObject, validIntelligentSurface } from './validate.js'
+import { uiObject, validIntelligentSurfaceProjection } from './validate.js'
 
 export interface IntelligentCatalogProps {
+  renderCustom?: CustomUiRenderer
   surface: UiSurface
   instance?: string
   input: Record<string, JsonValue>
@@ -28,7 +30,7 @@ export interface IntelligentCatalogProps {
 
 export function IntelligentCatalog(props: IntelligentCatalogProps) {
   const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
-  if (!validIntelligentSurface(props.surface))
+  if (!validIntelligentSurfaceProjection(props.surface))
     return (
       <p role="alert" data-testid="ui-unavailable">
         {t('ui.unavailable')}
@@ -76,7 +78,21 @@ function CatalogComponent(props: IntelligentCatalogProps & { component: UiCompon
     </div>
   )
   let content: ReactNode
-  if (component.kind === 'form')
+  if ('fallback' in component) {
+    content = (
+      <CustomUiComponent
+        component={component}
+        surface={surface}
+        disabled={disabled || props.invalid === true}
+        {...(props.renderCustom ? { render: props.renderCustom } : {})}
+        onAction={(id) => {
+          const action = surface.actions.find((item) => item.id === id)
+          if (!disabled && !props.invalid && component.actionIds.includes(id) && action)
+            props.onAction(action)
+        }}
+      />
+    )
+  } else if (component.kind === 'form')
     content = (
       <>
         <fieldset disabled={disabled} data-testid={`ui-form-${component.id}`}>

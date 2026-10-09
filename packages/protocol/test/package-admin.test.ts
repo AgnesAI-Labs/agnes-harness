@@ -154,9 +154,19 @@ describe('PM4 management contracts', () => {
     ).toBe(true)
   })
 
-  it('preserves verified client content digests through the browser row projection', () => {
+  it('preserves reviewed client declarations and content digests through the browser row projection', () => {
     const contentDigest = `sha256-${'a'.repeat(64)}`
+    const intelligentComponents = [
+      {
+        kind: 'acme/ui/diff@1',
+        propsSchema: { type: 'object' },
+        maxPropsBytes: 256,
+        fallback: 'Use table.',
+        accessibility: { label: 'Differences', keyboard: true as const },
+      },
+    ]
     const module = {
+      intelligentComponents,
       rowId: 'web:acme/ui',
       packageId: 'acme/ui',
       revision: 'sha256-revision',
@@ -186,10 +196,13 @@ describe('PM4 management contracts', () => {
           packageId: 'acme/ui',
           enabled: true,
           phase: 'ready',
+          intelligentComponents,
           contentDigest,
         },
       ],
     })
+    expect(withRows.modules[0]?.intelligentComponents).toEqual(intelligentComponents)
+    expect(withRows.rows?.[0]?.intelligentComponents).toEqual(intelligentComponents)
     expect(withRows.modules[0]?.contentDigest).toBe(contentDigest)
     expect(withRows.rows?.[0]?.contentDigest).toBe(contentDigest)
     expect(withRows.rowAliases).toEqual({ 'web:acme/legacy': 'web:acme/ui' })
@@ -201,6 +214,7 @@ describe('PM4 management contracts', () => {
       statuses: [status],
       rowAliases: { 'web:acme/legacy': 'web:acme/ui' },
     })
+    expect(compatibility.rows?.[0]?.intelligentComponents).toEqual(intelligentComponents)
     expect(compatibility.rows?.[0]?.contentDigest).toBe(contentDigest)
     expect(compatibility.rowAliases).toEqual({ 'web:acme/legacy': 'web:acme/ui' })
   })

@@ -73,3 +73,8 @@ npm test
 ```
 
 测试覆盖公开 loop/tool/policy 契约、夹具结果与关键拒绝边界。[外部验证器](../README.zh-CN.md#验证)在仓库外安装并测试。本验证不代表真实模型质量、浏览器交互或客户系统验收。
+
+
+## 已审阅的对账差异组件
+
+差异视图在 `client/agnes.client.json` 中声明，由自包含的 `client/reconciliation-diff.mjs` 实现。安装审阅覆盖 namespace/version、本地 props Schema、字节上限、文本回退与键盘/语义标签要求。会话保留 generation 锁定的已审阅模块。旁边的预设账簿差异表继续可用；TUI/channels 使用声明的文本回退。“审阅调整”按钮触发现有 `approve` surface action、确认及 `fde_finance_approve` 审批流程，组件不能写账簿、fetch 数据或访问会话。详见[自定义组件合同](../../../docs/develop/intelligent-ui.zh-CN.md#已审阅的自定义组件)。

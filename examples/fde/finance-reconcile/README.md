@@ -73,3 +73,8 @@ npm test
 ```
 
 Own tests cover public loop/tool/policy contracts, fixture outcomes and the key refusal boundary. The [external harness](../README.md#verification) installs and tests this example outside the repository. These checks do not establish live-model quality, browser interaction or customer-system acceptance.
+
+
+## Reviewed reconciliation diff renderer
+
+The differences view is declared in `client/agnes.client.json` and implemented by the self-contained `client/reconciliation-diff.mjs` renderer. Installation review covers its namespace/version, local props schema, byte limit, text fallback and keyboard/semantic-label requirements. Sessions keep the reviewed module from their pinned generation. The preset ledger differences table remains available beside the custom view; TUI/channels use the declared text fallback. Its “Review adjustments” button triggers the existing `approve` surface action, confirmation and `fde_finance_approve` permission flow. It cannot post a ledger, fetch data or access the session. See [the custom component contract](../../../docs/develop/intelligent-ui.md#reviewed-custom-components).

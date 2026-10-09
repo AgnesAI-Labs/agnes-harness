@@ -235,7 +235,7 @@ describe('Intelligent UI session projection and commands', () => {
     const { client, server, id, action } = await setup()
     const record = financeRecord()
     const table = record.surface.components.find((item) => item.kind === 'table')!
-    if (table.kind !== 'table') throw new Error('Missing table fixture')
+    if ('fallback' in table || table.kind !== 'table') throw new Error('Missing table fixture')
     table.rowActionIds = ['confirm']
     server.page = uiPage(record, [uiReceipt('failed', { commandId: 'old-row-command' })], 20)
     await client.refresh()

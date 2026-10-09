@@ -18,7 +18,7 @@ const meta = {
   requiresApproval: 'never' as const,
 }
 export default defineExtension((agnes) => {
-  if (!agnes.intelligentUi) throw new Error('Host does not support preset Intelligent UI')
+  if (!agnes.intelligentUi) throw new Error('Host does not support Intelligent UI')
   const runtime = agnes.intelligentUi
   const off = [runtime.register(createIntelligentUiService), agnes.registerProjection(uiProjection)]
   off.push(
@@ -26,7 +26,7 @@ export default defineExtension((agnes) => {
       defineTool({
         name: 'ui_render',
         description:
-          'Render a bounded preset surface in the conversation and workbench. Every action must map to a declared tool. No HTML or executable code.',
+          'Render a bounded surface with presets or pinned plugin-declared components in the conversation and workbench. Every action must map to a declared tool. No HTML or executable code.',
         parameters: UiRenderParams,
         meta,
         async execute(input, ctx) {
@@ -35,7 +35,11 @@ export default defineExtension((agnes) => {
             content: [
               {
                 type: 'text',
-                text: `${record.surface.title} — ${record.surface.components.length} components. [Open review](/?session=${encodeURIComponent(ctx.session.key)}&surface=${encodeURIComponent(record.surface.id)}).`,
+                text:
+                  `${record.surface.title} — ${record.surface.components.length} components. [Open review](/?session=${encodeURIComponent(ctx.session.key)}&surface=${encodeURIComponent(record.surface.id)}).` +
+                  record.surface.components
+                    .flatMap((item) => ('fallback' in item ? ['\n' + item.fallback] : []))
+                    .join(''),
               },
             ],
             details: { surface: record.surface },
@@ -58,7 +62,11 @@ export default defineExtension((agnes) => {
             content: [
               {
                 type: 'text',
-                text: `Updated ${record.surface.title} (revision ${record.surface.revision}).`,
+                text:
+                  `Updated ${record.surface.title} (revision ${record.surface.revision}).` +
+                  record.surface.components
+                    .flatMap((item) => ('fallback' in item ? ['\n' + item.fallback] : []))
+                    .join(''),
               },
             ],
             details: { surface: record.surface },

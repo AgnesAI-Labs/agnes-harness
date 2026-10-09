@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
 import { jcs } from '@agnes/protocol'
+import descriptor from './client/agnes.client.json' with { type: 'json' }
 
-/** Preset declaration only. Values stay in integer USD cents throughout. */
+/** Data-only declaration with a reviewed diff renderer and the preset table fallback. Values stay in integer USD cents throughout. */
 export function reviewSurface(id, report, revision = 1, receipt = null) {
   const approved = new Set(receipt?.entries.map((entry) => entry.id) ?? [])
   const rows = report.mismatches.map((item) => ({
@@ -46,6 +47,14 @@ export function reviewSurface(id, report, revision = 1, receipt = null) {
     placement: { inline: true, workbench: true, preferred: 'workbench' },
     components: [
       {
+        id: 'diff-view',
+        kind: descriptor.client.intelligentComponents[0].kind,
+        title: 'Reconciliation diff / 对账差异',
+        dataKey: 'diffProps',
+        fallback: descriptor.client.intelligentComponents[0].fallback,
+        actionIds: actionable ? ['approve'] : [],
+      },
+      {
         id: 'differences',
         kind: 'table',
         title: 'Ledger differences (USD cents)',
@@ -86,6 +95,7 @@ export function reviewSurface(id, report, revision = 1, receipt = null) {
       { id: 'status', kind: 'status', dataKey: 'status' },
     ],
     data: {
+      diffProps: { rows, actionable },
       differences: rows,
       adjustment: { proposals: report.proposals },
       status: receipt

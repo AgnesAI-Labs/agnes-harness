@@ -7,6 +7,7 @@ import {
   workbenchPanels,
 } from '@agnes/web-client'
 import { createDocumentLocaleSource, INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from '@agnes/web-ui'
+import type { CustomUiModuleSource } from './custom-host.js'
 import { IntelligentUiClient } from './client.js'
 import {
   IntelligentInline,
@@ -18,6 +19,7 @@ import { intelligentUiServer } from './server.js'
 
 /** Two registrations, one session client. Mounting a placement never submits a command. */
 export function mountIntelligentUi(options: {
+  customModules?: CustomUiModuleSource
   client: Client
   registry: SlotRegistry
   session: SessionService
@@ -43,6 +45,7 @@ export function mountIntelligentUi(options: {
     },
     getSnapshot: () => current,
     getVersion: () => version,
+    ...(options.customModules ? { customModules: options.customModules } : {}),
     locale: documentLocale.source,
     target: () => target,
     expand: (surfaceId, revision) => {

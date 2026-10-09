@@ -1,0 +1,59 @@
+{
+  "client": {
+    "id": "reconciliation-diff",
+    "entry": "./reconciliation-diff.mjs",
+    "intelligentComponents": [
+      {
+        "kind": "@agnes-fde/finance-reconcile/reconciliation-diff@1",
+        "propsSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rows", "actionable"],
+          "properties": {
+            "rows": {
+              "type": "array",
+              "maxItems": 1000,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "kind", "bankCents", "bookCents", "differenceCents", "status"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "kind": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "bankCents": {
+                    "type": ["integer", "null"]
+                  },
+                  "bookCents": {
+                    "type": ["integer", "null"]
+                  },
+                  "differenceCents": {
+                    "type": "integer"
+                  },
+                  "status": {
+                    "enum": ["simulated-approved", "unresolved", "needs-review"]
+                  }
+                }
+              }
+            },
+            "actionable": {
+              "type": "boolean"
+            }
+          }
+        },
+        "maxPropsBytes": 16384,
+        "fallback": "Reconciliation differences are available in the ledger differences table below. Amounts are integer USD cents; no real ledger is posted. / 对账差异见下方账簿差异表，金额单位为美元分，不会写入真实账簿。",
+        "accessibility": {
+          "label": "Reconciliation differences / 对账差异",
+          "keyboard": true
+        }
+      }
+    ]
+  }
+}

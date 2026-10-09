@@ -12,6 +12,7 @@ import { IntelligentCatalog, type IntelligentCatalogProps } from './catalog.js'
 import { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
 
 export interface IntelligentSurfaceProps {
+  renderCustom?: IntelligentCatalogProps['renderCustom']
   record: UiSurfaceRecord
   placement: 'inline' | 'workbench'
   input: Record<string, JsonValue>
@@ -73,6 +74,7 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
         </Button>
       )}
       <IntelligentCatalog
+        {...(props.renderCustom ? { renderCustom: props.renderCustom } : {})}
         surface={surface}
         instance={props.placement}
         input={props.input}

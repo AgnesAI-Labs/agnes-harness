@@ -99,6 +99,7 @@ function decodeUrlPathSegments(segments: readonly string[]): string[] | null {
  * 同一份清单在任何一条路径上得到的摘要字节都相同。
  */
 export type NormalizedClientContribution = {
+  intelligentComponents?: ClientContribution['intelligentComponents']
   id?: string
   entry: string
   styles: string[]
@@ -117,6 +118,7 @@ export function normalizeClientContribution(client: ClientContribution): Normali
   return {
     ...(client.id === undefined ? {} : { id: client.id }),
     entry: normalizeClientPath(client.entry),
+    ...(client.intelligentComponents ? { intelligentComponents: client.intelligentComponents } : {}),
     styles: (client.styles ?? []).map(normalizeClientPath),
     slots: set(client.slots),
     ...(client.slotCatalogVersion === undefined ? {} : { slotCatalogVersion: client.slotCatalogVersion }),
@@ -174,12 +176,9 @@ export function resolveClientAssets(
     // containedEntry 负责文件真实存在、类型正确且 realpath 后仍在包内。
     const target = containedEntry(dir, path, 'file', file)
     const bytes = statSync(target).size
-    if (bytes > CLIENT_MAX_FILE_BYTES)
-      fail(
-        path,
-        `client asset is ${bytes} bytes, over the ${CLIENT_MAX_FILE_BYTES}-byte cap`,
-        'client-asset-too-large',
-      )
+    const limit = client.intelligentComponents ? 262144 : CLIENT_MAX_FILE_BYTES
+    if (bytes > limit)
+      fail(path, `client asset is ${bytes} bytes, over the ${limit}-byte cap`, 'client-asset-too-large')
     total += bytes
     resolved.push(target)
   }

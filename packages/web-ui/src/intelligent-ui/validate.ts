@@ -1,1 +1,6 @@
-export { boundedUiJson, uiObject, validIntelligentSurface } from '@agnes/protocol/intelligent-ui'
+export {
+  boundedUiJson,
+  uiObject,
+  validIntelligentSurface,
+  validIntelligentSurfaceProjection,
+} from '@agnes/protocol/intelligent-ui'

@@ -14,6 +14,8 @@ function simpleForm(surface: UiSurface) {
   if (forms.length !== 1) return undefined
   const form = forms[0]!
   if (
+    'fallback' in form ||
+    form.kind !== 'form' ||
     form.actionIds?.length !== 1 ||
     !object(form.schema) ||
     form.schema.type !== 'object' ||
@@ -42,7 +44,8 @@ export function surfaceText(surface: UiSurface): string {
   const lines = [`${surface.title} (revision ${surface.revision})`]
   for (const component of surface.components) {
     if (component.title) lines.push(component.title)
-    if (component.kind === 'text' || component.kind === 'status')
+    if ('fallback' in component) lines.push(component.fallback)
+    else if (component.kind === 'text' || component.kind === 'status')
       lines.push(String(surface.data[component.dataKey]))
     else if (component.kind === 'table') {
       lines.push(component.columns.map((column) => column.label).join(' | '))

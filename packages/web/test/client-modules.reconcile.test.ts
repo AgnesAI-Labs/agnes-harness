@@ -74,6 +74,34 @@ function stubPlugin(ctx: Context, log: { loaded: string[]; disposed: string[] })
 }
 
 describe('client reconciler（WC10 前端状态机）', () => {
+  it('leaves custom renderer modules in their isolated host on initial load and hot reload', async () => {
+    const h = await harness()
+    const custom = {
+      ...mod('finance', 'v1'),
+      intelligentComponents: [
+        {
+          kind: 'finance/reconcile/diff@1',
+          propsSchema: true,
+          maxPropsBytes: 256,
+          fallback: 'Use table.',
+          accessibility: { label: 'Differences', keyboard: true as const },
+        },
+      ],
+    }
+    const reconciler = createReconciler({
+      ctx: h.ctx,
+      importer: h.importer,
+      source: { list: async () => roster([custom]) },
+    })
+    try {
+      await reconciler.reconcileNow()
+      await reconciler.reload('finance', 'v1')
+      expect(h.loaded).toEqual([])
+      expect(reconciler.snapshot()).toEqual(new Map())
+    } finally {
+      await h.ctx.fiber.dispose()
+    }
+  })
   it('真实 clientModule 以低 priority 替换已迁移区域，撤销名册后不会被下一次对账复活', async () => {
     const ctx = new Context()
     await ctx.plugin(SlotRegistry)

@@ -154,6 +154,8 @@ describe('protocol src boundary', () => {
         'boundedUiJson',
         'uiObject',
         'validIntelligentSurface',
+        'validIntelligentSurfaceProjection',
+        'validUiComponentDeclaration',
         'validateActor',
         'validateAction',
         'validateTarget',

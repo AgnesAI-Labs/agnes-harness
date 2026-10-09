@@ -84,3 +84,40 @@ for (const locale of ['en', 'zh-CN'])
     await expect(card.locator('[data-status="pending-approval"]')).toHaveCount(1)
     expect(errors).toEqual([])
   })
+
+for (const mode of ['ready', 'blocked', 'error'])
+  test(`reviewed custom renderer preserves fallback and the normal action flow (${mode})`, async ({
+    page,
+  }) => {
+    await page.goto(`${url}/?custom=${mode}&locale=en`)
+    const card = page.getByTestId('intelligent-ui-inline')
+    await expect(card.getByTestId('ui-table-differences')).toBeVisible()
+    if (mode !== 'ready') {
+      await expect(card.getByTestId('ui-custom-fallback-custom')).toContainText(
+        'Review the preset differences table.',
+      )
+      if (mode === 'error') await expect(card.getByTestId('ui-custom-frame-custom')).toHaveCount(0)
+      await expect(card.getByTestId('ui-action-confirm')).toBeEnabled()
+      return
+    }
+    const frame = card.frameLocator('[data-testid="ui-custom-frame-custom"]')
+    await expect(frame.getByText('Delta cents: 250')).toBeVisible()
+    expect(
+      await frame.locator('body').evaluate(() => ({
+        fetch: typeof fetch,
+        parentReadable: (() => {
+          try {
+            return !!parent.document
+          } catch {
+            return false
+          }
+        })(),
+      })),
+    ).toEqual({ fetch: 'undefined', parentReadable: false })
+    await frame.getByRole('button', { name: 'Review adjustments' }).focus()
+    await frame.getByRole('button', { name: 'Review adjustments' }).press('Enter')
+    await expect(card.getByTestId('ui-confirmation')).toBeVisible()
+    await card.getByTestId('ui-confirm').click()
+    await expect(card.getByTestId('ui-open-approval')).toBeVisible()
+    await expect(card.getByTestId('ui-table-differences')).toBeVisible()
+  })

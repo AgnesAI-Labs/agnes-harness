@@ -231,7 +231,9 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
    * an apply or a teardown, so one slow module cannot delay another module's change.
    */
   function plan(roster: ClientRoster): Promise<void>[] {
-    const wanted = new Map(roster.modules.map((mod) => [rowKey(mod), mod]))
+    const wanted = new Map(
+      roster.modules.filter((mod) => !mod.intelligentComponents?.length).map((mod) => [rowKey(mod), mod]),
+    )
     const blockedRows = migrateRosterAliases(roster.rowAliases, wanted)
     const waits: Promise<void>[] = []
     // 名册不再列出的包：dispose（级联撤销注册项）；模块记录本身驻留（B1）。
@@ -328,7 +330,10 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
     async reload(packageId, revision) {
       const roster = await source.list()
       const targets = roster.modules.filter(
-        (module) => module.packageId === packageId && module.revision === revision,
+        (module) =>
+          !module.intelligentComponents?.length &&
+          module.packageId === packageId &&
+          module.revision === revision,
       )
       // An out-of-order event may refer to a snapshot that was subsequently revoked. Reconcile
       // the authoritative roster in that case, rather than reviving the event's package.

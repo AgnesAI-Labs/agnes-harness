@@ -8,6 +8,8 @@ import type {
 
 /** 名册里的 ready 模块（WC3 modules 的最小子集）。 */
 export interface ReadyClientModule {
+  /** Isolated Intelligent UI renderers; never imported into the workbench document. */
+  intelligentComponents?: readonly import('@agnes/protocol/gen/extension-manifest').UiComponentDeclaration[]
   /** Stable lifecycle key for one browser row; omitted only by legacy roster producers. */
   rowId?: string
   packageId: string

@@ -3,6 +3,7 @@ import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { uiComponentFrame } from '../../packages/web-server/src/ui-component-frame.ts'
 import { readWebStyleSource } from '../web-style-source.mjs'
 
 // Explicit offline renderer acceptance fixture; invoked only by the Web spec.
@@ -30,6 +31,23 @@ const assets = new Map([
 ])
 const server = createServer(async (request, response) => {
   const path = new URL(request.url ?? '/', 'http://127.0.0.1').pathname
+  if (path === '/plugins/generations/11111111-1111-1111-1111-111111111111/finance/reviewed/diff.mjs') {
+    const frame = uiComponentFrame(`export const renderers = {
+      'finance/reconcile/diff@1'(mount, props, api) {
+        if (props.fail) throw new Error('synthetic renderer failure');
+        const summary = document.createElement('p');
+        summary.textContent = 'Delta cents: ' + props.amount;
+        const button = document.createElement('button');
+        button.textContent = 'Review adjustments';
+        button.onclick = () => api.emitAction('confirm');
+        mount.append(summary, button);
+      }
+    };`)
+    response
+      .writeHead(200, { 'Content-Type': 'text/html', 'Content-Security-Policy': frame.csp })
+      .end(frame.body)
+    return
+  }
   if (path === '/') {
     response
       .writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-store' })

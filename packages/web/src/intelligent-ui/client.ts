@@ -9,7 +9,7 @@ import {
   type UiSurfaceRecord,
   X_AGNES_UI_LIMITS,
 } from '@agnes/protocol/gen/intelligent-ui'
-import { boundedUiJson, validIntelligentSurface } from '@agnes/web-ui'
+import { boundedUiJson, validIntelligentSurfaceProjection } from '@agnes/web-ui'
 import type { IntelligentUiServer, UiCommandStorage } from './types.js'
 
 export interface UiDraft {
@@ -189,7 +189,7 @@ export class IntelligentUiClient {
           if (
             page.surfaces.some(
               (record) =>
-                !validIntelligentSurface(record.surface) ||
+                !validIntelligentSurfaceProjection(record.surface) ||
                 record.createdSeq > record.updatedSeq ||
                 record.updatedSeq > watermark,
             ) ||
@@ -330,7 +330,7 @@ export class IntelligentUiClient {
         invalid: new Set(),
       }
       for (const component of this.record(id)?.surface.components ?? [])
-        if (component.kind === 'form')
+        if (!('fallback' in component) && component.kind === 'form')
           draft.input[component.id] = structuredClone(this.record(id)!.surface.data[component.dataKey]!)
       this.drafts.set(id, draft)
     }
@@ -412,7 +412,7 @@ export class IntelligentUiClient {
     const action = record.surface.actions.find((item) => item.id === receipt.actionId)
     if (!action) return
     const table = record.surface.components.find(
-      (item) => item.kind === 'table' && item.rowActionIds?.includes(action.id),
+      (item) => !('fallback' in item) && item.kind === 'table' && item.rowActionIds?.includes(action.id),
     )
     let row = this.commandRows.get(receipt.commandId)
     if (table && !row) {

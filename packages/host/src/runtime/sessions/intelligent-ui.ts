@@ -10,6 +10,9 @@ import { enqueueSessionInputOnce } from './deferred-invocations.js'
 export function createIntelligentUiAdapter(
   resolve: (ref: SessionRef) => HostSession | undefined,
   deferred: DeferredInvocationsService,
+  components: (
+    session: HostSession,
+  ) => readonly import('@agnes/protocol/gen/extension-manifest').UiComponentDeclaration[] = () => [],
 ) {
   let current:
     | { factory: IntelligentUiFactory; meta: RegMeta; instances: WeakMap<HostSession, IntelligentUiService> }
@@ -76,6 +79,7 @@ export function createIntelligentUiAdapter(
           registration.meta,
         )
       },
+      components: () => components(session),
       tools: () => session.currentTools().list(),
       deliver: (key, text, actor, signal) =>
         enqueueSessionInputOnce(

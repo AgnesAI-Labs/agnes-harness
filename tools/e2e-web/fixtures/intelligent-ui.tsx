@@ -1,6 +1,6 @@
 import { Context } from '@agnes/cordis'
 import type { UiActionParams, UiActionReceipt, UiReadResult } from '@agnes/protocol/gen/intelligent-ui'
-import { LocaleService, workbenchNavigation, workbenchPanels } from '@agnes/web-client'
+import { LocaleService, ThemeService, workbenchNavigation, workbenchPanels } from '@agnes/web-client'
 import {
   createAntdRoot,
   createDocumentLocaleSource,
@@ -25,6 +25,29 @@ const key = 'intelligent-ui-fixture'
 const state: { page: UiReadResult; requests: UiActionParams[] } = JSON.parse(
   localStorage.getItem(key) ?? 'null',
 ) ?? { page: uiPage(), requests: [] }
+const customMode = new URL(location.href).searchParams.get('custom')
+const customDeclaration = {
+  kind: 'finance/reconcile/diff@1',
+  propsSchema: {
+    type: 'object',
+    required: ['amount', 'fail'],
+    properties: { amount: { type: 'integer' }, fail: { type: 'boolean' } },
+    additionalProperties: false,
+  },
+  maxPropsBytes: 256,
+  fallback: 'Review the preset differences table.',
+  accessibility: { label: 'Reconciliation differences', keyboard: true as const },
+}
+if (customMode && !state.page.surfaces[0]!.surface.components.some((item) => item.id === 'custom')) {
+  state.page.surfaces[0]!.surface.components.unshift({
+    id: 'custom',
+    kind: customDeclaration.kind,
+    dataKey: 'custom',
+    fallback: customDeclaration.fallback,
+    actionIds: ['confirm'],
+  })
+  state.page.surfaces[0]!.surface.data.custom = { amount: 250, fail: customMode === 'error' }
+}
 const save = () => localStorage.setItem(key, JSON.stringify(state))
 let onEvent: ((event: { seq: number; type: string }) => void) | undefined
 const notify = () => {
@@ -102,6 +125,26 @@ let version = 0,
   target: ReturnType<UiPlacementBinding['target']>
 const listeners = new Set<() => void>()
 const binding: UiPlacementBinding = {
+  ...(customMode
+    ? {
+        customModules: {
+          theme: new ThemeService(new Context(), 'light'),
+          subscribe: () => () => {},
+          list: async () => [
+            {
+              rowId: 'web:finance',
+              moduleName: 'finance',
+              enabled: true,
+              phase: customMode === 'blocked' ? ('blocked' as const) : ('ready' as const),
+              revision: 'reviewed',
+              contentDigest: `sha256-${'a'.repeat(64)}`,
+              entryUrl: '/plugins/generations/11111111-1111-1111-1111-111111111111/finance/reviewed/diff.mjs',
+              intelligentComponents: [customDeclaration],
+            },
+          ],
+        },
+      }
+    : {}),
   subscribe: (listener) => {
     listeners.add(listener)
     return () => {

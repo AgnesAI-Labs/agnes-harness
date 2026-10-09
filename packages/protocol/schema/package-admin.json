@@ -2441,6 +2441,10 @@
                 "description": "Explicitly public package-authored browser metadata. It is immutable manifest data, never runtime row config, credentials, secret references or artifact data.",
                 "type": "object",
                 "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+              },
+              "intelligentComponents": {
+                "type": "array", "minItems": 1, "maxItems": 16,
+                "items": { "$ref": "extension-manifest.json#/$defs/UiComponentDeclaration" }
               }
             }
           }
@@ -2608,6 +2612,10 @@
           "description": "Explicitly public package-authored client configuration. It is a narrow manifest projection, never runtime row config, credentials, secret references or artifact data.",
           "type": "object",
           "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+        },
+        "intelligentComponents": {
+          "type": "array", "minItems": 1, "maxItems": 16,
+          "items": { "$ref": "extension-manifest.json#/$defs/UiComponentDeclaration" }
         }
       }
     },

@@ -4,7 +4,7 @@ English | [简体中文](intelligent-ui.zh-CN.md)
 
 [Architecture](architecture.md) · [Plugins](plugins.md) · [Frontend](frontend.md) · [Sessions and recovery](../guide/sessions.md) · [Web renderer](intelligent-ui-web.md)
 
-This document defines the preset surface contract. The official backend plugin, authenticated App Server methods and generic deferred execution bridge implement it; client rendering and the finance pilot are described below. Availability still requires the repository-wide validation pass.
+This document defines the preset and reviewed custom-component surface contract. The official backend plugin, authenticated App Server methods and generic deferred execution bridge implement it; client rendering and the finance pilot are described below. Availability still requires the repository-wide validation pass.
 
 ## Ownership and scope
 
@@ -29,7 +29,7 @@ The declaration source is [intelligent-ui.json](../../packages/protocol/schema/i
 | `text` | `dataKey` | A plain string, rendered as text. |
 | `status` | `dataKey` | A plain string; processing/approval state comes from receipts, never this business label. |
 
-All components may have `title`. Columns have `key`, `label` and optional `format` (`text`, `number`, `currency`, `date`, `status`); formats only affect display, never change values or infer currency units. Chart series have `key` and `label`. Bound data must exist and match the component shape. Invalid rows, missing fields, duplicate row ids and unsupported component kinds reject the whole render/update; they are not silently omitted.
+All components may have `title`. Columns have `key`, `label` and optional `format` (`text`, `number`, `currency`, `date`, `status`); formats only affect display, never change values or infer currency units. Chart series have `key` and `label`. Bound data must exist and match the component shape. Invalid rows, missing fields, duplicate row ids and undeclared component kinds reject the whole render/update; they are not silently omitted.
 
 Forms reuse the [existing schema renderer](../../packages/web-ui/src/plugin-schema-fields.tsx) and [model](../../packages/web-ui/src/plugin-schema-model.ts): `UiJsonSchema` is a boolean or JSON Schema object; local `$ref`, object/array/variant/enum/scalar controls and lossless JSON fallback keep their existing semantics. The visual recursion threshold remains 6, independent of the backend payload limit. Unsupported assertions use the JSON fallback rather than a misleading partial form. Backend validation compiles the full schema and checks submitted values without coercion or dropping unknown properties. No network `$ref` resolution. Secret input is not a way to acquire authority: surfaces cannot carry raw credentials; any business credential field must use an existing credential-reference contract.
 
@@ -165,9 +165,35 @@ Fact-chain and trace views must show surface id/revisions and ownership, receive
 
 The [finance reconciliation pilot](../../examples/fde/finance-reconcile/index.mjs) keeps synthetic source ledgers and exact integer cents. After reconciliation it renders differences, a bar chart and an adjustment form. “确认调整” maps to the existing `fde_finance_approve` simulated adjustment tool, whose approval-required metadata and policy remain intact. The business tool validates proposals against the committed reconciliation facts and selection, including transaction membership, integer cents, reason, no duplicate ids and whether they were already processed. Form edits cannot override committed differences unnoticed. After permission and a simulated receipt, the queued result resumes the Agent; it updates processed rows to `simulated-approved`, retains unresolved transactions and states `posted: false`. Approval denial/failure never marks rows processed. The generic deferred-invocation drain replaces the pilot's existing business-question stage; it does not require a second free-text “Proceed”.
 
-A later extension point may let plugins register additional component renderers through their existing reviewed client modules, pinned with the session generation. It will need component namespace/version declarations, server-side payload schema, reviewed module identity, fallbacks, bounds and accessibility. This phase implements no registration hook or custom kind; unknown kinds are rejected.
+### Reviewed custom components
 
-Phase 2 will migrate existing `tool.card.inline` question/table cards to this model and delete their special formats. It requires inventorying producers/consumers and fixtures, mapping question ids/options/answers and table row identity into surfaces/actions, mapping each executable response to a declared tool with the normal approval path, replacing slot-specific reducers/renderer/SDK/TUI/channel handling, and covering refresh, stale answers and denial on the unified facts. A question's answer collection tool must preserve trust and distinguish a business answer from permission. This is an unreleased product: remove obsolete formats and tests in that migration, without compatibility shims or old-data migration. No phase-2 code is included here.
+A business plugin can declare namespaced kinds (`<plugin-id>/<name>@<major>`) in `contributes.client.intelligentComponents`, or in the `client` object of its ordinary-plugin `agnes.client.json` descriptor. The namespace is the extension id for an extension manifest, and the package name for an ordinary-plugin descriptor. A positive major version is part of the kind; changing an incompatible props contract requires a new major.
+
+```json
+{
+  "client": {
+    "id": "reconciliation-diff",
+    "entry": "./reconciliation-diff.mjs",
+    "intelligentComponents": [{
+      "kind": "@agnes-fde/finance-reconcile/reconciliation-diff@1",
+      "propsSchema": { "type": "object", "required": ["rows"], "properties": { "rows": { "type": "array", "maxItems": 1000 } }, "additionalProperties": false },
+      "maxPropsBytes": 16384,
+      "fallback": "Review the preset differences table.",
+      "accessibility": { "label": "Reconciliation differences", "keyboard": true }
+    }]
+  }
+}
+```
+
+The module exports `renderers`, an object keyed by the exact declared kinds. Each function receives `(mount, props, api)` and may return a cleanup function or a promise of one. Types `IntelligentUiRenderer` and `IntelligentUiRendererApi` are exported by `@agnes/web-client`. The API has only `emitAction(id)`, `readTheme()` (`light`/`dark`), and `readLocale()` (`en`/`zh-CN`). An emitted id must be in that component's `actionIds` and the surface's `actions`; the host calls the existing surface confirmation, tool and approval path. It supplies no input, row, tool name, session accessor or service client.
+
+Custom modules use the existing install review, capability digest, trust, immutable assets and session-generation roster. They are self-contained ESM entries (at most 262,144 bytes), with no runtime imports, slots, services or external styles. They execute in an opaque-origin iframe with `sandbox="allow-scripts"` and a separate CSP that denies fetch/network resources, forms and nested frames. The host does not import them into its own document. Renderers own only their frame mount; render text with `textContent`, provide semantic labels and keyboard-operable controls, preserve focus visibility, and dispose resources on teardown. The manifest's keyboard requirement is an author/reviewer obligation, not automatic accessibility certification.
+
+The model emits a data-only component: `id`, namespaced `kind`, `dataKey`, `fallback` and `actionIds` (plus optional `title`). `surface.data[dataKey]` holds props. Backend `validIntelligentSurface(surface, declarations)` resolves the declaration from the durable session generation, validates its local synchronous JSON Schema before persistence, checks the exact declared fallback, and refuses unknown or ambiguous kinds. No current-installation substitution is allowed. Bounds: at most 16 declarations per module; schema 16,384 bytes and depth 16; props at most the declared limit (1–16,384 bytes); fallback 1–4,096 characters; the existing surface byte/depth/component limits still apply. Schemas cannot load remote references or run asynchronous validation.
+
+When a ready, reviewed pinned module cannot be found, its import/render fails, or loading exceeds 15 seconds, the component displays its declared text fallback and a localized notice. Other preset/custom components continue working. TUI and channels receive the fallback in `ui_render`/`ui_update` tool text. The [finance example](../../examples/fde/finance-reconcile/client/agnes.client.json) uses a small reconciliation diff renderer and keeps its preset differences table alongside it as the usable fallback.
+
+The preset question/table migration and authenticated text-client submission are described in “Question, table and deliverable surfaces” below. Custom renderers use the same surface facts and action flow; text clients display their declared fallback. Business answers remain distinct from permission grants.
 
 ## Implementation acceptance
 

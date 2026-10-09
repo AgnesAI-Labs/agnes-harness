@@ -240,17 +240,20 @@ export function inspectStaged(input: {
       (!descriptor.client && (!Array.isArray(descriptor.skins) || descriptor.skins.length === 0))
     )
       invalid('client-descriptor-content')
-    const synthetic = checkManifest({
-      id: 'client/descriptor',
-      version: pkg.version,
-      apiRange: '*',
-      entry: './index.mjs',
-      capabilities: { ui: descriptor.client ? ['client'] : ['skin'] },
-      contributes: {
-        ...(descriptor.client === undefined ? {} : { client: descriptor.client }),
-        ...(descriptor.skins === undefined ? {} : { skins: descriptor.skins }),
+    const synthetic = checkManifest(
+      {
+        id: 'client/descriptor',
+        version: pkg.version,
+        apiRange: '*',
+        entry: './index.mjs',
+        capabilities: { ui: descriptor.client ? ['client'] : ['skin'] },
+        contributes: {
+          ...(descriptor.client === undefined ? {} : { client: descriptor.client }),
+          ...(descriptor.skins === undefined ? {} : { skins: descriptor.skins }),
+        },
       },
-    })
+      pkg.name as string,
+    )
     if (!synthetic.ok) invalid('client-descriptor-content')
     const manifest = synthetic.value
     const client = manifest.contributes?.client

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, join, posix, relative, resolve, sep } from 'node:path'
+import { validUiComponentDeclaration } from '@agnes/protocol/intelligent-ui'
 import { clientModuleRowIdForContribution, packageOfRow } from '@agnes/daemon-foundation/composite-desired'
 import { type CompositionPatch, CompositionSessionStore, compositionModuleAllowed } from '@agnes/host'
 import {
@@ -67,6 +68,7 @@ type StoredDeclaration = Readonly<{
   extIds: readonly string[]
   services: readonly string[]
   backendRowId?: string
+  intelligentComponents?: ClientContribution['intelligentComponents']
   publicConfig?: Readonly<Record<string, unknown>>
 }>
 type PackageState = Readonly<{
@@ -254,7 +256,11 @@ function isState(value: unknown, profile: string): value is ProfileState {
             !declaration.extIds.every((id) => typeof id === 'string') ||
             !Array.isArray(declaration.services) ||
             !declaration.services.every((service) => typeof service === 'string') ||
-            (declaration.publicConfig !== undefined && !isRecord(declaration.publicConfig))
+            (declaration.publicConfig !== undefined && !isRecord(declaration.publicConfig)) ||
+            (declaration.intelligentComponents !== undefined &&
+              (!Array.isArray(declaration.intelligentComponents) ||
+                declaration.intelligentComponents.length > 16 ||
+                !declaration.intelligentComponents.every(validUiComponentDeclaration)))
           )
             return false
         }
@@ -526,6 +532,9 @@ function storedDeclaration(declared: ClientDeclaration): StoredDeclaration {
     extIds: [...declared.extIds],
     services: [...(declared.client.services ?? [])],
     ...(declared.backendRowId ? { backendRowId: declared.backendRowId } : {}),
+    ...(declared.client.intelligentComponents
+      ? { intelligentComponents: declared.client.intelligentComponents }
+      : {}),
     ...(declared.client.publicConfig === undefined ? {} : { publicConfig: declared.client.publicConfig }),
   }
 }
@@ -1224,6 +1233,9 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
                   ? {}
                   : { slotCatalogVersion: value.slotCatalogVersion }),
                 services: [...value.services],
+                ...(value.intelligentComponents
+                  ? { intelligentComponents: value.intelligentComponents }
+                  : {}),
                 ...(value.publicConfig === undefined ? {} : { publicConfig: value.publicConfig }),
               },
               entry: value.entry,
@@ -1389,6 +1401,9 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
             : { slotCatalogVersion: item.client.slotCatalogVersion }),
           contentDigest,
           extIds: [...item.extIds],
+          ...(item.client.intelligentComponents
+            ? { intelligentComponents: item.client.intelligentComponents }
+            : {}),
           ...(item.client.publicConfig === undefined ? {} : { publicConfig: item.client.publicConfig }),
         })
         rows.push({
@@ -1407,6 +1422,9 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
           contentDigest,
           extIds: [...item.extIds],
           services: [...(item.client.services ?? [])],
+          ...(item.client.intelligentComponents
+            ? { intelligentComponents: item.client.intelligentComponents }
+            : {}),
           ...(item.client.publicConfig === undefined ? {} : { publicConfig: item.client.publicConfig }),
         })
       }

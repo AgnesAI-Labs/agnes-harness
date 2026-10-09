@@ -26,6 +26,8 @@ export interface IntelligentUiPorts {
   readonly lastSeq: number
   readonly taskId: string
   readonly supportsDeferredInvocations: boolean
+  /** Host-selected immutable declarations from this session generation. */
+  components?(): readonly import('@agnes/protocol/gen/extension-manifest').UiComponentDeclaration[]
   readonly queue: DeferredToolInvocationQueue
   scan(): Promise<readonly EventEnvelope[]>
   append(name: string, data: JsonValue, sourceSeq?: number): Promise<number>

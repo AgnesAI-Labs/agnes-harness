@@ -4,7 +4,7 @@
 
 [架构](architecture.zh-CN.md) · [插件](plugins.zh-CN.md) · [前端](frontend.zh-CN.md) · [会话与恢复](../guide/sessions.zh-CN.md) · [Web 渲染器](intelligent-ui-web.zh-CN.md)
 
-本文定义预设 surface 合同。官方后端插件、已认证 App Server 方法与通用 deferred 执行桥已实现该合同；下文描述客户端渲染与财务试点。可用性仍需仓库统一验证。
+本文定义预设与已审阅自定义组件的 surface 合同。官方后端插件、已认证 App Server 方法与通用 deferred 执行桥已实现该合同；下文描述客户端渲染与财务试点。可用性仍需仓库统一验证。
 
 ## 归属与范围
 
@@ -29,7 +29,7 @@
 | `text` | `dataKey` | 纯字符串，按文本渲染。 |
 | `status` | `dataKey` | 纯字符串；处理/审批状态来自回执，不能由该业务标签决定。 |
 
-所有组件均可带 `title`。列包含 `key`、`label` 和可选 `format`（`text`、`number`、`currency`、`date`、`status`）；格式只影响展示，不改变值、不推断货币单位。图表序列包含 `key`、`label`。绑定的数据必须存在并符合组件形状。非法行、缺失字段、重复行 id、未知组件类型拒绝整个 render/update，不静默省略。
+所有组件均可带 `title`。列包含 `key`、`label` 和可选 `format`（`text`、`number`、`currency`、`date`、`status`）；格式只影响展示，不改变值、不推断货币单位。图表序列包含 `key`、`label`。绑定的数据必须存在并符合组件形状。非法行、缺失字段、重复行 id、未声明的组件类型拒绝整个 render/update，不静默省略。
 
 表单复用[现有 Schema 渲染器](../../packages/web-ui/src/plugin-schema-fields.tsx)与[模型](../../packages/web-ui/src/plugin-schema-model.ts)：`UiJsonSchema` 为布尔值或 JSON Schema 对象；本地 `$ref`、对象/数组/变体/枚举/标量控件、无损 JSON 回退保持既有语义。展示递归阈值仍为 6，与后台载荷限制独立。无法展示的断言回退到 JSON 编辑器，不展示会误导人的部分表单。后台编译完整 Schema，校验提交值，不做类型转换、不丢弃未知属性。不进行网络 `$ref` 解析。秘密字段不提供权限：surface 不得携带原始凭据；业务凭据字段只能使用现有凭据引用合同。
 
@@ -163,9 +163,36 @@ Fact-chain 与 trace 展示 surface id/revision 和归属、received 命令/acto
 
 [财务对账试点](../../examples/fde/finance-reconcile/index.mjs) 保持合成源账本和精确整数分。对账后渲染差异、柱状图和调整表单。“确认调整”映射到现有模拟调整工具 `fde_finance_approve`，保留其需要审批的元数据与 policy。业务工具根据已提交对账事实与选择校验提案，包括交易成员、整数分、原因、无重复 id、是否已处理。表单编辑不能悄悄覆盖已提交差异。获得权限与模拟回执后，queued result 恢复 Agent；Agent 将已处理行更新为 `simulated-approved`，保留未解决交易，明确 `posted: false`。审批拒绝/失败不能标记行已处理。通用 deferred-invocation drain 替换试点既有业务提问阶段，不再要求第二次自由文本 “Proceed”。
 
-后续扩展点可允许插件通过现有已审阅 client module 注册其他组件渲染器，并随会话 generation 锁定。它需要组件 namespace/version 声明、服务端载荷 Schema、已审阅模块身份、回退、大小限制和无障碍要求。本阶段不实现注册钩子或自定义 kind；未知类型拒绝。
+### 已审阅的自定义组件
 
-第二阶段将既有 `tool.card.inline` question/table 卡片迁移到该模型并删除特殊格式。需要盘点生产/消费方与 fixture，将 question id/options/answers 和表格行身份映射为 surface/action，将每个可执行响应映射到声明工具及普通审批路径，替换 slot 专用 reducer/renderer/SDK/TUI/channel 处理，并覆盖统一事实下的刷新、陈旧回答与拒绝。问题的答案收集工具须保留 trust，区分业务答案与权限。产品尚未发布：迁移时删除旧格式和测试，不增加兼容 shim 或旧数据迁移。本次不包含第二阶段代码。
+业务插件可在 `contributes.client.intelligentComponents`，或普通插件的 `agnes.client.json` 描述符的 `client` 对象中声明命名空间 kind：`<plugin-id>/<name>@<major>`。扩展 manifest 的 namespace 是扩展 id；普通插件描述符使用包名。major 必须为正整数；不兼容的 props 合同变化需要新的 major。
+
+```json
+{
+  "client": {
+    "id": "reconciliation-diff",
+    "entry": "./reconciliation-diff.mjs",
+    "intelligentComponents": [{
+      "kind": "@agnes-fde/finance-reconcile/reconciliation-diff@1",
+      "propsSchema": { "type": "object", "required": ["rows"], "properties": { "rows": { "type": "array", "maxItems": 1000 } }, "additionalProperties": false },
+      "maxPropsBytes": 16384,
+      "fallback": "请审阅下方预设差异表。",
+      "accessibility": { "label": "对账差异", "keyboard": true }
+    }]
+  }
+}
+```
+
+模块导出 `renderers` 对象，键为声明的完整 kind。函数接收 `(mount, props, api)`，可返回清理函数或其 Promise。`@agnes/web-client` 导出 `IntelligentUiRenderer` 与 `IntelligentUiRendererApi` 类型。API 仅有 `emitAction(id)`、`readTheme()`（`light`/`dark`）和 `readLocale()`（`en`/`zh-CN`）。action id 必须同时在组件 `actionIds` 与 surface `actions` 中；宿主调用现有 surface 的确认、工具及审批路径。组件不能提交 input、row、工具名，也没有会话或服务访问接口。
+
+自定义模块沿用现有安装审阅、能力摘要、信任、不可变资源和会话 generation 名册。入口必须是自包含 ESM（不超过 262,144 字节），不允许运行时 import、slots、services 或外部样式。代码在独立 opaque-origin iframe 中运行，`sandbox="allow-scripts"` 与该文档的 CSP 禁止 fetch/网络资源、表单和嵌套 frame。宿主不将其 import 到自己的页面。渲染器只拥有自身 frame 的 mount；使用 `textContent` 展示文字，提供语义标签、键盘可操作控件、可见焦点，并在卸载时清理资源。manifest 的 keyboard 要求是作者与审阅者的责任，不等于自动无障碍认证。
+
+模型只输出数据组件：`id`、命名空间 `kind`、`dataKey`、`fallback`、`actionIds`（可选 `title`）；props 位于 `surface.data[dataKey]`。后台 `validIntelligentSurface(surface, declarations)` 从持久会话 generation 取得声明，在持久化前按本地同步 JSON Schema 校验 props，核对声明的原文 fallback，并拒绝未知或不唯一的 kind。不能替换为当前安装版本。限制：每模块最多 16 项声明；Schema 最多 16,384 字节、深度 16；props 不超过声明的上限（1–16,384 字节）；fallback 为 1–4,096 字符；继续遵守现有 surface 字节、深度与组件数量上限。Schema 不得加载远程引用或异步执行。
+
+找不到已审阅、ready、锁定版本的模块，或加载/渲染失败、加载超过 15 秒时，该组件显示声明的文本回退与本地化提示，其他组件继续工作。TUI 与 channels 从 `ui_render`/`ui_update` 工具文本得到 fallback。[财务示例](../../examples/fde/finance-reconcile/client/agnes.client.json) 使用小型对账差异组件，并保留旁边的预设差异表作为可用回退。
+
+
+预设 question/table 迁移与经认证的文本客户端提交见下方“问答、表格与交付物 surface”。自定义 renderer 使用相同 surface 事实和动作路径，文本客户端展示声明的 fallback。业务答案仍不代表权限授予。
 
 ## 实现验收
 

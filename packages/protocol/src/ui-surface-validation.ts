@@ -1,3 +1,8 @@
+import { Ajv2020 } from 'ajv/dist/2020.js'
+import {
+  UiComponentDeclaration as UiComponentDeclarationSchema,
+  type UiComponentDeclaration,
+} from '../gen/ts/extension-manifest.js'
 import { UiSurface, X_AGNES_UI_LIMITS } from '../gen/ts/intelligent-ui.js'
 import type { JsonValue } from '../gen/ts/session-v1.js'
 import { validateAgainst } from './validate.js'
@@ -25,8 +30,53 @@ export function boundedUiJson(
 export const uiObject = (value: JsonValue | undefined): value is Record<string, JsonValue> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
-/** Fail closed for the entire surface, including relationships and display data bounds. */
-export function validIntelligentSurface(value: unknown): value is UiSurface {
+/** Local synchronous schemas only; no remote references or mutable registry identities. */
+export function validUiComponentDeclaration(value: unknown): value is UiComponentDeclaration {
+  if (!boundedUiJson(value, 24576)) return false
+  const parsed = validateAgainst<UiComponentDeclaration>(UiComponentDeclarationSchema, value)
+  if (!parsed.ok || !safeUiSchema(parsed.value.propsSchema)) return false
+  try {
+    const ajv = new Ajv2020({
+      strict: true,
+      strictTypes: false,
+      strictTuples: false,
+      strictRequired: false,
+      validateFormats: false,
+      ownProperties: true,
+    })
+    ajv.compile(parsed.value.propsSchema)
+    return true
+  } catch {
+    return false
+  }
+}
+function safeUiSchema(schema: unknown): boolean {
+  if (!boundedUiJson(schema, 16384, X_AGNES_UI_LIMITS.schemaDepth)) return false
+  const visit = (value: unknown): boolean => {
+    if (!value || typeof value !== 'object') return true
+    return Object.entries(value).every(
+      ([key, child]) =>
+        !['__proto__', 'prototype', 'constructor', '$async', '$id', '$dynamicRef', '$recursiveRef'].includes(
+          key,
+        ) &&
+        (key !== '$ref' || (typeof child === 'string' && child.startsWith('#/'))) &&
+        visit(child),
+    )
+  }
+  return visit(schema)
+}
+/** Fail closed for backend writes. Only pinned manifest declarations admit custom kinds. */
+export function validIntelligentSurface(
+  value: unknown,
+  declarations: readonly UiComponentDeclaration[] = [],
+): value is UiSurface {
+  return validSurface(value, declarations)
+}
+/** Display-only validation of server facts: missing renderers must still allow text fallback. */
+export function validIntelligentSurfaceProjection(value: unknown): value is UiSurface {
+  return validSurface(value)
+}
+function validSurface(value: unknown, declarations?: readonly UiComponentDeclaration[]): value is UiSurface {
   if (!boundedUiJson(value, X_AGNES_UI_LIMITS.surfaceBytes)) return false
   const result = validateAgainst<UiSurface>(UiSurface, value)
   if (!result.ok) return false
@@ -34,19 +84,10 @@ export function validIntelligentSurface(value: unknown): value is UiSurface {
   const ids = new Set(surface.components.map((item) => item.id))
   const actions = new Set(surface.actions.map((item) => item.id))
   if (ids.size !== surface.components.length || actions.size !== surface.actions.length) return false
-  const schemaSafe = (schema: unknown): boolean => {
-    if (!schema || typeof schema !== 'object') return true
-    return Object.entries(schema).every(
-      ([key, child]) =>
-        !['__proto__', 'prototype', 'constructor', '$async', '$id'].includes(key) &&
-        (key !== '$ref' || (typeof child === 'string' && child.startsWith('#/'))) &&
-        schemaSafe(child),
-    )
-  }
   for (const action of surface.actions) {
     if (
       !boundedUiJson(action.paramsSchema, 16384, X_AGNES_UI_LIMITS.schemaDepth) ||
-      !schemaSafe(action.paramsSchema)
+      !safeUiSchema(action.paramsSchema)
     )
       return false
     if (
@@ -55,6 +96,38 @@ export function validIntelligentSurface(value: unknown): value is UiSurface {
       return false
   }
   for (const component of surface.components) {
+    if ('fallback' in component) {
+      if (
+        component.actionIds.some((id) => !actions.has(id)) ||
+        !Object.hasOwn(surface.data, component.dataKey)
+      )
+        return false
+      const props = surface.data[component.dataKey]
+      if (!boundedUiJson(props, 16384)) return false
+      if (declarations !== undefined) {
+        const matches = declarations.filter((item) => item.kind === component.kind)
+        if (matches.length !== 1) return false
+        const declaration = matches[0]!
+        if (
+          !validUiComponentDeclaration(declaration) ||
+          declaration.fallback !== component.fallback ||
+          !boundedUiJson(props, declaration.maxPropsBytes)
+        )
+          return false
+        try {
+          const ajv = new Ajv2020({
+            strict: false,
+            validateFormats: false,
+            ownProperties: true,
+            addUsedSchema: false,
+          })
+          if (!ajv.compile(declaration.propsSchema)(props)) return false
+        } catch {
+          return false
+        }
+      }
+      continue
+    }
     const refs =
       component.kind === 'table'
         ? component.rowActionIds
@@ -68,7 +141,7 @@ export function validIntelligentSurface(value: unknown): value is UiSurface {
     if (component.kind === 'form') {
       if (
         !boundedUiJson(component.schema, 16384, X_AGNES_UI_LIMITS.schemaDepth) ||
-        !schemaSafe(component.schema)
+        !safeUiSchema(component.schema)
       )
         return false
     } else if (component.kind === 'text' || component.kind === 'status') {

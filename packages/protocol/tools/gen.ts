@@ -31,7 +31,13 @@ const TARGETS: Array<{
       { from: 'schema/surface.json', defs: ['SurfaceDescriptor', 'SurfaceArtifact', 'SurfaceServiceGrant'] },
       {
         from: 'schema/extension-manifest.json',
-        defs: ['Capabilities', 'ClientContribution', 'SkinContribution', 'SkinTokenValue'],
+        defs: [
+          'Capabilities',
+          'ClientContribution',
+          'UiComponentDeclaration',
+          'SkinContribution',
+          'SkinTokenValue',
+        ],
       },
       { from: 'schema/hooks.json', defs: ['HookEvent'] },
       { from: 'schema/slots.json', defs: ['UiSlotName'] },
@@ -136,7 +142,13 @@ const TARGETS: Array<{
       { from: 'schema/surface.json', defs: ['SurfaceDescriptor', 'SurfaceArtifact', 'SurfaceServiceGrant'] },
       {
         from: 'schema/extension-manifest.json',
-        defs: ['Capabilities', 'ClientContribution', 'SkinContribution', 'SkinTokenValue'],
+        defs: [
+          'Capabilities',
+          'ClientContribution',
+          'UiComponentDeclaration',
+          'SkinContribution',
+          'SkinTokenValue',
+        ],
       },
       { from: 'schema/hooks.json', defs: ['HookEvent'] },
       { from: 'schema/slots.json', defs: ['UiSlotName'] },
@@ -334,7 +346,13 @@ const TARGETS: Array<{
       { from: 'schema/surface.json', defs: ['SurfaceDescriptor', 'SurfaceArtifact', 'SurfaceServiceGrant'] },
       {
         from: 'schema/extension-manifest.json',
-        defs: ['Capabilities', 'ClientContribution', 'SkinContribution', 'SkinTokenValue'],
+        defs: [
+          'Capabilities',
+          'ClientContribution',
+          'UiComponentDeclaration',
+          'SkinContribution',
+          'SkinTokenValue',
+        ],
       },
       { from: 'schema/hooks.json', defs: ['HookEvent'] },
       { from: 'schema/slots.json', defs: ['UiSlotName'] },

@@ -235,6 +235,10 @@
           "description": "Optional browser-visible, package-authored JSON configuration. This is immutable manifest metadata only; runtime configuration, credentials, secret references and backend row config must never be placed here.",
           "type": "object",
           "additionalProperties": { "$ref": "session-v1.json#/$defs/JsonValue" }
+        },
+        "intelligentComponents": {
+          "type": "array", "minItems": 1, "maxItems": 16,
+          "items": { "$ref": "#/$defs/UiComponentDeclaration" }
         }
       }
     },
@@ -316,6 +320,66 @@
     },
     "SeamName": {
       "$ref": "profile.json#/$defs/SeamName"
+    },
+    "UiComponentDeclaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "propsSchema",
+        "maxPropsBytes",
+        "fallback",
+        "accessibility"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)+@[1-9][0-9]*$"
+        },
+        "propsSchema": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "session-v1.json#/$defs/JsonValue"
+              }
+            }
+          ]
+        },
+        "maxPropsBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16384
+        },
+        "fallback": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "accessibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "label",
+            "keyboard"
+          ],
+          "properties": {
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "keyboard": {
+              "const": true
+            }
+          }
+        }
+      }
     }
   }
 }

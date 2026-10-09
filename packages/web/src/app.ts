@@ -736,6 +736,7 @@ function renderReconnect(phase: ReconnectPhase): void {
 // 客户端模块底座（WC8）：Cordis 根 + 五个宿主服务 + workbench.panel 挂载点。
 // 名册真源是 `_agnes/v1/clientModules.list`（P1a）；profile 要等 config.get() 才报出，
 // 之前名册按空处理（fail-closed，不加载任何模块）。
+const customModuleListeners = new Set<() => void>()
 const moduleExtIds = new Map<string, string[]>()
 let moduleSessionId: string | undefined
 const rosterSource: RosterSource = {
@@ -759,6 +760,7 @@ const rosterSource: RosterSource = {
         return []
       return [
         {
+          ...(row.intelligentComponents ? { intelligentComponents: row.intelligentComponents } : {}),
           rowId: row.rowId,
           packageId: row.packageId,
           revision: row.revision,
@@ -773,6 +775,7 @@ const rosterSource: RosterSource = {
         },
       ]
     })
+    for (const listener of customModuleListeners) listener()
     // 认领真源（WC9）：名册刷新即重建 owner(browser row) → extIds 映射。
     // A package may publish several independent browser rows, so packageId is
     // deliberately not used as the slot-owner key here.
@@ -955,6 +958,19 @@ const renderer = clientModules.transcript as NonNullable<typeof clientModules.tr
 if (!renderer) throw new Error('missing transcript region')
 bindSlotCardContext({ registry: clientModules.registry, claim: claimSlotCard, locale: clientModules.locale })
 const unmountIntelligentUi = mountIntelligentUi({
+  customModules: {
+    theme: clientModules.theme,
+    async list(sessionId) {
+      if (!profileName) return []
+      return (await client.clientModules.list(profileName, sessionId)).rows
+    },
+    subscribe(listener) {
+      customModuleListeners.add(listener)
+      return () => {
+        customModuleListeners.delete(listener)
+      }
+    },
+  },
   client,
   registry: clientModules.registry,
   session: clientModules.session,

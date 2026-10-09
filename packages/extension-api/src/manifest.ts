@@ -4,6 +4,7 @@ import {
   inspectJsonData,
   validateExtensionManifest,
 } from '@agnes/protocol'
+import { validUiComponentDeclaration } from '@agnes/protocol/intelligent-ui'
 import { parseSemver } from './api-range.js'
 import { ExtensionError } from './errors.js'
 import { THEME_TOKENS } from './generated/theme-tokens.js'
@@ -66,18 +67,33 @@ function skinProblems(value: ExtensionManifest): string[] {
  * presence of `contributes.client` must come in a pair. Path form, extension allowlist, sizes and
  * existence belong to the package loader (`client-assets.ts`), which owns the package directory.
  */
-function clientProblems(value: ExtensionManifest): string[] {
+function clientProblems(value: ExtensionManifest, namespace: string): string[] {
   const client = value.contributes?.client
   const declared = value.capabilities.ui?.includes('client') ?? false
   if (client === undefined && !declared) return []
   if (client !== undefined && !declared)
     return ["contributes.client: declaring a client module requires capabilities.ui to include 'client'"]
   if (client === undefined) return ["capabilities.ui: 'client' requires a contributes.client contribution"]
+  const components = client.intelligentComponents
+  if (!components) return []
+  if ((client.slots?.length ?? 0) || (client.services?.length ?? 0) || (client.styles?.length ?? 0))
+    return ['intelligentComponents modules must be self-contained and have no slots, services or styles']
+  const seen = new Set<string>()
+  for (const component of components) {
+    if (
+      !component.kind.startsWith(`${namespace}/`) ||
+      !validUiComponentDeclaration(component) ||
+      seen.has(component.kind)
+    )
+      return ['intelligentComponents: invalid, duplicate or foreign namespace declaration']
+    seen.add(component.kind)
+  }
   return []
 }
 
 export function checkManifest(
   input: unknown,
+  componentNamespace?: string,
 ): { ok: true; value: ExtensionManifest } | { ok: false; problems: string[] } {
   const data = inspectJsonData(input, Number.MAX_SAFE_INTEGER)
   if (!data.ok) return { ok: false, problems: ['manifest: expected plain JSON data'] }
@@ -89,7 +105,10 @@ export function checkManifest(
     if (!result.value.apiRange.trim()) return { ok: false, problems: ['apiRange: must not be empty'] }
     if (!containedRelativePath(result.value.entry))
       return { ok: false, problems: ['entry: must be a relative path inside the package'] }
-    const problems = [...skinProblems(result.value), ...clientProblems(result.value)]
+    const problems = [
+      ...skinProblems(result.value),
+      ...clientProblems(result.value, componentNamespace ?? result.value.id),
+    ]
     if (problems.length > 0) return { ok: false, problems }
     return { ok: true, value: result.value }
   } catch {

@@ -2,6 +2,8 @@ import type { LocaleCatalog } from '../locales/index.js'
 export const INTELLIGENT_UI_NAMESPACE = '@agnes/web-ui/intelligent-ui'
 export const intelligentUiCatalog: LocaleCatalog = {
   en: {
+    'ui.customFrame': 'Custom business component',
+    'ui.customFallback': 'Custom renderer unavailable. Showing the text fallback.',
     'ui.title': 'Interactive surfaces',
     'ui.otherAnswer': 'Other answer',
     'ui.expand': 'Expand',
@@ -39,6 +41,8 @@ export const intelligentUiCatalog: LocaleCatalog = {
     'ui.invalidJson': 'Complete a valid draft within the input limit before submitting.',
   },
   'zh-CN': {
+    'ui.customFrame': '自定义业务组件',
+    'ui.customFallback': '自定义组件暂不可用，已显示文字回退。',
     'ui.title': '交互界面',
     'ui.otherAnswer': '补充答案',
     'ui.expand': '展开',

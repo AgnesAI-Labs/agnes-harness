@@ -32,7 +32,8 @@
       "bundle",
       "loop",
       "tool",
-      "skills"
+      "skills",
+      "ui"
     ],
     "capabilities": {
       "model": true,
@@ -89,7 +90,13 @@
           }
         }
       }
-    }
+    },
+    "clientDescriptors": [
+      {
+        "rowId": "ext:@agnes-fde/finance-reconcile/main",
+        "path": "./client/agnes.client.json"
+      }
+    ]
   },
   "devDependencies": {
     "@agnes/host": "0.0.0",

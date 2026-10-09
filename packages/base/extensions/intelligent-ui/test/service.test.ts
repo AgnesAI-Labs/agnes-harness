@@ -5,7 +5,7 @@ import type {
   IntelligentUiService,
 } from '@agnes/extension-api'
 import { type Actor, type EventEnvelope, jcs, type UiActionParams, type UiSurface } from '@agnes/protocol'
-import { validIntelligentSurface } from '@agnes/protocol/intelligent-ui'
+import { surfaceText, validIntelligentSurface } from '@agnes/protocol/intelligent-ui'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { createIntelligentUiService } from '../src/service.js'
@@ -98,7 +98,9 @@ const request = (commandId = 'one'): UiActionParams => ({
   selection: { differences: ['a'] },
   confirmed: true,
 })
-function fixture() {
+function fixture(
+  components: readonly import('@agnes/protocol/gen/extension-manifest').UiComponentDeclaration[] = [],
+) {
   const rows: EventEnvelope[] = [],
     calls = new Map<string, DeferredInvocationReceipt>(),
     deliveries = new Map<string, number>()
@@ -170,6 +172,7 @@ function fixture() {
       taskId: 'task',
       supportsDeferredInvocations: true,
       queue,
+      components: () => components,
       scan: async () => rows,
       append: async (name, data) => row(name, data),
       tools: () => (available ? [{ name: 'adjust', parameters }] : []),
@@ -412,7 +415,7 @@ describe('preset surface contract and ledger lifecycle', () => {
     for (const [index, candidate] of badSurfaces.entries()) {
       candidate.id = 'invalid' + index
       const chart = candidate.components.find((item) => item.kind === 'chart')!
-      if (chart.kind !== 'chart') throw new Error('missing chart')
+      if ('fallback' in chart || chart.kind !== 'chart') throw new Error('missing chart')
       if (index >= 2) chart.chartType = 'pie'
       if (index === 2) chart.series.push({ key: 'second', label: 'second' })
       if (index === 3) candidate.data.chart = [{ label: 'a', amount: -1 }]
@@ -494,5 +497,71 @@ describe('preset surface contract and ledger lifecycle', () => {
     })
     const forged = { ...f.rows[0]!, origin: 'principal' }
     expect(uiProjection.apply(uiProjection.init(), forged)).toEqual(uiProjection.init())
+  })
+})
+
+describe('pinned custom component declarations', () => {
+  const declaration = {
+    kind: 'finance/reconcile/diff@1',
+    propsSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['amount'],
+      properties: { amount: { type: 'integer' } },
+    },
+    maxPropsBytes: 256,
+    fallback: 'Review the preset table.',
+    accessibility: { label: 'Reconciliation differences', keyboard: true as const },
+  }
+  const customSurface = (): UiSurface => ({
+    ...surface(),
+    components: [
+      ...surface().components,
+      {
+        id: 'custom',
+        kind: declaration.kind,
+        dataKey: 'custom',
+        fallback: declaration.fallback,
+        actionIds: ['confirm'],
+      },
+    ],
+    data: { ...surface().data, custom: { amount: 12 } },
+  })
+  it('refuses undeclared kinds and invalid props before writing any surface fact', async () => {
+    const undeclared = fixture()
+    await expect(undeclared.service().render({ surface: customSurface() }, signal)).rejects.toMatchObject({
+      data: { code: 'INVALID_PARAMS' },
+    })
+    const declared = fixture([declaration])
+    const bad = customSurface()
+    bad.data.custom = { amount: '12' }
+    await expect(declared.service().render({ surface: bad }, signal)).rejects.toMatchObject({
+      data: { code: 'INVALID_PARAMS' },
+    })
+    expect((await declared.service().read({ sessionId: 'session' }, signal)).surfaces).toEqual([])
+    bad.data.custom = { amount: 12 }
+    const component = bad.components.at(-1)!
+    if ('fallback' in component) component.fallback = 'Undeclared fallback'
+    await expect(declared.service().render({ surface: bad }, signal)).rejects.toMatchObject({
+      data: { code: 'INVALID_PARAMS' },
+    })
+  })
+  it('keeps a custom action on the ordinary deferred tool and approval path', async () => {
+    const f = fixture([declaration])
+    await f.service().render({ surface: customSurface() }, signal)
+    expect(surfaceText(customSurface())).toContain(declaration.fallback)
+    const receipt = await f.service().action(request(), actor, signal)
+    expect(receipt.status).toBe('received')
+    const invocation = await f.queue.next(signal)
+    expect(invocation?.invocation.tool).toBe('adjust')
+    expect(invocation?.invocation.args).toEqual({
+      amount: 12,
+      reason: 'reviewed',
+      rows: [{ id: 'a', amount: 12 }],
+    })
+    await f.outcome('pending-approval')
+    expect((await f.service().read({ sessionId: 'session' }, signal)).actions[0]?.status).toBe(
+      'pending-approval',
+    )
   })
 })

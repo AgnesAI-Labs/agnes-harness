@@ -173,6 +173,16 @@ export function isDshWebClientModuleSlotName(value: string): boolean {
   return DSH_RUNTIME_SUPPORTED_SLOT_NAMES.has(value)
 }
 
+function copyUiComponents(items: readonly P.UiComponentDeclaration[]): P.UiComponentDeclaration[] {
+  return items.map((item) => ({
+    kind: item.kind,
+    propsSchema: structuredClone(item.propsSchema),
+    maxPropsBytes: item.maxPropsBytes,
+    fallback: item.fallback,
+    accessibility: { label: item.accessibility.label, keyboard: item.accessibility.keyboard },
+  }))
+}
+
 /**
  * Build the browser-safe row projection from the compatibility roster fields.
  *
@@ -192,6 +202,9 @@ export function projectClientModuleRows(result: P.ClientModuleListResult): P.Cli
     ...(source.slotCatalogVersion === undefined ? {} : { slotCatalogVersion: source.slotCatalogVersion }),
     ...(source.contentDigest === undefined ? {} : { contentDigest: source.contentDigest }),
     extIds: [...source.extIds],
+    ...(source.intelligentComponents === undefined
+      ? {}
+      : { intelligentComponents: copyUiComponents(source.intelligentComponents) }),
     ...(source.publicConfig === undefined ? {} : { publicConfig: { ...source.publicConfig } }),
   }))
   const statuses: P.ClientModuleListResult['statuses'] = result.statuses.map((source) => ({
@@ -245,6 +258,8 @@ export function projectClientModuleRows(result: P.ClientModuleListResult): P.Cli
       if (source.contentDigest !== undefined) row.contentDigest = source.contentDigest
       if (source.extIds !== undefined) row.extIds = [...source.extIds]
       if (source.services !== undefined) row.services = [...source.services]
+      if (source.intelligentComponents !== undefined)
+        row.intelligentComponents = copyUiComponents(source.intelligentComponents)
       if (source.publicConfig !== undefined) row.publicConfig = { ...source.publicConfig }
       return row
     })
@@ -287,6 +302,8 @@ export function projectClientModuleRows(result: P.ClientModuleListResult): P.Cli
       row.slots = [...module.slots]
       if (module.contentDigest !== undefined) row.contentDigest = module.contentDigest
       row.extIds = [...module.extIds]
+      if (module.intelligentComponents !== undefined)
+        row.intelligentComponents = copyUiComponents(module.intelligentComponents)
       if (module.publicConfig !== undefined) row.publicConfig = { ...module.publicConfig }
     }
     rows.push(row)

@@ -52,7 +52,10 @@ export function accepts(schema: JsonValue, value: JsonValue): boolean {
 }
 export function validateSurface(surface: Surface, ports: IntelligentUiPorts): void {
   bounded(surface, X_AGNES_UI_LIMITS.surfaceBytes)
-  if (!validIntelligentSurface(surface)) throw rpcError('INVALID_PARAMS')
+  const declarations = surface.components.some((item) => 'fallback' in item)
+    ? (ports.components?.() ?? [])
+    : []
+  if (!validIntelligentSurface(surface, declarations)) throw rpcError('INVALID_PARAMS')
   const actionIds = new Set<string>()
   const catalog = new Map(ports.tools().map((tool) => [tool.name, tool]))
   for (const action of surface.actions) {
@@ -71,6 +74,7 @@ export function validateSurface(surface: Surface, ports: IntelligentUiPorts): vo
       if (dangerous.has(key)) throw rpcError('INVALID_PARAMS')
   }
   for (const component of surface.components) {
+    if ('fallback' in component) continue
     if (component.kind === 'form') {
       safeSchema(component.schema)
       accepts(component.schema, surface.data[component.dataKey]!) // incomplete defaults are allowed
@@ -104,7 +108,9 @@ export function bindArguments(
   for (const [id, value] of Object.entries(request.input)) {
     const component = surface.components.find((item) => item.id === id)
     if (
-      component?.kind !== 'form' ||
+      !component ||
+      'fallback' in component ||
+      component.kind !== 'form' ||
       !component.actionIds?.includes(action.id) ||
       !accepts(component.schema, value)
     )
@@ -114,7 +120,9 @@ export function bindArguments(
   for (const [id, keys] of Object.entries(request.selection)) {
     const component = surface.components.find((item) => item.id === id)
     if (
-      component?.kind !== 'table' ||
+      !component ||
+      'fallback' in component ||
+      component.kind !== 'table' ||
       component.selection === 'none' ||
       (component.selection === 'single' && keys.length > 1)
     )
@@ -128,7 +136,12 @@ export function bindArguments(
   }
   if (request.row) {
     const component = surface.components.find((item) => item.id === request.row!.tableId)
-    if (component?.kind !== 'table' || !component.rowActionIds?.includes(action.id))
+    if (
+      !component ||
+      'fallback' in component ||
+      component.kind !== 'table' ||
+      !component.rowActionIds?.includes(action.id)
+    )
       throw new Error('Invalid row action')
     const row = (surface.data[component.dataKey] as Record<string, JsonValue>[]).find(
       (item) => item[component.rowKey] === request.row!.rowId,

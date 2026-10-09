@@ -294,6 +294,7 @@ import {
   resolveSessionCapabilities,
   type SessionCapabilitySet,
 } from '../profile/session-capabilities.js'
+import { readUiComponentDeclarations } from '../sessions/ui-component-declarations.js'
 import { createIntelligentUiAdapter } from '../sessions/intelligent-ui.js'
 import {
   applyTelemetryConsent,
@@ -2504,6 +2505,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const intelligentUi = createIntelligentUiAdapter(
       (ref) => kernel.get(ref.key),
       pluginTree.root.deferredInvocations,
+      (session) => readUiComponentDeclarations(deps.profileDir, session.key),
     )
     const extPorts = bindExtensionInvocations(
       {

@@ -1,5 +1,6 @@
 export { IntelligentCatalog, type IntelligentCatalogProps } from './catalog.js'
+export { CustomUiFallback, type CustomUiRenderProps, type CustomUiRenderer } from './custom.js'
 export { IntelligentChart } from './chart.js'
 export { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
 export { IntelligentSurface, type IntelligentSurfaceProps } from './surface.js'
-export { boundedUiJson, validIntelligentSurface } from './validate.js'
+export { boundedUiJson, validIntelligentSurface, validIntelligentSurfaceProjection } from './validate.js'

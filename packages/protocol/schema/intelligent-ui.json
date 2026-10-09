@@ -283,6 +283,9 @@
               "$ref": "#/$defs/UiKey"
             }
           }
+        },
+        {
+          "$ref": "#/$defs/UiCustomComponent"
         }
       ]
     },
@@ -753,6 +756,43 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 1024
+        }
+      }
+    },
+    "UiCustomComponent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "dataKey", "fallback", "actionIds"],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/UiKey"
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 256,
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*(?:/[a-z0-9][a-z0-9._-]*)+@[1-9][0-9]*$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "dataKey": {
+          "$ref": "#/$defs/UiKey"
+        },
+        "fallback": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "actionIds": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/UiKey"
+          }
         }
       }
     }

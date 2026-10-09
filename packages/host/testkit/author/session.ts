@@ -17,7 +17,12 @@ import {
   type ToolResult,
 } from '@agnes/extension-api'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
-import { developmentPluginRows, hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
+import {
+  developmentPluginRows,
+  hashDirectory,
+  readDevelopmentPlugin,
+  type RuntimePluginSnapshot,
+} from '@agnes/package-manager'
 import { defineLoop } from '@agnes/plugin-runtime'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { RouteDecl, UiActionParams, UiActionReceipt, UiReadParams, UiReadResult } from '@agnes/protocol'
@@ -28,6 +33,8 @@ export interface AuthorPluginVersion {
   plugin: Plugin
   version: string
   config?: unknown
+  /** Reviewed browser declaration and self-contained code, copied into the synthetic package. */
+  clientModule?: { declaration: import('@agnes/protocol').ClientContribution; code: string }
 }
 export interface AuthorTestOptions extends AuthorPluginVersion {
   packageId?: string
@@ -101,6 +108,9 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
         type: 'module',
         exports: './index.mjs',
         agnes: {
+          ...(next.clientModule
+            ? { clientDescriptors: [{ rowId: `ext:${id}/main`, path: './client/agnes.client.json' }] }
+            : {}),
           plugins: [
             {
               export: 'main',
@@ -116,7 +126,19 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
         },
       }),
     )
+    if (next.clientModule) {
+      await mkdir(join(folder, 'client'))
+      await writeFile(
+        join(folder, 'client', 'agnes.client.json'),
+        JSON.stringify({ client: next.clientModule.declaration }),
+      )
+      const file = next.clientModule.declaration.entry.replace(/^\.\//, '')
+      if (file.includes('/') || !/^[a-z0-9.-]+\.(mjs|js)$/.test(file))
+        throw new Error('Author clientModule requires one self-contained entry file')
+      await writeFile(join(folder, 'client', file), next.clientModule.code)
+    }
     const integrity = hashDirectory(folder, { exclude: [] })
+    const inspected = next.clientModule ? readDevelopmentPlugin(folder, 'local-dev') : undefined
     const source: RuntimePluginSnapshot = {
       snapshot: {
         packageId: id,
@@ -126,8 +148,8 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
         snapshotId: integrity,
         integrity,
         treeIntegrity: integrity,
-        capabilityHash: createHash('sha256').update(id).digest('hex'),
-        contributions: [],
+        capabilityHash: inspected?.snapshot.capabilityHash ?? createHash('sha256').update(id).digest('hex'),
+        contributions: inspected?.snapshot.contributions ?? [],
       },
       generation: sources.length + 1,
       trusted: true,

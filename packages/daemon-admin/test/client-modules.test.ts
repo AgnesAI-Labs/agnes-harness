@@ -41,6 +41,7 @@ function installed(input: {
   entry?: string
   styles?: string[]
   slots?: string[]
+  intelligentComponents?: import('@agnes/protocol').ClientContribution['intelligentComponents']
   publicConfig?: Record<string, unknown>
   services?: string[]
   slotCatalogVersion?: string
@@ -63,6 +64,7 @@ function installed(input: {
         apiRange: '*',
         capabilities: input.backend ? { ui: ['client'], tools: { prefix: 'panel_' } } : { ui: ['client'] },
         client: {
+          ...(input.intelligentComponents ? { intelligentComponents: input.intelligentComponents } : {}),
           entry: input.entry ?? 'dist/index.js',
           styles: input.styles ?? ['dist/index.css'],
           slots: input.slots ?? ['workbench.panel'],
@@ -111,7 +113,20 @@ function webArtifact(packageId: string, revision: string, disabled = false) {
 describe('client module immutable snapshots', () => {
   it('serves the session generation roster and assets after the installed plugin is removed', async () => {
     const f = fixture(),
-      row = installed({ directory: f.packageDirectory })
+      row = installed({
+        directory: f.packageDirectory,
+        slots: [],
+        styles: [],
+        intelligentComponents: [
+          {
+            kind: 'acme/panel/diff@1',
+            propsSchema: { type: 'object' },
+            maxPropsBytes: 256,
+            fallback: 'Use the preset table.',
+            accessibility: { label: 'Differences', keyboard: true },
+          },
+        ],
+      })
     const store = new RuntimeGenerationSnapshotStore(f.root)
     const snapshot = store.create(
       decodeRuntimeTargetArtifact(webArtifact(row.id, row.entry.integrity)),
@@ -150,6 +165,14 @@ describe('client module immutable snapshots', () => {
       }
       const roster = await registry.list({ ...input, sessionId: 'old-session' })
       expect(roster.modules).toHaveLength(1)
+      expect(roster.modules[0]?.intelligentComponents).toEqual(
+        row.contributions[0] && 'client' in row.contributions[0]
+          ? row.contributions[0].client?.intelligentComponents
+          : undefined,
+      )
+      expect(roster.rows?.find((item) => item.phase === 'ready')?.intelligentComponents).toEqual(
+        roster.modules[0]?.intelligentComponents,
+      )
       expect(roster.modules[0]?.entryUrl).toContain(`/plugins/generations/${snapshot.id}/`)
       const otherRoster = await registry.list({ ...input, sessionId: 'other-session' })
       expect(otherRoster.revision).not.toBe(roster.revision)

@@ -1,7 +1,13 @@
 // jcs is the shared strict RFC 8785 serializer for SDK/daemon signature bytes; it does not replace core request hashing.
 export { type ValidatedRequestMedia, validateRequestMedia } from './request-media.js'
 export { readSessionTitle, SESSION_TITLE_EVENT, SessionTitleRecord } from './session-title.js'
-export { boundedUiJson, uiObject, validIntelligentSurface } from './ui-surface-validation.js'
+export {
+  boundedUiJson,
+  uiObject,
+  validIntelligentSurface,
+  validIntelligentSurfaceProjection,
+  validUiComponentDeclaration,
+} from './ui-surface-validation.js'
 
 // ── What belongs on the root export surface ──────────────────────────────────────────────────
 // This surface used to have no discernible rule. Only 8 of the 11 event data types were exported
@@ -217,6 +223,7 @@ export type { DeployManifest } from '../gen/ts/deploy-manifest.js'
 export type {
   Capabilities,
   ClientContribution,
+  UiComponentDeclaration,
   ExtensionManifest,
   SkinContribution,
   SkinTokenValue,
@@ -233,6 +240,7 @@ export type {
   UiCloseParams,
   UiColumn,
   UiComponent,
+  UiCustomComponent,
   UiFailure,
   UiJsonSchema,
   UiKey,

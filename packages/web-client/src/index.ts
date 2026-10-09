@@ -126,3 +126,4 @@ export {
   UiExtensionRegistry,
   workbenchPanels,
 } from './ui-registries.js'
+export type { IntelligentUiRenderer, IntelligentUiRendererApi } from './intelligent-ui-renderer.js'

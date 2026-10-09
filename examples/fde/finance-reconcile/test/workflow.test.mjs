@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import descriptor from '../client/agnes.client.json' with { type: 'json' }
 import { fileURLToPath } from 'node:url'
 import { createAuthorTestkit } from '@agnes/host/author-testkit'
 import { test } from 'vitest'
@@ -19,6 +21,10 @@ for (const verdict of ['allowed-once', 'rejected'])
   test(`scripted finance pilot records ${verdict} through the real Host policy and deferred queue`, async () => {
     const kit = await createAuthorTestkit({
       plugin: main,
+      clientModule: {
+        declaration: descriptor.client,
+        code: await readFile(new URL('../client/reconciliation-diff.mjs', import.meta.url), 'utf8'),
+      },
       version: '1.1.0',
       packageId: '@agnes-fde/finance-reconcile',
       loop: { id: 'fde.finance-reconcile', version: '4.0.0' },
@@ -40,7 +46,7 @@ for (const verdict of ['allowed-once', 'rejected'])
       assert.equal(surface.revision, 1)
       assert.deepEqual(
         surface.components.map((component) => component.kind),
-        ['table', 'chart', 'form', 'button-group', 'status'],
+        [descriptor.client.intelligentComponents[0].kind, 'table', 'chart', 'form', 'button-group', 'status'],
       )
       const request = {
         surfaceId: surface.id,
