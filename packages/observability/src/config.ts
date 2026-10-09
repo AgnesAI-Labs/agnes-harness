@@ -1,4 +1,5 @@
 import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs'
+import { open } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
@@ -59,6 +60,7 @@ export function validateObservability(config: ObservabilityConfig): Observabilit
   ]) {
     if (endpoint === undefined) continue
     try {
+      if (typeof endpoint !== 'string' || endpoint.length > 2048) throw new Error()
       const url = new URL(endpoint)
       if (
         !['http:', 'https:'].includes(url.protocol) ||
@@ -95,16 +97,23 @@ export function validateObservability(config: ObservabilityConfig): Observabilit
       throw new Error('Invalid OTLP secret refs')
     for (const [key, value] of Object.entries(config.headers))
       if (
-        !/^[a-zA-Z0-9-]+$/.test(key) ||
+        !/^[a-zA-Z0-9-]{1,128}$/.test(key) ||
         ['content-type', 'host', 'content-length'].includes(key.toLowerCase()) ||
         !value ||
         typeof value !== 'object' ||
         Object.keys(value).length !== 1 ||
-        !/^env:[A-Z_][A-Z0-9_]*$/.test(value.secretRef)
+        typeof value.secretRef !== 'string' ||
+        !/^env:[A-Z_][A-Z0-9_]{0,123}$/.test(value.secretRef)
       )
         throw new Error('Invalid OTLP secret refs')
   }
-  return config
+  // Queue rows retain a snapshot even if the caller later mutates its settings object.
+  return {
+    ...config,
+    ...(config.headers
+      ? { headers: Object.fromEntries(Object.entries(config.headers).map(([key, ref]) => [key, { ...ref }])) }
+      : {}),
+  }
 }
 /** No plaintext header configuration or ambient OTLP_HEADERS is consumed. */
 export function observabilityConfig(
@@ -128,6 +137,8 @@ export function observabilityConfig(
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
       throw new Error('Invalid observability configuration')
   }
+  if (!file || typeof file !== 'object' || Array.isArray(file))
+    throw new Error('Invalid observability configuration')
   const config = validateObservability({ enabled: false, ...file, ...explicit })
   if (env.OTEL_SDK_DISABLED === 'true' || env.OTEL_SDK_DISABLED === '1') config.enabled = false
   return config
@@ -140,4 +151,31 @@ export function resolveHeaders(config: ObservabilityConfig): Record<string, stri
     headers[name] = value
   }
   return headers
+}
+
+/** Asynchronous live-resource read; never performs disk I/O on a session append callback. */
+export async function readObservabilityConfig(
+  home: string,
+  explicit: Partial<ObservabilityConfig> = {},
+): Promise<ObservabilityConfig> {
+  let file: Partial<ObservabilityConfig> = {}
+  try {
+    const handle = await open(join(home, 'observability.json'), constants.O_RDONLY | constants.O_NOFOLLOW)
+    try {
+      const stat = await handle.stat()
+      if (!stat.isFile() || stat.size > 64 * 1024) throw new Error('Invalid observability configuration')
+      file = JSON.parse(await handle.readFile('utf8')) as Partial<ObservabilityConfig>
+    } finally {
+      await handle.close()
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
+      throw new Error('Invalid observability configuration')
+  }
+  if (!file || typeof file !== 'object' || Array.isArray(file))
+    throw new Error('Invalid observability configuration')
+  const config = validateObservability({ enabled: false, ...file, ...explicit })
+  if (process.env.OTEL_SDK_DISABLED === 'true' || process.env.OTEL_SDK_DISABLED === '1')
+    config.enabled = false
+  return config
 }

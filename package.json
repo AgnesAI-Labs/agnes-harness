@@ -40,7 +40,8 @@
     "@agnes/core": "workspace:*",
     "@agnes/core-common": "workspace:*",
     "@agnes/core-effects": "workspace:*",
-    "@agnes/core-ledger": "workspace:*"
+    "@agnes/core-ledger": "workspace:*",
+    "@agnes/observability": "workspace:*"
   },
   "license": "Apache-2.0"
 }

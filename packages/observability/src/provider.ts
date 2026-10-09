@@ -43,6 +43,22 @@ const attributes = (values: Attributes): Span['attributes'] =>
   }))
 function content(value: unknown, config: ObservabilityConfig, roots: readonly string[]): string {
   // Bounds the hot path before parsing/string scrubbing; never recursively scans files.
+  const pending: Array<{ value: unknown; depth: number }> = [{ value, depth: 0 }]
+  let nodes = 0,
+    chars = 0
+  while (pending.length) {
+    const entry = pending.pop()!
+    if (++nodes > 256 || entry.depth > 8) return '<omitted>'
+    if (typeof entry.value === 'string') {
+      chars += entry.value.length
+      if (chars > 16384) return '<omitted>'
+    } else if (entry.value && typeof entry.value === 'object') {
+      for (const child in entry.value) {
+        if (pending.length + nodes > 256) return '<omitted>'
+        pending.push({ value: (entry.value as Record<string, unknown>)[child], depth: entry.depth + 1 })
+      }
+    }
+  }
   let json: string
   try {
     json = JSON.stringify(value) ?? 'null'

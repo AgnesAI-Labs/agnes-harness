@@ -52,6 +52,7 @@ export type WorkerMethod =
   | 'session.catalog'
   | 'systemPrompt.defaults'
   | 'memory.manage'
+  | 'observability.health'
   | 'inspectService'
   | 'callService'
   | 'abortService'

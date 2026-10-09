@@ -5,6 +5,7 @@ import {
   manageMemory,
   type ResolvedProfile,
 } from '@agnes/host'
+import { exporterHealth } from '@agnes/observability'
 import type { LocalGate } from '@agnes/plugin-runtime/host'
 import {
   type Actor,
@@ -782,6 +783,8 @@ export async function handleServiceCommand(
       if (!host?.collectPluginGenerations) throw new Error('Plugin generation collection is unavailable')
       await host.collectPluginGenerations()
       return {}
+    case 'observability.health':
+      return exporterHealth()
     case 'pluginGenerations.status':
       if (!host?.pluginGenerationStatus) throw new Error('Plugin generation status is unavailable')
       return host.pluginGenerationStatus()

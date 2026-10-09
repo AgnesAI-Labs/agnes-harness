@@ -1,5 +1,10 @@
 import type { ObservabilityProvider } from '@agnes/extension-api'
-import { type ObservabilityConfig, observabilityConfig, observabilityHome } from './config.js'
+import {
+  type ObservabilityConfig,
+  observabilityConfig,
+  observabilityHome,
+  readObservabilityConfig,
+} from './config.js'
 import { createObservability } from './provider.js'
 
 // Symbol registry survives module replacement; queues belong to a process/home, not a code fiber.
@@ -9,6 +14,7 @@ type Runtime = {
   refs: number
   timer: ReturnType<typeof setInterval>
   config: string
+  explicit: Partial<ObservabilityConfig>
   closing?: Promise<void>
 }
 const globals = globalThis as typeof globalThis & { [key]?: Map<string, Runtime> }
@@ -24,25 +30,38 @@ export function acquireObservability(
     const read = () => observabilityConfig(explicit, { ...process.env, AGH_HOME: home })
     const config = read()
     const provider = createObservability(config)
+    let reading = false
     runtime = {
       provider,
       refs: 0,
       config: JSON.stringify(config),
-      timer: setInterval(() => {
+      explicit,
+      timer: setInterval(async () => {
+        if (reading) return
+        reading = true
         try {
-          const next = read(),
+          const next = await readObservabilityConfig(home, runtime!.explicit),
             identity = JSON.stringify(next)
           if (runtime!.config !== identity) {
             provider.configure(next)
             runtime!.config = identity
           }
         } catch {
-          /* Invalid live settings fail closed to the last validated configuration. */
+          provider.configure({ enabled: false })
+          runtime!.config = ''
+          /* Invalid live configuration stops capture until a valid snapshot is available. */
+        } finally {
+          reading = false
         }
       }, 1000),
     }
     runtime.timer.unref()
     runtimes.set(home, runtime)
+  } else if (Object.keys(explicit).length) {
+    const next = observabilityConfig(explicit, { ...process.env, AGH_HOME: home })
+    runtime.provider.configure(next)
+    runtime.config = JSON.stringify(next)
+    runtime.explicit = explicit
   }
   const owner = runtime
   owner.refs++
@@ -69,4 +88,13 @@ export function exporterHealth(home = observabilityHome()) {
       failures: 0,
     }
   )
+}
+
+export function configureExporter(home: string, config: ObservabilityConfig): void {
+  const runtime = runtimes.get(home)
+  if (runtime) {
+    runtime.provider.configure(config)
+    runtime.explicit = {}
+    runtime.config = JSON.stringify(config)
+  }
 }

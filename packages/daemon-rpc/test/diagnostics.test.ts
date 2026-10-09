@@ -121,6 +121,15 @@ describe('diagnostics.export', () => {
     expect(JSON.stringify(exported.result)).not.toContain('synthetic-loop')
     const denied = await call(ep, '_agnes/v1/diagnostics.export', { sessionId: 'foreign' })
     expect(denied.error?.data?.code).toBe('CAPABILITY_DENIED')
+    expect((await call(ep, '_agnes/v1/admin.observability', {})).result).toMatchObject({
+      settings: { enabled: false },
+      health: { status: 'disabled' },
+    })
+    ep.conn.authKind = 'jwt'
+    expect(await call(ep, '_agnes/v1/admin.observability', {})).toHaveProperty(
+      'error.data.code',
+      'CAPABILITY_DENIED',
+    )
   })
 
   it('exports only metadata and locates transport and durable diagnostic IDs without secrets', async () => {

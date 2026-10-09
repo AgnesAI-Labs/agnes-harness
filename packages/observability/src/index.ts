@@ -11,6 +11,7 @@ export const observabilityPlugin = {
   },
 }
 export type { ObservabilityProvider } from '@agnes/extension-api'
+export { administerObservability, telemetrySnapshot } from './admin.js'
 export { correlatedLogger, currentCorrelation, withObservedSession } from './correlation.js'
 export { installDiagnosticJournal, readDiagnosticJournal } from './journal.js'
 export { acquireObservability, exporterHealth } from './runtime.js'

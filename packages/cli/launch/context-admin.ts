@@ -17,11 +17,15 @@ export function contextAdmin(
   memory?: (
     input: AppServerParams<'_agnes/v1/admin.memory'>,
   ) => Promise<AppServerResult<'_agnes/v1/admin.memory'>>,
+  observability?: (
+    input: AppServerParams<'_agnes/v1/admin.observability'>,
+  ) => Promise<AppServerResult<'_agnes/v1/admin.observability'>>,
 ) {
   return async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
     const url = new URL(request.url ?? '/', origin)
     const isMemory = url.pathname === '/api/memory' && memory !== undefined
-    if (url.pathname !== '/api/context' && !isMemory) return false
+    const isObservability = url.pathname === '/api/observability' && observability !== undefined
+    if (url.pathname !== '/api/context' && !isMemory && !isObservability) return false
     const reply = (status: number, data: unknown) => {
       response.writeHead(status, {
         'Content-Type': 'application/json',
@@ -54,13 +58,19 @@ export function contextAdmin(
       const input: unknown = JSON.parse(
         new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)),
       )
-      const method = isMemory ? '_agnes/v1/admin.memory' : '_agnes/v1/admin.context'
+      const method = isObservability
+        ? '_agnes/v1/admin.observability'
+        : isMemory
+          ? '_agnes/v1/admin.memory'
+          : '_agnes/v1/admin.context'
       if (!validateMethod(method, 'params', input).ok) throw new Error('request')
       reply(
         200,
-        isMemory
-          ? await memory!(input as AppServerParams<'_agnes/v1/admin.memory'>)
-          : await invoke(input as AppServerParams<'_agnes/v1/admin.context'>),
+        isObservability
+          ? await observability!(input as AppServerParams<'_agnes/v1/admin.observability'>)
+          : isMemory
+            ? await memory!(input as AppServerParams<'_agnes/v1/admin.memory'>)
+            : await invoke(input as AppServerParams<'_agnes/v1/admin.context'>),
       )
     } catch (error) {
       const rpc = (error as { rpc?: RpcError })?.rpc

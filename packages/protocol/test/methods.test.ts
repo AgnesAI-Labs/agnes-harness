@@ -92,6 +92,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/admin.search.test',
         '_agnes/v1/admin.context',
         '_agnes/v1/admin.memory',
+        '_agnes/v1/admin.observability',
         '_agnes/v1/admin.history.search',
         '_agnes/v1/admin.plan',
         '_agnes/v1/admin.mcp.oauth.save',
@@ -246,7 +247,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(164)
+    expect(Object.keys(METHODS)).toHaveLength(165)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })

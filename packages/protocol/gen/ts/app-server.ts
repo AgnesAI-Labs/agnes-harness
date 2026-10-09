@@ -34,6 +34,10 @@ export const AppServerV1 = Type.Module({
   "MemoryInspection": Type.Object({ "root": Type.String({ minLength: 1, maxLength: 4096 }), "settings": Type.Ref('MemorySettings'), "files": Type.Array(Type.Ref('MemoryFileInfo'), { maxItems: 128 }), "bytes": Type.Integer({ minimum: 0 }), "lastWriter": Type.Optional(Type.Ref('MemorySource')) }, { additionalProperties: false }),
   "AdminMemoryParams": Type.Object({ "cwd": Type.String({ minLength: 1, maxLength: 4096 }), "settings": Type.Optional(Type.Ref('MemorySettingsPatch')), "file": Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.md$" })), "content": Type.Optional(Type.String({ maxLength: 1048576 })), "baseHash": Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })) }, { additionalProperties: false }),
   "AdminMemoryResult": Type.Object({ "workspaces": Type.Array(Type.Object({ "path": Type.String({ minLength: 1, maxLength: 4096 }), "available": Type.Boolean() }, { additionalProperties: false }), { maxItems: 4096 }), "inspection": Type.Ref('MemoryInspection'), "file": Type.Optional(Type.Ref('MemoryFile')) }, { additionalProperties: false }),
+  "ObservabilitySettings": Type.Object({ "enabled": Type.Boolean(), "endpoint": Type.Optional(Type.String({ maxLength: 2048 })), "tracesEndpoint": Type.Optional(Type.String({ maxLength: 2048 })), "metricsEndpoint": Type.Optional(Type.String({ maxLength: 2048 })), "logsEndpoint": Type.Optional(Type.String({ maxLength: 2048 })), "headers": Type.Optional(Type.Record(Type.String(), Type.Object({ "secretRef": Type.String({ pattern: "^env:[A-Z_][A-Z0-9_]*$" }) }, { additionalProperties: false }))), "redaction": Type.Optional(Type.Union([Type.Literal('metadata'), Type.Literal('content')])), "shutdownPolicy": Type.Optional(Type.Union([Type.Literal('flush'), Type.Literal('discard')])), "batchSize": Type.Optional(Type.Integer({ minimum: 1, maximum: 16384 })), "queueSize": Type.Optional(Type.Integer({ minimum: 1, maximum: 16384 })), "batchMs": Type.Optional(Type.Integer({ minimum: 10, maximum: 30000 })), "timeoutMs": Type.Optional(Type.Integer({ minimum: 10, maximum: 30000 })) }, { additionalProperties: false }),
+  "ObservabilityHealth": Type.Object({ "status": Type.Union([Type.Literal('disabled'), Type.Literal('idle'), Type.Literal('ok'), Type.Literal('backoff'), Type.Literal('rejected'), Type.Literal('closed')]), "queued": Type.Integer({ minimum: 0 }), "dropped": Type.Integer({ minimum: 0 }), "failures": Type.Integer({ minimum: 0 }), "lastExportAt": Type.Optional(Type.String()) }, { additionalProperties: false }),
+  "AdminObservabilityParams": Type.Object({ "settings": Type.Optional(Type.Ref('ObservabilitySettings')), "test": Type.Optional(Type.Boolean()) }, { additionalProperties: false }),
+  "AdminObservabilityResult": Type.Object({ "settings": Type.Ref('ObservabilitySettings'), "health": Type.Ref('ObservabilityHealth'), "connection": Type.Optional(Type.Union([Type.Literal('ok'), Type.Literal('failed')])), "workerHealth": Type.Optional(Type.Ref('ObservabilityHealth')), "workerState": Type.Optional(Type.Union([Type.Literal('available'), Type.Literal('idle'), Type.Literal('unavailable')])) }, { additionalProperties: false }),
 })
 
 export const AppServerErrorCause = AppServerV1.Import('AppServerErrorCause')
@@ -94,6 +98,14 @@ export const AdminMemoryParams = AppServerV1.Import('AdminMemoryParams')
 export type AdminMemoryParams = Static<typeof AdminMemoryParams>
 export const AdminMemoryResult = AppServerV1.Import('AdminMemoryResult')
 export type AdminMemoryResult = Static<typeof AdminMemoryResult>
+export const ObservabilitySettings = AppServerV1.Import('ObservabilitySettings')
+export type ObservabilitySettings = Static<typeof ObservabilitySettings>
+export const ObservabilityHealth = AppServerV1.Import('ObservabilityHealth')
+export type ObservabilityHealth = Static<typeof ObservabilityHealth>
+export const AdminObservabilityParams = AppServerV1.Import('AdminObservabilityParams')
+export type AdminObservabilityParams = Static<typeof AdminObservabilityParams>
+export const AdminObservabilityResult = AppServerV1.Import('AdminObservabilityResult')
+export type AdminObservabilityResult = Static<typeof AdminObservabilityResult>
 
 export const ADMIN_METHODS = {
   "_agnes/v1/admin.bundles.get": {kind:'request',direction:'c2s',params:AdminEmpty,result:AdminBundlesResult},
@@ -108,4 +120,5 @@ export const ADMIN_METHODS = {
   "_agnes/v1/admin.mcp.oauth.save": {kind:'request',direction:'c2s',params:AdminMcpOAuthSave,result:AdminEmpty},
   "_agnes/v1/doctor.run": {kind:'request',direction:'c2s',params:DoctorParams,result:DoctorResult},
   "_agnes/v1/admin.memory": {kind:'request',direction:'c2s',params:AdminMemoryParams,result:AdminMemoryResult},
+  "_agnes/v1/admin.observability": {kind:'request',direction:'c2s',params:AdminObservabilityParams,result:AdminObservabilityResult},
 } as const

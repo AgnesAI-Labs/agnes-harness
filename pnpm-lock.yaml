@@ -37,6 +37,9 @@ importers:
       '@agnes/host-infrastructure':
         specifier: workspace:*
         version: link:packages/host-infrastructure
+      '@agnes/observability':
+        specifier: workspace:*
+        version: link:packages/observability
       '@axe-core/playwright':
         specifier: 4.11.0
         version: 4.11.0(playwright-core@1.63.0)
@@ -1659,6 +1662,9 @@ importers:
 
   packages/worker-runtime:
     dependencies:
+      '@agnes/observability':
+        specifier: workspace:*
+        version: link:../observability
       '@agnes/ai':
         specifier: workspace:*
         version: link:../ai

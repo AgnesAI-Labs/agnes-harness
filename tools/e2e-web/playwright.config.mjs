@@ -7,6 +7,7 @@ export default defineConfig({
   testMatch: [
     'memory.spec.ts',
     'diagnostics.spec.ts',
+    'observability.spec.ts',
     'prompt-trace.spec.ts',
     'fact-chain.spec.ts',
     'runtime.spec.ts',

@@ -21,6 +21,7 @@ import {
 } from './diagnostics-api.js'
 import { DIAGNOSTICS_NAMESPACE, diagnosticsCatalog } from './diagnostics-locale.js'
 import { DoctorPanel } from './doctor.js'
+import { ObservabilityPanel } from './observability.js'
 
 const browserApi = diagnosticsApi()
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
@@ -105,7 +106,6 @@ export function DiagnosticsPanel({
     )
   }
   const failure = error instanceof DiagnosticsRequestError ? error.envelope : undefined
-  const telemetry = bundle?.telemetry
   const boundSessions = bundle?.generations.available
     ? bundle.generations.items.reduce((count, row) => count + row.boundSessions, 0)
     : undefined
@@ -245,44 +245,7 @@ export function DiagnosticsPanel({
           {t('export')}
         </Button>
       </SettingsCard>
-      <SettingsCard title={t('telemetry')} data-testid="diagnostics-telemetry">
-        <SettingsList>
-          <SettingsRow
-            title={t('status')}
-            actions={
-              <Badge tone={telemetry?.enabled ? 'ok' : 'off'}>
-                {t(telemetry ? (telemetry.enabled ? 'enabled' : 'disabled') : 'unknown')}
-              </Badge>
-            }
-          />
-          <SettingsRow title={t('collector')}>
-            <span data-testid="diagnostics-endpoint">
-              {telemetry ? telemetry.endpointHosts.join(', ') || t('notConfigured') : t('unknown')}
-            </span>
-          </SettingsRow>
-          <SettingsRow
-            title={t('content')}
-            actions={
-              <Badge tone={telemetry?.includeContent ? 'warn' : 'off'}>
-                {t(telemetry ? (telemetry.includeContent ? 'enabled' : 'disabled') : 'unknown')}
-              </Badge>
-            }
-          />
-        </SettingsList>
-        {telemetry?.includeContent && (
-          <SettingsState tone="error" data-testid="diagnostics-content-warning">
-            {t('risk')}
-          </SettingsState>
-        )}
-        <p>{t('readOnly')}</p>
-        <a
-          href={`https://github.com/AgnesAI-Labs/agnes-harness/blob/main/docs/guide/observability${locale.startsWith('zh') ? '.zh-CN' : ''}.md`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          {t('docs')}
-        </a>
-      </SettingsCard>
+      <ObservabilityPanel />
       <SettingsCard title={t('runtime')} data-testid="diagnostics-runtime">
         <SettingsRow title={t('worker')}>
           <Badge>{workerIdle ? t('workerIdle') : t(`state.${workerStatus ?? 'unavailable'}`)}</Badge>

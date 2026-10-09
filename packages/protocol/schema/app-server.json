@@ -1092,6 +1092,127 @@
       },
       "required": ["workspaces", "inspection"],
       "additionalProperties": false
+    },
+    "ObservabilitySettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "endpoint": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "tracesEndpoint": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "metricsEndpoint": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "logsEndpoint": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "headers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["secretRef"],
+            "properties": {
+              "secretRef": {
+                "type": "string",
+                "pattern": "^env:[A-Z_][A-Z0-9_]*$"
+              }
+            }
+          }
+        },
+        "redaction": {
+          "enum": ["metadata", "content"]
+        },
+        "shutdownPolicy": {
+          "enum": ["flush", "discard"]
+        },
+        "batchSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16384
+        },
+        "queueSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16384
+        },
+        "batchMs": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 30000
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 30000
+        }
+      }
+    },
+    "ObservabilityHealth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "queued", "dropped", "failures"],
+      "properties": {
+        "status": {
+          "enum": ["disabled", "idle", "ok", "backoff", "rejected", "closed"]
+        },
+        "queued": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dropped": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lastExportAt": {
+          "type": "string"
+        }
+      }
+    },
+    "AdminObservabilityParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "settings": {
+          "$ref": "#/$defs/ObservabilitySettings"
+        },
+        "test": {
+          "type": "boolean"
+        }
+      }
+    },
+    "AdminObservabilityResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["settings", "health"],
+      "properties": {
+        "settings": {
+          "$ref": "#/$defs/ObservabilitySettings"
+        },
+        "health": {
+          "$ref": "#/$defs/ObservabilityHealth"
+        },
+        "connection": {
+          "enum": ["ok", "failed"]
+        },
+        "workerHealth": { "$ref": "#/$defs/ObservabilityHealth" },
+        "workerState": { "enum": ["available", "idle", "unavailable"] }
+      }
     }
   },
   "x-methods": {
@@ -1142,6 +1263,10 @@
     "_agnes/v1/admin.memory": {
       "params": "AdminMemoryParams",
       "result": "AdminMemoryResult"
+    },
+    "_agnes/v1/admin.observability": {
+      "params": "AdminObservabilityParams",
+      "result": "AdminObservabilityResult"
     }
   }
 }

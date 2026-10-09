@@ -6226,6 +6226,29 @@ const AppSamples: Record<string, Sample> = {
     invalid: [null],
     note: 'File memory boundary shape',
   },
+  ObservabilitySettings: {
+    valid: { enabled: false, headers: { authorization: { secretRef: 'env:OTLP_AUTH' } } },
+    invalid: [null, { enabled: true, headers: { authorization: 'plaintext' } }],
+    note: 'Secret refs only',
+  },
+  ObservabilityHealth: {
+    valid: { status: 'disabled', queued: 0, dropped: 0, failures: 0 },
+    invalid: [null, { status: 'ok', queued: -1, dropped: 0, failures: 0 }],
+    note: 'Bounded exporter health',
+  },
+  AdminObservabilityParams: {
+    valid: {},
+    invalid: [null, { settings: { enabled: true, redaction: 'raw' } }],
+    note: 'Exporter administration',
+  },
+  AdminObservabilityResult: {
+    valid: {
+      settings: { enabled: false },
+      health: { status: 'disabled', queued: 0, dropped: 0, failures: 0 },
+    },
+    invalid: [null],
+    note: 'Exporter settings and health',
+  },
   AdminMemoryParams: { valid: { cwd: '/tmp' }, invalid: [null], note: 'File memory boundary shape' },
   AdminMemoryResult: {
     valid: {
@@ -6757,6 +6780,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     fileId: 'https://agnes.ai/schema/app-server-v1',
     params: 'AdminSearchTest',
     result: 'AdminSearchResult',
+  },
+  '_agnes/v1/admin.observability': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminObservabilityParams',
+    result: 'AdminObservabilityResult',
   },
   '_agnes/v1/admin.memory': {
     fileId: 'https://agnes.ai/schema/app-server-v1',
@@ -7608,6 +7636,11 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [null],
     note: 'App Server boundary shape',
   },
+  '_agnes/v1/admin.observability': {
+    valid: {},
+    invalid: [null, { settings: { enabled: false, headers: { authorization: 'plaintext' } } }],
+    note: 'Exporter admin params',
+  },
   '_agnes/v1/admin.memory': {
     valid: { cwd: '/tmp' },
     invalid: [null, { cwd: '/tmp', settings: { mode: 'invalid' } }],
@@ -7942,6 +7975,14 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/admin.search.get': { valid: {}, invalid: [null], note: 'App Server boundary shape' },
   '_agnes/v1/admin.search.save': { valid: {}, invalid: [null], note: 'App Server boundary shape' },
   '_agnes/v1/admin.search.test': { valid: {}, invalid: [null], note: 'App Server boundary shape' },
+  '_agnes/v1/admin.observability': {
+    valid: {
+      settings: { enabled: false },
+      health: { status: 'disabled', queued: 0, dropped: 0, failures: 0 },
+    },
+    invalid: [null],
+    note: 'Exporter admin result',
+  },
   '_agnes/v1/admin.memory': {
     valid: {
       workspaces: [],

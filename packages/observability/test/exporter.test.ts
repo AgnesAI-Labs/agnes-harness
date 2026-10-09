@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { EventEnvelope } from '@agnes/protocol'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { createObservability } from '../src/provider.js'
 import { acquireObservability } from '../src/runtime.js'
 import { OtlpTransport } from '../src/transport.js'
@@ -118,10 +118,14 @@ it('bounds in-flight delivery, retains retryable failures and flushes after reco
     transport.add('logs', { body: { stringValue: 'overflow' } })
     expect(transport.health()).toMatchObject({ status: 'backoff', queued: 2, dropped: 1 })
     collector.refuse(200)
+    const now = Date.now()
+    vi.spyOn(Date, 'now').mockReturnValue(now + 200)
     await transport.dispose()
+    vi.restoreAllMocks()
     expect(transport.health()).toMatchObject({ status: 'closed', queued: 0, dropped: 1 })
     expect(collector.requests.filter((row) => JSON.stringify(row.body).includes('second'))).toHaveLength(1)
   } finally {
+    vi.restoreAllMocks()
     await transport.dispose()
     await collector.close()
   }
@@ -129,6 +133,7 @@ it('bounds in-flight delivery, retains retryable failures and flushes after reco
 
 it('keeps a held batch and session watermark through a generation lease switch', async () => {
   const collector = await memoryCollector()
+  const nextCollector = await memoryCollector()
   const home = await mkdtemp(join(tmpdir(), 'agh-otlp-upgrade-'))
   await writeFile(
     join(home, 'observability.json'),
@@ -144,7 +149,7 @@ it('keeps a held batch and session watermark through a generation lease switch',
   const oldRelease = old.bindSession('s')
   old.observe('s', event(1, 'turn/start', { turn: 1 }))
   const pending = old.flush()
-  const next = acquireObservability(home)
+  const next = acquireObservability(home, { endpoint: nextCollector.endpoint })
   const nextRelease = next.bindSession('s')
   try {
     await old.dispose()
@@ -155,13 +160,15 @@ it('keeps a held batch and session watermark through a generation lease switch',
     resume()
     await pending
     await next.dispose()
-    expect(records(collector, 'Logs')).toHaveLength(2)
-    expect(records(collector, 'Spans').filter((row) => row.name === 'turn')).toHaveLength(1)
+    expect(records(collector, 'Logs')).toHaveLength(1)
+    expect(records(nextCollector, 'Logs')).toHaveLength(1)
+    expect(records(nextCollector, 'Spans').filter((row) => row.name === 'turn')).toHaveLength(1)
   } finally {
     resume()
     await old.dispose()
     await next.dispose()
     await collector.close()
+    await nextCollector.close()
     await rm(home, { recursive: true, force: true })
   }
 })

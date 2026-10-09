@@ -163,16 +163,18 @@ export class OtlpTransport {
         reader?.releaseLock()
       }
       const text = Buffer.concat(chunks).toString('utf8')
-      const partial = text
-        ? (JSON.parse(text) as { partialSuccess?: Record<string, string> }).partialSuccess
-        : undefined
-      return Math.min(
-        count,
-        Math.max(
-          0,
-          Number(partial?.rejectedSpans ?? partial?.rejectedLogRecords ?? partial?.rejectedDataPoints ?? 0),
-        ),
+      let partial: Record<string, string> | undefined
+      try {
+        partial = text
+          ? (JSON.parse(text) as { partialSuccess?: Record<string, string> }).partialSuccess
+          : undefined
+      } catch {
+        return count
+      }
+      const rejected = Number(
+        partial?.rejectedSpans ?? partial?.rejectedLogRecords ?? partial?.rejectedDataPoints ?? 0,
       )
+      return Number.isSafeInteger(rejected) && rejected >= 0 ? Math.min(count, rejected) : count
     } catch {
       return 'retry'
     }

@@ -26,12 +26,16 @@
     "fixtures.ts",
     "quality.ts",
     "i18n.ts",
-    "../acceptance/provider-fixture.ts"
+    "../acceptance/provider-fixture.ts",
+    "observability.spec.ts"
   ],
   "exclude": ["fixtures/**"],
   "references": [
     {
       "path": "../../packages/sdk"
+    },
+    {
+      "path": "../../packages/observability/tsconfig.testkit.json"
     }
   ]
 }

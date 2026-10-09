@@ -55,4 +55,4 @@ App Server 方法 `_agnes/v1/diagnostics.export` 支持可选 `sessionId`、`lim
 
 打开 **设置 → 诊断** 可查看近期安全错误记录、复制诊断 ID，或输入完整 ID 查询历史记录。**导出诊断包** 会下载脱敏 JSON；查询后仅选择该错误。页面还显示 Worker 状态、插件代数和绑定会话数，技术详情默认折叠。
 
-遥测状态只读，反映 daemon 启动时的配置。收集端只显示主机名与端口，不显示 URL 路径、查询参数、请求头或凭据。启用内容导出时显示风险提示，但诊断包始终不含内容。修改 `AGH_HOME/observability.json` 并重启 daemon 后配置生效。后端注册自检方法时，页面还会提供 **运行自检**。
+OTLP 设置卡支持启用、端点、内容策略、批次/队列限制、超时、关闭策略和请求头 secret refs。测试连接只发送合成 traces、metrics 和 logs，不上传会话内容、不保存草稿。保存设置写入私有配置，一秒内生效。页面分别显示 App Server 与运行中会话 Worker 的最近成功、队列、失败和丢弃数；Worker 不存在或查询失败会明确显示，健康查询不会启动 Worker。local-owner 管理方法为 `_agnes/v1/admin.observability`。诊断包始终不含内容。

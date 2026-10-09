@@ -166,7 +166,7 @@ import {
   type ScanRead,
   sessionsDbPath,
 } from '@agnes/host'
-import { acquireObservability, installDiagnosticJournal, observabilityConfig } from '@agnes/observability'
+import { acquireObservability, installDiagnosticJournal, telemetrySnapshot } from '@agnes/observability'
 import {
   activeRuntimePinId,
   createPackageManager,
@@ -731,7 +731,6 @@ export type StartSupervisorOptions = {
   /** Read-only Host mutation readiness; omission is the production fail-closed default. */
   lockedPackageMutations?: LockedPackageMutationStatusSource
   observability?: import('@agnes/observability').ObservabilityProvider
-  telemetryStatus?: import('@agnes/protocol').DiagnosticsExportResult['telemetry']
   audit?: (rec: unknown) => void
   /** Test/composition injection; production creates one global supervisor gate. */
   activationBarrier?: ExtensionActivationBarrier
@@ -2103,9 +2102,26 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         requireSessionOwner: requireSessionOwner(cx),
         registry: cx.registry,
         sessionSnapshot: (key) => workspaces.metadata(key),
+        exporterHealth: async () => {
+          const worker = pool.businessWorker()
+          if (!worker) return { workerState: 'idle' }
+          if (!worker.link.alive) return { workerState: 'unavailable' }
+          try {
+            return {
+              workerState: 'available',
+              workerHealth: (await worker.link.command(
+                'observability.health',
+                {},
+                { timeoutMs: 3000 },
+              )) as import('@agnes/extension-api').ObservabilityHealth,
+            }
+          } catch {
+            return { workerState: 'unavailable' }
+          }
+        },
         dataDir: o.config.dataDir,
         home: o.config.home ?? o.config.dataDir,
-        ...(o.telemetryStatus ? { telemetry: o.telemetryStatus } : {}),
+        telemetry: () => telemetrySnapshot(o.config.home ?? o.config.dataDir),
         profileHash: o.profile.hash,
         ...(composition
           ? { compositionHash: createHash('sha256').update(JSON.stringify(composition)).digest('hex') }
@@ -2430,34 +2446,14 @@ export async function startProductionSupervisor(
     start?: typeof startSupervisor
   } = {},
 ): Promise<SupervisorHandle> {
-  const telemetryConfig = observabilityConfig(
-    {},
-    { ...process.env, AGH_HOME: o.config.home ?? o.config.dataDir },
-  )
   const observability = acquireObservability(o.config.home ?? o.config.dataDir)
   const stopDiagnostics = installDiagnosticJournal(o.config.home ?? o.config.dataDir)
   observability.lifecycle('daemon', 'start')
   o = {
     ...o,
     observability,
-    telemetryStatus: {
-      enabled: telemetryConfig.enabled,
-      includeContent: telemetryConfig.redaction === 'content',
-      endpointHosts: [
-        ...new Set(
-          [telemetryConfig.endpoint, telemetryConfig.tracesEndpoint, telemetryConfig.metricsEndpoint].flatMap(
-            (endpoint) => {
-              try {
-                return endpoint ? [new URL(endpoint).host] : []
-              } catch {
-                return []
-              }
-            },
-          ),
-        ),
-      ],
-    },
   }
+
   let storage: ReturnType<typeof createSqliteStorage>
   try {
     prepareDaemonSocketPaths(o.config)

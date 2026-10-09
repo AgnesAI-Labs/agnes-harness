@@ -6,7 +6,7 @@ import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/
 import type { Registry } from '@agnes/daemon-foundation/registry'
 import { memoryPrivateEvent } from '@agnes/extension-api'
 import { redactDetail } from '@agnes/host'
-import { observabilityHome, readDiagnosticJournal } from '@agnes/observability'
+import { administerObservability, observabilityHome, readDiagnosticJournal } from '@agnes/observability'
 import {
   type DiagnosticsCollectResult,
   type DiagnosticsEventsParams,
@@ -16,6 +16,7 @@ import {
   type EventEnvelope,
   rpcError,
 } from '@agnes/protocol'
+import type { AdminObservabilityParams, AdminObservabilityResult } from '@agnes/protocol/gen/app-server'
 import type { SessionEntry } from '../sessions.js'
 
 // Injected into the daemon bundle by cli/tools/build-local.ts and sea/build.mjs; absent from source runs.
@@ -97,13 +98,23 @@ export function registerDiagnostics(
     home?: string
     profileHash?: string
     compositionHash?: string
-    telemetry?: DiagnosticsExportResult['telemetry']
+    telemetry?: DiagnosticsExportResult['telemetry'] | (() => DiagnosticsExportResult['telemetry'])
+    exporterHealth?: () => Promise<Pick<AdminObservabilityResult, 'workerHealth' | 'workerState'>>
     generations?: () => Promise<unknown> | unknown
     doctor?: () =>
       | Promise<readonly { name: string; status: string }[]>
       | readonly { name: string; status: string }[]
   },
 ): void {
+  endpoint.register('_agnes/v1/admin.observability', async (params, c) => {
+    localOwner(c)
+    try {
+      const result = await administerObservability(params as AdminObservabilityParams, deps.home)
+      return { ...result, ...(deps.exporterHealth ? await deps.exporterHealth() : {}) }
+    } catch {
+      throw rpcError('INVALID_PARAMS', { reason: 'invalid observability settings' })
+    }
+  })
   endpoint.register('_agnes/v1/diagnostics.export', async (params, c): Promise<DiagnosticsExportResult> => {
     localOwner(c)
     const { sessionId, diagnosticId, limit = 100 } = params as DiagnosticsExportParams
@@ -200,7 +211,9 @@ export function registerDiagnostics(
     ]
     return {
       schemaVersion: 1,
-      ...(deps.telemetry ? { telemetry: deps.telemetry } : {}),
+      ...(deps.telemetry
+        ? { telemetry: typeof deps.telemetry === 'function' ? deps.telemetry() : deps.telemetry }
+        : {}),
       collectedAt: new Date(c.clock()).toISOString(),
       agh: { version: typeof AGNES_VERSION === 'string' ? AGNES_VERSION : 'dev' },
       runtime: {

@@ -2,7 +2,7 @@
 import type { DiagnosticsExportResult } from '@agnes/protocol'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { DiagnosticsPanel } from '../src/settings/diagnostics.js'
 
 import { DiagnosticsRequestError, diagnosticsApi } from '../src/settings/diagnostics-api.js'
@@ -13,6 +13,18 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await act(async () => root.unmount())
   document.body.replaceChildren()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
+beforeEach(() => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      Response.json({
+        settings: { enabled: true, endpoint: 'http://collector.example:4318', redaction: 'content' },
+        health: { status: 'idle', queued: 0, dropped: 0, failures: 0 },
+      }),
+    ),
+  )
 })
 const diagnosticId = '11111111-1111-4111-8111-111111111111'
 const bundle: DiagnosticsExportResult = {
@@ -53,11 +65,13 @@ it.each([false, true])(
     })
     const download = vi.fn()
     const host = await mount(diagnosticsApi(fetcher), download)
-    expect(host.textContent).toContain('collector.example:4318')
+    expect(host.querySelector<HTMLInputElement>('[data-testid="otlp-endpoint"]')?.value).toBe(
+      'http://collector.example:4318',
+    )
     const errorCode = host.querySelector('[data-testid="diagnostics-error-code"]')!
     expect(errorCode.textContent).toBe('-32602')
     expect(errorCode.closest<HTMLDetailsElement>('details')?.open).toBe(false)
-    expect(host.querySelector('[data-testid="diagnostics-content-warning"]')).not.toBeNull()
+    expect(host.querySelector('[data-testid="otlp-privacy"]')).not.toBeNull()
     expect(host.querySelector<HTMLDetailsElement>('[data-testid="diagnostics-runtime-details"]')?.open).toBe(
       false,
     )
@@ -132,6 +146,15 @@ it('renders safe translated failures, rejects invalid DTOs, and cancels an unmou
   )
   await act(async () => roots.pop()?.unmount())
   expect(signal?.aborted).toBe(true)
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () =>
+      Response.json({
+        settings: { enabled: false },
+        health: { status: 'disabled', queued: 0, dropped: 0, failures: 0 },
+      }),
+    ),
+  )
   const idle = await mount(
     diagnosticsApi(async () =>
       Response.json({
@@ -151,5 +174,5 @@ it('renders safe translated failures, rejects invalid DTOs, and cancels an unmou
   expect(idle.querySelector('[data-testid="diagnostics-runtime"]')?.textContent).toContain(
     'No Worker is currently running',
   )
-  expect(idle.querySelector('[data-testid="diagnostics-endpoint"]')?.textContent).toBe('Not configured')
+  expect(idle.querySelector('[data-testid="otlp-health"]')?.textContent).toContain('Disabled')
 })

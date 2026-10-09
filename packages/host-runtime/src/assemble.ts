@@ -2356,10 +2356,10 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       if (observations.has(key) || !observability) return () => undefined
       const session = kernel.get(key)
       if (!session) return () => undefined
+      const generation = deps.sessionGeneration?.(key)
       const release = observability.bindSession(key, {
         workspace: session.d.cwd,
-        ...(deps.sessionGeneration?.(key) ? { generation: deps.sessionGeneration!(key)! } : {}),
-        pin: profile.hash,
+        ...(generation ? { generation, pin: generation } : { pin: profile.hash }),
         privateRoots: [deps.homeDir ?? dirname(dirname(deps.profileDir))],
       })
       const stop = session.onAppended((events) => {
