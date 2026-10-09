@@ -81,6 +81,6 @@ Every page under `docs/` has English and Simplified Chinese editions. Use the la
 
 [Documentation maintenance](maintainers/maintenance.md) · [Release checks](maintainers/release.md) · [Versioning](maintainers/versioning.md) · [Verification](maintainers/verification.md) · [Licensing](maintainers/provenance.md) · [Apache-2.0](../LICENSE) · [NOTICE](../NOTICE)
 
-Frontend maintainers: [UI registry APIs](develop/ui-extension-registries.md), [UI coverage](develop/ui-coverage.md), [terminology](develop/ui-glossary.md).
+Frontend maintainers: [UI consistency](develop/ui-consistency.md), [UI registry APIs](develop/ui-extension-registries.md), [UI coverage](develop/ui-coverage.md), [terminology](develop/ui-glossary.md).
 
 Developer contract (proposed): [Intelligent UI contract](develop/intelligent-ui.md).

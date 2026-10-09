@@ -69,6 +69,6 @@
 
 [文档维护](maintainers/maintenance.zh-CN.md) · [发布检查](maintainers/release.zh-CN.md) · [版本管理](maintainers/versioning.zh-CN.md) · [验证记录](maintainers/verification.zh-CN.md) · [许可说明](maintainers/provenance.zh-CN.md) · [Apache-2.0](../LICENSE) · [NOTICE](../NOTICE)
 
-前端维护：[UI 注册接口](develop/ui-extension-registries.zh-CN.md)、[UI 能力覆盖](develop/ui-coverage.zh-CN.md)、[术语表](develop/ui-glossary.zh-CN.md)。
+前端维护：[UI 一致性](develop/ui-consistency.zh-CN.md)、[UI 注册接口](develop/ui-extension-registries.zh-CN.md)、[UI 能力覆盖](develop/ui-coverage.zh-CN.md)、[术语表](develop/ui-glossary.zh-CN.md)。
 
 开发者合同（待实现）：[Intelligent UI 合同](develop/intelligent-ui.zh-CN.md)。
