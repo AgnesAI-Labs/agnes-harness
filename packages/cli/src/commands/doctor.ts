@@ -41,6 +41,25 @@ const failed = (name: DoctorSectionName, detail: string): Section => ({
   detail: [detail],
 })
 
+const PROVIDER_UNCONFIGURED =
+  'no model provider is configured for this profile, so the host was not assembled and this check was not run; run `agh config` to add one'
+
+/**
+ * Why a host-backed section could not run. A profile with no provider is a setup step, reported
+ * the way the provider section reports it. Any other failure stays a failure and names its stable
+ * error code; the error message is never copied, since it can carry paths.
+ */
+function hostSectionFailure(name: DoctorSectionName, label: string, error: unknown): Section {
+  const { code, detail } = (error !== null && typeof error === 'object' ? error : {}) as {
+    code?: unknown
+    detail?: { reason?: unknown } | null
+  }
+  if (code === 'E_PRESET_UNRESOLVED' && detail?.reason === 'no-routes')
+    return { name, status: 'warn', detail: [PROVIDER_UNCONFIGURED] }
+  const suffix = typeof code === 'string' && /^E_[A-Z0-9_]{1,48}$/.test(code) ? ` (${code})` : ''
+  return failed(name, `${label} host assembly failed${suffix}`)
+}
+
 /** Read-only daemon health through the package-owned owner/process/socket probes (ERRATA B23). */
 export async function doctorDaemon(deps: Pick<DoctorCommandDeps, 'home'>): Promise<Section> {
   const dataDir = hostDataDir(deps.home)
@@ -168,15 +187,15 @@ export async function doctorCommand(
                 accounts,
               }),
             )
-          } catch {
-            sections.push(failed('provider', 'provider host assembly failed'))
+          } catch (error) {
+            sections.push(hostSectionFailure('provider', 'provider', error))
           }
           break
         case 'extensions':
           try {
             sections.push(await doctorExtensions(await assembledHost()))
-          } catch {
-            sections.push(failed('extensions', 'extension host assembly failed'))
+          } catch (error) {
+            sections.push(hostSectionFailure('extensions', 'extension', error))
           }
           break
         case 'code-runtime':
@@ -186,8 +205,8 @@ export async function doctorCommand(
                 ...(commandDeps.signal ? { signal: commandDeps.signal } : {}),
               }),
             )
-          } catch {
-            sections.push(failed('code-runtime', 'code runtime host assembly failed'))
+          } catch (error) {
+            sections.push(hostSectionFailure('code-runtime', 'code runtime', error))
           }
           break
       }

@@ -403,6 +403,8 @@ export type SessionDeps = {
   actor: Actor
   resolvedProfileHash: string | null
   /** Carried into a new session/start only; a reopened ledger keeps the one it has. */
+  resolvedPresetHash?: string
+  /** Carried into a new session/start only; a reopened ledger keeps the one it has. */
   imported?: SessionStart['imported']
   cwd: string
   netFetch: ToolContextDeps['netFetch']
@@ -701,6 +703,7 @@ export class SessionImpl {
         data: {
           key: this.key,
           resolvedProfileHash: this.d.resolvedProfileHash,
+          ...(this.d.resolvedPresetHash ? { resolvedPresetHash: this.d.resolvedPresetHash } : {}),
           preset: this.preset.name,
           agnesVersion: this.d.agnesVersion ?? '0.0.0',
           ...(modelSettings.length ? { modelSettings } : {}),

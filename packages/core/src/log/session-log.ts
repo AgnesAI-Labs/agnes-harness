@@ -512,6 +512,7 @@ export class SessionLogImpl {
       agnesVersion: string
       preset: string | null
       resolvedProfileHash: string | null
+      resolvedPresetHash?: string
       writerRunId: string
       lane: string
       modelSelections?: Array<{
@@ -613,6 +614,7 @@ export class SessionLogImpl {
             key: childKey,
             parent: { key: this.o.key, boundarySeq },
             resolvedProfileHash: opener.resolvedProfileHash,
+            ...(opener.resolvedPresetHash ? { resolvedPresetHash: opener.resolvedPresetHash } : {}),
             preset: opener.preset,
             agnesVersion: opener.agnesVersion,
             ...(opener.delegation ? { delegation: opener.delegation } : {}),
