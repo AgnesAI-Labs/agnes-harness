@@ -153,6 +153,8 @@ function environment(home: string): NodeJS.ProcessEnv {
     SystemRoot: process.env.SystemRoot,
     LANG: 'en_US.UTF-8',
     CI: '1',
+    GOMAXPROCS: process.env.GOMAXPROCS,
+    GOMEMLIMIT: process.env.GOMEMLIMIT,
     npm_config_cache: join(home, '.npm'),
     npm_config_userconfig: join(home, '.npmrc'),
   }
