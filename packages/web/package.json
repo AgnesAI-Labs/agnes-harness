@@ -18,7 +18,6 @@
     "@agnes/protocol": "workspace:*",
     "@agnes/resource-control-web": "workspace:*",
     "@agnes/sdk": "workspace:*",
-    "@agnes/web-admin-frame": "workspace:*",
     "@agnes/web-client": "workspace:*",
     "@agnes/web-server": "workspace:*",
     "@agnes/web-ui": "workspace:*",
