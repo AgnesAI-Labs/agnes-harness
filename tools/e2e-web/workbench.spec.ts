@@ -1,4 +1,6 @@
+import { execFile } from 'node:child_process'
 import { access, copyFile, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
+import { devNull } from 'node:os'
 import { dirname, join } from 'node:path'
 import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import type { Page, TestInfo } from '@playwright/test'
@@ -16,6 +18,23 @@ async function workbenchScreen(page: Page, info: TestInfo, name: string, folder?
 
 test('workspace dock previews and mentions a file that the agent reads', async ({ page, runtime }, info) => {
   test.setTimeout(120_000)
+  for (const args of [
+    ['init', '--quiet'],
+    ['add', '--', 'report.md'],
+  ])
+    await new Promise<void>((done, reject) => {
+      execFile(
+        'git',
+        args,
+        {
+          cwd: runtime.workspace,
+          timeout: 10_000,
+          maxBuffer: 4096,
+          env: { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: devNull },
+        },
+        (error) => (error ? reject(error) : done()),
+      )
+    })
   await page.addInitScript(() => {
     if (location.protocol !== 'http:') return
     if (!localStorage.getItem('agnes-locale')) localStorage.setItem('agnes-locale', 'en')
@@ -42,6 +61,15 @@ test('workspace dock previews and mentions a file that the agent reads', async (
   const id = new URL(page.url()).searchParams.get('session')
   if (!id) throw new Error('The session URL must identify the workspace session')
   const session = await client.session.load(id, { cwd: runtime.workspace })
+  const listing = await session.workspaceList()
+  expect(listing.gitStatus).toBe('available')
+  expect(listing.entries.find((entry) => entry.name === 'report.md')?.git).toBe('added')
+  expect(listing.entries.some((entry) => entry.name === '.git')).toBe(false)
+  await expect(session.workspaceRead('.git/config')).rejects.toMatchObject({
+    code: -32011,
+    data: { code: 'WORKSPACE_PATH_DENIED' },
+  })
+  await expect(files.locator('[data-path="report.md"] .workbench-git-mark')).toHaveText('Added')
   expect(JSON.stringify(await toolResult(session, 'read'))).toContain('Synthetic delivery')
   await translated(page)
   await accessible(page, info, 'workspace-files')
@@ -142,8 +170,13 @@ test('session terminal survives UI detachment, follows agent output and honors p
   })
   await page.getByTestId('workbench-bottom-toggle').click()
   const panel = page.getByTestId('terminal-panel')
+  await expect(page.getByTestId('workbench-tab-terminal')).toBeFocused()
   const resize = page.locator('#workbench-bottom .workbench-resize')
-  for (let i = 0; i < 8; i++) await resize.press('ArrowUp')
+  await expect(resize).toHaveAttribute('aria-valuenow', '220')
+  for (let i = 0; i < 8; i++) {
+    await resize.press('ArrowUp')
+    await expect(resize).toHaveAttribute('aria-valuenow', String(220 + (i + 1) * 16))
+  }
   await panel
     .getByRole('button', { name: /Attach.*Agent/ })
     .first()
@@ -312,6 +345,7 @@ test('goal panel follows durable progress and shares authorized human controls',
   await expect(panel.getByTestId('goal-panel-objective')).toHaveText('Review the synthetic delivery')
   await expect(panel.getByTestId('goal-panel-progress')).toContainText('1 of 1')
   await expect(panel.getByTestId('goal-reason')).toContainText('maximum automatic rounds')
+  await expect(page.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0)
   const client = await runtime.connect(),
     id = new URL(page.url()).searchParams.get('session')
   if (!id) throw new Error('session required')
@@ -326,8 +360,10 @@ test('goal panel follows durable progress and shares authorized human controls',
   await composer.fill('/goal pause')
   await composer.press('Enter')
   await expect(panel.getByTestId('goal-panel-phase')).toHaveText('Paused goal')
+  await expect(page.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0)
   await panel.getByTestId('goal-panel-resume').click()
   await expect(panel.getByTestId('goal-panel-phase')).toHaveText('Blocked goal', { timeout: 30_000 })
+  await expect(page.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0)
   expect((await snapshot())?.revision).toBeGreaterThan(initial?.revision ?? 0)
   await translated(page)
   await accessible(page, info, 'goal-panel')
