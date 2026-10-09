@@ -347,7 +347,7 @@ async function stopWeb() {
 }
 try {
   const launch = await launchWeb()
-  const ownerPath = join(home, 'data', 'daemon', 'owner.json')
+  const ownerPath = join(home, 'daemon', 'owner.json')
   const owner = JSON.parse(await readFile(ownerPath, 'utf8'))
   browser = await chromium.launch({ headless: true })
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })

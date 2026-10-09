@@ -108,12 +108,13 @@ it.skipIf(!entry)(
     if (!model) throw new Error('DeepSeek model catalogue is empty')
     const provider = await startProviderFixture(
       'Shared backend acceptance reply. 中文验证通过。',
-      {
-        name: 'edit',
-        args: { path: editedName, edits: [{ oldText: 'before', newText: 'after 中文' }] },
-      },
+      { name: 'read', args: { path: editedName } },
       model,
     )
+    provider.queueTool({
+      name: 'edit',
+      args: { path: editedName, edits: [{ oldText: 'before', newText: 'after 中文' }] },
+    })
     const clients: ReturnType<typeof createClient>[] = []
     let web: ChildProcess | undefined
     try {
@@ -131,7 +132,7 @@ it.skipIf(!entry)(
       expect(await readFile(consentFile, 'utf8')).toBe('telemetry:\n  consent: LOCAL\n')
       // guards-allow-platform: verify the production CLI's actual consent file ACL.
       if (process.platform === 'win32') expect(hasPrivateDaclSync(consentFile)).toBe(true)
-      const ownerFile = join(home, 'data', 'daemon', 'owner.json')
+      const ownerFile = join(home, 'daemon', 'owner.json')
       const owner = JSON.parse(await readFile(ownerFile, 'utf8')) as {
         pid: number
         processStartId: string

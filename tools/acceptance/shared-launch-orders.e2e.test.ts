@@ -60,7 +60,7 @@ async function waitForWebLaunch(child: ChildProcess, expectedOrigin: string): Pr
     }
     const onData = (chunk: Buffer | string): void => {
       output += String(chunk)
-      const match = output.match(/http:\/\/127\.0\.0\.1:\d+\/[#][A-Za-z0-9_-]+/u)
+      const match = output.match(/http:\/\/127\.0\.0\.1:\d+\/[^\s]*/u)
       if (!match) return
       let url: URL
       try {
@@ -69,16 +69,11 @@ async function waitForWebLaunch(child: ChildProcess, expectedOrigin: string): Pr
         finish(new Error('Web launcher produced an invalid URL'))
         return
       }
-      if (
-        url.origin !== expectedOrigin ||
-        url.pathname !== '/' ||
-        url.search !== '' ||
-        url.hash.length <= 1
-      ) {
+      if (url.origin !== expectedOrigin || url.pathname !== '/' || url.search !== '' || url.hash !== '') {
         finish(new Error('Web launcher origin or URL shape did not match the selected origin'))
         return
       }
-      // `url.hash` remains in this process only. It is never included in a failure or diagnostic.
+      // The public launcher URL carries no browser credential.
       finish(undefined, url)
     }
     const onError = (): void => finish(new Error('Web launcher failed before readiness'))
@@ -188,9 +183,9 @@ async function scenario(options: { simultaneous: boolean }): Promise<void> {
     AGNES_WEB_ORIGIN: origin,
   }
   const children = new Set<ChildProcess>()
-  const ownerPath = join(home, 'data', 'daemon', 'owner.json')
-  const discoveryPath = join(home, 'data', 'daemon', 'discovery.json')
-  const credentialPath = join(home, 'data', 'daemon', 'web-credential.json')
+  const ownerPath = join(home, 'daemon', 'owner.json')
+  const discoveryPath = join(home, 'daemon', 'discovery.json')
+  const credentialPath = join(home, 'daemon', 'web-credential.json')
 
   const runCli = (args: string[], cwd = workspace): Promise<CliResult> =>
     new Promise((resolve) => {

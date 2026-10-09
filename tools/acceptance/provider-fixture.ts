@@ -66,7 +66,7 @@ export async function startProviderFixture(
         model: body.model,
       }
       response.write(
-        `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: tool ? { role: 'assistant', tool_calls: [{ index: 0, id: 'acceptance-edit', type: 'function', function: { name: tool.name, arguments: JSON.stringify(tool.args) } }] } : { role: 'assistant', content: reply }, finish_reason: null }] })}\n\n`,
+        `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: tool ? { role: 'assistant', tool_calls: [{ index: 0, id: `acceptance-${requests.length}`, type: 'function', function: { name: tool.name, arguments: JSON.stringify(tool.args) } }] } : { role: 'assistant', content: reply }, finish_reason: null }] })}\n\n`,
       )
       response.end(
         `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: {}, finish_reason: tool ? 'tool_calls' : 'stop' }], usage: { prompt_tokens: 8, completion_tokens: 5, total_tokens: 13 } })}\n\ndata: [DONE]\n\n`,
