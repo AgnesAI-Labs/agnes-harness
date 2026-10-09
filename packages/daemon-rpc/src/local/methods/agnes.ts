@@ -452,6 +452,7 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.workspace.list',
       'session.workspace.read',
       'session.fileUpload',
+      'session.references.search',
       'session.readToolDetail',
       'session.list',
       'session.rename',
@@ -1579,7 +1580,7 @@ export function registerAgnes(
             )
           : entry.session.controls.edit(
               String(payload.itemId),
-              payload.content as never,
+              await resolvePromptReferences(entry.session, payload.content as never, undefined),
               connActor(c.conn),
               admissionId,
             )
