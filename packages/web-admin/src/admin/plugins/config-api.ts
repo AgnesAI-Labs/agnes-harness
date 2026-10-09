@@ -18,7 +18,8 @@ export class PluginConfigApi {
     signal?: AbortSignal,
   ): Promise<T> {
     const method = `_agnes/v1/plugins.config.${action}` as PackageAdminMethodName
-    const response = await this.fetcher(`/admin/plugins/api/config/${action}`, {
+    const fetcher = this.fetcher
+    const response = await fetcher(`/admin/plugins/api/config/${action}`, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },

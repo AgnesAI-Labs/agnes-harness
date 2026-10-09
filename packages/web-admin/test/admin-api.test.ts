@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest'
 import { type AdminApiError, PluginAdminApi } from '../src/admin/plugins/api.js'
+import { PluginConfigApi } from '../src/admin/plugins/config-api.js'
 import { ADMIN_FEATURES, hasFeature } from '../src/admin/plugins/types.js'
 import { loadRuntimeCatalog } from '../src/settings/api.js'
 
@@ -128,6 +129,12 @@ it('calls a stored fetch without rebinding its browser receiver to the API facad
 
   await api.list()
 
+  expect(receiver).toBeUndefined()
+  const configFetcher = function (this: unknown): Promise<Response> {
+    receiver = this
+    return Promise.resolve(Response.json({ revision: 'r1', entries: [], audit: [] }))
+  } as typeof fetch
+  await new PluginConfigApi(context, configFetcher).get('fixture/plugin')
   expect(receiver).toBeUndefined()
 })
 
