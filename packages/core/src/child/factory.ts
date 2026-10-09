@@ -1019,7 +1019,8 @@ export class KernelChildren implements ChildrenFactory {
       content: [{ type: 'text', text }],
       kind: 'steer',
       actor,
-      admissionId,
+      // Internal message/control IDs need the same stable digest shape as RPC admissions.
+      admissionId: /^[0-9a-f]{64}$/.test(admissionId) ? admissionId : sha256Hex(admissionId),
     })
     await child.d.log.append([child.controls.fact('child-continue', 'applied', actor, { admissionId })])
     this.humanStopped.delete(childKey)
