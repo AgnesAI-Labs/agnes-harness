@@ -20,6 +20,8 @@ const dispose = workbenchPanels.register({
 
 worker 在会话 workspace invocation 内执行 list/read，使用与工具一致的文件策略。native 逐层打开规范路径，拒绝链接并保留同一个经过校验的 descriptor 完成有上限的读取；native 不可用时拒绝操作。POSIX 使用 `openat`；Windows 持有真实目录句柄阻止替换并拒绝 reparse point（仅本地盘路径）。list revision 描述可见目录列表；read revision 是返回字节的 SHA-256，超大文件明确标为 `weak:mtime:size`。`observedAt` 是服务端读取时间，不保证后续预览仍然最新。Git 超时或溢出返回 `gitStatus: unavailable`，不能显示为干净状态。
 
+Git badge 由 Host 在已授权的规范工作区根下受控执行 `git status --porcelain=v1 -z`（500 ms、256 KiB）。固定 argv 禁用可选 index 写入、fsmonitor hook 与子模块遍历，环境忽略系统/全局 Git 配置。客户端只接收可见条目的 badge；list/read 仍拒绝 `.git`，链接或非目录 `.git` 元数据也会被拒绝，不返回 Git config、index、objects 或 stderr。
+
 忽略匹配支持注释、`*`、`?`、`**`、目录规则和按顺序生效的否定规则；不支持转义、字符组、Git 全局排除或重新包含已隐藏的父目录。查看器也明确声明这一子集。
 
 从 `@agnes/web-client` 注册 `fileViewerActions`，条目为 `{ id, order, component }`。组件收到 `{ context, path, revision }`，可进入独立注册的 diff/review 面板并链接实际 ledger 来源，不获得写入或恢复权限。需把 disposer 绑定到模块生命周期。

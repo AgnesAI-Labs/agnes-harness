@@ -1,6 +1,15 @@
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
+import { devNull, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
 import { readWorkspace } from '@agnes/worker-runtime'
@@ -42,6 +51,8 @@ describe('workspace ignore rules and git status records', () => {
     expect(ignoredBy('notes.md', false, files)).toBe(false)
     expect(ignoredBy('.gitignore', false, files)).toBe(false)
     expect(ignoredBy('src/.aghignore', false, files)).toBe(false)
+    expect(ignoredBy('.git', false, files)).toBe(true)
+    expect(ignoredBy('.git/config', false, files)).toBe(true)
   })
 
   it('parses porcelain records, including a rename', () => {
@@ -95,9 +106,34 @@ describe('session workspace files', () => {
       writeFileSync(join(home, 'secrets', 'key'), 'PRIVATE_KEY_SENTINEL')
       writeFileSync(join(home, 'memory', 'note'), 'PRIVATE_MEMORY_SENTINEL')
       vi.stubEnv('AGH_HOME', home)
-      const git = spawnSync('git', ['init'], { cwd: workspace, encoding: 'utf8' })
-      expect(git.status, git.stderr).toBe(0)
-      expect(spawnSync('git', ['add', 'report.md'], { cwd: workspace }).status).toBe(0)
+      const git = (args: string[]) =>
+        spawnSync('git', args, {
+          cwd: workspace,
+          encoding: 'utf8',
+          timeout: 10_000,
+          env: { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: devNull },
+        })
+      expect(git(['init']).status).toBe(0)
+      writeFileSync(join(workspace, 'old\nname.txt'), 'synthetic tracked file\n')
+      writeFileSync(join(workspace, 'new\nname.txt'), 'synthetic untracked file\n')
+      expect(git(['add', '--', 'old\nname.txt']).status).toBe(0)
+      expect(
+        git([
+          '-c',
+          'user.name=Fixture',
+          '-c',
+          'user.email=fixture@example.invalid',
+          '-c',
+          `core.hooksPath=${join(workspace, 'no-hooks')}`,
+          'commit',
+          '--no-gpg-sign',
+          '-m',
+          'Fixture',
+        ]).status,
+      ).toBe(0)
+      expect(git(['mv', '--', 'old\nname.txt', 'renamed\nname.txt']).status).toBe(0)
+      expect(git(['add', '--', 'report.md']).status).toBe(0)
+      appendFileSync(join(workspace, '.git', 'config'), '\n# PRIVATE_GIT_CONFIG_SENTINEL\n')
       await h.addWorkspace(workspace)
       expect(await ep.handle(init)).toMatchObject({ result: { protocolVersion: 1 } })
       const created = (await ep.handle({
@@ -123,13 +159,19 @@ describe('session workspace files', () => {
       expect(names).not.toContain('notes.log')
       expect(names).not.toContain('secret.txt')
       expect(names).not.toContain(AGH_DIR)
-      // The tool workspace authority hard-denies Git internals; optional badges must not bypass it.
+      // Metadata badges are a controlled Host operation; document reads still deny Git internals.
       expect(listed.result).toMatchObject({
-        gitStatus: 'unavailable',
+        gitStatus: 'available',
         revision: expect.any(String),
         observedAt: expect.any(String),
       })
-      expect(listed.result.entries.find((entry) => entry.name === 'report.md')?.git).toBeUndefined()
+      expect(listed.result.entries.find((entry) => entry.name === 'report.md')?.git).toBe('added')
+      expect(listed.result.entries.find((entry) => entry.name === 'renamed\nname.txt')?.git).toBe('renamed')
+      expect(listed.result.entries.find((entry) => entry.name === 'new\nname.txt')?.git).toBe('untracked')
+      expect(names).not.toContain('.git')
+      expect(JSON.stringify(listed)).not.toContain('PRIVATE_GIT_CONFIG_SENTINEL')
+      expect(JSON.stringify(listed)).not.toContain('PRIVATE_KEY_SENTINEL')
+      expect(JSON.stringify(listed)).not.toContain('PRIVATE_MEMORY_SENTINEL')
       expect(listed.result.entries.find((entry) => entry.name === 'escape')?.kind).toBe('other')
       expect(listed.result.entries.find((entry) => entry.name === 'escape-dir')?.kind).toBe('other')
       expect(JSON.stringify(listed)).not.toContain('OUTSIDE_SECRET_SENTINEL')
@@ -137,7 +179,10 @@ describe('session workspace files', () => {
       const nested = (await call(4, '_agnes/v1/session.workspace.list', { sessionId, path: 'src' })) as {
         result: { path: string; entries: { name: string }[] }
       }
-      expect(nested.result).toMatchObject({ path: 'src', entries: [{ name: 'main.ts', kind: 'file' }] })
+      expect(nested.result).toMatchObject({
+        path: 'src',
+        entries: [{ name: 'main.ts', kind: 'file', git: 'untracked' }],
+      })
 
       const read = (await call(5, '_agnes/v1/session.workspace.read', {
         sessionId,
@@ -205,6 +250,19 @@ describe('session workspace files', () => {
         })
         expect(JSON.stringify(denied)).not.toContain('OUTSIDE_SECRET_SENTINEL')
       }
+      expect(await call(50, '_agnes/v1/session.workspace.list', { sessionId, path: '.git' })).toMatchObject({
+        error: { data: { code: 'WORKSPACE_PATH_DENIED' } },
+      })
+      renameSync(join(workspace, '.git'), join(outside, 'repo-git'))
+      symlinkSync(join(outside, 'repo-git'), join(workspace, '.git'))
+      expect(await call(51, '_agnes/v1/session.workspace.list', { sessionId })).toMatchObject({
+        result: { gitStatus: 'unavailable' },
+      })
+      rmSync(join(workspace, '.git'))
+      mkdirSync(join(workspace, '.git'))
+      expect(await call(52, '_agnes/v1/session.workspace.list', { sessionId })).toMatchObject({
+        result: { gitStatus: 'unavailable' },
+      })
       const escapedList = await call(10, '_agnes/v1/session.workspace.list', { sessionId, path: '../' })
       expect(escapedList).toMatchObject({
         error: { data: { code: 'WORKSPACE_PATH_DENIED', messageKey: 'appServer.errors.forbidden' } },

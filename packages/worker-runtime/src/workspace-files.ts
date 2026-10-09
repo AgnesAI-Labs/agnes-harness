@@ -200,6 +200,7 @@ function relativeToBase(base: string, rel: string): string | undefined {
 
 /** Last matching rule wins. `.gitignore` and `.aghignore` themselves stay visible. */
 export function ignoredBy(rel: string, isDir: boolean, files: readonly IgnoreFile[]): boolean {
+  if (rel.split('/').includes('.git')) return true
   const baseName = rel.split('/').at(-1) ?? rel
   if (baseName === '.gitignore' || baseName === '.aghignore') return false
   let ignored = false
@@ -302,6 +303,7 @@ function gitPorcelain(root: string): Promise<GitStatus> {
     const child = spawn(
       'git',
       [
+        '--no-optional-locks',
         '-c',
         'core.fsmonitor=false',
         '--git-dir',
@@ -311,8 +313,11 @@ function gitPorcelain(root: string): Promise<GitStatus> {
         'status',
         '--porcelain=v1',
         '-z',
+        '--ignore-submodules=all',
+        '--untracked-files=all',
       ],
       {
+        cwd: root,
         stdio: ['ignore', 'pipe', 'ignore'],
         env: { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: devNull },
       },
@@ -349,7 +354,8 @@ async function gitStatus(root: string, authority: WorkspaceAuthority): Promise<G
   try {
     const git = await lstat(join(root, '.git'))
     if (!git.isDirectory() || git.isSymbolicLink()) return { marks: new Map(), status: 'unavailable' }
-    await resolveInside(root, '.git', authority)
+    // This fixed Host metadata operation authorizes the root, not document reads of .git.
+    await resolveInside(root, '', authority)
   } catch (error) {
     return {
       marks: new Map(),
