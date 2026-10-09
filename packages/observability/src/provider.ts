@@ -325,7 +325,7 @@ export function createObservability(
     },
     lifecycle(component, phase, queueDepth, id) {
       const identity = `${component}:${id ?? 'process'}`
-      if (!config.enabled || closed || event.type.startsWith('x/feedback/')) return
+      if (!config.enabled || closed) return
       if (phase === 'start') {
         end(processes.get(identity), true)
         processes.set(
