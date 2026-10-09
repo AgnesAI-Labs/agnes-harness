@@ -20,6 +20,7 @@ import { ConversationCost } from './cost.js'
 import { interactionToolPresentation } from './interaction-result.js'
 import { useInteractionSnapshot } from './markdown-snapshot.js'
 import type { ConversationMessage } from './runtime.js'
+import { UserMessageReferences } from './reference-chips.js'
 
 type AssistantNode = Extract<UINode, { kind: 'assistant' }>
 type ToolNode = Extract<UINode, { kind: 'tool' }>
@@ -246,7 +247,9 @@ function UserMessageImages({ node, t }: { node: Extract<UINode, { kind: 'user' }
 
 function UserMessage({ node, t }: { node: Extract<UINode, { kind: 'user' }>; t: Translate }) {
   const value = node.content
-    .filter((block) => block.type === 'text')
+    .filter(
+      (block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text' && !block.reference,
+    )
     .map((block) => block.text)
     .join('\n')
   return (
@@ -254,6 +257,7 @@ function UserMessage({ node, t }: { node: Extract<UINode, { kind: 'user' }>; t: 
       <p className="node-label">{t('timeline.userLabel')}</p>
       <UserMessageImages node={node} t={t} />
       <UserMessageFiles node={node} />
+      <UserMessageReferences node={node} t={t} />
       <div className="node-body">{value}</div>
     </>
   )
@@ -420,6 +424,7 @@ function ConversationMessageView() {
             <p className="node-label">{t('timeline.userLabel')}</p>
             <UserMessageImages node={node} t={t} />
             <UserMessageFiles node={node} />
+            <UserMessageReferences node={node} t={t} />
             <MessagePrimitive.Parts components={userMessageParts} />
           </div>
         </div>

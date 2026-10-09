@@ -32,6 +32,7 @@ Still choosing? Try the [three examples](guide/demo.md), then use the [extension
 | Topic | What you will learn |
 | --- | --- |
 | [CLI and TUI](guide/cli.md) | Run terminal tasks, hold interactive conversations, and handle approvals |
+| [Composer references](extend/references.md) | Pick workspace files and readable sessions as bounded context |
 | [Default context](guide/context.md) | Inspect live repository rules, time context and custom Skill roots |
 | [Feedback and reviewed growth](guide/feedback.md) | Rate messages and draft Skills for human review |
 | [Learned memory](guide/memory.md) | Control learned file preferences, approvals and privacy |

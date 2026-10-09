@@ -11,6 +11,7 @@ import {
   type ModelSettings,
   modelImageInputError,
   type PageSessionMeta,
+  type ReferenceSelection,
   readSessionTitle,
   toAcpPrompt,
   type UITimeline,
@@ -87,6 +88,7 @@ import { startPluginHotReload } from './client-modules/hot-reload.js'
 import type { RosterSource } from './client-modules/reconcile.js'
 import { bindSlotCardContext } from './client-modules/timeline-slot.js'
 import { rememberWebComposer, selectionFromMemory } from './composer-memory.js'
+import { composerReferences } from './composer-references.js'
 import { createDiagnosticsDialog } from './diagnostics-dialog.js'
 import {
   type LoopSelection,
@@ -234,6 +236,9 @@ const claimSlotCard: ClaimResolver = (entry, extId) =>
   entry.owner !== undefined && (moduleExtIds.get(entry.owner)?.includes(extId) ?? false)
 const computerUseStatus = createComputerUsePaneController(client)
 addEventListener('pagehide', () => computerUseStatus.dispose(), { once: true })
+const references = composerReferences(prepareComposerSession, renderControls)
+let referenceSessionPending: Promise<Session> | undefined
+
 const clientModules = await startClientModules({
   agnes: client,
   claim: claimSlotCard,
@@ -320,6 +325,7 @@ const clientModules = await startClientModules({
   approvalContainer: document.getElementById('approval') ?? undefined,
   composerContainer: document.getElementById('composer-mount') ?? undefined,
   composer: {
+    references,
     initialDraft: savedComposerDraft ?? '',
     onAttachmentsChange: renderControls,
     onCancel: handleComposerCancel,
@@ -811,7 +817,8 @@ function renderControls(): void {
   const available = connected
   const busy = projection ? webView(projection, undefined, t).busy : false
   const images = composerRuntime.getAttachmentBlocks()
-  const hasInput = composerRuntime.getDraft().trim().length > 0 || images.length > 0
+  const hasInput =
+    composerRuntime.getDraft().trim().length > 0 || images.length > 0 || references.getSnapshot().length > 0
   const initialSubmissionPending = sending && pendingSessionKey !== undefined
   const action = composerActionPresentation({ busy, loading: sessionPending, sending }, t)
   for (const control of notice.querySelectorAll<HTMLButtonElement>('[data-recovery-action]'))
@@ -1386,6 +1393,7 @@ async function open(
   } = {},
 ): Promise<void> {
   const epoch = ++selection
+  if (!options.created) references.clear()
   if (!options.preserveSending) submissionGeneration++
   let selectionReady = false
   sessionPending = true
@@ -1748,6 +1756,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   if (workspace) selectedWorkspace = workspace
   clearSessionRecovery()
   const epoch = ++selection
+  references.clear()
   const previous = current
   if (previous && knownSessionModel) rememberWebComposer({ model: knownSessionModel })
   const inherited = selectionFromMemory(runtimeModels, accountProvider)
@@ -2445,15 +2454,24 @@ function handleComposerDraftChange(value: string): void {
   composerRuntime.resize()
   renderControls()
 }
-function imageSubmissionFrameBytes(sessionId: string, content: ContentBlock[], steer: boolean): number {
+function imageSubmissionFrameBytes(
+  sessionId: string,
+  content: ContentBlock[],
+  steer: boolean,
+  references: readonly ReferenceSelection[] = [],
+): number {
   const params = steer
     ? {
         clientId: 'c'.repeat(128),
         commandId: 'c'.repeat(128),
         kind: 'steer',
-        payload: { sessionId, content },
+        payload: { sessionId, content, ...(references.length ? { references } : {}) },
       }
-    : { sessionId, prompt: toAcpPrompt(content) }
+    : {
+        sessionId,
+        prompt: toAcpPrompt(content),
+        ...(references.length ? { _meta: { 'ai.agnes.harness': { references } } } : {}),
+      }
   return new TextEncoder().encode(
     JSON.stringify({
       jsonrpc: '2.0',
@@ -2466,10 +2484,61 @@ function imageSubmissionFrameBytes(sessionId: string, content: ContentBlock[], s
 function isPlanCommand(input: string): boolean {
   return /^\/plan(?:\s|$)/.test(input)
 }
+async function prepareComposerSession(): Promise<Session> {
+  if (current) return current
+  if (referenceSessionPending) return referenceSessionPending
+  if (!draftingNew || !selectedWorkspace?.available || sessionPending)
+    throw new Error(t('app.session.createFailed'))
+  const epoch = selection
+  sessionPending = true
+  renderControls()
+  referenceSessionPending = (async () => {
+    const key = pendingSessionKey ?? crypto.randomUUID()
+    const draftModel = knownSessionModel
+    const workspace = selectedWorkspace
+    pendingSessionKey = key
+    if (!draftLoopAvailable() || loopCatalogPending) throw new Error(t('composer.loop.unavailable'))
+    if (draftBundles.some((id) => !runtimeCatalog?.bundles?.some((bundle) => bundle.id === id)))
+      throw new Error(settingsText('bundleUnavailable'))
+    const created = await client.session.new({
+      cwd: workspace?.path ?? '',
+      sessionKey: key,
+      ...(draftLoop ? { loop: draftLoop } : {}),
+      ...(draftPreset ? { preset: draftPreset } : {}),
+      ...(draftBundles.length ? { bundles: draftBundles } : {}),
+    })
+    if (selection !== epoch) throw new Error(t('app.session.selectionChanged'))
+    await open(created.id, {
+      created,
+      preserveSending: true,
+      ...(workspace ? { workspace } : {}),
+      ...(draftModel ? { initialModel: draftModel } : {}),
+    })
+    if (current !== created) throw new Error(t('app.session.selectionChanged'))
+    if (!current) throw new Error(t('app.session.createFailed'))
+    return current
+  })()
+  try {
+    return await referenceSessionPending
+  } finally {
+    referenceSessionPending = undefined
+    if (selection === epoch) {
+      sessionPending = false
+      renderControls()
+    }
+  }
+}
+
 function submitComposer(): void {
   const originalDraft = composerRuntime.getDraft()
+  const selectedReferences = references.getSnapshot()
+  const referenceSelections = selectedReferences.map(({ source, id }) => ({ source, id }))
   const input = originalDraft.trim()
-  if (/^\/goal(?:\s+show)?$/.test(input) && composerRuntime.getAttachmentBlocks().length === 0) {
+  if (
+    !selectedReferences.length &&
+    /^\/goal(?:\s+show)?$/.test(input) &&
+    composerRuntime.getAttachmentBlocks().length === 0
+  ) {
     composerRuntime.setDraft('')
     sessionStorage.removeItem(composerDraftKey)
     composerRuntime.resize()
@@ -2478,13 +2547,13 @@ function submitComposer(): void {
     toggle?.focus()
     return
   }
-  if (/^\/goal(?:\s|$)/.test(input) && current && projection?.opState) {
+  if (!selectedReferences.length && /^\/goal(?:\s|$)/.test(input) && current && projection?.opState) {
     composerRuntime.setDraft('')
     sessionStorage.removeItem(composerDraftKey)
     void current.steer(input).catch(showError)
     return
   }
-  if (isPlanCommand(input)) {
+  if (!selectedReferences.length && isPlanCommand(input)) {
     const cwd = selectedWorkspace?.path
     if (!cwd) {
       showError(new Error(t('app.plan.noWorkspace')))
@@ -2507,7 +2576,7 @@ function submitComposer(): void {
   const images = attachments.filter((block) => block.type === 'image')
   let session = current
   if (
-    (!input && attachments.length === 0) ||
+    (!input && attachments.length === 0 && selectedReferences.length === 0) ||
     composerRuntime.hasPendingImages() ||
     !configured ||
     !selectedModelAvailable() ||
@@ -2536,11 +2605,13 @@ function submitComposer(): void {
     showError(new Error(imageError))
     return
   }
-  const content: ContentBlock[] = [...(input ? [{ type: 'text' as const, text: input }] : []), ...attachments]
+  const text = input || referenceSelections.map(({ source, id }) => `@${source} ${id}`).join('\n')
+  const content: ContentBlock[] = [...(text ? [{ type: 'text' as const, text }] : []), ...attachments]
   const busy = projection?.opState !== null && projection?.opState !== undefined
   if (
     attachments.length > 0 &&
-    imageSubmissionFrameBytes(session?.id ?? 's'.repeat(512), content, busy) > MAX_FRAME_BYTES
+    imageSubmissionFrameBytes(session?.id ?? 's'.repeat(512), content, busy, referenceSelections) >
+      MAX_FRAME_BYTES
   ) {
     showError(new Error(t('app.error.messageTooLarge')))
     return
@@ -2555,6 +2626,7 @@ function submitComposer(): void {
   awaitingPromptStart = !busy
   composerRuntime.setDraft('')
   composerRuntime.clearImageBlocks()
+  references.clear()
   sessionStorage.removeItem(composerDraftKey)
   composerRuntime.resize()
   renderer.pinToBottom()
@@ -2562,32 +2634,11 @@ function submitComposer(): void {
   // A prompt can remain pending for the entire run. Controls follow daemon state, not this promise.
   const work = (async () => {
     if (!session) {
-      const key = pendingSessionKey ?? crypto.randomUUID()
-      const draftModel = knownSessionModel
-      const workspace = selectedWorkspace
-      pendingSessionKey = key
-      if (!draftLoopAvailable() || loopCatalogPending) throw new Error(t('composer.loop.unavailable'))
-      if (draftBundles.some((id) => !runtimeCatalog?.bundles?.some((bundle) => bundle.id === id)))
-        throw new Error(settingsText('bundleUnavailable'))
-      const created = await client.session.new({
-        cwd: workspace?.path ?? '',
-        sessionKey: key,
-        ...(draftLoop ? { loop: draftLoop } : {}),
-        ...(draftPreset ? { preset: draftPreset } : {}),
-        ...(draftBundles.length ? { bundles: draftBundles } : {}),
-      })
       try {
-        await open(created.id, {
-          created,
-          preserveSending: true,
-          ...(workspace ? { workspace } : {}),
-          ...(draftModel ? { initialModel: draftModel } : {}),
-        })
+        session = await prepareComposerSession()
       } finally {
         ownedSelection = selection
       }
-      if (current !== created) throw new Error(t('app.session.selectionChanged'))
-      session = current
     }
     if (!session) throw new Error(t('app.session.createFailed'))
     if (initialModelPending) {
@@ -2623,8 +2674,9 @@ function submitComposer(): void {
     if (current !== session || selection !== ownedSelection) throw new Error(t('app.error.sessionChanged'))
     if (sessionYoloEnabled === undefined) throw new Error(t('app.error.permissionRequired'))
     const result = await (busy
-      ? session.steer(content)
+      ? session.steer(content, { references: referenceSelections })
       : session.prompt(content, {
+          references: referenceSelections,
           titleLocale: clientModules.locale.getSnapshot() === 'zh-CN' ? 'zh-CN' : 'en',
         }))
     const submittedId = session.id
@@ -2655,6 +2707,7 @@ function submitComposer(): void {
           }
           if (!composerRuntime.getAttachmentBlocks().length && !composerRuntime.hasPendingImages())
             composerRuntime.restoreAttachmentBlocks(attachments)
+          references.restore([...selectedReferences, ...references.getSnapshot()])
           composerRuntime.resize()
         }
         showError(error)

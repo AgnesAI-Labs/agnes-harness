@@ -147,7 +147,25 @@ describe('W3b projected message DOM', () => {
     const store = createConversationProjectionStore({
       sessionId: 'session',
       nodes: [
-        { kind: 'user', id: 'user-1', seq: 1, content: [{ type: 'text', text: 'Question' }] },
+        {
+          kind: 'user',
+          id: 'user-1',
+          seq: 1,
+          content: [
+            { type: 'text', text: 'Question' },
+            {
+              type: 'text',
+              text: 'UNTRUSTED REFERENCE: hidden excerpt',
+              reference: {
+                source: 'session',
+                id: 'previous/session',
+                label: '<script>Previous</script>',
+                hash: 'a'.repeat(64),
+                truncated: true,
+              },
+            },
+          ],
+        },
         {
           kind: 'assistant',
           id: 'assistant-1',
@@ -164,6 +182,12 @@ describe('W3b projected message DOM', () => {
     const assistant = item('assistant-1')?.querySelector('[data-agnes-assistant-ui-message="assistant"]')
     expect(user).not.toBeNull()
     expect(user?.textContent).toContain('Question')
+    expect(user?.textContent).not.toContain('hidden excerpt')
+    expect(user?.querySelector('[data-testid="reference-session-link"]')?.getAttribute('href')).toBe(
+      '?session=previous%2Fsession',
+    )
+    expect(user?.querySelector('[data-testid="reference-sent-chip"]')?.textContent).toContain('摘录已截断')
+    expect(user?.querySelector('script')).toBeNull()
     expect(assistant?.querySelector('[data-assistant-ui-part="reasoning"]')?.textContent).toContain(
       'Checking the result',
     )

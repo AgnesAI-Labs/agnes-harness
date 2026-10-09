@@ -45,6 +45,7 @@ import {
   useState,
 } from 'react'
 import { flushSync } from 'react-dom'
+import { ReferencePicker, type ComposerReferences } from './reference-picker.js'
 import { composerLocaleCatalog } from './locales/composer.js'
 import type { Translate } from './locales/index.js'
 
@@ -179,6 +180,7 @@ export interface ComposerHandle {
 }
 
 export interface ComposerRegionOptions {
+  references?: ComposerReferences
   initialDraft?: string
   onCancel(): void
   onAttachmentsChange?(): void
@@ -354,6 +356,7 @@ const nativeImageFile = (file: File): boolean =>
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
   {
+    references,
     initialDraft = '',
     initialView = INITIAL_VIEW,
     dependencies,
@@ -857,6 +860,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           onSubmit()
         },
       },
+      createElement(ReferencePicker, {
+        textarea: prompt,
+        adapter: references,
+        t: dependencies.translate,
+        disabled: imageDisabled,
+      }),
       slots?.overlay,
       // 待发图片排在输入文字上方：文字行数增长时图片不会被顶出视野。空态由 CSS 收掉
       // （style.css 的 :has 规则），这里不额外做条件渲染。

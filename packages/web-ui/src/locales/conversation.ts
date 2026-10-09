@@ -6,6 +6,8 @@ import type { LocaleCatalog } from './index.js'
  */
 export const conversationLocaleCatalog: LocaleCatalog = {
   en: {
+    'conversation.references': 'Referenced sources',
+    'conversation.referenceTruncated': 'Excerpt truncated',
     'brand.agent': 'Agnes',
     'brand.harness': 'Agnes Harness',
     'tool.interaction.answered': 'Question answered: {answer}',
@@ -216,6 +218,8 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'settings.oauth.methodLabel': 'Auth method',
   },
   'zh-CN': {
+    'conversation.references': '引用来源',
+    'conversation.referenceTruncated': '摘录已截断',
     'brand.agent': 'Agnes',
     'brand.harness': 'Agnes Harness',
     'tool.interaction.answered': '已回答问题：{answer}',

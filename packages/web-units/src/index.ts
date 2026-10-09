@@ -351,3 +351,5 @@ export function assertBuiltinWebUnitContract(definition: WebUnitDefinition): voi
 }
 
 for (const definition of BUILTIN_WEB_UNITS) assertBuiltinWebUnitContract(definition)
+
+export { createComposerReferences, type ComposerReferences } from './reference-picker.js'

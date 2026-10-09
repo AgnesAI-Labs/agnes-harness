@@ -58,7 +58,8 @@ export function createConversationProjectionStore(
 function userText(node: Extract<UINode, { kind: 'user' }>): string {
   return node.content
     .filter(
-      (block): block is Extract<(typeof node.content)[number], { type: 'text' }> => block.type === 'text',
+      (block): block is Extract<(typeof node.content)[number], { type: 'text' }> =>
+        block.type === 'text' && !block.reference,
     )
     .map((block) => block.text)
     .join('\n')
