@@ -3,6 +3,20 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 /** 输入框、会话编排提示与工作区/会话错误说明。宿主组装 view 时渲染取词。 */
 export const composerLocaleCatalog: LocaleCatalog = {
   en: {
+    'composer.child.title': 'Sub-agents / workflows',
+    'composer.child.metrics': 'Usage: {tokens} tokens · duration: {seconds} s',
+    'composer.child.unknown': 'Unknown',
+    'composer.child.stop': 'Stop child',
+    'composer.child.continue': 'Continue child',
+    'composer.child.message': 'Continue message',
+    'composer.child.starting': 'Starting',
+    'composer.child.running': 'Running',
+    'composer.child.idle': 'Idle',
+    'composer.child.completed': 'Completed',
+    'composer.child.failed': 'Failed',
+    'composer.child.cancelled': 'Cancelled',
+    'composer.child.interrupted': 'Stopped',
+
     'composer.control.pause': 'Pause',
     'composer.control.resume': 'Resume',
     'composer.control.paused': 'Paused · no new steps will start',
@@ -89,6 +103,20 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'topbar.preparing': 'Preparing session',
   },
   'zh-CN': {
+    'composer.child.title': '子代理 / 工作流',
+    'composer.child.metrics': '用量：{tokens} tokens · 耗时：{seconds} 秒',
+    'composer.child.unknown': '未知',
+    'composer.child.stop': '停止子代理',
+    'composer.child.continue': '继续子代理',
+    'composer.child.message': '继续消息',
+    'composer.child.starting': '正在启动',
+    'composer.child.running': '运行中',
+    'composer.child.idle': '空闲',
+    'composer.child.completed': '已完成',
+    'composer.child.failed': '失败',
+    'composer.child.cancelled': '已取消',
+    'composer.child.interrupted': '已停止',
+
     'composer.control.pause': '暂停',
     'composer.control.resume': '继续',
     'composer.control.paused': '已暂停 · 不会开始新的步骤',

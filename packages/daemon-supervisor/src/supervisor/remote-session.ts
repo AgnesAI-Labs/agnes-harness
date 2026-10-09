@@ -114,15 +114,16 @@ export class RemoteSession {
   }
 
   readonly controls = {
-    state: () =>
-      this.link.command('controlState', {}) as Promise<
+    state: (afterSeq?: number) =>
+      this.link.command('controlState', afterSeq === undefined ? {} : { afterSeq }) as Promise<
         import('@agnes/protocol/gen/agnes-v1').SessionControlStateResult
       >,
     apply: (
-      action: 'pause' | 'resume' | 'cancel' | 'interrupt',
+      action: 'pause' | 'resume' | 'cancel' | 'interrupt' | 'child-stop' | 'child-continue',
       actor: Actor,
       admissionId: string,
       itemId?: string,
+      child?: { id: string; text?: string },
     ) => {
       const release = this.beginActivity()
       return (
@@ -131,6 +132,7 @@ export class RemoteSession {
           actor,
           admissionId,
           ...(itemId ? { itemId } : {}),
+          ...(child ? { childId: child.id, ...(child.text !== undefined ? { text: child.text } : {}) } : {}),
         }) as Promise<number>
       )
         .then((seq) => {

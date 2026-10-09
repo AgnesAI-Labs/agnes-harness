@@ -325,6 +325,8 @@ const SESSION_DEFS: Record<string, TSchema> = {
 }
 
 const AGNES_DEFS: Record<string, TSchema> = {
+  SessionControlsParams: AgnesGen.SessionControlsParams,
+  SessionControlledChild: AgnesGen.SessionControlledChild,
   SessionControlFact: AgnesGen.SessionControlFact,
   SessionControlParams: AgnesGen.SessionControlParams,
   SessionEditQueuedParams: AgnesGen.SessionEditQueuedParams,
@@ -1832,6 +1834,36 @@ const REVIEW_RESULT = {
 }
 
 const AGNES_SAMPLES: Record<string, Sample> = {
+  SessionControlsParams: {
+    valid: { sessionId: 's1', afterSeq: 0 },
+    invalid: [
+      { sessionId: 's1', afterSeq: -1 },
+      { sessionId: 's1', afterSeq: '0' },
+    ],
+  },
+  SessionControlledChild: {
+    valid: {
+      id: 'child1',
+      parentId: 's1',
+      providerId: 'native',
+      status: 'interrupted',
+      controls: { stop: false, continue: true },
+      durationMs: 100,
+      totalTokens: null,
+    },
+    invalid: [
+      { id: 'child1' },
+      {
+        id: 'child1',
+        parentId: 's1',
+        providerId: 'native',
+        status: 'running',
+        controls: { stop: true, continue: true },
+        durationMs: -1,
+        totalTokens: null,
+      },
+    ],
+  },
   SessionControlFact: {
     valid: {
       seq: 1,
@@ -6806,7 +6838,7 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   },
   '_agnes/v1/session.controls': {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
-    params: 'SessionIdParams',
+    params: 'SessionControlsParams',
     result: 'SessionControlStateResult',
   },
   '_agnes/v1/session.editQueued': {
@@ -7535,8 +7567,8 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     note: 'explicit durable human control',
   },
   '_agnes/v1/session.controls': {
-    valid: { sessionId: 'owned' },
-    invalid: [{ sessionId: 1 }],
+    valid: { sessionId: 'owned', afterSeq: 0 },
+    invalid: [{ sessionId: 1 }, { sessionId: 'owned', afterSeq: -1 }],
     note: 'pinned session capability and pause state',
   },
   '_agnes/v1/session.editQueued': {

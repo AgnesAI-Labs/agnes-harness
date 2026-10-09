@@ -114,6 +114,35 @@ it('wires the real local prompt path to wait for an active turn and rejects new 
       },
     })
     expect(switched).toBe(false)
+    await expect(
+      endpoint.handle({
+        jsonrpc: '2.0',
+        id: 'steer-pinned',
+        method: '_agnes/v1/session.steer',
+        params: {
+          sessionId,
+          commandId: 'steer-during-switch',
+          content: [{ type: 'text', text: 'pinned instructions' }],
+        },
+      }),
+    ).resolves.toMatchObject({ result: { seq: expect.any(Number) } })
+    await expect(
+      endpoint.handle({
+        jsonrpc: '2.0',
+        id: 'pause-pinned',
+        method: '_agnes/v1/session.control',
+        params: { sessionId, commandId: 'pause-during-switch', action: 'pause' },
+      }),
+    ).resolves.toMatchObject({ result: { seq: expect.any(Number) } })
+    await expect(
+      endpoint.handle({
+        jsonrpc: '2.0',
+        id: 'state-pinned',
+        method: '_agnes/v1/session.controls',
+        params: { sessionId },
+      }),
+    ).resolves.toMatchObject({ result: { paused: true } })
+    expect(switched).toBe(false)
     await endpoint.handle({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } })
     await Promise.all([prompt, activation])
     expect(switched).toBe(true)

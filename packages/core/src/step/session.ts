@@ -1147,37 +1147,50 @@ export class SessionImpl {
       events?: EventInput[] | ((nextSeq: Seq) => EventInput[])
     } = {},
   ): Promise<Seq> {
-    const controlEnd = reason === 'aborted' || reason === 'interrupted' ? await this.controls.ending() : null
-    if (controlEnd) reason = controlEnd.reason
+    const expected = this.opSeq()
     const turnNumber = this.op()?.meta.turn ?? 0
-    const last = extra.lastAssistantSeq ?? this.op()?.latestAssistantSeq ?? null
-    const events = extra.events
-    const end = this.ev('turn/end', {
-      reason,
-      lastAssistantSeq: last,
-      ...(extra.error ? { error: extra.error } : {}),
+    // Serialize completion with pause admission; whichever fact commits first wins.
+    const seqs = await this.locked(async () => {
+      if (reason === 'completed' && (await this.controls.paused()))
+        throw new CoreError('E_LANE_BUSY', 'Turn completion is paused', { reason: 'CONTROL_PAUSED' })
+      const controlEnd =
+        reason === 'aborted' || reason === 'interrupted' ? await this.controls.ending() : null
+      if (controlEnd) reason = controlEnd.reason
+      const last = extra.lastAssistantSeq ?? this.op()?.latestAssistantSeq ?? null
+      const events = extra.events
+      const end = this.ev('turn/end', {
+        reason,
+        lastAssistantSeq: last,
+        ...(extra.error ? { error: extra.error } : {}),
+      })
+      const seq = this.lastSeq + 1
+      const rows = (() => {
+        const inbox = this.latest('inbox') as Inbox | undefined
+        // A steer arriving after the final boundary remains pending for the next turn.
+        const carry =
+          reason === 'completed' && inbox?.items.some((item) => item.target === 'next-step')
+            ? [
+                inboxEvent(this.lane, this.d.actor, {
+                  items: inbox.items.map((item) =>
+                    item.target === 'next-step' ? { ...item, target: 'next-turn' as const } : item,
+                  ),
+                }),
+              ]
+            : []
+        return [
+          ...(typeof events === 'function' ? events(seq) : (events ?? [])),
+          ...carry,
+          ...(controlEnd ? [controlEnd.event] : []),
+          end,
+        ]
+      })()
+      const result = await this.d.log.append(rows, {
+        expectedRegisterSeq: { register: 'op.state', key: this.lane, seq: expected },
+        opState: { lane: this.lane, data: null },
+      })
+      this.turn = null
+      return result.seqs
     })
-    const seqs = await this.transition((seq) => {
-      const inbox = this.latest('inbox') as Inbox | undefined
-      // A steer arriving after the final boundary remains pending for the next turn.
-      const carry =
-        reason === 'completed' && inbox?.items.some((item) => item.target === 'next-step')
-          ? [
-              inboxEvent(this.lane, this.d.actor, {
-                items: inbox.items.map((item) =>
-                  item.target === 'next-step' ? { ...item, target: 'next-turn' as const } : item,
-                ),
-              }),
-            ]
-          : []
-      return [
-        ...(typeof events === 'function' ? events(seq) : (events ?? [])),
-        ...carry,
-        ...(controlEnd ? [controlEnd.event] : []),
-        end,
-      ]
-    }, null)
-    this.turn = null
     this.turnEndError = extra.error
     // Observer failure cannot undo a committed turn ending.
     await this.loopEvents
@@ -1279,8 +1292,17 @@ export class SessionImpl {
   removeQueuedInput(itemId: string, by: Actor, admissionId: string): Promise<Seq> {
     return this.locked(async () => {
       const inbox = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
-      if (!inbox.items.some((item) => item.itemId === itemId))
+      if (!inbox.items.some((item) => item.itemId === itemId)) {
+        await this.d.log.append([
+          this.controls.fact('steer', 'refused', by, {
+            itemId,
+            admissionId,
+            operation: 'withdraw',
+            reason: 'QUEUED_INPUT_GONE',
+          }),
+        ])
         throw new CoreError('E_RELATION', 'queued input is no longer pending', { itemId })
+      }
       const written = await this.d.log.append([
         inboxEvent(this.lane, this.d.actor, {
           items: inbox.items.filter((item) => item.itemId !== itemId),
@@ -1299,7 +1321,16 @@ export class SessionImpl {
     const seq = await this.locked(async () => {
       const inbox = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
       const item = inbox.items.find((item) => item.itemId === itemId)
-      if (!item) throw new CoreError('E_RELATION', 'queued input is no longer pending', { itemId })
+      if (!item) {
+        await this.d.log.append([
+          this.controls.fact('interrupt', 'refused', by, {
+            itemId,
+            admissionId,
+            reason: 'QUEUED_INPUT_GONE',
+          }),
+        ])
+        throw new CoreError('E_RELATION', 'queued input is no longer pending', { itemId })
+      }
       const op = this.op()
       draining = this.running
       const written = await this.d.log.append(
@@ -1317,6 +1348,7 @@ export class SessionImpl {
             { actor: by, origin: 'principal', ignorable: true },
           ),
           this.controls.fact('interrupt', 'requested', by, { itemId, admissionId }),
+          ...(!op ? [this.controls.fact('interrupt', 'applied', by, { itemId, admissionId })] : []),
         ],
         op
           ? {
@@ -1338,14 +1370,17 @@ export class SessionImpl {
       this.ac.abort()
       return written.firstSeq
     })
-    await this.abort(by)
-    if (draining) await draining
-    // A parked/recovered turn has no run promise; close its cancelled state before the new run.
-    if (this.op()?.control.status === 'cancel_requested')
-      await this.run({ until: 'turn-end', signal: new AbortController().signal })
-    await this.restartLoopDriver()
-    this.controls.interrupting = false
-    return seq
+    try {
+      await this.abort(by)
+      if (draining) await draining
+      // A parked/recovered turn has no run promise; close its cancelled state before the new run.
+      if (this.op()?.control.status === 'cancel_requested')
+        await this.run({ until: 'turn-end', signal: new AbortController().signal })
+      await this.restartLoopDriver()
+      return seq
+    } finally {
+      this.controls.interrupting = false
+    }
   }
 
   lastTurnNumber(): number {
@@ -1786,7 +1821,13 @@ export class SessionImpl {
     if (await this.controls.boundary()) return { outcome: 'parked', phase: 'paused', reason: 'parked' }
     if (op && !this.turn) await this.rehydrateTurn(op)
     this.loopEdge++
-    return this.loopDriver.step(this.ac.signal)
+    try {
+      return await this.loopDriver.step(this.ac.signal)
+    } catch (error) {
+      if (error instanceof CoreError && error.detail?.reason === 'CONTROL_PAUSED')
+        return { outcome: 'parked', phase: 'paused', reason: 'parked' }
+      throw error
+    }
   }
 
   async drainCancelledTurn(): Promise<void> {
@@ -1797,11 +1838,11 @@ export class SessionImpl {
 
   /** An interrupt ends the old execution scope; construct the pinned driver from its durable checkpoint. */
   async restartLoopDriver(): Promise<void> {
-    await this.loopDriver.dispose()
     const ctx = this.loopContext
     if (!ctx) throw new CoreError('E_RELATION', 'Loop context is missing')
+    const checkpoint = ctx.checkpoints.read() ?? this.loopDriver.checkpoint()
+    await this.loopDriver.dispose()
     this.ac = new AbortController()
-    const checkpoint = ctx.checkpoints.read() ?? this.d.loopFactory.codec.encode(null)
     this.loopDriver = await this.d.loopFactory.resume(ctx, checkpoint, this.ac.signal)
   }
 

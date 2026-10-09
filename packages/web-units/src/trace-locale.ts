@@ -12,6 +12,7 @@ const en = {
   'trace.controls.requested': 'Requested',
   'trace.controls.applied': 'Applied',
   'trace.controls.refused': 'Refused',
+  'trace.controls.uncertain': 'Outcome unknown',
   'trace.controls.child-stop': 'Stop child',
   'trace.controls.child-continue': 'Continue child',
 
@@ -170,6 +171,7 @@ const zh: Record<keyof typeof en, string> = {
   'trace.controls.requested': '已请求',
   'trace.controls.applied': '已生效',
   'trace.controls.refused': '已拒绝',
+  'trace.controls.uncertain': '结果未知',
   'trace.controls.child-stop': '停止子代理',
   'trace.controls.child-continue': '继续子代理',
 

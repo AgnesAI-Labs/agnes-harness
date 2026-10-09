@@ -249,7 +249,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/session.controls': {
     kind: 'request',
     direction: 'c2s',
-    params: A.SessionIdParams,
+    params: A.SessionControlsParams,
     result: A.SessionControlStateResult,
   },
   '_agnes/v1/session.editQueued': {

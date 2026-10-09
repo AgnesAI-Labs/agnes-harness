@@ -101,6 +101,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
   const invocations = new LoopInvocations(s, () => checkpoint)
   const resumingTools = new Set<string>()
   async function prepareRequest(options: LoopRequestOptions = {}): Promise<LoopRequest> {
+    const releaseEffect = await s.controls.beginEffect()
     const done = s.beginLoopOperation()
     try {
       const op = requireOp()
@@ -119,9 +120,11 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       return request
     } finally {
       done()
+      releaseEffect()
     }
   }
   async function* stream(request: LoopRequest, signal: AbortSignal): AsyncIterable<InferenceEvent> {
+    const releaseEffect = await s.controls.beginEffect()
     const done = s.beginLoopOperation()
     try {
       const binding = prepared.get(request)
@@ -154,6 +157,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     } finally {
       await releaseTreeReservation(s)
       done()
+      releaseEffect()
     }
   }
   async function* streamWire(
@@ -301,6 +305,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     }
   }
   async function execute(call: LoopToolCall, signal: AbortSignal) {
+    const releaseEffect = await s.controls.beginEffect()
     const done = s.beginLoopOperation()
     try {
       const id = call.invocationId ?? s.d.ids.effectId()
@@ -316,6 +321,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       return await invocations.run(id, input, () => executeOwned({ ...call, invocationId: id }, signal))
     } finally {
       done()
+      releaseEffect()
     }
   }
   async function claim(target: 'next-turn' | 'next-step'): Promise<LoopInput | null> {
@@ -353,12 +359,14 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     }
   }
   async function controlled<T>(signal: AbortSignal, fn: () => Promise<T>): Promise<T> {
+    const releaseEffect = await s.controls.beginEffect()
     const done = s.beginLoopOperation()
     try {
       signal.throwIfAborted()
       return await fn()
     } finally {
       done()
+      releaseEffect()
     }
   }
   const children = s.loopChildrenPort()
@@ -433,6 +441,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       async resume(id, signal) {
         if (resumingTools.has(id))
           throw new CoreError('E_RELATION', 'Approval invocation is already resuming')
+        const releaseEffect = await s.controls.beginEffect()
         const done = s.beginLoopOperation()
         resumingTools.add(id)
         try {
@@ -481,9 +490,11 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         } finally {
           resumingTools.delete(id)
           done()
+          releaseEffect()
         }
       },
       async batch(calls, signal) {
+        const releaseEffect = await s.controls.beginEffect()
         const done = s.beginLoopOperation()
         try {
           if (!calls.length) return []
@@ -522,6 +533,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
           return results
         } finally {
           done()
+          releaseEffect()
         }
       },
     },
@@ -626,18 +638,19 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     },
     ...(children ? { children: loopChildStarts(s, children) } : {}),
     compaction: {
-      run: async (signal: AbortSignal) => {
-        signal.throwIfAborted()
-        const op = s.op()
-        if (!op || s.state.openStep.has(s.lane))
-          throw new Error('Compaction requires an accepted input at a step boundary')
-        if (op.phase.kind !== 'compaction')
-          await s.transition(
-            [],
-            withPhase(op, { kind: 'compaction', reason: 'requested', resumeAfter: op.phase }),
-          )
-        return publicOutcome(await runCompaction(s, signal))
-      },
+      run: (signal: AbortSignal) =>
+        controlled(signal, async () => {
+          signal.throwIfAborted()
+          const op = s.op()
+          if (!op || s.state.openStep.has(s.lane))
+            throw new Error('Compaction requires an accepted input at a step boundary')
+          if (op.phase.kind !== 'compaction')
+            await s.transition(
+              [],
+              withPhase(op, { kind: 'compaction', reason: 'requested', resumeAfter: op.phase }),
+            )
+          return publicOutcome(await runCompaction(s, signal))
+        }),
     },
   }
   cleanup.set(ctx, () => {

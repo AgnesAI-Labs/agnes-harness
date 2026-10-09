@@ -328,16 +328,21 @@ export async function handleCommand(
     case 'systemPrompt.preview':
       return session.systemPromptPreview()
     case 'controlState':
-      return session.controls.state()
+      return session.controls.state(typeof p.afterSeq === 'number' ? p.afterSeq : undefined)
     case 'control':
-      if (!['pause', 'resume', 'cancel', 'interrupt'].includes(String(p.action)))
+      if (
+        !['pause', 'resume', 'cancel', 'interrupt', 'child-stop', 'child-continue'].includes(String(p.action))
+      )
         throw new TypeError('invalid session control')
       return session.controls
         .apply(
-          p.action as 'pause' | 'resume' | 'cancel' | 'interrupt',
+          p.action as 'pause' | 'resume' | 'cancel' | 'interrupt' | 'child-stop' | 'child-continue',
           p.actor as Actor,
           String(p.admissionId),
           typeof p.itemId === 'string' ? p.itemId : undefined,
+          typeof p.childId === 'string'
+            ? { id: p.childId, ...(typeof p.text === 'string' ? { text: p.text } : {}) }
+            : undefined,
         )
         .catch((error: unknown) => {
           const failure = error as { code?: string; detail?: { control?: unknown; reason?: unknown } }

@@ -65,9 +65,11 @@ export function loopChildStarts(s: SessionImpl, children: ChildAgentSessionServi
     return handle
   }
   async function owned(id: string, work: () => Promise<ChildAgentHandle>) {
+    const releaseEffect = await s.controls.beginEffect()
     const done = s.beginLoopOperation()
     if (active.has(id)) {
       done()
+      releaseEffect()
       throw new CoreError('E_LANE_BUSY', 'Child invocation is active')
     }
     active.add(id)
@@ -76,6 +78,7 @@ export function loopChildStarts(s: SessionImpl, children: ChildAgentSessionServi
     } finally {
       active.delete(id)
       done()
+      releaseEffect()
     }
   }
   return {

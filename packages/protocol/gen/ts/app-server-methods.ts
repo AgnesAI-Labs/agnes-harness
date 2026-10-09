@@ -120,7 +120,7 @@ export interface AppServerMethods {
   "session/request_permission": { params: Static<typeof import("./acp.js").RequestPermissionRequest>; result: Static<typeof import("./acp.js").RequestPermissionResponse>; direction: "s2c"; kind: "request" }
   "_agnes/v1/session.attach": { params: Static<typeof import("./agnes-v1.js").SessionAttachParams>; result: Static<typeof import("./agnes-v1.js").SessionAttachResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.control": { params: Static<typeof import("./agnes-v1.js").SessionControlParams>; result: Static<typeof import("./agnes-v1.js").SessionSteerResult>; direction: "c2s"; kind: "request" }
-  "_agnes/v1/session.controls": { params: Static<typeof import("./agnes-v1.js").SessionIdParams>; result: Static<typeof import("./agnes-v1.js").SessionControlStateResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/session.controls": { params: Static<typeof import("./agnes-v1.js").SessionControlsParams>; result: Static<typeof import("./agnes-v1.js").SessionControlStateResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.editQueued": { params: Static<typeof import("./agnes-v1.js").SessionEditQueuedParams>; result: Static<typeof import("./agnes-v1.js").SessionSteerResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.steer": { params: Static<typeof import("./agnes-v1.js").SessionSteerParams>; result: Static<typeof import("./agnes-v1.js").SessionSteerResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.budget": { params: Static<typeof import("./agnes-v1.js").SessionIdParams>; result: Static<typeof import("./agnes-v1.js").SessionBudgetResult>; direction: "c2s"; kind: "request" }

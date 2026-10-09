@@ -43,7 +43,14 @@ export function bindChildAgentSession(
   const facade: ChildAgentSessionService = {
     start: (task, options = {}) => start(task, options, false),
     adoptStart: (task, options) => start(task, options, true),
-    list: async () => (await service.list(owner.sessionKey)).filter((child) => handles.has(child.id)),
+    list: async () =>
+      (await service.list(owner.sessionKey))
+        .filter((child) => handles.has(child.id))
+        .map((child) => ({
+          ...child,
+          interrupt: handles.get(child.id)!.capabilities.interrupt,
+          continuable: child.continuable && handles.get(child.id)!.capabilities.continuable,
+        })),
     sendMessage: (id, text, other) =>
       owned(id).sendMessage(text, other ? AbortSignal.any([signal, other]) : signal),
     interrupt: (id) => owned(id).interrupt(),

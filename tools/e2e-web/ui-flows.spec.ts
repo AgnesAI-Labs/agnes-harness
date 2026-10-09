@@ -60,7 +60,7 @@ test('UI first run, Agent selection, demo read/cancel, account save and restart 
   const cancelled = await send(page, 'call e2e_wait_for_cancel {}')
   await expect(cancelled).toHaveAttribute('data-status', 'running')
   await expect(cancelled.getByTestId('tool-detail-toggle')).toBeVisible()
-  await page.getByRole('button', { name: 'Stop', exact: true }).click()
+  await page.getByRole('button', { name: 'Cancel turn', exact: true }).click()
   await expect(cancelled).toHaveAttribute('data-status', 'cancelled')
   await turn(page, 'Recovered after explicit cancellation')
   await quality(page, info, 'demo-cancel')

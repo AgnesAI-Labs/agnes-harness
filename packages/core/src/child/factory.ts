@@ -12,7 +12,7 @@ import { CoreError } from '@agnes/core-common/types'
 import type { ChildHandle, ChildrenFactory, ChildStatus } from '@agnes/core-effects/effects/tool-context'
 import type { ChildWorkspaceLifecycle } from '@agnes/core-effects/workspace/runtime'
 import type { ChildAgentListing, ChildAgentResult, ChildAgentStatus } from '@agnes/extension-api'
-import type { Provider } from '@agnes/protocol'
+import type { Actor, Provider } from '@agnes/protocol'
 import type { Kernel } from '../kernel.js'
 import type { SessionImpl } from '../step/session.js'
 import { childExecutionReceipt } from './execution-receipt.js'
@@ -53,6 +53,9 @@ export class KernelChildren implements ChildrenFactory {
   >()
   private readonly turnSignals = new Map<string, AbortController>()
   private readonly continued = new Set<string>()
+  private readonly humanStopped = new Set<string>()
+  private readonly stopReady = new Map<string, () => void>()
+  private readonly continueWaiters = new Map<string, () => void>()
   private readonly turnListeners = new Map<string, Set<(event: ResidentTurn) => void>>()
   private readonly completions = new Map<
     string,
@@ -201,6 +204,11 @@ export class KernelChildren implements ChildrenFactory {
     this.handles.delete(childKey)
     this.residents.delete(childKey)
     this.continued.delete(childKey)
+    this.humanStopped.delete(childKey)
+    this.continueWaiters.get(childKey)?.()
+    this.continueWaiters.delete(childKey)
+    this.stopReady.get(childKey)?.()
+    this.stopReady.delete(childKey)
     this.turnSignals.delete(childKey)
     this.turnListeners.delete(childKey)
     if (this.kernel.sessions.get(childKey) === child) this.kernel.sessions.delete(childKey)
@@ -245,6 +253,7 @@ export class KernelChildren implements ChildrenFactory {
   }
 
   private pump(childKey: string): void {
+    if (this.humanStopped.has(childKey)) return
     const resident = this.residents.get(childKey)
     if (!resident?.idle()) return
     const inbox = resident.child.latest('inbox') as { items?: unknown[] } | undefined
@@ -692,10 +701,33 @@ export class KernelChildren implements ChildrenFactory {
             })
           }
           if (opts.recovering && child.op()) await child.resume()
-          const result = await child.run({
+          let result = await child.run({
             until: 'turn-end',
             signal: turnAbort.signal,
           })
+          // A human stop retains the child, its constraints and the parent's waiting workflow.
+          // Continue opens a new turn only after Core has drained cancellation and reset its driver.
+          while (
+            !opts.resident &&
+            this.humanStopped.has(record.childKey) &&
+            state === 'running' &&
+            (result.reason === 'aborted' || result.reason === 'interrupted')
+          ) {
+            const stopped = await store.lookupByKey(record.childKey)
+            if (stopped?.state === 'running')
+              await store.casState(record.childKey, stopped.stateRevision, 'ready')
+            this.noteTurn(record.childKey, await lastText(), 'interrupted')
+            await new Promise<void>((resolve) => {
+              this.continueWaiters.set(record.childKey, resolve)
+              this.stopReady.get(record.childKey)?.()
+            })
+            this.continueWaiters.delete(record.childKey)
+            if (state !== 'running') throw new CoreError('E_RELATION', 'Child was disposed while stopped')
+            const ready = await store.lookupByKey(record.childKey)
+            if (!ready || !(await store.casState(record.childKey, ready.stateRevision, 'running')))
+              throw new CoreError('E_RELATION', 'Stopped child cannot continue')
+            result = await child.run({ until: 'turn-end', signal: turnAbort.signal })
+          }
           const text = await lastText()
           if (
             opts.resident &&
@@ -735,6 +767,7 @@ export class KernelChildren implements ChildrenFactory {
           if (state === 'running') state = child.ac.signal.aborted ? 'cancelled' : 'error'
           throw error
         } finally {
+          this.stopReady.get(record.childKey)?.()
           this.turnSignals.delete(record.childKey)
           cachedText = await lastText().catch(() => cachedText)
           cachedSeq = child.lastSeq
@@ -758,6 +791,10 @@ export class KernelChildren implements ChildrenFactory {
         }
       },
       close: async () => {
+        this.humanStopped.delete(record.childKey)
+        this.stopReady.get(record.childKey)?.()
+        this.continueWaiters.get(record.childKey)?.()
+        if (this.continueWaiters.has(record.childKey)) state = 'cancelled'
         if (kind === 'spawn' && (state === 'ready' || state === 'running')) {
           const live = await store.lookupByKey(record.childKey)
           if (live) await store.casState(record.childKey, live.stateRevision, 'recovery_pending')
@@ -774,6 +811,9 @@ export class KernelChildren implements ChildrenFactory {
       },
       cancel: async () => {
         const idle = state === 'ready'
+        this.humanStopped.delete(record.childKey)
+        this.stopReady.get(record.childKey)?.()
+        this.continueWaiters.get(record.childKey)?.()
         if (state === 'ready' || state === 'running') {
           child.ac.abort()
           state = 'cancelled'
@@ -933,25 +973,130 @@ export class KernelChildren implements ChildrenFactory {
     )
   }
 
+  /** Parent-owned Web controls use the same pinned session controls as top-level turns. */
+  async humanControl(
+    childKey: string,
+    action: 'stop' | 'continue',
+    actor: Actor,
+    admissionId: string,
+    text?: string,
+  ): Promise<number> {
+    const parent = this.parent()
+    const record = await requireChildControl(parent.d.log.storage).lookupByKey(childKey)
+    if (!record || !this.owns(record, parent.key))
+      throw new CoreError('E_CHILD_NOT_FOUND', 'Child is not owned by this parent')
+    const child = this.kernel.get(childKey)
+    if (!child)
+      throw new CoreError('E_UNSUPPORTED', 'Child has no live control endpoint', { control: action })
+    if (action === 'stop') {
+      await child.controls.require('interrupt', actor)
+      if (!child.op())
+        throw new CoreError('E_RELATION', 'Child has no running turn', { reason: 'CONTROL_NOT_RUNNING' })
+      if (this.humanStopped.has(childKey))
+        throw new CoreError('E_RELATION', 'Child stop already requested', { reason: 'CONTROL_NOT_RUNNING' })
+      this.humanStopped.add(childKey)
+      const ready = this.turnSignals.has(childKey)
+        ? new Promise<void>((resolve) => this.stopReady.set(childKey, resolve))
+        : Promise.resolve()
+      try {
+        const seq = await child.controls.apply('cancel', actor, admissionId)
+        await ready
+        return seq
+      } catch (error) {
+        this.humanStopped.delete(childKey)
+        this.continueWaiters.get(childKey)?.()
+        throw error
+      } finally {
+        this.stopReady.delete(childKey)
+      }
+    }
+    await child.controls.require('steer', actor)
+    if (!text?.trim()) throw new CoreError('E_ENVELOPE', 'Continue requires a message')
+    const waiter = this.continueWaiters.get(childKey)
+    if (!waiter && !this.residents.has(childKey))
+      throw new CoreError('E_UNSUPPORTED', 'Child is not continuable', { control: 'continue' })
+    const seq = await child.enqueue(child.op() ? 'next-step' : 'next-turn', {
+      content: [{ type: 'text', text }],
+      kind: 'steer',
+      actor,
+      admissionId,
+    })
+    await child.d.log.append([child.controls.fact('child-continue', 'applied', actor, { admissionId })])
+    this.humanStopped.delete(childKey)
+    if (waiter) waiter()
+    else this.pump(childKey)
+    return seq
+  }
+
+  async humanControlState(
+    childKey: string,
+  ): Promise<import('@agnes/protocol/gen/agnes-v1').SessionControlledChild> {
+    const parent = this.parent()
+    const record = await requireChildControl(parent.d.log.storage).lookupByKey(childKey)
+    if (!record || !this.owns(record, parent.key))
+      throw new CoreError('E_CHILD_NOT_FOUND', 'Child is not owned by this parent')
+    const child = this.kernel.get(childKey)
+    const state = (await this.list()).find((entry) => entry.id === childKey)!
+    let totalTokens: number | null = null
+    {
+      const costs = await parent.d.log.storage.scan(childKey, {
+        type: 'cost/ledger',
+        fromSeq: (record.boundarySeq + 1) as typeof record.boundarySeq,
+        limit: 1000,
+      })
+      const tokens = costs.map((row) => {
+        const tokens = (row.data as { tokens?: { input?: number; output?: number } }).tokens
+        return typeof tokens?.input === 'number' && typeof tokens.output === 'number'
+          ? tokens.input + tokens.output
+          : undefined
+      })
+      if (costs.length && costs.length < 1000 && tokens.every((value) => typeof value === 'number'))
+        totalTokens = tokens.reduce<number>((sum, value) => sum + (value ?? 0), 0)
+    }
+    const first = await parent.d.log.storage.scan(childKey, {
+      type: 'turn/start',
+      fromSeq: (record.boundarySeq + 1) as typeof record.boundarySeq,
+      limit: 1,
+    })
+    const last = await parent.d.log.storage.scan(childKey, {
+      type: 'turn/end',
+      fromSeq: (record.boundarySeq + 1) as typeof record.boundarySeq,
+      order: 'desc',
+      limit: 1,
+    })
+    const end = child?.op() ? parent.d.clock() : last[0] ? Date.parse(last[0].ts) : null
+    const start = first[0] ? Date.parse(first[0].ts) : null
+    return {
+      id: childKey,
+      parentId: parent.key,
+      providerId: state.providerId,
+      status: this.humanStopped.has(childKey) ? 'interrupted' : state.status,
+      controls: {
+        stop: child?.d.loopFactory.controls?.interrupt === true && child.op() !== null,
+        continue:
+          child?.d.loopFactory.controls?.steer === true &&
+          (this.continueWaiters.has(childKey) || this.residents.has(childKey)),
+      },
+      durationMs: start !== null && end !== null ? Math.max(0, end - start) : null,
+      totalTokens,
+    }
+  }
+
   async sendMessage(childKey: string, text: string, signal: AbortSignal): Promise<{ messageId: string }> {
     signal.throwIfAborted()
     if (!text) throw new CoreError('E_ENVELOPE', 'message must not be empty')
     const resident = this.residents.get(childKey)
     if (!resident) return this.missingContinuable(childKey)
     const messageId = this.kernel.ids.ulid()
-    await resident.child.enqueue('next-turn', {
-      content: [{ type: 'text', text }],
-      actor: resident.child.d.actor,
-    })
-    this.pump(childKey)
+    await this.humanControl(childKey, 'continue', resident.child.d.actor, messageId, text)
     return { messageId }
   }
 
   async interrupt(childKey: string): Promise<{ accepted: boolean }> {
     if (!this.residents.has(childKey)) return this.missingContinuable(childKey)
-    const controller = this.turnSignals.get(childKey)
-    if (!controller) return { accepted: false }
-    controller.abort()
+    const child = this.kernel.get(childKey)
+    if (!child?.op() || this.humanStopped.has(childKey)) return { accepted: false }
+    await this.humanControl(childKey, 'stop', child.d.actor, this.kernel.ids.ulid())
     return { accepted: true }
   }
 

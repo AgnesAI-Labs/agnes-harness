@@ -1573,10 +1573,13 @@ export function registerAgnes(
         // Control targets the already pinned session. Publication must not block a human stop.
         const seq = await (kind === 'control'
           ? entry.session.controls.apply(
-              payload.action as 'pause' | 'resume' | 'cancel' | 'interrupt',
+              payload.action as 'pause' | 'resume' | 'cancel' | 'interrupt' | 'child-stop' | 'child-continue',
               connActor(c.conn),
               admissionId,
               typeof payload.itemId === 'string' ? payload.itemId : undefined,
+              typeof payload.childId === 'string'
+                ? { id: payload.childId, ...(typeof payload.text === 'string' ? { text: payload.text } : {}) }
+                : undefined,
             )
           : entry.session.controls.edit(
               String(payload.itemId),
@@ -1599,65 +1602,32 @@ export function registerAgnes(
         )
           throw rpcError('INVALID_PARAMS', { reason: 'invalid queued input selection' })
         const entry = cx.registry.require(sessionId)
-        const queued = cx.activationBarrier.enqueue('turn')
-        try {
-          const invocation = await queued.start()
-          const seq = await invocation.run(() =>
-            (kind === 'sendNow'
-              ? entry.session.sendQueuedNow(String(payload.itemId), connActor(c.conn), admissionId)
-              : entry.session.removeQueuedInput(String(payload.itemId), connActor(c.conn), admissionId)
-            ).catch((error: unknown) => {
-              const failure = error as { code?: unknown; data?: { code?: unknown } }
-              if (failure.code === 'E_RELATION' || failure.data?.code === 'E_RELATION')
-                throw rpcError('SEMANTIC_REJECTED', { code: 'QUEUED_INPUT_GONE', itemId: payload.itemId })
-              throw error
-            }),
-          )
-          if (kind === 'sendNow') cx.continueFollowUps?.(entry, undefined, true)
-          return { seq }
-        } finally {
-          queued.cancel()
-        }
+        const seq = await (kind === 'sendNow'
+          ? entry.session.sendQueuedNow(String(payload.itemId), connActor(c.conn), admissionId)
+          : entry.session.removeQueuedInput(String(payload.itemId), connActor(c.conn), admissionId)
+        ).catch(controlRefusal)
+        if (kind === 'sendNow') cx.continueFollowUps?.(entry, undefined, true)
+        return { seq }
       }
       case 'steer':
       case 'followUp': {
         const entry = cx.registry.require(sessionId)
-        let queued: QueuedActivationInvocation
-        try {
-          queued = cx.activationBarrier.enqueue('turn')
-        } catch (error) {
-          if (error instanceof ActivationInProgressError)
-            throw rpcError('OVERLOADED', {
-              reason: error.reason,
-              operationId: error.operationId,
-              retryAfterMs: 500,
-            })
-          throw error
-        }
-        // commandId goes into the ledger too. core's EnqueueMsg accepts it, and without it the second
-        // layer this plan claims does not exist: the journal would be the only thing deduping.
-        try {
-          const invocation = await queued.start()
-          return await invocation.run(async () => {
-            const seq = await entry.session
-              .enqueue(kind === 'steer' ? 'next-step' : 'next-turn', {
-                content: await resolvePromptReferences(
-                  entry.session,
-                  payload.content as never,
-                  payload.references,
-                ),
-                actor: connActor(c.conn),
-                kind: kind === 'steer' ? 'steer' : 'follow_up',
-                commandId,
-                admissionId,
-              })
-              .catch(controlRefusal)
-            if (kind === 'followUp') cx.continueFollowUps?.(entry)
-            return { seq }
+        // Input targets the existing pinned session; generation publication cannot block control.
+        const seq = await entry.session
+          .enqueue(kind === 'steer' ? 'next-step' : 'next-turn', {
+            content: await resolvePromptReferences(
+              entry.session,
+              payload.content as never,
+              payload.references,
+            ),
+            actor: connActor(c.conn),
+            kind: kind === 'steer' ? 'steer' : 'follow_up',
+            commandId,
+            admissionId,
           })
-        } finally {
-          queued.cancel()
-        }
+          .catch(controlRefusal)
+        if (kind === 'followUp') cx.continueFollowUps?.(entry)
+        return { seq }
       }
       case 'compact': {
         const entry = cx.registry.require(sessionId)
@@ -1735,6 +1705,15 @@ export function registerAgnes(
       )
       if (!event) return undefined
       guard()
+      const fact = event.data as { outcome?: string; reason?: string }
+      if (fact.outcome === 'refused')
+        throw rpcError('SEMANTIC_REJECTED', { code: fact.reason ?? 'CONTROL_REFUSED' })
+      // A crash between the parent request and the child receipt cannot prove the effect succeeded.
+      if (
+        (payload.action === 'child-stop' || payload.action === 'child-continue') &&
+        fact.outcome !== 'applied'
+      )
+        throw rpcError('INTERNAL_ERROR', { code: 'UNCERTAIN', reason: 'child control receipt missing' })
       if (kind === 'control' && (payload.action === 'resume' || payload.action === 'interrupt'))
         cx.continueFollowUps?.(entry, undefined, true)
       return { seq: event.seq }
@@ -1950,7 +1929,7 @@ export function registerAgnes(
   ep.register('_agnes/v1/session.controls', async (params, c) => {
     const sessionId = (params as { sessionId: string }).sessionId
     requireOwner('session.controls', sessionId, c)
-    return cx.registry.require(sessionId).session.controls.state()
+    return cx.registry.require(sessionId).session.controls.state((params as { afterSeq?: number }).afterSeq)
   })
   ep.register('_agnes/v1/session.control', (params, c) => sugar('control', params, c))
   ep.register('_agnes/v1/session.editQueued', (params, c) => sugar('editQueued', params, c))

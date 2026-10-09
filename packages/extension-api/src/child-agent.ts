@@ -132,6 +132,10 @@ export type ChildAgentCatalogEntry = Readonly<{
 }>
 
 export type ChildAgentListing = Readonly<{
+  /** Optional provider-owned stop capability and observed metrics; missing metrics are unknown. */
+  interrupt?: boolean
+  durationMs?: number
+  totalTokens?: number
   id: string
   providerId: string
   status: ChildAgentStatus

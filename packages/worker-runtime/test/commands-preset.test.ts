@@ -126,7 +126,13 @@ it('routes controls to the pinned session while Host publication changes', async
       opts,
     ),
   ).resolves.toBe(99)
-  expect(apply).toHaveBeenCalledWith('pause', { kind: 'principal', id: 'human' }, 'pause-1', undefined)
+  expect(apply).toHaveBeenCalledWith(
+    'pause',
+    { kind: 'principal', id: 'human' },
+    'pause-1',
+    undefined,
+    undefined,
+  )
   await expect(
     handleCommand(
       session,

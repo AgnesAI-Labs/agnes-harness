@@ -840,21 +840,35 @@ export class Session {
   }
 
   /** Authoritative controls of this session's pinned Loop, and its durable pause/queue state. */
-  controls(): Promise<import('@agnes/protocol/gen/agnes-v1').SessionControlStateResult> {
-    return this.client.call('_agnes/v1/session.controls', { sessionId: this.id })
+  controls(
+    opts: { afterSeq?: number } = {},
+  ): Promise<import('@agnes/protocol/gen/agnes-v1').SessionControlStateResult> {
+    return this.client.call('_agnes/v1/session.controls', { sessionId: this.id, ...opts })
   }
 
   control(
-    action: 'pause' | 'resume' | 'cancel' | 'interrupt',
-    opts: { itemId?: string; commandId?: string } = {},
+    action: 'pause' | 'resume' | 'cancel' | 'interrupt' | 'child-stop' | 'child-continue',
+    opts: { itemId?: string; childId?: string; text?: string; commandId?: string } = {},
   ): Promise<number> {
     return submitCommand(
       this.client,
       this.id,
       'control',
-      { sessionId: this.id, action, ...(opts.itemId ? { itemId: opts.itemId } : {}) },
+      {
+        sessionId: this.id,
+        action,
+        ...(opts.itemId ? { itemId: opts.itemId } : {}),
+        ...(opts.childId ? { childId: opts.childId } : {}),
+        ...(opts.text !== undefined ? { text: opts.text } : {}),
+      },
       opts.commandId,
     )
+  }
+  stopChild(childId: string, opts: { commandId?: string } = {}): Promise<number> {
+    return this.control('child-stop', { ...opts, childId })
+  }
+  continueChild(childId: string, text: string, opts: { commandId?: string } = {}): Promise<number> {
+    return this.control('child-continue', { ...opts, childId, text })
   }
   pause(opts: { commandId?: string } = {}): Promise<number> {
     return this.control('pause', opts)

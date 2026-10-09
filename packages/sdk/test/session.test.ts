@@ -602,6 +602,17 @@ describe('Session', () => {
       { sessionId: 's3', action: 'interrupt', itemId: 'queued-E' },
       { sessionId: 's3', itemId: 'queued-F', content: [{ type: 'text', text: 'edited' }] },
     ])
+    expect(await s.stopChild('child-1')).toBe(43)
+    expect(await s.continueChild('child-1', 'new instructions')).toBe(43)
+    expect(
+      f.calls
+        .filter((call) => call.method === '_agnes/v1/submit')
+        .slice(-2)
+        .map((call) => (call.params as { payload: unknown }).payload),
+    ).toEqual([
+      { sessionId: 's3', action: 'child-stop', childId: 'child-1' },
+      { sessionId: 's3', action: 'child-continue', childId: 'child-1', text: 'new instructions' },
+    ])
     expect(
       f.calls.find(
         (call) => call.method === '_agnes/v1/submit' && (call.params as { kind?: string }).kind === 'sendNow',

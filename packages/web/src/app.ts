@@ -330,6 +330,7 @@ const clientModules = await startClientModules({
     onAttachmentsChange: renderControls,
     prepareUploadSession: prepareAttachmentSession,
     onCancel: handleComposerCancel,
+    onChildControl: handleChildControl,
     onPauseResume: handlePauseResume,
     onEditQueued: handleEditQueued,
     onDraftChange: handleComposerDraftChange,
@@ -427,6 +428,23 @@ let sessionControls: { sessionId: string; value: SessionControlStateResult } | u
 let controlsRefresh = 0
 let controlPending = false
 const recoveredReturns = new Set<string>()
+const controlsHistory = new Map<
+  string,
+  { through: number; facts: NonNullable<SessionControlStateResult['facts']> }
+>()
+const childControlRefreshTimer = setInterval(() => {
+  const session = current
+  if (
+    connected &&
+    session &&
+    !sessionPending &&
+    sessionControls?.value.children?.some((child) =>
+      ['starting', 'running', 'interrupted'].includes(child.status),
+    )
+  )
+    void refreshSessionControls(session).catch(showError)
+}, 1500)
+window.addEventListener('pagehide', () => clearInterval(childControlRefreshTimer), { once: true })
 let projection: UITimeline | undefined
 let selection = 0
 let listGeneration = 0
@@ -847,6 +865,8 @@ function renderControls(): void {
       hidden: !busy && !stopping,
       label: stopping ? t('composer.cancel.stopping') : t('composer.cancel.stop'),
     },
+    children: sessionControls?.sessionId === current?.id ? sessionControls?.value.children : [],
+    childrenDisabled: !connected || sessionPending || stopping,
     controls: {
       paused: sessionControls?.sessionId === current?.id && sessionControls?.value.paused === true,
       pending: controlPending,
@@ -2421,7 +2441,18 @@ function handleQueuedAction(itemId: string, kind: 'sendNow' | 'removeQueued'): v
 async function refreshSessionControls(session: Session): Promise<void> {
   const epoch = selection
   const request = ++controlsRefresh
-  const value = await session.controls()
+  const history = controlsHistory.get(session.id) ?? { through: 0, facts: [] }
+  let through = history.through
+  const facts = [...history.facts]
+  let value: SessionControlStateResult
+  do {
+    value = await session.controls({ afterSeq: through })
+    if (current !== session || selection !== epoch || request !== controlsRefresh) return
+    facts.push(...(value.facts ?? []))
+    through = value.factsThrough ?? through
+  } while (value.factsMore)
+  value = { ...value, facts }
+  controlsHistory.set(session.id, { through, facts })
   if (current !== session || selection !== epoch || request !== controlsRefresh) return
   sessionControls = { sessionId: session.id, value }
   for (const fact of value.facts ?? []) {
@@ -2446,6 +2477,14 @@ async function refreshSessionControls(session: Session): Promise<void> {
     sessionStorage.setItem(key, 'pending')
   }
   render()
+}
+async function handleChildControl(id: string, action: 'stop' | 'continue', text?: string): Promise<void> {
+  const session = current
+  if (!session || sessionPending || !connected) return
+  if (action === 'stop') await session.stopChild(id)
+  else await session.continueChild(id, text ?? '')
+  await refreshSessionControls(session)
+  live?.refresh()
 }
 function handlePauseResume(): void {
   run(async () => {
@@ -2651,6 +2690,9 @@ function submitComposer(): void {
   if (busy && (sessionControls?.sessionId !== session?.id || !sessionControls?.value.controls.steer)) return
   notice.textContent = ''
   notice.dataset.kind = ''
+  const submittedReturns = [...recoveredReturns].filter((key) =>
+    key.startsWith(`agnes-return:${session?.id}:`),
+  )
   const submission = ++submissionGeneration
   const connectionEpoch = permissionConnectionEpoch
   let ownedSelection = selection
@@ -2714,9 +2756,7 @@ function submitComposer(): void {
     const submittedId = session.id
     if (typeof result === 'object' && result.reason === 'completed' && !sessionTitles.has(submittedId))
       titleRefresh.start(submittedId)
-    for (const key of recoveredReturns) {
-      if (key.startsWith(`agnes-return:${session.id}:`)) sessionStorage.setItem(key, 'sent')
-    }
+    for (const key of submittedReturns) sessionStorage.setItem(key, 'sent')
     pendingSessionKey = undefined
     if (busy && current === session && selection === ownedSelection) live?.refresh()
   })()

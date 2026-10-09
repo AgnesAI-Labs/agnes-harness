@@ -4,14 +4,27 @@ import type { Inbox } from '@agnes/core-ledger/reduce/shapes'
 import { type Actor, type ContentBlock, MAX_FRAME_BYTES } from '@agnes/protocol'
 import { validateUserMessageImages } from '../request/user-message-images.js'
 import { inboxEvent } from '../step/inbox.js'
+import { applyChildControl, controlledChildTree } from './child-controls.js'
 import type { SessionImpl } from '../step/session.js'
 
-export type SessionControl = 'pause' | 'resume' | 'cancel' | 'interrupt'
+export type SessionControl = 'pause' | 'resume' | 'cancel' | 'interrupt' | 'child-stop' | 'child-continue'
 const PAUSE = 'x/core/pause-state'
 
 /** Core-owned controls apply to the session's pinned factory, independent of its scheduler. */
 export class SessionControls {
   interrupting = false
+  private activeEffects = 0
+  /** Public effect ports fence input delivery even when a plugin overlaps operations. */
+  async beginEffect(): Promise<() => void> {
+    return this.s.locked(async () => {
+      if (await this.paused())
+        throw new CoreError('E_LANE_BUSY', 'Session is paused', { reason: 'CONTROL_PAUSED' })
+      this.activeEffects++
+      return () => {
+        this.activeEffects--
+      }
+    })
+  }
   constructor(private readonly s: SessionImpl) {}
 
   fact(action: string, outcome: string, actor: Actor, details: Record<string, unknown> = {}): EventInput {
@@ -59,15 +72,21 @@ export class SessionControls {
     })
   }
 
-  async state() {
+  async state(afterSeq?: number) {
+    const through = this.s.lastSeq
     const rows = await this.s.d.log.scan({
       type: 'x/core/control',
       lane: this.s.lane,
-      order: 'desc',
+      toSeq: through,
+      order: afterSeq === undefined ? 'desc' : 'asc',
+      ...(afterSeq === undefined ? {} : { fromSeq: afterSeq + 1 }),
       limit: 200,
     })
     return {
-      facts: rows.reverse().map((row) => {
+      children: await controlledChildTree(this.s),
+      factsMore: afterSeq !== undefined && rows.length === 200,
+      factsThrough: afterSeq !== undefined && rows.length === 200 ? rows.at(-1)!.seq : through,
+      facts: (afterSeq === undefined ? rows.reverse() : rows).map((row) => {
         const details = row.data as { action: string; outcome: string }
         return {
           seq: row.seq,
@@ -98,7 +117,7 @@ export class SessionControls {
   async claim(itemId?: string) {
     return this.s.locked(async () => {
       const op = this.s.op()
-      if (!op) return null
+      if (!op || this.activeEffects > 0 || (await this.paused())) return null
       const inbox = (this.s.latest('inbox') as Inbox | undefined) ?? { items: [] }
       const item = inbox.items.find(
         (item) => item.target === 'next-step' && (!itemId || item.itemId === itemId),
@@ -142,8 +161,17 @@ export class SessionControls {
     content = structuredClone(content)
     return this.s.locked(async () => {
       const inbox = (this.s.latest('inbox') as Inbox | undefined) ?? { items: [] }
-      if (!inbox.items.some((item) => item.itemId === itemId))
+      if (!inbox.items.some((item) => item.itemId === itemId)) {
+        await this.s.d.log.append([
+          this.fact('steer', 'refused', actor, {
+            itemId,
+            admissionId,
+            operation: 'edit',
+            reason: 'QUEUED_INPUT_GONE',
+          }),
+        ])
         throw new CoreError('E_RELATION', 'queued input is no longer pending', { itemId })
+      }
       const next = {
         items: inbox.items.map((item) => (item.itemId === itemId ? { ...item, content } : item)),
       }
@@ -182,7 +210,24 @@ export class SessionControls {
     }
   }
 
-  async apply(action: SessionControl, actor: Actor, admissionId: string, itemId?: string): Promise<Seq> {
+  async apply(
+    action: SessionControl,
+    actor: Actor,
+    admissionId: string,
+    itemId?: string,
+    child?: { id: string; text?: string },
+  ): Promise<Seq> {
+    if (action === 'child-stop' || action === 'child-continue') {
+      if (!child?.id) throw new CoreError('E_ENVELOPE', 'Child control requires a child id')
+      return applyChildControl(
+        this.s,
+        child.id,
+        action === 'child-stop' ? 'stop' : 'continue',
+        actor,
+        admissionId,
+        child.text,
+      )
+    }
     if (action === 'pause' || action === 'resume') {
       await this.require('pause', actor)
       const seq = await this.s.locked(async () => {
