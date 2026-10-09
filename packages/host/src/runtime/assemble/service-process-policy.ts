@@ -1,6 +1,6 @@
 import { resolveToolCallPolicy, type ServiceContext } from '@agnes/extension-api'
 import { rpcError } from '@agnes/protocol'
-import type { HostSession } from './host.js'
+import type { HostSession } from '../lifecycle/host.js'
 
 /** An explicit human process request still obeys preset and plan-mode refusal. */
 export async function authorizeServiceProcess(

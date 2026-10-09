@@ -1,6 +1,6 @@
 import type { BundleCatalog, ResolvedComposition } from '@agnes/host-common/profile/composition'
 import type { LiveCompositionSession } from '@agnes/host-providers/profile/composition-state'
-import type { Host, HostSession } from '../host.js'
+import type { Host, HostSession } from '../lifecycle/host.js'
 import { compositionToolGroups } from './composition-visibility.js'
 
 /** Both legacy and composition Hosts publish the resolver's actual session facts. */

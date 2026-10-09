@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, unlinkSync } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
-import { trustedHookCommands } from '@agnes/host-runtime/assemble/trusted-hooks'
+import { trustedHookCommands } from '../src/runtime/assemble/trusted-hooks.js'
 import { afterEach, expect, it } from 'vitest'
 
 const dirs: string[] = []

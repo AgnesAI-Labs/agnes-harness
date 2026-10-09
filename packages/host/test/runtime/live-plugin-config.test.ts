@@ -1,7 +1,10 @@
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import { createPluginRow, type RuntimeTarget } from '@agnes/plugin-runtime/host'
 import { expect, it } from 'vitest'
-import { applyLivePluginConfig, overlayLivePluginConfig } from '../src/live-plugin-config.js'
+import {
+  applyLivePluginConfig,
+  overlayLivePluginConfig,
+} from '../../src/runtime/lifecycle/live-plugin-config.js'
 
 const row = createPluginRow({
   id: 'ext:acme/agent',

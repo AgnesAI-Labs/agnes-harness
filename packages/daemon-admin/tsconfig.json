@@ -4,7 +4,9 @@
     "rootDir": ".",
     "outDir": "dist"
   },
-  "include": ["src/**/*.ts"],
+  "include": [
+    "src/**/*.ts"
+  ],
   "references": [
     {
       "path": "../../tsconfig.config.json"
@@ -41,9 +43,6 @@
     },
     {
       "path": "../resource-control-runtime"
-    },
-    {
-      "path": "../extension-api"
     }
   ]
 }

@@ -8,7 +8,7 @@ import {
   createLoopbackTransport,
   type RemoteTransport,
 } from '@agnes/host-infrastructure/adapters/remote-transport'
-import { openAdapters, sandboxHostServices, toSeamAdapters } from '@agnes/host-runtime/adapters/index'
+import { openAdapters, sandboxHostServices, toSeamAdapters } from '../../src/runtime/adapters/index.js'
 import { remoteSandboxSeam } from '@agnes/sandbox-remote'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 

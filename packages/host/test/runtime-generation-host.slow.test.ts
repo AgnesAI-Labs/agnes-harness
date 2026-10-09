@@ -6,7 +6,7 @@ import { ScriptedProvider } from '@agnes/ai/testkit'
 import type { PluginExtensionAPI } from '@agnes/extension-api'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
-import { createGenerationSkills } from '@agnes/host-runtime/runtime-generation-resources'
+import { createGenerationSkills } from '../src/runtime/generation/resources.js'
 import {
   hashDirectory,
   RuntimeGenerationSnapshotStore,

@@ -552,7 +552,7 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
 /**
  * The closed set of structural refusals a preset or model switch can raise, collapsed to one wire
  * error: `E_PRESET_UNSUPPORTED`/`E_PRESET_UNRESOLVED` are host's `validatePresetSwitch` (
- * `packages/host-runtime/src/session-switch.ts`), `E_MODEL_UNSUPPORTED` is host's `validateModelSwitch`'s own
+ * `packages/host/src/runtime/sessions/session-switch.ts`), `E_MODEL_UNSUPPORTED` is host's `validateModelSwitch`'s own
  * policy refusal (the pair exists and the provider publishes it, but it is outside this deployment's
  * assembled route table), and `E_MODEL_UNKNOWN` is core's own structural double-check
  * (`packages/core/src/step/reentry.ts`'s `setModel`, reached if a caller ever skips the host gate).

@@ -14,7 +14,7 @@ import {
   ModelAdapterRegistry,
   modelAdapterCatalog,
 } from '@agnes/host-providers/assemble/model-adapters'
-import { assemble } from '@agnes/host-runtime/assemble'
+import { assemble } from '../../src/runtime/assemble/assemble.js'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import type { InferenceEvent, RequestBody } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'

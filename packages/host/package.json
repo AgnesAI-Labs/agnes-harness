@@ -38,13 +38,12 @@
     "@agnes/host-artifacts": "workspace:*",
     "@agnes/host-extensions": "workspace:*",
     "@agnes/host-providers": "workspace:*",
-    "@agnes/host-runtime": "workspace:*"
+    "@agnes/observability": "workspace:*"
   },
   "devDependencies": {
     "@agnes/base": "workspace:*",
     "@agnes/code": "workspace:*",
-    "@sinclair/typebox": "0.34.33",
-    "@agnes/observability": "workspace:*"
+    "@sinclair/typebox": "0.34.33"
   },
   "license": "Apache-2.0 AND MIT"
 }

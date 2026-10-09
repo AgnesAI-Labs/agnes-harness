@@ -1,2 +1,2 @@
-export * from './assemble.js'
-export * from './host.js'
+export * from './assemble/assemble.js'
+export * from './lifecycle/host.js'

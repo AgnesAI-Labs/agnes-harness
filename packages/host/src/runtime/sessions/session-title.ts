@@ -19,7 +19,7 @@ import {
   type SessionTitleRecord,
   validateEvent,
 } from '@agnes/protocol'
-import type { HostSession } from './host.js'
+import type { HostSession } from '../lifecycle/host.js'
 
 const clip = (text: string, max: number) => Array.from(text).slice(0, max).join('')
 const titleEffectId = (session: HostSession, startSeq: number): string =>

@@ -3,7 +3,7 @@ import { HostError } from '@agnes/host-common/errors'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import type { PackageModule, SeamInitContext } from '@agnes/host-extensions/assemble/packages'
 import type { PlatformBackend } from '@agnes/host-infrastructure/adapters/platform'
-import type { Rollback } from '../lifecycle.js'
+import type { Rollback } from '../lifecycle/lifecycle.js'
 
 /**
  * Initialize the two build-time seams. Platform is Host-owned and sandbox remains selected when

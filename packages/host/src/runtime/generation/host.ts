@@ -1,4 +1,4 @@
-import { applyLivePluginConfig, overlayLivePluginConfig } from './live-plugin-config.js'
+import { applyLivePluginConfig, overlayLivePluginConfig } from '../lifecycle/live-plugin-config.js'
 import { createHash } from 'node:crypto'
 import { resolve as resolvePath } from 'node:path'
 import { providerRestartRequired } from '@agnes/extension-api'
@@ -24,14 +24,10 @@ import {
   encodeRuntimeTargetArtifact,
   type RuntimeTarget,
 } from '@agnes/plugin-runtime/host'
-import type { Host, HostOptions } from './host.js'
-import { createHostFacade } from './host-facade.js'
-import {
-  captureGenerationResources,
-  createGenerationSkills,
-  restoreGenerationRows,
-} from './runtime-generation-resources.js'
-import { sessionKey } from './session.js'
+import type { Host, HostOptions } from '../lifecycle/host.js'
+import { createHostFacade } from '../lifecycle/host-facade.js'
+import { captureGenerationResources, createGenerationSkills, restoreGenerationRows } from './resources.js'
+import { sessionKey } from '../sessions/session.js'
 
 export type PluginGenerationStatus = Readonly<{
   currentGenerationId?: string

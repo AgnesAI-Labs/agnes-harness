@@ -5,12 +5,12 @@ import { matchesRatchetKey } from './ratchet-key.js'
 import { isTestFile, LITERAL_SCAN_EXCLUDE_DIRS, listSourceFiles, repoRoot } from './repo.js'
 
 const root = repoRoot()
-// The only legitimate call site is the single file packages/host-runtime/src/assemble.ts, or any file under
-// the packages/host-runtime/src/assemble/ directory. The old spelling hard-coded one file path, so the moment
+// The only legitimate call site is the single file packages/host/src/runtime/assemble/assemble.ts, or any file under
+// the packages/host/src/runtime/assemble/ directory. The old spelling hard-coded one file path, so the moment
 // host split the assembly layer into assemble/index.ts it would have flagged that as a violation.
 // Now uses the same boundary matcher as ratchet.test.ts (tools/guards/src/ratchet-key.ts), shared
 // between the two so they cannot drift apart.
-const ALLOWED_ABS = join(root, 'packages/host-runtime/src/assemble')
+const ALLOWED_ABS = join(root, 'packages/host/src/runtime/assemble')
 
 // The guard used to scan only `${root}/packages` and not tools/. Both this guard and platform.test.ts
 // should cover tools/. fixtures/ holds data fixtures where the literal `Kernel.create(` is perfectly
@@ -26,7 +26,7 @@ const EXCLUDE_DIRS = LITERAL_SCAN_EXCLUDE_DIRS
 export const KERNEL_CREATE_RE = /\bKernel\s*\.\s*create\s*\(/g
 
 describe('single Kernel.create call site', () => {
-  it('Kernel.create( appears exactly once repo-wide, only under packages/host-runtime/src/assemble(.ts|/**)', () => {
+  it('Kernel.create( appears exactly once repo-wide, only under packages/host/src/runtime/assemble(.ts|/**)', () => {
     const offenders: string[] = []
     let totalOccurrences = 0
     for (const scanDir of SCAN_DIRS) {
@@ -46,7 +46,7 @@ describe('single Kernel.create call site', () => {
         if (!matchesRatchetKey(f, ALLOWED_ABS)) offenders.push(`${rel} (${matches.length}x)`)
       }
     }
-    expect(offenders, 'Kernel.create( found outside packages/host-runtime/src/assemble').toEqual([])
+    expect(offenders, 'Kernel.create( found outside packages/host/src/runtime/assemble').toEqual([])
     // While host has not implemented the assembly layer yet, 0 occurrences is a legitimate starting
     // point (matching the original callers.length === 0 handling). Once it lands there must be exactly
     // 1 — two occurrences, even within one file, must go red, rather than only counting matching

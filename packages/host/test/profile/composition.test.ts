@@ -12,15 +12,15 @@ import {
   validateComposition,
 } from '@agnes/host-common/profile/composition'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
-import { createCompositionAdmin, readBundleSelection } from '@agnes/host-runtime/profile/bundle-selection'
+import { createCompositionAdmin, readBundleSelection } from '../../src/runtime/profile/bundle-selection.js'
 import {
   compositionAllowsTool,
   profileForComposition,
-} from '@agnes/host-runtime/profile/composition-selection'
+} from '../../src/runtime/profile/composition-selection.js'
 import {
   capabilityEnabled,
   resolveSessionCapabilities,
-} from '@agnes/host-runtime/profile/session-capabilities'
+} from '../../src/runtime/profile/session-capabilities.js'
 import {
   SessionCapabilitySet,
   validateAgainst,

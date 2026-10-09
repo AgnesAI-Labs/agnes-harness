@@ -462,26 +462,26 @@ export {
   type Prompter,
   type SeamAdapters,
   toSeamAdapters,
-} from '@agnes/host-runtime/adapters/index'
+} from './runtime/adapters/index.js'
 export {
   type ApprovalGrantBinding,
   type ApprovalGrantManagement,
   type ApprovalGrantStore,
   createApprovalGrantStore,
-} from '@agnes/host-runtime/approval-grants'
+} from './runtime/approval/grants.js'
 export {
   ASSEMBLY_STEPS,
   type AssembleDeps,
   type Assembled,
   type AssemblyStep,
   assemble,
-} from '@agnes/host-runtime/assemble'
-export { ChildAgentRegistry, childAgentCatalog } from '@agnes/host-runtime/assemble/child-agents'
+} from './runtime/assemble/assemble.js'
+export { ChildAgentRegistry, childAgentCatalog } from './runtime/assemble/child-agents.js'
 export {
   childEnginePluginLayers,
   loadChildEnginePluginLayers,
   overlayChildEngineTarget,
-} from '@agnes/host-runtime/child-engine-layers'
+} from './runtime/children/child-engine-layers.js'
 export {
   type ChildCandidate,
   listChildCandidates,
@@ -489,40 +489,40 @@ export {
   type RepairResult,
   repairChildCandidates,
   sessionsDbPath,
-} from '@agnes/host-runtime/child-maintenance'
-export { readFactChainBinding } from '@agnes/host-runtime/fact-chain-binding'
-export { createHost, type Host, type HostOptions, type HostSession } from '@agnes/host-runtime/host'
+} from './runtime/children/child-maintenance.js'
+export { readFactChainBinding } from './runtime/sessions/fact-chain-binding.js'
+export { createHost, type Host, type HostOptions, type HostSession } from './runtime/lifecycle/host.js'
 export {
   assertHostPublication,
   type HostConvergenceReport,
   HostPublicationError,
   type HostPublicationReport,
   hostInspectionSource,
-} from '@agnes/host-runtime/host-facade'
-export { closeHost, Rollback } from '@agnes/host-runtime/lifecycle'
-export { manageMemory } from '@agnes/host-runtime/memory-admin'
-export * from '@agnes/host-runtime/profile/bundle-selection'
+} from './runtime/lifecycle/host-facade.js'
+export { closeHost, Rollback } from './runtime/lifecycle/lifecycle.js'
+export { manageMemory } from './runtime/memory/admin.js'
+export * from './runtime/profile/bundle-selection.js'
 export {
   compositionAllowsTool,
   profileForComposition,
-} from '@agnes/host-runtime/profile/composition-selection'
-export * from '@agnes/host-runtime/profile/composition-visibility'
+} from './runtime/profile/composition-selection.js'
+export * from './runtime/profile/composition-visibility.js'
 export {
   type ConfigurationProfileInputsOptions,
   readConfigurationProfileInputs,
-} from '@agnes/host-runtime/profile/inputs'
-export * from '@agnes/host-runtime/profile/session-capabilities'
-export type { PluginGenerationStatus } from '@agnes/host-runtime/runtime-generation-host'
+} from './runtime/profile/inputs.js'
+export * from './runtime/profile/session-capabilities.js'
+export type { PluginGenerationStatus } from './runtime/generation/host.js'
 export {
   type CreateSessionOptions,
   createSession,
   type SessionRecovery,
   sessionKey,
-} from '@agnes/host-runtime/session'
-export { readProfileTelemetryConsent } from '@agnes/host-runtime/session-hooks'
-export { loadSessionTitle } from '@agnes/host-runtime/session-title'
+} from './runtime/sessions/session.js'
+export { readProfileTelemetryConsent } from './runtime/sessions/session-hooks.js'
+export { loadSessionTitle } from './runtime/sessions/session-title.js'
 export type { CapabilityReason, SessionCapability, SessionCapabilitySet } from '@agnes/protocol'
 
-export { createFeedbackService } from '@agnes/host-runtime/feedback'
-export { draftFeedbackSkill, feedbackSkillFiles } from '@agnes/host-runtime/feedback-draft'
+export { createFeedbackService } from './runtime/feedback/service.js'
+export { draftFeedbackSkill, feedbackSkillFiles } from './runtime/feedback/draft.js'
 export { AutoReviewSettingsStore } from '@agnes/host-infrastructure/auto-review-settings'

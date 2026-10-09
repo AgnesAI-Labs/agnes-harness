@@ -19,7 +19,7 @@ import {
   persistenceConformance,
   sandboxConformance,
 } from '@agnes/extension-api/testkit'
-import { sqlitePersistenceProvider } from '@agnes/host-runtime/adapters/index'
+import { sqlitePersistenceProvider } from '../../src/runtime/adapters/index.js'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { expect, it } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'

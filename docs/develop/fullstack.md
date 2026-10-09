@@ -73,4 +73,4 @@ pnpm exec vitest run tools/public-docs/examples.test.ts packages/host/test/assem
 
 This combination covers example modules, Host assembly/revocation, and daemon browser-call boundaries. [web-workbench.mjs](../../tools/acceptance/web-workbench.mjs) is an optional acceptance program for the full browser → BFF → daemon → worker → Host path. Recorded versions and coverage are listed separately in [verification](../maintainers/verification.md).
 
-Source: [Host dynamic client extensions](../../packages/host-runtime/src/assemble.ts), [dynamic assembly tests](../../packages/host/test/assemble/dynamic-client-extension.test.ts), [ClientContext service gates](../../packages/web-client/src/client-module.ts).
+Source: [Host dynamic client extensions](../../packages/host/src/runtime/assemble/assemble.ts), [dynamic assembly tests](../../packages/host/test/assemble/dynamic-client-extension.test.ts), [ClientContext service gates](../../packages/web-client/src/client-module.ts).

@@ -8,7 +8,7 @@ import {
   createSessionHookPort,
   readProfileTelemetryConsent,
   readTelemetryConsent,
-} from '@agnes/host-runtime/session-hooks'
+} from '../src/runtime/sessions/session-hooks.js'
 import { describe, expect, it, vi } from 'vitest'
 
 const lease: HookContext['lease'] = {

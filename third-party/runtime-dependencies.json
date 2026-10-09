@@ -246,7 +246,6 @@
         "packages/code",
         "packages/host",
         "packages/host-common",
-        "packages/host-runtime",
         "packages/package-manager"
       ]
     },

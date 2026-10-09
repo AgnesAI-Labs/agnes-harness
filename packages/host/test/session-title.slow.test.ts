@@ -7,8 +7,12 @@ import { seams } from '@agnes/base'
 import { fakeSeamInit } from '@agnes/base/testkit'
 import { contextTokens, type LedgerSeam } from '@agnes/core'
 import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
-import type { Host, HostSession } from '@agnes/host-runtime/host'
-import { loadSessionTitle, normalizeSessionTitle, startSessionTitle } from '@agnes/host-runtime/session-title'
+import type { Host, HostSession } from '../src/runtime/lifecycle/host.js'
+import {
+  loadSessionTitle,
+  normalizeSessionTitle,
+  startSessionTitle,
+} from '../src/runtime/sessions/session-title.js'
 import {
   type InferenceEvent,
   type ModelRecord,

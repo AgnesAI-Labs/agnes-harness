@@ -268,43 +268,43 @@ import {
 } from '@agnes/plugin-runtime/host'
 import type { ComputerUseDoctorParams, RouteTable } from '@agnes/protocol'
 import { privateArtifactDeleteAvailable } from '@agnes/system-node'
-import type { AdapterBundle } from './adapters/index.js'
+import type { AdapterBundle } from '../adapters/index.js'
 import {
   createNetFetch,
   lazyPackageTables,
   openAdapters,
   sandboxHostServices,
   toSeamAdapters,
-} from './adapters/index.js'
+} from '../adapters/index.js'
 import {
   type ApprovalGrantManagement,
   createApprovalGrantControlPlane,
   migrateApprovalGrants,
-} from './approval-grants.js'
-import { childAgentCatalog, installChildAgents, withBuiltinChildAgents } from './assemble/child-agents.js'
-import { initStaticSeams } from './assemble/seams.js'
-import { trustedHookCommands } from './assemble/trusted-hooks.js'
+} from '../approval/grants.js'
+import { childAgentCatalog, installChildAgents, withBuiltinChildAgents } from './child-agents.js'
+import { initStaticSeams } from './seams.js'
+import { trustedHookCommands } from './trusted-hooks.js'
 import type { AssembleDeps } from './assembly-deps.js'
-import { Rollback } from './lifecycle.js'
+import { Rollback } from '../lifecycle/lifecycle.js'
 import {
   compositionSkillOwners,
   compositionSkills,
   compositionTools,
-} from './profile/composition-visibility.js'
+} from '../profile/composition-visibility.js'
 import {
   capabilityClientCatalog,
   capabilityEnabled,
   capabilityToolCatalog,
   resolveSessionCapabilities,
   type SessionCapabilitySet,
-} from './profile/session-capabilities.js'
+} from '../profile/session-capabilities.js'
 import { authorizeServiceProcess } from './service-process-policy.js'
 import {
   applyTelemetryConsent,
   createSessionHookPort,
   readProfileTelemetryConsent,
   readTelemetryConsent,
-} from './session-hooks.js'
+} from '../sessions/session-hooks.js'
 
 /**
  * A raw module import, distinct from `PackageLoader`: `createManagedExtHost` evaluates an

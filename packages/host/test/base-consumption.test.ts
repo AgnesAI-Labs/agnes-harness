@@ -7,7 +7,7 @@ import { SEAM_NAMES } from '@agnes/core'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import type { LockState, ResolveEnv } from '@agnes/host-common/profile/types'
 import type { SeamInitContext as HostSeamInitContext } from '@agnes/host-extensions/assemble/packages'
-import { openAdapters, toSeamAdapters } from '@agnes/host-runtime/adapters/index'
+import { openAdapters, toSeamAdapters } from '../src/runtime/adapters/index.js'
 import { describe, expect, it } from 'vitest'
 
 // `@agnes/base` cannot import this package, so it restates the assembly context as a consumption

@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { readConfigurationProfileInputs } from '@agnes/host-runtime/profile/inputs'
+import { readConfigurationProfileInputs } from '../src/runtime/profile/inputs.js'
 import { afterEach, expect, it } from 'vitest'
 
 const roots: string[] = []

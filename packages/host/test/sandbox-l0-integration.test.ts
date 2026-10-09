@@ -45,11 +45,11 @@ import {
   type SessionWorkspaceRuntime,
   SessionWorkspaceRuntimeTable,
 } from '@agnes/host-infrastructure/session-workspace-runtime'
-import { openAdapters, toSeamAdapters } from '@agnes/host-runtime/adapters/index'
-import { type AssembleDeps, type Assembled, assemble } from '@agnes/host-runtime/assemble'
-import { trustedHookCommands } from '@agnes/host-runtime/assemble/trusted-hooks'
-import { readConfigurationProfileInputs } from '@agnes/host-runtime/profile/inputs'
-import { createSession } from '@agnes/host-runtime/session'
+import { openAdapters, toSeamAdapters } from '../src/runtime/adapters/index.js'
+import { type AssembleDeps, type Assembled, assemble } from '../src/runtime/assemble/assemble.js'
+import { trustedHookCommands } from '../src/runtime/assemble/trusted-hooks.js'
+import { readConfigurationProfileInputs } from '../src/runtime/profile/inputs.js'
+import { createSession } from '../src/runtime/sessions/session.js'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
 import { windowsProcessStartTimeSync } from '@agnes/system-node'
 import { afterEach, describe, expect, it } from 'vitest'

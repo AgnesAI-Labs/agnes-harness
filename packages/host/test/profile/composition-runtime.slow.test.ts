@@ -19,7 +19,7 @@ import {
   readLiveCompositionSessions,
 } from '@agnes/host-providers/profile/composition-state'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
-import { assertHostPublication } from '@agnes/host-runtime/host-facade'
+import { assertHostPublication } from '../../src/runtime/lifecycle/host-facade.js'
 import {
   compositionModuleAllowed,
   compositionSkillOwners,
@@ -27,11 +27,11 @@ import {
   compositionSurfaceAllowed,
   compositionToolGroups,
   compositionTools,
-} from '@agnes/host-runtime/profile/composition-visibility'
+} from '../../src/runtime/profile/composition-visibility.js'
 import {
   capabilityToolCatalog,
   resolveSessionCapabilities,
-} from '@agnes/host-runtime/profile/session-capabilities'
+} from '../../src/runtime/profile/session-capabilities.js'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { RuntimeSecurityStatus, SessionCapabilitySet, validateAgainst } from '@agnes/protocol'

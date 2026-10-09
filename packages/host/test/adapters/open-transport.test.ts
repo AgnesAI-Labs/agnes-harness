@@ -10,7 +10,7 @@ import {
   readNamedExports,
 } from '@agnes/host-extensions/assemble/packages'
 import { createLoader } from '@agnes/host-extensions/ext-host/loader'
-import { openAdapters } from '@agnes/host-runtime/adapters/index'
+import { openAdapters } from '../../src/runtime/adapters/index.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const dirs: string[] = []

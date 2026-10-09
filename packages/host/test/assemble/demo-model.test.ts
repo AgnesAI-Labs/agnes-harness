@@ -13,7 +13,7 @@ import {
 } from '@agnes/host-providers/assemble/model-adapters'
 import { buildProvider } from '@agnes/host-providers/assemble/provider'
 import { materializeRoutes } from '@agnes/host-providers/assemble/routes'
-import { readConfigurationProfileInputs } from '@agnes/host-runtime/profile/inputs'
+import { readConfigurationProfileInputs } from '../../src/runtime/profile/inputs.js'
 import { currentCorrelation, observabilityPlugin } from '@agnes/observability'
 import { memoryCollector } from '@agnes/observability/testkit'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'

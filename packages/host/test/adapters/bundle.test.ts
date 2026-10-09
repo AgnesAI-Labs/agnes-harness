@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { isHostError } from '@agnes/host-common/errors'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
 import type { LockState, ResolveEnv } from '@agnes/host-common/profile/types'
-import { openAdapters, sandboxHostServices, toSeamAdapters } from '@agnes/host-runtime/adapters/index'
+import { openAdapters, sandboxHostServices, toSeamAdapters } from '../../src/runtime/adapters/index.js'
 import {
   createPrivateDirectorySync,
   createPrivateFileSync,

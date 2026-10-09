@@ -1,5 +1,5 @@
 import type { AuditSink } from '@agnes/host-infrastructure/audit'
-import type { Assembled } from './assemble.js'
+import type { Assembled } from '../assemble/assemble.js'
 
 /**
  * The teardown a half-finished assembly owes, and the one a finished host owes at shutdown. Every

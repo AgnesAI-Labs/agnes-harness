@@ -16,7 +16,7 @@ import {
   openAdapters,
   openConfiguredPersistence,
   sqlitePersistenceProvider,
-} from '@agnes/host-runtime/adapters/index'
+} from '../../src/runtime/adapters/index.js'
 import { afterAll, describe, expect, it } from 'vitest'
 
 const env: ResolveEnv = {
@@ -346,7 +346,7 @@ it('runs the default accounting, refine and MCP domains on metadata without SQL'
   )
   const { seams, mcpCatalogHubFor } = await import('@agnes/base')
   const { fakeSeamInit } = await import('@agnes/base/testkit')
-  const { toSeamAdapters } = await import('@agnes/host-runtime/adapters/index')
+  const { toSeamAdapters } = await import('../../src/runtime/adapters/index.js')
   const dir = tempDir()
   const profile = await resolveProfile({ builtin: 'local-dev', lock }, env)
   const bundle = await openAdapters(profile, {

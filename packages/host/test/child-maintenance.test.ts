@@ -6,7 +6,7 @@ import {
   listChildCandidates,
   repairChildCandidates,
   sessionsDbPath,
-} from '@agnes/host-runtime/child-maintenance'
+} from '../src/runtime/children/child-maintenance.js'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 describe('child maintenance', () => {

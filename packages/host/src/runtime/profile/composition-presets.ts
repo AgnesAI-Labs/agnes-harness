@@ -3,7 +3,7 @@ import { mergeValue } from '@agnes/host-common/presets/merge'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { loadRuntimePackage } from '@agnes/host-extensions/assemble/packages'
-import type { HostOptions } from '../host.js'
+import type { HostOptions } from '../lifecycle/host.js'
 
 /** Read authorized package exports before choosing providers. No plugin is mounted by this pass. */
 export async function compositionPresets(

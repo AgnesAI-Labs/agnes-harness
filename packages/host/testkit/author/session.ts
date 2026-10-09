@@ -21,7 +21,7 @@ import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import type { LoopPluginContext } from '@agnes/extension-api'
 import { createTestHost, type TestHostOptions } from '../index.js'
-import type { Host, HostSession } from '@agnes/host-runtime/host'
+import type { Host, HostSession } from '../../src/runtime/lifecycle/host.js'
 
 export interface AuthorPluginVersion {
   plugin: Plugin

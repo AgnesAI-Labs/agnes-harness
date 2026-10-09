@@ -20,10 +20,14 @@ import {
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import type { PluginRow, RuntimeTarget } from '@agnes/plugin-runtime/host'
-import type { Host, HostOptions } from '../host.js'
-import { assertHostPublication, createHostFacade, type HostPublicationReport } from '../host-facade.js'
-import { createRuntimeGenerationHost } from '../runtime-generation-host.js'
-import { sessionKey } from '../session.js'
+import type { Host, HostOptions } from '../lifecycle/host.js'
+import {
+  assertHostPublication,
+  createHostFacade,
+  type HostPublicationReport,
+} from '../lifecycle/host-facade.js'
+import { createRuntimeGenerationHost } from '../generation/host.js'
+import { sessionKey } from '../sessions/session.js'
 import { compositionPresets } from './composition-presets.js'
 import { profileForComposition } from './composition-selection.js'
 import { capabilityEnabled, resolveSessionCapabilities } from './session-capabilities.js'

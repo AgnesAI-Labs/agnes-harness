@@ -16,7 +16,7 @@ import type { ProviderBuildOptions } from '@agnes/host-providers/assemble/provid
 import type { RuntimePluginSnapshot } from '@agnes/package-manager'
 import type { EntryRow, HostPluginImporterFactory, PackageSnapshotVerifier } from '@agnes/plugin-runtime/host'
 import type { SkillCordisService } from '@agnes/resource-control-runtime'
-import type { PlatformBackend, Prompter } from './adapters/index.js'
+import type { PlatformBackend, Prompter } from '../adapters/index.js'
 
 export type HostPaths = { dataDir: string; profileDir: string; workspaceRoot: string; hostRoot: string }
 

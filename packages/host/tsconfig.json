@@ -56,7 +56,22 @@
       "path": "../host-providers"
     },
     {
-      "path": "../host-runtime"
+      "path": "../../tsconfig.config.json"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../extension-api"
+    },
+    {
+      "path": "../package-manager"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../observability"
     }
   ]
 }

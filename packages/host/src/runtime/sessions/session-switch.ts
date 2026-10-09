@@ -3,8 +3,8 @@ import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/r
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { materializeRoutes, pinPresetRoutes } from '@agnes/host-providers/assemble/routes'
 import { minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
-import type { Assembled } from './assemble.js'
-import type { HostSession } from './host.js'
+import type { Assembled } from '../assemble/assemble.js'
+import type { HostSession } from '../lifecycle/host.js'
 import { checkPresetHardRequirements } from './session.js'
 
 /**

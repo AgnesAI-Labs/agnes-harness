@@ -6,8 +6,8 @@ import {
   createLiveCompositionWriter,
   type LiveCompositionSession,
 } from '@agnes/host-providers/profile/composition-state'
-import type { Host } from '../host.js'
-import { createHostFacade } from '../host-facade.js'
+import type { Host } from '../lifecycle/host.js'
+import { createHostFacade } from '../lifecycle/host-facade.js'
 import { describeCapabilitySession } from './session-capability-view.js'
 
 /** Keep legacy Hosts' behavior unchanged while exposing the same safe live inspection surface. */

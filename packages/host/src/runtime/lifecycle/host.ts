@@ -40,22 +40,22 @@ import { currentCorrelation } from '@agnes/observability'
 import type { RuntimeTarget } from '@agnes/plugin-runtime/host'
 import type { Actor, ExtensionCallParams, ExtensionCallResult, ThinkingLevel } from '@agnes/protocol'
 import { adminSecurityStatus } from './admin-security-status.js'
-import { startApprovalExpiry } from './approval-expiry.js'
-import { type AssembleDeps, type Assembled, assemble } from './assemble.js'
+import { startApprovalExpiry } from '../approval/expiry.js'
+import { type AssembleDeps, type Assembled, assemble } from '../assemble/assemble.js'
 import type { HostConvergenceReport, HostPublicationReport } from './host-facade.js'
 import { closeHost } from './lifecycle.js'
-import { createCompositionHost } from './profile/composition-runtime.js'
-import { trackHostComposition } from './profile/composition-tracking.js'
-import { resolveSessionCapabilities } from './profile/session-capabilities.js'
-import { createRuntimeGenerationHost, type PluginGenerationStatus } from './runtime-generation-host.js'
+import { createCompositionHost } from '../profile/composition-runtime.js'
+import { trackHostComposition } from '../profile/composition-tracking.js'
+import { resolveSessionCapabilities } from '../profile/session-capabilities.js'
+import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../generation/host.js'
 import {
   type CreateSessionOptions,
   checkPresetHardRequirements,
   createSession as openSession,
   sessionKey,
-} from './session.js'
-import { validateModelSwitch, validatePresetSwitch } from './session-switch.js'
-import { createTitleQueue, startSessionTitle } from './session-title.js'
+} from '../sessions/session.js'
+import { validateModelSwitch, validatePresetSwitch } from '../sessions/session-switch.js'
+import { createTitleQueue, startSessionTitle } from '../sessions/session-title.js'
 
 // core does not export a type named `Session`; it exports SessionImpl and SessionLogImpl. Taking the
 // return type instead of pinning a name means a rename over there is not a break over here.

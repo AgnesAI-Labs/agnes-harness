@@ -241,7 +241,7 @@ export async function prepareIdleResources(
  *
  * `setPreset`/`setModel` go through `o.host.validatePresetSwitch`/`validateModelSwitch` first, not
  * a `HostSession` method the caller invokes unchecked — `Host` is the only place that can weigh a
- * switch against the actual assembly (`packages/host-runtime/src/host.ts`), and `HostSession` has no method
+ * switch against the actual assembly (`packages/host/src/runtime/lifecycle/host.ts`), and `HostSession` has no method
  * that does this check on its own.
  *
  * `decideApproval` resolves a pending ticket through `HostSession.resumeApproval` — core's session

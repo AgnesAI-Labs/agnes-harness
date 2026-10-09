@@ -25,9 +25,9 @@ import { referenceHistory } from '@agnes/host-providers/assemble/reference-histo
 import { referenceLimits } from '@agnes/host-providers/assemble/reference-text'
 import { materializeRoutes, pinPresetRoutes } from '@agnes/host-providers/assemble/routes'
 import type { Actor, LoopSelection, SessionStart } from '@agnes/protocol'
-import type { Assembled } from './assemble.js'
-import type { HostSession } from './host.js'
-import { resolveSessionCapabilities } from './profile/session-capabilities.js'
+import type { Assembled } from '../assemble/assemble.js'
+import type { HostSession } from '../lifecycle/host.js'
+import { resolveSessionCapabilities } from '../profile/session-capabilities.js'
 import { replaySwitchesOnOpen } from './session-switch.js'
 
 /**

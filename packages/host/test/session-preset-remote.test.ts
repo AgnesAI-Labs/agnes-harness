@@ -1,4 +1,4 @@
-import { checkPresetHardRequirements } from '@agnes/host-runtime/session'
+import { checkPresetHardRequirements } from '../src/runtime/sessions/session.js'
 import { describe, expect, it } from 'vitest'
 
 // Minimal doubles for `ResolvedProfile` / `Assembled` / `ResolvedPreset`, narrowed to the fields

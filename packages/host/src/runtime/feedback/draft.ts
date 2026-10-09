@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { createEnvelopeCache, deriveRequest, toProviderRequest } from '@agnes/core'
 import type { FeedbackItem } from '@agnes/extension-api'
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
-import type { HostSession } from './host.js'
+import type { HostSession } from '../lifecycle/host.js'
 
 /** Only the Skill text is model-authored. The registration wrapper and its tests are fixed code. */
 export function feedbackSkillFiles(input: unknown, feedback: FeedbackItem) {

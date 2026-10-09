@@ -1,5 +1,5 @@
 import { approvalDeadlineMs, type Timers } from '@agnes/core'
-import type { HostSession } from './host.js'
+import type { HostSession } from '../lifecycle/host.js'
 
 /**
  * The host owns the wake-up, while core owns the fact that gets written. Nothing is scheduled while

@@ -9,7 +9,7 @@ import {
   bindApprovalGrantStore,
   createApprovalGrantControlPlane,
   createApprovalGrantStore,
-} from '@agnes/host-runtime/approval-grants'
+} from '../src/runtime/approval/grants.js'
 import type { ApprovalGrant } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTestHost } from '../testkit/index.js'

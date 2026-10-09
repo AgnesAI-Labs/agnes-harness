@@ -20,7 +20,6 @@ const owners = [
   'host-artifacts',
   'host-extensions',
   'host-providers',
-  'host-runtime',
 ]
 const roots = [src, ...owners.map(ownerSrc)]
 const modulePath = (file: string): string => {
@@ -78,7 +77,7 @@ describe('host boundaries', () => {
   })
   it('Kernel.create appears only in assemble.ts', () => {
     const callers = files.filter((f) => /\bKernel\s*\.\s*create\s*\(/.test(read(f)))
-    expect(callers.map((f) => modulePath(f))).toEqual(['host-runtime/assemble.ts'])
+    expect(callers.map((f) => modulePath(f))).toEqual(['host/runtime/assemble/assemble.ts'])
   })
   // The writer lease setting belongs to the kernel; extension leases are bound to their row and
   // must not start reading it again. Comments are stripped so prose naming the key does not count.
@@ -92,11 +91,11 @@ describe('host boundaries', () => {
           .filter(([, count]) => count !== 0),
       )
     expect(occurrences(/['"]lease\.ttl_ms['"]/g)).toEqual({
-      'host-runtime/assemble.ts': 2,
+      'host/runtime/assemble/assemble.ts': 2,
       'host-common/profile-policy.ts': 1,
     })
-    expect(occurrences(/\bleaseTtlMs\b/g)).toEqual({ 'host-runtime/assemble.ts': 1 })
-    const wiring = uncommented(read(join(ownerSrc('host-runtime'), 'assemble.ts')))
+    expect(occurrences(/\bleaseTtlMs\b/g)).toEqual({ 'host/runtime/assemble/assemble.ts': 1 })
+    const wiring = uncommented(read(join(src, 'runtime', 'assemble', 'assemble.ts')))
       .split('\n')
       .filter((line) => /['"]lease\.ttl_ms['"]/.test(line))
     expect(wiring).toHaveLength(1)

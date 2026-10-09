@@ -290,11 +290,11 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon-surfaces/src': 1962,
   'packages/daemon-foundation/src/jobs': 653,
   'packages/daemon-foundation/src': 4248,
-  'packages/host-runtime/src/approval-expiry': 105,
-  'packages/host-runtime/src/adapters': 465,
-  'packages/host-runtime/src/profile': 1655,
-  'packages/host-runtime/src': 9478,
-  'packages/host-runtime/src/assemble': 3358,
+  'packages/host/src/runtime/approval/expiry': 105,
+  'packages/host/src/runtime/adapters': 465,
+  'packages/host/src/runtime/profile': 1655,
+  'packages/host/src/runtime': 9478,
+  'packages/host/src/runtime/assemble': 3468,
   'packages/host-providers/src/adapters': 477,
   'packages/host-providers/src/profile': 165,
   'packages/host-providers/src': 4639,
@@ -2916,7 +2916,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 46355 -> 46484 (+129); exact measured cap, no exclusions or spare allocation.
   // Acceptance review: Restore immutable generation sources and publish child-engine configuration with explicit engine admission.
   // countLines: 46484 -> 46566; exact cap, no exclusions or spare allocation.
-  'packages/host/src': 521,
+  'packages/host/src': 9999,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot

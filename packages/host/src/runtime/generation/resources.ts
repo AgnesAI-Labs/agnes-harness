@@ -5,7 +5,7 @@ import type {
 } from '@agnes/package-manager'
 import type { JsonValue } from '@agnes/protocol'
 import type { SkillRuntimeInput } from '@agnes/resource-control-runtime'
-import type { Host, HostOptions } from './host.js'
+import type { Host, HostOptions } from '../lifecycle/host.js'
 
 type PreparedRow = Parameters<Host['extensionRows']['prepare']>[0]
 type ResourceData = {

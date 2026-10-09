@@ -1,6 +1,6 @@
 import { createMemoryAudit } from '@agnes/host-infrastructure/audit'
-import type { Assembled } from '@agnes/host-runtime/assemble'
-import { closeHost, Rollback } from '@agnes/host-runtime/lifecycle'
+import type { Assembled } from '../src/runtime/assemble/assemble.js'
+import { closeHost, Rollback } from '../src/runtime/lifecycle/lifecycle.js'
 import { describe, expect, it } from 'vitest'
 
 describe('Rollback', () => {
