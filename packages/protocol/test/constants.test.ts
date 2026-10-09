@@ -45,6 +45,9 @@ describe('constants', () => {
     expect(EXT_EVENT_PATTERN.test('x/feedback/item')).toBe(true)
     expect(EXT_EVENT_PATTERN.test('x/feedback/growth')).toBe(true)
     expect(EXT_EVENT_PATTERN.test('x/feedback/forged')).toBe(false)
+    expect(EXT_EVENT_PATTERN.test('x/approval/review')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/approval/reservation')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/approval/forged')).toBe(false)
     expect(EXT_EVENT_PATTERN.test('x/agnes/intelligent-ui/surface.opened')).toBe(true)
     expect(EXT_EVENT_PATTERN.test('x/agnes/intelligent-ui/action.pending-approval')).toBe(true)
     for (const type of [
