@@ -5,6 +5,9 @@ const output = resolve(process.env.AGH_WEB_TEST_OUTPUT ?? '.agnes-tmp/e2e-web')
 export default defineConfig({
   testDir: '.',
   testMatch: [
+    'human-controls.spec.ts',
+    'references.spec.ts',
+    'intelligent-ui.spec.ts',
     'feedback.spec.ts',
     'large-upload.spec.ts',
     'auto-review.spec.ts',

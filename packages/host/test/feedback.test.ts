@@ -60,11 +60,13 @@ it('persists feedback revisions and withdrawal in the ledger, restores them, and
   ])
   let candidate: AuthoringCandidate | undefined
   const candidates = new Map<string, AuthoringCandidate>()
+  let failLink = false, drafts = 0
   const ports: FeedbackPorts = {
     sessions: async () => ({ ids: ['s'], truncated: false }),
     scan: (_id, types) => log.scan({ type: [...types], order: 'asc', limit: 100 }),
-    append: async (_id, type, data, author) =>
-      (
+    append: async (_id, type, data, author) => {
+      if (type === FEEDBACK_GROWTH_EVENT && failLink) throw new Error('ledger link interrupted')
+      return (
         await log.append([
           {
             type,
@@ -76,13 +78,16 @@ it('persists feedback revisions and withdrawal in the ledger, restores them, and
             lane: 'main',
           },
         ])
-      ).firstSeq,
+      ).firstSeq
+    },
     now: () => '2026-10-09T00:00:00Z',
     id: (() => {
       let id = 0
       return () => `feedback-${++id}`
     })(),
+    recoverCandidate: async (id, item) => [...candidates.values()].find((value) => value.origin.sessionKey === id && value.origin.feedbackId === item.id && value.origin.feedbackRevision === item.revision) ?? null,
     draft: async (_id, item, evidence) => {
+      drafts++
       expect(evidence.map((e) => e.seq)).toEqual([1, 2, 3, 4])
       return feedbackSkillFiles(
         {
@@ -197,6 +202,12 @@ it('persists feedback revisions and withdrawal in the ledger, restores them, and
   ] as const) {
     await expect(service.execute(request, author, signal)).rejects.toMatchObject({ data: { reason } })
   }
+  failLink = true
+  await expect(service.execute({ action: 'generate', sessionId: 's', id: 'feedback-1', expectedRevision: 5 }, actor, signal)).rejects.toThrow('ledger link interrupted')
+  expect(candidates.size).toBe(1)
+  expect(drafts).toBe(1)
+  service = createFeedbackService(ports)
+  failLink = false
   const generated = await service.execute(
     { action: 'generate', sessionId: 's', id: 'feedback-1', expectedRevision: 5 },
     actor,
@@ -212,6 +223,8 @@ it('persists feedback revisions and withdrawal in the ledger, restores them, and
     version: null,
   })
   expect(candidate?.state).toBe('draft')
+  expect(candidates.size).toBe(1)
+  expect(drafts).toBe(1)
   await service.execute(
     { action: 'generate', sessionId: 's', id: 'feedback-1', expectedRevision: 5 },
     actor,

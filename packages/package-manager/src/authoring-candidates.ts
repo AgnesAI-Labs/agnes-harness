@@ -34,6 +34,7 @@ export type AuthoringTestRunner = (
   files: readonly AuthoringFile[],
   signal: AbortSignal,
 ) => Promise<Omit<AuthoringTests, 'hash' | 'completedAt'>>
+const commandCandidateId = (key: string) => 'candidate-' + authoringHash(key).slice(7, 39)
 export class AuthoringCandidates {
   private readonly publications = new Set<string>()
   private readonly tails = new Map<string, Promise<unknown>>()
@@ -163,6 +164,11 @@ export class AuthoringCandidates {
       authoringError('Candidate evidence is unavailable')
     return structuredClone(value)
   }
+  /** Exact server-bound command lookup, without regenerating candidate content. */
+  forCommand(profileDir: string, commandKey: string, owner: string): AuthoringCandidate | null {
+    const id = commandCandidateId(commandKey)
+    return existsSync(this.path(profileDir, id)) ? this.evidence(profileDir, id, owner) : null
+  }
   show(profileDir: string, id: string, owner: string) {
     return this.project(this.load(profileDir, id, owner), profileDir)
   }
@@ -175,7 +181,7 @@ export class AuthoringCandidates {
   ): Promise<AuthoringCandidate> {
     const checked = authoringFiles(files),
       createHash = authoringHash(jcs({ files: checked, origin }))
-    const id = 'candidate-' + authoringHash(commandKey).slice(7, 39),
+    const id = commandCandidateId(commandKey),
       file = this.path(profileDir, id)
     if (existsSync(file)) {
       const old = this.load(profileDir, id, owner)
