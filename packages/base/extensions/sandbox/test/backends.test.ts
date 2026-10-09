@@ -46,6 +46,7 @@ describe('closed-network backend compilers', () => {
     expect(confined.indexOf('--tmpfs')).toBeGreaterThan(confined.lastIndexOf('--bind'))
     const full = bwrapConfine(['true'], { ...options, fullAccess: true, allowPaths: ['/'], network: 'allow' })
     expect(full.slice(0, 4)).toEqual(['bwrap', '--bind', '/', '/'])
+    expect(full.lastIndexOf('/')).toBeLessThan(full.indexOf('--dev'))
     expect(full.indexOf('--dev')).toBeGreaterThan(full.indexOf('--bind'))
     expect(full.indexOf('--tmpfs')).toBeGreaterThan(full.indexOf('--proc'))
     expect(full).not.toContain('--unshare-net')
@@ -53,6 +54,17 @@ describe('closed-network backend compilers', () => {
       bwrapConfine(['true'], { ...options, fullAccess: true, allowPaths: ['/'], denyPaths: [] }),
     ).toThrow(/private deny floor/)
     expect(confined.slice(-3)).toEqual(['--hostile-looking-executable', '-c', 'literal $HOME; touch /x'])
+    const partitioned = bwrapConfine(['true'], {
+      ...options,
+      readPaths: ['/usr', '/work/proj'],
+      denyPaths: ['/not-mounted/future-memory', '/work/proj/.agh/secrets'],
+    })
+    expect(partitioned).not.toContain('/not-mounted/future-memory')
+    const ancestor = partitioned.indexOf('/work/proj/.agh')
+    expect(partitioned[ancestor - 1]).toBe('--bind')
+    expect(ancestor).toBeLessThan(partitioned.indexOf('--tmpfs'))
+    expect(partitioned).toEqual(expect.arrayContaining(['--tmpfs', '/work/proj/.agh/secrets']))
+    expect(partitioned.slice(partitioned.lastIndexOf('--remount-ro'), -4)).toEqual(['--remount-ro', '/'])
   })
 
   it('rejects lexical aliases, controls, NUL argv and unsafe writable kernel trees', () => {

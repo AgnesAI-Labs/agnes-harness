@@ -3245,7 +3245,7 @@ const EXTENSION_CEILING_EXCEPTIONS = new Map([
   // Reviewed gap-fill implementation; exact countLines, no spare allocation.
   ['tools-web', 1284],
   // Reviewed gap-fill implementation; exact countLines, no spare allocation.
-  ['sandbox', 841],
+  ['sandbox', 854],
   // CORDIS-C1b Task 6 adds invocation-scoped workspace hook snapshots and descendant draining.
   // 2026-09-21 AGH namespace rename, +1 approved by the user: the AGH_DIR import for the workspace
   // `.agh/hooks.json` fallback path. Context-first prompt denial and scoped memo; measured 1007.
