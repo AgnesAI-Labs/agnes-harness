@@ -1,11 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { checkManifest } from '@agnes/extension-api'
-import { validateAgainst } from '@agnes/protocol'
-import { Type } from '@sinclair/typebox'
+import { Ajv2020 } from 'ajv/dist/2020.js'
 import { describe, expect, it } from 'vitest'
+import { interactionSurfaceId } from '../../../src/interaction-surfaces.js'
 import { questionProjection } from '../src/index.js'
 import { questionSurface } from '../src/question.js'
-import { interactionSurfaceId } from '../../../src/interaction-surfaces.js'
 
 const questions = [
   { id: 'single', question: 'Pick one', options: ['A', 'B'] },
@@ -19,10 +18,10 @@ describe('surface questions', () => {
     ).toBe(true)
     const surface = questionSurface('question', questions)
     const form = surface.components[0]!
-    if (form.kind !== 'form') throw new Error('Expected form')
-    const schema = Type.Unsafe(typeof form.schema === 'boolean' ? {} : form.schema)
+    if (form.kind !== 'form' || !('schema' in form)) throw new Error('Expected form')
+    const validate = new Ajv2020({ strict: false }).compile(form.schema)
     const answers = { single: 'A', multi: ['A', 'B'], text: 'Free answer' }
-    expect(validateAgainst(schema, answers).ok).toBe(true)
+    expect(validate(answers)).toBe(true)
     for (const invalid of [
       { ...answers, single: 'C' },
       { ...answers, multi: 'A' },
@@ -31,7 +30,7 @@ describe('surface questions', () => {
       { single: 'A' },
       { ...answers, extra: 'x' },
     ])
-      expect(validateAgainst(schema, invalid).ok).toBe(false)
+      expect(validate(invalid)).toBe(false)
     expect(surface.actions[0]?.tool).toBe('ui_submit')
   })
   it('recovers late answers from authenticated action facts and ignores refusals and user prose', () => {

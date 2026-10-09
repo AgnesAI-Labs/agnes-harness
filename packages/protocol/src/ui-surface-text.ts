@@ -1,6 +1,7 @@
-import { Type } from '@sinclair/typebox'
+import { Ajv2020 } from 'ajv/dist/2020.js'
 import type { JsonValue, UiSurface } from '../gen/ts/intelligent-ui.js'
-import { validateAgainst } from './validate.js'
+
+const ajv = new Ajv2020({ strict: false, validateFormats: false, addUsedSchema: false, ownProperties: true })
 
 const object = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value)
@@ -61,7 +62,6 @@ export function surfaceText(surface: UiSurface): string {
           for (const [index, label] of (choices(field) ?? []).entries()) lines.push(`${index + 1}. ${label}`)
         }
     } else if (component.kind === 'chart') lines.push(JSON.stringify(surface.data[component.dataKey]))
-    else if ('fallback' in component) lines.push(component.fallback)
   }
   return lines.join('\n')
 }
@@ -105,7 +105,13 @@ export function numberedSurfaceInput(
     }
     translated[key] = Array.isArray(value) ? value.map(translate) : translate(value)
   }
-  if (!validateAgainst(Type.Unsafe(simple.schema), translated).ok)
+  let valid = false
+  try {
+    valid = simple.schema.$async === undefined && ajv.compile(simple.schema)(translated) === true
+  } catch {
+    // Invalid or unresolved schemas cannot admit a terminal answer.
+  }
+  if (!valid)
     throw new Error('Choose the listed option(s), or supply free text when allowed.')
   return { actionId: simple.action.id, input: { [simple.form.id]: translated }, selection: {} }
 }
