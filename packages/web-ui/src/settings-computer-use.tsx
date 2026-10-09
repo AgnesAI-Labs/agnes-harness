@@ -1,3 +1,4 @@
+import { SettingsCard, SettingsPage, SettingsToolbar } from './settings-layout.js'
 import { computerUseUiCatalog } from './locales/computer-use.js'
 import { Button } from './ui/button.js'
 import { useUiText } from './ui-locale.js'
@@ -47,17 +48,11 @@ export function SettingsComputerUse({
     return value && value !== key ? value : t(key)
   }
   return (
-    <section
-      id="computer-use-settings-pane"
-      className="settings-content"
-      data-agnes-region="settings-pane"
-      hidden
-    >
-      <header className="config-heading">
-        <div>
-          <h2>{label('computerUse.title')}</h2>
-          <p>{label('computerUse.intro')}</p>
-        </div>
+    <SettingsPage
+      title={label('computerUse.title')}
+      description={label('computerUse.intro')}
+      bodyClassName="config-workspace"
+      actions={
         <Button
           id="computer-use-refresh"
           className="secondary-button compact"
@@ -67,104 +62,107 @@ export function SettingsComputerUse({
         >
           {label('computerUse.action.refresh')}
         </Button>
-      </header>
-      <div className="config-workspace">
-        <section className="config-card" aria-labelledby="computer-use-state">
-          <p className="eyebrow">{label('computerUse.status.eyebrow')}</p>
-          <strong id="computer-use-state" role="status">
-            {view.status.label}
-          </strong>
-          <p id="computer-use-summary">{view.status.summary}</p>
-          <p id="computer-use-runtime">{view.status.runtime}</p>
-          <ul id="computer-use-blockers">
-            {view.status.blockers.map((text) => (
-              <li key={text}>{text}</li>
-            ))}
-          </ul>
-        </section>
-        <section className="config-card" aria-labelledby="computer-use-permission-state">
-          <p className="eyebrow">{label('computerUse.permissions.eyebrow')}</p>
-          <strong id="computer-use-permission-state">{view.permissions.label}</strong>
-          <p id="computer-use-permission-summary">{view.permissions.summary}</p>
+      }
+      id="computer-use-settings-pane"
+      className="settings-content"
+      data-agnes-region="settings-pane"
+      hidden
+    >
+      <SettingsCard aria-labelledby="computer-use-state">
+        <p className="eyebrow">{label('computerUse.status.eyebrow')}</p>
+        <strong id="computer-use-state" role="status">
+          {view.status.label}
+        </strong>
+        <p id="computer-use-summary">{view.status.summary}</p>
+        <p id="computer-use-runtime">{view.status.runtime}</p>
+        <ul id="computer-use-blockers">
+          {view.status.blockers.map((text) => (
+            <li key={text}>{text}</li>
+          ))}
+        </ul>
+      </SettingsCard>
+      <SettingsCard aria-labelledby="computer-use-permission-state">
+        <p className="eyebrow">{label('computerUse.permissions.eyebrow')}</p>
+        <strong id="computer-use-permission-state">{view.permissions.label}</strong>
+        <p id="computer-use-permission-summary">{view.permissions.summary}</p>
+        <Button
+          id="computer-use-permission-grant"
+          className="primary-button compact"
+          htmlType="button"
+          hidden={view.permissions.grantHidden}
+          disabled={view.controls.grantDisabled}
+          onClick={() => void actions.grantPermissions()}
+        >
+          {label('computerUse.permissions.grant')}
+        </Button>
+      </SettingsCard>
+      <SettingsCard aria-labelledby="computer-use-doctor-state">
+        <p className="eyebrow">{label('computerUse.doctor.eyebrow')}</p>
+        <strong id="computer-use-doctor-state">{view.doctor.label}</strong>
+        <p id="computer-use-doctor-summary">{view.doctor.summary}</p>
+        <Button
+          id="computer-use-doctor-run"
+          className="secondary-button compact"
+          htmlType="button"
+          disabled={view.controls.doctorDisabled}
+          onClick={() => void actions.doctor()}
+        >
+          {label('computerUse.doctor.run')}
+        </Button>
+      </SettingsCard>
+      <SettingsCard aria-labelledby="computer-use-operation-state">
+        <p className="eyebrow">{label('computerUse.operation.eyebrow')}</p>
+        <strong id="computer-use-operation-state">{view.operation.label}</strong>
+        <p id="computer-use-operation-summary">{view.operation.summary}</p>
+        <SettingsToolbar className="config-actions">
           <Button
-            id="computer-use-permission-grant"
-            className="primary-button compact"
-            htmlType="button"
-            hidden={view.permissions.grantHidden}
-            disabled={view.controls.grantDisabled}
-            onClick={() => void actions.grantPermissions()}
-          >
-            {label('computerUse.permissions.grant')}
-          </Button>
-        </section>
-        <section className="config-card" aria-labelledby="computer-use-doctor-state">
-          <p className="eyebrow">{label('computerUse.doctor.eyebrow')}</p>
-          <strong id="computer-use-doctor-state">{view.doctor.label}</strong>
-          <p id="computer-use-doctor-summary">{view.doctor.summary}</p>
-          <Button
-            id="computer-use-doctor-run"
+            id="computer-use-install"
             className="secondary-button compact"
             htmlType="button"
-            disabled={view.controls.doctorDisabled}
-            onClick={() => void actions.doctor()}
+            disabled={view.controls.installDisabled}
+            onClick={() => void actions.install()}
           >
-            {label('computerUse.doctor.run')}
+            {label('computerUse.action.install')}
           </Button>
-        </section>
-        <section className="config-card" aria-labelledby="computer-use-operation-state">
-          <p className="eyebrow">{label('computerUse.operation.eyebrow')}</p>
-          <strong id="computer-use-operation-state">{view.operation.label}</strong>
-          <p id="computer-use-operation-summary">{view.operation.summary}</p>
-          <div className="config-actions">
-            <Button
-              id="computer-use-install"
-              className="secondary-button compact"
-              htmlType="button"
-              disabled={view.controls.installDisabled}
-              onClick={() => void actions.install()}
-            >
-              {label('computerUse.action.install')}
-            </Button>
-            <Button
-              id="computer-use-update"
-              className="secondary-button compact"
-              htmlType="button"
-              disabled={view.controls.updateDisabled}
-              onClick={() => void actions.update()}
-            >
-              {label('computerUse.action.update')}
-            </Button>
-            <Button
-              id="computer-use-restart"
-              className="secondary-button compact"
-              htmlType="button"
-              disabled={view.controls.restartDisabled}
-              onClick={() => void actions.restart()}
-            >
-              {label('computerUse.action.restart')}
-            </Button>
-            <Button
-              id="computer-use-operation-refresh"
-              className="secondary-button compact"
-              htmlType="button"
-              disabled={view.controls.operationRefreshDisabled}
-              onClick={() => void actions.refreshOperation()}
-            >
-              {label('computerUse.action.operationRefresh')}
-            </Button>
-            <Button
-              id="computer-use-operation-cancel"
-              className="secondary-button compact"
-              htmlType="button"
-              hidden={view.controls.cancelHidden}
-              disabled={view.controls.cancelDisabled}
-              onClick={() => void actions.cancelOperation()}
-            >
-              {label('computerUse.action.cancel')}
-            </Button>
-          </div>
-        </section>
-      </div>
-    </section>
+          <Button
+            id="computer-use-update"
+            className="secondary-button compact"
+            htmlType="button"
+            disabled={view.controls.updateDisabled}
+            onClick={() => void actions.update()}
+          >
+            {label('computerUse.action.update')}
+          </Button>
+          <Button
+            id="computer-use-restart"
+            className="secondary-button compact"
+            htmlType="button"
+            disabled={view.controls.restartDisabled}
+            onClick={() => void actions.restart()}
+          >
+            {label('computerUse.action.restart')}
+          </Button>
+          <Button
+            id="computer-use-operation-refresh"
+            className="secondary-button compact"
+            htmlType="button"
+            disabled={view.controls.operationRefreshDisabled}
+            onClick={() => void actions.refreshOperation()}
+          >
+            {label('computerUse.action.operationRefresh')}
+          </Button>
+          <Button
+            id="computer-use-operation-cancel"
+            className="secondary-button compact"
+            htmlType="button"
+            hidden={view.controls.cancelHidden}
+            disabled={view.controls.cancelDisabled}
+            onClick={() => void actions.cancelOperation()}
+          >
+            {label('computerUse.action.cancel')}
+          </Button>
+        </SettingsToolbar>
+      </SettingsCard>
+    </SettingsPage>
   )
 }

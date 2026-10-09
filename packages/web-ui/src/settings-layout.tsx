@@ -12,23 +12,27 @@ export function SettingsPage({
   title,
   description,
   actions,
+  headingId,
+  bodyClassName,
   children,
   ...props
 }: Omit<HTMLAttributes<HTMLElement>, 'title'> & {
   title: ReactNode
   description?: ReactNode
   actions?: ReactNode
+  headingId?: string
+  bodyClassName?: string
 }) {
   return (
     <section {...props} className={['agnes-settings-page', props.className].filter(Boolean).join(' ')}>
       <header className="config-heading agnes-settings-page-heading">
         <div>
-          <h2>{title}</h2>
+          <h2 id={headingId}>{title}</h2>
           {description && <p>{description}</p>}
         </div>
         {actions && <div className="agnes-settings-actions">{actions}</div>}
       </header>
-      <div className="agnes-settings-stack">{children}</div>
+      <div className={['agnes-settings-stack', bodyClassName].filter(Boolean).join(' ')}>{children}</div>
     </section>
   )
 }

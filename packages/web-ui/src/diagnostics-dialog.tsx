@@ -1,3 +1,5 @@
+import { Button } from './ui/button.js'
+import { SettingsCheckbox, SettingsState } from './settings-layout.js'
 import type { JSX } from 'react'
 
 export type DiagnosticsStep = 'menu' | 'share' | 'ready' | 'saved'
@@ -53,58 +55,49 @@ export function DiagnosticsDialogView({
           {label('diagnostics.redaction', 'Secrets are redacted before sharing.')}
         </p>
         <div className="dialog-actions">
-          <button className="secondary-button" type="button" data-action="cancel" onClick={actions.close}>
+          <Button className="secondary-button" htmlType="button" data-action="cancel" onClick={actions.close}>
             {label('diagnostics.cancel', 'Cancel')}
-          </button>
-          <button className="primary-button" type="button" data-action="share" onClick={actions.share}>
+          </Button>
+          <Button className="primary-button" htmlType="button" data-action="share" onClick={actions.share}>
             {label('diagnostics.share', 'Share diagnostics')}
-          </button>
+          </Button>
         </div>
       </section>
       <section data-step="share" hidden={step !== 'share'}>
         <fieldset className="diagnostics-include" aria-labelledby="diagnostics-heading">
-          <label>
-            <input
-              type="checkbox"
-              name="conversation"
-              checked={include.conversation}
-              disabled={!snapshot.hasSession}
-              onChange={(event) => actions.setInclude('conversation', event.currentTarget.checked)}
-            />{' '}
-            {label('diagnostics.include.conversation', 'Conversation and trace')}
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="logs"
-              checked={include.logs}
-              onChange={(event) => actions.setInclude('logs', event.currentTarget.checked)}
-            />{' '}
-            {label('diagnostics.include.logs', 'Logs')}
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              name="system"
-              checked={include.system}
-              onChange={(event) => actions.setInclude('system', event.currentTarget.checked)}
-            />{' '}
-            {label('diagnostics.include.system', 'System information')}
-          </label>
+          <SettingsCheckbox
+            name="conversation"
+            checked={include.conversation}
+            disabled={!snapshot.hasSession}
+            onChange={(event) => actions.setInclude('conversation', event.currentTarget.checked)}
+            label={label('diagnostics.include.conversation', 'Conversation and trace')}
+          />
+          <SettingsCheckbox
+            name="logs"
+            checked={include.logs}
+            onChange={(event) => actions.setInclude('logs', event.currentTarget.checked)}
+            label={label('diagnostics.include.logs', 'Logs')}
+          />
+          <SettingsCheckbox
+            name="system"
+            checked={include.system}
+            onChange={(event) => actions.setInclude('system', event.currentTarget.checked)}
+            label={label('diagnostics.include.system', 'System information')}
+          />
         </fieldset>
         <div className="dialog-actions">
-          <button
+          <Button
             className="secondary-button"
-            type="button"
+            htmlType="button"
             data-back="menu"
             disabled={snapshot.generating}
             onClick={() => actions.back('menu')}
           >
             {label('diagnostics.back', 'Back')}
-          </button>
-          <button
+          </Button>
+          <Button
             className="primary-button"
-            type="button"
+            htmlType="button"
             data-action="generate"
             disabled={snapshot.generating}
             onClick={actions.generate}
@@ -112,7 +105,7 @@ export function DiagnosticsDialogView({
             {snapshot.generating
               ? label('diagnostics.generating', 'Generating…')
               : label('diagnostics.generate', 'Generate package')}
-          </button>
+          </Button>
         </div>
       </section>
       <section data-step="ready" hidden={step !== 'ready'}>
@@ -126,23 +119,23 @@ export function DiagnosticsDialogView({
           )}
         </p>
         <div className="dialog-actions">
-          <button
+          <Button
             className="secondary-button"
-            type="button"
+            htmlType="button"
             data-back="share"
             onClick={() => actions.back('share')}
           >
             {label('diagnostics.back', 'Back')}
-          </button>
-          <button
+          </Button>
+          <Button
             className="primary-button"
-            type="button"
+            htmlType="button"
             data-action="save"
             disabled={snapshot.saving}
             onClick={actions.save}
           >
             {label('diagnostics.save', 'Save ZIP')}
-          </button>
+          </Button>
         </div>
       </section>
       <section data-step="saved" hidden={step !== 'saved'}>
@@ -156,14 +149,14 @@ export function DiagnosticsDialogView({
           {snapshot.savedName}
         </p>
         <div className="dialog-actions">
-          <button className="primary-button" type="button" data-action="close" onClick={actions.close}>
+          <Button className="primary-button" htmlType="button" data-action="close" onClick={actions.close}>
             {label('diagnostics.close', 'Close')}
-          </button>
+          </Button>
         </div>
       </section>
-      <p className="dialog-error" role="alert">
+      <SettingsState hidden={!snapshot.error} className="dialog-error" tone="error" role="alert">
         {snapshot.error}
-      </p>
+      </SettingsState>
     </div>
   )
 }

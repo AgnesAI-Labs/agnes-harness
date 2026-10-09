@@ -1,4 +1,6 @@
 import type { ConfigAccount, ConfigAccountInput } from '@agnes/protocol'
+import { Button } from './ui/button.js'
+import { Badge } from './ui/badge.js'
 import { fallbackT, type Translate } from './locales/index.js'
 
 export type SettingsAccountsProps = {
@@ -50,56 +52,52 @@ export function SettingsAccounts({
         data-selected={account.accountId === editingId}
         data-status={accountStatus(account)}
       >
-        <button
-          type="button"
+        <Button
+          htmlType="button"
           className="config-account-select"
           aria-pressed={account.accountId === editingId}
           disabled={disabled}
           onClick={() => onEdit(account.accountId)}
         >
           {account.label}
-        </button>
+        </Button>
         <span className="config-account-meta">
           <span>
             {account.providerId} · {account.model}
           </span>
-          <span className="config-account-status" data-tone={account.enabled ? 'success' : 'neutral'}>
+          <Badge className="config-account-status" tone={account.enabled ? 'ok' : 'off'}>
             {account.enabled ? t('accounts.enabled') : t('accounts.disabled')}
-          </span>
-          {isDefault && (
-            <span className="config-account-status" data-tone="brand">
-              {t('accounts.defaultBadge')}
-            </span>
-          )}
+          </Badge>
+          {isDefault && <Badge className="config-account-status">{t('accounts.defaultBadge')}</Badge>}
         </span>
         <div className="config-account-actions">
-          <button
-            type="button"
+          <Button
+            htmlType="button"
             aria-label={t('accounts.editAria', { label: account.label })}
             disabled={disabled}
             onClick={() => onEdit(account.accountId)}
           >
             {t('accounts.edit')}
-          </button>
+          </Button>
           {actions.map(([action, label]) => {
             if (action === 'default' && (!account.enabled || isDefault)) return null
             if ((action === 'disable' || action === 'remove') && isDefault && canTransferDefault) return null
             return (
-              <button
+              <Button
                 key={action}
-                type="button"
+                htmlType="button"
                 aria-label={`${label} ${account.label}`}
                 disabled={disabled}
                 onClick={() => onAction(account, action)}
               >
                 {label}
-              </button>
+              </Button>
             )
           })}
           {removingId === account.accountId && (
-            <button type="button" disabled={disabled} onClick={onCancelRemove}>
+            <Button htmlType="button" disabled={disabled} onClick={onCancelRemove}>
               {t('accounts.cancelRemove')}
-            </button>
+            </Button>
           )}
         </div>
       </div>

@@ -9,10 +9,18 @@ const colors: Record<StateTone, string> = {
   unknown: 'var(--agnes-text-secondary)',
 }
 /** Text remains the state indicator; semantic colors are supplementary and theme-owned. */
-export function Badge({ children, tone = 'off' }: { children: ReactNode; tone?: StateTone }) {
+export function Badge({
+  children,
+  tone = 'off',
+  className,
+}: {
+  children: ReactNode
+  tone?: StateTone
+  className?: string
+}) {
   return (
     <span
-      className="agnes-ui-badge"
+      className={['agnes-ui-badge', className].filter(Boolean).join(' ')}
       data-tone={tone}
       style={{
         display: 'inline-flex',

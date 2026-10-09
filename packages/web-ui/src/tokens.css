@@ -823,3 +823,33 @@ button {
 #resource-detail .plugin-detail-heading {
   align-items: flex-start;
 }
+
+/* Native settings panes share the hub header while retaining their scroll body. */
+#model-settings-pane > .agnes-settings-page-heading,
+#computer-use-settings-pane > .agnes-settings-page-heading {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: var(--s20) var(--s24) var(--s12);
+  padding-inline-end: calc(var(--s24) + var(--s32));
+  border-bottom: 1px solid var(--agnes-line-primary);
+}
+.config-accounts-section.agnes-settings-card {
+  padding: 0;
+}
+.config-account .agnes-ui-button.config-account-select {
+  height: auto;
+  min-height: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  #model-settings-pane > .agnes-settings-page-heading,
+  #computer-use-settings-pane > .agnes-settings-page-heading {
+    padding-inline-start: var(--s16);
+  }
+}
