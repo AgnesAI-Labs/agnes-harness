@@ -259,7 +259,7 @@ export class SessionControls {
       const op = this.s.op()
       return this.s.d.log.append(
         [
-          inboxEvent(this.s.lane, actor, { items: inbox.items.filter((item) => item.kind !== 'steer') }),
+          inboxEvent(this.s.lane, actor, { items: inbox.items.filter((item) => item.kind !== 'steer').map((item) => item.target === 'next-step' ? { ...item, target: 'next-turn' as const } : item) }),
           this.s.ev(PAUSE, { paused: false }, { actor, origin: 'principal', ignorable: true }),
           this.fact(action, 'requested', actor, { admissionId, returned }),
           ...(!op ? [this.fact(action, 'applied', actor, { admissionId })] : []),

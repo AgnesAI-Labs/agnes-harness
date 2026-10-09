@@ -178,3 +178,5 @@ Fact-chain 与 trace 展示 surface id/revision 和归属、received 命令/acto
 公开 Host author testkit 为本试点提供 `AuthorSession.uiAction()`／`uiRead()`；`AuthorTestOptions.packageDirs`、`presets`、`preset` 显式指定隔离夹具的官方 manifest 和业务策略预设，不读取开发者 home 或凭证。
 
 后台与渲染器复用 `@agnes/protocol/intelligent-ui` 的 surface 验证，包含表格列和图表展示语义。默认读取开放视图；按 `surfaceId` 读取仍可获得关闭后的账本证据。关闭视图不占投影容量，也不允许复用 ID。
+
+读取 cursor 经过签名，60 秒过期，并绑定水位、筛选与页大小。后续页按该水位重放，不重复首页面的有界回执。后台结果 follow-up 在 cancel 后保留为 next-turn 输入；delivery 确认持久入队，队列 claim 才消费输入。

@@ -197,7 +197,11 @@ export class IntelligentUiClient {
           )
             throw new Error('UI evidence gap')
           surfaces.push(...page.surfaces)
-          receipts.push(...page.actions)
+          for (const receipt of page.actions) {
+            const previous = receipts.find((item) => item.commandId === receipt.commandId)
+            if (previous && JSON.stringify(previous) !== JSON.stringify(receipt)) throw new Error('UI receipt changed within snapshot')
+            if (!previous) receipts.push(receipt)
+          }
           if (
             !boundedUiJson(
               { surfaces, receipts },

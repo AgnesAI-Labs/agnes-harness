@@ -425,6 +425,25 @@ describe('preset surface contract and ledger lifecycle', () => {
     f.clock(161000)
     expect(await f.service().action(request('limit'), actor, signal)).toMatchObject({ status: 'received' })
   })
+  it('binds cursor pages to a snapshot, filters and expiry without repeating receipts', async () => {
+    const f = await opened()
+    const second = surface(); second.id = 'second'
+    await f.service().render({ surface: second }, signal)
+    await f.service().action(request(), actor, signal)
+    const first = await f.service().read({ sessionId: 'session', limit: 1 }, signal)
+    expect(first.nextCursor).toBeDefined()
+    expect(first.actions).toHaveLength(1)
+    const updated = surface(); updated.id = 'second'; updated.revision = 2
+    await f.service().update({ surfaceId: 'second', expectedRevision: 1, surface: updated }, signal)
+    const next = await f.service().read({ sessionId: 'session', limit: 1, cursor: first.nextCursor }, signal)
+    expect(next.lastSeq).toBe(first.lastSeq)
+    expect(next.surfaces[0]?.surface.revision).toBe(1)
+    expect(next.actions).toEqual([])
+    for (const params of [{ surfaceId: 'second' }, { limit: 2 }, { cursor: first.nextCursor + 'x' }])
+      await expect(f.service().read({ sessionId: 'session', limit: 1, cursor: first.nextCursor, ...params }, signal)).rejects.toMatchObject({ data: { code: 'INVALID_PARAMS' } })
+    f.clock(161000)
+    await expect(f.service().read({ sessionId: 'session', limit: 1, cursor: first.nextCursor }, signal)).rejects.toMatchObject({ data: { code: 'INVALID_PARAMS' } })
+  })
   it('releases closed view capacity while preserving historical identity after restart', async () => {
     const f = fixture()
     for (let i = 0; i < 20; i++) {

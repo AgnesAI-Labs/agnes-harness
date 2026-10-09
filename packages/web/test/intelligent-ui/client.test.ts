@@ -184,7 +184,7 @@ describe('Intelligent UI session projection and commands', () => {
   it('buffers live events while reading consistent snapshot pages, then reads current facts', async () => {
     const server = new FakeServer()
     server.readOverride = async (params) => {
-      if (params.cursor) return { ...uiPage(financeRecord(), [], 10), surfaces: [] }
+      if (params.cursor) return { ...uiPage(financeRecord(), [uiReceipt('received', { seq: 9 })], 10), surfaces: [] }
       if (!server.attached) {
         server.onEvent?.({ seq: 11, type: 'x/agnes/intelligent-ui/surface.updated' })
         return { ...uiPage(financeRecord(), [], 10), nextCursor: 'page-2' }

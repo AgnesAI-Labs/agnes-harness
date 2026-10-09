@@ -36,7 +36,7 @@ export async function enqueueSessionInputOnce(
     content: [{ type: 'text', text }],
     actor,
     commandId: key,
-    kind: target === 'next-step' ? 'steer' : 'follow_up',
+    kind: 'follow_up',
     trust: 'untrusted',
   })
 }

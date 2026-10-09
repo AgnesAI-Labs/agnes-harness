@@ -178,3 +178,5 @@ The finance Loop version 4 / codec 4 drains the same generic contract and consum
 The public Host author testkit exposes `AuthorSession.uiAction()` and `uiRead()` for this pilot. `AuthorTestOptions.packageDirs`, `presets` and `preset` explicitly supply isolated official manifests and the business policy preset; they never load the developer home or credentials.
 
 The backend and renderer share `@agnes/protocol/intelligent-ui` surface validation, including table columns and chart display semantics. Default reads return open views; `surfaceId` reads retain closed ledger evidence. Closed views do not consume projection capacity or permit ID reuse.
+
+Read cursors are authenticated, expire after 60 seconds and bind the watermark, filters and page size. Later pages replay that watermark and omit the first page’s bounded receipts. Backend result follow-ups survive cancel as next-turn inputs; delivery acknowledges durable enqueue, while queue claim consumes the input.
