@@ -241,6 +241,12 @@ function invocationView(source: WorkspaceInvocationSource, scope: InvocationScop
           authorizeWrite: (path: string) => scope.track(() => source.fs.authorizeWrite!(path)),
         }
       : {}),
+    ...(source.fs.authorizeRemove
+      ? { authorizeRemove: (path: string, opts?: { recursive?: boolean }) => scope.track(() => source.fs.authorizeRemove!(path, opts)) }
+      : {}),
+    ...(source.fs.rm
+      ? { rm: (path: string, opts?: { recursive?: boolean }) => scope.track(() => source.fs.rm!(path, opts)) }
+      : {}),
     ...(source.fs.preflight
       ? {
           preflight: (path: string, mode: 'read' | 'write') =>

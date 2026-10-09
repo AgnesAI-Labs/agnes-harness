@@ -25,6 +25,8 @@ const SHA = /^[a-f0-9]{64}$/u
 const MIME = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/iu
 type Fs = {
   authorizeWrite?(path: string): Promise<void>
+  authorizeRemove?(path: string, opts?: { recursive?: boolean }): Promise<void>
+  rm?(path: string, opts?: { recursive?: boolean }): Promise<void>
   write(path: string, bytes: Uint8Array): Promise<void>
   stat(path: string): Promise<unknown>
   list(path: string): Promise<{ name: string }[]>
@@ -151,7 +153,7 @@ export class FileUploadStore {
           this.uploads.set(input.uploadId, upload)
           return { offset: 0 }
         } catch (error) {
-          await this.remove(upload)
+          await this.cleanupTemporary(upload)
           throw error
         }
       })()
@@ -166,25 +168,11 @@ export class FileUploadStore {
     const upload = this.uploads.get(input.uploadId)
     if (!upload) {
       if (input.operation === 'cancel') {
+        await this.cancelFiles(input.uploadId, root, fs)
         this.cancelled.set(input.uploadId, Date.now())
-        // Completed receipts outlive the in-memory retry cache. Removal still addresses only
-        // this session's generated receipt directory, never a filename supplied by the client.
-        const directory = join(root, '.agnes-attachments', hash(Buffer.from(this.sessionId)))
-        for (const path of [join(directory, `.partial-${input.uploadId}`), join(directory, input.uploadId)]) {
-          try {
-            await this.safe(path, root, fs)
-            await canonicalFs('rm', path, true)
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-          }
-        }
         return {}
       }
       return fail('UPLOAD_NOT_FOUND')
-    }
-    if (input.operation === 'cancel') {
-      upload.cancelled = true
-      this.cancelled.set(input.uploadId, Date.now())
     }
     const writes = input.operation === 'chunk' || input.operation === 'finish'
     if (writes && upload.busy) return fail('UPLOAD_BUSY')
@@ -192,11 +180,14 @@ export class FileUploadStore {
     const work = upload.tail
       .catch(() => undefined)
       .then(async () => {
-        upload.touched = Date.now()
         if (input.operation === 'cancel') {
-          await this.remove(upload)
+          await this.cancelFiles(input.uploadId, root, fs)
+          upload.cancelled = true
+          this.cancelled.set(input.uploadId, Date.now())
+          this.uploads.delete(input.uploadId)
           return {}
         }
+        upload.touched = Date.now()
         if (upload.cancelled) return fail('UPLOAD_CANCELLED')
         if (input.operation === 'status')
           return { offset: upload.offset, ...(upload.attachment ? { attachment: upload.attachment } : {}) }
@@ -330,7 +321,7 @@ export class FileUploadStore {
             ['UPLOAD_UNAVAILABLE', 'UPLOAD_INCOMPLETE'].includes(error.code)
           ) {
             await file?.close().catch(() => undefined)
-            await this.remove(upload)
+            await this.cleanupTemporary(upload)
           }
           throw error
         } finally {
@@ -381,7 +372,27 @@ export class FileUploadStore {
     }
     if ((await realpath(path)) !== path) return fail('UPLOAD_PATH_DENIED')
   }
-  private async remove(upload: Upload): Promise<void> {
+  /** Caller cancellation never borrows the maintenance cleanup authority. */
+  private async cancelFiles(id: string, root: string, fs: Fs): Promise<void> {
+    if (!fs.authorizeRemove || !fs.rm) return fail('UPLOAD_WORKSPACE_DENIED')
+    const directory = join(root, '.agnes-attachments', hash(Buffer.from(this.sessionId)))
+    const paths = [
+      { path: join(directory, `.partial-${id}`), recursive: false },
+      { path: join(directory, id), recursive: true },
+    ]
+    // Check every target (including absent leaves) before deleting bytes or recording cancellation.
+    for (const { path, recursive } of paths) await fs.authorizeRemove(path, { recursive })
+    for (const { path, recursive } of paths) {
+      try {
+        await this.safe(path, root, fs)
+        await fs.rm(path, { recursive })
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+    }
+  }
+  /** Session-owned interrupted intake only; never invoked by caller cancellation. */
+  private async cleanupTemporary(upload: Upload): Promise<void> {
     await canonicalFs('rm', upload.path).catch((error) => {
       if (error.code !== 'ENOENT') throw error
     })
@@ -399,7 +410,7 @@ export class FileUploadStore {
       else if (!upload.attachment && Date.now() - upload.touched > 30 * 60_000) {
         upload.cancelled = true
         await upload.tail.catch(() => undefined)
-        await this.remove(upload)
+        await this.cleanupTemporary(upload)
       }
     }
   }
@@ -411,7 +422,7 @@ export class FileUploadStore {
       if (upload.attachment) continue
       upload.cancelled = true
       await upload.tail.catch(() => undefined)
-      await this.remove(upload)
+      await this.cleanupTemporary(upload)
     }
   }
 }

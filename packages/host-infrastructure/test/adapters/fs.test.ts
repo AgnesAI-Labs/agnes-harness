@@ -65,6 +65,8 @@ describe('fs adapter', () => {
         await expect(f.write('existing.txt', new TextEncoder().encode('changed'))).rejects.toMatchObject({
           code: 'E_FS_DENIED',
         })
+        await expect(f.authorizeRemove!('existing.txt')).rejects.toMatchObject({ code: 'E_FS_DENIED' })
+        await expect(f.rm('existing.txt')).rejects.toMatchObject({ code: 'E_FS_DENIED' })
         await expect(f.mkdir('new')).rejects.toMatchObject({ code: 'E_FS_DENIED' })
       },
     )

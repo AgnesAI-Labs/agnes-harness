@@ -29,6 +29,8 @@ export type FsBinding = { policy: FsPolicy; caseSensitive: boolean; readOnly?: b
 export type FencedFs = HostFs & {
   /** Check current write policy without truncating or allocating file bytes. */
   authorizeWrite?(path: string): Promise<void>
+  /** Check the same target, parent and descendant policy enforced by rm. */
+  authorizeRemove?(path: string, opts?: { recursive?: boolean }): Promise<void>
   preflight(path: string, mode: 'read' | 'write'): Promise<void>
   resolveInside(path: string): Promise<string>
   /** Symlink resolution only - no policy decision. What the sandbox seam's compiler and session open ask for. */
@@ -214,9 +216,30 @@ export function createFs(
     return (await authorize(p)).real
   }
 
+  async function authorizeRemoval(p: string, opts: { recursive?: boolean } = {}): Promise<string> {
+    // Removing is answered twice: the target, and the resolved parent it is removed from. A
+    // policy that allows a leaf but not its directory is not a licence to unlink there.
+    const { real } = await authorize(p, 'remove')
+    const { policy, caseSensitive } = binding()
+    if (
+      opts.recursive &&
+      policy.rules.some(
+        (rule) => rule.hard && decideFsPath(overlay(real), rule.path, { caseSensitive }).effect === 'allow',
+      )
+    )
+      refuse(p, 'contains a hard-denied descendant')
+    const parent = decideFsPath(policy, dirname(real), { caseSensitive })
+    if (parent.effect !== 'allow' && !(parent.reason === 'no-match' && sessionHasFullFileAccess(fs)))
+      refuse(p, 'is denied by policy at its parent')
+    return real
+  }
+
   const fs: FencedFs = {
     async authorizeWrite(path) {
       await authorize(path, 'write')
+    },
+    async authorizeRemove(path, opts) {
+      await authorizeRemoval(path, opts)
     },
     async preflight(path, mode) {
       if (mode === 'read') await authorizeRead(path)
@@ -283,20 +306,7 @@ export function createFs(
       await io.mkdir(real)
     },
     async rm(p, opts = {}) {
-      // Removing is answered twice: the target, and the resolved parent it is removed from. A
-      // policy that allows a leaf but not its directory is not a licence to unlink there.
-      const { real } = await authorize(p, 'remove')
-      const { policy, caseSensitive } = binding()
-      if (
-        opts.recursive &&
-        policy.rules.some(
-          (rule) => rule.hard && decideFsPath(overlay(real), rule.path, { caseSensitive }).effect === 'allow',
-        )
-      )
-        refuse(p, 'contains a hard-denied descendant')
-      const parent = decideFsPath(policy, dirname(real), { caseSensitive })
-      if (parent.effect !== 'allow' && !(parent.reason === 'no-match' && sessionHasFullFileAccess(fs)))
-        refuse(p, 'is denied by policy at its parent')
+      const real = await authorizeRemoval(p, opts)
       await io.rm(real, { recursive: opts.recursive ?? false })
     },
   }

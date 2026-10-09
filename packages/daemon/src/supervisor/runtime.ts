@@ -2172,6 +2172,12 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         },
       })
       registerDiagnostics(ep, {
+        authority: transport === 'unix'
+          ? (effectivePackageAdmin?.unixAuthority ?? localPackageAdminAuthority())
+          : (effectivePackageAdmin?.webAuthority ?? denyPackageAdminAuthority),
+        readOnly: (context) => configurationReadOnly(async () => effectivePackageAdmin?.service.call(
+          '_agnes/v1/packages.list', { profile: o.profile.name }, localPackageAdminAuthority(['packages.read'])(context),
+        )),
         requireSessionOwner: requireSessionOwner(cx),
         registry: cx.registry,
         sessionSnapshot: (key) => workspaces.metadata(key),

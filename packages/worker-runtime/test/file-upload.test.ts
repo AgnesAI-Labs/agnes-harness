@@ -18,6 +18,8 @@ async function fixture() {
   })
   const fs = {
     authorizeWrite: async (_path: string) => undefined,
+    authorizeRemove: async (_path: string) => undefined,
+    rm: (path: string, opts?: { recursive?: boolean }) => rm(path, opts),
     stat,
     write: async (path: string, bytes: Uint8Array) => {
       await mkdir(dirname(path), { recursive: true })
@@ -69,6 +71,16 @@ it('writes ordered chunks, retries a lost acknowledgement, and verifies a conten
       false,
     )
     expect(await h.request({ operation: 'finish', sha256: ref.sha256 })).toEqual(result)
+    const denied = { ...h.fs, authorizeRemove: async () => { throw new Error('read-only') } }
+    for (const store of [h.store, new FileUploadStore('session')]) {
+      try {
+        await expect(store.request({ ...h.base, operation: 'cancel' }, h.root, denied)).rejects.toThrow('read-only')
+        expect(await readFile(join(h.root, ref.path), 'utf8')).toBe('abcdefgh')
+        // Refusal must not install a cancellation tombstone.
+        if (store === h.store) expect(await h.request({ operation: 'status' })).toEqual(result)
+        else await store.request({ ...h.base, operation: 'cancel' }, h.root, h.fs)
+      } finally { if (store !== h.store) await store.close() }
+    }
     await h.request({ operation: 'cancel' })
     await expect(stat(join(h.root, ref.path))).rejects.toMatchObject({ code: 'ENOENT' })
   } finally {

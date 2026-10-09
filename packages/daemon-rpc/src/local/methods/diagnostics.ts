@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { open } from 'node:fs/promises'
 import { release } from 'node:os' // guards-allow-platform: diagnostics report
 import { join } from 'node:path'
+import { type PackageAdminAuthorityResolver, requireLocalAdminAuthority } from '@agnes/daemon-admin/packages/index'
 import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { Registry } from '@agnes/daemon-foundation/registry'
 import { memoryPrivateEvent } from '@agnes/extension-api'
@@ -89,6 +90,8 @@ async function readTail(dataDir: string | undefined, name: Log['name']): Promise
 export function registerDiagnostics(
   endpoint: LocalEndpoint,
   deps: {
+    authority: PackageAdminAuthorityResolver
+    readOnly(context: CallContext): Promise<boolean>
     requireSessionOwner: (method: string, sessionId: string, c: CallContext) => void
     registry: Pick<Registry<SessionEntry>, 'require' | 'get'>
     sessionSnapshot?: (
@@ -107,9 +110,14 @@ export function registerDiagnostics(
   },
 ): void {
   endpoint.register('_agnes/v1/admin.observability', async (params, c) => {
-    localOwner(c)
+    const input = params as AdminObservabilityParams
+    requireLocalAdminAuthority(c, deps.authority, false)
+    if (input.settings && !input.test) requireLocalAdminAuthority(c, deps.authority, true)
+    if (input.test) requireLocalAdminAuthority(c, deps.authority, true)
+    if ((input.settings || input.test) && await deps.readOnly(c))
+      throw rpcError('SEMANTIC_REJECTED', { reason: 'E_ADMIN_READ_ONLY' })
     try {
-      const result = await administerObservability(params as AdminObservabilityParams, deps.home)
+      const result = await administerObservability(input, deps.home)
       return { ...result, ...(deps.exporterHealth ? await deps.exporterHealth() : {}) }
     } catch {
       throw rpcError('INVALID_PARAMS', { reason: 'invalid observability settings' })
