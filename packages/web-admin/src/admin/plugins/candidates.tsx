@@ -145,6 +145,17 @@ export function CandidateInbox({
   const refresh = async () => {
     if (api) setItems((await api.candidatesList()).candidates)
   }
+  // Finish navigation reads before allowing another action to replace the selected review.
+  const navigate = async (read: () => Promise<void>) => {
+    setBusy(true)
+    try {
+      await read()
+    } catch {
+      setError(t('candidates.unavailable'))
+    } finally {
+      setBusy(false)
+    }
+  }
   const act = async (fn: () => Promise<AuthoringCandidate>) => {
     setBusy(true)
     try {
@@ -204,9 +215,10 @@ export function CandidateInbox({
           data-testid="candidate-refresh"
           disabled={!api || busy}
           onClick={() =>
-            void refresh()
-              .then(() => setSelected(undefined))
-              .catch(() => setError(t('candidates.unavailable')))
+            void navigate(async () => {
+              await refresh()
+              setSelected(undefined)
+            })
           }
         >
           {t('candidates.refresh')}
@@ -231,10 +243,7 @@ export function CandidateInbox({
                     disabled={busy}
                     onClick={() => {
                       if (api)
-                        void api
-                          .candidatesShow(value.candidateId)
-                          .then(setSelected)
-                          .catch(() => setError(t('candidates.unavailable')))
+                        void navigate(async () => setSelected(await api.candidatesShow(value.candidateId)))
                     }}
                   >
                     <span>
