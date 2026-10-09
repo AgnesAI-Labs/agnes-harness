@@ -90,6 +90,10 @@ for (const locale of ['en', 'zh-CN'])
       await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
       await page.getByTestId('memory-workspace').selectOption(cwd)
       await page.getByTestId('memory-open').click()
+      // Establish the editor's old revision before the external edit; a pending read may otherwise
+      // observe that edit and make the following save a valid CAS, rather than the intended conflict.
+      await expect(page.getByTestId('memory-content')).toHaveValue('Prefer concise synthetic summaries.')
+      await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
       await client.request('_agnes/v1/admin.memory', {
         cwd,
         file: 'MEMORY.md',

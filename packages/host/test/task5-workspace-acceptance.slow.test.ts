@@ -232,14 +232,14 @@ describe('Task 5 production workspace acceptance', () => {
       await expect(invocation.run((view) => view.fs().read('.git/config'))).rejects.toMatchObject({
         code: 'E_FS_DENIED',
       })
-      // The test home is the workspace, so its profiles are inside the allow rule; full access still
-      // reads them but may not rewrite them.
+      // The test home is the workspace, but its private profile remains under the Host hard floor
+      // even when full access opens ordinary files outside the workspace.
       const profileYaml = join(root, 'profiles', 'local-dev', 'profile.yaml')
       mkdirSync(join(root, 'profiles', 'local-dev'), { recursive: true })
       writeFileSync(profileYaml, 'name: local-dev\n')
-      await expect(invocation.run((view) => view.fs().read(profileYaml))).resolves.toEqual(
-        new TextEncoder().encode('name: local-dev\n'),
-      )
+      await expect(invocation.run((view) => view.fs().read(profileYaml))).rejects.toMatchObject({
+        code: 'E_FS_DENIED',
+      })
       await expect(
         invocation.run((view) => view.fs().write(profileYaml, new TextEncoder().encode('approvals: off'))),
       ).rejects.toMatchObject({ code: 'E_FS_DENIED', message: expect.stringContaining('denied by policy') })
@@ -300,7 +300,7 @@ describe('Task 5 production workspace acceptance', () => {
     }
   })
 
-  it('keeps a pinned secrets directory outside the home read-only under full access', async () => {
+  it('keeps a pinned secrets directory outside the home private under full access', async () => {
     const dataDir = tempDir()
     const root = realpathSync.native(dataDir)
     // Not <home>/secrets: only the profile's own pin names this directory.
@@ -329,9 +329,9 @@ describe('Task 5 production workspace acceptance', () => {
       const invocation = session.d.workspaceInvocation
       if (!invocation) throw new Error('test session needs a workspace invocation')
       await session.setYolo(true, session.d.actor)
-      await expect(invocation.run((view) => view.fs().read(join(secrets, 'token')))).resolves.toEqual(
-        new TextEncoder().encode('CANARY-PINNED'),
-      )
+      await expect(invocation.run((view) => view.fs().read(join(secrets, 'token')))).rejects.toMatchObject({
+        code: 'E_FS_DENIED',
+      })
       await expect(
         invocation.run((view) => view.fs().write(join(secrets, 'token'), new TextEncoder().encode('x'))),
       ).rejects.toMatchObject({ code: 'E_FS_DENIED', message: expect.stringContaining('denied by policy') })
