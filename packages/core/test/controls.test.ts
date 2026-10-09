@@ -145,7 +145,7 @@ describe('human Loop controls', () => {
   })
 
   it('pages all control facts so reload recovery cannot lose old returned steers', async () => {
-    const { session, log } = await openSession()
+    const { session, log } = await openSession({ provider: fakeProvider([textTurn('unused')]) })
     const rows = [
       session.controls.fact('cancel', 'requested', actor, { returned: [{ content: content('old draft') }] }),
       ...Array.from({ length: 205 }, () => session.controls.fact('steer', 'withdrawn', actor)),

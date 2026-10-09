@@ -1835,6 +1835,7 @@ const REVIEW_RESULT = {
 
 const AGNES_SAMPLES: Record<string, Sample> = {
   SessionControlsParams: {
+    note: 'bounded control fact cursor',
     valid: { sessionId: 's1', afterSeq: 0 },
     invalid: [
       { sessionId: 's1', afterSeq: -1 },
@@ -1842,6 +1843,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     ],
   },
   SessionControlledChild: {
+    note: 'owned child controls and observed metrics',
     valid: {
       id: 'child1',
       parentId: 's1',
