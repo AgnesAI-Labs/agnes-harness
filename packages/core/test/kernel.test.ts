@@ -158,6 +158,65 @@ describe('Kernel (I1 assembly)', () => {
     await missing.close()
   })
 
+  it.each(['new', 'resume'] as const)(
+    'releases the writer and renewal timer after memory open fails on %s',
+    async (mode) => {
+      const storage = new MemoryStorage()
+      const pending = new Map<object, () => void>()
+      const timers = {
+        setTimeout: (fn: () => void) => {
+          const handle = {}
+          pending.set(handle, fn)
+          return handle
+        },
+        clearTimeout: (handle: unknown) => {
+          pending.delete(handle as object)
+        },
+      }
+      const first = base({
+        storage,
+        provider: fakeProvider([toolTurn('read', {}), textTurn('first')]),
+        timers,
+      })
+      first.tools.add(readTool(), { source: 'agnes/tools-core', trust: 'builtin' })
+      if (mode === 'resume') {
+        const session = await first.session('memory-failure', sessionOpts)
+        await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'synthetic' }] })
+        await session.step()
+        await session.step()
+        await session.step()
+        expect(session.op()?.phase.kind).toBe('tools')
+        expect(pending.size).toBeGreaterThan(0)
+        await session.close()
+        expect(pending.size).toBe(0)
+      }
+      let unavailable = true
+      const kernel = base({
+        storage,
+        timers,
+        memoryFor: () => {
+          if (unavailable) throw new Error('synthetic memory unavailable')
+          return undefined
+        },
+      })
+      try {
+        await expect(
+          kernel.session('memory-failure', { ...sessionOpts, writerRunId: 'failed' }),
+        ).rejects.toThrow('synthetic memory unavailable')
+        expect(kernel.get('memory-failure')).toBeUndefined()
+        expect(pending.size).toBe(0)
+        unavailable = false
+        const recovered = await kernel.session('memory-failure', { ...sessionOpts, writerRunId: 'recovered' })
+        expect(recovered.key).toBe('memory-failure')
+        await recovered.close()
+        expect(pending.size).toBe(0)
+      } finally {
+        await kernel.close()
+        await first.close()
+      }
+    },
+  )
+
   it('two keys get two ledgers, and the tool registry is shared across them', async () => {
     const k = base()
     k.tools.add(readTool(), { source: 'agnes/tools-core', trust: 'builtin' })
@@ -593,14 +652,36 @@ describe('Kernel per-session hook factory', () => {
     'releases the writer lease when hook initialization is %s',
     async (kind) => {
       const storage = new MemoryStorage()
+      let memoryOpen = true
       const k = base({
         storage,
+        memoryFor: () => ({
+          root: '/memory',
+          snapshot: async () => undefined,
+          files: (fallback) => fallback,
+          inspect: async () => {
+            throw new Error('unused')
+          },
+          configure: async () => {
+            throw new Error('unused')
+          },
+          readFile: async () => {
+            throw new Error('unused')
+          },
+          editFile: async () => {
+            throw new Error('unused')
+          },
+          close: () => {
+            memoryOpen = false
+          },
+        }),
         hooksFactory: () => {
           if (kind === 'throw') throw new Error('factory failure')
           return {} as never
         },
       })
       await expect(k.session('failed', sessionOpts)).rejects.toThrow()
+      expect(memoryOpen).toBe(false)
       expect(k.get('failed')).toBeUndefined()
       const recovery = base({ storage })
       await expect(

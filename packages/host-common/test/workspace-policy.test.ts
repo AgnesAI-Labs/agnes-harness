@@ -1,5 +1,6 @@
 import { posix } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { privateStateRoots } from '../src/paths.js'
 import {
   compileWorkspacePolicy,
   normalizeSandboxStaticConfig,
@@ -9,11 +10,12 @@ import {
 const canonicalize = async (path: string, options?: { base?: string }) =>
   posix.normalize(posix.resolve(options?.base ?? '/', path))
 
-const compile = (root = '/work', preset: Record<string, unknown> = {}) =>
+const compile = (root = '/work', preset: Record<string, unknown> = {}, protectedPaths: string[] = []) =>
   compileWorkspacePolicy({
     canonicalRoot: root,
     dataDir: '/data',
     homeDir: '/home/user',
+    protectedPaths,
     semantics: { flavor: 'posix', caseSensitive: true },
     staticConfig: normalizeSandboxStaticConfig(preset),
     canonicalize,
@@ -59,18 +61,39 @@ describe('Host workspace policy compiler', () => {
   })
 
   it('binds permission presets to write roots and distinct readiness identities', async () => {
-    const readOnly = await compile('/work', {
-      approval: { policy: 'read-only' },
-      sandbox: { level: 'L1', required: true },
-    })
-    const writable = await compile('/work', {
-      approval: { policy: 'default' },
-      sandbox: { level: 'L1', required: true },
-    })
-    const full = await compile('/work', {
-      approval: { policy: 'full-access' },
-      sandbox: { level: 'L0', on_unavailable: 'allow' },
-    })
+    const protectedPaths = privateStateRoots({ home: '/installation', dataDir: '/data', workspace: '/work' })
+    const readOnly = await compile(
+      '/work',
+      {
+        approval: { policy: 'read-only' },
+        sandbox: { level: 'L1', required: true },
+      },
+      protectedPaths,
+    )
+    const writable = await compile(
+      '/work',
+      {
+        approval: { policy: 'default' },
+        sandbox: { level: 'L1', required: true },
+      },
+      protectedPaths,
+    )
+    const full = await compile(
+      '/work',
+      {
+        approval: { policy: 'full-access' },
+        sandbox: { level: 'L0', on_unavailable: 'allow' },
+      },
+      protectedPaths,
+    )
+    for (const plan of [readOnly, writable, full])
+      for (const path of [
+        '/installation/memory',
+        '/installation/secrets',
+        '/installation/profiles',
+        '/data/daemon',
+      ])
+        expect(plan.backendOptions.denyPaths).toContain(path)
     expect(readOnly.backendOptions.allowPaths).toEqual([])
     expect(writable.backendOptions.allowPaths).toContain('/work')
     expect(full.policy.rules.some((rule) => rule.effect === 'allow' && rule.path === '/')).toBe(false)

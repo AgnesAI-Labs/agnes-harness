@@ -6,7 +6,11 @@ import {
   type RequestMessage as WireMessage,
 } from '@agnes/protocol'
 import { RequestBody as WireSchema } from '@agnes/protocol/gen/model'
-import { auxiliaryVisionSettledForProvider, requestMediaForProvider } from './derive.js'
+import {
+  auxiliaryVisionSettledForProvider,
+  requestMediaForProvider,
+  requestMemoryRevision,
+} from './derive.js'
 import { isLedgerRequest, type LedgerRequest, type RequestMessage } from './mint.js'
 
 type ProviderMediaBlock =
@@ -33,6 +37,7 @@ export function toProviderRequest(
 ): WireBody {
   if (!isLedgerRequest(req)) throw new CoreError('E_ENVELOPE', 'provider request was not minted by Core')
   const requestMedia = requestMediaForProvider(req, o.sessionKey, o.derivedHash)
+  const memoryRevision = requestMemoryRevision(req)
   // Auxiliary media is consumed by the Core-owned image-slot effect before the primary request is
   // dispatched. Until that effect has replaced it with an attested untrusted-text bridge, sending
   // these bytes here would violate capability pre-routing and expose images to a text-only model.
@@ -78,8 +83,13 @@ export function toProviderRequest(
     // Joined with a blank line rather than concatenated: the sections are separate instructions and
     // the ledger keeps them apart, so the flattening must not run two of them into one paragraph.
     // `prompt_prefix_hash` hashes this same join, so the stamp covers the bytes that ship.
-    ...(o.compactionBoundary !== undefined
-      ? { traceContext: { compactionBoundary: o.compactionBoundary } }
+    ...(o.compactionBoundary !== undefined || memoryRevision !== undefined
+      ? {
+          traceContext: {
+            ...(o.compactionBoundary === undefined ? {} : { compactionBoundary: o.compactionBoundary }),
+            ...(memoryRevision === undefined ? {} : { memoryRevision }),
+          },
+        }
       : {}),
     sections: req.sections.map((section) => ({ ...section })),
     system: req.sections.map((s) => s.text).join('\n\n'),

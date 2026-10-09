@@ -60,6 +60,43 @@ type CallRecord = Omit<ModelRequestSnapshot, 'system' | 'sections' | 'tools' | '
   wireHash?: string
   wireRefs?: string[]
 }
+function validRecord(value: unknown, id: string): value is CallRecord {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const row = value as CallRecord
+  const hash = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value)
+  const refs = (value: unknown) => value === undefined || (Array.isArray(value) && value.every(hash))
+  if (
+    row.id !== id ||
+    typeof row.createdAt !== 'string' ||
+    !Number.isFinite(Date.parse(row.createdAt)) ||
+    ![row.sessionHash, row.systemHash, row.sectionsHash, row.toolsHash].every(hash) ||
+    (row.wireHash !== undefined && !hash(row.wireHash)) ||
+    !refs(row.wireRefs) ||
+    !Array.isArray(row.attempts)
+  )
+    return false
+  const attempts = []
+  for (const attempt of row.attempts) {
+    if (
+      !attempt ||
+      typeof attempt !== 'object' ||
+      (attempt.wireHash !== undefined && !hash(attempt.wireHash)) ||
+      !refs(attempt.wireRefs)
+    )
+      return false
+    const { wireHash: _hash, wireRefs: _refs, ...metadata } = attempt
+    attempts.push({ ...metadata, wire: null })
+  }
+  const { sessionHash: _owner, wireHash: _hash, wireRefs: _refs, attempts: _attempts, ...metadata } = row
+  return validateAgainst(SnapshotSchema, {
+    ...metadata,
+    system: '',
+    sections: [],
+    tools: [],
+    wire: null,
+    attempts,
+  }).ok
+}
 /** Local private content store. Retention is scoped to a profile; no audit/telemetry integration. */
 export class RequestTraceStore implements ModelRequestTrace {
   private readonly dir: string
@@ -159,7 +196,8 @@ export class RequestTraceStore implements ModelRequestTrace {
         if ((await stat(join(this.dir, file))).size > this.limits.callBytes) continue
         const text = await readFile(join(this.dir, file), 'utf8')
         if (Buffer.byteLength(text) > this.limits.callBytes) continue
-        records.push(JSON.parse(text) as CallRecord)
+        const row: unknown = JSON.parse(text)
+        if (validRecord(row, file.slice(0, -10))) records.push(row)
       } catch {
         /* An atomic replacement/read race has no content to expose. */
       }

@@ -59,10 +59,13 @@ function model(id: string, slot: ModelRecord['slot'], contextWindow = 100): Mode
   }
 }
 
-async function history(summaryScript: Script = textTurn('SUMMARY')) {
+async function history(
+  summaryScript: Script = textTurn('SUMMARY'),
+  memory?: import('@agnes/extension-api').MemorySession,
+) {
   const provider = fakeProvider([textTurn('old-one'), textTurn('old-two'), summaryScript, textTurn('final')])
   provider.models = () => [model('answer-model', 'primary'), model('summary-model', 'compaction', 1000)]
-  const opened = await openSession({ provider })
+  const opened = await openSession({ provider, ...(memory ? { memory } : {}) })
   // These fixtures resize catalog models; saved conversation budgets are covered separately.
   delete opened.session.preset.model.contextWindow
   opened.session.preset.model.id.compaction = 'summary-model'
@@ -362,7 +365,25 @@ describe('production compaction phase', () => {
   })
 
   it('replays the primary system, tools and history before a wide summary instruction', async () => {
-    const { session, provider } = await history()
+    const revision = 'a'.repeat(64)
+    const memory = {
+      root: '/memory',
+      snapshot: async () => ({ revision, content: 'synthetic memory index', omitted: false }),
+      files: (fallback) => fallback,
+      inspect: async () => {
+        throw new Error('unused')
+      },
+      configure: async () => {
+        throw new Error('unused')
+      },
+      readFile: async () => {
+        throw new Error('unused')
+      },
+      editFile: async () => {
+        throw new Error('unused')
+      },
+    } satisfies import('@agnes/extension-api').MemorySession
+    const { session, provider } = await history(textTurn('SUMMARY'), memory)
     provider.models = () => [model('answer-model', 'primary', 10_000)]
     session.preset.model.id.compaction = 'answer-model'
     session.compaction = runner()
@@ -375,6 +396,8 @@ describe('production compaction phase', () => {
     expect(summary.kind).toBe('summary')
     expect(summary.model).toBe(previous.model)
     expect(summary.system).toBe(previous.system)
+    expect(previous.traceContext?.memoryRevision).toBe(revision)
+    expect(summary.traceContext?.memoryRevision).toBe(revision)
     expect(summary.tools).toEqual(previous.tools)
     expect(summary.messages.slice(0, previous.messages.length)).toEqual(previous.messages)
     expect((summary.messages.at(-1)?.content[0] as { text?: string } | undefined)?.text).toContain(
@@ -510,6 +533,7 @@ describe('production compaction phase', () => {
     const previous = provider.requests[1]
     if (!previous) throw new Error('missing primary request')
     turn.lastPrefix = {
+      memoryRevision: 'a'.repeat(64),
       sections: [
         {
           id: 'core:untrusted-envelope',
@@ -526,6 +550,7 @@ describe('production compaction phase', () => {
     expect(provider.requests[2]?.tools).toEqual([])
     expect(provider.requests[2]?.system).toContain('summarize safely')
     expect(provider.requests[2]?.system).not.toContain('large section')
+    expect(provider.requests[2]?.traceContext?.memoryRevision).toBeUndefined()
   })
 
   it('inherits primary thinking unless the compaction level is explicit', async () => {

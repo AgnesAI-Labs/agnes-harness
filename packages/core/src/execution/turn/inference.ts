@@ -50,6 +50,7 @@ import {
   type RequestHeaderData,
   remintAfterBeforeRequest,
   remintRequestWithMaxTokens,
+  requestMemoryRevision,
 } from '../../request/derive.js'
 import { inlineImageMediaSurface } from '../../request/inline-images.js'
 import { toProviderRequest } from '../../request/to-provider.js'
@@ -291,6 +292,7 @@ export async function assembleRequestPrefix(
   disclosed: DeriveInput['disclosed']
   additionalContext: string
   preloaded: RuntimePromptPreload | null
+  memoryRevision?: string
 }> {
   const t = s.turn
   if (!t) throw new CoreError('E_RELATION', 'request prefix outside an active turn')
@@ -353,7 +355,13 @@ export async function assembleRequestPrefix(
     const def = t.snapshot.byName.get(name)
     return def ? [def] : []
   })
-  return { merged, disclosed, additionalContext: hookContext.additionalContext, preloaded }
+  return {
+    merged,
+    disclosed,
+    additionalContext: hookContext.additionalContext,
+    preloaded,
+    ...(memory ? { memoryRevision: memory.revision } : {}),
+  }
 }
 
 /**
@@ -508,7 +516,7 @@ export async function prepareInferenceRequest(
   // list it reads off `ctx` are already resolved, so an Operation here sees exactly what is about to
   // go out rather than having to recompute either one itself.
   await runSlot(s, 'before-inference', ctx)
-  const { merged, disclosed, additionalContext, preloaded } = await assembleRequestPrefix(
+  const { merged, disclosed, additionalContext, preloaded, memoryRevision } = await assembleRequestPrefix(
     s,
     ctx,
     op.meta.triggerSeq,
@@ -627,6 +635,7 @@ export async function prepareInferenceRequest(
   }
   await s.ensureEnvelopeEpochs()
   let out = deriveRequest({
+    ...(memoryRevision === undefined ? {} : { memoryRevision }),
     ...(s.d.systemPrompt ? { systemPrompt: s.d.systemPrompt } : {}),
     kind: 'turn',
     inlineImages: {
@@ -907,7 +916,9 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     disclosed: out.request.tools.map((tool) => tool.name),
     model: { slot, ...target },
   }
+  const memoryRevision = requestMemoryRevision(out.request)
   const mintedPrefix = {
+    ...(memoryRevision === undefined ? {} : { memoryRevision }),
     sections: out.request.sections,
     tools: out.request.tools,
     model: out.request.model,

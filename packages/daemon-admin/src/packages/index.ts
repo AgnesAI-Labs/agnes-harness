@@ -31,12 +31,14 @@ export {
   type StoredPackageOperation,
 } from './operations.js'
 export {
+  configurationReadOnly,
   denyPackageAdminAuthority,
   localPackageAdminAuthority,
   localWebSkinReadAuthority,
   PACKAGE_ADMIN_ALL_PERMISSIONS,
   type PackageAdminAuthority,
   type PackageAdminAuthorityResolver,
+  requireLocalAdminAuthority,
 } from './permissions.js'
 export { type PackageProfileDirectory, scopedPackageProfileDirectory } from './project.js'
 export {

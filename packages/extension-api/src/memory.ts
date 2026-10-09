@@ -72,5 +72,21 @@ export function memoryPrivateEvent(event: Readonly<EventEnvelope>): EventEnvelop
     const value = data[key]
     if (typeof value === 'string' && /^[A-Za-z0-9_.:@/-]{1,256}$/.test(value)) safe[key] = value
   }
+  if (
+    event.type === 'turn/end' &&
+    typeof data.reason === 'string' &&
+    ['completed', 'aborted', 'error', 'parked', 'blocked', 'budget', 'max_steps', 'interrupted'].includes(
+      data.reason,
+    )
+  )
+    safe.reason = data.reason
+  if (data.tokens && typeof data.tokens === 'object' && !Array.isArray(data.tokens)) {
+    const tokens: Record<string, number> = {}
+    for (const key of ['input', 'output', 'cacheRead', 'cacheWrite', 'reasoning'] as const) {
+      const value = data.tokens[key]
+      if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) tokens[key] = value
+    }
+    safe.tokens = tokens
+  }
   return { ...event, data: safe }
 }

@@ -32,6 +32,49 @@ const request = (sessionKey = 'owned'): RequestBody => ({
   messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
 })
 describe('local request snapshots', () => {
+  it('isolates malformed metadata while healthy reads and expired-content collection continue', async () => {
+    const root = await home()
+    let now = Date.now()
+    const store = new RequestTraceStore(
+      root,
+      'local',
+      { callBytes: 8192, totalBytes: 65536, calls: 16, ttlMs: 100 },
+      () => now,
+    )
+    const first = await store.begin({ ...request(), system: 'old distinct prompt' })
+    await first.finish()
+    const snapshot = (await store.get('owned', first.id)).snapshot!
+    const dir = join(root, 'model-requests', createHash('sha256').update('local').digest('hex'))
+    const record = JSON.parse(await readFile(join(dir, `${first.id}.call.json`), 'utf8'))
+    const invalid = [
+      {},
+      { ...record, createdAt: 17 },
+      { ...record, attempts: {} },
+      { ...record, wireRefs: [17] },
+    ]
+    for (const [index, value] of invalid.entries()) {
+      const id = `ffffffff-ffff-ffff-ffff-${String(index).padStart(12, '0')}`
+      await writeFile(join(dir, `${id}.call.json`), JSON.stringify({ ...value, id }))
+    }
+    const reopened = new RequestTraceStore(
+      root,
+      'local',
+      { callBytes: 8192, totalBytes: 65536, calls: 16, ttlMs: 100 },
+      () => now,
+    )
+    expect((await reopened.get('owned')).calls?.map((call) => call.id)).toEqual([first.id])
+    expect((await reopened.get('owned', first.id)).snapshot?.system).toBe('old distinct prompt')
+    await utimes(join(dir, `${snapshot.systemHash}.blob.json`), new Date(now - 1000), new Date(now - 1000))
+    now += 101
+    const next = await reopened.begin(request())
+    await next.finish()
+    expect((await reopened.get('owned', next.id)).snapshot?.system).toBe('synthetic persona')
+    expect((await reopened.get('owned', first.id)).snapshot).toBeNull()
+    expect((await readdir(dir)).some((name) => name.startsWith('ffffffff-'))).toBe(false)
+    await expect(stat(join(dir, `${snapshot.systemHash}.blob.json`))).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
+  })
   it('deduplicates immutable prompt/tools, retains final JSON and metadata, and isolates profiles and sessions after reopen', async () => {
     const root = await home()
     let now = 1000

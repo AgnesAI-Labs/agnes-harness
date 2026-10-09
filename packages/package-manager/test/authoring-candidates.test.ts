@@ -95,6 +95,35 @@ it('keeps drafts outside discovery and binds tests, diffs, capabilities and prov
   const r = await review(s)
   expect(discoverLocalPlugins(localPluginRoots(join(s.root, 'home'), join(s.root, 'workspace')))).toEqual([])
   expect((await s.manager.inventory(s.profile)).packages).toEqual([])
+  await expect(
+    s.candidates.create(
+      s.profile,
+      [{ path: 'package.json', content: '{invalid json' }],
+      'owner',
+      'invalid-draft',
+      origin,
+    ),
+  ).rejects.toThrow('invalid package.json')
+  const reopened = new AuthoringCandidates(s.manager, s.runner)
+  // An interrupted creation has no durable record and must not hide healthy reviews or fill their quota.
+  for (let n = 0; n < 128; n++)
+    mkdirSync(
+      join(
+        s.profile,
+        '.authoring-candidates',
+        'candidate-' + n.toString(16).padStart(32, '0'),
+        'trees/unfinished',
+      ),
+      { recursive: true },
+    )
+  expect(reopened.list(s.profile, 'owner').map((row) => row.candidateId)).toEqual([r.candidateId])
+  const another = await reopened.create(s.profile, files, 'owner', 'after-invalid', origin)
+  expect(
+    reopened
+      .list(s.profile, 'owner')
+      .map((row) => row.candidateId)
+      .sort(),
+  ).toEqual([r.candidateId, another.candidateId].sort())
   expect(r).toMatchObject({
     state: 'review',
     baseHash: null,
@@ -228,6 +257,10 @@ it.each(['trust failed', 'reviewed bytes changed'] as const)(
       record = JSON.parse(readFileSync(file, 'utf8'))
     record.value.state = 'publishing'
     writeFileSync(file, JSON.stringify(record))
+    await reopened.create(s.profile, files, 'other', 'quota-inspection', origin)
+    expect(JSON.parse(readFileSync(file, 'utf8')).value.state).toBe('publishing')
+    expect(reopened.list(s.profile, 'other')).toHaveLength(1)
+    expect(JSON.parse(readFileSync(file, 'utf8')).value.state).toBe('publishing')
     expect(reopened.show(s.profile, r.candidateId, 'owner').state).toBe('interrupted')
     expect(publish).toHaveBeenCalledOnce()
   },

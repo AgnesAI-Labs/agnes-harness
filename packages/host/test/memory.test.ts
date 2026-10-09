@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { defaultLoopPlugin, memoryPlugin, seams } from '@agnes/base'
 import type { ApprovalRequest } from '@agnes/core'
+import { RequestTraceStore } from '@agnes/host-infrastructure/request-traces'
 import { observabilityPlugin } from '@agnes/observability'
 import { memoryCollector } from '@agnes/observability/testkit'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
@@ -121,6 +122,9 @@ it('uses normal read/write/edit and approval, injects the next revision, and clo
     expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
       'completed',
     )
+    const request = provider?.calls.at(-1)
+    const revision = /Revision: ([a-f0-9]+)/.exec(request?.system ?? '')?.[1]
+    expect(request?.traceContext?.memoryRevision).toBe(revision)
     return { session, results: await session.scan({ fromSeq: before + 1, type: 'tool/result', limit: 20 }) }
   }
   try {
@@ -263,12 +267,20 @@ it('pins index and topic revisions across tool requests and a model retry, then 
     expect(JSON.stringify(results[0]?.data)).not.toContain('New topic')
     const revision = /Revision: ([a-f0-9]+)/.exec(JSON.stringify(provider.calls[0]?.system))?.[1]
     expect(revision).toBeTruthy()
-    for (const request of provider.calls)
+    const traces = new RequestTraceStore(home, 'memory-revision')
+    for (const request of provider.calls) {
       expect(JSON.stringify(request.system)).toContain(`Revision: ${revision}.`)
+      expect(request.traceContext?.memoryRevision).toBe(revision)
+      const capture = await traces.begin(request)
+      await capture.finish()
+      expect((await traces.get('turn-snapshot', capture.id)).snapshot?.memoryRevision).toBe(revision)
+    }
     await turn()
     expect(provider.calls).toHaveLength(4)
     expect(JSON.stringify(provider.calls.at(-1)?.system)).toContain('New preference')
     expect(JSON.stringify(provider.calls.at(-1)?.system)).not.toContain(`Revision: ${revision}.`)
+    const refreshed = /Revision: ([a-f0-9]+)/.exec(JSON.stringify(provider.calls.at(-1)?.system))?.[1]
+    expect(provider.calls.at(-1)?.traceContext?.memoryRevision).toBe(refreshed)
   } finally {
     await host.close()
   }

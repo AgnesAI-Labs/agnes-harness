@@ -1,7 +1,13 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import {
+  localPackageAdminAuthority,
+  localWebSkinReadAuthority,
+  type PackageAdminAuthorityResolver,
+} from '@agnes/daemon-admin/packages/index'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
+import { SystemPromptSettingsStore } from '@agnes/host'
 import { rpcError, type SystemPromptSnapshot } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { registerPromptTrace } from '../src/local/methods/prompt-trace.js'
@@ -19,7 +25,12 @@ it('requires local configuration authority and checks both session owners before
     sections: [],
     preview: 'default-sections',
   }
+  let authority: PackageAdminAuthorityResolver = localPackageAdminAuthority()
+  let readOnly = false
+  const settings = new SystemPromptSettingsStore(dir, 'test')
   registerPromptTrace(ep, {
+    authority: (context) => authority(context),
+    readOnly: async () => readOnly,
     dataDir: dir,
     profile: 'test',
     registry: {
@@ -39,6 +50,39 @@ it('requires local configuration authority and checks both session owners before
       error?: { data?: { code?: string } }
     }
   try {
+    expect(
+      (await call('_agnes/v1/systemPrompt.save', { config: { personaPrefix: 'hello' } })).result,
+    ).toMatchObject({ config: { personaPrefix: 'hello' } })
+    for (const denied of [
+      () => undefined,
+      localWebSkinReadAuthority,
+      localPackageAdminAuthority(['packages.read']),
+    ]) {
+      authority = denied
+      expect(
+        (await call('_agnes/v1/systemPrompt.save', { config: { personaPrefix: 'refused' } })).error?.data
+          ?.code,
+      ).toBe('CAPABILITY_DENIED')
+      expect(await settings.read()).toEqual({ personaPrefix: 'hello' })
+    }
+    authority = localPackageAdminAuthority(['packages.read'])
+    expect((await call('_agnes/v1/systemPrompt.get', {})).result).toMatchObject({
+      config: { personaPrefix: 'hello' },
+    })
+    authority = localWebSkinReadAuthority
+    expect((await call('_agnes/v1/systemPrompt.get', {})).error?.data?.code).toBe('CAPABILITY_DENIED')
+    authority = localPackageAdminAuthority(['packages.activate'])
+    readOnly = true
+    expect(
+      (await call('_agnes/v1/systemPrompt.save', { config: { personaPrefix: 'refused' } })).error?.data,
+    ).toMatchObject({ reason: 'E_ADMIN_READ_ONLY' })
+    expect(await settings.read()).toEqual({ personaPrefix: 'hello' })
+    authority = localPackageAdminAuthority(['packages.read'])
+    expect((await call('_agnes/v1/systemPrompt.get', {})).result).toMatchObject({
+      config: { personaPrefix: 'hello' },
+    })
+    readOnly = false
+    authority = localPackageAdminAuthority(['packages.activate'])
     expect(
       (await call('_agnes/v1/systemPrompt.save', { config: { personaPrefix: 'hello' } })).result,
     ).toMatchObject({ config: { personaPrefix: 'hello' } })

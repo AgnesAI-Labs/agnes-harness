@@ -28,6 +28,8 @@ export type ContractRef = { contract_id: string | null; parser_version: string }
 export type RequestHeaderData = RequestHeader
 export type DeriveInput = {
   systemPrompt?: PinnedSystemPrompt
+  /** Revision of the Core-owned memory contribution assembled for this exact prefix. */
+  memoryRevision?: string
   kind: 'turn' | 'summary'
   /** Core's current model snapshot governs inline history; originals stay on the ledger. */
   inlineImages?: InlineImagePolicy
@@ -103,6 +105,11 @@ type RequestMediaAuthority = Readonly<{
   auxiliaryVisionBindingHash?: string
 }>
 const requestMediaAuthority = new WeakMap<object, RequestMediaAuthority>()
+const memoryRevisions = new WeakMap<LedgerRequest, string>()
+
+export function requestMemoryRevision(request: LedgerRequest): string | undefined {
+  return memoryRevisions.get(request)
+}
 
 function messagesHash(request: LedgerRequest): string {
   return sha256Hex(canonicalJson(request.messages))
@@ -167,6 +174,8 @@ export function remintAfterBeforeRequest(
   const derivedHash = hashDerivedRequest(body, media?.hashMaterial)
   const request = mintFrom(body)
   carryRequestMediaAuthority(source, request, media, derivedHash)
+  const memoryRevision = memoryRevisions.get(source)
+  if (memoryRevision !== undefined) memoryRevisions.set(request, memoryRevision)
   return Object.freeze({ request, derivedHash })
 }
 
@@ -1040,6 +1049,11 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
     envelopeNonce: input.nonce,
     ...(input.media === undefined ? {} : { media: input.media.header }),
   }
+  if (
+    input.memoryRevision !== undefined &&
+    request.sections.some((section) => section.id === 'memory:index' && section.source === 'memory')
+  )
+    memoryRevisions.set(request, input.memoryRevision)
   if (input.media !== undefined)
     bindRequestMediaAuthority(
       request,

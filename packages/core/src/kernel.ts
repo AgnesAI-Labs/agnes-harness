@@ -511,9 +511,12 @@ export class Kernel {
       throw error
     }
     const { log, tracker, surface, ui, registersRebuilt } = tracked
-    let systemPrompt: import('./request/system-prompt.js').PinnedSystemPrompt | undefined
-    let loopFactory: LoopFactory
+    let session!: SessionImpl
+    let memory: import('@agnes/extension-api').MemorySession | undefined
+    let factoryPort: HookPort | undefined
     try {
+      let systemPrompt: import('./request/system-prompt.js').PinnedSystemPrompt | undefined
+      let loopFactory: LoopFactory
       const promptPort = so.systemPrompt ?? this.o.systemPrompt
       const persistedPrompt = tracker.state.session?.systemPrompt
       if (persistedPrompt && !promptPort)
@@ -543,163 +546,179 @@ export class Kernel {
           throw new CoreError('E_LOOP_MISSING', error.message, { loop: selection })
         throw error
       }
-    } catch (error) {
-      await log.close()
-      throw error
-    }
-    const workspaceInvocation = so.workspaceInvocation ?? so.workspaceRuntime?.invocation
-    const workspaceIdentity = so.workspaceIdentity ?? so.workspaceRuntime?.identity
-    const quietGroup = so.parent ? (this.sessions.get(so.parent.key)?.d.quietGroup ?? so.parent.key) : key
-    const runtime = new SeamRuntime(fitted, preset, {
-      clock: this.clock,
-      onFailure: (f) => logger.warn('seam failed', { ...f }),
-      ...(this.o.timers ? { timers: this.o.timers } : {}),
-      ...(workspaceInvocation ? { workspaceInvocation } : {}),
-      ...(this.o.workspacePublication ? { workspacePublication: this.o.workspacePublication } : {}),
-    })
-    // The Operation, if any, standing in for each of core's own named step-machine segments. Built
-    // once per session here (rather than read fresh by whatever eventually dispatches on it) because
-    // `this.o.operations` is a Kernel-wide, assembly-time list — it cannot change under a running
-    // session, so there is nothing to gain from recomputing it per step.
-    const segments = Object.fromEntries(
-      CORE_OPS.map((n) => [n, replacementFor(this.o.operations ?? [], n)] as const),
-    ) as Partial<{ [K in CoreOpName]: ReplacementOperation<K> | undefined }>
-    let session!: SessionImpl
-    const children = this.o.children ?? new KernelChildren(this, () => session)
-    const toolFilter = so.toolFilter
-    const memory = this.o.memoryFor?.({ key, cwd: so.cwd })
-    session = new SessionImpl({
-      ...(memory ? { memory } : {}),
-      log,
-      tracker,
-      surface,
-      ui,
-      slotFills: () => {
-        const deadline = Date.now() + 1000
-        return this.slots.snapshot(
-          { key, lane, workspaceRoot: so.cwd },
-          { remainingMs: () => deadline - Date.now() },
-        )
-      },
-      lane,
-      runtime,
-      provider: this.o.provider,
-      loopFactory,
-      ...(this.o.loopChildren ? { bindLoopChildren: this.o.loopChildren } : {}),
-      ...(so.toolFilter ? { loopChildToolFilter: so.toolFilter } : {}),
-      toolRuntimes: this.toolRuntimes,
-      toolPolicies: this.toolPolicies,
-      loopEvents: this.loopEvents,
-      loopResume: !forked && Boolean(tracker.state.session),
-      ...(this.o.withModelSnapshot ? { withModelSnapshot: this.o.withModelSnapshot } : {}),
-      registry: so.toolFilter ? new ChildToolRegistry(this.tools, so.toolFilter) : this.tools,
-      resources: this.resources,
-      ...(this.o.currentRuntime
-        ? {
-            currentRuntime: so.toolFilter
-              ? {
-                  current: (key: string) => {
-                    const current = this.o.currentRuntime?.current(key)
-                    return current && toolFilter
-                      ? { ...current, tools: new ChildToolRegistry(current.tools, toolFilter) }
-                      : undefined
-                  },
-                }
-              : this.o.currentRuntime,
-          }
-        : {}),
-      ...(this.o.sessionOverlay ? { sessionOverlay: this.o.sessionOverlay } : {}),
-      ...(systemPrompt ? { systemPrompt } : {}),
-      operations: this.o.operations ?? [],
-      preset,
-      contract: this.o.contract,
-      ...(this.o.contractForModel ? { contractForModel: this.o.contractForModel } : {}),
-      children,
-      ...(workspaceIdentity ? { workspaceIdentity } : {}),
-      ...(workspaceInvocation ? { workspaceInvocation } : {}),
-      ...(this.o.workspacePublication ? { workspacePublication: this.o.workspacePublication } : {}),
-      ...(so.workspaceLease ? { workspaceLease: so.workspaceLease } : {}),
-      ...(so.childWorkspaceRuntime ? { childWorkspaceRuntime: so.childWorkspaceRuntime } : {}),
-      ids: this.ids,
-      clock: this.clock,
-      actor: so.actor,
-      resolvedProfileHash: so.resolvedProfileHash,
-      ...(so.imported ? { imported: so.imported } : {}),
-      cwd: so.cwd,
-      netFetch: this.o.netFetch,
-      ...(this.o.publicFetch ? { publicFetch: this.o.publicFetch } : {}),
-      ...(this.o.approvalMode ? { approvalMode: this.o.approvalMode } : {}),
-      ...(this.o.hostToolDispatch ? { hostToolDispatch: this.o.hostToolDispatch } : {}),
-      ...(this.o.requestMedia ? { requestMedia: this.o.requestMedia } : {}),
-      ...(this.o.imageInputTokenFallback ? { imageInputTokenFallback: this.o.imageInputTokenFallback } : {}),
-      logger,
-      invariants: this.invariants,
-      segments,
-      ...(this.o.timers ? { timers: this.o.timers } : {}),
-      ...(this.o.hooks ? { hooks: this.o.hooks } : {}),
-      ...(this.o.compaction ? { compaction: this.o.compaction } : {}),
-      ...(this.o.runtimePromptPreloader ? { runtimePromptPreloader: this.o.runtimePromptPreloader } : {}),
-      ...(this.o.quiet ? { quiet: this.o.quiet } : {}),
-      ...(this.o.quiet ? { quietGroup } : {}),
-      agnesVersion: this.o.agnesVersion ?? '0.0.0',
-    })
-    if (so.toolFilter) bindChildSessionToolFilter(session, so.toolFilter)
-    if (children instanceof KernelChildren) bindChildFactory(session.key, children)
-    const sessionHooks = this.createHookEngine(logger, preset)
-    let factoryPort: HookPort | undefined
-    const cancelCreation = () => {
-      void session.close().catch(() => undefined)
-    }
-    this.construction.signal.addEventListener('abort', cancelCreation, { once: true })
-    try {
-      this.construction.signal.throwIfAborted()
-      if (this.o.hooksFactory) {
-        const hooks = this.o.hooksFactory(session, sessionHooks)
-        if (
-          !hooks ||
-          !['beforeStep', 'toolCall', 'turnStopping', 'context', 'beforeRequest'].every(
-            (name) => typeof (hooks as unknown as Record<string, unknown>)[name] === 'function',
+      const workspaceInvocation = so.workspaceInvocation ?? so.workspaceRuntime?.invocation
+      const workspaceIdentity = so.workspaceIdentity ?? so.workspaceRuntime?.identity
+      const quietGroup = so.parent ? (this.sessions.get(so.parent.key)?.d.quietGroup ?? so.parent.key) : key
+      const runtime = new SeamRuntime(fitted, preset, {
+        clock: this.clock,
+        onFailure: (f) => logger.warn('seam failed', { ...f }),
+        ...(this.o.timers ? { timers: this.o.timers } : {}),
+        ...(workspaceInvocation ? { workspaceInvocation } : {}),
+        ...(this.o.workspacePublication ? { workspacePublication: this.o.workspacePublication } : {}),
+      })
+      // The Operation, if any, standing in for each of core's own named step-machine segments. Built
+      // once per session here (rather than read fresh by whatever eventually dispatches on it) because
+      // `this.o.operations` is a Kernel-wide, assembly-time list — it cannot change under a running
+      // session, so there is nothing to gain from recomputing it per step.
+      const segments = Object.fromEntries(
+        CORE_OPS.map((n) => [n, replacementFor(this.o.operations ?? [], n)] as const),
+      ) as Partial<{ [K in CoreOpName]: ReplacementOperation<K> | undefined }>
+      const children = this.o.children ?? new KernelChildren(this, () => session)
+      const toolFilter = so.toolFilter
+      memory = this.o.memoryFor?.({ key, cwd: so.cwd })
+      session = new SessionImpl({
+        ...(memory ? { memory } : {}),
+        log,
+        tracker,
+        surface,
+        ui,
+        slotFills: () => {
+          const deadline = Date.now() + 1000
+          return this.slots.snapshot(
+            { key, lane, workspaceRoot: so.cwd },
+            { remainingMs: () => deadline - Date.now() },
           )
-        )
-          throw new CoreError('E_ENVELOPE', 'invalid session hook factory result')
-        if (this.factoryHooks.has(hooks))
-          throw new CoreError('E_ENVELOPE', 'hook factory reused a session port')
-        this.factoryHooks.add(hooks)
-        factoryPort = hooks
-        session.hooks = hooks
-      } else if (!this.o.hooks) {
-        // SessionImpl is the sole lifecycle caller. This default keeps Kernel-owned registrations
-        // live without adding a second dispatch beside a fitted hooksFactory port.
-        session.hooks = lifecyclePort(session, sessionHooks, logger)
+        },
+        lane,
+        runtime,
+        provider: this.o.provider,
+        loopFactory,
+        ...(this.o.loopChildren ? { bindLoopChildren: this.o.loopChildren } : {}),
+        ...(so.toolFilter ? { loopChildToolFilter: so.toolFilter } : {}),
+        toolRuntimes: this.toolRuntimes,
+        toolPolicies: this.toolPolicies,
+        loopEvents: this.loopEvents,
+        loopResume: !forked && Boolean(tracker.state.session),
+        ...(this.o.withModelSnapshot ? { withModelSnapshot: this.o.withModelSnapshot } : {}),
+        registry: so.toolFilter ? new ChildToolRegistry(this.tools, so.toolFilter) : this.tools,
+        resources: this.resources,
+        ...(this.o.currentRuntime
+          ? {
+              currentRuntime: so.toolFilter
+                ? {
+                    current: (key: string) => {
+                      const current = this.o.currentRuntime?.current(key)
+                      return current && toolFilter
+                        ? { ...current, tools: new ChildToolRegistry(current.tools, toolFilter) }
+                        : undefined
+                    },
+                  }
+                : this.o.currentRuntime,
+            }
+          : {}),
+        ...(this.o.sessionOverlay ? { sessionOverlay: this.o.sessionOverlay } : {}),
+        ...(systemPrompt ? { systemPrompt } : {}),
+        operations: this.o.operations ?? [],
+        preset,
+        contract: this.o.contract,
+        ...(this.o.contractForModel ? { contractForModel: this.o.contractForModel } : {}),
+        children,
+        ...(workspaceIdentity ? { workspaceIdentity } : {}),
+        ...(workspaceInvocation ? { workspaceInvocation } : {}),
+        ...(this.o.workspacePublication ? { workspacePublication: this.o.workspacePublication } : {}),
+        ...(so.workspaceLease ? { workspaceLease: so.workspaceLease } : {}),
+        ...(so.childWorkspaceRuntime ? { childWorkspaceRuntime: so.childWorkspaceRuntime } : {}),
+        ids: this.ids,
+        clock: this.clock,
+        actor: so.actor,
+        resolvedProfileHash: so.resolvedProfileHash,
+        ...(so.imported ? { imported: so.imported } : {}),
+        cwd: so.cwd,
+        netFetch: this.o.netFetch,
+        ...(this.o.publicFetch ? { publicFetch: this.o.publicFetch } : {}),
+        ...(this.o.approvalMode ? { approvalMode: this.o.approvalMode } : {}),
+        ...(this.o.hostToolDispatch ? { hostToolDispatch: this.o.hostToolDispatch } : {}),
+        ...(this.o.requestMedia ? { requestMedia: this.o.requestMedia } : {}),
+        ...(this.o.imageInputTokenFallback
+          ? { imageInputTokenFallback: this.o.imageInputTokenFallback }
+          : {}),
+        logger,
+        invariants: this.invariants,
+        segments,
+        ...(this.o.timers ? { timers: this.o.timers } : {}),
+        ...(this.o.hooks ? { hooks: this.o.hooks } : {}),
+        ...(this.o.compaction ? { compaction: this.o.compaction } : {}),
+        ...(this.o.runtimePromptPreloader ? { runtimePromptPreloader: this.o.runtimePromptPreloader } : {}),
+        ...(this.o.quiet ? { quiet: this.o.quiet } : {}),
+        ...(this.o.quiet ? { quietGroup } : {}),
+        agnesVersion: this.o.agnesVersion ?? '0.0.0',
+      })
+      if (so.toolFilter) bindChildSessionToolFilter(session, so.toolFilter)
+      if (children instanceof KernelChildren) bindChildFactory(session.key, children)
+      const sessionHooks = this.createHookEngine(logger, preset)
+      const cancelCreation = () => {
+        void session.close().catch(() => undefined)
       }
-      const reason = forked ? 'new' : session.state.session ? 'resume' : 'new'
-      await session.start()
-      this.construction.signal.throwIfAborted()
-      if (!(so.skipSessionStartHooks && reason === 'new'))
-        await session.hooks.sessionStart?.({ reason, preset: session.preset.name, cwd: so.cwd })
-      this.construction.signal.throwIfAborted()
+      this.construction.signal.addEventListener('abort', cancelCreation, { once: true })
+      try {
+        this.construction.signal.throwIfAborted()
+        if (this.o.hooksFactory) {
+          const hooks = this.o.hooksFactory(session, sessionHooks)
+          if (
+            !hooks ||
+            !['beforeStep', 'toolCall', 'turnStopping', 'context', 'beforeRequest'].every(
+              (name) => typeof (hooks as unknown as Record<string, unknown>)[name] === 'function',
+            )
+          )
+            throw new CoreError('E_ENVELOPE', 'invalid session hook factory result')
+          if (this.factoryHooks.has(hooks))
+            throw new CoreError('E_ENVELOPE', 'hook factory reused a session port')
+          this.factoryHooks.add(hooks)
+          factoryPort = hooks
+          session.hooks = hooks
+        } else if (!this.o.hooks) {
+          // SessionImpl is the sole lifecycle caller. This default keeps Kernel-owned registrations
+          // live without adding a second dispatch beside a fitted hooksFactory port.
+          session.hooks = lifecyclePort(session, sessionHooks, logger)
+        }
+        const reason = forked ? 'new' : session.state.session ? 'resume' : 'new'
+        await session.start()
+        this.construction.signal.throwIfAborted()
+        if (!(so.skipSessionStartHooks && reason === 'new'))
+          await session.hooks.sessionStart?.({ reason, preset: session.preset.name, cwd: so.cwd })
+        this.construction.signal.throwIfAborted()
+      } finally {
+        this.construction.signal.removeEventListener('abort', cancelCreation)
+      }
+      if (registersRebuilt) await session.diag('registers-rebuilt', { sessionKey: key })
+      if (log.recovery) {
+        const [lastRecovery] = await log.scan({
+          type: 'x/core/ledger-tail-recovered',
+          order: 'desc',
+          limit: 1,
+        })
+        if (
+          (lastRecovery?.data as { diagnosticId?: unknown } | undefined)?.diagnosticId !==
+          log.recovery.diagnosticId
+        )
+          await log.append([session.ev('x/core/ledger-tail-recovered', log.recovery, { ignorable: true })])
+      }
+      this.sessions.set(key, session)
+      return session
     } catch (error) {
       if (factoryPort) this.factoryHooks.delete(factoryPort)
-      try {
-        await session.close()
-      } catch (cleanupError) {
-        throw new AggregateError([error, cleanupError], 'session initialization and cleanup failed')
+      const failures: unknown[] = [error]
+      if (session) {
+        try {
+          await session.close()
+        } catch (cleanup) {
+          failures.push(cleanup)
+        }
+      } else {
+        try {
+          await memory?.close?.()
+        } catch (cleanup) {
+          failures.push(cleanup)
+        }
+        try {
+          await log.close()
+        } catch (cleanup) {
+          failures.push(cleanup)
+        }
       }
+      if (failures.length > 1) throw new AggregateError(failures, 'session initialization and cleanup failed')
       throw error
-    } finally {
-      this.construction.signal.removeEventListener('abort', cancelCreation)
     }
-    this.sessions.set(key, session)
-    if (registersRebuilt) await session.diag('registers-rebuilt', { sessionKey: key })
-    if (log.recovery) {
-      const [lastRecovery] = await log.scan({ type: 'x/core/ledger-tail-recovered', order: 'desc', limit: 1 })
-      if (
-        (lastRecovery?.data as { diagnosticId?: unknown } | undefined)?.diagnosticId !==
-        log.recovery.diagnosticId
-      )
-        await log.append([session.ev('x/core/ledger-tail-recovered', log.recovery, { ignorable: true })])
-    }
-    return session
   }
 
   /**
