@@ -176,6 +176,12 @@ export function createDagLoop(config = {}) {
           await save()
           return { outcome: 'running', phase: state.stage }
         }
+        const steer = await ctx.input.claim('next-step')
+        if (steer) {
+          state.input.push(...steer.content)
+          await save()
+          return { outcome: 'running', phase: state.stage }
+        }
         if (state.stage === 'plan') {
           const executorTools = (await ctx.turn.view())?.tools ?? []
           const text = await complete(
@@ -288,6 +294,7 @@ export function createDagLoop(config = {}) {
   return {
     id: ID,
     version: VERSION,
+    controls: { steer: true, interrupt: true, pause: true },
     capabilities: ['tools', 'parallel', 'checkpoint', 'model'],
     codec,
     create: (ctx) => driver(ctx),

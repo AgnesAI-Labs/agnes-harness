@@ -44,6 +44,7 @@ export class LoopRegistry implements LoopRegistryPort {
           version: factory.version,
           capabilities: Object.freeze([...factory.capabilities]),
           sourcePackage,
+          ...(factory.controls ? { controls: Object.freeze({ ...factory.controls }) } : {}),
         }),
       ),
     )

@@ -20,7 +20,6 @@ import { runCompaction } from '../step/compaction.js'
 import { finishAborted } from '../step/control.js'
 import { appendExtensionEvent } from '../step/ext-events.js'
 import { builtinBudgetPreflight, checkpointRoutine } from '../step/gate.js'
-import { claimFrom, inboxEvent } from '../step/inbox.js'
 import { admitInferenceRequest, prepareInferenceRequest } from '../step/inference.js'
 import type { SessionImpl } from '../step/session.js'
 import { loopChildStarts } from './child-starts.js'
@@ -324,31 +323,8 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
     if (target === 'next-step') {
       {
         const op = requireOp()
-        const claimed = claimFrom(s.latest('inbox') as Inbox | undefined, target)
-        if (!claimed) return null
-        const { item, rest } = claimed
-        await s.transition(
-          [
-            inboxEvent(s.lane, s.d.actor, rest),
-            s.ev(
-              'user/message',
-              { content: item.content, kind: item.kind ?? 'steer' },
-              {
-                origin: 'principal',
-                trust: item.trust ?? 'trusted',
-                actor: item.actor,
-              },
-            ),
-          ],
-          op.phase.kind === 'failure_drain'
-            ? withPhase(op, {
-                kind: 'checkpoint',
-                continuation: 'need_assistant',
-                triggerSeq: op.meta.triggerSeq,
-                skipInboxOnce: true,
-              })
-            : op,
-        )
+        const item = await s.controls.claim()
+        if (!item) return null
         return {
           id: item.itemId,
           turnId: op.meta.turn,

@@ -312,6 +312,7 @@ export function createReactLoop(config = {}) {
   return {
     id: ID,
     version: VERSION,
+    controls: { steer: true },
     capabilities: ['model', 'tools', 'parallel', 'approval', 'checkpoint', 'compaction', 'children', 'park'],
     codec,
     create: (ctx) => driver(ctx),

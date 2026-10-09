@@ -642,6 +642,7 @@ it('exposes trusted input claims, frozen tool schemas and post-compaction histor
   let captured: LoopContext | undefined
   const viewLoop: LoopFactory = {
     ...echo,
+    controls: { steer: true },
     id: 'test.view',
     create(ctx) {
       captured = ctx

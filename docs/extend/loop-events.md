@@ -30,3 +30,9 @@ Aliases run the existing hook pipeline once and then event listeners in registra
 The default loop emits response events after a successful stream and before assistant persistence, and ending events after the ledger commits `turn/end`. These are runtime callbacks rather than additional ledger rows. Usage, cancellation, park and recovery facts remain on the session ledger.
 
 Custom loops receive the same handling automatically through `LoopContext.model`, `tools` and `events.finish()`. The runtime also supplies `events.dispatch(name, payload, signal)` for explicit boundaries. Avoid manually dispatching an event around an operation that already emits it. The field is optional in the type for compatibility with older test ports. Custom wire requests support protocol sampling fields and `maxTokens`; unsupported sampling or metadata patches fail explicitly.
+
+## Human controls
+
+A `LoopFactory` may declare `controls: { steer: true, interrupt: true, pause: true }`. Omitted controls are refused by Core with `E_UNSUPPORTED` and `detail.reason = "LOOP_CONTROL_UNSUPPORTED"`. Core uses the session’s pinned factory, including during generation publication. Cancellation remains part of the driver lifecycle.
+
+Claim steer inputs with `ctx.input.claim("next-step")` between completed scheduling edges. Never claim while a tool batch is active. Pause blocks the next edge and retains the same turn and checkpoint across reload and cold recovery. Interrupt cooperatively cancels the active execution, drains available receipts and accepts the selected queued input next. Committed effects remain recorded; missing receipts remain uncertain. Queuing, delivery, editing, withdrawal and control outcomes are Core ledger facts with actor and timestamp.

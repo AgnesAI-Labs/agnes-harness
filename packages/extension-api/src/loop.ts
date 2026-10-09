@@ -259,7 +259,20 @@ export interface LoopDriver {
   checkpoint(): LoopCheckpoint
 }
 
+/** Optional human controls. Omission is a refusal, never an inferred default.
+ * Steer is claimed at a completed step boundary, never inside an active tool batch.
+ * Interrupt cooperatively drains effects before accepting the next input.
+ * Pause keeps the turn/checkpoint and must remain paused after cold recovery.
+ * Cancellation is part of every driver's existing lifecycle contract.
+ */
+export interface LoopControls {
+  readonly steer?: boolean
+  readonly interrupt?: boolean
+  readonly pause?: boolean
+}
+
 export interface LoopFactory extends LoopSelection {
+  readonly controls?: LoopControls
   readonly capabilities: readonly string[]
   /** Ledger-backed drivers recover through public continuation ports; driver is the default. */
   readonly checkpointMode?: 'driver' | 'ledger'
@@ -269,6 +282,7 @@ export interface LoopFactory extends LoopSelection {
 }
 
 export interface LoopCatalogEntry extends LoopSelection {
+  controls?: LoopControls
   capabilities: readonly string[]
   sourcePackage: string
 }
