@@ -814,6 +814,46 @@ export class Session {
     return this.write('steer', input, opts)
   }
 
+  /** Authoritative controls of this session's pinned Loop, and its durable pause/queue state. */
+  controls(): Promise<import('@agnes/protocol/gen/agnes-v1').SessionControlStateResult> {
+    return this.client.call('_agnes/v1/session.controls', { sessionId: this.id })
+  }
+
+  control(
+    action: 'pause' | 'resume' | 'cancel' | 'interrupt',
+    opts: { itemId?: string; commandId?: string } = {},
+  ): Promise<number> {
+    return submitCommand(
+      this.client,
+      this.id,
+      'control',
+      { sessionId: this.id, action, ...(opts.itemId ? { itemId: opts.itemId } : {}) },
+      opts.commandId,
+    )
+  }
+  pause(opts: { commandId?: string } = {}): Promise<number> {
+    return this.control('pause', opts)
+  }
+  resume(opts: { commandId?: string } = {}): Promise<number> {
+    return this.control('resume', opts)
+  }
+  interrupt(itemId: string, opts: { commandId?: string } = {}): Promise<number> {
+    return this.control('interrupt', { ...opts, itemId })
+  }
+  editQueued(
+    itemId: string,
+    input: ContentBlock[] | string,
+    opts: { commandId?: string } = {},
+  ): Promise<number> {
+    return submitCommand(
+      this.client,
+      this.id,
+      'editQueued',
+      { sessionId: this.id, itemId, content: toContentBlocks(input) },
+      opts.commandId,
+    )
+  }
+
   followUp(input: ContentBlock[] | string, opts: { commandId?: string } = {}): Promise<number> {
     return this.write('followUp', input, opts)
   }
@@ -862,10 +902,9 @@ export class Session {
     )
   }
 
-  // A notification, not a request: cancellation is reported through the turn's own
-  // stop reason, so there is nothing to wait for here.
+  /** Durable cancellation ends the turn and returns pending steers on the ledger. */
   async cancel(): Promise<void> {
-    await this.client.notify('session/cancel', { sessionId: this.id })
+    await this.control('cancel')
   }
 
   // Stopping the stream is better than growing without bound: the daemon keeps the

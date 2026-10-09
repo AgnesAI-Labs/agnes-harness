@@ -58,7 +58,12 @@ import {
   type UITurn,
   validateAgainst,
 } from '@agnes/protocol'
-import { SessionRemoveQueuedParams, SessionSendNowParams } from '@agnes/protocol/gen/agnes-v1'
+import {
+  SessionControlParams,
+  SessionEditQueuedParams,
+  SessionRemoveQueuedParams,
+  SessionSendNowParams,
+} from '@agnes/protocol/gen/agnes-v1'
 import {
   readToolDetailPage,
   TOOL_DETAIL_PAGE_BYTES,
@@ -430,6 +435,9 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.detach',
       'session.event',
       'session.steer',
+      'session.control',
+      'session.controls',
+      'session.editQueued',
       'session.followUp',
       'session.budget',
       'session.projectUI',
@@ -1519,6 +1527,25 @@ export function registerAgnes(
     )
   })
 
+  const controlRefusal = (error: unknown): never => {
+    const failure = error as {
+      code?: unknown
+      detail?: { control?: unknown; reason?: unknown }
+      data?: { code?: unknown; control?: unknown }
+    }
+    const code = failure.data?.code ?? failure.code
+    if (code === 'E_UNSUPPORTED' || code === 'LOOP_CONTROL_UNSUPPORTED')
+      throw rpcError('SEMANTIC_REJECTED', {
+        code: 'LOOP_CONTROL_UNSUPPORTED',
+        control: failure.detail?.control ?? failure.data?.control,
+      })
+    if (failure.detail?.reason === 'CONTROL_NOT_RUNNING' || code === 'CONTROL_NOT_RUNNING')
+      throw rpcError('SEMANTIC_REJECTED', { code: 'CONTROL_NOT_RUNNING' })
+    if (code === 'E_RELATION' || code === 'QUEUED_INPUT_GONE')
+      throw rpcError('SEMANTIC_REJECTED', { code: 'QUEUED_INPUT_GONE' })
+    throw error
+  }
+
   const dispatch = async (
     kind: string,
     commandId: string,
@@ -1528,6 +1555,35 @@ export function registerAgnes(
   ): Promise<JournalResult> => {
     const sessionId = String(payload.sessionId)
     switch (kind) {
+      case 'control':
+      case 'editQueued': {
+        if (
+          !validateAgainst(kind === 'control' ? SessionControlParams : SessionEditQueuedParams, {
+            ...payload,
+            commandId,
+          }).ok
+        )
+          throw rpcError('INVALID_PARAMS', { reason: 'invalid session control' })
+        const entry = cx.registry.require(sessionId)
+        // Control targets the already pinned session. Publication must not block a human stop.
+        const seq = await (kind === 'control'
+          ? entry.session.controls.apply(
+              payload.action as 'pause' | 'resume' | 'cancel' | 'interrupt',
+              connActor(c.conn),
+              admissionId,
+              typeof payload.itemId === 'string' ? payload.itemId : undefined,
+            )
+          : entry.session.controls.edit(
+              String(payload.itemId),
+              payload.content as never,
+              connActor(c.conn),
+              admissionId,
+            )
+        ).catch(controlRefusal)
+        if (kind === 'control' && (payload.action === 'resume' || payload.action === 'interrupt'))
+          cx.continueFollowUps?.(entry, undefined, true)
+        return { seq }
+      }
       case 'sendNow':
       case 'removeQueued': {
         if (
@@ -1578,13 +1634,15 @@ export function registerAgnes(
         try {
           const invocation = await queued.start()
           return await invocation.run(async () => {
-            const seq = await entry.session.enqueue(kind === 'steer' ? 'next-step' : 'next-turn', {
-              content: payload.content as never,
-              actor: connActor(c.conn),
-              kind: kind === 'steer' ? 'steer' : 'follow_up',
-              commandId,
-              admissionId,
-            })
+            const seq = await entry.session
+              .enqueue(kind === 'steer' ? 'next-step' : 'next-turn', {
+                content: payload.content as never,
+                actor: connActor(c.conn),
+                kind: kind === 'steer' ? 'steer' : 'follow_up',
+                commandId,
+                admissionId,
+              })
+              .catch(controlRefusal)
             if (kind === 'followUp') cx.continueFollowUps?.(entry)
             return { seq }
           })
@@ -1658,6 +1716,20 @@ export function registerAgnes(
     c: CallContext,
     guard: () => void,
   ): Promise<JournalResult | undefined> => {
+    if (kind === 'control' || kind === 'editQueued') {
+      const entry = cx.registry.get(String(payload.sessionId))
+      if (!entry) return undefined
+      const event = await scanNewest(
+        entry.session as unknown as ScannableSession,
+        'x/core/control',
+        (candidate) => (candidate.data as { admissionId?: string }).admissionId === admissionId,
+      )
+      if (!event) return undefined
+      guard()
+      if (kind === 'control' && (payload.action === 'resume' || payload.action === 'interrupt'))
+        cx.continueFollowUps?.(entry, undefined, true)
+      return { seq: event.seq }
+    }
     if (kind === 'sendNow' || kind === 'removeQueued') {
       const entry = cx.registry.get(String(payload.sessionId))
       if (!entry) return undefined
@@ -1754,6 +1826,8 @@ export function registerAgnes(
   ): Promise<Ack> => {
     const sessionId = String(payload.sessionId ?? payload.sessionKey ?? `command:${commandId}`)
     if (
+      kind === 'control' ||
+      kind === 'editQueued' ||
       kind === 'steer' ||
       kind === 'followUp' ||
       kind === 'sendNow' ||
@@ -1820,12 +1894,12 @@ export function registerAgnes(
   }
 
   const sugar = async (
-    kind: 'steer' | 'followUp',
+    kind: 'steer' | 'followUp' | 'control' | 'editQueued',
     params: unknown,
     c: CallContext,
   ): Promise<{ seq: number }> => {
     const p = params as { sessionId: string; content: unknown[]; commandId: string; generation?: number }
-    const payload = { sessionId: p.sessionId, content: p.content }
+    const { commandId: _commandId, generation: _generation, ...payload } = p
     const a = await submit(c.conn.clientId, p.commandId, kind, payload, c, p.generation)
     if (a.status === 'uncertain') throw rpcError('INTERNAL_ERROR', { code: 'UNCERTAIN' })
     // SessionSteerResult requires an integer seq, so an absent one is not a result that can ship.
@@ -1858,6 +1932,13 @@ export function registerAgnes(
     })
     return {}
   })
+  ep.register('_agnes/v1/session.controls', async (params, c) => {
+    const sessionId = (params as { sessionId: string }).sessionId
+    requireOwner('session.controls', sessionId, c)
+    return cx.registry.require(sessionId).session.controls.state()
+  })
+  ep.register('_agnes/v1/session.control', (params, c) => sugar('control', params, c))
+  ep.register('_agnes/v1/session.editQueued', (params, c) => sugar('editQueued', params, c))
   ep.register('_agnes/v1/session.steer', (params, c) => sugar('steer', params, c))
   ep.register('_agnes/v1/session.followUp', (params, c) => sugar('followUp', params, c))
   ep.register('_agnes/v1/apis.list', async (_params, c) => {

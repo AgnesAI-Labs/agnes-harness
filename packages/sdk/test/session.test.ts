@@ -473,7 +473,7 @@ describe('Session', () => {
     expect(await s.prompt('two')).toEqual({ stopReason: 'end_turn', reason: 'completed', lastSeq: 4 })
   })
 
-  it('pulling the prompt signal sends session/cancel without abandoning the request', async () => {
+  it('pulling the prompt signal submits durable cancel without abandoning the request', async () => {
     let cancelled = false
     let release: () => void = () => {}
     const cancelSeen = new Promise<void>((r) => {
@@ -486,9 +486,11 @@ describe('Session', () => {
         await cancelSeen
         return { stopReason: 'cancelled' }
       },
-      'session/cancel': () => {
+      '_agnes/v1/submit': (params) => {
+        expect(params).toMatchObject({ kind: 'control', payload: { sessionId: 's5', action: 'cancel' } })
         cancelled = true
         release()
+        return { seq: 1, replayed: false }
       },
     })
     const c = createClient({
@@ -530,7 +532,7 @@ describe('Session', () => {
     await flush()
   })
 
-  it('steer / followUp / compact / sendNow / removeQueued carry a journal commandId and return seq; cancel is a notification', async () => {
+  it('steer / followUp / compact / sendNow / removeQueued carry journal identities, including durable controls and queue editing', async () => {
     const f = fakeEndpoint({
       initialize: init,
       'session/new': () => ({ sessionId: 's3' }),
@@ -570,7 +572,28 @@ describe('Session', () => {
       kind: 'compact',
       payload: { sessionId: 's3', instructions: 'keep decisions' },
     })
-    expect(f.calls.at(-1)).toMatchObject({ method: 'session/cancel', params: { sessionId: 's3' } })
+    expect(
+      f.calls.find(
+        (call) => call.method === '_agnes/v1/submit' && (call.params as { kind?: string }).kind === 'control',
+      ),
+    ).toMatchObject({
+      params: { kind: 'control', commandId: 'cid:s3:6', payload: { sessionId: 's3', action: 'cancel' } },
+    })
+    expect(await s.pause()).toBe(43)
+    expect(await s.resume()).toBe(43)
+    expect(await s.interrupt('queued-E')).toBe(43)
+    expect(await s.editQueued('queued-F', 'edited')).toBe(43)
+    expect(
+      f.calls
+        .filter((call) => call.method === '_agnes/v1/submit')
+        .slice(-4)
+        .map((call) => (call.params as { payload: unknown }).payload),
+    ).toEqual([
+      { sessionId: 's3', action: 'pause' },
+      { sessionId: 's3', action: 'resume' },
+      { sessionId: 's3', action: 'interrupt', itemId: 'queued-E' },
+      { sessionId: 's3', itemId: 'queued-F', content: [{ type: 'text', text: 'edited' }] },
+    ])
     expect(
       f.calls.find(
         (call) => call.method === '_agnes/v1/submit' && (call.params as { kind?: string }).kind === 'sendNow',

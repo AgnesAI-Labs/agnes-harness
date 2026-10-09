@@ -35,7 +35,11 @@ export function createFollowUpRunner(
           const [row] = await entry.session.scan({ type: 'inbox', order: 'desc', limit: 1, lane: 'main' })
           const items = (row?.data as { items?: Array<{ target: string; kind?: string }> } | null)?.items
           const first = items?.find((item) => item.target === 'next-turn')
-          if (!first || (!immediate && first.kind !== 'follow_up')) return finish()
+          const controls = await entry.session.controls.state()
+          if (controls.paused) return finish()
+          const open = immediate && (await entry.session.projectUI()).opState !== null
+          if ((!first && !open) || (!immediate && first?.kind !== 'follow_up' && first?.kind !== 'steer'))
+            return finish()
           immediate = false
           const queued = cx.activationBarrier.enqueue('turn')
           try {

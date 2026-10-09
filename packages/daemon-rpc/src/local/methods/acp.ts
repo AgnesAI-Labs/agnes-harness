@@ -736,11 +736,10 @@ export function registerAcp(
         !abort.signal.aborted &&
         (await runQueued(cx.commandQueue, p.sessionId, new AbortController().signal, async () => {
           const [row] = await entry.session.scan({ type: 'inbox', order: 'desc', limit: 1, lane: 'main' })
-          return (
-            (row?.data as { items?: Array<{ target: string; kind?: string }> } | null)?.items?.find(
-              (item) => item.target === 'next-turn',
-            )?.kind === 'follow_up'
-          )
+          const first = (
+            row?.data as { items?: Array<{ target: string; kind?: string }> } | null
+          )?.items?.find((item) => item.target === 'next-turn')
+          return first?.kind === 'follow_up' || first?.kind === 'steer'
         }).catch(() => false))
       if (entry.inflight?.abort !== abort) {
         // An explicit send-now transferred this session's activity to a fresh runner.
@@ -752,10 +751,11 @@ export function registerAcp(
     }
   })
 
-  ep.register('session/cancel', async (params) => {
+  ep.register('session/cancel', async (params, c) => {
     const sessionId = (params as { sessionId: string }).sessionId
     requireOwner('session/cancel', sessionId)
     const e = cx.registry.get(sessionId)
+    if (e) await e.session.controls.apply('cancel', connActor(c.conn), `acp-cancel:${cx.clock()}`)
     e?.inflight?.abort.abort()
   })
 

@@ -325,6 +325,11 @@ const SESSION_DEFS: Record<string, TSchema> = {
 }
 
 const AGNES_DEFS: Record<string, TSchema> = {
+  SessionControlParams: AgnesGen.SessionControlParams,
+  SessionEditQueuedParams: AgnesGen.SessionEditQueuedParams,
+  SessionQueuedControlInput: AgnesGen.SessionQueuedControlInput,
+  SessionControlStateResult: AgnesGen.SessionControlStateResult,
+
   FactChainAnchor: AgnesGen.FactChainAnchor,
   FactChainParams: AgnesGen.FactChainParams,
   FactChainPackage: AgnesGen.FactChainPackage,
@@ -1815,6 +1820,30 @@ const REVIEW_RESULT = {
 }
 
 const AGNES_SAMPLES: Record<string, Sample> = {
+  SessionControlParams: {
+    valid: { sessionId: 's', action: 'pause', commandId: 'c' },
+    invalid: [{ sessionId: 's', action: 'stop', commandId: 'c' }],
+    note: 'explicit human control action',
+  },
+  SessionEditQueuedParams: {
+    valid: { sessionId: 's', itemId: 'i', commandId: 'c', content: [{ type: 'text', text: 'edited' }] },
+    invalid: [{ sessionId: 's', itemId: 'i', commandId: 'c', content: [] }],
+    note: 'undelivered input edit',
+  },
+  SessionQueuedControlInput: {
+    valid: { itemId: 'i', target: 'next-step', kind: 'steer', content: [{ type: 'text', text: 'steer' }] },
+    invalid: [{ itemId: 'i', target: 'now', kind: 'steer', content: [] }],
+    note: 'authoritative pending item',
+  },
+  SessionControlStateResult: {
+    valid: {
+      controls: { steer: true, interrupt: false, pause: true, cancel: true },
+      paused: true,
+      pending: [],
+    },
+    invalid: [{ controls: {}, paused: 'yes', pending: [] }],
+    note: 'durable pause with pinned controls',
+  },
   FactChainAnchor: {
     valid: { kind: 'tool', toolUseId: 'tool-1' },
     invalid: [
@@ -6618,6 +6647,21 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/session.control': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'SessionControlParams',
+    result: 'SessionSteerResult',
+  },
+  '_agnes/v1/session.controls': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'SessionIdParams',
+    result: 'SessionControlStateResult',
+  },
+  '_agnes/v1/session.editQueued': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'SessionEditQueuedParams',
+    result: 'SessionSteerResult',
+  },
   '_agnes/v1/session.factChain': {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
     params: 'FactChainParams',
@@ -7304,6 +7348,24 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/session.control': {
+    valid: { sessionId: 'owned', action: 'pause', commandId: 'c' },
+    invalid: [
+      { sessionId: 'owned', action: 'stop', commandId: 'c' },
+      { sessionId: 'owned', action: 'pause' },
+    ],
+    note: 'explicit durable human control',
+  },
+  '_agnes/v1/session.controls': {
+    valid: { sessionId: 'owned' },
+    invalid: [{ sessionId: 1 }],
+    note: 'pinned session capability and pause state',
+  },
+  '_agnes/v1/session.editQueued': {
+    valid: { sessionId: 'owned', itemId: 'i', commandId: 'c', content: [{ type: 'text', text: 'edited' }] },
+    invalid: [{ sessionId: 'owned', itemId: 'i', commandId: 'c', content: [] }],
+    note: 'edit only undelivered queue input',
+  },
   '_agnes/v1/session.factChain': {
     valid: { sessionId: 'owned', laneId: 'main', anchor: { kind: 'tool', toolUseId: 'tool-1' } },
     invalid: [
@@ -7842,6 +7904,9 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/session.control': AGNES_SAMPLES.SessionSteerResult as Sample,
+  '_agnes/v1/session.controls': AGNES_SAMPLES.SessionControlStateResult as Sample,
+  '_agnes/v1/session.editQueued': AGNES_SAMPLES.SessionSteerResult as Sample,
   '_agnes/v1/session.factChain': AGNES_SAMPLES.FactChainResult!,
   '_agnes/v1/doctor.run': AppSamples.DoctorResult!,
   '_agnes/v1/plugins.candidates.reject': PackageAdminSamples.AuthoringCandidate as Sample,

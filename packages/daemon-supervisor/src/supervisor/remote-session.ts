@@ -81,6 +81,40 @@ export class RemoteSession {
     return this.link.command('workspaceFiles', { operation, path })
   }
 
+  readonly controls = {
+    state: () =>
+      this.link.command('controlState', {}) as Promise<
+        import('@agnes/protocol/gen/agnes-v1').SessionControlStateResult
+      >,
+    apply: (
+      action: 'pause' | 'resume' | 'cancel' | 'interrupt',
+      actor: Actor,
+      admissionId: string,
+      itemId?: string,
+    ) => {
+      const release = this.beginActivity()
+      return (
+        this.link.command('control', {
+          action,
+          actor,
+          admissionId,
+          ...(itemId ? { itemId } : {}),
+        }) as Promise<number>
+      )
+        .then((seq) => {
+          if (action === 'resume' || action === 'interrupt') this.queuedInputReservation = this.runSeq + 1
+          return seq
+        })
+        .finally(release)
+    },
+    edit: (
+      itemId: string,
+      content: import('@agnes/protocol').ContentBlock[],
+      actor: Actor,
+      admissionId: string,
+    ) => this.link.command('editQueuedInput', { itemId, content, actor, admissionId }) as Promise<number>,
+  }
+
   enqueue(target: 'next-turn' | 'next-step', msg: unknown): Promise<number> {
     return this.link.command('enqueue', { target, msg }) as Promise<number>
   }
