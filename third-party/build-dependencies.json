@@ -138,7 +138,14 @@
       "source": "https://github.com/evanw/esbuild",
       "purpose": "SDK browser checks, the Web client bundle and the isolated hooks-runner bundle.",
       "rationale": "Provides one fast bundler for browser compatibility and deterministic self-contained runtime artifacts.",
-      "consumers": ["packages/base", "packages/cli", "packages/mhs", "packages/sdk", "packages/web"]
+      "consumers": [
+        "examples/mars-world",
+        "packages/base",
+        "packages/cli",
+        "packages/mhs",
+        "packages/sdk",
+        "packages/web"
+      ]
     },
     {
       "name": "react-dom",
@@ -217,6 +224,15 @@
       "purpose": "Tailwind v4 CSS framework used to build the shared web-ui conversation styles.",
       "rationale": "Provides the source directives and theme utilities consumed by the web-ui stylesheet build.",
       "consumers": ["packages/web-ui"]
+    },
+    {
+      "name": "@types/three",
+      "version": "0.186.0",
+      "license": "MIT",
+      "source": "https://github.com/three-types/three-ts-types",
+      "purpose": "Type the three.js API in the 3D demo world.",
+      "rationale": "three ships without TypeScript declarations.",
+      "consumers": ["examples/mars-world"]
     }
   ]
 }

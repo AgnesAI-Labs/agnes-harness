@@ -234,6 +234,15 @@
       "purpose": "Compile Extension and MCP tool schemas at runtime and independently verify protocol conformance.",
       "rationale": "Reuse the established schema implementation; reject invalid or external references before callbacks run.",
       "consumers": ["packages/base", "packages/host", "packages/mhs", "packages/protocol"]
+    },
+    {
+      "name": "three",
+      "version": "0.186.1",
+      "license": "MIT",
+      "source": "https://github.com/mrdoob/three.js",
+      "purpose": "Render the 3D demo world of Agnes MHS in the browser.",
+      "rationale": "The standard WebGL scene graph, with the loaders and post-processing the demo needs.",
+      "consumers": ["examples/mars-world"]
     }
   ]
 }
