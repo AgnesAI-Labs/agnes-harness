@@ -135,6 +135,12 @@ const codexKey = (): string => {
 
 beforeAll(async () => {
   installLoopbackOnly()
+  // These cases measure destination/cache policy, not cold SDK module loading. Prepare the two
+  // first-used implementations before starting their unchanged first-token request deadlines.
+  await Promise.all([
+    import('@earendil-works/pi-ai/api/anthropic-messages'),
+    import('@earendil-works/pi-ai/api/openai-completions'),
+  ])
   const declared = await listen('DECLARED')
   const elsewhere = await listen('ELSEWHERE')
   servers = [declared.server, elsewhere.server]
@@ -231,7 +237,8 @@ describe('the request goes to the endpoint the route declared', () => {
     const previous = process.env.PI_CACHE_RETENTION
     setEnv('PI_CACHE_RETENTION', 'long')
     try {
-      await run('anthropic-messages', 'BOUND-KEY', declaredUrl(), true)
+      const events = await run('anthropic-messages', 'BOUND-KEY', declaredUrl(), true)
+      expect(hits[0], JSON.stringify(events)).toMatchObject({ where: 'DECLARED', kind: 'request' })
       const anthropic = JSON.parse(hits[0]?.body ?? '{}')
       expect(JSON.stringify(anthropic)).toContain('cache_control')
       expect(JSON.stringify(anthropic)).not.toContain('"ttl":"1h"')
@@ -244,8 +251,8 @@ describe('the request goes to the endpoint the route declared', () => {
     const previous = process.env.PI_CACHE_RETENTION
     setEnv('PI_CACHE_RETENTION', 'long')
     try {
-      await run('openai-completions', 'BOUND-KEY', declaredUrl(), true)
-      expect(hits[0]).toMatchObject({ where: 'DECLARED', kind: 'request' })
+      const events = await run('openai-completions', 'BOUND-KEY', declaredUrl(), true)
+      expect(hits[0], JSON.stringify(events)).toMatchObject({ where: 'DECLARED', kind: 'request' })
       const compatible = JSON.parse(hits[0]?.body ?? '{}')
       expect(compatible).not.toHaveProperty('prompt_cache_key')
       expect(compatible).not.toHaveProperty('prompt_cache_retention')
