@@ -780,7 +780,7 @@ describe('session extras: list, preset/model switching and durable fork', () => 
       method: '_agnes/v1/session.setPreset',
       params: { sessionId, preset: 'minimal-rl' },
     })
-    expect(rejected).toMatchObject({ error: { code: -32008 } })
+    expect(rejected).toMatchObject({ error: { code: -32008, data: { cause: 'preset-unsupported' } } })
     await ep.close()
     await h.close()
   })
@@ -828,7 +828,7 @@ describe('session extras: list, preset/model switching and durable fork', () => 
       method: '_agnes/v1/session.setModel',
       params: { sessionId, slot: 'primary', route, model: 'ghost' },
     })
-    expect(rejected).toMatchObject({ error: { code: -32008 } })
+    expect(rejected).toMatchObject({ error: { code: -32008, data: { cause: 'model-unsupported' } } })
     await ep.close()
     await h.close()
   })

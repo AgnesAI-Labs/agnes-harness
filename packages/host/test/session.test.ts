@@ -128,6 +128,31 @@ describe('createSession', () => {
     const e = await refusal(host.createSession({ cwd: dataDir, preset: 'nope' }))
     expect(e.code).toBe('E_PRESET_UNSUPPORTED')
     expect(e.detail.capability).toBe('preset')
+    expect(e.detail.rule).toBe('not-allowed')
+    await host.close()
+  })
+  it('tells a preset that is provided but not allowed from one that no package provides', async () => {
+    const dataDir = tmp()
+    const { host } = await createTestHost({
+      dataDir,
+      presets: { l1: { name: 'l1', extends: 'standard' } },
+      allowed: ['standard'],
+    })
+    // Provided by a package but not listed: the allow-list is what refuses it.
+    const unlisted = await refusal(host.createSession({ cwd: dataDir, preset: 'l1', key: 'unlisted' }))
+    expect(unlisted.detail.rule).toBe('not-allowed')
+    // The default preset is subject to the same list, not exempt from it.
+    expect((host.validatePresetSwitch('standard') as { doc: { name: string } }).doc.name).toBe('standard')
+    const switched = (() => {
+      try {
+        host.validatePresetSwitch('l1')
+      } catch (error) {
+        return error as Refusal
+      }
+      throw new Error('the switch was accepted')
+    })()
+    expect(switched.code).toBe('E_PRESET_UNSUPPORTED')
+    expect(switched.detail.rule).toBe('not-allowed')
     await host.close()
   })
   it('rejects hard requirements this deployment cannot meet, naming the capability', async () => {

@@ -165,7 +165,9 @@ export async function doctorCommand(
               })
             const snapshot = await configuration.get()
             const accounts = snapshot.accounts ?? []
-            if (accounts.length === 0) {
+            // Routes can also be declared by the profile itself; only a profile with neither has no
+            // provider to report on.
+            if (accounts.length === 0 && !((await resolvedProfile()).provider.routes?.length ?? 0)) {
               sections.push(
                 await doctorProvider(undefined, {
                   signal: commandDeps.signal ?? new AbortController().signal,

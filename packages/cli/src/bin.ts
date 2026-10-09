@@ -57,7 +57,7 @@ export function safeDaemonDisconnectLine(error: unknown): string | undefined {
 type RpcFailureShape = Readonly<{
   kind?: unknown
   code?: unknown
-  data?: Readonly<{ code?: unknown }>
+  data?: Readonly<{ code?: unknown; cause?: unknown }>
 }>
 
 /**
@@ -76,6 +76,31 @@ export function safeExpectedResourceRpcFailureLine(error: unknown): string | und
 }
 
 /**
+ * One fixed sentence per cause the daemon names for a refused preset or model. The cause is a closed
+ * set chosen by the daemon, so it is looked up here and never printed; anything else gets the
+ * general sentence below.
+ */
+const PRESET_REFUSAL_LINES: Readonly<Record<string, string>> = {
+  'not-allowed':
+    "PRESET_SWITCH_REJECTED: the requested preset is not in this profile's presets.allowed; list it there (the default preset has to be listed too).",
+  'preset-unsupported':
+    'PRESET_SWITCH_REJECTED: the requested preset is not provided by an installed package or needs a capability this host does not have; `agh doctor platform` lists the capabilities.',
+  'preset-unresolved':
+    'PRESET_SWITCH_REJECTED: the requested preset asks for a model route this host did not assemble; `agh doctor provider` lists the configured routes.',
+  'model-unsupported':
+    'PRESET_SWITCH_REJECTED: the requested model is not served by this profile; `agh doctor provider` lists the configured routes.',
+  'model-unknown':
+    'PRESET_SWITCH_REJECTED: the requested model is not known to the configured provider; `agh doctor provider` lists the configured routes.',
+}
+
+/** Own keys only: a cause named like an Object.prototype member must not select a function. */
+function presetRefusalLine(cause: unknown): string | undefined {
+  return typeof cause === 'string' && Object.hasOwn(PRESET_REFUSAL_LINES, cause)
+    ? PRESET_REFUSAL_LINES[cause]
+    : undefined
+}
+
+/**
  * Refusals a session command meets because of what the operator asked for or has configured: a
  * `--model`/`--preset` this profile does not carry, or a home with no provider at all. Each gets
  * one fixed line saying what to do next. Same rule as above: the server's message and data are not
@@ -85,7 +110,10 @@ export function safeExpectedSessionRpcFailureLine(error: unknown): string | unde
   const value = error as RpcFailureShape | null
   if (value?.kind !== 'json-rpc') return undefined
   if (value.code === AGNES_ERRORS.PRESET_SWITCH_REJECTED)
-    return 'PRESET_SWITCH_REJECTED: the requested preset or model is not available in this profile; `agh doctor provider` lists the configured routes.'
+    return (
+      presetRefusalLine(value.data?.cause) ??
+      'PRESET_SWITCH_REJECTED: the requested preset or model is not available in this profile; `agh doctor provider` lists the configured routes.'
+    )
   if (value.code === AGNES_ERRORS.SEMANTIC_REJECTED && value.data?.code === 'PROVIDER_UNCONFIGURED')
     return 'PROVIDER_UNCONFIGURED: no model provider is configured for this profile; run `agh config` to add one.'
   if (value.code === AGNES_ERRORS.SEMANTIC_REJECTED && value.data?.code === 'LEGACY_LEDGER_FORMAT')

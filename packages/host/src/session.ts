@@ -89,7 +89,7 @@ export function checkPresetHardRequirements(
     })
   }
   if (!profile.presets.allowed.includes(name))
-    unsupported('is not in presets.allowed', { capability: 'preset' })
+    unsupported('is not in presets.allowed', { capability: 'preset', rule: 'not-allowed' })
 
   // hard requirements, checked against what this deployment can actually provide
   const doc = resolved.doc as HardRequirements
@@ -280,7 +280,7 @@ export async function createSession(
   const name = parentSession?.preset.name ?? opts.preset ?? profile.presets.default
   if (!profile.presets.allowed.includes(name))
     throw new HostError('E_PRESET_UNSUPPORTED', `preset ${name} is not in presets.allowed`, {
-      detail: { source: name, capability: 'preset' },
+      detail: { source: name, capability: 'preset', rule: 'not-allowed' },
     })
   const preset = resolvePreset(name, a.presets, a.sessionPresetLimits())
 

@@ -541,10 +541,34 @@ const REJECT_CODES = new Set([
   'E_MODEL_UNSUPPORTED',
   'E_MODEL_UNKNOWN',
 ])
+
+/**
+ * Which refusal it was, as a closed set a client can show a fixed sentence for. `reason` stays the
+ * free-form message and is not for display; this is the part that is safe to act on.
+ */
+function rejectionCause(err: {
+  code?: string
+  detail?: Record<string, unknown>
+}): 'not-allowed' | 'preset-unsupported' | 'preset-unresolved' | 'model-unsupported' | 'model-unknown' {
+  switch (err.code) {
+    case 'E_PRESET_UNSUPPORTED':
+      return err.detail?.rule === 'not-allowed' ? 'not-allowed' : 'preset-unsupported'
+    case 'E_PRESET_UNRESOLVED':
+      return 'preset-unresolved'
+    case 'E_MODEL_UNSUPPORTED':
+      return 'model-unsupported'
+    default:
+      return 'model-unknown'
+  }
+}
+
 export function mapCore(e: unknown): never {
-  const err = e as { code?: string; message?: string }
+  const err = e as { code?: string; message?: string; detail?: Record<string, unknown> }
   if (err.code && REJECT_CODES.has(err.code))
-    throw rpcError('PRESET_SWITCH_REJECTED', { reason: err.message ?? 'rejected' })
+    throw rpcError('PRESET_SWITCH_REJECTED', {
+      reason: err.message ?? 'rejected',
+      cause: rejectionCause(err),
+    })
   throw e
 }
 

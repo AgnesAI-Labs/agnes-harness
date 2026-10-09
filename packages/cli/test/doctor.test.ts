@@ -61,6 +61,40 @@ describe('doctor command aggregation', () => {
     expect(json.text).not.toContain('minimal_inference')
   })
 
+  it('inspects the routes a profile declares itself when no account was saved', async () => {
+    const d = deps()
+    let hostBuilds = 0
+    const build = d.createHostImpl
+    d.createHostImpl = async (...args) => {
+      hostBuilds++
+      return build?.(...args) as never
+    }
+    d.configuration = {
+      get: async () => ({
+        profile: 'local-dev',
+        revision: 0,
+        configured: false,
+        provider: null,
+        effect: 'new-sessions',
+        accounts: [],
+      }),
+      // What the profile file declares, layered in as a prompt boot does.
+      profileInput: async () => ({
+        provider: {
+          package: '@agnes/ai',
+          adapters: ['@agnes/ai'],
+          routes: [{ route: 'acct-test', api: 'openai-completions', baseUrl: 'https://example.invalid/v1' }],
+          catalog: { include: [] },
+        },
+      }),
+    } as never
+    const result = await doctorCommand(parseArgs(['doctor', 'provider']), d)
+    expect(hostBuilds).toBe(1)
+    expect(result.json[0]?.name).toBe('provider')
+    expect(result.text).not.toContain('no configured provider route selected')
+    expect(result.json[0]?.detail.join('\n')).toContain('configured routes')
+  })
+
   it('fails default provider doctor for an enabled account whose credential is absent', async () => {
     const d = deps()
     d.configuration = {
