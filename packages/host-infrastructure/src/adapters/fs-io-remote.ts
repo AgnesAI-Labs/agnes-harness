@@ -137,6 +137,8 @@ export function createRemoteFsIo(transport: RemoteTransport): FsIo {
     args: string[] = [],
     options: { stdin?: string; maxOutputBytes?: number } = {},
   ) => {
+    if (/\p{Surrogate}/u.test(abs))
+      throw Object.assign(new TypeError('Expected a lossless POSIX filesystem path'), { code: 'EINVAL' })
     const result = await transport.exec(['python3', '-c', SCRIPT, operation, abs, ...args], {
       cwd: '/',
       ...options,

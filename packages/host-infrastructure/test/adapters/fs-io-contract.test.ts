@@ -111,7 +111,7 @@ const FIXTURES: Array<[string, () => Fixture]> = [
 // The remote fixture spawns a process for every lstat, readdir and mkdir the fence makes: a case
 // takes up to about a second alone and has run past vitest's 5 s default on a loaded macOS runner.
 // The local and memory fixtures finish in milliseconds either way.
-describe.each(FIXTURES)('FsIo contract through the fence: %s', { timeout: 30_000 }, (_name, open) => {
+describe.each(FIXTURES)('FsIo contract through the fence: %s', { timeout: 30_000 }, (name, open) => {
   const held: Fixture[] = []
   afterEach(() => {
     for (const f of held.splice(0)) f.dispose()
@@ -179,6 +179,12 @@ describe.each(FIXTURES)('FsIo contract through the fence: %s', { timeout: 30_000
     expect((await fs.stat('inside-link')).kind).toBe('symlink')
     expect((await fs.stat('real')).kind).toBe('dir')
     expect(dec(await fs.read('inside-link/x'))).toBe('ok')
+    f.seed('ordinary-\ufffd🙂.txt', 'synthetic fixture only')
+    expect((await fs.stat('ordinary-\ufffd🙂.txt')).kind).toBe('file')
+    if (process.platform !== 'win32' && name !== 'memory') {
+      await expect(fs.stat('ordinary-\ud800🙂.txt')).rejects.toMatchObject({ code: 'EINVAL' })
+      await expect(fs.read('ordinary-\ud800🙂.txt')).rejects.toMatchObject({ code: 'EINVAL' })
+    }
   }, 15_000)
 
   it('answers rm for the parent as well as the leaf', async () => {
