@@ -144,10 +144,10 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     },
     readFileSync('tools/e2e-web/baselines/screenshot.css', 'utf8'),
   )
-  // The demo model echoes two runtime-only IDs in its background-job receipt. Normalize
+  // The demo model echoes runtime-only IDs in its job and surface receipts. Normalize
   // only those marked identifiers; keep the receipt wording, bytes, command and state.
   const jobReceipts = page.locator('#conversation-shell p')
-  if (name.startsWith('workbench-p2-'))
+  if (name.startsWith('workbench-p2-') || name.startsWith('fact-artifact-'))
     await jobReceipts.evaluateAll((rows) => {
       for (const row of rows) {
         if (row.childElementCount) continue
@@ -161,13 +161,18 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
             /(background job )[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/g,
             (_match, prefix: string) => `${prefix}00000000-0000-0000-0000-000000000000`,
           )
+          .replace(
+            /(\[Open review\]\(\/\?session=)[a-f0-9-]{36}(&surface=card-)([a-f0-9]+)(\))/g,
+            (_match, prefix: string, surface: string, id: string, suffix: string) =>
+              `${prefix}00000000-0000-0000-0000-000000000000${surface}${'0'.repeat(id.length)}${suffix}`,
+          )
         if (normalized !== original) {
           row.setAttribute('data-e2e-job-receipt-original', original)
           row.textContent = normalized
         }
       }
     })
-  if (name.startsWith('workbench-')) {
+  if (name.startsWith('workbench-') || name.startsWith('fact-artifact-')) {
     // Frame the latest completed conversation consistently after dock/viewport reflow.
     await page.getByRole('region', { name: /^(Conversation|对话)$/, exact: true }).evaluate((viewport) => {
       const behavior = viewport.style.scrollBehavior

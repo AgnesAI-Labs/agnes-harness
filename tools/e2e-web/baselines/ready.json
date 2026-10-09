@@ -15,7 +15,8 @@
     "Repository workspace text only: checkout name and absolute path vary by machine.",
     "Turn timing: runtime duration varies. Metadata clock only is normalized to 12:00.",
     "Workspace file read clock only is normalized to 12:00; its localized label stays visible.",
-    "Terminal demo receipt opaque IDs only are normalized to fixed-length values; content and controls stay visible."
+    "Terminal demo receipt opaque IDs only are normalized to fixed-length values; content and controls stay visible.",
+    "Surface demo receipt session UUID and surface ID only are normalized to fixed-length values; artifact digest, wording and controls stay visible."
   ],
   "ready": [
     "first-run-en-light",

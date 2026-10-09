@@ -1,3 +1,4 @@
+import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
 import { chooseWorkspace, fresh, preferences } from './ui.js'
@@ -65,7 +66,14 @@ for (const locale of ['en', 'zh-CN'])
       await page.getByTestId('workbench-tab-facts').press('Escape')
 
       await send('call present {"files":[{"path":"report.md","name":"report.md"}]}')
-      await page.getByTestId('deliverable-fact-chain').last().click()
+      await page.getByTestId('conversation-turn').last().getByTestId('turn-process-toggle').click()
+      const artifactEntry = page
+        .getByTestId('conversation-turn')
+        .last()
+        .getByRole('article', { name: /\bpresent\b/ })
+        .getByTestId('tool-fact-chain')
+      await artifactEntry.click()
+      await facts.locator('[data-fact-kind=artifact]').getByRole('button').click()
       await expect(facts.locator('[data-fact-kind="artifact"]')).toContainText(
         locale === 'en' ? 'Provided by the linked call' : '由关联调用提供',
       )
@@ -85,7 +93,7 @@ for (const locale of ['en', 'zh-CN'])
       await page.setViewportSize({ width: 390, height: 740 })
       await expect(page.getByTestId('workbench-tab-facts')).toBeInViewport()
       await page.getByTestId('workbench-tab-facts').press('Escape')
-      await expect(page.getByTestId('deliverable-fact-chain').last()).toBeFocused()
+      await expect(artifactEntry).toBeFocused()
     })
 
 for (const locale of ['en', 'zh-CN'])
@@ -93,77 +101,106 @@ for (const locale of ['en', 'zh-CN'])
     page,
     runtime,
   }) => {
-    await preferences(page, locale, 'light')
-    await page.goto(runtime.url)
-    await chooseWorkspace(page, runtime, locale)
-    await fresh(page, locale)
-    const surface = {
-      id: 'evidence-review',
-      revision: 1,
-      title: 'Review report',
-      placement: { inline: true, workbench: true },
-      components: [
-        { id: 'status', kind: 'text', dataKey: 'status' },
-        { id: 'buttons', kind: 'button-group', actionIds: ['read-report'] },
-      ],
-      data: { status: 'Read synthetic evidence before continuing.' },
-      actions: [
-        {
-          id: 'read-report',
-          label: 'Read report',
-          tool: 'read',
-          argsTemplate: { path: { literal: 'report.md' } },
-          paramsSchema: {
-            type: 'object',
-            required: ['path'],
-            properties: { path: { type: 'string' } },
-            additionalProperties: false,
+    test.setTimeout(120_000)
+    const client = await runtime.connect()
+    const model = (await client.config.test({ providerId: 'deepseek' })).models[0]?.id
+    if (!model) throw new Error('Missing reviewed fixture model')
+    // The teaching demo deliberately refuses complex schemas; send scripted calls through
+    // the real provider adapter, Core validation and normal tool authorization instead.
+    const fixture = await startProviderFixture('Synthetic UI evidence.', undefined, model)
+    try {
+      const config = await client.config.get()
+      await client.config.save({
+        providerId: 'deepseek',
+        baseUrl: fixture.baseUrl,
+        apiKey: fixture.apiKey,
+        model,
+        accountId: 'evidence-fixture',
+        label: 'Local scripted evidence model',
+        expectedRevision: config.revision,
+        makeDefault: true,
+      })
+      await preferences(page, locale, 'light')
+      await page.goto(runtime.url)
+      await chooseWorkspace(page, runtime, locale)
+      await fresh(page, locale)
+      const surface = {
+        id: 'evidence-review',
+        revision: 1,
+        title: 'Review report',
+        placement: { inline: true, workbench: true },
+        components: [
+          { id: 'status', kind: 'text', dataKey: 'status' },
+          { id: 'buttons', kind: 'button-group', actionIds: ['read-report'] },
+        ],
+        data: { status: 'Read synthetic evidence before continuing.' },
+        actions: [
+          {
+            id: 'read-report',
+            label: 'Read report',
+            tool: 'read',
+            argsTemplate: { path: { literal: 'report.md' } },
+            paramsSchema: {
+              type: 'object',
+              required: ['path'],
+              properties: { path: { type: 'string' } },
+              additionalProperties: false,
+            },
           },
-        },
-      ],
-    }
-    const composer = page.getByRole('textbox', {
-      name: locale === 'en' ? 'Task content' : '任务内容',
-      exact: true,
-    })
-    for (const prompt of [
-      'call tool_search {"query":"ui_render"}',
-      'call tool_describe {"name":"ui_render"}',
-    ]) {
-      const turns = page.getByTestId('conversation-turn')
-      const before = await turns.count()
-      await composer.fill(prompt)
+        ],
+      }
+      const composer = page.getByRole('textbox', {
+        name: locale === 'en' ? 'Task content' : '任务内容',
+        exact: true,
+      })
+      for (const tool of [
+        { name: 'tool_search', args: { query: 'ui_render' } },
+        { name: 'tool_describe', args: { name: 'ui_render' } },
+      ]) {
+        fixture.queueTool(tool)
+        const prompt = 'call ' + tool.name + ' ' + JSON.stringify(tool.args)
+        const turns = page.getByTestId('conversation-turn')
+        const before = await turns.count()
+        await composer.fill(prompt)
+        await composer.press('Enter')
+        await expect(turns).toHaveCount(before + 1, { timeout: 25_000 })
+        await expect(turns.last()).toHaveAttribute('data-status', 'completed', { timeout: 25_000 })
+        await turns.last().getByTestId('turn-process-toggle').click()
+        await expect(turns.last()).toContainText('ui_render')
+      }
+      fixture.queueTool({ name: 'ui_render', args: { surface } })
+      await composer.fill('call ui_render ' + JSON.stringify({ surface }))
       await composer.press('Enter')
-      await expect(turns).toHaveCount(before + 1, { timeout: 25_000 })
-      await expect(turns.last()).toHaveAttribute('data-status', 'completed', { timeout: 25_000 })
-      await turns.last().getByTestId('turn-process-toggle').click()
-      await expect(turns.last()).toContainText('ui_render')
+      const card = page.getByTestId('intelligent-ui-inline')
+      await expect(card.getByTestId('ui-surface-evidence-review')).toHaveAttribute('data-revision', '1')
+      await card.getByTestId('ui-action-read-report').click()
+      await card.getByTestId('ui-confirm').click()
+      await expect(card.locator('[data-status="succeeded"]')).toBeVisible()
+      const actionTool = page.getByRole('article', { name: /\bread\b/, includeHidden: true })
+      const actionTurn = page.getByTestId('conversation-turn').filter({ has: actionTool })
+      await expect(actionTurn).toHaveAttribute('data-status', 'completed', { timeout: 25_000 })
+      await actionTurn.getByTestId('turn-process-toggle').click()
+      await actionTool.getByTestId('tool-fact-chain').click()
+      const facts = page.getByTestId('fact-chain')
+      await expect(
+        facts
+          .getByTestId('ui-fact-chain-node')
+          .filter({ hasText: locale === 'en' ? 'Action succeeded' : '动作成功' }),
+      ).toBeVisible()
+      await expect(
+        facts
+          .getByTestId('ui-fact-chain-node')
+          .filter({ hasText: locale === 'en' ? 'Revision 1' : '修订 1' })
+          .first(),
+      ).toBeVisible()
+      await page.locator('#view-trace').click()
+      await expect(
+        page
+          .locator('.trace-row')
+          .filter({ hasText: locale === 'en' ? 'Action succeeded' : '动作成功' })
+          .first(),
+      ).toBeVisible()
+    } finally {
+      await fixture.close()
     }
-    await composer.fill('call ui_render ' + JSON.stringify({ surface }))
-    await composer.press('Enter')
-    const card = page.getByTestId('intelligent-ui-inline')
-    await expect(card.getByTestId('ui-surface-evidence-review')).toHaveAttribute('data-revision', '1')
-    await card.getByTestId('ui-action-read-report').click()
-    await expect(card.locator('[data-status="succeeded"]')).toBeVisible()
-    await page.getByTestId('conversation-turn').last().getByTestId('turn-process-toggle').click()
-    await page.getByTestId('tool-fact-chain').last().click()
-    const facts = page.getByTestId('fact-chain')
-    await expect(
-      facts
-        .getByTestId('ui-fact-chain-node')
-        .filter({ hasText: locale === 'en' ? 'Action succeeded' : '动作成功' }),
-    ).toBeVisible()
-    await expect(
-      facts
-        .getByTestId('ui-fact-chain-node')
-        .filter({ hasText: locale === 'en' ? 'Revision 1' : '修订 1' })
-        .first(),
-    ).toBeVisible()
-    await page.locator('#view-trace').click()
-    await expect(
-      page
-        .locator('.trace-row')
-        .filter({ hasText: locale === 'en' ? 'Action succeeded' : '动作成功' })
-        .first(),
-    ).toBeVisible()
   })
