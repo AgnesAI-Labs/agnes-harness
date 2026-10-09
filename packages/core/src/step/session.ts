@@ -1154,12 +1154,26 @@ export class SessionImpl {
       lastAssistantSeq: last,
       ...(extra.error ? { error: extra.error } : {}),
     })
-    const seqs = await this.transition(
-      typeof events === 'function'
-        ? (seq) => [...events(seq), ...(controlEnd ? [controlEnd.event] : []), end]
-        : [...(events ?? []), ...(controlEnd ? [controlEnd.event] : []), end],
-      null,
-    )
+    const seqs = await this.transition((seq) => {
+      const inbox = this.latest('inbox') as Inbox | undefined
+      // A steer arriving after the final boundary remains pending for the next turn.
+      const carry =
+        reason === 'completed' && inbox?.items.some((item) => item.target === 'next-step')
+          ? [
+              inboxEvent(this.lane, this.d.actor, {
+                items: inbox.items.map((item) =>
+                  item.target === 'next-step' ? { ...item, target: 'next-turn' as const } : item,
+                ),
+              }),
+            ]
+          : []
+      return [
+        ...(typeof events === 'function' ? events(seq) : (events ?? [])),
+        ...carry,
+        ...(controlEnd ? [controlEnd.event] : []),
+        end,
+      ]
+    }, null)
     this.turn = null
     this.turnEndError = extra.error
     // Observer failure cannot undo a committed turn ending.
@@ -1258,7 +1272,7 @@ export class SessionImpl {
     })
   }
 
-  /** Remove only unclaimed next-turn input under the same lock as enqueue and acceptInput. */
+  /** Withdraw unclaimed input under the same lock as enqueue and delivery. */
   removeQueuedInput(itemId: string, by: Actor, admissionId: string): Promise<Seq> {
     return this.locked(async () => {
       const inbox = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
@@ -1321,6 +1335,7 @@ export class SessionImpl {
       this.ac.abort()
       return written.firstSeq
     })
+    await this.abort(by)
     if (draining) await draining
     // A parked/recovered turn has no run promise; close its cancelled state before the new run.
     if (this.op()?.control.status === 'cancel_requested')
@@ -1825,7 +1840,11 @@ export class SessionImpl {
         // A queued cancellation must not reset the active run's signal or claim its next input.
         if (opts.signal.aborted) return { reason: 'aborted' as const, lastSeq: this.lastSeq }
         // Concurrent admissions share a stop/failure boundary; a later explicit run can resume.
-        if (outcome.reason !== 'completed') return outcome
+        if (
+          outcome.reason !== 'completed' &&
+          !(outcome.reason === 'parked' && this.op() && !(await this.controls.paused()))
+        )
+          return outcome
       }
       return this.runTurns(opts)
     })

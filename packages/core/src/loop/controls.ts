@@ -1,7 +1,7 @@
 import { withPhase } from '@agnes/core-common/step/op-state'
 import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
 import type { Inbox } from '@agnes/core-ledger/reduce/shapes'
-import type { Actor, ContentBlock } from '@agnes/protocol'
+import { type Actor, type ContentBlock, MAX_FRAME_BYTES } from '@agnes/protocol'
 import { validateUserMessageImages } from '../request/user-message-images.js'
 import { inboxEvent } from '../step/inbox.js'
 import type { SessionImpl } from '../step/session.js'
@@ -61,9 +61,19 @@ export class SessionControls {
 
   async state() {
     return {
-      controls: { ...this.s.d.loopFactory.controls, cancel: true },
+      controls: {
+        steer: this.s.d.loopFactory.controls?.steer === true,
+        interrupt: this.s.d.loopFactory.controls?.interrupt === true,
+        pause: this.s.d.loopFactory.controls?.pause === true,
+        cancel: true,
+      },
       paused: await this.paused(),
-      pending: structuredClone((this.s.latest('inbox') as Inbox | undefined)?.items ?? []),
+      pending: ((this.s.latest('inbox') as Inbox | undefined)?.items ?? []).map((item) => ({
+        itemId: item.itemId,
+        target: item.target,
+        kind: item.kind ?? 'prompt',
+        content: structuredClone(item.content),
+      })),
     }
   }
 
@@ -112,18 +122,18 @@ export class SessionControls {
   async edit(itemId: string, content: ContentBlock[], actor: Actor, admissionId: string): Promise<Seq> {
     await this.require('steer', actor)
     validateUserMessageImages(content)
-    if (new TextEncoder().encode(JSON.stringify(content)).byteLength > 256_000)
-      throw new CoreError('E_ENVELOPE', 'Queued input is too large')
+    content = structuredClone(content)
     return this.s.locked(async () => {
       const inbox = (this.s.latest('inbox') as Inbox | undefined) ?? { items: [] }
       if (!inbox.items.some((item) => item.itemId === itemId))
         throw new CoreError('E_RELATION', 'queued input is no longer pending', { itemId })
+      const next = {
+        items: inbox.items.map((item) => (item.itemId === itemId ? { ...item, content } : item)),
+      }
+      if (new TextEncoder().encode(JSON.stringify(next)).byteLength > MAX_FRAME_BYTES - 4096)
+        throw new CoreError('E_ENVELOPE', 'Queued input is too large')
       const result = await this.s.d.log.append([
-        inboxEvent(this.s.lane, actor, {
-          items: inbox.items.map((item) =>
-            item.itemId === itemId ? { ...item, content: structuredClone(content) } : item,
-          ),
-        }),
+        inboxEvent(this.s.lane, actor, next),
         this.fact('steer', 'edited', actor, { itemId, admissionId }),
       ])
       return result.firstSeq
@@ -138,7 +148,7 @@ export class SessionControls {
       lane: this.s.lane,
       fromSeq: op.meta.triggerSeq,
       order: 'desc',
-      limit: 100,
+      limit: 1000,
     })
     const row = rows.find((row) => {
       const data = row.data as { action?: string; outcome?: string }
@@ -159,14 +169,21 @@ export class SessionControls {
     if (action === 'pause' || action === 'resume') {
       await this.require('pause', actor)
       const seq = await this.s.locked(async () => {
-        if (!this.s.op()) throw new CoreError('E_RELATION', 'Pause/resume requires an open turn')
+        if (!this.s.op()) {
+          await this.s.d.log.append([
+            this.fact(action, 'refused', actor, { admissionId, reason: 'CONTROL_NOT_RUNNING' }),
+          ])
+          throw new CoreError('E_RELATION', 'Pause/resume requires an open turn', {
+            reason: 'CONTROL_NOT_RUNNING',
+          })
+        }
         const result = await this.s.d.log.append([
           this.s.ev(PAUSE, { paused: action === 'pause' }, { actor, origin: 'principal', ignorable: true }),
           this.fact(action, action === 'pause' ? 'requested' : 'applied', actor, { admissionId }),
         ])
         return result.firstSeq
       })
-      if (action === 'resume') await this.s.resume()
+      if (action === 'resume' && !this.s.turn) await this.s.resume()
       return seq
     }
     if (action === 'interrupt') {
@@ -204,6 +221,7 @@ export class SessionControls {
     })
     await this.s.abort(actor)
     await this.s.drainCancelledTurn()
+    await this.s.restartLoopDriver()
     return result.firstSeq
   }
 }

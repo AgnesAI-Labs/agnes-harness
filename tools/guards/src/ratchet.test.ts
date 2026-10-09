@@ -271,13 +271,13 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-foundation/src': 2340,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
   'packages/daemon-rpc/src/local/auth': 341,
-  'packages/daemon-rpc/src': 7525,
+  'packages/daemon-rpc/src': 7608,
   'packages/daemon-supervisor/src/supervisor/startup': 18,
   'packages/daemon-supervisor/src/supervisor/discovery': 446,
   'packages/daemon-supervisor/src/supervisor/scope': 254,
   'packages/daemon-supervisor/src/supervisor/configuration': 45,
   'packages/daemon-supervisor/src/supervisor/service-worker': 103,
-  'packages/daemon-supervisor/src': 10427,
+  'packages/daemon-supervisor/src': 10460,
   'packages/daemon-admin/src/packages/project': 43,
   'packages/daemon-admin/src/packages/permissions': 97,
   'packages/daemon-admin/src/packages/operations': 416,
@@ -1213,7 +1213,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 29399 -> 30048; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Await async loop construction, propagate session cancellation and drain initialization before storage closes.
   // countLines: 30048 -> 30103 (+55); exact measured cap, no exclusions or spare allocation.
-  'packages/core/src': 20710,
+  'packages/core/src': 20746,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1546,7 +1546,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2509 -> 2726; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Context/search/history/goal/schedule admin methods and persisted child-engine configuration schemas.
   // countLines: 2726 -> 2981; exact cap, no exclusions or spare allocation.
-  'packages/protocol/src': 3547,
+  'packages/protocol/src': 3568,
   'packages/cli/src/tui': 38,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1766,7 +1766,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 5443 -> 5447; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Typed search, history, context and child-engine administration methods.
   // countLines: 5447 -> 5456; exact cap, no exclusions or spare allocation.
-  'packages/sdk/src': 5880,
+  'packages/sdk/src': 5933,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 192,
   'packages/sdk/src/surface.browser': 1,

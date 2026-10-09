@@ -99,6 +99,9 @@ export type MethodName =
   | 'session/update'
   | 'session/request_permission'
   | '_agnes/v1/session.attach'
+  | '_agnes/v1/session.control'
+  | '_agnes/v1/session.controls'
+  | '_agnes/v1/session.editQueued'
   | '_agnes/v1/session.steer'
   | '_agnes/v1/session.budget'
   | '_agnes/v1/session.projectUI'
@@ -229,6 +232,24 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     direction: 'c2s',
     params: A.SessionAttachParams,
     result: A.SessionAttachResult,
+  },
+  '_agnes/v1/session.control': {
+    kind: 'request',
+    direction: 'c2s',
+    params: A.SessionControlParams,
+    result: A.SessionSteerResult,
+  },
+  '_agnes/v1/session.controls': {
+    kind: 'request',
+    direction: 'c2s',
+    params: A.SessionIdParams,
+    result: A.SessionControlStateResult,
+  },
+  '_agnes/v1/session.editQueued': {
+    kind: 'request',
+    direction: 'c2s',
+    params: A.SessionEditQueuedParams,
+    result: A.SessionSteerResult,
   },
   '_agnes/v1/session.steer': {
     kind: 'request',

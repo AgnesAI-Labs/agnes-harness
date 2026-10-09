@@ -11,6 +11,9 @@ import { workerGeneration } from '@agnes/protocol'
 
 export type SessionMethod =
   | 'enqueue'
+  | 'control'
+  | 'controlState'
+  | 'editQueuedInput'
   | 'sendQueuedNow'
   | 'removeQueuedInput'
   | 'run'
