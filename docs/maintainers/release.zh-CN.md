@@ -28,6 +28,6 @@
 
 - [ ] `packages.private` — 选定公开包集合、赋予非占位版本，并仅对这些包移除 `private`；工具包继续保持私有发布标记。
 
-执行 `pnpm release:npx-smoke` 打包 tarball，在仓库外离线安装并检查版本、帮助和 Web 健康状态。执行 `pnpm release:external-examples --keep`，用打包后的公开 API 验证外部作者示例。两个 TypeScript 入口均使用锁定的 tsx。
+按[首次 npm 发布清单](first-npm-release.zh-CN.md)准备；首次发布尚未完成。执行 `pnpm release:pack` 生成并审计宿主平台 tarball 集合。执行 `pnpm release:npx-smoke`，仅发布到临时本地 registry，在仓库外通过 npx 安装，检查版本、doctor、Web 健康/资源及干净停机，并记录安装体积和冷启动时间。执行 `pnpm release:external-examples --keep`，用打包后的公开 API 验证外部作者示例。这些 TypeScript 入口均使用锁定的 tsx。
 
 检查通过只能说明已执行的检查范围；真实模型、外部 MCP、跨平台、设备和安装器按各自环境验收。

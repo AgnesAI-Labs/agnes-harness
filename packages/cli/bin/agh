@@ -77,6 +77,7 @@ function placeFile(source, target, mode) {
 
 function linkVendorPackages(root) {
   const vendor = join(root, 'vendor')
+  if (!existsSync(vendor)) return
   for (const entry of readdirSync(vendor, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue
     const names = entry.name.startsWith('@')

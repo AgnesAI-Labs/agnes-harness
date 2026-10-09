@@ -1,155 +1,151 @@
 #!/usr/bin/env -S node --import tsx
-// Packs @agnes/harness, installs the tarball outside the repo, and checks agh web.
-import { execFileSync, spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { createServer } from 'node:net'
+import { spawn } from 'node:child_process'
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { localRegistry } from './local-registry.js'
 import { PUBLIC_PACKAGE_NAME, PUBLIC_PACKAGE_VERSION } from './npx-package.js'
-import { packNpxPackage } from './pack-npx.js'
+import { guardTarball } from './packed-tarball.js'
+import { releasePack } from './release-pack.js'
+import { command, freePort, stopWeb, treeBytes, waitFor } from './smoke-support.js'
 
-const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+const repo = resolve(import.meta.dirname, '../..')
+// The smoke owns a POSIX process group; Windows needs a separate process-tree shutdown contract.
+if (process.platform === 'win32')
+  // guards-allow-platform: fail before starting an unverified process tree.
+  throw new Error('Local-registry smoke requires macOS or Linux; Windows smoke is not implemented')
+const args = process.argv.slice(2)
+const options = new Map<string, string>()
+for (let index = 0; index < args.length; index += 2) {
+  const flag = args[index]
+  const value = args[index + 1]
+  if (!flag || !['--tarball', '--report'].includes(flag) || !value || !isAbsolute(value) || options.has(flag))
+    throw new Error('Expected --tarball and/or --report with absolute paths')
+  options.set(flag, value)
+}
 const root = await mkdtemp(join(tmpdir(), 'agh-npx-smoke-'))
-if (resolve(root).startsWith(repo)) throw new Error(`smoke directory must stay outside the repo: ${root}`)
-
-const stage = join(root, 'stage')
-const install = join(root, 'install')
+if (root === repo || root.startsWith(`${repo}${sep}`))
+  throw new Error('Smoke home must be outside the checkout')
 const home = join(root, 'home')
-const workspace = join(root, 'work')
+const aghHome = join(root, 'agh')
+const work = join(root, 'work')
 const cache = join(root, 'npm-cache')
-const daemonStderr = join(root, 'daemon.stderr.log')
+const registryRoot = join(root, 'registry')
+let registry: Awaited<ReturnType<typeof localRegistry>> | undefined
 let web: ReturnType<typeof spawn> | undefined
 let webLog = ''
 let succeeded = false
-const agh = join(install, 'node_modules', '.bin', process.platform === 'win32' ? 'agh.cmd' : 'agh') // guards-allow-platform: npm executable suffix for the smoke platform
-
+let daemonStarted = false
 const env: NodeJS.ProcessEnv = {
   PATH: process.env.PATH ?? '',
   HOME: home,
   USERPROFILE: home,
-  AGH_HOME: home,
+  AGH_HOME: aghHome,
   TMPDIR: root,
   TEMP: root,
   TMP: root,
-  LANG: process.env.LANG ?? 'C.UTF-8',
+  LANG: 'en_US.UTF-8',
   AGNES_PROFILE: 'local-dev',
+  npm_config_cache: cache,
+  npm_config_fund: 'false',
+  npm_config_audit: 'false',
+  npm_config_update_notifier: 'false',
+  npm_config_ignore_scripts: 'true',
+  npm_config_userconfig: join(root, 'user.npmrc'),
+  npm_config_globalconfig: join(root, 'global.npmrc'),
+  npm_config_fetch_retries: '0',
+  npm_config_fetch_timeout: '15000',
 }
-
-function npmEnv(): NodeJS.ProcessEnv {
-  return {
-    ...env,
-    npm_config_cache: cache,
-    npm_config_offline: 'true',
-    npm_config_fund: 'false',
-    npm_config_audit: 'false',
-    npm_config_update_notifier: 'false',
-  }
-}
-
-function run(command: string, args: string[], cwd: string): string {
-  return execFileSync(command, args, {
-    cwd,
-    env,
-    encoding: 'utf8',
-    timeout: 60_000,
-    maxBuffer: 8 * 1024 * 1024,
-  })
-}
-
-async function freePort(): Promise<number> {
-  const listener = createServer()
-  await new Promise<void>((done, reject) => {
-    listener.once('error', reject)
-    listener.listen(0, '127.0.0.1', () => done())
-  })
-  const address = listener.address()
-  if (address === null || typeof address === 'string') throw new Error('no TCP port')
-  const port = address.port
-  await new Promise<void>((done) => listener.close(() => done()))
-  return port
-}
-
-async function waitFor(label: string, probe: () => Promise<boolean>): Promise<void> {
-  const deadline = Date.now() + 90_000
-  let last = 'not ready'
-  while (Date.now() < deadline) {
-    if (web && web.exitCode !== null) {
-      const daemonLog = await readFile(daemonStderr, 'utf8').catch(() => '')
-      throw new Error(`${label}: agh web exited ${web.exitCode}\n${webLog}\ndaemon stderr:\n${daemonLog}`)
-    }
-    try {
-      if (await probe()) return
-    } catch (error) {
-      last = error instanceof Error ? error.message : String(error)
-    }
-    await new Promise((done) => setTimeout(done, 250))
-  }
-  const daemonLog = await readFile(daemonStderr, 'utf8').catch(() => '')
-  throw new Error(`${label}: timed out (${last})\n${webLog}\ndaemon stderr:\n${daemonLog}`)
-}
+const npm = 'npm'
+const npx = 'npx'
+const npxArgs = ['--yes', '--package', `${PUBLIC_PACKAGE_NAME}@${PUBLIC_PACKAGE_VERSION}`, 'agh']
+const run = (args: string[], acceptedExitCodes?: readonly number[]) =>
+  command(npx, [...npxArgs, ...args], work, env, acceptedExitCodes)
 
 try {
-  process.stdout.write(`smoke root ${root}\n`)
-  const packed = await packNpxPackage(stage)
-  const packJson = execFileSync('npm', ['pack', '--json', '--pack-destination', root], {
-    cwd: stage,
-    env: npmEnv(),
-    encoding: 'utf8',
-    timeout: 120_000,
-    maxBuffer: 8 * 1024 * 1024,
-  })
-  const jsonStart = packJson.indexOf('[')
-  const jsonEnd = packJson.lastIndexOf(']')
-  if (jsonStart < 0 || jsonEnd < jsonStart) throw new Error(`npm pack did not name a tarball: ${packJson}`)
-  const [entry] = JSON.parse(packJson.slice(jsonStart, jsonEnd + 1)) as Array<{ filename?: string } | string>
-  const filename = typeof entry === 'string' ? entry : entry?.filename
-  if (!filename) throw new Error(`npm pack did not name a tarball: ${packJson}`)
-  const tarball = join(root, filename)
-  await mkdir(install, { recursive: true })
-  await mkdir(home, { recursive: true, mode: 0o700 })
-  await mkdir(join(home, 'profiles', 'local-dev'), { recursive: true, mode: 0o700 })
-  await mkdir(workspace, { recursive: true })
+  for (const path of [home, aghHome, work, registryRoot]) await mkdir(path, { mode: 0o700 })
+  for (const file of ['user.npmrc', 'global.npmrc']) await writeFile(join(root, file), '')
+  const prepared = options.get('--tarball') ?? (await releasePack(join(root, 'tarballs'))).tarball
+  const tarball = join(root, 'candidate.tgz')
+  await copyFile(prepared, tarball)
+  if (options.has('--tarball')) {
+    const triple = `${process.platform}-${process.arch}` // guards-allow-platform: supplied tarball must target this smoke host.
+    await guardTarball(tarball, triple)
+  }
+  registry = await localRegistry(registryRoot, await readFile(tarball))
+  env.npm_config_registry = registry.url
+  // npm's client requires a credential even for this anonymous, local-only fixture.
   await writeFile(
-    join(home, 'profiles', 'local-dev', 'profile.yaml'),
+    join(root, 'user.npmrc'),
+    `//${new URL(registry.url).host}/:_authToken=local-smoke-fixture\n`,
+  )
+  // The registry address comes exclusively from the bound loopback listener, never arguments/config.
+  await command(
+    npm,
     [
-      'name: local-dev',
-      'computerUse:',
-      '  enabled: false',
-      'policy:',
-      '  capabilityCeiling: [tools, hooks, slots, events, resources, ui, services, network, network.publicRead, tools.invoke, artifacts, subagent]',
-      '',
-    ].join('\n'),
+      'publish',
+      tarball,
+      '--registry',
+      registry.url,
+      '--ignore-scripts',
+      '--tag',
+      'local-smoke',
+      '--loglevel',
+      'error',
+    ],
+    work,
+    { ...env, npm_config_cache: join(root, 'publish-cache') },
   )
-  await writeFile(join(install, 'package.json'), '{"private":true}\n')
-  execFileSync(
-    'npm',
-    ['install', '--offline', '--ignore-scripts', '--no-fund', '--no-audit', '--cache', cache, tarball],
-    { cwd: install, env: npmEnv(), encoding: 'utf8', timeout: 120_000, stdio: 'inherit' },
+  process.stdout.write('Local publish complete; installing through npx with an empty cache\n')
+  const installStart = performance.now()
+  const version = await run(['--version'])
+  const installAndVersionMs = performance.now() - installStart
+  if (!version.includes(PUBLIC_PACKAGE_VERSION)) throw new Error(`Unexpected version: ${version}`)
+  if (!registry.requests.includes('GET /candidate.tgz'))
+    throw new Error('npx did not install through the local registry')
+  const installs = await readdir(join(cache, '_npx'))
+  const installId = installs[0]
+  if (installs.length !== 1 || !installId) throw new Error('Expected exactly one isolated npx install')
+  const modules = join(cache, '_npx', installId, 'node_modules')
+  const installed = JSON.parse(await readFile(join(modules, PUBLIC_PACKAGE_NAME, 'package.json'), 'utf8'))
+  if (installed.name !== PUBLIC_PACKAGE_NAME || installed.version !== PUBLIC_PACKAGE_VERSION)
+    throw new Error('Installed manifest does not match the candidate')
+  const installBytes = await treeBytes(modules)
+  // A second phase proves every runtime invocation works without consulting even the registry.
+  const installRegistryRequests = registry.requests.length
+  env.npm_config_offline = 'true'
+  const versionStart = performance.now()
+  await run(['--version'])
+  const cachedVersionMs = performance.now() - versionStart
+  // Doctor intentionally does not initialize homes. Use the installed CLI's read-only status
+  // command to create the supported fresh layout without starting a daemon or adding accounts.
+  const before = JSON.parse(await run(['daemon', 'status', '--json'], [0, 1])) as { running?: boolean }
+  if (before.running !== false) throw new Error('Unexpected daemon in the isolated home')
+  await writeFile(
+    join(aghHome, 'profiles', 'local-dev', 'profile.yaml'),
+    'name: local-dev\ncomputerUse:\n  enabled: false\n',
+    { mode: 0o600 },
   )
-  const installed = JSON.parse(
-    await readFile(join(install, 'node_modules', PUBLIC_PACKAGE_NAME, 'package.json'), 'utf8'),
-  ) as { name?: string; dependencies?: unknown; version?: string }
-  if (installed.name !== PUBLIC_PACKAGE_NAME) throw new Error(`installed name ${String(installed.name)}`)
-  if (installed.version !== PUBLIC_PACKAGE_VERSION)
-    throw new Error(`installed version ${String(installed.version)}`)
-  if (installed.dependencies !== undefined) throw new Error('installed package must not declare dependencies')
-  const versionText = run(agh, ['--version'], workspace)
-  if (!versionText.includes(PUBLIC_PACKAGE_VERSION)) throw new Error(`version output: ${versionText}`)
-  const help = run(agh, ['--help'], workspace)
-  if (!help.includes('agh web') || !help.includes('agh start')) throw new Error(`help output: ${help}`)
-
-  const port = await freePort()
-  const origin = `http://127.0.0.1:${port}`
+  process.stdout.write('npx version passed; checking fresh-home doctor\n')
+  const doctorBefore = JSON.parse(await run(['doctor', '--json'])) as { name: string; status: string }[]
+  if (!doctorBefore.length || doctorBefore.some((check) => check.status === 'fail'))
+    throw new Error(`Fresh-home doctor failed: ${JSON.stringify(doctorBefore)}`)
   const capture = join(root, 'daemon-stderr-capture.mjs')
   await copyFile(join(repo, 'tools/release/daemon-stderr-capture.mjs'), capture)
   env.NODE_OPTIONS = `--import=${pathToFileURL(capture).href}`
-  env.AGH_SMOKE_DAEMON_STDERR = daemonStderr
-  web = spawn(agh, ['web', '--port', String(port)], {
-    cwd: workspace,
+  env.AGH_SMOKE_DAEMON_STDERR = join(root, 'daemon.stderr.log')
+  const origin = `http://127.0.0.1:${await freePort()}`
+  process.stdout.write('Starting Web without a browser or provider calls\n')
+  const coldStart = performance.now()
+  web = spawn(npx, [...npxArgs, 'web', '--port', new URL(origin).port], {
+    cwd: work,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
+  })
+  web.on('error', (error) => {
+    webLog += String(error)
   })
   web.stdout?.on('data', (chunk: Buffer) => {
     webLog += chunk.toString()
@@ -157,41 +153,73 @@ try {
   web.stderr?.on('data', (chunk: Buffer) => {
     webLog += chunk.toString()
   })
-  await waitFor('health', async () => {
-    const response = await fetch(`${origin}/healthz`)
-    if (!response.ok) return false
-    const body = (await response.json()) as { status?: string }
-    return body.status === 'ok'
+  daemonStarted = true
+  await waitFor(
+    'healthz',
+    async () => {
+      const response = await fetch(`${origin}/healthz`, { signal: AbortSignal.timeout(2000) })
+      return response.ok && ((await response.json()) as { status?: string }).status === 'ok'
+    },
+    web,
+    () => webLog,
+  )
+  const coldStartMs = performance.now() - coldStart
+  const html = await (await fetch(origin)).text()
+  if (!html.includes('<html') || !html.includes('Agnes Harness')) throw new Error('Missing Web shell')
+  const app = await fetch(`${origin}/app.js`)
+  if (!app.ok || !(await app.text()).length) throw new Error('Missing prebuilt Web app')
+  const doctorRunning = JSON.parse(await run(['doctor', '--json'])) as { name: string; status: string }[]
+  if (!doctorRunning.length || doctorRunning.some((check) => check.status === 'fail'))
+    throw new Error('Running doctor failed')
+  await run(['daemon', 'stop'])
+  daemonStarted = false
+  await stopWeb(web)
+  await waitFor('Web listener closed', async () => {
+    try {
+      await fetch(`${origin}/healthz`, { signal: AbortSignal.timeout(1000) })
+      return false
+    } catch {
+      return true
+    }
   })
-  await waitFor('web page', async () => {
-    const response = await fetch(origin)
-    if (!response.ok) return false
-    const html = await response.text()
-    return html.includes('<html') && html.includes('Agnes Harness')
-  })
-  process.stdout.write(`smoke ok ${packed.triple} ${origin}\n`)
+  const status = JSON.parse(await run(['daemon', 'status', '--json'], [0, 1])) as { running?: boolean }
+  if (status.running !== false) throw new Error('Daemon is still running after stop')
+  if (registry.requests.length !== installRegistryRequests)
+    throw new Error('Runtime contacted the registry in offline mode')
+  const registryRequests = [...registry.requests]
+  await registry.close()
+  registry = undefined
+  const result = {
+    status: 'ok',
+    package: `${PUBLIC_PACKAGE_NAME}@${PUBLIC_PACKAGE_VERSION}`,
+    platform: `${process.platform}-${process.arch}`, // guards-allow-platform: smoke evidence identifies the tested host.
+    node: process.version,
+    npm: (await command(npm, ['--version'], work, env)).trim(),
+    tarballBytes: (await readFile(tarball)).length,
+    installBytes,
+    installAndVersionMs: Math.round(installAndVersionMs),
+    cachedVersionMs: Math.round(cachedVersionMs),
+    coldStartMs: Math.round(coldStartMs),
+    doctorBefore,
+    doctorRunning,
+    registryRequests,
+    health: 'ok',
+    webAssets: 'ok',
+    shutdown: 'clean',
+    registry: 'loopback-only, no uplinks',
+  }
+  const report = options.get('--report') ?? join(repo, 'dist/release/npx-smoke-result.json')
+  await mkdir(dirname(report), { recursive: true })
+  await writeFile(report, `${JSON.stringify(result, null, 2)}\n`)
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
   succeeded = true
 } finally {
-  if (existsSync(agh)) {
-    try {
-      run(agh, ['daemon', 'stop'], workspace)
-    } catch {
-      // The daemon may never have started.
-    }
-  }
-  if (web && web.exitCode === null) {
-    web.kill('SIGTERM')
-    await new Promise<void>((done) => {
-      const timer = setTimeout(() => {
-        web?.kill('SIGKILL')
-        done()
-      }, 10_000)
-      web?.once('exit', () => {
-        clearTimeout(timer)
-        done()
-      })
-    })
-  }
-  if (succeeded) await rm(root, { recursive: true, force: true })
-  else process.stderr.write(`smoke kept ${root}\n`)
+  const cleanupErrors: unknown[] = []
+  // Try each cleanup even when another fails, and retain the exact isolated home for diagnosis.
+  if (daemonStarted) await run(['daemon', 'stop']).catch((error: unknown) => cleanupErrors.push(error))
+  if (web) await stopWeb(web).catch((error: unknown) => cleanupErrors.push(error))
+  if (registry) await registry.close().catch((error: unknown) => cleanupErrors.push(error))
+  if (succeeded && !cleanupErrors.length) await rm(root, { recursive: true, force: true })
+  else process.stderr.write(`Smoke failed; isolated evidence retained at ${root}\n${webLog}\n`)
+  if (cleanupErrors.length) throw new AggregateError(cleanupErrors, 'Smoke cleanup failed')
 }
