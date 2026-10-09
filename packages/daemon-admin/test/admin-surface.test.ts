@@ -333,13 +333,13 @@ describe('local package admin surface trust boundary', () => {
     expect(s.invoke).toHaveBeenCalledTimes(2)
   })
 
-  // packages/web/src/admin/plugins/api.ts keeps its own hand-maintained METHOD_BY_PATH map of the
+  // packages/web-admin/src/admin/plugins/api.ts keeps its own hand-maintained METHOD_BY_PATH map of the
   // exact same BFF surface (@agnes/daemon can't import from @agnes/web — see
   // tools/guards/dependency-allowlist.json — so the expected list is hardcoded here instead of
   // imported). The two maps have no shared source of truth: a route added to one without the other
   // either 404s (missing from ACTIONS here) or fails client-side validation (missing from
   // METHOD_BY_PATH there). This assertion is the tripwire — if you add a route to either side,
-  // update BOTH `ACTIONS` above and `METHOD_BY_PATH` in packages/web/src/admin/plugins/api.ts, and
+  // update BOTH `ACTIONS` above and `METHOD_BY_PATH` in packages/web-admin/src/admin/plugins/api.ts, and
   // this list.
   it('keeps the BFF route allowlist in lockstep with the Web admin API client route map', () => {
     const expectedPaths = [

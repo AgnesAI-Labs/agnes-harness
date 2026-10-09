@@ -637,7 +637,7 @@ export class TuiApp {
   // `daemon.notice` payloads are heterogeneous (packages/protocol's `DaemonNotice` is
   // `{kind, sessionId?, detail, at}` with `detail` an open `JsonValue`); only the two kinds the
   // spec calls out get a status-bar rendering today, matching what daemon's reclaim path
-  // (packages/daemon/src/lease/reclaim.ts) and worker pool (packages/daemon/src/supervisor/
+  // (packages/daemon-foundation/src/lease/reclaim.ts) and worker pool (packages/daemon/src/supervisor/
   // worker-pool.ts) actually emit. Anything else is left alone rather than guessed at.
   private handleNotice(payload: unknown): void {
     const n = payload as { kind?: string; detail?: { lastStep?: number } }

@@ -148,7 +148,7 @@ export function buildConfig(o: {
     ...(o.args.socket !== undefined ? { socket: o.args.socket } : {}),
   })
 
-  // host's `Transport` type (packages/host/src/profile/types.ts) carries a ws-tls leg as
+  // host's `Transport` type (packages/host-common/src/profile/types.ts) carries a ws-tls leg as
   // `{ kind: 'ws-tls', listen?, tls?: { cert?, key? } }`, not the flat `{ addr, cert, key }` the
   // daemon config wants — so this reshapes it rather than casting past the mismatch. `--ws` on the
   // command line overrides the profile's configured listen address; cert/key always come from the

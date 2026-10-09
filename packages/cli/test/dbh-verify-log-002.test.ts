@@ -12,7 +12,7 @@ import { FakeEndpoint } from './fake-endpoint.js'
 //     then `.sort()` then `rows.slice(0, limit)`
 //   - packages/daemon/src/local/sessions.ts:253-269   -> `.filter(k => !q.q || k.includes(q.q))`
 //     then `items.slice(offset, offset + limit)`
-//   - packages/daemon/src/local/methods/agnes.ts:883  -> `const q = p.q?.text ?? p.q?.prefix`
+//   - packages/daemon-rpc/src/local/methods/agnes.ts:883  -> `const q = p.q?.text ?? p.q?.prefix`
 // The endpoint below is a faithful stub of exactly that semantic (substring + ascending sort +
 // slice-to-limit). Session keys are caller-chosen with no `agnes:` enforcement
 // (packages/protocol/schema/agnes-v1.json:124-127 -- `type: string, maxLength: 512`, no pattern;

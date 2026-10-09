@@ -312,8 +312,8 @@ import {
  * nonbuiltin roots so their entry cannot run before isolation selection.
  *
  * The default, when `deps.extensionLoader` is not supplied, is plain native `import()` - the exact
- * same `nativeImport` the legacy tools-only ext host this step replaces already defaulted to (see
- * `ext-host/host.ts`). That default is load-bearing, not a placeholder: `@agnes/base`'s real
+ * native-import behavior used by the builtin-row extension loader. That default is load-bearing:
+ * `@agnes/base`'s real
  * bundled extensions are plain `.ts`/`.js` files with no packaging step of their own, and every
  * existing test that loads them for real (`test/ext-host/base-tools.test.ts`,
  * `test/assemble/enabled-packages.test.ts`, the L1 replay corpus) already relies on a zero-config

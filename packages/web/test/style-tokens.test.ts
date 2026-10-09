@@ -226,7 +226,7 @@ const MASK_PROPERTIES = new Set(['mask', '-webkit-mask'])
  * 新增使用点必须同步改这里——这份摩擦是刻意的。
  */
 const DYNAMIC_CUSTOM_PROPERTIES = new Set([
-  '--usage-pct', // packages/web/src/usage.ts 的用量环，var() 自带 0% 回退
+  '--usage-pct', // packages/web-conversation/src/usage.ts 的用量环，var() 自带 0% 回退
   '--workbench-width', // packages/web/src/workbench/dock.tsx 写入，var() 自带 320px 回退
   '--workbench-height', // packages/web/src/workbench/dock.tsx 写入，var() 自带 220px 回退
 ])

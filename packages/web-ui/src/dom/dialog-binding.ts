@@ -32,7 +32,7 @@ export function bindDismissibleDialog(options: {
  *
  * 轮次过程块**不**在此列：运行中它被投影器每帧撑开，点外部收起会在下一帧被撑回
  * （表现为闪烁），且误伤面过宽——Web 端只认 summary 点击切换，不注册此机制
- * （见 packages/web/src/turns.ts）。
+ * （见 packages/web-conversation/src/turns.ts）。
  *
  * 实现是**一次性的 document 级委托**，不是按元素挂/卸监听器：展开体在会话里会被反复创建
  * （每个回合两个），而"元素在展开态被移除"（换会话、点新会话、条目被替换）不会触发

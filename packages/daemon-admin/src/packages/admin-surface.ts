@@ -34,7 +34,7 @@ import { configurationReadOnly } from './permissions.js'
 
 const PREFIX = '/admin/plugins/api/'
 // Exported so tests can assert this stays in lockstep with the Web BFF client's own hand-maintained
-// route map (packages/web/src/admin/plugins/api.ts METHOD_BY_PATH) — see
+// route map (packages/web-admin/src/admin/plugins/api.ts METHOD_BY_PATH) — see
 // admin-surface.test.ts's "route allowlist" coverage.
 export const ACTIONS = {
   'candidates/list': '_agnes/v1/plugins.candidates.list',

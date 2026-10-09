@@ -29,7 +29,7 @@ it('rejects untranslated presentation copy, layout styles and bypassed settings 
     expect(frontendUiViolations(code, 'packages/web/src/app.ts')).toContainEqual(
       expect.objectContaining({ rule: 'settings' }),
     )
-  expect(frontendUiViolations('<SearchPanel />', 'packages/web/src/settings/registry.tsx')).toEqual([])
+  expect(frontendUiViolations('<SearchPanel />', 'packages/web-admin/src/settings/registry.tsx')).toEqual([])
   expect(
     frontendUiViolations(
       '<Button>{t("save")}</Button><input data-testid="save"/>',

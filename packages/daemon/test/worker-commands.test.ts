@@ -319,7 +319,7 @@ describe('worker command dispatch against a real host+session', () => {
  * These isolate `handleCommand`'s dispatch against tiny fakes, on purpose: `setPreset`/`setModel`
  * must route through `Host.validatePresetSwitch`/`validateModelSwitch` before ever calling
  * `HostSession.setPreset`/`setModel` - the plan's own illustrative sample called a `host.presetView`
- * method that `@agnes/host`'s real `Host` interface does not have (packages/host/src/host.ts has no
+ * method that `@agnes/host`'s real `Host` interface does not have (packages/host-runtime/src/host.ts has no
  * such member) - and `decideApproval` must resolve through `HostSession.resumeApproval`, since core's
  * `SessionImpl` has no method literally named `decideApproval` (packages/core/src/step/session.ts).
  * A fake proves the *call shape* handleCommand makes without needing a real assembled preset table.

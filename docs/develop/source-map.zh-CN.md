@@ -47,3 +47,5 @@ MCP 传输健康回调：[implementation](../../packages/base/src/mcp/transport-
 可关闭对话框 DOM 绑定：[web-ui](../../packages/web-ui/src/dom/dialog-binding.ts) · [tests](../../packages/web-ui/test/dialog-binding.test.ts)
 
 Host 组合合同测试：[owner suites](../../packages/host/test/owners)
+
+Daemon、Host、Web 的私有实现路径直接使用所属包；已删除过时的一行转发路径。插件作者显式从 `@agnes/host/testkit` 提供注册桥。

@@ -49,3 +49,5 @@ MCP transport health: [implementation](../../packages/base/src/mcp/transport-hea
 Dismissible dialog DOM bindings: [web-ui](../../packages/web-ui/src/dom/dialog-binding.ts) · [tests](../../packages/web-ui/test/dialog-binding.test.ts)
 
 Host assembly contract tests: [owner suites](../../packages/host/test/owners)
+
+Private paths under daemon, Host and Web use their owning packages directly; obsolete one-line forwarding paths have been removed. Plugin author registration is explicitly supplied from `@agnes/host/testkit`.

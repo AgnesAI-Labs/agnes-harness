@@ -307,7 +307,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-extensions/src/ext-host/hooks-isolation-client': 232,
   'packages/host-extensions/src/ext-host/tool-context-capabilities': 130,
   'packages/host-extensions/src/ext-host/service-invocation': 267,
-  'packages/host-extensions/src': 7944,
+  'packages/host-extensions/src': 7943,
   'packages/host-extensions/src/assemble': 1259,
   'packages/host-artifacts/src': 2243,
   'packages/host-computer-use/src': 10586,
@@ -520,8 +520,6 @@ const INITIAL_CEILING: Record<string, number> = {
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
   // 2026-09-20: map the already-sanitized turn AUTH category to a reconnect instruction. Exact.
   // Output-limit and rate-limit failures render actionable guidance. Measured +4, exact allocation.
-  'packages/web/src/presentation': 1,
-  'packages/web/src/markdown': 1,
   // Phase03 Web workbench: separate settings controller, stable keyed timeline, run receipts,
   // and client integration. Each component is bounded independently; no execution state
   // machine is added to Web. SDK adds reconnect-start and pre-load permission registration.
@@ -593,12 +591,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
-  'packages/web/src/permission-picker': 1,
   // 2026-09-17 WEB-RUN-TRACE: new panel renderer. Measured 130; exact cap, no spare.
   // 2026-09-17 DSH parity: gantt + event list + inspector. Measured 411.
   // 2026-09-17 DSH layout: idle-compressed gantt. Measured 445.
   // B1/main integration: +7 formatter lines around typed turn lookup and expressions; exact count.
-  'packages/web/src/trace-panel': 1,
   // 2026-09-15/16 (admin-pages A5b): the popover placement and listbox key map moved to
   // @agnes/web-ui, so this file only keeps its own state machine and rendering.
   // 2026-09-25 UI refactor: model options now render through the React region contract.
@@ -614,7 +610,6 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 900 -> 1846; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Live context/search/history settings, goal controls and optional child-engine configuration.
   // countLines: 1846 -> 3890; exact cap, no exclusions or spare allocation.
-  'packages/web/src/settings': 21,
   // 2026-09-17 rebase 后的重新实测：timeline.ts 的详情弹窗管线已在 WEB-UI-ALIGN-DSH 中删除
   // （原 427 是旧实现的实测值），删码后未跟着收紧会留下 55 行富余，故收到实测精确值 372。
   // 2026-09-24 WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C6 (Web incremental wiring) and its review fixes,
@@ -648,7 +643,6 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web/src/shell': 109,
   // 2026-09-17 rebase 后的重新实测：turns.ts 把过程摘要搬进过程行、用量面板只留关键项、
   // 运行中页脚整行隐藏（原 432 是旧实现的实测值），收紧到实测精确值 399。
-  'packages/web/src/turns': 1,
   // 2026-09-24 WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C6 (Web incremental wiring) and its review fixes,
   // rebased onto main after C0-C2: merged tree re-measured with countLines(): 99, exact.
   'packages/web/src/view': 116,
@@ -1263,7 +1257,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // (a) host Task 25/26 Steps 9-11 (archived implementation record) —
   // assemble.ts's step 9 now wires the real, already-built managed ext host
   // (bindExtensionInvocations + createManagedExtHost + loadBundledExtensions) in place of the old
-  // tools-only createExtHost, replacing one line with the ports construction, the shutdown
+  // retired tools-only package scanner, replacing one line with the ports construction, the shutdown
   // callback (a real judgment call, documented in the code), the native-import default for the raw
   // extension loader, and the two discovery mechanisms (specs built from
   // PackageModule.extensionEntry, plus loadBundledExtensions for package.json's
@@ -2140,7 +2134,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 27898 -> 28105; exact cap, no exclusions or spare allocation.
   // Acceptance review: Persist child-engine settings through publication and recover legacy default loop pins when listing sessions.
   // countLines: 28105 -> 28157; exact cap, no exclusions or spare allocation.
-  'packages/daemon/src': 304,
+  'packages/daemon/src': 257,
 
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2156,7 +2150,6 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 399 -> 484; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Validated live context, search configuration and child-engine administration handlers.
   // countLines: 484 -> 584; exact cap, no exclusions or spare allocation.
-  'packages/daemon/src/packages/admin-surface': 1,
   // A manager error may race its last onProgress callback; the handler drains that callback before
   // recording terminal failure so polling cannot resurrect an operation. Measured total: 1043.
   // 2026-09-14: Task 3 orphaned-pin-cleanup adds RuntimePinReleaseOutcome/RuntimePinsAdapter type
@@ -2208,8 +2201,6 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon/src/packages/operations': 1,
   // 2026-09-16 (plugin-skin S26): the authority `methods` allowlist, its enforcement in
   // `requirePackageAdmin`, and `localWebSkinReadAuthority`. Measured 70, exact.
-  'packages/daemon/src/packages/permissions': 1,
-  'packages/daemon/src/packages/project': 1,
   // H3 and the activation handoff add the supervisor admission seam plus separately factored
   // activation/actual/deployment transaction modules. Review hardening binds scheduled turns,
   // runtime observations, desired/actual drift/orphan reconciliation and failure cleanup. The
@@ -2289,7 +2280,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Task 16 cold update: stop old then start new, no auto-restore. Re-measured: 2541, exact.
   // SurfaceInstanceStatus.revision is the package snapshot used for mixed/surface-only actual.
   // Re-measured: 2543, exact cap, no spare.
-  'packages/daemon/src/surfaces': 13,
+  'packages/daemon/src/surfaces': 7,
   'packages/daemon/src/worker/service-authority': 1,
   // 2026-09-12: T2.5 introduces the framework-free Web UI, its loopback static launcher and the
   // projection adapter. New package, measured at 320 production TypeScript lines; exact cap.
@@ -2413,7 +2404,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 19657 -> 22109; exact cap, no exclusions or spare allocation.
   // Acceptance review: Retain published composition details and stable expanded goal state during admin refresh.
   // countLines: 22109 -> 22110; exact cap, no exclusions or spare allocation.
-  'packages/web/src': 10464,
+  'packages/web/src': 10387,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2443,7 +2434,6 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-22 Web Plugins parity: plugin-row diagnostics and client capability UI. Exact.
   // 2026-09-22 UI plugin management: runtime subscription, retry action, and four-state controls.
   // Re-measured with this guard's countLines(): 1685, exact cap after review follow-up.
-  'packages/web/src/admin/plugins/admin': 1,
   // WEBFETCH-01: +2 counted lines for approved public retrieval; excludes concurrent work.
   // SINGLE-EXTENSION-PATH: new client descriptor capability confirmation. Exact count.
 
@@ -2462,7 +2452,6 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 433 -> 468; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Typed context/search/child-engine administration calls.
   // countLines: 468 -> 485; exact cap, no exclusions or spare allocation.
-  'packages/web/src/admin/plugins/api': 1,
   // 2026-09-22 UI plugin management: browser runtime phase labels and safe failure messages.
   // Re-measured: 112, exact cap.
 
@@ -2472,8 +2461,6 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-25 C-line: countLines 79 (same import reorganization).
   // 2026-10-07 reviewed growth: local reload and plugin lifecycle state projections.
   // countLines: 79 -> 82 (+3); exact cap, no exclusions or spare allocation.
-  'packages/web/src/admin/plugins/types': 1,
-  'packages/daemon/src/jobs': 4,
   'packages/bridges/src': 1728,
   // I7 Channels12/13 add durable refs, bounded multipart outbound delivery, gap recovery, and
   // lifecycle/resource limits. Measured total: 3607; exact cap.
@@ -2928,7 +2915,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 46355 -> 46484 (+129); exact measured cap, no exclusions or spare allocation.
   // Acceptance review: Restore immutable generation sources and publish child-engine configuration with explicit engine admission.
   // countLines: 46484 -> 46566; exact cap, no exclusions or spare allocation.
-  'packages/host/src': 524,
+  'packages/host/src': 521,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
@@ -2988,7 +2975,6 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2798 -> 2919; exact measured cap, no exclusions or spare allocation.
   // Acceptance review: Preserve live skill importers and latest code composition rows across publication and frozen views.
   // countLines: 2919 -> 2974; exact cap, no exclusions or spare allocation.
-  'packages/host/src/profile': 1,
   // 2026-09-09: raised from 1100. 1071 of it was spent and the 29 left could not cover the deny-list
   // repair with anything to spare; the repair measures 1075. The remaining 100 are platform-win32
   // reaching parity with platform-posix - today its probe() asserts a fixed table where posix
