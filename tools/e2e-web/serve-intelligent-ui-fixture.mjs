@@ -10,7 +10,7 @@ const require = createRequire(resolve('packages/web/package.json'))
 const { build } = require('esbuild')
 const directory = await mkdtemp(join(tmpdir(), 'agh-intelligent-ui-fixture-'))
 await build({
-  entryPoints: ['tools/e2e-web/fixtures/intelligent-ui.tsx'],
+  entryPoints: [process.argv[2] ?? 'tools/e2e-web/fixtures/intelligent-ui.tsx'],
   outfile: join(directory, 'fixture.js'),
   bundle: true,
   format: 'esm',

@@ -25,16 +25,11 @@ const english: Translate = (key, vars) =>
 export function interactionToolPresentation(
   node: ToolNode,
   t: Translate = english,
-  answer?: string,
 ): { name: string; summary: string } | undefined {
   const kind = interactionKinds[node.name]
   if (!kind) return undefined
   const summary =
-    node.status === 'completed'
-      ? kind === 'question' && answer
-        ? t('tool.interaction.answered', { answer })
-        : t(`tool.interaction.${kind}.completed`)
-      : t(`tool.status.${node.status}`)
+    node.status === 'completed' ? t(`tool.interaction.${kind}.completed`) : t(`tool.status.${node.status}`)
   return { name: t(`tool.interaction.${kind}.name`), summary }
 }
 

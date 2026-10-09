@@ -20,12 +20,7 @@ export function keepConversationCardVisible(node: UINode): boolean {
     node.slots?.some((fill) => {
       if (fill.slot !== 'tool.card.inline') return false
       const payload = fill.payload as ToolCardInlinePayload
-      return (
-        (fill.extId === 'agnes/workflow' && !!payload.table) ||
-        !!payload.question ||
-        !!payload.deliverables?.length ||
-        !!payload.table
-      )
+      return !!payload.title
     }) ?? false
   )
 }

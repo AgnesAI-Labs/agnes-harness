@@ -183,3 +183,43 @@ describe('preset Intelligent UI catalog', () => {
       expect(validIntelligentSurface(bad)).toBe(false)
   })
 })
+
+it('renders schema choices as radio/checkbox and preserves free text in the form draft', async () => {
+  const { questionSurface } = await import('../../base/extensions/interaction/src/question.js')
+  const question = questionSurface('question', [
+    { id: 'single', question: 'Pick one', options: ['A', 'B'] },
+    { id: 'multi', question: 'Pick several', options: ['A', 'B'], multiple: true, allowFreeText: true },
+    { id: 'text', question: 'Explain' },
+  ])
+  const host = document.createElement('div'),
+    root = createRoot(host)
+  const input = vi.fn(),
+    action = vi.fn()
+  try {
+    await act(async () =>
+      root.render(
+        createElement(IntelligentCatalog, {
+          surface: question,
+          input: {},
+          selection: {},
+          disabled: false,
+          onInput: input,
+          onSelection: vi.fn(),
+          onInvalid: vi.fn(),
+          onAction: action,
+        }),
+      ),
+    )
+    expect(host.querySelectorAll('input[type=radio]')).toHaveLength(2)
+    expect(host.querySelectorAll('input[type=checkbox]')).toHaveLength(2)
+    await act(async () => host.querySelector<HTMLInputElement>('[data-testid=ui-option-single-1]')!.click())
+    expect(input).toHaveBeenLastCalledWith('answers', { single: 'B' })
+    await act(async () => host.querySelector<HTMLInputElement>('[data-testid=ui-option-multi-0]')!.click())
+    expect(input).toHaveBeenLastCalledWith('answers', { multi: ['A'] })
+    expect(host.querySelector('[data-testid=ui-free-multi]')).not.toBeNull()
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid=ui-action-submit]')!.click())
+    expect(action).toHaveBeenCalledWith(question.actions[0], undefined)
+  } finally {
+    await act(async () => root.unmount())
+  }
+})

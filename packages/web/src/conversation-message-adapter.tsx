@@ -1,4 +1,4 @@
-import { parseAnswer, type UINode, type UITurn } from '@agnes/protocol'
+import { type UINode, type UITurn } from '@agnes/protocol'
 import {
   type ClientResourceService,
   factChainLinks,
@@ -18,7 +18,6 @@ import { DefaultToolCards } from '@agnes/web-conversation/default-tool-cards'
 import { toolIconReact } from '@agnes/web-conversation/tool-icon'
 import { Button } from '@agnes/web-ui'
 import {
-  ConversationInteractionResult,
   ConversationMarkdown,
   ConversationMessages,
   type ConversationMessagesProps,
@@ -185,35 +184,6 @@ export function WebConversationMessages({
     echoedTools.set(node.id, echo)
     rawEchoes.set(echo.id, [...(rawEchoes.get(echo.id) ?? []), node.text])
   }
-  const answered = new Set<string>()
-  const answerLabels = new Map<string, string>()
-  const answerMessages = new Map<string, string>()
-  const answerValues = new Map<string, Record<string, string | string[]>>()
-  for (const tool of nodes ?? []) {
-    if (tool.kind !== 'tool') continue
-    for (const fill of tool.slots ?? []) {
-      const payload = fill.payload as import('@agnes/protocol/gen/slots').ToolCardInlinePayload
-      if (!payload.question) continue
-      for (const node of nodes ?? []) {
-        if (node.kind !== 'user') continue
-        const text = node.content
-          .filter((b) => b.type === 'text')
-          .map((b) => b.text)
-          .join('\n')
-        const values = parseAnswer(payload.question.id, payload.question.questions, text)
-        if (values) {
-          answered.add(payload.question.id)
-          answerValues.set(payload.question.id, values)
-          const label = new Intl.ListFormat(locale?.locale ?? 'en', {
-            style: 'long',
-            type: 'conjunction',
-          }).format(Object.values(values).flat())
-          answerLabels.set(tool.id, label)
-          answerMessages.set(node.id, label)
-        }
-      }
-    }
-  }
   const props: ConversationMessagesProps = {
     keepNodeVisible: (node) => keepConversationCardVisible(node) || rawEchoes.has(node.id),
     t: (key, vars) => locale?.t(key, vars) ?? key,
@@ -256,8 +226,6 @@ export function WebConversationMessages({
             <>
               <DefaultToolCards
                 node={node}
-                answered={answered}
-                answerValues={answerValues}
                 {...(locale ? { t: (key: string) => locale.t(key) } : {})}
                 {...(session ? { session } : {})}
                 {...(resources ? { resources } : {})}
@@ -278,11 +246,7 @@ export function WebConversationMessages({
                 node={node}
                 resultAppendix={rawEchoes.get(node.id)?.join('\n\n')}
                 icon={toolIconReact(node.name)}
-                presentation={interactionToolPresentation(
-                  node,
-                  (key, vars) => locale?.t(key, vars) ?? key,
-                  answerLabels.get(node.id),
-                )}
+                presentation={interactionToolPresentation(node, (key, vars) => locale?.t(key, vars) ?? key)}
                 t={(key, vars) => locale?.t(key, vars) ?? key}
               />
             </>
@@ -308,17 +272,7 @@ export function WebConversationMessages({
       />
     ),
     renderNode: (node, native) => {
-      const answer = answerMessages.get(node.id)
-      const base = answer ? (
-        <ConversationInteractionResult
-          summary={locale?.t('tool.interaction.answered', { answer }) ?? answer}
-          t={(key, vars) => locale?.t(key, vars) ?? key}
-        >
-          {native}
-        </ConversationInteractionResult>
-      ) : (
-        native
-      )
+      const base = native
       const factAnchor =
         node.kind === 'tool'
           ? { kind: 'tool' as const, toolUseId: node.toolUseId }

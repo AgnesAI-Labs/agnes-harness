@@ -24,7 +24,6 @@
     "./transcript": "./src/transcript.ts",
     "./turns": "./src/turns.ts",
     "./usage": "./src/usage.ts",
-    "./workflow-run-card": "./src/workflow-run-card.tsx",
     "./conversation-registry": "./src/conversation-registry.tsx",
     "./workbench": "./src/workbench/register.tsx"
   },

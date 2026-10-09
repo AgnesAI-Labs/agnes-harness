@@ -3,6 +3,7 @@ export const INTELLIGENT_UI_NAMESPACE = '@agnes/web-ui/intelligent-ui'
 export const intelligentUiCatalog: LocaleCatalog = {
   en: {
     'ui.title': 'Interactive surfaces',
+    'ui.otherAnswer': 'Other answer',
     'ui.expand': 'Expand',
     'ui.revision': 'Revision {revision}',
     'ui.select': 'Select row {row}',
@@ -39,6 +40,7 @@ export const intelligentUiCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     'ui.title': '交互界面',
+    'ui.otherAnswer': '补充答案',
     'ui.expand': '展开',
     'ui.revision': '版本 {revision}',
     'ui.select': '选择行 {row}',

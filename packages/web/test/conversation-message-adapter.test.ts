@@ -470,7 +470,7 @@ it('keeps each React action footer through replay and history prepend, then reti
   expect(host.querySelector('[data-turn-id="turn:1"] footer.turn-footer')).not.toBe(firstFooter)
 })
 
-it('keeps questions, deliverables, jobs and children visible when settled process history collapses', async () => {
+it('keeps installed cards, jobs and children visible when settled process history collapses', async () => {
   const cardNodes: UINode[] = [
     user,
     tool('completed'),
@@ -484,7 +484,6 @@ it('keeps questions, deliverables, jobs and children visible when settled proces
           extId: 'interaction',
           payload: {
             title: 'Question',
-            question: { id: 'q', questions: [{ id: 'choice', question: 'Pick', options: ['A'] }] },
           },
         },
       ],
@@ -499,7 +498,6 @@ it('keeps questions, deliverables, jobs and children visible when settled proces
           extId: 'present',
           payload: {
             title: 'Files',
-            deliverables: [{ name: 'report.txt', lane: 'main', ref: { sha256: 'a'.repeat(64), size: 6 } }],
           },
         },
       ],
@@ -556,13 +554,7 @@ it('keeps questions, deliverables, jobs and children visible when settled proces
     expect(item(id)?.parentElement?.className).toBe('turn-attention')
     expect(item(id)?.parentElement?.hidden).toBe(false)
   }
-  for (const id of [
-    'question-card',
-    'question-submit',
-    'deliverable-card',
-    'background-job-card',
-    'child-agent-card',
-  ])
+  for (const id of ['background-job-card', 'child-agent-card'])
     expect(host.querySelector(`[data-testid="${id}"]`)).not.toBeNull()
   expect(host.querySelector('[data-testid="child-engine-output"]')?.textContent).toContain(
     'child-a completed',
@@ -570,30 +562,17 @@ it('keeps questions, deliverables, jobs and children visible when settled proces
   expect(host.querySelector('[data-testid="child-engine-output"]')?.getAttribute('aria-label')).toBe(
     '子代理引擎输出',
   )
-  expect(host.querySelector('[data-testid="question-submit"]')?.textContent).toBe('提交答案')
-  expect(host.querySelector('[data-testid="deliverable-card"]')?.getAttribute('aria-label')).toBe(
-    '交付物: report.txt',
-  )
   await act(async () => host.querySelector<HTMLElement>('[data-testid="turn-process-toggle"]')?.click())
   expect(item('question')?.parentElement?.hidden).toBe(false)
 })
 
 it('summarizes interaction protocol and exact demo echoes while preserving raw details and arbitrary prose', async () => {
-  const protocol = 'Question remains open.\nSubmit [question-answer q] followed by a JSON object.'
+  const protocol = 'Question remains open.\nSubmit through the authenticated surface.'
   const question: Extract<UINode, { kind: 'tool' }> = {
     ...tool('completed'),
     name: 'ask_user_question',
     summary: protocol,
     resultPreview: protocol,
-    slots: [
-      {
-        extId: 'agnes/interaction',
-        slot: 'tool.card.inline',
-        payload: {
-          question: { id: 'q', questions: [{ id: 'choice', question: 'Choose', options: ['One', 'Two'] }] },
-        },
-      },
-    ],
   }
   const echo: UINode = {
     kind: 'assistant',
@@ -613,22 +592,9 @@ it('summarizes interaction protocol and exact demo echoes while preserving raw d
   )
   expect(item('prose')?.querySelector('[data-testid=interaction-result-summary]')).toBeNull()
   expect(item('prose')?.textContent).toContain(`My own explanation: ${protocol}`)
-  const answer: UINode = {
-    kind: 'user',
-    id: 'answer',
-    seq: 5,
-    content: [{ type: 'text', text: '[question-answer q] {"choice":"Two"}' }],
-  }
+  const answer: UINode = { kind: 'user', id: 'answer', seq: 5, content: [{ type: 'text', text: 'Two' }] }
   await update(store, [question, echo, prose, answer])
-  expect(item('tool')?.querySelector('.tool-summary')?.textContent).toBe('已回答问题：Two')
-  expect(item('tool')?.querySelector<HTMLInputElement>('input[value="Two"]')?.checked).toBe(true)
-  expect(item('answer')?.querySelector('[data-testid=interaction-result-summary] > p')?.textContent).toBe(
-    '已回答问题：Two',
-  )
-  expect(
-    item('answer')?.querySelector<HTMLDetailsElement>('[data-testid=interaction-result-details]')?.open,
-  ).toBe(false)
-  expect(item('echo')?.querySelector('[data-testid=interaction-result-summary] > p')).toBeNull()
+  expect(item('answer')?.querySelector('[data-testid=interaction-result-summary]')).toBeNull()
   const present: UINode = {
     ...tool('completed'),
     id: 'present',

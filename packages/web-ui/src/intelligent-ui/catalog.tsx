@@ -6,7 +6,7 @@ import type {
   UiSurface,
 } from '@agnes/protocol/gen/intelligent-ui'
 import { type ReactNode, useCallback, useId } from 'react'
-import { PluginSchemaFields } from '../plugin-schema-fields.js'
+import { SurfaceFormFields } from './form-fields.js'
 import { Button } from '../ui/button.js'
 import { useUiText } from '../ui-locale.js'
 import { IntelligentChart } from './chart.js'
@@ -80,7 +80,7 @@ function CatalogComponent(props: IntelligentCatalogProps & { component: UiCompon
     content = (
       <>
         <fieldset disabled={disabled} data-testid={`ui-form-${component.id}`}>
-          <PluginSchemaFields
+          <SurfaceFormFields
             root={component.schema}
             schema={component.schema}
             value={
