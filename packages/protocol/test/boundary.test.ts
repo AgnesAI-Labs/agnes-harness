@@ -59,6 +59,12 @@ describe('protocol src boundary', () => {
     expect(Object.keys(mod).sort()).toEqual(
       [
         'AGNES_ERRORS',
+        'AutoReviewConfig',
+        'ToolReviewFact',
+        'compilePluginConfig',
+        'redactPluginConfig',
+        'PLUGIN_SECRET_REF_PATTERN',
+        'validateReferenceSelections',
         'ADMIN_METHODS',
         'APP_SERVER_VERSION',
         'APP_SERVER_SCHEMA',
@@ -376,6 +382,9 @@ describe('protocol src boundary', () => {
                 // SessionSetModelParams.slot $refs model.json's SlotName rather than retyping its
                 // seven-value enum a second time; SlotName is already on the surface via model.ts.
                 'SlotName',
+                // These generated schemas/types are exposed by the dedicated auto-review module.
+                'AutoReviewConfig',
+                'ToolReviewFact',
               ].includes(n)
             ),
         )

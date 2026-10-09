@@ -44,7 +44,7 @@ const COUNTS = {
   workerRuntimeTarget: 8,
 } as const
 // Includes generation status, capability/source authoring and permission-profile fixtures.
-const ALL_FIXTURE_COUNT = 1515
+const ALL_FIXTURE_COUNT = 1540
 
 describe('conformance fixtures', () => {
   it('all checked-in fixtures across the complete fixture tree pass', () => {

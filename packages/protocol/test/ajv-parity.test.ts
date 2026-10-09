@@ -54,6 +54,7 @@ import * as DeployManifestGen from '../gen/ts/deploy-manifest.js'
 import * as ExtensionManifestGen from '../gen/ts/extension-manifest.js'
 import * as ServiceGen from '../gen/ts/extension-service.js'
 import * as HooksGen from '../gen/ts/hooks.js'
+import * as IntelligentUiGen from '../gen/ts/intelligent-ui.js'
 import * as JobsGen from '../gen/ts/jobs.js'
 import * as LockfileGen from '../gen/ts/lockfile.js'
 import * as ModelGen from '../gen/ts/model.js'
@@ -94,6 +95,7 @@ import {
   ScheduleView,
 } from '../src/schedules.js'
 import { SessionToolsParams, SessionToolsResult } from '../src/session-tools.js'
+import { intelligentUiSamples } from './parity-intelligent-ui-samples.js'
 
 type Json = Record<string, unknown>
 type FixtureRow = { id: string; payload: unknown }
@@ -225,7 +227,8 @@ const ServiceDoc = JSON.parse(readFileSync(`${pkgRoot}schema/extension-service.j
 ajv.addSchema(ServiceDoc)
 const ProjectionDoc = JSON.parse(readFileSync(`${pkgRoot}schema/projection.json`, 'utf8')) as Json
 ajv.addSchema(ProjectionDoc)
-ajv.addSchema(JSON.parse(readFileSync(`${pkgRoot}schema/intelligent-ui.json`, 'utf8')))
+const IntelligentUiDoc = JSON.parse(readFileSync(`${pkgRoot}schema/intelligent-ui.json`, 'utf8')) as Json
+ajv.addSchema(IntelligentUiDoc)
 ajv.addSchema(AppDoc)
 ajv.addSchema(sessionSchemaDoc)
 ajv.addSchema(agnesSchemaDoc)
@@ -1873,7 +1876,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     valid: {
       seq: 1,
       ts: '2026-10-09T00:00:00.000Z',
-      actor: { kind: 'principal', id: 'human' },
+      actor: { id: 'human', org: '', role: 'user', deptPath: [], attrs: {} },
       action: 'pause',
       outcome: 'requested',
       details: {},
@@ -6217,6 +6220,68 @@ const webhookRuleSample = {
 }
 const webhookConfigSample = { enabled: false, path: '/hooks/events', maxPayloadBytes: 262144 }
 const AppSamples: Record<string, Sample> = {
+  FeedbackTarget: {
+    valid: { messageSeq: 1, turn: 1 },
+    invalid: [{ messageSeq: 0, turn: 1 }],
+    note: 'Feedback event locator',
+  },
+  FeedbackItem: {
+    valid: {
+      id: 'f',
+      sessionId: 's',
+      target: { messageSeq: 1, turn: 1 },
+      rating: 'up',
+      category: '',
+      note: '',
+      actor: 'human',
+      createdAt: 'now',
+      updatedAt: 'now',
+      revision: 1,
+      withdrawn: false,
+      candidateId: null,
+      candidateHash: null,
+    },
+    invalid: [{ id: 'f' }],
+    note: 'Bounded feedback receipt',
+  },
+  FeedbackGrowth: {
+    valid: {
+      feedbackId: 'f',
+      feedbackRevision: 1,
+      messageSeq: 1,
+      candidateId: 'c',
+      candidateHash: 'hash',
+      reviewHash: null,
+      state: 'draft',
+      reviewer: null,
+      packageId: '@author/skill',
+      version: null,
+    },
+    invalid: [{ feedbackId: 'f', feedbackRevision: 0 }],
+    note: 'Feedback candidate lineage',
+  },
+  AdminFeedbackParams: {
+    valid: { action: 'list' },
+    invalid: [{ action: 'other' }],
+    note: 'Closed feedback administration',
+  },
+  AdminFeedbackResult: {
+    valid: {
+      items: [],
+      growth: [],
+      counts: { up: 0, down: 0, withdrawn: 0, withCandidate: 0 },
+      truncated: false,
+    },
+    invalid: [
+      {
+        items: [],
+        growth: [],
+        counts: { up: -1, down: 0, withdrawn: 0, withCandidate: 0 },
+        truncated: false,
+      },
+    ],
+    note: 'Bounded feedback results',
+  },
   WebhookRule: {
     valid: webhookRuleSample,
     invalid: [{ ...webhookRuleSample, secretRef: 'plaintext' }],
@@ -6496,6 +6561,12 @@ const AppSamples: Record<string, Sample> = {
 }
 const SELF_OWNED_DOCS: Array<[string, Json, string, Record<string, Sample>]> = [
   [
+    'intelligent-ui.json',
+    IntelligentUiDoc,
+    'https://agnes.ai/schema/intelligent-ui.json',
+    intelligentUiSamples,
+  ],
+  [
     'resource-control.json',
     ResourceControlDoc,
     'https://agnes.ai/schema/resource-control.json',
@@ -6530,6 +6601,12 @@ const SELF_OWNED_DOCS: Array<[string, Json, string, Record<string, Sample>]> = [
 ]
 
 const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
+  'https://agnes.ai/schema/intelligent-ui.json': Object.fromEntries(
+    Object.keys(intelligentUiSamples).map((key) => [
+      key,
+      (IntelligentUiGen as unknown as Record<string, TSchema>)[key]!,
+    ]),
+  ),
   'https://agnes.ai/schema/app-server-v1': Object.fromEntries(
     Object.keys(AppSamples).map((key) => [key, (AppGen as unknown as Record<string, TSchema>)[key]!]),
   ),
@@ -6611,6 +6688,14 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     WorkspaceId: ResourceControlGen.WorkspaceId,
   },
   'https://agnes.ai/schema/package-admin.json': {
+    PluginConfigAudit: PackageAdminGen.PluginConfigAudit,
+    PluginConfigEntry: PackageAdminGen.PluginConfigEntry,
+    PluginConfigGetParams: PackageAdminGen.PluginConfigGetParams,
+    PluginConfigSaveParams: PackageAdminGen.PluginConfigSaveParams,
+    PluginConfigSaveResult: PackageAdminGen.PluginConfigSaveResult,
+    PluginConfigSnapshot: PackageAdminGen.PluginConfigSnapshot,
+    PluginConfigValidateParams: PackageAdminGen.PluginConfigValidateParams,
+    PluginConfigValidation: PackageAdminGen.PluginConfigValidation,
     AuthoringFile: PackageAdminGen.AuthoringFile,
     AuthoringOrigin: PackageAdminGen.AuthoringOrigin,
     AuthoringTests: PackageAdminGen.AuthoringTests,
@@ -8240,6 +8325,13 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/admin.feedback': AppSamples.AdminFeedbackResult!,
+  '_agnes/v1/admin.triggers': AppSamples.WebhookResult!,
+  '_agnes/v1/plugins.config.get': PackageAdminSamples.PluginConfigSnapshot!,
+  '_agnes/v1/plugins.config.validate': PackageAdminSamples.PluginConfigValidation!,
+  '_agnes/v1/plugins.config.save': PackageAdminSamples.PluginConfigSaveResult!,
+  '_agnes/v1/autoReview.get': AGNES_SAMPLES.AutoReviewConfig!,
+  '_agnes/v1/autoReview.save': AGNES_SAMPLES.AutoReviewConfig!,
   '_agnes/v1/ui.action': {
     note: 'Persisted action receipt',
     valid: {

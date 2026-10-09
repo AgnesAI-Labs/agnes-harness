@@ -103,6 +103,20 @@ const MODEL_VALIDATORS: Record<string, (x: unknown) => ValidationResult<unknown>
 }
 
 const CONFIG_VALIDATORS: Record<string, (x: unknown) => ValidationResult<unknown>> = {
+  PluginConfigGetParams: (x) =>
+    validatePackageAdminData('PluginConfigGetParams' satisfies PackageAdminDataName, x),
+  PluginConfigValidateParams: (x) =>
+    validatePackageAdminData('PluginConfigValidateParams' satisfies PackageAdminDataName, x),
+  PluginConfigSaveParams: (x) =>
+    validatePackageAdminData('PluginConfigSaveParams' satisfies PackageAdminDataName, x),
+  PluginConfigEntry: (x) => validatePackageAdminData('PluginConfigEntry' satisfies PackageAdminDataName, x),
+  PluginConfigAudit: (x) => validatePackageAdminData('PluginConfigAudit' satisfies PackageAdminDataName, x),
+  PluginConfigSnapshot: (x) =>
+    validatePackageAdminData('PluginConfigSnapshot' satisfies PackageAdminDataName, x),
+  PluginConfigValidation: (x) =>
+    validatePackageAdminData('PluginConfigValidation' satisfies PackageAdminDataName, x),
+  PluginConfigSaveResult: (x) =>
+    validatePackageAdminData('PluginConfigSaveResult' satisfies PackageAdminDataName, x),
   AuthoringFile: (x) => validatePackageAdminData('AuthoringFile' satisfies PackageAdminDataName, x),
   AuthoringOrigin: (x) => validatePackageAdminData('AuthoringOrigin' satisfies PackageAdminDataName, x),
   AuthoringTests: (x) => validatePackageAdminData('AuthoringTests' satisfies PackageAdminDataName, x),

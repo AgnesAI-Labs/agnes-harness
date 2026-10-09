@@ -94,6 +94,14 @@ describe('methods (I1 set)', () => {
   it('lists the I1 methods with kind and direction', () => {
     expect(Object.keys(METHODS).sort()).toEqual(
       [
+        '_agnes/v1/admin.feedback',
+        '_agnes/v1/admin.triggers',
+        '_agnes/v1/plugins.config.get',
+        '_agnes/v1/plugins.config.validate',
+        '_agnes/v1/plugins.config.save',
+        '_agnes/v1/session.control',
+        '_agnes/v1/session.controls',
+        '_agnes/v1/session.editQueued',
         '_agnes/v1/ui.action',
         '_agnes/v1/ui.read',
         '_agnes/v1/autoReview.get',
@@ -268,7 +276,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(167)
+    expect(Object.keys(METHODS)).toHaveLength(179)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })
