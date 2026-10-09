@@ -178,12 +178,50 @@ export async function sandboxMcpConfig(
     '/etc/nsswitch.conf',
     '/etc/gai.conf',
   ].filter(existsSync)
+  // A shared-library Node build needs its loader dependencies too. Grant individual loaded
+  // files only for the Host's own runtime; never grant its installation directory wholesale.
+  const nodeLibraries: string[] = []
+  if (executable === (await realpath(process.execPath))) {
+    const report = process.report.getReport()
+    if (typeof report === 'object' && 'sharedObjects' in report && Array.isArray(report.sharedObjects)) {
+      for (const file of report.sharedObjects)
+        if (typeof file === 'string' && isAbsolute(file) && existsSync(file)) nodeLibraries.push(file)
+    }
+  }
+  const darwin = process.platform === 'darwin' // guards-allow-platform: worker-owned dynamic loader read grants.
+  if (darwin && nodeLibraries.length) {
+    // Seatbelt checks install-name aliases before dyld resolves their symlinks.
+    const binaries = [executable, ...nodeLibraries.filter((file) => file.endsWith('.dylib'))]
+    for (const binary of new Set(binaries)) {
+      if (runtimePaths.some((root) => below(root, binary))) continue
+      const { stdout } = await exec('/usr/bin/otool', ['-L', binary], {
+        timeout: 2000,
+        maxBuffer: 1024 * 1024,
+        signal,
+        encoding: 'utf8',
+      })
+      for (const line of stdout.split('\n')) {
+        const file = line.match(/^\s+(\/.*?) \(compatibility version /)?.[1]
+        if (file && existsSync(file) && (await stat(file)).isFile()) {
+          const canonical = await realpath(file)
+          const directory = await realpath(dirname(file))
+          nodeLibraries.push(
+            file,
+            canonical,
+            join(directory, basename(file)),
+            join(dirname(file), basename(canonical)),
+          )
+        }
+      }
+    }
+  }
   const readPaths = [
     workspace,
     ...(declaredWorkspace ? [declaredWorkspace] : []),
     data,
     dataDir,
     executable,
+    ...nodeLibraries,
     ...runtimePaths,
     ...(await Promise.all(runtimePaths.map((path) => realpath(path)))),
   ]
@@ -224,6 +262,12 @@ export async function sandboxMcpConfig(
     ...config,
     cwd: workspace,
     cmd: backend.confine([executable, ...args], options),
-    baseEnv: { PATH: context.path ?? '/usr/bin:/bin', HOME: dataDir, TMPDIR: dataDir },
+    baseEnv: {
+      PATH: context.path ?? '/usr/bin:/bin',
+      HOME: dataDir,
+      TMPDIR: dataDir,
+      // The isolated Node child must not depend on an ambient Homebrew OpenSSL config.
+      ...(darwin && nodeLibraries.length ? { OPENSSL_CONF: '/dev/null' } : {}),
+    },
   }
 }
