@@ -48,3 +48,5 @@ location / { return 404; }
 ```
 
 With a tunnel, apply the same exact-path ingress allowlist and deny all other paths. Endpoint secrecy is not authentication: retain signature or bearer verification. Disabling the endpoint blocks new admissions; it does not cancel sessions already created.
+
+Webhook-rendered input enters through a backend-only enqueue path with the verified provider, rule and delivery identity. It is recorded as `system/untrusted`; signing authenticates delivery, not human instruction authority.

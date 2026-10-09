@@ -265,6 +265,9 @@ describe('reducer', () => {
       ev('turn/start', { turn: 2, trigger: 'prompt' }),
     ])
     expect(cleared.taint.get('main')).toBe(false)
+    seq = 0
+    const accepted = foldEvents([ev('user/message', { content: [{ type: 'text', text: 'external input' }] }, { origin: 'system', trust: 'untrusted' }), ev('turn/start', { turn: 1, trigger: 'follow_up', inputTainted: true })])
+    expect(accepted.taint.get('main')).toBe(true)
     // Trust is half the rule, and the half a fixture that always passes `trust: 'untrusted'` never
     // exercises: without it every tool result and every user message inside a turn taints the lane,
     // and taint stops meaning "untrusted content reached this turn".

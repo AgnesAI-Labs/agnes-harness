@@ -1091,9 +1091,10 @@ const SESSION_SAMPLES: Record<string, Sample> = {
     note: 'valid and the enum negative reuse fixtures/events/i2-types.jsonl; the rest cover every bounded scalar in the settlement row',
   },
   TurnStart: {
-    valid: turnStartOk,
+    valid: { ...turnStartOk, inputTainted: true },
     invalid: [
       dataOf('i1-turn-start-bad-trigger'),
+      { ...turnStartOk, inputTainted: 'true' },
       { ...turnStartOk, turn: 0 }, // boundary: minimum:1
       { ...turnStartOk, continues: { turn: 1, step: 1, toolUseId: rep(129) } }, // boundary: maxLength:128
       // continues.requestId also carries maxLength:128
@@ -1471,6 +1472,7 @@ const SESSION_SAMPLES: Record<string, Sample> = {
         content: [{ type: 'text', text: 'hi' }],
         actor: parityActor,
         enqueuedAt: 'x',
+        origin: 'external',
         trust: 'maybe',
       }, // enum
     ],

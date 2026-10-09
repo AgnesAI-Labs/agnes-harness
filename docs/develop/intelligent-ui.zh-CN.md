@@ -180,3 +180,5 @@ Fact-chain 与 trace 展示 surface id/revision 和归属、received 命令/acto
 后台与渲染器复用 `@agnes/protocol/intelligent-ui` 的 surface 验证，包含表格列和图表展示语义。默认读取开放视图；按 `surfaceId` 读取仍可获得关闭后的账本证据。关闭视图不占投影容量，也不允许复用 ID。
 
 读取 cursor 经过签名，60 秒过期，并绑定水位、筛选与页大小。后续页按该水位重放，不重复首页面的有界回执。后台结果 follow-up 在 cancel 后保留为 next-turn 输入；delivery 确认持久入队，队列 claim 才消费输入。
+
+后台结果的 inbox 项使用 `origin: system` 与 `trust: untrusted`，与提交动作的人类 actor 分开记录。

@@ -213,7 +213,7 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       }
       table('openTurn').set(lane, { turn: Number(d?.turn), startSeq: e.seq, trigger: String(d?.trigger) })
       table('lastTurn').set(lane, Number(d?.turn))
-      table('taint').set(lane, false)
+      table('taint').set(lane, e.origin === 'system' && e.trust === 'trusted' && d?.inputTainted === true)
       break
     }
     case 'turn/end':
@@ -340,10 +340,10 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
   const anchor = contextAnchorOf(e)
   if (anchor) s.lastLedgerTokens = anchor
   // Taint is a property of the turn in progress, so a row arriving outside one taints nothing, and
-  // turn/start above clears it for the turn it opens.
+  // turn/start seeds it from the accepted input, which is recorded before that row.
   if (
     (e.type === 'user/message' || e.type === 'tool/result') &&
-    e.trust === 'untrusted' &&
+    (e.trust === 'untrusted' || (e.type === 'user/message' && (d?.content as { type?: string; reference?: unknown }[] | undefined)?.some((block) => block.type === 'text' && block.reference !== undefined))) &&
     s.openTurn.has(lane)
   )
     table('taint').set(lane, true)

@@ -55,7 +55,10 @@ export async function decideToolPolicy(
   const user = await scanAll((q) => s.d.log.scan(q), { type: 'user/message', lane: s.lane, toSeq: s.lastSeq })
   const instructions = user
     .filter((row) => row.origin === 'principal' && row.trust === 'trusted')
-    .map((row) => canonicalJson(row.data))
+    .flatMap((row) => {
+      const data = row.data as { content?: import('@agnes/protocol').ContentBlock[] }
+      return (data.content ?? []).filter((block) => block.type === 'text' && block.reference === undefined).map((block) => (block as { text: string }).text)
+    })
   const permission = await s
     .toolPolicy(settings?.policy)
     .decide({ ...input, ...(settings?.config ? { config: settings.config } : {}), instructions }, signal, {

@@ -3,7 +3,7 @@ import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
 import type { Inbox } from '@agnes/core-ledger/reduce/shapes'
 import { type Actor, type ContentBlock, MAX_FRAME_BYTES } from '@agnes/protocol'
 import { validateUserMessageImages } from '../request/user-message-images.js'
-import { inboxEvent } from '../step/inbox.js'
+import { inboxEvent, inputMessageEvents } from '../step/inbox.js'
 import { applyChildControl, controlledChildTree } from './child-controls.js'
 import type { SessionImpl } from '../step/session.js'
 
@@ -139,11 +139,7 @@ export class SessionControls {
           inboxEvent(this.s.lane, this.s.d.actor, {
             items: inbox.items.filter((candidate) => candidate.itemId !== item.itemId),
           }),
-          this.s.ev(
-            'user/message',
-            { content: item.content, kind: item.kind ?? 'steer' },
-            { origin: 'principal', trust: item.trust ?? 'trusted', actor: item.actor },
-          ),
+          ...inputMessageEvents(item, this.s.lane),
           this.fact('steer', 'delivered', item.actor, { itemId: item.itemId }),
         ],
         {

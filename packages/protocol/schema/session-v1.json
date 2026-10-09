@@ -326,6 +326,7 @@
       "properties": {
         "turn": { "type": "integer", "minimum": 1 },
         "trigger": { "enum": ["prompt", "steer", "follow_up", "job", "approval-resume"] },
+        "inputTainted": { "type": "boolean" },
         "continues": {
           "type": "object",
           "additionalProperties": false,
@@ -1750,6 +1751,7 @@
         "kind": {
           "enum": ["prompt", "steer", "follow_up"]
         },
+        "origin": { "enum": ["principal", "system"] },
         "trust": {
           "enum": ["trusted", "untrusted"]
         }

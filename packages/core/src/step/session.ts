@@ -155,6 +155,8 @@ import {
   budgetOverrideEvent,
   claimFrom,
   type EnqueueMsg,
+  inputMessageEvents,
+  inputTainted,
   INBOX_BUDGET_EVENT,
   type InboxBudgetOverride,
   inboxEvent,
@@ -1266,7 +1268,8 @@ export class SessionImpl {
         ...(msg.admissionId ? { admissionId: msg.admissionId } : {}),
         kind: msg.kind ?? (target === 'next-turn' ? 'prompt' : 'steer'),
         ...(msg.titleLocale ? { titleLocale: msg.titleLocale } : {}),
-        trust: msg.trust ?? 'trusted',
+        trust: msg.origin === 'system' ? 'untrusted' : (msg.trust ?? 'trusted'),
+        ...(msg.origin ? { origin: msg.origin } : {}),
       }
       const nextInbox = inboxEvent(this.lane, this.d.actor, { items: [...cur.items, item] })
       if (encoder.encode(JSON.stringify(nextInbox)).byteLength > MAX_FRAME_BYTES - 4096) throw oversized()
@@ -1406,27 +1409,14 @@ export class SessionImpl {
       await this.d.log.append(
         [
           inboxEvent(this.lane, this.d.actor, rest),
-          {
-            type: 'user/message',
-            origin: 'principal',
-            // Whoever enqueued the item decided how far it is trusted; the accept path stamps what
-            // it was told rather than inferring it from the actor's role.
-            trust: item.trust ?? 'trusted',
-            actor: item.actor,
-            lane: this.lane,
-            data: {
-              content: item.content,
-              kind: item.kind ?? 'prompt',
-              ...(item.titleLocale ? { titleLocale: item.titleLocale } : {}),
-            },
-          },
+          ...inputMessageEvents(item, this.lane),
           {
             type: 'turn/start',
             origin: 'system',
             trust: 'trusted',
             actor: this.d.actor,
             lane: this.lane,
-            data: { turn, trigger: TRIGGER[item.kind ?? 'prompt'] },
+            data: { turn, trigger: TRIGGER[item.kind ?? 'prompt'], inputTainted: inputTainted(item) },
           },
           ...(item.kind === 'steer'
             ? [this.controls.fact('steer', 'delivered', item.actor, { itemId: item.itemId })]

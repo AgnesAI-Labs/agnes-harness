@@ -187,7 +187,7 @@ describe('Intelligent UI session projection and commands', () => {
       if (params.cursor) return { ...uiPage(financeRecord(), [uiReceipt('received', { seq: 9 })], 10), surfaces: [] }
       if (!server.attached) {
         server.onEvent?.({ seq: 11, type: 'x/agnes/intelligent-ui/surface.updated' })
-        return { ...uiPage(financeRecord(), [], 10), nextCursor: 'page-2' }
+        return { ...uiPage(financeRecord(), [uiReceipt('received', { seq: 9 })], 10), nextCursor: 'page-2' }
       }
       return uiPage(financeRecord(2), [], 11)
     }

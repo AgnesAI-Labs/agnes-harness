@@ -21,6 +21,7 @@ export type TriggerSessionInput = {
   agent: string
   bundles: string[]
   prompt: string
+  trigger: { provider: string; ruleId: string; deliveryId: string }
 }
 export function createWebhookService(options: {
   dataDir: string
@@ -124,6 +125,7 @@ export function createWebhookService(options: {
           agent: rule.agent,
           bundles: rule.bundles,
           prompt,
+          trigger: { provider: rule.provider, ruleId: rule.id, deliveryId: value.deliveryId },
         })
         row.status = 'accepted'
       } catch {

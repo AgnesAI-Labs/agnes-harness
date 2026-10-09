@@ -12,9 +12,26 @@ export type EnqueueMsg = {
   kind?: 'prompt' | 'steer' | 'follow_up'
   titleLocale?: 'en' | 'zh-CN'
   trust?: 'trusted' | 'untrusted'
+  /** Backend-owned provenance; system inputs are always untrusted. Never accepted from RPC payloads. */
+  origin?: 'principal' | 'system'
   /** Replaces `budget.per_request_cap` for the one next turn opened by this inbox item. The value
    * is ledger-bound to the item and turn, so worker recovery cannot lose or leak it. */
   budget?: number
+}
+
+/** Reference text is external evidence even when embedded in an authenticated human prompt. */
+export function inputTainted(item: Pick<InboxItem, 'content' | 'trust' | 'origin'>): boolean {
+  return item.origin === 'system' || item.trust === 'untrusted' || item.content.some((block) => block.type === 'text' && block.reference !== undefined)
+}
+export function inputMessageEvents(item: InboxItem, lane: string): EventInput[] {
+  const untrusted = item.origin === 'system' || item.trust === 'untrusted'
+  const human = untrusted ? [] : item.content.filter((block) => !(block.type === 'text' && block.reference))
+  const external = untrusted ? item.content : item.content.filter((block) => block.type === 'text' && block.reference)
+  const message = (content: ContentBlock[], origin: 'principal' | 'system', trust: 'trusted' | 'untrusted'): EventInput => ({
+    type: 'user/message', origin, trust, actor: item.actor, lane,
+    data: { content, kind: item.kind ?? 'prompt', ...(item.titleLocale ? { titleLocale: item.titleLocale } : {}) },
+  })
+  return [...(human.length ? [message(human, 'principal', 'trusted')] : []), ...(external.length ? [message(external, 'system', 'untrusted')] : [])]
 }
 
 export type InboxBudgetOverride = { itemId: string; creditsCap: number }

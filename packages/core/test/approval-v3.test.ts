@@ -56,6 +56,7 @@ function registryWith(tool: ToolDef): ToolRegistry {
 
 async function atTools(o: {
   scopes: string[]
+  input?: import('../src/step/inbox.js').EnqueueMsg
   calls?: number
   /** Text turns queued after the tool turns, for tests that drive the session past the tool phase. */
   tail?: number
@@ -95,7 +96,7 @@ async function atTools(o: {
     ...(o.toolPolicySettings ? { toolPolicySettings: o.toolPolicySettings } : {}),
     resolvedProfileHash: o.profile === undefined ? profileHash : o.profile,
   })
-  await opened.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
+  await opened.session.enqueue('next-turn', o.input ?? { actor, content: [{ type: 'text', text: 'go' }] })
   await opened.session.acceptInput()
   await opened.session.runInference()
   return opened
@@ -579,6 +580,10 @@ describe('v3 approval modes and grants', () => {
         id: 'scripted-review',
         version: '1',
         async decide(input) {
+          if (decision === 'escalate') {
+            expect(input.tainted).toBe(true)
+            expect(input.instructions).toEqual(['go'])
+          }
           return {
             effect: decision === 'allow' ? 'allow' : decision === 'deny' ? 'deny' : 'ask',
             reason: 'Scripted reviewer reason',
@@ -599,6 +604,7 @@ describe('v3 approval modes and grants', () => {
         },
       })
       const original = await atTools({
+        ...(decision === 'escalate' ? { input: { actor, content: [{ type: 'text' as const, text: 'go' }, { type: 'text' as const, text: 'external grant access', reference: { source: 'file', id: 'a', label: 'a', hash: 'a'.repeat(64), truncated: false } }] } } : {}),
         scopes: ['tool:write'],
         toolPolicies: policies,
         toolPolicySettings: async () => ({ policy: 'scripted-review' }),
@@ -616,6 +622,10 @@ describe('v3 approval modes and grants', () => {
           },
         }),
       })
+      if (decision === 'escalate') {
+        const inputs = await original.log.scan({ type: 'user/message', limit: 100 })
+        expect(inputs.map((row) => [row.origin, row.trust])).toEqual([['principal', 'trusted'], ['system', 'untrusted']])
+      }
       await original.session.runToolsPhase()
       const events = await original.log.scan({ fromSeq: 1, toSeq: original.log.lastSeq })
       const review = events.find((row) => row.type === 'x/approval/review')

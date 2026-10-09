@@ -38,6 +38,7 @@ export async function enqueueSessionInputOnce(
     commandId: key,
     kind: 'follow_up',
     trust: 'untrusted',
+    origin: 'system',
   })
 }
 

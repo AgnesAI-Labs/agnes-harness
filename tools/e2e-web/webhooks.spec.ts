@@ -70,6 +70,8 @@ test('signed business event creates a policy-bound root session', async ({
       { timeout: 30000 },
     )
     .toContain('Synthetic signed issue')
+  const messages = await session.scan({ type: 'user/message', limit: 100 })
+  expect(messages[0]).toMatchObject({ origin: 'system', trust: 'untrusted', actor: { id: 'webhook:business-issues', org: 'webhook', attrs: { provider: 'github', ruleId: 'business-issues', deliveryId: 'synthetic-delivery' } } })
   await page.getByTestId('trigger-session').first().click()
   await expect(page).toHaveURL(new RegExp(`session=${encodeURIComponent(result.delivery.sessionId)}`))
   await expect(page.getByTestId('conversation-turn')).toHaveCount(1)

@@ -4,7 +4,7 @@ import type { SessionEntry } from './sessions.js'
 
 /** Reuse the persisted inbox; admission stays serialized, but model IO never holds its queue. */
 export function createFollowUpRunner(
-  cx: LocalContext,
+  cx: Pick<LocalContext, 'commandQueue' | 'activationBarrier' | 'onPromptStart' | 'onPromptEnd'>,
   pushed: (entry: SessionEntry, seq: number) => Promise<void>,
 ): (entry: SessionEntry, inherited?: NonNullable<SessionEntry['inflight']>, restart?: boolean) => void {
   return (entry, inherited, restart = false) => {

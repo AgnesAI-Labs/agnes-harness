@@ -79,7 +79,7 @@ describe('webhook admission', () => {
     expect((await f.send(undefined, 'bad', true)).delivery?.status).toBe('bad-signature')
     expect((await f.send()).delivery?.status).toBe('accepted')
     expect(f.sessions).toHaveLength(1)
-    expect(f.sessions[0]).toMatchObject({ workspace: '/synthetic', agent: 'default', bundles: [] })
+    expect(f.sessions[0]).toMatchObject({ workspace: '/synthetic', agent: 'default', bundles: [], trigger: { provider, ruleId: 'issues', deliveryId: 'delivery-1' } })
     expect(f.sessions[0]?.sessionKey).toMatch(/^agnes:webhook:issues:/)
     expect(f.sessions[0]?.prompt).toContain('``````UNTRUSTED')
     const stored = await readFile(join(f.home, 'webhook-triggers.json'), 'utf8')

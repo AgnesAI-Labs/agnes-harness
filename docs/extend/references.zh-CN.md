@@ -9,3 +9,5 @@
 官方 `file` 与 `session` provider 通过公开 `reference-resolver` kind 注册。第三方插件通过 `@agnes/plugin-runtime` 的 `defineProvider('reference-resolver', provider)` 和 `ctx.providers.register` 添加来源，例如知识库。完整示例见[英文版](references.md)。公开 `ReferenceContext` 提供读取者身份、可撤销的文件端口、按权限过滤的会话端口、取消信号及限制。自定义来源须自行检查其后端读取权限；搜索结果不是权限凭据。
 
 Host 的 `referenceLimits` 选项可配置 `maxBytes`、`maxSourceBytes` 和 `headFraction`。默认每个摘录最多 32 KiB UTF-8 字节，保留 75% 头部及 25% 尾部，并显示 `[TRUNCATED: middle omitted]`。文件完整读取和 hash 上限为 16 MiB，超限或二进制文件拒绝引用；忽略规则、沙箱和私有状态目录限制在发送时再次检查。会话摘录最多保留 24 条已索引的用户/助手消息，省略时显示标记。文件 hash 对应完整文件，会话 hash 对应读取时的标题与索引摘录快照。JSON 转义防止来源内容关闭 UNTRUSTED 围栏；这些数据不会获得指令权限。
+
+解析后的引用块独立落账为 `system/untrusted` 消息，人类文字保留 `principal/trusted` 来源。模型请求将引用封装为不可信内容，reviewer 的人类指令排除引用。虽然输入消息先于 `turn/start` 写入，接纳输入仍会在开始 turn 时初始化 taint。

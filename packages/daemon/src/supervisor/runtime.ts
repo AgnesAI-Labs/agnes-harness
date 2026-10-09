@@ -244,6 +244,7 @@ import { type SkillWatcher, startSkillWatcher } from './skill-watcher.js'
 import { listenUnix } from './socket.js'
 import { prepareDaemonSocketPaths } from './socket-paths.js'
 import { watchWindowsStopRequest } from './stop-request.js'
+import { createFollowUpRunner } from '@agnes/daemon-rpc/local/follow-up-runner'
 import { webhookSessions } from './webhook-sessions.js'
 import { WorkerPool } from './worker-pool.js'
 import { listenWebSocket } from './ws.js'
@@ -1909,7 +1910,20 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
               reason: 'new session actor authority unavailable',
             })
           }
-    const triggerSessions = webhookSessions(o.config.socketPath, lock.owner)
+    const continueTrigger = createFollowUpRunner({ commandQueue, activationBarrier,
+      onPromptEnd: (id) => registry.retireAtTurnBoundary(id),
+    }, async () => undefined)
+    const triggerSessions = webhookSessions(o.config.socketPath, lock.owner, async (input) => {
+      const entry = supervisorRegistry.require(input.sessionKey)
+      // Only this backend closure can mint trigger identity/provenance; no chat RPC accepts it.
+      await runQueued(commandQueue, entry.key, entry.ac.signal, () => entry.session.enqueue('next-turn', {
+        content: [{ type: 'text', text: input.prompt }],
+        actor: { id: `webhook:${input.trigger.ruleId}`, org: 'webhook', role: 'trigger', deptPath: [], attrs: { ...input.trigger } },
+        origin: 'system', trust: 'untrusted', kind: 'follow_up',
+        commandId: `webhook:${input.trigger.deliveryId}`,
+      }))
+      continueTrigger(entry)
+    })
     startupCleanup.push(() => triggerSessions.close())
     const appServerAdmin = createAppServerAdmin({
       triggerSession: triggerSessions.create,

@@ -166,7 +166,7 @@ describe('human Loop controls', () => {
     await session.enqueue('next-turn', { content: content('go'), actor })
     await session.step()
     await session.enqueue('next-step', { content: content('return this'), actor })
-    await session.enqueue('next-step', { content: content('Intelligent UI action result: succeeded'), actor, kind: 'follow_up', trust: 'untrusted', commandId: 'ui-result:one' })
+    await session.enqueue('next-step', { content: content('Intelligent UI action result: succeeded'), actor, kind: 'follow_up', trust: 'untrusted', origin: 'system', commandId: 'ui-result:one' })
     await session.controls.apply('cancel', actor, 'cancel')
     expect(session.op()).toBeNull()
     expect((await log.scan({ type: 'turn/end', limit: 1 }))[0]?.data).toMatchObject({ reason: 'aborted' })
@@ -177,6 +177,8 @@ describe('human Loop controls', () => {
         returned: [expect.objectContaining({ content: content('return this') })],
       }),
     )
+    await session.acceptInput()
+    expect(session.laneTaint()).toBe(true)
     await run(session)
     expect((await session.controls.state()).pending).toEqual([])
     const messages = await log.scan({ type: 'user/message', limit: 100 })
