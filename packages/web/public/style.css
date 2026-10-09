@@ -135,7 +135,7 @@
   --agnes-surface-glass-hover: rgb(255 255 255 / 54%);
 
   /* Input */
-  --agnes-input-surface: var(--agnes-color-neutral-100-a70);
+  --agnes-input-surface: var(--agnes-bg-surface);
   --agnes-input-content-strong: var(--agnes-color-neutral-900);
   --agnes-input-placeholder: var(--agnes-color-neutral-725-a60);
   --agnes-input-border: var(--agnes-color-line-light-a30);
@@ -245,7 +245,7 @@
   --agnes-surface-glass-hover: rgb(255 255 255 / 12%);
 
   /* Input */
-  --agnes-input-surface: var(--agnes-color-neutral-775);
+  --agnes-input-surface: var(--agnes-bg-surface);
   --agnes-input-content-strong: var(--agnes-color-neutral-050);
   --agnes-input-placeholder: var(--agnes-color-neutral-300-a60);
   --agnes-input-border: var(--agnes-color-line-dark-primary);
@@ -5936,7 +5936,7 @@ body.admin-page {
   border: 1px solid var(--agnes-input-border);
   border-radius: var(--radius-md);
   color: var(--agnes-input-content-strong);
-  background: var(--agnes-bg-surface);
+  background: var(--agnes-input-surface);
   font-size: var(--font-size-sm);
   font-weight: 400;
   text-align: start;
@@ -6143,7 +6143,7 @@ body.admin-page {
   border-color: var(--agnes-input-border);
   border-radius: var(--radius-md);
   color: var(--agnes-input-content-strong);
-  background: var(--agnes-bg-surface);
+  background: var(--agnes-input-surface);
   font-size: var(--font-size-sm);
   transition:
     border-color var(--transition-fast),
@@ -6156,14 +6156,14 @@ body.admin-page {
   ):hover:not(:disabled),
 :is(#config-form, #account-dialog) select:hover:not(:disabled) {
   border-color: var(--agnes-input-border-emphasis);
-  background: var(--agnes-bg-surface);
+  background: var(--agnes-input-surface);
 }
 :is(#config-form, #account-dialog)
   input:not(.ant-select-input):not(.agnes-settings-toolbar input):not(
     .agnes-settings-input-surface
   ):focus-visible,
 :is(#config-form, #account-dialog) select:focus-visible {
-  background: var(--agnes-bg-surface);
+  background: var(--agnes-input-surface);
 }
 :is(#config-form, #account-dialog)
   input:not(.ant-select-input):not(.agnes-settings-toolbar input):not(.agnes-settings-input-surface):disabled,
