@@ -248,5 +248,85 @@
     "previous": "templates/scaffold.test.ts",
     "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
     "observedMaxMs": 6824
+  },
+  "packages/host-infrastructure/test/child-crash-restart.e2e.test.ts": {
+    "previous": "packages/host-infrastructure/test/child-crash-restart.test.ts",
+    "reason": "真实进程/OS/build",
+    "evidence": "Static audit; not executed in this development window."
+  },
+  "packages/package-manager/test/process-recovery.e2e.test.ts": {
+    "previous": "packages/package-manager/test/process-recovery.test.ts",
+    "reason": "真实进程/OS/build",
+    "evidence": "Static audit; not executed in this development window."
+  },
+  "packages/channels/test/local-pipe-real.e2e.test.ts": {
+    "previous": "packages/channels/test/local-pipe-real.test.ts",
+    "reason": "真实进程/OS/build",
+    "evidence": "Static audit; not executed in this development window."
+  },
+  "packages/host-extensions/test/ext-host/extension-seatbelt.integration.e2e.test.ts": {
+    "previous": "packages/host-extensions/test/ext-host/extension-seatbelt.integration.test.ts",
+    "reason": "真实进程/OS/build",
+    "evidence": "Static audit; not executed in this development window."
+  },
+  "packages/cli/sea/smoke.e2e.test.ts": {
+    "previous": "packages/cli/sea/smoke.test.ts",
+    "reason": "真实进程/OS/build",
+    "evidence": "Static audit; not executed in this development window."
+  },
+  "packages/system-node/test/renamed-runtime.e2e.test.ts": {
+    "previous": "packages/system-node/test/renamed-runtime.test.ts",
+    "reason": "真实进程/OS/build",
+    "evidence": "Static audit; not executed in this development window."
+  },
+  "packages/web/test/conversation-assets-build.e2e.test.ts": {
+    "previous": "packages/web/test/conversation-assets-build.test.ts",
+    "reason": "真实进程/OS/build",
+    "evidence": "Static audit; not executed in this development window."
+  },
+  "tools/acceptance/shared-local-delivery.e2e.test.ts": {
+    "previous": "tools/acceptance/shared-local-delivery.test.ts",
+    "reason": "真实进程/OS/build",
+    "evidence": "Static audit; not executed in this development window."
+  },
+  "tools/acceptance/shared-launch-orders.e2e.test.ts": {
+    "previous": "tools/acceptance/shared-launch-orders.test.ts",
+    "reason": "真实进程/OS/build",
+    "evidence": "Static audit; not executed in this development window."
+  },
+  "tools/acceptance/windows-channel-reconnect.e2e.test.ts": {
+    "previous": "tools/acceptance/windows-channel-reconnect.test.ts",
+    "reason": "真实进程/OS/build",
+    "evidence": "Static audit; not executed in this development window."
+  },
+  "tools/acceptance/shared-real-provider.e2e.test.ts": {
+    "previous": "tools/acceptance/shared-real-provider.test.ts",
+    "reason": "真实进程/OS/build",
+    "evidence": "Static audit; not executed in this development window."
+  },
+  "packages/core-ledger/test/fold-perf.slow.test.ts": {
+    "previous": "packages/core-ledger/test/fold-perf.test.ts",
+    "reason": "大 ledger / opt-in 性能预算",
+    "evidence": "Static audit; not executed in this development window."
+  },
+  "packages/core/test/reduce-copy-budget.slow.test.ts": {
+    "previous": "packages/core/test/reduce-copy-budget.test.ts",
+    "reason": "大 ledger / opt-in 性能预算",
+    "evidence": "Static audit; not executed in this development window."
+  },
+  "packages/core-ledger/test/fold-gate.slow.test.ts": {
+    "previous": "packages/core-ledger/test/fold-gate.test.ts",
+    "reason": "大 ledger / opt-in 性能预算",
+    "evidence": "Static audit; not executed in this development window."
+  },
+  "packages/base/test/sandbox-shell.e2e.test.ts": {
+    "previous": "packages/base/test/sandbox-shell.test.ts",
+    "reason": "1 个真实 POSIX shell case 迁入 e2e，3 个 argv 注册留 fast",
+    "evidence": "Static audit; not executed in this development window."
+  },
+  "packages/base/test/sandbox-seatbelt.e2e.test.ts": {
+    "previous": "packages/base/test/sandbox-seatbelt.test.ts",
+    "reason": "2 个真实 OS/network case 迁入 e2e，2 个 argv 注册留 fast",
+    "evidence": "Static audit; not executed in this development window."
   }
 }
