@@ -82,3 +82,11 @@ The official default goal plugin keeps a session objective on the ledger. In Web
 /goal followed by an objective also creates a goal; /goal in the CLI displays its status. Options precede the objective. The default allowance is ten automatic rounds without an additional credit limit. Resume grants a fresh round allowance while keeping spend. Editing preserves phase and spend. The model can report completion or a blocker with evidence through goal_update, and cannot raise limits or resume itself.
 
 Automatic rounds enter the next-turn inbox. Human controls take priority; stale rounds stop before model work. Completion, blockers, cancellation, errors and exhausted limits stop continuation. Credit checks occur between steps/turns; an in-flight response can exceed the goal limit, while normal model budget admission still applies. Unknown credit usage with a goal budget blocks continuation. Restored and forked active goals pause until explicit resume.
+
+## Control running work
+
+Sending while the agent is working queues a steer for the next step boundary, after the active model call or tool batch. Edit or withdraw it above the composer before delivery. **Interrupt now** on a queued message cooperatively stops the active step and runs that message next; committed effects remain committed and unknown outcomes remain unknown.
+
+**Pause** waits for the next boundary; **Resume** continues the same turn. Reloading the browser or cold restarting the daemon keeps the pause. **Cancel** ends the turn and returns queued steers to the composer. The trace's **Human control facts** shows the actor, time, request and outcome. Controls use the session's pinned Loop generation, including during an upgrade. Unsupported controls are disabled with the pinned Loop's refusal reason.
+
+SDK: `session.controls()` reads capabilities and state; `steer(content)`, `editQueued(itemId, content)`, `removeQueued(itemId)`, `interrupt(itemId)`, `pause()`, `resume()` and `cancel()` use durable commands. A Loop opts in through `LoopFactory.controls`; omission refuses steer, interrupt and pause.

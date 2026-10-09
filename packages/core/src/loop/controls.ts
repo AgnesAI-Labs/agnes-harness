@@ -60,7 +60,24 @@ export class SessionControls {
   }
 
   async state() {
+    const rows = await this.s.d.log.scan({
+      type: 'x/core/control',
+      lane: this.s.lane,
+      order: 'desc',
+      limit: 200,
+    })
     return {
+      facts: rows.reverse().map((row) => {
+        const details = row.data as { action: string; outcome: string }
+        return {
+          seq: row.seq,
+          ts: row.ts,
+          actor: row.actor,
+          action: details.action,
+          outcome: details.outcome,
+          details: row.data,
+        }
+      }),
       controls: {
         steer: this.s.d.loopFactory.controls?.steer === true,
         interrupt: this.s.d.loopFactory.controls?.interrupt === true,

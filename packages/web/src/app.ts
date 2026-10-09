@@ -1,3 +1,4 @@
+import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import { adaptResourceAdmin } from '@agnes/web-admin/admin/resources/admin'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
 import { factChainLinks } from '@agnes/web-client'
@@ -322,6 +323,8 @@ const clientModules = await startClientModules({
     initialDraft: savedComposerDraft ?? '',
     onAttachmentsChange: renderControls,
     onCancel: handleComposerCancel,
+    onPauseResume: handlePauseResume,
+    onEditQueued: handleEditQueued,
     onDraftChange: handleComposerDraftChange,
     onError: showError,
     onModelSelect: selectModel,
@@ -413,6 +416,10 @@ addEventListener('pagehide', () => stopPluginHotReload(), { once: true })
 let connected = false
 let configured = false
 let current: Session | undefined
+let sessionControls: { sessionId: string; value: SessionControlStateResult } | undefined
+let controlsRefresh = 0
+let controlPending = false
+const recoveredReturns = new Set<string>()
 let projection: UITimeline | undefined
 let selection = 0
 let listGeneration = 0
@@ -832,31 +839,57 @@ function renderControls(): void {
       hidden: !busy && !stopping,
       label: stopping ? t('composer.cancel.stopping') : t('composer.cancel.stop'),
     },
+    controls: {
+      paused: sessionControls?.sessionId === current?.id && sessionControls?.value.paused === true,
+      pending: controlPending,
+      disabled: !connected || !busy || sessionPending || stopping,
+      pauseSupported:
+        sessionControls?.sessionId === current?.id && sessionControls?.value.controls.pause === true,
+      interruptSupported:
+        sessionControls?.sessionId === current?.id && sessionControls?.value.controls.interrupt === true,
+      reason: t(
+        sessionControls?.sessionId === current?.id
+          ? 'composer.control.unsupported'
+          : 'composer.control.syncing',
+      ),
+    },
     connected,
     configured,
     hasSession: current !== undefined || draftingNew,
-    hint: permissionUnknown
-      ? {
-          kind: 'state',
-          text: permissionRefreshPending
-            ? t('composer.hint.permissionSyncing')
-            : t('composer.hint.permissionRequired'),
-        }
-      : knownSessionModel && !selectedModelAvailable()
-        ? { kind: 'state', text: t('composer.hint.modelUnavailable') }
-        : imageUnsupported
-          ? { kind: 'state', text: t('composer.hint.imageUnsupported') }
-          : composerHintPresentation(
-              {
-                connected,
-                configured,
-                hasSession: current !== undefined || draftingNew,
-                busy,
-                stopping,
-                loading: sessionPending,
-              },
-              t,
+    hint:
+      busy && sessionControls?.value.controls.steer !== true
+        ? {
+            kind: 'state',
+            text: t(
+              sessionControls?.sessionId === current?.id
+                ? 'composer.control.unsupported'
+                : 'composer.control.syncing',
             ),
+          }
+        : busy && !permissionUnknown
+          ? { kind: 'state', text: t('composer.control.steerHint') }
+          : permissionUnknown
+            ? {
+                kind: 'state',
+                text: permissionRefreshPending
+                  ? t('composer.hint.permissionSyncing')
+                  : t('composer.hint.permissionRequired'),
+              }
+            : knownSessionModel && !selectedModelAvailable()
+              ? { kind: 'state', text: t('composer.hint.modelUnavailable') }
+              : imageUnsupported
+                ? { kind: 'state', text: t('composer.hint.imageUnsupported') }
+                : composerHintPresentation(
+                    {
+                      connected,
+                      configured,
+                      hasSession: current !== undefined || draftingNew,
+                      busy,
+                      stopping,
+                      loading: sessionPending,
+                    },
+                    t,
+                  ),
     input: {
       disabled:
         !available || (!current && !draftingNew) || stopping || sessionPending || initialSubmissionPending,
@@ -898,7 +931,21 @@ function renderControls(): void {
       selected: permissionUnknown ? null : permissionMode,
     },
     queue: {
-      items: current && projection?.sessionId === current.id ? (projection.pendingInputs ?? []) : [],
+      items:
+        current && projection?.sessionId === current.id
+          ? (projection.pendingInputs ?? []).map((item) => ({
+              ...item,
+              editText:
+                sessionControls?.value.pending
+                  .find((pending) => pending.itemId === item.itemId)
+                  ?.content.filter((block) => block.type === 'text')
+                  .map((block) => block.text)
+                  .join('\n') ?? item.preview,
+            }))
+          : [],
+      interruptSupported:
+        sessionControls?.sessionId === current?.id && sessionControls?.value.controls.interrupt === true,
+      reason: t('composer.control.unsupported'),
       removeDisabled:
         !available ||
         !current ||
@@ -938,6 +985,8 @@ function renderControls(): void {
         !selectedModelAvailable() ||
         (!current && !canStartDraft) ||
         !hasInput ||
+        (busy &&
+          (sessionControls?.sessionId !== current?.id || sessionControls?.value.controls.steer !== true)) ||
         composerRuntime.hasPendingImages() ||
         Boolean(imageUnsupported) ||
         sending ||
@@ -1246,13 +1295,20 @@ function transcriptMeta(): {
   loadEarlier?: () => void
   sessionId?: string
   loop?: { id: string; version: string }
+  controlFacts?: SessionControlStateResult['facts']
 } {
   const session = live
   const loop =
     sessionLoopSelection(projection) ??
     sessionLoopSelection(current) ??
     sessionLoopSelection(sessionRows.find((row) => row.sessionId === current?.id))
-  const identity = current ? { sessionId: current.id, ...(loop ? { loop } : {}) } : {}
+  const identity = current
+    ? {
+        sessionId: current.id,
+        ...(loop ? { loop } : {}),
+        ...(sessionControls?.sessionId === current.id ? { controlFacts: sessionControls.value.facts } : {}),
+      }
+    : {}
   if (!session?.hasEarlier()) return { hasEarlier: false, ...identity }
   return { hasEarlier: true, ...identity, loadEarlier: () => void session.loadEarlier().catch(showError) }
 }
@@ -1272,6 +1328,8 @@ function searchApproval(limit?: number): void {
 }
 /** What watching the event stream used to do per event: titles, the list, the run receipt. */
 async function followEvent(session: Session, event: LedgerEvent): Promise<void> {
+  if (['inbox', 'x/core/control', 'x/core/pause-state', 'turn/start', 'turn/end'].includes(event.type))
+    void refreshSessionControls(session).catch(showError)
   const title = readSessionTitle(event)
   if (title?.status === 'generated') {
     // The list owns user overrides; a late automatic event cannot overwrite one.
@@ -1400,6 +1458,8 @@ async function open(
     }
     const loaded = binding.session
     current = loaded
+    sessionControls = undefined
+    controlPending = false
     offPermission = binding.offPermission
     moduleSessionId = loaded.id
     await clientModules.reconciler.reconcileNow()
@@ -1479,6 +1539,7 @@ async function open(
     live = liveProjection
     stopEvents = () => liveProjection.stop()
     await liveProjection.start()
+    await refreshSessionControls(loaded)
     if (epoch !== selection) return
     selectionReady = true
     sessionPending = false
@@ -2290,9 +2351,12 @@ function handleQueuedAction(itemId: string, kind: 'sendNow' | 'removeQueued'): v
   >
   queueAction = action
   renderControls()
-  void session[kind](itemId)
+  void (kind === 'sendNow' ? session.interrupt(itemId) : session.removeQueued(itemId))
     .then(() => {
-      if (current === session && selection === action.selection) live?.refresh()
+      if (current === session && selection === action.selection) {
+        live?.refresh()
+        void refreshSessionControls(session).catch(showError)
+      }
     })
     .catch((error: unknown) => {
       const failure = error as { data?: { code?: unknown } }
@@ -2302,7 +2366,10 @@ function handleQueuedAction(itemId: string, kind: 'sendNow' | 'removeQueued'): v
           : error instanceof Error
             ? error.message
             : String(error)
-      if (current === session && selection === action.selection) live?.refresh()
+      if (current === session && selection === action.selection) {
+        live?.refresh()
+        void refreshSessionControls(session).catch(showError)
+      }
     })
     .finally(() => {
       action.pending = false
@@ -2310,17 +2377,80 @@ function handleQueuedAction(itemId: string, kind: 'sendNow' | 'removeQueued'): v
     })
 }
 
+async function refreshSessionControls(session: Session): Promise<void> {
+  const epoch = selection
+  const request = ++controlsRefresh
+  const value = await session.controls()
+  if (current !== session || selection !== epoch || request !== controlsRefresh) return
+  sessionControls = { sessionId: session.id, value }
+  for (const fact of value.facts ?? []) {
+    if (fact.action !== 'cancel' || fact.outcome !== 'requested') continue
+    const key = `agnes-return:${session.id}:${fact.seq}`
+    if (recoveredReturns.has(key) || sessionStorage.getItem(key) === 'sent') continue
+    const returned = (fact.details as { returned?: Array<{ content: ContentBlock[] }> })?.returned ?? []
+    const blocks = returned.flatMap((item) => item.content)
+    const text = blocks
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text)
+      .join('\n')
+    if (!sessionStorage.getItem(key) && text) {
+      const draft = [composerRuntime.getDraft(), text].filter(Boolean).join('\n')
+      composerRuntime.setDraft(draft)
+      sessionStorage.setItem(composerDraftKey, draft)
+    }
+    const attachments = blocks.filter((block) => block.type === 'image' || block.type === 'file')
+    if (attachments.length)
+      composerRuntime.restoreAttachmentBlocks([...composerRuntime.getAttachmentBlocks(), ...attachments])
+    recoveredReturns.add(key)
+    sessionStorage.setItem(key, 'pending')
+  }
+  render()
+}
+function handlePauseResume(): void {
+  run(async () => {
+    const session = current
+    if (!session || sessionPending || controlPending || sessionControls?.sessionId !== session.id) return
+    const epoch = selection
+    controlPending = true
+    renderControls()
+    try {
+      await session.control(sessionControls.value.paused ? 'resume' : 'pause')
+      await refreshSessionControls(session)
+      live?.refresh()
+    } finally {
+      if (current === session && selection === epoch) {
+        controlPending = false
+        renderControls()
+      }
+    }
+  })
+}
+async function handleEditQueued(itemId: string, text: string): Promise<void> {
+  const session = current
+  if (!session || sessionPending || !connected) return
+  // Preserve attachments and edit the complete text, including content beyond the preview limit.
+  const state = await session.controls()
+  const item = state.pending.find((candidate) => candidate.itemId === itemId)
+  if (!item) throw new Error(t('composer.queue.gone'))
+  await session.editQueued(itemId, [
+    { type: 'text', text },
+    ...item.content.filter((block) => block.type !== 'text'),
+  ])
+  await refreshSessionControls(session)
+  live?.refresh()
+}
+
 function handleComposerDraftChange(value: string): void {
   sessionStorage.setItem(composerDraftKey, value)
   composerRuntime.resize()
   renderControls()
 }
-function imageSubmissionFrameBytes(sessionId: string, content: ContentBlock[], followUp: boolean): number {
-  const params = followUp
+function imageSubmissionFrameBytes(sessionId: string, content: ContentBlock[], steer: boolean): number {
+  const params = steer
     ? {
         clientId: 'c'.repeat(128),
         commandId: 'c'.repeat(128),
-        kind: 'followUp',
+        kind: 'steer',
         payload: { sessionId, content },
       }
     : { sessionId, prompt: toAcpPrompt(content) }
@@ -2328,7 +2458,7 @@ function imageSubmissionFrameBytes(sessionId: string, content: ContentBlock[], f
     JSON.stringify({
       jsonrpc: '2.0',
       id: Number.MAX_SAFE_INTEGER,
-      method: followUp ? '_agnes/v1/submit' : 'session/prompt',
+      method: steer ? '_agnes/v1/submit' : 'session/prompt',
       params,
     }),
   ).byteLength
@@ -2415,6 +2545,7 @@ function submitComposer(): void {
     showError(new Error(t('app.error.messageTooLarge')))
     return
   }
+  if (busy && (sessionControls?.sessionId !== session?.id || !sessionControls?.value.controls.steer)) return
   notice.textContent = ''
   notice.dataset.kind = ''
   const submission = ++submissionGeneration
@@ -2492,13 +2623,16 @@ function submitComposer(): void {
     if (current !== session || selection !== ownedSelection) throw new Error(t('app.error.sessionChanged'))
     if (sessionYoloEnabled === undefined) throw new Error(t('app.error.permissionRequired'))
     const result = await (busy
-      ? session.followUp(content)
+      ? session.steer(content)
       : session.prompt(content, {
           titleLocale: clientModules.locale.getSnapshot() === 'zh-CN' ? 'zh-CN' : 'en',
         }))
     const submittedId = session.id
     if (typeof result === 'object' && result.reason === 'completed' && !sessionTitles.has(submittedId))
       titleRefresh.start(submittedId)
+    for (const key of recoveredReturns) {
+      if (key.startsWith(`agnes-return:${session.id}:`)) sessionStorage.setItem(key, 'sent')
+    }
     pendingSessionKey = undefined
     if (busy && current === session && selection === ownedSelection) live?.refresh()
   })()

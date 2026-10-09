@@ -74,7 +74,7 @@ describe('web presentation controls', () => {
         },
         zhT,
       ),
-    ).toBe('可补充下一轮')
+    ).toBe('可指导正在运行的 Agent')
     expect(
       composerHint(
         {
@@ -103,8 +103,8 @@ describe('web presentation controls', () => {
     })
     expect(composerActionPresentation({ busy: true, loading: false, sending: false }, zhT)).toEqual({
       mode: 'busy',
-      label: '加入下一轮',
-      title: '加入下一轮（Enter）',
+      label: '排队指引',
+      title: '排队指引（Enter）',
     })
     expect(composerActionPresentation({ busy: true, loading: false, sending: true }, zhT)).toEqual({
       mode: 'pending',
@@ -136,7 +136,7 @@ describe('web presentation controls', () => {
         },
         zhT,
       ),
-    ).toEqual({ kind: 'state', text: '可补充下一轮' })
+    ).toEqual({ kind: 'state', text: '可指导正在运行的 Agent' })
   })
 
   it('blocks prompt submission while a session transition is pending', () => {
@@ -265,7 +265,7 @@ describe('web presentation controls', () => {
     expect(button.textContent).toBe('icon 发送')
 
     const legacy = { textContent: '发送', querySelector: () => null } as unknown as HTMLButtonElement
-    setButtonLabel(legacy, '加入下一轮')
-    expect(legacy.textContent).toBe('加入下一轮')
+    setButtonLabel(legacy, '排队指引')
+    expect(legacy.textContent).toBe('排队指引')
   })
 })
