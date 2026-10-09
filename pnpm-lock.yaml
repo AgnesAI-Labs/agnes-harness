@@ -1342,13 +1342,13 @@ importers:
       '@agnes/web-ui':
         specifier: workspace:*
         version: link:../web-ui
+      '@agnes/web-units':
+        specifier: workspace:*
+        version: link:../web-units
       react:
         specifier: 18.3.1
         version: 18.3.1
     devDependencies:
-      '@agnes/web-units':
-        specifier: workspace:*
-        version: link:../web-units
       '@types/react':
         specifier: 18.3.12
         version: 18.3.12
@@ -1585,6 +1585,9 @@ importers:
 
   tools/e2e-web:
     dependencies:
+      '@agnes/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

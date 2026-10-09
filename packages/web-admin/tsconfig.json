@@ -30,6 +30,9 @@
     },
     {
       "path": "../web-ui"
+    },
+    {
+      "path": "../web-units"
     }
   ]
 }

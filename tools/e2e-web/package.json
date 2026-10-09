@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@agnes/protocol": "workspace:*",
-    "@agnes/sdk": "workspace:*"
+    "@agnes/sdk": "workspace:*",
+    "@agnes/observability": "workspace:*"
   }
 }

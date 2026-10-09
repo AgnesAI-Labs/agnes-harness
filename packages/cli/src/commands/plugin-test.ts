@@ -3,6 +3,7 @@ import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
 import { createPlatform } from '@agnes/host'
+import { AGH_DIR } from '@agnes/protocol'
 import type { MainIO } from '../bin.js'
 import { UsageError } from '../errors.js'
 
@@ -38,7 +39,7 @@ export function pluginTestEnvironment(source: NodeJS.ProcessEnv, home: string): 
     ...env,
     HOME: home,
     USERPROFILE: home,
-    AGH_HOME: join(home, '.agh'),
+    AGH_HOME: join(home, AGH_DIR),
     npm_config_cache: join(home, '.npm'),
     npm_config_userconfig: join(home, '.npmrc'),
     npm_config_offline: 'true',

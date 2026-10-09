@@ -55,10 +55,10 @@
     "@agnes/web-client": "workspace:*",
     "@agnes/web-foundation": "workspace:*",
     "@agnes/web-ui": "workspace:*",
-    "react": "18.3.1"
+    "react": "18.3.1",
+    "@agnes/web-units": "workspace:*"
   },
   "devDependencies": {
-    "@agnes/web-units": "workspace:*",
     "react-dom": "18.3.1",
     "vitest": "5.0.0",
     "@types/react": "18.3.12",
