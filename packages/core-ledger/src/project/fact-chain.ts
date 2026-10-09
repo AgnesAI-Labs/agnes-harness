@@ -1,3 +1,4 @@
+import { ToolReviewFact, validateAgainst } from '@agnes/protocol'
 import type {
   ArtifactRef,
   EventEnvelope,
@@ -76,7 +77,16 @@ export function projectFactChain(input: {
       (row) => row.type === 'x/core/loop-effect' && core(row) && object(row.data).toolUseId === toolUseId,
     )
     const link = links.length === 1 ? links[0] : undefined
+    const reviewEvent = events.findLast(
+      (row) =>
+        row.type === 'x/approval/review' &&
+        core(row) &&
+        object(row.data).toolUseId === toolUseId &&
+        row.sourceEventSeqs?.includes(call.seq),
+    )
+    const review = object(reviewEvent?.data).review
     add({
+      ...(validateAgainst(ToolReviewFact, review).ok ? { review: review as ToolReviewFact } : {}),
       id,
       kind: 'invocation',
       toolUseId,

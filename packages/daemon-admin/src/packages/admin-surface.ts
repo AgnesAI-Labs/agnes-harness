@@ -1,3 +1,4 @@
+import { AutoReviewConfig } from '@agnes/protocol'
 import { createHash } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
@@ -122,6 +123,12 @@ export type AdminSurfaceOptions = {
       input: import('@agnes/protocol').DiagnosticsExportParams,
     ): Promise<import('@agnes/protocol').DiagnosticsExportResult>
     doctor?: () => Promise<unknown>
+  }
+  autoReview?: {
+    get(): Promise<import('@agnes/protocol').AutoReviewConfig>
+    save(
+      config: import('@agnes/protocol').AutoReviewConfig,
+    ): Promise<import('@agnes/protocol').AutoReviewConfig>
   }
   systemPrompt?: {
     get(
@@ -261,6 +268,36 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
             reply(response, 200, result)
           } catch {
             error(response, 502, 'E_ADMIN_BACKEND', '')
+          }
+          return true
+        }
+        if (route === 'auto-review') {
+          const write = request.method === 'POST'
+          if (request.method !== 'GET' && !write) {
+            error(response, 404, 'E_ADMIN_ROUTE', '')
+            return true
+          }
+          if (!configuredPermissions.includes(write ? 'packages.activate' : 'packages.read')) {
+            error(response, 403, 'E_ADMIN_FORBIDDEN', '')
+            return true
+          }
+          if (write && readOnly) {
+            error(response, 409, 'E_ADMIN_READ_ONLY', '')
+            return true
+          }
+          if (!options.autoReview) {
+            error(response, 503, 'E_ADMIN_CATALOG_UNAVAILABLE', '')
+            return true
+          }
+          try {
+            const input = write ? await readBody(request) : {}
+            if (!validateAgainst(AutoReviewConfig, input).ok) throw new Error('Invalid reviewer config')
+            const result = write
+              ? await options.autoReview.save(input as import('@agnes/protocol').AutoReviewConfig)
+              : await options.autoReview.get()
+            reply(response, 200, result)
+          } catch {
+            error(response, 400, 'CONFIG_INVALID_INPUT', '')
           }
           return true
         }

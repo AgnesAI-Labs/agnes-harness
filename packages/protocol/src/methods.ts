@@ -1,3 +1,4 @@
+import { AutoReviewConfig } from './auto-review.js'
 import type { TSchema } from '@sinclair/typebox'
 import * as Acp from '../gen/ts/acp.js'
 import * as A from '../gen/ts/agnes-v1.js'
@@ -71,6 +72,8 @@ export type MethodName =
   | '_agnes/v1/sessionSelection.defaults.save'
   | '_agnes/v1/config.childEngines.get'
   | '_agnes/v1/config.childEngines.save'
+  | '_agnes/v1/autoReview.get'
+  | '_agnes/v1/autoReview.save'
   | '_agnes/v1/systemPrompt.get'
   | '_agnes/v1/systemPrompt.save'
   | '_agnes/v1/session.factChain'
@@ -171,6 +174,8 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   ),
   '_agnes/v1/sessionSelection.defaults.get': clientRequest(A.ConfigEmptyParams, A.SessionDefaultsState),
   '_agnes/v1/sessionSelection.defaults.save': clientRequest(A.SessionDefaultsState, A.SessionDefaultsState),
+  '_agnes/v1/autoReview.get': clientRequest(A.ConfigEmptyParams, AutoReviewConfig),
+  '_agnes/v1/autoReview.save': clientRequest(AutoReviewConfig, AutoReviewConfig),
   '_agnes/v1/systemPrompt.get': clientRequest(A.SystemPromptGetParams, A.SystemPromptSnapshot),
   '_agnes/v1/systemPrompt.save': clientRequest(A.SystemPromptSaveParams, A.SystemPromptSnapshot),
   '_agnes/v1/trace.clear': clientRequest(A.ModelRequestClearParams, A.ModelRequestClearResult),

@@ -16,6 +16,14 @@ export const approvalPolicy: SeamFactory<ApprovalSeam> = async (ctx) => {
   const cfg = readApprovalConfig(ctx.profile.preset)
   const tickets = createTicketStore(ctx, cfg.pendingTtlMs)
   const bind = (workspaceRoot: string): ApprovalSeam => ({
+    async checkTool(name, args) {
+      if (cfg.rules.length === 0) return true
+      try {
+        return matchPolicy(cfg.rules, name, normalizeArgv(name, args, workspaceRoot)) !== 'deny'
+      } catch {
+        return false
+      }
+    },
     async ask(req): Promise<Verdict | ApprovalAnswer | Pending> {
       const tool = req.tool
       // A budget quote or an unknown-outcome question carries no tool, so the command table has

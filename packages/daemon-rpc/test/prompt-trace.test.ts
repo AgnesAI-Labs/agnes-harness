@@ -50,6 +50,15 @@ it('requires local configuration authority and checks both session owners before
       error?: { data?: { code?: string } }
     }
   try {
+    expect((await call('_agnes/v1/autoReview.save', { enabled: true, maxReviews: 3 })).result).toMatchObject({
+      enabled: true,
+      maxReviews: 3,
+    })
+    expect((await call('_agnes/v1/autoReview.get', {})).result).toMatchObject({
+      enabled: true,
+      maxReviews: 3,
+    })
+    expect((await call('_agnes/v1/autoReview.save', { maxRisk: 'high' })).error).toBeDefined()
     expect(
       (await call('_agnes/v1/systemPrompt.save', { config: { personaPrefix: 'hello' } })).result,
     ).toMatchObject({ config: { personaPrefix: 'hello' } })
@@ -59,6 +68,9 @@ it('requires local configuration authority and checks both session owners before
       localPackageAdminAuthority(['packages.read']),
     ]) {
       authority = denied
+      expect((await call('_agnes/v1/autoReview.save', { enabled: false })).error?.data?.code).toBe(
+        'CAPABILITY_DENIED',
+      )
       expect(
         (await call('_agnes/v1/systemPrompt.save', { config: { personaPrefix: 'refused' } })).error?.data
           ?.code,
@@ -73,6 +85,9 @@ it('requires local configuration authority and checks both session owners before
     expect((await call('_agnes/v1/systemPrompt.get', {})).error?.data?.code).toBe('CAPABILITY_DENIED')
     authority = localPackageAdminAuthority(['packages.activate'])
     readOnly = true
+    expect((await call('_agnes/v1/autoReview.save', { enabled: false })).error?.data).toMatchObject({
+      reason: 'E_ADMIN_READ_ONLY',
+    })
     expect(
       (await call('_agnes/v1/systemPrompt.save', { config: { personaPrefix: 'refused' } })).error?.data,
     ).toMatchObject({ reason: 'E_ADMIN_READ_ONLY' })

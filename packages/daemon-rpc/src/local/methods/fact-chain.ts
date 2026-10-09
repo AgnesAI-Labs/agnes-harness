@@ -14,6 +14,7 @@ const types = [
   'request/sent',
   'request/header',
   'tool/call',
+  'x/approval/review',
   'tool/result',
   'effect/intent',
   'effect/settled',

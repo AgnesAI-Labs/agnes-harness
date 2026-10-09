@@ -1,4 +1,4 @@
-import type { ToolPolicy, ToolPolicyDecision, ToolPolicyInput } from '@agnes/extension-api'
+import type { ToolPolicy, ToolPolicyDecision, ToolPolicyInput, ToolPolicyPorts } from '@agnes/extension-api'
 import { readPlanMode } from './state.js'
 
 /**
@@ -10,10 +10,11 @@ export function decidePlanMode(
   input: ToolPolicyInput,
   signal: AbortSignal,
   fallback: ToolPolicy,
+  ports?: ToolPolicyPorts,
 ): ToolPolicyDecision | Promise<ToolPolicyDecision> {
-  if (!readPlanMode(input.cwd).active) return fallback.decide(input, signal)
+  if (!readPlanMode(input.cwd).active) return fallback.decide(input, signal, ports)
   if (input.call.name === 'exit_plan_mode')
     return { effect: 'ask', reason: 'Approve the plan to leave plan mode' }
-  if (input.policy.isReadOnly) return fallback.decide(input, signal)
+  if (input.policy.isReadOnly) return fallback.decide(input, signal, ports)
   return { effect: 'deny', reason: 'Plan mode blocks write and exec tools until the plan is approved' }
 }

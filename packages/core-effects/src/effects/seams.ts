@@ -70,6 +70,7 @@ export type ApprovalWorkspaceBinding = Readonly<{ root: string }>
 export interface ApprovalSeam {
   /** Dynamic seams fit the shared implementation to the session before it enters an invocation. */
   forWorkspace?(workspace: ApprovalWorkspaceBinding): ApprovalSeam | Promise<ApprovalSeam>
+  checkTool?(name: string, args: unknown): Promise<boolean>
   ask(req: ApprovalRequest): Promise<Verdict | ApprovalAnswer | Pending>
   resume(
     ticket: string,

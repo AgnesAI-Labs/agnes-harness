@@ -177,6 +177,7 @@ import {
   type SessionWorkspaceRuntime,
   type WorkspaceRuntimeFence,
 } from '@agnes/host-infrastructure/session-workspace-runtime'
+import { AutoReviewSettingsStore } from '@agnes/host-infrastructure/auto-review-settings'
 import { SystemPromptSettingsStore } from '@agnes/host-infrastructure/system-prompt-settings'
 import { WorkspaceHookLoader } from '@agnes/host-infrastructure/workspace-hook-loader'
 import type { WorkspaceInvocationResolver } from '@agnes/host-infrastructure/workspace-invocation-resolver'
@@ -2172,6 +2173,24 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       netFetch: deps.netFetch ?? createNetFetch(),
       publicFetch: deps.publicFetch ?? createPublicFetch(deps.env),
       approvalMode: profile.approvals.mode,
+      toolPolicySettings: async (basePolicy) => {
+        if (basePolicy !== 'default' && basePolicy !== 'auto-review') return {}
+        let config: import('@agnes/protocol').AutoReviewConfig
+        try {
+          config = await new AutoReviewSettingsStore(
+            profile.dataDir,
+            profile.name,
+            profile.approvals.mode === 'auto-review',
+          ).read()
+        } catch {
+          // Unreadable operator settings cannot silently revert to smart approval.
+          return { policy: 'auto-review', config: { maxReviews: 0 } }
+        }
+        return {
+          config,
+          ...(config.enabled && basePolicy === 'default' ? { policy: 'auto-review' } : {}),
+        }
+      },
       ...(computerUseBackendProvider ? { hostToolDispatch: createComputerUseHostDispatchPort() } : {}),
       ...(profile.reconcile.point === 'immediate' ? {} : { quiet: quietState }),
       ...(deps.log ? { logger: correlatedLogger(deps.log) } : {}),

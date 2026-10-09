@@ -37,6 +37,7 @@ import type { ChainStep, SessionImpl, StepOutcome } from '../../step/session.js'
 import { summarizeCall } from '../../step/summarize-call.js'
 import { stepVerifyInput, toolVerifyInput } from '../../step/verify-input.js'
 import { resolveModel } from './inference.js'
+import { decideToolPolicy } from './policy-review.js'
 import { approveMemoryFile } from './memory-approval.js'
 import { approvalContinuation } from './parked.js'
 
@@ -398,14 +399,70 @@ export async function approveAndExecute(
         result: await refuse(s, call.toolUseId, 'CANCELLED', 'cancelled before dispatch', decisionId),
       }
     }
+    if (call.executionDomain === 'workspace' && !policy.isReadOnly && !s.d.runtime.sandboxAllowed())
+      return {
+        result: await refuse(
+          s,
+          call.toolUseId,
+          'SANDBOX_UNAVAILABLE',
+          'Sandbox enforcement unavailable',
+          decisionId,
+        ),
+      }
+    const fileArgs = call.args as { path?: unknown; file_path?: unknown }
+    const filePath =
+      fileArgs?.path ?? fileArgs?.file_path ?? (['ls', 'grep', 'find'].includes(call.name) ? '.' : undefined)
+    if (
+      ['read', 'write', 'edit', 'ls', 'grep', 'find'].includes(call.name) &&
+      typeof filePath === 'string' &&
+      s.d.workspaceInvocation
+    ) {
+      try {
+        await s.d.workspaceInvocation.run(async (view) => {
+          const fs = view.fs()
+          if (fs.preflight) await fs.preflight(filePath, policy.isReadOnly ? 'read' : 'write')
+          else await fs.stat(filePath)
+        })
+      } catch (error) {
+        if ((error as { code?: string }).code !== 'ENOENT')
+          return {
+            result: await refuse(
+              s,
+              call.toolUseId,
+              'E_FS_DENIED',
+              'Filesystem policy refuses this path',
+              decisionId,
+            ),
+          }
+      }
+    }
+    if (!(await s.d.runtime.approvalToolAllowed(call.name, call.args)))
+      return {
+        result: await refuse(
+          s,
+          call.toolUseId,
+          'POLICY_DENIED',
+          'Command deny-list refuses the call',
+          decisionId,
+        ),
+      }
     const approvalMode = s.d.approvalMode ?? 'manual'
-    const permission = await s.toolPolicy().decide(
+    const permission = await decideToolPolicy(
+      s,
       structuredClone({
         sessionKey: s.key,
         cwd: s.d.cwd,
         actor: s.d.actor,
-        call: { id: call.toolUseId, name: call.name, args: call.args as JsonValue },
+        call: {
+          id: call.toolUseId,
+          name: call.name,
+          args: call.args as JsonValue,
+          description: def.description,
+          parameters: def.parameters as JsonValue,
+          definitionFingerprint: call.definitionFingerprint,
+        },
         policy,
+        category: meta.isOpenWorld ? 'external' : policy.isReadOnly ? 'read' : 'write',
         tainted: taint,
         fullAccess: s.yolo,
         approvalMode,
@@ -628,7 +685,9 @@ export async function approveAndExecute(
         requestId,
         kind: 'tool' as const,
         toolUseId: call.toolUseId,
-        summary: summarizeCall(call.name, call.args),
+        summary: permission.review
+          ? `${summarizeCall(call.name, call.args)} — ${permission.reason}`
+          : summarizeCall(call.name, call.args),
         risk: risk === 'always' ? ('always' as const) : ('destructive' as const),
         bindingHash,
         scope,
@@ -674,7 +733,7 @@ export async function approveAndExecute(
         options: [...options],
         ...(overridden?.context !== undefined ? { context: overridden.context } : {}),
       }
-      if (approvalMode === 'smart' && !guardianFailed && !priorGuardianData) {
+      if (approvalMode === 'smart' && !permission.review && !guardianFailed && !priorGuardianData) {
         const guardianModel = resolveModel(s, 'primary').model
         const projected = await s.d.runtime.ledgerProjected({
           tokensEstimate: GUARDIAN_RESERVATION_TOKENS,

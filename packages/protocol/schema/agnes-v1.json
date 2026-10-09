@@ -3037,6 +3037,7 @@
           "additionalProperties": false,
           "required": ["kind", "id", "seq", "toolUseId", "name", "status", "summary"],
           "properties": {
+            "review": { "$ref": "#/$defs/ToolReviewFact" },
             "kind": {
               "const": "tool"
             },
@@ -3672,6 +3673,36 @@
       "additionalProperties": false,
       "required": ["id", "kind", "name", "status", "startSeq", "startedAt", "children"],
       "properties": {
+        "review": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "model": { "type": "string", "maxLength": 256 },
+            "promptHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "argsHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "scopeHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "decision": { "enum": ["allow", "deny", "escalate"] },
+            "risk": { "enum": ["low", "medium", "high"] },
+            "reason": { "type": "string", "minLength": 1, "maxLength": 2048 },
+            "latencyMs": { "type": "number", "minimum": 0 },
+            "cost": { "type": "number", "minimum": 0 },
+            "costSource": { "enum": ["estimated", "gateway", "unavailable"] },
+            "source": { "enum": ["model", "human-override", "fallback"] }
+          },
+          "required": [
+            "model",
+            "promptHash",
+            "argsHash",
+            "scopeHash",
+            "decision",
+            "risk",
+            "reason",
+            "latencyMs",
+            "cost",
+            "costSource",
+            "source"
+          ]
+        },
         "id": {
           "type": "string",
           "maxLength": 128
@@ -7238,6 +7269,7 @@
             "parentEffectId"
           ],
           "properties": {
+            "review": { "$ref": "#/$defs/ToolReviewFact" },
             "id": {
               "type": "string",
               "maxLength": 1024
@@ -7722,6 +7754,72 @@
           "type": "boolean"
         }
       }
+    },
+    "AutoReviewConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "modelSlot": { "enum": ["fast", "verifier"] },
+        "eligibleTools": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "maxItems": 256
+        },
+        "eligibleCategories": {
+          "type": "array",
+          "items": { "enum": ["read", "write", "external"] },
+          "maxItems": 3
+        },
+        "maxRisk": { "enum": ["low", "medium"] },
+        "maxReviews": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 60000 },
+        "overrides": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "tool": { "type": "string", "minLength": 1, "maxLength": 128 },
+              "scopeHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+              "decision": { "enum": ["allow", "deny", "escalate"] },
+              "risk": { "enum": ["low", "medium", "high"] }
+            },
+            "required": ["tool", "scopeHash", "decision", "risk"]
+          }
+        }
+      }
+    },
+    "ToolReviewFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": { "type": "string", "maxLength": 256 },
+        "promptHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "argsHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "scopeHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "decision": { "enum": ["allow", "deny", "escalate"] },
+        "risk": { "enum": ["low", "medium", "high"] },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "latencyMs": { "type": "number", "minimum": 0 },
+        "cost": { "type": "number", "minimum": 0 },
+        "costSource": { "enum": ["estimated", "gateway", "unavailable"] },
+        "source": { "enum": ["model", "human-override", "fallback"] }
+      },
+      "required": [
+        "model",
+        "promptHash",
+        "argsHash",
+        "scopeHash",
+        "decision",
+        "risk",
+        "reason",
+        "latencyMs",
+        "cost",
+        "costSource",
+        "source"
+      ]
     }
   }
 }

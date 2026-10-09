@@ -79,6 +79,7 @@ export type ChildrenFactory = {
 export type FsOps = {
   /** Host-owned admission for bounded native writes; never grants an arbitrary filesystem path. */
   authorizeWrite?(path: string): Promise<void>
+  preflight?(path: string, mode: 'read' | 'write'): Promise<void>
   read(path: string, opts?: { offset?: number; limit?: number }): Promise<Uint8Array>
   write(path: string, data: Uint8Array | string): Promise<void>
   list(path: string): Promise<FsEntry[]>

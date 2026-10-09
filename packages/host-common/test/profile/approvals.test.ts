@@ -10,9 +10,6 @@ const env: ResolveEnv = {
 }
 const lock: LockState = { packages: {} }
 const workspace = { path: '/work', hash: 'sha256-workspace', manifestId: 'fixture' }
-const workspaceOff = { approvals: { mode: 'off' } } as unknown as NonNullable<
-  ProfileInputs['workspaceOverlay']
->
 
 async function refused(input: ProfileInputs) {
   try {
@@ -37,28 +34,34 @@ describe('resolved approval mode', () => {
     expect(implicit.hash).toBe(explicit.hash)
   })
 
-  it.each(['smart', 'off'] as const)('accepts %s only from the trusted profile layer', async (mode) => {
-    const manual = await resolveProfile({ builtin: 'local-dev', lock }, env)
-    const resolved = await resolveProfile(
-      { builtin: 'local-dev', lock, user: { name: 'local-dev', approvals: { mode } } },
-      env,
-    )
-    expect(resolved.approvals.mode).toBe(mode)
-    expect(resolved.hash).not.toBe(manual.hash)
-  })
+  it.each(['smart', 'off', 'auto-review'] as const)(
+    'accepts %s only from the trusted profile layer',
+    async (mode) => {
+      const manual = await resolveProfile({ builtin: 'local-dev', lock }, env)
+      const resolved = await resolveProfile(
+        { builtin: 'local-dev', lock, user: { name: 'local-dev', approvals: { mode } } },
+        env,
+      )
+      expect(resolved.approvals.mode).toBe(mode)
+      expect(resolved.hash).not.toBe(manual.hash)
+    },
+  )
 
-  it('rejects workspace off instead of treating a verified repository as an admin layer', async () => {
-    const error = await refused({
-      builtin: 'local-dev',
-      lock: { ...lock, workspace },
-      workspaceOverlay: workspaceOff,
-    })
-    expect(error).toMatchObject({
-      code: 'E_PROFILE_FRAGMENT_KEY',
-      source: { layer: 'workspace' },
-      detail: { field: 'approvals.mode', mode: 'off' },
-    })
-  })
+  it.each(['off', 'auto-review'] as const)(
+    'rejects workspace %s instead of treating a verified repository as an admin layer',
+    async (mode) => {
+      const error = await refused({
+        builtin: 'local-dev',
+        lock: { ...lock, workspace },
+        workspaceOverlay: { approvals: { mode } },
+      })
+      expect(error).toMatchObject({
+        code: 'E_PROFILE_FRAGMENT_KEY',
+        source: { layer: 'workspace' },
+        detail: { field: 'approvals.mode', mode },
+      })
+    },
+  )
 
   it('rejects malformed approval objects instead of hashing only the recognized subset', async () => {
     const error = await refused({

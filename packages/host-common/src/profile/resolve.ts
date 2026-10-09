@@ -28,7 +28,10 @@ type LayerInput = {
   manifest: Partial<RuntimeProfileManifest> & { name?: string }
 }
 
-const APPROVAL_MODE_RANK = { off: 0, smart: 1, manual: 2 } as const satisfies Record<ApprovalMode, number>
+const APPROVAL_MODE_RANK = { off: 0, smart: 1, 'auto-review': 1, manual: 2 } as const satisfies Record<
+  ApprovalMode,
+  number
+>
 const MAX_TIMER_MS = 2_147_483_647
 
 function resolveReconcilePolicy(value: unknown, layer: Layer): ReconcilePolicy {
@@ -77,7 +80,7 @@ function approvalProfile(value: unknown, layer: Layer): ApprovalProfile {
     Object.hasOwn(value, 'mode')
   ) {
     const mode = (value as { mode?: unknown }).mode
-    if (mode === 'manual' || mode === 'smart' || mode === 'off') return { mode }
+    if (mode === 'manual' || mode === 'smart' || mode === 'off' || mode === 'auto-review') return { mode }
   }
   throw new HostError('E_PROFILE_FRAGMENT_KEY', 'invalid approvals.mode', {
     source: { layer },
@@ -314,11 +317,15 @@ export async function resolveProfile(inputs: ProfileInputs, env: ResolveEnv): Pr
     }
     if (Object.hasOwn(l.manifest, 'approvals')) {
       const mode = approvalProfile((l.manifest as { approvals?: unknown }).approvals, l.layer).mode
-      if (l.layer === 'workspace' && mode === 'off')
-        throw new HostError('E_PROFILE_FRAGMENT_KEY', 'workspace cannot enable approvals.mode off', {
-          source: { layer: l.layer },
-          detail: { field: 'approvals.mode', mode },
-        })
+      if (l.layer === 'workspace' && (mode === 'off' || mode === 'auto-review'))
+        throw new HostError(
+          'E_PROFILE_FRAGMENT_KEY',
+          'workspace cannot enable approvals.mode off or auto-review',
+          {
+            source: { layer: l.layer },
+            detail: { field: 'approvals.mode', mode },
+          },
+        )
     }
     if (Object.hasOwn(l.manifest, 'reconcile'))
       resolveReconcilePolicy((l.manifest as { reconcile?: unknown }).reconcile, l.layer)

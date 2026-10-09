@@ -1,3 +1,4 @@
+import { ToolReviewFact, validateAgainst } from '@agnes/protocol'
 import type { CostLedger, EventEnvelope, UISpan, UITurn, UITurnUsage } from '@agnes/protocol'
 import { clipUtf16 as clip } from './clip.js'
 
@@ -253,6 +254,17 @@ function applyTraceEventInner(state: TraceFoldState, event: EventEnvelope): void
       if (!toolUseId) return
       const parentEffectId = state.activeInference
       ensureTool(state, event, toolUseId, name, parentEffectId)
+      return
+    }
+    case 'x/approval/review': {
+      if (event.origin !== 'system' || event.trust !== 'trusted' || typeof data.toolUseId !== 'string') return
+      const span = state.spans.get(state.toolToSpan.get(data.toolUseId) ?? '')
+      if (
+        span &&
+        event.sourceEventSeqs?.includes(span.callSeq ?? span.startSeq) &&
+        validateAgainst(ToolReviewFact, data.review).ok
+      )
+        span.review = data.review as ToolReviewFact
       return
     }
     case 'approval/asked': {

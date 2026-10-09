@@ -461,6 +461,9 @@ export type SessionDeps = {
   netFetch: ToolContextDeps['netFetch']
   publicFetch?: ToolContextDeps['publicFetch']
   /** Trusted resolved profile value. Omission preserves the safe manual default. */
+  toolPolicySettings?: (
+    basePolicy: string,
+  ) => Promise<{ policy?: string; config?: import('@agnes/protocol').AutoReviewConfig }>
   approvalMode?: ApprovalMode
   /** Host-private attestation boundary for host-computer-use dispatches. */
   hostToolDispatch?: HostToolDispatchPort
@@ -775,8 +778,8 @@ export class SessionImpl {
     // Keep previous instances until close: an in-flight batch may still own one after a preset switch.
     return instance.runtime
   }
-  toolPolicy() {
-    return this.toolPolicies.resolve(this.preset.approval.policy ?? 'default')
+  toolPolicy(selection?: string) {
+    return this.toolPolicies.resolve(selection ?? this.preset.approval.policy ?? 'default')
   }
 
   loopChildrenPort(): import('@agnes/extension-api').ChildAgentSessionService | undefined {

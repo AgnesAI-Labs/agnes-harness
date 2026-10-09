@@ -335,6 +335,8 @@ const AGNES_DEFS: Record<string, TSchema> = {
   FileUploadResultSchema: AgnesGen.FileUploadResultSchema,
   SessionReferenceSearchParams: AgnesGen.SessionReferenceSearchParams,
   SessionReferenceSearchResult: AgnesGen.SessionReferenceSearchResult,
+  AutoReviewConfig: AgnesGen.AutoReviewConfig,
+  ToolReviewFact: AgnesGen.ToolReviewFact,
   FactChainAnchor: AgnesGen.FactChainAnchor,
   FactChainParams: AgnesGen.FactChainParams,
   FactChainPackage: AgnesGen.FactChainPackage,
@@ -1901,6 +1903,26 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { items: Array(41).fill({ source: 'file', id: 'a', label: 'a' }), truncated: false },
     ],
     note: 'Bounded source locators do not grant content access',
+  },
+  AutoReviewConfig: {
+    valid: { enabled: true, modelSlot: 'fast' },
+    invalid: [{ maxReviews: -1 }, { maxRisk: 'high' }],
+  },
+  ToolReviewFact: {
+    valid: {
+      model: 'scripted',
+      promptHash: 'a'.repeat(64),
+      argsHash: 'b'.repeat(64),
+      scopeHash: 'c'.repeat(64),
+      costSource: 'estimated',
+      decision: 'allow',
+      risk: 'low',
+      reason: 'Bounded work',
+      latencyMs: 1,
+      cost: 0,
+      source: 'model',
+    },
+    invalid: [{ decision: 'allow' }, { model: 'x', promptHash: 'bad' }],
   },
   FactChainAnchor: {
     valid: { kind: 'tool', toolUseId: 'tool-1' },
@@ -7259,6 +7281,8 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'ExtensionCallParams',
     result: 'ExtensionCallResult',
   },
+  '_agnes/v1/autoReview.get': { fileId: AGNES_ID, params: 'ConfigEmptyParams', result: 'AutoReviewConfig' },
+  '_agnes/v1/autoReview.save': { fileId: AGNES_ID, params: 'AutoReviewConfig', result: 'AutoReviewConfig' },
   '_agnes/v1/systemPrompt.get': {
     fileId: AGNES_ID,
     params: 'SystemPromptGetParams',
@@ -7873,6 +7897,11 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 
   '_agnes/v1/extension.ack': ServiceSamples.ExtensionAckParams as Sample,
   '_agnes/v1/extension.call': ServiceSamples.ExtensionCallParams as Sample,
+  '_agnes/v1/autoReview.get': { valid: {}, invalid: [{ enabled: true }] },
+  '_agnes/v1/autoReview.save': {
+    valid: { enabled: true, modelSlot: 'fast' },
+    invalid: [{ maxReviews: -1 }, { maxRisk: 'high' }],
+  },
   '_agnes/v1/systemPrompt.get': {
     valid: {},
     invalid: [{ sessionId: 1 }],

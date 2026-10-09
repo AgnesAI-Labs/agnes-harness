@@ -147,6 +147,7 @@ export type KernelOptions = {
   netFetch: ToolContextDeps['netFetch']
   publicFetch?: ToolContextDeps['publicFetch']
   /** Trusted resolved profile approval mode; only trusted profile resolution may set `off`. */
+  toolPolicySettings?: SessionDeps['toolPolicySettings']
   approvalMode?: ApprovalMode
   /** Host-private dispatch attestation; extensions never receive this port. */
   hostToolDispatch?: HostToolDispatchPort
@@ -626,6 +627,7 @@ export class Kernel {
         cwd: so.cwd,
         netFetch: this.o.netFetch,
         ...(this.o.publicFetch ? { publicFetch: this.o.publicFetch } : {}),
+        ...(this.o.toolPolicySettings ? { toolPolicySettings: this.o.toolPolicySettings } : {}),
         ...(this.o.approvalMode ? { approvalMode: this.o.approvalMode } : {}),
         ...(this.o.hostToolDispatch ? { hostToolDispatch: this.o.hostToolDispatch } : {}),
         ...(this.o.requestMedia ? { requestMedia: this.o.requestMedia } : {}),

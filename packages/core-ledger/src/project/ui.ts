@@ -17,6 +17,7 @@ import {
   type SessionStart,
   type SlotFillView,
   type ThinkingLevel,
+  ToolReviewFact,
   type ToolCall,
   type ToolResult,
   UI_SLOT_MAX_BYTES,
@@ -808,6 +809,20 @@ export class UIProjectionCell {
           node.resultSeq = seq
           node.enforcement = structuredClone(result.enforcement)
           this.completedResults.push({ seq, toolUseId: node.toolUseId })
+          changed.add(node.id)
+        }
+        break
+      }
+      case 'x/approval/review': {
+        if (event.origin !== 'system' || event.trust !== 'trusted') break
+        const review = data as { toolUseId?: string; review?: unknown }
+        const node = review.toolUseId ? this.tools.get(review.toolUseId) : undefined
+        if (
+          node &&
+          event.sourceEventSeqs?.includes(node.seq) &&
+          validateAgainst(ToolReviewFact, review.review).ok
+        ) {
+          node.review = structuredClone(review.review as ToolReviewFact)
           changed.add(node.id)
         }
         break
