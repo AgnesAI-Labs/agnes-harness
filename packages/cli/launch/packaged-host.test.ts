@@ -92,6 +92,7 @@ describe('packaged host wiring', () => {
       'child-agent:sdk',
       'memory:file',
       'skills:remembering',
+      'reference-resolvers:default',
     ])
     expect(module.plugins?.every(({ entry }) => typeof entry.prepared === 'object')).toBe(true)
   })

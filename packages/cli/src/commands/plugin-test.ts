@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
+import { createPlatform } from '@agnes/host'
 import type { MainIO } from '../bin.js'
 import { UsageError } from '../errors.js'
 
@@ -45,7 +46,7 @@ export function pluginTestEnvironment(source: NodeJS.ProcessEnv, home: string): 
 }
 
 async function npmCommand(env: NodeJS.ProcessEnv) {
-  if (process.platform !== 'win32') return { executable: 'npm', prefix: [] as string[] }
+  if (createPlatform().os !== 'win32') return { executable: 'npm', prefix: [] as string[] }
   // Execute npm's JS entry with Node; never interpolate runner arguments into cmd.exe.
   for (const directory of (env.PATH ?? env.Path ?? '').split(delimiter)) {
     if (!directory) continue
