@@ -225,6 +225,7 @@ const ServiceDoc = JSON.parse(readFileSync(`${pkgRoot}schema/extension-service.j
 ajv.addSchema(ServiceDoc)
 const ProjectionDoc = JSON.parse(readFileSync(`${pkgRoot}schema/projection.json`, 'utf8')) as Json
 ajv.addSchema(ProjectionDoc)
+ajv.addSchema(JSON.parse(readFileSync(`${pkgRoot}schema/intelligent-ui.json`, 'utf8')))
 ajv.addSchema(AppDoc)
 ajv.addSchema(sessionSchemaDoc)
 ajv.addSchema(agnesSchemaDoc)
@@ -6828,6 +6829,14 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/ui.action': {
+    fileId: 'https://agnes.ai/schema/intelligent-ui.json',
+    params: 'UiActionParams', result: 'UiActionReceipt',
+  },
+  '_agnes/v1/ui.read': {
+    fileId: 'https://agnes.ai/schema/intelligent-ui.json',
+    params: 'UiReadParams', result: 'UiReadResult',
+  },
   '_agnes/v1/admin.feedback': {
     fileId: 'https://agnes.ai/schema/app-server-v1',
     params: 'AdminFeedbackParams',
@@ -7572,6 +7581,20 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/ui.action': {
+    note: 'Durable UI command with bounded input and unique selection',
+    valid: { sessionId: 's', surfaceId: 'view', revision: 1, actionId: 'submit', commandId: 'c', input: {}, selection: {} },
+    invalid: [
+      { sessionId: 's', surfaceId: 'view', revision: 0, actionId: 'submit', commandId: 'c', input: {}, selection: {} },
+      { sessionId: 's', surfaceId: 'view', revision: 1, actionId: 'submit', commandId: 'c', input: {}, selection: { rows: ['a', 'a'] } },
+      { sessionId: 's', surfaceId: 'view', revision: 1, actionId: 'submit', commandId: 'c', input: {} },
+    ],
+  },
+  '_agnes/v1/ui.read': {
+    note: 'Filtered bounded snapshot page',
+    valid: { sessionId: 's', limit: 16 },
+    invalid: [{ sessionId: 's', limit: 17 }, { sessionId: 's', cursor: '' }, { sessionId: 's', extra: true }],
+  },
   '_agnes/v1/admin.feedback': {
     valid: { action: 'list' },
     invalid: [{ action: 'send' }, { action: 'put', rating: 'bad' }],
@@ -8177,6 +8200,19 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/ui.action': {
+    note: 'Persisted action receipt',
+    valid: { sessionId: 's', surfaceId: 'view', revision: 1, actionId: 'submit', commandId: 'c', status: 'received', seq: 1, duplicate: false },
+    invalid: [
+      { sessionId: 's', surfaceId: 'view', revision: 1, actionId: 'submit', commandId: 'c', status: 'unknown', seq: 1, duplicate: false },
+      { sessionId: 's', surfaceId: 'view', revision: 1, actionId: 'submit', commandId: 'c', status: 'received', seq: 0, duplicate: false },
+    ],
+  },
+  '_agnes/v1/ui.read': {
+    note: 'Snapshot watermark and bounded surface/receipt page',
+    valid: { sessionId: 's', lastSeq: 0, surfaces: [], actions: [] },
+    invalid: [{ sessionId: 's', lastSeq: -1, surfaces: [], actions: [] }, { sessionId: 's', lastSeq: 0, surfaces: [] }, { sessionId: 's', lastSeq: 0, surfaces: [], actions: [], nextCursor: '' }],
+  },
   '_agnes/v1/session.control': AGNES_SAMPLES.SessionSteerResult as Sample,
   '_agnes/v1/session.controls': AGNES_SAMPLES.SessionControlStateResult as Sample,
   '_agnes/v1/session.editQueued': AGNES_SAMPLES.SessionSteerResult as Sample,

@@ -1,7 +1,7 @@
 import { MemoryStorage, SessionLogImpl } from '@agnes/core'
 import { defaultIds } from '@agnes/core-common/ids'
 import { FEEDBACK_EVENT, FEEDBACK_GROWTH_EVENT, type FeedbackPorts } from '@agnes/extension-api'
-import type { Actor, AuthoringCandidate, Provider } from '@agnes/protocol'
+import type { Actor, AuthoringCandidate, InferenceEvent, Provider } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import {
   createFeedbackService,
@@ -356,6 +356,7 @@ it('uses only local scripted inference, rejects invalid drafts, and never execut
     candidateHash: null,
   }
   let baseUrl = 'https://example.invalid/v1'
+  let doneReason: Extract<InferenceEvent, { type: 'done' }>['reason'] = 'stop'
   const requests: Parameters<Provider['infer']>[0][] = []
   const provider: Provider = {
     models: () => [
@@ -375,19 +376,19 @@ it('uses only local scripted inference, rejects invalid drafts, and never execut
         contract_id: null,
       },
     ],
-    async *infer(request, options) {
+    async *infer(request, options): AsyncGenerator<InferenceEvent> {
       requests.push(request)
       expect(options.toolNames).toEqual([])
       expect(options.retry).toBe(false)
       yield {
         type: 'text_delta',
-        text: JSON.stringify({
+        delta: JSON.stringify({
           name: 'cite-evidence',
           description: 'When reporting observations',
           body: 'Cite evidence.',
         }),
       }
-      yield { type: 'finish', reason: 'stop' }
+      yield { type: 'done', reason: doneReason }
     },
   }
   // A narrow fixture deliberately has no turn, tool, memory-edit or package-publication methods.
@@ -404,10 +405,15 @@ it('uses only local scripted inference, rejects invalid drafts, and never execut
   expect(files.find((file) => file.path === 'SKILL.md')?.content).toContain('assistant ledger sequence 3')
   expect(requests).toHaveLength(1)
   expect(JSON.stringify(requests[0])).toContain('Cite evidence')
+  doneReason = 'length'
+  await expect(draftFeedbackSkill(session, feedback, [], signal)).rejects.toMatchObject({
+    data: { reason: 'FEEDBACK_DRAFT_INCOMPLETE' },
+  })
+  doneReason = 'stop'
   const aborted = new AbortController()
   aborted.abort()
   await expect(draftFeedbackSkill(session, feedback, [], aborted.signal)).rejects.toThrow()
-  expect(requests).toHaveLength(1)
+  expect(requests).toHaveLength(2)
   for (const name of ['bad-', 'bad--name', '../escape'])
     expect(() =>
       feedbackSkillFiles({ name, description: 'When needed', body: 'Use evidence' }, feedback),

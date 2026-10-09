@@ -141,8 +141,8 @@ export async function draftFeedbackSkill(
         while (true) {
           const next = await Promise.race([iterator.next(), cancelled])
           if (next.done) break
-          if (next.value.type === 'text_delta') text += next.value.text
-          if (next.value.type === 'finish') complete = next.value.reason === 'stop'
+          if (next.value.type === 'text_delta') text += next.value.delta
+          if (next.value.type === 'done') complete = next.value.reason === 'stop'
           if (text.length > 32000) throw new Error('Feedback draft too large')
         }
       } finally {
