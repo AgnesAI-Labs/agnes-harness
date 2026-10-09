@@ -1,10 +1,10 @@
 import type { EventEnvelope } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
+import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
 import type { PreviewUpdate } from '../src/registry.js'
 import { WorkerRegistry } from '../src/supervisor/registry.js'
 import { PREVIEW_SNAPSHOT_TIMEOUT_MS } from '../src/supervisor/remote-session.js'
 import type { WorkerPool } from '../src/supervisor/worker-pool.js'
-import { workspaceBinding } from './workspace-authority.js'
 
 const update: PreviewUpdate = { lane: 'main', effectId: 'e1', stream: 'text', offset: 0, delta: 'hi' }
 

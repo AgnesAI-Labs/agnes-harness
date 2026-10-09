@@ -13,8 +13,8 @@ import {
   rpcError,
 } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
-import { openTestHost } from '../../daemon/test/host.js'
 import { registerDiagnostics } from '../src/local/methods/diagnostics.js'
+import { openTestHost } from './host.js'
 
 const initialize = {
   jsonrpc: '2.0' as const,

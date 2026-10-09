@@ -7,10 +7,10 @@ import { presets as codePresets, operations, PRESET_NAMES } from '@agnes/code'
 import { createTestHost } from '@agnes/host/testkit'
 import { createClient, memoryJournal, TransportClosed } from '@agnes/sdk'
 import { expect, it } from 'vitest'
+import { testWorkspaceCatalog } from '../../daemon-rpc/test/host.js'
 import { createLocalEndpoint, createPrompterBridge } from '../src/local/index.js'
 import { bindConnection } from '../src/supervisor/connection.js'
 import { listenUnix } from '../src/supervisor/socket.js'
-import { testWorkspaceCatalog } from './host.js'
 import { localSdkTransport, localSocketPath } from './local-socket-path.js'
 
 it.each(['allow', 'reject', 'disconnect'])('real write approval over SDK/daemon: %s', async (mode) => {

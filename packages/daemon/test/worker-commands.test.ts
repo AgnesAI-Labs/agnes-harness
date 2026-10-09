@@ -1,10 +1,10 @@
 import type { Host, HostSession } from '@agnes/host'
 import type { Actor } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
+import { openTestHost, say } from '../../daemon-rpc/test/host.js'
 import type { WorkerHello } from '../src/supervisor/frames.js'
 import { encodeFrame, FrameTooLarge, InvalidFrame, JsonlDecoder } from '../src/supervisor/framing.js'
 import { handleCommand } from '../src/worker/commands.js'
-import { openTestHost, say } from './host.js'
 
 const actor: Actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 type CommandFrame = Parameters<typeof handleCommand>[1]

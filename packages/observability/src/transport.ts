@@ -1,178 +1,180 @@
+import type { ObservabilityHealth } from '@agnes/extension-api'
 import { deploymentFetch } from '@agnes/system-node/deployment-network'
-import type { ObservabilityConfig } from './config.js'
+import { type ObservabilityConfig, resolveHeaders } from './config.js'
+import { aggregateMetrics } from './metrics.js'
 
-type Point = {
-  attributes: unknown[]
-  startTimeUnixNano: string
-  timeUnixNano: string
-  asDouble?: number
-  count?: string
-  sum?: number
-  bucketCounts?: string[]
-}
-type Metric = { name: string; unit: string } & Partial<
-  Record<
-    'sum' | 'histogram' | 'gauge',
-    { dataPoints: Point[]; aggregationTemporality?: number; isMonotonic?: boolean }
-  >
->
+export type Resource = Record<string, string>
+type Signal = 'traces' | 'metrics' | 'logs'
+type Row = { signal: Signal; value: unknown; resource: Resource; size: number; config: ObservabilityConfig }
+const attributes = (values: Resource) =>
+  Object.entries(values).map(([key, stringValue]) => ({ key, value: { stringValue } }))
 
-/** One data point per metric/attribute identity in a batch; delta intervals do not overlap. */
-function aggregateMetrics(values: unknown[], previous: Map<string, string>): Metric[] {
-  const metrics = new Map<string, Metric>()
-  const points = new Map<string, Point>()
-  for (const input of values) {
-    const metric = input as Metric
-    const kind = metric.sum ? 'sum' : metric.histogram ? 'histogram' : 'gauge'
-    const data = metric[kind]!
-    const identity = JSON.stringify([metric.name, metric.unit, kind])
-    let output = metrics.get(identity)
-    if (!output) {
-      output = { name: metric.name, unit: metric.unit, [kind]: { ...data, dataPoints: [] } }
-      metrics.set(identity, output)
-    }
-    for (const point of data.dataPoints) {
-      const key = JSON.stringify([identity, point.attributes])
-      const found = points.get(key)
-      if (!found) {
-        const first = {
-          ...point,
-          ...(kind !== 'gauge' && previous.has(key) ? { startTimeUnixNano: previous.get(key)! } : {}),
-        }
-        points.set(key, first)
-        output[kind]!.dataPoints.push(first)
-      } else {
-        found.timeUnixNano = point.timeUnixNano
-        if (kind === 'sum') found.asDouble = (found.asDouble ?? 0) + (point.asDouble ?? 0)
-        else if (kind === 'histogram') {
-          found.count = String(BigInt(found.count ?? '0') + BigInt(point.count ?? '0'))
-          found.sum = (found.sum ?? 0) + (point.sum ?? 0)
-          found.bucketCounts = [found.count]
-        } else found.asDouble = point.asDouble ?? 0
-      }
-    }
-  }
-  for (const [key, point] of points) {
-    previous.set(key, point.timeUnixNano)
-    if (previous.size > 1024) previous.delete(previous.keys().next().value!)
-  }
-  return [...metrics.values()]
-}
-
-/** Bounded OTLP/HTTP JSON delivery. No global SDK, ambient auth, redirects or execution dependency. */
+/** One bounded queue, including in-flight records. Collector failures never escape to execution. */
 export class OtlpTransport {
-  private queue: Array<{ signal: 'traces' | 'metrics'; value: unknown }> = []
+  private queue: Row[] = []
   private bytes = 0
   private readonly metricEnds = new Map<string, string>()
-  private pending?: Promise<void> | undefined
+  private pending: Promise<void> | undefined
   private closed = false
-  private closing?: Promise<void>
+  private closing: Promise<void> | undefined
   private readonly abort = new AbortController()
   private readonly timer: ReturnType<typeof setInterval>
+  private retryAt = 0
+  private attempts = 0
+  private lastExportAt: string | undefined
+  private lastStatus: ObservabilityHealth['status'] = 'idle'
   dropped = 0
   failures = 0
-  constructor(private readonly config: ObservabilityConfig) {
-    this.timer = setInterval(() => void this.flush(), config.batchMs ?? 1000)
+  constructor(private config: ObservabilityConfig) {
+    this.timer = setInterval(() => void this.flush(false), 10)
     this.timer.unref()
   }
-  add(signal: 'traces' | 'metrics', value: unknown): void {
-    if (this.closed) return
-    const size = Buffer.byteLength(JSON.stringify(value))
-    if (this.queue.length >= 1024 || this.bytes + size > 1024 * 1024) {
+  configure(config: ObservabilityConfig): void {
+    this.config = config
+  }
+  health(): ObservabilityHealth {
+    return {
+      status: this.closed ? 'closed' : this.lastStatus,
+      queued: this.queue.length,
+      dropped: this.dropped,
+      failures: this.failures,
+      ...(this.lastExportAt ? { lastExportAt: this.lastExportAt } : {}),
+    }
+  }
+  add(signal: Signal, value: unknown, resource: Resource = {}): void {
+    if (this.closed || !this.config.enabled) return
+    const size = Buffer.byteLength(JSON.stringify([value, resource])) + 512
+    if (this.queue.length >= (this.config.queueSize ?? 1024) || this.bytes + size > 1024 * 1024) {
       this.dropped++
       return
     }
-    this.queue.push({ signal, value })
+    this.queue.push({ signal, value, resource, size, config: this.config })
     this.bytes += size
   }
-  flush(): Promise<void> {
-    if (this.closed) return Promise.resolve()
-    this.pending ??= this.send().finally(() => {
+  flush(force = true): Promise<void> {
+    if (this.closed || Date.now() < this.retryAt) return Promise.resolve()
+    if (
+      !force &&
+      this.queue.length < (this.config.batchSize ?? 256) &&
+      Date.now() - this.lastFlush < (this.config.batchMs ?? 1000)
+    )
+      return Promise.resolve()
+    this.pending ??= this.drain().finally(() => {
       this.pending = undefined
     })
     return this.pending
   }
-  private async send(): Promise<void> {
-    const batch = this.queue.splice(0)
-    this.bytes = 0
-    for (const signal of ['traces', 'metrics'] as const) {
-      const rows = batch.filter((row) => row.signal === signal).map((row) => row.value)
-      const values = signal === 'metrics' ? aggregateMetrics(rows, this.metricEnds) : rows
-      if (!values.length || this.closed) continue
-      const endpoint = signal === 'traces' ? this.config.tracesEndpoint : this.config.metricsEndpoint
-      const base = new URL(this.config.endpoint ?? endpoint!)
-      base.pathname = `${base.pathname.replace(/\/$/, '')}/v1/${signal}`
-      const url = endpoint ?? base.href
-      const resource = { attributes: [{ key: 'service.name', value: { stringValue: 'agnes-harness' } }] }
-      const scope = { name: '@agnes/observability', version: '1.0.0' }
-      const body = JSON.stringify(
-        signal === 'traces'
-          ? { resourceSpans: [{ resource, scopeSpans: [{ scope, spans: values }] }] }
-          : { resourceMetrics: [{ resource, scopeMetrics: [{ scope, metrics: values }] }] },
-      )
-      for (let attempt = 0; attempt < 3 && !this.closed; attempt++) {
-        try {
-          const response = await deploymentFetch(url, {
-            method: 'POST',
-            headers: { ...this.config.headers, 'content-type': 'application/json' },
-            body,
-            redirect: 'error',
-            signal: AbortSignal.any([this.abort.signal, AbortSignal.timeout(this.config.timeoutMs ?? 3000)]),
-          })
-          const retry = [429, 502, 503, 504].includes(response.status)
-          // Read only a bounded response: collectors may return partialSuccess or arbitrary text.
-          const reader = response.body?.getReader()
-          const chunks: Uint8Array[] = []
-          let total = 0
-          try {
-            while (reader) {
-              const next = await reader.read()
-              if (next.done) break
-              total += next.value.byteLength
-              if (total > 64 * 1024) {
-                await reader.cancel()
-                throw new Error('OTLP response exceeds limit')
-              }
-              chunks.push(next.value)
-            }
-          } finally {
-            reader?.releaseLock()
-          }
-          const text = Buffer.concat(chunks).toString('utf8')
-          if (response.ok && text.length <= 64 * 1024) {
-            const result = text
-              ? (JSON.parse(text) as {
-                  partialSuccess?: { rejectedSpans?: string; rejectedDataPoints?: string }
-                })
-              : {}
-            if (
-              Number(result.partialSuccess?.rejectedSpans ?? result.partialSuccess?.rejectedDataPoints ?? 0)
-            )
-              this.failures++
-            break
-          }
-          if (!retry || attempt === 2) {
-            this.failures++
-            break
-          }
-        } catch {
-          if (attempt === 2 || this.closed) {
-            this.failures++
-            break
-          }
-        }
-        await new Promise<void>((resolve) => {
-          const timer = setTimeout(done, 50 * 2 ** attempt)
-          const signal = this.abort.signal
-          function done() {
-            clearTimeout(timer)
-            signal.removeEventListener('abort', done)
-            resolve()
-          }
-          if (signal.aborted) done()
-          else signal.addEventListener('abort', done, { once: true })
-        })
+  private lastFlush = Date.now()
+  private async drain(): Promise<void> {
+    this.lastFlush = Date.now()
+    while (!this.closed && this.queue.length) {
+      const first = this.queue[0]!
+      const rows: Row[] = []
+      for (const row of this.queue) {
+        if (
+          row.signal !== first.signal ||
+          row.config !== first.config ||
+          JSON.stringify(row.resource) !== JSON.stringify(first.resource) ||
+          rows.length >= (first.config.batchSize ?? 256)
+        )
+          break
+        rows.push(row)
       }
+      const resource = {
+        attributes: attributes({
+          'service.name': 'agnes-harness',
+          'service.version': '0.0.0',
+          ...first.resource,
+        }),
+      }
+      const scope = { name: '@agnes/observability', version: '1.0.0' }
+      const values =
+        first.signal === 'metrics'
+          ? aggregateMetrics(
+              rows.map((row) => row.value),
+              new Map(this.metricEnds),
+            )
+          : rows.map((row) => row.value)
+      const body = JSON.stringify(
+        first.signal === 'traces'
+          ? { resourceSpans: [{ resource, scopeSpans: [{ scope, spans: values }] }] }
+          : first.signal === 'logs'
+            ? { resourceLogs: [{ resource, scopeLogs: [{ scope, logRecords: values }] }] }
+            : { resourceMetrics: [{ resource, scopeMetrics: [{ scope, metrics: values }] }] },
+      )
+      const result = await this.send(first, body, rows.length)
+      if (result === 'retry') {
+        this.failures++
+        this.lastStatus = 'backoff'
+        this.retryAt = Date.now() + Math.min(30000, 100 * 2 ** Math.min(this.attempts++, 8))
+        return
+      }
+      this.queue.splice(0, rows.length)
+      this.bytes -= rows.reduce((size, row) => size + row.size, 0)
+      if (first.signal === 'metrics' && result === 0)
+        aggregateMetrics(
+          rows.map((row) => row.value),
+          this.metricEnds,
+        )
+      this.dropped += result
+      if (result) {
+        this.failures++
+        this.lastStatus = 'rejected'
+      } else {
+        this.lastStatus = 'ok'
+        this.lastExportAt = new Date().toISOString()
+      }
+      this.attempts = 0
+      this.retryAt = 0
+    }
+  }
+  private async send(row: Row, body: string, count: number): Promise<number | 'retry'> {
+    try {
+      const config = row.config
+      const endpoint = config[`${row.signal}Endpoint`]
+      const base = new URL(config.endpoint ?? endpoint!)
+      base.pathname = `${base.pathname.replace(/\/$/, '')}/v1/${row.signal}`
+      const response = await deploymentFetch(endpoint ?? base.href, {
+        method: 'POST',
+        headers: { ...resolveHeaders(config), 'content-type': 'application/json' },
+        body,
+        redirect: 'error',
+        signal: AbortSignal.any([this.abort.signal, AbortSignal.timeout(config.timeoutMs ?? 3000)]),
+      })
+      if (!response.ok) {
+        await response.body?.cancel()
+        return [429, 502, 503, 504].includes(response.status) ? 'retry' : count
+      }
+      const reader = response.body?.getReader()
+      const chunks: Uint8Array[] = []
+      let total = 0
+      try {
+        while (reader) {
+          const next = await reader.read()
+          if (next.done) break
+          total += next.value.byteLength
+          if (total > 64 * 1024) {
+            await reader.cancel()
+            return count
+          }
+          chunks.push(next.value)
+        }
+      } finally {
+        reader?.releaseLock()
+      }
+      const text = Buffer.concat(chunks).toString('utf8')
+      const partial = text
+        ? (JSON.parse(text) as { partialSuccess?: Record<string, string> }).partialSuccess
+        : undefined
+      return Math.min(
+        count,
+        Math.max(
+          0,
+          Number(partial?.rejectedSpans ?? partial?.rejectedLogRecords ?? partial?.rejectedDataPoints ?? 0),
+        ),
+      )
+    } catch {
+      return 'retry'
     }
   }
   dispose(): Promise<void> {
@@ -180,19 +182,25 @@ export class OtlpTransport {
     return this.closing
   }
   private async close(): Promise<void> {
-    if (this.closed) return
     clearInterval(this.timer)
     const deadline = setTimeout(() => {
       this.closed = true
       this.abort.abort()
     }, this.config.timeoutMs ?? 3000)
     try {
-      await this.flush()
-      await this.flush()
+      if (this.config.shutdownPolicy !== 'discard') {
+        while (!this.closed && this.queue.length) {
+          await this.flush()
+          if (this.retryAt > Date.now())
+            await new Promise((resolve) => setTimeout(resolve, Math.min(50, this.retryAt - Date.now())))
+        }
+      }
     } finally {
-      clearTimeout(deadline)
       this.closed = true
       this.abort.abort()
+      await this.pending
+      clearTimeout(deadline)
+      this.dropped += this.queue.length
       this.queue = []
       this.bytes = 0
     }

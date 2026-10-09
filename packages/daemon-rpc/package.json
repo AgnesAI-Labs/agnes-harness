@@ -52,7 +52,6 @@
   "devDependencies": {
     "@agnes/ai": "workspace:*",
     "@agnes/code": "workspace:*",
-    "@agnes/daemon": "workspace:*",
     "@agnes/package-manager": "workspace:*",
     "@agnes/sdk": "workspace:*",
     "@agnes/system-node": "workspace:*",

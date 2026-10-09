@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { describe, expect, it, vi } from 'vitest'
-import { openTestHost } from '../../daemon/test/host.js'
 import { createAuthenticatedArtifactReadHandler } from '../src/local/artifact-read.js'
 import { type ArtifactReadScopeAuthority, registerArtifactRead } from '../src/local/methods/artifacts.js'
+import { openTestHost } from './host.js'
 
 const bytes = new TextEncoder().encode('authenticated artifact bytes')
 const artifact = Object.freeze({

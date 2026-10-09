@@ -51,7 +51,6 @@
     "@agnes/resource-control-cli": "workspace:*",
     "@agnes/resource-control-runtime": "workspace:*",
     "@agnes/cli-tui": "workspace:*",
-    "@agnes/cli-launch": "workspace:*",
     "get-east-asian-width": "1.6.0",
     "marked": "18.0.12",
     "yaml": "2.9.0",

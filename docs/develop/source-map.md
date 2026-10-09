@@ -12,7 +12,7 @@ Links point to source at the same revision as this document. See [verification](
 
 | Behavior | Main source | Verification starting point |
 | --- | --- | --- |
-| Arguments / startup / runtime directory | [cli](../../packages/cli/src), [cli-launch](../../packages/cli-launch/src) | [CLI arguments](../../packages/cli/test/args.test.ts), [shared local acceptance](../../tools/acceptance/shared-local-delivery.test.ts) |
+| Arguments / startup / runtime directory | [cli](../../packages/cli/src), [launch resources](../../packages/cli/launch/resources.ts) | [CLI arguments](../../packages/cli/test/args.test.ts), [shared local acceptance](../../tools/acceptance/shared-local-delivery.test.ts) |
 | TUI | [cli-tui](../../packages/cli-tui/src) | [Tests](../../packages/cli-tui/test) |
 | Web presentation and connections | [web](../../packages/web/src), [web-server](../../packages/web-server/src) | [Web tests](../../packages/web/test) |
 | Web appearance and locale foundation | [web-foundation](../../packages/web-foundation/src) | [Foundation tests](../../packages/web-foundation/test) |
@@ -20,7 +20,7 @@ Links point to source at the same revision as this document. See [verification](
 | Web administration and settings | [web-admin](../../packages/web-admin/src) | [Module tests](../../packages/web-admin/test) |
 | Frontend plugins and slots | [web-client](../../packages/web-client/src), [web-slots](../../packages/web-slots/src), [web-units](../../packages/web-units/src) | [Roster reconciliation](../../packages/web/test/client-modules.reconcile.test.ts) |
 | Protocol / validation | [protocol schema](../../packages/protocol/schema), [method table](../../packages/protocol/src/methods.ts), [protocol-validation](../../packages/protocol-validation/src) | [Protocol tests](../../packages/protocol/test) |
-| SDK sessions / transports | [sdk](../../packages/sdk/src) | [SDK tests](../../packages/sdk/test) |
+| SDK sessions / transports | [sdk](../../packages/sdk/src), [Node resources](../../packages/sdk/src/resource-control.node.ts), [Node package client](../../packages/sdk/src/package-admin.node.ts) | [SDK tests](../../packages/sdk/test) |
 | daemon / worker | [daemon-foundation](../../packages/daemon-foundation/src), [daemon-surfaces](../../packages/daemon-surfaces/src), [daemon-admin](../../packages/daemon-admin/src), [daemon-rpc](../../packages/daemon-rpc/src), [daemon-supervisor](../../packages/daemon-supervisor/src), [daemon](../../packages/daemon/src), [worker-runtime](../../packages/worker-runtime/src) | [Daemon tests](../../packages/daemon/test) |
 | Observability / safe diagnostics | [observability](../../packages/observability/src), [provider kind](../../packages/extension-api/src/observability.ts), [diagnostics RPC](../../packages/daemon-rpc/src/local/methods/diagnostics.ts) | [Tests](../../packages/observability/test/provider.test.ts) |
 | Execution loop / recovery | [core-common](../../packages/core-common/src), [core-child-control](../../packages/core-child-control/src), [core-ledger](../../packages/core-ledger/src), [core-effects](../../packages/core-effects/src), [core-artifacts](../../packages/core-artifacts/src), [core](../../packages/core/src) | [Core tests](../../packages/core/test) |
@@ -43,3 +43,7 @@ Production, tests and shared testkits use separate TypeScript projects in the ru
 Local RPC authenticates and dispatches settings operations through `@agnes/daemon-admin/app-server`; daemon-admin owns composition, context, plan-mode and history implementations. Runtime doctor composition lives in `@agnes/daemon-admin/runtime-doctor`; local RPC retains authentication and dispatch. The RPC factory export remains compatible. The only Base import allowed in local RPC is the named `ScheduleRejected` public refusal marker. MCP names use the portable `sha256Hex` export from protocol: UTF-8 encoding (including replacement of unpaired surrogates) and existing suffixes remain unchanged.
 
 Learned preferences: `packages/memory-file` owns the official file provider; `packages/extension-api/src/memory.ts` owns its public SPI, `packages/web-admin/src/settings/memory.tsx` its editor, and `packages/base/src/memory` the remembering Skill.
+
+MCP transport health: [implementation](../../packages/base/src/mcp/transport-health.ts) · [tests](../../packages/base/test/mcp/transport-health.test.ts)
+
+Dismissible dialog DOM bindings: [web-ui](../../packages/web-ui/src/dom/dialog-binding.ts) · [tests](../../packages/web-ui/test/dialog-binding.test.ts)

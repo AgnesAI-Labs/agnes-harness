@@ -2,8 +2,8 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { resolveLaunchResources } from '@agnes/cli-launch'
 import { expect, it } from 'vitest'
+import { resolveLaunchResources } from '../launch/resources.js'
 
 it('builds local web assets with the shared platform vendor modules', async () => {
   const output = await mkdtemp(join(tmpdir(), 'agnes-local-web-build-'))

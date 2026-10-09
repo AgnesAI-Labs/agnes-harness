@@ -1,8 +1,8 @@
 import type { Host, WorkspaceBinding } from '@agnes/host'
 import { describe, expect, it, vi } from 'vitest'
-import { openTestHost } from '../../daemon/test/host.js'
-import { workspaceBinding } from '../../daemon/test/workspace-authority.js'
+import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
 import { type SessionEntry, SessionRegistry } from '../src/local/sessions.js'
+import { openTestHost } from './host.js'
 
 const actor = { id: 'tester', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 

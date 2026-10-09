@@ -135,9 +135,6 @@ importers:
       '@agnes/loop-default':
         specifier: workspace:*
         version: link:../loop-default
-      '@agnes/mcp-transport-health':
-        specifier: workspace:*
-        version: link:../mcp-transport-health
       '@agnes/memory-file':
         specifier: workspace:*
         version: link:../memory-file
@@ -243,9 +240,6 @@ importers:
       '@agnes/bridges':
         specifier: workspace:*
         version: link:../bridges
-      '@agnes/cli-launch':
-        specifier: workspace:*
-        version: link:../cli-launch
       '@agnes/cli-tui':
         specifier: workspace:*
         version: link:../cli-tui
@@ -313,8 +307,6 @@ importers:
       postject:
         specifier: 1.0.0-alpha.6
         version: 1.0.0-alpha.6
-
-  packages/cli-launch: {}
 
   packages/cli-tui:
     dependencies:
@@ -592,9 +584,6 @@ importers:
       '@agnes/ai':
         specifier: workspace:*
         version: link:../ai
-      '@agnes/daemon':
-        specifier: workspace:*
-        version: link:../daemon
 
   packages/daemon-foundation:
     dependencies:
@@ -616,10 +605,6 @@ importers:
       '@agnes/worker-runtime':
         specifier: workspace:*
         version: link:../worker-runtime
-    devDependencies:
-      '@agnes/daemon':
-        specifier: workspace:*
-        version: link:../daemon
 
   packages/daemon-rpc:
     dependencies:
@@ -657,9 +642,6 @@ importers:
       '@agnes/code':
         specifier: workspace:*
         version: link:../code
-      '@agnes/daemon':
-        specifier: workspace:*
-        version: link:../daemon
       '@agnes/package-manager':
         specifier: workspace:*
         version: link:../package-manager
@@ -749,9 +731,6 @@ importers:
         specifier: workspace:*
         version: link:../system-node
     devDependencies:
-      '@agnes/daemon':
-        specifier: workspace:*
-        version: link:../daemon
       '@agnes/web-server':
         specifier: workspace:*
         version: link:../web-server
@@ -1164,8 +1143,6 @@ importers:
         specifier: workspace:*
         version: link:../extension-api
 
-  packages/mcp-transport-health: {}
-
   packages/memory-file:
     dependencies:
       '@agnes/extension-api':
@@ -1207,12 +1184,6 @@ importers:
       '@agnes/system-node':
         specifier: workspace:*
         version: link:../system-node
-
-  packages/package-admin-client-node:
-    dependencies:
-      '@agnes/protocol':
-        specifier: workspace:*
-        version: link:../protocol
 
   packages/package-isolation:
     dependencies:
@@ -1330,12 +1301,6 @@ importers:
         specifier: workspace:*
         version: link:../sdk
 
-  packages/resource-control-client-node:
-    dependencies:
-      '@agnes/protocol':
-        specifier: workspace:*
-        version: link:../protocol
-
   packages/resource-control-contracts:
     dependencies:
       '@sinclair/typebox':
@@ -1435,15 +1400,9 @@ importers:
 
   packages/sdk:
     dependencies:
-      '@agnes/package-admin-client-node':
-        specifier: workspace:*
-        version: link:../package-admin-client-node
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
-      '@agnes/resource-control-client-node':
-        specifier: workspace:*
-        version: link:../resource-control-client-node
       '@agnes/system-node':
         specifier: workspace:*
         version: link:../system-node
@@ -1481,9 +1440,6 @@ importers:
       '@agnes/web-admin':
         specifier: workspace:*
         version: link:../web-admin
-      '@agnes/web-admin-frame':
-        specifier: workspace:*
-        version: link:../web-admin-frame
       '@agnes/web-client':
         specifier: workspace:*
         version: link:../web-client
@@ -1561,8 +1517,6 @@ importers:
       vitest:
         specifier: 5.0.0
         version: 5.0.0(@types/node@26.4.1)(happy-dom@20.14.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0(patch_hash=77f93f7110d63c7b4551ac2eab9c87a64c2ba97de0b71047e25171d3fac05fd2))(tsx@4.23.13)(yaml@2.9.0))
-
-  packages/web-admin-frame: {}
 
   packages/web-client:
     dependencies:

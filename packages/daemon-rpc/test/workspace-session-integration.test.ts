@@ -1,8 +1,8 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { openTestHost, testWorkspaceCatalogAt } from '../../daemon/test/host.js'
 import { createLocalEndpoint } from '../src/local/index.js'
+import { openTestHost, testWorkspaceCatalogAt } from './host.js'
 
 const request = (id: number, method: string, params: unknown) => ({
   jsonrpc: '2.0' as const,

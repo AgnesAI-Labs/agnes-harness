@@ -292,8 +292,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-runtime/src/approval-expiry': 105,
   'packages/host-runtime/src/adapters': 465,
   'packages/host-runtime/src/profile': 1655,
-  'packages/host-runtime/src': 9469,
-  'packages/host-runtime/src/assemble': 3349,
+  'packages/host-runtime/src': 9478,
+  'packages/host-runtime/src/assemble': 3358,
   'packages/host-providers/src/adapters': 477,
   'packages/host-providers/src/profile': 165,
   'packages/host-providers/src': 4639,
@@ -389,7 +389,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Approval reasons: the approval card label reads the decision reason (+22). Measured 6651, exact cap.
   // 2026-10-07 reviewed growth: plugin state badges and session default controls.
   // countLines: 6640 -> 6681 (+41); exact cap, no exclusions or spare allocation.
-  'packages/web-ui/src': 8909,
+  'packages/web-ui/src': 8947,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
@@ -600,7 +600,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // B1/main integration: +7 formatter lines around typed turn lookup and expressions; exact count.
   'packages/web/src/trace-panel': 1,
   // 2026-09-15/16 (admin-pages A5b): the popover placement and listbox key map moved to
-  // @agnes/web-admin-frame, so this file only keeps its own state machine and rendering.
+  // @agnes/web-ui, so this file only keeps its own state machine and rendering.
   // 2026-09-25 UI refactor: model options now render through the React region contract.
   // Re-measured with countLines(): 274, exact, no spare.
   // 2026-10-04 preview-path fixes: the leaf keyboard boundary follows the previewed model, the
@@ -776,7 +776,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 1261 -> 1397; exact cap, no exclusions or spare allocation.
   // Acceptance review: Pass persisted child-engine configuration to the packaged Host runtime.
   // countLines: 1397 -> 1400; exact cap, no exclusions or spare allocation.
-  'packages/cli/launch': 1604, // SKILL-INSTALL-CORE: preserve request-only port in packaged Host options.
+  'packages/cli/launch': 1704, // SKILL-INSTALL-CORE: preserve request-only port in packaged Host options.
   // 2026-09-14: whole-branch review fix wave (Finding 1), same as above. Measured 90, exact --
   // unaffected by the workspace-picker change (different file, same aggregate prefix).
   // 2026-09-14: Task 4 profile-command-plan wires packages.trustWorkspace into invoke()'s switch --
@@ -1680,7 +1680,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2327 -> 2438; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Expose cooperative construction signals, adapter credential ports and shared default compaction/policy helpers.
   // countLines: 2438 -> 2505 (+67); exact measured cap, no exclusions or spare allocation.
-  'packages/extension-api/src': 2755, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  'packages/extension-api/src': 2770, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -1766,9 +1766,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 5443 -> 5447; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Typed search, history, context and child-engine administration methods.
   // countLines: 5447 -> 5456; exact cap, no exclusions or spare allocation.
-  'packages/sdk/src': 5549,
+  'packages/sdk/src': 5880,
   'packages/sdk/src/extensions.node': 21,
-  'packages/sdk/src/package-admin.node': 1,
+  'packages/sdk/src/package-admin.node': 192,
   'packages/sdk/src/surface.browser': 1,
   'packages/sdk/src/surface.node': 149,
   // 2026-09-10: raised from 3000 by daemon Task 17 (WorkerPool / WorkerLink / RemoteSession /
@@ -2320,7 +2320,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-15 (admin-pages A2-A7): openAdminPane wiring in app.ts, the id/markup contract test's
   // supporting surface changes and the detail three-part split. Measured exact: 5963.
   // 2026-09-15/16 (admin-pages A5b): positionPopover + bindListboxKeys moved out of model-picker.ts
-  // into @agnes/web-admin-frame. Tightened to the new exact measurement: 5927.
+  // into @agnes/web-ui. Tightened to the new exact measurement: 5927.
   // 2026-09-16 (plugin-skin S7): src/skin.ts adds the skin preference logic — cache read/write/
   // clear, the one-shot ?skin= override, and mode-aware token application with precise clearing.
   // safeThemeStorage gained an optional removeItem without becoming stricter for existing callers.
@@ -2562,7 +2562,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 1401 -> 1571; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Portable metadata-backed MCP tool indexing for non-SQL persistence.
   // countLines: 1571 -> 1601; exact cap, no exclusions or spare allocation.
-  'packages/base/src/mcp': 1559,
+  'packages/base/src/mcp': 1601,
   // 2026-09-12: I7 Base Tasks 34/35 introduce the privacy extension. Its first slice measures 214
   // counted lines; the universal fixed extension ceiling remains 800 rather than growing Base.
   'packages/base/extensions/privacy': 369,

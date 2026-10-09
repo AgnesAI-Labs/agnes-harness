@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { type CloseObservableTransport, observeTransportDisconnect } from '../src/index.js'
+import { type CloseObservableTransport, observeTransportDisconnect } from '../../src/mcp/transport-health.js'
 
 const causes = ['close', 'error'] as const
 function emit(transport: CloseObservableTransport, event: (typeof causes)[number], cause: Error): void {

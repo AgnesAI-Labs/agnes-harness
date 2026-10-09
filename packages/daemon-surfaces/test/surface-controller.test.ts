@@ -12,15 +12,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ResolvedDeployment } from '@agnes/host'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createSurfaceController } from '../src/surfaces/controller.js'
 import {
   createLocalNodeRuntime,
-  createSurfaceController,
   type SpawnedSurfaceProcess,
-  type SurfaceExit,
-  type SurfaceRuntimeAdapter,
-  type SurfaceRuntimeHandle,
   type SurfaceSpawnOptions,
-} from '../../daemon/src/index.js'
+} from '../src/surfaces/local-runtime.js'
+import type { SurfaceExit, SurfaceRuntimeAdapter, SurfaceRuntimeHandle } from '../src/surfaces/types.js'
 
 const temporaryDirectories: string[] = []
 

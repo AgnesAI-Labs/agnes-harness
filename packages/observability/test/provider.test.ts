@@ -34,7 +34,11 @@ it('requires explicit opt-in and refuses invalid enabled settings without leakin
       { enabled: true, endpoint: 'https://user:synthetic-password@example.invalid' },
       { enabled: true, endpoint: 'file:///synthetic' },
       { enabled: true, endpoint: 'http://localhost', timeoutMs: -1 },
-      { enabled: true, endpoint: 'http://localhost', headers: { authorization: 'synthetic\r\nsecret' } },
+      {
+        enabled: true,
+        endpoint: 'http://localhost',
+        headers: { authorization: { secretRef: 'synthetic\r\nsecret' } },
+      },
     ])
       expect(() => observabilityConfig(explicit, { AGH_HOME: home })).toThrow()
     await writeFile(
@@ -55,7 +59,7 @@ it.each([false, true])(
     const provider = createObservability({
       enabled: true,
       endpoint: collector.endpoint,
-      includeContent: true,
+      redaction: 'content',
     })
     const release = provider.bindSession('synthetic-session')
     let seq = 0
@@ -139,8 +143,16 @@ it.each([false, true])(
           'agh.queue.depth',
         ]),
       )
-      expect(metrics.find((row) => row.name === 'agh.tokens.input')?.sum?.dataPoints[0]?.asDouble).toBe(7)
-      expect(metrics.find((row) => row.name === 'agh.tokens.output')?.sum?.dataPoints[0]?.asDouble).toBe(3)
+      expect(
+        metrics
+          .filter((row) => row.name === 'agh.tokens.input')
+          .reduce((total, row) => total + (row.sum?.dataPoints[0]?.asDouble ?? 0), 0),
+      ).toBe(7)
+      expect(
+        metrics
+          .filter((row) => row.name === 'agh.tokens.output')
+          .reduce((total, row) => total + (row.sum?.dataPoints[0]?.asDouble ?? 0), 0),
+      ).toBe(3)
     } finally {
       await provider.dispose()
       await collector.close()
@@ -151,7 +163,11 @@ it.each([false, true])(
 it('bounds delivery and accepts collector refusal without failing the caller', async () => {
   const fetch = vi.fn(async () => new Response('{}', { status: 400 }))
   vi.stubGlobal('fetch', fetch)
-  const transport = new OtlpTransport({ enabled: true, endpoint: 'http://collector.invalid' })
+  const transport = new OtlpTransport({
+    enabled: true,
+    endpoint: 'http://collector.invalid',
+    batchSize: 1024,
+  })
   for (let i = 0; i < 1030; i++) transport.add('traces', { spanId: String(i) })
   await transport.dispose()
   expect(transport.dropped).toBeGreaterThan(0)

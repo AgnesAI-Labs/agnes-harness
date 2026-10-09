@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { fakeRequest } from '@agnes/ai/testkit'
 import type { InferenceEvent } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { openTestHost, say, slowProvider } from '../../daemon/test/host.js'
+import { openTestHost, say, slowProvider } from './host.js'
 
 describe('openTestHost', () => {
   it('assembles a host that opens a session, and close removes the data directory', async () => {

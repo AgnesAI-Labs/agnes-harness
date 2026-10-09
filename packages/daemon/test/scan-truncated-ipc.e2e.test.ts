@@ -13,11 +13,11 @@ import {
 } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import { expect, it } from 'vitest'
+import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
 import { type DaemonConfig, DEFAULT_LIMITS } from '../src/config.js'
 import { RemoteSession } from '../src/supervisor/remote-session.js'
 import { listenUnix } from '../src/supervisor/socket.js'
 import { WorkerPool } from '../src/supervisor/worker-pool.js'
-import { workspaceBinding } from './workspace-authority.js'
 
 // A real worker process (runWorker over a testkit Host on SQLite) behind a real WorkerPool: the
 // E_SCAN_TRUNCATED a worker's adapter raises has to arrive at the daemon with enough in its message

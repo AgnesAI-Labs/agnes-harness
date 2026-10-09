@@ -35,9 +35,6 @@
       "path": "packages/protocol-validation"
     },
     {
-      "path": "packages/package-admin-client-node"
-    },
-    {
       "path": "packages/error-sanitization"
     },
     {
@@ -45,9 +42,6 @@
     },
     {
       "path": "packages/web-server"
-    },
-    {
-      "path": "packages/web-admin-frame"
     },
     {
       "path": "packages/resource-control-contracts"
@@ -62,16 +56,10 @@
       "path": "packages/resource-control-web"
     },
     {
-      "path": "packages/resource-control-client-node"
-    },
-    {
       "path": "packages/resource-control-cli"
     },
     {
       "path": "packages/cli-tui"
-    },
-    {
-      "path": "packages/cli-launch"
     },
     {
       "path": "packages/resource-control-worker"
@@ -111,9 +99,6 @@
     },
     {
       "path": "packages/bridges"
-    },
-    {
-      "path": "packages/mcp-transport-health"
     },
     {
       "path": "packages/base"

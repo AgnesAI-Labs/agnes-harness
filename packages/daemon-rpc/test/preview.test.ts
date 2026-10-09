@@ -14,9 +14,9 @@ import { notify } from '@agnes/daemon-foundation/rpc'
 import type { EventEnvelope, InferenceEvent, Provider, RequestBody } from '@agnes/protocol'
 import { createClient, fileJournal } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
-import { openTestHost } from '../../daemon/test/host.js'
 import { Feed } from '../src/local/methods/acp.js'
 import type { SessionEntry } from '../src/local/sessions.js'
+import { openTestHost } from './host.js'
 
 const p = (delta: string, offset: number, o: Partial<PreviewUpdate> = {}): PreviewUpdate => ({
   lane: 'main',

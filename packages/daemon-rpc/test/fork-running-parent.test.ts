@@ -1,7 +1,7 @@
 import type { HostSession } from '@agnes/host'
 import { describe, expect, it } from 'vitest'
-import { openTestHost } from '../../daemon/test/host.js'
 import { createLocalEndpoint } from '../src/local/index.js'
+import { openTestHost } from './host.js'
 
 const init = {
   jsonrpc: '2.0' as const,

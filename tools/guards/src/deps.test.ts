@@ -77,17 +77,12 @@ const LAYER: Record<string, number> = {
   // Author-facing browser API above sdk (web-client-modules WC6); react is a pinned peer, not a layer.
   '@agnes/web-client': 4,
   '@agnes/resource-control-contracts': -1,
-  '@agnes/mcp-transport-health': -1,
   '@agnes/protocol-validation': -1,
   '@agnes/error-sanitization': -1,
   '@agnes/package-isolation': -1,
   '@agnes/system-node': -2, // OS primitives sit below infrastructure leaves and have no package dependencies.
   '@agnes/web-server': 1,
-  '@agnes/web-admin-frame': -1,
   '@agnes/protocol': 0,
-  '@agnes/resource-control-client-node': 2,
-  '@agnes/package-admin-client-node': 2,
-  '@agnes/cli-launch': 1,
   '@agnes/cli-tui': 4,
   '@agnes/resource-control-runtime': 6,
   '@agnes/resource-control-store': 6,
@@ -152,8 +147,6 @@ const EXACT_ONLY: Record<string, string[]> = {
   '@agnes/plugin-runtime': ['@agnes/cordis', '@agnes/cordis-loader', '@agnes/extension-api'],
   '@agnes/sdk': [
     '@agnes/protocol',
-    '@agnes/resource-control-client-node',
-    '@agnes/package-admin-client-node',
     '@agnes/system-node', // Node-only private file journal; browser entry stays free of native imports.
   ],
   '@agnes/extension-api': ['@agnes/protocol'],

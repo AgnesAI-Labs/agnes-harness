@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createLocalArtifactReadStore } from '@agnes/host'
 import { afterEach, describe, expect, it } from 'vitest'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { PersistentArtifactReadAuthorityIndex } from '../src/local/artifact-read-authority.js'
 import { createArtifactAuthorityProjection } from '../src/supervisor/artifact-authority-projection.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 const roots: string[] = []
 afterEach(async () => {

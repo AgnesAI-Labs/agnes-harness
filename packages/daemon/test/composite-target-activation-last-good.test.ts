@@ -5,9 +5,9 @@ import {
   type RuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
 import { describe, expect, it } from 'vitest'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { createCompositeTargetActivation } from '../src/composite-target-activation.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 const revision = 'b'.repeat(64)
 const snap1 = `sha256-${'1'.repeat(64)}`

@@ -10,7 +10,7 @@
 
 | 行为 | 主要源码 | 验证起点 |
 | --- | --- | --- |
-| 参数/启动/运行目录 | [cli](../../packages/cli/src)、[cli-launch](../../packages/cli-launch/src) | [CLI 参数](../../packages/cli/test/args.test.ts)、[共享本地验收](../../tools/acceptance/shared-local-delivery.test.ts) |
+| 参数/启动/运行目录 | [cli](../../packages/cli/src)、[启动资源](../../packages/cli/launch/resources.ts) | [CLI 参数](../../packages/cli/test/args.test.ts)、[共享本地验收](../../tools/acceptance/shared-local-delivery.test.ts) |
 | TUI | [cli-tui](../../packages/cli-tui/src) | [测试](../../packages/cli-tui/test) |
 | Web 展示与连接 | [web](../../packages/web/src)、[web-server](../../packages/web-server/src) | [Web 测试](../../packages/web/test) |
 | Web 外观与语言基础 | [web-foundation](../../packages/web-foundation/src) | [基础模块测试](../../packages/web-foundation/test) |
@@ -18,7 +18,7 @@
 | Web 管理与设置 | [web-admin](../../packages/web-admin/src) | [模块测试](../../packages/web-admin/test) |
 | 前端插件与槽位 | [web-client](../../packages/web-client/src)、[web-slots](../../packages/web-slots/src)、[web-units](../../packages/web-units/src) | [名册对账](../../packages/web/test/client-modules.reconcile.test.ts) |
 | 协议/校验 | [protocol schema](../../packages/protocol/schema)、[method table](../../packages/protocol/src/methods.ts)、[protocol-validation](../../packages/protocol-validation/src) | [protocol tests](../../packages/protocol/test) |
-| SDK 会话/传输 | [sdk](../../packages/sdk/src) | [sdk tests](../../packages/sdk/test) |
+| SDK 会话/传输 | [sdk](../../packages/sdk/src)、[Node 资源管理](../../packages/sdk/src/resource-control.node.ts)、[Node 包客户端](../../packages/sdk/src/package-admin.node.ts) | [sdk tests](../../packages/sdk/test) |
 | daemon/worker | [daemon-foundation](../../packages/daemon-foundation/src)、[daemon-surfaces](../../packages/daemon-surfaces/src)、[daemon-admin](../../packages/daemon-admin/src)、[daemon-rpc](../../packages/daemon-rpc/src)、[daemon-supervisor](../../packages/daemon-supervisor/src)、[daemon](../../packages/daemon/src)、[worker-runtime](../../packages/worker-runtime/src) | [daemon tests](../../packages/daemon/test) |
 | 可观测性 / 安全诊断 | [observability](../../packages/observability/src), [provider kind](../../packages/extension-api/src/observability.ts), [diagnostics RPC](../../packages/daemon-rpc/src/local/methods/diagnostics.ts) | [测试](../../packages/observability/test/provider.test.ts) |
 | 执行循环/恢复 | [core-common](../../packages/core-common/src), [core-child-control](../../packages/core-child-control/src), [core-ledger](../../packages/core-ledger/src), [core-effects](../../packages/core-effects/src), [core-artifacts](../../packages/core-artifacts/src), [core](../../packages/core/src) | [core tests](../../packages/core/test) |
@@ -41,3 +41,7 @@
 本地 RPC 经 `@agnes/daemon-admin/app-server` 认证并分派设置操作；daemon-admin 拥有组合、上下文、计划模式及历史的实现。Runtime doctor 的组合探测位于 `@agnes/daemon-admin/runtime-doctor`，本地 RPC 保留认证与分派。RPC 原有工厂出口保持兼容。本地 RPC 仅允许从 Base 导入具名公开拒绝标记 `ScheduleRejected`。MCP 命名使用 protocol 的可移植 `sha256Hex` 出口：UTF-8 编码（包括未配对代理项的替换）与现有后缀均保持不变。
 
 学习偏好：`packages/memory-file` 拥有官方文件提供器，`packages/extension-api/src/memory.ts` 拥有公共 SPI，`packages/web-admin/src/settings/memory.tsx` 拥有编辑器，`packages/base/src/memory` 拥有 remembering 技能。
+
+MCP 传输健康回调：[implementation](../../packages/base/src/mcp/transport-health.ts) · [tests](../../packages/base/test/mcp/transport-health.test.ts)
+
+可关闭对话框 DOM 绑定：[web-ui](../../packages/web-ui/src/dom/dialog-binding.ts) · [tests](../../packages/web-ui/test/dialog-binding.test.ts)

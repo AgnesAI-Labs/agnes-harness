@@ -1,7 +1,7 @@
 import { tailSession } from '@agnes/daemon-foundation/local/tail'
 import type { EventEnvelope } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
-import { openTestHost } from '../../daemon/test/host.js'
+import { openTestHost } from './host.js'
 
 const actor = { id: 'tester', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 

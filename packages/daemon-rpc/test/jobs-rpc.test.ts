@@ -1,7 +1,7 @@
 import type { DirectoryPort, JobsPort } from '@agnes/daemon-foundation/local/ports'
 import { describe, expect, it, vi } from 'vitest'
-import { openTestHost } from '../../daemon/test/host.js'
 import { signSourceAuth, sourceAuthCanonical } from '../src/local/auth.js'
+import { openTestHost } from './host.js'
 
 const initialize = {
   jsonrpc: '2.0' as const,

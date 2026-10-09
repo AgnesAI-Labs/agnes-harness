@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { PackageManager } from '@agnes/package-manager'
 import { buildRuntimeTarget, createPluginRow, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { afterEach, describe, expect, it } from 'vitest'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import {
   createCompositeReferenceFacts,
   createCompositeTargetActivation,
@@ -11,7 +12,6 @@ import {
 import { createPackageAdminService } from '../src/packages/handler.js'
 import { FilePackageOperationStore } from '../src/packages/operations.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 const revision = 'c'.repeat(64)
 const profile = 'local-dev'

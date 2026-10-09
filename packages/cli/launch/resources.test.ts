@@ -65,7 +65,7 @@ describe('local launch resources', () => {
       writeFile(join(cli, 'launch', 'daemon-entry.ts'), ''),
       writeFile(join(cli, 'launch', 'worker-entry.ts'), ''),
     ])
-    const entry = pathToFileURL(join(cli, 'tools', 'web-local.ts')).href
+    const entry = pathToFileURL(join(cli, 'launch', 'resources.ts')).href
     expect(() => resolveLaunchResources(entry, { allowSource: true })).toThrow(/build:local/)
     await mkdir(backend, { recursive: true })
     await writeFile(join(backend, 'daemon.mjs'), '')

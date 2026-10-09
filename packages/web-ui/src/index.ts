@@ -11,6 +11,7 @@ export * from './config-schema.js'
 export * from './confirm.js'
 export { ConversationCardLayout } from './conversation/card-layout.js'
 export * from './diagnostics-dialog.js'
+export { bindAutoDismissDisclosure, bindDismissibleDialog } from './dom/dialog-binding.js'
 export * from './first-run.js'
 export { ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog } from './locales/admin.js'
 export {

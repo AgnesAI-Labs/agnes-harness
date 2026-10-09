@@ -6,53 +6,33 @@ AGH includes an official `observability:otel` plugin in `@agnes/base`, implement
 
 ## Enable OTLP export
 
-An administrator can create `observability.json` in `AGH_HOME` (normally `~/.agh`):
+Create private `AGH_HOME/observability.json` (normally `~/.agh/observability.json`):
 
 ```json
 {
   "enabled": true,
   "endpoint": "http://127.0.0.1:4318",
-  "includeContent": false,
+  "redaction": "metadata",
+  "headers": { "authorization": { "secretRef": "env:AGH_COLLECTOR_AUTH" } },
+  "batchSize": 256,
   "batchMs": 1000,
-  "timeoutMs": 3000
+  "queueSize": 1024,
+  "timeoutMs": 3000,
+  "shutdownPolicy": "flush"
 }
 ```
 
-Restart the daemon after changing this file or the environment. The administrator owns the collector destination and its access policy. Keep configuration containing collector headers private. The equivalent environment configuration is:
+The official plugin reads validated changes within one second. Headers accept only `env:NAME` secret references; put the value in the service process environment, never in configuration. Missing secrets cause safe delivery backoff. Endpoints must be HTTP(S), without user credentials, query or fragment. Optional `tracesEndpoint`, `metricsEndpoint`, `logsEndpoint` are full signal URLs; `endpoint` is a base URL with `/v1/traces`, `/v1/metrics`, `/v1/logs` appended. There is no ambient plaintext OTLP header input. `OTEL_SDK_DISABLED=true` forces export off.
 
-```sh
-export AGH_OTEL_ENABLED=true
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
-node agnes.mjs serve
-```
-
-Supported settings:
-
-| Environment | JSON field | Meaning |
-| --- | --- | --- |
-| `AGH_OTEL_ENABLED` | `enabled` | Explicit opt-in; `true`/`false` or `1`/`0` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | `endpoint` | Base HTTP(S) URL; append `/v1/traces` and `/v1/metrics` |
-| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | `tracesEndpoint` | Exact trace URL |
-| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | `metricsEndpoint` | Exact metric URL |
-| `OTEL_EXPORTER_OTLP_HEADERS` | `headers` | Comma-separated `name=percent-encoded-value`; JSON uses an object |
-| `OTEL_EXPORTER_OTLP_TIMEOUT` | `timeoutMs` | Request and shutdown deadline in milliseconds, 10–30000 |
-| — | `batchMs` | Flush interval in milliseconds, 10–30000 |
-| `AGH_OTEL_INCLUDE_CONTENT` | `includeContent` | Explicit risky content opt-in |
-| `OTEL_SDK_DISABLED` | — | `true`/`1` disables export even if enabled elsewhere |
-
-Environment settings override the file. Explicit ordinary plugin configuration overrides both. HTTP redirects, URL credentials and invalid enabled settings are refused. This implementation sends [OTLP/HTTP JSON](https://opentelemetry.io/docs/specs/otlp/) traces and metrics; it does not install global instrumentation or provide a gRPC/protobuf exporter. Signal endpoint behavior follows the [OTLP exporter specification](https://opentelemetry.io/docs/specs/otel/protocol/exporter/).
+Batch interval and timeout are 10–30000 ms. Queue size is 1–16384 records; batch size is 1–queue size. Delivery is also bounded to 1 MiB including in-flight records. Shutdown policy is `flush` (default) or `discard`; the timeout bounds final flushing. Queue overflow, permanent refusal and partial rejection increment drop counters. Retryable collector failures retain records with exponential backoff. Delivery runs asynchronously and never awaits the collector from an agent turn.
 
 ## What is exported
 
-Committed public session events produce session, turn, model and tool spans. Public child lifecycle hooks link each child span and its session/turn/model spans to the parent's trace. Supervisor seams emit daemon and worker lifecycle spans. Separate OS processes have separate lifecycle traces; there is no cross-process trace-context propagation on IPC yet.
+Committed public events generate session → turn → step → model/tool spans and correlated OTLP log records for each ledger event (type, sequence, timestamp). Resources include service/version, hashed workspace/session/pin identities and generation ID when Host supplies them. Child and daemon/worker lifecycle spans and the existing duration/token/tool/queue metrics remain available. Exporters are replaceable through the public `observabilityKind` contract; `bindSession(key, resource)` accepts resource identity and private roots, and optional `health()` exposes delivery health. Core does not perform network export.
 
-Metrics are `agh.turn.duration` and `agh.tool.duration` histograms in milliseconds; `agh.tokens.input`, `agh.tokens.output`, `agh.tool.calls`, `agh.tool.errors` and `agh.worker.restarts` delta counters; and `agh.queue.depth`, a gauge of admitted commands including in-flight work. Compute tool error rate from errors/calls. Existing structured execution logs and audit entries gain `traceId` and `spanId` while an observed session runs. Log bodies are not uploaded.
+`metadata` is the default redaction level. `content` explicitly opts into bounded user/assistant/tool content. Credential fields, recognized secret patterns, referenced header values and content mentioning private state roots are omitted or redacted. Memory-enabled sessions receive structural events only. No exporter reads private files. Content may still include confidential business information; authorize the destination before opting in.
 
-By default, exported attributes contain hashed session/model/tool/call identities, turn numbers, timestamps, counts and success/error status. Prompt, response, tool result and file bodies, raw session identifiers, working directory paths and collector credentials are excluded. Hashes permit correlation; they are not an anonymity guarantee for guessable names.
-
-**Content export is risky.** Setting `includeContent: true` or `AGH_OTEL_INCLUDE_CONTENT=true` includes bounded user/assistant/tool content attributes, capped at 4096 characters. Credential field names and recognized credential strings are scrubbed, but free-form content may still identify people or contain confidential files. Enable only with authorization for that collector and workload. Diagnostics export always excludes content, independently of this switch.
-
-Delivery uses a queue limited to 1024 records or 1 MiB, with one in-flight batch and a bounded 64 KiB collector response. Queue overflow drops telemetry. Network failures and retryable HTTP responses receive at most three attempts; a refused or partially accepted batch is not an execution failure. Shutdown flushes within the configured deadline and aborts remaining requests. Observation is bounded to 512 sessions, 512 children and 256 simultaneous tools per session. This is best-effort telemetry, not an audit ledger; inspect collector health to detect missing data.
+Generation leases in the same process/home share session sequence watermarks, active spans and delivery queues. An overlapping generation switch keeps in-flight requests intact and does not replay accepted events. Queued records retain the destination and capture policy under which they were accepted; disabling stops new capture. Final lease disposal flushes. This is best-effort telemetry: process crashes lose the in-memory queue, and an ambiguous network acknowledgement can cause a collector duplicate on retry. It does not replace the durable ledger or implement feedback-authorized prefix uploads. Separate OS processes have separate pipelines.
 
 ## Export a support bundle
 

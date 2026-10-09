@@ -165,7 +165,7 @@ Bundle 父先于子、每次解析只应用一次；循环/未知 id 拒绝；�
 | Admin bundle/composition API | `GET/PUT /admin/api/bundles`（写 `{revision,bundles}`，乐观冲突拒绝）、`GET/POST /admin/api/composition`（POST `{preset}`）；read/activation grants 与 exact-origin/Host 检查；保存选择需重启 |
 | 浏览器插件调用 | `clientModules.callService/callEffect` 使用 generation/session 绑定的声明服务访问；launcher 保管 Node 凭据；query/effect 权限仍由后台拥有 |
 
-源码权威：[SDK 会话创建](../../packages/sdk/src/client.ts)、[Node 包客户端](../../packages/package-admin-client-node/src/package-admin.ts)、[Web admin helper](../../packages/web-admin/src/admin/plugins/api.ts)、[前端模块合同](frontend.zh-CN.md)。CLI 对应 `agh sessions migrate`、`agh plugins publication-status`。这些 API 为 experimental，公开 SDK 包集合尚未发行。
+源码权威：[SDK 会话创建](../../packages/sdk/src/client.ts)、[Node 包客户端](../../packages/sdk/src/package-admin.node.ts)、[Web admin helper](../../packages/web-admin/src/admin/plugins/api.ts)、[前端模块合同](frontend.zh-CN.md)。CLI 对应 `agh sessions migrate`、`agh plugins publication-status`。这些 API 为 experimental，公开 SDK 包集合尚未发行。
 
 ## 作者 helper、testkit 与出口审计
 

@@ -5,9 +5,9 @@ import { TOOLS_CORE } from '@agnes/base'
 import type { HostSession } from '@agnes/host'
 import { MAX_FRAME_BYTES, toAcpPrompt, UI_PROJECTION_MAX_BYTES, type UITimeline } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
-import { openTestHost, say } from '../../daemon/test/host.js'
 import { diffUITimeline } from '../src/local/methods/agnes.js'
 import { RegistryLister, SessionRegistry } from '../src/local/sessions.js'
+import { openTestHost, say } from './host.js'
 
 const caps = {
   fs: { readTextFile: false, writeTextFile: false },

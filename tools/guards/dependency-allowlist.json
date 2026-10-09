@@ -14,12 +14,8 @@
   "@agnes/error-sanitization": [],
   "@agnes/package-isolation": ["@agnes/system-node"],
   "@agnes/web-server": ["@agnes/protocol", "@agnes/history-index"],
-  "@agnes/web-admin-frame": [],
-  "@agnes/package-admin-client-node": ["@agnes/protocol"],
   "@agnes/resource-control-runtime": ["@agnes/cordis", "@agnes/protocol", "@agnes/system-node"],
   "@agnes/resource-control-store": ["@agnes/protocol", "@agnes/system-node"],
-  "@agnes/resource-control-client-node": ["@agnes/protocol"],
-  "@agnes/cli-launch": [],
   "@agnes/cli-tui": ["@agnes/protocol", "@agnes/sdk"],
   "@agnes/resource-control-web": ["@agnes/protocol", "@agnes/web-ui"],
   "@agnes/resource-control-worker": [
@@ -70,14 +66,12 @@
     "@agnes/core",
     "@agnes/plugin-runtime",
     "@agnes/ai",
-    "@agnes/mcp-transport-health",
     "@agnes/system-node",
     "@agnes/loop-default",
     "@agnes/history-index",
     "@agnes/observability",
     "@agnes/memory-file"
   ],
-  "@agnes/mcp-transport-health": [],
   "@agnes/code": ["@agnes/protocol", "@agnes/extension-api", "@agnes/core", "@agnes/base"],
   "@agnes/runtime-python": ["@agnes/code", "@agnes/protocol"],
   "@agnes/host": [
@@ -101,12 +95,7 @@
     "@agnes/host-providers",
     "@agnes/host-runtime"
   ],
-  "@agnes/sdk": [
-    "@agnes/protocol",
-    "@agnes/resource-control-client-node",
-    "@agnes/package-admin-client-node",
-    "@agnes/system-node"
-  ],
+  "@agnes/sdk": ["@agnes/protocol", "@agnes/system-node"],
   "@agnes/daemon": [
     "@agnes/protocol",
     "@agnes/base",
@@ -140,7 +129,6 @@
     "@agnes/resource-control-cli",
     "@agnes/resource-control-runtime",
     "@agnes/cli-tui",
-    "@agnes/cli-launch",
     "@agnes/package-manager",
     "@agnes/observability"
   ],
@@ -151,7 +139,6 @@
     "@agnes/protocol",
     "@agnes/resource-control-web",
     "@agnes/sdk",
-    "@agnes/web-admin-frame",
     "@agnes/web-client",
     "@agnes/web-server",
     "@agnes/web-ui",

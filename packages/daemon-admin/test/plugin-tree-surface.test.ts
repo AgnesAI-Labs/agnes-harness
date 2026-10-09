@@ -1,7 +1,7 @@
 import { CompositeTargetStore } from '@agnes/daemon-foundation/storage/composite-target-store'
 import { buildRuntimeTarget, createPluginRow, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { describe, expect, it } from 'vitest'
-import { sqliteTables } from '../../daemon/test/sqlite-tables.js'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { pluginTreeActual, pluginTreeList } from '../src/plugin-tree-surface.js'
 
 const revision = 'f'.repeat(64)

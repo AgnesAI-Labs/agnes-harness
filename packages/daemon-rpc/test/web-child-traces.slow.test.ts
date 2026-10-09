@@ -1,6 +1,6 @@
 import type { UISpan, UITimeline, UITurn } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { openTestHost } from '../../daemon/test/host.js'
+import { openTestHost } from './host.js'
 
 const caps = {
   fs: { readTextFile: false, writeTextFile: false },

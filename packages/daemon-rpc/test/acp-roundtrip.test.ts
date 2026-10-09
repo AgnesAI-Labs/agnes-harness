@@ -3,9 +3,9 @@ import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { JsonRpcMessage } from '@agnes/daemon-foundation/rpc'
 import { notify } from '@agnes/daemon-foundation/rpc'
 import { describe, expect, it } from 'vitest'
-import { openTestHost, say, slowProvider } from '../../daemon/test/host.js'
 import { createLocalEndpoint } from '../src/local/index.js'
 import { Feed } from '../src/local/methods/acp.js'
+import { openTestHost, say, slowProvider } from './host.js'
 
 const caps = (permission: boolean) => ({
   fs: { readTextFile: false, writeTextFile: false },

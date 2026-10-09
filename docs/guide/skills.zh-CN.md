@@ -87,7 +87,7 @@ node /path/to/agnes-harness/agnes.mjs skills list
 - 两者需要服务端授予的 admin authority 与 `resources.skills.write`；JSON 参数不能授予权限。浏览器管理页通过受约束的同源 BFF 调用，不把管理 SDK 给插件。
 - 使用当前实例返回的身份、revision、priority，保存 commandId 和 operation receipt；相同已受理请求使用相同 commandId 查询/重放，删除失败后的新重试则显式发起新操作。用 `client.resources.operation.get({ profile, operationId })` 或 shell `resources operation OPERATION_ID` 查询结果。
 
-合同依据：[资源 Schema](../../packages/protocol/schema/resource-control.json)、[方法与权限](../../packages/resource-control-contracts/src/resource-control.ts)、[Node 客户端](../../packages/resource-control-client-node/src/resource-control.ts)、[持久控制与删除标记](../../packages/resource-control-store/src/skills.ts)、[Web 操作](../../packages/resource-control-web/src/admin.tsx)、[Worker 接线](../../packages/resource-control-worker/src/runtime-bootstrap.ts)。原生删除由[Worker 删除实现](../../packages/resource-control-worker/src/skill-remove.ts)调用 system-node 完成。源码链接对应所在文档版本；运行旧产物时应核对相应版本的合同。
+合同依据：[资源 Schema](../../packages/protocol/schema/resource-control.json)、[方法与权限](../../packages/resource-control-contracts/src/resource-control.ts)、[Node 客户端](../../packages/sdk/src/resource-control.node.ts)、[持久控制与删除标记](../../packages/resource-control-store/src/skills.ts)、[Web 操作](../../packages/resource-control-web/src/admin.tsx)、[Worker 接线](../../packages/resource-control-worker/src/runtime-bootstrap.ts)。原生删除由[Worker 删除实现](../../packages/resource-control-worker/src/skill-remove.ts)调用 system-node 完成。源码链接对应所在文档版本；运行旧产物时应核对相应版本的合同。
 
 ## Cordis 运行时贡献
 

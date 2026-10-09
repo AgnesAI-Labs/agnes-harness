@@ -6,10 +6,10 @@ import { MemoryClaims } from '@agnes/daemon-foundation/local/ports'
 import { createTestHost } from '@agnes/host/testkit'
 import { type ApisListResult, METHODS, userImagePolicy, validateAgainst } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { openTestHost, say } from '../../daemon/test/host.js'
 import { signSourceAuth, sourceAuthCanonical } from '../src/local/auth.js'
 import { createLocalEndpoint } from '../src/local/index.js'
 import { apisFamilies } from '../src/local/methods/agnes.js'
+import { openTestHost, say } from './host.js'
 
 const caps = {
   fs: { readTextFile: false, writeTextFile: false },

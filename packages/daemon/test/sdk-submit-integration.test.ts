@@ -1,9 +1,9 @@
 import { join } from 'node:path'
 import { createClient, fileJournal, RequestTimeout } from '@agnes/sdk'
 import { expect, it, vi } from 'vitest'
+import { openTestHost } from '../../daemon-rpc/test/host.js'
 import { bindConnection } from '../src/supervisor/connection.js'
 import { listenUnix } from '../src/supervisor/socket.js'
-import { openTestHost } from './host.js'
 import { localSdkTransport, localSocketPath } from './local-socket-path.js'
 
 // Only the deliberately unanswered submit uses a short deadline. Initialize, session/new and

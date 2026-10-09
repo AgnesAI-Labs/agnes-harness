@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { sqliteTables } from '../../daemon/test/sqlite-tables.js'
 import { JobsRepo } from '../src/jobs/repo.js'
 import { JobsService } from '../src/jobs/service.js'
+import { sqliteTables } from './sqlite-tables.js'
 
 describe('JobsService', () => {
   it('enqueues idempotently, polls, and cancels', async () => {

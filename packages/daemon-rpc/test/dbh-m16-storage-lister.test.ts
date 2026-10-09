@@ -6,8 +6,8 @@ import { ensure } from '@agnes/daemon-foundation/storage/table'
 import { MemoryWorkspaceStore, WorkspaceCatalog } from '@agnes/daemon-foundation/storage/workspaces'
 import { resolveWorkspaceDirectory } from '@agnes/host'
 import { afterEach, describe, expect, it } from 'vitest'
-import { openTestHost } from '../../daemon/test/host.js'
-import { sqliteTables } from '../../daemon/test/sqlite-tables.js'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
+import { openTestHost } from './host.js'
 
 // Deep Bug Hunt M-16, shared-daemon lister (supervisor.ts StorageLister). The binding is written
 // through the production WorkspaceCatalog.validate + bindSession (the session/new write path, which

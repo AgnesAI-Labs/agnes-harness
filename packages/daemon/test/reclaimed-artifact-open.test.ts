@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { createSqliteStorage } from '@agnes/host'
 import type { EventEnvelope } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
+import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
 import {
   createArtifactReadAuthorityPort,
   PersistentArtifactReadAuthorityIndex,
@@ -12,8 +14,6 @@ import {
 import { composeProductionProjectedArtifactRead } from '../src/supervisor/artifact-read.js'
 import { WorkerRegistry } from '../src/supervisor/registry.js'
 import type { WorkerPool } from '../src/supervisor/worker-pool.js'
-import { sqliteTables } from './sqlite-tables.js'
-import { workspaceBinding } from './workspace-authority.js'
 
 const roots: string[] = []
 afterEach(async () => {

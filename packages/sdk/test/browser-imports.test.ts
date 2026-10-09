@@ -26,7 +26,7 @@ it('bundles the browser SDK without external imports or Node implementations', a
   const bundled = result.outputFiles[0]?.text ?? ''
   expect(bundled).not.toMatch(/(?:from|import\()\s*['"]node:/)
   expect(bundled).not.toMatch(
-    /mintPortalIdentity|verifyPortalIdentity|createRelay|createSurfaceRelay|createPackageAdminClient|createExtensionClient|stripIdentity|sourceAuthProvider|signSourceAuth|createHmac|timingSafeEqual/,
+    /mintPortalIdentity|verifyPortalIdentity|createRelay|createSurfaceRelay|createPackageAdminClient|createResourceControlClient|createExtensionClient|stripIdentity|sourceAuthProvider|signSourceAuth|createHmac|timingSafeEqual/,
   )
   // Public protocol profile schemas legitimately contain SecretRef/sourceAuthSecrets.
   // SDK credential secrecy is therefore guarded by the symbol scan above and the

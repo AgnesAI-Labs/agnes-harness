@@ -9,7 +9,7 @@ import {
 } from '@agnes/daemon-foundation/storage/session-preferences'
 import { createSqliteStorage } from '@agnes/host'
 import { describe, expect, it } from 'vitest'
-import { sqliteTables } from '../../daemon/test/sqlite-tables.js'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { registerSessionPreferences } from '../src/local/methods/session-preferences.js'
 
 const row = {

@@ -17,6 +17,7 @@ import {
 import { createClient, createSurfaceRelay, memoryJournal } from '@agnes/sdk'
 import { afterEach, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { type DaemonConfig, DEFAULT_LIMITS } from '../src/config.js'
 import { signSourceAuth, sourceAuthCanonical } from '../src/local/auth.js'
 import { SessionWorkspaceIndex } from '../src/storage/lister.js'
@@ -27,7 +28,6 @@ import { daemonSocketPaths } from '../src/supervisor/socket-paths.js'
 import { startSupervisor } from '../src/supervisor/supervisor.js'
 import { createSurfaceRoutes, type SurfaceRelay } from '../src/surfaces/routes.js'
 import { serviceOwner, servicePackageId, serviceRowId } from './service-row-fixture.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 type Rpc = Readonly<{ id?: number; result?: unknown; error?: unknown }>
 const cleanup: Array<() => void | Promise<void>> = []

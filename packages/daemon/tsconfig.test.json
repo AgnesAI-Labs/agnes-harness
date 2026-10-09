@@ -57,6 +57,12 @@
     },
     {
       "path": "../host/tsconfig.testkit.json"
+    },
+    {
+      "path": "../daemon-foundation/tsconfig.test.json"
+    },
+    {
+      "path": "../daemon-rpc/tsconfig.test.json"
     }
   ]
 }

@@ -8,28 +8,118 @@ export interface ObservabilityConfig {
   endpoint?: string
   tracesEndpoint?: string
   metricsEndpoint?: string
-  headers?: Record<string, string>
-  includeContent?: boolean
+  logsEndpoint?: string
+  headers?: Record<string, { secretRef: string }>
+  redaction?: 'metadata' | 'content'
+  batchSize?: number
   batchMs?: number
+  queueSize?: number
   timeoutMs?: number
+  shutdownPolicy?: 'flush' | 'discard'
 }
 export function observabilityHome(env: NodeJS.ProcessEnv = process.env): string {
   const home = env.AGH_HOME?.trim() || env.AGNES_HOME?.trim() || join(homedir(), AGH_DIR)
   if (!isAbsolute(home)) throw new Error('Observability home must be absolute')
   return home
 }
-/** Explicit opt-in is independent of an endpoint. Invalid enabled configuration fails at load. */
+export function validateObservability(config: ObservabilityConfig): ObservabilityConfig {
+  const allowed = new Set([
+    'enabled',
+    'endpoint',
+    'tracesEndpoint',
+    'metricsEndpoint',
+    'logsEndpoint',
+    'headers',
+    'redaction',
+    'batchSize',
+    'batchMs',
+    'queueSize',
+    'timeoutMs',
+    'shutdownPolicy',
+  ])
+  if (
+    !config ||
+    typeof config !== 'object' ||
+    Array.isArray(config) ||
+    Object.keys(config).some((key) => !allowed.has(key)) ||
+    typeof config.enabled !== 'boolean'
+  )
+    throw new Error('Invalid observability configuration')
+  if (
+    config.enabled &&
+    !config.endpoint &&
+    !(config.tracesEndpoint && config.metricsEndpoint && config.logsEndpoint)
+  )
+    throw new Error('Observability requires an OTLP endpoint')
+  for (const endpoint of [
+    config.endpoint,
+    config.tracesEndpoint,
+    config.metricsEndpoint,
+    config.logsEndpoint,
+  ]) {
+    if (endpoint === undefined) continue
+    try {
+      const url = new URL(endpoint)
+      if (
+        !['http:', 'https:'].includes(url.protocol) ||
+        url.username ||
+        url.password ||
+        url.hash ||
+        url.search
+      )
+        throw new Error()
+    } catch {
+      throw new Error('Invalid OTLP endpoint')
+    }
+  }
+  for (const [value, min, max] of [
+    [config.batchMs ?? 1000, 10, 30000],
+    [config.timeoutMs ?? 3000, 10, 30000],
+    [config.queueSize ?? 1024, 1, 16384],
+    [config.batchSize ?? Math.min(256, config.queueSize ?? 1024), 1, config.queueSize ?? 1024],
+  ]) {
+    if (!Number.isInteger(value) || value! < min! || value! > max!)
+      throw new Error('Invalid observability limits')
+  }
+  if (config.redaction !== undefined && !['metadata', 'content'].includes(config.redaction))
+    throw new Error('Invalid observability redaction')
+  if (config.shutdownPolicy !== undefined && !['flush', 'discard'].includes(config.shutdownPolicy))
+    throw new Error('Invalid observability shutdown policy')
+  if (config.headers !== undefined) {
+    if (
+      !config.headers ||
+      typeof config.headers !== 'object' ||
+      Array.isArray(config.headers) ||
+      Object.keys(config.headers).length > 16
+    )
+      throw new Error('Invalid OTLP secret refs')
+    for (const [key, value] of Object.entries(config.headers))
+      if (
+        !/^[a-zA-Z0-9-]+$/.test(key) ||
+        ['content-type', 'host', 'content-length'].includes(key.toLowerCase()) ||
+        !value ||
+        typeof value !== 'object' ||
+        Object.keys(value).length !== 1 ||
+        !/^env:[A-Z_][A-Z0-9_]*$/.test(value.secretRef)
+      )
+        throw new Error('Invalid OTLP secret refs')
+  }
+  return config
+}
+/** No plaintext header configuration or ambient OTLP_HEADERS is consumed. */
 export function observabilityConfig(
   explicit: Partial<ObservabilityConfig> = {},
   env: NodeJS.ProcessEnv = process.env,
 ): ObservabilityConfig {
-  const path = join(observabilityHome(env), 'observability.json')
   let file: Partial<ObservabilityConfig> = {}
   try {
-    const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+    const fd = openSync(
+      join(observabilityHome(env), 'observability.json'),
+      constants.O_RDONLY | constants.O_NOFOLLOW,
+    )
     try {
       const stat = fstatSync(fd)
-      if (!stat.isFile() || stat.size > 64 * 1024) throw new Error('Invalid observability configuration')
+      if (!stat.isFile() || stat.size > 64 * 1024) throw new Error()
       file = JSON.parse(readFileSync(fd, 'utf8')) as Partial<ObservabilityConfig>
     } finally {
       closeSync(fd)
@@ -38,51 +128,16 @@ export function observabilityConfig(
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
       throw new Error('Invalid observability configuration')
   }
-  if (!file || typeof file !== 'object' || Array.isArray(file))
-    throw new Error('Invalid observability configuration')
-  const boolean = (value: string | undefined, fallback: boolean): boolean => {
-    if (value === undefined) return fallback
-    if (!['true', 'false', '1', '0'].includes(value)) throw new Error('Invalid observability switch')
-    return value === 'true' || value === '1'
-  }
-  const headers: Record<string, string> = {}
-  if (env.OTEL_EXPORTER_OTLP_HEADERS)
-    for (const entry of env.OTEL_EXPORTER_OTLP_HEADERS.split(',')) {
-      const index = entry.indexOf('=')
-      if (index < 1) throw new Error('Invalid OTLP headers')
-      headers[entry.slice(0, index).trim()] = decodeURIComponent(entry.slice(index + 1).trim())
-    }
-  const config: ObservabilityConfig = {
-    ...file,
-    enabled: boolean(env.AGH_OTEL_ENABLED, file.enabled ?? false),
-    ...(env.OTEL_EXPORTER_OTLP_ENDPOINT ? { endpoint: env.OTEL_EXPORTER_OTLP_ENDPOINT } : {}),
-    ...(env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
-      ? { tracesEndpoint: env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT }
-      : {}),
-    ...(env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
-      ? { metricsEndpoint: env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT }
-      : {}),
-    ...(env.OTEL_EXPORTER_OTLP_HEADERS ? { headers } : {}),
-    ...(env.OTEL_EXPORTER_OTLP_TIMEOUT ? { timeoutMs: Number(env.OTEL_EXPORTER_OTLP_TIMEOUT) } : {}),
-    includeContent: boolean(env.AGH_OTEL_INCLUDE_CONTENT, file.includeContent ?? false),
-    ...explicit,
-  }
-  if (boolean(env.OTEL_SDK_DISABLED, false)) config.enabled = false
-  if (typeof config.enabled !== 'boolean' || typeof config.includeContent !== 'boolean')
-    throw new Error('Invalid observability switch')
-  if (config.enabled) {
-    if (!config.endpoint && !(config.tracesEndpoint && config.metricsEndpoint))
-      throw new Error('Observability requires an OTLP endpoint')
-    for (const endpoint of [config.endpoint, config.tracesEndpoint, config.metricsEndpoint].filter(Boolean)) {
-      const url = new URL(endpoint!)
-      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash)
-        throw new Error('Invalid OTLP endpoint')
-    }
-    for (const ms of [config.batchMs ?? 1000, config.timeoutMs ?? 3000])
-      if (!Number.isInteger(ms) || ms < 10 || ms > 30_000) throw new Error('Invalid observability timeout')
-    for (const [key, value] of Object.entries(config.headers ?? {}))
-      if (!/^[a-zA-Z0-9-]+$/.test(key) || typeof value !== 'string' || /[\r\n]/.test(value))
-        throw new Error('Invalid OTLP headers')
-  }
+  const config = validateObservability({ enabled: false, ...file, ...explicit })
+  if (env.OTEL_SDK_DISABLED === 'true' || env.OTEL_SDK_DISABLED === '1') config.enabled = false
   return config
+}
+export function resolveHeaders(config: ObservabilityConfig): Record<string, string> {
+  const headers: Record<string, string> = {}
+  for (const [name, ref] of Object.entries(config.headers ?? {})) {
+    const value = process.env[ref.secretRef.slice(4)]
+    if (!value || value.length > 8192 || /[\r\n]/.test(value)) throw new Error('OTLP secret unavailable')
+    headers[name] = value
+  }
+  return headers
 }

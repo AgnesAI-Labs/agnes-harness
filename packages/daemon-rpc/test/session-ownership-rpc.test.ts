@@ -3,7 +3,7 @@ import type { JobsPort, SessionLister, SessionMetaRow } from '@agnes/daemon-foun
 import { MemoryTickets } from '@agnes/daemon-foundation/storage/lister'
 import { sessionKey as canonicalSessionKey } from '@agnes/host'
 import { describe, expect, it, vi } from 'vitest'
-import { openTestHost } from '../../daemon/test/host.js'
+import { openTestHost } from './host.js'
 
 const initialize = {
   jsonrpc: '2.0' as const,

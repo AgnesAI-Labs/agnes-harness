@@ -2,9 +2,9 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { ensure } from '../src/storage/table.js'
 import { daemonDoctor } from '../src/supervisor/doctor.js'
-import { sqliteTables } from './sqlite-tables.js'
 
 describe('daemonDoctor', () => {
   it('reports real lock/socket state plus lease and scheduler signals', async () => {

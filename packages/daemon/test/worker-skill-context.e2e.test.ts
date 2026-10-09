@@ -9,7 +9,7 @@ import { createTestHost } from '@agnes/host/testkit'
 import type { InferenceEvent, RequestBody } from '@agnes/protocol'
 import { bootstrapWorkerResources, scanSkills } from '@agnes/resource-control-worker'
 import { afterEach, expect, it } from 'vitest'
-import { workspaceBinding } from './workspace-authority.js'
+import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
 
 const baseDir = fileURLToPath(new URL('../../base', import.meta.url))
 const roots: string[] = []

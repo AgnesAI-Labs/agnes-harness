@@ -165,7 +165,7 @@ Bundles resolve parent-before-child once, reject cycles/unknown ids, and apply l
 | Admin bundle/composition APIs | `GET/PUT /admin/api/bundles` (write `{revision,bundles}`, optimistic conflict refusal), `GET/POST /admin/api/composition` (POST `{preset}`); read/activation grants and exact-origin/Host checks apply; saved choices require restart |
 | Browser plugin calls | `clientModules.callService/callEffect` use generation/session-bound declared service access; launcher keeps Node credentials private; query/effect authority remains backend-owned |
 
-Source authorities: [SDK session creation](../../packages/sdk/src/client.ts), [Node package client](../../packages/package-admin-client-node/src/package-admin.ts), [Web admin helper](../../packages/web-admin/src/admin/plugins/api.ts), [client module contract](frontend.md). CLI equivalents include `agh sessions migrate` and `agh plugins publication-status`. These APIs are experimental; the public SDK package set is not yet released.
+Source authorities: [SDK session creation](../../packages/sdk/src/client.ts), [Node package client](../../packages/sdk/src/package-admin.node.ts), [Web admin helper](../../packages/web-admin/src/admin/plugins/api.ts), [client module contract](frontend.md). CLI equivalents include `agh sessions migrate` and `agh plugins publication-status`. These APIs are experimental; the public SDK package set is not yet released.
 
 ## Author helpers, testkit and surface audit
 

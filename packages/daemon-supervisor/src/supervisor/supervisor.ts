@@ -166,7 +166,7 @@ import {
   type ScanRead,
   sessionsDbPath,
 } from '@agnes/host'
-import { createObservability, installDiagnosticJournal, observabilityConfig } from '@agnes/observability'
+import { acquireObservability, installDiagnosticJournal, observabilityConfig } from '@agnes/observability'
 import {
   activeRuntimePinId,
   createPackageManager,
@@ -2434,7 +2434,7 @@ export async function startProductionSupervisor(
     {},
     { ...process.env, AGH_HOME: o.config.home ?? o.config.dataDir },
   )
-  const observability = createObservability(telemetryConfig)
+  const observability = acquireObservability(o.config.home ?? o.config.dataDir)
   const stopDiagnostics = installDiagnosticJournal(o.config.home ?? o.config.dataDir)
   observability.lifecycle('daemon', 'start')
   o = {
@@ -2442,7 +2442,7 @@ export async function startProductionSupervisor(
     observability,
     telemetryStatus: {
       enabled: telemetryConfig.enabled,
-      includeContent: telemetryConfig.includeContent ?? false,
+      includeContent: telemetryConfig.redaction === 'content',
       endpointHosts: [
         ...new Set(
           [telemetryConfig.endpoint, telemetryConfig.tracesEndpoint, telemetryConfig.metricsEndpoint].flatMap(

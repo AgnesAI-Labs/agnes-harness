@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { sqliteTables } from '../../daemon/test/sqlite-tables.js'
 import { NonceTable, startClaimsGc, TableClaims } from '../src/storage/claims-table.js'
+import { sqliteTables } from './sqlite-tables.js'
 
 describe('TableClaims', () => {
   afterEach(() => vi.useRealTimers())
