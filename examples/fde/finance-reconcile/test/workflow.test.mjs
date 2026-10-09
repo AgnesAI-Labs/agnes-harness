@@ -19,6 +19,7 @@ const replies = Array.from({ length: 8 }, () => [
 
 for (const verdict of ['allowed-once', 'rejected'])
   test(`scripted finance pilot records ${verdict} through the real Host policy and deferred queue`, async () => {
+    const requests = []
     const kit = await createAuthorTestkit({
       plugin: main,
       clientModule: {
@@ -33,7 +34,10 @@ for (const verdict of ['allowed-once', 'rejected'])
       presets: {
         finance: { name: 'finance', extends: 'standard', approval: { policy: 'fde.finance-reconcile' } },
       },
-      replies,
+      replies: replies.map((events) => (request) => {
+        requests.push(request)
+        return events
+      }),
       approval: async () => verdict,
     })
     try {
@@ -44,6 +48,8 @@ for (const verdict of ['allowed-once', 'rejected'])
       assert.equal(opening.surfaces.length, 1)
       const surface = opening.surfaces[0].surface
       assert.equal(surface.revision, 1)
+      assert.ok(requests.length > 0)
+      assert.ok(requests.every((request) => request.tools.length === 0))
       assert.deepEqual(
         surface.components.map((component) => component.kind),
         [descriptor.client.intelligentComponents[0].kind, 'table', 'chart', 'form', 'button-group', 'status'],

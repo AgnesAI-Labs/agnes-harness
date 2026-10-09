@@ -283,6 +283,8 @@ export interface ToolContext {
   readonly tools: {
     invoke(name: string, args: JsonValue, opts?: { signal?: AbortSignal }): Promise<ToolResult>
     list(): ToolDef[]
+    /** Include an available tool's schema in later model requests. Grants no execution permission. */
+    disclose?(name: string): Promise<void>
   }
   readonly codeRuntime?: {
     state: 'persistent' | 'stateless'

@@ -1,4 +1,5 @@
 import type { LoopTurnView } from '@agnes/extension-api'
+import { restoreToolDisclosure } from '../execution/turn/tool-disclosure.js'
 import { assembleRequestPrefix, discloseTools, resolveModel } from '../step/inference.js'
 import type { SessionImpl } from '../step/session.js'
 
@@ -15,6 +16,7 @@ export async function loopTurnView(s: SessionImpl): Promise<LoopTurnView | null>
   const op = s.op()
   if (!op) return null
   if (!s.turn) await s.rehydrateTurn(op)
+  await restoreToolDisclosure(s)
   const slot = 'primary'
   const target = resolveModel(s, slot)
   const record = s.d.provider

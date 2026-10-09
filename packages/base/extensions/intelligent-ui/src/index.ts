@@ -1,6 +1,7 @@
 import { defineExtension, defineTool } from '@agnes/extension-api'
 import { UiCloseParams, UiRenderParams, UiUpdateParams } from '@agnes/protocol/gen/intelligent-ui'
 import { Type } from '@sinclair/typebox'
+import { reachableParameters } from './parameters.js'
 import { createIntelligentUiService } from './service.js'
 import { uiProjection } from './state.js'
 
@@ -14,7 +15,7 @@ const meta = {
   isOpenWorld: false,
   replay: 'idempotent' as const,
   costHint: {},
-  deferLoading: false,
+  deferLoading: true,
   requiresApproval: 'never' as const,
 }
 export default defineExtension((agnes) => {
@@ -27,7 +28,7 @@ export default defineExtension((agnes) => {
         name: 'ui_render',
         description:
           'Render a bounded surface with presets or pinned plugin-declared components in the conversation and workbench. Every action must map to a declared tool. No HTML or executable code.',
-        parameters: UiRenderParams,
+        parameters: reachableParameters(UiRenderParams),
         meta,
         async execute(input, ctx) {
           const record = await runtime.session(ctx.session).render(input, ctx.signal)
@@ -54,7 +55,7 @@ export default defineExtension((agnes) => {
         name: 'ui_update',
         description:
           'Replace an open surface at expectedRevision with revision + 1 after the previous action finishes.',
-        parameters: UiUpdateParams,
+        parameters: reachableParameters(UiUpdateParams),
         meta,
         async execute(input, ctx) {
           const record = await runtime.session(ctx.session).update(input, ctx.signal)
@@ -80,7 +81,7 @@ export default defineExtension((agnes) => {
       defineTool({
         name: 'ui_close',
         description: 'Close an open surface after actions finish. Closed actions cannot execute.',
-        parameters: UiCloseParams,
+        parameters: reachableParameters(UiCloseParams),
         meta,
         async execute(input, ctx) {
           const record = await runtime.session(ctx.session).close(input, ctx.signal)

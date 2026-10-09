@@ -7,6 +7,7 @@ import { withTimeout } from '@agnes/core-effects/effects/wrap'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { BudgetState } from '@agnes/core-ledger/reduce/shapes'
 import type { InferenceEvent, JsonValue, ModelRecord, RequestBody as WireBody } from '@agnes/protocol'
+import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
 import { childReceiptNarrative } from '../../child/receipts.js'
 import {
   releaseTreeReservation,
@@ -401,7 +402,8 @@ export function resolveModel(s: SessionImpl, slot: string): { route: string; mod
 export function discloseTools(s: SessionImpl): string[] {
   const snap = s.turn?.snapshot
   if (!snap) return []
-  const eager = (): string[] => snap.defs.filter((d) => d.meta.deferLoading !== true).map((d) => d.name)
+  const eager = (): string[] =>
+    snap.defs.filter((d) => d.meta.deferLoading !== true || loadedToolNames(s).has(d.name)).map((d) => d.name)
   let names: string[]
   switch (s.preset.disclosure) {
     case 'code':
@@ -480,6 +482,7 @@ export async function prepareInferenceRequest(
   const op = s.op()
   const t = s.turn
   if (!op || !t) throw new CoreError('E_RELATION', 'Request preparation requires an accepted input')
+  await restoreToolDisclosure(s)
   const attempt = op.phase.kind === 'inference' ? op.phase.gen.attempt : 0
   const step = op.step + 1
   const slot = options.slot ?? 'primary'

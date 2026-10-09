@@ -110,6 +110,7 @@ import {
   UI_PROJECTION_DEFAULT_MAX_BYTES,
   validateActor,
 } from '@agnes/protocol'
+import { restoreToolDisclosure } from '../execution/turn/tool-disclosure.js'
 import { unbindChildFactory } from '../child/sessions.js'
 import { runDeferred } from '../execution/turn/deferred.js'
 // A type-only import, erased at compile time, so it is not a runtime cycle back to the kernel.
@@ -1709,6 +1710,7 @@ export class SessionImpl {
    */
   async rehydrateTurn(op: OpStateObj): Promise<void> {
     await this.restoreGrants()
+    await restoreToolDisclosure(this)
     const range = { fromSeq: op.meta.triggerSeq, toSeq: this.lastSeq, lane: this.lane }
     const [lastRow] = await this.d.log.scan({ ...range, type: 'request/header', order: 'desc', limit: 1 })
     const last = lastRow?.data as RequestHeaderData | undefined

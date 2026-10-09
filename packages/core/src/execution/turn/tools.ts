@@ -12,6 +12,7 @@ import { settlesWithin, withTimeout } from '@agnes/core-effects/effects/wrap'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { ToolResult } from '@agnes/extension-api'
 import type { Actor, ExecutionDomain, JsonValue, ResolvedToolCallPolicy } from '@agnes/protocol'
+import { discloseTool } from './tool-disclosure.js'
 import { dispatchLoopEvent } from '../../loop/events.js'
 import {
   hasAuthenticToolPolicyHash,
@@ -1165,6 +1166,7 @@ export async function approveAndExecute(
           ...(s.d.publicFetch ? { publicFetch: s.d.publicFetch } : {}),
           log: s.d.logger,
           invoke: invokeNested,
+          discloseTool: (name, signal) => discloseTool(s, name, signal),
           listTools: () =>
             t.snapshot.defs.filter((definition) => definition.name !== 'computer_use' || computerUseAllowed),
           appendPlan: (items) =>

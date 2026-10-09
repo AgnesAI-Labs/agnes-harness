@@ -474,6 +474,10 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       }
       const first = await prompt('Ask me')
       expect(first).toMatchObject({ reason: 'completed' })
+      expect(provider.calls[0]?.tools.map((tool) => tool.name)).toContain('ask_user_question')
+      expect(
+        provider.calls[0]?.tools.map((tool) => tool.name).filter((name) => name.startsWith('ui_')),
+      ).toEqual([])
       expect(provider.calls[0]?.system).toContain('LIVE_RULE_V1')
       expect(provider.calls[1]?.system).toContain('LIVE_RULE_V2')
       expect(JSON.stringify(provider.calls[0]?.messages)).toContain('Time zone:')
@@ -509,7 +513,9 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       })
       expect(provider.calls[2]?.system).toContain('LIVE_RULE_V2')
       expect(provider.calls[2]?.system).not.toContain('LIVE_RULE_V1')
-      expect((await service.read({ sessionId: session.key }, new AbortController().signal)).surfaces[0]?.status).toBe('open')
+      expect(
+        (await service.read({ sessionId: session.key }, new AbortController().signal)).surfaces[0]?.status,
+      ).toBe('open')
       expect(await submit('late', 'B')).toMatchObject({ status: 'received' })
       expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
         reason: 'completed',

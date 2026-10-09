@@ -4,6 +4,8 @@ English | [简体中文](default-tools.zh-CN.md)
 
 The standard preset advertises these tools from official `defineTool` plugins. Deployment capabilities and filesystem policy still apply. New local-dev and enterprise templates admit the projection capability needed by questions and deliverables; existing managed profiles must explicitly admit it.
 
+Intelligent UI tools (`ui_render`, `ui_update`, `ui_close`, `ui_submit`) are available on demand. Use `tool_search` to find a matching deferred tool, then `tool_describe` with its exact name to include its full schema in subsequent model requests. Discovery survives compaction and session reopen; the current session catalog, model capabilities, parameter validation and tool authorization still govern every call. `ask_user_question` stays immediately available and renders its form through the ordinary internal tool path. Business Loops may explicitly select tools through `prepareRequest({ tools: [...] })` or execute them through the controlled tool port; the finance pilot uses that execution port and sends prose requests with `tools: []`.
+
 | Tool | Input and behavior |
 | --- | --- |
 | `read` | Reads confined workspace text, session attachments and originals. Local single-frame PNG/JPEG becomes artifact-backed model image input for a vision-capable model. Input limits: 4 MiB and 16 million pixels. Aspect-preserving downsampling uses the active model/runtime byte, dimension and pixel limits; metadata is stripped. Web uses the existing tool image card. Non-vision models receive an honest text notice without inspecting pixels. Other formats require a suitable tool. |

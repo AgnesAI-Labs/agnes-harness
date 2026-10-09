@@ -126,6 +126,19 @@ for (const locale of ['en', 'zh-CN'])
       name: locale === 'en' ? 'Task content' : '任务内容',
       exact: true,
     })
+    for (const prompt of [
+      'call tool_search {"query":"ui_render"}',
+      'call tool_describe {"name":"ui_render"}',
+    ]) {
+      const turns = page.getByTestId('conversation-turn')
+      const before = await turns.count()
+      await composer.fill(prompt)
+      await composer.press('Enter')
+      await expect(turns).toHaveCount(before + 1, { timeout: 25_000 })
+      await expect(turns.last()).toHaveAttribute('data-status', 'completed', { timeout: 25_000 })
+      await turns.last().getByTestId('turn-process-toggle').click()
+      await expect(turns.last()).toContainText('ui_render')
+    }
     await composer.fill('call ui_render ' + JSON.stringify({ surface }))
     await composer.press('Enter')
     const card = page.getByTestId('intelligent-ui-inline')

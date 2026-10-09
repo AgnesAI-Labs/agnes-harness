@@ -417,4 +417,35 @@ describe('tool_search / tool_describe', () => {
       isError: true,
     })
   })
+
+  it('finds deferred plugin tools outside the MCP index and loads only the described available tool', async () => {
+    const ctx = fakeToolContext()
+    const template = toolSearchTool(populated())
+    const tool = {
+      ...template,
+      name: 'ui_render',
+      description: 'Render a review surface',
+      meta: { ...template.meta, deferLoading: true },
+    }
+    const disclosed: string[] = []
+    ctx.tools.list = () => [tool]
+    ctx.tools.disclose = async (name) => {
+      disclosed.push(name)
+    }
+    const index = new MemFts()
+    expect(await toolSearchTool(index).execute({ query: 'review' }, ctx)).toMatchObject({
+      content: [{ text: expect.stringContaining('ui_render — Render a review surface') }],
+    })
+    expect(disclosed).toEqual([])
+    expect(await toolDescribeTool(index).execute({ name: 'ui_render' }, ctx)).toMatchObject({
+      content: [{ text: expect.stringContaining('parameters:') }],
+    })
+    expect(disclosed).toEqual(['ui_render'])
+    ctx.tools.list = () => []
+    expect(await toolSearchTool(index).execute({ query: 'review' }, ctx)).toMatchObject({
+      content: [{ text: 'no matching tools' }],
+    })
+    expect(await toolDescribeTool(index).execute({ name: 'ui_render' }, ctx)).toMatchObject({ isError: true })
+    expect(disclosed).toEqual(['ui_render'])
+  })
 })
