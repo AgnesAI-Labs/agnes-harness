@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { AutoReviewSettingsStore } from '@agnes/base/approval-policy'
+import { createAutoReviewSettings } from '@agnes/daemon-admin/app-server'
 import {
   type PackageAdminAuthorityResolver,
   requireLocalAdminAuthority,
@@ -33,7 +33,7 @@ export function registerPromptTrace(
 ) {
   const settings = new SystemPromptSettingsStore(deps.dataDir, deps.profile)
   const traces = new RequestTraceStore(deps.dataDir, deps.profile)
-  const reviewer = new AutoReviewSettingsStore(deps.dataDir, deps.profile, deps.reviewEnabled)
+  const reviewer = createAutoReviewSettings(deps.dataDir, deps.profile, deps.reviewEnabled)
   endpoint.register('_agnes/v1/autoReview.get', async (_params, context) => {
     requireLocalAdminAuthority(context, deps.authority, false)
     return reviewer.read()

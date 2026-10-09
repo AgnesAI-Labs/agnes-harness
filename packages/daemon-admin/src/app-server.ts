@@ -1,6 +1,7 @@
 import { readdir, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { loadContextRules, readContextConfig, writeContextConfig } from '@agnes/base'
+import { AutoReviewSettingsStore } from '@agnes/base/approval-policy'
 import { applyPlanCommand } from '@agnes/base/plan-mode'
 import { createSearchAdmin } from '@agnes/base/search'
 import { HistoryIndexError, searchHistoryDirectory } from '@agnes/history-index'
@@ -12,7 +13,7 @@ import {
   type ResolvedProfile,
   resolveFileSecretsDirectory,
 } from '@agnes/host'
-import { rpcError } from '@agnes/protocol'
+import { type AutoReviewConfig, rpcError } from '@agnes/protocol'
 import type {
   AdminBundlesSave,
   AdminContextParams,
@@ -23,6 +24,15 @@ import type {
 } from '@agnes/protocol/gen/app-server'
 import { credentialRefFor } from '@agnes/resource-control-runtime'
 import { createWebhookService, type TriggerSessionInput } from './webhooks/service.js'
+
+/** Local settings owner exposes only read/save operations to authenticated RPC adapters. */
+export function createAutoReviewSettings(dataDir: string, profile: string, enabled = false) {
+  const store = new AutoReviewSettingsStore(dataDir, profile, enabled)
+  return {
+    read: () => store.read(),
+    save: (config: AutoReviewConfig) => store.save(config),
+  }
+}
 
 /** One daemon-owned closure for local settings; HTTP adapters never access credentials/files. */
 export function createAppServerAdmin(options: {
