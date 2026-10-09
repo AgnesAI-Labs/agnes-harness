@@ -79,6 +79,8 @@ Switch from Chat to Trajectory to review a session by turn and step. Select a re
 
 Fold turns or tool calls, search the records, or load earlier history as needed. Tool arguments and results in **Projected content** are previews; choose **Full input** or **Full output** to read the recorded detail on demand. **Timing** shows recorded time fields. Missing timing, usage, or history is labeled rather than estimated.
 
+On narrow screens, select timeline events from the record list. The chart remains an overview. Selected details use the full content area; Close details or Escape returns to the selected record. Switch back to Conversation to use the composer. Settings categories scroll horizontally, and composer chips wrap instead of shrinking their actions.
+
 <a id="日常管理"></a>
 
 ## Everyday management

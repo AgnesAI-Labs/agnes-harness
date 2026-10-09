@@ -40,7 +40,8 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
   const [ids, setIds] = useState<string[]>([]),
     [active, setActive] = useState('')
   const [error, setError] = useState(''),
-    [busy, setBusy] = useState(false)
+    [busy, setBusy] = useState(false),
+    [inputBlocked, setInputBlocked] = useState(false)
   const outputElement = useRef<HTMLTextAreaElement>(null)
   const pendingInput = useRef<PendingInput | undefined>(undefined)
   useEffect(() => {
@@ -67,6 +68,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
     restored.current = false
     const stored = sessionId ? attachments(sessionId) : []
     setBusy(false)
+    setInputBlocked(false)
     setIds(stored ?? [])
     setActive(stored?.[0] ?? '')
     setSnapshot({ jobs: [], completions: [] })
@@ -133,6 +135,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
     if (!session) return false
     const id = session.id
     setBusy(true)
+    if (input.operation !== 'send') setInputBlocked(true)
     try {
       const result = await session.jobsControl(input)
       if (scope.current !== id) return false
@@ -157,7 +160,10 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
         setError(appServerErrorMessage(cause, document.documentElement.lang) ?? t('workbench.error'))
       return false
     } finally {
-      if (scope.current === id) setBusy(false)
+      if (scope.current === id) {
+        setBusy(false)
+        if (input.operation !== 'send') setInputBlocked(false)
+      }
     }
   }
   const sendInput = (jobId: string, text: string) => {
@@ -346,6 +352,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
             data-testid="workbench-terminal-output"
             aria-label={t('workbench.terminal.output')}
             readOnly
+            disabled={inputBlocked}
             value={output}
             spellCheck={false}
             onKeyDown={(event) => {
