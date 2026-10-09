@@ -32,7 +32,8 @@ describe('PM4 management contracts', () => {
     // negatives proving config/credential fields are refused, plus standalone row fixtures for
     // the generated-schema parity table. The current set also includes generation status and
     // capability/source authoring boundaries.
-    expect(result.total).toBe(631)
+    // Five presentation rows preserve valid metadata and reject invalid display/authority fields.
+    expect(result.total).toBe(636)
     expect(result.skipped).toBe(0)
   })
   it('requires explicit classification, permission and command identity for every management method', () => {

@@ -179,6 +179,23 @@ const addFormats = nodeRequire('ajv-formats') as (ajv: InstanceType<typeof Ajv20
 
 const ajv = new AjvCtor({ strict: false, allowUnionTypes: true })
 addFormats(ajv)
+// Public metadata documentation links require credential-free HTTPS and no whitespace/control bytes.
+ajv.addFormat('agnes-plugin-docs-url', (value: string) => {
+  try {
+    const url = new URL(value)
+    return (
+      value.startsWith('https://') &&
+      [...value].every((char) => {
+        const code = char.charCodeAt(0)
+        return code > 32 && (code < 127 || code > 159)
+      }) &&
+      url.username === '' &&
+      url.password === ''
+    )
+  } catch {
+    return false
+  }
+})
 const SESSION_TOOLS_ID = 'https://agnes.dev/session-tools'
 const RUNTIME_ADMIN_ID = 'https://agnes.dev/runtime-admin'
 const SCHEDULES_ID = 'https://agnes.dev/schedules'
@@ -5460,6 +5477,88 @@ const PROFILE_SAMPLES: Record<string, Sample> = {
   JsonValue: SESSION_SAMPLES.JsonValue as Sample,
 }
 const EXTENSION_SAMPLES: Record<string, Sample> = {
+  UiComponentDeclaration: {
+    valid: {
+      kind: 'finance/diff@1',
+      propsSchema: true,
+      maxPropsBytes: 1024,
+      fallback: 'Preset table',
+      accessibility: { label: 'Differences', keyboard: true },
+    },
+    invalid: [
+      {
+        kind: 'finance/diff@1',
+        propsSchema: true,
+        maxPropsBytes: 0,
+        fallback: 'Preset table',
+        accessibility: { label: 'Differences', keyboard: true },
+      },
+      {
+        kind: 'finance/diff@1',
+        propsSchema: true,
+        maxPropsBytes: 16385,
+        fallback: 'Preset table',
+        accessibility: { label: 'Differences', keyboard: true },
+      },
+      {
+        kind: 'finance/diff@1',
+        propsSchema: true,
+        maxPropsBytes: 1024,
+        fallback: 'Preset table',
+        accessibility: { label: 'Differences', keyboard: false },
+      },
+    ],
+    note: 'Reviewed custom UI declarations bound props bytes and require keyboard accessibility',
+  },
+  PluginCategory: { valid: 'tools', invalid: ['unknown', '', 1], note: 'Public plugin category vocabulary' },
+  PluginMetadata: {
+    valid: {
+      displayName: 'Reports',
+      summary: 'Find reports.',
+      description: 'Search project reports.',
+      category: 'tools',
+      docsUrl: 'https://example.org/docs',
+    },
+    invalid: [
+      {
+        displayName: '',
+        summary: 'Find reports.',
+        description: 'Search project reports.',
+        category: 'tools',
+      },
+      {
+        displayName: 'Reports',
+        summary: 'Find reports.',
+        description: 'Search project reports.',
+        category: 'unknown',
+      },
+      {
+        displayName: 'Reports',
+        summary: 'Find reports.',
+        description: 'Search project reports.',
+        category: 'tools',
+        docsUrl: 'http://example.org/docs',
+      },
+      {
+        displayName: 'Reports',
+        summary: 'Find reports.',
+        description: 'Search project reports.',
+        category: 'tools',
+        docsUrl: 'https://user:password@example.org/docs',
+      },
+    ],
+    note: 'Author metadata remains bounded display data with credential-free documentation links',
+  },
+  PluginMetadataLocale: {
+    valid: { summary: 'Find reports.', docsUrl: 'https://example.org/docs' },
+    invalid: [
+      { summary: '' },
+      { summary: ' trailing ' },
+      { docsUrl: 'http://example.org/docs' },
+      { category: 'tools' },
+    ],
+    note: 'Locale overrides allow only public presentation fields',
+  },
   Capabilities: helperSample('Capabilities', [
     { events: ['x'] },
     { tools: { prefix: 'BAD' } },
@@ -5577,6 +5676,10 @@ const LockfileDefs: Record<string, TSchema> = {
   Capability: LockfileGen.Capability,
 }
 const ExtensionManifestDefs: Record<string, TSchema> = {
+  UiComponentDeclaration: ExtensionManifestGen.UiComponentDeclaration,
+  PluginCategory: ExtensionManifestGen.PluginCategory,
+  PluginMetadata: ExtensionManifestGen.PluginMetadata,
+  PluginMetadataLocale: ExtensionManifestGen.PluginMetadataLocale,
   Capabilities: ExtensionManifestGen.Capabilities,
   ClientContribution: ExtensionManifestGen.ClientContribution,
   SkinContribution: ExtensionManifestGen.SkinContribution,
@@ -6686,6 +6789,7 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     WorkspaceId: ResourceControlGen.WorkspaceId,
   },
   'https://agnes.ai/schema/package-admin.json': {
+    PackagePresentation: PackageAdminGen.PackagePresentation,
     PluginConfigAudit: PackageAdminGen.PluginConfigAudit,
     PluginConfigEntry: PackageAdminGen.PluginConfigEntry,
     PluginConfigGetParams: PackageAdminGen.PluginConfigGetParams,

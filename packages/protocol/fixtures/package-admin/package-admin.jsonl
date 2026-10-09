@@ -629,3 +629,8 @@
 {"id":"config-method-save-params","target":"method","name":"_agnes/v1/plugins.config.save","side":"params","kind":"valid","payload":{"profile":"local-dev","id":"@author/plugin","rowId":"ext:author/main","value":{},"expectedRevision":"revision","clientId":"client","commandId":"command"}}
 {"id":"config-method-save-result","target":"method","name":"_agnes/v1/plugins.config.save","side":"result","kind":"valid","payload":{"ok":true,"revision":"revision","reason":"saved","issues":[],"reload":"live"}}
 {"id":"config-method-save-actor","target":"method","name":"_agnes/v1/plugins.config.save","side":"params","kind":"invalid","payload":{"profile":"local-dev","id":"@author/plugin","rowId":"ext:author/main","value":{},"expectedRevision":"revision","clientId":"client","commandId":"command","actor":"forged"}}
+{"id":"presentation-valid","target":"config","name":"PackagePresentation","kind":"valid","payload":{"origin":"example","rows":[{"id":"ext:author/main","settings":true,"metadata":{"displayName":"Reports","summary":"Find reports.","description":"Search project reports.","category":"tools"}}]}}
+{"id":"presentation-origin","target":"config","name":"PackagePresentation","kind":"invalid","payload":{"origin":"system","rows":[]}}
+{"id":"presentation-id","target":"config","name":"PackagePresentation","kind":"invalid","payload":{"rows":[{"id":"","settings":true}]}}
+{"id":"presentation-settings","target":"config","name":"PackagePresentation","kind":"invalid","payload":{"rows":[{"id":"ext:author/main","settings":"true"}]}}
+{"id":"presentation-extra","target":"config","name":"PackagePresentation","kind":"invalid","payload":{"rows":[],"capabilities":{"admin":true}}}

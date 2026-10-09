@@ -645,6 +645,7 @@ export type PackageAdminDataName =
   | 'PackageProvenance'
   | 'PluginCapabilities'
   | 'PackagePreview'
+  | 'PackagePresentation'
   | 'PackageTrustDecision'
   | 'PackageActivationTrust'
   | 'PackageActivationRequest'
@@ -727,6 +728,7 @@ const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
   PackageProvenance: P.PackageProvenance,
   PluginCapabilities: P.PluginCapabilities,
   PackagePreview: P.PackagePreview,
+  PackagePresentation: P.PackagePresentation,
   PackageTrustDecision: P.PackageTrustDecision,
   PackageActivationTrust: P.PackageActivationTrust,
   PackageActivationRequest: P.PackageActivationRequest,

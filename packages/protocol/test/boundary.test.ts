@@ -63,6 +63,8 @@ describe('protocol src boundary', () => {
         'ToolReviewFact',
         'compilePluginConfig',
         'redactPluginConfig',
+        'resolvePluginMetadata',
+        'validatePluginMetadata',
         'PLUGIN_SECRET_REF_PATTERN',
         'validateReferenceSelections',
         'ADMIN_METHODS',

@@ -1,5 +1,12 @@
 const placement = { inline: true, workbench: true }
 const component = { id: 'form', kind: 'form', dataKey: 'input', schema: { type: 'object' } }
+const custom = {
+  id: 'custom',
+  kind: 'finance/diff@1',
+  dataKey: 'rows',
+  fallback: 'Review the preset table.',
+  actionIds: ['submit'],
+}
 const surface = {
   id: 'surface',
   revision: 1,
@@ -53,6 +60,14 @@ export const intelligentUiSamples = {
   UiComponent: sample(component, [
     { ...component, kind: 'html' },
     { ...component, schema: null },
+  ]),
+  UiCustomComponent: sample(custom, [
+    { ...custom, kind: 'html' },
+    { ...custom, kind: 'finance/diff@0' },
+    { ...custom, fallback: '' },
+    { ...custom, fallback: 'x'.repeat(4097) },
+    { ...custom, actionIds: ['submit', 'submit'] },
+    { ...custom, html: '<script>untrusted</script>' },
   ]),
   UiArgument: sample({ from: 'input', key: 'name', pointer: '/name' }, [
     { from: 'secret', key: 'name' },
