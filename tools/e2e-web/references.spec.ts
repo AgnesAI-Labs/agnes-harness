@@ -1,3 +1,4 @@
+import { readSessionEvents } from './ledger.js'
 import { createHash } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -48,10 +49,15 @@ test('selects file and session references, records send-time versions and links 
   const targetId = new URL(page.url()).searchParams.get('session')!
   const client = await runtime.connect()
   const session = await client.session.load(targetId, { cwd: runtime.workspace })
-  const [message] = await session.scan({ type: 'user/message', order: 'desc', limit: 1 })
+  const messages = (await readSessionEvents(session))
+    .filter((row) => row.type === 'user/message')
+    .slice(0, 100)
+  const message = messages.at(-1)
   expect(message).toMatchObject({ origin: 'system', trust: 'untrusted' })
-  const messages = await session.scan({ type: 'user/message', limit: 100 })
-  expect(messages.find((row) => row.origin === 'principal')).toMatchObject({ trust: 'trusted', data: { content: [{ type: 'text', text: 'Compare these references.' }] } })
+  expect(messages.find((row) => row.origin === 'principal')).toMatchObject({
+    trust: 'trusted',
+    data: { content: [{ type: 'text', text: 'Compare these references.' }] },
+  })
   const serialized = JSON.stringify(message)
   expect(serialized).toContain(createHash('sha256').update('new send-time file contents').digest('hex'))
   expect(serialized).toContain('new send-time file contents')

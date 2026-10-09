@@ -1,3 +1,4 @@
+import { readSessionEvents } from './ledger.js'
 import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
@@ -119,7 +120,7 @@ for (const locale of ['en', 'zh-CN'])
     if (!id) throw new Error('Missing session identity')
     const client = await runtime.connect()
     const session = await client.session.load(id, { cwd: runtime.workspace })
-    const rows = await session.scan({ type: 'user/message', limit: 10 })
+    const rows = (await readSessionEvents(session)).filter((row) => row.type === 'user/message').slice(0, 10)
     const saved = JSON.stringify(rows)
     expect(saved.length).toBeLessThan(4096)
     expect(saved).toContain('agnes-upload://')
@@ -216,7 +217,9 @@ test('uploads 512 MiB with measured bounded browser and server memory', async ({
   await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed', {
     timeout: 40_000,
   })
-  const messages = await session.scan({ type: 'user/message', limit: 10 })
+  const messages = (await readSessionEvents(session))
+    .filter((row) => row.type === 'user/message')
+    .slice(0, 10)
   const ref = (messages.at(-1)?.data as { content?: { type: string; uri?: string }[] })?.content?.find(
     (block) => block.uri,
   )?.uri

@@ -1,5 +1,5 @@
-import type { IncomingMessage, ServerResponse } from 'node:http'
-import { Readable } from 'node:stream'
+import { IncomingMessage, type ServerResponse } from 'node:http'
+import { Socket } from 'node:net'
 import type { WebhookRequest, WebhookResult, WebhookSnapshot } from '@agnes/protocol/gen/app-server'
 import { describe, expect, it } from 'vitest'
 import { webhookRoute } from '../src/webhook-route.js'
@@ -29,12 +29,17 @@ function setup(enabled = true) {
     options: { path?: string; method?: string; body?: Buffer; headers?: Record<string, string[]> } = {},
   ) {
     const headers = { 'content-type': ['application/json'], ...options.headers }
-    const request = Object.assign(Readable.from([options.body ?? Buffer.from('{}')]), {
-      url: options.path ?? '/hooks/business',
-      method: options.method ?? 'POST',
-      headers: Object.fromEntries(Object.entries(headers).map(([key, values]) => [key, values.join(', ')])),
-      headersDistinct: headers,
-    }) as IncomingMessage
+    const request = new IncomingMessage(new Socket())
+    request.url = options.path ?? '/hooks/business'
+    request.method = options.method ?? 'POST'
+    request.headers = Object.fromEntries(
+      Object.entries(headers).map(([key, values]) => [key, values.join(', ')]),
+    )
+    request.rawHeaders = Object.entries(headers).flatMap(([key, values]) =>
+      values.flatMap((value) => [key, value]),
+    )
+    request.push(options.body ?? Buffer.from('{}'))
+    request.push(null)
     let status = 0
     let body = ''
     const response = {
@@ -72,11 +77,11 @@ describe('webhook HTTP boundary', () => {
     ).toBe(202)
     const delivered = f.inputs.find((input) => input.action === 'deliver')
     expect(Buffer.from(delivered?.body ?? '', 'base64')).toEqual(bytes)
-    expect(delivered?.headers?.['x-hub-signature-256']).toBe('sha256=synthetic')
+    expect(delivered?.headers).toMatchObject({ 'x-hub-signature-256': 'sha256=synthetic' })
     expect((await f.send({ body: Buffer.alloc(17) })).status).toBe(413)
     expect(f.inputs.at(-1)).toEqual({ action: 'deliver', tooLarge: true })
     await f.send({ headers: { authorization: ['Bearer one', 'Bearer two'] } })
-    expect(f.inputs.at(-1)?.headers?.['content-type']).toBe('')
+    expect(f.inputs.at(-1)?.headers).toMatchObject({ 'content-type': '' })
   })
   it('requires same-origin administration and blocks raw delivery actions at the UI endpoint', async () => {
     const f = setup()

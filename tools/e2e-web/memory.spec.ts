@@ -49,8 +49,10 @@ for (const locale of ['en', 'zh-CN'])
           })),
         )
       expect(positions).toHaveLength(2)
-      expect(positions[1].x).toBeGreaterThan(positions[0].x)
-      expect(positions[1].y).toBe(positions[0].y)
+      const [first, second] = positions
+      if (!first || !second) throw new Error('Expected two memory toolbar buttons')
+      expect(second.x).toBeGreaterThan(first.x)
+      expect(second.y).toBe(first.y)
       await translated(page)
       await accessible(page, info, 'memory-settings')
       await screen(page, info, `memory-${locale}-${theme}`, [
