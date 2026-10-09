@@ -48,8 +48,8 @@ separate from this gate.
 ## Gate and failure evidence
 
 The required GitHub status is **Web E2E gate** from `.github/workflows/e2e-web.yml`. It aggregates
-every macOS 14 and Linux Web shard, all six Linux fast-test shards and the separate Linux
-contracts job and three migrated-heavy shards; a failed or cancelled dependency fails the aggregate.
+all eight macOS 14 and eight Linux Web shards, all six Linux fast-test shards and the separate Linux
+contracts job (including `pnpm test:story`) and three migrated-heavy shards; a failed or cancelled dependency fails the aggregate. Web shards retain one worker and the existing deadlines; splitting the long settings/candidate flows gives each runner room for build and quality prechecks. Uploads retain completed reports, screenshots and trace archives, excluding volatile Playwright scratch directories.
 Maintainers must select that status in the target branch's required checks/ruleset; committing a
 workflow alone does not change GitHub branch protection. The workflow runs on pull requests,
 merge groups, integration/main pushes and manual dispatch, without path-based skips.
