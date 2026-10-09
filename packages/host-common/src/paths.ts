@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, parse, sep } from 'node:path'
-import { AGH_DIR } from '@agnes/protocol'
+import { AGH_DIR, WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import { HostError } from './errors.js'
 
 /**
@@ -119,4 +119,27 @@ export function ownStateRoots(paths: {
   for (const home of homes) roots.push(fileSecretsDir(home), join(home, 'auth'), join(home, 'profiles'))
   if (paths.secretsDir !== undefined) roots.push(paths.secretsDir)
   return [...new Set(roots)]
+}
+
+/** Host-owned private state, shared by command/PTY and confined MCP policy compilers.
+ * Callers supply the actual installation home; canonicalization and alias masks belong to their fence.
+ */
+export function privateStateRoots(paths: {
+  home: string
+  dataDir: string
+  workspace?: string
+  profileDir?: string
+  secretsDir?: string
+}): string[] {
+  const workspace = paths.workspace
+  return [
+    ...new Set([
+      ...['secrets', 'auth', 'profiles', 'daemon', 'memory'].map((leaf) => join(paths.home, leaf)),
+      join(paths.dataDir, 'secrets'),
+      join(paths.dataDir, 'daemon'),
+      ...(workspace ? WORKSPACE_SECRET_DIRS.map((leaf) => join(workspace, leaf)) : []),
+      ...(paths.profileDir ? [paths.profileDir] : []),
+      ...(paths.secretsDir ? [paths.secretsDir] : []),
+    ]),
+  ]
 }

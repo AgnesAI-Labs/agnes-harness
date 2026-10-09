@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, readFileSync, rmdirSync, rmSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import {
   type AuthoringCandidate,
@@ -51,13 +51,14 @@ export class AuthoringCandidates {
   private save(profileDir: string, record: Record) {
     saveAuthoringRecord(this.path(profileDir, record.value.candidateId), record)
   }
-  private load(profileDir: string, id: string, owner: string, readOnly = false): Record {
+  private load(profileDir: string, id: string, owner?: string, readOnly = false): Record {
     const file = this.path(profileDir, id)
     if (!existsSync(file) || lstatSync(file).isSymbolicLink() || lstatSync(file).size > 8388608)
       authoringError('Candidate is unavailable')
     const record = JSON.parse(readFileSync(file, 'utf8')) as Record
     if (
-      record.owner !== owner ||
+      typeof record.owner !== 'string' ||
+      (owner !== undefined && record.owner !== owner) ||
       record.value.candidateId !== id ||
       !validatePackageAdminData('AuthoringCandidate', record.value).ok
     )
@@ -76,7 +77,8 @@ export class AuthoringCandidates {
         authoringDirectory(cursor)
       }
     }
-    if (record.value.state === 'publishing' && !this.publications.has(id)) {
+    // Quota scans do not recover another owner's publication.
+    if (owner !== undefined && record.value.state === 'publishing' && !this.publications.has(id)) {
       record.value.state = 'interrupted'
       record.value.message = 'Publication interrupted; inspect actual package state before retrying'
       if (!readOnly) this.save(profileDir, record)
@@ -97,17 +99,30 @@ export class AuthoringCandidates {
       if (this.tails.get(key) === task) this.tails.delete(key)
     }
   }
-  list(profileDir: string, owner: string): AuthoringCandidateSummary[] {
+  private records(profileDir: string, owner?: string): Record[] {
     const root = this.root(profileDir)
     if (!existsSync(root)) return []
     authoringDirectory(root)
     return readdirSync(root)
       .filter((id) => /^candidate-[a-f0-9]{32}$/.test(id))
-      .slice(0, 128)
       .flatMap((id) => {
-        const record = this.load(profileDir, id, owner)
-        const { candidateId, packageId, candidateHash, state } = this.project(record, profileDir)
-        return [{ candidateId, packageId, candidateHash, state }]
+        try {
+          return [this.load(profileDir, id, owner)]
+        } catch {
+          return []
+        }
+      })
+  }
+  list(profileDir: string, owner: string): AuthoringCandidateSummary[] {
+    return this.records(profileDir, owner)
+      .slice(0, 128)
+      .flatMap((record) => {
+        try {
+          const { candidateId, packageId, candidateHash, state } = this.project(record, profileDir)
+          return [{ candidateId, packageId, candidateHash, state }]
+        } catch {
+          return []
+        }
       })
   }
   private project(record: Record, profileDir: string): AuthoringCandidate {
@@ -167,41 +182,52 @@ export class AuthoringCandidates {
       if (old.createHash !== createHash) authoringError('Candidate command id conflicts')
       return this.project(old, profileDir)
     }
-    if (
-      existsSync(this.root(profileDir)) &&
-      readdirSync(this.root(profileDir)).filter((x) => x.startsWith('candidate-')).length >= 128
-    )
-      authoringError('Candidate limit reached')
+    if (this.records(profileDir).length >= 128) authoringError('Candidate limit reached')
     const tree = join(this.root(profileDir), id, 'trees', randomUUID())
-    writeAuthoringFiles(tree, checked)
-    const source = { type: 'file' as const, ref: 'file:' + tree },
-      preview = await this.manager.inspect(profileDir, source)
-    const installed = (await this.manager.inventory(profileDir)).packages.find((p) => p.id === preview.id)
-    const candidateHash = hashDirectory(tree, { exclude: [] })
-    if (preview.integrity !== candidateHash) authoringError('Candidate source changed during inspection')
-    const record: Record = {
-      owner,
-      createHash,
-      tree,
-      value: {
-        candidateId: id,
-        packageId: preview.id,
-        candidateHash,
-        baseHash: installed?.entry.integrity ?? null,
-        reviewHash: null,
-        state: 'draft',
-        sourceFiles: checked,
-        files: checked.map((f) => ({ path: f.path, before: null, after: f.content })),
-        preview: null,
-        tests: null,
-        origin,
-        installer: 'agent',
-        reviewer: null,
-        message: '',
-      },
+    let published = false
+    try {
+      writeAuthoringFiles(tree, checked)
+      const source = { type: 'file' as const, ref: 'file:' + tree },
+        preview = await this.manager.inspect(profileDir, source)
+      const installed = (await this.manager.inventory(profileDir)).packages.find((p) => p.id === preview.id)
+      const candidateHash = hashDirectory(tree, { exclude: [] })
+      if (preview.integrity !== candidateHash) authoringError('Candidate source changed during inspection')
+      const record: Record = {
+        owner,
+        createHash,
+        tree,
+        value: {
+          candidateId: id,
+          packageId: preview.id,
+          candidateHash,
+          baseHash: installed?.entry.integrity ?? null,
+          reviewHash: null,
+          state: 'draft',
+          sourceFiles: checked,
+          files: checked.map((f) => ({ path: f.path, before: null, after: f.content })),
+          preview: null,
+          tests: null,
+          origin,
+          installer: 'agent',
+          reviewer: null,
+          message: '',
+        },
+      }
+      this.save(profileDir, record)
+      published = true
+      return this.project(record, profileDir)
+    } finally {
+      if (!published) {
+        rmSync(tree, { recursive: true, force: true })
+        // Only remove empty ancestors; a concurrent successful candidate is never removed.
+        for (const directory of [dirname(tree), dirname(dirname(tree))])
+          try {
+            rmdirSync(directory)
+          } catch {
+            /* another tree/record may exist */
+          }
+      }
     }
-    this.save(profileDir, record)
-    return this.project(record, profileDir)
   }
   async write(
     profileDir: string,

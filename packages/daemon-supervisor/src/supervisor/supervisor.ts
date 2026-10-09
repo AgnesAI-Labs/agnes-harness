@@ -9,6 +9,7 @@ import {
   initializeDefaultHelpers,
 } from '@agnes/daemon-admin/packages/default-helpers'
 import {
+  configurationReadOnly,
   createClientModuleRegistry,
   createPackageAdminService,
   createPackageReferences,
@@ -2073,6 +2074,18 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           : {}),
       })
       registerPromptTrace(ep, {
+        authority:
+          transport === 'unix'
+            ? (effectivePackageAdmin?.unixAuthority ?? localPackageAdminAuthority())
+            : denyPackageAdminAuthority,
+        readOnly: (context) =>
+          configurationReadOnly(async () =>
+            effectivePackageAdmin?.service.call(
+              '_agnes/v1/packages.list',
+              { profile: o.profile.name },
+              localPackageAdminAuthority(['packages.read'])(context),
+            ),
+          ),
         dataDir: o.config.dataDir,
         profile: o.profile.name,
         registry: cx.registry,

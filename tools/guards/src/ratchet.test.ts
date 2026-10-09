@@ -271,20 +271,20 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-foundation/src': 2340,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
   'packages/daemon-rpc/src/local/auth': 341,
-  'packages/daemon-rpc/src': 7521,
+  'packages/daemon-rpc/src': 7519,
   'packages/daemon-supervisor/src/supervisor/startup': 18,
   'packages/daemon-supervisor/src/supervisor/discovery': 446,
   'packages/daemon-supervisor/src/supervisor/scope': 254,
   'packages/daemon-supervisor/src/supervisor/configuration': 45,
   'packages/daemon-supervisor/src/supervisor/service-worker': 103,
-  'packages/daemon-supervisor/src': 10414,
+  'packages/daemon-supervisor/src': 10427,
   'packages/daemon-admin/src/packages/project': 43,
-  'packages/daemon-admin/src/packages/permissions': 74,
+  'packages/daemon-admin/src/packages/permissions': 97,
   'packages/daemon-admin/src/packages/operations': 416,
-  'packages/daemon-admin/src/packages/index': 47,
+  'packages/daemon-admin/src/packages/index': 49,
   'packages/daemon-admin/src/packages/handler': 1858,
-  'packages/daemon-admin/src/packages/admin-surface': 827,
-  'packages/daemon-admin/src': 5526,
+  'packages/daemon-admin/src/packages/admin-surface': 823,
+  'packages/daemon-admin/src': 5547,
   'packages/daemon-surfaces/src/surfaces': 1961,
   'packages/daemon-surfaces/src': 1962,
   'packages/daemon-foundation/src/jobs': 653,
@@ -292,8 +292,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-runtime/src/approval-expiry': 105,
   'packages/host-runtime/src/adapters': 465,
   'packages/host-runtime/src/profile': 1655,
-  'packages/host-runtime/src': 9461,
-  'packages/host-runtime/src/assemble': 3341,
+  'packages/host-runtime/src': 9466,
+  'packages/host-runtime/src/assemble': 3346,
   'packages/host-providers/src/adapters': 477,
   'packages/host-providers/src/profile': 165,
   'packages/host-providers/src': 4639,
@@ -323,10 +323,10 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-infrastructure/src/configuration': 1443,
   'packages/host-infrastructure/src/adapters/storage-sqlite': 658,
   'packages/host-infrastructure/src/adapters': 6386,
-  'packages/host-infrastructure/src': 10414,
+  'packages/host-infrastructure/src': 10452,
   'packages/host-common/src/configuration-lock': 39,
   'packages/host-common/src/profile': 1840,
-  'packages/host-common/src': 3738,
+  'packages/host-common/src': 3757,
   'packages/host-common/src/assemble': 439,
   'packages/core-artifacts/src': 744,
   'packages/core-effects/src': 2621,
@@ -514,7 +514,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 7131 -> 7200; exact measured cap, no exclusions or spare allocation.
   // Acceptance review: Include all runnable FDE examples and loop bundle manifests in the local example catalog.
   // countLines: 7200 -> 7217; exact cap, no exclusions or spare allocation.
-  'packages/package-manager/src': 8263,
+  'packages/package-manager/src': 8286,
   'packages/package-manager/src/catalog': 211,
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
@@ -1213,7 +1213,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 29399 -> 30048; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Await async loop construction, propagate session cancellation and drain initialization before storage closes.
   // countLines: 30048 -> 30103 (+55); exact measured cap, no exclusions or spare allocation.
-  'packages/core/src': 20402,
+  'packages/core/src': 20466,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1680,7 +1680,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2327 -> 2438; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Expose cooperative construction signals, adapter credential ports and shared default compaction/policy helpers.
   // countLines: 2438 -> 2505 (+67); exact measured cap, no exclusions or spare allocation.
-  'packages/extension-api/src': 2732, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  'packages/extension-api/src': 2748, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.

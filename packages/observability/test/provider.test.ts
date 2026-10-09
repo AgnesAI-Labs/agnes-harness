@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { memoryPrivateEvent } from '@agnes/extension-api'
 import { type EventEnvelope, normalizeRpcError, rpcError } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { observabilityConfig } from '../src/config.js'
@@ -47,90 +48,105 @@ it('requires explicit opt-in and refuses invalid enabled settings without leakin
   }
 })
 
-it('exports safe attributes, error metrics and lifecycle spans; content requires explicit opt-in', async () => {
-  const collector = await memoryCollector()
-  const provider = createObservability({ enabled: true, endpoint: collector.endpoint, includeContent: true })
-  const release = provider.bindSession('synthetic-session')
-  let seq = 0
-  const event = (type: EventEnvelope['type'], data: EventEnvelope['data']): void =>
-    provider.observe('synthetic-session', {
-      id: String(seq + 1),
-      actor: { id: 'synthetic', org: 'synthetic', role: 'owner', deptPath: [], attrs: {} },
-      origin: 'system',
-      trust: 'trusted',
-      seq: ++seq,
-      ts: new Date().toISOString(),
-      type,
-      data,
-    } as EventEnvelope)
-  try {
-    event('turn/start', { turn: 1 })
-    event('user/message', { content: { text: 'explicitly shared', authorization: 'synthetic-credential' } })
-    event('request/header', { model: 'synthetic-model' })
-    event('assistant/message', { content: 'explicitly shared response' })
-    event('tool/call', { name: 'synthetic-tool', toolUseId: 'call' })
-    event('tool/result', { toolUseId: 'call', isError: true, content: { apiKey: 'synthetic-key' } })
-    event('cost/ledger', { tokens: { input: 3, output: 2 } })
-    event('cost/ledger', { tokens: { input: 4, output: 1 } })
-    event('turn/end', { reason: 'error' })
-    provider.lifecycle('daemon', 'start')
-    provider.lifecycle('worker', 'start', undefined, 'worker')
-    provider.lifecycle('worker', 'restart', undefined, 'worker')
-    provider.queueDepth(2)
-    release()
-    await provider.dispose()
-    const payload = JSON.stringify(collector.requests)
-    expect(payload).toContain('explicitly shared')
-    for (const secret of [
-      'synthetic-credential',
-      'synthetic-key',
-      'synthetic-session',
-      'synthetic-tool',
-      'synthetic-model',
-    ])
-      expect(payload).not.toContain(secret)
-    const spans = collector.requests
-      .filter((r) => r.path === '/v1/traces')
-      .flatMap((r) =>
-        (
-          r.body.resourceSpans as Array<{
-            scopeSpans: Array<{ spans: Array<{ name: string; status: { code: number } }> }>
-          }>
-        ).flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans)),
+it.each([false, true])(
+  'exports accurate safe facts and lifecycle spans (memory privacy=%s)',
+  async (memoryPrivate) => {
+    const collector = await memoryCollector()
+    const provider = createObservability({
+      enabled: true,
+      endpoint: collector.endpoint,
+      includeContent: true,
+    })
+    const release = provider.bindSession('synthetic-session')
+    let seq = 0
+    const event = (type: EventEnvelope['type'], data: EventEnvelope['data']): void =>
+      provider.observe(
+        'synthetic-session',
+        (memoryPrivate ? memoryPrivateEvent : (event: EventEnvelope) => event)({
+          id: String(seq + 1),
+          actor: { id: 'synthetic', org: 'synthetic', role: 'owner', deptPath: [], attrs: {} },
+          origin: 'system',
+          trust: 'trusted',
+          seq: ++seq,
+          ts: new Date().toISOString(),
+          type,
+          data,
+        } as EventEnvelope),
       )
-    expect(spans.find((row) => row.name === 'tool')?.status.code).toBe(2)
-    expect(spans.map((row) => row.name)).toEqual(
-      expect.arrayContaining(['daemon', 'worker', 'worker.restart']),
-    )
-    const metrics = collector.requests
-      .filter((r) => r.path === '/v1/metrics')
-      .flatMap((r) =>
-        (
-          r.body.resourceMetrics as Array<{
-            scopeMetrics: Array<{
-              metrics: Array<{ name: string; sum?: { dataPoints: Array<{ asDouble: number }> } }>
+    try {
+      event('turn/start', { turn: 1 })
+      event('user/message', { content: { text: 'explicitly shared', authorization: 'synthetic-credential' } })
+      event('request/header', { model: 'synthetic-model' })
+      event('assistant/message', { content: 'explicitly shared response' })
+      event('tool/call', { name: 'synthetic-tool', toolUseId: 'call' })
+      event('tool/result', { toolUseId: 'call', isError: true, content: { apiKey: 'synthetic-key' } })
+      event('cost/ledger', { tokens: { input: 3, output: 2 } })
+      event('cost/ledger', { tokens: { input: 4, output: 1 } })
+      event('turn/end', { reason: 'error' })
+      event('turn/start', { turn: 2 })
+      event('turn/end', { reason: 'aborted' })
+      provider.lifecycle('daemon', 'start')
+      provider.lifecycle('worker', 'start', undefined, 'worker')
+      provider.lifecycle('worker', 'restart', undefined, 'worker')
+      provider.queueDepth(2)
+      release()
+      await provider.dispose()
+      const payload = JSON.stringify(collector.requests)
+      if (memoryPrivate) expect(payload).not.toContain('explicitly shared')
+      else expect(payload).toContain('explicitly shared')
+      for (const secret of [
+        'synthetic-credential',
+        'synthetic-key',
+        'synthetic-session',
+        'synthetic-tool',
+        'synthetic-model',
+      ])
+        expect(payload).not.toContain(secret)
+      const spans = collector.requests
+        .filter((r) => r.path === '/v1/traces')
+        .flatMap((r) =>
+          (
+            r.body.resourceSpans as Array<{
+              scopeSpans: Array<{ spans: Array<{ name: string; status: { code: number } }> }>
             }>
-          }>
-        ).flatMap((resource) => resource.scopeMetrics.flatMap((scope) => scope.metrics)),
+          ).flatMap((resource) => resource.scopeSpans.flatMap((scope) => scope.spans)),
+        )
+      expect(spans.find((row) => row.name === 'tool')?.status.code).toBe(2)
+      expect(spans.filter((row) => row.name === 'turn').map((row) => row.status.code)).toEqual([2, 2])
+      expect(spans.map((row) => row.name)).toEqual(
+        expect.arrayContaining(['daemon', 'worker', 'worker.restart']),
       )
-    expect(metrics.map((row) => row.name)).toEqual(
-      expect.arrayContaining([
-        'agh.turn.duration',
-        'agh.tool.duration',
-        'agh.tool.calls',
-        'agh.tool.errors',
-        'agh.tokens.input',
-        'agh.tokens.output',
-        'agh.worker.restarts',
-        'agh.queue.depth',
-      ]),
-    )
-    expect(metrics.find((row) => row.name === 'agh.tokens.input')?.sum?.dataPoints[0]?.asDouble).toBe(7)
-  } finally {
-    await provider.dispose()
-    await collector.close()
-  }
-})
+      const metrics = collector.requests
+        .filter((r) => r.path === '/v1/metrics')
+        .flatMap((r) =>
+          (
+            r.body.resourceMetrics as Array<{
+              scopeMetrics: Array<{
+                metrics: Array<{ name: string; sum?: { dataPoints: Array<{ asDouble: number }> } }>
+              }>
+            }>
+          ).flatMap((resource) => resource.scopeMetrics.flatMap((scope) => scope.metrics)),
+        )
+      expect(metrics.map((row) => row.name)).toEqual(
+        expect.arrayContaining([
+          'agh.turn.duration',
+          'agh.tool.duration',
+          'agh.tool.calls',
+          'agh.tool.errors',
+          'agh.tokens.input',
+          'agh.tokens.output',
+          'agh.worker.restarts',
+          'agh.queue.depth',
+        ]),
+      )
+      expect(metrics.find((row) => row.name === 'agh.tokens.input')?.sum?.dataPoints[0]?.asDouble).toBe(7)
+      expect(metrics.find((row) => row.name === 'agh.tokens.output')?.sum?.dataPoints[0]?.asDouble).toBe(3)
+    } finally {
+      await provider.dispose()
+      await collector.close()
+    }
+  },
+)
 
 it('bounds delivery and accepts collector refusal without failing the caller', async () => {
   const fetch = vi.fn(async () => new Response('{}', { status: 400 }))

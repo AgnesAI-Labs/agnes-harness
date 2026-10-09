@@ -4,6 +4,7 @@ import {
   type PackageAdminMethodName,
   type PackageAdminPermission,
   rpcError,
+  validatePackageAdminCall,
 } from '@agnes/protocol'
 
 /**
@@ -108,4 +109,30 @@ export function requirePackageAdminPermissions(
       method,
       reason: 'package administration requires server-granted composite authority',
     })
+}
+
+/** Configuration uses the same local, unscoped administration grant as the other admin RPCs. */
+export function requireLocalAdminAuthority(
+  context: CallContext,
+  authority: PackageAdminAuthorityResolver,
+  write: boolean,
+): void {
+  const grant = authority(context)
+  if (
+    context.conn.authKind !== 'local' ||
+    context.conn.credentialKind !== 'local' ||
+    !grant ||
+    grant.methods !== undefined ||
+    !grant.permissions.includes(write ? 'packages.activate' : 'packages.read')
+  )
+    throw rpcError('CAPABILITY_DENIED')
+}
+
+/** An unhealthy package control plane cannot authorize configuration mutations. */
+export async function configurationReadOnly(readList: () => Promise<unknown>): Promise<boolean> {
+  try {
+    return !validatePackageAdminCall('_agnes/v1/packages.list', 'result', await readList()).ok
+  } catch {
+    return true
+  }
 }

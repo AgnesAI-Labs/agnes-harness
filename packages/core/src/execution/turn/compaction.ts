@@ -16,7 +16,7 @@ import type { Billing, InferenceEvent, ThinkingLevel } from '@agnes/protocol'
 import { childReceiptNarrative } from '../../child/receipts.js'
 import { settleTreeSpend } from '../../child/runtime-budget.js'
 import { HookBlockedError } from '../../hooks/block.js'
-import { deriveRequest, sanitize, wrapUntrusted } from '../../request/derive.js'
+import { deriveRequest, requestMemoryRevision, sanitize, wrapUntrusted } from '../../request/derive.js'
 import type { RequestBody as MintedRequestBody } from '../../request/mint.js'
 import { toProviderRequest } from '../../request/to-provider.js'
 import { applyBeforeRequestPatches } from '../../request/transforms.js'
@@ -53,7 +53,9 @@ export { CompactionRunner } from '../../step/compaction-runner.js'
 
 const SUMMARY_NO_TOOLS_PREAMBLE =
   'Summarize the conversation only. Do not call any tool, emit a tool invocation, or delegate work. Return only the requested summary text.'
-type Prefix = Pick<MintedRequestBody, 'sections' | 'tools' | 'model' | 'samplingParams'>
+type Prefix = Pick<MintedRequestBody, 'sections' | 'tools' | 'model' | 'samplingParams'> & {
+  memoryRevision?: string
+}
 type SummarySegment = {
   nodes: readonly SurfaceNode[]
   instruction: string
@@ -227,9 +229,10 @@ async function primaryPrefix(s: SessionImpl): Promise<Prefix> {
   // A recovery may compact before this process sends a primary request. Build its sections and
   // disclosure without invoking a per-request patch hook for a request that is never sent.
   const ctx = s.operationContext()
-  const { merged, disclosed } = await assembleRequestPrefix(s, ctx, op.meta.triggerSeq)
+  const { merged, disclosed, memoryRevision } = await assembleRequestPrefix(s, ctx, op.meta.triggerSeq)
   const target = resolveModel(s, 'primary')
   const out = deriveRequest({
+    ...(memoryRevision === undefined ? {} : { memoryRevision }),
     kind: 'turn',
     merged,
     harnessEntries: [...s.state.registers.harnessEntries.values()].map((entry) => entry.value),
@@ -245,7 +248,9 @@ async function primaryPrefix(s: SessionImpl): Promise<Prefix> {
     envelopeNonceFor: (nodeSeq) => s.envelopeNonceFor(nodeSeq),
     envelopeCache: s.envelopeCache,
   })
+  const revision = requestMemoryRevision(out.request)
   return {
+    ...(revision === undefined ? {} : { memoryRevision: revision }),
     sections: out.request.sections,
     tools: out.request.tools,
     model: out.request.model,
@@ -293,7 +298,12 @@ async function summaryRequest(
     nonce: t.nonce,
     envelopeNonceFor: (nodeSeq) => s.envelopeNonceFor(nodeSeq),
     envelopeCache: s.envelopeCache,
-    ...(segment.wide ? { mintedPrefix: prefix } : {}),
+    ...(segment.wide
+      ? {
+          mintedPrefix: prefix,
+          ...(prefix.memoryRevision === undefined ? {} : { memoryRevision: prefix.memoryRevision }),
+        }
+      : {}),
     summaryPlan: {
       ...(segment.wide ? {} : { system }),
       instruction,

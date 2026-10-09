@@ -1,4 +1,8 @@
 import { createHash } from 'node:crypto'
+import {
+  type PackageAdminAuthorityResolver,
+  requireLocalAdminAuthority,
+} from '@agnes/daemon-admin/packages/index'
 import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { Registry } from '@agnes/daemon-foundation/registry'
 import { RequestTraceStore, SystemPromptSettingsStore } from '@agnes/host'
@@ -18,6 +22,8 @@ export function registerPromptTrace(
   deps: {
     dataDir: string
     profile: string
+    authority: PackageAdminAuthorityResolver
+    readOnly(context: CallContext): Promise<boolean>
     registry: Pick<Registry<SessionEntry>, 'require'>
     requireSessionOwner(method: string, sessionId: string, context: CallContext): void
     preview(config: SystemPromptConfig): Promise<SystemPromptSnapshot>
@@ -25,10 +31,6 @@ export function registerPromptTrace(
 ) {
   const settings = new SystemPromptSettingsStore(deps.dataDir, deps.profile)
   const traces = new RequestTraceStore(deps.dataDir, deps.profile)
-  const admin = (context: CallContext) => {
-    if (context.conn.authKind !== 'local' || context.conn.credentialKind !== 'local')
-      throw rpcError('CAPABILITY_DENIED', { reason: 'local configuration owner required' })
-  }
   endpoint.register('_agnes/v1/systemPrompt.get', async (params, context) => {
     const { sessionId } = params as SystemPromptGetParams
     if (sessionId) {
@@ -46,11 +48,12 @@ export function registerPromptTrace(
           }
         : pinned
     }
-    admin(context)
+    requireLocalAdminAuthority(context, deps.authority, false)
     return deps.preview(await settings.read())
   })
   endpoint.register('_agnes/v1/systemPrompt.save', async (params, context) => {
-    admin(context)
+    requireLocalAdminAuthority(context, deps.authority, true)
+    if (await deps.readOnly(context)) throw rpcError('SEMANTIC_REJECTED', { reason: 'E_ADMIN_READ_ONLY' })
     const { config, confirmFullOverride } = params as SystemPromptSaveParams
     if (
       config.fullOverride !== undefined &&

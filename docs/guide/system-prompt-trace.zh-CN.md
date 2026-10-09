@@ -30,9 +30,9 @@
 
 内容寻址 blob 对系统文本、节元数据、工具 schema 和最终正文去重。每次调用上限 2 MiB，每个 profile 为 64 MiB、256 次调用，每个会话为 16 MiB、128 次调用，最长保留七天。超大逻辑采集会跳过，wire 采集不完整会明确标注。近期无引用 blob 仍占用容量时，可能拒绝新采集。
 
-Worker 在启动时、写入后及空闲期间每五分钟回收；关闭 Host 会停止回收器。自动 GC 只有在 blob **无保留调用引用且保留期已过** 时才删除。打开采集详情，确认 **删除此调用在本地保留的正文和元数据**，再选择 **清除此采集记录**，立即删除该记录与无共享引用的内容。其他调用仍引用的 blob 会保留。已回收或清除的运行中调用不会被后续响应重新写回。
+Worker 在启动时、写入后及空闲期间每五分钟回收；关闭 Host 会停止回收器。读取与回收会隔离格式错误的调用元数据，健康采集与保留期回收继续工作。自动 GC 只有在 blob **无保留调用引用且保留期已过** 时才删除。打开采集详情，确认 **删除此调用在本地保留的正文和元数据**，再选择 **清除此采集记录**，立即删除该记录与无共享引用的内容。其他调用仍引用的 blob 会保留。已回收或清除的运行中调用不会被后续响应重新写回。
 
-生成 schema 的 App Server 方法为 `_agnes/v1/systemPrompt.get`、`_agnes/v1/systemPrompt.save`、`_agnes/v1/trace.request` 和 `_agnes/v1/trace.clear`。SDK 提供 `client.systemPrompt.get/save` 与 `client.requestTrace.get/list/clear`。配置访问需要本地配置权限；会话预览、采集读取、对比与清除检查持久会话归属。管理桥使用固定路由、同源检查与管理员写权限。
+生成 schema 的 App Server 方法为 `_agnes/v1/systemPrompt.get`、`_agnes/v1/systemPrompt.save`、`_agnes/v1/trace.request` 和 `_agnes/v1/trace.clear`。SDK 提供 `client.systemPrompt.get/save` 与 `client.requestTrace.get/list/clear`。读取默认配置需要服务端授予的、无方法范围限制的本地 `packages.read` 权限；写入需要 `packages.activate` 及健康、可写的配置控制平面。只读管理员可检查默认配置但不能保存。普通 Web 连接没有配置权限，请使用管理桥。会话预览、采集读取、对比与清除检查持久会话归属。管理桥使用固定路由、同源检查与管理员写权限。
 
 ## 执行依据
 

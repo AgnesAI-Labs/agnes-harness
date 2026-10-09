@@ -42,7 +42,7 @@ import { createProductionImageInputTokenFallback } from '@agnes/host-artifacts/r
 import { createTrajectoryLifecycle } from '@agnes/host-artifacts/trajectory-lifecycle'
 import { installProviderRegistry, installProviders } from '@agnes/host-common/assemble/provider-registry'
 import { HostError, type HostErrorCode } from '@agnes/host-common/errors'
-import { ownStateRoots } from '@agnes/host-common/paths'
+import { ownStateRoots, privateStateRoots } from '@agnes/host-common/paths'
 import { mergeValue } from '@agnes/host-common/presets/merge'
 import { resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
@@ -827,7 +827,12 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             canonicalRoot: sessionFence.root,
             dataDir,
             homeDir: deps.homeDir ?? homedir(),
-            protectedPaths: [join(dirname(dirname(deps.profileDir)), 'memory')],
+            protectedPaths: privateStateRoots({
+              home: dirname(dirname(deps.profileDir)),
+              dataDir,
+              profileDir: deps.profileDir,
+              ...(profile.adapters?.secrets.path ? { secretsDir: profile.adapters.secrets.path } : {}),
+            }),
             semantics: sessionFence.semantics,
             staticConfig: sandboxConfig,
             canonicalize: (path, options) => sessionFence.fs.canonicalize(path, options),

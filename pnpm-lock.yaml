@@ -1402,6 +1402,9 @@ importers:
       '@agnes/base':
         specifier: workspace:*
         version: link:../base
+      '@agnes/host-common':
+        specifier: workspace:*
+        version: link:../host-common
       '@agnes/package-manager':
         specifier: workspace:*
         version: link:../package-manager

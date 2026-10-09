@@ -505,7 +505,9 @@ export type TurnMemory = {
   preload?: RuntimePromptPreload | null
   nonce: string
   /** Prefix of the most recent primary request after all request hooks have run. */
-  lastPrefix?: Pick<MintedRequestBody, 'sections' | 'tools' | 'model' | 'samplingParams'>
+  lastPrefix?: Pick<MintedRequestBody, 'sections' | 'tools' | 'model' | 'samplingParams'> & {
+    memoryRevision?: string
+  }
   lastHeader: RequestHeaderData | null
   lastHeaderSeq: Seq | null
   ordinal: number

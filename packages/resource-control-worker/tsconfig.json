@@ -24,6 +24,9 @@
     },
     {
       "path": "../package-manager"
+    },
+    {
+      "path": "../host-common"
     }
   ]
 }

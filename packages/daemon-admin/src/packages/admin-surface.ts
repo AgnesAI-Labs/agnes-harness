@@ -30,6 +30,8 @@ import {
   SystemPromptSnapshot,
 } from '@agnes/protocol/gen/agnes-v1'
 
+import { configurationReadOnly } from './permissions.js'
+
 const PREFIX = '/admin/plugins/api/'
 // Exported so tests can assert this stays in lockstep with the Web BFF client's own hand-maintained
 // route map (packages/web/src/admin/plugins/api.ts METHOD_BY_PATH) — see
@@ -730,12 +732,7 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
       }
       const action = url.pathname.slice(PREFIX.length)
       if (action === 'context' && request.method === 'GET') {
-        try {
-          const list = await options.invoke('list', { profile: options.profile })
-          readOnly = !validatePackageAdminCall(ACTIONS.list, 'result', list).ok
-        } catch {
-          readOnly = true
-        }
+        readOnly = await configurationReadOnly(() => options.invoke('list', { profile: options.profile }))
         const context: PackageAdminContext = {
           ...configuredContext,
           permissions: readOnly

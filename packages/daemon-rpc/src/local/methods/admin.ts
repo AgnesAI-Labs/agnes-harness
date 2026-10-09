@@ -1,5 +1,8 @@
 import type { AppServerAdmin } from '@agnes/daemon-admin/app-server'
-import type { PackageAdminAuthorityResolver } from '@agnes/daemon-admin/packages/index'
+import {
+  type PackageAdminAuthorityResolver,
+  requireLocalAdminAuthority,
+} from '@agnes/daemon-admin/packages/index'
 import type { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { type AdminMethodName, rpcError } from '@agnes/protocol'
 import type {
@@ -21,15 +24,7 @@ export function registerAppServerAdmin(
 ): void {
   const register = (name: AdminMethodName, write: boolean, action: (input: unknown) => Promise<unknown>) =>
     endpoint.register(name, async (input, ctx) => {
-      const grant = authority(ctx)
-      if (
-        ctx.conn.authKind !== 'local' ||
-        ctx.conn.credentialKind !== 'local' ||
-        !grant ||
-        grant.methods !== undefined ||
-        !grant.permissions.includes(write ? 'packages.activate' : 'packages.read')
-      )
-        throw rpcError('CAPABILITY_DENIED')
+      requireLocalAdminAuthority(ctx, authority, write)
       try {
         return await action(input)
       } catch (error) {

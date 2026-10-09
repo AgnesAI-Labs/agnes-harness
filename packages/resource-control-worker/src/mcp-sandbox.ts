@@ -6,8 +6,9 @@ import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep 
 import { promisify } from 'node:util'
 import type { McpServerConfig } from '@agnes/base'
 import { type BackendProbeExec, detectBackend } from '@agnes/base/sandbox'
+import { privateStateRoots } from '@agnes/host-common/paths'
 import { isOfficialMcpDefinition, readPackageSourceConfiguration } from '@agnes/package-manager'
-import { type McpServerDefinitionInput, WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
+import type { McpServerDefinitionInput } from '@agnes/protocol'
 
 export type McpSandboxContext = Readonly<{
   workspace?: string
@@ -67,14 +68,7 @@ const below = (root: string, path: string): boolean => {
 }
 
 async function hardDenyRoots(workspace: string, readPaths: string[], context: McpSandboxContext) {
-  const roots = [
-    ...WORKSPACE_SECRET_DIRS.map((path) => join(workspace, path)),
-    join(context.dataDir, 'secrets'),
-    join(context.dataDir, 'daemon'),
-    ...['secrets', 'auth', 'profiles', 'daemon'].map((leaf) => join(context.home as string, leaf)),
-    ...(context.profileDir ? [context.profileDir] : []),
-    ...(context.secretsDir ? [context.secretsDir] : []),
-  ]
+  const roots = privateStateRoots({ ...context, home: context.home as string, workspace })
   const grants = await Promise.all(readPaths.map(async (raw) => ({ raw, real: await realpath(raw) })))
   const denied: string[] = []
   for (const path of roots) {
