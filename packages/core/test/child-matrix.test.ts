@@ -529,6 +529,15 @@ describe('a delegated sub-agent with nobody to ask', () => {
     }
     expect(result.code).toBe('APPROVAL_REJECTED')
     expect(result.content[0]?.text).toMatch(/sub-agent.*fixed permission scope.*do not retry/s)
+    expect((await child.status()).receipt).toMatchObject({
+      workspace: { cwd: '/w', isolation: 'shared' },
+      tools: [{ name: 'shell', isError: true }],
+      truncated: false,
+    })
+    // The handle can be gone: collection still reads the same child-local ledger evidence.
+    expect((await parent.d.children.inspect?.(child.key))?.receipt).toMatchObject({
+      tools: [{ name: 'shell', isError: true }],
+    })
     await k.close()
   })
 })

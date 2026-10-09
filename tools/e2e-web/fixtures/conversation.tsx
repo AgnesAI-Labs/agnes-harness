@@ -76,6 +76,32 @@ const nodes: UINode[] = [
       },
     ],
   },
+  {
+    ...tool('workflow', 'workflow_wait'),
+    slots: [
+      {
+        slot: 'tool.card.inline',
+        extId: 'agnes/workflow',
+        payload: {
+          title: 'Report workflow',
+          table: {
+            columns: ['Stage', 'Member', 'Status', 'Session', 'Run', 'Id', 'Integration'],
+            rows: [
+              [
+                'Draft',
+                'Writer',
+                'completed',
+                'child-worktree',
+                'completed',
+                'workflow-fixture',
+                'not-merged-by-workflow',
+              ],
+            ],
+          },
+        },
+      },
+    ],
+  },
   tool('job', 'job_output', 'job-fixture: running\nSynthetic captured output'),
   tool('child', 'subagent_list', 'child-fixture completed continuable'),
   { kind: 'assistant', id: 'final', seq: 3, text: 'Review the deliverable and choose a channel.' },

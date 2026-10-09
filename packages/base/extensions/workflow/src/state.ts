@@ -1,6 +1,16 @@
-import type { ProjectionDef } from '@agnes/extension-api'
+import type { ChildStatus, ProjectionDef } from '@agnes/extension-api'
 
-export type Member = { name: string; task: string; status: string; childKey: string; text: string }
+export type Member = {
+  name: string
+  task: string
+  status: string
+  childKey: string
+  /** Child-authored report; never authoritative execution evidence. */
+  text: string
+  receipt?: NonNullable<ChildStatus['receipt']>
+  isolation?: 'shared' | 'worktree'
+  worktree?: string
+}
 export type Stage = { name: string; members: Member[] }
 export type Run = {
   id: string

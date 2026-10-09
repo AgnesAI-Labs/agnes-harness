@@ -16,6 +16,7 @@ for (const locale of ['en', 'zh-CN'])
         'deliverable-card',
         'background-job-card',
         'child-agent-card',
+        'workflow-run-card',
         'plan-approval-card',
       ])
         await expect(page.getByTestId(id)).toBeVisible()
@@ -23,6 +24,17 @@ for (const locale of ['en', 'zh-CN'])
       await page.getByTestId('turn-process-toggle').click()
       await page.getByTestId('turn-process-toggle').click()
       await expect(page.getByTestId('question-card')).toBeVisible()
+      await page.getByTestId('workflow-stage').locator('summary').click()
+      await expect(page.getByTestId('workflow-integration')).toContainText(
+        locale === 'en' ? 'has not merged' : '未将其合并到主工作区',
+      )
+      await expect(page.getByTestId('workflow-child-session')).toHaveAttribute(
+        'href',
+        '?session=child-worktree',
+      )
+      await page
+        .getByTestId('workflow-run-card')
+        .screenshot({ path: test.info().outputPath(`workflow-${locale}-${width}.png`) })
       const option = page.locator('[data-testid="question-option"][value="Web"]')
       expect((await option.boundingBox())?.width).toBeLessThan(24)
       await option.check()

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { defineExtension, defineTool, type ToolContext } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
+import { WORKFLOW_RECEIPT_RULE, workflowReceipts } from './receipts.js'
 import { type Run, type State, workflowProjection } from './state.js'
 
 const member = Type.Object(
@@ -39,13 +40,41 @@ async function state(ctx: ToolContext): Promise<State> {
 }
 
 const result = (run: Run) => ({
-  content: [{ type: 'text' as const, text: JSON.stringify({ ...run, runId: run.id }) }],
+  content: [
+    {
+      type: 'text' as const,
+      text: JSON.stringify({
+        ...run,
+        runId: run.id,
+        execution: workflowReceipts(run),
+        evidenceRule: WORKFLOW_RECEIPT_RULE,
+      }),
+    },
+  ],
   structured: { ...run, runId: run.id },
   isError: run.status !== 'completed',
 })
 
 export default defineExtension((agnes) => {
   const disposers = [agnes.registerProjection(workflowProjection)]
+  disposers.push(
+    agnes.registerHook('context', async (_payload, ctx) => {
+      const read = await ctx.projections.readOwn<State>('runs')
+      if (read.status !== 'available') return {}
+      const runs = Object.values(read.value.runs).slice(-8)
+      if (!runs.length) return {}
+      return {
+        refreshOnRequest: true,
+        sections: [
+          {
+            id: 'workflow:receipts',
+            order: 113,
+            content: WORKFLOW_RECEIPT_RULE + '\n' + JSON.stringify(runs.map(workflowReceipts)),
+          },
+        ],
+      }
+    }),
+  )
   disposers.push(
     agnes.registerTool(
       defineTool({
@@ -148,6 +177,9 @@ export default defineExtension((agnes) => {
                     )
                       throw new Error('Child creation refused')
                     m.childKey = spawned.details.childKey
+                    if (spawned.details.isolation === 'worktree' || spawned.details.isolation === 'shared')
+                      m.isolation = spawned.details.isolation
+                    if (typeof spawned.details.worktree === 'string') m.worktree = spawned.details.worktree
                     m.status = 'running'
                     await save()
                   }
@@ -163,13 +195,18 @@ export default defineExtension((agnes) => {
                   m.text = new TextDecoder().decode(
                     new TextEncoder().encode(child.text ?? '').subarray(0, 1024),
                   )
+                  if (child.receipt) m.receipt = structuredClone(child.receipt)
                   await save()
                   if (m.status !== 'completed') throw new Error('Workflow child failed')
                 }),
               )
               const failed = settled.find((s) => s.status === 'rejected')
               if (failed?.status === 'rejected') throw failed.reason
-              input = JSON.stringify(stage.members.map((m) => ({ name: m.name, text: m.text })))
+              input = JSON.stringify({
+                execution: workflowReceipts(current),
+                childReports: stage.members.map((m) => ({ name: m.name, text: m.text })),
+                evidenceRule: WORKFLOW_RECEIPT_RULE,
+              })
             }
             current.status = 'completed'
           } catch (error) {
@@ -232,9 +269,21 @@ export default defineExtension((agnes) => {
         ? {
             title: run.name,
             table: {
-              columns: ['Stage', 'Member', 'Status', 'Child session', 'Run status', 'Run id'],
+              columns: ['Stage', 'Member', 'Status', 'Child session', 'Run status', 'Run id', 'Integration'],
               rows: run.stages.flatMap((s) =>
-                s.members.map((m) => [s.name, m.name, m.status, m.childKey, run.status, run.id]),
+                s.members.map((m) => [
+                  s.name,
+                  m.name,
+                  m.status,
+                  m.childKey,
+                  run.status,
+                  run.id,
+                  (m.receipt?.workspace.isolation ?? m.isolation) === 'worktree'
+                    ? 'not-merged-by-workflow'
+                    : (m.receipt?.workspace.isolation ?? m.isolation) === 'shared'
+                      ? 'shared-workspace'
+                      : 'unverified',
+                ]),
               ),
             },
           }

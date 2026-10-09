@@ -136,6 +136,12 @@ export type ChildStatus = {
   text?: string
   credits?: number
   waitTimedOut?: boolean
+  /** Backend ledger facts; child prose is not evidence of tool execution or workspace integration. */
+  receipt?: {
+    workspace: { cwd: string; isolation: 'shared' | 'worktree' }
+    tools: Array<{ seq: number; name: string; isError: boolean }>
+    truncated: boolean
+  }
 }
 
 // The programmable-runtime interface a tool can be handed. It lives here, rather than in the

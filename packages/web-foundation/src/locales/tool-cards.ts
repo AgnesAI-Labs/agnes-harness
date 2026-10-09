@@ -5,6 +5,11 @@ export const toolCardsLocaleCatalog = {
     'slot.notReady': 'Plugin for this card is not ready',
     'cards.workflow.title': 'Workflow run',
     'cards.workflow.open': 'Open child session',
+    'cards.workflow.not-merged-by-workflow':
+      'Output remains in the child worktree; Workflow has not merged it into the main workspace.',
+    'cards.workflow.shared-workspace':
+      'Child used the shared workspace. Check execution receipts for file changes.',
+    'cards.workflow.unverified': 'Workspace integration has not been verified.',
     'cards.workflow.interrupted': 'Interrupted',
     'cards.workflow.pending': 'Pending',
     'cards.workflow.starting': 'Starting',
@@ -32,6 +37,9 @@ export const toolCardsLocaleCatalog = {
     'slot.notReady': '此卡片的插件尚未就绪',
     'cards.workflow.title': '工作流运行',
     'cards.workflow.open': '打开子会话',
+    'cards.workflow.not-merged-by-workflow': '产物留在子任务 worktree 中，Workflow 未将其合并到主工作区。',
+    'cards.workflow.shared-workspace': '子任务使用共享工作区；文件改动以执行回执为准。',
+    'cards.workflow.unverified': '尚未验证工作区集成状态。',
     'cards.workflow.interrupted': '已中断',
     'cards.workflow.pending': '待运行',
     'cards.workflow.starting': '正在创建',

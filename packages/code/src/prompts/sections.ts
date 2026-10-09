@@ -46,6 +46,7 @@ export function validateSections(specs: ReadonlyArray<PromptSectionSpec>): Reado
 export const PROMPT_SECTIONS: ReadonlyArray<PromptSectionSpec> = validateSections([
   { id: 'persona', order: 100, source: 'file', owner: 'code' },
   { id: 'environment', order: 110, source: 'dynamic', owner: 'code' },
+  { id: 'workflow:receipts', order: 113, source: 'dynamic', owner: 'base' },
   // Order 115, formerly 'tools-available', is retired rather than reassigned: the tool list moved
   // to the runtime-context tail message (code-mode/prompts.ts's contribute()), and the gaps of ten
   // exist precisely so a retirement like this one does not force renumbering everything below it.

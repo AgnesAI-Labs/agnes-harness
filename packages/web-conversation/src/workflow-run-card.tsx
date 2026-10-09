@@ -46,6 +46,7 @@ export function WorkflowRunCard({
                     {t('cards.workflow.open')}
                   </a>
                 )}
+                {member[6] && <p data-testid="workflow-integration">{t('cards.workflow.' + member[6])}</p>}
               </li>
             ))}
           </ul>

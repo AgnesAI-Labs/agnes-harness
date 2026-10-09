@@ -8,7 +8,7 @@
       "prefix": "",
       "names": ["workflow", "workflow_status"]
     },
-    "hooks": [],
+    "hooks": ["context"],
     "slots": ["tool.card.inline"],
     "projections": [
       {

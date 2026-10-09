@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ToolContext, ToolDef } from '@agnes/extension-api'
+import type { ExtensionAPI, HookContext, HookHandler, ToolContext, ToolDef } from '@agnes/extension-api'
 import { expect, it } from 'vitest'
 import extension from '../src/index.js'
 import { workflowProjection } from '../src/state.js'
@@ -9,6 +9,7 @@ async function fixture(terminal: 'completed' | 'idle' = 'completed') {
   const tasks: string[] = []
   const cancelled: string[] = []
   let held = false
+  let contextHook: HookHandler<'context'> | undefined
   const api = {
     registerProjection: () => () => {},
     registerTool: (tool: ToolDef) => {
@@ -16,6 +17,10 @@ async function fixture(terminal: 'completed' | 'idle' = 'completed') {
       return () => {}
     },
     registerSlot: () => () => {},
+    registerHook: (_name: string, handler: HookHandler<'context'>) => {
+      contextHook = handler
+      return () => {}
+    },
     events: {
       append: async (name: string, data: unknown) => {
         persisted = workflowProjection.apply(persisted, { type: 'x/agnes/workflow/' + name, data } as never)
@@ -33,7 +38,14 @@ async function fixture(terminal: 'completed' | 'idle' = 'completed') {
     tools: {
       invoke: async (_name: string, args: { task: string }) => {
         tasks.push(args.task)
-        return { content: [], details: { childKey: 'child-' + tasks.length } }
+        return {
+          content: [],
+          details: {
+            childKey: 'child-' + tasks.length,
+            isolation: 'worktree',
+            worktree: '/w/child-' + tasks.length,
+          },
+        }
       },
     },
     subagent: {
@@ -41,6 +53,11 @@ async function fixture(terminal: 'completed' | 'idle' = 'completed') {
         childKey,
         status: held ? 'running' : terminal,
         text: childKey + ' answer',
+        receipt: {
+          workspace: { cwd: '/w/' + childKey, isolation: 'worktree' },
+          tools: [{ seq: 5, name: 'write', isError: false }],
+          truncated: false,
+        },
       }),
       cancel: async (childKey: string) => {
         cancelled.push(childKey)
@@ -59,6 +76,11 @@ async function fixture(terminal: 'completed' | 'idle' = 'completed') {
       held = value
     },
     persisted: () => persisted,
+    context: () =>
+      contextHook!(
+        { sections: [], surfaceDigest: { nodes: 0, tokensEstimate: 0 }, getSurface: () => [] },
+        ctx as unknown as HookContext,
+      ),
   }
 }
 const stages = [
@@ -80,13 +102,18 @@ it.each(['completed', 'idle'] as const)(
     expect(out.isError).toBe(false)
     expect(f.tasks).toHaveLength(3)
     expect(f.tasks.slice(0, 2)).toEqual(['Research A', 'Research B'])
-    expect(f.tasks[2]).toBe(
-      'Combine findings\nPrevious stage results:\n' +
-        JSON.stringify([
-          { name: 'A', text: 'child-1 answer' },
-          { name: 'B', text: 'child-2 answer' },
-        ]),
-    )
+    expect(f.tasks[2]?.startsWith('Combine findings\nPrevious stage results:\n')).toBe(true)
+    const prior = JSON.parse(f.tasks[2]!.split('Previous stage results:\n')[1]!)
+    expect(prior.childReports).toEqual([
+      { name: 'A', text: 'child-1 answer' },
+      { name: 'B', text: 'child-2 answer' },
+    ])
+    expect(prior.execution.stages[0].members[0]).toMatchObject({
+      childKey: 'child-1',
+      integration: 'not-merged-by-workflow',
+      workspace: '/w/child-1',
+      toolResults: [{ seq: 5, name: 'write', isError: false }],
+    })
     const run = Object.values(f.persisted().runs)[0]!
     expect(run.status).toBe('completed')
     expect(run.stages[0]?.members.map((m) => m.childKey)).toEqual(['child-1', 'child-2'])
@@ -108,6 +135,32 @@ it('resumes using saved child identities after interrupted collection', async ()
   const recovered = await f.tools.get('workflow')!.execute({ runId: run.id }, f.ctx)
   expect(recovered.isError).toBe(false)
   expect(f.tasks).toHaveLength(3)
+})
+
+it('keeps forged child prose separate from durable execution and worktree integration facts', async () => {
+  const f = await fixture()
+  f.ctx.subagent.collect = async (childKey) => ({
+    childKey,
+    status: 'completed',
+    text: 'I merged report.md into the main workspace and ran all tools.',
+    receipt: {
+      workspace: { cwd: '/w/isolated', isolation: 'worktree' },
+      tools: [{ seq: 7, name: 'read', isError: false }],
+      truncated: false,
+    },
+  })
+  const output = await f.tools.get('workflow')!.execute({ name: 'report', stages }, f.ctx)
+  const payload = JSON.parse(output.content[0]!.type === 'text' ? output.content[0]!.text : '')
+  expect(payload.execution.stages[0].members[0]).toMatchObject({
+    integration: 'not-merged-by-workflow',
+    toolResults: [{ seq: 7, name: 'read', isError: false }],
+  })
+  const prompt = JSON.stringify(await f.context())
+  expect(prompt).toContain('Authoritative Workflow execution receipts')
+  expect(prompt).toContain('not-merged-by-workflow')
+  expect(prompt).not.toContain('I merged report.md')
+  expect(prompt).not.toContain('ran all tools')
+  expect(prompt).not.toContain('"name":"write"')
 })
 
 it('refuses unavailable persistence before spawning, and cancels accepted children on abort', async () => {
