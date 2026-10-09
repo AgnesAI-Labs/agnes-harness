@@ -378,6 +378,7 @@
         "isDestructive": { "type": "boolean" },
         "isConcurrencySafe": { "type": "boolean" },
         "isOpenWorld": { "type": "boolean" },
+        "returnsImages": { "const": true },
         "replay": { "enum": ["safe", "never", "idempotent"] },
         "requiresApproval": { "enum": ["never", "destructive", "always"] },
         "approvalScopes": {

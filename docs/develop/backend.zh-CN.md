@@ -40,6 +40,8 @@ export const textStatsTool = {
 
 元数据准确声明只读、非破坏、并发安全、封闭世界、`replay: 'safe'` 和不需审批。若改成写文件或调用外部系统，应重新定义效果、审批与重放语义，不能沿用这里的声明。
 
+工具结果要把图片交给模型时（例如读取摄像头），还要在 `meta` 中设置 `returnsImages: true`：用 `ctx.artifacts.put(bytes, { mime })` 保存字节，在 `content` 中返回 `{ type: 'image', ref, mime }`，格式为 PNG 或 JPEG。调用会把该标记记入其解析后的策略；只有工具同时是封闭世界（`isOpenWorld: false`）时，请求媒体才把图片发给模型。不设该标记时，工具的图片不会进入模型请求，下一次请求会失败；只有内置的 `read`、`computer_use` 和 `document_read` 不需要标记。该标记不另设权限检查：插件的工具只在用户安装、信任并启用其包之后才会运行。
+
 ## 安装和运行
 
 按[插件管理](../guide/packages.zh-CN.md)对 `file:./examples/packages/hot-tool-plugin` 执行 inspect、install、trust、enable，然后在已配置模型的新会话中请求：

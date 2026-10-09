@@ -81,6 +81,13 @@ describe('checkToolMeta (every one of the eight keys must be written out)', () =
     expect(checkToolMeta({ ...fullMeta, costHint: { credits: 1.5, wallMs: 200 } })).toEqual({ ok: true })
     expect(checkToolMeta({ ...fullMeta, costHint: { credits: undefined } })).toEqual({ ok: true })
   })
+  it('takes returnsImages as an optional boolean', () => {
+    expect(checkToolMeta({ ...fullMeta, returnsImages: true })).toEqual({ ok: true })
+    expect(checkToolMeta({ ...fullMeta, returnsImages: 'yes' })).toEqual({
+      ok: false,
+      problems: ['returnsImages: expected boolean | undefined'],
+    })
+  })
   it('rejects non-objects', () => {
     expect(checkToolMeta(null).ok).toBe(false)
     expect(checkToolMeta('x').ok).toBe(false)

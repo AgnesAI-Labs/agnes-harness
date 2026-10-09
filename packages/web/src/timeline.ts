@@ -430,8 +430,7 @@ function createEntry(node: UINode, t: Translate, entryFingerprint: string): Entr
 }
 
 // 与 NativeDshChildren 的子槽位清单保持一致（那边带 entryKey，这里只关心名字），
-// 供「有没有人认领」判定使用；声明占位条目（key: '__agnes-native-child-declarations__'）
-// 不是真实注册项，不会被 entriesOfSlot 之外的判断误伤。
+// 供「有没有人认领」判定使用。
 const dshChildSlotNames = (slotName: string, kind: UINode['kind']): readonly string[] =>
   slotName === 'tool.call.toolview'
     ? ['tool.call.images', 'tool.view.cordis']
