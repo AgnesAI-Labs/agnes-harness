@@ -111,6 +111,7 @@ const SUPPLIED: Record<string, string[]> = {
   'agnes/workflow': [
     'tool:workflow',
     'tool:workflow_status',
+    'hook:context',
     'slot:tool.card.inline',
     'projection:agnes/workflow/runs',
   ],

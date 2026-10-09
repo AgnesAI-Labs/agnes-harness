@@ -1,3 +1,4 @@
+// Exact integrated workflow receipts, fact links and sandbox refusal counts; no headroom.
 // FC1 rebase: exact combined counts for bounded evidence projection and four UI entries; no headroom.
 // 2026-10-06 attachment history reopening: bound authority replay so worker frames can be split.
 // Reviewed exact countLines daemon 26847 (+5); no exclusions or spare allocation.
@@ -255,9 +256,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-conversation/src/trace-panel': 11,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-conversation/src': 4165,
+  'packages/web-conversation/src': 4166,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src/settings': 6335,
+  'packages/web-admin/src/settings': 6341,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/permission-picker': 248,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
@@ -265,12 +266,12 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/admin/plugins/api': 543,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src': 11873,
+  'packages/web-admin/src': 11879,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-foundation/src': 2330,
+  'packages/web-foundation/src': 2340,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
   'packages/daemon-rpc/src/local/auth': 341,
-  'packages/daemon-rpc/src': 7510,
+  'packages/daemon-rpc/src': 7521,
   'packages/daemon-supervisor/src/supervisor/startup': 18,
   'packages/daemon-supervisor/src/supervisor/discovery': 446,
   'packages/daemon-supervisor/src/supervisor/scope': 254,
@@ -328,7 +329,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-common/src': 3738,
   'packages/host-common/src/assemble': 439,
   'packages/core-artifacts/src': 744,
-  'packages/core-effects/src': 2612,
+  'packages/core-effects/src': 2621,
   'packages/core-ledger/src': 6452,
   'packages/core-child-control/src': 397,
   'packages/core-common/src': 528,
@@ -588,7 +589,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2311 -> 2443; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Session-bound goal state and context/settings integration.
   // countLines: 2443 -> 2471; exact cap, no exclusions or spare allocation.
-  'packages/web/src/app': 2638,
+  'packages/web/src/app': 2658,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -1212,7 +1213,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 29399 -> 30048; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Await async loop construction, propagate session cancellation and drain initialization before storage closes.
   // countLines: 30048 -> 30103 (+55); exact measured cap, no exclusions or spare allocation.
-  'packages/core/src': 20368,
+  'packages/core/src': 20402,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1679,7 +1680,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2327 -> 2438; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Expose cooperative construction signals, adapter credential ports and shared default compaction/policy helpers.
   // countLines: 2438 -> 2505 (+67); exact measured cap, no exclusions or spare allocation.
-  'packages/extension-api/src': 2727, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  'packages/extension-api/src': 2732, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -2412,7 +2413,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 19657 -> 22109; exact cap, no exclusions or spare allocation.
   // Acceptance review: Retain published composition details and stable expanded goal state during admin refresh.
   // countLines: 22109 -> 22110; exact cap, no exclusions or spare allocation.
-  'packages/web/src': 10371,
+  'packages/web/src': 10391,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2505,7 +2506,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/channels/src': 5261,
   // 2026-10-07 gap-fill review: Confined code subprocess runtime and governed bridge error propagation.
   // countLines: 1600 -> 1729; exact cap, no exclusions or spare allocation.
-  'packages/code/src': 1804,
+  'packages/code/src': 1805,
   'packages/cli/src/args': 275,
   'packages/runtime-python/src': 7,
   // 2026-09-11: initial I6 ceiling for the bundled subagent extension. Task 33's worktree
@@ -3197,7 +3198,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/base/extensions/time-context': 65,
   // 2026-10-07 gap-fill review: Durable child workflows with explicit resume identifiers and uncertain-state refusal.
   // countLines: new scope -> 282; exact cap, no exclusions or spare allocation.
-  'packages/base/extensions/workflow': 282,
+  'packages/base/extensions/workflow': 370,
   // 2026-10-07 gap-fill review: Separate FTS history index, ledger catch-up, bounded read-only query and directory ownership.
   // countLines: new scope -> 1117; exact cap, no exclusions or spare allocation.
   'packages/history-index/src': 1117,
