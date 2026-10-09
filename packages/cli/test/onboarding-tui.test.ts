@@ -273,26 +273,31 @@ describe('first-run onboarding TUI', () => {
     )
   })
 
-  it('never renders the key after the provider rejects it', async () => {
-    const term = new FakeTerminal({ columns: 80, rows: 24 })
-    const { client, save } = stubClient({
-      test: vi.fn().mockRejectedValue(new Error('401 Unauthorized for key sk-secret-value')),
-    })
+  it.each(['401 Unauthorized', '403 Forbidden', 'TimeoutError'])(
+    'never renders a reflected key after %s',
+    async (reason) => {
+      const term = new FakeTerminal({ columns: 80, rows: 24 })
+      const { client, save } = stubClient({
+        test: vi.fn().mockRejectedValue(new Error(`${reason} for key sk-secret-value`)),
+      })
 
-    void runOnboardingTui(client, UNCONFIGURED, term)
-    await settle()
-    term.feed('\x1b[B')
-    term.feed('\r')
-    await settle()
-    term.feed('\r')
-    await settle()
-    term.feed('sk-secret-value')
-    term.feed('\r')
-    await settle()
+      void runOnboardingTui(client, UNCONFIGURED, term)
+      await settle()
+      term.feed('\x1b[B')
+      term.feed('\r')
+      await settle()
+      term.feed('\r')
+      await settle()
+      term.feed('sk-secret-value')
+      term.feed('\r')
+      await settle()
 
-    const screen = (await screenOf(term, 80, 24)).join('\n')
-    expect(screen).not.toContain('sk-secret-value')
-    expect(screen).toContain('Could not verify that key')
-    expect(save).not.toHaveBeenCalled()
-  })
+      const screen = (await screenOf(term, 80, 24)).join('\n')
+      expect(screen).not.toContain('sk-secret-value')
+      expect(screen).toContain('Could not verify that key')
+      expect(save).not.toHaveBeenCalled()
+      term.feed('\x03')
+      await settle()
+    },
+  )
 })

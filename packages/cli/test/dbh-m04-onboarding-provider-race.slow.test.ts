@@ -13,8 +13,7 @@ import { screenOf } from './tui/harness.js'
 
 // Deep Bug Hunt M-04. Oracles: onboarding/tui.ts:17-19 (the key is held "for the span of test+save" of
 // the provider it was entered for); host configuration.ts:757 "Never forward an existing account's key
-// to an edited destination implicitly"; onboarding/controller.ts discards stale async results by
-// generation. A key typed for provider A must never be tested or saved against provider B.
+// to an edited destination implicitly"; onboarding/tui.ts discards superseded probe results. A key typed for provider A must never be tested or saved against provider B.
 // Tests assert the correct behaviour; a failure reproduces the defect.
 
 const KEY_A = 'sk-key-typed-for-provider-a'
