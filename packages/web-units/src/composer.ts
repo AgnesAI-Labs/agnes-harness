@@ -125,6 +125,14 @@ export interface ComposerDependencies {
 export interface ComposerView {
   imagePolicy?: ReturnType<typeof userImagePolicy>
   cancel: { disabled: boolean; hidden: boolean; label: string }
+  controls?: {
+    paused: boolean
+    pending: boolean
+    disabled: boolean
+    pauseSupported: boolean
+    interruptSupported: boolean
+    reason: string
+  }
   connected: boolean
   configured: boolean
   hasSession: boolean
@@ -140,11 +148,13 @@ export interface ComposerView {
   }
   permission: PermissionPickerState
   queue?: {
-    items: readonly UIPendingInput[]
+    items: readonly (UIPendingInput & { editText?: string })[]
     disabled: boolean
     removeDisabled?: boolean
     sending?: string
     removing?: string
+    interruptSupported?: boolean
+    reason?: string
     error?: string
   }
   sending: boolean
@@ -178,6 +188,8 @@ export interface ComposerRegionOptions {
   onModelSettingsChange?(settings: ModelSettings): Promise<boolean>
   onPermissionSelect(mode: PermissionMode): Promise<boolean>
   onSubmit(): void
+  onPauseResume?(): void
+  onEditQueued?(itemId: string, text: string): Promise<void>
   onSendNow?(itemId: string): void
   onRemoveQueued?(itemId: string): void
   onWorkspace(): void
@@ -353,6 +365,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     onModelSettingsChange,
     onPermissionSelect,
     onSubmit,
+    onPauseResume,
+    onEditQueued,
     onSendNow,
     onRemoveQueued,
     onWorkspace,
@@ -744,7 +758,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             view.queue.items.map((item, index) =>
               createElement(
                 'li',
-                { key: item.itemId, 'data-queue-item': item.itemId },
+                { key: item.itemId, 'data-queue-item': item.itemId, 'data-testid': 'queued-steer' },
                 createElement(
                   'div',
                   { className: 'composer-queue-row' },
@@ -758,11 +772,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                     {
                       className: 'composer-queue-send',
                       type: 'button',
-                      disabled: view.queue?.disabled || !onSendNow,
+                      disabled:
+                        view.queue?.disabled || !onSendNow || view.queue?.interruptSupported === false,
+                      'data-testid': 'queued-steer-interrupt',
                       'aria-label': dependencies.translate('composer.queue.sendAccessible', {
                         index: index + 1,
                       }),
-                      title: dependencies.translate('composer.queue.sendTitle'),
+                      title:
+                        view.queue?.interruptSupported === false
+                          ? view.queue.reason
+                          : dependencies.translate('composer.queue.sendTitle'),
                       'aria-busy': view.queue?.sending === item.itemId,
                       onClick: () => {
                         onSendNow?.(item.itemId)
@@ -773,6 +792,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                       view.queue?.sending === item.itemId ? 'composer.queue.sending' : 'composer.queue.send',
                     ),
                   ),
+                  onEditQueued
+                    ? createElement(QueuedInputEditor, {
+                        key: item.itemId,
+                        text: item.editText ?? item.preview,
+                        disabled: view.queue?.removeDisabled ?? view.queue?.disabled,
+                        save: (text: string) => onEditQueued(item.itemId, text),
+                        t: dependencies.translate,
+                        onError,
+                      })
+                    : null,
                   onRemoveQueued
                     ? createElement(
                         'button',
@@ -780,6 +809,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                           type: 'button',
                           className: 'composer-queue-remove',
                           disabled: view.queue?.removeDisabled ?? view.queue?.disabled,
+                          'data-testid': 'queued-steer-withdraw',
                           'aria-label': dependencies.translate('composer.queue.removeAccessible', {
                             index: index + 1,
                           }),
@@ -1037,9 +1067,36 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               })
             : undefined,
         ),
+        view.controls
+          ? createElement(
+              'button',
+              {
+                type: 'button',
+                'data-testid': 'composer-pause-resume',
+                hidden: view.cancel.hidden,
+                disabled: view.controls.disabled || view.controls.pending || !view.controls.pauseSupported,
+                title: view.controls.pauseSupported
+                  ? dependencies.translate('composer.control.pauseTitle')
+                  : view.controls.reason,
+                'aria-pressed': view.controls.paused,
+                onClick: onPauseResume,
+              },
+              dependencies.translate(
+                view.controls.paused ? 'composer.control.resume' : 'composer.control.pause',
+              ),
+            )
+          : null,
+        view.controls?.paused
+          ? createElement(
+              'span',
+              { role: 'status', 'data-testid': 'composer-paused' },
+              dependencies.translate('composer.control.paused'),
+            )
+          : null,
         createElement(
           'button',
           {
+            'data-testid': 'composer-cancel',
             id: 'cancel',
             className: 'secondary-button compact',
             type: 'button',
@@ -1122,3 +1179,62 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     ),
   )
 })
+
+function QueuedInputEditor({
+  text,
+  disabled,
+  save,
+  t,
+  onError,
+}: {
+  text: string
+  disabled?: boolean
+  save: (text: string) => Promise<void>
+  t: ComposerDependencies['translate']
+  onError: (error: unknown) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(text)
+  const [pending, setPending] = useState(false)
+  return createElement(
+    'div',
+    null,
+    editing
+      ? createElement('textarea', {
+          'data-testid': 'queued-steer-editor',
+          'aria-label': t('composer.queue.edit'),
+          value: draft,
+          disabled: disabled || pending,
+          onChange: (event: ChangeEvent<HTMLTextAreaElement>) => setDraft(event.currentTarget.value),
+        })
+      : null,
+    createElement(
+      'button',
+      {
+        type: 'button',
+        'data-testid': 'queued-steer-edit',
+        disabled: disabled || pending || (editing && !draft.trim()),
+        onClick: () => {
+          if (!editing) {
+            setDraft(text)
+            setEditing(true)
+            return
+          }
+          setPending(true)
+          void save(draft)
+            .then(() => setEditing(false))
+            .catch(onError)
+            .finally(() => setPending(false))
+        },
+      },
+      t(editing ? 'composer.queue.save' : 'composer.queue.edit'),
+    ),
+    editing
+      ? createElement(
+          'button',
+          { type: 'button', disabled: pending, onClick: () => setEditing(false) },
+          t('composer.queue.discardEdit'),
+        )
+      : null,
+  )
+}

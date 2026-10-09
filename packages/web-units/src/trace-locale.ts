@@ -1,4 +1,20 @@
 const en = {
+  'trace.controls.title': 'Human control facts',
+  'trace.controls.steer': 'Steer',
+  'trace.controls.pause': 'Pause',
+  'trace.controls.resume': 'Resume',
+  'trace.controls.cancel': 'Cancel',
+  'trace.controls.interrupt': 'Interrupt',
+  'trace.controls.queued': 'Queued',
+  'trace.controls.delivered': 'Delivered',
+  'trace.controls.withdrawn': 'Withdrawn',
+  'trace.controls.edited': 'Edited',
+  'trace.controls.requested': 'Requested',
+  'trace.controls.applied': 'Applied',
+  'trace.controls.refused': 'Refused',
+  'trace.controls.child-stop': 'Stop child',
+  'trace.controls.child-continue': 'Continue child',
+
   'trace.sessionLoop': 'Agent Loop: {id} · {version}',
   'trace.badge.user': 'User',
   'trace.badge.context': 'Context',
@@ -139,6 +155,22 @@ const en = {
 } as const
 
 const zh: Record<keyof typeof en, string> = {
+  'trace.controls.title': '人工控制记录',
+  'trace.controls.steer': '指引',
+  'trace.controls.pause': '暂停',
+  'trace.controls.resume': '继续',
+  'trace.controls.cancel': '取消',
+  'trace.controls.interrupt': '打断',
+  'trace.controls.queued': '已排队',
+  'trace.controls.delivered': '已送达',
+  'trace.controls.withdrawn': '已撤回',
+  'trace.controls.edited': '已修改',
+  'trace.controls.requested': '已请求',
+  'trace.controls.applied': '已生效',
+  'trace.controls.refused': '已拒绝',
+  'trace.controls.child-stop': '停止子代理',
+  'trace.controls.child-continue': '继续子代理',
+
   'trace.sessionLoop': 'Agent Loop：{id} · {version}',
   'trace.badge.user': '用户',
   'trace.badge.context': '上下文',

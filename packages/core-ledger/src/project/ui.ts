@@ -1018,9 +1018,10 @@ export class UIProjectionCell {
   }
 
   private pendingInputs(): NonNullable<UITimeline['pendingInputs']> {
-    return (this.state.registers.inbox.get(this.lane)?.value.items ?? [])
-      .filter((item) => item.target === 'next-turn')
-      .map((item) => ({ itemId: item.itemId, preview: clip(text(item.content), 2000) }))
+    return (this.state.registers.inbox.get(this.lane)?.value.items ?? []).map((item) => ({
+      itemId: item.itemId,
+      preview: clip(text(item.content), 2000),
+    }))
   }
 
   private timeline(nodes: UINode[], usage?: UsageView, turns?: UITurn[]): CoreUITimeline {

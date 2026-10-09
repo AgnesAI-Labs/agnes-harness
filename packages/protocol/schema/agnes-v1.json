@@ -314,6 +314,19 @@
         }
       }
     },
+    "SessionControlFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq", "ts", "actor", "action", "outcome", "details"],
+      "properties": {
+        "seq": { "type": "integer", "minimum": 1 },
+        "ts": { "type": "string" },
+        "actor": { "$ref": "#/$defs/Actor" },
+        "action": { "type": "string" },
+        "outcome": { "type": "string" },
+        "details": { "$ref": "#/$defs/JsonValue" }
+      }
+    },
     "SessionControlStateResult": {
       "type": "object",
       "additionalProperties": false,
@@ -340,6 +353,7 @@
         "paused": {
           "type": "boolean"
         },
+        "facts": { "type": "array", "items": { "$ref": "#/$defs/SessionControlFact" } },
         "pending": {
           "type": "array",
           "items": {

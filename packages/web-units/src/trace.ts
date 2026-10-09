@@ -1,3 +1,4 @@
+import type { SessionControlFact } from '@agnes/protocol/gen/agnes-v1'
 import type { ToolCall, ToolResult, UINode, UISpan, UITurn } from '@agnes/protocol'
 import {
   createElement,
@@ -59,6 +60,7 @@ const STATUS_KEY: Record<string, TraceMessageKey> = {
 
 /** What the host knows beyond the loaded snapshot: whether older records exist, and how to load them. */
 export type TraceMeta = {
+  controlFacts?: readonly SessionControlFact[]
   hasEarlier: boolean
   loadEarlier?: () => void
   sessionId?: string
@@ -1681,6 +1683,30 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
       'data-agnes-region-owner': 'builtin',
       'data-agnes-region-unit': 'trace',
     },
+    meta?.controlFacts?.length
+      ? createElement(
+          'details',
+          { 'data-testid': 'control-facts' },
+          createElement('summary', null, traceText('trace.controls.title')),
+          createElement(
+            'ol',
+            null,
+            meta.controlFacts.map((fact) =>
+              createElement(
+                'li',
+                { key: fact.seq, 'data-testid': 'control-fact' },
+                createElement(
+                  'span',
+                  null,
+                  `${traceText(('trace.controls.' + fact.action) as TraceMessageKey)} · ${traceText(('trace.controls.' + fact.outcome) as TraceMessageKey)} · ${fact.actor.id}`,
+                ),
+                createElement('time', { dateTime: fact.ts }, fact.ts),
+                createElement('pre', null, JSON.stringify(fact.details, null, 2)),
+              ),
+            ),
+          ),
+        )
+      : null,
     createElement(
       'div',
       { className: 'trace-toolbar', hidden: rows.length === 0 && !meta?.loop },

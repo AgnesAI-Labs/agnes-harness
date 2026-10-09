@@ -3,6 +3,17 @@ import type { LocaleCatalog } from './index.js'
 /** 组件内置可访问性文案。经 `ComposerDependencies.translate` 注入，命名空间 `@agnes/web-units`。 */
 export const composerLocaleCatalog: LocaleCatalog = {
   en: {
+    'composer.control.pause': 'Pause',
+    'composer.control.resume': 'Resume',
+    'composer.control.paused': 'Paused · no new steps will start',
+    'composer.control.pauseTitle': 'Pause at the next step boundary',
+    'composer.control.unsupported': 'The pinned Loop does not support this control.',
+    'composer.control.syncing': 'Syncing controls from the session…',
+    'composer.control.steerHint': 'Queued steer is delivered after the current model call or tool batch.',
+    'composer.queue.edit': 'Edit queued message',
+    'composer.queue.save': 'Save edit',
+    'composer.queue.discardEdit': 'Discard edit',
+
     'composer.initial.stop': 'Stop',
     'composer.initial.connect': 'Connect to the backend to start',
     'composer.initial.placeholder': 'Describe what you want to do…',
@@ -23,7 +34,7 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.queue.label': 'Queued messages',
     'composer.queue.count': 'Queued · {count}',
     'composer.queue.attachment': 'Message with attachments',
-    'composer.queue.send': 'Send now',
+    'composer.queue.send': 'Interrupt now',
     'composer.queue.sending': 'Stopping and sending…',
     'composer.queue.sendAccessible': 'Send queued message {index} now',
     'composer.queue.sendTitle': 'Stop the current turn and run this message first',
@@ -52,6 +63,17 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.image.tooLarge': 'Attachments in one message must total no more than 100 MiB.',
   },
   'zh-CN': {
+    'composer.control.pause': '暂停',
+    'composer.control.resume': '继续',
+    'composer.control.paused': '已暂停 · 不会开始新的步骤',
+    'composer.control.pauseTitle': '在下一个步骤边界暂停',
+    'composer.control.unsupported': '此会话固定的 Loop 不支持该控制。',
+    'composer.control.syncing': '正在同步会话控制能力…',
+    'composer.control.steerHint': '指引将在当前模型调用或工具批次结束后送达。',
+    'composer.queue.edit': '编辑排队消息',
+    'composer.queue.save': '保存修改',
+    'composer.queue.discardEdit': '放弃修改',
+
     'composer.initial.stop': '停止',
     'composer.initial.connect': '请连接后台后开始',
     'composer.initial.placeholder': '描述你想完成的任务…',
@@ -72,7 +94,7 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.queue.label': '待执行消息',
     'composer.queue.count': '待执行 · {count}',
     'composer.queue.attachment': '含附件的消息',
-    'composer.queue.send': '立即发送',
+    'composer.queue.send': '立即打断',
     'composer.queue.sending': '正在停止并发送…',
     'composer.queue.sendAccessible': '立即发送第 {index} 条待执行消息',
     'composer.queue.sendTitle': '停止当前轮，优先执行这条消息',

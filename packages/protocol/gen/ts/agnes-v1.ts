@@ -37,7 +37,8 @@ export const AgnesV1 = Type.Module({
   "SessionControlParams": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 512 }), "commandId": Type.String({ minLength: 1, maxLength: 128 }), "generation": Type.Optional(Type.Integer({ minimum: 1 })), "action": Type.Union([Type.Literal('pause'), Type.Literal('resume'), Type.Literal('cancel'), Type.Literal('interrupt')]), "itemId": Type.Optional(Type.String({ minLength: 1, maxLength: 512 })) }, { additionalProperties: false }),
   "SessionEditQueuedParams": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 512 }), "commandId": Type.String({ minLength: 1, maxLength: 128 }), "generation": Type.Optional(Type.Integer({ minimum: 1 })), "itemId": Type.String({ minLength: 1, maxLength: 512 }), "content": Type.Array(Type.Ref('ContentBlock'), { minItems: 1 }) }, { additionalProperties: false }),
   "SessionQueuedControlInput": Type.Object({ "itemId": Type.String(), "target": Type.Union([Type.Literal('next-step'), Type.Literal('next-turn')]), "kind": Type.Union([Type.Literal('prompt'), Type.Literal('steer'), Type.Literal('follow_up')]), "content": Type.Array(Type.Ref('ContentBlock')) }, { additionalProperties: false }),
-  "SessionControlStateResult": Type.Object({ "controls": Type.Object({ "steer": Type.Optional(Type.Boolean()), "interrupt": Type.Optional(Type.Boolean()), "pause": Type.Optional(Type.Boolean()), "cancel": Type.Optional(Type.Boolean()) }, { additionalProperties: false }), "paused": Type.Boolean(), "pending": Type.Array(Type.Ref('SessionQueuedControlInput')) }, { additionalProperties: false }),
+  "SessionControlFact": Type.Object({ "seq": Type.Integer({ minimum: 1 }), "ts": Type.String(), "actor": Type.Ref('Actor'), "action": Type.String(), "outcome": Type.String(), "details": JsonValue }, { additionalProperties: false }),
+  "SessionControlStateResult": Type.Object({ "controls": Type.Object({ "steer": Type.Optional(Type.Boolean()), "interrupt": Type.Optional(Type.Boolean()), "pause": Type.Optional(Type.Boolean()), "cancel": Type.Optional(Type.Boolean()) }, { additionalProperties: false }), "paused": Type.Boolean(), "facts": Type.Optional(Type.Array(Type.Ref('SessionControlFact'))), "pending": Type.Array(Type.Ref('SessionQueuedControlInput')) }, { additionalProperties: false }),
   "SessionSteerParams": Type.Object({ "sessionId": Type.String({ maxLength: 512 }), "content": Type.Array(Type.Ref('ContentBlock'), { minItems: 1 }), "commandId": Type.String({ maxLength: 128 }), "generation": Type.Optional(Type.Integer({ minimum: 1 })) }, { additionalProperties: false }),
   "SessionSendNowParams": Type.Object({ "sessionId": Type.String({ maxLength: 512 }), "itemId": Type.String({ minLength: 1, maxLength: 512 }), "commandId": Type.String({ maxLength: 128 }), "generation": Type.Optional(Type.Integer({ minimum: 1 })) }, { additionalProperties: false }),
   "SessionRemoveQueuedParams": Type.Ref('SessionSendNowParams'),
@@ -328,6 +329,8 @@ export const SessionEditQueuedParams = AgnesV1.Import('SessionEditQueuedParams')
 export type SessionEditQueuedParams = Static<typeof SessionEditQueuedParams>
 export const SessionQueuedControlInput = AgnesV1.Import('SessionQueuedControlInput')
 export type SessionQueuedControlInput = Static<typeof SessionQueuedControlInput>
+export const SessionControlFact = AgnesV1.Import('SessionControlFact')
+export type SessionControlFact = Static<typeof SessionControlFact>
 export const SessionControlStateResult = AgnesV1.Import('SessionControlStateResult')
 export type SessionControlStateResult = Static<typeof SessionControlStateResult>
 export const SessionSteerParams = AgnesV1.Import('SessionSteerParams')
