@@ -306,7 +306,8 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                           active.id === 'facts'
                             ? {
                                 ...context,
-                                selection, openPanel,
+                                selection,
+                                openPanel,
                                 data: {
                                   ...(context.data as WorkbenchContext),
                                   factChain: factTarget?.sessionId === sessionId ? factTarget : undefined,

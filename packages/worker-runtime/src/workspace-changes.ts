@@ -41,6 +41,7 @@ export type ReviewEvidence = {
   receiptSeq: number
   toolUseId: string
   tool: 'write' | 'edit'
+  laneId?: string
   turn: number
   observedAt: string
   decisionId: string
@@ -215,6 +216,7 @@ async function snapshot(session: Reader, scope: 'session' | 'turn', root: string
     const call = row?.type === 'tool/call' ? (row.data as ToolCall) : undefined,
       args = record(call?.args)
     if (
+      !row ||
       !call ||
       call.toolUseId !== item.value.toolUseId ||
       call.name !== item.value.operation ||
@@ -247,10 +249,17 @@ async function snapshot(session: Reader, scope: 'session' | 'turn', root: string
     effects.push({
       receipt: item.value,
       evidence: {
-        callSeq: row!.seq,
+        callSeq: row.seq,
         resultSeq: item.result.row.seq,
         receiptSeq: item.row.seq,
         toolUseId: call.toolUseId,
+        ...(typeof row.lane === 'string' &&
+        row.lane.length > 0 &&
+        row.lane.length <= 64 &&
+        row.lane === item.row.lane &&
+        row.lane === item.result.row.lane
+          ? { laneId: row.lane }
+          : {}),
         tool: item.value.operation,
         turn: item.value.turn,
         observedAt: item.row.ts,

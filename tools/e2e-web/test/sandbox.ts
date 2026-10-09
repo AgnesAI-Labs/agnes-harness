@@ -30,7 +30,11 @@ export async function sandboxedSession(
   await expect(opening).rejects.toMatchObject({
     code: -32011,
     rpc: { message: 'SEMANTIC_REJECTED' },
-    data: { code: 'SANDBOX_UNAVAILABLE', messageKey: 'appServer.errors.unavailable' },
+    data: {
+      code: 'E_SANDBOX_WORKSPACE',
+      cause: { code: 'E_SANDBOX_WORKSPACE' },
+      messageKey: 'appServer.errors.unavailable',
+    },
   })
   return undefined
 }

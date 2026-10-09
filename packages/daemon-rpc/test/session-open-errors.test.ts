@@ -102,7 +102,7 @@ describe('throwSessionOpenRpcError', () => {
         expect(caught(error)).toEqual({
           code: -32011,
           message: 'SEMANTIC_REJECTED',
-          data: { code: 'SANDBOX_UNAVAILABLE' },
+          data: { code },
         })
       const unknown = { code: 'E_UNKNOWN', message: `${code}: unavailable` }
       expect(caught(unknown)).toBe(unknown)
