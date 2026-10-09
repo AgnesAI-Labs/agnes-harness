@@ -23,6 +23,7 @@ const STATUS_KEY: Record<string, TraceMessageKey> = {
 }
 
 export type TraceRow = {
+  review?: import('@agnes/protocol').ToolReviewFact | undefined
   requestTraceId?: string | undefined
   id: string
   seq: number
@@ -276,7 +277,8 @@ export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[
       cached.row.errorCode === errorCode &&
       cached.row.usage === usage &&
       cached.row.callUsage === callUsage &&
-      cached.row.requestTraceId === span?.requestTraceId
+      cached.row.requestTraceId === span?.requestTraceId &&
+      cached.row.review === span?.review
     ) {
       rows.push(cached.row)
       continue
@@ -303,6 +305,7 @@ export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[
       usage,
       callUsage,
       requestTraceId: span?.requestTraceId,
+      review: span?.review,
     }
     rowCache.set(node, { locale, turn, span, row })
     rows.push(row)

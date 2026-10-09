@@ -49,7 +49,7 @@ In **Settings → Models → account details**, keep using Base URL for an accou
 | `transports` | stdio/unix/ws-tls; remote configuration also needs certificates and authentication |
 | `dataDir`, `cacheDir` | Data/cache locations; a running canonical-home daemon rejects incompatible profile/data-directory configuration |
 | `presets` | default and allowed; the default must be allowed |
-| `approvals.mode` | manual/smart/off |
+| `approvals.mode` | manual/smart/off/auto-review |
 | `reconcile` | immediate/turn/step; maxWaitMs applies only to turn/step |
 | `policy.capabilityCeiling` | Capability ceiling; current local-dev and enterprise templates include services |
 | `policy.workspacePackages` | deny or require-project-trust |

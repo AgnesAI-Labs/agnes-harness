@@ -328,6 +328,20 @@ export function WebConversationMessages({
       const content = (
         <>
           {base}
+          {node.kind === 'tool' && node.review && (
+            <p data-testid="tool-review-decision">
+              {locale?.t(
+                node.review.source === 'human-override'
+                  ? 'facts.reviewHumanRule'
+                  : node.review.decision === 'allow'
+                    ? 'facts.reviewAllowed'
+                    : node.review.decision === 'deny'
+                      ? 'facts.reviewDenied'
+                      : 'facts.reviewEscalated',
+              )}
+              : {node.review.reason}
+            </p>
+          )}
           {factAnchor && sessionScope && (
             <Button
               type="link"

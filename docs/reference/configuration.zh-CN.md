@@ -43,7 +43,7 @@ builtin 模板是基础，用户 profile 与 Host configuration overlay 合并�
 | `transports` | stdio/unix/ws-tls，远程配置另需证书与认证 |
 | `dataDir`, `cacheDir` | 数据/缓存位置；规范化 home 的运行中 daemon 拒绝不兼容的配置档或数据目录配置 |
 | `presets` | default 与 allowed；默认必须在允许集合中 |
-| `approvals.mode` | manual/smart/off |
+| `approvals.mode` | manual/smart/off/auto-review |
 | `reconcile` | immediate/turn/step；maxWaitMs 仅适用 turn/step |
 | `policy.capabilityCeiling` | 能力上限；当前 local-dev 与 enterprise 模板包含 services |
 | `policy.workspacePackages` | deny 或 require-project-trust |

@@ -5,6 +5,7 @@ import type { UiExtensionContext } from '@agnes/web-client'
 import { Button } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
 import { panelContext } from './context.js'
+import { ReviewEvidence } from './review-evidence.js'
 
 function anchorFor(node: FactChainNode): FactChainAnchor | undefined {
   if (node.kind === 'request') return { kind: 'request', callId: node.callId }
@@ -109,6 +110,9 @@ export function FactChainPanel({ context }: { context: UiExtensionContext }) {
                       ? node.name
                       : t(`facts.tool.${node.name}`)}
                   </p>
+                )}
+                {node.kind === 'invocation' && node.review && (
+                  <ReviewEvidence name={node.name} review={node.review} t={t} />
                 )}
                 {node.kind === 'attempt' && (
                   <p>
