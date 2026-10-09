@@ -29,8 +29,10 @@ test('human controls queue, interrupt, persist pause and stop/continue a child',
 
   await composer.fill('call e2e_wait_for_cancel {}')
   await composer.press('Enter')
+  const beforeInterrupt = await page.getByTestId('conversation-turn').count()
   await page.getByTestId('queued-steer-interrupt').click()
   await expect(original).toHaveAttribute('data-status', 'cancelled')
+  await expect(page.getByTestId('conversation-turn')).toHaveCount(beforeInterrupt + 1)
   const interruptedTurn = page.getByTestId('conversation-turn').last()
   await expect(interruptedTurn.getByTestId('tool-detail-toggle')).toBeVisible()
   const client = await runtime.connect()
@@ -78,5 +80,5 @@ test('human controls queue, interrupt, persist pause and stop/continue a child',
   await page.locator('#view-trace').click()
   const evidence = page.getByTestId('control-facts')
   await evidence.locator('summary').click()
-  await expect(evidence.getByTestId('control-fact').filter({ hasText: 'child-stop' })).toBeVisible()
+  await expect(evidence.getByTestId('control-fact').filter({ hasText: 'child-stop' }).last()).toBeVisible()
 })
