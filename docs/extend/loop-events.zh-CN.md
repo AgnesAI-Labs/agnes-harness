@@ -28,3 +28,9 @@ export const plugin = {
 自定义循环通过 `LoopContext.model`、`tools`、`events.finish` 获得相同处理。运行时还提供 `events.dispatch`，用于显式边界；不要在自动发出事件的操作周围重复调用。为兼容旧测试端口，该字段在类型中为可选。自定义 wire 请求只接受协议支持的采样字段和输出上限，不支持的补丁明确失败。
 
 参见[工具运行时与策略](tool-runtime.zh-CN.md)。
+
+## 人工控制
+
+`LoopFactory` 可声明 `controls: { steer: true, interrupt: true, pause: true }`。未声明的控制由 Core 拒绝，返回 `E_UNSUPPORTED` 和 `detail.reason = "LOOP_CONTROL_UNSUPPORTED"`。包括 generation 发布期间，Core 始终依据会话绑定的 factory。取消仍属于 driver 生命周期。
+
+在调度边完成后通过 `ctx.input.claim("next-step")` 接收 steer；不要在工具批次运行中接收。暂停阻止下一条边，保留同一 turn 和 checkpoint，浏览器重载与冷恢复均保持暂停。立即打断合作取消当前执行，收集可用回执，再接受选中的排队输入。已提交效果仍有记录，缺少回执的效果仍属未知。排队、交付、修改、撤回及控制结果均由 Core 记为带操作者和时间的 ledger 事实。

@@ -46,6 +46,7 @@ function create(ctx: LoopContext): LoopDriver {
           : { outcome: 'idle', phase: 'idle' }
       }
       if (ctx.turn.cancelled() || signal.aborted) return ctx.turn.finishCancelled()
+      if (continuation !== 'checkpoint' && continuation !== 'failure') await ctx.input.claim('next-step')
       switch (continuation) {
         case 'checkpoint':
           return ctx.turn.checkpoint(signal)
@@ -69,6 +70,7 @@ function create(ctx: LoopContext): LoopDriver {
 export const defaultLoopFactory: LoopFactory = Object.freeze({
   ...DEFAULT_LOOP,
   checkpointMode: 'ledger',
+  controls: { steer: true, interrupt: true, pause: true },
   capabilities: ['model', 'tools', 'multimodal', 'compaction', 'children', 'park', 'recovery'],
   codec,
   create,
