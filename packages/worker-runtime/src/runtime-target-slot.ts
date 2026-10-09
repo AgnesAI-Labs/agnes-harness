@@ -196,3 +196,16 @@ export function createRuntimeTargetSlot<Result = void>(
 ): RuntimeTargetSlot<Result> {
   return new LatestRuntimeTargetSlot(port)
 }
+
+/** Preserve the plugin's original refusal through Host transaction wrappers; the admin redacts it. */
+export function runtimeTargetFailureMessage(error: unknown): string {
+  const seen = new Set<unknown>()
+  let cause: unknown = error
+  for (let depth = 0; depth < 8 && cause instanceof Error && !seen.has(cause); depth++) {
+    seen.add(cause)
+    const next: unknown = cause instanceof AggregateError ? cause.errors[0] : cause.cause
+    if (next === undefined) break
+    cause = next
+  }
+  return cause instanceof Error ? cause.message : String(cause)
+}

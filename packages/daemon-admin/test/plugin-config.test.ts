@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CompositeTargetStore } from '@agnes/daemon-foundation/storage/composite-target-store'
@@ -9,7 +9,7 @@ import {
   decodeRuntimeTargetArtifact,
   encodeRuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { PluginConfiguration } from '../src/packages/plugin-config.js'
 
@@ -66,6 +66,9 @@ it.each([false, true])(
       )
       store.publishDesired(initial)
       let refuse = false
+      let applyGate: Promise<void> | undefined
+      let offered!: () => void
+      let liveRequest: boolean | undefined
       const controller = new PluginConfiguration({
         manager: {
           inventory: async () => ({ packages: [{ id: 'acme', directory }] }),
@@ -73,8 +76,16 @@ it.each([false, true])(
         profileDirectory: () => directory,
         store: () => store,
         clock: () => '2026-10-09T00:00:00Z',
-        publish: async (artifact) => {
-          if (refuse) throw new Error('probe refusal')
+        acknowledgementTimeoutMs: 10_000,
+        publish: async (artifact, liveConfig) => {
+          liveRequest = liveConfig
+          offered?.()
+          await applyGate
+          if (refuse) {
+            const error = new Error('Synthetic configuration refusal secret://demo/new token=hidden')
+            error.name = 'PluginConfigRefused'
+            throw error
+          }
           store.publishDesired(artifact)
         },
       })
@@ -102,12 +113,29 @@ it.each([false, true])(
       expect(JSON.stringify(invalid)).not.toContain('synthetic-plaintext')
       expect(store.desired()?.digest).toBe(initial.digest)
       refuse = true
-      expect((await controller.save(request, authority)).reason).toBe('refused')
+      const refusal = await controller.save(request, authority)
+      expect(refusal).toMatchObject({ ok: false, reason: 'refused', revision: initial.digest })
+      expect(refusal.refusalReason).toContain('Synthetic configuration refusal')
+      expect(JSON.stringify(refusal)).not.toMatch(/secret:\/\/|hidden/)
       expect(store.configAudit.facts([rowId])).toEqual([])
       expect(store.desired()?.digest).toBe(initial.digest)
       refuse = false
+      let accept!: () => void
+      applyGate = new Promise<void>((resolve) => {
+        accept = resolve
+      })
+      const applying = new Promise<void>((resolve) => {
+        offered = resolve
+      })
+      const first = controller.save(request, authority)
+      await applying
+      expect(liveRequest).toBe(true)
+      expect(store.desired()?.digest).toBe(initial.digest)
+      expect(store.configAudit.facts([rowId])).toEqual([])
+      accept()
+      applyGate = undefined
       const results = await Promise.all([
-        controller.save(request, authority),
+        first,
         controller.save(
           { ...request, commandId: 'second', value: { ...request.value, name: 'concurrent' } },
           authority,
@@ -161,6 +189,50 @@ it.each([false, true])(
       expect(
         new CompositeTargetStore(tables.table('composite'), 'default').configAudit.value('acme', rowId),
       ).toEqual(request.value)
+      // A bounded response may be pending; a late refusal must still leave facts and revision intact.
+      vi.useFakeTimers()
+      try {
+        let release!: () => void
+        applyGate = new Promise<void>((resolve) => {
+          release = resolve
+        })
+        const started = new Promise<void>((resolve) => {
+          offered = resolve
+        })
+        refuse = true
+        const beforeTimeout = store.desired()!.digest
+        const beforeAudit = store.configAudit.facts([rowId])
+        const waiting = controller.save(
+          {
+            ...request,
+            expectedRevision: beforeTimeout,
+            commandId: 'timeout',
+            value: { ...request.value, name: 'slow' },
+          },
+          authority,
+        )
+        await started
+        await vi.advanceTimersByTimeAsync(10_000)
+        expect(await waiting).toMatchObject({ ok: false, reason: 'pending', revision: beforeTimeout })
+        expect(store.configAudit.facts([rowId])).toEqual(beforeAudit)
+        expect(store.desired()?.digest).toBe(beforeTimeout)
+        release()
+        // The next request stays behind the late refusal, then observes the original revision.
+        expect(
+          (
+            await controller.save(
+              { ...request, expectedRevision: beforeTimeout, commandId: 'after-timeout' },
+              authority,
+            )
+          ).reason,
+        ).toBe('saved')
+        expect(store.desired()?.digest).toBe(beforeTimeout)
+        expect(store.configAudit.facts([rowId])).toEqual(beforeAudit)
+      } finally {
+        applyGate = undefined
+        refuse = false
+        vi.useRealTimers()
+      }
       // Installed but inactive entries retain revisioned values without mounting their code.
       const unmounted = encodeRuntimeTargetArtifact(
         buildRuntimeTarget({
@@ -184,8 +256,20 @@ it.each([false, true])(
         authority,
       )
       expect(inactive.reason).toBe('saved')
+      expect(liveRequest).toBe(false)
       expect(decodeRuntimeTargetArtifact(store.desired()!).tree.rows).toEqual([])
       expect(store.configAudit.value('acme', rowId)).toEqual({ name: 'inactive', auth: 'secret://demo/key' })
+      // Next-session saves do not request a live apply even for an enabled row.
+      const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'))
+      manifest.agnes.plugins[0].configReload = 'next-session'
+      await writeFile(join(directory, 'package.json'), JSON.stringify(manifest))
+      store.publishDesired(initial)
+      const nextSession = await controller.save(
+        { ...request, commandId: 'next-session', expectedRevision: initial.digest },
+        authority,
+      )
+      expect(nextSession).toMatchObject({ ok: true, reason: 'saved', reload: 'next-session' })
+      expect(liveRequest).toBe(false)
       // A manifest row name never authorizes overwriting another installed package's row.
       const foreign = encodeRuntimeTargetArtifact(
         buildRuntimeTarget({

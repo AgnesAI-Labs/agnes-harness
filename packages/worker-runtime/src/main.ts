@@ -78,7 +78,11 @@ import {
   sessionScopedKey,
 } from './hosted-sessions.js'
 import { createMcpRowRuntime } from './mcp-row-runtime.js'
-import { createRuntimeTargetSlot, type RuntimeTargetApplyPort } from './runtime-target-slot.js'
+import {
+  createRuntimeTargetSlot,
+  runtimeTargetFailureMessage,
+  type RuntimeTargetApplyPort,
+} from './runtime-target-slot.js'
 import { createWorkerServiceAuthority } from './service-authority.js'
 import { SharedSessionChannel } from './shared-session-channel.js'
 import { createMcpStatusFrameBuffer } from './status-frame-buffer.js'
@@ -629,7 +633,7 @@ export async function runWorker(
           digest: outcome.artifact.digest,
           identity: outcome.artifact.identity,
           phase: 'apply',
-          message: outcome.error instanceof Error ? outcome.error.message : String(outcome.error),
+          message: runtimeTargetFailureMessage(outcome.error),
         })
       }
       return

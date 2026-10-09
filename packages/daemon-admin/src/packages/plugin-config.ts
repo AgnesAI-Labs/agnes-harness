@@ -25,6 +25,28 @@ import type { PackageProfileDirectory } from './project.js'
 
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
+/** Plugin failures are untrusted text. Never echo configuration values or secret references. */
+function refusalReason(error: Error, values: readonly unknown[]): string {
+  let message = error.message.split('\n')[0] ?? ''
+  const strings = (value: unknown): string[] =>
+    typeof value === 'string'
+      ? [value]
+      : value && typeof value === 'object'
+        ? Object.values(value).flatMap(strings)
+        : []
+  for (const value of values
+    .flatMap(strings)
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length))
+    message = message.split(value).join('[redacted]')
+  return message
+    .replace(/secret:\/\/[^\s"'<>]+/gi, '[redacted]')
+    .replace(/(?:Bearer\s+\S+|(?:password|token|credential|api[_-]?key)\s*[:=]\s*\S+)/gi, '[redacted]')
+    .replace(/(?:\/[^\s]+|[A-Za-z]:\\[^\s]+)/g, '[redacted]')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .slice(0, 512)
+}
+
 /** Runtime generation publication owns hot apply; this controller owns validation, CAS and facts. */
 export class PluginConfiguration {
   private tail: Promise<unknown> = Promise.resolve()
@@ -33,8 +55,9 @@ export class PluginConfiguration {
       manager: PackageManager
       profileDirectory: PackageProfileDirectory
       store(): CompositeTargetStore | undefined
-      publish(artifact: RuntimeTargetArtifact): Promise<void>
+      publish(artifact: RuntimeTargetArtifact, liveConfig?: boolean): Promise<void>
       clock(): string
+      acknowledgementTimeoutMs?: number
     },
   ) {}
 
@@ -83,7 +106,31 @@ export class PluginConfiguration {
     const owned = structuredClone(input)
     const task = this.tail.then(() => this.saveNow(owned, authority))
     this.tail = task.catch(() => undefined)
-    return task
+    // A timed-out response does not cancel or release the serialized publication. Its late receipt
+    // must still decide whether the staged audit and value can commit before another save starts.
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const pending = new Promise<PluginConfigSaveResult>((resolve, reject) => {
+      timer = setTimeout(() => {
+        void this.get(owned).then((snapshot) => {
+          const reload =
+            snapshot.entries.find((entry) => entry.rowId === owned.rowId)?.reload ??
+            DEFAULT_PLUGIN_CONFIG_RELOAD
+          // Next-session does not apply to existing workers and keeps its original save contract.
+          if (reload !== 'live') {
+            resolve(task)
+            return
+          }
+          resolve({
+            ok: false,
+            reason: 'pending',
+            revision: snapshot.revision,
+            reload,
+            issues: [],
+          })
+        }, reject)
+      }, this.options.acknowledgementTimeoutMs ?? 10_000)
+    })
+    return Promise.race([task, pending]).finally(() => clearTimeout(timer))
   }
 
   private async saveNow(
@@ -149,11 +196,21 @@ export class PluginConfiguration {
       { packageId: input.id, rowId: entry.rowId, value: input.value },
     )
     try {
-      await this.options.publish(next)
+      await this.options.publish(
+        next,
+        entry.reload === 'live' && currentRow !== undefined && !currentRow.disabled,
+      )
       if (store.desired()?.digest !== next.digest) return result('refused')
       return result('saved')
-    } catch {
-      return result(store.desired()?.digest !== prior.digest ? 'conflict' : 'refused')
+    } catch (error) {
+      if (store.desired()?.digest !== prior.digest) return result('conflict')
+      if (error instanceof Error && error.name === 'PluginConfigRefused')
+        return { ...result('refused'), refusalReason: refusalReason(error, [entry.value, input.value]) }
+      return result(
+        error instanceof Error && error.message === 'E_RUNTIME_TARGET_OUTCOME_UNKNOWN'
+          ? 'pending'
+          : 'refused',
+      )
     } finally {
       store.configAudit.clear()
     }

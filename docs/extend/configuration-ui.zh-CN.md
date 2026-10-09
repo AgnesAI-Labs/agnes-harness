@@ -111,9 +111,13 @@ Schema 使用同步 JSON Schema 2020-12、标准 format 和本地引用。安装
 
 行内校验与保存都由服务端共享的 `compilePluginConfig` 验证器执行。`_agnes/v1/plugins.config.get` 返回 `{ revision, entries, audit }`；`.validate` 接收 `{ profile, id, rowId, value }`，返回 `{ issues }`；`.save` 另需 `expectedRevision`、`clientId`、`commandId`。读取/验证需要 `packages.read`，保存需要 `packages.activate` 与服务端确定的 client 身份。SDK 入口为 `client.packages.config.get/validate/save`；本地 Web 中继为 `/admin/plugins/api/config/get`、`/validate`、`/save`。
 
-保存返回 `{ ok, revision, reason, issues, reload }`；`reason` 为 `saved`、`invalid`、`conflict` 或 `refused`。旧修订不会覆盖新配置，界面保留草稿并提供重新读取。Schema 错误或候选探测拒绝时，先前 desired 配置与审计保持不变。成功配置与审计事实（主体、时间、条目、修订、脱敏 before/after 差异）在同一次 desired target 事务中提交。持久化覆盖值在禁用/启用后保留，更新时按新 manifest 重验；不兼容则拒绝发布，不会静默重置。
+保存返回 `{ ok, revision, reason, issues, reload, refusalReason? }`，`reason` 为 `saved`、`invalid`、`conflict`、`refused` 或 `pending`；只有 `saved` 返回 `ok: true`。实时保存最多等待十秒返回响应。`pending` 表示应用仍在进行或结果未知，不能当作保存成功；界面保留草稿，提示重新读取当前配置。晚到的成功确认仍可提交，晚到的拒绝保留原 revision 与历史。保存操作在确认或 Worker 退出前保持串行。
+
+旧 revision 不会覆盖新配置；界面保留草稿并提供重新读取。Schema 校验、工件探测或实时 Worker apply 拒绝都不修改原 desired revision、配置值与审计历史。apply 拒绝可返回限制长度的插件原因，配置字符串、密钥引用和凭据文本经过脱敏。实时保存只在授权业务 Worker 确认应用成功后，将新 desired、配置值与审计事实（操作者、时间、row、revision、脱敏前后差异）在同一事务提交。canonical-artifact probe 只校验工件，不打开业务运行时；应用结果复用现有 Worker convergence/failure 帧。保存的覆盖值在禁用后再启用时保留，并针对更新后的 manifest 重新校验，不兼容时拒绝发布，不静默重置。
 
 `live` 在运行准入边界应用于使用同一固定代码身份的已有会话，应用被拒绝时补偿已修改容器。`next-session` 保留已有会话的配置，后续会话使用新值。页签明确说明声明的模式。配置不会替换固定代码或放宽须重启的后端边界。官方 observability 插件与[第三方示例](../../examples/third-party-plugin/package.json) 提供 manifest schema 示例。
+
+`next-session` 的保存顺序保持不变：已有会话按合同继续使用原配置，不会应用这次保存，因此不以它们的实时确认为保存条件。禁用或未挂载条目也直接保存覆盖值，不打开插件代码。
 
 ## Guard 与验收
 

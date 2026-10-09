@@ -463,7 +463,7 @@ class Service implements PackageAdminService {
       pluginTree?: CompositeTargetStore | (() => CompositeTargetStore | undefined)
       revokeRuntimePackage?: (packageId: string) => Promise<void>
       /** Production publisher: validates in an isolated probe before changing desired state. */
-      pluginTreePublisher?: (artifact: RuntimeTargetArtifact) => Promise<void>
+      pluginTreePublisher?: (artifact: RuntimeTargetArtifact, liveConfig?: boolean) => Promise<void>
       workerGeneration?: () => number | undefined
       /** Private launcher BFF dispatch. The registry performs row/snapshot authority checks first. */
       clientServiceCall?: (
@@ -482,9 +482,9 @@ class Service implements PackageAdminService {
       profileDirectory: options.profileDirectory,
       store: () => this.pluginTreeStore(),
       clock: options.clock,
-      publish: async (artifact) => {
+      publish: async (artifact, liveConfig) => {
         if (!options.pluginTreePublisher) throw new Error('E_PACKAGE_STATE')
-        await options.pluginTreePublisher(artifact)
+        await options.pluginTreePublisher(artifact, liveConfig)
       },
     })
     this.candidates = new AuthoringCandidates(
@@ -2093,7 +2093,7 @@ export function createPackageAdminService(options: {
   clientModules?: ClientModuleRegistry
   pluginTree?: CompositeTargetStore | (() => CompositeTargetStore | undefined)
   revokeRuntimePackage?: (packageId: string) => Promise<void>
-  pluginTreePublisher?: (artifact: RuntimeTargetArtifact) => Promise<void>
+  pluginTreePublisher?: (artifact: RuntimeTargetArtifact, liveConfig?: boolean) => Promise<void>
   workerGeneration?: () => number | undefined
   clientServiceCall?: (
     input: ClientModuleServiceCallParams & Readonly<{ packageId: string; extension: string }>,

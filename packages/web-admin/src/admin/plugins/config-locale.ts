@@ -16,6 +16,8 @@ export const pluginConfigAdminCatalog: LocaleCatalog = {
     conflict:
       'Configuration changed elsewhere. Your draft is preserved. Reload to review the latest revision before saving.',
     refused: 'The plugin refused this configuration. The previous configuration remains active.',
+    pending:
+      'Configuration outcome is pending or unknown. Saving has not been confirmed. Reload to inspect the current configuration.',
     validating: 'Validating…',
     live: 'Live: applies at a safe runtime boundary to sessions using this code version.',
     next: 'Next session: existing sessions keep their configuration.',
@@ -39,6 +41,7 @@ export const pluginConfigAdminCatalog: LocaleCatalog = {
     invalid: '请修正标出的字段；先前配置保持生效。',
     conflict: '配置已被其他操作修改，草稿已保留。请重新读取并核对最新版本后保存。',
     refused: '插件拒绝了这份配置；先前配置保持生效。',
+    pending: '配置应用结果待确认或未知，尚未确认保存。请重新读取以查看当前配置。',
     validating: '正在校验…',
     live: '实时：在安全运行边界应用于使用此代码版本的会话。',
     next: '下次会话：已有会话继续使用原配置。',

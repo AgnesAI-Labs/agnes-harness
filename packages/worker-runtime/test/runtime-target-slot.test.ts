@@ -10,7 +10,7 @@ import {
   type RuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
 import { describe, expect, it, vi } from 'vitest'
-import { createRuntimeTargetSlot } from '../src/runtime-target-slot.js'
+import { createRuntimeTargetSlot, runtimeTargetFailureMessage } from '../src/runtime-target-slot.js'
 
 function artifact(revision: string): RuntimeTargetArtifact {
   return encodeRuntimeTargetArtifact(
@@ -198,7 +198,7 @@ describe('runtime target latest-wins slot', () => {
 
   it('continues with the latest queued target after an apply failure', async () => {
     const first = deferred<void>()
-    const failure = new Error('candidate failed')
+    const failure = new Error('candidate failed', { cause: new Error('plugin refused new value') })
     const a = artifact('a')
     const b = artifact('b')
     const calls: string[] = []
@@ -215,6 +215,7 @@ describe('runtime target latest-wins slot', () => {
     first.reject(failure)
 
     await expect(failedA).resolves.toMatchObject({ status: 'failed', error: failure })
+    expect(runtimeTargetFailureMessage(failure)).toBe('plugin refused new value')
     await expect(appliedB).resolves.toMatchObject({
       status: 'applied',
       changed: true,

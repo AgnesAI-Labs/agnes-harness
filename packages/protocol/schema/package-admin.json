@@ -202,7 +202,12 @@
           "maxLength": 512
         },
         "reason": {
-          "enum": ["saved", "invalid", "conflict", "refused"]
+          "enum": ["saved", "invalid", "conflict", "refused", "pending"]
+        },
+        "refusalReason": {
+          "description": "Sanitized plugin apply refusal; never contains configuration values or secret references.",
+          "type": "string",
+          "maxLength": 512
         },
         "issues": {
           "type": "array",

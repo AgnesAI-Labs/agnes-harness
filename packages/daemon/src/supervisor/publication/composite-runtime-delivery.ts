@@ -25,6 +25,42 @@ export class CompositeRuntimeDelivery {
   readonly #store: CompositeTargetStore
   readonly #boots = new Map<number, RuntimeAdmission>()
   readonly #onFailureRecorded: (() => unknown) | undefined
+  readonly #applies = new Map<
+    number,
+    {
+      artifact: RuntimeTargetArtifact
+      resolve: (receipt: {
+        generation: number
+        report: import('@agnes/protocol').RuntimeConvergenceReport
+      }) => void
+      reject: (error: Error) => void
+    }
+  >()
+
+  /** Live config candidates use the business worker's existing acknowledgement frames before commit. */
+  applyBeforeCommit(
+    generation: number,
+    artifact: RuntimeTargetArtifact,
+    offer: () => void,
+  ): Promise<{ generation: number; report: import('@agnes/protocol').RuntimeConvergenceReport }> {
+    if (this.#applies.has(generation)) return Promise.reject(new Error('E_RUNTIME_TARGET_BUSY'))
+    return new Promise((resolve, reject) => {
+      this.#applies.set(generation, { artifact, resolve, reject })
+      try {
+        offer()
+      } catch (error) {
+        this.#applies.delete(generation)
+        reject(error)
+      }
+    })
+  }
+
+  workerExited(generation: number): void {
+    const pending = this.#applies.get(generation)
+    this.#applies.delete(generation)
+    pending?.reject(new Error('E_RUNTIME_TARGET_OUTCOME_UNKNOWN'))
+    this.#boots.delete(generation)
+  }
 
   constructor(store: CompositeTargetStore, options: CompositeRuntimeDeliveryOptions = {}) {
     this.#store = store
@@ -89,6 +125,30 @@ export class CompositeRuntimeDelivery {
   }
 
   handleWorkerFrame(generation: number, frame: unknown): boolean {
+    const candidate = this.#applies.get(generation)
+    if (candidate) {
+      const converged = validateRuntimeConvergedFrame(frame)
+      const failed = validateRuntimeApplyFailedFrame(frame)
+      const value = converged.ok ? converged.value : failed.ok ? failed.value : undefined
+      if (
+        value?.generation === generation &&
+        value.digest === candidate.artifact.digest &&
+        value.identity.treeHash === candidate.artifact.identity.treeHash &&
+        value.identity.resourceRevision === candidate.artifact.identity.resourceRevision &&
+        value.identity.compositeRevision === candidate.artifact.identity.compositeRevision
+      ) {
+        this.#applies.delete(generation)
+        if (converged.ok) {
+          candidate.resolve({ generation, report: converged.value.report })
+        } else {
+          const error = new Error(failed.ok ? failed.value.message : 'E_PLUGIN_CONFIG_REFUSED')
+          error.name = 'PluginConfigRefused'
+          candidate.reject(error)
+        }
+        // An unpublished refusal must never enter desired-failure compensation.
+        return true
+      }
+    }
     const boot = validateRuntimeBootReadyFrame(frame)
     if (boot.ok) return this.#boots.get(generation)?.admit(boot.value) === true
     const failedBoot = validateRuntimeApplyFailedFrame(frame)

@@ -53,10 +53,6 @@ for (const locale of ['en', 'zh-CN'] as const) {
     page,
     runtime,
   }) => {
-    test.skip(
-      true,
-      'GT1-K02: live config save acknowledges desired before Worker apply refusal; TODO reports/gt1-global-test/REPORT.md',
-    )
     const { client, pkg, panel, name, save } = await openConfiguration(page, runtime, locale)
     const saved = await client.packages.config.get({ profile: 'local-dev', id: pkg.id })
     await name.fill('refuse')
@@ -65,9 +61,22 @@ for (const locale of ['en', 'zh-CN'] as const) {
     await expect(panel.getByTestId('plugin-config-notice')).toContainText(
       locale === 'en' ? 'refused' : '拒绝',
     )
-    expect((await client.packages.config.get({ profile: 'local-dev', id: pkg.id })).revision).toBe(
-      saved.revision,
+    await expect(panel.getByTestId('plugin-config-refusal-reason')).toContainText(
+      'Synthetic configuration refusal',
     )
+    const rpcRefusal = await client.packages.config.save({
+      ...(await command(client)),
+      id: pkg.id,
+      rowId: 'ext:e2e/config-agent',
+      expectedRevision: saved.revision,
+      value: { ...(saved.entries[0]!.value as Record<string, JsonValue>), name: 'refuse' },
+    })
+    expect(rpcRefusal).toMatchObject({ ok: false, reason: 'refused', revision: saved.revision })
+    expect(rpcRefusal.refusalReason).toContain('Synthetic configuration refusal')
+    const refused = await client.packages.config.get({ profile: 'local-dev', id: pkg.id })
+    expect(refused.revision).toBe(saved.revision)
+    expect(refused.entries).toEqual(saved.entries)
+    expect(refused.audit).toEqual(saved.audit)
   })
 }
 

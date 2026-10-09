@@ -31,6 +31,7 @@ export function PluginConfigPanel({
   const [validating, setValidating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
+  const [refusalReason, setRefusalReason] = useState('')
   const [loadVersion, setLoadVersion] = useState(0)
   const [editorVersion, setEditorVersion] = useState(0)
   const alive = useRef(true)
@@ -59,6 +60,7 @@ export function PluginConfigPanel({
         setIssues([])
         setInvalidJson(new Set())
         setNotice('')
+        setRefusalReason('')
       })
       .catch(() => {
         if (!abort.signal.aborted) setNotice('unavailable')
@@ -104,6 +106,7 @@ export function PluginConfigPanel({
     setDraft(value)
     setValidating(true)
     setNotice('')
+    setRefusalReason('')
   }
   const save = async () => {
     if (!snapshot || !entry || issues.length || invalidJson.size || validating || !canSave) return
@@ -112,7 +115,8 @@ export function PluginConfigPanel({
       const result = await api.save(id, entry.rowId, draft, snapshot.revision)
       if (!alive.current) return
       setIssues(result.issues)
-      setNotice(result.reason === 'saved' ? 'saved' : result.reason)
+      setNotice(result.reason)
+      setRefusalReason(result.reason === 'refused' ? (result.refusalReason ?? '') : '')
       if (result.ok) {
         const latest = await api.get(id)
         if (alive.current) {
@@ -133,6 +137,9 @@ export function PluginConfigPanel({
       {notice && (
         <p role="status" data-testid="plugin-config-notice">
           {t(notice)}
+          {notice === 'refused' && refusalReason && (
+            <span data-testid="plugin-config-refusal-reason"> {refusalReason}</span>
+          )}
         </p>
       )}
       {!snapshot && !notice && <p role="status">{t('loading')}</p>}
@@ -158,6 +165,7 @@ export function PluginConfigPanel({
                 setIssues([])
                 setInvalidJson(new Set())
                 setNotice('')
+                setRefusalReason('')
               }
             }}
           >

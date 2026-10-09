@@ -8,7 +8,7 @@ import {
   type RuntimeSnapshotSelector,
 } from '@agnes/package-manager'
 import { decodeRuntimeTargetArtifact, type RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
-import { publishProbedRuntimeTarget } from './runtime-target-publisher.js'
+import { publishProbedRuntimeTarget, type RuntimeTargetApplyReceipt } from './runtime-target-publisher.js'
 
 type SnapshotRef = Readonly<{ packageId: string; integrity: string }>
 
@@ -129,7 +129,11 @@ export function createRuntimePinCoordinator(
         input.store.sweepPins()
         await collect()
       }),
-    publish: (artifact: RuntimeTargetArtifact, probe: (target: RuntimeTargetArtifact) => Promise<void>) =>
+    publish: (
+      artifact: RuntimeTargetArtifact,
+      probe: (target: RuntimeTargetArtifact) => Promise<void>,
+      apply?: (target: RuntimeTargetArtifact) => Promise<RuntimeTargetApplyReceipt>,
+    ) =>
       exclusive(async () => {
         const baseline = input.store.desired()?.digest
         try {
@@ -137,6 +141,28 @@ export function createRuntimePinCoordinator(
           await publishProbedRuntimeTarget({
             store: input.store,
             artifact,
+            ...(apply
+              ? {
+                  apply: async (target: RuntimeTargetArtifact) => {
+                    const receipt = await apply(target)
+                    try {
+                      // Trust and CAS can change while business code is applying the candidate.
+                      if (input.store.desired()?.digest !== baseline)
+                        throw new Error('E_RUNTIME_TARGET_STALE')
+                      if ((await input.manager.inventory(input.profileDirectory)).hash !== inventoryHash)
+                        throw new Error('E_RUNTIME_TARGET_INVENTORY_STALE')
+                      return receipt
+                    } catch (error) {
+                      try {
+                        await receipt.restore?.()
+                      } catch {
+                        throw new Error('E_RUNTIME_TARGET_OUTCOME_UNKNOWN')
+                      }
+                      throw error
+                    }
+                  },
+                }
+              : {}),
             probe: async (target) => {
               await probe(target)
               if (input.store.desired()?.digest !== baseline) throw new Error('E_RUNTIME_TARGET_STALE')

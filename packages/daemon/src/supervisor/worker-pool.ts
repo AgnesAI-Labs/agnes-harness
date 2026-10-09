@@ -443,6 +443,7 @@ export class WorkerPool {
           gate?.on('error', () => undefined).end('start\n')
           slot.link = link
           link.onExit(() => {
+            this.o.runtimeDelivery?.workerExited(slot.generation)
             if (slot.link === link) slot.link = undefined
             if (!startupFinished) failStarting(new Error(`worker ${workerKey} link closed during startup`))
           })

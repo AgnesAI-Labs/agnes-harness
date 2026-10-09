@@ -782,7 +782,10 @@ export type StartSupervisorOptions = {
     bindPluginTree?(
       store: CompositeTargetStore,
       workerGeneration?: () => number | undefined,
-      publish?: (artifact: import('@agnes/plugin-runtime/host').RuntimeTargetArtifact) => Promise<void>,
+      publish?: (
+        artifact: import('@agnes/plugin-runtime/host').RuntimeTargetArtifact,
+        liveConfig?: boolean,
+      ) => Promise<void>,
     ): void
   }
 }
@@ -1614,14 +1617,66 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           runtimeStore,
           () => pool.businessWorker()?.generation,
           runtimeTargetProbe
-            ? async (artifact) => {
+            ? async (artifact, liveConfig) => {
                 await revertFailedDesired?.()
-                if (pinCoordinator) await pinCoordinator.publish(artifact, runtimeTargetProbe)
+                const apply =
+                  liveConfig && runtimeDelivery
+                    ? async (target: RuntimeTargetArtifact) => {
+                        const link = await pool.acquireSharedWorker().catch(() => {
+                          throw new Error('E_RUNTIME_TARGET_OUTCOME_UNKNOWN')
+                        })
+                        const worker = pool.businessWorker()
+                        if (!worker || worker.link !== link)
+                          throw new Error('E_RUNTIME_TARGET_OUTCOME_UNKNOWN')
+                        const restore = async () => {
+                          const current = runtimeStore.desired()
+                          const worker = pool.businessWorker()
+                          if (!current || !worker) throw new Error('E_RUNTIME_TARGET_OUTCOME_UNKNOWN')
+                          const restored = await runtimeDelivery.applyBeforeCommit(
+                            worker.generation,
+                            current,
+                            () => worker.link.offerRuntimeTarget(current),
+                          )
+                          if (
+                            !restored.report.ok ||
+                            !worker.link.alive ||
+                            pool.businessWorker()?.generation !== restored.generation
+                          )
+                            throw new Error('E_RUNTIME_TARGET_OUTCOME_UNKNOWN')
+                        }
+                        let receipt
+                        try {
+                          receipt = await runtimeDelivery.applyBeforeCommit(worker.generation, target, () =>
+                            link.offerRuntimeTarget(target),
+                          )
+                        } catch (error) {
+                          // A Host publication can fail after some composition containers applied.
+                          if (error instanceof Error && error.name === 'PluginConfigRefused') {
+                            try {
+                              await restore()
+                            } catch {
+                              throw new Error('E_RUNTIME_TARGET_OUTCOME_UNKNOWN')
+                            }
+                          }
+                          throw error
+                        }
+                        if (!link.alive || pool.businessWorker()?.generation !== receipt.generation)
+                          throw new Error('E_RUNTIME_TARGET_OUTCOME_UNKNOWN')
+                        return {
+                          ...receipt,
+                          isCurrent: () =>
+                            link.alive && pool.businessWorker()?.generation === receipt.generation,
+                          restore,
+                        }
+                      }
+                    : undefined
+                if (pinCoordinator) await pinCoordinator.publish(artifact, runtimeTargetProbe, apply)
                 else
                   await publishProbedRuntimeTarget({
                     store: runtimeStore,
                     artifact,
                     probe: runtimeTargetProbe,
+                    ...(apply ? { apply } : {}),
                   })
               }
             : undefined,
@@ -2809,7 +2864,9 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
   let packageRuntimePins: RuntimePinsAdapter | undefined
   let packagePluginTree: CompositeTargetStore | undefined
   let packageWorkerGeneration: (() => number | undefined) | undefined
-  let packagePluginTreePublisher: ((artifact: RuntimeTargetArtifact) => Promise<void>) | undefined
+  let packagePluginTreePublisher:
+    | ((artifact: RuntimeTargetArtifact, liveConfig?: boolean) => Promise<void>)
+    | undefined
   let packageClientServiceCall:
     | ((
         input: ClientModuleServiceCallParams & Readonly<{ packageId: string; extension: string }>,
@@ -2860,10 +2917,10 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
       activation: deferredActivation,
       runtimePins: deferredRuntimePins,
       pluginTree: () => packagePluginTree,
-      pluginTreePublisher: async (artifact) => {
+      pluginTreePublisher: async (artifact, liveConfig) => {
         const publish = packagePluginTreePublisher
         if (!publish) throw new Error('E_PACKAGE_STATE: runtime target publisher is unavailable')
-        await publish(artifact)
+        await publish(artifact, liveConfig)
       },
       workerGeneration: () => packageWorkerGeneration?.(),
       clientServiceCall: async (input) => {

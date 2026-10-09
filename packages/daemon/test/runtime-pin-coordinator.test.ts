@@ -138,6 +138,31 @@ describe('runtime active pin coordinator', () => {
     }
   })
 
+  it('rejects a trust change during business Worker apply before committing desired', async () => {
+    const f = fixture()
+    const value = artifact()
+    let restored = false
+    await expect(
+      f.coordinator.publish(
+        value,
+        async () => {},
+        async () => {
+          f.setTrusted(false)
+          return {
+            generation: 1,
+            report: { hash: value.identity.treeHash, ok: true, rows: [] },
+            restore: async () => {
+              restored = true
+            },
+          }
+        },
+      ),
+    ).rejects.toThrow('E_RUNTIME_TARGET_INVENTORY_STALE')
+    expect(restored).toBe(true)
+    expect(f.store.desired()).toBeUndefined()
+    expect(f.store.configAudit.facts(['ext:acme/pin-test'])).toEqual([])
+  })
+
   it('holds a revoked package pin until its running row has stopped', async () => {
     const f = fixture()
     await f.coordinator.publish(artifact(), async () => {})

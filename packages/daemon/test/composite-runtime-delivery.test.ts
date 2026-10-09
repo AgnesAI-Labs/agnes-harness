@@ -85,6 +85,74 @@ describe('CompositeRuntimeDelivery', () => {
     expect(store.lastGood()?.digest).toBe(newer.digest)
   })
 
+  it.each(['success', 'refusal', 'exit'] as const)(
+    'correlates unpublished live config receipts without changing durable state (%s)',
+    async (outcome) => {
+      const tables = sqliteTables()
+      try {
+        const store = new CompositeTargetStore(tables.table('composite'), 'default')
+        const prior = artifact('ext:prior')
+        const next = artifact('ext:next')
+        store.publishDesired(prior)
+        store.qualifyConverged(1, prior, { hash: prior.identity.treeHash, ok: true, rows: [] })
+        const delivery = new CompositeRuntimeDelivery(store)
+        const pending = delivery.applyBeforeCommit(2, next, () => {})
+        const frame = {
+          type: 'runtime.converged',
+          workerKind: 'session',
+          workerKey: '@shared',
+          generation: 2,
+          digest: next.digest,
+          identity: next.identity,
+          report: { hash: next.identity.treeHash, ok: true, rows: [] },
+        }
+        // A stale worker or mismatched identity cannot settle this save.
+        expect(delivery.handleWorkerFrame(1, { ...frame, generation: 1 })).toBe(false)
+        expect(
+          delivery.handleWorkerFrame(2, {
+            ...frame,
+            identity: { ...next.identity, compositeRevision: 'f'.repeat(64) },
+          }),
+        ).toBe(false)
+        if (outcome === 'success') {
+          expect(delivery.handleWorkerFrame(2, frame)).toBe(true)
+          expect(await pending).toMatchObject({ generation: 2, report: { ok: true } })
+        } else if (outcome === 'refusal') {
+          const rejected = expect(pending).rejects.toMatchObject({
+            name: 'PluginConfigRefused',
+            message: 'synthetic refusal',
+          })
+          expect(
+            delivery.handleWorkerFrame(2, {
+              type: 'runtime.apply_failed',
+              workerKind: 'session',
+              workerKey: '@shared',
+              generation: 2,
+              digest: next.digest,
+              identity: next.identity,
+              phase: 'apply',
+              message: 'synthetic refusal',
+            }),
+          ).toBe(true)
+          await rejected
+        } else {
+          const unknown = expect(pending).rejects.toThrow('E_RUNTIME_TARGET_OUTCOME_UNKNOWN')
+          delivery.workerExited(2)
+          await unknown
+          expect(delivery.handleWorkerFrame(2, frame)).toBe(false)
+        }
+        expect(store.desired()).toEqual(prior)
+        expect(store.previous()).toBeUndefined()
+        expect(store.lastGood()).toEqual(prior)
+        expect(store.acknowledged()?.generation).toBe(1)
+        expect(store.lastFailure()).toBeUndefined()
+        expect(store.configAudit.facts(['ext:next'])).toEqual([])
+      } finally {
+        await tables.close()
+      }
+    },
+  )
+
   it('uses desired as bootstrap when there is no lastGood and ignores a stale failure', () => {
     const tables = sqliteTables()
     const store = new CompositeTargetStore(tables.table('composite'), 'default')

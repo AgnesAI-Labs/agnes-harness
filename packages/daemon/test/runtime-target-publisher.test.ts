@@ -36,18 +36,37 @@ describe('publishProbedRuntimeTarget', () => {
       expect(probed.digest).toBe(value.digest)
       expect(probed.canonicalBase64).toBe(value.canonicalBase64)
     })
-    await publishProbedRuntimeTarget({
+    let accept!: () => void
+    const acknowledgement = new Promise<void>((resolve) => {
+      accept = resolve
+    })
+    let applying!: () => void
+    const offered = new Promise<void>((resolve) => {
+      applying = resolve
+    })
+    const publication = publishProbedRuntimeTarget({
       store,
       artifact: value,
       pins: ['tree:live'],
       probe,
+      apply: async () => {
+        applying()
+        await acknowledgement
+        return { generation: 3, report: { hash: value.identity.treeHash, ok: true, rows: [] } }
+      },
     })
+    await offered
+    expect(store.desired()).toBeUndefined()
+    expect(store.acknowledged()).toBeUndefined()
+    accept()
+    await publication
+    expect(store.acknowledged()).toMatchObject({ digest: value.digest, generation: 3 })
     expect(probe).toHaveBeenCalledOnce()
     expect(store.desired()).toEqual(value)
     expect(store.pins()).toEqual([])
   })
 
-  it('does not publish when probe fails', async () => {
+  it.each(['probe', 'apply'] as const)('does not publish when %s fails', async (phase) => {
     const tables = sqliteTables()
     const store = new CompositeTargetStore(tables.table('composite'), 'default')
     await expect(
@@ -55,12 +74,52 @@ describe('publishProbedRuntimeTarget', () => {
         store,
         artifact: artifact('ext:fail'),
         probe: async () => {
-          throw new Error('probe failed')
+          if (phase === 'probe') throw new Error('refused')
+        },
+        apply: async () => {
+          throw new Error('refused')
         },
       }),
-    ).rejects.toThrow('probe failed')
+    ).rejects.toThrow('refused')
     expect(store.desired()).toBeUndefined()
   })
+
+  it.each(['cas', 'generation', 'report'] as const)(
+    'restores the authorized target when post-apply qualification changes (%s)',
+    async (change) => {
+      const tables = sqliteTables()
+      try {
+        const store = new CompositeTargetStore(tables.table('composite'), 'default')
+        const prior = artifact('ext:prior')
+        const next = artifact('ext:next')
+        store.publishDesired(prior)
+        let restored = false
+        await expect(
+          publishProbedRuntimeTarget({
+            store,
+            artifact: next,
+            probe: async () => {},
+            apply: async () => {
+              if (change === 'cas') store.publishDesired(artifact('ext:intervening'))
+              return {
+                generation: 1,
+                report: { hash: next.identity.treeHash, ok: change !== 'report', rows: [] },
+                isCurrent: () => change !== 'generation',
+                restore: async () => {
+                  restored = true
+                },
+              }
+            },
+          }),
+        ).rejects.toThrow(change === 'cas' ? 'E_RUNTIME_TARGET_STALE' : 'E_RUNTIME_TARGET_OUTCOME_UNKNOWN')
+        expect(restored).toBe(true)
+        expect(store.desired()?.digest).not.toBe(next.digest)
+        expect(store.lastGood()).toBeUndefined()
+      } finally {
+        await tables.close()
+      }
+    },
+  )
 
   it('keeps one probed artifact and no ack without lastGood/report after a qualify crash', async () => {
     const tables = sqliteTables()
