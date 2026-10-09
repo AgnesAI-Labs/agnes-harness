@@ -368,7 +368,19 @@ describe('settings controller', () => {
     expect((reported as Error).message).toBe('provider rejected [redacted]')
   })
 
-  it('translates known configuration reasons into an actionable settings error', async () => {
+  it.each([
+    [
+      'CONFIG_CREDENTIAL_PERMISSIONS',
+      '凭据存储权限不符合要求。请确认 AGH_HOME 及 secrets/auth 目录属于当前用户，目录权限为 0700、文件权限为 0600；具体路径见 data/audit/configuration.jsonl。',
+    ],
+    ['CONFIG_CREDENTIAL_READ_ONLY', '凭据存储位于只读文件系统。请将 AGH_HOME 移至可写的本地目录并重启。'],
+    [
+      'CONFIG_CREDENTIAL_INVALID',
+      '凭据存储存在不安全路径或无效数据。请检查 data/audit/configuration.jsonl，恢复私有的普通目录和文件。',
+    ],
+    ['CONFIG_CREDENTIAL_NO_SPACE', '凭据存储所在磁盘空间不足。请释放 AGH_HOME 所在磁盘的空间后重试。'],
+    ['CONFIG_REVISION_CONFLICT', '配置已被其他客户端修改，请重新打开设置后再试。'],
+  ])('translates %s into an actionable settings error', async (reason, message) => {
     installDom()
     const onError = vi.fn()
     const settings = createSettingsController({
