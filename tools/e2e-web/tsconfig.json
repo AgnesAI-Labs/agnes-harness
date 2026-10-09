@@ -14,6 +14,7 @@
     "ui-flows.spec.ts",
     "first-run.spec.ts",
     "workbench.spec.ts",
+    "narrow.spec.ts",
     "ui.ts",
     "navigation.spec.ts",
     "conversation.spec.ts",
