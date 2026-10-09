@@ -4,7 +4,7 @@
 
 [文档](../README.zh-CN.md) · [前端](frontend.zh-CN.md) · [皮肤](skins.zh-CN.md) · [UI 覆盖](ui-coverage.zh-CN.md)
 
-本文规定现有 Web 界面的呈现方式，复用 `@agnes/web-ui` 的公开出口和既有主题，不改变导航、后端决策、表单值或权限。[源码清单与实施顺序](ui-consistency-audit.md) 区分现有能力与待完成工作。
+本文规定现有 Web 界面的呈现方式，复用 `@agnes/web-ui` 的公开出口和既有主题，不改变导航、后端决策、表单值或权限。[源码清单与实施顺序](ui-consistency-audit.zh-CN.md) 区分现有能力与待完成工作。
 
 ## 页面与面板骨架
 

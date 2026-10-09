@@ -2,7 +2,7 @@
 
 [English](plugin-metadata.md) | 简体中文
 
-[插件作者工具包](README.zh-CN.md) · [双语内容表](plugin-presentation/CONTENT.md) · [页面设计](plugin-presentation/DESIGN.zh-CN.md)
+[插件作者工具包](README.zh-CN.md) · [双语内容表](plugin-presentation/CONTENT.zh-CN.md) · [页面设计](plugin-presentation/DESIGN.zh-CN.md)
 
 用 `@agnes/extension-api` 导出的公开 `PluginMetadata` 契约说明插件为用户解决什么问题。支持 `agnes.extension.json.metadata`、`package.json.agnes.metadata` 和 `package.json.agnes.plugins[].metadata`。包级元数据介绍整个包；展示独立插件行时，行级的完整元数据优先于包级介绍。第三方插件也使用这一契约，整个块可省略。
 

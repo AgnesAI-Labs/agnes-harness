@@ -2,7 +2,7 @@
 
 English | [简体中文](CONTENT.zh-CN.md)
 
-[Design](DESIGN.md) · [设计](DESIGN.zh-CN.md)
+[Design](DESIGN.md)
 
 Proposed author-owned metadata, not a runtime lookup table. English text is the default; Chinese text belongs in `locales.zh-CN`. Each row below gives exact summary copy. Descriptions in implementation will add scope and prerequisites without stronger claims.
 
