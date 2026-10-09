@@ -34,6 +34,7 @@
     "human-controls.spec.ts",
     "references.spec.ts",
     "intelligent-ui.spec.ts",
+    "question-surfaces.spec.ts",
     "feedback.spec.ts",
     "auto-review.spec.ts",
     "memory.spec.ts",

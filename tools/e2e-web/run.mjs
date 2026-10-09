@@ -6,7 +6,12 @@ import { canReuse, recordBuild, sourceHash } from './build-cache.mjs'
 import gateConfig from './playwright.config.mjs'
 
 // Registration is checked before building or starting browsers, including --list and file filters.
-for (const spec of ['human-controls.spec.ts', 'references.spec.ts', 'intelligent-ui.spec.ts']) {
+for (const spec of [
+  'human-controls.spec.ts',
+  'references.spec.ts',
+  'intelligent-ui.spec.ts',
+  'question-surfaces.spec.ts',
+]) {
   if (!gateConfig.testMatch.includes(spec)) throw new Error(`Missing Web regression spec: ${spec}`)
   await access(new URL(spec, import.meta.url))
 }
