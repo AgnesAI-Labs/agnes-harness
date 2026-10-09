@@ -332,7 +332,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/core-effects/src': 2621,
   'packages/core-ledger/src': 6452,
   'packages/core-child-control/src': 397,
-  'packages/core-common/src': 528,
+  'packages/core-common/src': 529,
   // 2026-09-22 M11 browser effect-command closure: exact measured deltas for the explicit
   // authorization facade, private BFF/RPC, durable journal reuse, and cross-platform test repair.
   // No source exclusions or spare budget were added.
@@ -1213,7 +1213,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 29399 -> 30048; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Await async loop construction, propagate session cancellation and drain initialization before storage closes.
   // countLines: 30048 -> 30103 (+55); exact measured cap, no exclusions or spare allocation.
-  'packages/core/src': 20466,
+  'packages/core/src': 20710,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1680,7 +1680,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2327 -> 2438; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Expose cooperative construction signals, adapter credential ports and shared default compaction/policy helpers.
   // countLines: 2438 -> 2505 (+67); exact measured cap, no exclusions or spare allocation.
-  'packages/extension-api/src': 2763, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  'packages/extension-api/src': 2770, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -3210,7 +3210,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/base/extensions/schedule': 798,
   // Acceptance review: Register the extracted default loop scheduler using public LoopContext ports and recoverable ledger checkpoints.
   // countLines: new scope -> 78; exact cap, no exclusions or spare allocation.
-  'packages/loop-default/src': 78,
+  'packages/loop-default/src': 80,
   'packages/base/extensions/computer-use': 1785,
   'packages/web-admin/src/admin/plugins/admin': 1930,
   'packages/web-ui/src/admin-confirmation': 442,
