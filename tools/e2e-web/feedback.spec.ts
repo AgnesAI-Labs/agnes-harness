@@ -9,7 +9,8 @@ test('message feedback drafts a Skill with a scripted local model and publishes 
 }, info) => {
   test.setTimeout(240_000)
   const client = await runtime.connect()
-  const model = 'deepseek-v4-flash'
+  const model = (await client.config.test({ providerId: 'deepseek' })).models[0]?.id
+  if (!model) throw new Error('Missing reviewed fixture model')
   const fixture = await startProviderFixture(
     JSON.stringify({
       name: 'review-evidence',
@@ -69,7 +70,10 @@ test('message feedback drafts a Skill with a scripted local model and publishes 
     await section(page, 'plugins')
     await page.getByTestId('candidate-open').filter({ hasText: candidate.packageId }).click()
     await page.getByTestId('candidate-test').click()
-    await page.getByRole('dialog').getByRole('button', { name: 'Run tests', exact: true }).click()
+    await page
+      .getByRole('dialog', { name: 'Run tests', exact: true })
+      .getByRole('button', { name: 'Run tests', exact: true })
+      .click()
     await expect(page.getByTestId('candidate-submit')).toBeEnabled({ timeout: 30_000 })
     await page.getByTestId('candidate-submit').click()
     await expect(page.getByTestId('candidate-approve')).toBeEnabled()
@@ -77,8 +81,8 @@ test('message feedback drafts a Skill with a scripted local model and publishes 
     await accessible(page, info, 'feedback-candidate-review')
     await page.getByTestId('candidate-approve').click()
     await page
-      .getByRole('dialog')
-      .getByRole('button', { name: /Approve|Publish/ })
+      .getByRole('dialog', { name: 'Approve and publish', exact: true })
+      .getByRole('button', { name: 'Approve and publish', exact: true })
       .click()
     await expect(page.getByTestId('candidate-state')).toHaveText('Published', { timeout: 40_000 })
     const published = await client.request('_agnes/v1/admin.feedback', { action: 'list', sessionId })

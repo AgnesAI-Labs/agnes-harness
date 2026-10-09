@@ -8,7 +8,12 @@ import { expect, it, vi } from 'vitest'
 import type { PluginAdminApi } from '../src/admin/plugins/api.js'
 import { candidateDiff } from '../src/admin/plugins/candidate-diff.js'
 import { CandidateListFacts, candidateIdentity } from '../src/admin/plugins/candidate-list.js'
-import { addedPermissions, CandidateDelta, capabilityLabel } from '../src/admin/plugins/candidate-review.js'
+import {
+  addedPermissions,
+  CandidateDelta,
+  CandidateFileDiff,
+  capabilityLabel,
+} from '../src/admin/plugins/candidate-review.js'
 import { CandidateInbox } from '../src/admin/plugins/candidates.js'
 import { pluginAdminLocaleCatalog } from '../src/admin/plugins/locales/admin.js'
 
@@ -20,6 +25,10 @@ it.each([
   ['text', 'text\n'],
   ['old\n'.repeat(1000), 'new\n'.repeat(1000)],
 ])('preserves both complete file versions in the line diff', (before, after) => {
+  const html = renderToStaticMarkup(
+    <CandidateFileDiff file={{ path: 'skill.test.mjs', before, after }} t={t} />,
+  )
+  expect(html).toContain('<code>skill.test.mjs</code>')
   const lines = candidateDiff(before, after)
   expect(
     lines

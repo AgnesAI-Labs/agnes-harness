@@ -115,7 +115,7 @@ export function CandidateFileDiff({
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary>
-        <span>{file.path}</span>
+        <code>{file.path}</code>
         <Badge tone={file.before === null ? 'ok' : file.after === null ? 'bad' : 'off'}>
           {t(
             file.before === null
