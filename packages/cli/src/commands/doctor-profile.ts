@@ -3,6 +3,7 @@ import {
   createConfigurationService,
   createPlatform,
   type LockState,
+  type PlatformBackend,
   type ResolvedProfile,
   resolveConfiguredPowerShell,
   resolveProfile,
@@ -11,9 +12,11 @@ import { profileNameFrom, readProfileInputs } from '../boot/inputs.js'
 import type { BootDeps, ParsedArgs } from '../types.js'
 import type { Section } from './doctor-local.js'
 
-export async function doctorPlatform(d: BootDeps): Promise<Section> {
+export async function doctorPlatform(
+  d: BootDeps,
+  platform: PlatformBackend = createPlatform(),
+): Promise<Section> {
   try {
-    const platform = createPlatform()
     await platform.probe({ root: d.cwd })
     const snapshot = platform.snapshot()
     const shellDetail: string[] = []
@@ -42,7 +45,12 @@ export async function doctorPlatform(d: BootDeps): Promise<Section> {
       detail: [
         `os ${snapshot.os} ${snapshot.arch}`,
         ...shellDetail,
-        ...Object.entries(snapshot.capabilities).map(([key, value]) => `${key}=${value}`),
+        // A level below full carries the platform's own reason on the next line, so "not probed
+        // yet" and "probed and failed" can be told apart. The level lines keep their old shape.
+        ...Object.entries(snapshot.capabilities).flatMap(([key, value]) => {
+          const reason = value === 'full' ? undefined : platform.capability(key).reason
+          return reason ? [`${key}=${value}`, `${key}.reason=${reason}`] : [`${key}=${value}`]
+        }),
       ],
     }
   } catch {

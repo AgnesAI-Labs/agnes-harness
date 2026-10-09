@@ -16,7 +16,7 @@ node packages/cli/dist/local/agnes.mjs doctor storage --json
 node packages/cli/dist/local/agnes.mjs doctor provider --json
 ```
 
-`doctor storage` 会建立并清理临时探测数据库；它不修复现有数据。`doctor provider --probe` 则会调用模型，排错时不要无意添加。
+`doctor platform` 会在每个低于 `full` 的能力下方输出 `<能力>.reason=…`。`sandbox.l1=unavailable` 且原因为 `awaiting sandbox backend full-boundary probe`，表示沙箱后端尚未探测（doctor 不会启动后端），并非平台不支持命令沙箱；`no runnable OS sandbox backend passed its full-boundary probe` 才是探测失败。`doctor storage` 会建立并清理临时探测数据库；它不修复现有数据。`doctor provider --probe` 则会调用模型，排错时不要无意添加。
 
 | 现象 | 核对与处理 |
 | --- | --- |
