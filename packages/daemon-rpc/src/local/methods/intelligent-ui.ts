@@ -48,7 +48,8 @@ export function registerIntelligentUi(
         // The journal binds admission; the ledger returns the current receipt, including pending outcomes.
         const receipt = await service.action(params, actor, signal)
         if (journal.state !== 'complete') await cx.journal.complete(identity, { seq: receipt.seq })
-        cx.continueFollowUps?.(entry)
+        // A persisted action may resume a loop parked for a surface answer.
+        cx.continueFollowUps?.(entry, undefined, receipt.status === 'received')
         return receipt
       } catch (error) {
         if (journal.state === 'new') await cx.journal.abandon(identity)
@@ -66,7 +67,11 @@ export function registerIntelligentUi(
       if (!service) throw rpcError('CAPABILITY_DENIED')
       const result = await service.read(params, signal)
       // Repair a durable queued invocation's wake after restart, through SC1's ordinary runner.
-      cx.continueFollowUps?.(entry)
+      cx.continueFollowUps?.(
+        entry,
+        undefined,
+        result.actions.some((action) => action.status === 'received'),
+      )
       return result
     })
   })

@@ -56,8 +56,8 @@ it('checks session ownership before state/dedupe, binds the actor and repairs a 
     workspaces: { restoreBinding: async () => ({ canonicalRoot: '/synthetic', sessionKey: 'owned' }) },
     resolveActor: async () => actor,
     journal: { begin: async () => ({ state: 'new' }), complete: async () => {}, abandon: async () => {} },
-    continueFollowUps: () => {
-      seen.push('SC1')
+    continueFollowUps: (_entry: unknown, _inherited: unknown, restart: boolean) => {
+      seen.push({ restart })
     },
   } as unknown as AgnesContext
   registerIntelligentUi(endpoint, cx, (_method, id) => {
@@ -85,6 +85,9 @@ it('checks session ownership before state/dedupe, binds the actor and repairs a 
     expect((await call('_agnes/v1/ui.action', request)).result).toEqual(receipt)
     expect(seen).toContainEqual({ input: request, actor })
     expect((await call('_agnes/v1/ui.read', { sessionId: 'owned' })).result).toEqual(result)
+    expect(seen.filter((value) => typeof value === 'object' && value !== null && 'restart' in value)).toEqual(
+      [{ restart: true }, { restart: true }],
+    )
     enabled = false
     expect((await call('_agnes/v1/ui.action', request)).error?.data?.code).toBe('CAPABILITY_DENIED')
   } finally {

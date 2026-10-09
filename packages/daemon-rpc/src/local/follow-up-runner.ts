@@ -31,10 +31,20 @@ export function createFollowUpRunner(
             return finish()
           const [end] = await entry.session.scan({ type: 'turn/end', order: 'desc', limit: 1, lane: 'main' })
           const reason = (end?.data as { reason?: string } | undefined)?.reason
-          if (!immediate && (reason === 'parked' || reason === 'blocked')) return finish()
+          if (!immediate && reason === 'blocked') return finish()
           const [row] = await entry.session.scan({ type: 'inbox', order: 'desc', limit: 1, lane: 'main' })
-          const items = (row?.data as { items?: Array<{ target: string; kind?: string }> } | null)?.items
+          const items = (
+            row?.data as { items?: Array<{ target: string; kind?: string; origin?: string }> } | null
+          )?.items
           const first = items?.find((item) => item.target === 'next-turn')
+          // An explicitly resumed backend action can deliver another backend receipt after parking.
+          // Ordinary user follow-ups and blocked turns still require a separate resume decision.
+          if (
+            !immediate &&
+            reason === 'parked' &&
+            (!restart || first?.kind !== 'follow_up' || first.origin !== 'system')
+          )
+            return finish()
           const controls = await entry.session.controls.state()
           if (controls.paused) return finish()
           const open = immediate && (await entry.session.projectUI()).opState !== null
@@ -54,7 +64,12 @@ export function createFollowUpRunner(
         if (!running) return
         const outcome = await running
         await pushed(entry, outcome.lastSeq)
-        if (entry.inflight !== flight || outcome.reason !== 'completed' || flight.abort.signal.aborted) return
+        if (
+          entry.inflight !== flight ||
+          (outcome.reason !== 'completed' && !(restart && outcome.reason === 'parked')) ||
+          flight.abort.signal.aborted
+        )
+          return
       }
     })()
       .catch(() => {
