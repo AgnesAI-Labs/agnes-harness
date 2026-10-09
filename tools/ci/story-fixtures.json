@@ -3,36 +3,45 @@
     "id": "reviewed-candidate",
     "highlights": [3],
     "file": "packages/package-manager/test/authoring-candidates.test.ts",
-    "testNamePattern": "publishes only the approved bytes and never replays failure or interrupted publication: (trust failed|reviewed bytes changed)$"
+    "testNames": [
+      "publishes only the approved bytes and never replays failure or interrupted publication: trust failed",
+      "publishes only the approved bytes and never replays failure or interrupted publication: reviewed bytes changed"
+    ]
   },
   {
     "id": "upgrade-in-flight",
     "highlights": [1, 2],
     "file": "packages/host/test/runtime-generation-host.slow.test.ts",
-    "testNamePattern": "keeps an in-flight turn on old plugin code across update, close and cold resume, and drains on deletion$"
+    "testNames": [
+      "keeps an in-flight turn on old plugin code across update, close and cold resume, and drains on deletion"
+    ]
   },
   {
     "id": "unknown-effect",
     "highlights": [2],
     "file": "packages/core/test/resume.test.ts",
-    "testNamePattern": "a tool that must not be replayed becomes TOOL_OUTCOME_UNKNOWN and parks the turn$"
+    "testNames": ["a tool that must not be replayed becomes TOOL_OUTCOME_UNKNOWN and parks the turn"]
   },
   {
     "id": "incomplete-summary",
     "highlights": [2],
     "file": "packages/core/test/compaction.test.ts",
-    "testNamePattern": "does not commit a summary that was truncated at the cap$"
+    "testNames": ["does not commit a summary that was truncated at the cap"]
   },
   {
     "id": "child-receipts",
     "highlights": [1, 2],
     "file": "packages/core/test/child-compaction.test.ts",
-    "testNamePattern": "counts only committed child creations after three proposals, compaction and ledger recovery$"
+    "testNames": [
+      "counts only committed child creations after three proposals, compaction and ledger recovery"
+    ]
   },
   {
     "id": "memory-turn-revision",
     "highlights": [3],
     "file": "packages/host/test/memory.test.ts",
-    "testNamePattern": "pins index and topic revisions across tool requests and a model retry, then refreshes next turn$"
+    "testNames": [
+      "pins index and topic revisions across tool requests and a model retry, then refreshes next turn"
+    ]
   }
 ]

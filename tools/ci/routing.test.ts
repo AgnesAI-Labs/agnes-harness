@@ -16,13 +16,17 @@ describe('story regression results', () => {
       success,
       testResults: [{ assertionResults: [{ fullName, status }] }],
     })
-    expect(verifyStoryResult(report('story exact fixture', 'passed'), 'exact fixture$')).toBe(1)
+    expect(verifyStoryResult(report('story exact fixture', 'passed'), ['exact fixture'])).toBe(1)
     for (const status of ['failed', 'pending', 'skipped', 'todo'])
-      expect(() => verifyStoryResult(report('story exact fixture', status), 'exact fixture$')).toThrow()
-    expect(() => verifyStoryResult(report('renamed fixture', 'passed'), 'exact fixture$')).toThrow()
+      expect(() => verifyStoryResult(report('story exact fixture', status), ['exact fixture'])).toThrow()
+    expect(() => verifyStoryResult(report('renamed fixture', 'passed'), ['exact fixture'])).toThrow()
     expect(() =>
-      verifyStoryResult(report('story exact fixture', 'passed', false), 'exact fixture$'),
+      verifyStoryResult(report('story exact fixture', 'passed', false), ['exact fixture']),
     ).toThrow()
+    expect(() =>
+      verifyStoryResult(report('story exact fixture', 'passed'), ['exact fixture', 'missing table row']),
+    ).toThrow()
+    expect(() => verifyStoryResult(report('story exact fixture', 'passed'), [])).toThrow()
   })
 })
 const temporary = () => {
