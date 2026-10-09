@@ -65,7 +65,7 @@ import {
   type SkinRosterEntry,
 } from '@agnes/web-foundation/skin'
 import { safeThemeStorage } from '@agnes/web-foundation/theme'
-import { bindDismissibleDialog, createCatalogTranslator } from '@agnes/web-ui'
+import { bindDismissibleDialog, createCatalogTranslator, materializeSettingsControls } from '@agnes/web-ui'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
 import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
 import { startPluginHotReload } from './client-modules/hot-reload.js'
@@ -669,6 +669,7 @@ const submissionController = createSubmissionController(appSessionContext)
 const sessionController = createSessionController(appSessionContext)
 const turnController = createTurnController(appSessionContext)
 
+materializeSettingsControls(document)
 installBrowserLogCapture()
 
 function element<K extends keyof HTMLElementTagNameMap>(id: string, tag: K): HTMLElementTagNameMap[K] {

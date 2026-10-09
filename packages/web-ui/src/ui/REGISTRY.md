@@ -45,3 +45,5 @@ StateSwitch also renders Boolean schema/settings fields; optional id/testId and 
 `terminalScreen` / `terminalKey` are shared pure-text VT and keyboard helpers for session and settings terminals; they do not create processes or render HTML. / 两者是会话与设置终端共用的纯文本 VT 和键盘辅助函数，不创建进程或渲染 HTML。
 
 | `SettingsChoice` | A | 原生 radio/checkbox | 共享外观选择呈现；保留 name/value 与方向键、表单语义 / Shared choice presentation preserves native group and form semantics |
+
+`createSettingsControl` / `materializeSettingsControls` provide token-styled native equivalents for fixed static shells. Materialization happens before controller binding, retaining form semantics and host-owned node lifetimes. / 固定静态壳在控制器绑定前生成与 SettingsInput/Select/TextArea 相同的 token 控件；宿主继续拥有节点、值和事件，不新增 React root。

@@ -60,6 +60,7 @@ export { resourceFailureCatalog, resourceFailureKey, resourceFailureLabel } from
 export * from './resource-list.js'
 export * from './schema-settings.js'
 export * from './select-picker.js'
+export * from './settings-control-templates.js'
 export { SettingsAccountDialog } from './settings-account-dialog.js'
 export { SettingsAccounts, type SettingsAccountsProps } from './settings-accounts.js'
 export {

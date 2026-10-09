@@ -1,7 +1,14 @@
 import type { ConfigModel, ConfigOAuthInput, ConfigProvider } from '@agnes/protocol'
 import { loginSubscription, type OAuthClient } from '@agnes/sdk/browser'
 import { tr } from '@agnes/web-foundation/locale-bridge'
-import { Button, createRegionHost, Field, mountRegion, SettingsInput } from '@agnes/web-ui'
+import {
+  Button,
+  createSettingsControl,
+  createRegionHost,
+  Field,
+  mountRegion,
+  SettingsInput,
+} from '@agnes/web-ui'
 import { createElement } from 'react'
 
 type UiButton = { button: HTMLButtonElement; host: HTMLElement; dispose?: () => void }
@@ -50,7 +57,7 @@ function uiField(parent: HTMLElement): UiField {
   const field = createRegionHost(parent, 'label') as HTMLLabelElement
   field.className = 'form-field oauth-prompt'
   field.textContent = tr('settings.oauth.prompt')
-  const input = createRegionHost(field, 'input') as HTMLInputElement
+  const input = createSettingsControl(field.ownerDocument ?? document, 'input')
   input.type = 'password'
   input.autocomplete = 'off'
   field.append(input)

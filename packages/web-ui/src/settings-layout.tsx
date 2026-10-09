@@ -111,9 +111,17 @@ export const SettingsTextArea = forwardRef<
   )
 })
 /** Native select preserves form semantics, following SettingsOptionSelect's account-dialog pattern. */
-export function SettingsSelect(props: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select {...props} className={['agnes-settings-input', props.className].filter(Boolean).join(' ')} />
-}
+export const SettingsSelect = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(
+  function SettingsSelect(props, ref) {
+    return (
+      <select
+        {...props}
+        ref={ref}
+        className={['agnes-settings-input', props.className].filter(Boolean).join(' ')}
+      />
+    )
+  },
+)
 
 /** Flat settings rows keep controls and diagnostics out of nested cards. */
 export function SettingsList(props: HTMLAttributes<HTMLDivElement>) {

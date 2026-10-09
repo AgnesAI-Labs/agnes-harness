@@ -1,6 +1,7 @@
 import type { PageSessionMeta } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import type { Translate } from '@agnes/web-conversation/presentation'
+import { materializeSettingsControls } from '@agnes/web-ui'
 
 export type SessionAction = 'rename' | 'fork' | 'archive'
 
@@ -32,10 +33,11 @@ export function createSessionActions(options: {
     <div class="dialog-heading"><h2 id="session-rename-heading"></h2></div>
     <label class="form-field" for="session-rename-input">
       <span id="session-rename-label"></span>
-      <input id="session-rename-input" required autocomplete="off" aria-describedby="session-rename-error" />
+      <template data-agnes-control="input" id="session-rename-input" required autocomplete="off" aria-describedby="session-rename-error" ></template>
     </label>
     <p id="session-rename-error" class="session-rename-error" role="alert"></p>
     <div class="dialog-actions"><button class="secondary-button" type="button"></button><button class="primary-button" type="submit"></button></div></form>`
+  materializeSettingsControls(dialog)
   document.body.append(dialog)
   const heading = dialog.querySelector('h2') as HTMLHeadingElement
   const nameLabel = dialog.querySelector('#session-rename-label') as HTMLElement

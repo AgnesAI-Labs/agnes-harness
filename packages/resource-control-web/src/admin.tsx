@@ -18,6 +18,7 @@ import {
   type ResourceDetailAction,
   ResourceListContent,
   type ResourceProgress,
+  materializeSettingsControls,
   renderRegion,
   resourceDesiredEnabled,
   resourceDetailLocaleCatalog,
@@ -832,6 +833,7 @@ export type ResourceAdminMount = Readonly<{
  * Importing this module never touches the DOM; the host decides when to mount.
  */
 export function mountResourceAdmin(options: ResourceAdminOptions = {}): ResourceAdminMount {
+  materializeSettingsControls(document)
   list = $('resource-list', 'section')
   detail = $('resource-detail', 'dialog')
   notice = $('resource-notice', 'p')

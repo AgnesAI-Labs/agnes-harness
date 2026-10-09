@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { ComposerRegionOptions } from '@agnes/web-conversation/composer'
+import { materializeSettingsControls } from '@agnes/web-ui'
 import { vi } from 'vitest'
 import {
   type AgnesClient,
@@ -33,6 +34,7 @@ export function readStaticPage(page: Exclude<WebPageName, 'index.html'>): Docume
     .replace(/<link\b[^>]*>/g, '')
   const parsed = new DOMParser().parseFromString(markup, 'text/html')
   if (!parsed) throw new Error(`unable to parse ${page}`)
+  materializeSettingsControls(parsed)
   return parsed
 }
 
@@ -46,6 +48,7 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
     .replace(/<script[\s\S]*?<\/script>/g, '')
     .replace(/<link\b[^>]*>/g, '')
   document.documentElement.innerHTML = markup
+  materializeSettingsControls(document)
 
   const runtime = await startClientModules({
     // The region bootstrap only retains this client for the reconciler. No roster read is issued by

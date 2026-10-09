@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { createAntdRoot } from './antd-root.js'
+import { SettingsSelect } from './settings-layout.js'
 
 export type SettingsSelectOption = { label: string; value: string }
 export type SettingsSelectGroup = { label: string; options: readonly SettingsSelectOption[] }
@@ -71,9 +72,9 @@ export function SettingsOptionSelect({ id }: { id: string }) {
   }, [])
 
   return (
-    <select id={id} ref={ref}>
+    <SettingsSelect id={id} ref={ref}>
       {optionNodes(content)}
-    </select>
+    </SettingsSelect>
   )
 }
 
