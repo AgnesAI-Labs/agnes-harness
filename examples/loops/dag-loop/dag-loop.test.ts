@@ -41,8 +41,8 @@ function ports(planReply: string | string[] = JSON.stringify(nodes)) {
     effects: { status: async (id) => ({ status: 'may-have-sent', invocationId: id, checkpoint }) },
     input: {
       accept: async () => ctx.input.claim('next-turn'),
-      claim: async () =>
-        finished
+      claim: async (target) =>
+        finished || target === 'next-step'
           ? null
           : {
               id: '1',

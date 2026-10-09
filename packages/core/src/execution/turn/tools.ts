@@ -1182,6 +1182,21 @@ export async function approveAndExecute(
         timedOut = error instanceof Error && error.message.startsWith('timeout:')
         cancelled = !timedOut && ac.signal.aborted
         observation = { phase: 'may_have_sent', error }
+        // A cooperative stop can return a truthful receipt after the abort wins the race.
+        // Retain that receipt; do not replace an already committed effect with generic cancellation.
+        if (
+          cancelled &&
+          s.controls.interrupting &&
+          (stopRequestedBy(s) || (policy.isReadOnly && !policy.isDestructive && policy.replay !== 'never')) &&
+          dispatched &&
+          (await settlesWithin(dispatched, STOPPED_CALL_REST_MS))
+        ) {
+          try {
+            observation = await dispatched
+          } catch {
+            /* no receipt: keep dispatch uncertainty */
+          }
+        }
       }
       if (observation.phase !== 'not_sent') break
       await s.transition([], (cur) =>
@@ -1352,7 +1367,20 @@ export async function approveAndExecute(
             'tool/result',
             {
               toolUseId: call.toolUseId,
-              content: toLedgerContent(recordedResult.content),
+              content: toLedgerContent(
+                cancelled
+                  ? [
+                      {
+                        type: 'text',
+                        text:
+                          policy.isDestructive || !policy.isReadOnly || policy.replay === 'never'
+                            ? userStoppedMessage(call.name)
+                            : `aborted: ${call.name}`,
+                      },
+                      ...recordedResult.content,
+                    ]
+                  : recordedResult.content,
+              ),
               ...(() => {
                 const refs = recordedResult.content.flatMap((block) =>
                   block.type === 'text' ? [] : [block.ref],
@@ -1365,7 +1393,10 @@ export async function approveAndExecute(
                   : {}
               })(),
               ...(recordedResult.structured !== undefined ? { structured: recordedResult.structured } : {}),
-              isError: recordedResult.isError === true,
+              isError: cancelled || recordedResult.isError === true,
+              ...(cancelled
+                ? { code: 'CANCELLED', partial: true, cancelledBy: stopRequestedBy(s) ?? s.d.actor }
+                : {}),
               ...(marker.present ? { code: 'JOB_FAILED' } : {}),
               enforcement: s.d.runtime.enforcement(),
               authz: { decisionId },
@@ -1399,27 +1430,31 @@ export async function approveAndExecute(
       // A workspace/Host call that threw after dispatch keeps the transport fact while preserving
       // the long-standing ordinary tool error contract. It cannot enter `responded`, whose schema
       // requires an actual response attestation, so result and settlement close atomically here.
-      await s.transition([...resultRows, effect.settle(effectOutcome({ failed })), verifierSignal], (cur) =>
-        updateCall(cur, call.toolUseId, {
-          status: 'completed',
-          effectId: effect.effectId,
-          dispatchAttempt: attempt,
-          dispatchPhase: settledDispatchPhase,
-          ...(recordedResult.terminate ? { terminate: true } : {}),
-        }),
+      await s.transition(
+        [...resultRows, effect.settle(effectOutcome({ failed, aborted: cancelled })), verifierSignal],
+        (cur) =>
+          updateCall(cur, call.toolUseId, {
+            status: 'completed',
+            effectId: effect.effectId,
+            dispatchAttempt: attempt,
+            dispatchPhase: settledDispatchPhase,
+            ...(recordedResult.terminate ? { terminate: true } : {}),
+          }),
       )
     } else if (deferred) {
       // A deferred response has no terminal tool/result row yet. Keep its marker, child intent and
       // parent settlement atomic so recovery never sees `responded` without either a result or a
       // durable job to poll.
-      await s.transition([...resultRows, effect.settle(effectOutcome({ failed })), verifierSignal], (cur) =>
-        updateCall(cur, call.toolUseId, {
-          status: 'completed',
-          effectId: effect.effectId,
-          dispatchAttempt: attempt,
-          dispatchPhase: 'responded',
-          ...(recordedResult.terminate ? { terminate: true } : {}),
-        }),
+      await s.transition(
+        [...resultRows, effect.settle(effectOutcome({ failed, aborted: cancelled })), verifierSignal],
+        (cur) =>
+          updateCall(cur, call.toolUseId, {
+            status: 'completed',
+            effectId: effect.effectId,
+            dispatchAttempt: attempt,
+            dispatchPhase: 'responded',
+            ...(recordedResult.terminate ? { terminate: true } : {}),
+          }),
       )
     } else {
       // The result, its settlement and the completed call are one commit: nothing but building the
@@ -1436,7 +1471,10 @@ export async function approveAndExecute(
         })
       await s.transitionChain([
         { events: resultRows, next: done('responded') },
-        { events: [effect.settle(effectOutcome({ failed })), verifierSignal], next: done('completed') },
+        {
+          events: [effect.settle(effectOutcome({ failed, aborted: cancelled })), verifierSignal],
+          next: done('completed'),
+        },
       ])
     }
     return {

@@ -134,6 +134,7 @@ export async function finishAborted(s: SessionImpl): Promise<StepOutcome> {
   const op = s.op()
   if (!op) return { phase: 'terminal', reason: 'aborted' }
   const error = op.phase.kind === 'failure_drain' ? op.phase.error : undefined
-  await closeTurn(s, 'aborted', error ? { error } : {})
-  return { phase: 'terminal', reason: 'aborted' }
+  const reason = (await s.controls.ending())?.reason ?? 'aborted'
+  await closeTurn(s, reason, error ? { error } : {})
+  return { phase: 'terminal', reason }
 }

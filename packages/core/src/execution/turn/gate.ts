@@ -500,19 +500,8 @@ export async function checkpointRoutine(s: SessionImpl): Promise<StepOutcome> {
   if (!ph.skipInboxOnce) {
     const claimed = await claimCheckpointInbox(s, s.latest('inbox') as Inbox | undefined)
     if (claimed) {
-      const { item, rest } = claimed
-      await s.transition(
-        [
-          inboxEvent(s.lane, s.d.actor, rest),
-          s.ev(
-            'user/message',
-            { content: item.content, kind: item.kind ?? 'steer' },
-            { origin: 'principal', trust: item.trust ?? 'trusted', actor: item.actor },
-          ),
-        ],
-        withPhase(op, { ...ph, continuation: 'need_assistant', skipInboxOnce: true }),
-      )
-      return { phase: 'checkpoint' }
+      const item = await s.controls.claim(claimed.item.itemId)
+      if (item) return { phase: 'checkpoint' }
     }
   }
   const t = s.turn

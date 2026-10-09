@@ -56,6 +56,13 @@ describe('Inbox segment', () => {
     const inbox = session.latest('inbox') as { items: Array<{ itemId: string; target: string }> }
     const steer = inbox.items.find((item) => item.target === 'next-step')
     if (!steer) throw new Error('missing steer input')
+    await session.removeQueuedInput(steer.itemId, actor, 'withdraw-steer')
+    expect(
+      (session.latest('inbox') as { items: Array<{ itemId: string }> }).items.some(
+        (item) => item.itemId === steer.itemId,
+      ),
+    ).toBe(false)
+    expect(session.op()).toEqual(op)
     const before = session.lastSeq
     for (const itemId of [selected.itemId, activeId, steer.itemId, 'missing'])
       await expect(session.removeQueuedInput(itemId, actor, 'refused')).rejects.toMatchObject({
