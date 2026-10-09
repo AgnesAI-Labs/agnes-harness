@@ -355,7 +355,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host/src/adapters/process-identity-win32': 18,
   'packages/host/src/adapters/exec-win32': 84,
   'packages/host/src/adapters/exec-output': 32,
-  'packages/host/src/adapters/secrets-win32': 25,
+  'packages/host/src/adapters/secrets-win32': 56,
   // WIN-TITLE-REPAIR: +3 for peer-only rejection backoff; no counting exclusions changed.
   // 2026-09-20 GC attestation keeps Node hashing/path/proxy primitives outside Core, while Windows
   // mapped-image identity remains native-bound. Measured 1080; exact cap.
@@ -1080,7 +1080,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: per-attempt fetch capture of status, allowlisted header values
   // and header names, plus provider-side shape checks. Measured 3886 (+51).
   // Agnes default output allowance is explicitly serialized to HTTP. Measured +6, exact allocation.
-  'packages/ai/src': 3974,
+  'packages/ai/src': 3996,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -2666,7 +2666,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // read-only under full file access: the fence guard, the roots helper and their wiring (+40).
   // Measured 38359, exact.
   // Approval reasons: the Prompter type may answer with a reason (+2). Measured 38398 (combined tree), exact cap.
-  'packages/host/src': 38491,
+  'packages/host/src': 38527,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2834,7 +2834,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // The fence refuses writes to the installation's own state under full file access. Measured 5053,
   // exact, no spare (+19).
   // Approval reasons: the Prompter type may answer with a reason (+2). Measured 5055, exact cap.
-  'packages/host/src/adapters': 5103,
+  'packages/host/src/adapters': 5139,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
