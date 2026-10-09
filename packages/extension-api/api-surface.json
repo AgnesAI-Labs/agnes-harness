@@ -6,10 +6,13 @@
     "DEFAULT_LOOP",
     "DEFAULT_OUTPUT_MAX_BYTES",
     "DEFAULT_PERSISTENCE_PROVIDER_ID",
+    "DEFAULT_PLUGIN_CONFIG_RELOAD",
     "EVENT_NAME_PATTERN",
     "EXTENSION_ERROR_CODES",
     "EXTENSION_ID_PATTERN",
     "ExtensionError",
+    "FEEDBACK_EVENT",
+    "FEEDBACK_GROWTH_EVENT",
     "HOOK_EVENTS",
     "HOOK_TABLE",
     "LOCAL_SANDBOX_PROVIDER_ID",
@@ -20,6 +23,7 @@
     "NETWORK_HOST_PATTERN",
     "PERSISTENCE_EFFECT",
     "PERSISTENCE_SCAN_PAGE_MAX",
+    "PLUGIN_SECRET_REF_PATTERN",
     "PROVIDER_ERROR_CODES",
     "PROVIDER_LIFECYCLE_SCOPES",
     "ProviderError",
@@ -41,6 +45,7 @@
     "checkServiceDef",
     "checkToolDef",
     "checkToolMeta",
+    "compilePluginConfig",
     "createCompactionThreshold",
     "defaultToolPolicy",
     "defineExtension",
@@ -60,6 +65,7 @@
     "parseSemver",
     "persistenceRegisterKey",
     "providerRestartRequired",
+    "redactPluginConfig",
     "registerLoopPlugin",
     "registerToolPolicyPlugin",
     "registerToolRuntimePlugin",
@@ -67,6 +73,7 @@
     "sandboxUnavailable",
     "satisfiesApiRange",
     "systemPromptKind",
-    "unavailableProjections"
+    "unavailableProjections",
+    "webhookTriggerKind"
   ]
 }

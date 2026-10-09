@@ -55,8 +55,10 @@ describe('plugin author API', () => {
       'defineTool',
       'defineToolPolicy',
       'defineToolRuntime',
+      'drainDeferredToolInvocations',
       'toolCancelled',
       'toolError',
+      'withDeferredToolInvocations',
     ])
   })
 })
