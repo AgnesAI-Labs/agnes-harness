@@ -10,13 +10,26 @@ concurrency:
   group: web-e2e-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
-  # Ten shards split the four full narrow-screen flows 2+2; eight or twelve group all four.
-  # Keep the ten-minute step budget and zero retries without dropping any case.
+  # Narrow flows can take over four minutes each on hosted macOS; give each its own job.
+  # Shard the remaining cases separately, retaining every scan and the ten-minute step budget.
   e2e-web:
-    name: macOS Web E2E (${{ matrix.shard }}/10)
+    name: macOS Web E2E (${{ matrix.id }})
     strategy:
       fail-fast: false
-      matrix: { shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] }
+      matrix:
+        include:
+          - { id: main-1, args: "--grep-invert 'narrow screens' --shard=1/8" }
+          - { id: main-2, args: "--grep-invert 'narrow screens' --shard=2/8" }
+          - { id: main-3, args: "--grep-invert 'narrow screens' --shard=3/8" }
+          - { id: main-4, args: "--grep-invert 'narrow screens' --shard=4/8" }
+          - { id: main-5, args: "--grep-invert 'narrow screens' --shard=5/8" }
+          - { id: main-6, args: "--grep-invert 'narrow screens' --shard=6/8" }
+          - { id: main-7, args: "--grep-invert 'narrow screens' --shard=7/8" }
+          - { id: main-8, args: "--grep-invert 'narrow screens' --shard=8/8" }
+          - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'" }
+          - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'" }
+          - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'" }
+          - { id: narrow-zh-CN-dark, args: "narrow.spec.ts --grep 'zh-CN/dark$'" }
     runs-on: macos-14
     timeout-minutes: 15
     steps:
@@ -37,12 +50,12 @@ jobs:
         run: pnpm exec playwright install chromium
       - name: Real daemon and Web gate (zero retries)
         timeout-minutes: 10
-        run: pnpm e2e:web --shard=${{ matrix.shard }}/10 --workers=1
+        run: pnpm e2e:web ${{ matrix.args }} --workers=1
       - name: Upload report, screenshots, traces and process evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: web-e2e-macos-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: web-e2e-macos-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
           # Only completed reports/traces; Playwright scratch files can disappear during teardown.
           path: |
             .agnes-tmp/e2e-web
@@ -51,10 +64,23 @@ jobs:
           if-no-files-found: error
           retention-days: 14
   e2e-web-linux:
-    name: Linux Web E2E (${{ matrix.shard }}/10)
+    name: Linux Web E2E (${{ matrix.id }})
     strategy:
       fail-fast: false
-      matrix: { shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] }
+      matrix:
+        include:
+          - { id: main-1, args: "--grep-invert 'narrow screens' --shard=1/8" }
+          - { id: main-2, args: "--grep-invert 'narrow screens' --shard=2/8" }
+          - { id: main-3, args: "--grep-invert 'narrow screens' --shard=3/8" }
+          - { id: main-4, args: "--grep-invert 'narrow screens' --shard=4/8" }
+          - { id: main-5, args: "--grep-invert 'narrow screens' --shard=5/8" }
+          - { id: main-6, args: "--grep-invert 'narrow screens' --shard=6/8" }
+          - { id: main-7, args: "--grep-invert 'narrow screens' --shard=7/8" }
+          - { id: main-8, args: "--grep-invert 'narrow screens' --shard=8/8" }
+          - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'" }
+          - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'" }
+          - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'" }
+          - { id: narrow-zh-CN-dark, args: "narrow.spec.ts --grep 'zh-CN/dark$'" }
     # Visual baselines use this image and its explicitly provisioned font families.
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -94,12 +120,12 @@ jobs:
       - name: Real daemon and Web gate (zero retries)
         if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.chromium.outcome == 'success' }}
         timeout-minutes: 10
-        run: pnpm e2e:web --reuse-build --shard=${{ matrix.shard }}/10 --workers=1
+        run: pnpm e2e:web --reuse-build ${{ matrix.args }} --workers=1
       - name: Upload report, screenshots, traces and process evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: web-e2e-linux-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: web-e2e-linux-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
           # Only completed reports/traces; Playwright scratch files can disappear during teardown.
           path: |
             .agnes-tmp/e2e-web

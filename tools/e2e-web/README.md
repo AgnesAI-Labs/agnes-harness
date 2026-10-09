@@ -48,8 +48,14 @@ separate from this gate.
 ## Gate and failure evidence
 
 The required GitHub status is **Web E2E gate** from `.github/workflows/e2e-web.yml`. It aggregates
-all eight macOS 14 and eight Linux Web shards, all six Linux fast-test shards and the separate Linux
-contracts job (including `pnpm test:story`) and three migrated-heavy shards; a failed or cancelled dependency fails the aggregate. Web shards retain one worker and the existing deadlines; splitting the long settings/candidate flows gives each runner room for build and quality prechecks. Uploads retain completed reports, screenshots and trace archives, excluding volatile Playwright scratch directories.
+all twelve macOS 14 and twelve Linux Web jobs, all six Linux fast-test shards and the separate Linux
+contracts job (including `pnpm test:story`) and three migrated-heavy shards; a failed or cancelled
+dependency fails the aggregate. Eight jobs per platform shard the regular cases; four additional
+jobs each run one narrow
+locale/theme combination. Hosted macOS narrow flows can take over four minutes per case, so
+combining two leaves insufficient room for build and quality prechecks. Every job retains one
+worker, all checks, and the existing deadlines. Uploads retain completed reports, screenshots
+and trace archives, excluding volatile Playwright scratch directories.
 Maintainers must select that status in the target branch's required checks/ruleset; committing a
 workflow alone does not change GitHub branch protection. The workflow runs on pull requests,
 merge groups, integration/main pushes and manual dispatch, without path-based skips.
@@ -58,8 +64,8 @@ watch the returned run with `gh run watch RUN_ID --exit-status`. Dispatch checks
 specs and baselines. Every ready screen needs both platform PNGs captured with the pinned
 Chromium and CI fonts; dispatch does not generate or approve missing baselines.
 
-The local command shares two workers with per-test scheduling. CI runs six complete, disjoint
-shards per platform with one worker per runner, so concurrent daemon/worker/Chromium trees do not
+The local command shares two workers with per-test scheduling. CI runs eight complete, disjoint
+regular shards plus four single-case narrow jobs per platform with one worker per runner, so concurrent daemon/worker/Chromium trees do not
 compete on the same small runner. The complete `pnpm test` fast tier runs in six independent
 Vitest shards with one worker each; typechecks, structural guards and kernel regressions run
 once in a separate contracts job. The process/data-heavy files listed in
@@ -84,7 +90,7 @@ session events are collected through the public SDK before shutdown, including c
 attribution and trusted timeout/cancellation/execution/result failure classifications. Extension
 exception text remains redacted.
 SDK and browser RPC timings contain only method names, durations and error codes, never parameters
-or response bodies. CI artifacts include the platform and shard number to avoid upload collisions. Set
+or response bodies. CI artifacts include the platform and matrix id to avoid upload collisions. Set
 `AGH_WEB_TEST_OUTPUT` to place these artifacts elsewhere. The harness closes its SDK clients,
 stops its own serve process, runs `daemon stop` for its isolated home, and removes only its own
 temporary directory. Browser console errors, uncaught page errors and off-loopback requests fail.
