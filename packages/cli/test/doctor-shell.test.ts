@@ -21,6 +21,11 @@ function platform(os: 'win32' | 'linux') {
     matches: () => true,
     probe: async () => {},
     snapshot: () => ({ os, arch: 'x64', capabilities: { 'sandbox.l1': 'unavailable' } }),
+    capability: () => ({
+      level: 'unavailable',
+      scope: [],
+      reason: 'awaiting sandbox backend full-boundary probe',
+    }),
   } as unknown as ReturnType<typeof createPlatform>)
 }
 
@@ -57,7 +62,11 @@ it('keeps non-Windows diagnostics independent of PowerShell', async () => {
   expect(await doctorPlatform(deps)).toEqual({
     name: 'platform',
     status: 'warn',
-    detail: ['os linux x64', 'sandbox.l1=unavailable'],
+    detail: [
+      'os linux x64',
+      'sandbox.l1=unavailable',
+      'sandbox.l1.reason=awaiting sandbox backend full-boundary probe',
+    ],
   })
   expect(resolveConfiguredPowerShell).not.toHaveBeenCalled()
 })
