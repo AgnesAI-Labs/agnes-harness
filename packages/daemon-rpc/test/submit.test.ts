@@ -258,7 +258,9 @@ describe('steer / followUp / submit', () => {
             : { result: { seq: expect.any(Number), replayed: false } },
         )
         const afterRemoval = core.lastSeq
-        expect(await ep.handle(command)).toMatchObject({ result: { seq: afterRemoval - 1, replayed: true } })
+        const removal = (await core.scan({ type: 'inbox', order: 'desc', limit: 1 }))[0]
+        expect(removal).toBeDefined()
+        expect(await ep.handle(command)).toMatchObject({ result: { seq: removal?.seq, replayed: true } })
         expect(core.lastSeq).toBe(afterRemoval)
         expect(
           await ep.handle({ ...command, params: { ...command.params, commandId: 'new-stale-removal' } }),
@@ -273,7 +275,12 @@ describe('steer / followUp / submit', () => {
         expect((await core.projectUI()).pendingInputs?.map((item) => item.preview)).toEqual(['B', 'D'])
         expect(await core.scan({ type: 'user/message', limit: 10 })).toHaveLength(1)
         expect(await core.scan({ type: 'x/core/queued-input-removed', limit: 10 })).toHaveLength(1)
-        expect(core.lastSeq).toBe(afterRemoval)
+        expect(await core.scan({ fromSeq: afterRemoval + 1, limit: 10 })).toMatchObject([
+          {
+            type: 'x/core/control',
+            data: { outcome: 'refused', operation: 'withdraw', reason: 'QUEUED_INPUT_GONE' },
+          },
+        ])
       } finally {
         await ep.close()
         await h.close()
@@ -448,7 +455,7 @@ describe('steer / followUp / submit', () => {
         await vi.waitFor(() => expect(inference).toBe(2))
         expect((await core.projectUI()).pendingInputs?.map((item) => item.preview)).toEqual(['B', 'D'])
         expect((await core.scan({ type: 'turn/end', limit: 10 }))[0]?.data).toMatchObject({
-          reason: 'aborted',
+          reason: 'interrupted',
         })
         expect(await ep.handle(command)).toMatchObject({ result: { replayed: true } })
         expect(
