@@ -59,3 +59,7 @@ Host 必须提供对应注册服务，循环或适配器插件才能加载。安
 [会话工作台面板](workbench-panels.zh-CN.md)介绍右侧和底部停靠面板的注册方式。
 
 [记忆 providers](memory.zh-CN.md) · 单选记忆与多个知识源共存。
+
+## 待实现提案
+
+[提案：插件用途 metadata 与页面卡片](plugin-presentation/DESIGN.zh-CN.md) 定义可选的作者用途说明与运行时派生贡献事实，尚未实现。

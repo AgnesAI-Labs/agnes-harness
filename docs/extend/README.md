@@ -75,3 +75,7 @@ Drop a source plugin into the [local plugins folder](local-plugins.md), or [buil
 [Session workbench panels](workbench-panels.md) describes registered right/bottom dock contributions.
 
 [Memory providers](memory.md) · Single selected memory with multiple knowledge sources.
+
+## Proposals
+
+[Proposed plugin metadata and purpose cards](plugin-presentation/DESIGN.md) defines optional author-owned descriptions and runtime-derived contribution facts; it is not implemented yet.
