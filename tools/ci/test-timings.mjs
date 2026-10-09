@@ -8,7 +8,9 @@ if (!process.argv[2]) {
         node: process.version,
         cpus: cpus().length,
         availableParallelism: availableParallelism(),
-        memoryBytes: process.constrainedMemory() || totalmem(),
+        // An unlimited Linux cgroup can report UINT64_MAX; it is not available RAM.
+        memoryBytes: Math.min(totalmem(), process.constrainedMemory() || Infinity),
+        systemMemoryBytes: totalmem(),
         pool: 'forks',
         maxWorkers: 1,
         note: 'One test worker leaves capacity for the Vite coordinator; isolation remains enabled.',

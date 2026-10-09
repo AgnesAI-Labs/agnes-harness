@@ -246,20 +246,38 @@ it('keeps old plugin leases across update, close and cold resume, and drains on 
 it('keeps code pins while reading live Skills after refresh and cold resume', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-generation-skills-'))
   let host: Awaited<ReturnType<typeof createTestHost>>['host'] | undefined
-  const view = (body: string) => {
+  // Disk resources own the reconstructible facade revision; runtime contributions own their plugin rows.
+  const view = async (body: string) => {
     const registry = createSkillCandidateRegistry({
       barrier: { quiesce: async (_id, publish) => publish({}) },
     })
-    registry.registerRuntime({
-      resourceId: `skill/runtime/runtime/${'a'.repeat(64)}`,
+    const candidate = {
+      resourceId: `skill/workspace/workspace-agnes/${'a'.repeat(64)}`,
       name: 'pinned',
       description: 'Pinned instructions',
       revision: (body === 'old body' ? 'a' : body === 'new body' ? 'b' : 'c').repeat(64),
       capabilityHash: 'c'.repeat(64),
-      sourceIdentity: { scope: 'runtime', rootKey: 'runtime', sourceId: 'a'.repeat(64) },
-      priority: 450,
+      sourceIdentity: {
+        scope: 'workspace' as const,
+        rootKey: 'workspace-agnes' as const,
+        sourceId: 'a'.repeat(64),
+      },
+      priority: 500,
       body,
+    }
+    registry.replaceRoot('workspace-agnes', [candidate])
+    registry.setControl({
+      desired: [{ resourceId: candidate.resourceId, state: 'enabled' }],
+      trust: [
+        {
+          resourceId: candidate.resourceId,
+          revision: candidate.revision,
+          capabilityHash: candidate.capabilityHash,
+          state: 'trusted',
+        },
+      ],
     })
+    await registry.activate('disk-fixture', async () => undefined)
     return registry.snapshot()
   }
   const options = {
@@ -270,9 +288,9 @@ it('keeps code pins while reading live Skills after refresh and cold resume', as
     runtimePluginSources: async () => [],
   }
   try {
-    host = (await createTestHost({ ...options, skillResources: view('old body') })).host
+    host = (await createTestHost({ ...options, skillResources: await view('old body') })).host
     const a = await host.createSession({ key: 'skills-old', cwd: root })
-    await host.refreshSkillRow(view('new body'))
+    await host.refreshSkillRow(await view('new body'))
     const b = await host.createSession({ key: 'skills-new', cwd: root })
     expect(b.pluginGenerationId).toBe(a.pluginGenerationId)
     const read = (session: typeof a) =>
@@ -292,7 +310,7 @@ it('keeps code pins while reading live Skills after refresh and cold resume', as
     const lastGoodTarget = required(host.runtimeTargetSnapshot?.())
     expect(lastGoodTarget.resource.rows['ext:agnes/skills']).not.toBeNull()
     await host.close()
-    host = (await createTestHost({ ...options, skillResources: view('current unrelated body') })).host
+    host = (await createTestHost({ ...options, skillResources: await view('current unrelated body') })).host
     expect(host.runtimeTargetSnapshot?.()?.resource.rows['ext:agnes/skills']?.entryRevision).not.toBe(
       lastGoodTarget.resource.rows['ext:agnes/skills']?.entryRevision,
     )

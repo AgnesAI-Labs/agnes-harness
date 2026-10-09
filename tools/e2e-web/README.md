@@ -128,6 +128,10 @@ AGH_UPDATE_VISUALS=1 pnpm e2e:web --reuse-build
 ```
 
 Review PNG changes and the manifest together with the pinned Chromium on the target platform.
+Linux provisions real bwrap filesystem/process/network namespaces. On Ubuntu CI, a dedicated
+AppArmor profile grants user namespaces only to `/usr/bin/bwrap`; global sysctls and AppArmor
+enforcement remain unchanged. Provisioning fails if the actual namespace probe fails, so job and
+terminal coverage exercises confinement rather than depending on an unconfined fallback.
 Linux uses the pinned Ubuntu 24.04 runner with Playwright-installed system libraries and
 `fonts-dejavu-core` / `fonts-dejavu-mono`. Install both font packages when reproducing the gate
 in a minimal container: without them Chromium falls back to WenQuanYi for monospace text,
