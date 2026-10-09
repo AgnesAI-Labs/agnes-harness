@@ -135,6 +135,8 @@ export type SessionOptions = {
   actor: Actor
   preset?: PresetView
   resolvedProfileHash: string | null
+  /** Hash of the resolved preset document; written to a new session/start only. */
+  resolvedPresetHash?: string | null
   seams?: Partial<SeamImplementations>
   cwd: string
   writerRunId: string
@@ -387,6 +389,7 @@ export class Kernel {
         agnesVersion: this.o.agnesVersion ?? '0.0.0',
         preset: preset.name,
         resolvedProfileHash: so.resolvedProfileHash,
+        ...(so.resolvedPresetHash ? { resolvedPresetHash: so.resolvedPresetHash } : {}),
         writerRunId: so.writerRunId,
         lane,
         modelSelections: Object.entries(preset.model.id).flatMap(([slot, model]) => {
@@ -483,6 +486,7 @@ export class Kernel {
       clock: this.clock,
       actor: so.actor,
       resolvedProfileHash: so.resolvedProfileHash,
+      ...(so.resolvedPresetHash ? { resolvedPresetHash: so.resolvedPresetHash } : {}),
       ...(so.imported ? { imported: so.imported } : {}),
       cwd: so.cwd,
       netFetch: this.o.netFetch,
