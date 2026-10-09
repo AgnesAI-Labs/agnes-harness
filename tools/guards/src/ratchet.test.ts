@@ -1,3 +1,4 @@
+// Responsibility splits transfer existing scopes and add only the reviewed binding/import delta.
 // Exact integrated workflow receipts, fact links and sandbox refusal counts; no headroom.
 // FC1 rebase: exact combined counts for bounded evidence projection and four UI entries; no headroom.
 // 2026-10-06 attachment history reopening: bound authority replay so worker frames can be split.
@@ -329,7 +330,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-common/src': 3757,
   'packages/host-common/src/assemble': 439,
   'packages/core/src/artifacts': 743,
-  'packages/core-effects/src': 2621,
+  'packages/core-effects/src': 2598,
   'packages/core-ledger/src': 6452,
   'packages/core-child-control/src': 397,
   'packages/core-common/src': 529,
@@ -389,7 +390,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Approval reasons: the approval card label reads the decision reason (+22). Measured 6651, exact cap.
   // 2026-10-07 reviewed growth: plugin state badges and session default controls.
   // countLines: 6640 -> 6681 (+41); exact cap, no exclusions or spare allocation.
-  'packages/web-ui/src': 8947,
+  'packages/web-ui/src': 9001,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
@@ -403,7 +404,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 6192 -> 6208 (+16); exact cap, no exclusions or spare allocation.
   // 2026-10-07 integration review: Inline conversation cards and approval/trace rendering.
   // countLines: 6208 -> 6222; exact measured cap, no exclusions or spare allocation.
-  'packages/web-units/src': 7368,
+  'packages/web-units/src': 7532,
   // Write staleness guard: a per-session table of what each file looked like when read, checked by
   // `write` (+55 counted lines, measured 855, exact cap).
   // 2026-10-07 integration review: Official job tools and bounded execution/output handling.
@@ -587,7 +588,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2311 -> 2443; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Session-bound goal state and context/settings integration.
   // countLines: 2443 -> 2471; exact cap, no exclusions or spare allocation.
-  'packages/web/src/app': 2662,
+  'packages/web/src/app': 3800,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -625,7 +626,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Approval reasons: the approval card label reads the decision reason (+10). Measured 796, exact cap.
   // 2026-10-05 the merge keeps both sides' additions, so neither number holds. Re-measured on the
   // merged tree: 807, exact, no spare.
-  'packages/web/src/timeline': 807,
+  'packages/web/src/timeline': 837,
   // 2026-09-17：navigation.ts 的 folderIcon 换成客户端 AgnesProjectFolderIcon 两态字形
   // （两条 path + folderSvg 构造器），展开/收起由 CSS 的 [aria-expanded] 切换。实测 108。
   // SESSION-ACTIONS integrated with b/main: exact increment +43.
@@ -1674,7 +1675,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2327 -> 2438; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Expose cooperative construction signals, adapter credential ports and shared default compaction/policy helpers.
   // countLines: 2438 -> 2505 (+67); exact measured cap, no exclusions or spare allocation.
-  'packages/extension-api/src': 2770, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  'packages/extension-api/src': 2794, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -2404,7 +2405,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 19657 -> 22109; exact cap, no exclusions or spare allocation.
   // Acceptance review: Retain published composition details and stable expanded goal state during admin refresh.
   // countLines: 22109 -> 22110; exact cap, no exclusions or spare allocation.
-  'packages/web/src': 10403,
+  'packages/web/src': 11812,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

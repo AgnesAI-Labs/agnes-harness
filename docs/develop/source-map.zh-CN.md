@@ -65,3 +65,5 @@ Daemon、Host、Web 的私有实现路径直接使用所属包；已删除过时
 CSS 片段保留原来的级联顺序，同一领域的后置覆盖仍在后面。两条构建路径先拼接为现有 `/style.css`，再追加对话样式；样式源码测试与主题 token 生成读取相同的拼接源码，开发模式监听每个片段。
 
 `RemoteTransport` 纯类型合同位于 [extension-api](../../packages/extension-api/src/remote-transport.ts)，Core 导出同一类型。Ledger 测试助手位于 [core-ledger/testkit](../../packages/core-ledger/testkit)。
+
+会话展示按职责拆为 [Web controllers](../../packages/web/src/app)、[区域挂载](../../packages/web/src/regions)、[时间线节点](../../packages/web/src/timeline)、[composer](../../packages/web-units/src/composer)、[消息与回合](../../packages/web-ui/src/conversation/messages) 和 [客户端对账](../../packages/web/src/client-modules/reconcile)。原入口保留现有导出。

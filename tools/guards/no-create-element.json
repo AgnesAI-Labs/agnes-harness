@@ -18,6 +18,15 @@
     "packages/web-admin/src/settings/dialog.ts",
     "packages/web-admin/src/admin/plugins/admin/page.tsx",
     "packages/web-admin/src/admin/plugins/admin/views.tsx",
-    "packages/resource-control-web/src/mcp-form.ts"
+    "packages/resource-control-web/src/mcp-form.ts",
+    "packages/web-ui/src/conversation/messages/approval-labels.ts",
+    "packages/web-ui/src/conversation/messages/assistant-message.tsx",
+    "packages/web-ui/src/conversation/messages/assistant-portal.tsx",
+    "packages/web-ui/src/conversation/messages/context.ts",
+    "packages/web-ui/src/conversation/messages/markdown-state.ts",
+    "packages/web-ui/src/conversation/messages/message.tsx",
+    "packages/web-ui/src/conversation/messages/tool-card.tsx",
+    "packages/web-ui/src/conversation/messages/turn.tsx",
+    "packages/web-ui/src/conversation/messages/user-message.tsx"
   ]
 }

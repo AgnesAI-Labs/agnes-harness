@@ -1,3 +1,8 @@
+import { createCommandController } from './app/command-controller.js'
+import { createComposerController } from './app/composer-controller.js'
+import { createSubmissionController } from './app/submission-controller.js'
+import { createSessionController } from './app/session-controller.js'
+import { createTurnController } from './app/turn-controller.js'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import { adaptResourceAdmin } from '@agnes/web-admin/admin/resources/admin'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
@@ -6,19 +11,11 @@ import '@agnes/web-admin/settings/registry'
 import {
   type ConfigSnapshot,
   type ContentBlock,
-  decodeSafeImages,
-  MAX_FRAME_BYTES,
   type ModelSettings,
-  modelImageInputError,
   type PageSessionMeta,
   type ReferenceSelection,
-  readSessionTitle,
-  toAcpPrompt,
   type UITimeline,
   type UITurn,
-  USER_MESSAGE_IMAGE_LIMITS,
-  userImagePolicy,
-  validateUserAttachments,
   type WorkspaceEntry,
 } from '@agnes/protocol'
 import {
@@ -29,40 +26,26 @@ import {
   type PermissionRequest,
   type Session,
 } from '@agnes/sdk/browser'
-import { sessionLoopSelection } from '@agnes/web-admin/admin/plugins/session-loop'
+
 import { type PermissionMode, permissionLabel, yoloEnabled } from '@agnes/web-admin/permission-picker'
 import { createSettingsController } from '@agnes/web-admin/settings'
 import { loadRuntimeCatalog } from '@agnes/web-admin/settings/api'
 import { settingsCatalog } from '@agnes/web-admin/settings/locales'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import { settingsSections } from '@agnes/web-client'
-import type { ApprovalAction } from '@agnes/web-conversation/approval'
-import { approvalToolName, liveApprovalCard } from '@agnes/web-conversation/approval-card'
-import type { ComposerView } from '@agnes/web-conversation/composer'
+
 import { createComputerUsePaneController } from '@agnes/web-conversation/computer-use-pane'
-import { renderGoalCard } from '@agnes/web-conversation/goal-card'
+
+import { type LiveProjection } from '@agnes/web-conversation/live-projection'
+
 import {
-  APPROVAL_SEARCH_PAGES,
-  approvalOutsideWindow,
-  createLiveProjection,
-  findApproval,
-  type LiveProjection,
-} from '@agnes/web-conversation/live-projection'
-import { PlanModeRequestError, submitPlanCommand } from '@agnes/web-conversation/plan-mode'
-import {
-  canSubmitComposer,
-  composerActionPresentation,
-  composerHintPresentation,
   errorNotice,
   type KnownSessionModel,
-  modelSelectAccessibleName,
-  modelSelectLabel,
   setButtonLabel,
-  shouldShowEmptyState,
   type Translate,
   workspaceErrorNotice,
 } from '@agnes/web-conversation/presentation'
-import { type WorkbenchContext, workbenchLocaleCatalog } from '@agnes/web-conversation/workbench'
+import { workbenchLocaleCatalog } from '@agnes/web-conversation/workbench'
 import { bindAppearance, bindSkinGroup } from '@agnes/web-foundation/appearance'
 import { installBrowserLogCapture } from '@agnes/web-foundation/browser-log'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
@@ -95,25 +78,595 @@ import {
   loadNewSessionCatalog,
   loopIdentity,
   type NewSessionCatalog,
-  updateLoopPicker,
 } from './loop-picker.js'
 import type { ModelPickerOption } from './model-picker.js'
 import { renderWorkspaceOptions } from './navigation.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
-import { createSessionActions, forkTitle } from './session-actions.js'
-import { bindWebSession, loadWebSession } from './session-binding.js'
-import { createTitleRefresh, sessionTitle } from './session-title.js'
-import {
-  durableApprovalActions,
-  nodeText,
-  type RunReceipt,
-  receiptFromTurns,
-  recordRunEvent,
-  type WebView,
-  webView,
-} from './view.js'
-import { renderWorkbench, unmountWorkbench } from './workbench/dock.js'
+import { createSessionActions } from './session-actions.js'
+
+import { createTitleRefresh } from './session-title.js'
+import { type RunReceipt, type WebView } from './view.js'
+import { unmountWorkbench } from './workbench/dock.js'
 import { requestWorkspacePicker, workspacePickerAvailable } from './workspace-picker.js'
+
+/** Live bindings keep selection guards and asynchronous cleanup on the app's shared state. */
+export interface AppSessionContext {
+  SESSION_WATCH_STOP_TIMEOUT_MS: typeof SESSION_WATCH_STOP_TIMEOUT_MS
+  TRACE_THROTTLE_MS: typeof TRACE_THROTTLE_MS
+  approvalBusy: typeof approvalBusy
+  approvalRuntime: typeof approvalRuntime
+  approvalSearch: typeof approvalSearch
+  approvalSearchTicket: typeof approvalSearchTicket
+  attachmentSessionOpening: typeof attachmentSessionOpening
+  awaitingPromptStart: typeof awaitingPromptStart
+  beginNewDraft: typeof beginNewDraft
+  clearSessionRecovery: typeof clearSessionRecovery
+  client: typeof client
+  clientModules: typeof clientModules
+  composerDraftKey: typeof composerDraftKey
+  composerRuntime: typeof composerRuntime
+  configured: typeof configured
+  connected: typeof connected
+  controlPending: typeof controlPending
+  controlsHistory: typeof controlsHistory
+  controlsRefresh: typeof controlsRefresh
+  conversationRuntime: typeof conversationRuntime
+  current: typeof current
+  dockControlsHost: typeof dockControlsHost
+  draftBundles: typeof draftBundles
+  draftLoop: typeof draftLoop
+  draftLoopAvailable: typeof draftLoopAvailable
+  draftLoopEdited: typeof draftLoopEdited
+  draftPreset: typeof draftPreset
+  draftingNew: typeof draftingNew
+  goalHost: typeof goalHost
+  initialModelPending: typeof initialModelPending
+  initialPermissionPending: typeof initialPermissionPending
+  intentionalClose: typeof intentionalClose
+  knownSessionModel: typeof knownSessionModel
+  list: typeof list
+  live: typeof live
+  liveApproval: typeof liveApproval
+  loopCatalogError: typeof loopCatalogError
+  loopCatalogPending: typeof loopCatalogPending
+  modelChangePending: typeof modelChangePending
+  modelDefaults: typeof modelDefaults
+  modelSelectionSeq: typeof modelSelectionSeq
+  moduleSessionId: typeof moduleSessionId
+  newSessionCatalog: typeof newSessionCatalog
+  notice: typeof notice
+  offPermission: typeof offPermission
+  open: typeof open
+  openNewSessionDialog: typeof openNewSessionDialog
+  pendingSessionKey: typeof pendingSessionKey
+  permissionChangePending: typeof permissionChangePending
+  permissionConnectionEpoch: typeof permissionConnectionEpoch
+  permissionMode: typeof permissionMode
+  permissionRefreshPending: typeof permissionRefreshPending
+  permissionSelectionSeq: typeof permissionSelectionSeq
+  projection: typeof projection
+  queueAction: typeof queueAction
+  receipts: typeof receipts
+  recoveredReturns: typeof recoveredReturns
+  recoveryDisabled: typeof recoveryDisabled
+  referenceSessionPending: typeof referenceSessionPending
+  references: typeof references
+  refreshSessionControls: typeof refreshSessionControls
+  render: typeof render
+  renderControls: typeof renderControls
+  renderNewSessionControls: typeof renderNewSessionControls
+  renderer: typeof renderer
+  run: typeof run
+  runtimeCatalog: typeof runtimeCatalog
+  runtimeModels: typeof runtimeModels
+  selectedDraftPreset: typeof selectedDraftPreset
+  selectedModelAvailable: typeof selectedModelAvailable
+  selectedWorkspace: typeof selectedWorkspace
+  selection: typeof selection
+  sending: typeof sending
+  sessionControls: typeof sessionControls
+  sessionPending: typeof sessionPending
+  sessionRows: typeof sessionRows
+  sessionTitles: typeof sessionTitles
+  sessionYoloEnabled: typeof sessionYoloEnabled
+  settingsText: typeof settingsText
+  showError: typeof showError
+  showSessionRecovery: typeof showSessionRecovery
+  stopAfterSeq: typeof stopAfterSeq
+  stopEvents: typeof stopEvents
+  stopping: typeof stopping
+  streamFrame: typeof streamFrame
+  submissionGeneration: typeof submissionGeneration
+  submitComposer: typeof submitComposer
+  syncDraftPermission: typeof syncDraftPermission
+  t: typeof t
+  titleRefresh: typeof titleRefresh
+  topbarRuntime: typeof topbarRuntime
+  tracePaintedAt: typeof tracePaintedAt
+  tracePanel: typeof tracePanel
+  tracePending: typeof tracePending
+  traceTrailing: typeof traceTrailing
+  transcriptMeta: typeof transcriptMeta
+  updateSidebar: typeof updateSidebar
+  updateTitle: typeof updateTitle
+  windowAtStart: typeof windowAtStart
+  workspaceRows: typeof workspaceRows
+}
+const appSessionContext: AppSessionContext = {
+  get SESSION_WATCH_STOP_TIMEOUT_MS() {
+    return SESSION_WATCH_STOP_TIMEOUT_MS
+  },
+  get TRACE_THROTTLE_MS() {
+    return TRACE_THROTTLE_MS
+  },
+  get approvalBusy() {
+    return approvalBusy
+  },
+  set approvalBusy(value: typeof approvalBusy) {
+    approvalBusy = value
+  },
+  get approvalRuntime() {
+    return approvalRuntime
+  },
+  get approvalSearch() {
+    return approvalSearch
+  },
+  set approvalSearch(value: typeof approvalSearch) {
+    approvalSearch = value
+  },
+  get approvalSearchTicket() {
+    return approvalSearchTicket
+  },
+  set approvalSearchTicket(value: typeof approvalSearchTicket) {
+    approvalSearchTicket = value
+  },
+  get attachmentSessionOpening() {
+    return attachmentSessionOpening
+  },
+  set attachmentSessionOpening(value: typeof attachmentSessionOpening) {
+    attachmentSessionOpening = value
+  },
+  get awaitingPromptStart() {
+    return awaitingPromptStart
+  },
+  set awaitingPromptStart(value: typeof awaitingPromptStart) {
+    awaitingPromptStart = value
+  },
+  get beginNewDraft() {
+    return beginNewDraft
+  },
+  get clearSessionRecovery() {
+    return clearSessionRecovery
+  },
+  get client() {
+    return client
+  },
+  get clientModules() {
+    return clientModules
+  },
+  get composerDraftKey() {
+    return composerDraftKey
+  },
+  get composerRuntime() {
+    return composerRuntime
+  },
+  get configured() {
+    return configured
+  },
+  set configured(value: typeof configured) {
+    configured = value
+  },
+  get connected() {
+    return connected
+  },
+  set connected(value: typeof connected) {
+    connected = value
+  },
+  get controlPending() {
+    return controlPending
+  },
+  set controlPending(value: typeof controlPending) {
+    controlPending = value
+  },
+  get controlsHistory() {
+    return controlsHistory
+  },
+  get controlsRefresh() {
+    return controlsRefresh
+  },
+  set controlsRefresh(value: typeof controlsRefresh) {
+    controlsRefresh = value
+  },
+  get conversationRuntime() {
+    return conversationRuntime
+  },
+  get current() {
+    return current
+  },
+  set current(value: typeof current) {
+    current = value
+  },
+  get dockControlsHost() {
+    return dockControlsHost
+  },
+  get draftBundles() {
+    return draftBundles
+  },
+  set draftBundles(value: typeof draftBundles) {
+    draftBundles = value
+  },
+  get draftLoop() {
+    return draftLoop
+  },
+  set draftLoop(value: typeof draftLoop) {
+    draftLoop = value
+  },
+  get draftLoopAvailable() {
+    return draftLoopAvailable
+  },
+  get draftLoopEdited() {
+    return draftLoopEdited
+  },
+  set draftLoopEdited(value: typeof draftLoopEdited) {
+    draftLoopEdited = value
+  },
+  get draftPreset() {
+    return draftPreset
+  },
+  set draftPreset(value: typeof draftPreset) {
+    draftPreset = value
+  },
+  get draftingNew() {
+    return draftingNew
+  },
+  set draftingNew(value: typeof draftingNew) {
+    draftingNew = value
+  },
+  get goalHost() {
+    return goalHost
+  },
+  get initialModelPending() {
+    return initialModelPending
+  },
+  set initialModelPending(value: typeof initialModelPending) {
+    initialModelPending = value
+  },
+  get initialPermissionPending() {
+    return initialPermissionPending
+  },
+  set initialPermissionPending(value: typeof initialPermissionPending) {
+    initialPermissionPending = value
+  },
+  get intentionalClose() {
+    return intentionalClose
+  },
+  set intentionalClose(value: typeof intentionalClose) {
+    intentionalClose = value
+  },
+  get knownSessionModel() {
+    return knownSessionModel
+  },
+  set knownSessionModel(value: typeof knownSessionModel) {
+    knownSessionModel = value
+  },
+  get list() {
+    return list
+  },
+  get live() {
+    return live
+  },
+  set live(value: typeof live) {
+    live = value
+  },
+  get liveApproval() {
+    return liveApproval
+  },
+  set liveApproval(value: typeof liveApproval) {
+    liveApproval = value
+  },
+  get loopCatalogError() {
+    return loopCatalogError
+  },
+  set loopCatalogError(value: typeof loopCatalogError) {
+    loopCatalogError = value
+  },
+  get loopCatalogPending() {
+    return loopCatalogPending
+  },
+  set loopCatalogPending(value: typeof loopCatalogPending) {
+    loopCatalogPending = value
+  },
+  get modelChangePending() {
+    return modelChangePending
+  },
+  set modelChangePending(value: typeof modelChangePending) {
+    modelChangePending = value
+  },
+  get modelDefaults() {
+    return modelDefaults
+  },
+  get modelSelectionSeq() {
+    return modelSelectionSeq
+  },
+  set modelSelectionSeq(value: typeof modelSelectionSeq) {
+    modelSelectionSeq = value
+  },
+  get moduleSessionId() {
+    return moduleSessionId
+  },
+  set moduleSessionId(value: typeof moduleSessionId) {
+    moduleSessionId = value
+  },
+  get newSessionCatalog() {
+    return newSessionCatalog
+  },
+  set newSessionCatalog(value: typeof newSessionCatalog) {
+    newSessionCatalog = value
+  },
+  get notice() {
+    return notice
+  },
+  get offPermission() {
+    return offPermission
+  },
+  set offPermission(value: typeof offPermission) {
+    offPermission = value
+  },
+  get open() {
+    return open
+  },
+  get openNewSessionDialog() {
+    return openNewSessionDialog
+  },
+  get pendingSessionKey() {
+    return pendingSessionKey
+  },
+  set pendingSessionKey(value: typeof pendingSessionKey) {
+    pendingSessionKey = value
+  },
+  get permissionChangePending() {
+    return permissionChangePending
+  },
+  set permissionChangePending(value: typeof permissionChangePending) {
+    permissionChangePending = value
+  },
+  get permissionConnectionEpoch() {
+    return permissionConnectionEpoch
+  },
+  set permissionConnectionEpoch(value: typeof permissionConnectionEpoch) {
+    permissionConnectionEpoch = value
+  },
+  get permissionMode() {
+    return permissionMode
+  },
+  set permissionMode(value: typeof permissionMode) {
+    permissionMode = value
+  },
+  get permissionRefreshPending() {
+    return permissionRefreshPending
+  },
+  set permissionRefreshPending(value: typeof permissionRefreshPending) {
+    permissionRefreshPending = value
+  },
+  get permissionSelectionSeq() {
+    return permissionSelectionSeq
+  },
+  set permissionSelectionSeq(value: typeof permissionSelectionSeq) {
+    permissionSelectionSeq = value
+  },
+  get projection() {
+    return projection
+  },
+  set projection(value: typeof projection) {
+    projection = value
+  },
+  get queueAction() {
+    return queueAction
+  },
+  set queueAction(value: typeof queueAction) {
+    queueAction = value
+  },
+  get receipts() {
+    return receipts
+  },
+  get recoveredReturns() {
+    return recoveredReturns
+  },
+  get recoveryDisabled() {
+    return recoveryDisabled
+  },
+  get referenceSessionPending() {
+    return referenceSessionPending
+  },
+  set referenceSessionPending(value: typeof referenceSessionPending) {
+    referenceSessionPending = value
+  },
+  get references() {
+    return references
+  },
+  get refreshSessionControls() {
+    return refreshSessionControls
+  },
+  get render() {
+    return render
+  },
+  get renderControls() {
+    return renderControls
+  },
+  get renderNewSessionControls() {
+    return renderNewSessionControls
+  },
+  get renderer() {
+    return renderer
+  },
+  get run() {
+    return run
+  },
+  get runtimeCatalog() {
+    return runtimeCatalog
+  },
+  set runtimeCatalog(value: typeof runtimeCatalog) {
+    runtimeCatalog = value
+  },
+  get runtimeModels() {
+    return runtimeModels
+  },
+  set runtimeModels(value: typeof runtimeModels) {
+    runtimeModels = value
+  },
+  get selectedDraftPreset() {
+    return selectedDraftPreset
+  },
+  get selectedModelAvailable() {
+    return selectedModelAvailable
+  },
+  get selectedWorkspace() {
+    return selectedWorkspace
+  },
+  set selectedWorkspace(value: typeof selectedWorkspace) {
+    selectedWorkspace = value
+  },
+  get selection() {
+    return selection
+  },
+  set selection(value: typeof selection) {
+    selection = value
+  },
+  get sending() {
+    return sending
+  },
+  set sending(value: typeof sending) {
+    sending = value
+  },
+  get sessionControls() {
+    return sessionControls
+  },
+  set sessionControls(value: typeof sessionControls) {
+    sessionControls = value
+  },
+  get sessionPending() {
+    return sessionPending
+  },
+  set sessionPending(value: typeof sessionPending) {
+    sessionPending = value
+  },
+  get sessionRows() {
+    return sessionRows
+  },
+  set sessionRows(value: typeof sessionRows) {
+    sessionRows = value
+  },
+  get sessionTitles() {
+    return sessionTitles
+  },
+  get sessionYoloEnabled() {
+    return sessionYoloEnabled
+  },
+  set sessionYoloEnabled(value: typeof sessionYoloEnabled) {
+    sessionYoloEnabled = value
+  },
+  get settingsText() {
+    return settingsText
+  },
+  get showError() {
+    return showError
+  },
+  get showSessionRecovery() {
+    return showSessionRecovery
+  },
+  get stopAfterSeq() {
+    return stopAfterSeq
+  },
+  set stopAfterSeq(value: typeof stopAfterSeq) {
+    stopAfterSeq = value
+  },
+  get stopEvents() {
+    return stopEvents
+  },
+  set stopEvents(value: typeof stopEvents) {
+    stopEvents = value
+  },
+  get stopping() {
+    return stopping
+  },
+  set stopping(value: typeof stopping) {
+    stopping = value
+  },
+  get streamFrame() {
+    return streamFrame
+  },
+  set streamFrame(value: typeof streamFrame) {
+    streamFrame = value
+  },
+  get submissionGeneration() {
+    return submissionGeneration
+  },
+  set submissionGeneration(value: typeof submissionGeneration) {
+    submissionGeneration = value
+  },
+  get submitComposer() {
+    return submitComposer
+  },
+  get syncDraftPermission() {
+    return syncDraftPermission
+  },
+  get t() {
+    return t
+  },
+  get titleRefresh() {
+    return titleRefresh
+  },
+  get topbarRuntime() {
+    return topbarRuntime
+  },
+  get tracePaintedAt() {
+    return tracePaintedAt
+  },
+  set tracePaintedAt(value: typeof tracePaintedAt) {
+    tracePaintedAt = value
+  },
+  get tracePanel() {
+    return tracePanel
+  },
+  get tracePending() {
+    return tracePending
+  },
+  set tracePending(value: typeof tracePending) {
+    tracePending = value
+  },
+  get traceTrailing() {
+    return traceTrailing
+  },
+  set traceTrailing(value: typeof traceTrailing) {
+    traceTrailing = value
+  },
+  get transcriptMeta() {
+    return transcriptMeta
+  },
+  get updateSidebar() {
+    return updateSidebar
+  },
+  get updateTitle() {
+    return updateTitle
+  },
+  get windowAtStart() {
+    return windowAtStart
+  },
+  set windowAtStart(value: typeof windowAtStart) {
+    windowAtStart = value
+  },
+  get workspaceRows() {
+    return workspaceRows
+  },
+  set workspaceRows(value: typeof workspaceRows) {
+    workspaceRows = value
+  },
+}
+const commandController = createCommandController(appSessionContext)
+const composerController = createComposerController(appSessionContext)
+const submissionController = createSubmissionController(appSessionContext)
+const sessionController = createSessionController(appSessionContext)
+const turnController = createTurnController(appSessionContext)
 
 installBrowserLogCapture()
 
@@ -590,22 +1143,8 @@ function updateSidebar(): void {
 }
 
 const SESSION_WATCH_STOP_TIMEOUT_MS = 3000
-async function stopWithTimeout(stop: (() => Promise<void>) | undefined): Promise<boolean> {
-  if (!stop) return true
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    await Promise.race([
-      stop(),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(t('app.watch.stopTimeout'))), SESSION_WATCH_STOP_TIMEOUT_MS)
-      }),
-    ])
-    return true
-  } catch {
-    return false
-  } finally {
-    if (timer) clearTimeout(timer)
-  }
+function stopWithTimeout(stop: (() => Promise<void>) | undefined): Promise<boolean> {
+  return sessionController.stopWithTimeout(stop)
 }
 const settings = createSettingsController({ client, onSaved: savedConfiguration, onError: showError })
 clientModules.locale.subscribe(() => settings.refreshLocale())
@@ -789,310 +1328,7 @@ function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'clo
 }
 const dockControlsHost = document.getElementById('workbench-controls')
 function renderControls(): void {
-  const workbench: WorkbenchContext = {
-    session: draftingNew || sessionPending ? undefined : current,
-    timeline: draftingNew || sessionPending ? undefined : projection,
-    disabled: !connected || sessionPending || sending || stopping,
-    mention: (path) => {
-      const reference = JSON.stringify(path)
-      const draft = composerRuntime.getDraft()
-      composerRuntime.setDraft(`${draft}${draft ? '\n' : ''}${reference}`)
-      composerRuntime.focus()
-    },
-    command: (command) => {
-      composerRuntime.setDraft(command)
-      submitComposer()
-    },
-  }
-  const dockHost = dockControlsHost
-  if (dockHost) {
-    dockHost.hidden = !workbench.session
-    if (workbench.session)
-      renderWorkbench(dockHost, {
-        t,
-        data: workbench,
-        openRecord: (sessionId, callSeq, resultSeq) => {
-          if (current?.id !== sessionId) return false
-          tracePanel.setOpen(true)
-          const selected = tracePanel.selectTool?.(sessionId, callSeq, resultSeq) ?? false
-          document.getElementById('view-trace')?.focus()
-          return selected
-        },
-      })
-    else unmountWorkbench(dockHost)
-  }
-  renderGoalCard(
-    goalHost,
-    draftingNew ? undefined : projection,
-    !connected || sessionPending || sending || stopping,
-    (command) => {
-      composerRuntime.setDraft(command)
-      submitComposer()
-    },
-  )
-  // 切换会话加载期间的视觉态：旧画面降不透明度提示「正在准备」，新投影就绪后
-  // 由 sessionPending = false 的那次 renderControls 平滑恢复。
-  document.body.classList.toggle('session-switching', sessionPending)
-  const available = connected
-  const busy = projection ? webView(projection, undefined, t).busy : false
-  const images = composerRuntime.getAttachmentBlocks()
-  const hasInput =
-    composerRuntime.getDraft().trim().length > 0 || images.length > 0 || references.getSnapshot().length > 0
-  const initialSubmissionPending = sending && pendingSessionKey !== undefined
-  const action = composerActionPresentation({ busy, loading: sessionPending, sending }, t)
-  for (const control of notice.querySelectorAll<HTMLButtonElement>('[data-recovery-action]'))
-    control.disabled = recoveryDisabled()
-  const canStartDraft = draftingNew && selectedWorkspace?.available === true
-  const permissionUnknown =
-    current !== undefined && (permissionRefreshPending || sessionYoloEnabled === undefined)
-  const selectedRecord = runtimeModels.find(
-    (m) => m.route === knownSessionModel?.route && m.id === knownSessionModel?.id,
-  )
-  const imageUnsupported =
-    images.some((block) => block.type === 'image') && !userImagePolicy(selectedRecord).supported
-  const composerView: ComposerView = {
-    imagePolicy: userImagePolicy(selectedRecord),
-    cancel: {
-      disabled:
-        !connected ||
-        !busy ||
-        stopping ||
-        sessionPending ||
-        (queueAction?.sessionId === current?.id &&
-          queueAction?.selection === selection &&
-          queueAction.kind === 'sendNow' &&
-          queueAction.pending),
-      hidden: !busy && !stopping,
-      label: stopping ? t('composer.cancel.stopping') : t('composer.cancel.stop'),
-    },
-    children: sessionControls?.sessionId === current?.id ? sessionControls?.value.children : [],
-    childrenDisabled: !connected || sessionPending || stopping,
-    controls: {
-      paused: sessionControls?.sessionId === current?.id && sessionControls?.value.paused === true,
-      pending: controlPending,
-      disabled: !connected || !busy || sessionPending || stopping,
-      pauseSupported:
-        sessionControls?.sessionId === current?.id && sessionControls?.value.controls.pause === true,
-      interruptSupported:
-        sessionControls?.sessionId === current?.id && sessionControls?.value.controls.interrupt === true,
-      reason: t(
-        sessionControls?.sessionId === current?.id
-          ? 'composer.control.unsupported'
-          : 'composer.control.syncing',
-      ),
-    },
-    connected,
-    configured,
-    hasSession: current !== undefined || draftingNew,
-    hint:
-      busy && sessionControls?.value.controls.steer !== true
-        ? {
-            kind: 'state',
-            text: t(
-              sessionControls?.sessionId === current?.id
-                ? 'composer.control.unsupported'
-                : 'composer.control.syncing',
-            ),
-          }
-        : busy && !permissionUnknown
-          ? { kind: 'state', text: t('composer.control.steerHint') }
-          : permissionUnknown
-            ? {
-                kind: 'state',
-                text: permissionRefreshPending
-                  ? t('composer.hint.permissionSyncing')
-                  : t('composer.hint.permissionRequired'),
-              }
-            : knownSessionModel && !selectedModelAvailable()
-              ? { kind: 'state', text: t('composer.hint.modelUnavailable') }
-              : imageUnsupported
-                ? { kind: 'state', text: t('composer.hint.imageUnsupported') }
-                : composerHintPresentation(
-                    {
-                      connected,
-                      configured,
-                      hasSession: current !== undefined || draftingNew,
-                      busy,
-                      stopping,
-                      loading: sessionPending,
-                    },
-                    t,
-                  ),
-    input: {
-      disabled:
-        !available || (!current && !draftingNew) || stopping || sessionPending || initialSubmissionPending,
-      placeholder: busy ? t('composer.placeholder.busy') : t('composer.placeholder.idle'),
-    },
-    loading: sessionPending,
-    model: {
-      accessibleName: modelSelectAccessibleName(knownSessionModel, t),
-      disabled:
-        !available ||
-        (!current && !draftingNew) ||
-        busy ||
-        sessionPending ||
-        initialSubmissionPending ||
-        !runtimeModels.length,
-      label: modelSelectLabel(knownSessionModel, t),
-      options: runtimeModels,
-      pending: modelChangePending,
-      ...(knownSessionModel ? { selected: knownSessionModel } : {}),
-    },
-    ...(knownSessionModel && selectedRecord?.contextWindow
-      ? {
-          modelSettings: {
-            settings: knownSessionModel.settings ?? modelDefaults(knownSessionModel).settings ?? {},
-            contextWindow: selectedRecord.contextWindow,
-            thinkingLevelMap: selectedRecord.thinkingLevelMap,
-          },
-        }
-      : {}),
-    permission: {
-      disabled:
-        !available ||
-        (!current && !draftingNew) ||
-        busy ||
-        sessionPending ||
-        initialSubmissionPending ||
-        permissionRefreshPending,
-      pending: permissionChangePending || permissionRefreshPending,
-      selected: permissionUnknown ? null : permissionMode,
-    },
-    queue: {
-      items:
-        current && projection?.sessionId === current.id
-          ? (projection.pendingInputs ?? []).map((item) => ({
-              ...item,
-              editText:
-                sessionControls?.value.pending
-                  .find((pending) => pending.itemId === item.itemId)
-                  ?.content.filter((block) => block.type === 'text')
-                  .map((block) => block.text)
-                  .join('\n') ?? item.preview,
-            }))
-          : [],
-      interruptSupported:
-        sessionControls?.sessionId === current?.id && sessionControls?.value.controls.interrupt === true,
-      reason: t('composer.control.unsupported'),
-      removeDisabled:
-        !available ||
-        !current ||
-        sessionPending ||
-        stopping ||
-        (queueAction?.sessionId === current?.id &&
-          queueAction.selection === selection &&
-          queueAction.pending),
-      disabled:
-        !available ||
-        !configured ||
-        !selectedModelAvailable() ||
-        !current ||
-        sessionPending ||
-        stopping ||
-        permissionChangePending ||
-        permissionUnknown ||
-        (queueAction?.sessionId === current?.id &&
-          queueAction.selection === selection &&
-          queueAction.pending),
-      ...(queueAction?.sessionId === current?.id && queueAction?.selection === selection
-        ? {
-            ...(queueAction.pending
-              ? queueAction.kind === 'sendNow'
-                ? { sending: queueAction.itemId }
-                : { removing: queueAction.itemId }
-              : {}),
-            ...(queueAction.error ? { error: queueAction.error } : {}),
-          }
-        : {}),
-    },
-    sending,
-    send: {
-      disabled:
-        !available ||
-        !configured ||
-        !selectedModelAvailable() ||
-        (!current && !canStartDraft) ||
-        !hasInput ||
-        (busy &&
-          (sessionControls?.sessionId !== current?.id || sessionControls?.value.controls.steer !== true)) ||
-        composerRuntime.hasPendingImages() ||
-        Boolean(imageUnsupported) ||
-        sending ||
-        stopping ||
-        sessionPending ||
-        permissionChangePending ||
-        permissionUnknown,
-      label: action.label,
-      mode: action.mode,
-      title: action.title,
-    },
-    stopping,
-    usage: projection?.usage,
-    workspace: {
-      disabled: !available || sending || sessionPending,
-      label:
-        selectedWorkspace?.name ??
-        (current ? t('composer.workspace.current') : t('composer.workspace.select')),
-      title:
-        selectedWorkspace?.path ??
-        (current ? t('composer.workspace.currentTitle') : t('composer.workspace.select')),
-    },
-  }
-  if (draftingNew && !draftLoopAvailable()) composerView.send.disabled = true
-  if (
-    draftingNew &&
-    permissionMode === 'view' &&
-    permissionForSessionPreset(selectedDraftPreset(), runtimeCatalog) !== 'view'
-  )
-    composerView.send.disabled = true
-  if (draftingNew && loopCatalogPending) composerView.send.disabled = true
-  if (draftingNew && draftBundles.some((id) => !runtimeCatalog?.bundles?.some((bundle) => bundle.id === id)))
-    composerView.send.disabled = true
-  updateLoopPicker({
-    visible: draftingNew,
-    disabled: !connected || sending || sessionPending || loopCatalogPending,
-    loops: newSessionCatalog?.loops ?? [],
-    resolvedLoop: newSessionCatalog?.defaults.loop ?? newSessionCatalog?.composition?.loop,
-    loopSource: newSessionCatalog?.defaults.loop
-      ? { layer: 'admin', name: 'session-defaults' }
-      : newSessionCatalog?.composition?.source,
-    ...(draftLoop ? { selected: draftLoop } : {}),
-    ...(loopCatalogError ? { error: t('composer.loop.loadFailed') } : {}),
-    label: t('composer.loop.select'),
-    inherited: t('composer.loop.inherited'),
-    unavailable: t('composer.loop.unavailable'),
-    onSelect(loop) {
-      if (!draftingNew || sending || sessionPending) return
-      draftLoop = loop
-      draftLoopEdited = true
-      renderControls()
-    },
-    ...(runtimeCatalog ? { presets: runtimeCatalog.presets } : {}),
-    bundles: runtimeCatalog?.bundles ?? [],
-    selectedBundles: draftBundles,
-    bundlesLabel: settingsText('sessionBundles'),
-    onBundles(bundles) {
-      if (!draftingNew || sending || sessionPending) return
-      draftBundles = bundles
-      renderControls()
-    },
-    preset: draftPreset,
-    inheritedPreset: effectiveSessionPreset(undefined, newSessionCatalog?.defaults, runtimeCatalog),
-    presetLabel: settingsText('presets'),
-    onPreset(preset) {
-      draftPreset = preset
-      syncDraftPermission()
-      rememberWebComposer({ permission: permissionMode })
-      renderControls()
-    },
-  })
-  composerRuntime.render(composerView)
-  updateSidebar()
-  if (sessionPending) {
-    topbarRuntime.setStatus(t('topbar.preparing'), 'loading')
-  }
-  conversationRuntime.setEmptyStateVisible(shouldShowEmptyState(projection))
-  renderNewSessionControls()
+  return composerController.renderControls()
 }
 // 流式期间每个事件都会让轨迹面板全量走查一遍节点，长会话里比时间线本身还贵。
 // busy 时把面板喂食节流到 500ms（尾沿补一帧，喂的是最新视图）；终态与空闲路径
@@ -1109,214 +1345,20 @@ let tracePending:
     }
   | undefined
 function paintTrace(): void {
-  const pending = tracePending
-  tracePending = undefined
-  if (!pending || !current || pending.sessionId !== current.id) return
-  tracePaintedAt = Date.now()
-  tracePanel.render(pending.view.nodes, pending.turns, pending.meta)
+  return turnController.paintTrace()
 }
 function renderTrace(
   view: WebView,
   turns: readonly UITurn[] | undefined,
   meta: ReturnType<typeof transcriptMeta>,
 ): void {
-  if (!current) return
-  tracePending = { sessionId: current.id, view, turns, meta }
-  const immediate = !view.busy || Date.now() - tracePaintedAt >= TRACE_THROTTLE_MS
-  if (immediate) {
-    if (traceTrailing !== undefined) clearTimeout(traceTrailing)
-    traceTrailing = undefined
-    paintTrace()
-    return
-  }
-  if (traceTrailing === undefined)
-    traceTrailing = setTimeout(() => {
-      traceTrailing = undefined
-      paintTrace()
-    }, TRACE_THROTTLE_MS)
+  return turnController.renderTrace(view, turns, meta)
 }
 function render(): void {
-  if (!projection) {
-    topbarRuntime.setStatus(t('app.status.newTask'))
-    tracePanel.render([], [])
-    renderControls()
-    return
-  }
-  // 会话切换的尾流（旧审批收尾、事件竞态）可能在这时触发渲染，而投影仍属于
-  // 上一会话：此时屏幕上保留的正是上一会话画面，任何重绘都会把旧投影的
-  // 模型、标题、审批卡写进新会话的控件。等投影换代后再渲染。
-  if (!current || projection.sessionId !== current.id) return
-  if (
-    typeof projection.yolo === 'boolean' &&
-    !permissionChangePending &&
-    !permissionRefreshPending &&
-    projection.upto >= permissionSelectionSeq
-  ) {
-    sessionYoloEnabled = projection.yolo
-    if (initialPermissionPending === undefined)
-      permissionMode = projection.yolo ? 'full' : permissionMode === 'view' ? 'view' : 'workspace'
-  }
-  if (
-    projection.usage?.model &&
-    !modelChangePending &&
-    !initialModelPending &&
-    projection.upto >= modelSelectionSeq
-  ) {
-    knownSessionModel = {
-      route: projection.usage.model.route,
-      id: projection.usage.model.id,
-      settings: projection.usage.model.settings ?? {
-        contextWindow: projection.usage.context.window,
-        thinking: projection.usage.model.thinking,
-      },
-    }
-    rememberWebComposer({ model: knownSessionModel })
-  }
-  const receipt = current ? receipts.get(current.id) : undefined
-  const view = webView(projection, receipt, t)
-  if (!view.busy && receipt?.reason && liveApproval && receipt.endSeq > liveApproval.afterSeq) {
-    // A real later terminal invalidates this live request; no cancelled task keeps an approval card.
-    liveApproval.finish({ verdict: 'rejected' })
-    return
-  }
-  const firstInput = windowAtStart ? view.nodes.find((node) => node.kind === 'user') : undefined
-  const selectedId = current?.id
-  const title = sessionTitle(
-    selectedId
-      ? (sessionTitles.get(selectedId) ?? sessionRows.find((row) => row.sessionId === selectedId)?.title)
-      : undefined,
-    firstInput ? nodeText(firstInput) : undefined,
-  )
-  topbarRuntime.setTaskTitle(title)
-  if (firstInput && current) {
-    updateTitle(current.id, title)
-  }
-  if (awaitingPromptStart && view.busy) {
-    awaitingPromptStart = false
-    sending = false
-  }
-  if (!view.busy && receipt?.reason && receipt.endSeq > stopAfterSeq) stopping = false
-  topbarRuntime.setStatus(
-    stopping ? t('app.status.stoppingWait') : liveApproval ? t('app.status.awaitingApproval') : view.status,
-    view.busy ? 'running' : (receipt?.reason ?? 'idle'),
-  )
-  const meta = transcriptMeta()
-  renderer.render(view.nodes, projection.turns, meta)
-  renderTrace(view, projection.turns, meta)
-  if (approvalOutsideWindow(projection)) {
-    const ticket = projection.opState?.parked?.ticket
-    // A different parked approval is looked for afresh.
-    if (ticket !== approvalSearchTicket && approvalSearch !== 'searching') approvalSearch = 'idle'
-    approvalSearchTicket = ticket
-    searchApproval(APPROVAL_SEARCH_PAGES)
-  } else approvalSearch = 'idle'
-  renderApproval()
-  renderControls()
+  return turnController.render()
 }
 function renderApproval(): void {
-  const durable = projection ? webView(projection, undefined, t).approval : undefined
-  const parked = !liveApproval && !durable && projection ? projection.opState?.parked : undefined
-  if (parked && approvalSearch !== 'idle') {
-    const stick = conversationRuntime.isTranscriptNearBottom()
-    const searching = approvalSearch === 'searching'
-    // The approval's own node, with the options it really offers, is before the loaded window; a
-    // verdict can only be given there, so this card only leads to it.
-    approvalRuntime.render({
-      key: `parked:${parked.ticket}`,
-      title: searching ? t('app.approval.searching') : t('app.approval.parkedTitle'),
-      summary: t('app.approval.parkedSummary', { expiresAt: parked.expiresAt }),
-      impact: searching ? t('app.approval.searchingImpact') : t('app.approval.locateImpact'),
-      actions: searching
-        ? []
-        : [{ id: 'locate', label: t('app.approval.locate'), onSelect: () => searchApproval() }],
-      disabled: !connected,
-    })
-    if (stick) renderer.pinToBottom()
-    return
-  }
-  const key = liveApproval ? `live:${liveApproval.request.toolCall.toolCallId}` : (durable?.ticket ?? '')
-  // 审批卡是会话区外的流内兄弟：显示/收回都会改变 #transcript 的视口高度。
-  // 原本贴底的会话要保持贴底，否则最新过程被压出可视区、贴底跟随也会被破坏。
-  const stick = conversationRuntime.isTranscriptNearBottom()
-  if (!key) {
-    approvalRuntime.render(undefined)
-    if (stick) renderer.pinToBottom()
-    return
-  }
-
-  const liveTitle = liveApproval?.request.toolCall.title
-  const summary =
-    typeof liveTitle === 'string' ? liveTitle : (durable?.summary ?? t('app.approval.defaultSummary'))
-  const risks = {
-    destructive: t('app.risk.destructive'),
-    always: t('app.risk.always'),
-    budget: t('app.risk.budget'),
-    unknown: t('app.risk.unknown'),
-  }
-  const card = liveApproval ? liveApprovalCard(liveApproval.request.toolCall, t) : undefined
-  const impact = durable ? risks[durable.risk] : (card?.impact ?? t('app.approval.toolImpact'))
-  const actions: ApprovalAction[] = []
-  const decide = (id: string, label: string, action: () => Promise<void>): void => {
-    actions.push({
-      id,
-      label,
-      onSelect: () =>
-        run(async () => {
-          if (approvalBusy || stopping) return
-          approvalBusy = true
-          renderApproval()
-          try {
-            await action()
-          } finally {
-            approvalBusy = false
-            live?.refresh()
-            renderApproval()
-          }
-        }),
-    })
-  }
-  if (liveApproval) {
-    const request = liveApproval
-    const labels: Record<string, string> = {
-      allow_once: t('app.approval.allowOnce'),
-      reject_once: t('app.approval.rejectOnce'),
-      reject_always: t('app.approval.rejectAlways'),
-      // Absent when the card cannot show the whole call: that choice would also cover later calls.
-      ...(card?.sessionLabel === undefined ? {} : { allow_always: card.sessionLabel }),
-    }
-    for (const option of request.request.options) {
-      if (option.name === 'allow_always' && labels.allow_always === undefined) continue
-      decide(`live:${option.name}`, labels[option.name] ?? option.name, async () =>
-        request.finish({ optionId: option.optionId }),
-      )
-    }
-  } else if (durable?.ticket) {
-    const ticket = durable.ticket
-    for (const { label, verdict } of durableApprovalActions(durable, t))
-      decide(
-        `durable:${verdict}`,
-        label,
-        async () => void (await client.approval.decide(ticket, verdict, { kind: 'local' })),
-      )
-  }
-  const planApproval = liveApproval
-    ? approvalToolName(liveApproval.request.toolCall) === 'exit_plan_mode'
-    : projection?.nodes.some(
-        (node) =>
-          node.kind === 'tool' && node.name === 'exit_plan_mode' && node.status === 'awaiting_approval',
-      )
-  approvalRuntime.render({
-    key,
-    ...(planApproval ? { kind: 'plan' as const } : {}),
-    title: t('app.approval.title'),
-    summary,
-    impact,
-    ...(card?.warning === undefined ? {} : { warning: card.warning }),
-    ...(card?.preview === undefined ? {} : { preview: card.preview }),
-    actions,
-    disabled: approvalBusy || stopping || !connected,
-  })
-  if (stick) renderer.pinToBottom()
+  return turnController.renderApproval()
 }
 function transcriptMeta(): {
   hasEarlier: boolean
@@ -1325,54 +1367,15 @@ function transcriptMeta(): {
   loop?: { id: string; version: string }
   controlFacts?: SessionControlStateResult['facts']
 } {
-  const session = live
-  const loop =
-    sessionLoopSelection(projection) ??
-    sessionLoopSelection(current) ??
-    sessionLoopSelection(sessionRows.find((row) => row.sessionId === current?.id))
-  const identity = current
-    ? {
-        sessionId: current.id,
-        ...(loop ? { loop } : {}),
-        ...(sessionControls?.sessionId === current.id ? { controlFacts: sessionControls.value.facts } : {}),
-      }
-    : {}
-  if (!session?.hasEarlier()) return { hasEarlier: false, ...identity }
-  return { hasEarlier: true, ...identity, loadEarlier: () => void session.loadEarlier().catch(showError) }
+  return turnController.transcriptMeta()
 }
 /** Loads earlier pages, `limit` at most, until the parked approval's node is loaded. */
 function searchApproval(limit?: number): void {
-  const session = live
-  if (!session || approvalSearch === 'searching' || (limit !== undefined && approvalSearch !== 'idle')) return
-  approvalSearch = 'searching'
-  renderApproval()
-  void findApproval(session, () => projection, limit)
-    .then((found) => {
-      if (live !== session) return
-      approvalSearch = found ? 'idle' : 'not-found'
-      renderApproval()
-    })
-    .catch(showError)
+  return turnController.searchApproval(limit)
 }
 /** What watching the event stream used to do per event: titles, the list, the run receipt. */
-async function followEvent(session: Session, event: LedgerEvent): Promise<void> {
-  if (['inbox', 'x/core/control', 'x/core/pause-state', 'turn/start', 'turn/end'].includes(event.type))
-    void refreshSessionControls(session).catch(showError)
-  const title = readSessionTitle(event)
-  if (title?.status === 'generated') {
-    // The list owns user overrides; a late automatic event cannot overwrite one.
-    await list().catch(showError)
-    titleRefresh.stop(session.id)
-  } else if (title?.status === 'failed') titleRefresh.stop(session.id)
-  // A new message makes this the most recently chatted session; the daemon now lists it first.
-  if (event.type === 'user/message') void list().catch(showError)
-  if (
-    event.type === 'turn/end' &&
-    (event.data as { reason?: string }).reason === 'completed' &&
-    !sessionTitles.has(session.id)
-  )
-    titleRefresh.start(session.id)
-  receipts.set(session.id, recordRunEvent(receipts.get(session.id), event))
+function followEvent(session: Session, event: LedgerEvent): Promise<void> {
+  return sessionController.followEvent(session, event)
 }
 async function list(cursor?: string): Promise<PageSessionMeta> {
   const epoch = ++listGeneration
@@ -1404,7 +1407,7 @@ async function list(cursor?: string): Promise<PageSessionMeta> {
     topbarRuntime.setTaskTitle(selectedRow.title ?? t('app.status.newTask'))
   return page
 }
-async function open(
+function open(
   id: string,
   options: {
     created?: Session
@@ -1413,281 +1416,18 @@ async function open(
     initialModel?: KnownSessionModel
   } = {},
 ): Promise<void> {
-  const epoch = ++selection
-  if (!options.created) references.clear()
-  if (!options.preserveSending) submissionGeneration++
-  let selectionReady = false
-  sessionPending = true
-  draftingNew = false
-  renderControls()
-  const previous = current
-  // 投影与转录区都保留到新投影就绪：加载期间旧画面继续显示（body.session-switching
-  // 半透明提示，状态栏「正在准备会话」），不经历「清空 → 空白 → 填充」的闪屏，
-  // 也避免 `body:has(#transcript:empty)` 把布局跳进空态模式。
-  current = undefined
-  moduleSessionId = undefined
-  clientModules.session.setSession(undefined)
-  sessionYoloEnabled = options.created ? false : undefined
-  permissionRefreshPending = false
-  initialPermissionPending = options.created ? permissionMode : undefined
-  permissionSelectionSeq = 0
-  permissionChangePending = false
-  stopping = false
-  if (!options.preserveSending) {
-    sending = false
-    awaitingPromptStart = false
-  }
-  knownSessionModel = undefined
-  initialModelPending = options.initialModel
-  modelSelectionSeq = 0
-  selectedWorkspace = undefined
-  modelChangePending = false
-  renderControls()
-  offPermission?.()
-  offPermission = undefined
-  liveApproval?.finish({ verdict: 'rejected' })
-  liveApproval = undefined
-  try {
-    const stopped = await stopWithTimeout(stopEvents)
-    stopEvents = undefined
-    live = undefined
-    if (!stopped) {
-      notice.textContent = t('app.notice.oldSessionClosing')
-      notice.dataset.kind = 'warning'
-    }
-    await previous?.detach()
-    if (epoch !== selection) return
-    const permission: Parameters<Session['onPermissionRequest']>[0] = (request, context) =>
-      new Promise<PermissionOutcome>((resolve) => {
-        const pending = {
-          request,
-          afterSeq: Math.max(projection?.upto ?? 0, receipts.get(id)?.endSeq ?? 0),
-          finish: (answer: PermissionOutcome) => {
-            context.signal.removeEventListener('abort', reject)
-            if (liveApproval === pending) liveApproval = undefined
-            render()
-            resolve(context.signal.aborted ? { verdict: 'rejected' } : answer)
-          },
-        }
-        const reject = () => pending.finish({ verdict: 'rejected' })
-        if (context.signal.aborted || epoch !== selection || permissionMode === 'view') {
-          resolve({ verdict: 'rejected' })
-          return
-        }
-        liveApproval = pending
-        context.signal.addEventListener('abort', reject, { once: true })
-        render()
-      })
-    const binding = options.created
-      ? bindWebSession(options.created, permission)
-      : await loadWebSession((sessionId, options) => client.session.load(sessionId, options), id, permission)
-    if (epoch !== selection) {
-      binding.offPermission?.()
-      return
-    }
-    const loaded = binding.session
-    current = loaded
-    sessionControls = undefined
-    controlPending = false
-    offPermission = binding.offPermission
-    moduleSessionId = loaded.id
-    await clientModules.reconciler.reconcileNow()
-    if (epoch !== selection) {
-      binding.offPermission?.()
-      return
-    }
-    clientModules.session.setSession(loaded.id)
-    if (!options.created)
-      permissionMode =
-        sessionRows.find((row) => row.sessionId === id)?.preset === 'read-only' ? 'view' : 'workspace'
-    const metadata = sessionRows.find((row) => row.sessionId === id) as
-      | (PageSessionMeta['items'][number] & { cwd?: string })
-      | undefined
-    const workspacePath = metadata?.cwd ?? options.workspace?.path
-    if (workspacePath)
-      selectedWorkspace =
-        workspaceRows.find((entry) => entry.path === workspacePath) ??
-        (options.workspace?.path === workspacePath ? options.workspace : undefined)
-    const url = new URL(location.href)
-    url.searchParams.set('session', id)
-    history.replaceState(null, '', `${url.pathname}${url.search}`)
-    offPermission = binding.offPermission
-    let opened = false
-    const selected = () => current === loaded && epoch === selection
-    const liveProjection = createLiveProjection(loaded, client, {
-      timeline(value, window) {
-        if (!selected()) return
-        // The SDK discards projections from older connections; history cannot confirm current permissions.
-        if (connected && window.reason !== 'history' && value.upto >= permissionSelectionSeq)
-          permissionRefreshPending = false
-        if (
-          window.reason === 'opening' &&
-          value.yolo === undefined &&
-          initialPermissionPending === undefined &&
-          !permissionChangePending &&
-          value.upto >= permissionSelectionSeq
-        )
-          sessionYoloEnabled = undefined
-        windowAtStart = window.startIndex === 0
-        // A reopened window may reach further back; look for a parked approval again.
-        if (window.reason === 'opening' && approvalSearch !== 'searching') approvalSearch = 'idle'
-        if (!opened) {
-          opened = true
-          // 首投影就绪后才换代：清空转录区、写入新会话内容、同步审批卡与控件，
-          // 都发生在同一次同步序列里，旧→新之间没有空白帧。
-          renderer.reset()
-          approvalSearch = 'idle'
-          // Nothing replays the history any more, so the last loaded turn stands for it.
-          const seeded = receiptFromTurns(value.turns)
-          if (seeded) {
-            receipts.set(loaded.id, seeded)
-            if (seeded.reason === 'completed' && !sessionTitles.has(loaded.id)) titleRefresh.start(loaded.id)
-          }
-        }
-        projection = value
-        render()
-      },
-      stream(value) {
-        if (!selected()) return
-        projection = value
-        // Streamed text only changes the transcript; everything else waits for the next patch.
-        if (streamFrame !== undefined) return
-        streamFrame = requestAnimationFrame(() => {
-          streamFrame = undefined
-          if (projection && selected())
-            renderer.render(webView(projection, undefined, t).nodes, projection.turns, transcriptMeta())
-        })
-      },
-      event(event) {
-        if (selected()) void followEvent(loaded, event).catch(showError)
-      },
-      error(error) {
-        if (selected()) showError(error)
-      },
-    })
-    live = liveProjection
-    stopEvents = () => liveProjection.stop()
-    await liveProjection.start()
-    await refreshSessionControls(loaded)
-    if (epoch !== selection) return
-    selectionReady = true
-    sessionPending = false
-    clearSessionRecovery()
-    render()
-    void list().catch((error: unknown) => {
-      if (epoch === selection) showError(error)
-    })
-  } catch (error) {
-    if (epoch !== selection) return
-    if (!selectionReady) {
-      const failed = current
-      current = undefined
-      moduleSessionId = undefined
-      clientModules.session.setSession(undefined)
-      projection = undefined
-      knownSessionModel = undefined
-      modelChangePending = false
-      offPermission?.()
-      offPermission = undefined
-      try {
-        await stopWithTimeout(stopEvents)
-      } catch {
-        // The original loading failure is the useful error for this selection.
-      }
-      stopEvents = undefined
-      live = undefined
-      try {
-        await failed?.detach()
-      } catch {
-        // The failed binding is already unavailable to the composer.
-      }
-      // 加载失败没有可保留的画面：清空转录区回到空态，错误走 #notice。
-      renderer.reset()
-      if (options.preserveSending) {
-        draftingNew = true
-        selectedWorkspace = options.workspace
-        knownSessionModel = options.initialModel
-        initialModelPending = undefined
-      }
-      sessionPending = false
-      render()
-      if (!options.created && !options.preserveSending) {
-        showSessionRecovery(error, id)
-        return
-      }
-    }
-    throw error
-  }
+  return sessionController.open(id, options)
 }
-async function forkSidebar(id: string, title: string): Promise<void> {
-  const epoch = selection
-  const row = sessionRows.find((item) => item.sessionId === id)
-  const source = await client.session.load(id, row?.cwd ? { cwd: row.cwd } : {})
-  const timeline = await source.projectUI(undefined, { surface: 'web' })
-  if (timeline.opState !== null) throw new Error(t('app.fork.waitIdle'))
-  const turn = timeline.turns.findLast((item) => item.forkable && item.endSeq !== undefined)
-  if (turn?.endSeq === undefined) throw new Error(t('app.fork.noForkableTurn'))
-  const child = await client.session.fork(id, turn.endSeq)
-  let namingError: unknown
-  try {
-    await client.session.rename(child.id, forkTitle(title))
-  } catch (error) {
-    namingError = error
-  }
-  let refreshError: unknown
-  try {
-    await list()
-  } catch (error) {
-    refreshError = error
-  }
-  try {
-    if (epoch === selection) await open(child.id, { created: child })
-  } catch (error) {
-    refreshError = error
-  }
-  if (refreshError) throw new Error(t('app.fork.refreshFailed', { id: child.id }))
-  if (namingError) throw new Error(t('app.fork.renameFailed'))
+function forkSidebar(id: string, title: string): Promise<void> {
+  return sessionController.forkSidebar(id, title)
 }
 let attachmentSessionOpening: Promise<string> | undefined
-async function prepareAttachmentSession(): Promise<string> {
-  if (current) return current.id
-  if (attachmentSessionOpening) return attachmentSessionOpening
-  attachmentSessionOpening = (async () => {
-    if (!draftingNew || !selectedWorkspace?.available || !draftLoopAvailable() || loopCatalogPending)
-      throw new Error(t('app.session.createFailed'))
-    const workspace = selectedWorkspace
-    const model = knownSessionModel
-    const epoch = selection
-    const key = pendingSessionKey ?? crypto.randomUUID()
-    pendingSessionKey = key
-    if (draftBundles.some((id) => !runtimeCatalog?.bundles?.some((bundle) => bundle.id === id)))
-      throw new Error(settingsText('bundleUnavailable'))
-    const created = await client.session.new({
-      cwd: workspace.path,
-      sessionKey: key,
-      ...(draftLoop ? { loop: draftLoop } : {}),
-      ...(draftPreset ? { preset: draftPreset } : {}),
-      ...(draftBundles.length ? { bundles: draftBundles } : {}),
-    })
-    if (epoch !== selection || !draftingNew) throw new Error(t('app.session.selectionChanged'))
-    await open(created.id, { created, workspace, ...(model ? { initialModel: model } : {}) })
-    if (current !== created) throw new Error(t('app.session.selectionChanged'))
-    return created.id
-  })().finally(() => {
-    attachmentSessionOpening = undefined
-  })
-  return attachmentSessionOpening
+function prepareAttachmentSession(): Promise<string> {
+  return submissionController.prepareAttachmentSession()
 }
 
-async function forkTurn(turn: UITurn): Promise<void> {
-  const parent = current
-  if (!parent || !turn.forkable || turn.endSeq === undefined || projection?.opState !== null)
-    throw new Error(t('app.fork.notIdle'))
-  const forked = await client.session.fork(parent.id, turn.endSeq)
-  await open(forked.id, { created: forked })
-  notice.textContent = t('app.fork.created')
-  notice.dataset.kind = ''
-  composerRuntime.focus()
+function forkTurn(turn: UITurn): Promise<void> {
+  return sessionController.forkTurn(turn)
 }
 function renderNewSessionControls(): void {
   newSessionCreate.setAttribute(
@@ -2369,161 +2109,30 @@ async function openAdminPane(pane: AdminPaneName, tab: ResourceTab = 'skills'): 
 }
 
 function handleComposerWorkspace(): void {
-  run(async () => {
-    if (!draftingNew) await beginNewDraft()
-    openNewSessionDialog()
-  })
+  return composerController.handleComposerWorkspace()
 }
 function handleComposerCancel(): void {
-  run(async () => {
-    const session = current
-    if (!session || sessionPending || stopping || !projection?.opState) return
-    const epoch = selection
-    stopping = true
-    stopAfterSeq = projection.upto
-    render()
-    try {
-      await session.cancel()
-    } catch (error) {
-      if (current !== session || selection !== epoch || sessionPending) return
-      stopping = false
-      render()
-      throw error
-    }
-  })
+  return commandController.handleComposerCancel()
 }
 function handleQueuedAction(itemId: string, kind: 'sendNow' | 'removeQueued'): void {
-  const session = current
-  if (
-    !session ||
-    !connected ||
-    (kind === 'sendNow' && (!configured || !selectedModelAvailable())) ||
-    sessionPending ||
-    stopping ||
-    (kind === 'sendNow' &&
-      (permissionChangePending || permissionRefreshPending || sessionYoloEnabled === undefined)) ||
-    (queueAction?.pending && queueAction.sessionId === session.id && queueAction.selection === selection) ||
-    projection?.sessionId !== session.id ||
-    !projection.pendingInputs?.some((item) => item.itemId === itemId)
-  )
-    return
-  const action = { sessionId: session.id, selection, itemId, kind, pending: true } as NonNullable<
-    typeof queueAction
-  >
-  queueAction = action
-  renderControls()
-  void (kind === 'sendNow' ? session.interrupt(itemId) : session.removeQueued(itemId))
-    .then(() => {
-      if (current === session && selection === action.selection) {
-        live?.refresh()
-        void refreshSessionControls(session).catch(showError)
-      }
-    })
-    .catch((error: unknown) => {
-      const failure = error as { data?: { code?: unknown } }
-      action.error =
-        failure?.data?.code === 'QUEUED_INPUT_GONE'
-          ? t('composer.queue.gone')
-          : error instanceof Error
-            ? error.message
-            : String(error)
-      if (current === session && selection === action.selection) {
-        live?.refresh()
-        void refreshSessionControls(session).catch(showError)
-      }
-    })
-    .finally(() => {
-      action.pending = false
-      if (current === session && selection === action.selection) renderControls()
-    })
+  return commandController.handleQueuedAction(itemId, kind)
 }
 
-async function refreshSessionControls(session: Session): Promise<void> {
-  const epoch = selection
-  const request = ++controlsRefresh
-  const history = controlsHistory.get(session.id) ?? { through: 0, facts: [] }
-  let through = history.through
-  const facts = [...history.facts]
-  let value: SessionControlStateResult
-  do {
-    value = await session.controls({ afterSeq: through })
-    if (current !== session || selection !== epoch || request !== controlsRefresh) return
-    facts.push(...(value.facts ?? []))
-    through = value.factsThrough ?? through
-  } while (value.factsMore)
-  value = { ...value, facts }
-  controlsHistory.set(session.id, { through, facts })
-  if (current !== session || selection !== epoch || request !== controlsRefresh) return
-  sessionControls = { sessionId: session.id, value }
-  for (const fact of value.facts ?? []) {
-    if (fact.action !== 'cancel' || fact.outcome !== 'requested') continue
-    const key = `agnes-return:${session.id}:${fact.seq}`
-    if (recoveredReturns.has(key) || sessionStorage.getItem(key) === 'sent') continue
-    const returned = (fact.details as { returned?: Array<{ content: ContentBlock[] }> })?.returned ?? []
-    const blocks = returned.flatMap((item) => item.content)
-    const text = blocks
-      .filter((block) => block.type === 'text')
-      .map((block) => block.text)
-      .join('\n')
-    if (!sessionStorage.getItem(key) && text) {
-      const draft = [composerRuntime.getDraft(), text].filter(Boolean).join('\n')
-      composerRuntime.setDraft(draft)
-      sessionStorage.setItem(composerDraftKey, draft)
-    }
-    const attachments = blocks.filter((block) => block.type === 'image' || block.type === 'file')
-    if (attachments.length)
-      composerRuntime.restoreAttachmentBlocks([...composerRuntime.getAttachmentBlocks(), ...attachments])
-    recoveredReturns.add(key)
-    sessionStorage.setItem(key, 'pending')
-  }
-  render()
+function refreshSessionControls(session: Session): Promise<void> {
+  return commandController.refreshSessionControls(session)
 }
-async function handleChildControl(id: string, action: 'stop' | 'continue', text?: string): Promise<void> {
-  const session = current
-  if (!session || sessionPending || !connected) return
-  if (action === 'stop') await session.stopChild(id)
-  else await session.continueChild(id, text ?? '')
-  await refreshSessionControls(session)
-  live?.refresh()
+function handleChildControl(id: string, action: 'stop' | 'continue', text?: string): Promise<void> {
+  return commandController.handleChildControl(id, action, text)
 }
 function handlePauseResume(): void {
-  run(async () => {
-    const session = current
-    if (!session || sessionPending || controlPending || sessionControls?.sessionId !== session.id) return
-    const epoch = selection
-    controlPending = true
-    renderControls()
-    try {
-      await session.control(sessionControls.value.paused ? 'resume' : 'pause')
-      await refreshSessionControls(session)
-      live?.refresh()
-    } finally {
-      if (current === session && selection === epoch) {
-        controlPending = false
-        renderControls()
-      }
-    }
-  })
+  return commandController.handlePauseResume()
 }
-async function handleEditQueued(itemId: string, text: string): Promise<void> {
-  const session = current
-  if (!session || sessionPending || !connected) return
-  // Preserve attachments and edit the complete text, including content beyond the preview limit.
-  const state = await session.controls()
-  const item = state.pending.find((candidate) => candidate.itemId === itemId)
-  if (!item) throw new Error(t('composer.queue.gone'))
-  await session.editQueued(itemId, [
-    { type: 'text', text },
-    ...item.content.filter((block) => block.type !== 'text'),
-  ])
-  await refreshSessionControls(session)
-  live?.refresh()
+function handleEditQueued(itemId: string, text: string): Promise<void> {
+  return commandController.handleEditQueued(itemId, text)
 }
 
 function handleComposerDraftChange(value: string): void {
-  sessionStorage.setItem(composerDraftKey, value)
-  composerRuntime.resize()
-  renderControls()
+  return composerController.handleComposerDraftChange(value)
 }
 function imageSubmissionFrameBytes(
   sessionId: string,
@@ -2531,268 +2140,17 @@ function imageSubmissionFrameBytes(
   steer: boolean,
   references: readonly ReferenceSelection[] = [],
 ): number {
-  const params = steer
-    ? {
-        clientId: 'c'.repeat(128),
-        commandId: 'c'.repeat(128),
-        kind: 'steer',
-        payload: { sessionId, content, ...(references.length ? { references } : {}) },
-      }
-    : {
-        sessionId,
-        prompt: toAcpPrompt(content),
-        ...(references.length ? { _meta: { 'ai.agnes.harness': { references } } } : {}),
-      }
-  return new TextEncoder().encode(
-    JSON.stringify({
-      jsonrpc: '2.0',
-      id: Number.MAX_SAFE_INTEGER,
-      method: steer ? '_agnes/v1/submit' : 'session/prompt',
-      params,
-    }),
-  ).byteLength
+  return submissionController.imageSubmissionFrameBytes(sessionId, content, steer, references)
 }
 function isPlanCommand(input: string): boolean {
-  return /^\/plan(?:\s|$)/.test(input)
+  return submissionController.isPlanCommand(input)
 }
-async function prepareComposerSession(): Promise<Session> {
-  if (current) return current
-  if (referenceSessionPending) return referenceSessionPending
-  if (!draftingNew || !selectedWorkspace?.available || sessionPending)
-    throw new Error(t('app.session.createFailed'))
-  const epoch = selection
-  sessionPending = true
-  renderControls()
-  referenceSessionPending = (async () => {
-    const key = pendingSessionKey ?? crypto.randomUUID()
-    const draftModel = knownSessionModel
-    const workspace = selectedWorkspace
-    pendingSessionKey = key
-    if (!draftLoopAvailable() || loopCatalogPending) throw new Error(t('composer.loop.unavailable'))
-    if (draftBundles.some((id) => !runtimeCatalog?.bundles?.some((bundle) => bundle.id === id)))
-      throw new Error(settingsText('bundleUnavailable'))
-    const created = await client.session.new({
-      cwd: workspace?.path ?? '',
-      sessionKey: key,
-      ...(draftLoop ? { loop: draftLoop } : {}),
-      ...(draftPreset ? { preset: draftPreset } : {}),
-      ...(draftBundles.length ? { bundles: draftBundles } : {}),
-    })
-    if (selection !== epoch) throw new Error(t('app.session.selectionChanged'))
-    await open(created.id, {
-      created,
-      preserveSending: true,
-      ...(workspace ? { workspace } : {}),
-      ...(draftModel ? { initialModel: draftModel } : {}),
-    })
-    if (current !== created) throw new Error(t('app.session.selectionChanged'))
-    if (!current) throw new Error(t('app.session.createFailed'))
-    return current
-  })()
-  try {
-    return await referenceSessionPending
-  } finally {
-    referenceSessionPending = undefined
-    if (selection === epoch) {
-      sessionPending = false
-      renderControls()
-    }
-  }
+function prepareComposerSession(): Promise<Session> {
+  return submissionController.prepareComposerSession()
 }
 
 function submitComposer(): void {
-  const originalDraft = composerRuntime.getDraft()
-  const selectedReferences = references.getSnapshot()
-  const referenceSelections = selectedReferences.map(({ source, id }) => ({ source, id }))
-  const input = originalDraft.trim()
-  if (
-    !selectedReferences.length &&
-    /^\/goal(?:\s+show)?$/.test(input) &&
-    composerRuntime.getAttachmentBlocks().length === 0
-  ) {
-    composerRuntime.setDraft('')
-    sessionStorage.removeItem(composerDraftKey)
-    composerRuntime.resize()
-    const toggle = goalHost.querySelector<HTMLButtonElement>('[data-testid="goal-toggle"]')
-    if (toggle?.getAttribute('aria-expanded') === 'false') toggle.click()
-    toggle?.focus()
-    return
-  }
-  if (!selectedReferences.length && /^\/goal(?:\s|$)/.test(input) && current && projection?.opState) {
-    composerRuntime.setDraft('')
-    sessionStorage.removeItem(composerDraftKey)
-    void current.steer(input).catch(showError)
-    return
-  }
-  if (!selectedReferences.length && isPlanCommand(input)) {
-    const cwd = selectedWorkspace?.path
-    if (!cwd) {
-      showError(new Error(t('app.plan.noWorkspace')))
-      return
-    }
-    composerRuntime.setDraft('')
-    sessionStorage.removeItem(composerDraftKey)
-    composerRuntime.resize()
-    void submitPlanCommand(cwd, input)
-      .then((result) => {
-        notice.textContent = result.text
-        notice.dataset.kind = ''
-      })
-      .catch((error: unknown) => {
-        showError(error instanceof PlanModeRequestError ? new Error(t('app.plan.failed')) : error)
-      })
-    return
-  }
-  const attachments = composerRuntime.getAttachmentBlocks()
-  const images = attachments.filter((block) => block.type === 'image')
-  let session = current
-  if (
-    (!input && attachments.length === 0 && selectedReferences.length === 0) ||
-    composerRuntime.hasPendingImages() ||
-    !configured ||
-    !selectedModelAvailable() ||
-    permissionChangePending ||
-    permissionRefreshPending ||
-    (session && sessionYoloEnabled === undefined) ||
-    (!session && (!draftingNew || !selectedWorkspace?.available)) ||
-    (!session &&
-      permissionMode === 'view' &&
-      permissionForSessionPreset(selectedDraftPreset(), runtimeCatalog) !== 'view') ||
-    !canSubmitComposer({ connected, hasSession: true, sending, stopping, loading: sessionPending })
-  )
-    return
-  const selectedRecord = runtimeModels.find(
-    (model) => model.route === knownSessionModel?.route && model.id === knownSessionModel?.id,
-  )
-  try {
-    validateUserAttachments(attachments)
-    decodeSafeImages(images, USER_MESSAGE_IMAGE_LIMITS)
-  } catch (error) {
-    showError(error)
-    return
-  }
-  const imageError = modelImageInputError(selectedRecord, [{ content: images }])
-  if (imageError) {
-    showError(new Error(imageError))
-    return
-  }
-  const text = input || referenceSelections.map(({ source, id }) => `@${source} ${id}`).join('\n')
-  const content: ContentBlock[] = [...(text ? [{ type: 'text' as const, text }] : []), ...attachments]
-  const busy = projection?.opState !== null && projection?.opState !== undefined
-  if (
-    attachments.length > 0 &&
-    imageSubmissionFrameBytes(session?.id ?? 's'.repeat(512), content, busy, referenceSelections) >
-      MAX_FRAME_BYTES
-  ) {
-    showError(new Error(t('app.error.messageTooLarge')))
-    return
-  }
-  if (busy && (sessionControls?.sessionId !== session?.id || !sessionControls?.value.controls.steer)) return
-  notice.textContent = ''
-  notice.dataset.kind = ''
-  const submittedReturns = [...recoveredReturns].filter((key) =>
-    key.startsWith(`agnes-return:${session?.id}:`),
-  )
-  const submission = ++submissionGeneration
-  const connectionEpoch = permissionConnectionEpoch
-  let ownedSelection = selection
-  sending = true
-  awaitingPromptStart = !busy
-  composerRuntime.setDraft('')
-  composerRuntime.clearImageBlocks()
-  references.clear()
-  sessionStorage.removeItem(composerDraftKey)
-  composerRuntime.resize()
-  renderer.pinToBottom()
-  renderControls()
-  // A prompt can remain pending for the entire run. Controls follow daemon state, not this promise.
-  const work = (async () => {
-    if (!session) {
-      try {
-        session = await prepareComposerSession()
-      } finally {
-        ownedSelection = selection
-      }
-    }
-    if (!session) throw new Error(t('app.session.createFailed'))
-    if (initialModelPending) {
-      const selectedModel = initialModelPending
-      const applied = await session.setModel({
-        slot: 'primary',
-        route: selectedModel.route,
-        model: selectedModel.id,
-        thinking: selectedModel.settings?.thinking ?? null,
-        contextWindow: selectedModel.settings?.contextWindow ?? null,
-      })
-      if (current !== session || selection !== ownedSelection) throw new Error(t('app.error.sessionChanged'))
-      modelSelectionSeq = applied.effectiveFromSeq
-      knownSessionModel = selectedModel
-      initialModelPending = undefined
-      renderControls()
-    }
-    if (!connected || connectionEpoch !== permissionConnectionEpoch || permissionRefreshPending)
-      throw new Error(t('app.error.connectionChanged'))
-    if (initialPermissionPending !== undefined) {
-      const selectedPermission = initialPermissionPending
-      const enabled = yoloEnabled(selectedPermission)
-      const applied = await session.setYolo(enabled)
-      if (current !== session || selection !== ownedSelection) throw new Error(t('app.error.sessionChanged'))
-      if (connectionEpoch !== permissionConnectionEpoch) throw new Error(t('app.error.connectionChanged'))
-      permissionSelectionSeq = applied.effectiveFromSeq
-      sessionYoloEnabled = enabled
-      permissionMode = selectedPermission
-      initialPermissionPending = undefined
-    }
-    if (!connected || connectionEpoch !== permissionConnectionEpoch || permissionRefreshPending)
-      throw new Error(t('app.error.connectionChanged'))
-    if (current !== session || selection !== ownedSelection) throw new Error(t('app.error.sessionChanged'))
-    if (sessionYoloEnabled === undefined) throw new Error(t('app.error.permissionRequired'))
-    const result = await (busy
-      ? session.steer(content, { references: referenceSelections })
-      : session.prompt(content, {
-          references: referenceSelections,
-          titleLocale: clientModules.locale.getSnapshot() === 'zh-CN' ? 'zh-CN' : 'en',
-        }))
-    const submittedId = session.id
-    if (typeof result === 'object' && result.reason === 'completed' && !sessionTitles.has(submittedId))
-      titleRefresh.start(submittedId)
-    for (const key of submittedReturns) sessionStorage.setItem(key, 'sent')
-    pendingSessionKey = undefined
-    if (busy && current === session && selection === ownedSelection) live?.refresh()
-  })()
-  void work
-    .catch((error: unknown) => {
-      if (submission === submissionGeneration && ownedSelection === selection) {
-        if (connectionEpoch !== permissionConnectionEpoch) {
-          initialPermissionPending = undefined
-          sessionYoloEnabled = undefined
-          render()
-        }
-        // Closing the connection on purpose (page unload, manual disconnect) rejects a prompt the daemon
-        // already accepted. That is not a failed send, so the sent text must not come back as a draft.
-        if (!intentionalClose) {
-          const laterDraft = composerRuntime.getDraft()
-          if (originalDraft) {
-            const restoredDraft = laterDraft ? `${originalDraft}\n${laterDraft}` : originalDraft
-            composerRuntime.setDraft(restoredDraft)
-            sessionStorage.setItem(composerDraftKey, restoredDraft)
-          }
-          if (!composerRuntime.getAttachmentBlocks().length && !composerRuntime.hasPendingImages())
-            composerRuntime.restoreAttachmentBlocks(attachments)
-          references.restore([...selectedReferences, ...references.getSnapshot()])
-          composerRuntime.resize()
-        }
-        showError(error)
-      }
-    })
-    .finally(() => {
-      if (submission === submissionGeneration && ownedSelection === selection) {
-        sending = false
-        awaitingPromptStart = false
-        renderControls()
-        live?.refresh()
-      }
-    })
+  return submissionController.submitComposer()
 }
 const diagnostics = createDiagnosticsDialog({
   call: (method, params) => client.call(method, params),

@@ -67,3 +67,5 @@ Large frontend entries retain their original exports while delegating to domain 
 CSS fragments remain in their original cascade order, including later overrides for the same domain. Both build paths compose them into the existing `/style.css` asset before appending conversation styles. Source-style tests and theme-token generation read the same composed source; development watches every fragment.
 
 `RemoteTransport` is a pure author contract in [extension-api](../../packages/extension-api/src/remote-transport.ts); Core re-exports the same type. Ledger test helpers live in [core-ledger/testkit](../../packages/core-ledger/testkit).
+
+Session presentation is organized under [Web controllers](../../packages/web/src/app), [region mounts](../../packages/web/src/regions), [timeline entries](../../packages/web/src/timeline), [composer](../../packages/web-units/src/composer), [conversation messages](../../packages/web-ui/src/conversation/messages) and [client reconciliation](../../packages/web/src/client-modules/reconcile). Existing entry modules retain their exports.
