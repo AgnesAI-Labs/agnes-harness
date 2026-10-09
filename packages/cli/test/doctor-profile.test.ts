@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CAPABILITY_IDS, type ConfigurationService, createConfigurationService } from '@agnes/host'
+import {
+  CAPABILITY_IDS,
+  type ConfigurationService,
+  createConfigurationService,
+  createPlatform,
+} from '@agnes/host'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { describe, expect, it } from 'vitest'
 import { parseArgs } from '../src/args.js'
@@ -28,6 +33,53 @@ describe('profile and platform doctor', () => {
         expect(report.detail.some((line) => line.startsWith(`${id}=`))).toBe(true)
       expect(report.detail).toContain('ipc=full')
       expect(report.detail).toContain('terminal.kitty-keys=unavailable')
+    } finally {
+      rmSync(d.home, { recursive: true, force: true })
+    }
+  })
+  it('says why a capability is below full, and tells an unprobed sandbox from a failed probe', async () => {
+    const d = setup()
+    try {
+      const unprobed = createPlatform()
+      const before = (await doctorPlatform(d, unprobed)).detail
+      // The doctor does not start a sandbox backend, so the sandbox rows are still waiting.
+      const l1 = before.indexOf('sandbox.l1=unavailable')
+      expect(l1).toBeGreaterThanOrEqual(0)
+      expect(before[l1 + 1]).toBe('sandbox.l1.reason=awaiting sandbox backend full-boundary probe')
+      expect(before).toContain('sandbox.network.reason=awaiting sandbox backend full-boundary probe')
+      // The level lines keep their old shape, so a reader of "key=value" lines is not surprised.
+      expect(before).toContain('terminal.kitty-keys=unavailable')
+      expect(before).toContain('terminal.kitty-keys.reason=negotiated at TUI start')
+      // Full capabilities carry no reason line, even when the platform recorded a note for them.
+      const noted = createPlatform()
+      const withNote = {
+        ...noted,
+        probe: async () => undefined,
+        snapshot: () => ({
+          ...noted.snapshot(),
+          capabilities: { ...noted.snapshot().capabilities, 'terminal.truecolor': 'full' as const },
+        }),
+        capability: (id: string) =>
+          id === 'terminal.truecolor'
+            ? { level: 'full' as const, scope: [], reason: 'a note that must stay off the full row' }
+            : noted.capability(id),
+      }
+      const fullRow = (await doctorPlatform(d, withNote)).detail
+      expect(fullRow).toContain('terminal.truecolor=full')
+      expect(fullRow.some((line) => line.startsWith('terminal.truecolor.reason='))).toBe(false)
+      expect(before).toContain('ipc=full')
+      expect(before.some((line) => line.startsWith('ipc.reason='))).toBe(false)
+
+      // A backend that was probed and failed says so, in different words.
+      const failed = createPlatform()
+      failed.recordSandboxBackend({ name: 'none', enforcement: { level: 'none', scope: [] } })
+      // probe() resets the table to its "awaiting" defaults, so the recorded failure is kept by
+      // not probing again here.
+      const after = (await doctorPlatform(d, { ...failed, probe: async () => undefined })).detail
+      expect(after).toContain(
+        'sandbox.l1.reason=no runnable OS sandbox backend passed its full-boundary probe',
+      )
+      expect(after).not.toContain('sandbox.l1.reason=awaiting sandbox backend full-boundary probe')
     } finally {
       rmSync(d.home, { recursive: true, force: true })
     }

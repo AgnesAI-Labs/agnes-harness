@@ -18,7 +18,7 @@ node packages/cli/dist/local/agnes.mjs doctor storage --json
 node packages/cli/dist/local/agnes.mjs doctor provider --json
 ```
 
-`doctor storage` creates and cleans up a temporary probe database; it does not repair existing data. `doctor provider --probe` calls a model, so do not add it unintentionally.
+`doctor platform` prints `<capability>.reason=...` under every capability that is below `full`. `sandbox.l1=unavailable` with `awaiting sandbox backend full-boundary probe` means the sandbox backend has not been probed yet (the doctor does not start one), not that the platform cannot sandbox commands; `no runnable OS sandbox backend passed its full-boundary probe` is the failed-probe case. `doctor storage` creates and cleans up a temporary probe database; it does not repair existing data. `doctor provider --probe` calls a model, so do not add it unintentionally.
 
 | Symptom | Check and next action |
 | --- | --- |

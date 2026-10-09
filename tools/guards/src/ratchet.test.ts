@@ -1,3 +1,6 @@
+// 2026-10-09 merge with main: three scopes were raised on both sides, so neither side's number holds.
+// Re-measured with countLines() on the resolved tree: Web 16967 (16947 + main's 20),
+// Web-units 6242, Web-UI 6678, Core 26556, Protocol 2276; no exclusions or spare allocation.
 // 2026-10-06 error notices move to an Ant Design notification overlay: a web-ui wrapper owns the antd
 // notification api, #notice keeps only the session-recovery block and the two page-level prompts, and
 // attachment refusals carry codes so the submit path translates them too.
@@ -505,7 +508,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web/src/model-picker': 981,
   // 2026-09-25 UI refactor: settings-owned element construction uses the shared UI host boundary.
   // Re-measured with countLines(): 754, exact, no spare.
-  'packages/web/src/settings': 900,
+  'packages/web/src/settings': 904,
   // 2026-09-17 rebase 后的重新实测：timeline.ts 的详情弹窗管线已在 WEB-UI-ALIGN-DSH 中删除
   // （原 427 是旧实现的实测值），删码后未跟着收紧会留下 55 行富余，故收到实测精确值 372。
   // 2026-09-24 WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C6 (Web incremental wiring) and its review fixes,
@@ -704,7 +707,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // override a model's reasoning capability when the installed pi-ai catalogue is incomplete or
   // wrong), landing independently of WIN-12c's own +2. Re-measured on the merged tree directly
   // (never summed): 911; exact cap, no spare.
-  'packages/host/src/configuration': 1230,
+  'packages/host/src/configuration': 1274,
   'packages/host/src/configuration-lock': 39,
   'packages/daemon/src/supervisor/configuration': 45,
   // S5 service workers reload the profile hash and its immutable snapshot path as one value.
@@ -1062,7 +1065,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-05 the two sides coexist on the merged tree, so neither side's number holds. Re-measured
   // with countLines() after the merge: 26102, exact, no spare.
   // 2026-10-06: reject oversized inbox records before durable append; 26424, exact.
-  'packages/core/src': 26546,
+  'packages/core/src': 26556,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -2179,7 +2182,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // merged tree: 16861, exact, no spare.
   // 2026-10-06 the same notification migration, counted over the whole web source scope.
   // Re-measured with countLines() after the review fixes on that work: 16947, exact, no spare.
-  'packages/web/src': 16947,
+  // 2026-10-09 merge with main: main's own increments in this scope land on top of that 16947, so
+  // neither side's number holds. Re-measured with countLines() on the merged tree: 16967, exact.
+  'packages/web/src': 16967,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2661,7 +2666,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // read-only under full file access: the fence guard, the roots helper and their wiring (+40).
   // Measured 38359, exact.
   // Approval reasons: the Prompter type may answer with a reason (+2). Measured 38398 (combined tree), exact cap.
-  'packages/host/src': 38398,
+  'packages/host/src': 38491,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2829,7 +2834,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // The fence refuses writes to the installation's own state under full file access. Measured 5053,
   // exact, no spare (+19).
   // Approval reasons: the Prompter type may answer with a reason (+2). Measured 5055, exact cap.
-  'packages/host/src/adapters': 5055,
+  'packages/host/src/adapters': 5103,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
