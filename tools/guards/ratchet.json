@@ -7,7 +7,7 @@
   "packages/web-slots/src": 620,
   "packages/web-ui/src": 8947,
   "packages/web-units/src": 7368,
-  "packages/core/src": 20746,
+  "packages/core/src": 21489,
   "packages/ai/src": 4284,
   "packages/protocol/src": 3568,
   "packages/cli/src/tui": 38,
@@ -111,7 +111,6 @@
   "packages/core-child-control/src": 397,
   "packages/core-ledger/src": 6452,
   "packages/core-effects/src": 2621,
-  "packages/core-artifacts/src": 744,
   "packages/host-common/src/assemble": 439,
   "packages/host-common/src": 3757,
   "packages/host-common/src/profile": 1840,
@@ -186,5 +185,6 @@
   "packages/web-ui/src/admin-confirmation": 442,
   "packages/web-ui/src/admin-text": 114,
   "packages/memory-file/src": 509,
-  "packages/base/src/memory": 14
+  "packages/base/src/memory": 14,
+  "packages/core/src/artifacts": 743
 }

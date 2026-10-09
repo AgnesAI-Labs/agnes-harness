@@ -1,1 +1,1 @@
-export * from '@agnes/core-artifacts/artifacts/index'
+export * from './artifact-exports.js'

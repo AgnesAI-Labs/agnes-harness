@@ -16,7 +16,7 @@ const walk = (d: string) => {
 const ownerSrc = (owner: string): string => fileURLToPath(new URL(`../../${owner}/src/`, import.meta.url))
 const roots = [
   src,
-  ...['core-common', 'core-child-control', 'core-ledger', 'core-effects', 'core-artifacts'].map(ownerSrc),
+  ...['core-common', 'core-child-control', 'core-ledger', 'core-effects'].map(ownerSrc),
 ]
 for (const root of roots) walk(root)
 

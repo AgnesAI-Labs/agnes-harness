@@ -23,7 +23,6 @@ const CORE_FILES = [
   'core-child-control',
   'core-ledger',
   'core-effects',
-  'core-artifacts',
 ].flatMap((name) =>
   listSourceFiles(join(root, 'packages', name, 'src'), { excludeDirs: LITERAL_SCAN_EXCLUDE_DIRS }),
 )
