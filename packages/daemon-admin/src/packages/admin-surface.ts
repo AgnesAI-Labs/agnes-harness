@@ -23,6 +23,8 @@ import {
 import {
   DiagnosticsExportParams,
   DiagnosticsExportResult,
+  FactChainParams,
+  FactChainResult,
   SystemPromptGetParams,
   SystemPromptSaveParams,
   SystemPromptSnapshot,
@@ -127,6 +129,10 @@ export type AdminSurfaceOptions = {
       input: import('@agnes/protocol').SystemPromptSaveParams,
     ): Promise<import('@agnes/protocol').SystemPromptSnapshot>
   }
+  /** Fixed owner-checked read bridge; does not expose arbitrary RPC names. */
+  factChain?: (
+    input: import('@agnes/protocol').FactChainParams,
+  ) => Promise<import('@agnes/protocol').FactChainResult>
   clock?: () => number
 }
 
@@ -229,6 +235,33 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
       }
       if (selectionRoute) {
         const route = url.pathname.slice('/admin/api/'.length)
+        if (route === 'fact-chain') {
+          if (request.method !== 'POST') {
+            error(response, 404, 'E_ADMIN_ROUTE', '')
+            return true
+          }
+          if (!configuredPermissions.includes('packages.read')) {
+            error(response, 403, 'E_ADMIN_FORBIDDEN', '')
+            return true
+          }
+          if (!options.factChain) {
+            error(response, 503, 'E_ADMIN_CATALOG_UNAVAILABLE', '')
+            return true
+          }
+          try {
+            const input = await readBody(request)
+            if (!validateAgainst(FactChainParams, input).ok) {
+              error(response, 400, 'E_ADMIN_REQUEST', '')
+              return true
+            }
+            const result = await options.factChain(input as import('@agnes/protocol').FactChainParams)
+            if (!validateAgainst(FactChainResult, result).ok) throw new Error('Invalid fact chain')
+            reply(response, 200, result)
+          } catch {
+            error(response, 502, 'E_ADMIN_BACKEND', '')
+          }
+          return true
+        }
         if (route === 'system-prompt' || route === 'system-prompt/session') {
           const sessionPreview = route === 'system-prompt/session'
           const write = !sessionPreview && request.method === 'POST'

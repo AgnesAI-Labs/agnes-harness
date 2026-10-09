@@ -2,6 +2,7 @@ export const PACKAGE_NAME = '@agnes/host' as const
 
 // Ledger paging for the packages that reach core only through host.
 export {
+  projectFactChain,
   REQUEST_MEDIA_ARTIFACT_RECLAIMED,
   SCAN_PAGE_MAX,
   type ScanRead,
@@ -489,6 +490,7 @@ export {
   repairChildCandidates,
   sessionsDbPath,
 } from '@agnes/host-runtime/child-maintenance'
+export { readFactChainBinding } from '@agnes/host-runtime/fact-chain-binding'
 export { createHost, type Host, type HostOptions, type HostSession } from '@agnes/host-runtime/host'
 export {
   assertHostPublication,

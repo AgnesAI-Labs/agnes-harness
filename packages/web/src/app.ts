@@ -1,5 +1,6 @@
 import { adaptResourceAdmin } from '@agnes/web-admin/admin/resources/admin'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
+import { factChainLinks } from '@agnes/web-client'
 import '@agnes/web-admin/settings/registry'
 import {
   type ConfigSnapshot,
@@ -341,6 +342,7 @@ const clientModules = await startClientModules({
       if (!current || current.id !== params.sessionId) throw new Error(t('app.trace.sessionSwitched'))
       return client.requestTrace.clear(params)
     },
+    openFactChain: (input) => factChainLinks.open(input),
     readModelRequest: async (params, signal) => {
       if (!current || current.id !== params.sessionId) throw new Error(t('app.trace.sessionSwitched'))
       if (signal?.aborted) throw new Error(t('app.trace.sessionSwitched'))
@@ -2704,6 +2706,21 @@ run(async () => {
     const first = page.items.find((item) => !item.archived)
     if (first) await open(first.sessionId)
     else await beginNewDraft(configured && !startupSection && !guided)
+  }
+  const factCandidate = startupRequest.get('factCandidate')
+  if (
+    selected &&
+    current?.id === selected &&
+    factCandidate &&
+    /^candidate-[a-f0-9]{32}$/.test(factCandidate)
+  ) {
+    requestAnimationFrame(() =>
+      factChainLinks.open({
+        sessionId: selected,
+        laneId: 'main',
+        anchor: { kind: 'authoring', candidateId: factCandidate },
+      }),
+    )
   }
   const shown = await firstRun.initialize(snapshot, page.items.length > 0 || Boolean(startupSection))
   if (guided && !shown) await beginNewDraft(true)

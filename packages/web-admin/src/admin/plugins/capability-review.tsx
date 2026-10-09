@@ -53,6 +53,14 @@ export function ProvenanceReview({ value, t }: { value: PackageProvenance | unde
     <section aria-label={t('provenance.title')}>
       <h3>{t('provenance.title')}</h3>
       <p>{t(value?.signatureVerified ? 'provenance.verified' : 'provenance.unverified')}</p>
+      {value?.authoring && (
+        <a
+          data-testid="plugin-fact-chain"
+          href={`/?session=${encodeURIComponent(value.authoring.origin.sessionKey)}&factCandidate=${encodeURIComponent(value.authoring.candidateId)}`}
+        >
+          {t('candidates.viewDrafting')}
+        </a>
+      )}
       {value && (
         <dl>
           <dt>{t('provenance.source')}</dt>

@@ -325,6 +325,14 @@ const SESSION_DEFS: Record<string, TSchema> = {
 }
 
 const AGNES_DEFS: Record<string, TSchema> = {
+  FactChainAnchor: AgnesGen.FactChainAnchor,
+  FactChainParams: AgnesGen.FactChainParams,
+  FactChainPackage: AgnesGen.FactChainPackage,
+  FactChainNode: AgnesGen.FactChainNode,
+  FactChainEdge: AgnesGen.FactChainEdge,
+  FactChainGap: AgnesGen.FactChainGap,
+  FactChainResult: AgnesGen.FactChainResult,
+
   AuthoringFile: AgnesGen.AuthoringFile,
   AuthoringOrigin: AgnesGen.AuthoringOrigin,
   AuthoringTests: AgnesGen.AuthoringTests,
@@ -1754,6 +1762,96 @@ const harnessMetaOk: Json = {
 }
 
 const AGNES_SAMPLES: Record<string, Sample> = {
+  FactChainAnchor: {
+    valid: { kind: 'tool', toolUseId: 'tool-1' },
+    invalid: [
+      { kind: 'tool', toolUseId: 'x'.repeat(129) },
+      { kind: 'authoring', candidateId: '../escape' },
+    ],
+    note: 'exact source identities, bounded public anchors',
+  },
+  FactChainParams: {
+    valid: { sessionId: 'owned', laneId: 'main', anchor: { kind: 'request', callId: 'call-1' } },
+    invalid: [
+      { sessionId: '', laneId: 'main', anchor: { kind: 'tool', toolUseId: 't' } },
+      { sessionId: 'owned', laneId: '', anchor: { kind: 'tool', toolUseId: 't' } },
+    ],
+    note: 'required session and lane',
+  },
+  FactChainPackage: {
+    valid: { packageId: 'plugin', version: '1.0.0', snapshotId: 's', integrity: 'i', treeIntegrity: 't' },
+    invalid: [
+      { packageId: 'x'.repeat(513), version: '1', snapshotId: 's', integrity: 'i', treeIntegrity: 't' },
+    ],
+    note: 'retained generation metadata only',
+  },
+  FactChainNode: {
+    valid: {
+      id: 'receipt:1',
+      kind: 'receipt',
+      toolUseId: 't',
+      resultSeq: null,
+      settledSeq: null,
+      isError: null,
+      code: null,
+      outcome: 'unknown',
+      resultKind: 'unavailable',
+      partial: false,
+      externalOutcome: 'unknown',
+    },
+    invalid: [
+      {
+        id: 'a',
+        kind: 'artifact',
+        seq: 0,
+        ref: { sha256: 'a'.repeat(64), size: 1, mime: 'text/plain' },
+        relation: 'produced',
+      },
+      {
+        id: 'r',
+        kind: 'receipt',
+        toolUseId: 't',
+        resultSeq: 1,
+        settledSeq: null,
+        isError: false,
+        code: null,
+        outcome: 'ok',
+        resultKind: 'actual',
+        partial: false,
+        externalOutcome: 'exactly-once',
+      },
+    ],
+    note: 'no external exactly-once, explicit nullable receipts',
+  },
+  FactChainEdge: {
+    valid: { from: 'tool:t', to: 'receipt:1', relation: 'status', evidence: [1], basis: 'ledger' },
+    invalid: [
+      { from: 't', to: 'r', relation: 'settled', evidence: Array(9).fill(1), basis: 'ledger' },
+      { from: 't', to: 'r', relation: 'settled', evidence: [0], basis: 'ledger' },
+    ],
+    note: 'bounded real source event sequences',
+  },
+  FactChainGap: {
+    valid: { at: null, reason: 'not-retained' },
+    invalid: [{ at: null, reason: 'success' }],
+    note: 'explicit evidence gaps',
+  },
+  FactChainResult: {
+    valid: { sessionId: 'owned', laneId: 'main', atSeq: 0, nodes: [], edges: [], gaps: [] },
+    invalid: [
+      { sessionId: 'owned', laneId: 'main', atSeq: -1, nodes: [], edges: [], gaps: [] },
+      {
+        sessionId: 'owned',
+        laneId: 'main',
+        atSeq: 0,
+        nodes: [],
+        edges: [],
+        gaps: Array(257).fill({ at: null, reason: 'truncated' }),
+      },
+    ],
+    note: 'bounded immutable read watermark',
+  },
+
   SystemPromptConfig: {
     note: 'prompt and local request snapshot boundary',
     valid: { personaPrefix: 'hello' },
@@ -6308,6 +6406,11 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/session.factChain': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'FactChainParams',
+    result: 'FactChainResult',
+  },
   '_agnes/v1/doctor.run': {
     fileId: 'https://agnes.ai/schema/app-server-v1',
     params: 'DoctorParams',
@@ -6974,6 +7077,24 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/session.factChain': {
+    valid: { sessionId: 'owned', laneId: 'main', anchor: { kind: 'tool', toolUseId: 'tool-1' } },
+    invalid: [
+      { sessionId: 'owned', anchor: { kind: 'tool', toolUseId: 'tool-1' } },
+      {
+        sessionId: 'owned',
+        laneId: 'main',
+        anchor: { kind: 'artifact', seq: 0, ref: { sha256: 'a'.repeat(64), size: 0, mime: 'text/plain' } },
+      },
+      {
+        sessionId: 'owned',
+        laneId: 'main',
+        anchor: { kind: 'tool', toolUseId: 'tool-1' },
+        compareSessionId: 'foreign',
+      },
+    ],
+    note: 'owner-checked exact ledger anchor, no arbitrary cross-session walk',
+  },
   '_agnes/v1/doctor.run': {
     valid: {},
     invalid: [{ probeAccounts: 'yes' }, { home: '/untrusted' }],
@@ -7491,6 +7612,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/session.factChain': AGNES_SAMPLES.FactChainResult!,
   '_agnes/v1/doctor.run': AppSamples.DoctorResult!,
   '_agnes/v1/plugins.candidates.reject': PackageAdminSamples.AuthoringCandidate as Sample,
   '_agnes/v1/plugins.candidates.approve': PackageAdminSamples.AuthoringCandidate as Sample,

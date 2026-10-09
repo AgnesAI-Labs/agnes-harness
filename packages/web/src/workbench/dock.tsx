@@ -1,4 +1,11 @@
-import { type UiExtensionContext, workbenchPanels } from '@agnes/web-client'
+import type { FactChainParams } from '@agnes/protocol'
+import {
+  factChainLinks,
+  type UiExtensionContext,
+  workbenchNavigation,
+  workbenchPanels,
+} from '@agnes/web-client'
+import type { WorkbenchContext } from '@agnes/web-conversation/workbench'
 import { Button, renderRegion, unmountRegion } from '@agnes/web-ui'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
@@ -27,6 +34,9 @@ function readLayout(): Layout {
 export function Dock({ context }: { context: UiExtensionContext }) {
   useSyncExternalStore(workbenchPanels.subscribe, workbenchPanels.getSnapshot)
   const [layout, setLayout] = useState(readLayout)
+  const [factTarget, setFactTarget] = useState<FactChainParams>()
+  const returnFocus = useRef<HTMLElement | null>(null)
+  const sessionId = (context.data as WorkbenchContext)?.session?.id
   const [selected, setSelected] = useState({ right: 'files', bottom: 'terminal' })
   const surfaces = useMemo(
     () => ({
@@ -40,6 +50,34 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   )
   const controls = useRef<HTMLDivElement>(null)
   const { t } = context
+  useEffect(() => {
+    setFactTarget(undefined)
+    const openPanel = (id: string) => {
+      const panel = workbenchPanels.get(id)
+      if (!panel) return false
+      returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      setSelected((value) => ({ ...value, [panel.edge]: id }))
+      setLayout((value) => ({
+        ...value,
+        [`${panel.edge}Open`]: true,
+        ...(window.innerWidth <= 767
+          ? { [`${panel.edge === 'right' ? 'bottom' : 'right'}Open`]: false }
+          : {}),
+      }))
+      requestAnimationFrame(() => document.getElementById(`workbench-tab-${id}`)?.focus())
+      return true
+    }
+    const removePanel = workbenchNavigation.register(openPanel)
+    const removeFacts = factChainLinks.register((target) => {
+      if (target.sessionId !== sessionId || !openPanel('facts')) return false
+      setFactTarget(target)
+      return true
+    })
+    return () => {
+      removeFacts()
+      removePanel()
+    }
+  }, [sessionId])
   useEffect(
     () => () => {
       surfaces.split?.classList.remove('workbench-right-open', 'workbench-bottom-open')
@@ -74,7 +112,8 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       if (event.key === 'Escape') {
         event.preventDefault()
         setLayout((value) => ({ ...value, [`${edge}Open`]: false }))
-        controls.current?.querySelector<HTMLButtonElement>(`[data-edge="${edge}"]`)?.focus()
+        if (returnFocus.current?.isConnected) returnFocus.current.focus()
+        else controls.current?.querySelector<HTMLButtonElement>(`[data-edge="${edge}"]`)?.focus()
       }
       if (event.key === 'Tab' && window.innerWidth < 1280) {
         const nodes = [
@@ -98,7 +137,8 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   }, [layout, surfaces])
   const close = (edge: 'right' | 'bottom') => {
     setLayout((value) => ({ ...value, [`${edge}Open`]: false }))
-    controls.current?.querySelector<HTMLButtonElement>(`[data-edge="${edge}"]`)?.focus()
+    if (returnFocus.current?.isConnected) returnFocus.current.focus()
+    else controls.current?.querySelector<HTMLButtonElement>(`[data-edge="${edge}"]`)?.focus()
   }
   const resize = (edge: 'right' | 'bottom', amount: number) =>
     setLayout((value) => ({
@@ -246,7 +286,17 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                     {Component && open && (
                       <Component
                         key={active.id}
-                        context={context}
+                        context={
+                          active.id === 'facts'
+                            ? {
+                                ...context,
+                                data: {
+                                  ...(context.data as WorkbenchContext),
+                                  factChain: factTarget?.sessionId === sessionId ? factTarget : undefined,
+                                },
+                              }
+                            : context
+                        }
                         headerId={`workbench-header-actions-${edge}`}
                       />
                     )}

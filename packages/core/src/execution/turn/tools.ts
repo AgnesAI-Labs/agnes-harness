@@ -1095,7 +1095,11 @@ export async function approveAndExecute(
           },
           progress: () => undefined,
           artifactJobEvent: (job) =>
-            s.d.log.append([s.ev('artifact/job', job, { register: 'artifact/job' })]).then(() => undefined),
+            s.d.log
+              .append([
+                s.ev('artifact/job', job, { register: 'artifact/job', sourceEventSeqs: [call.argsSeq] }),
+              ])
+              .then(() => undefined),
           // What the writer lease actually has left, not a constant: a tool budgeting its own work
           // against a number the kernel invented plans against a deadline that is not the real one.
           lease: { remainingMs: () => s.d.log.leaseRemainingMs() },
@@ -1349,6 +1353,17 @@ export async function approveAndExecute(
             {
               toolUseId: call.toolUseId,
               content: toLedgerContent(recordedResult.content),
+              ...(() => {
+                const refs = recordedResult.content.flatMap((block) =>
+                  block.type === 'text' ? [] : [block.ref],
+                )
+                return refs.length
+                  ? {
+                      artifactRefs: refs.slice(0, 64),
+                      ...(refs.length > 64 ? { artifactRefsTruncated: true as const } : {}),
+                    }
+                  : {}
+              })(),
               ...(recordedResult.structured !== undefined ? { structured: recordedResult.structured } : {}),
               isError: recordedResult.isError === true,
               ...(marker.present ? { code: 'JOB_FAILED' } : {}),

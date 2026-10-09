@@ -81,6 +81,7 @@ export type TracePanelOptions = {
   clearModelRequest?: (
     params: import('@agnes/protocol').ModelRequestClearParams,
   ) => Promise<import('@agnes/protocol').ModelRequestClearResult>
+  openFactChain?: (input: import('@agnes/protocol').FactChainParams) => boolean
   readModelRequest?: (
     params: import('@agnes/protocol').ModelRequestParams,
     signal?: AbortSignal,
@@ -1368,6 +1369,23 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
             '×',
           ),
         ),
+        selectedRow.requestTraceId && snapshot.meta?.sessionId && options.openFactChain
+          ? createElement(
+              'button',
+              {
+                type: 'button',
+                className: 'trace-detail-copy',
+                'data-testid': 'trace-fact-chain',
+                onClick: () =>
+                  options.openFactChain?.({
+                    sessionId: snapshot.meta!.sessionId!,
+                    laneId: 'main',
+                    anchor: { kind: 'request', callId: selectedRow.requestTraceId! },
+                  }),
+              },
+              traceLocale() === 'zh-CN' ? '查看执行依据' : 'View execution evidence',
+            )
+          : null,
         selectedRow.requestTraceId && snapshot.meta?.sessionId && options.readModelRequest
           ? createElement(RequestTraceView, {
               key: `${snapshot.meta.sessionId}:${selectedRow.requestTraceId}`,

@@ -8,6 +8,7 @@ export default defineConfig({
     'memory.spec.ts',
     'diagnostics.spec.ts',
     'prompt-trace.spec.ts',
+    'fact-chain.spec.ts',
     'runtime.spec.ts',
     'ui-gate.spec.ts',
     'ui-flows.spec.ts',

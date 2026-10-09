@@ -5,6 +5,7 @@ export const PLUGIN_ADMIN_LOCALE_NAMESPACE = '@agnes/web/plugin-admin'
 
 export const pluginAdminLocaleCatalog: LocaleCatalog = {
   en: {
+    'candidates.viewDrafting': 'View drafting session',
     'drain.pluginOne': 'plugin',
     'drain.pluginMany': 'plugins',
     'drain.sessionOne': 'session',
@@ -324,6 +325,7 @@ export const pluginAdminLocaleCatalog: LocaleCatalog = {
     'source.validation.prefix': 'This source reference must start with “{prefix}”, for example {example}.',
   },
   'zh-CN': {
+    'candidates.viewDrafting': '查看起草会话',
     'drain.pluginOne': '插件',
     'drain.pluginMany': '插件',
     'drain.sessionOne': '会话',

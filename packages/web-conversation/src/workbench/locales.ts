@@ -1,6 +1,9 @@
-import type { LocaleCatalog } from '@agnes/web-ui'
+import { adminListLocaleCatalog, type LocaleCatalog } from '@agnes/web-ui'
+import { factChainCatalog } from './fact-chain-locales.js'
 export const workbenchLocaleCatalog: LocaleCatalog = {
   en: {
+    ...adminListLocaleCatalog.en,
+    ...factChainCatalog.en,
     'workbench.right': 'Open workspace panels',
     'workbench.bottom': 'Open terminal panel',
     'workbench.close': 'Close this dock',
@@ -29,6 +32,8 @@ export const workbenchLocaleCatalog: LocaleCatalog = {
     'workbench.git.renamed': 'Renamed',
   },
   'zh-CN': {
+    ...adminListLocaleCatalog['zh-CN'],
+    ...factChainCatalog['zh-CN'],
     'workbench.right': '打开工作区面板',
     'workbench.bottom': '打开终端面板',
     'workbench.close': '关闭此停靠面板',

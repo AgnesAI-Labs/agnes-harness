@@ -553,6 +553,55 @@ export class RequestTraceStore implements ModelRequestTrace {
       return true
     })
   }
+  /** Metadata only: no prompt, response, wire body or blob hydration for graph navigation. */
+  async metadata(
+    sessionKey: string,
+    callId: string,
+  ): Promise<{
+    request: Extract<import('@agnes/protocol').FactChainNode, { kind: 'request' }>
+    attempts: Extract<import('@agnes/protocol').FactChainNode, { kind: 'attempt' }>[]
+  } | null> {
+    if (!/^[a-f0-9-]{36}$/.test(callId)) return null
+    return this.serial(async () => {
+      const row = (await this.records()).find(
+        (value) =>
+          value.id === callId &&
+          value.sessionHash === digest(sessionKey) &&
+          this.clock() - Date.parse(value.createdAt) <= this.limits.ttlMs,
+      )
+      if (!row) return null
+      const params =
+        row.params && typeof row.params === 'object' && !Array.isArray(row.params) ? row.params : {}
+      return {
+        request: {
+          id: `request:${row.id}`,
+          kind: 'request',
+          callId: row.id,
+          seq: null,
+          model: String(params.model ?? '').slice(0, 512),
+          generationId: row.generationId,
+          derivedHash: row.derivedHash,
+          promptHash: row.promptHash,
+          toolSchemaHash: row.toolSchemaHash,
+          messagesHash: row.messagesHash,
+          memoryRevision: row.memoryRevision,
+          memoryHash: row.memoryHash,
+          hashBasis: 'redacted-json',
+          incomplete: row.incomplete,
+        },
+        attempts: (row.attempts ?? []).slice(0, 32).map((attempt) => ({
+          id: `attempt:${attempt.attemptId}`,
+          kind: 'attempt',
+          attemptId: attempt.attemptId,
+          parentCallId: attempt.parentCallId,
+          index: attempt.index,
+          adapterId: attempt.adapter.id,
+          status: attempt.status,
+          wireUnavailable: attempt.wireUnavailable,
+        })),
+      }
+    }, false)
+  }
   async get(sessionKey: string, callId?: string): Promise<import('@agnes/protocol').ModelRequestResult> {
     if (callId && !/^[a-f0-9-]{36}$/.test(callId))
       return { snapshot: null, previous: null, unavailable: 'not-retained' }

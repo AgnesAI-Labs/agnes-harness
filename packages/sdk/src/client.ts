@@ -297,6 +297,12 @@ export class Client {
     ): Promise<import('@agnes/protocol').SystemPromptSnapshot> =>
       this.call('_agnes/v1/systemPrompt.save', input),
   }
+  /** Owner-checked, bounded execution evidence; missing external receipts remain unknown. */
+  readonly factChain = (
+    input: import('@agnes/protocol').FactChainParams,
+    options: CallOptions = {},
+  ): Promise<import('@agnes/protocol').FactChainResult> =>
+    this.call('_agnes/v1/session.factChain', input, options)
   readonly requestTrace = {
     clear: (
       input: import('@agnes/protocol').ModelRequestClearParams,

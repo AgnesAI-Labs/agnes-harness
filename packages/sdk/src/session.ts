@@ -495,6 +495,13 @@ export class Session {
     return this.client.call<SessionBudgetResult>('_agnes/v1/session.budget', { sessionId: this.id })
   }
 
+  factChain(
+    anchor: import('@agnes/protocol').FactChainAnchor,
+    laneId = 'main',
+    options: import('./client.js').CallOptions = {},
+  ): Promise<import('@agnes/protocol').FactChainResult> {
+    return this.client.factChain({ sessionId: this.id, laneId, anchor }, options)
+  }
   workspaceList(path = ''): Promise<SessionWorkspaceListResult> {
     return this.client.call<SessionWorkspaceListResult>('_agnes/v1/session.workspace.list', {
       sessionId: this.id,

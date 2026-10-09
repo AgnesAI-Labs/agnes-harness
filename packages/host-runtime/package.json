@@ -27,7 +27,8 @@
     "./session-switch": "./src/session-switch.ts",
     "./session-title": "./src/session-title.ts",
     "./session": "./src/session.ts",
-    "./memory-admin": "./src/memory-admin.ts"
+    "./memory-admin": "./src/memory-admin.ts",
+    "./fact-chain-binding": "./src/fact-chain-binding.ts"
   },
   "scripts": {
     "typecheck": "tsc -b"

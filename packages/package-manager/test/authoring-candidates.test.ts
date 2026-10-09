@@ -188,6 +188,10 @@ it('refuses failed tests, foreign owners, unsafe files, symlinks and source edit
   await expect(
     s.candidates.test(s.profile, d.candidateId, 'owner', d.candidateHash, new AbortController().signal),
   ).rejects.toThrow('Candidate changed')
+  const recordPath = join(s.profile, '.authoring-candidates', d.candidateId, 'record.json')
+  const beforeEvidence = readFileSync(recordPath, 'utf8')
+  expect(() => s.candidates.evidence(s.profile, d.candidateId, 'owner')).toThrow('evidence is unavailable')
+  expect(readFileSync(recordPath, 'utf8')).toBe(beforeEvidence)
   const current = s.candidates.show(s.profile, d.candidateId, 'owner')
   expect(current.tests).toBeNull()
   expect(current.candidateHash).not.toBe(d.candidateHash)
@@ -228,6 +232,12 @@ it.each(['trust failed', 'reviewed bytes changed'] as const)(
       record = JSON.parse(readFileSync(file, 'utf8'))
     record.value.state = 'publishing'
     writeFileSync(file, JSON.stringify(record))
+    const beforeEvidence = readFileSync(file, 'utf8')
+    if (failure === 'trust failed')
+      expect(reopened.evidence(s.profile, r.candidateId, 'owner').state).toBe('interrupted')
+    else expect(() => reopened.evidence(s.profile, r.candidateId, 'owner')).toThrow('evidence is unavailable')
+    expect(readFileSync(file, 'utf8')).toBe(beforeEvidence)
+    expect(() => reopened.evidence(s.profile, r.candidateId, 'foreign')).toThrow('unavailable')
     expect(reopened.show(s.profile, r.candidateId, 'owner').state).toBe('interrupted')
     expect(publish).toHaveBeenCalledOnce()
   },

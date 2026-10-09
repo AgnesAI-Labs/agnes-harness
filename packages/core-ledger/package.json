@@ -30,7 +30,8 @@
     "./reduce/shapes": "./src/reduce/shapes.ts",
     "./reduce/state": "./src/reduce/state.ts",
     "./reduce/tracker": "./src/reduce/tracker.ts",
-    "./registry/owner-batch": "./src/registry/owner-batch.ts"
+    "./registry/owner-batch": "./src/registry/owner-batch.ts",
+    "./project/fact-chain": "./src/project/fact-chain.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

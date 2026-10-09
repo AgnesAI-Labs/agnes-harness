@@ -1,6 +1,7 @@
 export const requestTraceCatalog = {
   en: {
     title: 'Model request',
+    viewContent: 'View content',
     logical: 'Logical request before adapter transforms',
     unknown: 'Unavailable',
     attempt: 'Sending attempt',
@@ -65,6 +66,7 @@ export const requestTraceCatalog = {
   },
   'zh-CN': {
     title: '模型请求',
+    viewContent: '查看内容',
     logical: '适配器转换前的逻辑请求',
     unknown: '不可用',
     attempt: '发送尝试',

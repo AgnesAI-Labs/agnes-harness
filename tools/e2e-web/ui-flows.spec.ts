@@ -650,6 +650,22 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     await translated(page)
     await accessible(page, info, `candidate-review-${locale}-${theme}`)
     await screen(page, info, `candidate-review-${locale}-${theme}`)
+    await page.getByTestId('candidate-fact-chain').click()
+    const facts = page.getByTestId('fact-chain')
+    await expect(facts.locator('[data-fact-kind="authoring"]')).toContainText(draft.packageId)
+    await expect(facts.locator('[data-fact-kind="authoring"]')).toContainText(
+      locale === 'en' ? 'Tests passed: 1' : '测试通过 1 项',
+    )
+    await expect(facts.locator('details')).not.toHaveAttribute('open')
+    await translated(page)
+    await accessible(page, info, `fact-authoring-${locale}-${theme}`)
+    // Frame the originating conversation consistently after navigation and text reflow.
+    await page.getByRole('region', { name: /^(Conversation|对话)$/, exact: true }).evaluate((viewport) => {
+      viewport.style.scrollBehavior = 'auto'
+      viewport.scrollTop = 0
+    })
+    await page.mouse.move(0, 0)
+    await screen(page, info, `fact-authoring-${locale}-${theme}`)
   }
   await page.evaluate(() => {
     localStorage.setItem('e2e-authoring-locale', 'en')
@@ -984,4 +1000,14 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     body: JSON.stringify({ reviewed, provenance }),
     contentType: 'application/json',
   })
+  // Installed provenance opens the retained published candidate, not the pending replacement.
+  await page.getByRole('button', { name: `View details for ${draft.packageId}`, exact: true }).click()
+  await page
+    .getByRole('dialog', { name: 'Plugin details', exact: true })
+    .getByTestId('plugin-fact-chain')
+    .click()
+  const publishedFacts = page.getByTestId('fact-chain').locator('[data-fact-kind="authoring"]')
+  await expect(publishedFacts).toContainText(`${draft.packageId} 0.1.0 · Published`)
+  await expect(publishedFacts).toContainText('Human review recorded')
+  await expect(publishedFacts).toContainText('Tests passed: 1')
 })

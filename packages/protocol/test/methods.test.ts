@@ -81,6 +81,7 @@ describe('methods (I1 set)', () => {
       [
         '_agnes/v1/systemPrompt.get',
         '_agnes/v1/systemPrompt.save',
+        '_agnes/v1/session.factChain',
         '_agnes/v1/trace.request',
         '_agnes/v1/trace.clear',
         '_agnes/v1/admin.bundles.get',
@@ -242,7 +243,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(160)
+    expect(Object.keys(METHODS)).toHaveLength(161)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })

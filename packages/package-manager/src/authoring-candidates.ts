@@ -51,7 +51,7 @@ export class AuthoringCandidates {
   private save(profileDir: string, record: Record) {
     saveAuthoringRecord(this.path(profileDir, record.value.candidateId), record)
   }
-  private load(profileDir: string, id: string, owner: string): Record {
+  private load(profileDir: string, id: string, owner: string, readOnly = false): Record {
     const file = this.path(profileDir, id)
     if (!existsSync(file) || lstatSync(file).isSymbolicLink() || lstatSync(file).size > 8388608)
       authoringError('Candidate is unavailable')
@@ -79,7 +79,7 @@ export class AuthoringCandidates {
     if (record.value.state === 'publishing' && !this.publications.has(id)) {
       record.value.state = 'interrupted'
       record.value.message = 'Publication interrupted; inspect actual package state before retrying'
-      this.save(profileDir, record)
+      if (!readOnly) this.save(profileDir, record)
     }
     return record
   }
@@ -133,6 +133,20 @@ export class AuthoringCandidates {
     }
     const value = structuredClone(record.value)
     return value
+  }
+  /** Fact-chain reads never reset drafts or persist interrupted-publication recovery. */
+  evidence(profileDir: string, id: string, owner: string): AuthoringCandidate {
+    const record = this.load(profileDir, id, owner, true)
+    const value = record.value
+    const tree = ['published', 'rejected', 'publishing', 'interrupted'].includes(value.state)
+      ? (record.snapshot ?? record.tree)
+      : record.tree
+    if (
+      hashDirectory(tree, { exclude: [] }) !== value.candidateHash ||
+      (value.reviewHash !== null && this.reviewDigest(value) !== value.reviewHash)
+    )
+      authoringError('Candidate evidence is unavailable')
+    return structuredClone(value)
   }
   show(profileDir: string, id: string, owner: string) {
     return this.project(this.load(profileDir, id, owner), profileDir)

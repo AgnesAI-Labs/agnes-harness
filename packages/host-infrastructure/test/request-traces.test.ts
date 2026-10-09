@@ -68,6 +68,16 @@ describe('local request snapshots', () => {
       wire: { messages: [{ role: 'user', content: 'transformed' }] },
       response: { status: 'done', tokens: { input: 12, output: 3 } },
     })
+    const metadata = await reopened.metadata('owned', first.id)
+    expect(metadata?.request).toMatchObject({
+      callId: first.id,
+      promptHash: result.previous!.promptHash,
+      hashBasis: 'redacted-json',
+    })
+    expect(metadata?.attempts[0]).toMatchObject({ parentCallId: first.id, status: 'completed' })
+    expect(JSON.stringify(metadata)).not.toMatch(/synthetic persona|transformed|providerActualTokens/)
+    expect(await reopened.metadata('other', first.id)).toBeNull()
+    expect(await new RequestTraceStore(root, 'other').metadata('owned', first.id)).toBeNull()
     const [profile] = await readdir(join(root, 'model-requests'))
     const files = await readdir(join(root, 'model-requests', profile!))
     expect(files.filter((file) => file.startsWith(result.snapshot!.systemHash))).toHaveLength(1)

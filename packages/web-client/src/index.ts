@@ -46,6 +46,7 @@ export {
 } from './dsh-slot-catalog.js'
 export type { ExternalSpecifier } from './externals.js'
 export { BUILDER_VERSION, externals } from './externals.js'
+export { factChainLinks, RegistrableLink, workbenchNavigation } from './fact-chain-links.js'
 export { slotLocaleCatalog } from './locales.js'
 export type { SlotOutletProps } from './outlet.js'
 export { SlotOutlet, SlotsProvider } from './outlet.js'

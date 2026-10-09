@@ -5850,6 +5850,800 @@
           "type": "boolean"
         }
       }
+    },
+    "FactChainAnchor": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "callId"],
+          "properties": {
+            "kind": {
+              "const": "request"
+            },
+            "callId": {
+              "type": "string",
+              "maxLength": 128
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "toolUseId"],
+          "properties": {
+            "kind": {
+              "const": "tool"
+            },
+            "toolUseId": {
+              "type": "string",
+              "maxLength": 128
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "seq", "ref"],
+          "properties": {
+            "kind": {
+              "const": "artifact"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "ref": {
+              "$ref": "#/$defs/ArtifactRef"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "candidateId"],
+          "properties": {
+            "kind": {
+              "const": "authoring"
+            },
+            "candidateId": {
+              "type": "string",
+              "pattern": "^candidate-[a-f0-9]{32}$"
+            }
+          }
+        }
+      ]
+    },
+    "FactChainParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "laneId", "anchor"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512,
+          "minLength": 1
+        },
+        "laneId": {
+          "type": "string",
+          "maxLength": 128,
+          "minLength": 1
+        },
+        "anchor": {
+          "$ref": "#/$defs/FactChainAnchor"
+        }
+      }
+    },
+    "FactChainPackage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packageId", "version", "snapshotId", "integrity", "treeIntegrity"],
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "snapshotId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "integrity": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "treeIntegrity": {
+          "type": "string",
+          "maxLength": 512
+        }
+      }
+    },
+    "FactChainNode": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "kind", "compositionHash", "bundles"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "kind": {
+              "const": "composition"
+            },
+            "compositionHash": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "bundles": {
+              "type": "array",
+              "maxItems": 128,
+              "items": {
+                "type": "string",
+                "maxLength": 512
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "kind", "generationId", "packages"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "kind": {
+              "const": "generation"
+            },
+            "generationId": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "packages": {
+              "type": "array",
+              "maxItems": 128,
+              "items": {
+                "$ref": "#/$defs/FactChainPackage"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "callId",
+            "seq",
+            "model",
+            "generationId",
+            "derivedHash",
+            "promptHash",
+            "toolSchemaHash",
+            "messagesHash",
+            "memoryRevision",
+            "memoryHash",
+            "hashBasis",
+            "incomplete"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "kind": {
+              "const": "request"
+            },
+            "callId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "seq": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "model": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "generationId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "derivedHash": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "promptHash": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "toolSchemaHash": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "messagesHash": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "memoryRevision": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "memoryHash": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hashBasis": {
+              "enum": ["redacted-json", "ledger-stamp", "unavailable"]
+            },
+            "incomplete": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "attemptId",
+            "parentCallId",
+            "index",
+            "adapterId",
+            "status",
+            "wireUnavailable"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "kind": {
+              "const": "attempt"
+            },
+            "attemptId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "parentCallId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "adapterId": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "status": {
+              "enum": ["not-sent", "sent", "failed", "cancelled", "completed", "unknown"]
+            },
+            "wireUnavailable": {
+              "anyOf": [
+                {
+                  "enum": ["adapter-no-tap", "not-sent", "capture-limit", "capture-failed"]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "toolUseId",
+            "name",
+            "callSeq",
+            "invocationId",
+            "effectId",
+            "definitionFingerprint",
+            "policyHash",
+            "parentEffectId"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "kind": {
+              "const": "invocation"
+            },
+            "toolUseId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "callSeq": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "invocationId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "effectId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "definitionFingerprint": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "policyHash": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "parentEffectId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "toolUseId",
+            "resultSeq",
+            "settledSeq",
+            "isError",
+            "code",
+            "outcome",
+            "resultKind",
+            "partial",
+            "externalOutcome"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "kind": {
+              "const": "receipt"
+            },
+            "toolUseId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "resultSeq": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "settledSeq": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "isError": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "code": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "outcome": {
+              "enum": ["ok", "error", "aborted", "unknown"]
+            },
+            "resultKind": {
+              "enum": ["actual", "synthetic", "deferred-accepted", "unavailable"]
+            },
+            "partial": {
+              "type": "boolean"
+            },
+            "externalOutcome": {
+              "const": "unknown"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "kind", "seq", "ref", "relation"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "kind": {
+              "const": "artifact"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "ref": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "relation": {
+              "enum": ["produced", "consumed", "recorded"]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "candidateId",
+            "packageId",
+            "version",
+            "state",
+            "candidateHash",
+            "reviewHash",
+            "baseHash",
+            "testHash",
+            "testsState",
+            "testsCount",
+            "reviewed",
+            "turn",
+            "toolUseId"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "kind": {
+              "const": "authoring"
+            },
+            "candidateId": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "packageId": {
+              "type": "string",
+              "maxLength": 256
+            },
+            "version": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "state": {
+              "enum": [
+                "draft",
+                "tested",
+                "review",
+                "publishing",
+                "published",
+                "rejected",
+                "failed",
+                "interrupted"
+              ]
+            },
+            "candidateHash": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "reviewHash": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "baseHash": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "testHash": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "testsState": {
+              "anyOf": [
+                {
+                  "enum": ["passed", "failed"]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "testsCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reviewed": {
+              "type": "boolean"
+            },
+            "turn": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "toolUseId": {
+              "type": "string",
+              "maxLength": 128
+            }
+          }
+        }
+      ]
+    },
+    "FactChainEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "relation", "evidence", "basis"],
+      "properties": {
+        "from": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "to": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "relation": {
+          "enum": [
+            "bound",
+            "captured",
+            "attempted",
+            "dispatched",
+            "settled",
+            "status",
+            "produced",
+            "consumed",
+            "drafted"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "basis": {
+          "enum": [
+            "ledger",
+            "composition-binding",
+            "generation-snapshot",
+            "request-capture",
+            "authoring-record"
+          ]
+        }
+      }
+    },
+    "FactChainGap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "reason"],
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1024
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "enum": [
+            "legacy-unlinked",
+            "not-retained",
+            "capture-unavailable",
+            "ambiguous-link",
+            "resource-version-unavailable",
+            "in-progress",
+            "truncated",
+            "source-unavailable"
+          ]
+        }
+      }
+    },
+    "FactChainResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "laneId", "atSeq", "nodes", "edges", "gaps"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "laneId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "atSeq": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "nodes": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/FactChainNode"
+          }
+        },
+        "edges": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/FactChainEdge"
+          }
+        },
+        "gaps": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/FactChainGap"
+          }
+        }
+      }
     }
   }
 }

@@ -166,6 +166,25 @@ describe('production supervisor storage', () => {
        VALUES (?, ?, 'new', 'active', NULL, NULL)`,
       [productionSession, 'local'],
     )
+    // A durable, closed ledger must be readable without opening a session in a worker.
+    await seeded.open(productionSession, { writerRunId: 'fact-fixture', ttlMs: 10_000 })
+    await seeded.commit(productionSession, {
+      expectedWriterRunId: 'fact-fixture',
+      events: [
+        {
+          id: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+          ts: '2026-01-01T00:00:00Z',
+          type: 'tool/call',
+          v: 1,
+          lane: 'main',
+          origin: 'system',
+          trust: 'trusted',
+          actor: { id: 'local', org: '', role: '', deptPath: [], attrs: {} },
+          data: { toolUseId: 'closed-call', name: 'read', args: {} },
+        },
+      ],
+    })
+    await seeded.release(productionSession, 'fact-fixture')
     await seeded.close()
     const supervisor = await startProductionSupervisor(o)
     const rpc = await client(supervisor.socketPath)
@@ -202,6 +221,19 @@ describe('production supervisor storage', () => {
       await expect(
         retry.call(2, '_agnes/v1/auth.claim', { kind: 'production-restart', value: 'same-event' }),
       ).resolves.toEqual({ granted: false })
+      await expect(
+        retry.call(3, '_agnes/v1/session.factChain', {
+          sessionId: productionSession,
+          laneId: 'main',
+          anchor: { kind: 'tool', toolUseId: 'closed-call' },
+        }),
+      ).resolves.toMatchObject({
+        atSeq: 1,
+        nodes: expect.arrayContaining([
+          expect.objectContaining({ kind: 'invocation', toolUseId: 'closed-call', callSeq: 1 }),
+          expect.objectContaining({ kind: 'receipt', outcome: 'unknown', resultKind: 'unavailable' }),
+        ]),
+      })
     } finally {
       retry.close()
       await restarted.close()

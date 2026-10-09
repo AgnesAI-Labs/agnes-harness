@@ -470,6 +470,8 @@
         "toolUseId": { "type": "string", "maxLength": 128 },
         "content": { "type": "array", "items": { "$ref": "#/$defs/ContentBlock" } },
         "structured": { "$ref": "#/$defs/JsonValue" },
+        "artifactRefs": { "type": "array", "maxItems": 64, "items": { "$ref": "#/$defs/ArtifactRef" } },
+        "artifactRefsTruncated": { "const": true },
         "isError": { "type": "boolean" },
         "code": { "type": "string", "maxLength": 64 },
         "enforcement": {

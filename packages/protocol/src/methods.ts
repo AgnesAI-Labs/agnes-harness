@@ -73,6 +73,7 @@ export type MethodName =
   | '_agnes/v1/config.childEngines.save'
   | '_agnes/v1/systemPrompt.get'
   | '_agnes/v1/systemPrompt.save'
+  | '_agnes/v1/session.factChain'
   | '_agnes/v1/trace.request'
   | '_agnes/v1/trace.clear'
   | '_agnes/v1/config.get'
@@ -165,6 +166,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/systemPrompt.get': clientRequest(A.SystemPromptGetParams, A.SystemPromptSnapshot),
   '_agnes/v1/systemPrompt.save': clientRequest(A.SystemPromptSaveParams, A.SystemPromptSnapshot),
   '_agnes/v1/trace.clear': clientRequest(A.ModelRequestClearParams, A.ModelRequestClearResult),
+  '_agnes/v1/session.factChain': clientRequest(A.FactChainParams, A.FactChainResult),
   '_agnes/v1/trace.request': clientRequest(A.ModelRequestParams, A.ModelRequestResult),
   '_agnes/v1/config.get': clientRequest(A.ConfigEmptyParams, A.ConfigSnapshot),
   '_agnes/v1/config.oauth': clientRequest(A.ConfigOAuthInput, A.ConfigOAuthResult),

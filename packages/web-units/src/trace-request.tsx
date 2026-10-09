@@ -18,7 +18,7 @@ import {
   SettingsToolbar,
   Tabs,
 } from '@agnes/web-ui'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { requestTraceCatalog } from './trace-request-locale.js'
 
@@ -92,6 +92,16 @@ export function RequestTraceView({
   const [result, setResult] = useState<ModelRequestResult>()
   const [error, setError] = useState(false)
   const [pane, setPane] = useState<Pane>('system')
+  const root = useRef<HTMLElement>(null)
+  const [compact, setCompact] = useState(false)
+  useEffect(() => {
+    if (!root.current || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setCompact(entry.contentRect.width < 520)
+    })
+    observer.observe(root.current)
+    return () => observer.disconnect()
+  }, [])
   const [compareMode, setCompareMode] = useState<'none' | 'previous' | 'fixed'>('none')
   const [copied, setCopied] = useState(false)
   const [comparisonInput, setComparisonInput] = useState(comparison)
@@ -223,7 +233,7 @@ export function RequestTraceView({
     </div>
   ) : null
   return (
-    <section className="request-trace" data-testid="request-trace" aria-label={t('title')}>
+    <section ref={root} className="request-trace" data-testid="request-trace" aria-label={t('title')}>
       {error ? (
         <SettingsState tone="error">{t('failed')}</SettingsState>
       ) : !result ? (
@@ -439,21 +449,44 @@ export function RequestTraceView({
               </SettingsToolbar>
             )}
           </SettingsDetails>
-          <Tabs
-            className="request-trace-tabs"
-            size="small"
-            destroyOnHidden
-            activeKey={pane}
-            onChange={(name) => {
-              setPane(name as Pane)
-              setCopied(false)
-            }}
-            items={panes.map((name) => ({
-              key: name,
-              children: name === pane ? content : null,
-              label: <span data-testid={`request-trace-tab-${name}`}>{t(name)}</span>,
-            }))}
-          />
+          {compact ? (
+            <>
+              <Field label={t('viewContent')} htmlFor={`request-trace-${callId}-pane`}>
+                <SettingsSelect
+                  id={`request-trace-${callId}-pane`}
+                  data-testid="request-trace-pane"
+                  value={pane}
+                  onChange={(event) => {
+                    setPane(event.currentTarget.value as Pane)
+                    setCopied(false)
+                  }}
+                >
+                  {panes.map((name) => (
+                    <option key={name} value={name}>
+                      {t(name)}
+                    </option>
+                  ))}
+                </SettingsSelect>
+              </Field>
+              {content}
+            </>
+          ) : (
+            <Tabs
+              className="request-trace-tabs"
+              size="small"
+              destroyOnHidden
+              activeKey={pane}
+              onChange={(name) => {
+                setPane(name as Pane)
+                setCopied(false)
+              }}
+              items={panes.map((name) => ({
+                key: name,
+                children: name === pane ? content : null,
+                label: <span data-testid={`request-trace-tab-${name}`}>{t(name)}</span>,
+              }))}
+            />
+          )}
           {!previous && <p>{t('noPrevious')}</p>}
         </>
       )}

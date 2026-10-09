@@ -30,7 +30,8 @@
     "./local/sessions": "./src/local/sessions.ts",
     "./local/methods/admin": "./src/local/methods/admin.ts",
     "./local/methods/doctor": "./src/local/methods/doctor.ts",
-    "./local/methods/prompt-trace": "./src/local/methods/prompt-trace.ts"
+    "./local/methods/prompt-trace": "./src/local/methods/prompt-trace.ts",
+    "./local/methods/fact-chain": "./src/local/methods/fact-chain.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

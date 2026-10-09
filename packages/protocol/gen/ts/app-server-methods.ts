@@ -87,6 +87,7 @@ export interface AppServerMethods {
   "_agnes/v1/systemPrompt.get": { params: Static<typeof import("./agnes-v1.js").SystemPromptGetParams>; result: Static<typeof import("./agnes-v1.js").SystemPromptSnapshot>; direction: "c2s"; kind: "request" }
   "_agnes/v1/systemPrompt.save": { params: Static<typeof import("./agnes-v1.js").SystemPromptSaveParams>; result: Static<typeof import("./agnes-v1.js").SystemPromptSnapshot>; direction: "c2s"; kind: "request" }
   "_agnes/v1/trace.clear": { params: Static<typeof import("./agnes-v1.js").ModelRequestClearParams>; result: Static<typeof import("./agnes-v1.js").ModelRequestClearResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/session.factChain": { params: Static<typeof import("./agnes-v1.js").FactChainParams>; result: Static<typeof import("./agnes-v1.js").FactChainResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/trace.request": { params: Static<typeof import("./agnes-v1.js").ModelRequestParams>; result: Static<typeof import("./agnes-v1.js").ModelRequestResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/config.get": { params: Static<typeof import("./agnes-v1.js").ConfigEmptyParams>; result: Static<typeof import("./agnes-v1.js").ConfigSnapshot>; direction: "c2s"; kind: "request" }
   "_agnes/v1/config.oauth": { params: Static<typeof import("./agnes-v1.js").ConfigOAuthInput>; result: Static<typeof import("./agnes-v1.js").ConfigOAuthResult>; direction: "c2s"; kind: "request" }

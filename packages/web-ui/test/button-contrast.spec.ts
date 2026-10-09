@@ -37,7 +37,9 @@ test.beforeAll(async () => {
             (props.color || props.type || 'default') + '/' + (props.variant || 'legacy') +
               (props.ghost ? ' ghost' : ''))),
           ...['', 'primary-button', 'secondary-button'].map(className =>
-            createElement('button', { key: className, className }, 'Native ' + className))))
+            createElement('button', { key: className, className }, 'Native ' + className)),
+          createElement('div', { className: 'workbench-panel-tabs', role: 'tablist' },
+            createElement(Button, { type: 'text', role: 'tab', 'aria-selected': true }, 'Selected panel'))))
       `,
     },
     bundle: true,
@@ -77,7 +79,7 @@ for (const theme of ['light', 'dark'])
       nodeId: documentNode.nodeId,
       selector: 'button',
     })
-    expect(nodeIds).toHaveLength(32)
+    expect(nodeIds).toHaveLength(33)
     for (const state of [[], ['hover'], ['hover', 'active'], ['focus', 'focus-visible']]) {
       for (const nodeId of nodeIds)
         await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: state })

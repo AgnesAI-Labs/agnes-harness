@@ -1,6 +1,7 @@
 import { parseAnswer, type UINode, type UITurn } from '@agnes/protocol'
 import {
   type ClientResourceService,
+  factChainLinks,
   type LocaleService,
   type SessionService,
   type SlotEntry,
@@ -15,6 +16,7 @@ import {
 import { RegisteredConversationCard } from '@agnes/web-conversation/conversation-registry'
 import { DefaultToolCards } from '@agnes/web-conversation/default-tool-cards'
 import { toolIconReact } from '@agnes/web-conversation/tool-icon'
+import { Button } from '@agnes/web-ui'
 import {
   ConversationInteractionResult,
   ConversationMarkdown,
@@ -307,7 +309,7 @@ export function WebConversationMessages({
     ),
     renderNode: (node, native) => {
       const answer = answerMessages.get(node.id)
-      const content = answer ? (
+      const base = answer ? (
         <ConversationInteractionResult
           summary={locale?.t('tool.interaction.answered', { answer }) ?? answer}
           t={(key, vars) => locale?.t(key, vars) ?? key}
@@ -316,6 +318,29 @@ export function WebConversationMessages({
         </ConversationInteractionResult>
       ) : (
         native
+      )
+      const factAnchor =
+        node.kind === 'tool'
+          ? { kind: 'tool' as const, toolUseId: node.toolUseId }
+          : node.kind === 'artifact'
+            ? { kind: 'artifact' as const, seq: node.seq, ref: node.ref }
+            : undefined
+      const content = (
+        <>
+          {base}
+          {factAnchor && sessionScope && (
+            <Button
+              type="link"
+              size="small"
+              data-testid={node.kind === 'tool' ? 'tool-fact-chain' : 'artifact-fact-chain'}
+              onClick={() =>
+                factChainLinks.open({ sessionId: sessionScope, laneId: 'main', anchor: factAnchor })
+              }
+            >
+              {locale?.t(node.kind === 'tool' ? 'facts.toolLink' : 'facts.artifactLink')}
+            </Button>
+          )}
+        </>
       )
       return registry ? (
         <DshNodeLeaf key={node.id} node={node} native={content} registry={registry} />

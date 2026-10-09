@@ -117,6 +117,7 @@ import { type PublishChildEngines, registerConfiguration } from '@agnes/daemon-r
 import { registerDiagnostics } from '@agnes/daemon-rpc/local/methods/diagnostics'
 import { registerDoctor } from '@agnes/daemon-rpc/local/methods/doctor'
 import { executeJournaledEffect, registerExtensions } from '@agnes/daemon-rpc/local/methods/extensions'
+import { registerFactChain } from '@agnes/daemon-rpc/local/methods/fact-chain'
 import { registerPromptTrace } from '@agnes/daemon-rpc/local/methods/prompt-trace'
 import { registerSessionPreferences } from '@agnes/daemon-rpc/local/methods/session-preferences'
 import {
@@ -154,11 +155,14 @@ import {
   overlayChildEngineTarget,
   type PresetDoc,
   type ProcessIdentity,
+  RequestTraceStore,
   type ResolvedPreset,
   type ResolvedProfile,
+  readFactChainBinding,
   resolveComposition,
   resolveFileSecretsDirectory,
   resolveWorkspaceDirectory,
+  type ScanRead,
   sessionsDbPath,
 } from '@agnes/host'
 import { createObservability, installDiagnosticJournal, observabilityConfig } from '@agnes/observability'
@@ -672,6 +676,8 @@ export type StartSupervisorOptions = {
   /** `join(home, 'profiles', profile.name)`. Not derivable from `profile.dataDir`: a profile's
    * home and its dataDir are configured independently and are not the same directory in general. */
   profileDir: string
+  /** Existing ledger adapter's read port; reads never acquire a worker or writer claim. */
+  sessionFactRead?: (sessionId: string) => ScanRead<import('@agnes/protocol').EventEnvelope>
   profileFile: string
   /** One daemon scope owns one canonical workspace skill root. Session cwd may vary, but profile
    * resource control never silently scans the daemon process cwd. */
@@ -2044,6 +2050,27 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         ...(o.configuration ? { configuration: o.configuration } : {}),
         connection: async () => true,
       })
+      registerFactChain(ep, {
+        requireSessionOwner: requireSessionOwner(cx),
+        scan: o.sessionFactRead ?? ((key) => (query) => cx.registry.require(key).session.scan(query)),
+        traces: new RequestTraceStore(o.config.dataDir, o.profile.name),
+        binding: (key, generationId) => readFactChainBinding(o.profileDir, key, generationId),
+        ...(effectivePackageAdmin
+          ? {
+              candidate: async (
+                candidateId: string,
+                context: import('@agnes/daemon-foundation/local/endpoint').CallContext,
+              ) =>
+                (await effectivePackageAdmin!.service.candidateEvidence?.(
+                  o.profile.name,
+                  candidateId,
+                  (transport === 'unix'
+                    ? (effectivePackageAdmin!.unixAuthority ?? localPackageAdminAuthority())
+                    : (effectivePackageAdmin!.webAuthority ?? denyPackageAdminAuthority))(context),
+                )) as import('@agnes/protocol').AuthoringCandidate,
+            }
+          : {}),
+      })
       registerPromptTrace(ep, {
         dataDir: o.config.dataDir,
         profile: o.profile.name,
@@ -2439,6 +2466,7 @@ export async function startProductionSupervisor(
         'artifact_read_authority',
       ),
       reclaim: storage.crashReclaim,
+      sessionFactRead: o.sessionFactRead ?? ((key) => (query) => storage.scan(key, query)),
     })
   } catch (error) {
     stopDiagnostics()

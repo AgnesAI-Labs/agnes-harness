@@ -1,6 +1,11 @@
 import { answerPrefix, parseAnswer, type UINode } from '@agnes/protocol'
 import type { ToolCardInlinePayload } from '@agnes/protocol/gen/slots'
-import { type ClientResourceService, conversationCards, type SessionService } from '@agnes/web-client'
+import {
+  type ClientResourceService,
+  conversationCards,
+  factChainLinks,
+  type SessionService,
+} from '@agnes/web-client'
 import { toolCardsLocaleCatalog } from '@agnes/web-foundation/locales/tool-cards'
 import { Button, ConversationCardLayout, SettingsInput, SettingsTextArea } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
@@ -9,7 +14,7 @@ import { WorkflowRunCard } from './workflow-run-card.js'
 
 type Text = (key: string) => string
 const englishDictionary: Record<string, string> = toolCardsLocaleCatalog.en
-const english: Text = (key) => englishDictionary[key] ?? key
+const english: Text = (key) => englishDictionary[key] ?? (key === 'facts.artifactLink' ? 'View source' : key)
 
 type Question = NonNullable<ToolCardInlinePayload['question']>
 type Deliverable = NonNullable<ToolCardInlinePayload['deliverables']>[number]
@@ -157,8 +162,12 @@ function DeliverableCard({
   file,
   resources,
   t,
+  seq,
+  sessionId,
 }: {
   t: Text
+  seq?: number | undefined
+  sessionId?: string | undefined
   file: Deliverable
   resources?: ClientResourceService | undefined
 }) {
@@ -197,6 +206,22 @@ function DeliverableCard({
       data-artifact-sha256={sha256}
       aria-label={`${t('cards.file.title')}: ${file.name}`}
     >
+      {seq !== undefined && sessionId && mime !== undefined && (
+        <Button
+          type="link"
+          size="small"
+          data-testid="deliverable-fact-chain"
+          onClick={() =>
+            factChainLinks.open({
+              sessionId,
+              laneId: lane,
+              anchor: { kind: 'artifact', seq, ref: { sha256, size, mime } },
+            })
+          }
+        >
+          {t('facts.artifactLink')}
+        </Button>
+      )}
       <strong>{file.name}</strong>
       {file.description && <p>{file.description}</p>}
       {resource ? (
@@ -260,6 +285,8 @@ for (const entry of [
           file={file}
           t={context.t}
           resources={context.resources}
+          seq={data.node.resultSeq}
+          sessionId={context.session?.sessionId}
         />
       )),
   },

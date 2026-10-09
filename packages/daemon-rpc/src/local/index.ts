@@ -50,6 +50,8 @@ import {
   type ExtensionActivationBarrier,
   type Host,
   hostInspectionSource,
+  RequestTraceStore,
+  readFactChainBinding,
   resolveWorkspaceDirectory,
 } from '@agnes/host'
 import { rpcError } from '@agnes/protocol'
@@ -67,6 +69,7 @@ import { type ArtifactReadRpcOptions, registerArtifactRead } from './methods/art
 import { registerConfiguration } from './methods/config.js'
 import { registerDiagnostics } from './methods/diagnostics.js'
 import { registerExtensions } from './methods/extensions.js'
+import { registerFactChain } from './methods/fact-chain.js'
 import { registerSessionPreferences } from './methods/session-preferences.js'
 import {
   hostSessionCatalog,
@@ -298,6 +301,8 @@ export type LocalEndpointOptions = {
   artifactRead?: ArtifactReadRpcOptions
   /** Where diagnostics.collect reads `audit/*.jsonl` tails. Omitted: both logs report missing. */
   dataDir?: string
+  /** Existing profile metadata; omitted in embedded deployments without durable bindings. */
+  profileDir?: string
   diagnosticsHome?: string
 }
 
@@ -472,6 +477,35 @@ export function createLocalEndpoint(
     feeds,
     attached,
   )
+  registerFactChain(ep, {
+    requireSessionOwner: requireSessionOwner(cx),
+    scan: (key) => (query) => host.kernel.o.storage.scan(key, query),
+    ...(opts.dataDir ? { traces: new RequestTraceStore(opts.dataDir, host.profile.name) } : {}),
+    ...(opts.profileDir
+      ? {
+          binding: (key: string, generationId: string | null) =>
+            readFactChainBinding(opts.profileDir!, key, generationId),
+        }
+      : {}),
+    ...(opts.packageAdmin
+      ? {
+          candidate: async (
+            candidateId: string,
+            context: import('@agnes/daemon-foundation/local/endpoint').CallContext,
+          ) =>
+            (await opts.packageAdmin!.service.candidateEvidence?.(
+              host.profile.name,
+              candidateId,
+              (
+                opts.packageAdmin!.authority ??
+                (cx.auth.config.transport === 'unix'
+                  ? localPackageAdminAuthority()
+                  : denyPackageAdminAuthority)
+              )(context),
+            )) as import('@agnes/protocol').AuthoringCandidate,
+        }
+      : {}),
+  })
   registerDiagnostics(ep, {
     requireSessionOwner: requireSessionOwner(cx),
     registry,

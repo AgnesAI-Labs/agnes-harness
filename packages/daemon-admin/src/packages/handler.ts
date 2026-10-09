@@ -136,6 +136,11 @@ export type RuntimePinsAdapter = Readonly<{
 }>
 
 export type PackageAdminService = Readonly<{
+  candidateEvidence?(
+    profile: string,
+    candidateId: string,
+    authority: PackageAdminAuthority | undefined,
+  ): Promise<AuthoringCandidate>
   call(
     method: PackageAdminMethodName,
     params: unknown,
@@ -486,6 +491,20 @@ class Service implements PackageAdminService {
       this.schedule(operation.operation.operationId, operation.operation.profile)
   }
 
+  async candidateEvidence(
+    profile: string,
+    candidateId: string,
+    authority: PackageAdminAuthority | undefined,
+  ): Promise<AuthoringCandidate> {
+    const granted = requirePackageAdmin('_agnes/v1/plugins.candidates.show', authority)
+    if (!validatePackageAdminCall('_agnes/v1/plugins.candidates.show', 'params', { profile, candidateId }).ok)
+      throw rpcError('INVALID_PARAMS')
+    return this.candidates.evidence(
+      await this.options.profileDirectory(profile),
+      candidateId,
+      granted.principalId,
+    )
+  }
   async call(
     method: PackageAdminMethodName,
     params: unknown,

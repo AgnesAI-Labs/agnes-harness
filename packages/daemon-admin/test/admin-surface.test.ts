@@ -27,6 +27,7 @@ async function server(
     sessionTools?: NonNullable<AdminSurfaceOptions['sessionTools']>
     diagnostics?: NonNullable<AdminSurfaceOptions['diagnostics']>
     systemPrompt?: NonNullable<AdminSurfaceOptions['systemPrompt']>
+    factChain?: NonNullable<AdminSurfaceOptions['factChain']>
     runtimeAdmin?: NonNullable<AdminSurfaceOptions['runtimeAdmin']>
   } = {},
 ) {
@@ -611,4 +612,33 @@ it('guards fixed prompt reads and writes by origin, permission, schema and recov
   ).toBe(403)
   const reader = await server(undefined, undefined, { systemPrompt: bridge, permissions: ['packages.read'] })
   expect((await reader.selectionRequest('system-prompt', 'POST', { config: {} })).status).toBe(403)
+})
+
+it('restricts fact-chain reads to the fixed same-origin read bridge with strict input and output contracts', async () => {
+  const input = { sessionId: 'owned', laneId: 'main', anchor: { kind: 'tool', toolUseId: 't1' } }
+  const result = {
+    sessionId: 'owned',
+    laneId: 'main',
+    atSeq: 1,
+    nodes: [],
+    edges: [],
+    gaps: [{ at: null, reason: 'source-unavailable' as const }],
+  }
+  const s = await server(undefined, undefined, {
+    permissions: ['packages.read'],
+    factChain: async () => result,
+  })
+  expect((await s.selectionRequest('fact-chain', 'POST', input)).status).toBe(200)
+  expect(
+    (await s.selectionRequest('fact-chain', 'POST', { ...input, compareSessionId: 'foreign' })).status,
+  ).toBe(400)
+  expect(
+    (await s.selectionRequest('fact-chain', 'POST', input, { Origin: 'http://evil.invalid' })).status,
+  ).toBe(403)
+  const denied = await server(undefined, undefined, { permissions: [], factChain: async () => result })
+  expect((await denied.selectionRequest('fact-chain', 'POST', input)).status).toBe(403)
+  const invalid = await server(undefined, undefined, {
+    factChain: async () => ({ ...result, password: 'secret' }),
+  })
+  expect((await invalid.selectionRequest('fact-chain', 'POST', input)).status).toBe(502)
 })

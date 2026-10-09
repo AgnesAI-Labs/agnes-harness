@@ -7035,7 +7035,8 @@ body.admin-page {
   overflow-x: auto;
 }
 .workbench-panel-tabs [aria-selected="true"] {
-  color: var(--agnes-text-emphasis);
+  color: var(--agnes-text-primary);
+  font-weight: 600;
   background: var(--agnes-bg-hover);
 }
 .workbench-panel-content {
@@ -7534,4 +7535,23 @@ body.admin-page {
   .system-prompt-layout [data-testid="system-prompt-preview"] {
     position: static;
   }
+}
+
+.fact-chain {
+  padding: var(--s12);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fact-chain-nodes {
+  padding-inline-start: var(--s20);
+}
+.fact-chain-nodes > li {
+  margin-block: var(--s12);
+}
+.fact-chain pre {
+  max-height: 16rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
 }

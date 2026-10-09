@@ -279,6 +279,12 @@ export function CandidateInbox({
             <p title={title} data-testid="candidate-provenance">
               {t('candidates.byAgent', { session: title, turn: selected.origin.turn })}
             </p>
+            <a
+              data-testid="candidate-fact-chain"
+              href={`/?session=${encodeURIComponent(selected.origin.sessionKey)}&factCandidate=${encodeURIComponent(selected.candidateId)}`}
+            >
+              {t('candidates.viewDrafting')}
+            </a>
             <div className="candidate-summary-facts">
               <span data-testid="candidate-tests">
                 {selected.tests?.state === 'passed'

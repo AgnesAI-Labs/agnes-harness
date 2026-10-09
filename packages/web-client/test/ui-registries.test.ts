@@ -1,4 +1,5 @@
 import { expect, it, vi } from 'vitest'
+import { RegistrableLink } from '../src/fact-chain-links.js'
 import { UiExtensionRegistry } from '../src/ui-registries.js'
 
 it('orders registrations, refuses duplicate IDs and disposes only its own live entry', () => {
@@ -21,4 +22,17 @@ it('orders registrations, refuses duplicate IDs and disposes only its own live e
   registry.register({ id: 'last', order: 30 })
   expect(registry.getSnapshot()).toBeGreaterThan(version)
   expect(changed).toHaveBeenCalledTimes(notifications)
+})
+
+it('keeps presentation links unavailable without a host and disposes only the registered opener', () => {
+  const links = new RegistrableLink<string>()
+  expect(links.open('facts')).toBe(false)
+  const removeFirst = links.register((target) => target === 'facts')
+  expect(links.open('facts')).toBe(true)
+  const removeSecond = links.register((target) => target === 'files')
+  removeFirst()
+  expect(links.open('files')).toBe(true)
+  expect(links.open('facts')).toBe(false)
+  removeSecond()
+  expect(links.open('files')).toBe(false)
 })

@@ -1,3 +1,5 @@
+import type { FactChainResult } from '@agnes/protocol'
+import { FactChainPanel } from '../src/workbench/fact-chain-panel.js'
 /** @vitest-environment happy-dom */
 
 import type { Session } from '@agnes/sdk/browser'
@@ -76,5 +78,83 @@ it('loads directories lazily, previews text and mentions a relative path without
     unmountRegion(host)
     host.remove()
     header.remove()
+  }
+})
+
+it('clears fact records on session changes and ignores an old response while keeping hashes collapsed', async () => {
+  const host = document.createElement('div')
+  document.body.append(host)
+  let oldReply: (result: FactChainResult) => void = () => undefined
+  const oldRead = new Promise<FactChainResult>((resolve) => {
+    oldReply = resolve
+  })
+  const result = (sessionId: string, model: string): FactChainResult => ({
+    sessionId,
+    laneId: 'main',
+    atSeq: 1,
+    edges: [],
+    gaps: [],
+    nodes: [
+      {
+        id: 'generation:existing',
+        kind: 'generation',
+        generationId: 'existing',
+        packages: [
+          {
+            packageId: '@agnes/document-reader',
+            version: '0.1.2',
+            snapshotId: 'existing',
+            integrity: 'sha256-retained',
+            treeIntegrity: 'sha256-retained-tree',
+          },
+        ],
+      },
+      {
+        id: 'request:existing',
+        kind: 'request',
+        callId: 'existing',
+        seq: 1,
+        model,
+        generationId: null,
+        derivedHash: 'a'.repeat(64),
+        promptHash: null,
+        toolSchemaHash: null,
+        messagesHash: null,
+        memoryRevision: null,
+        memoryHash: null,
+        hashBasis: 'ledger-stamp',
+        incomplete: true,
+      },
+    ],
+  })
+  const render = (id: string, read: () => Promise<FactChainResult>) =>
+    renderRegion(
+      host,
+      <FactChainPanel
+        context={{
+          t: createCatalogTranslator(workbenchLocaleCatalog, 'zh-CN'),
+          data: {
+            session: { id, factChain: read },
+            factChain: { sessionId: id, laneId: 'main', anchor: { kind: 'request', callId: 'existing' } },
+          },
+        }}
+      />,
+    )
+  try {
+    render('old', () => oldRead)
+    await vi.waitFor(() => expect(host.textContent).toContain('正在读取执行记录'))
+    render('new', async () => result('new', 'NEW_MODEL'))
+    await vi.waitFor(() => expect(host.querySelector('ol')?.textContent).toContain('NEW_MODEL'))
+    oldReply(result('old', 'OLD_PRIVATE'))
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(host.textContent).not.toContain('OLD_PRIVATE')
+    expect(host.querySelector('details')?.open).toBe(false)
+    expect(host.querySelector('ol')?.textContent).not.toContain('a'.repeat(64))
+    expect(host.querySelector('summary')?.textContent).toBe('技术详情')
+    expect(host.querySelector('ol')?.textContent).toContain('文档读取 · 0.1.2')
+  } finally {
+    unmountRegion(host)
+    host.remove()
   }
 })
