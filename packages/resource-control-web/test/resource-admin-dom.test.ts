@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { createMcpPreset } from '@agnes/resource-control-contracts/mcp-presets'
 import type { McpServerDescriptor } from '@agnes/protocol'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
@@ -198,6 +199,7 @@ beforeEach(async () => {
 
 it('keeps manual MCP creation hidden when the MCP tab is selected', () => {
   expect(byId<HTMLButtonElement>('mcp-create').hidden).toBe(true)
+  expect(byId<HTMLButtonElement>('mcp-add-preset').hidden).toBe(false)
 })
 
 it('localizes the stable admin-unavailable code in the current locale', async () => {
@@ -804,4 +806,52 @@ it('enables an untrusted Skill without exposing a separate trust action', async 
     expectedRevision: revision,
     state: 'enabled',
   })
+})
+
+it('prefills a Playwright preset without writes and requires save and enable confirmation', async () => {
+  byId<HTMLDialogElement>('resource-detail').close()
+  byId('mcp-add-preset').click()
+  expect(byId<HTMLDialogElement>('mcp-dialog').open).toBe(true)
+  expect(byId<HTMLInputElement>('mcp-id').value).toBe('playwright')
+  expect(byId<HTMLInputElement>('mcp-name').value).toBe('Playwright MCP')
+  expect(byId<HTMLInputElement>('mcp-executable').value).toBe('npx')
+  expect(byId<HTMLTextAreaElement>('mcp-args').value).toContain('@playwright/mcp@0.0.83')
+  expect(byId<HTMLSelectElement>('mcp-sandbox').value).toBe('network')
+  expect(byId('mcp-preset-description').textContent).toContain('Headless')
+  expect(submitted('mcp/create')).toHaveLength(0)
+  expect(submitted('mcp/trust')).toHaveLength(0)
+  expect(submitted('mcp/enable')).toHaveLength(0)
+  document.documentElement.lang = 'zh-CN'
+  window.dispatchEvent(new Event('agnes:locale-changed'))
+  expect(byId('mcp-add-preset').textContent).toBe('添加预设')
+  expect(byId('mcp-preset-description').textContent).toContain('默认无头运行')
+  document.documentElement.lang = 'en'
+  window.dispatchEvent(new Event('agnes:locale-changed'))
+  byId('mcp-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  await vi.waitFor(() => expect(byId<HTMLDialogElement>('admin-confirm').open).toBe(true))
+  byId('admin-confirm-cancel').click()
+  await settle()
+  expect(submitted('mcp/create')).toHaveLength(0)
+  current = {
+    ...server,
+    serverId: 'playwright',
+    resourceId: 'mcp/playwright',
+    displayName: 'Playwright MCP',
+    definition: createMcpPreset('playwright'),
+  }
+  await submitMcpForm()
+  await vi.waitFor(() => expect(submitted('mcp/create')).toHaveLength(1))
+  expect(submitted('mcp/create')[0]?.body.definition).toEqual(createMcpPreset('playwright'))
+  expect(submitted('mcp/trust')).toHaveLength(0)
+  expect(submitted('mcp/enable')).toHaveLength(0)
+  await vi.waitFor(() => expect(byId('resource-notice').textContent).toContain('Playwright MCP'))
+  byId('resource-list').querySelector<HTMLElement>('.resource-row')?.click()
+  await vi.waitFor(() => expect(byId('resource-detail').textContent).toContain('Playwright MCP'))
+  action('Enable', { confirm: false })
+  await settle()
+  expect(submitted('mcp/trust')).toHaveLength(0)
+  expect(submitted('mcp/enable')).toHaveLength(0)
+  action('Enable')
+  await vi.waitFor(() => expect(submitted('mcp/trust')).toHaveLength(1))
+  await vi.waitFor(() => expect(submitted('mcp/enable')).toHaveLength(1))
 })

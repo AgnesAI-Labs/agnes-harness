@@ -20,6 +20,30 @@
 
 本地 stdio 服务的确认仅授权该服务的具体配置启动。显式配置的部署 allowlist 始终有效；会话不能覆盖管理员的限制。更新定义或撤销信任后，原配置的本地启动批准失效，需要重新审核。
 
+## 浏览器自动化：Playwright MCP 与 Computer Use 如何选择？
+
+对于具有可访问页面控件的业务网站，例如 CRM 导航、表单填写、表格读取或流程检查，使用 **Playwright MCP**。它通过浏览器无障碍树操作页面，可以无头运行，不占用桌面。原生桌面应用、可视化或画布控件，以及需要真实屏幕截图和像素点击的流程，使用 **Computer Use**（`agnes/computer-use`，Cua 驱动）。根据目标界面选择；Playwright MCP 仍是普通的实时 MCP 资源。
+
+在 **设置 → MCP → 添加预设** 中选择 **Playwright MCP**。AGH 在现有可编辑表单中预填 `npx --yes @playwright/mcp@0.0.83 --headless --isolated` 和 `network` 沙箱配置。包名、版本和参数已按 [npm 包](https://www.npmjs.com/package/@playwright/mcp/v/0.0.83) 与[上游文档](https://github.com/microsoft/playwright-mcp#configuration)核对。审核命令、工作区、沙箱和工具范围，再通过普通确认保存。资源仍为**未信任、禁用**。明确选择“启用”并确认，才会信任该修订并请求激活。选择或保存预设不会安装或启动任何程序。
+
+CLI 使用现有 `mcp` 命令形态，创建相同的受管定义：
+
+```sh
+node agnes.mjs mcp add --preset playwright
+# 可选：独立服务器 ID，以及 daemon 所在机器上的明确工作区：
+node agnes.mjs mcp add billing-browser --preset playwright --sandbox-workspace /workspace/billing
+node agnes.mjs mcp get playwright
+node agnes.mjs mcp trust playwright --expected-revision REVISION
+node agnes.mjs mcp get playwright
+node agnes.mjs mcp enable playwright --expected-revision REVISION
+```
+
+非交互调用必须为每次修改明确提供 `--yes`。CLI 创建预设不会授予信任或启用。修改已保存的定义仍使用提交完整定义的 `mcp update` 流程；修改后需要重新审核。
+
+`--isolated` 将每个浏览器连接的配置保存在内存中，不复用用户浏览器的登录状态，也不会在关闭浏览器后保留登录。自动输出使用可写工作区中的上游隐藏目录 `.playwright-mcp`。现有 `network` 沙箱使工作区只读，因此上游会回落到服务器私有 `TMPDIR`（`<profile-data>/mcp/<server-id>`）下的 `.playwright-mcp`。明确命名的文件仍按工作区解析，可能被沙箱拒绝。预设有意不设置 `--output-dir`，以保留可写回落路径，不扩大沙箱权限。
+
+AGH 不打包或安装浏览器。使用前，请按上游浏览器安装说明准备 daemon 执行环境可访问的兼容浏览器，并在信任前审核 `--browser` / `--executable-path` 等修改。明确启用（或确认连接测试）之后，npx 可能将固定版本的包下载到服务器环境。部署的可执行文件限制、网络权限和沙箱可用性仍然生效。查看 `mcp status playwright` 并验证真实浏览器工具调用；预设只是配置便利入口，不代表所有平台都已验证浏览器启动。
+
 ## 可直接复制的本地 stdio 示例
 
 在源码仓库构建 CLI 后执行。此例只需 Node，不依赖网络包或 API key；使用全新的 AGH_HOME 和 local-dev profile。完成信任与启用后 daemon 会启动服务，无需另开进程。

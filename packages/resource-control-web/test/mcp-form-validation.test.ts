@@ -1,3 +1,4 @@
+import { createMcpPreset } from '@agnes/resource-control-contracts/mcp-presets'
 import { describe, expect, it } from 'vitest'
 import { MCP_FORM_LIMITS, type McpFormFieldSnapshot, mcpFormIssues } from '../src/mcp-form-validation.js'
 
@@ -24,6 +25,19 @@ const messages = (snapshot: McpFormFieldSnapshot, mode = live): string[] =>
 
 describe('MCP form live validation mirrors the runtime schema', () => {
   it('passes the documented examples through every field', () => {
+    const preset = createMcpPreset('playwright')
+    if (preset.transport.kind !== 'stdio') throw new Error('expected stdio preset')
+    expect(
+      messages(
+        {
+          ...base,
+          serverId: preset.serverId,
+          executable: preset.transport.executable,
+          argsText: preset.transport.args.join('\n'),
+        },
+        submit,
+      ),
+    ).toEqual([])
     expect(
       messages({
         ...http('https://example.com/mcp'),

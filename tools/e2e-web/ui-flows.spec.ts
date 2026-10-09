@@ -1057,3 +1057,39 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   await expect(publishedFacts).toContainText('Human review recorded')
   await expect(publishedFacts).toContainText('Tests passed: 1')
 })
+
+for (const locale of ['en', 'zh-CN'] as const) {
+  test(`Playwright MCP preset prefill and cancelled confirmation (${locale})`, async ({ page, runtime }) => {
+    await preferences(page, locale)
+    await page.goto(runtime.url)
+    await chooseWorkspace(page, runtime, locale)
+    await fresh(page, locale)
+    await settings(page, locale)
+    await section(page, 'mcp')
+    await page.getByTestId('mcp-add-preset').click()
+    await expect(page.locator('#mcp-dialog')).toBeVisible()
+    await expect(page.locator('#mcp-id')).toHaveValue('playwright')
+    await expect(page.locator('#mcp-executable')).toHaveValue('npx')
+    await expect(page.locator('#mcp-args')).toHaveValue(
+      '--yes\n@playwright/mcp@0.0.83\n--headless\n--isolated',
+    )
+    await expect(page.locator('#mcp-preset-description')).toContainText(
+      locale === 'en' ? 'Headless' : '默认无头运行',
+    )
+    const client = await runtime.connect()
+    expect(
+      (await client.mcp.servers.list({ profile: 'local-dev' })).items.some(
+        (item) => item.serverId === 'playwright',
+      ),
+    ).toBe(false)
+    await page.locator('#mcp-form button[type=submit]').click()
+    await expect(page.locator('#admin-confirm')).toBeVisible()
+    await page.locator('#admin-confirm-cancel').click()
+    expect(
+      (await client.mcp.servers.list({ profile: 'local-dev' })).items.some(
+        (item) => item.serverId === 'playwright',
+      ),
+    ).toBe(false)
+    await page.locator('#mcp-cancel').click()
+  })
+}

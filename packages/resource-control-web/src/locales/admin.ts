@@ -6,6 +6,10 @@ export const RESOURCE_ADMIN_LOCALE_NAMESPACE = '@agnes/resource-control-web/admi
 
 export const resourceAdminLocaleCatalog: LocaleCatalog = {
   en: {
+    'preset.add': 'Add preset',
+    'preset.label': 'MCP preset',
+    'preset.output':
+      'Automatic output uses .playwright-mcp in a writable workspace, or the server’s private temporary directory in the network sandbox. Review and save, then explicitly enable.',
     ...resourceFailureCatalog.en,
     ...resourceAdminShellLocaleCatalog.en,
     'error.unavailable': 'The resource admin service is temporarily unavailable. Try again later.',
@@ -106,6 +110,10 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'tab.label': 'Resource type',
   },
   'zh-CN': {
+    'preset.add': '添加预设',
+    'preset.label': 'MCP 预设',
+    'preset.output':
+      '自动输出使用可写工作区中的 .playwright-mcp；联网沙箱下使用服务器私有临时目录。请审核并保存，再明确启用。',
     ...resourceFailureCatalog['zh-CN'],
     ...resourceAdminShellLocaleCatalog['zh-CN'],
     'error.unavailable': '资源管理后台暂时不可用，请稍后重试。',

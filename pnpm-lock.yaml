@@ -1141,6 +1141,9 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@agnes/resource-control-contracts':
+        specifier: workspace:*
+        version: link:../resource-control-contracts
       '@agnes/sdk':
         specifier: workspace:*
         version: link:../sdk
@@ -1195,6 +1198,9 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@agnes/resource-control-contracts':
+        specifier: workspace:*
+        version: link:../resource-control-contracts
       '@agnes/web-ui':
         specifier: workspace:*
         version: link:../web-ui

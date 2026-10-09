@@ -1,3 +1,4 @@
+import { createMcpPreset } from '@agnes/resource-control-contracts/mcp-presets'
 import { describe, expect, it } from 'vitest'
 import {
   ResourceOperationFailure,
@@ -425,4 +426,59 @@ it('lists skills and accepts --yes without prompting, while preserving revision 
     { path: '/project' },
     expect.objectContaining({ profile: 'local-dev', clientId: 'client', workspaceId: 'a'.repeat(64) }),
   ])
+})
+
+it('creates the same managed Playwright preset only after explicit confirmation', async () => {
+  const definitions: unknown[] = []
+  let output = ''
+  const client = {
+    clientId: async () => 'preset-client',
+    mcp: {
+      servers: {
+        create: async (params: { definition: unknown }) => {
+          definitions.push(params.definition)
+          return { operationId: 'preset-add', state: 'succeeded' }
+        },
+      },
+    },
+    resources: {
+      operation: {
+        get: async () => ({ operationId: 'preset-add', state: 'succeeded', revision: 'a'.repeat(64) }),
+      },
+    },
+  }
+  await expect(
+    runResourceCommand('mcp', ['add', '--preset', 'playwright'], client as never, { write: () => undefined }),
+  ).rejects.toThrow('operation cancelled')
+  expect(definitions).toEqual([])
+  await runResourceCommand('mcp', ['add', '--preset', 'playwright', '--yes'], client as never, {
+    write: (text) => {
+      output += text
+    },
+  })
+  expect(definitions).toEqual([createMcpPreset('playwright')])
+  expect(output).toContain('trust=untrusted, desired=disabled')
+  await runResourceCommand(
+    'mcp',
+    ['add', 'billing', '--preset', 'playwright', '--sandbox-workspace', '/workspace/billing', '--yes'],
+    client as never,
+    { write: () => undefined },
+  )
+  expect(definitions[1]).toEqual(
+    createMcpPreset('playwright', { serverId: 'billing', workspacePath: '/workspace/billing' }),
+  )
+  await expect(
+    runResourceCommand('mcp', ['add', '--preset', 'unknown', '--yes'], client as never, {
+      write: () => undefined,
+    }),
+  ).rejects.toThrow('Unknown MCP preset')
+  await expect(
+    runResourceCommand(
+      'mcp',
+      ['add', '--preset', 'playwright', '--stdio', 'node', '--yes'],
+      client as never,
+      { write: () => undefined },
+    ),
+  ).rejects.toThrow('--stdio does not apply')
+  expect(definitions).toHaveLength(2)
 })

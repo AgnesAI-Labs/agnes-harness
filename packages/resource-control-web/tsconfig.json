@@ -17,6 +17,9 @@
     },
     {
       "path": "../web-ui"
+    },
+    {
+      "path": "../resource-control-contracts"
     }
   ]
 }

@@ -35,6 +35,7 @@ import { $ } from './admin-dom.js'
 import { ResourceAdminApi, ResourceAdminApiError } from './api.js'
 import { RESOURCE_ADMIN_LOCALE_NAMESPACE, resourceAdminLocaleCatalog } from './locales/admin.js'
 import { createMcpForm, McpFormValidationError } from './mcp-form.js'
+import { mountMcpPresets } from './mcp-presets.js'
 import { watchMcpPanel } from './mcp-refresh.js'
 import { SKILL_LOCATION_HINTS } from './skill-copy.js'
 import type { ResourceAdminContext, ResourceAdminError } from './types.js'
@@ -48,6 +49,7 @@ let mcpTransport!: HTMLSelectElement
 let mcpSecretKind!: HTMLSelectElement
 let mcpForm!: ReturnType<typeof createMcpForm>
 let mcpPickers: SelectPicker[] = []
+let mcpPresets: ReturnType<typeof mountMcpPresets> | undefined
 let stopMcpRefresh: (() => void) | undefined
 const terminal = new Set<ResourceOperation['state']>(['succeeded', 'failed', 'cancelled'])
 
@@ -143,12 +145,17 @@ class ResourceAdminPage {
       activeResourceText = this.#t
       syncResourcePickers(this.#t)
       syncTransport(this.#t)
+      mcpPresets?.localize()
       if (dialog?.open)
         $('mcp-dialog-title', 'h2').textContent = editing
           ? this.#t('form.title.edit', { name: editing.displayName })
           : this.#t('form.title.create')
       this.render()
     })
+  }
+
+  locale(): 'en' | 'zh-CN' {
+    return this.#locale.getSnapshot()
   }
 
   confirm(summary: string): Promise<boolean> {
@@ -417,6 +424,10 @@ class ResourceAdminPage {
     $('skill-refresh', 'button').disabled = !this.writable() || busy
     $('mcp-create', 'button').hidden = true
     $('mcp-create', 'button').disabled = !this.writable() || busy
+    if (mcpPresets) {
+      mcpPresets.button.hidden = this.#tab !== 'mcp'
+      mcpPresets.button.disabled = !this.writable() || busy || this.#activeOperation !== undefined
+    }
     list.dataset.state = this.#loadState
     list.setAttribute('aria-busy', String(this.#loadState === 'loading'))
     renderRegion(
@@ -736,6 +747,8 @@ class ResourceAdminPage {
     stopMcpRefresh = undefined
     for (const picker of mcpPickers) picker.destroy()
     mcpPickers = []
+    mcpPresets?.dispose()
+    mcpPresets = undefined
     unmountRegion(list)
     unmountRegion(detail)
   }
@@ -779,6 +792,7 @@ function writeDefinition(definition: McpServerDefinitionInput): void {
 function openMcpDialog(server?: McpServerDescriptor, t: LocaleTranslator = activeResourceText): void {
   editing = server
   form.reset()
+  mcpPresets?.reset()
   if (server) writeDefinition(server.definition)
   syncTransport(t)
   $('mcp-dialog-title', 'h2').textContent = server
@@ -848,6 +862,19 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
   })
   const page = new ResourceAdminPage(options.workspaceId, options.tab, options.locale)
   syncResourcePickers(activeResourceText)
+  mcpPresets?.dispose()
+  mcpPresets = mountMcpPresets({
+    form,
+    toolbar: $('mcp-create', 'button').parentElement as HTMLElement,
+    open: () => openMcpDialog(),
+    fill: (definition) => {
+      writeDefinition(definition)
+      syncTransport()
+    },
+    locale: () => page.locale(),
+    text: () => activeResourceText,
+  })
+  mcpPresets.localize()
 
   // 详情是模态框：点遮罩、按 Escape、点「关闭详情」都要走同一条收尾路径（含焦点归还）。
   detail.addEventListener('cancel', (event) => {

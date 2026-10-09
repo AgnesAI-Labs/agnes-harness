@@ -24,6 +24,30 @@ The session helper currently supports credential-free stdio, HTTP, and SSE defin
 
 Confirmation for a local stdio service authorizes startup of that specific configuration. An explicit deployment allowlist remains binding; sessions cannot override administrator restrictions. Updating the definition or revoking trust invalidates the previous local startup approval and requires review again.
 
+## Browser automation: Playwright MCP or Computer Use?
+
+Use **Playwright MCP** for business websites with accessible page controls: navigating a CRM, filling forms, reading tables or checking a workflow. It uses the browser's accessibility tree and can run headless without occupying the desktop. Use **Computer Use** (`agnes/computer-use`, Cua driver) for native desktop applications, visual/canvas controls, or workflows that require screenshots and pixel clicks on the real screen. Choose according to the target interface; Playwright MCP remains an ordinary live MCP resource.
+
+In **Settings → MCP → Add preset**, select **Playwright MCP**. AGH prefills the existing editable form with `npx --yes @playwright/mcp@0.0.83 --headless --isolated` and the `network` sandbox profile. The package and flags were checked against the [npm package](https://www.npmjs.com/package/@playwright/mcp/v/0.0.83) and [upstream documentation](https://github.com/microsoft/playwright-mcp#configuration). Review the command, workspace, sandbox and tool scope, then save through the normal confirmation. The resource remains **untrusted and disabled**. Choose **Enable** and confirm to trust that revision and request activation. Selecting or saving a preset does not install or launch anything.
+
+The matching CLI command uses the existing `mcp` command shape:
+
+```sh
+node agnes.mjs mcp add --preset playwright
+# Optional independent server ID and explicit workspace on the daemon machine:
+node agnes.mjs mcp add billing-browser --preset playwright --sandbox-workspace /workspace/billing
+node agnes.mjs mcp get playwright
+node agnes.mjs mcp trust playwright --expected-revision REVISION
+node agnes.mjs mcp get playwright
+node agnes.mjs mcp enable playwright --expected-revision REVISION
+```
+
+Non-interactive callers must explicitly supply `--yes` to each mutation. CLI preset creation does not grant trust or enablement. Edit a saved definition through the normal complete-definition `mcp update` flow; changing it requires review again.
+
+`--isolated` keeps each browser connection's profile in memory; it does not reuse the user's browser login and does not preserve login state across browser closure. Automatic outputs use upstream's hidden `.playwright-mcp` directory in a writable workspace. The existing `network` sandbox makes the workspace read-only, so upstream falls back to `.playwright-mcp` under the server's private `TMPDIR` (`<profile-data>/mcp/<server-id>`). An explicitly named file resolves against the workspace instead and can be refused by the sandbox. The preset deliberately leaves `--output-dir` unset to retain this writable fallback; it does not widen sandbox permissions.
+
+AGH does not bundle or install browsers. Prepare a compatible browser in the daemon's execution environment before use; inspect upstream's browser setup instructions and any `--browser` / `--executable-path` edits before trusting the definition. After explicit enablement (or a confirmed connection test), npx may download the pinned package into the server environment. Deployment executable restrictions, network access and available sandbox enforcement still apply. Check `mcp status playwright` and verify an actual browser tool call; this preset is a configuration convenience, not a claim that browser launch works on every platform.
+
 ## Try a local stdio server
 
 From the source repository after building the CLI, this example needs only Node and no network dependency or API key. It uses a fresh AGH_HOME and the local-dev profile. The daemon launches the server after trust and enable; do not start it separately.

@@ -17,7 +17,8 @@
   "dependencies": {
     "@agnes/protocol": "workspace:*",
     "@agnes/web-ui": "workspace:*",
-    "react": "18.3.1"
+    "react": "18.3.1",
+    "@agnes/resource-control-contracts": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "18.3.12"

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { McpServerDefinitionInput, ResourceDescriptor, ResourceOperation } from '@agnes/protocol'
+import { createMcpPreset } from '@agnes/resource-control-contracts/mcp-presets'
 import type { NodeClient } from '@agnes/sdk'
 
 /** Resource parser failures remain typed without importing the outer CLI command layer. */
@@ -101,6 +102,7 @@ const VALUE_FLAGS = new Set([
   '--expected-revision',
   '--root-key',
   '--name',
+  '--preset',
   '--sandbox-profile',
   '--sandbox-workspace',
   '--stdio',
@@ -700,10 +702,12 @@ export async function runResourceCommand(
       return
     }
     case 'add': {
+      const preset = one(parsed, '--preset')
       onlyFlags(
         parsed,
         [
           '--profile',
+          '--preset',
           '--name',
           '--sandbox-profile',
           '--sandbox-workspace',
@@ -718,16 +722,34 @@ export async function runResourceCommand(
         ],
         'agh mcp add <serverId> ...',
       )
-      if (parsed.positional.length !== 1) throw new UsageError('usage: agh mcp add <serverId> ...')
+      if (parsed.positional.length > 1 || (!preset && parsed.positional.length !== 1))
+        throw new UsageError(
+          'usage: agh mcp add [<serverId>] --preset playwright, or agh mcp add <serverId> ...',
+        )
       const id = valid(
         need(
-          serverId,
+          serverId ?? preset,
           'agh mcp add <serverId> --name <name> (--stdio <executable> | --http <url> | --sse <url>)',
         ),
         SERVER,
         'server id',
       )
-      const definition = buildDefinition(parsed, id)
+      let definition: McpServerDefinitionInput
+      if (preset) {
+        onlyFlags(
+          parsed,
+          ['--profile', '--preset', '--sandbox-workspace'],
+          'agh mcp add [<serverId>] --preset playwright [--sandbox-workspace <path>]',
+        )
+        try {
+          definition = createMcpPreset(preset, {
+            serverId: id,
+            workspacePath: one(parsed, '--sandbox-workspace'),
+          })
+        } catch (error) {
+          throw new UsageError(error instanceof Error ? error.message : 'Invalid MCP preset')
+        }
+      } else definition = buildDefinition(parsed, id)
       await confirm(
         io,
         `add MCP ${id} (${definition.transport.kind}) with trust=untrusted${'sandboxProfile' in definition ? ` sandbox=${definition.sandboxProfile}` : ''}${'workspacePath' in definition ? ` workspace=${definition.workspacePath}` : ''}`,

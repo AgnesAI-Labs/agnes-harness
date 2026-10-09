@@ -21,7 +21,7 @@ export function commandHelp(command?: Command): string {
     case 'start':
       return 'Usage: agh serve [--profile <name>] [--home <path>] [--cwd <path>] [--port <port>]\nStart the local Web listener. --help only prints this message.'
     case 'mcp':
-      return `Usage: agh mcp <action> [--profile <name>]\nActions: list, get, status, tools, add, update, trust, enable, disable, test, reconnect, remove\nAdd: agh mcp add <id> --name <name> (--stdio <executable> [--arg <value>] | --http <url> | --sse <url>) [--yes]\nTrust/enable/test: agh mcp <action> <id> --expected-revision <revision> [--yes]\n${common}`
+      return `Usage: agh mcp <action> [--profile <name>]\nActions: list, get, status, tools, add, update, trust, enable, disable, test, reconnect, remove\nAdd: agh mcp add <id> --name <name> (--stdio <executable> [--arg <value>] | --http <url> | --sse <url>) [--yes]\nPreset: agh mcp add [<id>] --preset playwright [--sandbox-workspace <absolute-path>] [--yes]\nTrust/enable/test: agh mcp <action> <id> --expected-revision <revision> [--yes]\n${common}`
     case 'skills':
       return `Usage: agh skills list|refresh|trust [--profile <name>]\nList: agh skills list [--workspace-id <id>] [--cursor <cursor>]\nRefresh: agh skills refresh [--workspace-id <id>] [--root-key <key>] [--yes]\nThe current directory is registered automatically; its workspaceId is printed.\nTrust: agh skills trust <resourceId> <revision> [trusted|rejected] [--yes]\n${common}`
     case 'resources':
