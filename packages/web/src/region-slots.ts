@@ -1410,6 +1410,7 @@ export function mountSidebarRegion(
   options: { state?: SidebarState; actions?: Partial<SidebarActions> } = {},
   locale: LocaleService,
 ): SidebarRegionMount {
+  let state = options.state ?? EMPTY_SIDEBAR_STATE
   // Render-time lookup: navigation copy resolves on each rebuild against the current locale.
   const sidebarDependencies: SidebarDependencies = {
     ...SIDEBAR_DEPENDENCIES_BASE,
@@ -1430,29 +1431,35 @@ export function mountSidebarRegion(
     () =>
       SidebarDshFrame({
         handle,
-        state: options.state ?? EMPTY_SIDEBAR_STATE,
+        state,
         ...(options.actions === undefined ? {} : { actions: options.actions }),
         dependencies: sidebarDependencies,
       }),
   )
   const removeBuiltin = registry.register(
     { name: SIDEBAR_SLOT as string, id: 'builtin-sidebar', owner: '@agnes/web-sidebar', priority: 0 },
-    () => createElement(SlotsProvider, { registry }, createElement(SlotOutlet, { name: 'sidebar' as never })),
+    () =>
+      createElement(
+        SlotsProvider,
+        { registry, locale },
+        createElement(SlotOutlet, { name: 'sidebar' as never }),
+      ),
   )
   const root = createAntdRoot(container)
   flushSync(() => {
     root.render(
       createElement(
         SlotsProvider,
-        { registry: rootStableRegistry(registry) },
+        { registry: rootStableRegistry(registry), locale },
         createElement(SlotOutlet, { name: SIDEBAR_SLOT }),
       ),
     )
   })
   let disposed = false
   return {
-    update(state) {
-      flushSync(() => handle.current?.update(state))
+    update(next) {
+      state = next
+      flushSync(() => handle.current?.update(next))
     },
     close() {
       handle.current?.close()

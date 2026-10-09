@@ -27,6 +27,7 @@
   --agnes-color-neutral-475: #909aa4;
   --agnes-color-neutral-500: #8d98b3;
   --agnes-color-neutral-550: #6b7280;
+  --agnes-color-neutral-560: #626978;
   --agnes-color-neutral-575: #676d83;
   --agnes-color-neutral-600: #667188;
   --agnes-color-neutral-625: #4e586a;
@@ -108,7 +109,8 @@
   /* Text */
   --agnes-text-primary: var(--agnes-color-neutral-900);
   --agnes-text-secondary: var(--agnes-color-neutral-725);
-  --agnes-text-tertiary: var(--agnes-color-neutral-550);
+  /* Keep tertiary copy readable on both hover surfaces and soft selected backgrounds. */
+  --agnes-text-tertiary: var(--agnes-color-neutral-560);
   --agnes-text-disabled: var(--agnes-color-neutral-350);
   --agnes-text-inverse: var(--agnes-color-white);
   /* 强调文字：桌面端 token 集无此角色，本次补齐（设计 §5.4） */

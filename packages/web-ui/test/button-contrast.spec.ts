@@ -39,7 +39,14 @@ test.beforeAll(async () => {
           ...['', 'primary-button', 'secondary-button'].map(className =>
             createElement('button', { key: className, className }, 'Native ' + className)),
           createElement('div', { className: 'workbench-panel-tabs', role: 'tablist' },
-            createElement(Button, { type: 'text', role: 'tab', 'aria-selected': true }, 'Selected panel'))))
+            createElement(Button, { type: 'text', role: 'tab', 'aria-selected': true }, 'Selected panel')),
+          createElement('fieldset', { className: 'appearance-options' },
+            createElement('legend', null, 'Palette'),
+            ...[true, false].map((checked, key) => createElement('label', { className: 'appearance-option', key },
+              createElement('input', { type: 'radio', name: 'palette', defaultChecked: checked }),
+              createElement('span', { className: 'appearance-option-copy' },
+                createElement('span', { className: 'appearance-option-name' }, checked ? 'Selected' : 'Unselected'),
+                createElement('span', { className: 'appearance-option-hint', id: 'appearance-hint-' + key }, 'Readable hint')))))))
       `,
     },
     bundle: true,
@@ -56,13 +63,20 @@ async function readable(page: Page, state: string) {
   const scan = await new AxeBuilder({ page }).withRules(['color-contrast']).analyze()
   expect([...scan.violations, ...scan.incomplete], state).toEqual([])
   expect(
+    scan.passes
+      .find(({ id }) => id === 'color-contrast')
+      ?.nodes.filter(({ target }) => target.some((selector) => String(selector).includes('appearance-hint-')))
+      .length,
+    state,
+  ).toBe(2)
+  expect(
     scan.passes.find(({ id }) => id === 'color-contrast')?.nodes.length ?? 0,
     state,
   ).toBeGreaterThanOrEqual(32)
 }
 
 for (const theme of ['light', 'dark'])
-  test(`keeps every button variant readable in forced states: ${theme}`, async ({ page }) => {
+  test(`keeps buttons and appearance choices readable in forced states: ${theme}`, async ({ page }) => {
     await page.setContent(`<html class="${theme === 'dark' ? 'dark' : ''}" lang="zh-CN"><head>
       <style>${css}
         body { display: block }
@@ -77,9 +91,9 @@ for (const theme of ['light', 'dark'])
     const { root: documentNode } = await cdp.send('DOM.getDocument')
     const { nodeIds } = await cdp.send('DOM.querySelectorAll', {
       nodeId: documentNode.nodeId,
-      selector: 'button',
+      selector: 'button, .appearance-option',
     })
-    expect(nodeIds).toHaveLength(33)
+    expect(nodeIds).toHaveLength(35)
     for (const state of [[], ['hover'], ['hover', 'active'], ['focus', 'focus-visible']]) {
       for (const nodeId of nodeIds)
         await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: state })

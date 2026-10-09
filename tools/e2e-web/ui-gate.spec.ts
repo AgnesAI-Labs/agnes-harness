@@ -213,3 +213,28 @@ for (const locale of ['en', 'zh-CN'])
       await quality('tool-row', true)
     })
   }
+
+test('live language switching updates sidebar and cached skin options without reloading', async ({
+  page,
+  runtime,
+}) => {
+  await preferences(page, 'en', 'light')
+  await page.goto(runtime.url)
+  await chooseWorkspace(page, runtime)
+  await settings(page)
+  await section(page, 'general')
+  for (const locale of ['zh-CN', 'en', 'zh-CN']) {
+    const en = locale === 'en'
+    await page.locator(`input[name="agnes-locale"][value="${locale}"]`).check()
+    await expect(page.locator('html')).toHaveAttribute('lang', locale)
+    await expect(page.locator('#settings')).toHaveText(en ? 'Settings' : '设置')
+    await expect(page.locator('#new')).toHaveText(en ? 'New session' : '新会话')
+    await expect(page.locator('#skin-option-items')).toContainText(
+      en ? 'Follow the theme (default)' : '跟随主题（默认）',
+    )
+    await expect(page.locator('input[name="agnes-skin"][value=""]')).toBeChecked()
+    await closeSettings(page, locale)
+    await settings(page, locale)
+    await section(page, 'general')
+  }
+})

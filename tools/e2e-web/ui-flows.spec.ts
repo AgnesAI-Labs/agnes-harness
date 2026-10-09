@@ -70,6 +70,7 @@ test('UI first run, Agent selection, demo read/cancel, account save and restart 
   const provider = await startProviderFixture('UI_CREDENTIAL_PERSISTED', undefined, model)
   try {
     await settings(page)
+    await expect(page.locator('#config-accounts')).toHaveAttribute('data-state', 'empty')
     await page.getByRole('button', { name: 'Add account', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'Add account', exact: true })
     await dialog.getByRole('textbox', { name: 'Account name', exact: true }).fill('Offline UI account')
@@ -87,6 +88,7 @@ test('UI first run, Agent selection, demo read/cancel, account save and restart 
     await expect(dialog.getByRole('button', { name: 'Save account', exact: true })).toBeEnabled()
     await dialog.getByRole('button', { name: 'Save account', exact: true }).click()
     await expect(dialog).toBeHidden()
+    await expect(page.locator('#config-accounts')).toHaveAttribute('data-state', 'ready')
     const saved = await client.config.get()
     expect(saved.accounts).toEqual(
       expect.arrayContaining([

@@ -85,7 +85,9 @@ async function setup(accounts: ConfigAccount[] = [account('work'), account('pers
     })),
     test: vi.fn(async () => ({ verified: true, models: account('work').models })),
     save: vi.fn(async () => snapshot),
-    account: vi.fn(async () => ({ ...snapshot, revision: 5, defaultAccountId: 'personal' })),
+    account: vi.fn(
+      async (): Promise<ConfigSnapshot> => ({ ...snapshot, revision: 5, defaultAccountId: 'personal' }),
+    ),
   }
   const onSaved = vi.fn(async () => undefined)
   const controller = createSettingsController({
@@ -256,4 +258,28 @@ it('requires an explicit second confirmation before removing an account', async 
     action: 'remove',
     expectedRevision: 4,
   })
+})
+
+it('updates the empty state after saving the first account and removing the last one', async () => {
+  const h = await setup([])
+  expect(h.doc.getElementById('config-accounts')?.getAttribute('data-state')).toBe('empty')
+  h.config.save.mockResolvedValue({ ...(await h.config.get()), revision: 5, accounts: [account('work')] })
+  h.click('#config-add-account')
+  h.input('config-account-name').value = 'work'
+  h.input('config-api-key').value = 'synthetic-key'
+  h.click('#config-test')
+  await vi.waitFor(() => expect(h.input('config-save').disabled).toBe(false))
+  h.click('#config-save')
+  await vi.waitFor(() => expect(h.doc.querySelectorAll('.config-account')).toHaveLength(1))
+  expect(h.doc.getElementById('config-accounts')?.getAttribute('data-state')).toBe('ready')
+  h.config.account.mockResolvedValue({
+    ...(await h.config.get()),
+    revision: 6,
+    accounts: [],
+    defaultAccountId: null,
+  })
+  h.click('button[aria-label="删除 work"]')
+  h.click('button[aria-label="确认删除 work"]')
+  await vi.waitFor(() => expect(h.doc.querySelectorAll('.config-account')).toHaveLength(0))
+  expect(h.doc.getElementById('config-accounts')?.getAttribute('data-state')).toBe('empty')
 })

@@ -138,10 +138,29 @@ describe('migrated sidebar region', () => {
     sidebar.innerHTML =
       '<button id="new">新会话</button><nav id="sessions"></nav><button id="settings">设置</button>'
     document.body.append(sidebar)
-    mounts.push(mountSidebarRegion(slots, sidebar, {}, zhLocaleService()))
+    const locale = zhLocaleService()
+    const mount = mountSidebarRegion(slots, sidebar, {}, locale)
+    mounts.push(mount)
+    mount.update({
+      sessions: [],
+      workspaces: [],
+      labels: new Map(),
+      locale: 'zh-CN',
+      sessionPending: false,
+      newDisabled: false,
+    })
 
     expect(sidebar.querySelector('[data-slot="ui:sidebar"]')).toBeTruthy()
     expect(sidebar.querySelector('#new')?.textContent).toBe('新会话')
+    locale.setLocale('en')
+    await vi.waitFor(
+      () => expect(sidebar.querySelector('#settings')?.textContent).toBe('Settings'),
+      committed,
+    )
+    expect(sidebar.querySelector('#new')?.textContent).toBe('New session')
+    expect(sidebar.querySelector<HTMLButtonElement>('#new')?.disabled).toBe(false)
+    locale.setLocale('zh-CN')
+    await vi.waitFor(() => expect(sidebar.querySelector('#new')?.textContent).toBe('新会话'), committed)
     const remove = slots.register(
       { name: SIDEBAR_SLOT as string, id: 'plugin-sidebar', owner: 'fixture', priority: -1 },
       () => createElement('div', { id: 'replacement-sidebar' }, '替换侧栏'),

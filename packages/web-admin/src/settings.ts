@@ -825,6 +825,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     }
     if (!currentAccountList) return
     renderedAccountList = currentAccountList
+    if (loadPhase === 'ready' || loadPhase === 'empty')
+      loadPhase = configuration?.accounts?.length ? 'ready' : 'empty'
+    currentAccountList.dataset.state = loadPhase
     renderRegion(
       currentAccountList,
       createElement(SettingsAccounts, {
