@@ -136,3 +136,5 @@ is documented in [the seam reference](seams.md).
 ## 1.0.0
 
 Initial contract under implementation: six controlled register methods, events and ctx, plus the existing optional latestExtEvent reader. It includes tool metadata and context, seventeen hook contracts, four UI slots, resource and manifest types, error codes, stable API range checks and the optional fixture authoring entry. S2/P3 add Service and Projection types, Service metadata validation, lease scopes and testkit samples. Generated references describe wire schemas; Host dispatch and invocation readers are accepted separately. This private workspace change is not an API release.
+
+- Intelligent UI adds `IntelligentUiPorts.invocationId(toolUseId)` and `IntelligentUiService.submittedInput` for authenticating the existing deferred form collector. They confer no execution or approval authority.

@@ -1,3 +1,4 @@
+import { renderInteractionSurface, tableSurface } from '../../../src/interaction-surfaces.js'
 import { randomUUID } from 'node:crypto'
 import { defineExtension, defineTool, type ToolContext } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
@@ -54,6 +55,32 @@ const result = (run: Run) => ({
   structured: { ...run, runId: run.id },
   isError: run.status !== 'completed',
 })
+
+async function renderRun(ctx: ToolContext, run: Run) {
+  await renderInteractionSurface(
+    ctx,
+    tableSurface(
+      ctx.session.toolUseId,
+      run.name,
+      ['Stage', 'Member', 'Status', 'Child session', 'Run status', 'Run id', 'Integration'],
+      run.stages.flatMap((s) =>
+        s.members.map((m) => [
+          s.name,
+          m.name,
+          m.status,
+          m.childKey,
+          run.status,
+          run.id,
+          (m.receipt?.workspace.isolation ?? m.isolation) === 'worktree'
+            ? 'not-merged-by-workflow'
+            : (m.receipt?.workspace.isolation ?? m.isolation) === 'shared'
+              ? 'shared-workspace'
+              : 'unverified',
+        ]),
+      ),
+    ),
+  )
+}
 
 export default defineExtension((agnes) => {
   const disposers = [agnes.registerProjection(workflowProjection)]
@@ -125,8 +152,10 @@ export default defineExtension((agnes) => {
               })),
             }
           } else run = structuredClone(run)
-          if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled')
+          if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') {
+            await renderRun(ctx, run)
             return result(run)
+          }
           const current = run
           // Serialize immutable snapshots so parallel completions cannot reorder persisted state.
           let persistenceFailed = false
@@ -230,6 +259,7 @@ export default defineExtension((agnes) => {
             } else current.status = 'interrupted'
           }
           await save()
+          await renderRun(ctx, current)
           return result(current)
         },
       }),
@@ -249,46 +279,11 @@ export default defineExtension((agnes) => {
           const run = (await state(ctx)).runs[args.runId]
           if (!run) throw new Error('Unknown workflow run')
           await agnes.events.append('view', { runId: run.id, toolUseId: ctx.session.toolUseId })
+          await renderRun(ctx, run)
           return { ...result(run), isError: false }
         },
       }),
     ),
-  )
-  disposers.push(
-    agnes.registerSlot('tool.card.inline', async (ctx) => {
-      if (ctx.trigger.kind !== 'tool_result') return null
-      const toolUseId = ctx.trigger.toolUseId
-      const read = await ctx.projections.readOwn<State>('runs')
-      const run =
-        read.status === 'available'
-          ? Object.values(read.value.runs).find(
-              (r) => r.toolUseId === toolUseId || r.id === read.value.views[toolUseId],
-            )
-          : undefined
-      return run
-        ? {
-            title: run.name,
-            table: {
-              columns: ['Stage', 'Member', 'Status', 'Child session', 'Run status', 'Run id', 'Integration'],
-              rows: run.stages.flatMap((s) =>
-                s.members.map((m) => [
-                  s.name,
-                  m.name,
-                  m.status,
-                  m.childKey,
-                  run.status,
-                  run.id,
-                  (m.receipt?.workspace.isolation ?? m.isolation) === 'worktree'
-                    ? 'not-merged-by-workflow'
-                    : (m.receipt?.workspace.isolation ?? m.isolation) === 'shared'
-                      ? 'shared-workspace'
-                      : 'unverified',
-                ]),
-              ),
-            },
-          }
-        : null
-    }),
   )
   return () => {
     for (const dispose of disposers.reverse()) dispose()

@@ -6,7 +6,12 @@
   "capabilities": {
     "tools": {
       "prefix": "ui_",
-      "names": ["ui_render", "ui_update", "ui_close"]
+      "names": [
+        "ui_render",
+        "ui_update",
+        "ui_close",
+        "ui_submit"
+      ]
     },
     "events": true,
     "projections": [

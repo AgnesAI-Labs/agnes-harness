@@ -1,5 +1,6 @@
 import { defineExtension, defineTool } from '@agnes/extension-api'
 import { UiCloseParams, UiRenderParams, UiUpdateParams } from '@agnes/protocol/gen/intelligent-ui'
+import { Type } from '@sinclair/typebox'
 import { createIntelligentUiService } from './service.js'
 import { uiProjection } from './state.js'
 
@@ -79,6 +80,39 @@ export default defineExtension((agnes) => {
             content: [{ type: 'text', text: `Closed ${record.surface.title}.` }],
             details: { surfaceId: record.surface.id, status: 'closed' },
           }
+        },
+      }),
+    ),
+  )
+  off.push(
+    agnes.registerTool(
+      defineTool({
+        name: 'ui_submit',
+        description:
+          'Collect an authenticated surface form submission. Only the deferred surface action can call this tool; answering never grants permission.',
+        parameters: Type.Object(
+          {
+            surfaceId: Type.String({ maxLength: 64 }),
+            answers: Type.Record(
+              Type.String(),
+              Type.Union([
+                Type.String({ minLength: 1, maxLength: 8192 }),
+                Type.Array(Type.String({ minLength: 1, maxLength: 8192 }), {
+                  minItems: 1,
+                  maxItems: 12,
+                  uniqueItems: true,
+                }),
+              ]),
+            ),
+          },
+          { additionalProperties: false },
+        ),
+        meta: { ...meta, isReadOnly: true },
+        async execute(args, ctx) {
+          const accepted = await runtime
+            .session(ctx.session)
+            .submittedInput(ctx.session.toolUseId, args, ctx.signal)
+          return { content: [{ type: 'text', text: JSON.stringify(accepted) }] }
         },
       }),
     ),

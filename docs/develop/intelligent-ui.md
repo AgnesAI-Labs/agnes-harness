@@ -182,3 +182,7 @@ The backend and renderer share `@agnes/protocol/intelligent-ui` surface validati
 Read cursors are authenticated, expire after 60 seconds and bind the watermark, filters and page size. Later pages replay that watermark and omit the first page’s bounded receipts. Backend result follow-ups survive cancel as next-turn inputs; delivery acknowledges durable enqueue, while queue claim consumes the input.
 
 Backend result inbox items carry `origin: system` and `trust: untrusted`, independently of the human actor that submitted an action.
+
+## Question, table and deliverable surfaces
+
+`ask_user_question` keeps its model-facing parameters. Official interaction producers invoke `ui_render` through ordinary tools. Questions use a preset form and the declared `ui_submit` collector; tables use the table preset; deliverables use plain text plus existing artifact references. The collector verifies the Host-recorded deferred invocation against the immutable authenticated action. Direct model calls are refused. Successful collection closes the surface and delivers the full accepted answers through SC1, preserving the authenticated actor and untrusted content. Answering confers no tool permission. The durable timeout controls only the optional wait; it does not close the form or expire late answers. Deferred execution proceeds at the next safe Loop boundary.

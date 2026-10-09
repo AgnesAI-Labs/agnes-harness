@@ -31,9 +31,12 @@ export interface IntelligentUiPorts {
   append(name: string, data: JsonValue, sourceSeq?: number): Promise<number>
   tools(): readonly Pick<ToolDef, 'name' | 'parameters'>[]
   deliver(key: string, text: string, actor: Actor, signal: AbortSignal): Promise<number>
+  /** Resolve an ordinary tool call to its durable deferred invocation; no caller attestation. */
+  invocationId(toolUseId: string): Promise<string | undefined>
   now(): number
 }
 export interface IntelligentUiService {
+  submittedInput(toolUseId: string, args: JsonValue, signal: AbortSignal): Promise<JsonValue>
   render(input: UiRenderParams, signal: AbortSignal): Promise<UiSurfaceRecord>
   update(input: UiUpdateParams, signal: AbortSignal): Promise<UiSurfaceRecord>
   close(input: UiCloseParams, signal: AbortSignal): Promise<UiSurfaceRecord>

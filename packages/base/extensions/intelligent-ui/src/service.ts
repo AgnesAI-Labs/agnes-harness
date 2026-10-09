@@ -67,9 +67,21 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
   const delivery = async (record: ActionRecord, signal: AbortSignal) => {
     if (!terminal(record) || record.deliveredSeq) return
     const receipt = record.receipt
+    if (record.invocation?.tool === 'ui_submit' && receipt.status === 'succeeded') {
+      const latest = await state(),
+        surface = latest.surfaces[record.request.surfaceId]
+      if (surface?.status === 'open')
+        await storeSurface('surface.closed', { ...surface, status: 'closed' }, latest, 'submitted')
+    }
     const inboxSeq = await ports.deliver(
       `ui-result:${receipt.commandId}`,
-      'Intelligent UI action result: ' + JSON.stringify(receipt),
+      'Intelligent UI action result: ' +
+        JSON.stringify({
+          ...receipt,
+          ...(record.invocation?.tool === 'ui_submit' && receipt.status === 'succeeded'
+            ? { submitted: record.invocation.args }
+            : {}),
+        }),
       record.actor,
       signal,
     )
@@ -206,6 +218,21 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
       await delivery((await state()).actions[record.request.commandId]!, signal)
     })
   return {
+    submittedInput: (toolUseId, args, signal) =>
+      serial(async () => {
+        signal.throwIfAborted()
+        const id = await ports.invocationId(toolUseId)
+        const record = Object.values((await state()).actions).find((item) => item.invocation?.id === id)
+        if (
+          !record?.invocation ||
+          record.invocation.tool !== 'ui_submit' ||
+          record.receipt.status !== 'executing' ||
+          jcs(record.invocation.args) !== jcs(args)
+        )
+          throw rpcError('CAPABILITY_DENIED', { reason: 'An authenticated surface submission is required' })
+        // Return only the originally admitted data. Model-origin calls cannot mint human replies.
+        return structuredClone(record.invocation.args)
+      }),
     render: (input, signal) =>
       serial(async () => {
         signal.throwIfAborted()

@@ -10,11 +10,14 @@
     },
     "hooks": [],
     "events": true,
-    "slots": ["tool.card.inline"],
     "projections": [
       {
         "name": "questions",
-        "inputEventTypes": ["x/agnes/interaction/requested", "user/message", "inbox"],
+        "inputEventTypes": [
+          "x/agnes/interaction/requested",
+          "x/agnes/intelligent-ui/action.received",
+          "x/agnes/intelligent-ui/action.succeeded"
+        ],
         "maxStateBytes": 262144
       }
     ]

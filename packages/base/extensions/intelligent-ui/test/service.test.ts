@@ -173,6 +173,7 @@ function fixture() {
       scan: async () => rows,
       append: async (name, data) => row(name, data),
       tools: () => (available ? [{ name: 'adjust', parameters }] : []),
+      invocationId: async () => undefined,
       now: () => now,
       async deliver(key, _text, _actor, signal) {
         signal.throwIfAborted()

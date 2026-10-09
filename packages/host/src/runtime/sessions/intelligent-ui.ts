@@ -86,6 +86,20 @@ export function createIntelligentUiAdapter(
           signal,
           session.op() && session.d.loopFactory.controls?.steer ? 'next-step' : 'next-turn',
         ),
+      async invocationId(toolUseId) {
+        const rows = await scanAll((q) => session.scan(q), {
+          type: 'x/core/loop-effect',
+          lane: session.lane,
+          toSeq: session.lastSeq,
+        })
+        const row = rows.find(
+          (row) =>
+            row.origin === 'system' &&
+            row.trust === 'trusted' &&
+            (row.data as { toolUseId?: string }).toolUseId === toolUseId,
+        )
+        return (row?.data as { invocationId?: string } | undefined)?.invocationId
+      },
       now: () => Date.now(),
     })
     registration.instances.set(session, service)

@@ -1,5 +1,6 @@
 import { basename, extname } from 'node:path'
 import { type ArtifactRef, defineExtension, defineTool, type ProjectionDef } from '@agnes/extension-api'
+import { interactionSurfaceId, renderInteractionSurface } from '../../../src/interaction-surfaces.js'
 import { Type } from '@sinclair/typebox'
 
 type Deliverable = { name: string; description: string; ref: ArtifactRef }
@@ -118,6 +119,20 @@ export default defineExtension((agnes) => {
               }
               await agnes.events.append('presented', { toolUseId: ctx.session.toolUseId, files })
             }
+            await renderInteractionSurface(ctx, {
+              id: interactionSurfaceId(ctx.session.toolUseId),
+              revision: 1,
+              title: 'Deliverables / 交付物',
+              placement: { inline: true, workbench: true, preferred: 'inline' },
+              components: files.map((_, i) => ({ id: 'file-' + i, kind: 'text', dataKey: 'file-' + i })),
+              data: Object.fromEntries(
+                files.map((file, i) => [
+                  'file-' + i,
+                  `${file.name} — ${file.description} (${file.ref.size} bytes; artifact ${file.ref.sha256})`,
+                ]),
+              ),
+              actions: [],
+            })
             return {
               content: [
                 { type: 'text', text: `Presented ${files.map((f) => f.name).join(', ')}` },
@@ -131,24 +146,6 @@ export default defineExtension((agnes) => {
         },
       }),
     ),
-  )
-  disposers.push(
-    agnes.registerSlot('tool.card.inline', async (ctx) => {
-      if (ctx.trigger.kind !== 'tool_result') return null
-      const state = await ctx.projections.readOwn<State>('presented')
-      const files = state.status === 'available' ? state.value.presented[ctx.trigger.toolUseId] : undefined
-      return files
-        ? {
-            title: 'Deliverables',
-            deliverables: files.map((f) => ({
-              name: f.name,
-              description: f.description,
-              ref: f.ref,
-              lane: ctx.session.lane,
-            })),
-          }
-        : null
-    }),
   )
   return () => {
     for (const dispose of disposers) dispose()

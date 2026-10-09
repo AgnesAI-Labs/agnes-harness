@@ -6,14 +6,22 @@
   "capabilities": {
     "tools": {
       "prefix": "",
-      "names": ["workflow", "workflow_status"]
+      "names": [
+        "workflow",
+        "workflow_status"
+      ]
     },
-    "hooks": ["context"],
-    "slots": ["tool.card.inline"],
+    "hooks": [
+      "context"
+    ],
+    "slots": [],
     "projections": [
       {
         "name": "runs",
-        "inputEventTypes": ["x/agnes/workflow/run", "x/agnes/workflow/view"],
+        "inputEventTypes": [
+          "x/agnes/workflow/run",
+          "x/agnes/workflow/view"
+        ],
         "maxStateBytes": 262144
       }
     ],

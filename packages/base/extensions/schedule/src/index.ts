@@ -1,3 +1,4 @@
+import { renderInteractionSurface, tableSurface } from '../../../src/interaction-surfaces.js'
 import { defineExtension } from '@agnes/extension-api'
 import { openScheduleCatalog, openSeamScheduleDb, type ScheduleCatalog } from './catalog.js'
 import { createScheduleTools } from './tools.js'
@@ -24,28 +25,34 @@ export function createScheduleExtension(tables?: ScheduleTableStore) {
     ? openScheduleCatalog(openSeamScheduleDb(tables.table('schedules')))
     : undefined
   return defineExtension((agnes) => {
-    const disposers = createScheduleTools(catalog, bind).map((tool) => agnes.registerTool(tool))
-    disposers.push(
-      agnes.registerSlot('tool.card.inline', async (ctx) => {
-        if (ctx.trigger.kind !== 'tool_result' || !catalog) return null
-        const bound = cards.get(ctx.trigger.toolUseId)
-        if (!bound || bound.sessionKey !== ctx.session.key) return null
-        const rows =
-          bound.target === '*'
-            ? catalog.list({ sessionKey: ctx.session.key }).filter((row) => row.status === 'active')
-            : [catalog.read(bound.target)].filter((row) => row !== undefined)
-        if (rows.length === 0) return null
-        return {
-          title: 'Reminder',
-          table: {
-            columns: ['Title', 'Next', 'Status'],
-            rows: rows.map((row) => [
-              clip(row.title, 1024),
-              row.nextRunAt === null ? '' : new Date(row.nextRunAt).toISOString(),
-              row.status,
-            ]),
-          },
-        }
+    const disposers = createScheduleTools(catalog, bind).map((tool) =>
+      agnes.registerTool({
+        ...tool,
+        async execute(args, ctx) {
+          const result = await tool.execute(args, ctx)
+          const bound = cards.get(ctx.session.toolUseId)
+          if (!result.isError && catalog && bound?.sessionKey === ctx.session.key) {
+            const rows =
+              bound.target === '*'
+                ? catalog.list({ sessionKey: ctx.session.key }).filter((row) => row.status === 'active')
+                : [catalog.read(bound.target)].filter((row) => row !== undefined)
+            if (rows.length)
+              await renderInteractionSurface(
+                ctx,
+                tableSurface(
+                  ctx.session.toolUseId,
+                  'Reminder / 提醒',
+                  ['Title', 'Next', 'Status'],
+                  rows.map((row) => [
+                    clip(row.title, 1024),
+                    row.nextRunAt === null ? '' : new Date(row.nextRunAt).toISOString(),
+                    row.status,
+                  ]),
+                ),
+              )
+          }
+          return result
+        },
       }),
     )
     disposers.push(

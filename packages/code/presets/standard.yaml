@@ -17,7 +17,7 @@ model:
     verifier: { route: default, model: default }
   prompt_sections: [persona, environment, coding-doctrine]
 disclosure: standard
-tools: { core: [read, write, edit, shell, grep, find, ls, todo, web_fetch, web_search, ask_user_question, present, job_output, job_list, job_kill, schedule_create, schedule_list, schedule_update, schedule_delete] }
+tools: { core: [read, write, edit, shell, grep, find, ls, todo, web_fetch, web_search, ask_user_question, ui_render, ui_update, ui_close, ui_submit, present, job_output, job_list, job_kill, schedule_create, schedule_list, schedule_update, schedule_delete] }
 # OS confinement must pass a real workspace probe before a session can execute.
 sandbox: { level: L1, required: true, on_unavailable: deny }
 mcp: { defer: true }

@@ -182,3 +182,7 @@ Fact-chain 与 trace 展示 surface id/revision 和归属、received 命令/acto
 读取 cursor 经过签名，60 秒过期，并绑定水位、筛选与页大小。后续页按该水位重放，不重复首页面的有界回执。后台结果 follow-up 在 cancel 后保留为 next-turn 输入；delivery 确认持久入队，队列 claim 才消费输入。
 
 后台结果的 inbox 项使用 `origin: system` 与 `trust: untrusted`，与提交动作的人类 actor 分开记录。
+
+## 问答、表格与交付物 surface
+
+`ask_user_question` 保持模型侧参数。官方交互生产方通过普通工具调用 `ui_render`：问答使用预设 form 和声明的 `ui_submit` 收集工具，表格使用 table，交付物使用纯文本及既有 artifact 引用。收集工具核对 Host 记录的 deferred invocation 和不可变的认证 action，拒绝模型直接调用。成功收集关闭 surface，经 SC1 投递完整答案，保留认证 actor 与 untrusted 内容。回答不授予工具权限。持久化超时只限制可选等待，不关闭表单或使晚答失效；deferred 执行在下一个安全 Loop 边界进行。

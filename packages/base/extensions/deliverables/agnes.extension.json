@@ -6,15 +6,19 @@
   "capabilities": {
     "tools": {
       "prefix": "",
-      "names": ["present"]
+      "names": [
+        "present"
+      ]
     },
     "events": true,
     "artifacts": true,
-    "slots": ["tool.card.inline"],
+    "slots": [],
     "projections": [
       {
         "name": "presented",
-        "inputEventTypes": ["x/agnes/deliverables/presented"],
+        "inputEventTypes": [
+          "x/agnes/deliverables/presented"
+        ],
         "maxStateBytes": 262144
       }
     ]

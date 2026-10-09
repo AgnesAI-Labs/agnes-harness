@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ToolDef } from '@agnes/extension-api'
-import { answerPrefix } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
+import { interactionSurfaceId } from '../../../src/interaction-surfaces.js'
 import interaction, { questionProjection } from '../src/index.js'
 
 it('continues immediately or at the durable deadline, accepts late answers and cancels an active wait', async () => {
@@ -32,6 +32,7 @@ it('continues immediately or at the durable deadline, accepts late answers and c
   const base = fakeToolContext()
   const ctx = {
     ...base,
+    tools: { ...base.tools, invoke: async () => ({ content: [] }) },
     session: { ...base.session, toolUseId: 'q' },
     projections: {
       readOwn: async () => ({
@@ -51,11 +52,26 @@ it('continues immediately or at the durable deadline, accepts late answers and c
     details: { status: 'pending', deadline: expect.any(Number) },
   })
   expect(state.questions[0]?.deadline).toBeGreaterThanOrEqual(now)
-  const reply = answerPrefix('q') + JSON.stringify({ pick: 'Late' })
-  state = questionProjection.apply(state, {
-    type: 'user/message',
-    data: { content: [{ type: 'text', text: reply }] },
-  } as unknown as Parameters<typeof questionProjection.apply>[1])
+  const accept = () => {
+    const apply = (type: string, data: unknown) => {
+      state = questionProjection.apply(state, {
+        type,
+        data,
+        origin: 'ext:agnes/intelligent-ui',
+      } as unknown as Parameters<typeof questionProjection.apply>[1])
+    }
+    apply('x/agnes/intelligent-ui/action.received', {
+      record: {
+        request: { commandId: 'cmd' },
+        invocation: {
+          tool: 'ui_submit',
+          args: { surfaceId: interactionSurfaceId('q'), answers: { pick: 'Late' } },
+        },
+      },
+    })
+    apply('x/agnes/intelligent-ui/action.succeeded', { commandId: 'cmd' })
+  }
+  accept()
   expect(await tool.execute({ questions: [{ id: 'pick', question: 'Pick' }] }, ctx)).toMatchObject({
     details: { answers: { pick: 'Late' } },
   })
@@ -66,18 +82,12 @@ it('continues immediately or at the durable deadline, accepts late answers and c
   const deadline = state.questions[0]?.deadline
   await tool.execute({ questions: [{ id: 'pick', question: 'Pick' }], timeoutMs: 60000 }, ctx)
   expect(state.questions[0]?.deadline).toBe(deadline)
-  state = questionProjection.apply(state, {
-    type: 'inbox',
-    data: { items: [{ content: [{ type: 'text', text: reply }] }] },
-  } as unknown as Parameters<typeof questionProjection.apply>[1])
+  accept()
   expect(state.questions[0]?.answer).toEqual({ pick: 'Late' })
   state = questionProjection.init()
   const waiting = tool.execute({ questions: [{ id: 'pick', question: 'Pick' }], timeoutMs: 1000 }, ctx)
   await vi.waitFor(() => expect(state.questions.length).toBe(1))
-  state = questionProjection.apply(state, {
-    type: 'inbox',
-    data: { items: [{ content: [{ type: 'text', text: reply }] }] },
-  } as unknown as Parameters<typeof questionProjection.apply>[1])
+  accept()
   expect(await waiting).toMatchObject({ details: { answers: { pick: 'Late' } } })
   state = questionProjection.init()
   const abort = new AbortController()
