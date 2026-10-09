@@ -1,3 +1,4 @@
+import { SettingsToolbar } from '@agnes/web-ui'
 import type { SessionWorkspaceListResult, SessionWorkspaceReadResult } from '@agnes/protocol'
 import { fileViewerActions, type UiExtensionContext } from '@agnes/web-client'
 import { appServerErrorMessage, Button, SettingsState } from '@agnes/web-ui'
@@ -154,12 +155,12 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
       </div>
       <section className="workbench-file-preview" aria-label={t('workbench.files.preview')}>
         {selected ? (
-          <div className="workbench-panel-toolbar">
+          <SettingsToolbar className="workbench-panel-toolbar">
             <strong className="workbench-file-name">{selected}</strong>
             <Button size="small" data-testid="file-mention" onClick={() => mention(selected)}>
               {t('workbench.files.mention')}
             </Button>
-          </div>
+          </SettingsToolbar>
         ) : (
           <SettingsState tone="empty">{t('workbench.files.choose')}</SettingsState>
         )}

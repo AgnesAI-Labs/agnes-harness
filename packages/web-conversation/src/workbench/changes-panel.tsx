@@ -1,3 +1,4 @@
+import { SettingsToolbar } from '@agnes/web-ui'
 import type { SessionWorkspaceChangesResult } from '@agnes/protocol'
 import { factChainLinks, type UiExtensionContext } from '@agnes/web-client'
 import { appServerErrorMessage, Button, Select, SettingsState } from '@agnes/web-ui'
@@ -107,7 +108,7 @@ function SessionChangesPanel({ context, headerId }: { context: UiExtensionContex
         <SettingsState tone="empty">{t('workbench.session')}</SettingsState>
       ) : (
         <>
-          <div className="workbench-panel-toolbar">
+          <SettingsToolbar className="workbench-panel-toolbar">
             <Select
               aria-label={t('workbench.changes.scope')}
               value={scope}
@@ -120,7 +121,7 @@ function SessionChangesPanel({ context, headerId }: { context: UiExtensionContex
                 label: t(`workbench.changes.scope.${value}`),
               }))}
             />
-          </div>
+          </SettingsToolbar>
           {error && <SettingsState tone="error">{error}</SettingsState>}
           {loading && !snapshot && (
             <SettingsState tone="loading">{t('workbench.changes.loading')}</SettingsState>
@@ -159,12 +160,12 @@ function SessionChangesPanel({ context, headerId }: { context: UiExtensionContex
             </nav>
             {selected ? (
               <article className="workbench-change-preview" aria-label={t('workbench.changes.diff')}>
-                <div className="workbench-panel-toolbar">
+                <SettingsToolbar className="workbench-panel-toolbar">
                   <code>{selected.path}</code>
                   <Button size="small" data-testid="changes-mention" onClick={() => mention(selected.path)}>
                     {t('workbench.files.mention')}
                   </Button>
-                </div>
+                </SettingsToolbar>
                 {selected.freshness === 'changed' && <p role="status">{t('workbench.changes.changed')}</p>}
                 {selected.freshness === 'unavailable' && (
                   <p role="status">{t('workbench.changes.freshnessUnavailable')}</p>

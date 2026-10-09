@@ -1,3 +1,4 @@
+import { createSettingsButton } from '@agnes/web-ui'
 import type { Translate } from '@agnes/web-conversation/presentation'
 import { positionPopover } from '@agnes/web-ui'
 import type { SessionAction } from './session-actions.js'
@@ -66,9 +67,9 @@ export function closeSessionMenu(returnFocus = false): void {
 
 /** 行内可见的触发控件：16px 裸三点图标。 */
 export function createSessionMenuTrigger(id: string, name: string, t: Translate): HTMLButtonElement {
-  const trigger = document.createElement('button')
+  const trigger = createSettingsButton(document)
   trigger.type = 'button'
-  trigger.className = 'session-menu-trigger'
+  trigger.className = 'agnes-ui-button session-menu-trigger'
   trigger.dataset.sessionActionId = id
   trigger.setAttribute('aria-haspopup', 'menu')
   trigger.setAttribute('aria-expanded', 'false')
@@ -96,7 +97,7 @@ function show(trigger: HTMLButtonElement, select: (action: SessionAction) => voi
   panel.setAttribute('role', 'menu')
   panel.setAttribute('aria-label', label)
   for (const [action, key, paths] of ITEMS) {
-    const item = document.createElement('button')
+    const item = createSettingsButton(document)
     item.type = 'button'
     item.setAttribute('role', 'menuitem')
     const caption = document.createElement('span')

@@ -1,3 +1,4 @@
+import { createSettingsButton } from '@agnes/web-ui'
 import type { UINode, UITurn } from '@agnes/protocol'
 import { isConversationNode } from '@agnes/web-conversation/conversation-visibility'
 import type { Translate } from '@agnes/web-conversation/presentation'
@@ -59,7 +60,7 @@ export function createTimelineRenderer(options: TimelineRendererOptions): Timeli
   const earlier = document.createElement('div')
   earlier.className = 'transcript-earlier'
   earlier.hidden = true
-  const earlierButton = document.createElement('button')
+  const earlierButton = createSettingsButton(document)
   earlierButton.type = 'button'
   earlierButton.textContent = t('timeline.loadEarlier')
   earlier.append(earlierButton)

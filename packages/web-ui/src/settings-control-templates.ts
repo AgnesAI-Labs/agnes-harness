@@ -10,6 +10,14 @@ export function createSettingsControl<K extends SettingsControlTag>(
   return control
 }
 
+/** Controller-owned actions share the button skin without introducing a second event owner. */
+export function createSettingsButton(owner: Document): HTMLButtonElement {
+  const button = owner.createElement('button')
+  button.type = 'button'
+  button.className = 'agnes-ui-button'
+  return button
+}
+
 /**
  * Materialize fixed host declarations before binding controllers. No root or state is retained:
  * the host owns the resulting native nodes, their values, events and removal as before.

@@ -1,5 +1,12 @@
 import type { FeedbackItem, FeedbackTarget } from '@agnes/protocol/gen/app-server'
-import { Button, Field, SettingsSelect, SettingsTextArea } from '@agnes/web-ui'
+import {
+  Button,
+  Field,
+  SettingsSelect,
+  SettingsTextArea,
+  SettingsState,
+  SettingsToolbar,
+} from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { feedbackRequest } from './api.js'
 import { feedbackCategories, useFeedbackText } from './feedback-locale.js'
@@ -94,7 +101,7 @@ export function MessageFeedback({
       aria-label={t(target.messageSeq === null ? 'session' : 'title')}
       data-testid={target.messageSeq === null ? 'session-feedback' : 'message-feedback'}
     >
-      <fieldset aria-label={t('title')}>
+      <fieldset className="agnes-settings-actions" aria-label={t('title')}>
         {(['up', 'down'] as const).map((value) => (
           <Button
             key={value}
@@ -147,18 +154,20 @@ export function MessageFeedback({
               onChange={(e) => setNote(e.target.value)}
             />
           </Field>
-          <Button data-testid="feedback-save" disabled={busy || error} onClick={() => void mutate('put')}>
-            {t('save')}
-          </Button>
-          {item && !item.withdrawn && (
-            <Button
-              data-testid="feedback-withdraw"
-              disabled={busy || error}
-              onClick={() => void mutate('withdraw')}
-            >
-              {t('withdraw')}
+          <SettingsToolbar>
+            <Button data-testid="feedback-save" disabled={busy || error} onClick={() => void mutate('put')}>
+              {t('save')}
             </Button>
-          )}
+            {item && !item.withdrawn && (
+              <Button
+                data-testid="feedback-withdraw"
+                disabled={busy || error}
+                onClick={() => void mutate('withdraw')}
+              >
+                {t('withdraw')}
+              </Button>
+            )}
+          </SettingsToolbar>
           <p>{t('privacy')}</p>
         </>
       )}
@@ -176,7 +185,13 @@ export function MessageFeedback({
           {t('evidence')}
         </Button>
       )}
-      <p role={error ? 'alert' : 'status'}>{error ? t('error') : status ? t(status) : ''}</p>
+      <SettingsState
+        hidden={!error && !status}
+        tone={error ? 'error' : 'success'}
+        role={error ? 'alert' : 'status'}
+      >
+        {error ? t('error') : status ? t(status) : ''}
+      </SettingsState>
       {error && <Button onClick={() => setReload((value) => value + 1)}>{t('reload')}</Button>}
     </section>
   )

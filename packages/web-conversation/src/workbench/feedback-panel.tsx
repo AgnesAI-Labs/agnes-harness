@@ -1,3 +1,4 @@
+import { SettingsState } from '@agnes/web-ui'
 import type { UiExtensionContext } from '@agnes/web-client'
 import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
 import { MessageFeedback } from '@agnes/web-units/message-feedback'
@@ -20,5 +21,7 @@ export function FeedbackPanel({ context }: { context: UiExtensionContext }) {
           workbenchNavigation.open('facts')
       }}
     />
-  ) : null
+  ) : (
+    <SettingsState>{context.t('workbench.session')}</SettingsState>
+  )
 }

@@ -1,3 +1,4 @@
+import { createSettingsButton } from '@agnes/web-ui'
 import type { PageSessionMeta, WorkspaceEntry } from '@agnes/protocol'
 import type { Translate } from '@agnes/web-conversation/presentation'
 import { attachSessionMenu, closeSessionMenu, createSessionMenuTrigger } from './session-menu.js'
@@ -70,9 +71,9 @@ export function renderWorkspaceOptions(
 ): void {
   container.replaceChildren(
     ...workspaces.map((workspace) => {
-      const choice = document.createElement('button')
+      const choice = createSettingsButton(document)
       choice.type = 'button'
-      choice.className = 'workspace-option'
+      choice.className = 'agnes-ui-button workspace-option'
       choice.dataset.available = String(workspace.available)
       choice.disabled = !workspace.available
       const copy = document.createElement('span')
@@ -125,9 +126,9 @@ export function renderSessionNavigation(
     group.className = 'workspace-group'
     const workspace = options.workspaces.find((entry) => entry.path === path)
     const collapsed = collapsedGroups.has(path)
-    const heading = document.createElement('button')
+    const heading = createSettingsButton(document)
     heading.type = 'button'
-    heading.className = 'workspace-heading'
+    heading.className = 'agnes-ui-button workspace-heading'
     heading.setAttribute('aria-expanded', String(!collapsed))
     heading.title = workspace?.path ?? t('nav.noWorkspaceTitle')
     const name = document.createElement('span')
@@ -138,9 +139,9 @@ export function renderSessionNavigation(
     headingRow.className = 'workspace-heading-row'
     headingRow.append(heading)
     if (workspace) {
-      const create = document.createElement('button')
+      const create = createSettingsButton(document)
       create.type = 'button'
-      create.className = 'icon-button workspace-new-session'
+      create.className = 'agnes-ui-button icon-button workspace-new-session'
       create.dataset.workspaceNewSession = workspace.path
       create.disabled = (options.newDisabled ?? false) || !workspace.available
       create.setAttribute('aria-label', t('nav.newSessionInWorkspace', { name: workspaceLabel(workspace) }))
@@ -155,9 +156,10 @@ export function renderSessionNavigation(
     children.className = 'workspace-sessions'
     children.hidden = collapsed
     for (const row of sessions) {
-      const choice = document.createElement('button')
+      const choice = createSettingsButton(document)
       choice.type = 'button'
-      choice.className = row.sessionId === options.currentId ? 'session active' : 'session'
+      choice.className =
+        row.sessionId === options.currentId ? 'agnes-ui-button session active' : 'agnes-ui-button session'
       choice.disabled = options.disabled ?? false
       choice.dataset.session = row.sessionId
       if (row.sessionId === options.currentId) choice.setAttribute('aria-current', 'page')
@@ -208,7 +210,7 @@ export function renderSessionNavigation(
   options.nav.replaceChildren(...fragments)
   if (options.next && options.loadMore) {
     const next = options.next
-    const more = document.createElement('button')
+    const more = createSettingsButton(document)
     more.type = 'button'
     more.textContent = t('nav.loadMore')
     more.disabled = options.disabled ?? false

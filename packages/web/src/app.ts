@@ -1,3 +1,4 @@
+import { createSettingsButton } from '@agnes/web-ui'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import { adaptResourceAdmin } from '@agnes/web-admin/admin/resources/admin'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
@@ -727,7 +728,7 @@ function renderReconnect(phase: ReconnectPhase): void {
     return
   }
   setConnection('closed')
-  const retry = document.createElement('button')
+  const retry = createSettingsButton(document)
   retry.type = 'button'
   retry.textContent = t('app.reconnect.retry')
   retry.addEventListener('click', () => reconnect.retry())
@@ -1263,7 +1264,7 @@ function showError(error: unknown): void {
       ? (error.data as { code?: unknown; modelRoute?: unknown })
       : undefined
   if (data?.code === 'CONFIG_CREDENTIAL_REJECTED') {
-    const fix = document.createElement('button')
+    const fix = createSettingsButton(document)
     fix.type = 'button'
     fix.dataset.testid = 'credential-repair'
     fix.textContent = t('session.error.openAccount')
@@ -1306,7 +1307,7 @@ function renderSessionRecovery(message = ''): void {
     notice.textContent = ''
     const description = document.createElement('span')
     description.dataset.recoveryMessage = ''
-    const retry = document.createElement('button')
+    const retry = createSettingsButton(document)
     retry.dataset.recoveryAction = 'retry'
     retry.type = 'button'
     retry.textContent = t('app.recovery.retry')
@@ -1315,7 +1316,7 @@ function renderSessionRecovery(message = ''): void {
       const id = sessionRecovery.id
       run(() => open(id))
     })
-    const create = document.createElement('button')
+    const create = createSettingsButton(document)
     create.dataset.recoveryAction = 'create'
     create.type = 'button'
     create.textContent = t('app.recovery.create')

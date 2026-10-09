@@ -927,3 +927,30 @@ select.agnes-settings-input {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+.settings-content.agnes-settings-page > .agnes-settings-page-heading {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: var(--s20) var(--s24) var(--s12);
+  padding-inline-end: calc(var(--s24) + var(--s32));
+  border-bottom: 1px solid var(--agnes-line-primary);
+}
+.workbench-panel-toolbar.agnes-settings-toolbar {
+  align-items: center;
+  gap: var(--s8);
+  padding: var(--s10);
+}
+.workbench-panel-toolbar.agnes-settings-toolbar > code,
+.workbench-panel-toolbar.agnes-settings-toolbar > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.workbench-header-actions {
+  flex-wrap: wrap;
+  gap: var(--s8);
+}
+@media (max-width: 640px) {
+  .settings-content.agnes-settings-page > .agnes-settings-page-heading {
+    padding-inline-start: var(--s16);
+  }
+}

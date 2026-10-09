@@ -1,3 +1,4 @@
+import { SettingsToolbar } from '@agnes/web-ui'
 import type { SessionJob, SessionJobsReadResult } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk/browser'
 import type { UiExtensionContext } from '@agnes/web-client'
@@ -240,7 +241,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
       data-testid="terminal-panel"
       aria-label={t('workbench.terminal.title')}
     >
-      <div className="workbench-panel-toolbar workbench-terminal-toolbar">
+      <SettingsToolbar className="workbench-panel-toolbar workbench-terminal-toolbar">
         <Select
           aria-label={t('workbench.terminal.shell')}
           value={shell}
@@ -256,7 +257,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
           {t('workbench.terminal.new')}
         </Button>
         <span>{t('workbench.terminal.detach')}</span>
-      </div>
+      </SettingsToolbar>
       {error && <SettingsState tone="error">{error}</SettingsState>}
       <div role="tablist" aria-label={t('workbench.terminal.tabs')} className="workbench-terminal-tabs">
         {tabs.map((tab, index) => (
@@ -299,7 +300,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
           aria-labelledby={`terminal-tab-${job.id}`}
           className="workbench-terminal-job"
         >
-          <div className="workbench-panel-toolbar">
+          <SettingsToolbar className="workbench-panel-toolbar">
             <span role="status">
               {t(`workbench.terminal.status.${job.status}`)}
               {job.code !== null && ` · ${t('workbench.terminal.exit', { code: job.code })}`}
@@ -334,7 +335,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
             >
               {t(human ? 'workbench.terminal.close' : 'workbench.terminal.unfollow')}
             </Button>
-          </div>
+          </SettingsToolbar>
           <details className="workbench-terminal-details">
             <summary>{t('workbench.terminal.details')}</summary>
             <dl>

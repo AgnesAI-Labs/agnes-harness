@@ -46,4 +46,6 @@ StateSwitch also renders Boolean schema/settings fields; optional id/testId and 
 
 | `SettingsChoice` | A | 原生 radio/checkbox | 共享外观选择呈现；保留 name/value 与方向键、表单语义 / Shared choice presentation preserves native group and form semantics |
 
-`createSettingsControl` / `materializeSettingsControls` provide token-styled native equivalents for fixed static shells. Materialization happens before controller binding, retaining form semantics and host-owned node lifetimes. / 固定静态壳在控制器绑定前生成与 SettingsInput/Select/TextArea 相同的 token 控件；宿主继续拥有节点、值和事件，不新增 React root。
+`createSettingsButton` / `createSettingsControl` / `materializeSettingsControls` provide token-styled native equivalents for fixed static shells. Materialization happens before controller binding, retaining form semantics and host-owned node lifetimes. / 固定静态壳在控制器绑定前生成与 SettingsInput/Select/TextArea 相同的 token 控件；宿主继续拥有节点、值和事件，不新增 React root。
+
+SettingsPage accepts `headingId` and `bodyClassName` for existing native pane IDs and scroll bodies. / SettingsPage 可保留原生设置面板的标题 ID 与正文滚动类。

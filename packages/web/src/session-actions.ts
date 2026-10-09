@@ -1,3 +1,4 @@
+import { createSettingsButton } from '@agnes/web-ui'
 import type { PageSessionMeta } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import type { Translate } from '@agnes/web-conversation/presentation'
@@ -35,7 +36,7 @@ export function createSessionActions(options: {
       <span id="session-rename-label"></span>
       <template data-agnes-control="input" id="session-rename-input" required autocomplete="off" aria-describedby="session-rename-error" ></template>
     </label>
-    <p id="session-rename-error" class="session-rename-error" role="alert"></p>
+    <p id="session-rename-error" class="session-rename-error agnes-settings-state" data-tone="error" role="alert"></p>
     <div class="dialog-actions"><button class="secondary-button" type="button"></button><button class="primary-button" type="submit"></button></div></form>`
   materializeSettingsControls(dialog)
   document.body.append(dialog)
@@ -144,7 +145,7 @@ export function createSessionActions(options: {
       const location = document.createElement('p')
       location.textContent = row.cwd ?? t('session.uncategorized')
       copy.append(title, location)
-      const restore = document.createElement('button')
+      const restore = createSettingsButton(document)
       restore.type = 'button'
       const restoreLabel = t('session.archived.restore')
       restore.textContent = restoring.has(row.sessionId) ? t('session.archived.restoring') : restoreLabel
