@@ -2342,17 +2342,26 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         },
       })
     }
-    const observability = pluginTree.root.providers
+    const observabilityEntries = pluginTree.root.providers
       .catalog()
-      .some((entry) => entry.kind === 'observability' && entry.id === 'agnes.otel')
-      ? pluginTree.root.providers.resolve(observabilityKind, 'agnes.otel')
+      .filter((entry) => entry.kind === 'observability')
+    const selectedObservability =
+      observabilityEntries.find((entry) => entry.active) ??
+      (observabilityEntries.length === 1 ? observabilityEntries[0] : undefined)
+    const observability = selectedObservability
+      ? pluginTree.root.providers.resolve(observabilityKind, selectedObservability.id)
       : undefined
     const observations = new Map<string, () => void>()
     const observeSession = (key: string): (() => void) => {
       if (observations.has(key) || !observability) return () => undefined
       const session = kernel.get(key)
       if (!session) return () => undefined
-      const release = observability.bindSession(key)
+      const release = observability.bindSession(key, {
+        workspace: session.d.cwd,
+        ...(deps.sessionGeneration?.(key) ? { generation: deps.sessionGeneration!(key)! } : {}),
+        pin: profile.hash,
+        privateRoots: [deps.homeDir ?? dirname(dirname(deps.profileDir))],
+      })
       const stop = session.onAppended((events) => {
         for (const event of events) {
           try {

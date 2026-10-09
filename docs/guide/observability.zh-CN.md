@@ -6,53 +6,33 @@ AGH 在 `@agnes/base` 中提供官方 `observability:otel` 插件，由 `@agnes/
 
 ## 开启 OTLP 导出
 
-管理员可在 `AGH_HOME`（通常为 `~/.agh`）创建 `observability.json`：
+创建私有配置 `AGH_HOME/observability.json`（通常为 `~/.agh/observability.json`）：
 
 ```json
 {
   "enabled": true,
   "endpoint": "http://127.0.0.1:4318",
-  "includeContent": false,
+  "redaction": "metadata",
+  "headers": { "authorization": { "secretRef": "env:AGH_COLLECTOR_AUTH" } },
+  "batchSize": 256,
   "batchMs": 1000,
-  "timeoutMs": 3000
+  "queueSize": 1024,
+  "timeoutMs": 3000,
+  "shutdownPolicy": "flush"
 }
 ```
 
-修改文件或环境变量后重启 daemon。管理员负责 collector 目的地及访问策略；包含 collector 请求头的配置应保持私有。等价环境配置：
+官方插件在一秒内读取经过验证的配置变化。请求头只接受 `env:NAME` secret ref；值放入服务进程环境，禁止明文写入配置。找不到 secret 时安全退避。端点为 HTTP(S)，禁止用户名、密码、query 或 fragment。可选 tracesEndpoint / metricsEndpoint / logsEndpoint 是完整 signal URL；endpoint 为自动追加 /v1/traces、/v1/metrics、/v1/logs 的基础 URL。不会读取明文 OTLP 请求头环境配置。OTEL_SDK_DISABLED=true 强制关闭。
 
-```sh
-export AGH_OTEL_ENABLED=true
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
-node agnes.mjs serve
-```
-
-支持以下设置：
-
-| 环境变量 | JSON 字段 | 含义 |
-| --- | --- | --- |
-| `AGH_OTEL_ENABLED` | `enabled` | 显式开启，支持 `true`/`false` 或 `1`/`0` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | `endpoint` | HTTP(S) 基地址，追加 `/v1/traces`、`/v1/metrics` |
-| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | `tracesEndpoint` | 完整 trace 地址 |
-| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | `metricsEndpoint` | 完整 metric 地址 |
-| `OTEL_EXPORTER_OTLP_HEADERS` | `headers` | 逗号分隔的 `name=百分号编码的值`；JSON 使用对象 |
-| `OTEL_EXPORTER_OTLP_TIMEOUT` | `timeoutMs` | 请求与关闭期限，10–30000 毫秒 |
-| — | `batchMs` | 批量发送间隔，10–30000 毫秒 |
-| `AGH_OTEL_INCLUDE_CONTENT` | `includeContent` | 显式开启高风险内容导出 |
-| `OTEL_SDK_DISABLED` | — | `true`/`1` 强制关闭导出 |
-
-环境覆盖文件，显式普通插件配置覆盖两者。拒绝重定向、URL 内凭据及无效的已开启配置。实现发送 [OTLP/HTTP JSON](https://opentelemetry.io/docs/specs/otlp/) traces 和 metrics，不安装全局 instrumentation，也不提供 gRPC/protobuf 导出器。信号地址遵循 [OTLP exporter 规范](https://opentelemetry.io/docs/specs/otel/protocol/exporter/)。
+batchMs 和 timeoutMs 为 10–30000 毫秒，queueSize 为 1–16384 条，batchSize 为 1–queueSize。队列另有包含在途记录的 1 MiB 上限。shutdownPolicy 为 flush（默认）或 discard，timeoutMs 限定最终排空时间。溢出、永久拒绝和部分拒绝增加 drop 计数；可重试故障保留记录并指数退避。Agent turn 不等待 collector。
 
 ## 导出的数据
 
-公共 session 已提交事件产生 session、turn、model 和 tool span；公共 child 生命周期 hooks 将 child 及其 session/turn/model spans 接入父 trace。Supervisor seam 产生 daemon、worker 生命周期 span。不同进程使用独立生命周期 trace；暂未在 IPC 传播跨进程 trace context。
+提交后的公开事件产生 session → turn → step → model/tool spans，每个 ledger 事件另有相关联的 OTLP logs（类型、序号、时间）。Resource 包含 service/version、哈希 workspace/session/pin 和 Host 提供的 generation ID；保留子代理和 daemon/worker 生命周期 spans，以及 duration/token/tool/queue metrics。通过公开 observabilityKind 可替换导出器；bindSession(key, resource) 接收身份和私有根，可选 health() 查询发送健康。Core 不执行网络导出。
 
-`agh.turn.duration`、`agh.tool.duration` 是毫秒 histogram；`agh.tokens.input`、`agh.tokens.output`、`agh.tool.calls`、`agh.tool.errors`、`agh.worker.restarts` 是 delta counter；`agh.queue.depth` 是已接纳命令数的 gauge，包含执行中的命令。工具错误率用 errors/calls 计算。已有结构化执行日志和审计记录在会话运行期间附带 `traceId`、`spanId`，日志正文不会上传。
+默认 metadata 只传元数据。content 显式开启有界用户、助手、工具内容。凭据字段、已知 secret 格式、引用的 header 值以及涉及私有状态根的内容被删除或脱敏。启用 memory 的会话只传结构事件；导出器不读取私有文件。内容仍可能含业务机密，开启前需授权目标端点。
 
-默认属性只有哈希后的 session/model/tool/call 身份、turn 编号、时间、数量和成功/失败状态。排除提示词、回复、工具结果、文件正文、原始 session ID、工作目录路径及 collector 凭据。哈希用于关联；可猜测名称的哈希不构成匿名性保证。
-
-**内容导出有风险。** `includeContent: true` 或 `AGH_OTEL_INCLUDE_CONTENT=true` 会加入最多 4096 字符的 user/assistant/tool 内容属性。凭据字段名及已识别的凭据字符串会被遮蔽，但自由文本仍可能包含个人信息或机密文件。只在工作负载及 collector 已获授权时开启。诊断导出始终排除内容，不受这个开关影响。
-
-队列限制为 1024 条或 1 MiB，最多一个在途批次；collector 响应限制为 64 KiB。队列满时丢弃遥测；网络失败及可重试 HTTP 响应最多尝试三次。collector 拒收或部分接收不会造成执行失败。关闭在配置期限内 flush 并取消剩余请求。观测上限为 512 个 session、512 个 child、每个 session 同时 256 个工具。遥测尽力交付，不是审计账本；通过 collector 健康状态判断数据缺失。
+同进程同 home 的代际租约共享 session 序号水位、活动 spans 和发送队列。重叠的代际切换保留在途请求，不重放已接纳事件。排队记录沿用捕获时的端点与隐私策略，关闭只停止新的捕获；最后租约释放时排空。此机制为尽力遥测：进程崩溃丢失内存队列，网络回执不明确时重试可能导致 collector 重复。不能代替持久 ledger，不实现 feedback 授权前缀上传。不同 OS 进程使用独立管线。
 
 ## 导出支持包
 
