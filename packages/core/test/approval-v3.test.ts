@@ -2,14 +2,14 @@ import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { ToolPolicyRegistry } from '@agnes/core-effects/effects/tool-providers'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
-import type { ToolDef, ToolPolicyRegistryPort } from '@agnes/extension-api'
+import type { ToolDef, ToolMeta, ToolPolicyRegistryPort } from '@agnes/extension-api'
 import type { ApprovalGrant, Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
-import { actor, openSession } from './helpers/open-session.js'
+import { actor, openSession, testFsOps } from './helpers/open-session.js'
 
 const profileHash = `sha256-${'a'.repeat(64)}`
 
@@ -60,9 +60,12 @@ async function atTools(o: {
   /** Text turns queued after the tool turns, for tests that drive the session past the tool phase. */
   tail?: number
   seams?: ReturnType<typeof fakeSeams>
-  approvalMode?: 'manual' | 'smart' | 'off'
+  approvalMode?: 'manual' | 'smart' | 'off' | 'auto-review'
   toolPolicies?: ToolPolicyRegistryPort
   provider?: Provider
+  paths?: ToolMeta['paths']
+  parameters?: ToolDef['parameters']
+  fsOps?: import('@agnes/core-effects/effects/tool-context').FsOps
   preset?: import('@agnes/core-common/step/preset').PresetView
   toolPolicySettings?: import('../src/step/session.js').SessionDeps['toolPolicySettings']
   profile?: string | null
@@ -75,11 +78,16 @@ async function atTools(o: {
       ...Array.from({ length: calls }, (_, i) => toolTurn('scoped_write', { value: String(i) })),
       ...Array.from({ length: o.tail ?? 0 }, () => textTurn('done')),
     ])
+  const tool = scopedTool(
+    o.scopes,
+    o.execute ?? (async () => ({ content: [{ type: 'text' as const, text: 'ok' }] })),
+  )
+  if (o.paths) tool.meta.paths = o.paths
+  if (o.parameters) tool.parameters = o.parameters
   const opened = await openSession({
     provider,
-    registry: registryWith(
-      scopedTool(o.scopes, o.execute ?? (async () => ({ content: [{ type: 'text' as const, text: 'ok' }] }))),
-    ),
+    registry: registryWith(tool),
+    ...(o.fsOps ? { fsOps: o.fsOps } : {}),
     ...(o.seams ? { seams: o.seams } : {}),
     ...(o.approvalMode ? { approvalMode: o.approvalMode } : {}),
     ...(o.preset ? { preset: o.preset } : {}),
@@ -653,6 +661,83 @@ describe('v3 approval modes and grants', () => {
     expect((await blocked.log.scan({ type: 'tool/result', limit: 10 })).at(-1)?.data).toMatchObject({
       code: 'POLICY_DENIED',
     })
+  })
+
+  it.each(['manual', 'smart', 'off', 'auto-review'] as const)(
+    'preflights declared arguments generically before policy in %s mode and leaves undeclared tools alone',
+    async (approvalMode) => {
+      const fsOps = {
+        ...testFsOps(),
+        preflight: async (target: string, access: 'read' | 'write') => {
+          expect(target).toBe('0')
+          expect(access).toBe('write')
+          throw Object.assign(new Error('hard private-state denial'), { code: 'E_FS_DENIED' })
+        },
+      }
+      const blocked = await atTools({
+        scopes: ['tool:write'],
+        approvalMode,
+        fsOps,
+        paths: [{ arg: 'value', access: 'write' }],
+        toolPolicySettings: async () => {
+          throw new Error('Path denial must precede policy selection')
+        },
+        execute: async () => {
+          throw new Error('Path denial must precede execution')
+        },
+      })
+      await blocked.session.runToolsPhase()
+      expect((await blocked.log.scan({ type: 'tool/result', limit: 10 })).at(-1)?.data).toMatchObject({
+        code: 'E_FS_DENIED',
+      })
+      let executions = 0
+      const undeclared = await atTools({
+        scopes: ['tool:write'],
+        approvalMode,
+        fsOps,
+        execute: async () => {
+          executions++
+          return { content: [{ type: 'text', text: 'done' }] }
+        },
+      })
+      await undeclared.session.runToolsPhase()
+      expect(executions).toBe(1)
+    },
+  )
+
+  it('preflights declared defaults and delegates only explicitly declared resource schemes', async () => {
+    const fsOps = {
+      ...testFsOps(),
+      preflight: async (target: string, access: 'read' | 'write') => {
+        expect(target).toBe('.')
+        expect(access).toBe('read')
+        throw Object.assign(new Error('hard path denial'), { code: 'E_FS_DENIED' })
+      },
+    }
+    const defaults = await atTools({
+      scopes: ['tool:write'],
+      fsOps,
+      parameters: Type.Object({ value: Type.Optional(Type.String()) }),
+      paths: [{ arg: 'value', access: 'read', default: '.' }],
+      provider: fakeProvider([toolTurn('scoped_write', {})]),
+    })
+    await defaults.session.runToolsPhase()
+    expect((await defaults.log.scan({ type: 'tool/result', limit: 10 })).at(-1)?.data).toMatchObject({
+      code: 'E_FS_DENIED',
+    })
+    let executions = 0
+    const resource = await atTools({
+      scopes: ['tool:write'],
+      fsOps,
+      paths: [{ arg: 'value', access: 'read', nonWorkspaceSchemes: ['artifact'] }],
+      provider: fakeProvider([toolTurn('scoped_write', { value: 'artifact://synthetic' })]),
+      execute: async () => {
+        executions++
+        return { content: [{ type: 'text', text: 'resource' }] }
+      },
+    })
+    await resource.session.runToolsPhase()
+    expect(executions).toBe(1)
   })
 
   it('provides tool-free reviewer requests, records costs and shares the reservation budget across calls', async () => {

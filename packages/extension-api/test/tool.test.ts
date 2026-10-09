@@ -30,6 +30,12 @@ const fullMeta = {
 describe('checkToolMeta (every one of the eight keys must be written out)', () => {
   it('accepts explicit undefined for the last three keys', () => {
     expect(checkToolMeta(fullMeta)).toEqual({ ok: true })
+    expect(
+      checkToolMeta({
+        ...fullMeta,
+        paths: [{ arg: 'file', access: 'read', default: '.', nonWorkspaceSchemes: ['artifact'] }],
+      }),
+    ).toEqual({ ok: true })
     expect(TOOL_META_KEYS).toEqual([
       'isReadOnly',
       'isDestructive',
@@ -40,6 +46,22 @@ describe('checkToolMeta (every one of the eight keys must be written out)', () =
       'deferLoading',
       'requiresApproval',
     ])
+  })
+  it.each(
+    [
+      null,
+      [{ arg: 'file', access: 'execute' }],
+      [{ arg: '__proto__', access: 'read' }],
+      [
+        { arg: 'file', access: 'read' },
+        { arg: 'file', access: 'write' },
+      ],
+      [{ arg: 'file', access: 'read', default: '' }],
+      [{ arg: 'file', access: 'read', nonWorkspaceSchemes: ['bad://'] }],
+      [{ arg: 'file', access: 'read', typo: true }],
+    ].map((paths) => [paths]),
+  )('rejects invalid path declarations %j', (paths) => {
+    expect(checkToolMeta({ ...fullMeta, paths }).ok).toBe(false)
   })
   it('rejects a missing key even if optional', () => {
     const { deferLoading: _d, ...noDefer } = fullMeta

@@ -173,6 +173,9 @@ export const readTool = defineTool({
     'Read an actual workspace file (relative paths use the session working directory), not packaged demo fixtures, with line numbers; offset and limit page through it. Also reads artifact:// truncated outputs. Read uploaded text files using session-file://message-seq/file-index; long lines wrap into paged rows. session-file://list lists saved attachments (offset/limit page entries). Local single-frame PNG/JPEG files become model image input when vision is supported; inputs are limited to 4 MiB and 16 million pixels, and are downscaled to the active limits. Other binary files, PDF, audio and video may be unreadable. For image originals, use session-image://list, then session-image://message-seq/image-index; combine references as session-image://12/1,34/2. Originals count toward the model image limit; inspect them before claiming unseen details.',
   parameters: ReadParams,
   meta: {
+    paths: [
+      { arg: 'path', access: 'read', nonWorkspaceSchemes: ['artifact', 'session-file', 'session-image'] },
+    ],
     isReadOnly: true,
     isDestructive: false,
     isConcurrencySafe: true,

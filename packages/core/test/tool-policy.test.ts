@@ -205,7 +205,11 @@ describe('resolved tool-call policy envelope', () => {
     const dynamicDefinition = dynamic(classify)
     const definition = {
       ...dynamicDefinition,
-      meta: { ...dynamicDefinition.meta, costHint: { credits: 1 } },
+      meta: {
+        ...dynamicDefinition.meta,
+        costHint: { credits: 1 },
+        paths: [{ arg: 'action', access: 'read' as const, nonWorkspaceSchemes: ['artifact'] }],
+      },
     }
     const registry = new ToolRegistry()
     registry.add(definition, provenance)
@@ -215,6 +219,8 @@ describe('resolved tool-call policy envelope', () => {
     definition.meta.isConcurrencySafe = true
     definition.meta.isOpenWorld = true
     definition.meta.costHint.credits = 999
+    definition.meta.paths[0]!.arg = 'other'
+    definition.meta.paths[0]!.nonWorkspaceSchemes.push('private')
     const afterMutation = registry.resolve('computer_use')
     if (!afterMutation) throw new Error('missing tool')
     const envelope = resolveValidatedToolCallPolicy(afterMutation, {})
@@ -222,6 +228,13 @@ describe('resolved tool-call policy envelope', () => {
     expect(envelope.definitionFingerprint).toBe(fingerprint)
     expect(envelope.resolvedPolicy).toMatchObject({ isConcurrencySafe: false, isOpenWorld: false })
     expect(afterMutation.meta.costHint).toEqual({ credits: 1 })
+    expect(afterMutation.meta.paths).toEqual([
+      { arg: 'action', access: 'read', nonWorkspaceSchemes: ['artifact'] },
+    ])
+    expect(Object.isFrozen(afterMutation.meta.paths?.[0])).toBe(true)
+    const changed = new ToolRegistry()
+    changed.add(definition, provenance)
+    expect(changed.resolve('computer_use')?.definitionFingerprint).not.toBe(fingerprint)
     expect(Object.isFrozen(afterMutation.meta)).toBe(true)
     expect(Object.isFrozen(afterMutation.meta.costHint)).toBe(true)
   })

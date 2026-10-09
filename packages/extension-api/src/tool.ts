@@ -52,6 +52,15 @@ export const MAX_OUTPUT_MAX_BYTES = 1048576
 // the last three are required keys typed `T | undefined` rather than optional `?:` members —
 // with exactOptionalPropertyTypes on, that is what forces the author to type the word. The
 // runtime check in checkToolMeta enforces the same rule for tools that arrive as plain data.
+/** One top-level string argument checked against the live workspace fence before policy decisions.
+ * Missing arguments use `default` when declared, otherwise no path is checked. Non-workspace URI
+ * schemes are delegated to the tool's own resource service; they never widen filesystem access. */
+export interface WorkspacePathArgument {
+  arg: string
+  access: 'read' | 'write'
+  default?: string
+  nonWorkspaceSchemes?: readonly string[]
+}
 export interface ToolMeta {
   isReadOnly: boolean
   isDestructive: boolean
@@ -61,6 +70,7 @@ export interface ToolMeta {
   costHint: { credits?: number; wallMs?: number } | undefined
   deferLoading: boolean | undefined
   requiresApproval: RiskClass | undefined
+  paths?: readonly WorkspacePathArgument[]
 }
 export const TOOL_META_KEYS = [
   'isReadOnly',
@@ -395,6 +405,45 @@ export function checkToolMeta(meta: unknown): CheckResult {
     problems.push('deferLoading: expected boolean | undefined')
   if (m.requiresApproval !== undefined && !RISK.has(String(m.requiresApproval)))
     problems.push('requiresApproval: expected never | destructive | always | undefined')
+  if (m.paths !== undefined) {
+    if (!Array.isArray(m.paths) || m.paths.length > 32)
+      problems.push('paths: expected at most 32 declarations')
+    else {
+      const seen = new Set<string>()
+      for (const path of m.paths) {
+        if (!path || typeof path !== 'object' || Array.isArray(path)) {
+          problems.push('paths: expected objects')
+          continue
+        }
+        const p = path as Record<string, unknown>
+        if (
+          typeof p.arg !== 'string' ||
+          !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(p.arg) ||
+          ['__proto__', 'constructor', 'prototype'].includes(p.arg) ||
+          seen.has(p.arg)
+        )
+          problems.push('paths.arg: expected unique top-level argument name')
+        else seen.add(p.arg)
+        if (p.access !== 'read' && p.access !== 'write') problems.push('paths.access: expected read | write')
+        if (
+          p.default !== undefined &&
+          (typeof p.default !== 'string' || !p.default || p.default.length > 4096 || p.default.includes('\0'))
+        )
+          problems.push('paths.default: expected usable path')
+        if (
+          p.nonWorkspaceSchemes !== undefined &&
+          (!Array.isArray(p.nonWorkspaceSchemes) ||
+            p.nonWorkspaceSchemes.length > 16 ||
+            p.nonWorkspaceSchemes.some(
+              (scheme: unknown) => typeof scheme !== 'string' || !/^[a-z][a-z0-9+.-]{0,63}$/.test(scheme),
+            ))
+        )
+          problems.push('paths.nonWorkspaceSchemes: expected URI scheme names')
+        if (Object.keys(p).some((key) => !['arg', 'access', 'default', 'nonWorkspaceSchemes'].includes(key)))
+          problems.push('paths: unknown key')
+      }
+    }
+  }
   return problems.length ? { ok: false, problems } : { ok: true }
 }
 
