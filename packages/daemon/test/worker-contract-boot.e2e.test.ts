@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { resolveProfile, type ResolvedProfile } from '@agnes/host'
+import { type ResolvedProfile, resolveProfile } from '@agnes/host'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
@@ -12,8 +12,8 @@ import { type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
 import { listenUnix } from '../src/supervisor/socket.js'
 import { daemonSocketPaths } from '../src/supervisor/socket-paths.js'
 import { startSupervisor } from '../src/supervisor/supervisor.js'
-import { localSdkTransport } from './local-socket-path.js'
 import { WorkerPool } from '../src/supervisor/worker-pool.js'
+import { localSdkTransport } from './local-socket-path.js'
 
 // No testkit, buildHost, package loader or extension loader injection: the executable must load
 // the official plugins through the production jiti graph before it can announce hello.
@@ -42,13 +42,18 @@ it('boots the source worker through the real extension loader and answers after 
     workerEntry: fileURLToPath(new URL('../src/worker/main.ts', import.meta.url)),
     execPath: process.execPath,
     execArgv: ['--import', 'tsx'],
-    spawn: (command, args, options) => {
-      const child = spawn(command, args, { ...options, stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'ipc'] })
-      child.stderr?.on('data', (data) => {
-        stderr += String(data)
+    // Node's spawn overloads cannot be implemented by the three-argument call the pool makes.
+    spawn: ((...args: Parameters<typeof spawn>) => {
+      const options = args[2]
+      const child = spawn(args[0], Array.isArray(args[1]) ? args[1] : [], {
+        ...(options && typeof options === 'object' ? options : {}),
+        stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'ipc'],
+      })
+      child.stderr?.on('data', (chunk: Buffer | string) => {
+        stderr += String(chunk)
       })
       return child
-    },
+    }) as typeof spawn,
     onEvent: () => undefined,
     onRequest: async () => undefined,
     notices: { emit() {} },
@@ -110,10 +115,13 @@ it('shares every service-kind token with loader-loaded plugins in a fresh proces
 async function sourceProfile(root: string): Promise<ResolvedProfile> {
   const hostRequire = createRequire(createRequire(import.meta.url).resolve('@agnes/host'))
   const { demoProvider } = await import(hostRequire.resolve('@agnes/host-common/profile/demo'))
+  const os = process.platform
+  if (os !== 'darwin' && os !== 'linux' && os !== 'win32') throw new Error(`unsupported platform ${os}`)
   return resolveProfile(
     {
       builtin: 'local-dev',
       user: {
+        name: 'local-dev',
         dataDir: join(root, 'data'),
         cacheDir: join(root, 'cache'),
         computerUse: { enabled: false },
@@ -129,7 +137,7 @@ async function sourceProfile(root: string): Promise<ResolvedProfile> {
       },
     },
     {
-      platform: { os: process.platform, arch: process.arch, capabilities: {} },
+      platform: { os, arch: process.arch, capabilities: {} },
       agnesVersion: '0.0.0',
       now: '2026-10-11T00:00:00Z',
       homeDir: root,
