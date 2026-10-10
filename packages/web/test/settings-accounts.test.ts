@@ -183,6 +183,15 @@ it('selects an exact account, clears transient keys and sends account-scoped tes
   expect(h.doc.getElementById('config-account-context')?.textContent).toBe('编辑连接与默认模型')
   expect(h.input('config-api-key').value).toBe('')
   expect(h.input('config-base-url').value).toBe('https://personal.example/v1')
+  h.input('config-account-name').value = 'renamed personal'
+  h.doc
+    .getElementById('config-account-name')
+    ?.dispatchEvent(new (window as Window).Event('input', { bubbles: true }))
+  expect(h.input('config-save').disabled).toBe(false)
+  h.input('config-account-name').value = 'personal'
+  h.doc
+    .getElementById('config-account-name')
+    ?.dispatchEvent(new (window as Window).Event('input', { bubbles: true }))
   h.click('#config-test')
   await settle()
   expect(h.config.test).toHaveBeenCalledWith({

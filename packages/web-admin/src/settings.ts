@@ -789,6 +789,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     resetTest()
     updateButtons()
   })
+  accountName?.addEventListener('input', updateButtons)
   ui.baseUrl.addEventListener('input', () => resetTest())
   ui.apiKey.addEventListener('input', () => resetTest())
   for (const control of [ui.thinking, ui.contextWindow])

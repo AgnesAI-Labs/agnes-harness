@@ -16,7 +16,7 @@ import {
   Transcript,
   type TranscriptHandle,
 } from '../src/index.js'
-import type { SettingsNavigationEntry } from '../src/settings.js'
+import type { SettingsNavigationEntry, SettingsRegionHandle } from '../src/settings.js'
 
 const roots: Root[] = []
 const englishText: Record<string, string> = {
@@ -68,6 +68,7 @@ describe('independent core web-unit implementations', () => {
     document.body.append(host)
     const root = createRoot(host)
     roots.push(root)
+    const region = createRef<SettingsRegionHandle>()
     let entries: SettingsNavigationEntry[] = [
       {
         id: 'model',
@@ -86,6 +87,7 @@ describe('independent core web-unit implementations', () => {
     flushSync(() =>
       root.render(
         createElement(SettingsBuiltin, {
+          ref: region,
           options: {
             translate: (key) => key,
             sections: {
@@ -101,6 +103,13 @@ describe('independent core web-unit implementations', () => {
         }),
       ),
     )
+    for (const pane of ['model', 'plugin'] as const) {
+      const slot = host.querySelector<HTMLElement>(`#settings-pane-slot-${pane}`)
+      if (!slot) throw new Error('Missing settings pane slot')
+      const paneRoot = createRoot(slot)
+      roots.push(paneRoot)
+      flushSync(() => paneRoot.render(createElement(SettingsPaneBuiltin, { pane })))
+    }
     const nav = () => host.querySelectorAll('.settings-nav-group > [data-settings-section]')
     expect(nav()).toHaveLength(2)
     host.querySelector<HTMLButtonElement>('[data-settings-section="first"]')?.click()
@@ -110,6 +119,18 @@ describe('independent core web-unit implementations', () => {
     expect(document.activeElement?.getAttribute('data-settings-section')).toBe('second')
     expect(host.querySelector('#config-form')?.getAttribute('data-settings-section')).toBe('second')
     expect(new URL(location.href).searchParams.get('settings')).toBe('second')
+    // A shell reopen can reset the native pane before restoring the same deep link.
+    region.current?.open('model')
+    expect(host.querySelector<HTMLElement>('#plugin-settings-pane')?.hidden).toBe(true)
+    host
+      .querySelector('#config-form')
+      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'second', bubbles: true }))
+    expect(host.querySelector<HTMLElement>('#plugin-settings-pane')?.hidden).toBe(false)
+    expect(host.querySelector<HTMLElement>('#model-settings-pane')?.hidden).toBe(true)
+    expect(host.querySelector('[data-testid="settings-nav-first"]')?.getAttribute('aria-current')).toBe(
+      'page',
+    )
+
     entries = [
       ...entries,
       { id: 'third', group: 'agent', titleKey: 'third', groupTitleKey: 'agent', icon: 'agent', order: 12 },

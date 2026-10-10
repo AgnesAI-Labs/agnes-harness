@@ -1,5 +1,6 @@
-// Session-authorized artifact download wiring: exact measured counts, no exclusions or spare allocation.
-// Feedback icons and per-turn usage detail: exact measured counts, no exclusions or spare allocation.
+// Account name save state and route recovery: exact measured Web-admin/settings counts.
+// Session-authorized artifact downloads and feedback/turn detail use exact measured scopes.
+// No counting exclusions or spare allocation.
 // Responsibility splits transfer existing scopes and add only the reviewed binding/import delta.
 // Exact integrated workflow receipts, fact links and sandbox refusal counts; no headroom.
 // FC1 rebase: exact combined counts for bounded evidence projection and four UI entries; no headroom.
@@ -265,7 +266,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-conversation/src': 4059,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src/settings': 7646,
+  'packages/web-admin/src/settings': 7647,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/permission-picker': 248,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
@@ -273,7 +274,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/admin/plugins/api': 546,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src': 14120,
+  'packages/web-admin/src': 14121,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-foundation/src': 2380,
   'packages/daemon-rpc/src/local/methods/extensions': 199,

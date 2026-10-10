@@ -434,7 +434,7 @@ function SettingsBuiltinImpl(
       }
       const onRoute = (event: Event) => {
         const id = String((event as CustomEvent).detail)
-        if (id !== root.dataset.settingsSection) navigate(id)
+        navigate(id)
       }
       const onKeys = (event: KeyboardEvent) => {
         const target = event.target as HTMLElement
