@@ -127,6 +127,41 @@ it('combines named registries and retains their public catalog shapes and restar
   expect(providers.catalog()).toEqual([])
 })
 
+it('treats a root-fiber call shadow as host-owned and still refuses an unverified plugin fiber', async () => {
+  const root = new Context()
+  const origins = { lookup: () => undefined }
+  // Cordis `extend` is the call shadow: a different object on the root fiber.
+  const shadow = root.extend()
+  expect(shadow).not.toBe(root)
+  expect(shadow.fiber).toBe(root.fiber)
+  expect(providerSource(shadow, origins, '@agnes/base', true)).toBe('@agnes/base')
+
+  let sawRootFiberShadow = false
+  const registry = installProviderRegistry(root, kind, (owner, source, provider) => {
+    sawRootFiberShadow = owner !== root && owner.fiber === root.fiber
+    const verified = providerSource(owner, origins, source, true)
+    return registry.register(verified, provider, owner)
+  })
+  root.providers.register(kind, '@agnes/base', { id: 'host', version: '1.0.0', ready: true })
+  expect(sawRootFiberShadow).toBe(true)
+  expect(registry.catalog()[0]).toMatchObject({ id: 'host', sourcePackage: '@agnes/base' })
+
+  let failure: unknown
+  const plugin = root.plugin((ctx) => {
+    try {
+      expect(ctx.fiber).not.toBe(root.fiber)
+      ctx.providers.register(kind, '@evil/plugin', { id: 'plugin', version: '1.0.0', ready: true })
+    } catch (error) {
+      failure = error
+    }
+  })
+  await plugin
+  expect(failure).toMatchObject({ code: 'E_EXT_LOAD' })
+  expect(String(failure)).toContain('verified plugin row')
+  expect(registry.catalog().map((entry) => entry.id)).toEqual(['host'])
+  await root.fiber.dispose()
+})
+
 it('normalizes canonical selections and aliases, preserves profile precedence and rejects conflicting config', () => {
   expect(readProviderSelection('loop', { id: 'echo', version: '1.0.0' })).toEqual({
     provider: 'echo',

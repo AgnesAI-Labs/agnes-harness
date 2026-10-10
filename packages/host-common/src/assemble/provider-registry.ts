@@ -35,7 +35,10 @@ export function providerSource(
       throw new HostError('E_EXT_LOAD', 'provider source package does not match its plugin row')
     return origin.packageId
   }
-  if (origins && ctx !== ctx.root)
+  // A Cordis call shadow is `ctx.extend(...)`: a different object on the same fiber.
+  // Object identity would reject Host registration through that shadow. A plugin
+  // fiber is distinct and still needs a verified row.
+  if (origins && ctx.fiber !== ctx.root.fiber)
     throw new HostError('E_EXT_LOAD', 'provider requires a verified plugin row')
   return fallback
 }

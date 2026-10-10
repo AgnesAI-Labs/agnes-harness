@@ -53,6 +53,18 @@ void runWorker(
   },
   {
     buildHost: async (profile, workerPrompter) => {
+      const exampleKind = env.AGNES_EXAMPLE_LOOP
+      if (exampleKind === 'react' || exampleKind === 'dag') {
+        const { exampleLoopHostOptions } = await import('./example-loop-worker.js')
+        const { host } = await createTestHost(
+          await exampleLoopHostOptions({
+            dataDir: profile.dataDir,
+            kind: exampleKind,
+            prompter: (req, opts) => workerPrompter.ask(req, opts),
+          }),
+        )
+        return host
+      }
       const { host } = await createTestHost({
         dataDir: profile.dataDir,
         ...(env.AGNES_FAKE_WORKER_QUEUE === '1'
