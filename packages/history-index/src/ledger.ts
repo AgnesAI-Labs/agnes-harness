@@ -54,7 +54,9 @@ function stampFile(path: string): string {
 }
 
 export function sourceStamp(dataDir: string): string {
-  const parts = [stampFile(join(dataDir, 'sessions.db'))]
+  const parts = ['sessions.db', 'sessions.db-wal', 'sessions.db-shm'].map((name) =>
+    stampFile(join(dataDir, name)),
+  )
   const tables = join(dataDir, 'tables')
   if (existsSync(tables)) {
     for (const name of readdirSync(tables).sort()) {

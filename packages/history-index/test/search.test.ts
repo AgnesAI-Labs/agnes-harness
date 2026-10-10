@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { searchHistoryDirectory } from '../src/directory.js'
 import { HistoryIndexError } from '../src/errors.js'
-import { readLedgerDirectory } from '../src/ledger.js'
-import { type HistoryAccess, type HistoryIndex, openHistoryIndex } from '../src/store.js'
+import * as ledger from '../src/ledger.js'
+import { readLedgerDirectory, sourceStamp } from '../src/ledger.js'
+import { type HistoryAccess, HistoryIndex, openHistoryIndex } from '../src/store.js'
 
 const dirs: string[] = []
 const indexes: HistoryIndex[] = []
@@ -288,6 +289,105 @@ describe('history index', () => {
     expect(() => searchHistoryDirectory(dir, { query: '', title: '', workspace: '' })).toThrow(
       /multiple owners/i,
     )
+  })
+
+  it('indexes a commit that landed only in the ledger wal', () => {
+    const dir = tempDir()
+    const path = join(dir, 'sessions.db')
+    const db = new DatabaseSync(path)
+    db.exec('PRAGMA journal_mode = WAL')
+    db.exec('PRAGMA wal_autocheckpoint = 0')
+    db.exec(`CREATE TABLE events (
+      session_key TEXT, seq INTEGER, ts TEXT, id TEXT, type TEXT, origin TEXT, trust TEXT,
+      source_event_seqs TEXT, data TEXT
+    )`)
+    db.exec(`CREATE TABLE sessions (session_key TEXT PRIMARY KEY, parent_key TEXT, created_at TEXT)`)
+    db.prepare(
+      `INSERT INTO events (session_key, seq, ts, id, type, origin, trust, source_event_seqs, data)
+       VALUES ('before', 1, 't', 'before:1', 'user/message', 'user', 'untrusted', NULL, ?)`,
+    ).run(JSON.stringify({ text: 'alpha bridge before' }))
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+    db.close()
+    const listed = searchHistoryDirectory(dir, { query: '', title: '', workspace: '' })
+    expect(listed.items.map((item) => item.sessionId)).toEqual(['before'])
+    const main = statSync(path)
+    const next = new DatabaseSync(path)
+    try {
+      next.exec('PRAGMA journal_mode = WAL')
+      next.exec('PRAGMA wal_autocheckpoint = 0')
+      next
+        .prepare(
+          `INSERT INTO events (session_key, seq, ts, id, type, origin, trust, source_event_seqs, data)
+           VALUES ('after', 1, 't2', 'after:1', 'user/message', 'user', 'untrusted', NULL, ?)`,
+        )
+        .run(JSON.stringify({ text: 'wal only marker' }))
+      const after = statSync(path)
+      expect(after.size).toBe(main.size)
+      expect(after.mtimeMs).toBe(main.mtimeMs)
+      expect(existsSync(`${path}-wal`)).toBe(true)
+      expect(sourceStamp(dir)).toContain(`${path}-wal:`)
+      expect(sourceStamp(dir)).toContain(`${path}-shm:`)
+      const page = searchHistoryDirectory(dir, { query: 'wal only marker', title: '', workspace: '' })
+      expect(page.items.map((item) => item.sessionId)).toEqual(['after'])
+    } finally {
+      next.close()
+    }
+  })
+
+  it('skips ledger parsing when the source stamp is unchanged and shares one parse', () => {
+    const dir = tempDir()
+    const path = join(dir, 'sessions.db')
+    const db = new DatabaseSync(path)
+    db.exec(`CREATE TABLE events (
+      session_key TEXT, seq INTEGER, ts TEXT, id TEXT, type TEXT, origin TEXT, trust TEXT,
+      source_event_seqs TEXT, data TEXT
+    )`)
+    db.prepare(
+      `INSERT INTO events (session_key, seq, ts, id, type, origin, trust, source_event_seqs, data)
+       VALUES ('one', 1, 't', 'one:1', 'user/message', 'user', 'untrusted', NULL, ?)`,
+    ).run(JSON.stringify({ text: 'alpha bridge once' }))
+    db.close()
+    searchHistoryDirectory(dir, { query: '', title: '', workspace: '' })
+    const read = vi.spyOn(ledger, 'readLedgerDirectory')
+    searchHistoryDirectory(dir, { query: '', title: '', workspace: '' })
+    expect(read).not.toHaveBeenCalled()
+    read.mockRestore()
+
+    const again = new DatabaseSync(path)
+    again
+      .prepare(
+        `INSERT INTO events (session_key, seq, ts, id, type, origin, trust, source_event_seqs, data)
+         VALUES ('two', 1, 't2', 'two:1', 'user/message', 'user', 'untrusted', NULL, ?)`,
+      )
+      .run(JSON.stringify({ text: 'alpha bridge twice' }))
+    again.close()
+    let parses = 0
+    const realRead = ledger.readLedgerDirectory
+    const shared = vi.spyOn(ledger, 'readLedgerDirectory').mockImplementation((dataDir: string) => {
+      parses += 1
+      return realRead(dataDir)
+    })
+    const realRebuild = HistoryIndex.prototype.rebuild
+    let nested = false
+    const rebuild = vi.spyOn(HistoryIndex.prototype, 'rebuild').mockImplementation(function (
+      this: HistoryIndex,
+      corpus,
+    ) {
+      if (!nested) {
+        nested = true
+        // The corpus is already in the flight map, so the overlapping search must not parse again.
+        searchHistoryDirectory(dir, { query: '', title: '', workspace: '' })
+      }
+      return realRebuild.call(this, corpus)
+    })
+    try {
+      const page = searchHistoryDirectory(dir, { query: '', title: '', workspace: '' })
+      expect(page.items.map((item) => item.sessionId).sort()).toEqual(['one', 'two'])
+      expect(parses).toBe(1)
+    } finally {
+      shared.mockRestore()
+      rebuild.mockRestore()
+    }
   })
 
   it('refuses to open the ledger as the index and an unreadable ledger', () => {

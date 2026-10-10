@@ -1,7 +1,19 @@
 import { isAbsolute, join } from 'node:path'
 import { HistoryIndexError } from './errors.js'
-import { readLedgerDirectory } from './ledger.js'
+import { type HistoryCorpus, readLedgerDirectory, sourceStamp } from './ledger.js'
 import { type HistoryAccess, type HistoryPage, openHistoryIndex } from './store.js'
+
+/** One ledger parse per directory stamp, shared by a search that re-enters while it is in use. */
+const corpusFlights = new Map<string, HistoryCorpus>()
+
+function ledgerCorpus(dataDir: string, stamp: string): { corpus: HistoryCorpus; owner: boolean } {
+  const key = `${dataDir}\0${stamp}`
+  const shared = corpusFlights.get(key)
+  if (shared) return { corpus: shared, owner: false }
+  const corpus = readLedgerDirectory(dataDir)
+  corpusFlights.set(key, corpus)
+  return { corpus, owner: true }
+}
 
 export function historyIndexPath(dataDir: string): string {
   return join(dataDir, 'history-index.db')
@@ -30,8 +42,15 @@ export function searchHistoryDirectory(dataDir: string, request: DirectoryQuery)
   )
     throw new HistoryIndexError('INVALID_REQUEST')
   const index = openHistoryIndex(historyIndexPath(dataDir))
+  let flight: { key: string; owner: boolean } | undefined
   try {
-    index.rebuild(readLedgerDirectory(dataDir))
+    const stamp = sourceStamp(dataDir)
+    if (index.stamp() !== stamp || index.generation() === 0) {
+      const key = `${dataDir}\0${stamp}`
+      const loaded = ledgerCorpus(dataDir, stamp)
+      flight = { key, owner: loaded.owner }
+      index.rebuild(loaded.corpus)
+    }
     const principals = index.principals()
     if (principals.length > 1) throw new HistoryIndexError('MULTIPLE_OWNERS')
     const access: HistoryAccess = { kind: 'local', principal: principals[0] ?? '' }
@@ -47,6 +66,7 @@ export function searchHistoryDirectory(dataDir: string, request: DirectoryQuery)
       ...(request.limit === undefined ? {} : { limit: request.limit }),
     })
   } finally {
+    if (flight?.owner) corpusFlights.delete(flight.key)
     index.close()
   }
 }
