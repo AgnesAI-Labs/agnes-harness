@@ -6,6 +6,7 @@ import {
   rpcError,
   type UiSurface as Surface,
   type UiActionParams,
+  uiDataBinding,
   validateAgainst,
 } from '@agnes/protocol'
 import { X_AGNES_UI_LIMITS } from '@agnes/protocol/gen/intelligent-ui'
@@ -72,6 +73,16 @@ export function validateSurface(surface: Surface, ports: IntelligentUiCatalog): 
     accepts(action.paramsSchema, {}) // compile even when an empty instance is not valid
     for (const key of Object.keys(action.argsTemplate))
       if (dangerous.has(key)) throw rpcError('INVALID_PARAMS')
+    for (const binding of Object.values(action.argsTemplate)) {
+      if (!('from' in binding)) continue
+      const dataKey = sourceDataKey(surface, binding)
+      // A source binding with an empty pointer would copy the resolved rows into tool arguments.
+      if (dataKey && uiDataBinding(surface.data[dataKey]) && !binding.pointer)
+        throw rpcError('INVALID_PARAMS', {
+          code: 'UI_INVALID',
+          reason: 'UI source binding must select a scalar field',
+        })
+    }
   }
   for (const component of surface.components) {
     if ('fallback' in component) continue
@@ -80,6 +91,18 @@ export function validateSurface(surface: Surface, ports: IntelligentUiCatalog): 
       accepts(component.schema, surface.data[component.dataKey]!) // incomplete defaults are allowed
     }
   }
+}
+function sourceDataKey(surface: Surface, binding: { from: string; key: string }): string | undefined {
+  if (binding.from === 'data') return binding.key
+  if (binding.from !== 'row' && binding.from !== 'selection') return undefined
+  const component = surface.components.find((item) => item.id === binding.key)
+  if (!component || !('dataKey' in component)) return undefined
+  return component.dataKey
+}
+function scalarJson(value: JsonValue | undefined): boolean {
+  return (
+    value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+  )
 }
 function pointer(root: JsonValue, path = ''): JsonValue {
   if (!path) return root
@@ -98,6 +121,7 @@ export function bindArguments(
   surface: Surface,
   request: UiActionParams,
   ports: IntelligentUiCatalog,
+  declared: Surface,
 ): JsonValue {
   const action = surface.actions.find((item) => item.id === request.actionId)
   if (!action) throw new Error('Unknown UI action')
@@ -156,6 +180,11 @@ export function bindArguments(
       const source = { data: surface.data, input: inputs, row: rows, selection: selected }[binding.from]
       if (!Object.hasOwn(source, binding.key)) throw new Error('Missing UI action binding')
       args[key] = pointer(source[binding.key]!, binding.pointer)
+      const dataKey = sourceDataKey(declared, binding)
+      if (dataKey && uiDataBinding(declared.data[dataKey])) {
+        if (!binding.pointer || !scalarJson(args[key]))
+          throw new Error('UI source binding must select a scalar field')
+      }
     }
   }
   if (!accepts(action.paramsSchema, args)) throw new Error('Invalid UI action arguments')

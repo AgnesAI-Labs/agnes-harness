@@ -45,7 +45,7 @@
 - `{ "literal": <JSON 值> }`：固定数据；
 - `{ "from": "data" | "input" | "row" | "selection", "key": "...", "pointer": "..." }`：值绑定。`pointer` 默认空 JSON Pointer。
 
-`data` 的键标识已提交的 surface 数据；`input` 的键标识表单组件 id；`row` 的键标识提交行上下文中的表格组件；`selection` 的键标识表格，解析结果是后台按展示顺序解析的行对象数组。客户端只发送行 id，不发送具有权威性的行对象。后台从接纳的 revision 解析行，检查成员、选择 id 唯一性与选择模式；在不匹配的表格动作上下文中使用 row/selection 绑定会被拒绝。表格动作可以使用 selection；行内动作还可以使用 row。表单草稿按其表单 Schema 校验；展开后的参数必须同时符合 `paramsSchema` 与注册工具的参数 Schema。缺失键、Pointer 或非法 Pointer 转义均为错误。Pointer 只访问自身属性，禁止 `__proto__`、`prototype`、`constructor` 路径段，不执行代码、不做字符串插值。
+`data` 的键标识已提交的 surface 数据；`input` 的键标识表单组件 id；`row` 的键标识提交行上下文中的表格组件；`selection` 的键标识表格，解析结果是后台按展示顺序解析的行对象数组。当该数据键是 `$source` 时，`data`、`row` 或 `selection` 绑定必须使用非空 pointer，并且只解析为一个标量，例如行 id 或一个字段。空 pointer、对象或数组为 `UI_INVALID`。字面参数，以及模型写入数据上的绑定，保持提交的值。客户端只发送行 id，不发送具有权威性的行对象。后台从接纳的 revision 解析行，检查成员、选择 id 唯一性与选择模式；在不匹配的表格动作上下文中使用 row/selection 绑定会被拒绝。表格动作可以使用 selection；行内动作还可以使用 row。表单草稿按其表单 Schema 校验；展开后的参数必须同时符合 `paramsSchema` 与注册工具的参数 Schema。缺失键、Pointer 或非法 Pointer 转义均为错误。Pointer 只访问自身属性，禁止 `__proto__`、`prototype`、`constructor` 路径段，不执行代码、不做字符串插值。
 
 ### 大小限制
 

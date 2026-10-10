@@ -395,7 +395,7 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
         }
         let args: ReturnType<typeof bindArguments>
         try {
-          args = bindArguments(view?.surface ?? surface.surface, request, cap)
+          args = bindArguments(view?.surface ?? surface.surface, request, cap, surface.surface)
         } catch (error) {
           return refusal(
             record,
@@ -560,7 +560,8 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
       const view = await present(surface.surface, signal, 'action', openSurfaceIds(value), record.request)
       if (
         (view && !view.ok) ||
-        jcs(bindArguments(view?.surface ?? surface.surface, record.request, cap)) !== jcs(invocation.args)
+        jcs(bindArguments(view?.surface ?? surface.surface, record.request, cap, surface.surface)) !==
+          jcs(invocation.args)
       )
         throw new Error('UI invocation validation is stale')
     },

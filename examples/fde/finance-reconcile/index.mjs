@@ -71,6 +71,23 @@ export const tools = [
     writeMeta,
   ),
 ]
+// Counts and totals only. Resolved rows stay on the authenticated read path.
+function modelEvidence(report, receipt) {
+  const counts = {
+    matchedCount: report.matched.length,
+    mismatchCount: report.mismatches.length,
+    proposalCount: report.proposals.length,
+    unresolvedCount: report.unresolved.length,
+    proposedAdjustmentCents: report.proposals.reduce((sum, item) => sum + item.amountCents, 0),
+  }
+  if (!receipt) return counts
+  return {
+    ...counts,
+    receiptStatus: receipt.status,
+    posted: receipt.posted,
+    entryCount: receipt.entries.length,
+  }
+}
 const stages = [
   {
     name: 'read-ledgers',
@@ -92,7 +109,7 @@ const stages = [
         commentary: await modelText(
           ctx,
           'Explain the exact ledger differences, unresolved transactions and proposed review entries. Never change amounts or claim entries were posted. These are synthetic accounting drafts.',
-          report,
+          modelEvidence(report),
           signal,
         ),
       }
@@ -124,7 +141,7 @@ const stages = [
       const commentary = await modelText(
         ctx,
         'Explain the authorized simulation receipt and remaining unresolved rows. No real ledger was posted.',
-        { receipt, unresolved: state.data.report.unresolved },
+        modelEvidence(state.data.report, receipt),
         signal,
       )
       const surface = reviewSurface(

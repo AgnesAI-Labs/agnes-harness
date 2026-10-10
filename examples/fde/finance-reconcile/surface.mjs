@@ -2,11 +2,9 @@ import { createHash } from 'node:crypto'
 import { jcs } from '@agnes/protocol'
 import { deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
 import descriptor from './client/agnes.client.json' with { type: 'json' }
-import { differenceRows } from './ledgers.mjs'
 
 /** Data-only declaration with a reviewed diff renderer and the preset table fallback. Values stay in integer USD cents throughout. */
 export function reviewSurface(id, report, revision = 1, receipt = null) {
-  const rows = differenceRows(report, receipt)
   const schema = {
     type: 'object',
     additionalProperties: false,
@@ -30,7 +28,8 @@ export function reviewSurface(id, report, revision = 1, receipt = null) {
     },
   }
   const actionable = !receipt && report.proposals.length > 0
-  const openReview = rows.some((row) => row.status === 'needs-review' || row.status === 'unresolved')
+  const approvedIds = new Set(receipt?.entries.map((entry) => entry.id) ?? [])
+  const openReview = report.mismatches.some((item) => !approvedIds.has(item.id))
   return {
     id,
     revision,
@@ -43,7 +42,7 @@ export function reviewSurface(id, report, revision = 1, receipt = null) {
         title: 'Reconciliation diff / 对账差异',
         dataKey: 'diffProps',
         fallback: descriptor.client.intelligentComponents[0].fallback,
-        actionIds: actionable ? ['approve'] : [],
+        actionIds: [],
       },
       {
         id: 'flow',
@@ -60,6 +59,7 @@ export function reviewSurface(id, report, revision = 1, receipt = null) {
           { key: 'mismatchCount', label: 'Mismatches / 差异', format: 'number' },
           { key: 'proposalCount', label: 'Proposals / 提案', format: 'number' },
           { key: 'unresolvedCount', label: 'Unresolved / 未解决', format: 'number' },
+          { key: 'approvedCount', label: 'Approved / 已确认', format: 'number' },
         ],
         statusKey: 'status',
         secondaryKey: 'note',
@@ -105,13 +105,14 @@ export function reviewSurface(id, report, revision = 1, receipt = null) {
       { id: 'status', kind: 'status', dataKey: 'status' },
     ],
     data: {
-      diffProps: { rows, actionable },
+      diffProps: { $source: 'finance/differences', params: {} },
       differences: { $source: 'finance/differences', params: {} },
       summary: {
         mismatchCount: report.mismatches.length,
         proposalCount: report.proposals.length,
         unresolvedCount: report.unresolved.length,
-        status: receipt ? 'simulated-approved' : rows.length ? 'needs-review' : 'clear',
+        approvedCount: receipt?.entries.length ?? 0,
+        status: receipt ? 'simulated-approved' : report.mismatches.length ? 'needs-review' : 'clear',
         note: 'Amounts stay integer USD cents. Nothing is posted.',
       },
       steps: [

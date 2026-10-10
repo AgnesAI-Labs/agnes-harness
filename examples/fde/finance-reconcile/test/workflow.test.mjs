@@ -70,8 +70,17 @@ for (const verdict of ['allowed-once', 'rejected'])
       assert.equal(surface.data.differences.find((row) => row.id === 'TX-2').status, 'needs-review')
       assert.equal(surface.data.differences.find((row) => row.id === 'TX-4').status, 'unresolved')
       assert.equal(opening.surfaces[0].sources.differences.status, 'ready')
+      assert.equal(opening.surfaces[0].sources.diffProps.status, 'ready')
+      assert.deepEqual(
+        surface.data.diffProps.map((row) => row.id),
+        ['TX-2', 'TX-3', 'TX-4'],
+      )
       const stored = openingFacts.find((event) => event.type === 'x/agnes/intelligent-ui/surface.opened')
       assert.deepEqual(stored.data.record.surface.data.differences, {
+        $source: 'finance/differences',
+        params: {},
+      })
+      assert.deepEqual(stored.data.record.surface.data.diffProps, {
         $source: 'finance/differences',
         params: {},
       })
@@ -112,19 +121,29 @@ for (const verdict of ['allowed-once', 'rejected'])
       assert.ok(events.some((event) => event.type === 'x/agnes/intelligent-ui/action.delivered'))
       if (verdict === 'allowed-once') {
         assert.equal(after.surfaces[0].surface.revision, 2)
-        const literal = after.surfaces[0].surface.data.diffProps.rows
-        assert.deepEqual(
-          literal.filter((row) => row.status === 'simulated-approved').map((row) => row.id),
-          ['TX-2', 'TX-3'],
-        )
-        assert.equal(literal.find((row) => row.id === 'TX-4').status, 'unresolved')
+        assert.equal(after.surfaces[0].surface.data.summary.status, 'simulated-approved')
+        assert.equal(after.surfaces[0].surface.data.summary.approvedCount, 2)
         const rows = after.surfaces[0].surface.data.differences
         assert.equal(rows.find((row) => row.id === 'TX-2').status, 'needs-review')
+        assert.equal(rows.find((row) => row.id === 'TX-4').status, 'unresolved')
+        assert.deepEqual(
+          after.surfaces[0].surface.data.diffProps.map((row) => row.status),
+          rows.map((row) => row.status),
+        )
         assert.equal(after.surfaces[0].sources.differences.status, 'ready')
+        assert.equal(after.surfaces[0].sources.diffProps.status, 'ready')
         assert.deepEqual(after.surfaces[0].surface.actions, [])
       } else {
         assert.equal(after.surfaces[0].surface.revision, 1)
         assert.equal(action.refusal.reason, 'unauthorized')
+      }
+      for (const modelRequest of requests) {
+        const text = JSON.stringify(modelRequest)
+        assert.equal(text.includes('bankCents'), false)
+        assert.equal(text.includes('bookCents'), false)
+        assert.equal(text.includes('differenceCents'), false)
+        assert.equal(text.includes('review-suspense'), false)
+        assert.equal(text.includes('"entries"'), false)
       }
     } finally {
       await kit.dispose()
@@ -146,10 +165,8 @@ test('exact cents, duplicate IDs and unresolved evidence retain their original a
   assert.deepEqual(report.unresolved, ['TX-4'])
   const review = reviewSurface('finance-review', report)
   assert.deepEqual(review.data.differences, { $source: 'finance/differences', params: {} })
-  assert.deepEqual(
-    review.data.diffProps.rows.map((row) => row.id),
-    ['TX-2', 'TX-3', 'TX-4'],
-  )
+  assert.deepEqual(review.data.diffProps, { $source: 'finance/differences', params: {} })
+  assert.equal(review.data.summary.approvedCount, 0)
   assert.equal(review.components.find((component) => component.id === 'differences').selection, 'multiple')
   assert.deepEqual(review.data.adjustment.proposals, report.proposals)
   assert.equal(review.data.summary.mismatchCount, report.mismatches.length)
@@ -166,11 +183,8 @@ test('exact cents, duplicate IDs and unresolved evidence retain their original a
   assert.equal(receipt.posted, false)
   const completed = reviewSurface('finance-review', report, 2, receipt)
   assert.deepEqual(completed.data.differences, { $source: 'finance/differences', params: {} })
-  assert.deepEqual(
-    completed.data.diffProps.rows.filter((row) => row.status === 'simulated-approved').map((row) => row.id),
-    ['TX-2', 'TX-3'],
-  )
-  assert.equal(completed.data.diffProps.rows.find((row) => row.id === 'TX-4').status, 'unresolved')
+  assert.deepEqual(completed.data.diffProps, { $source: 'finance/differences', params: {} })
+  assert.equal(completed.data.summary.approvedCount, receipt.entries.length)
   assert.equal(completed.components.find((component) => component.id === 'differences').selection, 'none')
   assert.deepEqual(completed.actions, [])
   assert.equal(completed.data.summary.status, 'simulated-approved')

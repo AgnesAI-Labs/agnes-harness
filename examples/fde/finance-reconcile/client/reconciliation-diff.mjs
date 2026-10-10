@@ -22,7 +22,8 @@ export const renderers = {
     head.append(header)
     table.append(head)
     const body = document.createElement('tbody')
-    for (const item of props.rows) {
+    const items = Array.isArray(props) ? props : []
+    for (const item of items) {
       const row = document.createElement('tr')
       for (const [index, value] of [
         item.id,
@@ -41,14 +42,6 @@ export const renderers = {
     table.append(body)
     mount.dataset.theme = api.readTheme()
     mount.replaceChildren(table)
-    if (props.actionable) {
-      const button = document.createElement('button')
-      button.type = 'button'
-      button.textContent = chinese ? '审阅调整' : 'Review adjustments'
-      button.dataset.testid = 'reconciliation-review'
-      button.addEventListener('click', () => api.emitAction('approve'))
-      mount.append(button)
-    }
     return () => mount.replaceChildren()
   },
 }

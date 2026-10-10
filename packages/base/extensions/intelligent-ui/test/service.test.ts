@@ -31,7 +31,11 @@ const parameters = Type.Object(
   {
     amount: Type.Number(),
     reason: Type.String({ minLength: 1 }),
-    rows: Type.Array(Type.Object({ id: Type.String(), amount: Type.Number() })),
+    rows: Type.Union([
+      Type.Array(Type.Object({ id: Type.String(), amount: Type.Number() })),
+      Type.Object({ id: Type.String(), amount: Type.Number() }),
+      Type.String(),
+    ]),
   },
   { additionalProperties: false },
 )
@@ -807,6 +811,18 @@ const HASH = 'ab'.repeat(32)
 const bound = (): UiSurface => {
   const value = surface()
   value.data.rows = { $source: 'finance/differences', params: {} }
+  const action = value.actions[0]
+  if (!action) throw new Error('missing confirm action')
+  action.argsTemplate = {
+    ...action.argsTemplate,
+    rows: { from: 'selection', key: 'differences', pointer: '/0/id' },
+  }
+  action.paramsSchema = {
+    type: 'object',
+    required: ['amount', 'reason', 'rows'],
+    properties: { amount: { type: 'number' }, reason: { type: 'string' }, rows: { type: 'string' } },
+    additionalProperties: false,
+  }
   return value
 }
 const resolved = (input: UiSourceResolveInput, ok = true): UiSourceResolveResult =>
@@ -924,6 +940,46 @@ describe('bound UI data sources', () => {
       data: { code: 'UI_SOURCE_DENIED' },
     })
     expect(f.rows.filter((item) => item.type.endsWith('/action.received'))).toHaveLength(before)
+  })
+  it('rejects an empty source pointer before storing a surface', async () => {
+    const f = fixture()
+    const value = bound()
+    const action = value.actions[0]
+    if (!action) throw new Error('missing confirm action')
+    action.argsTemplate = {
+      ...action.argsTemplate,
+      rows: { from: 'selection', key: 'differences' },
+    }
+    await expect(f.service().render({ surface: value }, signal)).rejects.toMatchObject({
+      data: { code: 'UI_INVALID' },
+    })
+    expect(f.rows).toEqual([])
+  })
+  it('rejects a source binding that resolves to a row object', async () => {
+    const f = fixture()
+    f.source(async (input) => resolved(input))
+    const value = bound()
+    const action = value.actions[0]
+    if (!action) throw new Error('missing confirm action')
+    action.argsTemplate = {
+      ...action.argsTemplate,
+      rows: { from: 'selection', key: 'differences', pointer: '/0' },
+    }
+    action.paramsSchema = {
+      type: 'object',
+      required: ['amount', 'reason', 'rows'],
+      properties: {
+        amount: { type: 'number' },
+        reason: { type: 'string' },
+        rows: { type: 'object' },
+      },
+      additionalProperties: false,
+    }
+    await f.service().render({ surface: value }, signal)
+    const receipt = await f.service().action(request(), actor, signal)
+    expect(receipt).toMatchObject({ status: 'rejected', refusal: { code: 'UI_INVALID' } })
+    expect(f.rows.some((item) => item.type.endsWith('/queue'))).toBe(false)
+    expect(JSON.stringify(f.rows)).not.toContain('"id":"a"')
   })
   it('refuses refresh while an action is unfinished and does not resolve again', async () => {
     const f = fixture()

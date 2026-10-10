@@ -55,7 +55,7 @@ loop 调用 Core 的公开 `prepareRequest()`；Core 解析会话主模型、契
 
 ## 官方工具与输出
 
-已安装的 standard 预设提供[官方工具](../../../docs/reference/default-tools.zh-CN.md)和 `agnes/intelligent-ui`。业务插件通过 `ui_render` 声明审阅界面，按钮映射到原 `fde_finance_approve`。业务确认不授予工具权限。默认 Loop 与财务 Loop 使用同一个公开 deferred-invocation 合同；终态结果通过 SC1 到达 Agent，再由 `ui_update` 标记已处理行，保留未解决交易。
+已安装的 standard 预设提供[官方工具](../../../docs/reference/default-tools.zh-CN.md)和 `agnes/intelligent-ui`。业务插件通过 `ui_render` 声明审阅界面，按钮映射到原 `fde_finance_approve`。业务确认不授予工具权限。默认 Loop 与财务 Loop 使用同一个公开 deferred-invocation 合同；终态结果通过 SC1 到达 Agent，再由 `ui_update` 把模拟结果记入摘要计数，不把行正文复制进 surface。
 
 官方 `write` 在 `fde-output/finance-reconcile/<run-hash>/` 生成报告，`present` 将最终结果复制为会话制品，使用标准打开／下载卡。策略仅允许此受限路径的报告写入，已读／过期版本保护继续生效。输出相对于会话工作区，manifest 声明相应读写范围。
 
@@ -77,4 +77,4 @@ npm test
 
 ## 已审阅的对账差异组件
 
-差异视图在 `client/agnes.client.json` 中声明，由自包含的 `client/reconciliation-diff.mjs` 实现。安装审阅覆盖 namespace/version、本地 props Schema、字节上限、文本回退与键盘/语义标签要求。会话保留 generation 锁定的已审阅模块。旁边的预设账簿差异表和金额图绑定 `finance/differences`。自定义视图保留带有回执状态的字面行。TUI/channels 使用声明的文本回退。“审阅调整”按钮触发现有 `approve` surface action、确认及 `fde_finance_approve` 审批流程，组件不能写账簿、fetch 数据或访问会话。详见[自定义组件合同](../../../docs/develop/intelligent-ui.zh-CN.md#已审阅的自定义组件)。
+差异视图在 `client/agnes.client.json` 中声明，由自包含的 `client/reconciliation-diff.mjs` 实现。安装审阅覆盖 namespace/version、本地 props Schema、字节上限、文本回退与键盘/语义标签要求。会话保留 generation 锁定的已审阅模块。预设账簿差异表、金额图和自定义差异视图都绑定 `finance/differences`。自定义视图展示该数据源的行，不保留带有回执状态的副本。确认结果是摘要状态和 `approvedCount`。Surface 的按钮组触发现有 `approve`、确认及 `fde_finance_approve` 审批流程。自定义视图自身没有动作。TUI/channels 使用声明的文本回退。组件不能写账簿、fetch 数据或访问会话。详见[自定义组件合同](../../../docs/develop/intelligent-ui.zh-CN.md#已审阅的自定义组件)。

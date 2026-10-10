@@ -252,8 +252,8 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 const INITIAL_CEILING: Record<string, number> = {
   // GT1: register new round scopes; exact values are remeasured once at the end.
   'packages/base/extensions/references': 21,
-  // UI data-source resolution. Rebased onto the deferred-producer plugin; countLines: 1065.
-  'packages/base/extensions/intelligent-ui': 1065,
+  // Source bindings resolve to scalars. Measured 1094, exact, no spare.
+  'packages/base/extensions/intelligent-ui': 1094,
   // Leaf Intelligent UI kind token so Host does not import Base. Exact countLines, no spare.
   // Deferred receipt types come from the plugin-runtime contract. countLines: 76, exact, no spare.
   // UI data-source kind, result enum, and failure codes. Rebased onto that 76; countLines: 163.

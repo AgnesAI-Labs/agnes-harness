@@ -77,7 +77,7 @@ export function reconcile(bank, book) {
   }
 }
 
-/** Table rows. A receipt marks only the literal custom view; the bound source omits it. */
+/** Rows for finance/differences. A caller may mark receipt ids; the published source does not. */
 export function differenceRows(report, receipt = null) {
   const approved = new Set(receipt?.entries.map((entry) => entry.id) ?? [])
   return report.mismatches.map((item) => ({
