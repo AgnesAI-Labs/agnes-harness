@@ -388,6 +388,40 @@ describe('ui data source resolution', () => {
     expect(busy.opens()).toBe(1)
   })
 
+  it('drops cached rows when a refresh fails', async () => {
+    let fail = false
+    const h = harness({
+      query: async () => {
+        if (fail) throw new Error('refresh down')
+        return rows
+      },
+    })
+    const first = await run(h, 'read')
+    if (!first.ok) throw new Error('expected rows')
+    expect(first.surface.data.rows).toEqual(rows)
+    expect(h.cache.size).toBe(1)
+    fail = true
+    const refresh = await run(h, 'refresh')
+    if (!refresh.ok) throw new Error('expected a degraded refresh')
+    expect(refresh.sources.rows).toEqual({ status: 'error', code: 'UI_SOURCE_UNAVAILABLE' })
+    expect(refresh.surface.data.rows).toEqual(binding)
+    expect(refresh.audits[0]?.name).toBe('source.refused')
+    expect(h.cache.size).toBe(0)
+    const again = await run(h, 'read')
+    if (!again.ok) throw new Error('expected a degraded read')
+    expect(again.sources.rows).toEqual({ status: 'error', code: 'UI_SOURCE_UNAVAILABLE' })
+    expect(again.surface.data.rows).toEqual(binding)
+    expect(again.audits.map((item) => item.name)).toEqual(['source.refused'])
+    expect(JSON.stringify(again)).not.toContain('id":"a"')
+    expect(h.cache.size).toBe(0)
+    fail = false
+    const recovered = await run(h, 'read')
+    if (!recovered.ok) throw new Error('expected a fresh query')
+    expect(recovered.surface.data.rows).toEqual(rows)
+    expect(recovered.audits.map((item) => item.name)).toEqual(['source.resolved'])
+    expect(h.cache.size).toBe(1)
+  })
+
   it('refreshes past the cache and names that audit', async () => {
     const h = harness()
     await run(h, 'read')

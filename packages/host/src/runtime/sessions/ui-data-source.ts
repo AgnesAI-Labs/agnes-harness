@@ -498,6 +498,10 @@ async function resolveKey(
     registration.id,
     paramsHash,
   ].join('\0')
+  const refuse = (code: UiSourceFailure): ResolvedKey => {
+    deps.cache.delete(cacheKey)
+    return finish(code, {})
+  }
   if (input.purpose === 'read') {
     const hit = deps.cache.get(cacheKey)
     if (hit) {
@@ -521,7 +525,7 @@ async function resolveKey(
     opened = await deps.open(registration, input.signal)
   } catch {
     throwIfCaller(input.signal)
-    return finish('UI_SOURCE_UNAVAILABLE', {})
+    return refuse('UI_SOURCE_UNAVAILABLE')
   }
   const queried = await querySource(
     opened,
@@ -529,31 +533,30 @@ async function resolveKey(
     input.signal,
     deps.timeoutMs ?? X_AGNES_UI_LIMITS.sourceTimeoutMs,
   )
-  if (!queried.ok) return finish(queried.code, {})
-  if (!isJson(queried.data)) return finish('UI_SOURCE_UNAVAILABLE', {})
+  if (!queried.ok) return refuse(queried.code)
+  if (!isJson(queried.data)) return refuse('UI_SOURCE_UNAVAILABLE')
   let encoded: string
   try {
     encoded = jcs(queried.data)
   } catch {
-    return finish('UI_SOURCE_UNAVAILABLE', {})
+    return refuse('UI_SOURCE_UNAVAILABLE')
   }
   const bytes = Buffer.byteLength(encoded)
-  if (bytes > (deps.resultBytes ?? X_AGNES_UI_LIMITS.sourceResultBytes))
-    return finish('UI_SOURCE_TOO_LARGE', {})
-  if (!resultMatches(registration.result, queried.data)) return finish('UI_SOURCE_SHAPE', {})
+  if (bytes > (deps.resultBytes ?? X_AGNES_UI_LIMITS.sourceResultBytes)) return refuse('UI_SOURCE_TOO_LARGE')
+  if (!resultMatches(registration.result, queried.data)) return refuse('UI_SOURCE_SHAPE')
   let declarations: readonly UiComponentDeclaration[]
   try {
     declarations = deps.declarations()
   } catch {
-    return finish('UI_SOURCE_UNAVAILABLE', {})
+    return refuse('UI_SOURCE_UNAVAILABLE')
   }
   try {
     for (const component of input.surface.components) {
       if (!('dataKey' in component) || component.dataKey !== key.dataKey) continue
-      if (!componentDataValid(component, queried.data, declarations)) return finish('UI_SOURCE_SHAPE', {})
+      if (!componentDataValid(component, queried.data, declarations)) return refuse('UI_SOURCE_SHAPE')
     }
   } catch {
-    return finish('UI_SOURCE_SHAPE', {})
+    return refuse('UI_SOURCE_SHAPE')
   }
   const renewed = uiDataSourceDecision(registration, deps.grant(registration.sourcePackage))
   if (renewed !== 'ok') {
