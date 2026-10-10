@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { bindProvidedContractModules } from '@agnes/base/provided-contracts'
 import { runIsolatedCommand } from '@agnes/package-isolation'
 import type { AuthoringTestRunner } from '@agnes/package-manager'
 import { providedExternalModules } from '@agnes/plugin-runtime/provided-externals'
@@ -18,6 +19,7 @@ export const runAuthoringTests: AuthoringTestRunner = async (directory, files, s
       runner: 'node-test',
       output: 'Add at least one observable Node test before review.',
     }
+  bindProvidedContractModules()
   const require = createRequire(import.meta.url)
   const sdk = join(dirname(fileURLToPath(import.meta.url)), 'authoring-sdk.mjs')
   const output = join(directory, 'node_modules', '.authoring-tests')

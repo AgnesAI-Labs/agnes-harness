@@ -1,14 +1,15 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { ProviderError } from '@agnes/extension-api'
-import { HostError } from '@agnes/host-common/errors'
 import * as gitWorktreeContract from '@agnes/git-worktree-contract'
+import { HostError } from '@agnes/host-common/errors'
 import * as intelligentUiContract from '@agnes/intelligent-ui-contract'
 import {
   checkPluginApiRanges,
   checkProvidedExternals,
   missingPluginModule,
   PluginModuleError,
+  registerProvidedExternal,
 } from '@agnes/plugin-runtime/provided-externals'
 import * as protocol from '@agnes/protocol'
 import { createJiti } from 'jiti'
@@ -38,15 +39,15 @@ export function createLoader(opts: { cacheDir: string; hostRoot: string; agnesVe
 } {
   if (!/^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(opts.agnesVersion))
     throw new HostError('E_EXT_LOAD', 'invalid loader cache version')
+  // This package does not depend on base. Register the namespaces it already imported.
+  registerProvidedExternal('@agnes/protocol', protocol)
+  registerProvidedExternal('@agnes/git-worktree-contract', gitWorktreeContract)
+  registerProvidedExternal('@agnes/intelligent-ui-contract', intelligentUiContract)
   const jiti = createJiti(join(opts.hostRoot, 'package.json'), {
     moduleCache: false,
     fsCache: join(opts.cacheDir, 'jiti', opts.agnesVersion),
     virtualModules: {
       ...localPluginVirtualModules,
-      '@agnes/protocol': protocol,
-      // Same module the Host installer imported. A second copy would fork the kind token.
-      '@agnes/git-worktree-contract': gitWorktreeContract,
-      '@agnes/intelligent-ui-contract': intelligentUiContract,
     },
     tryNative: false,
     forceTranspile: true,

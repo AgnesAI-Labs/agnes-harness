@@ -4,11 +4,10 @@ import { API_VERSION, ProviderError, satisfiesApiRange } from '@agnes/extension-
 import * as typebox from '@sinclair/typebox'
 import * as typeboxCompiler from '@sinclair/typebox/compiler'
 import * as typeboxValue from '@sinclair/typebox/value'
-import * as author from './index.js'
 import * as deferredContract from './deferred-contract.js'
+import * as author from './index.js'
 
-/** Public author namespaces only: never expose plugin-runtime/host or testkit. */
-export const providedExternalModules = Object.freeze({
+const builtins: Readonly<Record<string, object>> = Object.freeze({
   '@agnes/plugin-runtime': author,
   '@agnes/plugin-runtime/deferred-contract': deferredContract,
   '@agnes/extension-api': extensionApi,
@@ -17,6 +16,51 @@ export const providedExternalModules = Object.freeze({
   '@sinclair/typebox/value': typeboxValue,
   '@sinclair/typebox/compiler': typeboxCompiler,
 })
+
+// These stay out of the static imports: the dependency guard allows this package only
+// cordis, cordis-loader and extension-api. A later binder registers the one process copy.
+const contractSpecifiers = new Set([
+  '@agnes/protocol',
+  '@agnes/intelligent-ui-contract',
+  '@agnes/git-worktree-contract',
+])
+const contracts = new Map<string, object>()
+
+const readModule = (key: PropertyKey): object | undefined => {
+  if (typeof key !== 'string') return undefined
+  if (Object.hasOwn(builtins, key)) return builtins[key]
+  return contracts.get(key)
+}
+
+/** Public author namespaces only: never expose plugin-runtime/host or testkit. */
+export const providedExternalModules: Readonly<Record<string, object>> = new Proxy(
+  {} as Record<string, object>,
+  {
+    get: (_target, key) => readModule(key),
+    has: (_target, key) => readModule(key) !== undefined,
+    ownKeys: () => [...Object.keys(builtins), ...contracts.keys()],
+    getOwnPropertyDescriptor: (_target, key) => {
+      const value = readModule(key)
+      return value === undefined
+        ? undefined
+        : { configurable: true, enumerable: true, writable: false, value }
+    },
+    set: () => false,
+    deleteProperty: () => false,
+    defineProperty: () => false,
+  },
+)
+
+/** Adds one contract namespace. The same object may be registered again; a second copy is refused. */
+export function registerProvidedExternal(specifier: string, namespace: object): void {
+  if (!contractSpecifiers.has(specifier)) throw new TypeError('Only a host contract module can be registered')
+  if (namespace === null || typeof namespace !== 'object' || Array.isArray(namespace))
+    throw new TypeError('A host contract module must be a namespace object')
+  const current = contracts.get(specifier)
+  if (current === namespace) return
+  if (current !== undefined) throw new TypeError('A host contract module is already bound')
+  contracts.set(specifier, namespace)
+}
 
 /** Release pins; ranges use the same syntax as extension apiRange. */
 export const providedExternalVersions: Readonly<Record<string, string>> = Object.freeze({

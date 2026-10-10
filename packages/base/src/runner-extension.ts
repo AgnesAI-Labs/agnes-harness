@@ -3,15 +3,14 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, relative } from 'node:path'
 import type { ExtensionAPI, HookEvent, HookHandler } from '@agnes/extension-api'
 import * as extensionApi from '@agnes/extension-api'
-import * as gitWorktreeContract from '@agnes/git-worktree-contract'
-import * as intelligentUiContract from '@agnes/intelligent-ui-contract'
 import {
   checkProvidedExternals,
   missingPluginModule,
   providedExternalModules,
 } from '@agnes/plugin-runtime/provided-externals'
-import * as protocol from '@agnes/protocol'
+import type { JsonValue } from '@agnes/protocol'
 import { createJiti } from 'jiti/static'
+import { bindProvidedContractModules } from './provided-contracts.js'
 import { runnerLease } from './runner-context.js'
 
 const record = (value: unknown): value is Record<string, unknown> =>
@@ -100,7 +99,7 @@ export async function loadRunnerExtension(
       bindOwn: unavailable,
     }),
     events: Object.freeze({
-      append: (name: string, value: protocol.JsonValue) =>
+      append: (name: string, value: JsonValue) =>
         capability('events.append', { name, data: value }) as Promise<extensionApi.Seq>,
     }),
     ctx: Object.freeze({
@@ -121,6 +120,7 @@ export async function loadRunnerExtension(
     const metadata = JSON.parse(readFileSync(packageManifest, 'utf8'))
     checkProvidedExternals(metadata.agnes?.hostProvidedExternals)
   }
+  bindProvidedContractModules()
   const jiti = createJiti(`${dirname(data.entry)}/package.json`, {
     moduleCache: false,
     fsCache: false,
@@ -131,10 +131,6 @@ export async function loadRunnerExtension(
     tsconfigPaths: false,
     virtualModules: {
       ...providedExternalModules,
-      '@agnes/protocol': protocol,
-      // Same module the Host installer imported. A second copy would fork the kind token.
-      '@agnes/git-worktree-contract': gitWorktreeContract,
-      '@agnes/intelligent-ui-contract': intelligentUiContract,
     },
   })
   const imported: unknown = await jiti.import(data.entry).catch((error) => {

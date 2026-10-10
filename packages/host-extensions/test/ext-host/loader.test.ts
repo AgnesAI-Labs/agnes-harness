@@ -2,11 +2,16 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { bindProvidedContractModules } from '@agnes/base/provided-contracts'
 import { ToolRegistry } from '@agnes/core'
 import { HOOK_EVENTS } from '@agnes/extension-api'
+import * as gitWorktreeContract from '@agnes/git-worktree-contract'
 import { gitWorktreeKind } from '@agnes/git-worktree-contract'
+import * as intelligentUiContract from '@agnes/intelligent-ui-contract'
 import { intelligentUiKind } from '@agnes/intelligent-ui-contract'
 import { defineTool } from '@agnes/plugin-runtime'
+import { providedExternalModules, registerProvidedExternal } from '@agnes/plugin-runtime/provided-externals'
+import * as protocol from '@agnes/protocol'
 import { inspectJsonData } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
@@ -67,6 +72,19 @@ it('requires compatible ordinary plugin apiRange before evaluating any source', 
   )
   expect(await f.loader.import(entry)).toHaveProperty('main')
   expect(readFileSync(marker, 'utf8')).toBe('yes')
+})
+
+it('keeps contract token identity on the one provided-externals table', () => {
+  bindProvidedContractModules()
+  setup()
+  expect(providedExternalModules['@agnes/protocol']).toBe(protocol)
+  expect({ ...providedExternalModules }['@agnes/git-worktree-contract']).toBe(gitWorktreeContract)
+  expect(
+    Object.entries(providedExternalModules).find(([name]) => name === '@agnes/intelligent-ui-contract')?.[1],
+  ).toBe(intelligentUiContract)
+  expect(() => registerProvidedExternal('@agnes/protocol', {})).toThrow(TypeError)
+  registerProvidedExternal('@agnes/protocol', protocol)
+  expect(providedExternalModules['@agnes/protocol']).toBe(protocol)
 })
 
 it('shares host modules even when the extension carries decoy copies', async () => {
