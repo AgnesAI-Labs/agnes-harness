@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 
-import type { UsageView } from '@agnes/protocol'
+import { type UsageView, userImagePolicy } from '@agnes/protocol'
 import type { ComposerView } from '@agnes/web-units'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -17,6 +17,30 @@ const usage: UsageView = {
   billingComplete: true,
   context: { tokens: 128, window: 8192, autoCompact: true, source: 'estimated' },
   model: { route: 'local', id: 'model-a', thinking: 'off', maxTokens: 1024 },
+}
+
+const view: ComposerView = {
+  cancel: { disabled: true, hidden: true, label: '停止' },
+  connected: true,
+  configured: true,
+  hasSession: true,
+  hint: { kind: 'shortcut', text: 'Enter 发送，Shift+Enter 换行' },
+  input: { disabled: false, placeholder: '描述你想完成的事…' },
+  loading: false,
+  model: {
+    accessibleName: '当前会话模型：model-a',
+    disabled: false,
+    label: 'model-a',
+    options: [{ route: 'local', id: 'model-a', label: '本地模型' }],
+    pending: false,
+    selected: { route: 'local', id: 'model-a' },
+  },
+  permission: { disabled: false, pending: false, selected: 'workspace' },
+  sending: false,
+  send: { disabled: false, label: '发送', mode: 'idle', title: '发送（Enter）' },
+  stopping: false,
+  usage,
+  workspace: { disabled: false, label: 'agnes', title: '/workspace/agnes' },
 }
 
 // A slot contribution renders in well under half a second, but under a loaded runner an
@@ -109,6 +133,8 @@ describe('rendered composer region', () => {
     })
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
     runtime = await mountRenderedIndex()
+    // A pasted PNG is an image only when the selected model accepts images; otherwise it is a file.
+    runtime.composer?.render({ ...view, imagePolicy: userImagePolicy({ input: ['text', 'image'] }) })
     const prompt = document.querySelector<HTMLTextAreaElement>('#prompt')
     if (!prompt) throw new Error('composer input is missing')
     const pasted = new Event('paste', { bubbles: true, cancelable: true })
@@ -134,29 +160,6 @@ describe('rendered composer region', () => {
     try {
       localStorage.setItem('agnes-locale', 'zh-CN')
       runtime = await mountRenderedIndex()
-      const view: ComposerView = {
-        cancel: { disabled: true, hidden: true, label: '停止' },
-        connected: true,
-        configured: true,
-        hasSession: true,
-        hint: { kind: 'shortcut', text: 'Enter 发送，Shift+Enter 换行' },
-        input: { disabled: false, placeholder: '描述你想完成的事…' },
-        loading: false,
-        model: {
-          accessibleName: '当前会话模型：model-a',
-          disabled: false,
-          label: 'model-a',
-          options: [{ route: 'local', id: 'model-a', label: '本地模型' }],
-          pending: false,
-          selected: { route: 'local', id: 'model-a' },
-        },
-        permission: { disabled: false, pending: false, selected: 'workspace' },
-        sending: false,
-        send: { disabled: false, label: '发送', mode: 'idle', title: '发送（Enter）' },
-        stopping: false,
-        usage,
-        workspace: { disabled: false, label: 'agnes', title: '/workspace/agnes' },
-      }
       const render = (next: Partial<ComposerView>) => runtime?.composer?.render({ ...view, ...next })
       const host = () => required(document.querySelector<HTMLElement>('#session-usage'))
       expect(host().hidden).toBe(true)

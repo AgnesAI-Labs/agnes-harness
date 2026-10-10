@@ -6,7 +6,7 @@ import {
   CAPABILITY_IDS,
   type ConfigurationService,
   createConfigurationService,
-  createPlatform,
+  createPosixPlatform,
 } from '@agnes/host'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { describe, expect, it } from 'vitest'
@@ -40,7 +40,9 @@ describe('profile and platform doctor', () => {
   it('says why a capability is below full, and tells an unprobed sandbox from a failed probe', async () => {
     const d = setup()
     try {
-      const unprobed = createPlatform()
+      // These are the POSIX adapter's reasons. The Windows adapter has no sandbox backend to wait
+      // for or to fail, and says so in its own words, so the test pins one adapter on every OS.
+      const unprobed = createPosixPlatform()
       const before = (await doctorPlatform(d, unprobed)).detail
       // The doctor does not start a sandbox backend, so the sandbox rows are still waiting.
       const l1 = before.indexOf('sandbox.l1=unavailable')
@@ -51,7 +53,7 @@ describe('profile and platform doctor', () => {
       expect(before).toContain('terminal.kitty-keys=unavailable')
       expect(before).toContain('terminal.kitty-keys.reason=negotiated at TUI start')
       // Full capabilities carry no reason line, even when the platform recorded a note for them.
-      const noted = createPlatform()
+      const noted = createPosixPlatform()
       const withNote = {
         ...noted,
         probe: async () => undefined,
@@ -71,7 +73,7 @@ describe('profile and platform doctor', () => {
       expect(before.some((line) => line.startsWith('ipc.reason='))).toBe(false)
 
       // A backend that was probed and failed says so, in different words.
-      const failed = createPlatform()
+      const failed = createPosixPlatform()
       failed.recordSandboxBackend({ name: 'none', enforcement: { level: 'none', scope: [] } })
       // probe() resets the table to its "awaiting" defaults, so the recorded failure is kept by
       // not probing again here.

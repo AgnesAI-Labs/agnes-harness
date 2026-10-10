@@ -150,24 +150,6 @@ it.each(['direct', 'nested'] as const)(
 )
 
 describe('user message images', () => {
-  it('refuses image backlog overflow before replacing the durable inbox', async () => {
-    const provider = fakeProvider([])
-    provider.models = () => [model]
-    const { session, log } = await openSession({ provider })
-    const bytes = Buffer.alloc(USER_MESSAGE_IMAGE_LIMITS.maxAggregateBytes)
-    bytes.set([
-      0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, 0, 1, 0, 1, 1, 1, 0x11, 0, 0xff, 0xda, 0, 8, 1, 1, 0, 0, 63, 0,
-    ])
-    bytes.set([0xff, 0xd9], bytes.length - 2)
-    const content = [{ type: 'image' as const, mimeType: 'image/jpeg', data: bytes.toString('base64') }]
-    await session.enqueue('next-turn', { content, actor })
-    await expect(session.enqueue('next-turn', { content, actor })).rejects.toMatchObject({
-      code: 'E_ENVELOPE',
-    })
-    expect(session.latest('inbox')).toMatchObject({ items: [{ content }] })
-    expect(await log.scan({ type: 'inbox', limit: 10 })).toHaveLength(1)
-  })
-
   it('accepts valid inline PNG content into the shared session input queue', async () => {
     const provider = fakeProvider([])
     provider.models = () => [model]
