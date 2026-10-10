@@ -4,6 +4,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import {
   type PackageBlocker,
   type PackageContributionSummary,
+  type PluginCapabilities,
   type PluginMetadata,
   validatePackageAdminData,
   validatePluginMetadata,
@@ -47,6 +48,9 @@ export type RuntimeSnapshot = Readonly<{
   directory: string
   metadata?: PluginMetadata
   contributions: readonly PackageContributionSummary[]
+  /** Sealed with capabilityHash at trust or development load. Pins leave these unset. */
+  dependencies?: Readonly<Record<string, string>>
+  declaredCapabilities?: PluginCapabilities
 }>
 
 export type RuntimePin = Readonly<{

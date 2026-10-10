@@ -1,8 +1,7 @@
 /** Session-scoped UI data-source resolution. The plugin calls this and writes the audit. */
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import type { UiComponentDeclaration } from '@agnes/protocol/gen/extension-manifest'
-import { X_AGNES_UI_LIMITS } from '@agnes/protocol/gen/intelligent-ui'
+import { pluginSnapshotIdentity } from '@agnes/host-providers/runtime-plugin-catalogue'
 import {
   UI_DATA_SOURCE_RESULTS,
   type UiDataSourceResult,
@@ -13,6 +12,15 @@ import {
   uiDataSourceKind,
 } from '@agnes/intelligent-ui-contract'
 import {
+  capabilityAtoms,
+  capabilityHash,
+  lockPath,
+  RuntimeGenerationSnapshotStore,
+  type RuntimeSnapshot,
+  readLock,
+} from '@agnes/package-manager'
+import { decodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
+import {
   type Actor,
   componentDataValid,
   type JsonValue,
@@ -20,15 +28,8 @@ import {
   type UiSurface,
   uiDataBinding,
 } from '@agnes/protocol'
-import { pluginSnapshotIdentity } from '@agnes/host-providers/runtime-plugin-catalogue'
-import {
-  capabilityAtoms,
-  lockPath,
-  readLock,
-  readPluginCapabilities,
-  RuntimeGenerationSnapshotStore,
-} from '@agnes/package-manager'
-import { decodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
+import type { UiComponentDeclaration } from '@agnes/protocol/gen/extension-manifest'
+import { X_AGNES_UI_LIMITS } from '@agnes/protocol/gen/intelligent-ui'
 import { Ajv2020 } from 'ajv/dist/2020.js'
 
 export interface UiDataSourceRegistration {
@@ -309,13 +310,28 @@ interface ResolvedKey {
   readonly cached: boolean
 }
 
+function sealedSnapshotAtoms(snapshot: RuntimeSnapshot): { hashMatches: boolean; atoms: readonly string[] } {
+  if (snapshot.dependencies === undefined) return { hashMatches: false, atoms: [] }
+  const recomputed = capabilityHash({
+    contributions: [...snapshot.contributions],
+    dependencies: { ...snapshot.dependencies },
+    ...(snapshot.declaredCapabilities === undefined
+      ? {}
+      : { declaredCapabilities: snapshot.declaredCapabilities }),
+  })
+  return recomputed === snapshot.capabilityHash
+    ? { hashMatches: true, atoms: capabilityAtoms(snapshot.declaredCapabilities) }
+    : { hashMatches: false, atoms: [] }
+}
+
 /**
  * Re-reads the pinned generation and the current lock.
+ * Atoms come from the declaration sealed by capabilityHash, not from a later package.json.
  * A missing generation, a disabled row, or a hash that no longer matches the pin is denied.
  * Live config rows win over the immutable generation artifact when the session has accepted them.
- * An author host with no agnes-lock.json can own trust the same way generation restore does:
- * one trusted snapshot and a non-disabled row are the authority, and atoms still come from that
- * snapshot. Once a lock file exists, the lock stays authoritative.
+ * An author host with no agnes-lock.json uses the trusted snapshot taken at load time.
+ * Once a lock file exists, the lock entry is authoritative: its recomputed hash must equal both
+ * the trust decision and the snapshot.
  */
 export function loadUiDataSourceGrant(input: {
   profileDir: string
@@ -341,33 +357,35 @@ export function loadUiDataSourceGrant(input: {
         // A malformed plugin string does not enable this package.
       }
     }
-    let atoms: readonly string[] = []
-    try {
-      atoms = capabilityAtoms(readPluginCapabilities(source.snapshot.directory))
-    } catch {
-      atoms = []
-    }
     if (!existsSync(lockPath(input.profileDir))) {
       const trusted = source.trusted === true
+      const sealed = sealedSnapshotAtoms(source.snapshot)
+      const hashMatches = trusted && sealed.hashMatches
       return {
         enabled: active,
         trusted,
-        hashMatches: trusted,
+        hashMatches,
         inGeneration: trusted && active,
-        atoms,
+        atoms: hashMatches ? sealed.atoms : [],
       }
     }
     const entry = readLock(input.profileDir, {
       profile: input.profile,
       agnesVersion: input.agnesVersion,
     }).packages[input.packageId]
-    const decisionHash = entry?.trustDecision?.capabilityHash
+    if (!entry) return DENIED_GRANT
+    const recomputed = capabilityHash(entry)
+    const decisionHash = entry.trustDecision?.capabilityHash
+    const hashMatches =
+      decisionHash !== undefined &&
+      decisionHash === recomputed &&
+      recomputed === source.snapshot.capabilityHash
     return {
-      enabled: entry?.state.enabled === true,
-      trusted: source.trusted === true && entry?.state.trusted != null,
-      hashMatches: decisionHash !== undefined && decisionHash === source.snapshot.capabilityHash,
+      enabled: entry.state.enabled === true,
+      trusted: source.trusted === true && entry.state.trusted != null,
+      hashMatches,
       inGeneration: source.trusted === true && active,
-      atoms,
+      atoms: hashMatches ? capabilityAtoms(entry.declaredCapabilities) : [],
     }
   } catch {
     return DENIED_GRANT
@@ -536,6 +554,11 @@ async function resolveKey(
     }
   } catch {
     return finish('UI_SOURCE_SHAPE', {})
+  }
+  const renewed = uiDataSourceDecision(registration, deps.grant(registration.sourcePackage))
+  if (renewed !== 'ok') {
+    dropSource(deps.cache, deps.session.key, registration.id)
+    return finish(renewed, {})
   }
   const rows = Array.isArray(queried.data) ? queried.data.length : 0
   const resultHash = createHash('sha256').update(encoded).digest('hex')

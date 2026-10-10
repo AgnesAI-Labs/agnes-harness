@@ -1,9 +1,16 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
-import { hashDirectory, lockPath, RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
+import {
+  capabilityHash,
+  hashDirectory,
+  lockPath,
+  RuntimeGenerationSnapshotStore,
+  readDevelopmentPlugin,
+} from '@agnes/package-manager'
 import { createPluginRow } from '@agnes/plugin-runtime/host'
 import { type JsonValue, jcs, type UiActionParams, type UiSurface } from '@agnes/protocol'
 import { X_AGNES_UI_LIMITS } from '@agnes/protocol/gen/intelligent-ui'
@@ -12,13 +19,13 @@ import {
   loadUiDataSourceGrant,
   lookupUiDataSource,
   resolveUiDataSources,
-  uiDataSourceDecision,
   type UiDataSourceCacheEntry,
   type UiDataSourceCatalogView,
   type UiDataSourceGrant,
   type UiDataSourceRegistration,
   type UiDataSourceResolverDeps,
   type UiSourceResolveInput,
+  uiDataSourceDecision,
 } from '../src/runtime/sessions/ui-data-source.js'
 
 const rows = [{ id: 'a', amount: 12 }]
@@ -482,6 +489,21 @@ describe('ui data source resolution', () => {
     expect([...h.cache.values()].some((entry) => entry.sessionKey === 'other-session')).toBe(true)
   })
 
+  it('does not cache rows when the grant is revoked during the query', async () => {
+    let calls = 0
+    const h = harness({
+      grant: () => allow(calls++ > 0 ? { enabled: false } : {}),
+    })
+    const result = await run(h, 'read')
+    expect(h.opens()).toBe(1)
+    expect(h.cache.size).toBe(0)
+    expect(result).toMatchObject({ ok: true })
+    if (!result.ok) return
+    expect(result.sources.rows).toEqual({ status: 'error', code: 'UI_SOURCE_DENIED' })
+    expect(result.surface.data.rows).toEqual(binding)
+    expect(JSON.stringify(result.audits)).not.toContain('id":"a"')
+  })
+
   it('returns a denied grant when the pinned generation is missing', () => {
     const profile = mkdtempSync(join(tmpdir(), 'agh-ui-source-'))
     try {
@@ -521,6 +543,9 @@ describe('ui data source resolution', () => {
       }),
     )
     const packageId = '@agnes-fde/finance-reconcile'
+    const declaredCapabilities = { uiData: ['finance.differences.read'] }
+    const dependencies = {}
+    const contributions: [] = []
     const integrity = hashDirectory(packageDir, { exclude: [] })
     const source = {
       snapshot: {
@@ -531,8 +556,10 @@ describe('ui data source resolution', () => {
         snapshotId: integrity,
         integrity,
         treeIntegrity: integrity,
-        capabilityHash: 'ab'.repeat(32),
-        contributions: [],
+        capabilityHash: capabilityHash({ contributions, dependencies, declaredCapabilities }),
+        contributions,
+        dependencies,
+        declaredCapabilities,
       },
       generation: 1,
       trusted: true,
@@ -580,6 +607,24 @@ describe('ui data source resolution', () => {
         inGeneration: false,
         atoms: ['uiData:finance.differences.read'],
       })
+      const copy = join(profile, '.runtime-generations', open.id, '0')
+      const manifest = JSON.parse(readFileSync(join(copy, 'package.json'), 'utf8')) as {
+        agnes: { capabilities: { uiData: string[] } }
+      }
+      manifest.agnes.capabilities.uiData.push('finance.other.read')
+      writeFileSync(join(copy, 'package.json'), JSON.stringify(manifest))
+      const recordPath = join(profile, '.runtime-generations', open.id, 'generation.json')
+      const record = JSON.parse(readFileSync(recordPath, 'utf8')) as {
+        sources: { snapshot: { treeIntegrity: string; declaredCapabilities: { uiData: string[] } } }[]
+      }
+      const snap = record.sources[0]?.snapshot
+      if (!snap) throw new Error('missing generation source')
+      snap.treeIntegrity = hashDirectory(copy, { exclude: [] })
+      writeFileSync(recordPath, JSON.stringify(record))
+      expect(ask(open.id).atoms).toEqual(['uiData:finance.differences.read'])
+      snap.declaredCapabilities.uiData.push('finance.other.read')
+      writeFileSync(recordPath, JSON.stringify(record))
+      expect(ask(open.id)).toMatchObject({ hashMatches: false, atoms: [] })
       writeFileSync(lockPath(profile), 'not-a-lock')
       expect(ask(open.id)).toEqual({
         enabled: false,
@@ -588,6 +633,63 @@ describe('ui data source resolution', () => {
         inGeneration: false,
         atoms: [],
       })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('denies a uiData atom added to a development package after the snapshot was sealed', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agh-ui-source-dev-'))
+    const profile = join(root, 'profile')
+    mkdirSync(profile, { recursive: true })
+    const packageDir = fileURLToPath(new URL('../../../examples/fde/finance-reconcile/', import.meta.url))
+    const source = readDevelopmentPlugin(packageDir, 'local-dev')
+    const packageId = source.snapshot.packageId
+    const row = createPluginRow({
+      id: 'ext:finance/main',
+      plugin: `${packageId}@${source.snapshot.integrity}/main`,
+      snapshotDigest: source.snapshot.integrity,
+      exportName: 'main',
+      entryRevision: '1',
+      extrasRevision: 'none',
+      mountRevision: '1',
+      disabled: false,
+    })
+    const generation = new RuntimeGenerationSnapshotStore(profile).create(
+      buildCompleteRuntimeTarget({ rows: [row], resources: { mcp: [], skills: {} } }).target,
+      [source],
+      'test',
+    )
+    const ask = () =>
+      loadUiDataSourceGrant({
+        profileDir: profile,
+        profile: 'local-dev',
+        agnesVersion: '0.0.0',
+        generationId: generation.id,
+        packageId,
+      })
+    try {
+      expect(ask().atoms).toContain('uiData:finance.differences.read')
+      expect(ask().atoms).not.toContain('uiData:finance.other.read')
+      const copy = join(profile, '.runtime-generations', generation.id, '0')
+      const manifestPath = join(copy, 'package.json')
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+        agnes: { capabilities: { uiData: string[] } }
+      }
+      manifest.agnes.capabilities.uiData.push('finance.other.read')
+      writeFileSync(manifestPath, JSON.stringify(manifest))
+      const recordPath = join(profile, '.runtime-generations', generation.id, 'generation.json')
+      const record = JSON.parse(readFileSync(recordPath, 'utf8')) as {
+        sources: { snapshot: { treeIntegrity: string } }[]
+      }
+      const snap = record.sources[0]?.snapshot
+      if (!snap) throw new Error('missing generation source')
+      snap.treeIntegrity = hashDirectory(copy, { exclude: [] })
+      writeFileSync(recordPath, JSON.stringify(record))
+      const granted = ask()
+      expect(granted.hashMatches).toBe(true)
+      expect(granted.atoms).toContain('uiData:finance.differences.read')
+      expect(granted.atoms).not.toContain('uiData:finance.other.read')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

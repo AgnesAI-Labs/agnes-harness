@@ -212,7 +212,7 @@ Host 会话桥解析数据源。官方插件调用该函数并追加审计事实
 2. 目录中的 `sourcePackage` 仍然启用，信任决定存在，且 `capabilityHash` 等于钉住的快照。较新版本的哈希不同时，解析停留在该快照上。禁用或撤销后停止解析，即使 pin 里仍有代码。
 3. Provider 声明的 `permission` 被该信任决定覆盖。
 
-`permission` 是插件清单字段 `agnes.capabilities.uiData` 里的能力字符串。每一项匹配 `^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$`，长度 3–128，列表最多 32 个互不相同的名称。`*` 通配不在该模式内。信任审核展示 atom `uiData:<permission>`。能力哈希覆盖该列表。解析检查这个精确 atom。信任决定是唯一的授权。Surface 数据和 `params` 不携带授权字段。本合同不增加角色系统，也不增加 `audience: owner` 门闩。
+`permission` 是插件清单字段 `agnes.capabilities.uiData` 里的能力字符串。每一项匹配 `^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$`，长度 3–128，列表最多 32 个互不相同的名称。`*` 通配不在该模式内。信任审核展示 atom `uiData:<permission>`。能力哈希覆盖该列表。解析对照密封声明检查这个精确 atom，而不是之后的 `package.json`。信任决定是唯一的授权。Surface 数据和 `params` 不携带授权字段。本合同不增加角色系统，也不增加 `audience: owner` 门闩。
 
 目录中没有该 id 时为 `UI_SOURCE_UNKNOWN`。目录条目多于一个、generation 快照多于一个、包已禁用或未信任、哈希不一致，或缺少该 atom，均为 `UI_SOURCE_DENIED`。无效绑定与有效绑定出现在同一 surface 时为 `UI_SOURCE_INVALID`。
 
