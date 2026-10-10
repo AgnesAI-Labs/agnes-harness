@@ -37,6 +37,7 @@
         "@agnes/host-extensions",
         "@agnes/host-infrastructure",
         "@agnes/host-providers",
+        "@agnes/intelligent-ui-contract",
         "@agnes/loop-default",
         "@agnes/memory-file",
         "@agnes/model-adapters",

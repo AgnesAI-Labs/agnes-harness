@@ -18,7 +18,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
 
 // The package directory the profile loads from disk. The service contract is the separate
-// `@agnes/base/intelligent-ui` subpath.
+// `@agnes/intelligent-ui-contract` package.
 const baseDir = fileURLToPath(new URL('../../../base', import.meta.url))
 const dirs: string[] = []
 afterEach(() => {

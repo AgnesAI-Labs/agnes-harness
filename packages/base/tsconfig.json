@@ -29,6 +29,9 @@
     },
     {
       "path": "../memory-file"
+    },
+    {
+      "path": "../intelligent-ui-contract"
     }
   ]
 }

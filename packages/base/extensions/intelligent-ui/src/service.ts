@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { DeferredInvocationReceipt } from '@agnes/extension-api'
+import type { IntelligentUiInstance, IntelligentUiServicePorts } from '@agnes/intelligent-ui-contract'
 import {
   jcs,
   rpcError,
@@ -16,8 +17,7 @@ import {
   UiUpdateParams,
   X_AGNES_UI_LIMITS,
 } from '@agnes/protocol/gen/intelligent-ui'
-import { scanOwnUiEvents, uiCursorMac, uiSerial } from '../../../src/intelligent-ui.js'
-import type { IntelligentUiInstance, IntelligentUiServicePorts } from '../../../src/intelligent-ui.js'
+import { scanOwnUiEvents, uiCursorMac, uiSerial } from '../../../src/intelligent-ui-runtime.js'
 import { type ActionRecord, foldUiEvent, initialUiState, type UiState } from './state.js'
 import { bindArguments, bounded, json, validateSurface } from './validation.js'
 

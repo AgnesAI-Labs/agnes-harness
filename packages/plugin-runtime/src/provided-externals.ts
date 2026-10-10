@@ -22,6 +22,7 @@ export const providedExternalVersions: Readonly<Record<string, string>> = Object
   '@agnes/extension-api': API_VERSION,
   '@agnes/cordis': '0.0.0',
   '@agnes/protocol': '0.0.0',
+  '@agnes/intelligent-ui-contract': '0.0.0',
   '@sinclair/typebox': '0.34.33',
   '@sinclair/typebox/value': '0.34.33',
   '@sinclair/typebox/compiler': '0.34.33',

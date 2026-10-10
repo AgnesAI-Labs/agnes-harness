@@ -3,6 +3,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, relative } from 'node:path'
 import type { ExtensionAPI, HookEvent, HookHandler } from '@agnes/extension-api'
 import * as extensionApi from '@agnes/extension-api'
+import * as intelligentUiContract from '@agnes/intelligent-ui-contract'
 import {
   checkProvidedExternals,
   missingPluginModule,
@@ -130,6 +131,8 @@ export async function loadRunnerExtension(
     virtualModules: {
       ...providedExternalModules,
       '@agnes/protocol': protocol,
+      // Same module the Host installer imported. A second copy would fork the kind token.
+      '@agnes/intelligent-ui-contract': intelligentUiContract,
     },
   })
   const imported: unknown = await jiti.import(data.entry).catch((error) => {

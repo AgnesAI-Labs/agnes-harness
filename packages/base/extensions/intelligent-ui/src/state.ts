@@ -1,9 +1,8 @@
 import type { DeferredToolInvocation, ProjectionDef } from '@agnes/extension-api'
+import { UI_EVENTS, UI_OWNER, UI_PREFIX } from '@agnes/intelligent-ui-contract'
 import type { EventEnvelope, JsonValue, UiActionParams, UiSurfaceRecord } from '@agnes/protocol'
 import { jcs, type UiRefusal, validateAgainst } from '@agnes/protocol'
 import { UiActionReceipt } from '@agnes/protocol/gen/intelligent-ui'
-
-import { UI_EVENTS, UI_OWNER, UI_PREFIX } from '../../../src/intelligent-ui.js'
 
 export { UI_EVENTS, UI_OWNER, UI_PREFIX }
 export interface ActionRecord {

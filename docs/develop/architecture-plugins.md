@@ -124,7 +124,7 @@ Service providers use that same registry. `defineServiceKind()` adds cardinality
 
 Feedback is the first feature on this path: one provider per profile, a new instance per request, and workspace scope so replacing that provider's code waits for a process restart. Sending feedback, drafting a Skill candidate, and live configuration do not restart.
 
-Intelligent UI is a generation-scoped, single provider per session. Tools bind it with `providers.bindOwn`. User actions and reads enter through the session port, which admits the authenticated actor and resolves SC1 delivery from the durable action fact. Result keys stay exact (`ui-result:`).
+Intelligent UI is a generation-scoped, single provider per session. Host and the official plugin share the kind token from `@agnes/intelligent-ui-contract`. Tools bind it with `providers.bindOwn`. User actions and reads enter through the session port, which admits the authenticated actor and resolves SC1 delivery from the durable action fact. Result keys stay exact (`ui-result:`).
 
 Provider failures use `ProviderError`, separate from the closed extension-call error set: `E_PROVIDER_DUPLICATE`, `E_PROVIDER_UNKNOWN`, `E_PROVIDER_INVALID`, `E_PROVIDER_INCOMPATIBLE` and `E_PROVIDER_UNAVAILABLE`. Each carries `kind`, optional `provider`, `operation`, `retryable`, optional `hint` and original `cause`. Duplicate registration no longer reports an API-range error.
 

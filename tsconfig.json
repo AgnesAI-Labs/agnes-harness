@@ -287,6 +287,9 @@
       "path": "packages/memory-file/tsconfig.test.json"
     },
     {
+      "path": "packages/intelligent-ui-contract"
+    },
+    {
       "path": "packages/core-ledger/tsconfig.testkit.json"
     }
   ]

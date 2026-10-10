@@ -253,6 +253,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // GT1: register new round scopes; exact values are remeasured once at the end.
   'packages/base/extensions/references': 21,
   'packages/base/extensions/intelligent-ui': 1009,
+  // Leaf Intelligent UI kind token so Host does not import Base. Exact countLines, no spare.
+  'packages/intelligent-ui-contract/src': 74,
+  // Official plugin process-local serial and cursor MAC. Not a package export. Exact countLines, no spare.
+  'packages/base/src/intelligent-ui-runtime': 55,
   'packages/observability/src': 1301,
   'packages/base/src/memory': 14,
   'packages/memory-file/src': 509,

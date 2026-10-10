@@ -17,7 +17,7 @@ The runtime surface snapshot includes the preview plugin config helpers
 The reserved feedback event constants and the feedback service factory moved to `@agnes/host`.
 Release versioning remains pending.
 
-Intelligent UI types moved to `@agnes/base/intelligent-ui`. `ExtensionAPI.intelligentUi` is removed.
+Intelligent UI types moved to `@agnes/intelligent-ui-contract`. `ExtensionAPI.intelligentUi` is removed.
 The official plugin registers `intelligentUiKind` and tools bind it with `providers.bindOwn`.
 Session actions still require the existing events and `surfaces` grants and confer no execution
 authority; delivery stays on the generic deferred-invocation contract.

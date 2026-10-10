@@ -1,30 +1,30 @@
-import { scanAll } from '@agnes/core'
 import type { Context } from '@agnes/cordis'
+import { scanAll } from '@agnes/core'
 import { unavailableProjections } from '@agnes/extension-api'
+import type { ServiceCall, ServiceDescriptor } from '@agnes/host-common/assemble/service-binding'
+import type { DeferredInvocationsService } from '@agnes/host-providers/assemble/deferred-invocations'
 import {
+  type IntelligentUiInstance,
   intelligentUiKind,
   UI_EVENTS,
   UI_OWNER,
-  type IntelligentUiInstance,
-} from '@agnes/base/intelligent-ui'
-import type { ServiceCall, ServiceDescriptor } from '@agnes/host-common/assemble/service-binding'
-import type { DeferredInvocationsService } from '@agnes/host-providers/assemble/deferred-invocations'
+} from '@agnes/intelligent-ui-contract'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import {
-  rpcError,
   type Actor,
+  rpcError,
   type UiActionParams,
   type UiActionReceipt,
   type UiReadParams,
   type UiReadResult,
 } from '@agnes/protocol'
+import type { HostSession } from '../lifecycle/host.js'
 import type { ExtensionServiceHost } from '../services/author-port.js'
 import {
   createSessionLedger,
-  sessionInputTarget,
   type SessionLedgerSession,
+  sessionInputTarget,
 } from '../services/session-ports.js'
-import type { HostSession } from '../lifecycle/host.js'
 import { enqueueSessionInputOnce } from './deferred-invocations.js'
 import { readUiComponentDeclarations } from './ui-component-declarations.js'
 

@@ -44,6 +44,9 @@
     },
     {
       "path": "../core/tsconfig.testkit.json"
+    },
+    {
+      "path": "../intelligent-ui-contract"
     }
   ]
 }

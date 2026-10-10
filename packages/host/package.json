@@ -19,7 +19,6 @@
   },
   "dependencies": {
     "@agnes/ai": "workspace:*",
-    "@agnes/base": "workspace:*",
     "@agnes/model-adapters": "workspace:*",
     "@agnes/cordis": "workspace:*",
     "@agnes/core": "workspace:*",
@@ -39,9 +38,11 @@
     "@agnes/host-artifacts": "workspace:*",
     "@agnes/host-extensions": "workspace:*",
     "@agnes/host-providers": "workspace:*",
+    "@agnes/intelligent-ui-contract": "workspace:*",
     "@agnes/observability": "workspace:*"
   },
   "devDependencies": {
+    "@agnes/base": "workspace:*",
     "@agnes/code": "workspace:*",
     "@sinclair/typebox": "0.34.33"
   },

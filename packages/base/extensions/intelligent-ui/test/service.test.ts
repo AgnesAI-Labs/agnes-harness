@@ -3,7 +3,7 @@ import type {
   DeferredToolInvocation,
   DeferredToolInvocationQueue,
 } from '@agnes/extension-api'
-import type { IntelligentUiInstance } from '../../../src/intelligent-ui.js'
+import type { IntelligentUiInstance } from '@agnes/intelligent-ui-contract'
 import {
   type Actor,
   type EventEnvelope,

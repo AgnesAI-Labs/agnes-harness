@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { ProviderError } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
+import * as intelligentUiContract from '@agnes/intelligent-ui-contract'
 import {
   checkPluginApiRanges,
   checkProvidedExternals,
@@ -42,6 +43,8 @@ export function createLoader(opts: { cacheDir: string; hostRoot: string; agnesVe
     virtualModules: {
       ...localPluginVirtualModules,
       '@agnes/protocol': protocol,
+      // Same module the Host installer imported. A second copy would fork the kind token.
+      '@agnes/intelligent-ui-contract': intelligentUiContract,
     },
     tryNative: false,
     forceTranspile: true,

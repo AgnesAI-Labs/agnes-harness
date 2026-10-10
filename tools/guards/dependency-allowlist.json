@@ -75,7 +75,8 @@
     "@agnes/loop-default",
     "@agnes/history-index",
     "@agnes/observability",
-    "@agnes/memory-file"
+    "@agnes/memory-file",
+    "@agnes/intelligent-ui-contract"
   ],
   "@agnes/code": ["@agnes/protocol", "@agnes/extension-api", "@agnes/core", "@agnes/base"],
   "@agnes/runtime-python": ["@agnes/code", "@agnes/protocol"],
@@ -98,6 +99,7 @@
     "@agnes/host-artifacts",
     "@agnes/host-extensions",
     "@agnes/host-providers",
+    "@agnes/intelligent-ui-contract",
     "@agnes/observability"
   ],
   "@agnes/sdk": ["@agnes/protocol", "@agnes/system-node"],
@@ -226,6 +228,7 @@
     "@agnes/host-common",
     "@agnes/host-computer-use",
     "@agnes/host-infrastructure",
+    "@agnes/intelligent-ui-contract",
     "@agnes/package-manager",
     "@agnes/plugin-runtime",
     "@agnes/protocol",
@@ -304,6 +307,7 @@
     "@agnes/web-ui",
     "@agnes/web-units"
   ],
+  "@agnes/intelligent-ui-contract": ["@agnes/extension-api", "@agnes/protocol"],
   "@agnes/observability": [
     "@agnes/extension-api",
     "@agnes/protocol",

@@ -5,7 +5,6 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./intelligent-ui": "./src/intelligent-ui.ts",
     "./search": "./extensions/tools-web/src/search/index.ts",
     "./computer-use": "./extensions/computer-use/src/index.ts",
     "./schedule": "./extensions/schedule/src/runtime.ts",
@@ -521,6 +520,7 @@
   "dependencies": {
     "@agnes/core": "workspace:*",
     "@agnes/history-index": "workspace:*",
+    "@agnes/intelligent-ui-contract": "workspace:*",
     "@agnes/loop-default": "workspace:*",
     "@agnes/observability": "workspace:*",
     "@agnes/plugin-runtime": "workspace:*",

@@ -1,4 +1,4 @@
-import type { IntelligentUiCatalog } from '../../../src/intelligent-ui.js'
+import type { IntelligentUiCatalog } from '@agnes/intelligent-ui-contract'
 import {
   inspectJsonData,
   type JsonValue,

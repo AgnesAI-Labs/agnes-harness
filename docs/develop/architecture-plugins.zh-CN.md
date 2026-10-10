@@ -127,7 +127,7 @@ Node SDK 提供 `client.packages.migrateSession({ profile, clientId, commandId, 
 
 反馈是这条路径上的第一个功能：每个 profile 一个提供者，每个请求一个新实例，作用域为 workspace，因此更换该提供者的代码要等进程重启。提交反馈、起草 Skill 候选和实时配置不会重启。
 
-Intelligent UI 是 generation 作用域、每个会话一个提供者。工具用 `providers.bindOwn` 取得实例。用户动作和读取走会话端口：端口接纳已认证 actor，并从持久的动作事实解析 SC1 投递。结果键保持精确（`ui-result:`）。
+Intelligent UI 是 generation 作用域、每个会话一个提供者。Host 与官方插件共用 `@agnes/intelligent-ui-contract` 里的 kind 令牌。工具用 `providers.bindOwn` 取得实例。用户动作和读取走会话端口：端口接纳已认证 actor，并从持久的动作事实解析 SC1 投递。结果键保持精确（`ui-result:`）。
 
 文件系统加载的每个普通 `agnes.plugins` 条目必须声明 `apiRange`（如 `"^1.4.0"`），Host 在执行模块代码前核验，不再依赖可选的 `hostProvidedExternals`。`ModelAdapter.wireApi` 表示线路格式，旧 `api` 为弃用兼容别名，二者冲突会被拒绝；目录同时提供两个字段。
 

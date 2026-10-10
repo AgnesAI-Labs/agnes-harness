@@ -135,6 +135,9 @@ importers:
       '@agnes/history-index':
         specifier: workspace:*
         version: link:../history-index
+      '@agnes/intelligent-ui-contract':
+        specifier: workspace:*
+        version: link:../intelligent-ui-contract
       '@agnes/loop-default':
         specifier: workspace:*
         version: link:../loop-default
@@ -689,9 +692,6 @@ importers:
       '@agnes/ai':
         specifier: workspace:*
         version: link:../ai
-      '@agnes/base':
-        specifier: workspace:*
-        version: link:../base
       '@agnes/cordis':
         specifier: workspace:*
         version: link:../cordis
@@ -719,6 +719,9 @@ importers:
       '@agnes/host-providers':
         specifier: workspace:*
         version: link:../host-providers
+      '@agnes/intelligent-ui-contract':
+        specifier: workspace:*
+        version: link:../intelligent-ui-contract
       '@agnes/model-adapters':
         specifier: workspace:*
         version: link:../model-adapters
@@ -753,6 +756,9 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
     devDependencies:
+      '@agnes/base':
+        specifier: workspace:*
+        version: link:../base
       '@agnes/code':
         specifier: workspace:*
         version: link:../code
@@ -865,6 +871,9 @@ importers:
       '@agnes/host-infrastructure':
         specifier: workspace:*
         version: link:../host-infrastructure
+      '@agnes/intelligent-ui-contract':
+        specifier: workspace:*
+        version: link:../intelligent-ui-contract
       '@agnes/package-manager':
         specifier: workspace:*
         version: link:../package-manager
@@ -982,6 +991,15 @@ importers:
       '@sinclair/typebox':
         specifier: 0.34.33
         version: 0.34.33
+
+  packages/intelligent-ui-contract:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
 
   packages/loop-default:
     dependencies:

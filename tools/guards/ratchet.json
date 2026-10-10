@@ -184,5 +184,7 @@
   "packages/core/src/artifacts": 744,
   "packages/base/extensions/references": 21,
   "packages/base/extensions/intelligent-ui": 1009,
-  "packages/observability/src": 1301
+  "packages/observability/src": 1301,
+  "packages/intelligent-ui-contract/src": 74,
+  "packages/base/src/intelligent-ui-runtime": 55
 }

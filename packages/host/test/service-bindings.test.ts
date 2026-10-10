@@ -2,34 +2,34 @@ import { Context } from '@agnes/cordis'
 import {
   defineServiceKind,
   ProviderError,
-  unavailableProjections,
   type ServiceInstance,
   type ServicePorts,
   type ServiceProvider,
+  unavailableProjections,
 } from '@agnes/extension-api'
 import { createOwnerLedger, type LedgerEvent } from '@agnes/host-common/assemble/owner-ledger'
 import {
   ServiceBindings,
-  serviceBindingScope,
   type ServiceCall,
   type ServiceDescriptor,
   type ServicePortFactories,
+  serviceBindingScope,
 } from '@agnes/host-common/assemble/service-binding'
-import { intelligentUiKind } from '@agnes/base/intelligent-ui'
-import { rpcError, type Actor } from '@agnes/protocol'
+import { intelligentUiKind } from '@agnes/intelligent-ui-contract'
+import { type Actor, rpcError } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import {
   FEEDBACK_DESCRIPTOR,
   FEEDBACK_OWNER,
   FEEDBACK_PACKAGE_ID,
   FEEDBACK_PROVIDER_ID,
-  feedbackKind,
   type FeedbackAuthority,
   type FeedbackResult,
+  feedbackKind,
 } from '../src/runtime/feedback/contract.js'
 import { createFeedbackLedger } from '../src/runtime/feedback/ledger.js'
 import { createExtensionServiceHost, type ServiceAdmission } from '../src/runtime/services/author-port.js'
-import { sessionInputTarget, type SessionLedgerSession } from '../src/runtime/services/session-ports.js'
+import { type SessionLedgerSession, sessionInputTarget } from '../src/runtime/services/session-ports.js'
 
 interface Probe extends ServiceInstance {
   mark(): string | Promise<string>

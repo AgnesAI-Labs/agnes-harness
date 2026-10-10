@@ -59,6 +59,7 @@
     "@agnes/host-common": "workspace:*",
     "@agnes/host-computer-use": "workspace:*",
     "@agnes/host-infrastructure": "workspace:*",
+    "@agnes/intelligent-ui-contract": "workspace:*",
     "@agnes/package-manager": "workspace:*",
     "@agnes/plugin-runtime": "workspace:*",
     "@agnes/protocol": "workspace:*",

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ToolRegistry } from '@agnes/core'
 import { HOOK_EVENTS } from '@agnes/extension-api'
+import { intelligentUiKind } from '@agnes/intelligent-ui-contract'
 import { defineTool } from '@agnes/plugin-runtime'
 import { inspectJsonData } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
@@ -67,9 +68,14 @@ it('requires compatible ordinary plugin apiRange before evaluating any source', 
   expect(readFileSync(marker, 'utf8')).toBe('yes')
 })
 
-it('shares all three real host modules even when the extension carries decoy copies', async () => {
+it('shares host modules even when the extension carries decoy copies', async () => {
   const f = setup()
-  for (const name of ['@agnes/extension-api', '@agnes/protocol', '@sinclair/typebox']) {
+  for (const name of [
+    '@agnes/extension-api',
+    '@agnes/protocol',
+    '@agnes/intelligent-ui-contract',
+    '@sinclair/typebox',
+  ]) {
     f.write(`node_modules/${name}/package.json`, JSON.stringify({ name, main: './index.js' }))
     f.write(`node_modules/${name}/index.js`, 'throw new Error("extension copy executed")')
   }
@@ -77,17 +83,19 @@ it('shares all three real host modules even when the extension carries decoy cop
     'index.ts',
     `
     import { HOOK_EVENTS } from '@agnes/extension-api'
+    import { intelligentUiKind } from '@agnes/intelligent-ui-contract'
     import { inspectJsonData } from '@agnes/protocol'
     import { Type } from '@sinclair/typebox'
     import { Value } from '@sinclair/typebox/value'
-    export const shared = { HOOK_EVENTS, inspectJsonData, Type, Value }
+    export const shared = { HOOK_EVENTS, intelligentUiKind, inspectJsonData, Type, Value }
     export default () => undefined
   `,
   )
   const mod = await f.loader.import(entry)
-  expect(mod.shared).toEqual({ HOOK_EVENTS, inspectJsonData, Type, Value })
+  expect(mod.shared).toEqual({ HOOK_EVENTS, intelligentUiKind, inspectJsonData, Type, Value })
   const shared = mod.shared as Record<string, unknown>
   expect(shared.HOOK_EVENTS).toBe(HOOK_EVENTS)
+  expect(shared.intelligentUiKind).toBe(intelligentUiKind)
   expect(shared.inspectJsonData).toBe(inspectJsonData)
   expect(shared.Type).toBe(Type)
   expect(shared.Value).toBe(Value)
