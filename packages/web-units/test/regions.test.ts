@@ -130,6 +130,23 @@ describe('independent core web-unit implementations', () => {
     expect(host.querySelector('[data-testid="settings-nav-first"]')?.getAttribute('aria-current')).toBe(
       'page',
     )
+    const marker = document.createElement('h3')
+    marker.id = 'auxiliary-models'
+    marker.tabIndex = -1
+    host.querySelector('#model-settings-pane')?.append(marker)
+    const link = document.createElement('a')
+    link.href = '?settings=model#auxiliary-models'
+    link.textContent = 'Models'
+    host.querySelector('#plugin-settings-pane')?.append(link)
+    link.click()
+    expect(host.querySelector<HTMLElement>('#model-settings-pane')?.hidden).toBe(false)
+    expect(host.querySelector<HTMLElement>('#plugin-settings-pane')?.hidden).toBe(true)
+    expect(new URL(location.href).searchParams.get('settings')).toBe('model')
+    expect(new URL(location.href).hash).toBe('#auxiliary-models')
+    host
+      .querySelector('#config-form')
+      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'second', bubbles: true }))
+    expect(host.querySelector<HTMLElement>('#plugin-settings-pane')?.hidden).toBe(false)
 
     entries = [
       ...entries,

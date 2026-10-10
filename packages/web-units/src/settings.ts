@@ -429,8 +429,40 @@ function SettingsBuiltinImpl(
         }
       }
       const onClick = (event: Event) => {
-        const target = (event.target as Element | null)?.closest<HTMLElement>('button[data-settings-section]')
-        if (target?.dataset.settingsSection) navigate(target.dataset.settingsSection)
+        const target = (event.target as Element | null)?.closest<HTMLElement>(
+          'button[data-settings-section], a[href]',
+        )
+        if (target?.dataset.settingsSection) {
+          navigate(target.dataset.settingsSection)
+          return
+        }
+        if (!(target instanceof HTMLAnchorElement) || !(event instanceof MouseEvent)) return
+        if (
+          event.button !== 0 ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey ||
+          event.defaultPrevented ||
+          (target.target !== '' && target.target !== '_self')
+        )
+          return
+        const url = new URL(target.href, location.href)
+        if (url.origin !== location.origin) return
+        const id = url.searchParams.get('settings')
+        if (!id) return
+        event.preventDefault()
+        navigate(id)
+        if (url.hash.length <= 1) return
+        const next = new URL(location.href)
+        next.hash = url.hash
+        history.replaceState(history.state, '', next)
+        const fragment = decodeURIComponent(url.hash.slice(1))
+        requestAnimationFrame(() => {
+          const section = document.getElementById(fragment)
+          section?.scrollIntoView({ block: 'start' })
+          section?.focus()
+        })
       }
       const onRoute = (event: Event) => {
         const id = String((event as CustomEvent).detail)

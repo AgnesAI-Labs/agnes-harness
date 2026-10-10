@@ -1,7 +1,7 @@
 import { AutoReviewConfig, validateAgainst } from '@agnes/protocol'
 import {
-  Button,
   Badge,
+  Button,
   Field,
   SettingsCard,
   SettingsCheckbox,
@@ -16,7 +16,7 @@ import { useEffect, useState } from 'react'
 export { reviewCatalog } from './auto-review-locale.js'
 
 import { reviewCatalog } from './auto-review-locale.js'
-import { modelSlotsSettings, modelSlotOptions, type ModelSlotsState } from './model-slots.js'
+import { type ModelSlotsState, modelSlotOptions, modelSlotsSettings } from './model-slots.js'
 
 export async function reviewSettings(
   config?: AutoReviewConfig,
@@ -144,22 +144,7 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
       </Field>
       <p>
         {t('profileHelp')}{' '}
-        <a
-          href="?settings=model#auxiliary-models"
-          data-testid="auto-review-model-link"
-          onClick={(event) => {
-            if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
-            event.preventDefault()
-            event.currentTarget.dispatchEvent(
-              new CustomEvent('agnes:settings-route', { detail: 'model', bubbles: true }),
-            )
-            requestAnimationFrame(() => {
-              const section = document.getElementById('auxiliary-models')
-              section?.scrollIntoView({ block: 'start' })
-              section?.focus()
-            })
-          }}
-        >
+        <a href="?settings=model#auxiliary-models" data-testid="auto-review-model-link">
           {t('modelLink')}
         </a>
       </p>

@@ -105,7 +105,7 @@ export function PresetTabs({
   const [active, setActive] = useState(tabs[0]?.id ?? '')
   if (tabs.length === 0) return null
   return (
-    <div data-testid={`ui-tabs-${id}`} aria-label={label}>
+    <div data-testid={`ui-tabs-${id}`} role="group" aria-label={label}>
       <Tabs
         activeKey={active}
         onChange={setActive}
@@ -169,7 +169,6 @@ export function ProgressView({ id, data }: { id: string; data: JsonValue | undef
     <div className="agnes-intelligent-progress" data-testid={`ui-progress-${id}`}>
       <div
         role="progressbar"
-        tabIndex={0}
         aria-valuemin={0}
         aria-valuemax={data.total}
         aria-valuenow={data.value}
