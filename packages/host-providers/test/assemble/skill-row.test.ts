@@ -1,7 +1,7 @@
 import type { EntryRow } from '@agnes/plugin-runtime/host'
 import type { SkillRuntimeInput } from '@agnes/resource-control-runtime'
 import { describe, expect, it } from 'vitest'
-import { skillRowRevision, withSkillRow } from '../../src/assemble/skill-row.js'
+import { skillRowRevision, withSkillRows } from '../../src/assemble/skill-row.js'
 
 const skill = (revision: string, workspaceId?: string) =>
   ({
@@ -50,11 +50,16 @@ describe('Skills row target', () => {
 
   it('replaces only the Skills row and keeps MCP object identities', () => {
     const mcp = { id: 'ext:agnes/mcp-server', plugin: 'builtin:mcp' } as EntryRow
-    const old = { id: 'ext:agnes/skills', plugin: 'builtin:skills', entryRevision: 'old' } as EntryRow
+    const old = {
+      id: 'ext:agnes/skills',
+      plugin: 'builtin:skills',
+      liveResources: ['skills'],
+      entryRevision: 'old',
+    } as EntryRow
     const next = { ...old, entryRevision: 'next' }
-    const target = withSkillRow([mcp, old], next)
+    const target = withSkillRows([mcp, old], [next])
     expect(target).toEqual([mcp, next])
     expect(target[0]).toBe(mcp)
-    expect(() => withSkillRow([mcp], mcp)).toThrow(/wrong Skills row/)
+    expect(() => withSkillRows([mcp], [mcp])).toThrow(/undeclared Skills consumer/)
   })
 })

@@ -228,9 +228,12 @@ function sameRow(left: Readonly<EntryRow>, right: Readonly<EntryRow>): boolean {
     sameStrings(left.provides, right.provides) &&
     left.runtime === right.runtime &&
     left.mountIdentity === right.mountIdentity &&
+    left.codeMountIdentity === right.codeMountIdentity &&
     left.mountRevision === right.mountRevision &&
     left.entryRevision === right.entryRevision &&
     left.extrasRevision === right.extrasRevision &&
+    sameValue(left.liveResources, right.liveResources) &&
+    left.liveResourceRevision === right.liveResourceRevision &&
     sameValue(left.config, right.config)
   )
 }
@@ -269,9 +272,12 @@ function snapshotRow(row: Readonly<EntryRow>, normalizedConfig: unknown): Readon
     provides: Object.freeze([...row.provides]),
     runtime: row.runtime,
     mountIdentity: row.mountIdentity,
+    ...(row.codeMountIdentity === undefined ? {} : { codeMountIdentity: row.codeMountIdentity }),
     mountRevision: row.mountRevision,
     entryRevision: row.entryRevision,
     extrasRevision: row.extrasRevision,
+    ...(row.liveResources === undefined ? {} : { liveResources: Object.freeze([...row.liveResources]) }),
+    ...(row.liveResourceRevision === undefined ? {} : { liveResourceRevision: row.liveResourceRevision }),
     ...(row.config === undefined ? {} : { config: normalizedConfig }),
   })
 }
@@ -333,19 +339,29 @@ function expectedPlugin(candidate: PackageSnapshotCandidateRef): string {
 }
 
 function assertIdentity(snapshot: DescriptorSnapshot): void {
-  const expected = buildMountIdentity({
+  const identity = {
     snapshotDigest: snapshot.digest,
     exportName: snapshot.snapshot.exportName,
     entryRevision: snapshot.row.entryRevision,
     extrasRevision: snapshot.row.extrasRevision,
+    ...(snapshot.row.liveResources === undefined ? {} : { liveResources: snapshot.row.liveResources }),
+    ...(snapshot.row.liveResourceRevision === undefined
+      ? {}
+      : { liveResourceRevision: snapshot.row.liveResourceRevision }),
     plugin: snapshot.row.plugin,
     inject: snapshot.row.inject,
     isolate: snapshot.row.isolate,
     provides: snapshot.row.provides,
     runtime: snapshot.row.runtime,
     mountRevision: snapshot.row.mountRevision,
-  })
-  if (expected !== snapshot.row.mountIdentity) {
+  }
+  const { liveResourceRevision: _live, ...codeIdentity } = identity
+  const expected = buildMountIdentity(identity)
+  if (
+    expected !== snapshot.row.mountIdentity ||
+    (snapshot.row.codeMountIdentity !== undefined &&
+      snapshot.row.codeMountIdentity !== buildMountIdentity(codeIdentity))
+  ) {
     throw new VerifiedRowError('E_MOUNT_IDENTITY', `row ${snapshot.row.id} has an invalid mount identity`)
   }
 }

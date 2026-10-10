@@ -6,7 +6,6 @@ import { type ResolvedComposition, resolveComposition } from '@agnes/host-common
 import { modelProfileDeployment } from '@agnes/host-common/profile/model-compatibility'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
-import { SKILL_ROW_ID } from '@agnes/host-providers/assemble/skill-row'
 import { readRuntimeBundles } from '@agnes/host-providers/profile/bundles-reader'
 import {
   type CompositionBinding,
@@ -89,8 +88,18 @@ export async function createCompositionHost(
   ): T[] => {
     // Skills are live resources. A replayed target can carry a row from an earlier worker boot.
     // Use this container's prepared row so its mount identity matches its current importer.
-    const skill = host?.extensionRows.current().find((row) => row.id === SKILL_ROW_ID)
-    const candidates = rows.map((row) => (skill && row.id === SKILL_ROW_ID ? (skill as T) : row))
+    const consumers = new Map(
+      host?.extensionRows
+        .current()
+        .filter((row) => row.liveResources?.length)
+        .map((row) => [row.id, row]),
+    )
+    const candidates = rows.map((row) => {
+      const live = consumers.get(row.id)
+      return live && live.plugin === row.plugin && live.entryRevision === row.entryRevision
+        ? (live as T)
+        : row
+    })
     const plugins = resolveSessionCapabilities({
       composition: tree,
       installed: {
@@ -130,8 +139,7 @@ export async function createCompositionHost(
     )
   }
   const liveResource = (row: PluginRow) =>
-    row.plugin.startsWith('builtin:@agnes/base/') &&
-    (row.id === SKILL_ROW_ID || /^ext:agnes\/mcp-[a-z0-9-]+-[a-f0-9]{8}$/.test(row.id))
+    row.plugin.startsWith('builtin:@agnes/base/') && /^ext:agnes\/mcp-[a-z0-9-]+-[a-f0-9]{8}$/.test(row.id)
   const project = (target: RuntimeTarget, tree: ResolvedComposition, host?: Host): RuntimeTarget => {
     const previous = host?.runtimeTargetSnapshot?.()
     // A disabled bundle has no new-session container. Retained sessions still need its exact
@@ -328,7 +336,9 @@ export async function createCompositionHost(
         : {
             ...report,
             rows: report.rows.filter(
-              (row) => row.id === SKILL_ROW_ID || /^ext:agnes\/mcp-[a-z0-9-]+-[a-f0-9]{8}$/.test(row.id),
+              (row) =>
+                !!host.extensionRows.current().find((entry) => entry.id === row.id)?.liveResources?.length ||
+                /^ext:agnes\/mcp-[a-z0-9-]+-[a-f0-9]{8}$/.test(row.id),
             ),
           }
     })
@@ -639,10 +649,15 @@ export async function createCompositionHost(
         return broadcast('skills', (container) => container.host.refreshSkillRow(fresh))
       }),
     reloadEcosystemExtension: async (id, input) => {
-      if (id !== 'agnes/skills') return initial.host.reloadEcosystemExtension(id, input)
+      if (
+        !initial.host.extensionRows
+          .current()
+          .some((row) => row.id === `ext:${id}` && row.liveResources?.includes('skills'))
+      )
+        return initial.host.reloadEcosystemExtension(id, input)
       assertHostPublication(await overrides.refreshSkillRow!(input.skillResources))
       const result = initial.host.extensions().find((entry) => entry.id === id)
-      if (!result) throw new Error('E_COMPOSITION_SKILLS: Skills row has no status')
+      if (!result) throw new Error('E_COMPOSITION_RESOURCE: Live resource consumer has no status')
       return result
     },
     applyModelProfile: (next) =>

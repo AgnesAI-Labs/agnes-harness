@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "apiRange": "^1.0",
   "entry": "./src/index.ts",
+  "liveResources": ["skills"],
   "capabilities": {
     "tools": {
       "prefix": "skill_",

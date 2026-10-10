@@ -273,6 +273,12 @@
           "type": "string",
           "pattern": "^\\./"
         },
+        "liveResources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["skills"] },
+          "description": "Live resource kinds consumed by this extension row. Resource refresh preserves pinned plugin code and reloads every declaring row."
+        },
         "capabilities": {
           "$ref": "#/$defs/Capabilities"
         },

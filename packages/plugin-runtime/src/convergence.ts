@@ -122,9 +122,23 @@ export function canonicalizePluginRow(value: unknown): Readonly<PluginRow> {
     provides: canonicalStringSet(row.provides, 'row.provides'),
     runtime: row.runtime,
     mountIdentity: nonEmptyString(row.mountIdentity, 'row.mountIdentity') as PluginRow['mountIdentity'],
+    ...(row.codeMountIdentity === undefined
+      ? {}
+      : {
+          codeMountIdentity: nonEmptyString(
+            row.codeMountIdentity,
+            'row.codeMountIdentity',
+          ) as PluginRow['mountIdentity'],
+        }),
     mountRevision: nonEmptyString(row.mountRevision, 'row.mountRevision'),
     entryRevision: nonEmptyString(row.entryRevision, 'row.entryRevision'),
     extrasRevision: nonEmptyString(row.extrasRevision, 'row.extrasRevision'),
+    ...(row.liveResources === undefined
+      ? {}
+      : { liveResources: canonicalStringSet(row.liveResources, 'row.liveResources') }),
+    ...(row.liveResourceRevision === undefined
+      ? {}
+      : { liveResourceRevision: nonEmptyString(row.liveResourceRevision, 'row.liveResourceRevision') }),
     ...(row.configReload === undefined
       ? {}
       : { configReload: row.configReload as NonNullable<PluginRow['configReload']> }),

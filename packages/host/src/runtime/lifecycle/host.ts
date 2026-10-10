@@ -148,16 +148,16 @@ export interface Host {
   setSessionPreset(sessionKey: string, name: string): Promise<number>
   extensions(): ExtensionStatus[]
   /**
-   * Cleanly unload and reload one already-loaded bundled ecosystem extension (`agnes/skills`) with a
+   * Cleanly unload and reload extension rows declaring live resource consumption with a
    * fresh resource snapshot, without restarting the worker process - see
-   * `Assembled['reloadEcosystemExtension']` for the full contract this delegates to. A thin
-   * `revoke()`+`load()` wrapper.
+   * `Assembled['reloadEcosystemExtension']` for the full contract. The declaration selects
+   * the affected consumers.
    */
   reloadEcosystemExtension(
     id: string,
     freshInit: Readonly<{ skillResources?: SkillRuntimeInput }>,
   ): Promise<ExtensionStatus>
-  /** Apply a fresh Skills resource view through its single builtin Cordis row. */
+  /** Apply a fresh Skills resource view through all declaring extension rows. */
   refreshSkillRow(fresh: SkillRuntimeInput | undefined): Promise<void | HostPublicationReport>
   /** Latest worker-produced ordinary report, qualified by its exact desired tree hash. */
   ordinaryConvergence(): HostConvergenceReport

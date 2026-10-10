@@ -26,6 +26,18 @@ The browser roster is session-aware: sessions use `/plugins/generations/<generat
 
 Old generations remain while any durable session references them. Close/hibernation retain pins. Disable/uninstall stops new bindings and collects only unreferenced generations. Admin shows `Draining (N)`, including packages removed from inventory. `boundSessions` counts all pins; `drainingSessions` counts pins outside the current generation. There is no public session-delete command yet; backend deletion owners must release the pin after actual deletion.
 
+## Declaring live resource consumption
+
+An extension row opts into live Skills through its public `agnes.extension.json` manifest:
+
+```json
+{ "liveResources": ["skills"] }
+```
+
+The optional array currently accepts `skills`; duplicate and unknown kinds are rejected. Omission or an empty array means the row is not refreshed for resource changes. The declaration supplies the composition-filtered, workspace-scoped Skill input to the extension factory context; it does not grant extra capabilities or bypass resource trust and read authorization.
+
+Host refreshes every declaring row, including replacement and third-party extension rows, while preserving its pinned code, configuration and disabled state. Code and live resource revisions have separate identities. Equal effective revisions skip remounting; a fresh scoped workspace source still replaces the read source when its global catalogue is unchanged. All affected rows publish together, and failure restores the previous rows and resource view. Retained code generations and cold resumes consume current live resources.
+
 ## What needs restart
 
 Persistence/storage providers, sandbox and other process backends stay `restart-required`. Package reload cannot replace them. Restore checks deployment compatibility and the persisted loop id/version. Missing code snapshots, modified pinned package trees or incompatible deployments produce explicit `E_GENERATION_*` errors without substituting current code.

@@ -9,6 +9,8 @@ export interface MountIdentityInput {
   snapshotDigest: string
   exportName: string
   entryRevision: string
+  liveResources?: readonly string[]
+  liveResourceRevision?: string
   extrasRevision: string
   plugin: string
   inject: readonly string[]
@@ -32,6 +34,10 @@ export interface EntryRow {
   readonly mountIdentity: MountIdentity
   readonly mountRevision: string
   readonly entryRevision: string
+  /** Resource inputs may change while the code fields remain pinned. */
+  readonly liveResources?: readonly string[]
+  readonly liveResourceRevision?: string
+  readonly codeMountIdentity?: MountIdentity
   readonly extrasRevision: string
 }
 
@@ -54,6 +60,9 @@ export function snapshotEntryRow(row: Readonly<EntryRow>): Readonly<EntryRow> {
     mountRevision: row.mountRevision,
     entryRevision: row.entryRevision,
     extrasRevision: row.extrasRevision,
+    ...(row.codeMountIdentity === undefined ? {} : { codeMountIdentity: row.codeMountIdentity }),
+    ...(row.liveResources === undefined ? {} : { liveResources: Object.freeze([...row.liveResources]) }),
+    ...(row.liveResourceRevision === undefined ? {} : { liveResourceRevision: row.liveResourceRevision }),
     ...(row.configReload === undefined ? {} : { configReload: row.configReload }),
     ...(row.config === undefined ? {} : { config: row.config }),
   })

@@ -81,6 +81,12 @@ describe('Task20 document validators', () => {
     expect(P.validateExtensionManifest(none)).toEqual({ ok: true, value: none })
     expect(none.capabilities.tools.names).toEqual([])
     expect(broad.capabilities.tools).not.toHaveProperty('names')
+    for (const liveResources of [[], ['skills']]) {
+      const input = { ...none, liveResources }
+      expect(P.validateExtensionManifest(input)).toEqual({ ok: true, value: input })
+    }
+    for (const liveResources of [['skills', 'skills'], ['unknown'], 'skills', [1], null])
+      expect(P.validateExtensionManifest({ ...none, liveResources }).ok).toBe(false)
   })
   it('rejects non JSON numbers, undefined payload members and diagnostic secret interpolation', () => {
     const job = {

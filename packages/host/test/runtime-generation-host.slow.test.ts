@@ -390,8 +390,8 @@ it('keeps code pins while reading live Skills after refresh and cold resume', as
     expect(lastGoodTarget.resource.rows['ext:agnes/skills']).not.toBeNull()
     await host.close()
     host = (await createTestHost({ ...options, skillResources: await view('current unrelated body') })).host
-    expect(host.runtimeTargetSnapshot?.()?.resource.rows['ext:agnes/skills']?.entryRevision).not.toBe(
-      lastGoodTarget.resource.rows['ext:agnes/skills']?.entryRevision,
+    expect(host.runtimeTargetSnapshot?.()?.resource.rows['ext:agnes/skills']?.liveResourceRevision).not.toBe(
+      lastGoodTarget.resource.rows['ext:agnes/skills']?.liveResourceRevision,
     )
     // Cold worker boot replays the daemon's last-good target after assembling current resources.
     expect((await host.applyRuntimeTarget(lastGoodTarget)).publication?.ok).toBe(true)

@@ -219,6 +219,8 @@ export function buildExtensionRow(
     extensionId: string
     packageId: string
     entryRevision: string
+    liveResources?: readonly string[]
+    liveResourceRevision?: string
     /** Set for a migrated id; otherwise the managed host's `loader` and `owners` carry the lifecycle. */
     facade?: FacadeRowLifecycleInput
     loader: ExtRowLoader
@@ -238,6 +240,8 @@ export function buildExtensionRow(
     snapshotDigest: EXT_ROW_MOUNT_REVISION,
     exportName: input.extensionId,
     entryRevision: input.entryRevision,
+    ...(input.liveResources === undefined ? {} : { liveResources: input.liveResources }),
+    ...(input.liveResourceRevision === undefined ? {} : { liveResourceRevision: input.liveResourceRevision }),
     extrasRevision: EMPTY_EXTRAS_REVISION,
     mountRevision: EXT_ROW_MOUNT_REVISION,
     ...(input.config === undefined ? {} : { config: input.config }),

@@ -231,7 +231,7 @@ import {
   verifyRoutes,
 } from '@agnes/host-providers/assemble/routes'
 import { buildSeamRows, REQUIRED_SEAM_ROW_IDS } from '@agnes/host-providers/assemble/seam-rows'
-import { SKILL_ROW_ID, skillRowRevision, withSkillRow } from '@agnes/host-providers/assemble/skill-row'
+import { skillRowRevision, withSkillRows } from '@agnes/host-providers/assemble/skill-row'
 import { installToolProviders, withBuiltinToolPolicies } from '@agnes/host-providers/assemble/tool-providers'
 import {
   type GenerationRegistries,
@@ -403,9 +403,8 @@ export type Assembled = {
     invocation?: import('@agnes/core').WorkspaceInvocationPort,
   ): Promise<SessionWorkspaceRuntime>
   /**
-   * Cleanly unload and reload one already-loaded bundled ecosystem
-   * extension (`agnes/skills`) with a fresh resource snapshot, without
-   * restarting the worker process. A thin `revoke()`+`load()` wrapper - it does not touch
+   * Cleanly unload and reload an extension row declaring live resources with a fresh resource snapshot, without
+   * restarting the worker process. It does not touch
    * PackageManager's own IH0-IH10 hot-update path.
    */
   reloadEcosystemExtension(
@@ -419,6 +418,7 @@ export type Assembled = {
       input: Readonly<{
         extensionId: string
         entryRevision?: string
+        liveResourceRevision?: string
         config?: unknown
         disabled?: boolean
         /** Supply the extension itself, for a row that exists only at runtime (stage 2b, D107′). */
@@ -428,7 +428,7 @@ export type Assembled = {
     ): Readonly<EntryRow>
     apply(rows: readonly Readonly<EntryRow>[]): Promise<RuntimeConvergenceReport>
   }>
-  /** Replace only the builtin Skills row against a newly bootstrapped resource view. */
+  /** Refresh every row declaring Skills consumption against a newly bootstrapped resource view. */
   refreshSkillRow(fresh: SkillRuntimeInput | undefined): Promise<void>
   ordinaryReconciliation: OrdinaryReconciliationLifecycle
   ordinaryConvergence(): RuntimeConvergenceReport
@@ -1803,9 +1803,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     // against a caller-supplied fresh resource snapshot instead of the boot-time `deps` one, without
     // duplicating the owner/extensionId gating below. `resources` defaults to `deps` itself, so
     // ordinary boot-time callers (`ecosystemContext` below) are unaffected byte for byte.
-    // What agnes/mcp-search's tool_search lists (design §3.9, D123): always the Skills generation
-    // agnes/skills currently serves (`preloadSkills`, which reloadEcosystemExtension swaps), so a
-    // resource reload never has to reload the search extension. Empty while agnes/skills reloads.
+    // Search discovery follows the currently published live Skills source.
     const liveSkillDiscovery: SkillRuntimeDiscovery = Object.freeze({
       list: () => preloadSkills?.list() ?? [],
       runInWorkspace: <T>(sessionKey: string, invoke: () => Promise<T>): Promise<T> => {
@@ -1822,6 +1820,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       owner: string,
       extensionId: string,
       resources: Readonly<{ skillResources?: SkillRuntimeInput }> = deps,
+      liveResources?: readonly string[],
     ): SeamInitContext => {
       const skills = resources.skillResources
         ? bindSkillRuntimeToWorkspace(resources.skillResources, workspaceInvocationFor, publicationDispatch)
@@ -1835,9 +1834,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         ...(owner === '@agnes/base' && extensionId === 'agnes/hooks-runner' && hookCommands
           ? { trustedHookCommands: hookCommands }
           : {}),
-        ...(owner === '@agnes/base' && extensionId === 'agnes/skills' && skills
-          ? { skillResources: skills }
-          : {}),
+        ...(liveResources?.includes('skills') && skills ? { skillResources: skills } : {}),
         ...(owner === '@agnes/base' && extensionId === 'agnes/mcp-search'
           ? { skillDiscovery: liveSkillDiscovery }
           : {}),
@@ -2584,7 +2581,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       // the constant, not from the rows actually built, so it also names ids that ended up on the
       // assembly-time fallback or were gated off and have no row - harmless: it only lifts an
       // immutability veto, it does not itself revoke or load anything.
-      reloadableExtensions: new Set(['agnes/skills', ...EXT_ROW_EXTENSION_IDS]),
+      reloadableExtensions: EXT_ROW_EXTENSION_IDS,
       // API_VERSION, not a literal: the loaded plan sample hardcoded '0.1.0', which is stale - the
       // real extension-api version is '1.0.0', and a mismatch here would fail every real manifest's
       // apiRange check at preflight (E_API_RANGE) before any real deployment ever got the chance.
@@ -2722,9 +2719,30 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         return 'unreadable' as const
       }
     }
+    const consumesSkills = (extensionId: string) => {
+      const manifest = authorManifestOf(extensionId)
+      return manifest !== 'unreadable' && !!manifest?.liveResources?.includes('skills')
+    }
+    // A replacement bundled extension can declare the same public resource contract under any id.
+    const declaredExtensionIds = new Set(EXT_ROW_EXTENSION_IDS)
+    for (const pkg of profile.packages) {
+      if (!pkg.enabled || pkg.trust !== 'builtin') continue
+      for (const manifest of modules.get(pkg.id)?.embeddedExtensions ?? [])
+        if (manifest.liveResources?.length) declaredExtensionIds.add(manifest.id)
+      const directory = dirs.get(pkg.id)
+      if (!directory) continue
+      try {
+        for (const extensionDirectory of readBundledExtensionDirs(directory, true)) {
+          const manifest = readAuthorManifest(extensionDirectory)
+          if (manifest.liveResources?.length) declaredExtensionIds.add(manifest.id)
+        }
+      } catch {
+        /* Admission below remains fail-closed for unreadable manifests. */
+      }
+    }
     const reservedToolName = (name: string) => name.toLowerCase().replace(/^_+|_+$/g, '')
     const reservedTools = new Map<string, string>()
-    for (const extensionId of [...EXT_ROW_EXTENSION_IDS, 'agnes/skills']) {
+    for (const extensionId of declaredExtensionIds) {
       const manifest = authorManifestOf(extensionId)
       // An unreadable manifest declares nothing to reserve: that extension fails to load on its own.
       if (manifest === 'unreadable') continue
@@ -2794,9 +2812,11 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         spec: found.spec,
         ...(found.embedded ? { embedded: found.embedded } : {}),
         factory: (token) =>
-          (extensionId === 'agnes/skills'
+          (consumesSkills(extensionId)
             ? makeFactorySelector((owner, id) =>
-                buildEcosystemContext(owner, id, skillResources ? { skillResources: liveSkillInput } : {}),
+                buildEcosystemContext(owner, id, skillResources ? { skillResources: liveSkillInput } : {}, [
+                  'skills',
+                ]),
               )
             : selectExtensionFactory)(
             found.packageId,
@@ -2815,15 +2835,25 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         rowId: `ext:${extensionId}`,
         spec: dynamic.spec,
         embedded: dynamic.manifest,
-        factory: () => dynamic.factory(ecosystemContext(dynamic.spec.package, extensionId)),
+        factory: () =>
+          dynamic.factory(
+            buildEcosystemContext(
+              dynamic.spec.package,
+              extensionId,
+              { skillResources: liveSkillInput },
+              dynamic.manifest.liveResources,
+            ),
+          ),
         registration: 'lifetime',
         onLateRegistration: () => mirrorGenerationOwner(extensionId),
       })
     }
+    const preparedExtensionInputs = new Map<string, Parameters<Assembled['extensionRows']['prepare']>[0]>()
     const prepareExtensionRow = (
       input: Readonly<{
         extensionId: string
         entryRevision?: string
+        liveResourceRevision?: string
         config?: unknown
         disabled?: boolean
         dynamic?: DynamicExtension
@@ -2832,6 +2862,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     ) => {
       if (input.dynamic) dynamicExtensionIds.add(input.extensionId)
       const found = input.dynamic ? undefined : findBundledExtension(input.extensionId)
+      const manifest = input.dynamic?.manifest ?? authorManifestOf(input.extensionId)
+      const liveResources = manifest && manifest !== 'unreadable' ? manifest.liveResources : undefined
+      preparedExtensionInputs.set(input.extensionId, input)
       const onDisposeError = (error: unknown) =>
         say('extension.revoke_failed', {
           id: input.extensionId,
@@ -2849,6 +2882,10 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           input.dynamic?.spec.revision ??
           found?.spec.revision ??
           EXT_ROW_MOUNT_REVISION,
+        ...(liveResources === undefined ? {} : { liveResources }),
+        ...(input.liveResourceRevision === undefined
+          ? {}
+          : { liveResourceRevision: input.liveResourceRevision }),
         loader: extRowLoader,
         owners: extRowOwners,
         onDisposeError,
@@ -2858,7 +2895,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
                 load: () => loadDynamicExtension(input.extensionId, input.dynamic as DynamicExtension),
               },
             }
-          : MIGRATED_EXTENSION_IDS.has(input.extensionId)
+          : MIGRATED_EXTENSION_IDS.has(input.extensionId) || !!liveResources?.length
             ? {
                 facade: {
                   load: () =>
@@ -2918,7 +2955,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       }
     }
     const extRowIds: string[] = []
-    for (const extensionId of EXT_ROW_EXTENSION_IDS) {
+    for (const extensionId of declaredExtensionIds) {
       // The Computer Use gate is a supply condition, not a grant condition: when it is off there is
       // nothing to load, so no row is built.
       if (extensionId === 'agnes/computer-use' && !profile.computerUse.enabled) continue
@@ -2937,8 +2974,11 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         const pinned = deps.generationBuiltinRows?.find((row) => row.id === `ext:${extensionId}`)
         return prepareExtensionRow({
           extensionId,
-          ...(extensionId === 'agnes/skills'
-            ? { entryRevision: skillRowRevision(deps.skillResources), skillResources: deps.skillResources }
+          ...(consumesSkills(extensionId)
+            ? {
+                liveResourceRevision: skillRowRevision(deps.skillResources),
+                skillResources: deps.skillResources,
+              }
             : {}),
           ...(pinned
             ? {
@@ -2962,6 +3002,8 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           const report = await applyExtensionRows(rows)
           // A dynamic extension whose row is gone is forgotten, so a later apply cannot bring it back.
           const wanted = new Set(rows.map((row) => row.id))
+          for (const id of preparedExtensionInputs.keys())
+            if (!wanted.has(`ext:${id}`)) preparedExtensionInputs.delete(id)
           for (const id of [...dynamicExtensionIds]) {
             if (wanted.has(`ext:${id}`)) continue
             dynamicExtensionIds.delete(id)
@@ -2981,52 +3023,67 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     let skillRefreshTail: Promise<void> = Promise.resolve()
     let skillRetry = 0
     const refreshSkillRow = (fresh: SkillRuntimeInput | undefined): Promise<void> => {
-      availableSkillResources = fresh
+      const supplied = fresh
       fresh = compositionSkills(fresh, profile.composition ?? {}, skillOwners)
       const task = skillRefreshTail.then(async () => {
-        const previous = extensionRows.current().find((row) => row.id === SKILL_ROW_ID)
-        if (!previous) throw new HostError('E_EXT_LOAD', 'builtin Skills row is unavailable')
+        const previousRows = extensionRows.current()
+        const consumers = previousRows.filter((row) => row.liveResources?.includes('skills'))
         const revision = skillRowRevision(fresh)
-        const currentStatus = builtinRows
-          .statusEntries()
-          .find(({ status }) => status.id === 'agnes/skills')?.status
-        if (
-          currentStatus?.loaded &&
-          (previous.entryRevision === revision || previous.entryRevision.startsWith(`${revision}:retry`))
-        ) {
-          activeSkillResources = fresh
-          preloadSkills = fresh
-          return
-        }
+        const statusFor = (row: EntryRow) =>
+          builtinRows.statusEntries().find(({ status }) => status.id === row.id.slice('ext:'.length))?.status
+        const changed = consumers.filter(
+          (row) =>
+            !row.disabled &&
+            (!statusFor(row)?.loaded ||
+              (row.liveResourceRevision !== revision &&
+                !row.liveResourceRevision?.startsWith(`${revision}:retry`))),
+        )
         const oldInput = activeSkillResources
-        const candidate = prepareExtensionRow({
-          extensionId: 'agnes/skills',
-          entryRevision: previous.entryRevision === revision ? `${revision}:retry${++skillRetry}` : revision,
-          skillResources: fresh,
-        })
+        const oldAvailable = availableSkillResources
+        const oldPrepared = new Map(preparedExtensionInputs)
+        const oldClaims = activeBuiltinClaims
         try {
-          await extensionRows.apply(withSkillRow(extensionRows.current(), candidate))
-          const status = builtinRows
-            .statusEntries()
-            .find(({ status }) => status.id === 'agnes/skills')?.status
-          if (!status?.loaded)
-            throw new HostError('E_EXT_LOAD', 'Skills row failed to load', {
-              detail: { id: 'agnes/skills', ...(status?.error ? { error: status.error.code } : {}) },
-            })
+          const replacements = new Map(
+            changed.map((row) => {
+              const extensionId = row.id.slice('ext:'.length)
+              return [
+                row.id,
+                prepareExtensionRow({
+                  ...oldPrepared.get(extensionId),
+                  extensionId,
+                  entryRevision: row.entryRevision,
+                  liveResourceRevision:
+                    row.liveResourceRevision === revision ? `${revision}:retry${++skillRetry}` : revision,
+                  ...(row.config === undefined ? {} : { config: row.config }),
+                  disabled: row.disabled,
+                  skillResources: fresh,
+                }),
+              ]
+            }),
+          )
+          if (changed.length)
+            await extensionRows.apply(withSkillRows(previousRows, [...replacements.values()]))
+          for (const row of changed) {
+            const status = statusFor(row)
+            if (!status?.loaded)
+              throw new HostError('E_EXT_LOAD', 'Live resource consumer failed to load', {
+                detail: { id: row.id, ...(status?.error ? { error: status.error.code } : {}) },
+              })
+          }
           activeSkillResources = fresh
           preloadSkills = fresh
+          availableSkillResources = supplied
         } catch (error) {
           try {
-            const restored = prepareExtensionRow({
-              extensionId: 'agnes/skills',
-              entryRevision: previous.entryRevision,
-              skillResources: oldInput,
-            })
-            await extensionRows.apply(withSkillRow(extensionRows.current(), restored))
+            activeBuiltinClaims = oldClaims
+            preparedExtensionInputs.clear()
+            for (const [id, input] of oldPrepared) preparedExtensionInputs.set(id, input)
+            await extensionRows.apply(previousRows)
             activeSkillResources = oldInput
             preloadSkills = oldInput
+            availableSkillResources = oldAvailable
           } catch (restoreError) {
-            throw new AggregateError([error, restoreError], 'Skills row refresh recovery required')
+            throw new AggregateError([error, restoreError], 'Live resource refresh recovery required')
           }
           throw error
         }
@@ -3042,9 +3099,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       id: string,
       freshInit: Readonly<{ skillResources?: SkillRuntimeInput }>,
     ): Promise<ExtensionStatus> => {
-      // Transitional worker API: Skills now load only through their Cordis row. The worker call is
-      // retired after its resource-generation compensation transaction moves to refreshSkillRow.
-      if (id === 'agnes/skills') {
+      if (
+        extensionRows.current().some((row) => row.id === `ext:${id}` && row.liveResources?.includes('skills'))
+      ) {
         await refreshSkillRow(freshInit.skillResources)
         const status = builtinRows.statusEntries().find(({ status }) => status.id === id)?.status
         if (!status) throw new HostError('E_EXT_LOAD', 'Skills row has no status')

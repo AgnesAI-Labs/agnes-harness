@@ -15,6 +15,8 @@ export interface PluginRowInput {
   readonly entryRevision: string
   readonly extrasRevision: string
   readonly mountRevision: string
+  readonly liveResources?: readonly string[]
+  readonly liveResourceRevision?: string
   readonly configReload?: 'live' | 'next-session'
   readonly config?: unknown
   readonly inject?: readonly string[]
@@ -69,6 +71,8 @@ export function createPluginRow(input: PluginRowInput): Readonly<EntryRow> {
     snapshotDigest: input.snapshotDigest,
     exportName: input.exportName,
     entryRevision: input.entryRevision,
+    ...(input.liveResources === undefined ? {} : { liveResources: sortedUnique(input.liveResources) }),
+    ...(input.liveResourceRevision === undefined ? {} : { liveResourceRevision: input.liveResourceRevision }),
     extrasRevision: input.extrasRevision,
     plugin: input.plugin,
     inject,
@@ -77,6 +81,7 @@ export function createPluginRow(input: PluginRowInput): Readonly<EntryRow> {
     runtime,
     mountRevision: input.mountRevision,
   }
+  const { liveResourceRevision: _live, ...codeIdentity } = identity
   const row: EntryRow = {
     id: input.id,
     plugin: input.plugin,
@@ -86,8 +91,11 @@ export function createPluginRow(input: PluginRowInput): Readonly<EntryRow> {
     provides,
     runtime,
     mountIdentity: buildMountIdentity(identity),
+    ...(input.liveResources === undefined ? {} : { codeMountIdentity: buildMountIdentity(codeIdentity) }),
     mountRevision: input.mountRevision,
     entryRevision: input.entryRevision,
+    ...(input.liveResources === undefined ? {} : { liveResources: sortedUnique(input.liveResources) }),
+    ...(input.liveResourceRevision === undefined ? {} : { liveResourceRevision: input.liveResourceRevision }),
     extrasRevision: input.extrasRevision,
     ...(input.configReload === undefined ? {} : { configReload: input.configReload }),
     ...(input.config === undefined ? {} : { config: snapshotConfig(input.config) }),

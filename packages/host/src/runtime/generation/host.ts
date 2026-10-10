@@ -7,7 +7,7 @@ import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { composeExtensionRowTarget } from '@agnes/host-extensions/assemble/ext-rows'
 import { createExtensionActivationBarrier } from '@agnes/host-extensions/ext-host/activation-barrier'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
-import { SKILL_ROW_ID, skillRowRevision } from '@agnes/host-providers/assemble/skill-row'
+import { skillRowRevision } from '@agnes/host-providers/assemble/skill-row'
 import { readLiveCompositionSessions } from '@agnes/host-providers/profile/composition-state'
 import { RuntimePluginCatalogue } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
@@ -57,12 +57,20 @@ const targetRows = (target: RuntimeTarget) => [
   ).values(),
 ]
 
-const liveResource = (id: string) => id === SKILL_ROW_ID || /^ext:agnes\/mcp-[a-z0-9-]+-[a-f0-9]{8}$/.test(id)
+const liveResource = (id: string) => /^ext:agnes\/mcp-[a-z0-9-]+-[a-f0-9]{8}$/.test(id)
 const liveResourceRow = (row: ReturnType<typeof targetRows>[number]) =>
   liveResource(row.id) && row.plugin.startsWith('builtin:@agnes/base/')
+const codeRow = (row: ReturnType<typeof targetRows>[number]) => {
+  if (!row.liveResources?.length) return row
+  const { liveResourceRevision: _revision, mountIdentity: _mount, ...code } = row
+  // All code/ownership fields stay in the fingerprint; the derived mount identity also includes resources.
+  return { ...code, mountIdentity: row.codeMountIdentity ?? row.mountIdentity }
+}
 const codeRevision = (target: RuntimeTarget) =>
   buildCompleteRuntimeTarget({
-    rows: targetRows(target).filter((row) => !liveResourceRow(row)),
+    rows: targetRows(target)
+      .filter((row) => !liveResourceRow(row))
+      .map(codeRow),
     resources: { mcp: [], skills: {} },
   }).artifact.digest
 
@@ -225,7 +233,6 @@ export async function createRuntimeGenerationHost(
       resources: freshTarget.resource.resources,
     }).target
     const generationSkills = createGenerationSkills(skills)
-    const pinnedSkillRow = targetRows(target).find((row) => row.id === SKILL_ROW_ID)
     const hasSkills = !!skills
     // A disabled row has no selected snapshot, but its package remains part of the composition
     // vocabulary. Keep inactive metadata without importing it; old sessions retain their code pin.
@@ -308,27 +315,52 @@ export async function createRuntimeGenerationHost(
       }
       const claims = new Map(builtins.map((row) => [row.id, row]))
       for (const input of restored.values()) {
-        const row = host.extensionRows.prepare(input)
+        const selected = targetRows(target).find((row) => row.id === `ext:${input.extensionId}`)
+        const row = host.extensionRows.prepare({
+          ...input,
+          ...(selected?.liveResources?.includes('skills')
+            ? {
+                liveResourceRevision: skillRowRevision(skills),
+                skillResources: hasSkills ? generationSkills.input : undefined,
+              }
+            : {}),
+        })
         claims.set(row.id, row)
       }
-      if (pinnedSkillRow)
+      for (const selected of targetRows(target).filter((row) => row.liveResources?.includes('skills'))) {
+        const extensionId = selected.id.slice('ext:'.length)
+        const input = restored.get(extensionId)
         claims.set(
-          SKILL_ROW_ID,
+          selected.id,
           host.extensionRows.prepare({
-            extensionId: 'agnes/skills',
-            entryRevision: pinnedSkillRow.entryRevision,
-            ...(hasSkills ? { skillResources: generationSkills.input } : {}),
+            ...input,
+            extensionId,
+            entryRevision: selected.entryRevision,
+            liveResourceRevision: skillRowRevision(skills),
+            ...(selected.config === undefined ? {} : { config: selected.config }),
+            disabled: selected.disabled,
+            skillResources: hasSkills ? generationSkills.input : undefined,
           }),
         )
+      }
       const rowIds = (snapshot.resources?.data as { extensionRowIds?: string[] } | undefined)?.extensionRowIds
       if (rowIds)
         await host.extensionRows.apply([
-          ...rowIds.filter((id) => !liveResource(id)).flatMap((id) => claims.get(id) ?? []),
+          ...rowIds
+            .filter((id) => !liveResource(id) && !claims.get(id)?.liveResources?.length)
+            .flatMap((id) => claims.get(id) ?? []),
           ...targetRows(target)
-            .filter((row) => liveResource(row.id))
+            .filter((row) => liveResource(row.id) || !!row.liveResources?.length)
             .flatMap((row) => claims.get(row.id) ?? []),
         ])
-      await host.applyRuntimeTarget(target)
+      await host.applyRuntimeTarget(
+        buildCompleteRuntimeTarget({
+          rows: targetRows(target).map((row) =>
+            row.liveResources?.length ? (claims.get(row.id) ?? row) : row,
+          ),
+          resources: target.resource.resources,
+        }).target,
+      )
     } catch (error) {
       await host.close().catch(() => undefined)
       throw error
@@ -503,14 +535,22 @@ export async function createRuntimeGenerationHost(
     for (const row of generation.host.extensionRows.current()) {
       if (liveResourceRow(row) || !row.plugin.startsWith('builtin:')) continue
       const extensionId = row.id.slice('ext:'.length)
-      generation.host.extensionRows.prepare(
-        saved?.get(extensionId) ?? {
+      generation.host.extensionRows.prepare({
+        ...(saved?.get(extensionId) ?? {
           extensionId,
           entryRevision: row.entryRevision,
           ...(row.config === undefined ? {} : { config: row.config }),
           ...(row.disabled === undefined ? {} : { disabled: row.disabled }),
-        },
-      )
+        }),
+        ...(row.liveResources?.includes('skills')
+          ? {
+              ...(row.liveResourceRevision === undefined
+                ? {}
+                : { liveResourceRevision: row.liveResourceRevision }),
+              skillResources: latestSkills ? createGenerationSkills(latestSkills).input : undefined,
+            }
+          : {}),
+      })
     }
   }
   const publishTargetCore = async (
@@ -526,8 +566,12 @@ export async function createRuntimeGenerationHost(
       decodeRuntimeTargetArtifact(head.snapshot.artifact)
     const extensionCodeChanged =
       extensionRows !== undefined &&
-      JSON.stringify(head.host.extensionRows.current().filter((row) => !liveResourceRow(row))) !==
-        JSON.stringify(extensionRows.filter((row) => !liveResourceRow(row)))
+      JSON.stringify(
+        head.host.extensionRows
+          .current()
+          .filter((row) => !liveResourceRow(row))
+          .map(codeRow),
+      ) !== JSON.stringify(extensionRows.filter((row) => !liveResourceRow(row)).map(codeRow))
     if (
       !skills &&
       !extensionCodeChanged &&
@@ -574,16 +618,16 @@ export async function createRuntimeGenerationHost(
     const resourcesChanged =
       !!skills ||
       (extensionRows !== undefined &&
-        JSON.stringify(
-          head.host.extensionRows.current().filter((row) => row.id !== SKILL_ROW_ID && liveResourceRow(row)),
-        ) !== JSON.stringify(extensionRows.filter((row) => row.id !== SKILL_ROW_ID && liveResourceRow(row))))
+        JSON.stringify(head.host.extensionRows.current().filter((row) => liveResourceRow(row))) !==
+          JSON.stringify(extensionRows.filter((row) => liveResourceRow(row))))
     for (const host of resourcesChanged
       ? new Set([...live.values()].map((generation) => generation.host))
       : []) {
-      if (skills) await host.refreshSkillRow(createGenerationSkills(skillInput).input)
+      if (skills)
+        await host.refreshSkillRow(skillInput ? createGenerationSkills(skillInput).input : undefined)
       const resources = resourceInputs.map((input) => host.extensionRows.prepare(input))
       await host.extensionRows.apply([
-        ...host.extensionRows.current().filter((row) => row.id === SKILL_ROW_ID || !liveResource(row.id)),
+        ...host.extensionRows.current().filter((row) => !liveResource(row.id)),
         ...resources,
       ])
       const retained = host.runtimeTargetSnapshot?.()
@@ -597,7 +641,7 @@ export async function createRuntimeGenerationHost(
     }
     latestSkills = skillInput
     if (!codeChanged) {
-      if (!extensionRows) await head.host.applyRuntimeTarget(target)
+      if (!extensionRows && !skills) await head.host.applyRuntimeTarget(target)
       return head.host.ordinaryConvergence()
     }
     const snapshot = snapshotTarget(target, sources, skillInput, extensionRows)
@@ -655,10 +699,33 @@ export async function createRuntimeGenerationHost(
       [...live.values()].map((generation) => generation.host),
       target,
     )
+    const beforeSkills = latestSkills
+    const retained = skills
+      ? [...new Set([...live.values()].map((generation) => generation.host))].map((host) => ({
+          host,
+          target: host.runtimeTargetSnapshot?.(),
+        }))
+      : []
     try {
       return await publishTargetCore(target, skills, extensionRows, previous)
     } catch (error) {
-      await rollback()
+      const failures: unknown[] = []
+      for (const { host, target } of retained.reverse()) {
+        try {
+          await host.refreshSkillRow(beforeSkills ? createGenerationSkills(beforeSkills).input : undefined)
+          if (target) await host.applyRuntimeTarget(target)
+        } catch (cause) {
+          failures.push(cause)
+        }
+      }
+      latestSkills = beforeSkills
+      try {
+        await rollback()
+      } catch (cause) {
+        failures.push(cause)
+      }
+      if (failures.length)
+        throw new AggregateError([error, ...failures], 'Live resource rollback was incomplete')
       throw error
     }
   }
@@ -864,54 +931,84 @@ export async function createRuntimeGenerationHost(
         const head = await ensureCurrent(),
           target = head.host.runtimeTargetSnapshot?.() ?? decodeRuntimeTargetArtifact(head.snapshot.artifact)
         const revision = skillRowRevision(fresh)
-        // A shared worker lists no workspace Skills outside an invocation. Equal catalogues
-        // cannot prove its newly supplied scoped source is unchanged.
+        const consumers = targetRows(target).filter((row) => row.liveResources?.includes('skills'))
+        // An empty global catalogue cannot prove a supplied workspace-scoped source is unchanged.
         if (
-          target.tree.rows.find((row) => row.id === SKILL_ROW_ID)?.entryRevision === revision &&
+          consumers.length &&
+          consumers.every(
+            (row) =>
+              row.liveResourceRevision === revision &&
+              (row.disabled || head.host.extensions().find((entry) => `ext:${entry.id}` === row.id)?.loaded),
+          ) &&
           !fresh?.scopeWorkspace
         )
           return
-        const row = head.host.extensionRows.prepare({
-          extensionId: 'agnes/skills',
-          entryRevision: revision,
-          skillResources: fresh,
-        })
-        const previous = preparedRows.get('agnes/skills')
-        preparedRows.set('agnes/skills', {
-          extensionId: 'agnes/skills',
-          entryRevision: revision,
-          skillResources: fresh,
-        })
-        const rows = [
-          ...target.tree.rows.filter((old) => old.id !== SKILL_ROW_ID),
-          row,
-          ...Object.values(target.resource.rows).flatMap((resource) =>
-            resource &&
-            resource.id !== SKILL_ROW_ID &&
-            !target.tree.rows.some((row) => row.id === resource.id)
-              ? [resource]
-              : [],
-          ),
-        ]
+        const previous = new Map(preparedRows)
+        const restoreConsumers = () => {
+          for (const row of consumers) {
+            const extensionId = row.id.slice('ext:'.length)
+            head.host.extensionRows.prepare({
+              ...previous.get(extensionId),
+              extensionId,
+              entryRevision: row.entryRevision,
+              ...(row.liveResourceRevision === undefined
+                ? {}
+                : { liveResourceRevision: row.liveResourceRevision }),
+              ...(row.config === undefined ? {} : { config: row.config }),
+              disabled: row.disabled,
+              skillResources: latestSkills,
+            })
+          }
+        }
         try {
+          const replacements = new Map(
+            consumers
+              .filter((row) => !row.disabled)
+              .map((row) => {
+                const extensionId = row.id.slice('ext:'.length)
+                const input = {
+                  ...preparedRows.get(extensionId),
+                  extensionId,
+                  entryRevision: row.entryRevision,
+                  liveResourceRevision: revision,
+                  ...(row.config === undefined ? {} : { config: row.config }),
+                  disabled: row.disabled,
+                  skillResources: fresh,
+                }
+                const candidate = head.host.extensionRows.prepare(input)
+                preparedRows.set(extensionId, input)
+                return [row.id, candidate]
+              }),
+          )
+          restoreConsumers()
           await publishTarget(
             buildCompleteRuntimeTarget({
-              rows,
+              rows: targetRows(target).map((row) => replacements.get(row.id) ?? row),
               resources: { ...target.resource.resources, skills: { entries: fresh?.list() ?? [] } },
             }).target,
             { input: fresh },
           )
         } catch (error) {
-          if (previous) preparedRows.set('agnes/skills', previous)
-          else preparedRows.delete('agnes/skills')
+          preparedRows.clear()
+          for (const [id, input] of previous) preparedRows.set(id, input)
+          try {
+            restoreConsumers()
+          } catch (cause) {
+            throw new AggregateError([error, cause], 'Live resource prepared-row rollback was incomplete')
+          }
           throw error
         }
       }),
     reloadEcosystemExtension: async (id, freshInit) => {
-      if (id !== 'agnes/skills') return (current?.host ?? initial).reloadEcosystemExtension(id, freshInit)
+      if (
+        !(current?.host ?? initial).extensionRows
+          .current()
+          .some((row) => row.id === `ext:${id}` && row.liveResources?.includes('skills'))
+      )
+        return (current?.host ?? initial).reloadEcosystemExtension(id, freshInit)
       await overrides.refreshSkillRow?.(freshInit.skillResources)
       const result = (current?.host ?? initial).extensions().find((entry) => entry.id === id)
-      if (!result) throw new Error('E_GENERATION_SKILLS: Skills row has no status')
+      if (!result) throw new Error('E_GENERATION_RESOURCE: Live resource consumer has no status')
       return result
     },
     sessionCapabilities: (key) => owner(key).sessionCapabilities!(key),

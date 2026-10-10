@@ -5,7 +5,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
-import type { ExtensionManifest } from '@agnes/extension-api'
+import { defineExtension, type ExtensionManifest } from '@agnes/extension-api'
+import type { DynamicExtension } from '@agnes/host-extensions/assemble/ext-rows'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import type { InferenceEvent } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -129,6 +130,116 @@ const seamsOnCode = (
 }
 
 describe('Host.reloadEcosystemExtension', () => {
+  it('refreshes all declared consumers, preserves code and unrelated rows, and rolls back a failure', async () => {
+    const dataDir = scratch()
+    const { host } = await createTestHost({
+      dataDir,
+      packageDirs: { '@agnes/base': baseDir },
+      disableSessionTitle: true,
+      skillResources: fakeSkillRuntimeInput('a'),
+    })
+    let failNext = false
+    let read: (() => readonly string[]) | undefined
+    const manifest: ExtensionManifest = {
+      id: 'acme/live-skills',
+      version: '1.0.0',
+      apiRange: '^1.0',
+      entry: './index.js',
+      liveResources: ['skills'],
+      capabilities: {},
+    }
+    const dynamic: DynamicExtension = {
+      spec: {
+        id: manifest.id,
+        package: '@acme/live-skills',
+        packageVersion: '1.0.0',
+        dir: dataDir,
+        trust: 'builtin',
+        enabled: true,
+        revision: 'pinned-code',
+      },
+      manifest,
+      factory: (ctx) =>
+        defineExtension(() => {
+          if (failNext) {
+            failNext = false
+            throw new Error('consumer refresh failed')
+          }
+          read = () => ctx.skillResources?.list().map((skill) => skill.name) ?? []
+        }),
+    }
+    try {
+      const second = host.extensionRows.prepare({
+        extensionId: manifest.id,
+        dynamic,
+        config: { marker: true },
+      })
+      const sleeping = host.extensionRows.prepare({
+        extensionId: 'acme/disabled-skills',
+        disabled: true,
+        config: { marker: 'disabled' },
+        dynamic: {
+          ...dynamic,
+          spec: { ...dynamic.spec, id: 'acme/disabled-skills' },
+          manifest: { ...manifest, id: 'acme/disabled-skills' },
+          factory: () => {
+            throw new Error('disabled consumer must stay unloaded')
+          },
+        },
+      })
+      await host.extensionRows.apply([...host.extensionRows.current(), second, sleeping])
+      const session = await host.createSession({ key: 'live-consumers', cwd: dataDir })
+      const generation = session.pluginGenerationId
+      const catalog = async () => {
+        session.hooks.resetTurn?.()
+        return (await session.hooks.context([])).sections.map((section) => section.text).join('\n')
+      }
+      const unrelated = host.extensionRows.current().find((row) => row.id === 'ext:agnes/jobs')!
+      await host.refreshSkillRow(fakeSkillRuntimeInput('b'))
+      const consumers = host.extensionRows.current().filter((row) => row.liveResources?.includes('skills'))
+      expect(consumers.map((row) => row.id)).toEqual(expect.arrayContaining(['ext:agnes/skills', second.id]))
+      expect(
+        consumers
+          .filter((row) => !row.disabled)
+          .every((row) => row.liveResourceRevision === consumers[0]?.liveResourceRevision),
+      ).toBe(true)
+      expect(host.extensionRows.current().find((row) => row.id === second.id)).toMatchObject({
+        entryRevision: 'pinned-code',
+        config: { marker: true },
+        disabled: false,
+      })
+      expect(host.extensionRows.current().find((row) => row.id === sleeping.id)).toEqual(sleeping)
+      expect(read?.()).toEqual(['skill-b'])
+      expect(await catalog()).toContain('skill-b')
+      expect(host.extensionRows.current().find((row) => row.id === unrelated.id)).toEqual(unrelated)
+      expect(host.pluginGenerationStatus?.().currentGenerationId).toBe(generation)
+      const before = host.runtimeTargetSnapshot?.()
+      await host.refreshSkillRow(fakeSkillRuntimeInput('b'))
+      expect(host.runtimeTargetSnapshot?.()).toEqual(before)
+      failNext = true
+      await expect(host.refreshSkillRow(fakeSkillRuntimeInput('c'))).rejects.toThrow()
+      expect(host.runtimeTargetSnapshot?.()).toEqual(before)
+      expect(read?.()).toEqual(['skill-b'])
+      expect(await catalog()).toContain('skill-b')
+      expect(
+        host
+          .extensions()
+          .filter((entry) => ['agnes/skills', manifest.id].includes(entry.id))
+          .every((entry) => entry.loaded),
+      ).toBe(true)
+      expect(
+        await host.reloadEcosystemExtension(manifest.id, { skillResources: fakeSkillRuntimeInput('c') }),
+      ).toMatchObject({ id: manifest.id, loaded: true })
+      expect(read?.()).toEqual(['skill-c'])
+      expect(await catalog()).toContain('skill-c')
+      await host.refreshSkillRow(undefined)
+      expect(read?.()).toEqual([])
+      expect(await catalog()).not.toContain('skill-c')
+    } finally {
+      await host.close()
+    }
+  })
+
   // Design §3.9 (D123): agnes/mcp-search's tool_search lists the Skills generation agnes/skills
   // currently serves. Reloading agnes/skills alone changes what it lists; the search extension itself
   // is never reloaded, which is why a resource reload no longer has to touch it.

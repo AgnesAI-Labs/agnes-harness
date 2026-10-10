@@ -26,6 +26,18 @@ agh plugins reload --profile local-dev
 
 只要还有持久会话引用，旧 generation 就保留。关闭或休眠不会释放 pin。禁用/卸载停止新绑定，仅回收无引用 generation。管理页显示“排干中 (N)”，也显示已从安装清单移除但仍有绑定的包。`boundSessions` 是所有绑定数，`drainingSessions` 是当前 generation 之外的绑定数。目前没有公开的会话删除命令；后端删除入口必须在实际删除会话后释放 pin。
 
+## 声明实时资源消费
+
+扩展 row 通过公开的 `agnes.extension.json` manifest 声明消费实时 Skills：
+
+```json
+{ "liveResources": ["skills"] }
+```
+
+可选数组目前支持 `skills`，重复或未知种类会被拒绝。省略或空数组表示资源变化不触发该 row 刷新。声明后，扩展工厂上下文会获得按 composition 过滤、按工作区限定的 Skill 输入；声明不会额外授予 capability，也不会绕过资源信任或读取授权。
+
+Host 刷新所有声明该种类的 row，包括替代插件和第三方扩展 row，同时保留固定代码、配置和禁用状态。代码与实时资源修订使用独立身份；有效修订相同会跳过重新挂载，但全局目录未变的新工作区限定来源仍会替换读取来源。所有受影响 row 一起发布，失败恢复原 row 和资源视图。保留的代码 generation 和冷恢复会使用当前实时资源。
+
 ## 哪些需要重启
 
 persistence/storage provider、sandbox 及其他进程基础后端仍标记 `restart-required`，不能被包重载替换。恢复检查部署兼容性与会话已持久化的 loop id/version。代码快照缺失、固定包目录被修改或部署不兼容会产生明确的 `E_GENERATION_*` 错误，不会替换为当前代码。
