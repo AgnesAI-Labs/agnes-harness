@@ -141,7 +141,8 @@ describe('doctor command aggregation', () => {
         expect(result.json).toEqual([{ name, status: 'warn', detail: expected }])
         expect(result.exitCode).toBe(0)
       }
-    })
+      // Each section assembles a real host, which takes far longer than the default five seconds on a CI runner.
+    }, 60_000)
 
     it('keep a real assembly failure a failure and name only its error code', async () => {
       const d = deps()
