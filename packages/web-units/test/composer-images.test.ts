@@ -737,7 +737,11 @@ describe('composer image attachments', () => {
     root = createRoot(host)
   })
 
-  it('rejects an image that is still over the per-image limit after downscaling', async () => {
+  // The fixture is one byte over the 100 MiB per-image limit, and the composer reads and encodes the
+  // whole file before it compares sizes, which takes several seconds on a hosted Linux runner.
+  it('rejects an image that is still over the per-image limit after downscaling', {
+    timeout: 30_000,
+  }, async () => {
     const handle = createRef<ComposerHandle>()
     const onError = vi.fn()
     const oversized = pngFile('still-big.png', new Uint8Array(USER_MESSAGE_IMAGE_LIMITS.maxBytesPerImage + 1))

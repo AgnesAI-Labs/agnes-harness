@@ -1,4 +1,4 @@
-import type { Provider } from '@agnes/protocol'
+import type { ModelRecord, Provider } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { withPhase } from '../src/step/op-state.js'
 import { presetDefaults } from '../src/step/preset.js'
@@ -21,6 +21,23 @@ const withCount = (tokens: number | 'unsupported' | 'throw'): Counting => {
         }
   }
   return p
+}
+// Session input refuses an image unless the selected model declares image input.
+const imagePrimary: ModelRecord = {
+  id: 'primary',
+  name: 'primary',
+  api: 'openai-completions',
+  route: 'default',
+  baseUrl: 'https://example.invalid/v1',
+  reasoning: false,
+  input: ['text', 'image'],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 8192,
+  maxTokens: 128,
+  toolCallFormats: ['native'],
+  thinkingReplay: 'native',
+  contract_id: null,
+  slot: 'primary',
 }
 const preset = (cap: number | null, onExceed: 'quote' | 'deny' = 'deny') => ({
   ...presetDefaults(),
@@ -179,6 +196,7 @@ describe('count calibration', () => {
       },
     })
     const provider = withCount('unsupported')
+    Object.assign(provider, { models: () => [imagePrimary] })
     const { session } = await openSession({ provider, preset: preset(4000), seams })
     session.d.imageInputTokenFallback = async ({ imageCount }) => ({ tokens: 9000, imageCount })
     await session.enqueue('next-turn', {
