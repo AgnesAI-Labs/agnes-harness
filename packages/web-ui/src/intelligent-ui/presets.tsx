@@ -113,11 +113,7 @@ export function PresetTabs({
           key: tab.id,
           label: <span data-testid={`ui-tab-${id}-${tab.id}`}>{tab.label}</span>,
           children: (
-            <div
-              role="tabpanel"
-              id={`${reactId}-ui-tabpanel-${id}-${tab.id}`}
-              data-testid={`ui-tabpanel-${id}-${tab.id}`}
-            >
+            <div id={`${reactId}-ui-tabpanel-${id}-${tab.id}`} data-testid={`ui-tabpanel-${id}-${tab.id}`}>
               {tab.componentIds.map((componentId) => (
                 <div key={componentId}>{renderChild(componentId)}</div>
               ))}
