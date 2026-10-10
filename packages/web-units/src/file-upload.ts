@@ -15,6 +15,26 @@ export class FileUploadFailure extends Error {
     super(code)
   }
 }
+
+const BUSY_BACKOFF_MS = [250, 500, 1_000, 2_000]
+
+function wait(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason)
+      return
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(signal.reason)
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
 async function result(response: Response): Promise<FileUploadResult> {
   const value = (await response.json()) as FileUploadResult & { error?: string }
   if (!response.ok || value.error) throw new FileUploadFailure(value.error ?? 'UPLOAD_UNAVAILABLE')
@@ -102,7 +122,9 @@ export async function uploadFile(
       continue
     }
     let acknowledged = false
-    for (let attempt = 0; attempt < 3; attempt++) {
+    let transientAttempt = 0
+    let busyAttempt = 0
+    while (!acknowledged) {
       try {
         const value = await result(
           await fetch(`${FILE_UPLOAD_PATH}?${query}`, {
@@ -114,11 +136,18 @@ export async function uploadFile(
         )
         if ((value.offset ?? 0) < offset + bytes.length) throw new FileUploadFailure('UPLOAD_OFFSET_MISMATCH')
         acknowledged = true
-        break
       } catch (error) {
         signal.throwIfAborted()
+        if (error instanceof FileUploadFailure && error.code === 'UPLOAD_BUSY') {
+          const delay = BUSY_BACKOFF_MS[busyAttempt]
+          if (delay === undefined) throw error
+          busyAttempt += 1
+          await wait(delay, signal)
+          continue
+        }
         if (error instanceof FileUploadFailure && error.code !== 'UPLOAD_UNAVAILABLE') throw error
-        if (attempt === 2) throw error
+        if (transientAttempt === 2) throw error
+        transientAttempt += 1
       }
     }
     if (acknowledged)

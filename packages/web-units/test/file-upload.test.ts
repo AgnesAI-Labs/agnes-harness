@@ -11,7 +11,16 @@ const attachment = {
 }
 const response = (value: unknown) =>
   new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+})
+
+const busy = () =>
+  new Response(JSON.stringify({ error: 'UPLOAD_BUSY' }), {
+    status: 409,
+    headers: { 'Content-Type': 'application/json' },
+  })
 
 it.each([0, 4])(
   'sends bounded chunks, resumes from %i, and retries a lost acknowledgement',
@@ -74,6 +83,81 @@ it.each([
     uploadFile(file, 'session', 'upload', limits, new AbortController().signal, () => undefined),
   ).rejects.toMatchObject({ code })
   expect(fetch).not.toHaveBeenCalled()
+})
+
+it('retries a busy chunk on 250, 500, 1000 and 2000 ms, then surfaces the error', async () => {
+  vi.useFakeTimers()
+  let chunks = 0
+  vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+    const query = new URL(url, 'http://localhost').searchParams
+    if (query.get('operation') === 'chunk') {
+      chunks += 1
+      return busy()
+    }
+    const control = JSON.parse(String(init.body)) as { operation: string }
+    if (control.operation === 'start') return response({ offset: 0 })
+    return response({ attachment })
+  })
+  const pending = uploadFile(
+    new File(['abcd'], 'contract.txt', { type: 'text/plain' }),
+    'session',
+    'upload',
+    limits,
+    new AbortController().signal,
+    () => undefined,
+  )
+  const surfaced = expect(pending).rejects.toMatchObject({ code: 'UPLOAD_BUSY' })
+  await vi.advanceTimersByTimeAsync(0)
+  expect(chunks).toBe(1)
+  await vi.advanceTimersByTimeAsync(249)
+  expect(chunks).toBe(1)
+  await vi.advanceTimersByTimeAsync(1)
+  expect(chunks).toBe(2)
+  await vi.advanceTimersByTimeAsync(499)
+  expect(chunks).toBe(2)
+  await vi.advanceTimersByTimeAsync(1)
+  expect(chunks).toBe(3)
+  await vi.advanceTimersByTimeAsync(999)
+  expect(chunks).toBe(3)
+  await vi.advanceTimersByTimeAsync(1)
+  expect(chunks).toBe(4)
+  await vi.advanceTimersByTimeAsync(1_999)
+  expect(chunks).toBe(4)
+  await vi.advanceTimersByTimeAsync(1)
+  expect(chunks).toBe(5)
+  await surfaced
+  expect(chunks).toBe(5)
+})
+
+it('stops a busy retry when the upload is aborted during the backoff', async () => {
+  vi.useFakeTimers()
+  const controller = new AbortController()
+  let chunks = 0
+  vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+    const query = new URL(url, 'http://localhost').searchParams
+    if (query.get('operation') === 'chunk') {
+      chunks += 1
+      return busy()
+    }
+    const control = JSON.parse(String(init.body)) as { operation: string }
+    if (control.operation === 'start') return response({ offset: 0 })
+    return response({ attachment })
+  })
+  const pending = uploadFile(
+    new File(['abcd'], 'contract.txt', { type: 'text/plain' }),
+    'session',
+    'upload',
+    limits,
+    controller.signal,
+    () => undefined,
+  )
+  const aborted = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+  await vi.advanceTimersByTimeAsync(0)
+  expect(chunks).toBe(1)
+  controller.abort()
+  await vi.advanceTimersByTimeAsync(2_000)
+  await aborted
+  expect(chunks).toBe(1)
 })
 
 it('aborts an in-flight chunk and sends a separate cleanup request without finishing', async () => {
