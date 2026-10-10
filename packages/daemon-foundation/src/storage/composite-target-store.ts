@@ -180,8 +180,12 @@ export class CompositeTargetStore {
     this.#table.exec(`INSERT OR IGNORE INTO composite_targets (profile) VALUES (?)`, [profile])
   }
 
-  publishDesired(artifact: RuntimeTargetArtifact): void {
+  publishDesired(
+    artifact: RuntimeTargetArtifact,
+    confirmation?: Readonly<{ generation: number; report: CompositeTargetReport }>,
+  ): void {
     const next = freezeArtifact(artifact)
+    const report = confirmation ? this.#freezeReport(confirmation.report) : undefined
     this.#table.transaction(() => {
       const current = this.#row()
       this.configAudit.commit(parseArtifact(current.desired_json)?.digest, next.digest)
@@ -195,8 +199,14 @@ export class CompositeTargetStore {
         [JSON.stringify(next), previous ?? null, keepAck ? current.acknowledged_json : null, this.#profile],
       )
       this.#retireRevertSuspicion()
+      if (confirmation && report) {
+        if (!this.#matchesDesired(confirmation.generation, next, next))
+          throw new Error('E_RUNTIME_TARGET_OUTCOME_UNKNOWN')
+        this.#writeQualification(confirmation.generation, next, report)
+      }
     })
     for (const listener of this.#desiredListeners) listener(next)
+    if (report) for (const listener of this.#reportListeners) listener(report)
   }
 
   desired(): RuntimeTargetArtifact | undefined {
@@ -240,27 +250,33 @@ export class CompositeTargetStore {
   ): boolean {
     const desired = this.desired()
     if (!this.#matchesDesired(generation, artifact, desired)) return false
-    const frozenReport = Object.freeze({
+    const frozenReport = this.#freezeReport(report)
+    this.#table.transaction(() => this.#writeQualification(generation, desired, frozenReport))
+    for (const listener of this.#reportListeners) listener(frozenReport)
+    return true
+  }
+
+  #freezeReport(report: CompositeTargetReport): CompositeTargetReport {
+    return Object.freeze({
       hash: report.hash,
       ok: report.ok,
       rows: Object.freeze(report.rows.map((row) => Object.freeze({ ...row }))),
     })
-    const ack = Object.freeze({
-      digest: desired.digest,
-      identity: Object.freeze({ ...desired.identity }),
-      generation,
-    })
-    this.#table.transaction(() => {
-      this.#table.exec(
-        `UPDATE composite_targets
-         SET last_good_json = ?, report_json = ?, acknowledged_json = ?, last_failure_json = NULL
-         WHERE profile = ?`,
-        [JSON.stringify(desired), JSON.stringify(frozenReport), JSON.stringify(ack), this.#profile],
-      )
-      this.#retireRevertSuspicion()
-    })
-    for (const listener of this.#reportListeners) listener(frozenReport)
-    return true
+  }
+
+  #writeQualification(
+    generation: number,
+    desired: RuntimeTargetArtifact,
+    report: CompositeTargetReport,
+  ): void {
+    const ack = { digest: desired.digest, identity: desired.identity, generation }
+    this.#table.exec(
+      `UPDATE composite_targets
+       SET last_good_json = ?, report_json = ?, acknowledged_json = ?, last_failure_json = NULL
+       WHERE profile = ?`,
+      [JSON.stringify(desired), JSON.stringify(report), JSON.stringify(ack), this.#profile],
+    )
+    this.#retireRevertSuspicion()
   }
 
   /**

@@ -66,6 +66,7 @@ it.each([false, true])(
       )
       store.publishDesired(initial)
       let refuse = false
+      let persistenceError: string | undefined
       let applyGate: Promise<void> | undefined
       let offered!: () => void
       let liveRequest: boolean | undefined
@@ -86,6 +87,7 @@ it.each([false, true])(
             error.name = 'PluginConfigRefused'
             throw error
           }
+          if (persistenceError) throw new Error(persistenceError)
           store.publishDesired(artifact)
         },
       })
@@ -120,6 +122,20 @@ it.each([false, true])(
       expect(store.configAudit.facts([rowId])).toEqual([])
       expect(store.desired()?.digest).toBe(initial.digest)
       refuse = false
+      for (const [failure, reason] of [
+        ['injected persistence failure', 'refused'],
+        ['E_RUNTIME_TARGET_OUTCOME_UNKNOWN', 'pending'],
+      ] as const) {
+        persistenceError = failure
+        expect(await controller.save({ ...request, commandId: failure }, authority)).toMatchObject({
+          ok: false,
+          reason,
+          revision: initial.digest,
+        })
+        expect(store.desired()?.digest).toBe(initial.digest)
+        expect(store.configAudit.facts([rowId])).toEqual([])
+      }
+      persistenceError = undefined
       let accept!: () => void
       applyGate = new Promise<void>((resolve) => {
         accept = resolve

@@ -51,6 +51,8 @@ export async function publishProbedRuntimeTarget(options: ProbedRuntimeTargetPub
     for (const pin of options.pins ?? []) {
       if (!remaining.has(pin)) throw new Error(`E_RUNTIME_TARGET_PIN: pin ${pin} missing after probe`)
     }
+    // Desired, config audit and qualification commit together, before leaving compensation scope.
+    options.store.publishDesired(artifact, receipt)
   } catch (error) {
     // Remain inside the publication lane while restoring after a post-apply refusal/CAS failure.
     try {
@@ -60,7 +62,5 @@ export async function publishProbedRuntimeTarget(options: ProbedRuntimeTargetPub
     }
     throw error
   }
-  options.store.publishDesired(artifact)
-  if (receipt) options.store.qualifyConverged(receipt.generation, artifact, receipt.report)
   options.store.sweepPins()
 }

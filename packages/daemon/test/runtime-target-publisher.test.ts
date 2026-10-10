@@ -84,35 +84,56 @@ describe('publishProbedRuntimeTarget', () => {
     expect(store.desired()).toBeUndefined()
   })
 
-  it.each(['cas', 'generation', 'report'] as const)(
+  it.each(['cas', 'generation', 'report', 'commit', 'qualify', 'restore'] as const)(
     'restores the authorized target when post-apply qualification changes (%s)',
     async (change) => {
       const tables = sqliteTables()
       try {
-        const store = new CompositeTargetStore(tables.table('composite'), 'default')
+        const handle = tables.table('composite')
+        const store = new CompositeTargetStore(handle, 'default')
         const prior = artifact('ext:prior')
         const next = artifact('ext:next')
         store.publishDesired(prior)
-        let restored = false
+        let runtime = prior
+        let restores = 0
+        const exec = handle.exec.bind(handle)
+        handle.exec = (sql, params = []) => {
+          exec(sql, params)
+          if (
+            ((change === 'commit' || change === 'restore') && String(sql).includes('SET desired_json')) ||
+            (change === 'qualify' && String(sql).includes('SET last_good_json'))
+          )
+            throw new Error('injected persistence failure')
+        }
         await expect(
           publishProbedRuntimeTarget({
             store,
             artifact: next,
             probe: async () => {},
             apply: async () => {
+              runtime = next
               if (change === 'cas') store.publishDesired(artifact('ext:intervening'))
               return {
                 generation: 1,
                 report: { hash: next.identity.treeHash, ok: change !== 'report', rows: [] },
                 isCurrent: () => change !== 'generation',
                 restore: async () => {
-                  restored = true
+                  restores++
+                  if (change === 'restore') throw new Error('injected restore failure')
+                  runtime = prior
                 },
               }
             },
           }),
-        ).rejects.toThrow(change === 'cas' ? 'E_RUNTIME_TARGET_STALE' : 'E_RUNTIME_TARGET_OUTCOME_UNKNOWN')
-        expect(restored).toBe(true)
+        ).rejects.toThrow(
+          change === 'cas'
+            ? 'E_RUNTIME_TARGET_STALE'
+            : change === 'commit' || change === 'qualify'
+              ? 'injected persistence failure'
+              : 'E_RUNTIME_TARGET_OUTCOME_UNKNOWN',
+        )
+        expect(restores).toBe(1)
+        expect(runtime.digest).toBe(change === 'restore' ? next.digest : prior.digest)
         expect(store.desired()?.digest).not.toBe(next.digest)
         expect(store.lastGood()).toBeUndefined()
       } finally {
