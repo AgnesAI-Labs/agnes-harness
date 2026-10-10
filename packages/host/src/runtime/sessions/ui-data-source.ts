@@ -256,6 +256,13 @@ function paramsAccept(
   }
 }
 
+/** Generated action `sources` is a patterned record whose Static type is `{}`. */
+function sourceHash(sources: object | undefined, key: string): string | undefined {
+  if (sources === undefined || !Object.hasOwn(sources, key)) return undefined
+  const value = (sources as Record<string, unknown>)[key]
+  return typeof value === 'string' ? value : undefined
+}
+
 function dataKeyOf(component: UiSurface['components'][number] | undefined): string | undefined {
   if (!component || !('dataKey' in component) || typeof component.dataKey !== 'string') return undefined
   return component.dataKey
@@ -275,7 +282,8 @@ function dependentDataKeys(
   }
   for (const id of Object.keys(action.selection))
     keys.add(dataKeyOf(surface.components.find((item) => item.id === id)) ?? '')
-  if (action.row) keys.add(dataKeyOf(surface.components.find((item) => item.id === action.row.tableId)) ?? '')
+  const row = action.row
+  if (row) keys.add(dataKeyOf(surface.components.find((item) => item.id === row.tableId)) ?? '')
   keys.delete('')
   return keys
 }
@@ -418,7 +426,7 @@ export async function resolveUiDataSources(
     const failed = resolved.find((item) => item.failure)
     if (failed?.failure) return { ok: false, code: failed.failure, dataKey: failed.dataKey, audits }
     if (input.purpose === 'action') {
-      const stale = resolved.find((item) => input.action?.sources?.[item.dataKey] !== item.resultHash)
+      const stale = resolved.find((item) => sourceHash(input.action?.sources, item.dataKey) !== item.resultHash)
       if (stale) return { ok: false, code: 'UI_STALE', dataKey: stale.dataKey, audits }
     }
   }

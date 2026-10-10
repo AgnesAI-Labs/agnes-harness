@@ -3,12 +3,18 @@ import type {
   UiActionReceipt,
   UiReadParams,
   UiReadResult,
+  UiSourceStatus,
   UiSurfaceRecord,
 } from '@agnes/protocol/gen/intelligent-ui'
 import { describe, expect, it } from 'vitest'
 import { IntelligentUiClient } from '../../src/intelligent-ui/client.js'
 import type { IntelligentUiServer, UiCommandStorage } from '../../src/intelligent-ui/types.js'
 import { financeRecord, uiPage, uiReceipt } from './fixture.js'
+
+function sourceAt(sources: object | undefined, key: string): UiSourceStatus | undefined {
+  if (sources === undefined || !Object.hasOwn(sources, key)) return undefined
+  return (sources as Record<string, UiSourceStatus>)[key]
+}
 
 class FakeServer implements IntelligentUiServer {
   page = uiPage()
@@ -297,7 +303,10 @@ describe('Intelligent UI session projection and commands', () => {
     await client.refreshSource(id)
     expect(client.record(id)?.surface.revision).toBe(1)
     expect(client.record(id)?.surface.data.rows).toEqual([{ id: 'txn-2', amountCents: 9 }])
-    expect(client.record(id)?.sources?.rows).toEqual({ status: 'ready', resultHash: 'cd'.repeat(32) })
+    expect(sourceAt(client.record(id)?.sources, 'rows')).toEqual({
+      status: 'ready',
+      resultHash: 'cd'.repeat(32),
+    })
     client.choose(id, action)
     await client.confirm(id)
     expect(server.submitted[0]?.sources).toEqual({ rows: 'cd'.repeat(32) })

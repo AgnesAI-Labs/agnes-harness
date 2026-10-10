@@ -13,6 +13,7 @@ import {
   type EventEnvelope,
   jcs,
   type UiActionParams,
+  type UiSourceStatus,
   type UiSurface,
   validateAgainst,
 } from '@agnes/protocol'
@@ -869,6 +870,15 @@ const resolved = (input: UiSourceResolveInput, ok = true): UiSourceResolveResult
         ],
       }
 
+/**
+ * Type.Module infers a record of an object schema as `{}`, so a source id is not a typed key.
+ * The value is still a UiSourceStatus; this reads that field without widening the assertion.
+ */
+function sourceAt(sources: object | undefined, key: string): UiSourceStatus | undefined {
+  if (sources === undefined || !Object.hasOwn(sources, key)) return undefined
+  return (sources as Record<string, UiSourceStatus>)[key]
+}
+
 describe('bound UI data sources', () => {
   it('stores the binding and audits the write without keeping rows', async () => {
     const f = fixture()
@@ -913,11 +923,11 @@ describe('bound UI data sources', () => {
     await f.service().render({ surface: bound() }, signal)
     const first = (await f.service().read({ sessionId: 'session' }, signal)).surfaces[0]!
     expect(first.surface.data.rows).toEqual([{ id: 'a', amount: 12 }])
-    expect(first.sources?.rows).toEqual({ status: 'ready', resultHash: HASH })
+    expect(sourceAt(first.sources, 'rows')).toEqual({ status: 'ready', resultHash: HASH })
     fail = true
     const second = (await f.service().read({ sessionId: 'session' }, signal)).surfaces[0]!
     expect(second.surface.data.rows).toEqual({ $source: 'finance/differences', params: {} })
-    expect(second.sources?.rows).toEqual({ status: 'error', code: 'UI_SOURCE_UNAVAILABLE' })
+    expect(sourceAt(second.sources, 'rows')).toEqual({ status: 'error', code: 'UI_SOURCE_UNAVAILABLE' })
   })
   it('refuses a stale bound action and rejects a denied one before action.received', async () => {
     const f = fixture()

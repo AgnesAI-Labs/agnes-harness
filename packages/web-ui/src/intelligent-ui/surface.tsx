@@ -3,6 +3,7 @@ import type {
   UiAction,
   UiActionReceipt,
   UiRowContext,
+  UiSourceStatus,
   UiSurfaceRecord,
 } from '@agnes/protocol/gen/intelligent-ui'
 import { type ReactNode, useId } from 'react'
@@ -85,7 +86,9 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
       <IntelligentCatalog
         {...(props.renderCustom ? { renderCustom: props.renderCustom } : {})}
         surface={surface}
-        {...(record.sources ? { sources: record.sources } : {})}
+        {...(record.sources
+          ? { sources: record.sources as Readonly<Record<string, UiSourceStatus>> }
+          : {})}
         {...(props.onRefreshSource ? { onRefreshSource: props.onRefreshSource } : {})}
         instance={props.placement}
         input={props.input}

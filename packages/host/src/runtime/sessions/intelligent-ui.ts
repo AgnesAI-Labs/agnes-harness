@@ -10,6 +10,7 @@ import {
 import {
   type IntelligentUiInstance,
   intelligentUiKind,
+  type UiSourceResolveInput,
   UI_EVENTS,
   UI_OWNER,
   UI_PROVIDER_ID,
@@ -316,7 +317,7 @@ export function createIntelligentUiBridge(input: {
           return (row?.data as { invocationId?: string } | undefined)?.invocationId
         },
         authenticatedActor: call.actor,
-        resolveSources: (request) => {
+        resolveSources: (request: UiSourceResolveInput) => {
           const live = requireSession(session.key, session.lane)
           const generationId = generationOf(live)
           const actor = call.actor
@@ -361,7 +362,7 @@ export function createIntelligentUiBridge(input: {
             },
           })
         },
-        dropSources: (surfaceId) => dropUiDataSourceCache(sourceCache, session.key, surfaceId),
+        dropSources: (surfaceId: string) => dropUiDataSourceCache(sourceCache, session.key, surfaceId),
       }
     },
     input(call) {

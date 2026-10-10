@@ -6,6 +6,7 @@ import {
   UiActionReceipt,
   UiReadResult,
   type UiRowContext,
+  type UiSourceStatus,
   type UiSurface,
   UiSurfaceRecord,
   X_AGNES_UI_LIMITS,
@@ -26,13 +27,21 @@ export type UiSnapshot = Readonly<{
   error?: 'ui.unavailable' | 'ui.transport' | 'ui.duplicate' | 'ui.retryRow' | 'ui.actionLimit'
   watermark: number
 }>
+/** `UiSurfaceRecord.sources` is a patterned record. Its generated Static type is `{}`. */
+function typedSources(
+  sources: object | undefined,
+): Readonly<Record<string, UiSourceStatus>> | undefined {
+  if (sources === undefined) return undefined
+  return sources as Readonly<Record<string, UiSourceStatus>>
+}
+
 function formSeed(
   component: UiSurface['components'][number],
   record: UiSurfaceRecord,
 ): JsonValue | undefined {
   if ('fallback' in component || component.kind !== 'form') return undefined
   const data = record.surface.data[component.dataKey]
-  const source = record.sources?.[component.dataKey]
+  const source = typedSources(record.sources)?.[component.dataKey]
   if (data === undefined || (source && source.status !== 'ready')) return undefined
   if (data && typeof data === 'object' && !Array.isArray(data) && Object.hasOwn(data, '$source'))
     return undefined
@@ -40,7 +49,7 @@ function formSeed(
 }
 function sourceHashes(record: UiSurfaceRecord): Record<string, string> {
   const sources: Record<string, string> = {}
-  for (const [key, status] of Object.entries(record.sources ?? {}))
+  for (const [key, status] of Object.entries(typedSources(record.sources) ?? {}))
     if (status.status === 'ready' && status.resultHash) sources[key] = status.resultHash
   return sources
 }
@@ -208,7 +217,7 @@ export class IntelligentUiClient {
           if (
             page.surfaces.some(
               (record) =>
-                !displayableIntelligentSurface(record.surface, record.sources) ||
+                !displayableIntelligentSurface(record.surface, typedSources(record.sources)) ||
                 record.createdSeq > record.updatedSeq ||
                 record.updatedSeq > watermark,
             ) ||
@@ -378,7 +387,7 @@ export class IntelligentUiClient {
       next.lane !== current.lane ||
       next.surface.revision !== current.surface.revision ||
       next.status !== 'open' ||
-      !displayableIntelligentSurface(next.surface, next.sources)
+      !displayableIntelligentSurface(next.surface, typedSources(next.sources))
     )
       return
     this.adoptFormDraft(current, next)

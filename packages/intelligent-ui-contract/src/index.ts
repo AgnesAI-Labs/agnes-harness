@@ -3,6 +3,7 @@ import {
   type AgentInputPort,
   defineServiceKind,
   type OwnerLedgerPort,
+  type Seq,
   type ServiceInstance,
   type ServicePorts,
   type ServiceProvider,
@@ -106,18 +107,25 @@ export interface IntelligentUiCapabilities extends IntelligentUiCatalog {
   supportsDeferredInvocations: boolean
   queue: UiDeferredQueue
   invocationId(toolUseId: string): Promise<string | undefined>
-  /** Actor admitted with this bind. A missing or different actor fails closed. */
-  authenticatedActor?: Actor
+  /**
+   * Actor admitted with this bind. A missing actor, or a getter that returns
+   * undefined after admission is cleared, fails closed. A different actor does too.
+   */
+  authenticatedActor?: Actor | undefined
   /**
    * Host resolver. A literal surface never calls it.
-   * A binding fails closed when this is absent.
+   * A binding fails closed when this is absent or undefined.
    */
-  resolveSources?(input: UiSourceResolveInput): Promise<UiSourceResolveResult>
+  resolveSources?:
+    | ((input: UiSourceResolveInput) => Promise<UiSourceResolveResult>)
+    | undefined
   /** Drops one surface from the host resolution cache. */
   dropSources?(surfaceId: string): void
 }
 
 export interface IntelligentUiServicePorts extends ServicePorts {
+  /** Live ledger watermark. A read cursor above it is rejected. */
+  readonly lastSeq: Seq
   readonly ledger: OwnerLedgerPort
   readonly input: AgentInputPort
   readonly capabilities: IntelligentUiCapabilities

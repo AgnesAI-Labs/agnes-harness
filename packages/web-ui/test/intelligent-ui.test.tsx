@@ -497,7 +497,7 @@ async function renderCatalog(
           onSelection: vi.fn(),
           onInvalid: vi.fn(),
           onAction: vi.fn(),
-          onRefreshSource: onRefresh,
+          onRefreshSource: onRefresh as () => void,
         }),
       ),
     ),

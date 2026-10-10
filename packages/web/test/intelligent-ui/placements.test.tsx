@@ -31,6 +31,7 @@ const deliverablesRecord = () => {
 const mounted = async (receipt = uiReceipt('pending-approval'), record = financeRecord()) => {
   const client = new IntelligentUiClient('session-finance', {
     read: async () => uiPage(record, [receipt], 20),
+    refresh: async () => record,
     action: async () => receipt,
     listen: () => () => {},
     attach: async () => {},

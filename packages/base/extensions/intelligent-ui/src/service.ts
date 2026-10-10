@@ -43,13 +43,18 @@ const unauthorized = (): UiRefusal => ({
   code: 'UI_UNAUTHORIZED',
   message: 'The declared tool was denied by the existing tool policy.',
 })
+/** Absent or non-integer watermark would let a future cursor through the ceiling check. */
+const requireSeq = (seq: number): number => {
+  if (!Number.isSafeInteger(seq) || seq < 0) throw rpcError('CAPABILITY_DENIED')
+  return seq
+}
 export function createIntelligentUiService(ports: IntelligentUiServicePorts): IntelligentUiInstance {
   const { binding, capabilities: cap, ledger, input } = ports
   const session = binding.session
   const owner = binding.owner
   if (!session || !ledger || !input || !cap?.queue) throw rpcError('CAPABILITY_DENIED')
   const { serial, secret } = uiSerial(ports)
-  const state = async (through = ports.lastSeq) => {
+  const state = async (through = requireSeq(ports.lastSeq)) => {
     let value = initialUiState()
     for (const row of await scanOwnUiEvents(ledger, through)) value = foldUiEvent(value, row)
     return value
@@ -451,7 +456,8 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
             }),
           )
           .digest('hex')
-        let watermark = ports.lastSeq,
+        const latest = requireSeq(ports.lastSeq)
+        let watermark = latest,
           offset = 0,
           expires = ports.now() + 60000
         if (input.cursor) {
@@ -467,7 +473,7 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
           if (
             !Number.isSafeInteger(cursor.w) ||
             cursor.w < 0 ||
-            cursor.w > ports.lastSeq ||
+            cursor.w > latest ||
             !Number.isSafeInteger(cursor.o) ||
             cursor.o < 1 ||
             !Number.isSafeInteger(cursor.e) ||

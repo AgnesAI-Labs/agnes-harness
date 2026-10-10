@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
+import type { UiSourceResolveInput } from '@agnes/intelligent-ui-contract'
 import {
   capabilityHash,
   hashDirectory,
@@ -24,7 +25,6 @@ import {
   type UiDataSourceGrant,
   type UiDataSourceRegistration,
   type UiDataSourceResolverDeps,
-  type UiSourceResolveInput,
   uiDataSourceDecision,
 } from '../src/runtime/sessions/ui-data-source.js'
 
