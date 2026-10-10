@@ -97,6 +97,18 @@ export const intelligentUiSamples = {
     { ...receipt, duplicate: 'false' },
   ]),
   UiSurfaceRecord: sample(record, [{ ...record, owner: '' }]),
+  UiDataBinding: sample({ $source: 'ledger/rows', params: { account: 'cash' } }, [
+    { $source: 'Ledger/rows', params: {} },
+    { $source: 'ledger/rows' },
+  ]),
+  UiSourceStatus: sample({ status: 'ready', resultHash: 'a'.repeat(64) }, [
+    { status: 'stale' },
+    { status: 'error', code: 'NOPE' },
+  ]),
+  UiRefreshParams: sample({ sessionId: 's', surfaceId: 'surface' }, [
+    { sessionId: 's' },
+    { sessionId: '', surfaceId: 'surface' },
+  ]),
   UiReadParams: sample({ sessionId: 's' }, [{ sessionId: 's', limit: 17 }]),
   UiReadResult: sample({ sessionId: 's', lastSeq: 1, surfaces: [record], actions: [receipt] }, [
     { sessionId: 's', lastSeq: -1, surfaces: [], actions: [] },

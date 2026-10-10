@@ -48,7 +48,7 @@ describe('reviewed preset components', () => {
               dataKey: 'form',
               schema: { type: 'object', properties: { reason: { type: 'string' } } },
             },
-            { id: 'controls', kind: 'button-group', actionIds: [] },
+            { id: 'controls', kind: 'button-group', actionIds: ['approve'] },
             { id: 'summary', kind: 'status', dataKey: 'status' },
           ],
           {
@@ -57,6 +57,15 @@ describe('reviewed preset components', () => {
             form: {},
             status: 'Review adjustments',
           },
+          [
+            {
+              id: 'approve',
+              label: 'Approve',
+              tool: 'approve',
+              argsTemplate: {},
+              paramsSchema: true,
+            },
+          ],
         ),
       ),
     ).toBe(true)
