@@ -174,6 +174,25 @@ describe('human Loop controls', () => {
     await session.close()
   })
 
+  it('reports the latest control window as truncated when older facts exist', async () => {
+    const { session, log } = await openSession({ provider: fakeProvider([textTurn('unused')]) })
+    await log.append(
+      Array.from({ length: 201 }, (_, index) =>
+        session.controls.fact('steer', 'withdrawn', actor, { index }),
+      ),
+    )
+    const latest = await session.controls.state()
+    expect(latest.facts).toHaveLength(200)
+    expect(latest.factsMore).toBe(true)
+    expect(latest.facts[0]?.details).toMatchObject({ index: 1 })
+    expect(latest.facts.at(-1)?.details).toMatchObject({ index: 200 })
+    expect(latest.factsThrough).toBe(session.lastSeq)
+    const history = await session.controls.state(0)
+    expect(history.factsMore).toBe(true)
+    expect(history.facts[0]?.details).toMatchObject({ index: 0 })
+    await session.close()
+  })
+
   it('cancel returns pending steers as durable content and ends the turn', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([textTurn('answer')]) })
     await session.enqueue('next-turn', { content: content('go'), actor })

@@ -85,7 +85,9 @@ export class SessionControls {
     })
     return {
       children: await controlledChildTree(this.s),
-      factsMore: afterSeq !== undefined && rows.length === 200,
+      // A full page is the same signal with or without afterSeq. The no-cursor read is the
+      // latest window, so factsThrough stays the session watermark; read older facts from 0.
+      factsMore: rows.length === 200,
       factsThrough: afterSeq !== undefined && rows.length === 200 ? rows.at(-1)!.seq : through,
       facts: (afterSeq === undefined ? rows.reverse() : rows).map((row) => {
         const details = row.data as { action: string; outcome: string }

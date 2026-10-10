@@ -851,7 +851,11 @@ export class Session {
     return this.write('steer', input, opts)
   }
 
-  /** Authoritative controls of this session's pinned Loop, and its durable pause/queue state. */
+  /**
+   * Authoritative controls of this session's pinned Loop, and its durable pause/queue state.
+   * Without `afterSeq` this is the latest window of at most 200 facts. `factsMore` then means
+   * older facts may exist; use `afterSeq` (from 0) and follow `factsThrough` to read that history.
+   */
   controls(
     opts: { afterSeq?: number } = {},
   ): Promise<import('@agnes/protocol/gen/agnes-v1').SessionControlStateResult> {

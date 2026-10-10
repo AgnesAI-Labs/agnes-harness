@@ -79,6 +79,6 @@ Agent 工作时发送消息，默认排队为指引，在当前模型调用或�
 
 **暂停**在下一个步骤边界生效，**继续**恢复同一轮。浏览器刷新和 daemon 冷启动都会保留暂停。**取消**结束当前轮，并将待送达的指引退回输入框。Trace 的**人工控制记录**显示操作者、时间、请求和结果。控制始终作用于会话固定的 Loop 版本，包括热升级期间；不支持的控件显示禁用原因。
 
-SDK：`session.controls()` 读取能力与状态；`steer(content)`、`editQueued(itemId, content)`、`removeQueued(itemId)`、`interrupt(itemId)`、`pause()`、`resume()` 和 `cancel()` 都走持久命令路径。Loop 通过 `LoopFactory.controls` 声明支持能力，省略即拒绝指引、打断和暂停。
+SDK：`session.controls()` 读取能力与状态；`steer(content)`、`editQueued(itemId, content)`、`removeQueued(itemId)`、`interrupt(itemId)`、`pause()`、`resume()` 和 `cancel()` 都走持久命令路径。Loop 通过 `LoopFactory.controls` 声明支持能力，省略即拒绝指引、打断和暂停。不带 `afterSeq` 时，`controls()` 只返回最新的至多 200 条事实（`facts[0].seq` 是该窗口中最早的 seq），窗口已满时 `factsMore` 为 true。读取历史请从 `afterSeq: 0` 开始。
 
 输入框上方的子代理树显示所属 workflow 和子代理会话的时长、Token 用量；未知值明确显示为未知。**停止子代理**协作式结束子代理当前轮，workflow 继续等待；发送继续消息后，同一子会话保留原有约束继续工作。SDK 使用 `stopChild(childId)` 和 `continueChild(childId, text)`。父、子控制事实保留人工操作者。外部子代理提供者声明自己的打断/继续能力，不支持的动作禁用。`controls({ afterSeq })` 通过 `factsThrough` 和 `factsMore` 分页读取完整控制历史。

@@ -33,4 +33,4 @@ export const plugin = {
 
 `LoopFactory` 可声明 `controls: { steer: true, interrupt: true, pause: true }`。未声明的控制由 Core 拒绝，返回 `E_UNSUPPORTED` 和 `detail.reason = "LOOP_CONTROL_UNSUPPORTED"`。包括 generation 发布期间，Core 始终依据会话绑定的 factory。取消仍属于 driver 生命周期。
 
-在调度边完成后通过 `ctx.input.claim("next-step")` 接收 steer；不要在工具批次运行中接收。暂停阻止下一条边，保留同一 turn 和 checkpoint，浏览器重载与冷恢复均保持暂停。立即打断合作取消当前执行，收集可用回执，再接受选中的排队输入。已提交效果仍有记录，缺少回执的效果仍属未知。排队、交付、修改、撤回及控制结果均由 Core 记为带操作者和时间的 ledger 事实。
+在调度边完成后通过 `ctx.input.claim("next-step")` 接收 steer；不要在工具批次运行中接收。暂停阻止下一条边，保留同一 turn 和 checkpoint，浏览器重载与冷恢复均保持暂停。立即打断合作取消当前执行，收集可用回执，再接受选中的排队输入。已提交效果仍有记录，缺少回执的效果仍属未知。排队、交付、修改、撤回及控制结果均由 Core 记为带操作者和时间的 ledger 事实。不带 `afterSeq` 的 `controls()` 只返回最新的至多 200 条事实，窗口已满时 `factsMore` 为 true。读取历史请从 `afterSeq: 0` 开始。
