@@ -535,7 +535,7 @@ export async function handleCommand(
  * (the caller's own shared slot, not a return value — see `handleCommand`'s doc comment). Failure at
  * any step is logged and left for the next `run` to retry: the caller advances `reloadedMarks` only
  * when this returns `true`, and a failed reload must never throw out of `run` — the turn proceeds on
- * whatever resource set it already had.
+ * the safely applied resource set; an uncertain MCP apply or failed compensation refuses admission.
  *
  * MCP (stage 2b step 3): the snapshot's servers are applied as Host rows, one per server
  * (`o.resources.mcpRows`). Host swaps only a row whose definition changed and unmounts only a removed
@@ -562,26 +562,23 @@ async function reloadWorkerResources(o: {
   if (!slot || !o.workerResourcesInput) return false
   const previous = slot.generation
   let next: WorkerResourceState | undefined
-  let mcpAttempted = false
+  let mcpPending = false
   try {
     next = await bootstrapWorkerResources(o.workerResourcesInput)
     if (previous && next) next.runtime.skills.shareRuntimeFrom(previous.runtime.skills)
-    mcpAttempted = !!slot.mcpRows
+    mcpPending = !!slot.mcpRows
     await slot.mcpRows?.apply(next?.mcpEntries ?? [])
+    mcpPending = false
     await refreshSkills(o.host, next?.skillResources)
   } catch (error) {
-    // Host refreshSkillRow compensates its own Skills row before rejecting. Only a failed Host
-    // compensation or failed reverse MCP apply requires intervention before another turn runs.
-    if (error instanceof AggregateError && error.message === 'Skills row refresh recovery required')
+    // MCP and Skills are independent. A successful MCP apply must survive Skills failure,
+    // especially a revocation. A failed MCP apply may have left revoked rows mounted: refuse
+    // admission rather than restoring a previous set that contains them.
+    if (
+      mcpPending ||
+      (error instanceof AggregateError && error.message === 'Skills row refresh recovery required')
+    )
       slot.recoveryRequired = true
-    if (mcpAttempted) {
-      try {
-        await slot.mcpRows?.apply(previous?.mcpEntries ?? [])
-      } catch (restoreError) {
-        slot.recoveryRequired = true
-        console.error('agnes worker: resource generation recovery required:', restoreError)
-      }
-    }
     console.error('agnes worker: resource reload failed, will retry on the next run:', error)
     if (next && next !== previous) closeDisownedGeneration(next)
     return false
