@@ -28,6 +28,7 @@ import { createHostFacade } from '../lifecycle/host-facade.js'
 import { applyLivePluginConfig, overlayLivePluginConfig } from '../lifecycle/live-plugin-config.js'
 import { sessionKey } from '../sessions/session.js'
 import { captureGenerationResources, createGenerationSkills, restoreGenerationRows } from './resources.js'
+import { assertGenerationTrust } from './trust.js'
 
 export type PluginGenerationStatus = Readonly<{
   currentGenerationId?: string
@@ -217,6 +218,13 @@ export async function createRuntimeGenerationHost(
       throw new Error(
         `E_GENERATION_INCOMPATIBLE: generation ${snapshot.id} needs its original loop/adapter deployment`,
       )
+    await assertGenerationTrust(
+      snapshot.sources,
+      options.profileDir,
+      profile.name,
+      options.agnesVersion ?? '0.0.0',
+      options.runtimePluginSources,
+    )
     const skills = latestSkills
     const pinnedTarget = decodeRuntimeTargetArtifact(snapshot.artifact)
     const freshTarget = (current?.host ?? initial).runtimeTargetSnapshot?.() ?? pinnedTarget
@@ -372,7 +380,16 @@ export async function createRuntimeGenerationHost(
   }
   const resolve = async (id: string): Promise<LiveGeneration> => {
     const found = live.get(id)
-    if (found) return found
+    if (found) {
+      await assertGenerationTrust(
+        found.snapshot.sources,
+        options.profileDir,
+        profile.name,
+        options.agnesVersion ?? '0.0.0',
+        options.runtimePluginSources,
+      )
+      return found
+    }
     const pending = opening.get(id)
     if (pending) return pending
     const started = Promise.resolve().then(() => build(store.read(id)))

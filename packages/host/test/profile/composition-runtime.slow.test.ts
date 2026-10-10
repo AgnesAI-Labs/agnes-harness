@@ -19,7 +19,13 @@ import {
   readLiveCompositionSessions,
 } from '@agnes/host-providers/profile/composition-state'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
-import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
+import {
+  capabilityHash,
+  emptyLock,
+  hashDirectory,
+  writeLock,
+  type RuntimePluginSnapshot,
+} from '@agnes/package-manager'
 import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { RuntimeSecurityStatus, SessionCapabilitySet, validateAgainst } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
@@ -718,7 +724,7 @@ it('opens a new composition from the published code after retiring a boot snapsh
         snapshotId: integrity,
         integrity,
         treeIntegrity: integrity,
-        capabilityHash: 'a'.repeat(64),
+        capabilityHash: capabilityHash({ dependencies: {} }),
         directory,
         contributions: [],
       },
@@ -817,6 +823,43 @@ it('opens a new composition from the published code after retiring a boot snapsh
     const current = await host.createSession({ key: 'new-composition', preset: 'observer', cwd: root })
     expect(current.currentTools().resolve('code_version')?.description).toBe('2.0.0')
     expect(old.currentTools().resolve('code_version')?.description).toBe('1.0.0')
+    // Installation trust is independent of source retention and desired enablement.
+    const profileDir = join(root, 'profiles/local-dev')
+    writeLock(profileDir, {
+      ...emptyLock('local-dev', '0.1.0'),
+      resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
+      seams: Object.fromEntries(
+        [
+          'approval',
+          'checkpoint',
+          'ledger',
+          'sandbox',
+          'verifier',
+          'repair',
+          'artifacts',
+          'principals',
+          'platform',
+          'harness',
+        ].map((name) => [name, '@agnes/base']),
+      ),
+      packages: {
+        [id]: {
+          version: two.snapshot.version,
+          integrity: two.snapshot.integrity,
+          source: { type: 'file', ref: 'file:fixture' },
+          trust: 'trusted',
+          license: 'MIT',
+          dependencies: {},
+          previous: null,
+          state: { installed: new Date(0).toISOString(), trusted: new Date(0).toISOString(), enabled: false },
+          trustDecision: {
+            integrity: two.snapshot.integrity,
+            capabilityHash: two.snapshot.capabilityHash,
+            decidedAt: new Date(0).toISOString(),
+          },
+        },
+      },
+    })
     const pin = old.pluginGenerationId
     await old.close()
     await current.close()

@@ -20,6 +20,7 @@ import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target
 import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import type { PluginRow, RuntimeTarget } from '@agnes/plugin-runtime/host'
 import { createRuntimeGenerationHost } from '../generation/host.js'
+import { assertGenerationTrust } from '../generation/trust.js'
 import type { Host, HostOptions } from '../lifecycle/host.js'
 import {
   assertHostPublication,
@@ -185,6 +186,14 @@ export async function createCompositionHost(
                 [],
             ).select(project(latestTarget, binding.tree))
           : options.runtimePluginSnapshots
+      if (sources)
+        await assertGenerationTrust(
+          sources,
+          options.profileDir,
+          profile.name,
+          options.agnesVersion ?? '0.0.0',
+          options.runtimePluginSources,
+        )
       const deployment = {
         ...binding.profile,
         ...(sources

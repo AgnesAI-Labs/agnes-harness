@@ -7,7 +7,12 @@ import type { PluginExtensionAPI } from '@agnes/extension-api'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import {
+  capabilityHash,
+  emptyLock,
   hashDirectory,
+  readLock,
+  writeLock,
+  type LockEntry,
   RuntimeGenerationSnapshotStore,
   type RuntimePluginSnapshot,
 } from '@agnes/package-manager'
@@ -54,7 +59,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
         version,
         integrity,
         treeIntegrity: hashDirectory(directory, { exclude: [] }),
-        capabilityHash: integrity,
+        capabilityHash: capabilityHash({ dependencies: {} }),
         directory,
         contributions: [],
       },
@@ -63,6 +68,53 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     }
     sources.push(source)
     return source
+  }
+  const profileDir = join(root, 'profiles/local-dev')
+  mkdirSync(profileDir, { recursive: true })
+  const persistTrust = (source: RuntimePluginSnapshot, trusted = true) => {
+    const entry: LockEntry = {
+      version: source.snapshot.version,
+      source: { type: 'file', ref: 'file:fixture' },
+      integrity: source.snapshot.integrity,
+      trust: 'trusted',
+      license: 'MIT',
+      apiRange: '^1.4.0',
+      dependencies: {},
+      previous: null,
+      state: {
+        installed: new Date(0).toISOString(),
+        trusted: trusted ? new Date(0).toISOString() : null,
+        enabled: false,
+      },
+      ...(trusted
+        ? {
+            trustDecision: {
+              integrity: source.snapshot.integrity,
+              capabilityHash: source.snapshot.capabilityHash,
+              decidedAt: new Date(0).toISOString(),
+            },
+          }
+        : {}),
+    }
+    writeLock(profileDir, {
+      ...emptyLock('local-dev', '0.1.0'),
+      resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
+      seams: Object.fromEntries(
+        [
+          'approval',
+          'checkpoint',
+          'ledger',
+          'sandbox',
+          'verifier',
+          'repair',
+          'artifacts',
+          'principals',
+          'platform',
+          'harness',
+        ].map((name) => [name, '@agnes/base']),
+      ),
+      packages: { 'acme/generation': entry },
+    })
   }
   const one = makeSource('1.0.0', '1'),
     two = makeSource('2.0.0', '2')
@@ -141,6 +193,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     },
   }
   try {
+    persistTrust(one)
     host = (await createTestHost(options)).host
     const base = required(host.runtimeTargetSnapshot?.())
     const target = (source?: RuntimePluginSnapshot) =>
@@ -175,6 +228,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
         throw new Error('old tool never entered')
       }),
     ])
+    persistTrust(two)
     const reload = await required(host.reloadPlugin)('acme/generation', two.snapshot.directory)
     expect(reload.changed).toBe(true)
     expect(await required(host.reloadPlugin)('acme/generation')).toEqual({ ...reload, changed: false })
@@ -311,6 +365,25 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       expect.objectContaining({ id: secondId, state: 'failed', boundSessions: 1 }),
     )
     writeFileSync(file, saved)
+    await host.close()
+    persistTrust(two, false)
+    host = (await createTestHost(options)).host
+    await expect(host.createSession({ key: 'session-b', cwd: root })).rejects.toMatchObject({
+      code: 'E_WORKSPACE_UNTRUSTED',
+      message: expect.stringContaining('E_GENERATION_UNTRUSTED'),
+    })
+    for (const field of ['integrity', 'capabilityHash'] as const) {
+      persistTrust(two)
+      const lock = readLock(profileDir, { profile: 'local-dev', agnesVersion: '0.1.0' })
+      const decision = required(lock.packages['acme/generation']?.trustDecision)
+      decision[field] = field === 'integrity' ? `sha256-${'f'.repeat(64)}` : 'f'.repeat(64)
+      writeLock(profileDir, lock)
+      await expect(host.createSession({ key: 'session-b', cwd: root })).rejects.toThrow(
+        'E_GENERATION_UNTRUSTED',
+      )
+    }
+    expect(host.kernel.get('session-b')).toBeUndefined()
+    expect(host.extensions().some((entry) => entry.id === 'acme/generation/main' && entry.loaded)).toBe(false)
     rmSync(join(store.root, secondId), { recursive: true })
     await expect(host.createSession({ key: 'session-b', cwd: root })).rejects.toThrow(
       'E_GENERATION_SNAPSHOT_MISSING',
