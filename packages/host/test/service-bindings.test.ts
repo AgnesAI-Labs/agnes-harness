@@ -15,8 +15,18 @@ import {
   type ServiceDescriptor,
   type ServicePortFactories,
 } from '@agnes/host-common/assemble/service-binding'
-import type { Actor } from '@agnes/protocol'
+import { rpcError, type Actor } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
+import {
+  FEEDBACK_DESCRIPTOR,
+  FEEDBACK_OWNER,
+  FEEDBACK_PACKAGE_ID,
+  FEEDBACK_PROVIDER_ID,
+  feedbackKind,
+  type FeedbackAuthority,
+  type FeedbackResult,
+} from '../src/runtime/feedback/contract.js'
+import { createFeedbackLedger } from '../src/runtime/feedback/ledger.js'
 import { createExtensionServiceHost, type ServiceAdmission } from '../src/runtime/services/author-port.js'
 import { sessionInputTarget, type SessionLedgerSession } from '../src/runtime/services/session-ports.js'
 
@@ -1052,3 +1062,198 @@ describe('extension service host', () => {
     }
   })
 })
+
+const feedbackResult: FeedbackResult = {
+  items: [],
+  growth: [],
+  counts: { up: 0, down: 0, withdrawn: 0, withCandidate: 0 },
+  truncated: false,
+}
+
+function feedbackCall(): ServiceCall {
+  return call({ owner: FEEDBACK_OWNER, packageId: FEEDBACK_PACKAGE_ID, watermark: 0 })
+}
+
+describe('feedback service binding', () => {
+  it('is a single request-scoped service whose code change is restart-required', () => {
+    expect(feedbackKind.cardinality).toBe('single')
+    expect(feedbackKind.instanceScope).toBe('request')
+    expect(feedbackKind.scope).toBe('workspace')
+    expect(feedbackKind.restartRequired).toBe(true)
+    expect(feedbackKind.versioned).toBe(true)
+    expect([...feedbackKind.ports]).toEqual(['ledger', 'input', 'projections'])
+    expect([...FEEDBACK_DESCRIPTOR.ports]).toEqual(['ledger'])
+    expect(FEEDBACK_DESCRIPTOR.audience).toBe('host')
+    expect([...(FEEDBACK_DESCRIPTOR.eventNames ?? [])]).toEqual(['item', 'growth'])
+    const first = feedbackCall()
+    const second = call({
+      owner: FEEDBACK_OWNER,
+      packageId: FEEDBACK_PACKAGE_ID,
+      watermark: 0,
+      workspaceKey: 'other-profile',
+    })
+    expect(serviceBindingScope(feedbackKind, first)).toBe('binding:feedback:request')
+    expect(serviceBindingScope(feedbackKind, second)).toBe(serviceBindingScope(feedbackKind, first))
+  })
+
+  it('selects the one host provider and refuses none, several, or the wrong package', async () => {
+    const opened: string[] = []
+    let seen: ServicePorts | undefined
+    const root = new Context()
+    const bindings = new ServiceBindings(() => root.providers)
+    bindings.install(root, feedbackKind, FEEDBACK_DESCRIPTOR)
+    const register = (id: string) => {
+      root.providers.register(feedbackKind, FEEDBACK_PACKAGE_ID, {
+        id,
+        version: '1.0.0',
+        open(ports) {
+          opened.push(id)
+          seen = ports
+          return { async execute() { return feedbackResult } }
+        },
+      })
+    }
+    try {
+      await expectClosed(bindings.bind(feedbackKind, feedbackCall(), {}), 'bind', 'feedback')
+      register('agh.other')
+      register(FEEDBACK_PROVIDER_ID)
+      await expectClosed(
+        bindings.bind(feedbackKind, feedbackCall(), {
+          ledger: () => {
+            throw new Error('unopened')
+          },
+        }),
+        'bind',
+        'feedback',
+      )
+      expect(opened).toEqual([])
+      const catalog = root.providers.catalog().filter((item) => item.kind === 'feedback')
+      expect(catalog.map((item) => item.id).sort()).toEqual(['agh.feedback', 'agh.other'])
+      for (const item of catalog) {
+        expect(item).toMatchObject({
+          sourcePackage: FEEDBACK_PACKAGE_ID,
+          restartRequired: true,
+          scope: 'workspace',
+        })
+      }
+    } finally {
+      await finish(root)
+    }
+
+    const sole = new Context()
+    const soleBindings = new ServiceBindings(() => sole.providers)
+    soleBindings.install(sole, feedbackKind, FEEDBACK_DESCRIPTOR)
+    sole.providers.register(feedbackKind, FEEDBACK_PACKAGE_ID, {
+      id: FEEDBACK_PROVIDER_ID,
+      version: '1.0.0',
+      open(ports) {
+        opened.push(FEEDBACK_PROVIDER_ID)
+        seen = ports
+        return { async execute() { return feedbackResult } }
+      },
+    })
+    try {
+      await expectClosed(
+        soleBindings.bind(
+          feedbackKind,
+          call({ owner: FEEDBACK_OWNER, packageId: '@other/package', watermark: 0 }),
+          {
+            ledger: () => {
+              throw new Error('unopened')
+            },
+          },
+        ),
+        'bind',
+        'feedback',
+      )
+      expect(opened).toEqual([])
+      const first = await soleBindings.bind(feedbackKind, feedbackCall(), {
+        ledger: () => createFeedbackLedger(feedbackAuthority(), 's', extensionActor('human')),
+      })
+      const second = await soleBindings.bind(feedbackKind, feedbackCall(), {
+        ledger: () => createFeedbackLedger(feedbackAuthority(), 's', extensionActor('human')),
+      })
+      expect(second).not.toBe(first)
+      expect(opened).toEqual([FEEDBACK_PROVIDER_ID, FEEDBACK_PROVIDER_ID])
+      expect(Object.keys(seen ?? {}).sort()).toEqual(['binding', 'lastSeq', 'ledger', 'now'])
+      expect(seen?.input).toBeUndefined()
+      expect(seen?.projections).toBeUndefined()
+      expect(seen?.lastSeq).toBe(0)
+      expect(seen?.binding.session).toBeUndefined()
+      expect(seen?.binding.packageId).toBe(FEEDBACK_PACKAGE_ID)
+    } finally {
+      await finish(sole)
+    }
+  })
+
+  it('refuses a forged ledger name and pins the admitted session and actor', async () => {
+    const appended: { sessionId: string; type: string; data: unknown; actor: Actor }[] = []
+    const actor = extensionActor('human')
+    const authority = feedbackAuthority(async (sessionId, type, data, author) => {
+      appended.push({ sessionId, type, data, author })
+      return appended.length
+    })
+    const root = new Context()
+    const bindings = new ServiceBindings(() => root.providers)
+    bindings.install(root, feedbackKind, FEEDBACK_DESCRIPTOR)
+    let ledger: ServicePorts['ledger']
+    root.providers.register(feedbackKind, FEEDBACK_PACKAGE_ID, {
+      id: FEEDBACK_PROVIDER_ID,
+      version: '1.0.0',
+      open(ports) {
+        ledger = ports.ledger
+        return { async execute() { return feedbackResult } }
+      },
+    })
+    try {
+      await bindings.bind(feedbackKind, feedbackCall(), {
+        ledger: () => createFeedbackLedger(authority, 's', actor),
+      })
+      await expect(ledger!.appendOwn('nope', { ok: true })).rejects.toMatchObject({
+        data: { reason: 'FEEDBACK_APPEND_FORBIDDEN' },
+      })
+      await expect(ledger!.appendOwn('x/feedback/item', { ok: true })).rejects.toMatchObject({
+        data: { reason: 'FEEDBACK_APPEND_FORBIDDEN' },
+      })
+      await expect(
+        createFeedbackLedger(authority, undefined, actor).appendOwn('item', { ok: true }),
+      ).rejects.toMatchObject({
+        data: { reason: 'FEEDBACK_APPEND_FORBIDDEN' },
+      })
+      expect(appended).toEqual([])
+      expect(await ledger!.appendOwn('item', { actor: 'forged', sessionId: 'foreign' })).toBe(1)
+      expect(appended).toEqual([
+        {
+          sessionId: 's',
+          type: 'x/feedback/item',
+          data: { actor: 'forged', sessionId: 'foreign' },
+          actor,
+        },
+      ])
+    } finally {
+      await finish(root)
+    }
+  })
+})
+
+function feedbackAuthority(
+  append: FeedbackAuthority['append'] = async () => {
+    throw rpcError('CAPABILITY_DENIED', { reason: 'FEEDBACK_APPEND_FORBIDDEN' })
+  },
+): FeedbackAuthority {
+  return {
+    sessions: async () => ({ ids: ['s'], truncated: false }),
+    scan: async () => [],
+    append,
+    draft: async () => [],
+    recoverCandidate: async () => null,
+    candidate: async () => {
+      throw new Error('candidate')
+    },
+    evidence: async () => {
+      throw new Error('evidence')
+    },
+    now: () => '2026-10-09T00:00:00Z',
+    id: () => 'feedback-1',
+  }
+}

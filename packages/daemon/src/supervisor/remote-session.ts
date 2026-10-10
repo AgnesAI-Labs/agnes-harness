@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { PreviewSnapshotEntry } from '@agnes/daemon-foundation/registry'
 import type { WorkspaceBindingEnvelope } from '@agnes/daemon-foundation/storage/workspaces'
+import { FEEDBACK_PROVIDER_ID } from '@agnes/host'
 import type { Actor, EventEnvelope } from '@agnes/protocol'
 import type { ToolDetailRead, ToolDetailReadResult } from '@agnes/worker-runtime'
 import type { WorkerSessionChannel } from './worker-link.js'
@@ -86,7 +87,7 @@ export class RemoteSession {
   }
 
   async draftFeedback(
-    feedback: import('@agnes/extension-api').FeedbackItem,
+    feedback: import('@agnes/protocol/gen/app-server').FeedbackItem,
     evidence: readonly EventEnvelope[],
     signal: AbortSignal,
   ): Promise<readonly { path: string; content: string }[]> {
@@ -100,7 +101,7 @@ export class RemoteSession {
     try {
       const files = await this.link.command(
         'feedback.draft',
-        { feedback, evidence, runId },
+        { feedback, evidence, runId, providerId: FEEDBACK_PROVIDER_ID },
         { timeoutMs: 35_000 },
       )
       signal.throwIfAborted()

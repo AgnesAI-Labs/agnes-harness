@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { PackageAdminAuthority, PackageAdminService } from '@agnes/daemon-admin/packages/index'
 import type { CallContext } from '@agnes/daemon-foundation/local/endpoint'
-import { FEEDBACK_EVENT, FEEDBACK_GROWTH_EVENT, type FeedbackPorts } from '@agnes/extension-api'
+import { FEEDBACK_EVENT, FEEDBACK_GROWTH_EVENT, type FeedbackAuthority } from '@agnes/host'
 import type { Actor, AuthoringCandidate, EventEnvelope } from '@agnes/protocol'
 import { inspectJsonData, jcs, rpcError, sha256Hex, validateAgainst } from '@agnes/protocol'
 import { FeedbackItem } from '@agnes/protocol/gen/app-server'
@@ -19,13 +19,13 @@ export function feedbackPorts(options: {
   session(id: string): {
     append(tx: unknown[]): Promise<{ seqs: number[] }>
     draftFeedback(
-      feedback: Parameters<FeedbackPorts['draft']>[1],
+      feedback: Parameters<FeedbackAuthority['draft']>[1],
       evidence: readonly EventEnvelope[],
       signal: AbortSignal,
     ): Promise<readonly { path: string; content: string }[]>
   }
-}): FeedbackPorts {
-  const growthKey = (sessionKey: string, feedback: Parameters<FeedbackPorts['candidate']>[1]) =>
+}): FeedbackAuthority {
+  const growthKey = (sessionKey: string, feedback: Parameters<FeedbackAuthority['candidate']>[1]) =>
     'feedback-' +
     sha256Hex(
       jcs([options.profile, options.authority.principalId, sessionKey, feedback.id, feedback.revision]),
@@ -112,9 +112,13 @@ export function feedbackPorts(options: {
       if (type === FEEDBACK_EVENT && typeof value.id === 'string') issuedIds.delete(value.id)
       return written.seqs[0]
     },
-    draft: (id, feedback, evidence, signal) => {
+    draft: async (id, feedback, evidence, signal) => {
       signal.throwIfAborted()
-      return options.session(id).draftFeedback(feedback, evidence, signal)
+      const files = await options.session(id).draftFeedback(feedback, evidence, signal)
+      signal.throwIfAborted()
+      // A revoke or actor change during inference must fail before a candidate is created.
+      await options.authorize(id)
+      return files
     },
     recoverCandidate: async (sessionKey, feedback, signal) => {
       signal.throwIfAborted()

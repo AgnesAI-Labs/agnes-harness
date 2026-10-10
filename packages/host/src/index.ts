@@ -491,7 +491,22 @@ export {
   repairChildCandidates,
   sessionsDbPath,
 } from './runtime/children/child-maintenance.js'
+export {
+  FEEDBACK_DESCRIPTOR,
+  FEEDBACK_EVENT,
+  FEEDBACK_GROWTH_EVENT,
+  FEEDBACK_OWNER,
+  FEEDBACK_PACKAGE_ID,
+  FEEDBACK_PROVIDER_ID,
+  feedbackKind,
+  type FeedbackAuthority,
+  type FeedbackInstance,
+  type FeedbackRequest,
+  type FeedbackResult,
+} from './runtime/feedback/contract.js'
 export { draftFeedbackSkill, feedbackSkillFiles } from './runtime/feedback/draft.js'
+export { createFeedbackLedger } from './runtime/feedback/ledger.js'
+export { createFeedbackOwner, type FeedbackOwner } from './runtime/feedback/owner.js'
 export { createFeedbackService } from './runtime/feedback/service.js'
 export type { PluginGenerationStatus } from './runtime/generation/host.js'
 export { createHost, type Host, type HostOptions, type HostSession } from './runtime/lifecycle/host.js'

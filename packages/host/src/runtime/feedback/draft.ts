@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { createEnvelopeCache, deriveRequest, toProviderRequest } from '@agnes/core'
-import type { FeedbackItem } from '@agnes/extension-api'
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
+import type { FeedbackItem } from '@agnes/protocol/gen/app-server'
 import type { HostSession } from '../lifecycle/host.js'
 
 /** Only the Skill text is model-authored. The registration wrapper and its tests are fixed code. */
@@ -159,6 +159,7 @@ export async function draftFeedbackSkill(
         void iterator.return?.().catch(() => undefined)
       }
       signal.throwIfAborted()
+      if (session.closingOrClosed) throw rpcError('SEMANTIC_REJECTED', { reason: 'FEEDBACK_SESSION_CLOSED' })
       if (!complete) throw rpcError('SEMANTIC_REJECTED', { reason: 'FEEDBACK_DRAFT_INCOMPLETE' })
       let value: unknown
       try {

@@ -1,13 +1,13 @@
+import { type Actor, type EventEnvelope, rpcError, validateMethod } from '@agnes/protocol'
+import type { FeedbackItem } from '@agnes/protocol/gen/app-server'
 import {
   FEEDBACK_EVENT,
   FEEDBACK_GROWTH_EVENT,
-  type FeedbackItem,
-  type FeedbackPorts,
+  type FeedbackAuthority,
+  type FeedbackInstance,
   type FeedbackRequest,
   type FeedbackResult,
-  type FeedbackService,
-} from '@agnes/extension-api'
-import { type Actor, type EventEnvelope, rpcError, validateMethod } from '@agnes/protocol'
+} from './contract.js'
 
 function refuse(reason: string): never {
   throw rpcError('SEMANTIC_REJECTED', { reason })
@@ -33,7 +33,7 @@ const trusted = (row: EventEnvelope) =>
   row.origin === 'system' && row.trust === 'trusted' && row.ignorable === true
 
 /** Append-only human facts; current values are a projection, including withdrawal tombstones. */
-export const createFeedbackService = (ports: FeedbackPorts): FeedbackService => {
+export const createFeedbackService = (ports: FeedbackAuthority): FeedbackInstance => {
   const tails = new Map<string, Promise<unknown>>()
   async function serialized<T>(id: string, run: () => Promise<T>): Promise<T> {
     const work = (tails.get(id) ?? Promise.resolve()).catch(() => undefined).then(run)

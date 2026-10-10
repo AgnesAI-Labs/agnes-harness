@@ -13,8 +13,9 @@ from this package to `@agnes/observability`. The exporter is a process-scoped se
 
 The runtime surface snapshot includes the preview plugin config helpers
 (`DEFAULT_PLUGIN_CONFIG_RELOAD`, `PLUGIN_SECRET_REF_PATTERN`, `compilePluginConfig`,
-`redactPluginConfig`), the two reserved feedback event constants, and `webhookTriggerKind`.
-They add author contracts without removing existing exports; release versioning remains pending.
+`redactPluginConfig`) and `webhookTriggerKind`.
+The reserved feedback event constants and the feedback service factory moved to `@agnes/host`.
+Release versioning remains pending.
 
 `ExtensionAPI.intelligentUi` adds an optional owner-bound factory adapter for namespace-bound ledger
 projections and idempotent SC1 delivery. It requires existing events/projection grants and provides

@@ -1,7 +1,11 @@
 import type { PackageAdminAuthority, PackageAdminService } from '@agnes/daemon-admin/packages/index'
-import { LocalEndpoint, type CallContext } from '@agnes/daemon-foundation/local/endpoint'
-import { FEEDBACK_EVENT, FEEDBACK_GROWTH_EVENT } from '@agnes/extension-api'
-import { createFeedbackService } from '@agnes/host'
+import { type CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
+import {
+  createFeedbackLedger,
+  createFeedbackService,
+  FEEDBACK_EVENT,
+  FEEDBACK_GROWTH_EVENT,
+} from '@agnes/host'
 import { rpcError, type Actor, type EventEnvelope } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { feedbackPorts } from '../src/supervisor/feedback-ports.js'
@@ -21,12 +25,26 @@ async function fixture() {
   let permitted = true,
     currentActor = actor
   let readGate: (() => Promise<void>) | undefined
+  let draftHold: Promise<void> | undefined
+  let markDraftStarted: () => void = () => undefined
+  const draftStarted = new Promise<void>((resolve) => {
+    markDraftStarted = resolve
+  })
+  let candidateCalls = 0
   const make = () =>
     feedbackPorts({
       context,
       profile: 'fixture',
       authority,
-      packages: {} as PackageAdminService,
+      packages: {
+        async call() {
+          candidateCalls += 1
+          throw new Error('candidate')
+        },
+        async candidateForCommand() {
+          return null
+        },
+      } as unknown as PackageAdminService,
       ids: ['s'],
       async authorize(id) {
         if (!permitted || id !== 's') throw rpcError('CAPABILITY_DENIED')
@@ -53,7 +71,11 @@ async function fixture() {
           }
           return { seqs }
         },
-        draftFeedback: async () => [],
+        draftFeedback: async () => {
+          markDraftStarted()
+          await draftHold
+          return []
+        },
       }),
     })
   const item = (id: string) => ({
@@ -84,6 +106,11 @@ async function fixture() {
     gate: (next: () => Promise<void>) => {
       readGate = next
     },
+    holdDraft: (next: Promise<void>) => {
+      draftHold = next
+    },
+    draftStarted,
+    candidateCalls: () => candidateCalls,
   }
 }
 
@@ -211,5 +238,137 @@ it('accepts a growth link only for the same authenticated item revision and mess
     }
   } finally {
     await f.endpoint.close()
+  }
+})
+
+it('pins ledger appends to the admitted session and refuses a forged name', async () => {
+  const f = await fixture()
+  try {
+    const ledger = createFeedbackLedger(f.make(), 's', actor)
+    await expect(ledger.appendOwn('nope', { ok: true })).rejects.toMatchObject({
+      data: { reason: 'FEEDBACK_APPEND_FORBIDDEN' },
+    })
+    await expect(ledger.appendOwn('x/feedback/item', { ok: true })).rejects.toMatchObject({
+      data: { reason: 'FEEDBACK_APPEND_FORBIDDEN' },
+    })
+    await expect(
+      ledger.appendOwn('item', { actor: 'forged', sessionId: 'foreign' }),
+    ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+    expect(f.rows).toEqual([])
+  } finally {
+    await f.endpoint.close()
+  }
+})
+
+it('does not create a candidate when authority is revoked during draft inference', async () => {
+  const f = await fixture()
+  let release: (value?: void) => void = () => undefined
+  const hold = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  f.holdDraft(hold)
+  const envelope = (seq: number, type: string, data: unknown): EventEnvelope =>
+    ({
+      id: `evidence-${seq}`,
+      v: 1,
+      seq,
+      ts: new Date(0).toISOString(),
+      type,
+      data,
+      actor,
+      origin: 'system',
+      trust: 'trusted',
+      lane: 'main',
+    }) as EventEnvelope
+  f.rows.push(
+    envelope(1, 'turn/start', { turn: 1 }),
+    envelope(2, 'assistant/message', { content: [] }),
+    envelope(3, 'turn/end', { reason: 'completed' }),
+  )
+  const signal = new AbortController().signal
+  try {
+    const created = await createFeedbackService(f.make()).execute(
+      {
+        action: 'put',
+        sessionId: 's',
+        expectedRevision: null,
+        target: { messageSeq: 2, turn: 1 },
+        rating: 'down',
+      },
+      actor,
+      signal,
+    )
+    const item = created.items[0]!
+    const pending = createFeedbackService(f.make()).execute(
+      { action: 'generate', sessionId: 's', id: item.id, expectedRevision: item.revision },
+      actor,
+      signal,
+    )
+    await f.draftStarted
+    f.revoke()
+    release()
+    await expect(pending).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+    expect(f.candidateCalls()).toBe(0)
+    expect(f.rows.some((row) => row.type === FEEDBACK_GROWTH_EVENT)).toBe(false)
+  } finally {
+    release()
+    await f.endpoint.close()
+  }
+})
+
+it('keeps candidate recovery and session lists inside the profile that built the ports', async () => {
+  const endpoint = new LocalEndpoint({ clock: Date.now, principalId: 'owner' })
+  const context: CallContext = { conn: endpoint.conn, clock: Date.now, signal: new AbortController().signal }
+  const seen: { profile: string; command: string }[] = []
+  const signal = new AbortController().signal
+  const feedback = {
+    id: 'fb',
+    sessionId: 's',
+    target: { messageSeq: 1, turn: 1 },
+    rating: 'down' as const,
+    category: '' as const,
+    note: '',
+    actor: actor.id,
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString(),
+    revision: 4,
+    withdrawn: false,
+    candidateId: null,
+    candidateHash: null,
+  }
+  const make = (profile: string, principalId: string, ids: readonly string[]) =>
+    feedbackPorts({
+      context,
+      profile,
+      authority: { ...authority, principalId },
+      packages: {
+        async candidateForCommand(nextProfile: string, command: string) {
+          seen.push({ profile: nextProfile, command })
+          return null
+        },
+      } as unknown as PackageAdminService,
+      ids,
+      async authorize() {
+        throw new Error('unused')
+      },
+      async scan() {
+        return []
+      },
+      session: () => {
+        throw new Error('unused')
+      },
+    })
+  try {
+    const alpha = make('alpha', 'owner-a', ['a'])
+    const beta = make('beta', 'owner-b', ['b'])
+    expect(await alpha.sessions()).toEqual({ ids: ['a'], truncated: false })
+    expect(await beta.sessions()).toEqual({ ids: ['b'], truncated: false })
+    expect(await alpha.recoverCandidate('s', feedback, signal)).toBeNull()
+    expect(await beta.recoverCandidate('s', feedback, signal)).toBeNull()
+    expect(seen.map((row) => row.profile)).toEqual(['alpha', 'beta'])
+    expect(seen[0]!.command).not.toBe(seen[1]!.command)
+    expect(seen[0]!.command.startsWith('feedback-')).toBe(true)
+  } finally {
+    await endpoint.close()
   }
 })

@@ -1,6 +1,7 @@
 import {
   assertHostPublication,
   draftFeedbackSkill,
+  FEEDBACK_PROVIDER_ID,
   type Host,
   type HostSession,
   HostError,
@@ -303,6 +304,8 @@ export async function handleCommand(
       return session.intelligentUi.read(p.input as import('@agnes/protocol').UiReadParams, session.ac.signal)
     case 'feedback.draft': {
       const runId = String(p.runId)
+      if (p.providerId !== FEEDBACK_PROVIDER_ID)
+        throw rpcError('CAPABILITY_DENIED', { reason: 'FEEDBACK_PROVIDER_MISMATCH' })
       if (!runId.startsWith('feedback:') || o.aborts.has(runId)) throw new Error('Invalid feedback draft id')
       const abort = new AbortController()
       o.aborts.set(runId, abort)

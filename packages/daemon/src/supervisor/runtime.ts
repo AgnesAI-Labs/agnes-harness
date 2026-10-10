@@ -144,6 +144,7 @@ import {
   compositionPreset,
   compositionSurfaceAllowed,
   createExtensionActivationBarrier,
+  createFeedbackOwner,
   createFileAudit,
   createPlatform,
   createSecretsEnv,
@@ -680,8 +681,6 @@ async function persistResolvedProfile(file: string, profile: ResolvedProfile): P
 }
 
 export type StartSupervisorOptions = {
-  feedbackServiceFactory?: import('@agnes/extension-api').FeedbackServiceFactory
-
   config: DaemonConfig
   profile: ResolvedProfile
   /** `join(home, 'profiles', profile.name)`. Not derivable from `profile.dataDir`: a profile's
@@ -941,7 +940,11 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
   // its own comment at `startupCleanup.length = 0`: it is wiped the moment startup succeeds and only
   // ever fires on a startup abort, never on a later `close()`).
   let surfaceController: SurfaceController | undefined
+  // One owner for this profile. Each request opens its own instance. The owner closes on
+  // shutdown, not when a feedback operation is in flight, so a code change waits for restart.
+  let feedbackOwner: ReturnType<typeof createFeedbackOwner> | undefined
   const startupCleanup: Array<() => void | Promise<void>> = []
+  startupCleanup.push(() => feedbackOwner?.close())
   const cleanupStartup = async (): Promise<void> => {
     for (const cleanup of startupCleanup.reverse()) {
       try {
@@ -2148,7 +2151,6 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       })
       if (effectivePackageAdmin)
         registerFeedback(ep, {
-          ...(o.feedbackServiceFactory ? { factory: o.feedbackServiceFactory } : {}),
           authority:
             transport === 'unix'
               ? (effectivePackageAdmin.unixAuthority ?? localPackageAdminAuthority())
@@ -2159,7 +2161,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             return cx.resolveActor(context.conn.credential, 'session', id)
           },
           serialize: (id, signal, work) => runQueued(cx.commandQueue, id, signal, work),
-          ports: (context, input) => {
+          open: async (context, input, actor, signal) => {
             const sessionId = input.sessionId,
               writable = input.action !== 'list'
             const resolveAuthority =
@@ -2168,50 +2170,56 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
                 : (effectivePackageAdmin!.webAuthority ?? denyPackageAdminAuthority)
             const authority = resolveAuthority(context)
             if (!authority) throw rpcError('CAPABILITY_DENIED')
-            return feedbackPorts({
-              context,
-              profile: o.profile.name,
-              authority,
-              packages: effectivePackageAdmin!.service,
-              ids: sessionOwnership.activeSessionIds(context.conn.principalId),
-              authorize: async (id) => {
-                if (!writable || sessionId !== id || !cx.resolveActor) throw rpcError('CAPABILITY_DENIED')
-                requireLocalAdminAuthority(context, resolveAuthority, true)
-                requireSessionOwner(cx)('feedback', id, context)
-                const actor = await cx.resolveActor(context.conn.credential, 'session', id)
-                requireLocalAdminAuthority(context, resolveAuthority, true)
-                requireSessionOwner(cx)('feedback', id, context)
-                return actor
-              },
-              session: (id) => registry.require(id).session,
-              scan: async (id, types) => {
-                requireSessionOwner(cx)('feedback', id, context)
-                const scan =
-                  o.sessionFactRead?.(id) ??
-                  ((
-                    query: Parameters<
-                      import('@agnes/host').ScanRead<import('@agnes/protocol').EventEnvelope>
-                    >[0],
-                  ) => registry.require(id).session.scan(query))
-                const rows: import('@agnes/protocol').EventEnvelope[] = []
-                let fromSeq = 1,
-                  bytes = 0
-                while (rows.length <= 4096) {
-                  const page = await scan({
-                    type: [...types],
-                    order: 'asc',
-                    fromSeq,
-                    limit: Math.min(100, 4097 - rows.length),
-                  })
-                  bytes += Buffer.byteLength(JSON.stringify(page), 'utf8')
-                  if (bytes > 4 * 1024 * 1024)
-                    throw rpcError('SEMANTIC_REJECTED', { reason: 'FEEDBACK_READ_LIMIT' })
-                  rows.push(...page)
-                  if (rows.length <= 4096 && page.length < 100) return rows
-                  fromSeq = page.at(-1)!.seq + 1
-                }
-                throw rpcError('SEMANTIC_REJECTED', { reason: 'FEEDBACK_READ_LIMIT' })
-              },
+            feedbackOwner ??= createFeedbackOwner(o.profile.name)
+            return feedbackOwner.bind({
+              actor,
+              signal,
+              ...(sessionId === undefined ? {} : { sessionId }),
+              authority: feedbackPorts({
+                context,
+                profile: o.profile.name,
+                authority,
+                packages: effectivePackageAdmin!.service,
+                ids: sessionOwnership.activeSessionIds(context.conn.principalId),
+                authorize: async (id) => {
+                  if (!writable || sessionId !== id || !cx.resolveActor) throw rpcError('CAPABILITY_DENIED')
+                  requireLocalAdminAuthority(context, resolveAuthority, true)
+                  requireSessionOwner(cx)('feedback', id, context)
+                  const actor = await cx.resolveActor(context.conn.credential, 'session', id)
+                  requireLocalAdminAuthority(context, resolveAuthority, true)
+                  requireSessionOwner(cx)('feedback', id, context)
+                  return actor
+                },
+                session: (id) => registry.require(id).session,
+                scan: async (id, types) => {
+                  requireSessionOwner(cx)('feedback', id, context)
+                  const scan =
+                    o.sessionFactRead?.(id) ??
+                    ((
+                      query: Parameters<
+                        import('@agnes/host').ScanRead<import('@agnes/protocol').EventEnvelope>
+                      >[0],
+                    ) => registry.require(id).session.scan(query))
+                  const rows: import('@agnes/protocol').EventEnvelope[] = []
+                  let fromSeq = 1,
+                    bytes = 0
+                  while (rows.length <= 4096) {
+                    const page = await scan({
+                      type: [...types],
+                      order: 'asc',
+                      fromSeq,
+                      limit: Math.min(100, 4097 - rows.length),
+                    })
+                    bytes += Buffer.byteLength(JSON.stringify(page), 'utf8')
+                    if (bytes > 4 * 1024 * 1024)
+                      throw rpcError('SEMANTIC_REJECTED', { reason: 'FEEDBACK_READ_LIMIT' })
+                    rows.push(...page)
+                    if (rows.length <= 4096 && page.length < 100) return rows
+                    fromSeq = page.at(-1)!.seq + 1
+                  }
+                  throw rpcError('SEMANTIC_REJECTED', { reason: 'FEEDBACK_READ_LIMIT' })
+                },
+              }),
             })
           },
         })
@@ -2562,7 +2570,11 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         releaseLock: async () => {
           // A forced worker exit can begin durable turn recovery after the graceful phase timed
           // out. Fence the runtime only after that recovery settles, then release ownership.
+          // Sockets and workers are already stopped, so closing the feedback owner does not cut
+          // an in-flight feedback RPC.
           await pool.waitForExitRecovery()
+          await feedbackOwner?.close().catch(() => undefined)
+          feedbackOwner = undefined
           try {
             dataGuard?.release()
           } finally {

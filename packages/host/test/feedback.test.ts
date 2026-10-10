@@ -1,12 +1,22 @@
 import { MemoryStorage, SessionLogImpl } from '@agnes/core'
 import { defaultIds } from '@agnes/core-common/ids'
-import { FEEDBACK_EVENT, FEEDBACK_GROWTH_EVENT, type FeedbackPorts } from '@agnes/extension-api'
-import type { Actor, AuthoringCandidate, InferenceEvent, Provider } from '@agnes/protocol'
+import { ProviderError } from '@agnes/extension-api'
+import {
+  rpcError,
+  type Actor,
+  type AuthoringCandidate,
+  type InferenceEvent,
+  type Provider,
+} from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import {
+  createFeedbackOwner,
   createFeedbackService,
   draftFeedbackSkill,
+  FEEDBACK_EVENT,
+  FEEDBACK_GROWTH_EVENT,
   feedbackSkillFiles,
+  type FeedbackAuthority,
   type HostSession,
 } from '../src/index.js'
 
@@ -62,7 +72,7 @@ it('persists feedback revisions and withdrawal in the ledger, restores them, and
   const candidates = new Map<string, AuthoringCandidate>()
   let failLink = false,
     drafts = 0
-  const ports: FeedbackPorts = {
+  const ports: FeedbackAuthority = {
     sessions: async () => ({ ids: ['s'], truncated: false }),
     scan: (_id, types) => log.scan({ type: [...types], order: 'asc', limit: 100 }),
     append: async (_id, type, data, author) => {
@@ -449,4 +459,170 @@ it('uses only local scripted inference, rejects invalid drafts, and never execut
     expect(() =>
       feedbackSkillFiles({ name, description: 'When needed', body: 'Use evidence' }, feedback),
     ).toThrow()
+  const closing = {
+    closingOrClosed: false,
+    preset: { model: { route: { primary: 'local' }, id: { primary: 'script' } } },
+    d: {
+      provider: {
+        models: () => provider.models(),
+        async *infer(): AsyncGenerator<InferenceEvent> {
+          closing.closingOrClosed = true
+          yield {
+            type: 'text_delta',
+            delta: JSON.stringify({
+              name: 'cite-evidence',
+              description: 'When reporting observations',
+              body: 'Cite evidence.',
+            }),
+          }
+          yield { type: 'done', reason: 'stop' }
+        },
+      },
+      contract: { contract_id: null, parser_version: '1' },
+    },
+  }
+  await expect(
+    draftFeedbackSkill(closing as unknown as HostSession, feedback, [], signal),
+  ).rejects.toMatchObject({ data: { reason: 'FEEDBACK_SESSION_CLOSED' } })
+  expect(requests).toHaveLength(2)
+})
+
+function bareAuthority(patch: Partial<FeedbackAuthority> = {}): FeedbackAuthority {
+  return {
+    sessions: async () => ({ ids: ['s'], truncated: false }),
+    scan: async () => [],
+    append: async () => 1,
+    draft: async () => [],
+    recoverCandidate: async () => null,
+    candidate: async () => {
+      throw new Error('candidate')
+    },
+    evidence: async () => {
+      throw new Error('evidence')
+    },
+    now: () => '2026-10-09T00:00:00Z',
+    id: () => 'feedback-1',
+    ...patch,
+  }
+}
+
+it('fails a list closed when any owned session refuses the read', async () => {
+  const scanned: string[] = []
+  const service = createFeedbackService(
+    bareAuthority({
+      sessions: async () => ({ ids: ['owned', 'foreign'], truncated: false }),
+      scan: async (id) => {
+        scanned.push(id)
+        if (id === 'foreign') throw rpcError('CAPABILITY_DENIED')
+        return []
+      },
+    }),
+  )
+  await expect(service.execute({ action: 'list' }, actor, signal)).rejects.toMatchObject({
+    data: { code: 'CAPABILITY_DENIED' },
+  })
+  expect(scanned).toEqual(['owned', 'foreign'])
+})
+
+it('opens one instance per bind and keeps profiles, actors, and in-flight reads apart', async () => {
+  const written: string[] = []
+  const scanned: string[] = []
+  const alpha = createFeedbackOwner('alpha')
+  const beta = createFeedbackOwner('beta')
+  const left = new AbortController()
+  const right = new AbortController()
+  const other = new AbortController()
+  try {
+    const first = await alpha.bind({
+      actor,
+      signal: left.signal,
+      sessionId: 's',
+      authority: bareAuthority({
+        id: () => 'left',
+        append: async (_id, _type, data) => {
+          written.push(String((data as { id?: unknown }).id))
+          return written.length
+        },
+      }),
+    })
+    const second = await alpha.bind({
+      actor,
+      signal: right.signal,
+      sessionId: 's',
+      authority: bareAuthority({
+        id: () => 'right',
+        append: async (_id, _type, data) => {
+          written.push(String((data as { id?: unknown }).id))
+          return written.length
+        },
+      }),
+    })
+    expect(second).not.toBe(first)
+    const put = {
+      action: 'put' as const,
+      sessionId: 's',
+      target: { messageSeq: null, turn: null },
+      rating: 'up' as const,
+      expectedRevision: null,
+    }
+    await first.execute(put, actor, left.signal)
+    await second.execute(put, actor, right.signal)
+    expect(written).toEqual(['left', 'right'])
+    const forged = await alpha.bind({
+      actor,
+      signal: other.signal,
+      sessionId: 's',
+      authority: bareAuthority({
+        append: async () => {
+          written.push('forged')
+          return 1
+        },
+      }),
+    })
+    await expect(
+      forged.execute(put, { ...actor, id: 'other' }, other.signal),
+    ).rejects.toMatchObject({ data: { reason: 'FEEDBACK_ACTOR_MISMATCH' } })
+    expect(written).toEqual(['left', 'right'])
+    const betaSignal = new AbortController()
+    const betaInstance = await beta.bind({
+      actor,
+      signal: betaSignal.signal,
+      authority: bareAuthority({
+        sessions: async () => ({ ids: ['beta-only'], truncated: false }),
+        scan: async (id) => {
+          scanned.push(id)
+          return []
+        },
+      }),
+    })
+    await betaInstance.execute({ action: 'list' }, actor, betaSignal.signal)
+    expect(scanned).toEqual(['beta-only'])
+    let release: (value?: void) => void = () => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const liveSignal = new AbortController()
+    const live = await alpha.bind({
+      actor,
+      signal: liveSignal.signal,
+      authority: bareAuthority({
+        scan: async () => {
+          await gate
+          return []
+        },
+      }),
+    })
+    const pending = live.execute({ action: 'list' }, actor, liveSignal.signal)
+    const closing = alpha.close()
+    release()
+    await expect(pending).resolves.toMatchObject({ items: [] })
+    expect(liveSignal.signal.aborted).toBe(false)
+    await closing
+    await expect(
+      alpha.bind({ actor, signal: new AbortController().signal, authority: bareAuthority() }),
+    ).rejects.toBeInstanceOf(ProviderError)
+  } finally {
+    await alpha.close().catch(() => undefined)
+    await beta.close().catch(() => undefined)
+  }
 })
