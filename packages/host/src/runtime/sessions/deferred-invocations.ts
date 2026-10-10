@@ -1,12 +1,21 @@
 import { scanAll } from '@agnes/core'
-import type { DeferredInvocationLedgerPort, ToolResult } from '@agnes/extension-api'
+import type { ToolResult } from '@agnes/extension-api'
 import {
   DEFERRED_INVOCATION_EVENT,
   DEFERRED_NOTIFICATION_EVENT,
+  type DeferredInvocationLedgerPort,
+  type DeferredInvocationsService,
 } from '@agnes/host-providers/assemble/deferred-invocations'
 import type { Actor, EventEnvelope } from '@agnes/protocol'
 import type { Assembled } from '../assemble/assemble.js'
 import type { HostSession } from '../lifecycle/host.js'
+
+const boundQueues = new WeakMap<HostSession, DeferredInvocationsService>()
+
+/** The generation service that bound this session. Unloading a producer does not drop the queue. */
+export function deferredQueueFor(session: HostSession): DeferredInvocationsService | undefined {
+  return boundQueues.get(session)
+}
 
 /** Normal SC1 input dedupe includes historical inbox facts, including already-claimed items. */
 export async function enqueueSessionInputOnce(
@@ -130,5 +139,11 @@ export function bindDeferredInvocations(a: Assembled, session: HostSession): () 
       )
     },
   }
-  return a.pluginTree.root.deferredInvocations.bind(session.key, session.lane, ports)
+  const service = a.pluginTree.root.deferredInvocations
+  boundQueues.set(session, service)
+  const release = service.bind(session.key, session.lane, ports)
+  return () => {
+    if (boundQueues.get(session) === service) boundQueues.delete(session)
+    release()
+  }
 }

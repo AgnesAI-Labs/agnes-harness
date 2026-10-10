@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./host": "./src/host/index.ts",
     "./testkit": "./testkit/index.ts",
-    "./provided-externals": "./src/provided-externals.ts"
+    "./provided-externals": "./src/provided-externals.ts",
+    "./deferred-contract": "./src/deferred-contract.ts"
   },
   "scripts": {
     "test": "vitest run",

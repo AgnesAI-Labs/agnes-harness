@@ -254,7 +254,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/base/extensions/references': 21,
   'packages/base/extensions/intelligent-ui': 1009,
   // Leaf Intelligent UI kind token so Host does not import Base. Exact countLines, no spare.
-  'packages/intelligent-ui-contract/src': 74,
+  // Deferred receipt types come from the plugin-runtime contract. countLines: 76, exact, no spare.
+  'packages/intelligent-ui-contract/src': 76,
   // Official plugin process-local serial and cursor MAC. Not a package export. Exact countLines, no spare.
   'packages/base/src/intelligent-ui-runtime': 55,
   'packages/observability/src': 1301,
@@ -305,12 +306,14 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host/src/runtime/approval/expiry': 105,
   'packages/host/src/runtime/adapters': 465,
   'packages/host/src/runtime/profile': 1661,
-  'packages/host/src/runtime': 10571,
+  // Deferred producer binding on the shared service ports. countLines: 11970, exact, no spare.
+  'packages/host/src/runtime': 11970,
   'packages/host/src/runtime/assemble': 3504,
   'packages/host-providers/src/adapters': 477,
   'packages/host-providers/src/profile': 165,
-  'packages/host-providers/src': 5066,
-  'packages/host-providers/src/assemble': 2306,
+  // Owner-scoped deferred queue facade. countLines: 5162 and assemble 2402, exact, no spare.
+  'packages/host-providers/src': 5162,
+  'packages/host-providers/src/assemble': 2402,
   'packages/host-extensions/src/ext-host/extension-runner-runtime': 187,
   'packages/host-extensions/src/ext-host/extension-seatbelt': 28,
   'packages/host-extensions/src/ext-host/extension-isolation-selector': 160,
@@ -386,7 +389,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-07 integration review: Public author helpers, provided external modules and plugin
   // admission diagnostics.
   // countLines: 2171 -> 2306; exact measured cap, no exclusions or spare allocation.
-  'packages/plugin-runtime/src': 2464,
+  // Deferred invocation contract beside the drain. countLines: 2577, exact, no spare.
+  'packages/plugin-runtime/src': 2577,
   'packages/cosmokit/src': 356,
   // 2026-09-17 (web-client-modules P2 / WC6): author-facing browser API package. Measured 480;
   // exact cap, no spare — new mount points add one table row + host container by contract.
@@ -1217,7 +1221,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 29399 -> 30048; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Await async loop construction, propagate session cancellation and drain initialization before storage closes.
   // countLines: 30048 -> 30103 (+55); exact measured cap, no exclusions or spare allocation.
-  'packages/core/src': 22290,
+  // Empty loop services reader. countLines: 22444, exact, no spare.
+  'packages/core/src': 22444,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -2924,7 +2929,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 46355 -> 46484 (+129); exact measured cap, no exclusions or spare allocation.
   // Acceptance review: Restore immutable generation sources and publish child-engine configuration with explicit engine admission.
   // countLines: 46484 -> 46566; exact cap, no exclusions or spare allocation.
-  'packages/host/src': 11094,
+  // Deferred queue facade and Intelligent UI producer binding. countLines: 12508, exact, no spare.
+  'packages/host/src': 12508,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot

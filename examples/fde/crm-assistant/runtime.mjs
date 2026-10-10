@@ -8,6 +8,7 @@ import {
   drainDeferredToolInvocations,
   toolError,
 } from '@agnes/plugin-runtime'
+import { deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
 
 /** Only a backend-linked successful collector receipt can continue a business review. */
 async function submittedAnswers(ctx, input, surfaceId, signal) {
@@ -30,7 +31,7 @@ async function submittedAnswers(ctx, input, surfaceId, signal) {
     typeof receipt.invocationId !== 'string'
   )
     return undefined
-  const original = await ctx.deferredInvocations?.read(receipt.invocationId, signal)
+  const original = await (await ctx.services?.get(deferredQueueKind))?.read(receipt.invocationId, signal)
   if (
     original?.state !== 'succeeded' ||
     original.resultSeq !== receipt.resultSeq ||

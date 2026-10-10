@@ -1,12 +1,10 @@
-import type {
-  DeferredInvocationReceipt,
-  DeferredInvocationRegistryPort,
-  DeferredInvocationState,
-  LoopContext,
-  LoopFactory,
-  LoopStepOutcome,
-  ToolResult,
-} from '@agnes/extension-api'
+import type { LoopContext, LoopFactory, LoopStepOutcome, ToolResult } from '@agnes/extension-api'
+import {
+  deferredQueueKind,
+  type DeferredInvocationReceipt,
+  type DeferredInvocationState,
+  type DeferredToolInvocationQueue,
+} from './deferred-contract.js'
 
 const receiptPending = (receipt: DeferredInvocationReceipt) =>
   receipt.state === 'queued' || receipt.state === 'executing'
@@ -27,7 +25,7 @@ export async function drainDeferredToolInvocations(
   ctx: LoopContext,
   signal: AbortSignal,
 ): Promise<LoopStepOutcome | null> {
-  const queue = ctx.deferredInvocations
+  const queue = await ctx.services?.get(deferredQueueKind)
   if (!queue) return null
   signal.throwIfAborted()
   await queue.notify(signal)
@@ -141,16 +139,22 @@ export async function drainDeferredToolInvocations(
   return { outcome: 'running', phase: 'deferred-tool-result' }
 }
 
-/** Host attaches the optional queue without changing Core or the selected Loop's identity/codec. */
+/** Host attaches the session queue through the generic services reader. */
 export function withDeferredToolInvocations(
   factory: LoopFactory,
-  resolve: DeferredInvocationRegistryPort['forSession'],
+  resolve: (sessionKey: string, lane: string) => DeferredToolInvocationQueue | undefined,
 ): LoopFactory {
-  const context = (ctx: LoopContext): LoopContext =>
-    Object.defineProperty(Object.create(ctx), 'deferredInvocations', {
-      get: () => resolve(ctx.sessionKey, ctx.lane),
+  const context = (ctx: LoopContext): LoopContext => {
+    const services = {
+      get(kind: Parameters<NonNullable<LoopContext['services']>['get']>[0]) {
+        return kind === deferredQueueKind ? resolve(ctx.sessionKey, ctx.lane) : ctx.services?.get(kind)
+      },
+    }
+    return Object.defineProperty(Object.create(ctx), 'services', {
+      value: services,
       enumerable: true,
     })
+  }
   return {
     ...factory,
     create: (ctx, signal) => factory.create(context(ctx), signal),

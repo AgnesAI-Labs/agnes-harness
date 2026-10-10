@@ -8,6 +8,9 @@ import type {
   LoopRequest,
   LoopRequestOptions,
   LoopToolCall,
+  ServiceInstance,
+  ServiceKind,
+  ServicePorts,
 } from '@agnes/extension-api'
 import { type ContentBlock, type InferenceEvent, inspectJsonData, type RequestBody } from '@agnes/protocol'
 import { releaseTreeReservation, settleTreeSpend } from '../child/runtime-budget.js'
@@ -373,6 +376,10 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
   const ctx: LoopContext = {
     sessionKey: s.key,
     lane: s.lane,
+    services: {
+      get: <S extends ServiceInstance, P extends ServicePorts>(_kind: ServiceKind<S, P>) =>
+        undefined as S | undefined,
+    },
     prepareRequest,
     async estimateRequest(request) {
       const done = s.beginLoopOperation()

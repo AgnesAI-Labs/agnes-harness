@@ -19,7 +19,6 @@ export type {
   CompactionReplacement,
 } from './compaction-engine.js'
 export { createCompactionThreshold } from './compaction-engine.js'
-export * from './deferred-invocations.js'
 export * from './errors.js'
 export * from './extension.js'
 export * from './git-worktrees.js'

@@ -14,6 +14,8 @@ it('scans nested HTML template substitutions and still refuses private and compu
       'import { defineTool } from "@agnes/plugin-runtime";\nconst svg = `<svg>${items.map(item => `<rect width="${item.width}"/>`).join("")}</svg>`;',
     )
     await expect(validateExample(directory)).resolves.toBeUndefined()
+    await writeFile(file, 'import { deferredQueueKind } from "@agnes/plugin-runtime/deferred-contract";')
+    await expect(validateExample(directory)).resolves.toBeUndefined()
     await writeFile(file, 'import "@agnes/plugin-runtime/host";')
     await expect(validateExample(directory)).rejects.toThrow('Private or undeclared')
     // biome-ignore lint/suspicious/noTemplateCurlyInString: deliberately test a computed module specifier.

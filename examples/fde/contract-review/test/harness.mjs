@@ -248,33 +248,40 @@ export async function runWorkflow(
     const drive = async (saved, text) => {
       const decorate = (ctx) => ({
         ...ctx,
-        deferredInvocations: {
-          sessionKey: ctx.sessionKey,
-          lane: ctx.lane,
-          notify: async () => {},
-          next: async () => null,
-          read: async (id) =>
-            receiptAvailable && typeof text === 'object' && text.fixtureAnswers && id === 'fixture-invocation'
-              ? {
-                  state: 'succeeded',
-                  seq: 4,
-                  resultSeq: 3,
-                  invocation: {
-                    id,
-                    source: 'agnes/intelligent-ui',
-                    sessionKey: ctx.sessionKey,
-                    lane: ctx.lane,
-                    actor: { id: 'test', org: 'test', role: 'owner', deptPath: [], attrs: {} },
-                    tool: 'ui_submit',
-                    args: {
-                      surfaceId: JSON.parse(
-                        text.content[0].text.slice('Intelligent UI action result: '.length),
-                      ).surfaceId,
-                      answers: text.fixtureAnswers,
-                    },
-                  },
-                }
-              : null,
+        services: {
+          async get() {
+            return {
+              sessionKey: ctx.sessionKey,
+              lane: ctx.lane,
+              notify: async () => {},
+              next: async () => null,
+              read: async (id) =>
+                receiptAvailable &&
+                typeof text === 'object' &&
+                text.fixtureAnswers &&
+                id === 'fixture-invocation'
+                  ? {
+                      state: 'succeeded',
+                      seq: 4,
+                      resultSeq: 3,
+                      invocation: {
+                        id,
+                        source: 'agnes/intelligent-ui',
+                        sessionKey: ctx.sessionKey,
+                        lane: ctx.lane,
+                        actor: { id: 'test', org: 'test', role: 'owner', deptPath: [], attrs: {} },
+                        tool: 'ui_submit',
+                        args: {
+                          surfaceId: JSON.parse(
+                            text.content[0].text.slice('Intelligent UI action result: '.length),
+                          ).surfaceId,
+                          answers: text.fixtureAnswers,
+                        },
+                      },
+                    }
+                  : null,
+            }
+          },
         },
         input: {
           ...ctx.input,

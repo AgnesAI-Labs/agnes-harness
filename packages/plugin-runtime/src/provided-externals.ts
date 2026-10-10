@@ -5,10 +5,12 @@ import * as typebox from '@sinclair/typebox'
 import * as typeboxCompiler from '@sinclair/typebox/compiler'
 import * as typeboxValue from '@sinclair/typebox/value'
 import * as author from './index.js'
+import * as deferredContract from './deferred-contract.js'
 
 /** Public author namespaces only: never expose plugin-runtime/host or testkit. */
 export const providedExternalModules = Object.freeze({
   '@agnes/plugin-runtime': author,
+  '@agnes/plugin-runtime/deferred-contract': deferredContract,
   '@agnes/extension-api': extensionApi,
   '@agnes/cordis': cordis,
   '@sinclair/typebox': typebox,
@@ -19,6 +21,7 @@ export const providedExternalModules = Object.freeze({
 /** Release pins; ranges use the same syntax as extension apiRange. */
 export const providedExternalVersions: Readonly<Record<string, string>> = Object.freeze({
   '@agnes/plugin-runtime': '0.0.0',
+  '@agnes/plugin-runtime/deferred-contract': '0.0.0',
   '@agnes/extension-api': API_VERSION,
   '@agnes/cordis': '0.0.0',
   '@agnes/protocol': '0.0.0',

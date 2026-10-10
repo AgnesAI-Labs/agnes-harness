@@ -4,6 +4,10 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+Deferred tool-invocation queue and receipt types moved to `@agnes/plugin-runtime/deferred-contract`.
+`LoopContext` no longer carries a dedicated queue field. A loop reads the session queue through the
+generic `services` reader. `API_VERSION` stays `1.4.0`.
+
 `defineServiceKind` and `ExtensionAPI.providers` add the shared service-provider contract. Host grants
 on the existing provider registry supply the owner-scoped ledger, agent input, projection read, and
 generation pin. Authors do not pass a package id. `API_VERSION` stays `1.4.0`.

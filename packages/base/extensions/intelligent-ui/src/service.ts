@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { DeferredInvocationReceipt } from '@agnes/extension-api'
+import type { DeferredInvocationReceipt } from '@agnes/plugin-runtime/deferred-contract'
 import type { IntelligentUiInstance, IntelligentUiServicePorts } from '@agnes/intelligent-ui-contract'
 import {
   jcs,

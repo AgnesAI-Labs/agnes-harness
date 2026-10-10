@@ -1,4 +1,5 @@
-import type { DeferredToolInvocation, ProjectionDef } from '@agnes/extension-api'
+import type { ProjectionDef } from '@agnes/extension-api'
+import type { DeferredToolInvocation } from '@agnes/plugin-runtime/deferred-contract'
 import { UI_EVENTS, UI_OWNER, UI_PREFIX } from '@agnes/intelligent-ui-contract'
 import type { EventEnvelope, JsonValue, UiActionParams, UiSurfaceRecord } from '@agnes/protocol'
 import { jcs, type UiRefusal, validateAgainst } from '@agnes/protocol'

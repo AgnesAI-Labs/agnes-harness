@@ -208,7 +208,11 @@ export function auditStageGraph(packages: PackageShape[], imports: ImportSite[])
   const runtime = byName.get(RUNTIME)
   if (runtime) {
     const keys = Object.keys(runtime.exports).sort()
-    if (keys.some((key) => !['.', './host', './testkit', './provided-externals'].includes(key))) {
+    if (
+      keys.some(
+        (key) => !['.', './host', './testkit', './provided-externals', './deferred-contract'].includes(key),
+      )
+    ) {
       errors.push(`plugin-runtime exports unexpected subpaths: ${keys.join(', ')}`)
     }
     for (const [key, target] of Object.entries(runtime.exports)) {

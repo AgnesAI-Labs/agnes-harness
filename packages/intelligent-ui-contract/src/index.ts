@@ -1,15 +1,17 @@
 /** Kind token shared by Host and the official plugin. No ledger, HMAC, or queue implementation. */
 import {
   type AgentInputPort,
-  type DeferredInvocationReceipt,
-  type DeferredToolInvocation,
-  type DeferredToolInvocationQueue,
   defineServiceKind,
   type OwnerLedgerPort,
   type ServiceInstance,
   type ServicePorts,
   type ToolDef,
 } from '@agnes/extension-api'
+import type {
+  DeferredInvocationReceipt,
+  DeferredToolInvocation,
+  DeferredToolInvocationQueue,
+} from '@agnes/plugin-runtime/deferred-contract'
 import type {
   Actor,
   JsonValue,

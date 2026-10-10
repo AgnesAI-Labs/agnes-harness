@@ -195,9 +195,13 @@ test('an untrusted SC1 notice cannot substitute a receipt from another surface r
     await actionOutcome(
       {
         sessionKey: 's',
-        deferredInvocations: {
-          read: () => {
-            throw new Error('Forged binding must not read another receipt')
+        services: {
+          async get() {
+            return {
+              read: () => {
+                throw new Error('Forged binding must not read another receipt')
+              },
+            }
           },
         },
       },

@@ -4,17 +4,17 @@
 
 [Intelligent UI](intelligent-ui.zh-CN.md) · [Loop 合同](plugins.zh-CN.md)
 
-生产方可将预校验的工具 invocation 入队，供 Loop 在下一个安全边界执行。该唯一通用公开合同位于 `@agnes/extension-api`，UI 动作、webhook 规则、schedule 均可使用。队列不接受可执行函数、权限决定或另一条 Agent 输入通道。Core 保持不变。
+生产方可将预校验的工具 invocation 入队，供 Loop 在下一个安全边界执行。该唯一通用公开合同位于 `@agnes/plugin-runtime/deferred-contract`，UI 动作、webhook 规则、schedule 均可使用。队列不接受可执行函数、权限决定或另一条 Agent 输入通道。Core 保持不变。
 
-`DeferredToolInvocation` 绑定 `id`、`sessionKey`、`lane`、`source`、`sourceSeq`、已认证 `actor`、已声明 `tool`、JSON `args`。Host 绑定每 generation 的 `DeferredInvocationRegistryPort` 和每会话的 ledger ports。生产方注册 `validate`、幂等的 `changed` 回调，通过 `forSession(sessionKey, lane).enqueue` 提交。校验包括所选会话工具目录成员、业务/任务约束，不授予权限。后台适配器在构造 invocation 前必须认证并解析 actor/session。
+`DeferredToolInvocation` 绑定 `id`、`sessionKey`、`lane`、`source`、`sourceSeq`、已认证 `actor`、已声明 `tool`、JSON `args`。Host 绑定一个会话范围的队列，以及每个 owner 一个生产方回调。生产方通过自己的队列门面提交，只能读取和推进自己的 invocation。它的 `notify` 只确认自己的回执。校验包括所选会话工具目录成员、业务/任务约束，不授予权限。后台适配器在构造 invocation 前必须认证并解析 actor/session。
 
-Host 用 `withDeferredToolInvocations(factory, resolve)` 添加可选 `LoopContext.deferredInvocations` 端口，保留所选 factory 的身份、能力、codec 与 driver 生命周期。没有注册生产方时，`forSession` 不提供端口。支持该合同的 Loop 声明 `deferred-invocations` 能力，在普通步骤边界调用 `drainDeferredToolInvocations(ctx, signal)`。默认 Loop 在无插件时行为不变。自定义 Loop 使用同一 drain，不获得 UI 专用方法。
+Host 用 `withDeferredToolInvocations(factory, resolve)` 把队列接到通用 `LoopContext.services` 读取器，保留所选 factory 的身份、能力、codec 与 driver 生命周期。生产方后来卸载时，已绑定的会话队列仍然可读；没有生产方时新的入队仍然失败关闭。支持该合同的 Loop 声明 `deferred-invocations` 能力，在普通步骤边界调用 `drainDeferredToolInvocations(ctx, signal)`。队列为空或没有读取器时，默认 Loop 的调度不变。自定义 Loop 使用同一 drain，不获得 UI 专用方法。
 
 每一步最多处理一个 invocation。新 queued 工作在普通 checkpoint 之后的 `model` 边界开始，不中断模型已规划的工具批次或 compaction。原审批 continuation 可在 `tools` 边界恢复。Failure 边界只恢复既有回执或报告未派发/不确定结果。取消向上传播，不将中断效果伪装成可安全重试的失败。空闲唤醒使用普通 SC1 queued input 开启 turn；生产方结果也通过 SC1 投递，采用持久去重键。Loop 仍负责用 `input.resumeParked` 打开原停驻 turn；队列不得窃取普通输入。
 
 | 队列状态 | 持久证据与行为 |
 | --- | --- |
-| `queued` | `x/agnes/deferred-invocations/state` 在唤醒前记录完整不可变 invocation。相同 id/规范化绑定返回首次回执；改变绑定拒绝。 |
+| `queued` | `x/agnes/deferred-invocations/state` 在唤醒前记录完整不可变 invocation。相同 id 与规范化绑定再次入队时返回首次回执，不再复查源事件；新的或不同的绑定必须引用可接受的源事件，改变绑定则拒绝。 |
 | `executing` | 状态事实先于 `ctx.tools.execute({invocationId: id, name: tool, args})`。既有 tool policy、approval、auto review、deny-list、sandbox 仍是权威。 |
 | `pending-approval` | `PARKED` 保存该状态；原 turn 打开后，`ctx.tools.resume(id)` 只恢复原票据。`E_LANE_BUSY` 继续停驻。 |
 | `succeeded` | 必须引用原始持久 tool-result 序号；队列事实只保存引用，不复制完整输出。 |
@@ -29,4 +29,4 @@ Host 适配器使用现有会话 lease 和公开 scan/append/enqueue 接口。�
 
 通用 drain 在没有活动 turn 且该 invocation 有原审批 ticket 时，通过公开 `input.resumeParked` 恢复该 ticket。拒绝审批可能只补记 tool/result 而不打开 turn；drain 仍会读取原工具回执、写 failed 并通知生产方。普通输入和非队列审批仍由 Loop 自己处理，queue 不领取它们。
 
-可执行的 drain 与 factory 装饰器由 `@agnes/plugin-runtime` 导出；`@agnes/extension-api` 仅维护队列、生产方与账本端口合同。Loop 插件从公开作者运行库命名空间导入 helper。
+可执行的 drain 与 factory 装饰器由 `@agnes/plugin-runtime` 导出。队列和回执类型位于 `@agnes/plugin-runtime/deferred-contract`。账本端口仍是 Host 适配器。Loop 插件从公开作者运行库命名空间导入 helper，并用 `deferredQueueKind` 读取队列。

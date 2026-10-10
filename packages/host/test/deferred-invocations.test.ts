@@ -2,19 +2,18 @@ import { defaultLoopPlugin } from '@agnes/base'
 import { Context } from '@agnes/cordis'
 import { MemoryStorage, SessionLogImpl } from '@agnes/core'
 import { defaultIds } from '@agnes/core-common/ids'
-import type {
-  DeferredInvocationLedgerPort,
-  DeferredInvocationReceipt,
-  DeferredToolInvocation,
-  LoopContext,
-  LoopFactory,
-  ToolResult,
-} from '@agnes/extension-api'
+import type { LoopContext, LoopFactory, ToolResult } from '@agnes/extension-api'
 import {
   createDeferredInvocationQueue,
+  type DeferredInvocationLedgerPort,
   DeferredInvocationsService,
 } from '@agnes/host-providers/assemble/deferred-invocations'
 import { drainDeferredToolInvocations } from '@agnes/plugin-runtime'
+import {
+  deferredQueueKind,
+  type DeferredInvocationReceipt,
+  type DeferredToolInvocation,
+} from '@agnes/plugin-runtime/deferred-contract'
 import type { Actor, EventEnvelope } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 
@@ -92,7 +91,9 @@ async function fixture() {
     ({
       sessionKey: 's',
       lane: 'main',
-      deferredInvocations: q,
+      services: {
+        get: async (kind: unknown) => (kind === deferredQueueKind ? q : undefined),
+      },
       turn: { continuation: () => 'model', cancelled: () => false },
       effects: {
         status: async (id: string) =>
@@ -227,14 +228,15 @@ it('leaves the default scheduler unchanged without a producing plugin and ignore
   const f = await fixture()
   try {
     const context = f.ctx()
-    await context.deferredInvocations!.enqueue(call, signal)
+    const admitted = await context.services!.get(deferredQueueKind)
+    await admitted!.enqueue(call, signal)
     const cancelled = new AbortController()
     cancelled.abort()
     await expect(drainDeferredToolInvocations(context, cancelled.signal)).rejects.toThrow()
     expect(f.executed).toEqual([])
     const bare = {
       ...context,
-      deferredInvocations: undefined,
+      services: undefined,
       input: { resumeParked: async () => false, claim: async () => null },
       turn: { continuation: () => null },
     } as unknown as LoopContext
@@ -323,3 +325,4 @@ it('permits the registry owner bridge while refusing a plugin without a verified
     await root.fiber.dispose()
   }
 })
+

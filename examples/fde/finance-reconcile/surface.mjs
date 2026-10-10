@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { jcs } from '@agnes/protocol'
+import { deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
 import descriptor from './client/agnes.client.json' with { type: 'json' }
 
 /** Data-only declaration with a reviewed diff renderer and the preset table fallback. Values stay in integer USD cents throughout. */
@@ -184,7 +185,7 @@ export async function actionOutcome(ctx, state, signal) {
     createHash('sha256')
       .update(jcs({ surfaceId: notice.surfaceId, revision: notice.revision, commandId: notice.commandId }))
       .digest('hex')
-  const original = await ctx.deferredInvocations?.read(id, signal)
+  const original = await (await ctx.services?.get(deferredQueueKind))?.read(id, signal)
   if (
     !original ||
     original.invocation.sessionKey !== ctx.sessionKey ||

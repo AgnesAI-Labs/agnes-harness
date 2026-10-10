@@ -307,7 +307,7 @@
     "@agnes/web-ui",
     "@agnes/web-units"
   ],
-  "@agnes/intelligent-ui-contract": ["@agnes/extension-api", "@agnes/protocol"],
+  "@agnes/intelligent-ui-contract": ["@agnes/extension-api", "@agnes/plugin-runtime", "@agnes/protocol"],
   "@agnes/observability": [
     "@agnes/extension-api",
     "@agnes/protocol",

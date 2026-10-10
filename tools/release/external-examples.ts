@@ -67,7 +67,13 @@ export async function validateExample(directory: string): Promise<void> {
         const [before, after = ''] = candidate.split('*')
         return key.startsWith(before!) && key.endsWith(after)
       })
-    if (!declared || (name === '@agnes/plugin-runtime' && key !== '.' && key !== './testkit')) {
+    if (
+      !declared ||
+      (name === '@agnes/plugin-runtime' &&
+        key !== '.' &&
+        key !== './testkit' &&
+        key !== './deferred-contract')
+    ) {
       throw new Error(`Private or undeclared module import in ${file}: ${specifier}`)
     }
   }

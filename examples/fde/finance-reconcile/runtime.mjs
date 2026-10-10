@@ -8,6 +8,7 @@ import {
   drainDeferredToolInvocations,
   toolError,
 } from '@agnes/plugin-runtime'
+import { deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
 
 export const readMeta = {
   isReadOnly: true,
@@ -236,7 +237,7 @@ export function makeBundle({
             return output
           },
           async resume(id, signal) {
-            const original = await ctx.deferredInvocations?.read(id, signal)
+            const original = await (await ctx.services?.get(deferredQueueKind))?.read(id, signal)
             const call = original
               ? { invocationId: id, name: original.invocation.tool, args: original.invocation.args }
               : state.approvalCall

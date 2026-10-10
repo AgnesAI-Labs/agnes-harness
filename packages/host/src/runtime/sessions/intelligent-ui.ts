@@ -1,14 +1,25 @@
 import type { Context } from '@agnes/cordis'
 import { scanAll } from '@agnes/core'
-import { unavailableProjections } from '@agnes/extension-api'
+import { ProviderError, unavailableProjections } from '@agnes/extension-api'
 import type { ServiceCall, ServiceDescriptor } from '@agnes/host-common/assemble/service-binding'
-import type { DeferredInvocationsService } from '@agnes/host-providers/assemble/deferred-invocations'
+import {
+  DEFERRED_INVOCATION_EVENT,
+  DEFERRED_NOTIFICATION_EVENT,
+  type DeferredInvocationsService,
+} from '@agnes/host-providers/assemble/deferred-invocations'
 import {
   type IntelligentUiInstance,
   intelligentUiKind,
   UI_EVENTS,
   UI_OWNER,
+  UI_PROVIDER_ID,
+  UI_PROVIDER_VERSION,
 } from '@agnes/intelligent-ui-contract'
+import {
+  type DeferredProducerInstance,
+  deferredProducerKind,
+  deferredQueueKind,
+} from '@agnes/plugin-runtime/deferred-contract'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import {
   type Actor,
@@ -25,7 +36,7 @@ import {
   type SessionLedgerSession,
   sessionInputTarget,
 } from '../services/session-ports.js'
-import { enqueueSessionInputOnce } from './deferred-invocations.js'
+import { deferredQueueFor, enqueueSessionInputOnce } from './deferred-invocations.js'
 import { readUiComponentDeclarations } from './ui-component-declarations.js'
 
 const READER: Actor = { id: UI_OWNER, org: 'local', role: 'extension', deptPath: [], attrs: {} }
@@ -55,9 +66,33 @@ async function actorForUiResult(session: HostSession, owner: string, key: string
   return actor
 }
 
+async function confirmDeferredSource(
+  session: HostSession,
+  owner: string,
+  seq: number,
+  source: string,
+  signal: AbortSignal,
+): Promise<void> {
+  signal.throwIfAborted()
+  if (source !== owner || !Number.isSafeInteger(seq) || seq < 1)
+    throw new Error('Deferred invocation source event is not admissible')
+  const rows = await scanAll((query) => session.scan(query), {
+    lane: session.lane,
+    fromSeq: seq,
+    toSeq: seq,
+  })
+  const row = rows.find((item) => item.seq === seq)
+  if (!row) throw new Error('Deferred invocation source event is missing')
+  if (row.type === DEFERRED_INVOCATION_EVENT || row.type === DEFERRED_NOTIFICATION_EVENT)
+    throw new Error('Deferred invocation source event is not admissible')
+  const ownExtension = row.origin === `ext:${owner}`
+  const trustedSystem = row.origin === 'system' && row.trust === 'trusted'
+  if (!ownExtension && !trustedSystem) throw new Error('Deferred invocation source event is not admissible')
+}
+
 /**
- * Session and producer entry for the intelligent-ui service kind.
- * The deferred queue stays the existing host implementation; only the author channel moved.
+ * Session entry for the intelligent-ui service kind.
+ * The deferred queue is the host session service. This bridge is one deferred-producer owner.
  */
 export function createIntelligentUiBridge(input: {
   extensionHost: ExtensionServiceHost
@@ -65,20 +100,8 @@ export function createIntelligentUiBridge(input: {
   sessionGeneration: (sessionKey: string) => string | undefined
   session: (key: string) => HostSession | undefined
 }) {
-  const deferredServices = new Set<DeferredInvocationsService>()
   let hooked = false
   const enabled = () => input.extensionHost.packageFor(intelligentUiKind, UI_OWNER) !== undefined
-  const queueFor = (key: string, lane: string) => {
-    for (const service of deferredServices) {
-      try {
-        const queue = service.forSession(key, lane)
-        if (queue) return queue
-      } catch {
-        deferredServices.delete(service)
-      }
-    }
-    return undefined
-  }
   const generationOf = (session: HostSession) =>
     input.sessionGeneration(session.key) ?? session.pluginGenerationId
   const requireSession = (key: string, lane: string): HostSession => {
@@ -94,7 +117,7 @@ export function createIntelligentUiBridge(input: {
     const packageId = input.extensionHost.packageFor(intelligentUiKind, UI_OWNER)
     const generationId = generationOf(session)
     if (!packageId || !generationId || session.closingOrClosed) denied(UNAVAILABLE)
-    const queue = queueFor(session.key, session.lane)
+    const queue = deferredQueueFor(session)?.forSession(session.key, session.lane)
     if (!queue) denied()
     const call: ServiceCall = {
       owner: UI_OWNER,
@@ -148,6 +171,71 @@ export function createIntelligentUiBridge(input: {
       }
     }
   }
+  const openProducer = async (source: string, sessionKey: string, lane: string, signal: AbortSignal) => {
+    const packageId = input.extensionHost.packageFor(deferredProducerKind, source)
+    const session = input.session(sessionKey)
+    const generationId = session ? generationOf(session) : undefined
+    if (!packageId || !session || session.closingOrClosed || session.lane !== lane || !generationId)
+      return undefined
+    let instance: DeferredProducerInstance
+    try {
+      instance = await input.extensionHost.bindHost(
+        deferredProducerKind,
+        {
+          owner: source,
+          packageId,
+          session: { key: session.key, lane: session.lane, workspaceRoot: session.d.cwd },
+          generationId,
+          signal,
+          live: () => {
+            if (session.closingOrClosed || signal.aborted) return undefined
+            if (generationOf(session) !== generationId) return undefined
+            const current = input.session(session.key)
+            if (current && (current !== session || current.closingOrClosed || current.lane !== session.lane))
+              return undefined
+            return { owner: source, active: true, generationId }
+          },
+        },
+        { now: () => Date.now() },
+      )
+    } catch (error) {
+      if (error instanceof ProviderError) return undefined
+      throw error
+    }
+    let spent = false
+    const finish = async () => {
+      if (spent) return
+      spent = true
+      try {
+        await instance.dispose?.()
+      } catch {
+        // Admission already completed. Disposal must not replace the producer result.
+      }
+    }
+    return {
+      source,
+      async validate(
+        invocation: Parameters<DeferredProducerInstance['validate']>[0],
+        producerSignal: AbortSignal,
+      ) {
+        try {
+          await instance.validate(invocation, producerSignal)
+        } finally {
+          await finish()
+        }
+      },
+      async changed(
+        receipt: Parameters<DeferredProducerInstance['changed']>[0],
+        producerSignal: AbortSignal,
+      ) {
+        try {
+          await instance.changed(receipt, producerSignal)
+        } finally {
+          await finish()
+        }
+      },
+    }
+  }
   const descriptor: ServiceDescriptor = {
     ports: ['ledger', 'input', 'projections'],
     eventNames: UI_EVENTS,
@@ -159,7 +247,12 @@ export function createIntelligentUiBridge(input: {
       const ref = call.session
       if (!ref) denied(UNAVAILABLE)
       const session = requireSession(ref.key, ref.lane)
-      const found = queueFor(session.key, session.lane)
+      if (!call.actor) denied()
+      const found = deferredQueueFor(session)?.ownerFacade(session.key, session.lane, {
+        owner: UI_OWNER,
+        actor: call.actor,
+        confirmSource: (seq, source, signal) => confirmDeferredSource(session, UI_OWNER, seq, source, signal),
+      })
       if (!found) denied()
       return {
         taskId: () => {
@@ -224,28 +317,46 @@ export function createIntelligentUiBridge(input: {
       }
     },
     attach(root: Context, origins: RowOriginLookup | undefined, deferred: DeferredInvocationsService): void {
-      deferredServices.add(deferred)
       input.extensionHost.install(root, intelligentUiKind, descriptor, origins)
+      input.extensionHost.install(root, deferredQueueKind, { ports: [], audience: 'host' }, origins)
+      input.extensionHost.install(root, deferredProducerKind, { ports: [], audience: 'callback' }, origins)
+      deferred.setProducerResolver((source, sessionKey, lane, signal) =>
+        openProducer(source, sessionKey, lane, signal),
+      )
       if (hooked) return
       hooked = true
-      input.extensionHost.onRegistered(intelligentUiKind, (owner) => {
+      input.extensionHost.onRegistered(intelligentUiKind, (owner, packageId) => {
         if (owner !== UI_OWNER) return () => undefined
-        const service = [...deferredServices].at(-1)
-        if (!service) return () => undefined
-        return service.register({
-          source: owner,
-          validate: (invocation, signal) =>
-            run(requireSession(invocation.sessionKey, invocation.lane), invocation.actor, signal, (ui) =>
-              ui.validate(invocation, signal),
-            ),
-          changed: (receipt, signal) =>
-            run(
-              requireSession(receipt.invocation.sessionKey, receipt.invocation.lane),
-              receipt.invocation.actor,
-              signal,
-              (ui) => ui.changed(receipt, signal),
-            ),
-        })
+        const release = input.extensionHost.ports.register(
+          deferredProducerKind,
+          {
+            id: UI_PROVIDER_ID,
+            version: UI_PROVIDER_VERSION,
+            open() {
+              const producer: DeferredProducerInstance = {
+                validate: (invocation, signal) =>
+                  run(
+                    requireSession(invocation.sessionKey, invocation.lane),
+                    invocation.actor,
+                    signal,
+                    (ui) => ui.validate(invocation, signal),
+                  ),
+                changed: (receipt, signal) =>
+                  run(
+                    requireSession(receipt.invocation.sessionKey, receipt.invocation.lane),
+                    receipt.invocation.actor,
+                    signal,
+                    (ui) => ui.changed(receipt, signal),
+                  ),
+              }
+              return producer
+            },
+          },
+          { owner, packageId },
+        )
+        return () => {
+          void release()
+        }
       })
     },
   }

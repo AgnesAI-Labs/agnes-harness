@@ -2,7 +2,7 @@ import type {
   DeferredInvocationReceipt,
   DeferredToolInvocation,
   DeferredToolInvocationQueue,
-} from '@agnes/extension-api'
+} from '@agnes/plugin-runtime/deferred-contract'
 import type { IntelligentUiInstance } from '@agnes/intelligent-ui-contract'
 import {
   type Actor,

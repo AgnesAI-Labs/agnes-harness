@@ -1,29 +1,58 @@
 import { type Context, Service } from '@agnes/cordis'
+import type { ToolResult } from '@agnes/extension-api'
+import { providerSource } from '@agnes/host-common/assemble/provider-registry'
 import type {
-  DeferredInvocationLedgerPort,
+  DeferredActor,
   DeferredInvocationProducer,
   DeferredInvocationReceipt,
-  DeferredInvocationRegistryPort,
   DeferredInvocationState,
+  DeferredJson,
   DeferredToolInvocation,
   DeferredToolInvocationQueue,
-} from '@agnes/extension-api'
-import { providerSource } from '@agnes/host-common/assemble/provider-registry'
+} from '@agnes/plugin-runtime/deferred-contract'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
-import { type JsonValue, jcs } from '@agnes/protocol'
+import { type Actor, type EventEnvelope, type JsonValue, jcs } from '@agnes/protocol'
 
 export const DEFERRED_INVOCATION_EVENT = 'x/agnes/deferred-invocations/state'
 export const DEFERRED_NOTIFICATION_EVENT = 'x/agnes/deferred-invocations/notified'
+const FOREIGN = 'Deferred invocation belongs to another producer'
 const terminal = (state: DeferredInvocationState) => state === 'succeeded' || state === 'failed'
 const json = (value: unknown): JsonValue => JSON.parse(jcs(value))
+
+/** Host-owned durable ports. The scan includes only this lane's trusted invocation facts. */
+export interface DeferredInvocationLedgerPort {
+  scan(): Promise<readonly EventEnvelope[]>
+  append(type: string, data: DeferredJson, actor: Actor, sourceSeq?: number): Promise<number>
+  outcome(
+    id: string,
+  ): Promise<{ resultSeq?: number; toolCallSeq?: number; approvalId?: string; result?: ToolResult }>
+  wake(id: string, actor: Actor, signal: AbortSignal): Promise<void>
+}
+
+export type DeferredProducerLookup = (
+  source: string,
+  signal: AbortSignal,
+) => DeferredInvocationProducer | undefined | Promise<DeferredInvocationProducer | undefined>
+
+/** Admitted producer identity. The actor and source come from the host, not the invocation body. */
+export interface DeferredOwnerAdmission {
+  readonly owner: string
+  readonly actor: DeferredActor
+  confirmSource(seq: number, source: string, signal: AbortSignal): Promise<void>
+}
+
+interface DeferredDispatcherQueue extends DeferredToolInvocationQueue {
+  /** Acknowledges one owner's receipts. Another owner's notification stays pending. */
+  notifyOwner(owner: string, signal: AbortSignal): Promise<void>
+}
 
 /** Ledger is the queue and the dedupe index. The in-memory tail is only admission serialization. */
 export function createDeferredInvocationQueue(
   sessionKey: string,
   lane: string,
   ports: DeferredInvocationLedgerPort,
-  producer: (source: string) => DeferredInvocationProducer | undefined,
-): DeferredToolInvocationQueue {
+  producer: DeferredProducerLookup,
+): DeferredDispatcherQueue {
   let tail = Promise.resolve()
   const serialized = <T>(work: () => Promise<T>): Promise<T> => {
     const result = tail.then(work, work)
@@ -64,7 +93,7 @@ export function createDeferredInvocationQueue(
   async function hydrate(value: DeferredInvocationReceipt): Promise<DeferredInvocationReceipt> {
     return { ...value, ...(await ports.outcome(value.invocation.id)) }
   }
-  const queue: DeferredToolInvocationQueue = {
+  const queue: DeferredDispatcherQueue = {
     sessionKey,
     lane,
     enqueue: (input, signal) =>
@@ -91,7 +120,7 @@ export function createDeferredInvocationQueue(
           if (!terminal(old.state)) await ports.wake(call.id, call.actor, signal)
           return hydrate(old)
         }
-        const owner = producer(call.source)
+        const owner = await producer(call.source, signal)
         if (!owner) throw new Error('Deferred invocation producer is unavailable')
         if ([...states.values()].filter((item) => !terminal(item.state)).length >= 8)
           throw new Error('Deferred invocation queue is full')
@@ -146,23 +175,78 @@ export function createDeferredInvocationQueue(
         return { ...data, ...original, ...(outcome.result ? { result: outcome.result } : {}), seq }
       }),
     async notify(signal) {
-      const { states, notified } = await records()
-      for (const receipt of states.values()) {
-        signal.throwIfAborted()
-        if (notified.has(receipt.seq)) continue
-        const owner = producer(receipt.invocation.source)
-        if (!owner) throw new Error('Deferred invocation producer is unavailable during recovery')
-        await owner.changed(await hydrate(receipt), signal)
-        await ports.append(
-          DEFERRED_NOTIFICATION_EVENT,
-          { id: receipt.invocation.id, receiptSeq: receipt.seq },
-          receipt.invocation.actor,
-          receipt.seq,
-        )
-      }
+      await deliver(undefined, signal)
+    },
+    async notifyOwner(owner, signal) {
+      await deliver(owner, signal)
     },
   }
+  async function deliver(source: string | undefined, signal: AbortSignal) {
+    const { states, notified } = await records()
+    for (const receipt of states.values()) {
+      signal.throwIfAborted()
+      if (source !== undefined && receipt.invocation.source !== source) continue
+      if (notified.has(receipt.seq)) continue
+      const owner = await producer(receipt.invocation.source, signal)
+      if (!owner) throw new Error('Deferred invocation producer is unavailable during recovery')
+      await owner.changed(await hydrate(receipt), signal)
+      await ports.append(
+        DEFERRED_NOTIFICATION_EVENT,
+        { id: receipt.invocation.id, receiptSeq: receipt.seq },
+        receipt.invocation.actor,
+        receipt.seq,
+      )
+    }
+  }
   return queue
+}
+
+/**
+ * Producer view of one shared lane queue. The caller sees and moves only its own invocations.
+ * Its notification acknowledges only those receipts, so one producer cannot clear another owner's delivery.
+ */
+export function ownerDeferredQueue(
+  queue: DeferredDispatcherQueue,
+  admission: DeferredOwnerAdmission,
+): DeferredToolInvocationQueue {
+  const signal = () => new AbortController().signal
+  return {
+    sessionKey: queue.sessionKey,
+    lane: queue.lane,
+    async enqueue(invocation, admitted) {
+      admitted.throwIfAborted()
+      if (invocation.source !== admission.owner) throw new Error(FOREIGN)
+      if (jcs(invocation.actor) !== jcs(admission.actor))
+        throw new Error('Deferred invocation actor does not match its admission')
+      // The first admission cites the source event. An identical durable binding stays idempotent.
+      const existing = await queue.read(invocation.id, admitted)
+      if (!existing || jcs(existing.invocation) !== jcs(invocation))
+        await admission.confirmSource(invocation.sourceSeq, invocation.source, admitted)
+      return queue.enqueue(invocation, admitted)
+    },
+    async next(admitted) {
+      const found = await queue.next(admitted)
+      if (found && found.invocation.source !== admission.owner) return null
+      return found
+    },
+    async read(id, admitted) {
+      const found = await queue.read(id, admitted)
+      if (found && found.invocation.source !== admission.owner) throw new Error(FOREIGN)
+      return found
+    },
+    async transition(id, expectedSeq, state, outcome) {
+      const current = await queue.read(id, signal())
+      if (!current) throw new Error('Deferred invocation transition is stale')
+      if (current.invocation.source !== admission.owner) throw new Error(FOREIGN)
+      if (outcome?.result && (!current.result || jcs(outcome.result) !== jcs(current.result)))
+        throw new Error('Deferred invocation receipt does not match its durable result')
+      return queue.transition(id, expectedSeq, state, outcome)
+    },
+    async notify(admitted) {
+      admitted.throwIfAborted()
+      await queue.notifyOwner(admission.owner, admitted)
+    },
+  }
 }
 
 declare module '@agnes/cordis' {
@@ -170,15 +254,27 @@ declare module '@agnes/cordis' {
     deferredInvocations: DeferredInvocationsService
   }
 }
+export type DeferredProducerResolver = (
+  source: string,
+  sessionKey: string,
+  lane: string,
+  signal: AbortSignal,
+) => Promise<DeferredInvocationProducer | undefined>
+
 /** Per-generation registry. A producer disappears only with its owning plugin row. */
-export class DeferredInvocationsService extends Service implements DeferredInvocationRegistryPort {
+export class DeferredInvocationsService extends Service {
   private readonly producers = new Map<string, DeferredInvocationProducer>()
-  private readonly sessions = new Map<string, DeferredToolInvocationQueue>()
+  private readonly sessions = new Map<string, DeferredDispatcherQueue>()
+  private resolver?: DeferredProducerResolver
   constructor(
     private readonly ownerContext: Context,
     private readonly origins?: RowOriginLookup,
   ) {
     super(ownerContext, 'deferredInvocations')
+  }
+  /** Opens a producer when this generation has no locally registered callback for that owner. */
+  setProducerResolver(resolver: DeferredProducerResolver | undefined): void {
+    this.resolver = resolver
   }
   register(producer: DeferredInvocationProducer): () => void {
     // The Host-created registry context owns its backend adapter registration.
@@ -193,15 +289,27 @@ export class DeferredInvocationsService extends Service implements DeferredInvoc
   bind(sessionKey: string, lane: string, ports: DeferredInvocationLedgerPort): () => void {
     const key = jcs([sessionKey, lane])
     if (this.sessions.has(key)) throw new Error('Deferred invocation session is already bound')
-    const queue = createDeferredInvocationQueue(sessionKey, lane, ports, (source) =>
-      this.producers.get(source),
-    )
+    const queue = createDeferredInvocationQueue(sessionKey, lane, ports, async (source, signal) => {
+      const local = this.producers.get(source)
+      if (local) return local
+      return this.resolver?.(source, sessionKey, lane, signal)
+    })
     this.sessions.set(key, queue)
     return () => {
       if (this.sessions.get(key) === queue) this.sessions.delete(key)
     }
   }
-  forSession(sessionKey: string, lane: string) {
-    return this.producers.size ? this.sessions.get(jcs([sessionKey, lane])) : undefined
+  /** Dispatcher view. A bound session queue remains readable after its producer unloads. */
+  forSession(sessionKey: string, lane: string): DeferredDispatcherQueue | undefined {
+    return this.sessions.get(jcs([sessionKey, lane]))
+  }
+  /** Producer view. Each owner can read and move only the invocations it admitted. */
+  ownerFacade(
+    sessionKey: string,
+    lane: string,
+    admission: DeferredOwnerAdmission,
+  ): DeferredToolInvocationQueue | undefined {
+    const queue = this.forSession(sessionKey, lane)
+    return queue ? ownerDeferredQueue(queue, admission) : undefined
   }
 }

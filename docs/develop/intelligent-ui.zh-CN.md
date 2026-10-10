@@ -139,7 +139,7 @@ Schema 声明结构限制并导出 `X_AGNES_UI_LIMITS`；后台与渲染器还�
 
 以上方法名为待评审声明，尚未注册为 App Server 方法。所有读取/写入前检查会话归属。未认证或跨会话调用使用既有认证/能力 RPC 错误，不泄露 surface 或历史命令结果。格式错误的请求使用 `INVALID_PARAMS`；只有形状正确且绑定会话的命令才能进入动作状态机。归属插件由工具贡献确定，不取自模型提供的 surface 数据。Surface 归属该会话持续中的任务；单纯开启新 turn 不使其失效。后台任务完成/退役时通过本合同关闭其 surface。
 
-Service 不提供任意工具调度入口。公开[延后工具调用合同](deferred-invocations.zh-CN.md)是唯一的通用执行桥接，可供 UI、webhook、schedule 使用。Host 将持久队列绑定到会话锁定的 session/lane，通过公开 Loop context 的可选端口接入，Core 不变。默认 Loop 与财务 Loop 在安全步骤边界，通过 `LoopContext.tools.execute`、`tools.resume`、`effects.status` 通用排空；不包含 UI 专用 helper 或组件逻辑。Intelligent UI 是一个生产方：校验动作、持久化绑定、将已声明工具 invocation 入队。队列事实与生产方通知仍基于 ledger。未安装生产插件时队列端口为空，默认 Loop 调度不变。缺少通用排空能力的自定义 Loop 在工具派发前拒绝提交。禁止直接调用 `ToolDef.execute`、导入 Core 私有模块、依赖模型文字指令执行或消费无关 SC1 输入。
+Service 不提供任意工具调度入口。公开[延后工具调用合同](deferred-invocations.zh-CN.md)是唯一的通用执行桥接，可供 UI、webhook、schedule 使用。Host 将持久队列绑定到会话锁定的 session/lane，通过 Loop 的通用 services 读取器接入，Core 不变。默认 Loop 与财务 Loop 在安全步骤边界，通过 `LoopContext.tools.execute`、`tools.resume`、`effects.status` 通用排空；不包含 UI 专用 helper 或组件逻辑。Intelligent UI 是一个生产方：校验动作、持久化绑定、将已声明工具 invocation 入队。队列事实与生产方通知仍基于 ledger。未安装生产插件时，空队列不改变默认 Loop 调度。缺少通用排空能力的自定义 Loop 在工具派发前拒绝提交。禁止直接调用 `ToolDef.execute`、导入 Core 私有模块、依赖模型文字指令执行或消费无关 SC1 输入。
 
 不可变的已接纳命令绑定 surface revision、归属 generation、任务/通道、已认证 actor、动作、完整校验的参数以及稳定 invocation id。命令事实构成工作队列，从 ledger 重建；不增加数据库或 Agent 输入通道。执行时 helper 再检查绑定任务、surface 与工具目录，再沿普通 tool policy、approval、auto review、sandbox、deny-list 控制执行原工具。业务 `confirmed: true` 仅满足 `action.confirm`，不授予工具权限。存在 `received`、`pending-approval`、`executing` 动作时，update/close 返回 `UI_BUSY`，避免审批票据下的审阅数据改变。未解决的 `outcomeUnknown` 失败也保持该 surface 锁定，直到既有效果对账解决它。相同 surface 以不同 command id 并发提交也返回瞬时 `OVERLOADED`，不创建第二个 invocation。
 
