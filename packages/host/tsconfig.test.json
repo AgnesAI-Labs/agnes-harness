@@ -58,6 +58,9 @@
       "path": "../observability/tsconfig.testkit.json"
     },
     {
+      "path": "../git-worktree-contract"
+    },
+    {
       "path": "../intelligent-ui-contract"
     }
   ]

@@ -3,9 +3,9 @@ import {
   foldEvents,
   hasChildControl,
   isTerminalChildState,
-  scanAll,
-  type StorageAdapter,
   type OpStateObj,
+  type StorageAdapter,
+  scanAll,
 } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import { DEFERRED_INVOCATION_EVENT } from '@agnes/host-providers/assemble/deferred-invocations'
@@ -32,6 +32,7 @@ type Fact = {
   receipt?: unknown
   failure?: unknown
   commandId?: string
+  path?: unknown
   outcomeUnknown?: boolean
   structured?: unknown
   content?: unknown
@@ -206,6 +207,17 @@ export async function assertMigrationSettled(
       if (op.phase.kind === 'tools' && op.phase.batch.calls.some((call) => call.status !== 'completed'))
         add('parked-continuation', cell.key, cell.seq)
     }
+    const pendingWorktrees = new Set<string>()
+    for (const row of rows) {
+      if (row.origin !== 'ext:agnes/subagent') continue
+      const data = object(row.data)
+      const path = typeof data.path === 'string' ? data.path : ''
+      if (path === '') continue
+      if (row.type === 'x/agnes/subagent/worktree-created' || row.type === 'x/agnes/subagent/worktree-bound')
+        pendingWorktrees.add(path)
+      else if (row.type === 'x/agnes/subagent/worktree-removed') pendingWorktrees.delete(path)
+    }
+    for (const path of pendingWorktrees) add('pending-worktree', path)
     if (hasChildControl(storage)) {
       for (const child of await storage.listByParent(key)) {
         if (!isTerminalChildState(child.state)) add('unfinished-sub-agent', child.childKey)

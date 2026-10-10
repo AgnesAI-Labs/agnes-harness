@@ -11,10 +11,14 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
 import type { WorkspaceInvocationView } from '@agnes/core'
-import type { GitWorktreeOperation, WorktreeCreateResult } from '@agnes/extension-api'
-import { createGitWorktreeService, createSessionGitWorktreeService } from '../src/git-worktrees.js'
+import type { WorktreeCreateResult } from '@agnes/git-worktree-contract'
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  createGitWorktreeService,
+  createSessionGitWorktreeService,
+  type GitWorktreeOperation,
+} from '../src/git-worktrees.js'
 
 const op: GitWorktreeOperation = {
   sessionKey: 'fixture',
@@ -147,6 +151,35 @@ describe('Host Git worktree service', () => {
       action: 'removed',
     })
     await expect(service.create(a.root, { ...op, sessionKey: 'unknown' })).rejects.toThrow('unknown session')
+  })
+  it('shares one workspace owner when two session keys resolve the same root', async () => {
+    const h = fixture()
+    const service = createSessionGitWorktreeService({
+      dataDir: h.dataDir,
+      remote: false,
+      signal: op.signal,
+      workspaceInvocationFor: (key) => ({
+        run: async (invoke) => {
+          if (key !== 'g1' && key !== 'g2') throw new Error('unknown session')
+          return invoke({ root: h.root } as WorkspaceInvocationView)
+        },
+      }),
+    })
+    const child = created(await service.create(h.root, { ...op, sessionKey: 'g1' }))
+    await expect(service.list({ ...op, sessionKey: 'g2' })).resolves.toEqual([
+      { root: child.root, path: child.path, branch: child.branch, stage: 'attached' },
+    ])
+    const restarted = createSessionGitWorktreeService({
+      dataDir: h.dataDir,
+      remote: false,
+      signal: op.signal,
+      workspaceInvocationFor: () => ({
+        run: async (invoke) => invoke({ root: h.root } as WorkspaceInvocationView),
+      }),
+    })
+    await expect(restarted.list({ ...op, sessionKey: 'g2' })).resolves.toEqual([
+      { root: child.root, path: child.path, branch: child.branch, stage: 'attached' },
+    ])
   })
   it('classifies missing Git as git-error and cancellation without mutating the repo', async () => {
     const h = fixture()

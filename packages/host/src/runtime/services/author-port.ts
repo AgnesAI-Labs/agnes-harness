@@ -1,13 +1,15 @@
 import type { Context } from '@agnes/cordis'
 import {
   EXTENSION_ID_PATTERN,
-  ProviderError,
-  unavailableProjections,
   type ProjectionReader,
+  ProviderError,
   type ServiceInstance,
   type ServiceKind,
   type ServicePorts,
+  type ServiceProvider,
+  unavailableProjections,
 } from '@agnes/extension-api'
+import { GIT_WORKTREE_OWNER, GIT_WORKTREE_PACKAGE, gitWorktreeKind } from '@agnes/git-worktree-contract'
 import type { ProvidersService } from '@agnes/host-common/assemble/provider-registry'
 import {
   ServiceBindings,
@@ -33,6 +35,13 @@ export interface ExtensionServiceHost {
   readonly sink: { current?: ExtensionInvocation }
   readonly ports: NonNullable<KernelPorts['serviceProviders']>
   install(ctx: Context, kind: ServiceKind, descriptor: ServiceDescriptor, origins?: RowOriginLookup): void
+  /** Registers on the mounting root. The author port cannot register the git worktree kind. */
+  registerOn<S extends ServiceInstance, P extends ServicePorts>(
+    ctx: Context,
+    kind: ServiceKind<S, P>,
+    provider: ServiceProvider<S, P>,
+    identity: { readonly owner: string; readonly packageId: string },
+  ): () => Promise<void>
   bindHost<S extends ServiceInstance, P extends ServicePorts>(
     kind: ServiceKind<S, P>,
     call: ServiceCall,
@@ -98,6 +107,7 @@ export function createExtensionServiceHost(input: {
       packageId: identity.packageId,
       session: { key: session.key, lane: session.lane, workspaceRoot: session.d.cwd },
       ...(generationId === undefined ? {} : { generationId }),
+      ...(kind.instanceScope === 'workspace' ? { workspaceKey: session.d.cwd } : {}),
       signal: admitted.signal,
       watermark: session.lastSeq,
       actor: extensionActor(identity.owner),
@@ -142,33 +152,42 @@ export function createExtensionServiceHost(input: {
       now: () => Date.now(),
     })
   }
+  const claim = (
+    providers: ProvidersService,
+    kind: ServiceKind,
+    provider: ServiceProvider,
+    identity: { readonly owner: string; readonly packageId: string },
+  ): (() => Promise<void>) => {
+    if (!EXTENSION_ID_PATTERN.test(identity.owner) || identity.packageId.trim() === '')
+      throw closed(kind.kind, 'register')
+    const dispose = providers.register(kind, identity.packageId, provider)
+    const offs: Array<() => void> = []
+    try {
+      bindings.noteOwner(kind.kind, provider.id, provider.version, identity.owner, identity.packageId)
+      for (const listener of listeners.get(kind.kind) ?? [])
+        offs.push(listener(identity.owner, identity.packageId))
+    } catch (error) {
+      for (const off of offs.reverse()) {
+        try {
+          off()
+        } catch {
+          // A listener that already returned must not hide the registration failure.
+        }
+      }
+      bindings.forget(kind.kind, provider.id, provider.version)
+      void dispose()
+      throw error
+    }
+    return async () => {
+      for (const off of offs) off()
+      bindings.forget(kind.kind, provider.id, provider.version)
+      await dispose()
+    }
+  }
   const ports: NonNullable<KernelPorts['serviceProviders']> = {
     register(kind, provider, identity) {
-      if (!EXTENSION_ID_PATTERN.test(identity.owner) || identity.packageId.trim() === '')
-        throw closed(kind.kind, 'register')
-      const dispose = input.providers().register(kind, identity.packageId, provider)
-      const offs: Array<() => void> = []
-      try {
-        bindings.noteOwner(kind.kind, provider.id, provider.version, identity.owner, identity.packageId)
-        for (const listener of listeners.get(kind.kind) ?? [])
-          offs.push(listener(identity.owner, identity.packageId))
-      } catch (error) {
-        for (const off of offs.reverse()) {
-          try {
-            off()
-          } catch {
-            // A listener that already returned must not hide the registration failure.
-          }
-        }
-        bindings.forget(kind.kind, provider.id, provider.version)
-        void dispose()
-        throw error
-      }
-      return async () => {
-        for (const off of offs) off()
-        bindings.forget(kind.kind, provider.id, provider.version)
-        await dispose()
-      }
+      if (kind.kind === gitWorktreeKind.kind) throw closed(kind.kind, 'register')
+      return claim(input.providers(), kind, provider, identity)
     },
     grants(kind) {
       return bindings.grants(kind.kind)
@@ -182,6 +201,16 @@ export function createExtensionServiceHost(input: {
     ports,
     install(ctx, kind, descriptor, origins) {
       bindings.install(ctx, kind, descriptor, origins)
+    },
+    registerOn(ctx, kind, provider, identity) {
+      if (
+        kind.kind === gitWorktreeKind.kind &&
+        (kind !== gitWorktreeKind ||
+          identity.owner !== GIT_WORKTREE_OWNER ||
+          identity.packageId !== GIT_WORKTREE_PACKAGE)
+      )
+        throw closed(kind.kind, 'register')
+      return claim(ctx.providers, kind, provider, identity)
     },
     bindHost(kind, call, factories) {
       return bindings.bind(kind, call, factories ?? {})

@@ -62,6 +62,7 @@
     "@agnes/cordis": "workspace:*",
     "@agnes/core": "workspace:*",
     "@agnes/extension-api": "workspace:*",
+    "@agnes/git-worktree-contract": "workspace:*",
     "@agnes/host-common": "workspace:*",
     "@agnes/protocol": "workspace:*",
     "@agnes/sandbox-remote": "workspace:*",

@@ -21,7 +21,6 @@ export type {
 export { createCompactionThreshold } from './compaction-engine.js'
 export * from './errors.js'
 export * from './extension.js'
-export * from './git-worktrees.js'
 export { HOOK_TABLE } from './generated/hook-table.js'
 export { SLOT_TABLE } from './generated/slot-table.js'
 export * from './hooks.js'

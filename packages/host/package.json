@@ -38,6 +38,7 @@
     "@agnes/host-artifacts": "workspace:*",
     "@agnes/host-extensions": "workspace:*",
     "@agnes/host-providers": "workspace:*",
+    "@agnes/git-worktree-contract": "workspace:*",
     "@agnes/intelligent-ui-contract": "workspace:*",
     "@agnes/observability": "workspace:*"
   },

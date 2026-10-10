@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { ExtensionFactory } from '@agnes/extension-api'
+import { gitWorktreeKind } from '@agnes/git-worktree-contract'
 import compactionExtension from '../extensions/compaction/src/index.js'
 import { createComputerUseExtension } from '../extensions/computer-use/src/index.js'
 import contextRulesExtension from '../extensions/context-rules/src/index.js'
@@ -204,7 +205,7 @@ function defineSubagentExtension(init: SeamInitContext): ExtensionFactory {
       worktrees: gitWorktrees({
         events: agnes.events,
         persist: sqliteWorktreePersist(init.profile.dataDir),
-        ...(init.gitWorktrees ? { service: init.gitWorktrees } : {}),
+        open: () => agnes.providers.bindOwn(gitWorktreeKind),
       }),
     })(agnes)
 }

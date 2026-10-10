@@ -20,6 +20,9 @@
     },
     {
       "path": "../base"
+    },
+    {
+      "path": "../git-worktree-contract"
     }
   ]
 }

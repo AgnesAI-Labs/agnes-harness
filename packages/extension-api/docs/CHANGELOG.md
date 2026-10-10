@@ -4,6 +4,9 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+Git worktree types moved to `@agnes/git-worktree-contract`. The dedicated init field is removed.
+Host registers `gitWorktreeKind`. The bundled subagent binds it. `API_VERSION` stays `1.4.0`.
+
 Deferred tool-invocation queue and receipt types moved to `@agnes/plugin-runtime/deferred-contract`.
 `LoopContext` no longer carries a dedicated queue field. A loop reads the session queue through the
 generic `services` reader. `API_VERSION` stays `1.4.0`.

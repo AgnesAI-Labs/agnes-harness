@@ -1,4 +1,4 @@
-import type { GitWorktreeService, WorktreeEntry } from '@agnes/extension-api'
+import type { GitWorktreeInstance, WorktreeEntry } from '@agnes/git-worktree-contract'
 import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { gitWorktrees } from '../src/worktree.js'
@@ -9,7 +9,7 @@ const entry: WorktreeEntry = {
   branch: 'agnes/subagent-1234abcd',
   stage: 'attached',
 }
-function harness(service?: GitWorktreeService, inUse?: () => boolean) {
+function harness(instance?: GitWorktreeInstance, inUse?: () => boolean) {
   const facts: Array<[string, unknown]> = []
   const saved = new Map<string, WorktreeEntry>()
   const bindings: unknown[] = []
@@ -20,7 +20,7 @@ function harness(service?: GitWorktreeService, inUse?: () => boolean) {
     },
   })
   const manager = gitWorktrees({
-    ...(service ? { service } : {}),
+    ...(instance ? { open: async () => instance } : {}),
     ...(inUse ? { inUse } : {}),
     events: {
       append: async (name, data) => {
@@ -40,7 +40,7 @@ function harness(service?: GitWorktreeService, inUse?: () => boolean) {
   })
   return { ctx, manager, facts, saved, bindings }
 }
-const service = (): GitWorktreeService => ({
+const service = (): GitWorktreeInstance => ({
   create: async () => ({ id: '1234abcd', root: entry.root, path: entry.path, branch: entry.branch }),
   list: async () => [entry],
   finish: async () => ({ action: 'removed' }),
@@ -115,5 +115,36 @@ describe('Host-backed gitWorktrees', () => {
     h.saved.set(entry.path, entry)
     await h.manager.bind?.('child', entry.path)
     expect(h.bindings).toEqual([['child', entry]])
+  })
+  it('maps a closed binding the same way as a missing service', async () => {
+    const facts: Array<[string, unknown]> = []
+    const ctx = fakeToolContext({
+      cwd: entry.root,
+      exec: () => {
+        throw new Error('agent Git exec forbidden')
+      },
+    })
+    const manager = gitWorktrees({
+      open: async () => {
+        throw new Error('service binding is closed')
+      },
+      events: {
+        append: async (name, data) => {
+          facts.push([name, data])
+          return facts.length
+        },
+      },
+    })
+    await expect(manager.create(ctx)).resolves.toEqual({ skipped: 'git-error' })
+    await expect(manager.finish(ctx, 'child', entry.path)).resolves.toEqual({
+      action: 'kept-inspection-failed',
+    })
+    await expect(manager.list?.(ctx)).rejects.toThrow('service binding is closed')
+    expect(facts).toEqual([
+      ['worktree-skipped', { reason: 'git-error' }],
+      ['worktree-cleanup-skipped', { childKey: 'child', path: entry.path, action: 'kept-inspection-failed' }],
+      ['worktree-skipped', { reason: 'git-error', operation: 'list' }],
+    ])
+    expect(ctx.calls.exec).toEqual([])
   })
 })

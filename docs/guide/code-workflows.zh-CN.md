@@ -38,7 +38,7 @@ return await tools.workflow({
 子任务使用官方 subagent_spawn 工具，继承深度、扇出、预算和 worktree 策略。
 后续阶段收到上一阶段的有界结果；成员失败后停止工作流。
 
-默认子 Agent 和工作流使用专属 Host 服务管理的 Git worktree。请先在仓库忽略规则中加入 `.worktrees/`。服务生成分支，仅列出自己登记的 worktree，并在不强制删除的前提下清理干净的工作树；脏工作树和未合并分支保留供审查，所有权及清理阶段在重启后继续有效。创建、列举、删除和清理拒绝以 `worktree-*` 事实呈现在 trace 中。Agent 工具仍不能读取或修改 `.git`。非 Git 仓库、缺少 Git 和远程沙箱分别报告 `not-git`、`git-error`、`remote-sandbox`；请求 worktree 隔离失败时明确拒绝。如确实需要共享工作目录，请显式选择 `isolation: "shared"`。
+默认子 Agent 和工作流通过 `@agnes/git-worktree-contract` 的工作区作用域 `gitWorktreeKind` 使用 Git worktree。Host 注册唯一提供者，内置子 Agent 在工具调用期间用 `providers.bindOwn` 绑定它。请先在仓库忽略规则中加入 `.worktrees/`。服务生成分支，仅列出自己登记的 worktree，并在不强制删除的前提下清理干净的工作树；脏工作树和未合并分支保留供审查，所有权及清理阶段在重启后继续有效。创建、列举、删除和清理拒绝以 `worktree-*` 事实呈现在 trace 中。Agent 工具仍不能读取或修改 `.git`。非 Git 仓库、缺少 Git 和远程沙箱分别报告 `not-git`、`git-error`、`remote-sandbox`；请求 worktree 隔离失败时明确拒绝。如确实需要共享工作目录，请显式选择 `isolation: "shared"`。
 
 `ctx.subagent.collect()` 可返回可选的 `receipt`：工作区隔离信息、最多 32 条近期工具结果（名称、账本序号和错误状态），以及 `truncated` 标记。旧版本或外部子代理 provider 可省略该字段；缺失的证据不能视为执行成功回执。
 

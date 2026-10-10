@@ -7,6 +7,13 @@ import {
   type ServiceProvider,
   unavailableProjections,
 } from '@agnes/extension-api'
+import {
+  GIT_WORKTREE_OWNER,
+  GIT_WORKTREE_PACKAGE,
+  GIT_WORKTREE_PROVIDER_ID,
+  GIT_WORKTREE_PROVIDER_VERSION,
+  gitWorktreeKind,
+} from '@agnes/git-worktree-contract'
 import { createOwnerLedger, type LedgerEvent } from '@agnes/host-common/assemble/owner-ledger'
 import {
   ServiceBindings,
@@ -15,6 +22,7 @@ import {
   type ServicePortFactories,
   serviceBindingScope,
 } from '@agnes/host-common/assemble/service-binding'
+import type { GitWorktreeOperation } from '@agnes/host-infrastructure/git-worktrees'
 import {
   createDeferredInvocationQueue,
   type DeferredInvocationLedgerPort,
@@ -22,8 +30,8 @@ import {
 } from '@agnes/host-providers/assemble/deferred-invocations'
 import {
   intelligentUiKind,
-  uiDataSourceKind,
   type UiDataSourceProvider,
+  uiDataSourceKind,
 } from '@agnes/intelligent-ui-contract'
 import { deferredProducerKind, deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
 import { type Actor, rpcError } from '@agnes/protocol'
@@ -39,6 +47,7 @@ import {
 } from '../src/runtime/feedback/contract.js'
 import { createFeedbackLedger } from '../src/runtime/feedback/ledger.js'
 import { createExtensionServiceHost, type ServiceAdmission } from '../src/runtime/services/author-port.js'
+import { installGitWorktreeService } from '../src/runtime/services/git-worktrees.js'
 import { type SessionLedgerSession, sessionInputTarget } from '../src/runtime/services/session-ports.js'
 
 interface Probe extends ServiceInstance {
@@ -1102,6 +1111,144 @@ describe('extension service host', () => {
       expect(fixture.enqueued[0]?.commandId).toBe(`svc/sample/${owner}/wake`)
       expect(() => root.providers.bindOwn(kind)).toThrow(/service binding is closed/)
       expect(fixture.enqueued).toHaveLength(1)
+    } finally {
+      await finish(root)
+    }
+  })
+
+  it('binds the bundled subagent git worktree and refuses every other registrar', async () => {
+    const fixture = sessionFixture()
+    const root = new Context()
+    const seen: GitWorktreeOperation[] = []
+    const signal = new AbortController().signal
+    const request = { signal, timeoutMs: 1000 }
+    const state = {
+      token: {} as object,
+      owner: GIT_WORKTREE_OWNER,
+      active: true,
+      generation: 'g1',
+      session: fixture.session,
+    }
+    const host = createExtensionServiceHost({
+      providers: () => root.providers,
+      sessionGeneration: () => state.generation,
+      readAdmission: () => ({
+        token: state.token,
+        owner: state.owner,
+        active: state.active,
+        signal,
+        session: state.session,
+      }),
+    })
+    installGitWorktreeService(host, root, undefined, {
+      async create(_cwd, operation) {
+        seen.push(operation)
+        return {
+          id: 'abcd1234',
+          root: '/work',
+          path: '/work/.worktrees/agnes-abcd1234',
+          branch: 'agnes/subagent-abcd1234',
+        }
+      },
+      async list(operation) {
+        seen.push(operation)
+        return []
+      },
+      async finish(_path, operation) {
+        seen.push(operation)
+        return { action: 'removed' }
+      },
+    })
+    const identity = {
+      owner: GIT_WORKTREE_OWNER,
+      packageId: GIT_WORKTREE_PACKAGE,
+      trust: 'builtin' as const,
+      projections: unavailableProjections,
+      recheck() {},
+    }
+    const forged = defineServiceKind<ServiceInstance, ServicePorts>({
+      kind: 'git-worktree',
+      cardinality: 'single',
+      instanceScope: 'workspace',
+      scope: 'workspace',
+      ports: [],
+    })
+    const forgedProvider = {
+      id: GIT_WORKTREE_PROVIDER_ID,
+      version: GIT_WORKTREE_PROVIDER_VERSION,
+      open() {
+        throw new Error('forged open')
+      },
+    }
+    try {
+      const first = await host.ports.bindOwn(gitWorktreeKind, identity)
+      await expect(first.create('/work', request)).resolves.toMatchObject({ id: 'abcd1234' })
+      expect(seen[0]).toMatchObject({ sessionKey: 'sess', timeoutMs: 1000 })
+      state.generation = 'g2'
+      state.token = {}
+      expect(() => first.create('/work', request)).toThrow(/service binding is closed/)
+      expect(seen).toHaveLength(1)
+      const second = await host.ports.bindOwn(gitWorktreeKind, identity)
+      expect(second).not.toBe(first)
+      await expect(second.list(request)).resolves.toEqual([])
+      expect(seen).toHaveLength(2)
+      expect(seen[1]?.sessionKey).toBe('sess')
+      state.owner = 'agnes/other'
+      await expectClosed(
+        host.ports.bindOwn(gitWorktreeKind, {
+          ...identity,
+          owner: 'agnes/other',
+          packageId: '@agnes/other',
+        }),
+        'bind',
+        'git-worktree',
+      )
+      await expectClosed(
+        Promise.resolve().then(() => host.ports.bindOwn(gitWorktreeKind, identity)),
+        'bind',
+        'git-worktree',
+      )
+      await expectClosed(
+        Promise.resolve().then(() =>
+          host.ports.register(gitWorktreeKind, forgedProvider, {
+            owner: GIT_WORKTREE_OWNER,
+            packageId: GIT_WORKTREE_PACKAGE,
+          }),
+        ),
+        'register',
+        'git-worktree',
+      )
+      await expectClosed(
+        Promise.resolve().then(() =>
+          host.registerOn(root, forged, forgedProvider, {
+            owner: GIT_WORKTREE_OWNER,
+            packageId: GIT_WORKTREE_PACKAGE,
+          }),
+        ),
+        'register',
+        'git-worktree',
+      )
+      await expectClosed(
+        Promise.resolve().then(() =>
+          host.registerOn(
+            root,
+            gitWorktreeKind,
+            { ...forgedProvider, id: 'agnes/forged-worktree' },
+            { owner: 'agnes/other', packageId: '@agnes/other' },
+          ),
+        ),
+        'register',
+        'git-worktree',
+      )
+      await expect(
+        Promise.resolve().then(() =>
+          host.registerOn(root, gitWorktreeKind, forgedProvider, {
+            owner: GIT_WORKTREE_OWNER,
+            packageId: GIT_WORKTREE_PACKAGE,
+          }),
+        ),
+      ).rejects.toThrow(/duplicate git-worktree provider/)
+      expect(seen).toHaveLength(2)
     } finally {
       await finish(root)
     }

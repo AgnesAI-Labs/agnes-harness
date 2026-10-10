@@ -3,22 +3,24 @@ import { createHash, randomUUID } from 'node:crypto'
 import {
   existsSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
-import type {
-  GitWorktreeOperation,
-  GitWorktreeService,
-  WorktreeCreateResult,
-  WorktreeEntry,
-  WorktreeFinishResult,
-} from '@agnes/extension-api'
+import type { WorktreeCreateResult, WorktreeEntry, WorktreeFinishResult } from '@agnes/git-worktree-contract'
 import type { WorkspaceInvocationResolver } from './workspace-invocation-resolver.js'
+
+/** Internal lease. Plugins never supply sessionKey. */
+export type GitWorktreeOperation = { sessionKey: string; signal: AbortSignal; timeoutMs: number }
+export interface GitWorktreeService {
+  create(cwd: string, operation: GitWorktreeOperation): Promise<WorktreeCreateResult>
+  list(operation: GitWorktreeOperation): Promise<readonly WorktreeEntry[]>
+  finish(path: string, operation: GitWorktreeOperation): Promise<WorktreeFinishResult>
+}
 
 type Owned = WorktreeEntry & { stage: WorktreeEntry['stage']; creating?: boolean; removing?: boolean }
 const ID = /^[0-9a-f]{8}$/

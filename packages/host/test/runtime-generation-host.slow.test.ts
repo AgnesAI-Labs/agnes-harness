@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
-import { defaultIds, hasChildControl, SessionLogImpl, type EventInput } from '@agnes/core'
+import { defaultIds, type EventInput, hasChildControl, SessionLogImpl } from '@agnes/core'
 import type { PluginExtensionAPI } from '@agnes/extension-api'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
@@ -11,11 +11,11 @@ import {
   capabilityHash,
   emptyLock,
   hashDirectory,
-  readLock,
-  writeLock,
   type LockEntry,
   RuntimeGenerationSnapshotStore,
   type RuntimePluginSnapshot,
+  readLock,
+  writeLock,
 } from '@agnes/package-manager'
 import { defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { createPluginRow } from '@agnes/plugin-runtime/host'
@@ -508,6 +508,17 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
         ],
       ],
       ['unfinished-sub-agent', []],
+      [
+        'pending-worktree',
+        [
+          {
+            type: 'x/agnes/subagent/worktree-created',
+            origin: 'ext:agnes/subagent',
+            trust: 'untrusted',
+            data: { path: '/work/.worktrees/agnes-pending' },
+          },
+        ],
+      ],
     ]
     for (const [reason, facts] of blocking) {
       const key = `migration-${reason}`
@@ -609,6 +620,22 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
         actor: resumed.d.actor,
         origin: 'system',
         trust: 'trusted',
+        lane: 'main',
+      },
+      {
+        type: 'x/agnes/subagent/worktree-created',
+        data: { path: '/work/.worktrees/agnes-finished' },
+        actor: resumed.d.actor,
+        origin: 'ext:agnes/subagent',
+        trust: 'untrusted',
+        lane: 'main',
+      },
+      {
+        type: 'x/agnes/subagent/worktree-removed',
+        data: { path: '/work/.worktrees/agnes-finished', branchRetained: true },
+        actor: resumed.d.actor,
+        origin: 'ext:agnes/subagent',
+        trust: 'untrusted',
         lane: 'main',
       },
     ])

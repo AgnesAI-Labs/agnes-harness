@@ -74,6 +74,9 @@
       "path": "../observability"
     },
     {
+      "path": "../git-worktree-contract"
+    },
+    {
       "path": "../intelligent-ui-contract"
     }
   ]

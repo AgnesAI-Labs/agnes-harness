@@ -1,7 +1,6 @@
 import { lstatSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { createSessionGitWorktreeService } from '@agnes/host-infrastructure/git-worktrees'
 import { pathToFileURL } from 'node:url'
 import type { ToolRegistry } from '@agnes/core'
 import {
@@ -112,8 +111,6 @@ import {
   MIGRATED_EXTENSION_IDS,
 } from '@agnes/host-extensions/assemble/ext-rows'
 import { bindExtensionInvocations } from '@agnes/host-extensions/assemble/extension-ports'
-import { createExtensionServiceHost, type ExtensionServiceHost } from '../services/author-port.js'
-import { installObservabilityService, startObservabilityFeed } from '../services/observability-feed.js'
 import type {
   LoadedRuntimePackage,
   OperationDeps,
@@ -169,6 +166,7 @@ import {
 import type { SessionWorkspaceFence } from '@agnes/host-infrastructure/adapters/session-workspace'
 import { persistenceProviderRegistry } from '@agnes/host-infrastructure/adapters/storage-provider'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
+import { createSessionGitWorktreeService } from '@agnes/host-infrastructure/git-worktrees'
 import { RequestTraceStore } from '@agnes/host-infrastructure/request-traces'
 import { sandboxReadPaths } from '@agnes/host-infrastructure/sandbox-read-paths'
 import { SandboxReadinessManager } from '@agnes/host-infrastructure/sandbox-readiness-manager'
@@ -295,6 +293,9 @@ import {
   resolveSessionCapabilities,
   type SessionCapabilitySet,
 } from '../profile/session-capabilities.js'
+import { createExtensionServiceHost, type ExtensionServiceHost } from '../services/author-port.js'
+import { installGitWorktreeService } from '../services/git-worktrees.js'
+import { installObservabilityService, startObservabilityFeed } from '../services/observability-feed.js'
 import { createIntelligentUiBridge, type UiDataSourceCatalog } from '../sessions/intelligent-ui.js'
 import {
   applyTelemetryConsent,
@@ -637,6 +638,12 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       ...backend,
     })
     rollback.push('adapters', () => adapters.close())
+    const gitWorktrees = createSessionGitWorktreeService({
+      workspaceInvocationFor,
+      dataDir,
+      remote: adapters.transport !== undefined,
+      signal: ac.signal,
+    })
     if (hasChildControl(adapters.storage)) {
       const now = clock()
       await recoverCreatingChildAttempts(adapters.storage, { staleBefore: now, now })
@@ -1169,6 +1176,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
               )
             const extensionHost = extensionServices.current
             if (!extensionHost) throw new HostError('E_EXT_LOAD', 'service binding is closed')
+            installGitWorktreeService(extensionHost, root, origins, gitWorktrees)
             installObservabilityService(extensionHost, root, origins)
             const memoryRegistry: import('@agnes/host-common/assemble/provider-registry').ProviderRegistry<
               import('@agnes/extension-api').MemoryProvider
@@ -1808,12 +1816,6 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const computerUseStatus = lazyComputerUse.controls
     rollback.push('computer-use', () => lazyComputerUse.dispose())
     say('seams.assembled', { seams: profile.seams, fsDigest: adapters.fs.fence().digest })
-    const gitWorktrees = createSessionGitWorktreeService({
-      workspaceInvocationFor,
-      dataDir,
-      remote: adapters.transport !== undefined,
-      signal: ac.signal,
-    })
     let privacyTrajectory: SeamInitContext['privacyTrajectory']
     const hookCommands =
       adapters.platform.os === 'win32'
@@ -1848,7 +1850,6 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       return {
         ...baseContext(owner),
         sandbox: seams.sandbox,
-        ...(owner === '@agnes/base' && extensionId === 'agnes/subagent' ? { gitWorktrees } : {}),
         ...(owner === '@agnes/base' && extensionId === 'agnes/tools-web' && deps.searchProvider
           ? { searchProvider: deps.searchProvider }
           : {}),
@@ -2845,7 +2846,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
                 load: () => loadDynamicExtension(input.extensionId, input.dynamic as DynamicExtension),
               },
             }
-          : MIGRATED_EXTENSION_IDS.has(input.extensionId) || !!liveResources?.length
+          : MIGRATED_EXTENSION_IDS.has(input.extensionId) || liveResources?.length
             ? {
                 facade: {
                   load: () =>

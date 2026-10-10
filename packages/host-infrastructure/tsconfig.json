@@ -22,6 +22,9 @@
       "path": "../extension-api"
     },
     {
+      "path": "../git-worktree-contract"
+    },
+    {
       "path": "../host-common"
     },
     {

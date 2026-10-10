@@ -710,6 +710,9 @@ importers:
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
+      '@agnes/git-worktree-contract':
+        specifier: workspace:*
+        version: link:../git-worktree-contract
       '@agnes/host-artifacts':
         specifier: workspace:*
         version: link:../host-artifacts
@@ -932,6 +935,9 @@ importers:
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
+      '@agnes/git-worktree-contract':
+        specifier: workspace:*
+        version: link:../git-worktree-contract
       '@agnes/host-common':
         specifier: workspace:*
         version: link:../host-common
