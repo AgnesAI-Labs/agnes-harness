@@ -315,8 +315,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host/src/runtime/profile': 1661,
   // Deferred producer binding on the shared service ports. countLines: 11970, exact, no spare.
   // UI data-source resolution. countLines: 11970 -> 12586 (+616).
-  // Sealed uiData atoms. Tip was 12688 against 12598; this change adds 21. Exact 12709, no spare.
-  'packages/host/src/runtime': 12709,
+  // Sealed uiData atoms. Rebased tip measured 12722, exact, no spare.
+  'packages/host/src/runtime': 12722,
   // UI data-source catalog wiring on that tree. countLines: 3517.
   'packages/host/src/runtime/assemble': 3517,
   'packages/host-providers/src/adapters': 477,
@@ -2954,8 +2954,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 46484 -> 46566; exact cap, no exclusions or spare allocation.
   // Deferred queue facade and Intelligent UI producer binding. countLines: 12508, exact, no spare.
   // UI data-source resolution. countLines: 12508 -> 13124 (+616).
-  // Sealed uiData atoms. Tip was 13226 against 13136; this change adds 21. Exact 13247, no spare.
-  'packages/host/src': 13247,
+  // Sealed uiData atoms. Rebased tip measured 13260, exact, no spare.
+  'packages/host/src': 13260,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
