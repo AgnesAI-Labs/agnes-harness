@@ -65,6 +65,99 @@ describe('resolveCredentials', () => {
     }
   })
 
+  // The store's own message never travels, but three words it uses to say what it refused do, so a
+  // refused directory is not reported the same way as a missing secret.
+  describe('when the store says what it refused', () => {
+    const failWith = (cause: unknown) => {
+      const a = new FakeAdapter({ id: 'a', routes, models: {} })
+      try {
+        resolveCredentials([a], () => {
+          throw cause
+        })
+      } catch (e) {
+        return e as AiSetupError
+      }
+      throw new Error('assembly did not stop')
+    }
+
+    it('carries the reason, the part and the check, and nothing else', () => {
+      const error = failWith(
+        Object.assign(new Error('secret store directory is unsafe: token=abc'), {
+          detail: {
+            ref: 'secret://other/ref',
+            kind: 'file',
+            reason: 'private-file',
+            part: 'namespace',
+            check: 'not-private',
+            path: 'C:\\Users\\someone\\secrets',
+          },
+        }),
+      )
+      expect(error.detail).toEqual({
+        route: 'gw',
+        ref: 'secret://agnes/gateway',
+        reason: 'private-file',
+        part: 'namespace',
+        check: 'not-private',
+      })
+      expect(error.message).toContain('"check":"not-private"')
+      expect(error.message).not.toContain('abc')
+      expect(error.message).not.toContain('Users')
+    })
+
+    it.each([
+      [{ reason: 'private-file', part: 'store' }],
+      [{ reason: 'mode' }],
+      [{ reason: 'schema' }],
+      [{ reason: 'bad-ref' }],
+    ])('carries %j', (detail) => {
+      expect(failWith({ detail }).detail).toEqual({ route: 'gw', ref: 'secret://agnes/gateway', ...detail })
+    })
+
+    it('drops a word outside the list, whatever field it is in', () => {
+      const error = failWith({
+        detail: {
+          reason: 'token=abc',
+          part: '/etc/passwd',
+          check: { not: 'a string' },
+          other: 'private-file',
+        },
+      })
+      expect(error.detail).toEqual({ route: 'gw', ref: 'secret://agnes/gateway' })
+    })
+
+    it('does not run a getter on a hostile detail, and still stops assembly', () => {
+      let ran = false
+      const detail = {}
+      Object.defineProperty(detail, 'reason', {
+        enumerable: true,
+        get() {
+          ran = true
+          return 'private-file'
+        },
+      })
+      const error = failWith({ detail })
+      expect(ran).toBe(false)
+      expect(error.detail).toEqual({ route: 'gw', ref: 'secret://agnes/gateway' })
+      const trap = new Proxy(
+        {},
+        {
+          getOwnPropertyDescriptor() {
+            throw new Error('trap')
+          },
+        },
+      )
+      expect(failWith({ detail: trap }).detail).toEqual({ route: 'gw', ref: 'secret://agnes/gateway' })
+    })
+
+    it.each([null, undefined, 'a string', 7, { detail: null }, { detail: 'private-file' }])(
+      'adds nothing for a cause shaped like %j',
+      (cause) => {
+        expect(failWith(cause).detail).toEqual({ route: 'gw', ref: 'secret://agnes/gateway' })
+      },
+    )
+  })
+
   it('treats an empty string as unresolved rather than binding a blank credential', () => {
     const a = new FakeAdapter({ id: 'a', routes, models: {} })
     let caught: unknown

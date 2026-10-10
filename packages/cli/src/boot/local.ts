@@ -38,6 +38,7 @@ import {
   type SqliteStorage,
   verifyLockIntegrity,
 } from '@agnes/host'
+import { createPackageManager } from '@agnes/package-manager'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { packagedPackages } from '../../launch/packaged-host.js'
 import { resolveLaunchResources } from '../../launch/resources.js'
@@ -115,6 +116,34 @@ async function defaultPackages(
 }
 
 /**
+ * The immutable snapshots of the profile's installed packages, found the way a daemon worker finds
+ * them. Host refuses a trusted non-builtin package whose snapshot it was not handed, so an embedded
+ * boot (`--standalone`, `--ephemeral`, `--mode acp`) that skipped this lookup could not load any
+ * package the profile names, and said the snapshot was missing when it had only not been read.
+ * A snapshot is admitted only when it matches the integrity the profile pins for that package.
+ */
+async function installedPackageSnapshots(
+  profile: ResolvedProfile,
+  profileDir: string,
+): Promise<Pick<HostOptions, 'runtimePluginSnapshots' | 'runtimePluginSources'>> {
+  const pinned = new Map(
+    (profile.packages ?? [])
+      .filter((pkg) => pkg.enabled && pkg.trust !== 'builtin')
+      .map((pkg) => [pkg.id, pkg.integrity]),
+  )
+  if (pinned.size === 0) return {}
+  // '0.0.0' is what the daemon and its workers read the store with, so both see the same inventory.
+  const manager = createPackageManager({ dataDir: profile.dataDir, agnesVersion: '0.0.0' })
+  const sources = () => manager.runtimePluginSnapshots(profileDir)
+  return {
+    runtimePluginSources: sources,
+    runtimePluginSnapshots: (await sources()).filter(
+      (source) => pinned.get(source.snapshot.packageId) === source.snapshot.integrity,
+    ),
+  }
+}
+
+/**
  * Builds the Host behind both a normal local boot and read-only diagnostics. Keeping the package
  * loader, lock-derived directories and logger here prevents `doctor` from assembling a subtly
  * different product than the one a prompt would use.
@@ -148,6 +177,8 @@ export async function assembleLocalHost(
         ...(deps.loader
           ? { loader: deps.loader }
           : await defaultPackages(deps, profile, profileDir, hostRoot)),
+        // A caller that supplies its own loader owns where packages come from, snapshots included.
+        ...(deps.loader ? {} : await installedPackageSnapshots(profile, profileDir)),
         ...(deps.signal ? { signal: deps.signal } : {}),
       })
 }

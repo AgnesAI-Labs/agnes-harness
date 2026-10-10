@@ -8,6 +8,23 @@ export type ValidationError = {
 }
 export type ValidationResult<T> = { ok: true; value: T } | { ok: false; errors: ValidationError[] }
 
+const MAX_LOCATION = 200
+
+/**
+ * One line that says where the first validation error is and what is wrong with it, with a count of
+ * the rest. A missing property is reported with its parent as `path` and its name as `key`, so the
+ * two are joined here. Only the JSON path and the validator's message are used, never a value, and
+ * a very long path is cut.
+ */
+export function describeValidationErrors(errors: readonly ValidationError[]): string {
+  const first = errors[0]
+  if (!first) return 'invalid'
+  const full = first.code === 'MISSING' && first.key ? `${first.path}/${first.key}` : first.path
+  const where = full.length > MAX_LOCATION ? `${full.slice(0, MAX_LOCATION)}…` : full
+  const text = where === '' ? first.message : `${where} ${first.message}`
+  return errors.length > 1 ? `${text} (+${errors.length - 1} more)` : text
+}
+
 function classify(e: ValueError): ValidationError {
   const key = e.path.split('/').pop() || undefined
   // Measured against TypeBox 0.34.33: for ObjectRequiredProperty, `e.path` points at the missing key

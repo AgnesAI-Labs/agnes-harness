@@ -3,6 +3,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { type RunAgnesdArgs, runAgnesd } from '@agnes/daemon'
+import { reportStartupFailure } from './startup-report.js'
 
 type LocalWeb = { addr: string; origin: string }
 
@@ -77,6 +78,9 @@ function isMainModule(moduleUrl: string): boolean {
 
 if (isMainModule(import.meta.url))
   void runDaemonEntry().catch((error: unknown) => {
-    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
+    const message = error instanceof Error ? error.message : String(error)
+    process.stderr.write(`${message}\n`)
+    // The launcher that started this detached process cannot read stderr; it reads this instead.
+    reportStartupFailure(message)
     process.exitCode = 1
   })

@@ -557,6 +557,8 @@ it.runIf(process.getuid !== undefined).each([0o500, 0o755])(
     ).rejects.toMatchObject({
       code: 'CONFIG_CREDENTIAL_PERMISSIONS',
       message: expect.stringContaining('0700'),
+      // The part and the permission bits, never a path.
+      facts: { target: 'secrets', actualMode: mode.toString(8).padStart(4, '0'), expectedMode: '0700' },
     })
     expect((await service.get()).revision).toBe(0)
     expect((await lstat(directory)).mode & 0o7777).toBe(mode)
@@ -570,6 +572,8 @@ it.runIf(process.getuid !== undefined).each([0o500, 0o755])(
         errorCode: 'CREDENTIAL_STORE_UNSAFE',
         reason: 'mode',
         path: directory,
+        actualMode: mode.toString(8).padStart(4, '0'),
+        expectedMode: '0700',
       },
     })
     await chmod(directory, 0o700)
@@ -607,12 +611,62 @@ it.runIf(process.getuid !== undefined).each([
       model: 'deepseek-flash',
       expectedRevision: 0,
     }),
-  ).rejects.toMatchObject({ code })
+  ).rejects.toMatchObject({ code, facts: undefined })
   expect((await service.get()).revision).toBe(0)
   const audit = await readFile(join(root, 'data', 'audit', 'configuration.jsonl'), 'utf8')
   expect(JSON.parse(audit.trim())).toMatchObject({
     detail: { errorClass: 'CredentialStoreError', reason: 'io', osCode, path: directory },
   })
+  expect(audit).not.toContain('actualMode')
   expect(audit).not.toContain('private exception marker')
   expect(audit).not.toContain('sk-test-value')
 })
+
+it.runIf(process.getuid !== undefined).each([
+  ['provider directory', ['secrets', 'deepseek'], 0o755, 'provider'],
+  ['auth directory', ['auth'], 0o750, 'auth'],
+] as const)('names the %s in the permission failure', async (_label, parts, mode, target) => {
+  const server = await fixture('deepseek-flash')
+  const root = await home()
+  for (const base of ['secrets', 'auth', 'locks']) await mkdir(join(root, base), { mode: 0o700 })
+  await mkdir(join(root, 'secrets', 'deepseek'), { mode: 0o700 })
+  await chmod(join(root, ...parts), mode)
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  await expect(
+    service.save({
+      providerId: 'deepseek',
+      baseUrl: server.baseUrl,
+      apiKey: 'sk-test-value',
+      model: 'deepseek-flash',
+      expectedRevision: 0,
+    }),
+  ).rejects.toMatchObject({
+    code: 'CONFIG_CREDENTIAL_PERMISSIONS',
+    facts: { target, actualMode: mode.toString(8).padStart(4, '0'), expectedMode: '0700' },
+  })
+  await chmod(join(root, ...parts), 0o700)
+})
+
+it.runIf(process.getuid !== undefined).each([0o775, 0o757, 0o1755])(
+  'does not narrow a home that others can write to (%o), and says which mode it has',
+  async (mode) => {
+    const server = await fixture('deepseek-flash')
+    const root = await home()
+    await chmod(root, mode)
+    const service = createConfigurationService({ home: root, profile: 'local-dev' })
+    await expect(
+      service.save({
+        providerId: 'deepseek',
+        baseUrl: server.baseUrl,
+        apiKey: 'sk-test-value',
+        model: 'deepseek-flash',
+        expectedRevision: 0,
+      }),
+    ).rejects.toMatchObject({
+      code: 'CONFIG_CREDENTIAL_PERMISSIONS',
+      facts: { target: 'home', actualMode: mode.toString(8).padStart(4, '0'), expectedMode: '0700' },
+    })
+    expect((await lstat(root)).mode & 0o7777).toBe(mode)
+    await chmod(root, 0o700)
+  },
+)

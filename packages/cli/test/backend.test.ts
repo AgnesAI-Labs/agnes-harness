@@ -1,8 +1,8 @@
 import type { ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import type { DaemonDiscovery, DaemonScope } from '@agnes/daemon'
 import * as daemon from '@agnes/daemon'
 import * as host from '@agnes/host'
@@ -301,6 +301,87 @@ describe('ensureLocalBackend', () => {
       }
     },
   )
+  describe('a daemon child that exits before it is ready', () => {
+    const exits = (reason: string | undefined, code = 1) =>
+      vi.fn((input: SpawnDaemonInput) => {
+        const child = fakeChild()
+        const file = input.env.AGNES_DAEMON_STARTUP_REPORT
+        setTimeout(() => {
+          if (reason !== undefined && file !== undefined) writeFileSync(file, reason)
+          child.emit('exit', code, null)
+        }, 5)
+        return child
+      })
+
+    it('says why in the error, from the file the launcher gave it', async () => {
+      const spawnDaemon = exits('Private directory validation failed')
+      await expect(
+        ensureLocalBackend({
+          resources: TEST_RESOURCES,
+          spawnDaemon,
+          readinessTimeoutMs: 2_000,
+          readinessPollMs: 3,
+        }),
+      ).rejects.toThrow('daemon child exited before readiness (1): Private directory validation failed')
+    })
+
+    it('removes the file and its directory once startup has failed, and also once it has succeeded', async () => {
+      const seen: string[] = []
+      const failing = exits('boom')
+      const record = (spawn: (input: SpawnDaemonInput) => FakeChild) =>
+        vi.fn((input: SpawnDaemonInput) => {
+          seen.push(input.env.AGNES_DAEMON_STARTUP_REPORT ?? '')
+          return spawn(input)
+        })
+      await expect(
+        ensureLocalBackend({
+          resources: TEST_RESOURCES,
+          spawnDaemon: record(failing),
+          readinessTimeoutMs: 2_000,
+          readinessPollMs: 3,
+        }),
+      ).rejects.toThrow(/exited before readiness/)
+      await ensureLocalBackend({
+        resources: TEST_RESOURCES,
+        spawnDaemon: record(() => {
+          vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(descriptor())
+          return fakeChild()
+        }),
+        createClientImpl: () => fakeClient(),
+      })
+      expect(seen).toHaveLength(2)
+      for (const file of seen) {
+        expect(file).not.toBe('')
+        expect(existsSync(dirname(file))).toBe(false)
+      }
+    })
+
+    it('keeps the old message when the child left no reason', async () => {
+      await expect(
+        ensureLocalBackend({
+          resources: TEST_RESOURCES,
+          spawnDaemon: exits(undefined, 7),
+          readinessTimeoutMs: 2_000,
+          readinessPollMs: 3,
+        }),
+      ).rejects.toThrow(/daemon child exited before readiness \(7\)$/)
+    })
+
+    it('shows the reason as one bounded line, however the child wrote it', async () => {
+      const spawnDaemon = exits(`first line\n\u001b[31mred\u0000 ${'x'.repeat(2_000)}`)
+      const error = (await ensureLocalBackend({
+        resources: TEST_RESOURCES,
+        spawnDaemon,
+        readinessTimeoutMs: 2_000,
+        readinessPollMs: 3,
+      }).catch((caught: unknown) => caught)) as Error
+      expect(error.message).toMatch(/exited before readiness \(1\): first line .*red x+…$/)
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: finding one is the point of the check
+      expect(error.message).not.toMatch(/[\u0000-\u001f]/)
+      expect(error.message.length).toBeLessThan(460)
+    })
+  })
+
   it('fails within the finite startup deadline and cleans up its child', async () => {
     const child = fakeChild()
     const spawnDaemon = vi.fn((_input: SpawnDaemonInput) => child)

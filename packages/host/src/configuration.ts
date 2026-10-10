@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { chmod, lstat, mkdir, open, readFile, unlink } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   API_KEY_PROVIDER_REGISTRY,
   type ApiKeyProviderRegistryEntry,
@@ -82,8 +82,31 @@ export type ConfigurationErrorCode =
   | 'CONFIG_PERSIST_FAILED'
   | 'CONFIG_INVALID_STATE'
 
+/** Names the credential store part a failing path belongs to, without exposing the path itself. */
+function credentialTarget(home: string, path: string): ConfigurationErrorFacts['target'] | undefined {
+  const parts = relative(resolve(home), resolve(path)).split(sep)
+  if (parts[0] === '..' || isAbsolute(parts[0] ?? '')) return undefined
+  if (parts.length === 1 && parts[0] === '') return 'home'
+  const [base, provider, name, ...rest] = parts
+  if (rest.length > 0) return undefined
+  if (base === 'locks') return parts.length === 1 ? 'locks' : undefined
+  if (base !== 'secrets' && base !== 'auth') return undefined
+  if (provider === undefined) return base
+  return name === undefined ? 'provider' : 'file'
+}
+
+/** Which part of the credential store a permission failure is about, with the modes involved. */
+export type ConfigurationErrorFacts = Readonly<{
+  target: 'home' | 'secrets' | 'auth' | 'locks' | 'provider' | 'file'
+  actualMode: string
+  expectedMode: string
+}>
+
 export class ConfigurationError extends Error {
-  constructor(readonly code: ConfigurationErrorCode) {
+  constructor(
+    readonly code: ConfigurationErrorCode,
+    readonly facts?: ConfigurationErrorFacts,
+  ) {
     super(
       code === 'CONFIG_CREDENTIAL_NO_SPACE'
         ? 'Credential storage has no free space. Free disk space in AGH_HOME and retry.'
@@ -679,11 +702,19 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
           reason: failure?.reason,
           osCode: failure?.osCode,
           path: failure?.path ?? join(home, 'secrets'),
+          ...(failure?.modes
+            ? { actualMode: failure.modes.actual, expectedMode: failure.modes.expected }
+            : {}),
         },
       })
     } catch {
       /* Audit failure must not replace the refusal. */
     }
+    const target = failure?.path === undefined ? undefined : credentialTarget(home, failure.path)
+    const facts: ConfigurationErrorFacts | undefined =
+      failure?.reason === 'mode' && failure.modes && target
+        ? { target, actualMode: failure.modes.actual, expectedMode: failure.modes.expected }
+        : undefined
     return new ConfigurationError(
       failure?.osCode === 'ENOSPC'
         ? 'CONFIG_CREDENTIAL_NO_SPACE'
@@ -696,6 +727,7 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
             : failure && !['io', 'enforcement-unavailable'].includes(failure.reason)
               ? 'CONFIG_CREDENTIAL_INVALID'
               : 'CONFIG_CREDENTIAL_STORE',
+      facts,
     )
   }
 

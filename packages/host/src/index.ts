@@ -10,10 +10,14 @@ export {
 } from '@agnes/core'
 export {
   type CredentialFileEnforcement,
+  type CredentialInspection,
+  type CredentialInspectionFinding,
+  type CredentialInspectionTarget,
   type CredentialKind,
   CredentialStoreError,
   type CredentialStoreReason,
   credentialFileEnforcement,
+  inspectCredentialStore,
 } from './adapters/credential-files.js'
 export {
   type ApiKeyCredentialV1,

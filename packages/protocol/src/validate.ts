@@ -27,7 +27,11 @@ export {
   USER_MESSAGE_IMAGE_LIMITS,
 } from '../../protocol-validation/src/safe-image.js'
 export type { ValidationError, ValidationResult } from '../../protocol-validation/src/validate.js'
-export { isDateTime, validateAgainst } from '../../protocol-validation/src/validate.js'
+export {
+  describeValidationErrors,
+  isDateTime,
+  validateAgainst,
+} from '../../protocol-validation/src/validate.js'
 
 // The lookup table validateEvent's second stage reads: event type -> the generated TypeBox schema for
 // that type's `data`. It is derived from the generated `X_AGNES_DATA` map rather than typed out, so

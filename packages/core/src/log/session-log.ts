@@ -1,4 +1,4 @@
-import { type ThinkingLevel, validateOpState } from '@agnes/protocol'
+import { describeValidationErrors, type ThinkingLevel, validateOpState } from '@agnes/protocol'
 import {
   type Clock,
   CoreError,
@@ -359,7 +359,7 @@ export class SessionLogImpl {
     if (op) {
       const checked = validateOpState(op.data)
       if (!checked.ok)
-        throw new CoreError('E_ENVELOPE', checked.errors[0]?.message ?? 'invalid op state', {
+        throw new CoreError('E_ENVELOPE', `op.state ${describeValidationErrors(checked.errors)}`, {
           errors: checked.errors,
         })
     }

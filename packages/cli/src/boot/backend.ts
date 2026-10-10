@@ -23,6 +23,7 @@ import {
 } from '@agnes/host'
 import { type Client, type CreateClientOptions, createClient, memoryJournal } from '@agnes/sdk'
 import { type LaunchResources, resolveLaunchResources } from '../../launch/resources.js'
+import { createStartupReport, type StartupReport } from '../../launch/startup-report.js'
 import { BootError } from '../errors.js'
 
 /** A private Web capability returned by the validated daemon discovery handshake. */
@@ -268,6 +269,7 @@ function launchChild(
   scope: DaemonScope,
   options: EnsureLocalBackendOptions,
   requested: LocalWebOptions | undefined,
+  report?: StartupReport,
 ): DetachedChild {
   const resources = productionResources(options) as LaunchResources & { runtimeNode?: string }
   const entry = resources.daemonEntry
@@ -290,6 +292,7 @@ function launchChild(
     ...(options.env ?? {}),
     AGH_HOME: scope.home,
     AGNES_PROFILE: scope.profile,
+    ...(report?.env ?? {}),
   }
   const runtimeOverride = options.env?.AGNES_NODE_EXEC_PATH ?? process.env.AGNES_NODE_EXEC_PATH
   const execPath = isSea() ? runtimeOverride || resources.runtimeNode : process.execPath
@@ -413,6 +416,7 @@ async function discoverOrStart(
   let child: DetachedChild | undefined
   let childStartId: string | undefined
   let childError: Error | undefined
+  const startupReport = createStartupReport()
   try {
     // Recheck after taking the launcher lock: another process may have published while this caller
     // was resolving its scope or waiting for the lock.
@@ -425,7 +429,7 @@ async function discoverOrStart(
             ipc: createPlatform().snapshot().os === 'win32' ? 'pipe' : 'unix',
           }),
         )
-        child = launchChild(scope, options, requested ?? options.startupWeb)
+        child = launchChild(scope, options, requested ?? options.startupWeb, startupReport)
       } catch (error) {
         throw asBootError('spawn', error)
       }
@@ -433,8 +437,10 @@ async function discoverOrStart(
         childError = error instanceof Error ? error : new Error(String(error))
       })
       child.once('exit', (code, signal) => {
+        const reason = startupReport?.read()
         childError = new Error(
-          `daemon child exited before readiness (${code === null ? 'signal' : code}${signal ? `/${signal}` : ''})`,
+          `daemon child exited before readiness (${code === null ? 'signal' : code}${signal ? `/${signal}` : ''})` +
+            (reason ? `: ${reason}` : ''),
         )
       })
       // Register lifecycle listeners before the identity probe: a very short-lived child can exit
@@ -461,6 +467,7 @@ async function discoverOrStart(
     }
     throw error
   } finally {
+    startupReport?.dispose()
     startupLock.release()
   }
 }

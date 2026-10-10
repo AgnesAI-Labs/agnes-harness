@@ -11,7 +11,7 @@ import { profileNameFrom } from '../boot/inputs.js'
 import { assembleLocalHost, type LocalBootDeps } from '../boot/local.js'
 import { doctorCodeRuntime } from './doctor-code-runtime.js'
 import { doctorExtensions } from './doctor-extensions.js'
-import { doctorBinary, doctorStorage, type Section } from './doctor-local.js'
+import { doctorBinary, doctorCredentials, doctorStorage, type Section } from './doctor-local.js'
 import { doctorPlatform, doctorResolvedProfile, resolveDoctorProfile } from './doctor-profile.js'
 import { doctorProvider } from './doctor-provider.js'
 import { doctorSubagents } from './doctor-subagents.js'
@@ -23,6 +23,7 @@ export const DOCTOR_SECTIONS = [
   'platform',
   'provider',
   'storage',
+  'credentials',
   'profile',
   'extensions',
   'daemon',
@@ -138,6 +139,9 @@ export async function doctorCommand(
         case 'storage':
           sections.push(await doctorStorage(commandDeps))
           break
+        case 'credentials':
+          sections.push(await doctorCredentials(commandDeps))
+          break
         case 'daemon':
           sections.push(await doctorDaemon(commandDeps))
           break
@@ -165,7 +169,9 @@ export async function doctorCommand(
               })
             const snapshot = await configuration.get()
             const accounts = snapshot.accounts ?? []
-            if (accounts.length === 0) {
+            // Routes can also be declared by the profile itself; only a profile with neither has no
+            // provider to report on.
+            if (accounts.length === 0 && !((await resolvedProfile()).provider.routes?.length ?? 0)) {
               sections.push(
                 await doctorProvider(undefined, {
                   signal: commandDeps.signal ?? new AbortController().signal,

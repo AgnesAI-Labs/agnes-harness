@@ -1,5 +1,14 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -59,6 +68,40 @@ describe('doctor command aggregation', () => {
     expect(json.exitCode).toBe(0)
     expect(JSON.parse(json.text)).toEqual(json.json)
     expect(json.text).not.toContain('minimal_inference')
+  })
+
+  it('inspects the routes a profile declares itself when no account was saved', async () => {
+    const d = deps()
+    let hostBuilds = 0
+    const build = d.createHostImpl
+    d.createHostImpl = async (...args) => {
+      hostBuilds++
+      return build?.(...args) as never
+    }
+    d.configuration = {
+      get: async () => ({
+        profile: 'local-dev',
+        revision: 0,
+        configured: false,
+        provider: null,
+        effect: 'new-sessions',
+        accounts: [],
+      }),
+      // What the profile file declares, layered in as a prompt boot does.
+      profileInput: async () => ({
+        provider: {
+          package: '@agnes/ai',
+          adapters: ['@agnes/ai'],
+          routes: [{ route: 'acct-test', api: 'openai-completions', baseUrl: 'https://example.invalid/v1' }],
+          catalog: { include: [] },
+        },
+      }),
+    } as never
+    const result = await doctorCommand(parseArgs(['doctor', 'provider']), d)
+    expect(hostBuilds).toBe(1)
+    expect(result.json[0]?.name).toBe('provider')
+    expect(result.text).not.toContain('no configured provider route selected')
+    expect(result.json[0]?.detail.join('\n')).toContain('configured routes')
   })
 
   it('fails default provider doctor for an enabled account whose credential is absent', async () => {
@@ -262,13 +305,14 @@ describe('doctor command aggregation', () => {
     expect(result.text).not.toContain('sk-do-not-print')
   })
 
-  it('lists the corrected eight sections and rejects unknown or extra section arguments', async () => {
+  it('lists the nine sections and rejects unknown or extra section arguments', async () => {
     const d = deps()
     const result = await doctorCommand(parseArgs(['doctor']), d)
     expect(result.json.map((section) => section.name)).toEqual([
       'platform',
       'provider',
       'storage',
+      'credentials',
       'profile',
       'extensions',
       'daemon',
@@ -277,7 +321,7 @@ describe('doctor command aggregation', () => {
     ])
     expect(result.exitCode).toBe(1)
     expect(usage()).toContain(
-      'doctor [platform|provider|storage|profile|extensions|daemon|binary|code-runtime]',
+      'doctor [platform|provider|storage|credentials|profile|extensions|daemon|binary|code-runtime]',
     )
     expect(usage()).not.toContain('doctor [provider|sandbox')
 
@@ -299,5 +343,102 @@ describe('doctor command aggregation', () => {
         { name: 'broken', status: 'fail', detail: ['offline'] },
       ]),
     ).toBe('✓ healthy\n    ready\n! degraded\n    partial\n✗ broken\n    offline')
+  })
+})
+
+describe.runIf(process.platform !== 'win32')('doctor credentials section', () => {
+  const store = (home: string, mode: number) => {
+    mkdirSync(join(home, 'secrets', 'openai'), { recursive: true })
+    writeFileSync(join(home, 'secrets', 'openai', 'default'), 'sk-test-secret-value', { mode: 0o600 })
+    for (const directory of [join(home, 'secrets', 'openai'), join(home, 'secrets'), home])
+      chmodSync(directory, 0o700)
+    for (const base of ['auth', 'locks']) {
+      mkdirSync(join(home, base), { recursive: true })
+      chmodSync(join(home, base), 0o700)
+    }
+    chmodSync(home, mode)
+  }
+  const run = async (home: string) => {
+    const d = deps()
+    d.home = home
+    return doctorCommand(parseArgs(['doctor', 'credentials']), d)
+  }
+
+  it('passes for a private store and reads no credential contents', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'agnes-doctor-cred-'))
+    cleanup.push(home)
+    store(home, 0o700)
+    const result = await run(home)
+    expect(result.json).toEqual([
+      {
+        name: 'credentials',
+        status: 'ok',
+        detail: [expect.stringMatching(/^\d+ credential store entries checked/)],
+      },
+    ])
+    expect(result.text).not.toContain('sk-test-secret-value')
+    expect(result.exitCode).toBe(0)
+  })
+
+  it('reports a home that does not exist yet as fine', async () => {
+    const home = join(mkdtempSync(join(tmpdir(), 'agnes-doctor-cred-')), 'absent')
+    cleanup.push(join(home, '..'))
+    const result = await run(home)
+    expect(result.json[0]).toMatchObject({ name: 'credentials', status: 'ok' })
+    expect(result.json[0]?.detail[0]).toContain('does not exist')
+  })
+
+  it('warns, with the modes and the fix, for a loose home the next save narrows', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'agnes-doctor-cred-'))
+    cleanup.push(home)
+    store(home, 0o755)
+    const result = await run(home)
+    expect(result.json[0]).toMatchObject({ name: 'credentials', status: 'warn' })
+    expect(result.json[0]?.detail).toEqual([
+      expect.stringContaining('mode 0755, must be 0700; the next credential save narrows it'),
+    ])
+    expect(result.json[0]?.detail[0]).toContain(`chmod 700 '${home}'`)
+    expect(result.exitCode).toBe(0)
+    expect(statSync(home).mode & 0o7777).toBe(0o755) // the check never changes anything
+  })
+
+  it('fails, with no promise to narrow it, for a home that others can write to', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'agnes-doctor-cred-'))
+    cleanup.push(home)
+    store(home, 0o775)
+    const result = await run(home)
+    expect(result.json[0]).toMatchObject({ name: 'credentials', status: 'fail' })
+    expect(result.json[0]?.detail[0]).toContain('mode 0775, must be 0700; run: chmod 700')
+    expect(result.json[0]?.detail[0]).not.toContain('narrows')
+    expect(result.exitCode).toBe(1)
+  })
+
+  it('fails for a loose secrets directory and a loose credential file, naming each', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'agnes-doctor-cred-'))
+    cleanup.push(home)
+    store(home, 0o700)
+    chmodSync(join(home, 'secrets'), 0o755)
+    chmodSync(join(home, 'secrets', 'openai', 'default'), 0o644)
+    const result = await run(home)
+    expect(result.json[0]).toMatchObject({ status: 'fail' })
+    const detail = result.json[0]?.detail.join('\n') ?? ''
+    expect(detail).toContain(`secrets directory ${join(home, 'secrets')}: mode 0755, must be 0700`)
+    expect(detail).toContain('credential file')
+    expect(detail).toContain('mode 0644, must be 0600')
+    expect(detail).not.toContain('sk-test-secret-value')
+    expect(result.exitCode).toBe(1)
+  })
+
+  it('fails for a symbolic link in place of the secrets directory', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'agnes-doctor-cred-'))
+    cleanup.push(home)
+    store(home, 0o700)
+    const elsewhere = mkdtempSync(join(tmpdir(), 'agnes-doctor-link-'))
+    cleanup.push(elsewhere)
+    rmSync(join(home, 'secrets'), { recursive: true, force: true })
+    symlinkSync(elsewhere, join(home, 'secrets'))
+    const result = await run(home)
+    expect(result.json[0]).toMatchObject({ status: 'fail' })
+    expect(result.json[0]?.detail[0]).toContain('is a symbolic link')
   })
 })

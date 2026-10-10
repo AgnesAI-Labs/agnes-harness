@@ -287,7 +287,7 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
           const presetName = o.preset ?? profile.presets.default
           if (!profile.presets.allowed.includes(presetName))
             throw new HostError('E_PRESET_UNSUPPORTED', `preset ${presetName} is not in presets.allowed`, {
-              detail: { source: presetName, capability: 'preset' },
+              detail: { source: presetName, capability: 'preset', rule: 'not-allowed' },
             })
           checkPresetHardRequirements(
             profile,

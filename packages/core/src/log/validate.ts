@@ -1,4 +1,4 @@
-import { isEventType, validateEvent } from '@agnes/protocol'
+import { describeValidationErrors, isEventType, validateEvent } from '@agnes/protocol'
 import { type Clock, CoreError, type EventInput, type IdMinter, type PreparedEvent } from '../types.js'
 
 /** The only three event types the model ever sees, and therefore the only ones a surfaceOp may edit. */
@@ -36,7 +36,9 @@ export function prepareEvents(
     // An ignorable event of an unknown type fails the envelope only on `/type`; anything else it got
     // wrong is still a rejection, so the pass is narrowed to batches where `/type` is the sole error.
     if (!r.ok && !(e.ignorable === true && r.errors.every((x) => x.path === '/type')))
-      throw new CoreError('E_ENVELOPE', r.errors[0]?.message ?? 'invalid', { errors: r.errors })
+      throw new CoreError('E_ENVELOPE', `${e.type} ${describeValidationErrors(r.errors)}`, {
+        errors: r.errors,
+      })
     const d = e.data as Record<string, unknown> | null
     if (e.type === 'approval/decided' && !DECIDED_VIA.has(String(d?.via)))
       throw new CoreError('E_ENVELOPE', 'approval/decided.via out of set')

@@ -72,6 +72,52 @@ it('permits shared local configuration but denies nonlocal identities and absent
     await Promise.all([local.close(), remote.close(), missing.close()])
   }
 })
+it('forwards only the permission part and bits of a credential permission failure', async () => {
+  const s = service(),
+    ep = endpoint(true, s)
+  const failure = (code: string, facts?: unknown) =>
+    Object.assign(new Error('unsafe PRIVATE-PATH-MARKER'), { code, facts })
+  try {
+    s.test.mockRejectedValueOnce(
+      failure('CONFIG_CREDENTIAL_PERMISSIONS', {
+        target: 'secrets',
+        actualMode: '0755',
+        expectedMode: '0700',
+        path: 'PRIVATE-PATH-MARKER/secrets',
+      }),
+    )
+    const sent = await request(ep, '_agnes/v1/config.test', { providerId: 'p', apiKey: 'secret-key' })
+    expect(sent).toMatchObject({
+      error: {
+        data: {
+          reason: 'CONFIG_CREDENTIAL_PERMISSIONS',
+          detail: { target: 'secrets', actualMode: '0755', expectedMode: '0700' },
+        },
+      },
+    })
+    expect(JSON.stringify(sent)).not.toContain('PRIVATE-PATH-MARKER')
+    for (const facts of [
+      { target: '../PRIVATE-PATH-MARKER', actualMode: '0755', expectedMode: '0700' },
+      { target: 'secrets', actualMode: '755', expectedMode: '0700' },
+      { target: 'secrets', actualMode: '0755' },
+      'secrets 0755',
+      null,
+    ]) {
+      s.test.mockRejectedValueOnce(failure('CONFIG_CREDENTIAL_PERMISSIONS', facts))
+      const refused = await request(ep, '_agnes/v1/config.test', { providerId: 'p' })
+      expect(refused).toMatchObject({ error: { data: { reason: 'CONFIG_CREDENTIAL_PERMISSIONS' } } })
+      expect(JSON.stringify(refused)).not.toContain('detail')
+    }
+    s.test.mockRejectedValueOnce(
+      failure('CONFIG_CREDENTIAL_READ_ONLY', { target: 'secrets', actualMode: '0755', expectedMode: '0700' }),
+    )
+    expect(JSON.stringify(await request(ep, '_agnes/v1/config.test', { providerId: 'p' }))).not.toContain(
+      'detail',
+    )
+  } finally {
+    await ep.close()
+  }
+})
 it('redacts provider errors and reports persisted-but-not-applied configuration honestly', async () => {
   const s = service(),
     ep = endpoint(true, s)

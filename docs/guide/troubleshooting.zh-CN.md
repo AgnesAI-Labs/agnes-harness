@@ -28,6 +28,7 @@ node packages/cli/dist/local/agnes.mjs doctor provider --json
 | 端口占用 | 先确认哪个实验 Web listener 持有它，再结束自己启动的服务或换端口 |
 | Origin/Host 不匹配 | 地址与 `AGNES_WEB_ORIGIN` 严格一致，不混用 localhost/127.0.0.1；旧后台不同配置时显式停止对应实例 |
 | 页面问 token/文档要求复制 token | 检查是否混用旧 build/旧说明；当前本地 Web 打印普通 URL |
+| Windows 上 `SECRET_UNRESOLVED` 且 `reason` 为 `private-file` | 密钥存储被拒绝，不是缺失；使用该存储的所有路由都会受影响，无论消息里点名的是哪个 ref。`part` 指出被拒的是 `store`、其 `namespace` 目录还是 `file`，`check` 指出目录没通过哪项检查：`not-private` 表示属主、访问列表或继承设置不满足私有要求。在私有目录里新建的子目录会继承其访问列表，但在关闭继承之前并不是私有的：执行 `icacls <目录> /inheritance:r`，再授予当前用户和 `SYSTEM` |
 | 缺 Provider / 非法 route/model | 运行 config 或 Web 设置，测试保存后从当前目录选模型；新默认不修改旧会话 |
 | `TOOL_ARGS_INVALID` | 按错误中的参数路径补齐符合工具定义的参数再重试。`write` 必须同时传入 `path` 和 `content`；被拒绝的调用不会写文件 |
 | 输出以 `max_tokens` / `OUTPUT_LIMIT` 结束 | 模型回复达到输出额度，保留已生成文字、丢弃未完成的工具调用并停止本轮，不自动重试。可要求分步继续，或在 Provider 支持范围内配置 preset 的 `model.max_tokens`；这与输入上下文超限不同 |

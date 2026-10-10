@@ -489,7 +489,11 @@ export function registerAcp(
     const h = pocket(params)
     const preset = typeof h.preset === 'string' ? h.preset : undefined
     if (preset && !cx.host.profile.presets.allowed.includes(preset))
-      throw rpcError('PRESET_SWITCH_REJECTED', { reason: 'not in presets.allowed', preset })
+      throw rpcError('PRESET_SWITCH_REJECTED', {
+        reason: 'not in presets.allowed',
+        cause: 'not-allowed',
+        preset,
+      })
     let entry: SessionEntry
     let workspace: Awaited<ReturnType<WorkspaceCatalog['validate']>>
     try {
