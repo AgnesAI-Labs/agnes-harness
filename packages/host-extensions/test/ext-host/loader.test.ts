@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ToolRegistry } from '@agnes/core'
 import { HOOK_EVENTS } from '@agnes/extension-api'
+import { gitWorktreeKind } from '@agnes/git-worktree-contract'
 import { intelligentUiKind } from '@agnes/intelligent-ui-contract'
 import { defineTool } from '@agnes/plugin-runtime'
 import { inspectJsonData } from '@agnes/protocol'
@@ -73,6 +74,7 @@ it('shares host modules even when the extension carries decoy copies', async () 
   for (const name of [
     '@agnes/extension-api',
     '@agnes/protocol',
+    '@agnes/git-worktree-contract',
     '@agnes/intelligent-ui-contract',
     '@sinclair/typebox',
   ]) {
@@ -83,18 +85,27 @@ it('shares host modules even when the extension carries decoy copies', async () 
     'index.ts',
     `
     import { HOOK_EVENTS } from '@agnes/extension-api'
+    import { gitWorktreeKind } from '@agnes/git-worktree-contract'
     import { intelligentUiKind } from '@agnes/intelligent-ui-contract'
     import { inspectJsonData } from '@agnes/protocol'
     import { Type } from '@sinclair/typebox'
     import { Value } from '@sinclair/typebox/value'
-    export const shared = { HOOK_EVENTS, intelligentUiKind, inspectJsonData, Type, Value }
+    export const shared = { HOOK_EVENTS, gitWorktreeKind, intelligentUiKind, inspectJsonData, Type, Value }
     export default () => undefined
   `,
   )
   const mod = await f.loader.import(entry)
-  expect(mod.shared).toEqual({ HOOK_EVENTS, intelligentUiKind, inspectJsonData, Type, Value })
+  expect(mod.shared).toEqual({
+    HOOK_EVENTS,
+    gitWorktreeKind,
+    intelligentUiKind,
+    inspectJsonData,
+    Type,
+    Value,
+  })
   const shared = mod.shared as Record<string, unknown>
   expect(shared.HOOK_EVENTS).toBe(HOOK_EVENTS)
+  expect(shared.gitWorktreeKind).toBe(gitWorktreeKind)
   expect(shared.intelligentUiKind).toBe(intelligentUiKind)
   expect(shared.inspectJsonData).toBe(inspectJsonData)
   expect(shared.Type).toBe(Type)

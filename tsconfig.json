@@ -290,6 +290,9 @@
       "path": "packages/intelligent-ui-contract"
     },
     {
+      "path": "packages/git-worktree-contract"
+    },
+    {
       "path": "packages/core-ledger/tsconfig.testkit.json"
     }
   ]

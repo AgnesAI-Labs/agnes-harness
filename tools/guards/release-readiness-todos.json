@@ -29,6 +29,7 @@
         "@agnes/daemon-surfaces",
         "@agnes/error-sanitization",
         "@agnes/extension-api",
+        "@agnes/git-worktree-contract",
         "@agnes/history-index",
         "@agnes/host",
         "@agnes/host-artifacts",

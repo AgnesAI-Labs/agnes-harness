@@ -259,6 +259,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI data-source kind, result enum, and failure codes. Rebased onto that 76; countLines: 163.
   // Resolve input and source audit names. countLines: 163 -> 205.
   'packages/intelligent-ui-contract/src': 205,
+  // Leaf Git worktree kind token so Host does not import Base. countLines: 34, exact, no spare.
+  'packages/git-worktree-contract/src': 34,
   // Official plugin process-local serial and cursor MAC. Not a package export. Exact countLines, no spare.
   'packages/base/src/intelligent-ui-runtime': 55,
   'packages/observability/src': 1301,

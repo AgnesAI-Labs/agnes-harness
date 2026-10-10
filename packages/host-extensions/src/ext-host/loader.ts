@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { ProviderError } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
+import * as gitWorktreeContract from '@agnes/git-worktree-contract'
 import * as intelligentUiContract from '@agnes/intelligent-ui-contract'
 import {
   checkPluginApiRanges,
@@ -44,6 +45,7 @@ export function createLoader(opts: { cacheDir: string; hostRoot: string; agnesVe
       ...localPluginVirtualModules,
       '@agnes/protocol': protocol,
       // Same module the Host installer imported. A second copy would fork the kind token.
+      '@agnes/git-worktree-contract': gitWorktreeContract,
       '@agnes/intelligent-ui-contract': intelligentUiContract,
     },
     tryNative: false,

@@ -76,6 +76,7 @@
     "@agnes/history-index",
     "@agnes/observability",
     "@agnes/memory-file",
+    "@agnes/git-worktree-contract",
     "@agnes/intelligent-ui-contract"
   ],
   "@agnes/code": ["@agnes/protocol", "@agnes/extension-api", "@agnes/core", "@agnes/base"],
@@ -228,6 +229,7 @@
     "@agnes/host-common",
     "@agnes/host-computer-use",
     "@agnes/host-infrastructure",
+    "@agnes/git-worktree-contract",
     "@agnes/intelligent-ui-contract",
     "@agnes/package-manager",
     "@agnes/plugin-runtime",
@@ -307,6 +309,7 @@
     "@agnes/web-ui",
     "@agnes/web-units"
   ],
+  "@agnes/git-worktree-contract": ["@agnes/extension-api"],
   "@agnes/intelligent-ui-contract": ["@agnes/extension-api", "@agnes/plugin-runtime", "@agnes/protocol"],
   "@agnes/observability": [
     "@agnes/extension-api",

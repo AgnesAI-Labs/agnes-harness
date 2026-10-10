@@ -520,6 +520,7 @@
   "dependencies": {
     "@agnes/core": "workspace:*",
     "@agnes/history-index": "workspace:*",
+    "@agnes/git-worktree-contract": "workspace:*",
     "@agnes/intelligent-ui-contract": "workspace:*",
     "@agnes/loop-default": "workspace:*",
     "@agnes/observability": "workspace:*",

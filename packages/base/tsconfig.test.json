@@ -47,6 +47,9 @@
     },
     {
       "path": "../intelligent-ui-contract"
+    },
+    {
+      "path": "../git-worktree-contract"
     }
   ]
 }

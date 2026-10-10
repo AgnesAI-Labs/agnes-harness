@@ -3,6 +3,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, relative } from 'node:path'
 import type { ExtensionAPI, HookEvent, HookHandler } from '@agnes/extension-api'
 import * as extensionApi from '@agnes/extension-api'
+import * as gitWorktreeContract from '@agnes/git-worktree-contract'
 import * as intelligentUiContract from '@agnes/intelligent-ui-contract'
 import {
   checkProvidedExternals,
@@ -132,6 +133,7 @@ export async function loadRunnerExtension(
       ...providedExternalModules,
       '@agnes/protocol': protocol,
       // Same module the Host installer imported. A second copy would fork the kind token.
+      '@agnes/git-worktree-contract': gitWorktreeContract,
       '@agnes/intelligent-ui-contract': intelligentUiContract,
     },
   })

@@ -186,5 +186,6 @@
   "packages/base/extensions/intelligent-ui": 1065,
   "packages/observability/src": 1301,
   "packages/intelligent-ui-contract/src": 205,
+  "packages/git-worktree-contract/src": 34,
   "packages/base/src/intelligent-ui-runtime": 55
 }

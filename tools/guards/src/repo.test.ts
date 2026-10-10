@@ -33,6 +33,7 @@ describe('repo', () => {
       '@agnes/e2e-web',
       '@agnes/error-sanitization',
       '@agnes/extension-api',
+      '@agnes/git-worktree-contract',
       '@agnes/guards',
       '@agnes/history-index',
       '@agnes/host',

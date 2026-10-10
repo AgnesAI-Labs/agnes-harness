@@ -88,6 +88,7 @@ const LAYER: Record<string, number> = {
   '@agnes/resource-control-cli': 10,
   '@agnes/history-index': 0,
   '@agnes/extension-api': 1,
+  '@agnes/git-worktree-contract': 1.5, // Pure Git worktree token so Host does not import Base.
   '@agnes/observability': 2, // Official telemetry consumes only public author contracts and OS primitives.
   '@agnes/intelligent-ui-contract': 2, // Pure Intelligent UI token so Host does not import Base.
   '@agnes/core-common': 1.1,

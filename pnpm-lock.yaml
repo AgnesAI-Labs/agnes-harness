@@ -132,6 +132,9 @@ importers:
       '@agnes/core':
         specifier: workspace:*
         version: link:../core
+      '@agnes/git-worktree-contract':
+        specifier: workspace:*
+        version: link:../git-worktree-contract
       '@agnes/history-index':
         specifier: workspace:*
         version: link:../history-index
@@ -685,6 +688,12 @@ importers:
         specifier: 0.34.33
         version: 0.34.33
 
+  packages/git-worktree-contract:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+
   packages/history-index: {}
 
   packages/host:
@@ -859,6 +868,9 @@ importers:
       '@agnes/extension-api':
         specifier: workspace:*
         version: link:../extension-api
+      '@agnes/git-worktree-contract':
+        specifier: workspace:*
+        version: link:../git-worktree-contract
       '@agnes/host-artifacts':
         specifier: workspace:*
         version: link:../host-artifacts
