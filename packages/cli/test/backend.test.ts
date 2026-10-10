@@ -376,6 +376,7 @@ describe('ensureLocalBackend', () => {
         readinessPollMs: 3,
       }).catch((caught: unknown) => caught)) as Error
       expect(error.message).toMatch(/exited before readiness \(1\): first line .*red x+…$/)
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: finding one is the point of the check
       expect(error.message).not.toMatch(/[\u0000-\u001f]/)
       expect(error.message.length).toBeLessThan(460)
     })
