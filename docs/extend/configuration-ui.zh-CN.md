@@ -115,6 +115,8 @@ Schema 使用同步 JSON Schema 2020-12、标准 format 和本地引用。安装
 
 旧 revision 不会覆盖新配置；界面保留草稿并提供重新读取。Schema 校验、工件探测或实时 Worker apply 拒绝都不修改原 desired revision、配置值与审计历史。apply 拒绝可返回限制长度的插件原因，配置字符串、密钥引用和凭据文本经过脱敏。实时保存只在授权业务 Worker 确认应用成功后，将新 desired、配置值与审计事实（操作者、时间、row、revision、脱敏前后差异）在同一事务提交。canonical-artifact probe 只校验工件，不打开业务运行时；应用结果复用现有 Worker convergence/failure 帧。保存的覆盖值在禁用后再启用时保留，并针对更新后的 manifest 重新校验，不兼容时拒绝发布，不静默重置。
 
+每个保留的代码 generation 会持久保存它已接受的实时配置。冷恢复先按固定行身份恢复这份记录，再仅对同一代码考虑当前配置。升级到其他插件版本不会覆盖旧 generation 已接受的值，也不会用新版 Schema 校验旧版配置。发布被拒绝时，记录与运行时一起补偿；记录损坏则拒绝恢复。
+
 实时应用后若持久化失败，发布器会恢复之前的运行目标。desired 配置、审计事实与 Worker 确认记录在同一数据库事务提交。恢复成功返回 `refused`；恢复失败因运行结果未知返回 `pending`。
 
 `live` 在运行准入边界应用于使用同一固定代码身份的已有会话，应用被拒绝时补偿已修改容器。`next-session` 保留已有会话的配置，后续会话使用新值。页签明确说明声明的模式。配置不会替换固定代码或放宽须重启的后端边界。官方 observability 插件与[第三方示例](../../examples/third-party-plugin/package.json) 提供 manifest schema 示例。

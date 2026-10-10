@@ -46,7 +46,31 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
         name: 'acme/generation',
         version,
         main: './index.js',
-        agnes: { plugins: [{ export: 'main', apiRange: '^1.4.0', inject: ['extension'] }] },
+        agnes: {
+          plugins: [
+            {
+              export: 'main',
+              apiRange: '^1.4.0',
+              inject: ['extension'],
+              configReload: 'live',
+              config: version === '1.0.0' ? { limit: 100 } : { limit: 2 },
+              configSchema:
+                version === '1.0.0'
+                  ? {
+                      type: 'object',
+                      required: ['limit'],
+                      additionalProperties: false,
+                      properties: { limit: { type: 'number', minimum: 10 } },
+                    }
+                  : {
+                      type: 'object',
+                      required: ['limit'],
+                      additionalProperties: false,
+                      properties: { limit: { type: 'number', minimum: 0 } },
+                    },
+            },
+          ],
+        },
       }),
     )
     writeFileSync(join(directory, 'index.js'), version)
@@ -173,7 +197,10 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
         return {
           main: defineAgnesPlugin({
             inject: ['extension'],
-            apply(ctx) {
+            apply(ctx, config) {
+              const accepted = config as { limit?: number }
+              if (typeof accepted?.limit !== 'number' || (version === '1.0.0' && accepted.limit < 10))
+                throw new Error('fixture code received configuration from the wrong version')
               ;(ctx as unknown as { extension(): PluginExtensionAPI }).extension().registerTool({
                 ...fixtureTool('generation_value'),
                 description: version,
@@ -183,7 +210,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
                     enter()
                     await release
                   }
-                  return { content: [{ type: 'text', text: version }] }
+                  return { content: [{ type: 'text', text: version }], structured: accepted }
                 },
               })
             },
@@ -196,7 +223,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     persistTrust(one)
     host = (await createTestHost(options)).host
     const base = required(host.runtimeTargetSnapshot?.())
-    const target = (source?: RuntimePluginSnapshot) =>
+    const target = (source?: RuntimePluginSnapshot, config?: unknown) =>
       buildCompleteRuntimeTarget({
         rows: [
           ...base.tree.rows,
@@ -211,6 +238,8 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
                   extrasRevision: 'none',
                   mountRevision: 'v1',
                   inject: ['extension'],
+                  configReload: 'live',
+                  config: config ?? (source.snapshot.version === '1.0.0' ? { limit: 100 } : { limit: 2 }),
                 }),
               ]
             : []),
@@ -285,6 +314,40 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       new RuntimeGenerationSnapshotStore(join(root, 'profiles/local-dev')).read(required(failed).id),
     ).toThrow('E_GENERATION_SNAPSHOT_MISSING')
     expect(await execute(b)).toMatchObject({ content: [{ text: '2.0.0' }] })
+    writeFileSync(join(two.snapshot.directory, 'index.js'), '2.0.0')
+    // A pinned v1 accepts live 100 -> 10, then v2 publishes a different config schema.
+    await host.applyRuntimeTarget(target(one))
+    expect(await execute(a)).toMatchObject({ structured: { limit: 100 } })
+    await host.applyRuntimeTarget(target(one, { limit: 10 }))
+    expect(await execute(a)).toMatchObject({ structured: { limit: 10 } })
+    const acceptedStore = new RuntimeGenerationSnapshotStore(profileDir)
+    const acceptedBefore = required(acceptedStore.liveConfig(required(firstId)))
+    const refusedConfig = target(one, { limit: 20 })
+    // Refuse after live apply/record when code publication cannot resolve a candidate source.
+    await expect(
+      host.applyRuntimeTarget(
+        buildCompleteRuntimeTarget({
+          rows: [
+            ...refusedConfig.tree.rows,
+            createPluginRow({
+              id: 'ext:unavailable',
+              plugin: 'missing@unavailable/main',
+              snapshotDigest: 'missing',
+              exportName: 'main',
+              entryRevision: 'missing',
+              extrasRevision: 'none',
+              mountRevision: 'v1',
+            }),
+          ],
+          resources: refusedConfig.resource.resources,
+        }).target,
+      ),
+    ).rejects.toThrow('E_RUNTIME_TARGET_PLUGIN')
+    expect(await execute(a)).toMatchObject({ structured: { limit: 10 } })
+    expect(acceptedStore.liveConfig(required(firstId))?.digest).toBe(acceptedBefore.digest)
+    await host.applyRuntimeTarget(target(two))
+    expect(await execute(a)).toMatchObject({ structured: { limit: 10 } })
+    expect(await execute(b)).toMatchObject({ structured: { limit: 2 } })
     await host.applyRuntimeTarget(target())
     const unbound = await host.createSession({ key: 'session-disabled', cwd: root })
     expect(unbound.currentTools().resolve('generation_value')).toBeUndefined()
@@ -300,10 +363,19 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     sources.splice(0)
     rmSync(one.snapshot.directory, { recursive: true })
     rmSync(two.snapshot.directory, { recursive: true })
+    const configFile = join(acceptedStore.root, required(firstId), 'live-config.json')
+    const configBytes = readFileSync(configFile, 'utf8')
+    writeFileSync(configFile, '{invalid')
+    host = (await createTestHost(options)).host
+    await expect(host.createSession({ key: 'session-a', cwd: root })).rejects.toThrow(
+      'E_GENERATION_CONFIG_INTEGRITY',
+    )
+    await host.close()
+    writeFileSync(configFile, configBytes)
     host = (await createTestHost(options)).host
     const resumed = await host.createSession({ key: 'session-a', cwd: root })
     expect(resumed.pluginGenerationId).toBe(firstId)
-    expect(await execute(resumed)).toMatchObject({ content: [{ text: '1.0.0' }] })
+    expect(await execute(resumed)).toMatchObject({ content: [{ text: '1.0.0' }], structured: { limit: 10 } })
     const store = new RuntimeGenerationSnapshotStore(join(root, 'profiles/local-dev'))
     expect(store.session('session-a')?.loop).toEqual(resumed.loop)
     expect(store.read(required(firstId)).packages).toContainEqual({ id: 'acme/generation', version: '1.0.0' })

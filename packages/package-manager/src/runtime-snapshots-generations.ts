@@ -17,6 +17,7 @@ import {
   type RuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
 import { copyPackageTreeSync } from './copy-tree.js'
+import { syncDirectory } from './integrity.js'
 import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
 import {
   type RuntimeGenerationResourceInput,
@@ -140,6 +141,49 @@ export class RuntimeGenerationSnapshotStore {
       sources: Object.freeze(sources),
       packages: Object.freeze(record.packages.map((pkg) => Object.freeze(pkg))),
     })
+  }
+
+  /** Accepted live config is mutable generation state, separate from the immutable code archive. */
+  liveConfig(id: string): RuntimeTargetArtifact | undefined {
+    const path = join(this.directory(id), 'live-config.json')
+    if (!existsSync(path)) return undefined
+    try {
+      const record = JSON.parse(readFileSync(path, 'utf8')) as {
+        generationId: string
+        artifact: RuntimeTargetArtifact
+      }
+      if (record.generationId !== id) throw new Error('generation binding mismatch')
+      decodeRuntimeTargetArtifact(record.artifact)
+      return Object.freeze(record.artifact)
+    } catch (cause) {
+      throw new Error('E_GENERATION_CONFIG_INTEGRITY: accepted configuration cannot be restored', { cause })
+    }
+  }
+
+  /** Called after Host accepts config; callers compensate this record along with their live apply. */
+  saveLiveConfig(id: string, artifact: RuntimeTargetArtifact | undefined): void {
+    const directory = this.directory(id),
+      path = join(directory, 'live-config.json')
+    if (!existsSync(join(directory, 'generation.json')))
+      throw new Error('E_GENERATION_SNAPSHOT_MISSING: configuration generation is unavailable')
+    if (!artifact) {
+      rmSync(path, { force: true })
+      syncDirectory(directory)
+      return
+    }
+    decodeRuntimeTargetArtifact(artifact)
+    const temporary = `${path}.${randomUUID()}.tmp`
+    try {
+      writeFileSync(temporary, JSON.stringify({ generationId: id, artifact }), {
+        mode: 0o600,
+        flag: 'wx',
+        flush: true,
+      })
+      renameSync(temporary, path)
+      syncDirectory(directory)
+    } finally {
+      rmSync(temporary, { force: true })
+    }
   }
 
   private pinPath(sessionKey: string): string {

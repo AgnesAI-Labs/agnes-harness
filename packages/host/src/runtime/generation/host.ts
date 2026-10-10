@@ -22,6 +22,7 @@ import {
   decodeRuntimeTargetArtifact,
   encodeRuntimeTargetArtifact,
   type RuntimeTarget,
+  type RuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
 import type { Host, HostOptions } from '../lifecycle/host.js'
 import { createHostFacade } from '../lifecycle/host-facade.js'
@@ -226,7 +227,17 @@ export async function createRuntimeGenerationHost(
       options.runtimePluginSources,
     )
     const skills = latestSkills
-    const pinnedTarget = decodeRuntimeTargetArtifact(snapshot.artifact)
+    const archivedTarget = decodeRuntimeTargetArtifact(snapshot.artifact)
+    const acceptedConfig = store.liveConfig(snapshot.id)
+    const pinnedTarget = acceptedConfig
+      ? buildCompleteRuntimeTarget({
+          rows: overlayLivePluginConfig(
+            targetRows(archivedTarget),
+            decodeRuntimeTargetArtifact(acceptedConfig),
+          ),
+          resources: archivedTarget.resource.resources,
+        }).target
+      : archivedTarget
     const freshTarget = (current?.host ?? initial).runtimeTargetSnapshot?.() ?? pinnedTarget
     const target = buildCompleteRuntimeTarget({
       rows: [
@@ -712,6 +723,8 @@ export async function createRuntimeGenerationHost(
     const head = await ensureCurrent()
     const previous =
       head.host.runtimeTargetSnapshot?.() ?? decodeRuntimeTargetArtifact(head.snapshot.artifact)
+    const beforeConfig = new Map([...live.values()].map(({ host }) => [host, host.runtimeTargetSnapshot?.()]))
+    const configRecords: { id: string; previous: RuntimeTargetArtifact | undefined }[] = []
     const rollback = await applyLivePluginConfig(
       [...live.values()].map((generation) => generation.host),
       target,
@@ -724,6 +737,14 @@ export async function createRuntimeGenerationHost(
         }))
       : []
     try {
+      for (const [id, generation] of live) {
+        const before = beforeConfig.get(generation.host),
+          after = generation.host.runtimeTargetSnapshot?.()
+        if (!before || !after || JSON.stringify(before.tree.rows) === JSON.stringify(after.tree.rows))
+          continue
+        configRecords.push({ id, previous: store.liveConfig(id) })
+        store.saveLiveConfig(id, encodeRuntimeTargetArtifact(after))
+      }
       return await publishTargetCore(target, skills, extensionRows, previous)
     } catch (error) {
       const failures: unknown[] = []
@@ -740,6 +761,13 @@ export async function createRuntimeGenerationHost(
         await rollback()
       } catch (cause) {
         failures.push(cause)
+      }
+      for (const { id, previous } of configRecords.reverse()) {
+        try {
+          store.saveLiveConfig(id, previous)
+        } catch (cause) {
+          failures.push(cause)
+        }
       }
       if (failures.length)
         throw new AggregateError([error, ...failures], 'Live resource rollback was incomplete')
