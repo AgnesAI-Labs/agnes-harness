@@ -32,6 +32,19 @@ function plugin(version: string, approval = false, wait?: (signal: AbortSignal) 
 }
 
 describe('public author testkit', () => {
+  it('boots the author host when the git-worktree registrar has no plugin row', async () => {
+    const kit = await createAuthorTestkit({
+      plugin: plugin('1'),
+      version: '1.0.0',
+    })
+    try {
+      const session = await kit.openSession()
+      expect((await session.invoke('version', {})).structured).toEqual({ version: '1' })
+    } finally {
+      await kit.dispose()
+    }
+  })
+
   it('mounts the lightweight tool fixture with one import and real registration', async () => {
     const fixture = await createPluginTestHost(plugin('1'))
     try {

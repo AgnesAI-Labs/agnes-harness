@@ -1140,25 +1140,31 @@ describe('extension service host', () => {
         session: state.session,
       }),
     })
-    installGitWorktreeService(host, root, undefined, {
-      async create(_cwd, operation) {
-        seen.push(operation)
-        return {
-          id: 'abcd1234',
-          root: '/work',
-          path: '/work/.worktrees/agnes-abcd1234',
-          branch: 'agnes/subagent-abcd1234',
-        }
+    // A live origin table with no row. Host registration must still succeed.
+    installGitWorktreeService(
+      host,
+      root,
+      { lookup: () => undefined },
+      {
+        async create(_cwd, operation) {
+          seen.push(operation)
+          return {
+            id: 'abcd1234',
+            root: '/work',
+            path: '/work/.worktrees/agnes-abcd1234',
+            branch: 'agnes/subagent-abcd1234',
+          }
+        },
+        async list(operation) {
+          seen.push(operation)
+          return []
+        },
+        async finish(_path, operation) {
+          seen.push(operation)
+          return { action: 'removed' }
+        },
       },
-      async list(operation) {
-        seen.push(operation)
-        return []
-      },
-      async finish(_path, operation) {
-        seen.push(operation)
-        return { action: 'removed' }
-      },
-    })
+    )
     const identity = {
       owner: GIT_WORKTREE_OWNER,
       packageId: GIT_WORKTREE_PACKAGE,
