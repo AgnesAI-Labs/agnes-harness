@@ -93,7 +93,7 @@ export async function assertMigrationSettled(
 
     const unknown = new Map<string, number>()
     const intents = new Map<string, { kind?: string; toolUseId?: string }>()
-    const results = new Map<string, { code?: string; partial: boolean }>()
+    const results = new Map<string, { code?: string; partial: boolean; seq: number }>()
     const settlements: { effectId: string; outcome: string; seq: number }[] = []
     const deferred = new Map<string, { state: string; seq: number }>()
     const jobs = new Map<string, { status: string; seq: number }>()
@@ -125,6 +125,7 @@ export async function assertMigrationSettled(
             results.set(data.toolUseId, {
               ...(typeof data.code === 'string' ? { code: data.code } : {}),
               partial: data.partial === true,
+              seq: row.seq,
             })
           const details = object(data.structured)
           if (typeof details.jobId === 'string' && typeof details.status === 'string')

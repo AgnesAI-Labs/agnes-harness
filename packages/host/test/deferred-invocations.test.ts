@@ -13,10 +13,10 @@ import {
 } from '@agnes/host-providers/assemble/deferred-invocations'
 import { drainDeferredToolInvocations } from '@agnes/plugin-runtime'
 import {
-  deferredQueueKind,
   type DeferredActor,
   type DeferredInvocationReceipt,
   type DeferredToolInvocation,
+  deferredQueueKind,
 } from '@agnes/plugin-runtime/deferred-contract'
 import type { Actor, EventEnvelope } from '@agnes/protocol'
 import { expect, it } from 'vitest'
@@ -802,9 +802,18 @@ it('treats a sent tool cancel as an unknown external outcome', async () => {
     { type: 'effect/settled', data: { effectId: 'effect', outcome: 'aborted' } },
   ])
   try {
-    await expect(assertMigrationSettled(sent.storage, 's', 'generation')).rejects.toThrow(
-      'unknown-external-outcome',
-    )
+    await expect(assertMigrationSettled(sent.storage, 's', 'generation')).rejects.toMatchObject({
+      code: 'E_GENERATION_EXECUTION_UNSETTLED',
+      detail: {
+        reasons: expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'unknown-external-outcome',
+            id: 'tool:call',
+            seq: expect.any(Number),
+          }),
+        ]),
+      },
+    })
   } finally {
     await sent.close()
   }
