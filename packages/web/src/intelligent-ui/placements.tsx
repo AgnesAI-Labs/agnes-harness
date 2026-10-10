@@ -156,6 +156,7 @@ export function BoundSurface({
       onSelection={onSelection}
       onInvalid={onInvalid}
       onAction={(action, row) => client.choose(id, action, row)}
+      onRefreshSource={() => void client.refreshSource(id)}
       onConfirm={() => void client.confirm(id)}
       onCancel={() => client.cancelConfirmation(id)}
       onRetry={(receipt) => client.retry(receipt)}

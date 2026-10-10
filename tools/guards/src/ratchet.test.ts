@@ -416,7 +416,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Approval reasons: the approval card label reads the decision reason (+22). Measured 6651, exact cap.
   // 2026-10-07 reviewed growth: plugin state badges and session default controls.
   // countLines: 6640 -> 6681 (+41); exact cap, no exclusions or spare allocation.
-  'packages/web-ui/src': 10937,
+  // UI data-source loading, error, and refresh. HEAD was 11480 against the previous 10937 ceiling;
+  // this change adds 182. countLines: 11662.
+  'packages/web-ui/src': 11662,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
@@ -2434,7 +2436,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Acceptance review: Retain published composition details and stable expanded goal state during admin refresh.
   // countLines: 22109 -> 22110; exact cap, no exclusions or spare allocation.
   // UI refresh forwarding. HEAD was 13323 against the previous 13225 ceiling; this change adds 4.
-  'packages/web/src': 13327,
+  // UI data-source refresh and form drafts. countLines: 13327 -> 13395 (+68).
+  'packages/web/src': 13395,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

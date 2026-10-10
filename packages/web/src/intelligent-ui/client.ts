@@ -6,10 +6,11 @@ import {
   UiActionReceipt,
   UiReadResult,
   type UiRowContext,
-  type UiSurfaceRecord,
+  type UiSurface,
+  UiSurfaceRecord,
   X_AGNES_UI_LIMITS,
 } from '@agnes/protocol/gen/intelligent-ui'
-import { boundedUiJson, validIntelligentSurfaceProjection } from '@agnes/web-ui'
+import { boundedUiJson, displayableIntelligentSurface } from '@agnes/web-ui'
 import type { IntelligentUiServer, UiCommandStorage } from './types.js'
 
 export interface UiDraft {
@@ -25,6 +26,24 @@ export type UiSnapshot = Readonly<{
   error?: 'ui.unavailable' | 'ui.transport' | 'ui.duplicate' | 'ui.retryRow' | 'ui.actionLimit'
   watermark: number
 }>
+function formSeed(
+  component: UiSurface['components'][number],
+  record: UiSurfaceRecord,
+): JsonValue | undefined {
+  if ('fallback' in component || component.kind !== 'form') return undefined
+  const data = record.surface.data[component.dataKey]
+  const source = record.sources?.[component.dataKey]
+  if (data === undefined || (source && source.status !== 'ready')) return undefined
+  if (data && typeof data === 'object' && !Array.isArray(data) && Object.hasOwn(data, '$source'))
+    return undefined
+  return structuredClone(data)
+}
+function sourceHashes(record: UiSurfaceRecord): Record<string, string> {
+  const sources: Record<string, string> = {}
+  for (const [key, status] of Object.entries(record.sources ?? {}))
+    if (status.status === 'ready' && status.resultHash) sources[key] = status.resultHash
+  return sources
+}
 const active = (receipt: UiActionReceipt) =>
   ['received', 'pending-approval', 'executing'].includes(receipt.status) ||
   receipt.failure?.outcomeUnknown === true
@@ -189,7 +208,7 @@ export class IntelligentUiClient {
           if (
             page.surfaces.some(
               (record) =>
-                !validIntelligentSurfaceProjection(record.surface) ||
+                !displayableIntelligentSurface(record.surface, record.sources) ||
                 record.createdSeq > record.updatedSeq ||
                 record.updatedSeq > watermark,
             ) ||
@@ -321,20 +340,53 @@ export class IntelligentUiClient {
     return this.snapshot.receipts.filter((item) => item.surfaceId === id)
   }
   draft(id: string): UiDraft {
+    const record = this.record(id)
     let draft = this.drafts.get(id)
-    if (!draft || draft.revision !== this.record(id)?.surface.revision) {
+    if (!draft || draft.revision !== record?.surface.revision) {
       draft = {
-        revision: this.record(id)?.surface.revision ?? 0,
+        revision: record?.surface.revision ?? 0,
         input: {},
         selection: {},
         invalid: new Set(),
       }
-      for (const component of this.record(id)?.surface.components ?? [])
-        if (!('fallback' in component) && component.kind === 'form')
-          draft.input[component.id] = structuredClone(this.record(id)!.surface.data[component.dataKey]!)
+      if (record)
+        for (const component of record.surface.components) {
+          const seed = formSeed(component, record)
+          if (seed !== undefined) draft.input[component.id] = seed
+        }
       this.drafts.set(id, draft)
     }
     return draft
+  }
+  /** Re-query bound data for one open surface. The stored revision stays the author's. */
+  async refreshSource(id: string): Promise<void> {
+    const current = this.record(id)
+    if (!current || current.status !== 'open' || this.locked(id) || this.disposed) return
+    let next: UiSurfaceRecord
+    try {
+      next = await this.server.refresh({ sessionId: this.sessionId, surfaceId: id })
+    } catch {
+      return
+    }
+    if (
+      this.disposed ||
+      !boundedUiJson(next, X_AGNES_UI_LIMITS.projectionBytes, X_AGNES_UI_LIMITS.jsonDepth + 4) ||
+      !validateAgainst<UiSurfaceRecord>(UiSurfaceRecord, next).ok ||
+      next.surface.id !== id ||
+      next.owner !== current.owner ||
+      next.taskId !== current.taskId ||
+      next.lane !== current.lane ||
+      next.surface.revision !== current.surface.revision ||
+      next.status !== 'open' ||
+      !displayableIntelligentSurface(next.surface, next.sources)
+    )
+      return
+    this.adoptFormDraft(current, next)
+    this.snapshot = {
+      ...this.snapshot,
+      surfaces: this.snapshot.surfaces.map((item) => (item.surface.id === id ? next : item)),
+    }
+    this.emit()
   }
   locked(id: string): boolean {
     return (
@@ -461,6 +513,7 @@ export class IntelligentUiClient {
       if (old?.status !== 'failed' || !old.failure?.retryable || old.failure.outcomeUnknown) return
     }
     const draft = this.draft(id)
+    const sources = sourceHashes(record)
     const params: UiActionParams = {
       sessionId: this.sessionId,
       surfaceId: id,
@@ -469,6 +522,7 @@ export class IntelligentUiClient {
       commandId: this.commandId(),
       input: structuredClone(draft.input),
       selection: structuredClone(draft.selection),
+      ...(Object.keys(sources).length ? { sources } : {}),
       ...(decision.row
         ? {
             row: decision.row,
@@ -546,6 +600,20 @@ export class IntelligentUiClient {
       // Keep the immutable request locked; reconnect/recovery cannot turn ambiguity into safe retry.
     } finally {
       this.sending.delete(params.commandId)
+    }
+  }
+  private adoptFormDraft(previous: UiSurfaceRecord, next: UiSurfaceRecord): void {
+    const draft = this.drafts.get(next.surface.id)
+    if (!draft || draft.revision !== next.surface.revision) return
+    for (const component of next.surface.components) {
+      if ('fallback' in component || component.kind !== 'form') continue
+      const held = draft.input[component.id]
+      const before = previous.surface.data[component.dataKey]
+      const untouched = held === undefined || JSON.stringify(held) === JSON.stringify(before)
+      if (!untouched) continue
+      const seed = formSeed(component, next)
+      if (seed === undefined) delete draft.input[component.id]
+      else draft.input[component.id] = seed
     }
   }
   private finishCommand(receipt: UiActionReceipt): void {

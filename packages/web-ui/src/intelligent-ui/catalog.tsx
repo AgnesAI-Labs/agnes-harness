@@ -3,6 +3,7 @@ import type {
   UiAction,
   UiComponent,
   UiRowContext,
+  UiSourceStatus,
   UiSurface,
 } from '@agnes/protocol/gen/intelligent-ui'
 import { type ReactNode, useCallback, useId } from 'react'
@@ -14,11 +15,20 @@ import { CustomUiComponent, type CustomUiRenderer } from './custom.js'
 import { SurfaceFormFields } from './form-fields.js'
 import { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
 import { DetailCard, formatFieldValue, ImageView, PresetTabs, ProgressView, StepsView } from './presets.js'
-import { uiObject, validIntelligentSurfaceProjection } from './validate.js'
+import {
+  actionNeedsDegradedData,
+  componentSourceCode,
+  componentSourceState,
+  degradedDataKeys,
+  displayableIntelligentSurface,
+  sourceBacked,
+} from './source-state.js'
+import { uiObject } from './validate.js'
 
 export interface IntelligentCatalogProps {
   renderCustom?: CustomUiRenderer
   surface: UiSurface
+  sources?: Readonly<Record<string, UiSourceStatus>>
   instance?: string
   input: Record<string, JsonValue>
   selection: Record<string, string[]>
@@ -28,17 +38,19 @@ export interface IntelligentCatalogProps {
   onSelection(componentId: string, ids: string[]): void
   onInvalid(componentId: string, path: string, invalid: boolean): void
   onAction(action: UiAction, row?: UiRowContext): void
+  onRefreshSource?(): void
 }
 
 export function IntelligentCatalog(props: IntelligentCatalogProps) {
   const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
-  if (!validIntelligentSurfaceProjection(props.surface))
+  if (!displayableIntelligentSurface(props.surface, props.sources))
     return (
       <SettingsState tone="error" role="alert" data-testid="ui-unavailable">
         {t('ui.unavailable')}
       </SettingsState>
     )
   const placed = placedComponentIds(props.surface)
+  const degradedKeys = degradedDataKeys(props.surface, props.sources)
   return (
     <div className="agnes-intelligent-catalog" data-agnes-intelligent-ui="catalog">
       {props.surface.components.map((component) =>
@@ -47,6 +59,7 @@ export function IntelligentCatalog(props: IntelligentCatalogProps) {
             key={`${component.id}:${props.surface.revision}`}
             {...props}
             component={component}
+            degradedKeys={degradedKeys}
           />
         ),
       )}
@@ -63,7 +76,9 @@ function placedComponentIds(surface: UiSurface): Set<string> {
   return placed
 }
 
-function CatalogComponent(props: IntelligentCatalogProps & { component: UiComponent }) {
+function CatalogComponent(
+  props: IntelligentCatalogProps & { component: UiComponent; degradedKeys: ReadonlySet<string> },
+) {
   const { component, surface, disabled } = props
   const { t, locale } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
   const instance = useId()
@@ -81,7 +96,11 @@ function CatalogComponent(props: IntelligentCatalogProps & { component: UiCompon
             htmlType="button"
             type={action.style === 'primary' ? 'primary' : 'default'}
             danger={action.style === 'danger'}
-            disabled={disabled || props.invalid === true}
+            disabled={
+              disabled ||
+              props.invalid === true ||
+              actionNeedsDegradedData(action, surface, props.degradedKeys)
+            }
             data-testid={`ui-action-${id}`}
             onClick={() => props.onAction(action, row)}
           >
@@ -91,8 +110,17 @@ function CatalogComponent(props: IntelligentCatalogProps & { component: UiCompon
       })}
     </div>
   )
+  const dataKey = 'dataKey' in component ? component.dataKey : undefined
+  const sourceStatus = dataKey ? props.sources?.[dataKey] : undefined
+  const sourceData = dataKey ? surface.data[dataKey] : undefined
+  const sourceState = componentSourceState(component, sourceData, sourceStatus)
+  const sourceCode = componentSourceCode(component, sourceData, sourceStatus)
+  const onRefreshSource = props.onRefreshSource
+  const refreshable = !!dataKey && !!onRefreshSource && sourceBacked(sourceData, sourceStatus)
   let content: ReactNode = null
-  if ('fallback' in component) {
+  if (dataKey && sourceState !== 'ready')
+    content = <SourceNotice state={sourceState} {...(sourceCode ? { code: sourceCode } : {})} />
+  else if ('fallback' in component) {
     content = (
       <CustomUiComponent
         component={component}
@@ -101,7 +129,13 @@ function CatalogComponent(props: IntelligentCatalogProps & { component: UiCompon
         {...(props.renderCustom ? { render: props.renderCustom } : {})}
         onAction={(id) => {
           const action = surface.actions.find((item) => item.id === id)
-          if (!disabled && !props.invalid && component.actionIds.includes(id) && action)
+          if (
+            !disabled &&
+            !props.invalid &&
+            component.actionIds.includes(id) &&
+            action &&
+            !actionNeedsDegradedData(action, surface, props.degradedKeys)
+          )
             props.onAction(action)
         }}
       />
@@ -238,8 +272,42 @@ function CatalogComponent(props: IntelligentCatalogProps & { component: UiCompon
   }
   return (
     <section data-testid={`ui-component-${component.id}`} aria-label={component.title ?? component.id}>
-      {component.title && component.kind !== 'table' && <h4>{component.title}</h4>}
+      {component.title && (sourceState !== 'ready' || component.kind !== 'table') && (
+        <h4>{component.title}</h4>
+      )}
       {content}
+      {onRefreshSource && refreshable ? (
+        <Button
+          htmlType="button"
+          data-testid="ui-source-refresh"
+          disabled={disabled || props.invalid === true}
+          aria-label={`${t('ui.refresh')} ${component.title ?? component.id}`}
+          onClick={onRefreshSource}
+        >
+          {t('ui.refresh')}
+        </Button>
+      ) : null}
     </section>
+  )
+}
+
+function SourceNotice(props: { state: 'loading' | 'error'; code?: string }) {
+  const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
+  if (props.state === 'loading')
+    return (
+      <SettingsState
+        tone="loading"
+        className="agnes-ui-source-state"
+        data-testid="ui-source-loading"
+        aria-busy="true"
+      >
+        {t('ui.sourceLoading')}
+      </SettingsState>
+    )
+  return (
+    <SettingsState tone="error" className="agnes-ui-source-state" data-testid="ui-source-error">
+      <p>{props.code === 'UI_SOURCE_SHAPE' ? t('ui.sourceShape') : t('ui.sourceError')}</p>
+      {props.code ? <p>{props.code}</p> : null}
+    </SettingsState>
   )
 }

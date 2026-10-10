@@ -31,6 +31,7 @@ export interface IntelligentSurfaceProps {
   onSelection: IntelligentCatalogProps['onSelection']
   onInvalid: IntelligentCatalogProps['onInvalid']
   onAction(action: UiAction, row?: UiRowContext): void
+  onRefreshSource?(): void
   onConfirm(): void
   onCancel(): void
   onRetry(receipt: UiActionReceipt): void
@@ -84,6 +85,8 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
       <IntelligentCatalog
         {...(props.renderCustom ? { renderCustom: props.renderCustom } : {})}
         surface={surface}
+        {...(record.sources ? { sources: record.sources } : {})}
+        {...(props.onRefreshSource ? { onRefreshSource: props.onRefreshSource } : {})}
         instance={props.placement}
         input={props.input}
         selection={props.selection}

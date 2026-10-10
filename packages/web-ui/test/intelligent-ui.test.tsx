@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true })
 
-import type { UiSurface } from '@agnes/protocol/gen/intelligent-ui'
+import type { UiSourceStatus, UiSurface } from '@agnes/protocol/gen/intelligent-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
@@ -453,6 +453,173 @@ describe('expanded preset catalog', () => {
     } finally {
       document.documentElement.className = ''
       await act(async () => root.unmount())
+    }
+  })
+})
+
+const hash = 'ab'.repeat(32)
+function boundSurface(data: UiSurface['data']): UiSurface {
+  return {
+    ...structuredClone(surface),
+    data,
+    actions: [
+      {
+        id: 'approve',
+        label: 'Approve',
+        tool: 'finance_approve',
+        argsTemplate: { rows: { from: 'selection', key: 'rows' } },
+        paramsSchema: true,
+      },
+    ],
+  }
+}
+
+async function renderCatalog(
+  rendered: UiSurface,
+  sources: Record<string, UiSourceStatus> | undefined,
+  locale: UiLocale,
+  onRefresh: ReturnType<typeof vi.fn>,
+) {
+  const host = document.createElement('div')
+  const root = createRoot(host)
+  await act(async () =>
+    root.render(
+      createElement(
+        UiLocaleProvider,
+        { source: localeSource(locale) },
+        createElement(IntelligentCatalog, {
+          surface: rendered,
+          ...(sources ? { sources } : {}),
+          input: {},
+          selection: {},
+          disabled: false,
+          onInput: vi.fn(),
+          onSelection: vi.fn(),
+          onInvalid: vi.fn(),
+          onAction: vi.fn(),
+          onRefreshSource: onRefresh,
+        }),
+      ),
+    ),
+  )
+  return {
+    host,
+    root,
+    unmount: async () => {
+      await act(async () => root.unmount())
+    },
+  }
+}
+
+describe('UI data source states', () => {
+  it('degrades one denied source and still renders the literal sibling', async () => {
+    const rendered = boundSurface({
+      rows: { $source: 'finance/differences', params: {} },
+      draft: { reason: 'Mismatch' },
+      text: 'literal note',
+    })
+    const refresh = vi.fn()
+    const view = await renderCatalog(
+      rendered,
+      { rows: { status: 'error', code: 'UI_SOURCE_DENIED' } },
+      'en',
+      refresh,
+    )
+    try {
+      expect(view.host.querySelector('[data-testid="ui-unavailable"]')).toBeNull()
+      expect(view.host.querySelectorAll('[data-testid="ui-source-error"]')).toHaveLength(2)
+      expect(view.host.querySelector('[data-testid="ui-source-error"]')?.getAttribute('role')).toBe('alert')
+      expect(view.host.textContent).toContain('This data is unavailable.')
+      expect(view.host.textContent).toContain('UI_SOURCE_DENIED')
+      expect(view.host.textContent).toContain('literal note')
+      expect(view.host.querySelector('[data-testid="ui-table-rows"]')).toBeNull()
+      expect(view.host.querySelector('svg')).toBeNull()
+      expect(view.host.textContent).not.toContain('finance/differences')
+      const button = view.host.querySelector<HTMLButtonElement>('[data-testid="ui-source-refresh"]')
+      expect(button?.textContent).toContain('Refresh')
+      expect(button?.getAttribute('aria-label')).toContain('Refresh')
+      await act(async () => button?.click())
+      expect(refresh).toHaveBeenCalledTimes(1)
+      expect(view.host.querySelector<HTMLButtonElement>('[data-testid="ui-action-approve"]')?.disabled).toBe(
+        true,
+      )
+    } finally {
+      await view.unmount()
+    }
+  })
+
+  it('shows a loading state and a Chinese error without crashing on a bad result', async () => {
+    const pending = boundSurface({
+      rows: { $source: 'finance/differences', params: {} },
+      draft: { reason: 'Mismatch' },
+      text: 'literal note',
+    })
+    const refresh = vi.fn()
+    const loading = await renderCatalog(pending, { rows: { status: 'pending' } }, 'zh-CN', refresh)
+    try {
+      const status = loading.host.querySelector('[data-testid="ui-source-loading"]')
+      expect(status?.getAttribute('role')).toBe('status')
+      expect(status?.getAttribute('aria-busy')).toBe('true')
+      expect(loading.host.textContent).toContain('正在加载数据…')
+      expect(loading.host.querySelector('[data-testid="ui-source-refresh"]')?.textContent).toContain('刷新')
+      expect(loading.host.textContent).toContain('literal note')
+    } finally {
+      await loading.unmount()
+    }
+    const malformed = boundSurface({
+      rows: [{ id: 'txn-1' }],
+      draft: { reason: 'Mismatch' },
+      text: 'literal note',
+    })
+    const broken = await renderCatalog(
+      malformed,
+      { rows: { status: 'ready', resultHash: hash } },
+      'zh-CN',
+      refresh,
+    )
+    try {
+      expect(broken.host.querySelector('[data-testid="ui-unavailable"]')).toBeNull()
+      expect(broken.host.textContent).toContain('这份数据与组件不匹配。')
+      expect(broken.host.textContent).toContain('UI_SOURCE_SHAPE')
+      expect(broken.host.textContent).toContain('literal note')
+      expect(broken.host.querySelector('[data-testid="ui-table-rows"]')).toBeNull()
+    } finally {
+      await broken.unmount()
+    }
+  })
+
+  it('renders a ready source after the structural check and refuses a bad literal surface', async () => {
+    const ready = boundSurface({
+      rows: [{ id: 'txn-1', amount: 250 }],
+      draft: { reason: 'Mismatch' },
+      text: 'literal note',
+    })
+    const refresh = vi.fn()
+    const view = await renderCatalog(ready, { rows: { status: 'ready', resultHash: hash } }, 'en', refresh)
+    try {
+      expect(view.host.querySelector('[data-testid="ui-table-rows"]')?.textContent).toContain('250')
+      expect(view.host.querySelector('[data-testid="ui-source-error"]')).toBeNull()
+      expect(view.host.querySelector('[data-testid="ui-source-refresh"]')).not.toBeNull()
+      expect(view.host.querySelector<HTMLButtonElement>('[data-testid="ui-action-approve"]')?.disabled).toBe(
+        false,
+      )
+    } finally {
+      await view.unmount()
+    }
+    const literal = structuredClone(surface)
+    literal.data = {
+      ...literal.data,
+      rows: [
+        { id: 'txn-1', amount: 250 },
+        { id: 'txn-1', amount: 0 },
+      ],
+    }
+    const rejected = await renderCatalog(literal, undefined, 'en', refresh)
+    try {
+      expect(rejected.host.querySelector('[data-testid="ui-unavailable"]')).not.toBeNull()
+      expect(rejected.host.querySelector('[data-testid="ui-table-rows"]')).toBeNull()
+    } finally {
+      await rejected.unmount()
     }
   })
 })

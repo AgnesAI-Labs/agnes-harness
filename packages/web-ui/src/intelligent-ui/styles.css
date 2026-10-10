@@ -152,6 +152,12 @@
   height: auto;
   background: var(--agnes-bg-surface);
 }
+.agnes-ui-source-state {
+  display: grid;
+  gap: var(--s8);
+  justify-items: start;
+  color: var(--agnes-text-primary);
+}
 .agnes-intelligent-catalog .agnes-ui-tabs [role="tab"] {
   color: var(--agnes-text-primary);
 }

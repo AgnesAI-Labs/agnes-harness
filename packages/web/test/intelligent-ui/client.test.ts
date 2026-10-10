@@ -3,6 +3,7 @@ import type {
   UiActionReceipt,
   UiReadParams,
   UiReadResult,
+  UiSurfaceRecord,
 } from '@agnes/protocol/gen/intelligent-ui'
 import { describe, expect, it } from 'vitest'
 import { IntelligentUiClient } from '../../src/intelligent-ui/client.js'
@@ -43,6 +44,8 @@ class FakeServer implements IntelligentUiServer {
   attach = async (seq: number) => {
     this.attached = seq
   }
+  refreshed?: UiSurfaceRecord
+  refresh = async () => this.refreshed ?? structuredClone(this.page.surfaces[0]!)
 }
 const storage = (): UiCommandStorage => {
   const map = new Map<string, string>()
@@ -261,6 +264,43 @@ describe('Intelligent UI session projection and commands', () => {
       row: { tableId: 'differences', rowId: 'txn-1' },
       selection: { differences: ['txn-1'] },
     })
+    client.dispose()
+  })
+
+  it('copies a resolved form object and never a source binding', async () => {
+    const { client, id } = await setup()
+    expect(client.draft(id).input.adjustment).toEqual({ reason: 'Mismatch' })
+    client.dispose()
+    const server = new FakeServer()
+    const bound = financeRecord()
+    bound.surface.data.draft = { $source: 'finance/differences', params: {} }
+    bound.sources = { draft: { status: 'error', code: 'UI_SOURCE_DENIED' } }
+    server.page = uiPage(bound)
+    const denied = new IntelligentUiClient('session-finance', server)
+    await denied.start()
+    expect(denied.draft(id).input.adjustment).toBeUndefined()
+    expect(JSON.stringify(denied.draft(id))).not.toContain('$source')
+    denied.dispose()
+  })
+
+  it('submits the ready source hash and replaces that surface on refresh', async () => {
+    const { client, server, id, action } = await setup()
+    const hash = 'ab'.repeat(32)
+    const record = financeRecord()
+    record.sources = { rows: { status: 'ready', resultHash: hash } }
+    server.page = uiPage(record, [], 20)
+    await client.refresh()
+    const refreshed = financeRecord()
+    refreshed.surface.data.rows = [{ id: 'txn-2', amountCents: 9 }]
+    refreshed.sources = { rows: { status: 'ready', resultHash: 'cd'.repeat(32) } }
+    server.refreshed = refreshed
+    await client.refreshSource(id)
+    expect(client.record(id)?.surface.revision).toBe(1)
+    expect(client.record(id)?.surface.data.rows).toEqual([{ id: 'txn-2', amountCents: 9 }])
+    expect(client.record(id)?.sources?.rows).toEqual({ status: 'ready', resultHash: 'cd'.repeat(32) })
+    client.choose(id, action)
+    await client.confirm(id)
+    expect(server.submitted[0]?.sources).toEqual({ rows: 'cd'.repeat(32) })
     client.dispose()
   })
 })

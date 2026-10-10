@@ -105,6 +105,7 @@ const server: IntelligentUiServer = {
     notify()
     return structuredClone(receipt)
   },
+  refresh: async () => structuredClone(state.page.surfaces[0]!),
   listen: (listener) => {
     onEvent = listener
     return () => {
