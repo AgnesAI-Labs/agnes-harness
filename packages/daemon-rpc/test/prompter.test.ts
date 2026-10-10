@@ -234,4 +234,131 @@ describe('PrompterRouter', () => {
     await expect(p).resolves.toEqual({ verdict: 'cancelled', reason: 'stopped' })
     expect(log.at(-1)).toMatchObject({ via: 'aborted', verdict: 'cancelled' })
   })
+
+  const attach = (ep: LocalEndpoint) => {
+    ep.conn.capabilities.permission = true
+    ep.conn.attached.set('k', {
+      cursor: { fromSeq: 0, generation: 1 },
+      filter: { preview: false, acpUpdates: true },
+    })
+  }
+
+  it('asks the same approval again when the browser connection closes', async () => {
+    const origin = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
+    origin.conn.capabilities.permission = true
+    const next = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
+    attach(next)
+    let live = [origin]
+    const log: AskOutcome[] = []
+    const r = new PrompterRouter({
+      endpointFor: (c) => {
+        const found = live.find((ep) => ep.conn === c)
+        if (!found) throw new Error('endpointFor: connection not found among live connections')
+        return found
+      },
+      connections: () => live.map((ep) => ep.conn),
+      originOf: () => origin.conn,
+      clock: () => 0,
+      record: (x) => log.push(x),
+    })
+    const first = origin.notifications[Symbol.asyncIterator]()
+    const p = r.ask(req as never, { signal: never })
+    await first.next()
+    await origin.close()
+    live = [next]
+    const it = next.notifications[Symbol.asyncIterator]()
+    const m = (await it.next()).value as {
+      id: string
+      params: { _meta: { 'ai.agnes.harness': { requestId: string } } }
+    }
+    expect(m.params._meta['ai.agnes.harness'].requestId).toBe('r1')
+    expect(origin.pending().events).toBe(0)
+    await next.handle({
+      jsonrpc: '2.0',
+      id: m.id,
+      result: { outcome: { outcome: 'selected', optionId: 'allow_once' } },
+    })
+    await expect(p).resolves.toBe('allowed-once')
+    expect(log).toEqual([{ requestId: 'r1', via: 'answered', verdict: 'allowed-once' }])
+  })
+
+  it('asks the next attached client when the origin endpoint is already gone', async () => {
+    const origin = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
+    origin.conn.capabilities.permission = true
+    const next = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
+    attach(next)
+    const log: AskOutcome[] = []
+    const r = new PrompterRouter({
+      endpointFor: (c) => {
+        if (c === next.conn) return next
+        throw new Error('endpointFor: connection not found among live connections')
+      },
+      connections: () => [origin.conn, next.conn],
+      originOf: () => origin.conn,
+      clock: () => 0,
+      record: (x) => log.push(x),
+    })
+    const it = next.notifications[Symbol.asyncIterator]()
+    const p = r.ask(req as never, { signal: never })
+    const m = (await it.next()).value as {
+      id: string
+      params: { _meta: { 'ai.agnes.harness': { requestId: string } } }
+    }
+    expect(m.params._meta['ai.agnes.harness'].requestId).toBe('r1')
+    expect(origin.pending().events).toBe(0)
+    await next.handle({
+      jsonrpc: '2.0',
+      id: m.id,
+      result: { outcome: { outcome: 'selected', optionId: 'allow_once' } },
+    })
+    await expect(p).resolves.toBe('allowed-once')
+    expect(log).toEqual([{ requestId: 'r1', via: 'answered', verdict: 'allowed-once' }])
+  })
+
+  it('waits out the deadline when a refresh leaves nobody to ask', async () => {
+    const ep = new LocalEndpoint({ clock: () => Date.now(), principalId: 'local' })
+    ep.conn.capabilities.permission = true
+    const log: AskOutcome[] = []
+    const r = new PrompterRouter({
+      endpointFor: () => ep,
+      connections: () => [ep.conn],
+      originOf: () => ep.conn,
+      clock: () => Date.now(),
+      record: (x) => log.push(x),
+    })
+    const it = ep.notifications[Symbol.asyncIterator]()
+    const started = Date.now()
+    const p = r.ask({ ...req, deadline: new Date(started + 80).toISOString() } as never, { signal: never })
+    await it.next()
+    await ep.close()
+    let settled = false
+    const done = p.then(
+      (answer) => {
+        settled = true
+        return answer
+      },
+      (error: unknown) => {
+        settled = true
+        throw error
+      },
+    )
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    expect(settled).toBe(false)
+    await expect(done).resolves.toEqual({ verdict: 'rejected', reason: 'timeout' })
+    expect(Date.now() - started).toBeGreaterThanOrEqual(50)
+    expect(log).toEqual([{ requestId: 'r1', via: 'timeout', verdict: 'rejected' }])
+  })
+
+  it('cancels a dropped approval when the caller aborts before anyone else answers', async () => {
+    const { ep, r, log } = mk()
+    ep.conn.capabilities.permission = true
+    const ac = new AbortController()
+    const it = ep.notifications[Symbol.asyncIterator]()
+    const p = r.ask(req as never, { signal: ac.signal })
+    await it.next()
+    await ep.close()
+    ac.abort()
+    await expect(p).resolves.toEqual({ verdict: 'cancelled', reason: 'stopped' })
+    expect(log).toEqual([{ requestId: 'r1', via: 'aborted', verdict: 'cancelled' }])
+  })
 })
