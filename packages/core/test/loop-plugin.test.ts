@@ -124,62 +124,68 @@ function kernel(
 }
 
 describe('loop plugins', () => {
-  it('uses an independent runtime and the same request/tool event waterfall from custom-loop ports', async () => {
-    const loops = defaultLoops()
-    loops.register('@test/echo', echo)
-    const toolRuntimes = new ToolRuntimeRegistry(false)
-    toolRuntimes.register('@test/serial', {
-      id: 'serial',
-      version: '1.0.0',
-      create: () => ({
-        async execute(call, port, signal) {
-          const result = await port.dispatch(call, signal)
-          return { ...result, content: [{ type: 'text', text: 'independent runtime' }] }
-        },
-        async batch(calls, port, signal) {
-          const results = []
-          for (const call of calls) results.push(await port.dispatch(call, signal))
-          return results
-        },
-        cancel() {},
-        dispose() {},
-      }),
-    })
-    const loopEvents = new LoopEventRegistry()
-    const responses: unknown[] = []
-    loopEvents.on('after_model_response', (payload) => {
-      responses.push(payload.content)
-    })
-    loopEvents.on('before_model_request', (payload) => {
-      expect(payload.request.maxTokens).toBe(12)
-      return { patch: { maxTokens: 14 } }
-    })
-    const preset = presetDefaults()
-    preset.tools.runtime = 'serial'
-    const k = kernel(new MemoryStorage(), loops, { toolRuntimes, loopEvents, preset })
-    k.tools.add(readTool(), { source: 'test', trust: 'builtin' })
-    const session = await k.session('independent-runtime', { ...options, loop: echo })
-    session.hooks = {
-      ...noopHooks,
-      beforeRequest: async (output) =>
-        applyBeforeRequestPatches(output, [{ ext: 'test', patch: { maxTokens: 12 } }]),
-    }
-    try {
-      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
-      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
-        'completed',
-      )
-      const rows = await session.scan({ fromSeq: 1, limit: 200 })
-      expect(rows.filter((row) => row.type === 'tool/result').map((row) => row.data)).toEqual([
-        expect.objectContaining({ content: [{ type: 'text', text: 'independent runtime' }] }),
-        expect.objectContaining({ content: [{ type: 'text', text: 'independent runtime' }] }),
-      ])
-      expect(responses).toEqual([[{ type: 'text', text: 'independent answer' }]])
-      expect((k.o.provider as ReturnType<typeof fakeProvider>).requests[0]?.sampling?.maxTokens).toBe(14)
-    } finally {
-      await k.close()
-    }
-  })
+  it.each([false, true])(
+    'uses the controlled custom-loop ports with deferLoading=%s',
+    async (deferLoading) => {
+      const loops = defaultLoops()
+      loops.register('@test/echo', echo)
+      const toolRuntimes = new ToolRuntimeRegistry(false)
+      toolRuntimes.register('@test/serial', {
+        id: 'serial',
+        version: '1.0.0',
+        create: () => ({
+          async execute(call, port, signal) {
+            const result = await port.dispatch(call, signal)
+            return { ...result, content: [{ type: 'text', text: 'independent runtime' }] }
+          },
+          async batch(calls, port, signal) {
+            const results = []
+            for (const call of calls) results.push(await port.dispatch(call, signal))
+            return results
+          },
+          cancel() {},
+          dispose() {},
+        }),
+      })
+      const loopEvents = new LoopEventRegistry()
+      const responses: unknown[] = []
+      loopEvents.on('after_model_response', (payload) => {
+        responses.push(payload.content)
+      })
+      loopEvents.on('before_model_request', (payload) => {
+        expect(payload.request.maxTokens).toBe(12)
+        return { patch: { maxTokens: 14 } }
+      })
+      const preset = presetDefaults()
+      preset.tools.runtime = 'serial'
+      const k = kernel(new MemoryStorage(), loops, { toolRuntimes, loopEvents, preset })
+      const tool = readTool()
+      k.tools.add({ ...tool, meta: { ...tool.meta, deferLoading } }, { source: 'test', trust: 'builtin' })
+      const session = await k.session('independent-runtime', { ...options, loop: echo })
+      session.hooks = {
+        ...noopHooks,
+        beforeRequest: async (output) =>
+          applyBeforeRequestPatches(output, [{ ext: 'test', patch: { maxTokens: 12 } }]),
+      }
+      try {
+        await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
+        expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+          'completed',
+        )
+        const rows = await session.scan({ fromSeq: 1, limit: 200 })
+        expect(rows.filter((row) => row.type === 'tool/result').map((row) => row.data)).toEqual([
+          expect.objectContaining({ content: [{ type: 'text', text: 'independent runtime' }] }),
+          expect.objectContaining({ content: [{ type: 'text', text: 'independent runtime' }] }),
+        ])
+        expect(responses).toEqual([[{ type: 'text', text: 'independent answer' }]])
+        expect(rows.filter((row) => row.type === 'x/core/tool-disclosed')).toEqual([])
+        expect((k.o.provider as ReturnType<typeof fakeProvider>).requests[0]?.tools).toEqual([])
+        expect((k.o.provider as ReturnType<typeof fakeProvider>).requests[0]?.sampling?.maxTokens).toBe(14)
+      } finally {
+        await k.close()
+      }
+    },
+  )
 
   it.each(['loop', 'tool-runtime'] as const)(
     'aborts and drains a late %s constructor before closing Kernel storage',

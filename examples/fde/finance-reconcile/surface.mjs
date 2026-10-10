@@ -60,7 +60,7 @@ export function reviewSurface(id, report, revision = 1, receipt = null) {
         title: 'Ledger differences (USD cents)',
         dataKey: 'differences',
         rowKey: 'id',
-        selection: 'none',
+        selection: actionable ? 'multiple' : 'none',
         columns: [
           { key: 'id', label: 'Transaction' },
           { key: 'kind', label: 'Difference' },

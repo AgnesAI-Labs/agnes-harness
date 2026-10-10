@@ -189,6 +189,8 @@ Fact-chain 与 trace 展示 surface id/revision 和归属、received 命令/acto
 
 模型只输出数据组件：`id`、命名空间 `kind`、`dataKey`、`fallback`、`actionIds`（可选 `title`）；props 位于 `surface.data[dataKey]`。后台 `validIntelligentSurface(surface, declarations)` 从持久会话 generation 取得声明，在持久化前按本地同步 JSON Schema 校验 props，核对声明的原文 fallback，并拒绝未知或不唯一的 kind。不能替换为当前安装版本。限制：每模块最多 16 项声明；Schema 最多 16,384 字节、深度 16；props 不超过声明的上限（1–16,384 字节）；fallback 为 1–4,096 字符；继续遵守现有 surface 字节、深度与组件数量上限。Schema 不得加载远程引用或异步执行。
 
+浏览器校验服务端已验证的 surface 投影、固定模块身份、原文 fallback 和声明的 props 字节上限。完整 props Schema 编译由后台负责；工作台 CSP 不允许动态编译函数。
+
 找不到已审阅、ready、锁定版本的模块，或加载/渲染失败、加载超过 15 秒时，该组件显示声明的文本回退与本地化提示，其他组件继续工作。TUI 与 channels 从 `ui_render`/`ui_update` 工具文本得到 fallback。[财务示例](../../examples/fde/finance-reconcile/client/agnes.client.json) 使用小型对账差异组件，并保留旁边的预设差异表作为可用回退。
 
 

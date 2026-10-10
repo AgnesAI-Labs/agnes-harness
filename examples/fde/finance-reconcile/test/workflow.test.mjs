@@ -48,6 +48,14 @@ for (const verdict of ['allowed-once', 'rejected'])
       assert.equal(opening.surfaces.length, 1)
       const surface = opening.surfaces[0].surface
       assert.equal(surface.revision, 1)
+      const openingFacts = await session.facts()
+      assert.ok(openingFacts.some((event) => event.type === 'tool/call' && event.data.name === 'ui_render'))
+      assert.equal(
+        openingFacts.some(
+          (event) => event.type === 'x/core/tool-disclosed' && event.data.name === 'ui_render',
+        ),
+        false,
+      ) // Loop tools execute from the controlled catalog without disclosing them to the model.
       assert.ok(requests.length > 0)
       assert.ok(requests.every((request) => request.tools.length === 0))
       assert.deepEqual(
@@ -107,8 +115,14 @@ test('exact cents, duplicate IDs and unresolved evidence retain their original a
     ],
   )
   assert.deepEqual(report.unresolved, ['TX-4'])
+  const review = reviewSurface('finance-review', report)
+  assert.equal(review.components.find((component) => component.id === 'differences').selection, 'multiple')
+  assert.deepEqual(review.data.adjustment.proposals, report.proposals)
   const { receipt } = value(await tools[2].execute({ proposals: report.proposals }, { signal }))
   assert.equal(receipt.posted, false)
+  const completed = reviewSurface('finance-review', report, 2, receipt)
+  assert.equal(completed.components.find((component) => component.id === 'differences').selection, 'none')
+  assert.deepEqual(completed.actions, [])
   for (const entry of receipt.entries)
     assert.equal(
       entry.lines.reduce((sum, line) => sum + line.signedCents, 0),

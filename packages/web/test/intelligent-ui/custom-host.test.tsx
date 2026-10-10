@@ -52,20 +52,30 @@ const message = (frame: HTMLIFrameElement, data: unknown) =>
   window.dispatchEvent(new MessageEvent('message', { data, source: frame.contentWindow, origin: 'null' }))
 
 describe('reviewed custom host', () => {
-  it('refuses blocked, unpinned, ambiguous and schema-invalid module identities', () => {
-    expect(selectCustomUiModule([row], base)).toEqual(row)
+  it('selects backend-validated projections under CSP and refuses invalid module bindings', () => {
+    const compile = vi.spyOn(globalThis, 'Function').mockImplementation(() => {
+      throw new EvalError('Content Security Policy forbids dynamic functions')
+    })
+    try {
+      expect(selectCustomUiModule([row], base)).toEqual(row)
+    } finally {
+      compile.mockRestore()
+    }
     for (const rows of [
       [],
       [{ ...row, phase: 'blocked' as const }],
       [{ ...row, enabled: false }],
       [{ ...row, entryUrl: '/plugins/current/diff.mjs' }],
+      [{ ...row, contentDigest: '' }],
+      [{ ...row, intelligentComponents: [declaration, declaration] }],
+      [{ ...row, intelligentComponents: [{ ...declaration, maxPropsBytes: 1 }] }],
       [row, row],
     ])
       expect(selectCustomUiModule(rows, base)).toBeUndefined()
     expect(
       selectCustomUiModule([row], {
         ...base,
-        surface: { ...surface, data: { ...surface.data, custom: { amount: '12' } } },
+        component: { ...component, fallback: 'Unreviewed fallback' },
       }),
     ).toBeUndefined()
   })

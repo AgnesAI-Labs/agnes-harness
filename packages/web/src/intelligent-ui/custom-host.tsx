@@ -1,5 +1,7 @@
+import { validateAgainst } from '@agnes/protocol'
+import { UiComponentDeclaration } from '@agnes/protocol/gen/extension-manifest'
 import type { ClientModuleRosterRow } from '@agnes/protocol/gen/package-admin'
-import { boundedUiJson, validIntelligentSurface } from '@agnes/protocol/intelligent-ui'
+import { boundedUiJson, validIntelligentSurfaceProjection } from '@agnes/protocol/intelligent-ui'
 import type { ThemeService } from '@agnes/web-client'
 import {
   CustomUiFallback,
@@ -35,8 +37,16 @@ export function selectCustomUiModule(
     !/^\/plugins\/generations\/[a-f0-9-]{36}\//.test(row.entryUrl)
   )
     return undefined
-  const declaration = row.intelligentComponents!.filter((item) => item.kind === props.component.kind)
-  return validIntelligentSurface({ ...props.surface, components: [props.component] }, declaration)
+  const declarations = row.intelligentComponents!.filter((item) => item.kind === props.component.kind)
+  if (declarations.length !== 1) return undefined
+  const declaration = declarations[0]!
+  // Props were validated against the pinned declaration before the backend wrote this surface.
+  // Rendering checks the projection and module binding; Ajv's backend schema compiler uses
+  // dynamic functions, which the workbench CSP deliberately forbids.
+  return validateAgainst(UiComponentDeclaration, declaration).ok &&
+    validIntelligentSurfaceProjection({ ...props.surface, components: [props.component] }) &&
+    declaration.fallback === props.component.fallback &&
+    boundedUiJson(props.surface.data[props.component.dataKey], declaration.maxPropsBytes)
     ? row
     : undefined
 }

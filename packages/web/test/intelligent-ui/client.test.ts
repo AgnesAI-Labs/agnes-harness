@@ -177,6 +177,18 @@ describe('Intelligent UI session projection and commands', () => {
       expect(client.locked(id)).toBe(reason === 'closed')
       await client.refresh()
       expect(client.needsReview(id)).toBe(false)
+      if (reason === 'stale') {
+        server.next = uiReceipt('succeeded', { revision: 2 })
+        client.choose(id, action)
+        expect(client.confirmation(id)?.revision).toBe(2)
+        await client.confirm(id)
+        expect(server.submitted.at(-1)).toMatchObject({
+          revision: 2,
+          input: { adjustment: { reason: 'Updated difference' } },
+          confirmed: true,
+        })
+        expect(client.receipts(id).some((receipt) => receipt.status === 'succeeded')).toBe(true)
+      }
       client.dispose()
     },
   )

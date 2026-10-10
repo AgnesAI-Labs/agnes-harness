@@ -31,7 +31,7 @@ agh serve
 
 在本目录执行 `npm pack`，通过 `agh plugins add ./NAME.tgz` 安装分发包。运行文件、夹具、Skill 和可选面板一同打包，没有工作区或相邻示例导入。
 
-同一 preset surface 在对话与工作台展示差异表、金额图和调整表单。审阅后点击 **确认调整**，后台再通过原工具路径申请模拟调整权限。刷新恢复同一个审阅状态和待审批回执；无交互运行在此边界等待。TUI／渠道展示文本摘要与工作台链接。
+同一 preset surface 在对话与工作台展示差异表、金额图和调整表单。勾选行可标记正在审阅的差异，并在表单中编辑提案理由；确认覆盖该表单内的全部提案。点击 **确认调整**，后台再通过原工具路径申请模拟调整权限。刷新恢复同一个审阅状态和待审批回执；无交互运行在此边界等待。TUI／渠道展示文本摘要与工作台链接。
 
 Web：打开 serve 地址，进入 **Admin → Plugins → Bundles**，选择 `@agnes-fde/finance-reconcile#finance-reconcile`，保存并按提示重启 Host。新建会话，选择 `finance-reconcile` 预设与 Demo 模型，粘贴 `fixtures/prompt.txt`。旧会话保留固定 loop。查看依据与轨迹。
 

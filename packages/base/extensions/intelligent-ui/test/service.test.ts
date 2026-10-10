@@ -599,6 +599,18 @@ describe('pinned custom component declarations', () => {
     await expect(declared.service().render({ surface: bad }, signal)).rejects.toMatchObject({
       data: { code: 'INVALID_PARAMS' },
     })
+    await declared.service().render({ surface: customSurface() }, signal)
+    const invalidUpdate = customSurface()
+    invalidUpdate.revision = 2
+    invalidUpdate.data.custom = { amount: '12' }
+    await expect(
+      declared
+        .service()
+        .update({ surfaceId: invalidUpdate.id, expectedRevision: 1, surface: invalidUpdate }, signal),
+    ).rejects.toMatchObject({ data: { code: 'INVALID_PARAMS' } })
+    expect((await declared.service().read({ sessionId: 'session' }, signal)).surfaces[0]?.surface).toEqual(
+      customSurface(),
+    )
   })
   it('keeps a custom action on the ordinary deferred tool and approval path', async () => {
     const f = fixture([declaration])
