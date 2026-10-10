@@ -751,6 +751,7 @@ export async function runWorker(
             serviceAborts,
             resources ? { mcp: resources.runtime.mcp } : undefined,
             workerGeneration,
+            () => resourceSlot.recoveryRequired === true,
           )
         const scopedKey = sessionScopedKey(command.params)
         // A command that names a session needs that session open; a hibernated one is woken first.

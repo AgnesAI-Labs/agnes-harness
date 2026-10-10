@@ -39,6 +39,7 @@ export const HOST_ERROR_CODES = [
   // A lifecycle refusal, not a seam refusal: createSession after close() used to raise
   // E_SEAM_IMMUTABLE, the code for "a seam implementation may not be swapped".
   'E_HOST_CLOSED',
+  'E_GENERATION_EXECUTION_UNSETTLED',
   // paths.ts refuses a relative AGH_HOME instead of resolving it against whatever the process's
   // cwd happens to be -- the same silent-relocation shape as the dataDir default it also fixed.
   'E_HOME_INVALID',

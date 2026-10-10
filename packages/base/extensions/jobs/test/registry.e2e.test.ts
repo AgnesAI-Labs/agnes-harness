@@ -56,7 +56,9 @@ describe.skipIf(process.platform === 'win32')('session shell jobs', () => {
     const ctx = context('close')
     try {
       const shell = createShellTool(jobs)
-      expect((await shell.execute({ command: 'sleep 30', background: true }, ctx)).isError).toBeUndefined()
+      const started = await shell.execute({ command: 'sleep 30', background: true }, ctx)
+      expect(started.isError).toBeUndefined()
+      expect(started.structured).toEqual({ jobId: jobs.list(ctx)[0]!.id, status: 'running' })
       await shell.execute({ command: 'sleep 30', background: true }, ctx)
       expect(jobs.list(ctx)).toHaveLength(1)
       await jobs.closeSession(ctx.session.key)

@@ -41,6 +41,7 @@ export function createJobTools(jobs: ShellJobs) {
           await jobs.syncChildren(ctx)
           const job = await jobs.wait(ctx, args.jobId, Math.min(args.waitMs ?? 0, ctx.timeoutMs))
           return {
+            structured: { jobId: job.id, status: job.status },
             ...(await guardedResult(
               ctx,
               `${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}\n[${job.status}; exit ${job.code ?? 'pending'}]${job.truncated ? ' [capture limit reached]' : ''}`,
@@ -61,7 +62,10 @@ export function createJobTools(jobs: ShellJobs) {
         try {
           await jobs.syncChildren(ctx)
           const job = await jobs.kill(ctx, args.jobId)
-          return { content: [{ type: 'text', text: `${job.id}: ${job.status}` }] }
+          return {
+            content: [{ type: 'text', text: `${job.id}: ${job.status}` }],
+            structured: { jobId: job.id, status: job.status },
+          }
         } catch (e) {
           return { content: [{ type: 'text', text: String(e) }], isError: true }
         }

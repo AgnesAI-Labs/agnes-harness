@@ -94,7 +94,10 @@ export interface Host {
   sessionGeneration?(sessionKey: string): string | undefined
   releaseSessionGeneration?(sessionKey: string): Promise<void>
   /** Privileged coordinator only: the caller must exclude concurrent admission for this idle session. */
-  migrateSessionGeneration?(sessionKey: string): Promise<{
+  migrateSessionGeneration?(
+    sessionKey: string,
+    context?: { recoveryRequired?: () => boolean },
+  ): Promise<{
     previousGenerationId: string
     generationId: string
     changed: boolean

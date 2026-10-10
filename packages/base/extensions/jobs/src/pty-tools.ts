@@ -51,6 +51,7 @@ export function createPtyTools(jobs: ShellJobs) {
           )
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(job) }],
+            structured: { jobId: job.id, status: job.status },
             details: { jobId: job.id },
           }
         } catch (error) {
@@ -78,6 +79,7 @@ export function createPtyTools(jobs: ShellJobs) {
           const job = await jobs.wait(ctx, args.jobId, Math.min(args.waitMs ?? 0, ctx.timeoutMs))
           return {
             ...(await guardedResult(ctx, JSON.stringify(job))),
+            structured: { jobId: job.id, status: job.status },
             details: { jobId: job.id, status: job.status },
           }
         } catch (error) {
@@ -164,6 +166,7 @@ export function createPtyTools(jobs: ShellJobs) {
           const job = await jobs.kill(ctx, args.jobId)
           return {
             content: [{ type: 'text' as const, text: JSON.stringify({ id: job.id, status: job.status }) }],
+            structured: { jobId: job.id, status: job.status },
           }
         } catch (error) {
           return { content: [{ type: 'text' as const, text: String(error) }], isError: true }

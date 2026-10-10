@@ -3,6 +3,7 @@ import {
   draftFeedbackSkill,
   type Host,
   type HostSession,
+  HostError,
   manageMemory,
   type ResolvedProfile,
 } from '@agnes/host'
@@ -748,6 +749,7 @@ export async function handleServiceCommand(
       }
     | WorkerGeneration,
   _workerGeneration?: WorkerGeneration,
+  resourceRecoveryRequired?: () => boolean,
 ): Promise<unknown> {
   // The numeric fourth argument remains a generation slot for existing generic service callers.
   // Resource-only workers supply their narrow runtime port first and generation fifth so neither
@@ -817,7 +819,15 @@ export async function handleServiceCommand(
       if (!host?.migrateSessionGeneration) throw new Error('Session generation migration is unavailable')
       if (typeof p.sessionId !== 'string' || !p.sessionId || p.sessionId.length > 512)
         throw new TypeError('invalid session key')
-      return host.migrateSessionGeneration(p.sessionId)
+      if (resourceRecoveryRequired?.())
+        throw new HostError(
+          'E_GENERATION_EXECUTION_UNSETTLED',
+          'generation migration refused: recovery-required',
+          {
+            detail: { reasons: [{ kind: 'recovery-required', id: p.sessionId, sessionKey: p.sessionId }] },
+          },
+        )
+      return host.migrateSessionGeneration(p.sessionId, { recoveryRequired: resourceRecoveryRequired })
     case 'pluginGenerations.collect':
       if (!host?.collectPluginGenerations) throw new Error('Plugin generation collection is unavailable')
       await host.collectPluginGenerations()

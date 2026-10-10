@@ -7,7 +7,12 @@ import type { Host, HostSession } from '@agnes/host'
 import type { McpStatus } from '@agnes/protocol'
 import { bootstrapWorkerResources, type WorkerResourceBootstrapInput } from '@agnes/resource-control-worker'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { applyMcpRowChange, handleCommand, prepareIdleResources } from '../src/commands.js'
+import {
+  applyMcpRowChange,
+  handleCommand,
+  handleServiceCommand,
+  prepareIdleResources,
+} from '../src/commands.js'
 import type { McpRowRuntime } from '../src/mcp-row-runtime.js'
 
 type CommandFrame = Parameters<typeof handleCommand>[1]
@@ -605,6 +610,26 @@ describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn 
       expect(ctx.resources?.generation).toBe(state1)
       expect(ctx.resources).toMatchObject({ staleMarks: 1, reloadedMarks: 0 })
       expect(ctx.resources?.recoveryRequired).toBe(true)
+      host.migrateSessionGeneration = vi.fn()
+      await expect(
+        handleServiceCommand(
+          host,
+          {
+            kind: 'command',
+            requestId: 'migration',
+            method: 'pluginGenerations.migrate',
+            params: { sessionId: 'session' },
+          },
+          ctx.aborts,
+          undefined,
+          undefined,
+          () => ctx.resources?.recoveryRequired === true,
+        ),
+      ).rejects.toMatchObject({
+        code: 'E_GENERATION_EXECUTION_UNSETTLED',
+        detail: { reasons: [expect.objectContaining({ kind: 'recovery-required' })] },
+      })
+      expect(host.migrateSessionGeneration).not.toHaveBeenCalled()
     },
   )
 })

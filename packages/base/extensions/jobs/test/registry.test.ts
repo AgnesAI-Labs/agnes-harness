@@ -28,11 +28,16 @@ it('unifies child output/cancellation with owner isolation and completion notifi
   }
   const [list, output, kill] = createJobTools(jobs)
   expect(JSON.stringify(await list!.execute({}, ctx))).toContain('child:child-1')
-  expect(JSON.stringify(await output!.execute({ jobId: 'child:child-1' }, ctx))).toContain('child output')
+  const running = await output!.execute({ jobId: 'child:child-1' }, ctx)
+  expect(JSON.stringify(running)).toContain('child output')
+  expect(running.structured).toEqual({ jobId: 'child:child-1', status: 'running' })
   expect(
     (await output!.execute({ jobId: 'child:child-1' }, fakeToolContext({ sessionKey: 'foreign' }))).isError,
   ).toBe(true)
-  await kill!.execute({ jobId: 'child:child-1' }, ctx)
+  expect((await kill!.execute({ jobId: 'child:child-1' }, ctx)).structured).toEqual({
+    jobId: 'child:child-1',
+    status: 'killed',
+  })
   expect(cancelled).toBe(true)
   expect(jobs.completions(ctx)).toMatchObject([{ id: 'child:child-1', kind: 'child', status: 'killed' }])
   await jobs.dispose()

@@ -558,18 +558,18 @@ export async function createCompositionHost(
         }
         publish()
       }),
-    migrateSessionGeneration: (key) =>
+    migrateSessionGeneration: (key, context) =>
       enqueue(async () => {
         const binding = store.read(key)
         if (!binding) {
           // Pre-composition durable generation pins retain the generation owner's migration checks.
           if (!initial.host.migrateSessionGeneration) throw new Error('E_GENERATION_MIGRATION_UNAVAILABLE')
-          return initial.host.migrateSessionGeneration(key)
+          return initial.host.migrateSessionGeneration(key, context)
         }
         const container = await open(binding)
         if (container.draining) throw new Error('E_GENERATION_LOOP_INCOMPATIBLE: session bundle is disabled')
         if (!container.host.migrateSessionGeneration) throw new Error('E_GENERATION_MIGRATION_UNAVAILABLE')
-        const result = await container.host.migrateSessionGeneration(key)
+        const result = await container.host.migrateSessionGeneration(key, context)
         publish()
         return result
       }),

@@ -30,6 +30,7 @@ import { applyLivePluginConfig, overlayLivePluginConfig } from '../lifecycle/liv
 import { sessionKey } from '../sessions/session.js'
 import { captureGenerationResources, createGenerationSkills, restoreGenerationRows } from './resources.js'
 import { assertGenerationTrust } from './trust.js'
+import { assertMigrationSettled } from './migration-state.js'
 
 export type PluginGenerationStatus = Readonly<{
   currentGenerationId?: string
@@ -843,7 +844,7 @@ export async function createRuntimeGenerationHost(
         store.releaseSession(key)
         await collect()
       }),
-    migrateSessionGeneration: (key) =>
+    migrateSessionGeneration: (key, context) =>
       enqueue(async () => {
         if (
           owner(key).kernel.get(key) ||
@@ -868,6 +869,12 @@ export async function createRuntimeGenerationHost(
             })
           }
         }
+        await assertMigrationSettled(
+          owner(key).kernel.o.storage,
+          key,
+          pin.generationId,
+          context?.recoveryRequired?.(),
+        )
         if (pin.generationId === head.snapshot.id)
           return { previousGenerationId: pin.generationId, generationId: pin.generationId, changed: false }
         store.migrateSession(key, pin.generationId, head.snapshot.id)

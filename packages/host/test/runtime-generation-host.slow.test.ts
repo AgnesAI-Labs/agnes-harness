@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
+import { defaultIds, hasChildControl, SessionLogImpl, type EventInput } from '@agnes/core'
 import type { PluginExtensionAPI } from '@agnes/extension-api'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
@@ -402,6 +403,192 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     )
     expect(store.session('idle-incompatible-loop')?.generationId).toBe(firstId)
     await required(host.releaseSessionGeneration)('idle-incompatible-loop')
+    const approval = {
+      requestId: 'approval',
+      kind: 'tool',
+      summary: 'fixture',
+      risk: 'always',
+      bindingHash: '',
+    }
+    const blocking: [string, (Pick<EventInput, 'type' | 'data'> & Partial<EventInput>)[]][] = [
+      ['pending-approval', [{ type: 'approval/asked', data: approval }]],
+      [
+        'parked-continuation',
+        [
+          { type: 'approval/asked', data: approval },
+          {
+            type: 'approval/decided',
+            data: { requestId: 'approval', verdict: 'allowed-once', via: 'callback' },
+          },
+        ],
+      ],
+      [
+        'pending-user-answer',
+        [
+          {
+            type: 'x/agnes/interaction/requested',
+            origin: 'ext:agnes/interaction',
+            trust: 'untrusted',
+            data: { id: 'question', toolUseId: 'question', answer: null },
+          },
+        ],
+      ],
+      [
+        'unfinished-background-job',
+        [
+          {
+            type: 'tool/result',
+            data: {
+              toolUseId: 'shell',
+              content: [],
+              isError: false,
+              enforcement: { level: 'none', scope: [] },
+              authz: { decisionId: 'fixture' },
+              structured: { jobId: 'shell-job', status: 'running' },
+            },
+          },
+        ],
+      ],
+      [
+        'unfinished-effect',
+        [{ type: 'effect/intent', data: { effectId: 'effect', kind: 'tool', replay: 'never' } }],
+      ],
+      [
+        'unfinished-tool-call',
+        [{ type: 'tool/call', data: { toolUseId: 'call', name: 'shell', args: {}, ordinal: 0 } }],
+      ],
+      [
+        'unfinished-deferred-invocation',
+        [
+          {
+            type: 'x/agnes/deferred-invocations/state',
+            data: { invocation: { id: 'invocation' }, state: 'queued' },
+          },
+        ],
+      ],
+      [
+        'unknown-external-outcome',
+        [
+          { type: 'effect/settled', data: { effectId: 'effect', outcome: 'unknown' } },
+          { type: 'effect/settled', data: { effectId: 'effect', outcome: 'aborted' } },
+        ],
+      ],
+      ['recovery-required', [{ type: 'x/core/recovery-required', data: { recoveryRequired: true } }]],
+      ['unfinished-sub-agent', []],
+    ]
+    for (const [reason, facts] of blocking) {
+      const key = `migration-${reason}`
+      store.pin(key, required(firstId))
+      const storage = host.kernel.o.storage
+      const log = await SessionLogImpl.open({
+        storage,
+        key,
+        writerRunId: key,
+        ttlMs: 30000,
+        ids: defaultIds(),
+        clock: Date.now,
+      })
+      const events = facts.map((fact) => ({
+        ...fact,
+        actor: resumed.d.actor,
+        origin: fact.origin ?? 'system',
+        trust: fact.trust ?? 'trusted',
+        lane: 'main',
+        ignorable: true,
+        ...(reason === 'unfinished-deferred-invocation'
+          ? { data: { invocation: { id: 'invocation', sessionKey: key }, state: 'queued' } }
+          : {}),
+      }))
+      if (events.length) await log.append(events)
+      if (reason === 'unfinished-sub-agent') {
+        expect(hasChildControl(storage)).toBe(true)
+        if (!hasChildControl(storage)) throw new Error('missing child control fixture')
+        await storage.ensureRootScope(key, 1000000n)
+        await log.append([
+          {
+            type: 'turn/start',
+            data: { turn: 1, trigger: 'prompt' },
+            actor: resumed.d.actor,
+            origin: 'system',
+            trust: 'trusted',
+            lane: 'main',
+          },
+        ])
+        expect(
+          await storage.createDelegatedChild({
+            childKey: `${key}/child`,
+            parentKey: key,
+            boundarySeq: log.lastSeq,
+            creationId: 'migration-child',
+            kind: 'spawn',
+            rootTaskId: key,
+            runtimeOwnerSessionKey: key,
+            generationDepth: 1,
+            generationLimit: 3,
+            maxFanOut: 3,
+            inputHash: 'child-input',
+            inputText: 'fixture',
+            cwd: root,
+            actorId: resumed.d.actor.id,
+            isolation: 'shared',
+            workspaceId: 'workspace',
+            treeCapMicro: 1000000n,
+            childCapMicro: null,
+            writerRunId: key,
+          }),
+        ).toMatchObject({ status: 'created' })
+      }
+      await log.close()
+      const before = store.session(key)
+      const beforeFacts = await storage.scan(key, { toSeq: log.lastSeq })
+      const refusal = await required(host.migrateSessionGeneration)(key).then(
+        () => {
+          throw new Error(`migration unexpectedly allowed ${reason}`)
+        },
+        (error) => error,
+      )
+      expect(refusal).toMatchObject({
+        code: 'E_GENERATION_EXECUTION_UNSETTLED',
+        detail: {
+          generationId: firstId,
+          reasons: expect.arrayContaining([expect.objectContaining({ kind: reason })]),
+        },
+      })
+      expect(store.session(key)).toEqual(before)
+      expect(await storage.scan(key, { toSeq: log.lastSeq })).toEqual(beforeFacts)
+      await required(host.releaseSessionGeneration)(key)
+    }
+    // A durable open chat turn with no tool/effect binding does not fence migration.
+    const chatKey = 'migration-unfinished-chat'
+    store.pin(chatKey, required(firstId))
+    const chatLog = await SessionLogImpl.open({
+      storage: host.kernel.o.storage,
+      key: chatKey,
+      writerRunId: chatKey,
+      ttlMs: 30000,
+      ids: defaultIds(),
+      clock: Date.now,
+    })
+    await chatLog.append([
+      {
+        type: 'turn/start',
+        data: { turn: 1, trigger: 'prompt' },
+        actor: resumed.d.actor,
+        origin: 'system',
+        trust: 'trusted',
+        lane: 'main',
+      },
+    ])
+    await chatLog.close()
+    await expect(
+      required(host.migrateSessionGeneration)(chatKey, { recoveryRequired: () => true }),
+    ).rejects.toMatchObject({
+      code: 'E_GENERATION_EXECUTION_UNSETTLED',
+      detail: { reasons: [expect.objectContaining({ kind: 'recovery-required' })] },
+    })
+    expect(store.session(chatKey)?.generationId).toBe(firstId)
+    expect(await required(host.migrateSessionGeneration)(chatKey)).toMatchObject({ changed: true })
+    await required(host.releaseSessionGeneration)(chatKey)
     const migration = await required(host.migrateSessionGeneration)('session-a')
     expect(migration).toEqual({
       previousGenerationId: firstId,

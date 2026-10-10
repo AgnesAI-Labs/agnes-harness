@@ -45,6 +45,7 @@ export async function runShellJob(
         }
       }
       return {
+        structured: { jobId: id, status: 'running' },
         content: [
           {
             type: 'text',
@@ -59,6 +60,7 @@ export async function runShellJob(
       }
     }
     return {
+      structured: { jobId: id, status: job.status },
       ...(await guardedResult(
         ctx,
         `${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}\n[exit ${job.code}]${job.truncated ? ' [capture limit reached]' : ''}`,
