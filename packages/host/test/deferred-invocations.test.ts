@@ -18,7 +18,7 @@ import {
   type DeferredToolInvocation,
   deferredQueueKind,
 } from '@agnes/plugin-runtime/deferred-contract'
-import type { Actor, EventEnvelope } from '@agnes/protocol'
+import type { Actor, EventEnvelope, JsonValue } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { assertMigrationSettled } from '../src/runtime/generation/migration-state.js'
 
@@ -428,10 +428,10 @@ function memoryLedger() {
         origin: 'system',
         trust: 'trusted',
         lane: 'main',
-        ts: seq,
+        ts: new Date(seq).toISOString(),
         ignorable: true,
         ...(sourceSeq ? { sourceEventSeqs: [sourceSeq] } : {}),
-      } as EventEnvelope)
+      })
       return seq
     },
     outcome: async (id) => effects.get(id) ?? {},
@@ -748,7 +748,7 @@ function cancelledReceipt(partial?: boolean) {
   }
 }
 
-async function migrationFacts(events: { type: string; data: object }[]) {
+async function migrationFacts(events: { type: string; data: JsonValue }[]) {
   const opened = await migrationLog()
   await opened.log.append(
     events.map((event) => ({

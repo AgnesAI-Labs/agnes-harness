@@ -77,6 +77,7 @@ import {
   validateMethod,
   validateRequestMedia,
 } from '../src/index.js'
+import { ModelSlotsSnapshot } from '../src/model-slots.js'
 import {
   ChildEnginesSaveParams,
   ChildEnginesState,
@@ -201,7 +202,13 @@ const RUNTIME_ADMIN_ID = 'https://agnes.dev/runtime-admin'
 const SCHEDULES_ID = 'https://agnes.dev/schedules'
 ajv.addSchema({
   $id: RUNTIME_ADMIN_ID,
-  $defs: { ChildEnginesSaveParams, ChildEnginesState, RuntimeAdminEmpty, RuntimeAdminSnapshot },
+  $defs: {
+    ChildEnginesSaveParams,
+    ChildEnginesState,
+    ModelSlotsSnapshot,
+    RuntimeAdminEmpty,
+    RuntimeAdminSnapshot,
+  },
 })
 ajv.addSchema({
   $id: SCHEDULES_ID,
@@ -6711,7 +6718,13 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
   'https://agnes.ai/schema/app-server-v1': Object.fromEntries(
     Object.keys(AppSamples).map((key) => [key, (AppGen as unknown as Record<string, TSchema>)[key]!]),
   ),
-  [RUNTIME_ADMIN_ID]: { ChildEnginesSaveParams, ChildEnginesState, RuntimeAdminEmpty, RuntimeAdminSnapshot },
+  [RUNTIME_ADMIN_ID]: {
+    ChildEnginesSaveParams,
+    ChildEnginesState,
+    ModelSlotsSnapshot,
+    RuntimeAdminEmpty,
+    RuntimeAdminSnapshot,
+  },
   [SCHEDULES_ID]: {
     ScheduleDelivery,
     ScheduleSelector,
@@ -7580,6 +7593,16 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'ChildEnginesSaveParams',
     result: 'ChildEnginesState',
   },
+  '_agnes/v1/config.modelSlots.get': {
+    fileId: RUNTIME_ADMIN_ID,
+    params: 'RuntimeAdminEmpty',
+    result: 'ModelSlotsSnapshot',
+  },
+  '_agnes/v1/config.modelSlots.save': {
+    fileId: RUNTIME_ADMIN_ID,
+    params: 'ModelSlotsSnapshot',
+    result: 'ModelSlotsSnapshot',
+  },
   '_agnes/v1/config.save': { fileId: AGNES_ID, params: 'ConfigSaveInput', result: 'ConfigSnapshot' },
   '_agnes/v1/computerUse.status': {
     fileId: AGNES_ID,
@@ -8338,6 +8361,21 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
       },
     ],
   },
+  '_agnes/v1/config.modelSlots.get': {
+    note: 'model slot reads have no caller scope',
+    valid: {},
+    invalid: [{ profile: 'other' }],
+  },
+  '_agnes/v1/config.modelSlots.save': {
+    note: 'a save names a revision and only the fast and verifier slots',
+    valid: { revision: 1, slots: { fast: { route: 'local', model: 'small' }, verifier: null } },
+    invalid: [
+      { revision: 1 },
+      { revision: -1, slots: {} },
+      { revision: 1, slots: { fast: { route: 'local' } } },
+      { revision: 1, slots: { other: null } },
+    ],
+  },
   '_agnes/v1/config.save': AGNES_SAMPLES.ConfigSaveInput as Sample,
   '_agnes/v1/computerUse.status': AGNES_SAMPLES.Empty as Sample,
   '_agnes/v1/computerUse.permissions.status': AGNES_SAMPLES.Empty as Sample,
@@ -8799,6 +8837,16 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
         },
       },
     ],
+  },
+  '_agnes/v1/config.modelSlots.get': {
+    note: 'the saved auxiliary slots, with no publication effect',
+    valid: { revision: 0, slots: {} },
+    invalid: [{ revision: 0 }, { revision: 0, slots: {}, extra: true }],
+  },
+  '_agnes/v1/config.modelSlots.save': {
+    note: 'a save returns the same snapshot shape',
+    valid: { revision: 2, slots: { verifier: { route: 'local', model: 'check' } } },
+    invalid: [{ revision: 2, slots: { fast: { route: 'has space', model: 'small' } } }],
   },
   '_agnes/v1/config.childEngines.save': {
     note: 'a save reports whether new sessions can see the rows',

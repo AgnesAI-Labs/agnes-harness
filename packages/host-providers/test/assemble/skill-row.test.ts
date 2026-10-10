@@ -3,6 +3,25 @@ import type { SkillRuntimeInput } from '@agnes/resource-control-runtime'
 import { describe, expect, it } from 'vitest'
 import { skillRowRevision, withSkillRows } from '../../src/assemble/skill-row.js'
 
+function entryRow(
+  input: Pick<EntryRow, 'id' | 'plugin' | 'entryRevision'> & Partial<Pick<EntryRow, 'liveResources'>>,
+): EntryRow {
+  return {
+    id: input.id,
+    plugin: input.plugin,
+    entryRevision: input.entryRevision,
+    inject: [],
+    disabled: false,
+    isolate: {},
+    provides: [],
+    runtime: 'in-process',
+    mountIdentity: 'fixture-mount' as EntryRow['mountIdentity'],
+    mountRevision: 'fixture-mount',
+    extrasRevision: 'fixture-extras',
+    ...(input.liveResources === undefined ? {} : { liveResources: input.liveResources }),
+  }
+}
+
 const skill = (revision: string, workspaceId?: string) =>
   ({
     list: () => [
@@ -49,13 +68,13 @@ describe('Skills row target', () => {
   })
 
   it('replaces only the Skills row and keeps MCP object identities', () => {
-    const mcp = { id: 'ext:agnes/mcp-server', plugin: 'builtin:mcp' } as EntryRow
-    const old = {
+    const mcp = entryRow({ id: 'ext:agnes/mcp-server', plugin: 'builtin:mcp', entryRevision: 'mcp' })
+    const old = entryRow({
       id: 'ext:agnes/skills',
       plugin: 'builtin:skills',
       liveResources: ['skills'],
       entryRevision: 'old',
-    } as EntryRow
+    })
     const next = { ...old, entryRevision: 'next' }
     const target = withSkillRows([mcp, old], [next])
     expect(target).toEqual([mcp, next])

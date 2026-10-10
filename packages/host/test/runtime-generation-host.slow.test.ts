@@ -17,7 +17,7 @@ import {
   readLock,
   writeLock,
 } from '@agnes/package-manager'
-import { defineAgnesPlugin } from '@agnes/plugin-runtime'
+import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { createPluginRow } from '@agnes/plugin-runtime/host'
 import {
   createSkillCandidateRegistry,
@@ -198,9 +198,8 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
         return {
           main: defineAgnesPlugin({
             inject: ['extension'],
-            apply(ctx, config) {
-              const accepted = config as { limit?: number }
-              if (typeof accepted?.limit !== 'number' || (version === '1.0.0' && accepted.limit < 10))
+            apply(ctx: Context, config: { limit?: number } | undefined) {
+              if (!config || typeof config.limit !== 'number' || (version === '1.0.0' && config.limit < 10))
                 throw new Error('fixture code received configuration from the wrong version')
               ;(ctx as unknown as { extension(): PluginExtensionAPI }).extension().registerTool({
                 ...fixtureTool('generation_value'),
@@ -211,7 +210,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
                     enter()
                     await release
                   }
-                  return { content: [{ type: 'text', text: version }], structured: accepted }
+                  return { content: [{ type: 'text', text: version }], structured: config }
                 },
               })
             },
@@ -532,16 +531,17 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
         ids: defaultIds(),
         clock: Date.now,
       })
-      const events = facts.map((fact) => ({
-        ...fact,
+      const events: EventInput[] = facts.map((fact) => ({
+        type: fact.type,
+        data:
+          reason === 'unfinished-deferred-invocation'
+            ? { invocation: { id: 'invocation', sessionKey: key }, state: 'queued' }
+            : fact.data,
         actor: resumed.d.actor,
         origin: fact.origin ?? 'system',
         trust: fact.trust ?? 'trusted',
         lane: 'main',
         ignorable: true,
-        ...(reason === 'unfinished-deferred-invocation'
-          ? { data: { invocation: { id: 'invocation', sessionKey: key }, state: 'queued' } }
-          : {}),
       }))
       if (events.length) await log.append(events)
       if (reason === 'unfinished-sub-agent') {

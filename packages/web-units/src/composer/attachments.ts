@@ -323,7 +323,7 @@ export function useComposerAttachments({
   const removeImage = (id: string): void => {
     const removed = attachmentsRef.current.find((attachment) => attachment.id === id)
     if (!removed) return
-    if (removed.type === 'resource_link') uploads.remove(id, removed.uri, removed.name, removed.size)
+    if (removed.type === 'resource_link') uploads.remove(id)
     if (removed.previewUrl) URL.revokeObjectURL(removed.previewUrl)
     publishAttachments(attachmentsRef.current.filter((attachment) => attachment.id !== id))
   }

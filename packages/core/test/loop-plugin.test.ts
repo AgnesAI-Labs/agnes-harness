@@ -10,6 +10,7 @@ import {
   type LoopDriver,
   type LoopFactory,
   loopCheckpointCodec,
+  type ToolDef,
   type ToolRuntime,
 } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
@@ -159,7 +160,7 @@ describe('loop plugins', () => {
       const preset = presetDefaults()
       preset.tools.runtime = 'serial'
       const k = kernel(new MemoryStorage(), loops, { toolRuntimes, loopEvents, preset })
-      const tool = readTool()
+      const tool = readTool() as ToolDef
       k.tools.add({ ...tool, meta: { ...tool.meta, deferLoading } }, { source: 'test', trust: 'builtin' })
       const session = await k.session('independent-runtime', { ...options, loop: echo })
       session.hooks = {

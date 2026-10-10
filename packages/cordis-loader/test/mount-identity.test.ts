@@ -41,6 +41,8 @@ describe('buildMountIdentity', () => {
     'provides',
     'runtime',
     'mountRevision',
+    'liveResources',
+    'liveResourceRevision',
   ])('changes when %s changes', (field) => {
     const changed: Record<keyof MountIdentityInput, unknown> = {
       snapshotDigest: 'sha256-other',
@@ -53,6 +55,8 @@ describe('buildMountIdentity', () => {
       provides: ['different.service'],
       runtime: 'isolated',
       mountRevision: 'mount-2',
+      liveResources: ['resource-a'],
+      liveResourceRevision: 'live-2',
     }
     expect(buildMountIdentity(identityInput({ [field]: changed[field] }))).not.toBe(
       buildMountIdentity(identityInput()),

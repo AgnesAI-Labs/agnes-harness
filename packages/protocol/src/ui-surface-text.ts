@@ -126,10 +126,10 @@ function componentLines(
     const data = surface.data[component.dataKey]
     if (object(data)) {
       for (const field of component.fields) lines.push(`${field.label}: ${textValue(data[field.key])}`)
-      if (component.statusKey && typeof data[component.statusKey] === 'string')
-        lines.push(data[component.statusKey])
-      if (component.secondaryKey && typeof data[component.secondaryKey] === 'string')
-        lines.push(data[component.secondaryKey])
+      const status = component.statusKey === undefined ? undefined : data[component.statusKey]
+      if (typeof status === 'string') lines.push(status)
+      const secondary = component.secondaryKey === undefined ? undefined : data[component.secondaryKey]
+      if (typeof secondary === 'string') lines.push(secondary)
     }
   } else if (component.kind === 'steps') {
     const steps = surface.data[component.dataKey]

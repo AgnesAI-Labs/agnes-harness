@@ -135,7 +135,7 @@ describe('preset surface text', () => {
   })
 
   it('prints a failure code for an unresolved binding and caps a long table', () => {
-    const bound = {
+    const bound: UiSurface = {
       id: 'rows',
       revision: 1,
       title: 'Rows',
