@@ -2,8 +2,8 @@ import type {
   DeferredInvocationReceipt,
   DeferredToolInvocation,
   DeferredToolInvocationQueue,
-  IntelligentUiService,
 } from '@agnes/extension-api'
+import type { IntelligentUiInstance } from '../../../src/intelligent-ui.js'
 import {
   type Actor,
   type EventEnvelope,
@@ -115,13 +115,14 @@ function fixture(
   const rows: EventEnvelope[] = [],
     calls = new Map<string, DeferredInvocationReceipt>(),
     deliveries = new Map<string, number>()
-  let service: IntelligentUiService,
+  let service: IntelligentUiInstance,
     available = true,
     now = 100000,
     lostWake = false,
     failDelivery = false,
     failAdmission = false,
-    invocation: string | undefined
+    invocation: string | undefined,
+    admitted: Actor | undefined = actor
   const row = (name: string, data: unknown, origin = 'ext:agnes/intelligent-ui') => {
     const seq = rows.length + 1
     rows.push({
@@ -174,47 +175,85 @@ function fixture(
       for (const receipt of calls.values()) await service.changed(receipt, signal)
     },
   }
+  const tools = () =>
+    available
+      ? [
+          {
+            name: collector ? 'ui_submit' : 'adjust',
+            parameters: collector
+              ? Type.Object(
+                  {
+                    surfaceId: Type.String(),
+                    answers: Type.Record(
+                      Type.String(),
+                      Type.Union([Type.String(), Type.Array(Type.String())]),
+                    ),
+                  },
+                  { additionalProperties: false },
+                )
+              : parameters,
+          },
+        ]
+      : []
   const restart = () =>
     (service = createIntelligentUiService({
-      session: { key: 'session', lane: 'main', workspaceRoot: '/synthetic' },
-      owner: 'agnes/intelligent-ui',
+      binding: {
+        owner: 'agnes/intelligent-ui',
+        packageId: '@agnes/base',
+        session: { key: 'session', lane: 'main', workspaceRoot: '/synthetic' },
+        signal,
+      },
       get lastSeq() {
         return rows.length
       },
-      taskId: 'task',
-      supportsDeferredInvocations: true,
-      queue,
-      components: () => components,
-      scan: async () => rows,
-      append: async (name, data) => row(name, data),
-      tools: () =>
-        available
-          ? [
-              {
-                name: collector ? 'ui_submit' : 'adjust',
-                parameters: collector
-                  ? Type.Object(
-                      {
-                        surfaceId: Type.String(),
-                        answers: Type.Record(
-                          Type.String(),
-                          Type.Union([Type.String(), Type.Array(Type.String())]),
-                        ),
-                      },
-                      { additionalProperties: false },
-                    )
-                  : parameters,
-              },
-            ]
-          : [],
-      invocationId: async (toolUseId) => (toolUseId === 'collector-call' ? invocation : undefined),
-      now: () => now,
-      async deliver(key, text, deliveredActor, signal) {
-        signal.throwIfAborted()
-        if (failDelivery) throw new Error('delivery interrupted')
-        if (!deliveries.has(key)) deliveries.set(key, row('inbox', { key, text, actor: deliveredActor }))
-        return deliveries.get(key)!
+      ledger: {
+        async scanOwn(query) {
+          const names = new Set(query.names)
+          return {
+            events: rows.filter(
+              (item) =>
+                names.has(item.type.slice('x/agnes/intelligent-ui/'.length)) &&
+                item.origin === 'ext:agnes/intelligent-ui' &&
+                item.trust === 'untrusted' &&
+                item.lane === 'main',
+            ),
+            asOfSeq: rows.length,
+          }
+        },
+        async appendOwn(name, data) {
+          return row(name, data)
+        },
       },
+      input: {
+        async deliver(key, text, deliverSignal) {
+          deliverSignal.throwIfAborted()
+          if (failDelivery) throw new Error('delivery interrupted')
+          const commandId = key.startsWith('ui-result:') ? key.slice('ui-result:'.length) : ''
+          const matched = [...rows].reverse().find((item) => {
+            if (item.type !== 'x/agnes/intelligent-ui/action.received') return false
+            if (item.origin !== 'ext:agnes/intelligent-ui' || item.trust !== 'untrusted') return false
+            const record = (item.data as { record?: { request?: { commandId?: string }; actor?: Actor } })
+              .record
+            return record?.request?.commandId === commandId && !!record.actor?.id && !!record.actor.org
+          })
+          const deliveredActor = (matched?.data as { record?: { actor?: Actor } } | undefined)?.record?.actor
+          if (!deliveredActor) throw new Error('missing action actor')
+          if (!deliveries.has(key)) deliveries.set(key, row('inbox', { key, text, actor: deliveredActor }))
+          return deliveries.get(key)!
+        },
+      },
+      capabilities: {
+        taskId: () => 'task',
+        supportsDeferredInvocations: true,
+        components: () => components,
+        queue,
+        tools,
+        invocationId: async (toolUseId) => (toolUseId === 'collector-call' ? invocation : undefined),
+        get authenticatedActor() {
+          return admitted
+        },
+      },
+      now: () => now,
     }))
   restart()
   return {
@@ -225,6 +264,9 @@ function fixture(
     queue,
     restart,
     service: () => service,
+    admit: (value?: Actor) => {
+      admitted = value
+    },
     row,
     tool: (value: boolean) => (available = value),
     clock: (value: number) => (now = value),
@@ -721,5 +763,31 @@ describe('question collector on the ordinary surface path', () => {
     expect(recovered.actions).toEqual(
       expect.arrayContaining([expect.objectContaining({ commandId: 'refused', status: 'rejected' })]),
     )
+  })
+  it('delivers one result when a later instance completes an approval admitted earlier', async () => {
+    const f = await opened()
+    expect(await f.service().action(request('late'), actor, signal)).toMatchObject({ status: 'received' })
+    await f.outcome('pending-approval')
+    expect(f.deliveries.size).toBe(0)
+    f.restart()
+    await f.outcome('succeeded')
+    expect(f.deliveries.size).toBe(1)
+    expect([...f.deliveries.keys()]).toEqual(['ui-result:late'])
+    f.restart()
+    await f.service().read({ sessionId: 'session' }, signal)
+    expect(f.deliveries.size).toBe(1)
+  })
+  it('fails closed when the admitted actor is missing or different', async () => {
+    const f = await opened()
+    const before = f.rows.length
+    f.admit(undefined)
+    await expect(f.service().action(request('missing'), actor, signal)).rejects.toMatchObject({
+      code: expect.any(Number),
+    })
+    f.admit({ ...actor, id: 'other' })
+    await expect(f.service().action(request('other'), actor, signal)).rejects.toMatchObject({
+      code: expect.any(Number),
+    })
+    expect(f.rows).toHaveLength(before)
   })
 })

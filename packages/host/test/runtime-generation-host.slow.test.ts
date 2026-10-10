@@ -474,6 +474,39 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
         ],
       ],
       ['recovery-required', [{ type: 'x/core/recovery-required', data: { recoveryRequired: true } }]],
+      [
+        'open-surface',
+        [
+          {
+            type: 'x/agnes/intelligent-ui/surface.opened',
+            origin: 'ext:agnes/intelligent-ui',
+            trust: 'untrusted',
+            data: { record: { status: 'open', surface: { id: 'surface' } } },
+          },
+        ],
+      ],
+      [
+        'unfinished-ui-action',
+        [
+          {
+            type: 'x/agnes/intelligent-ui/action.received',
+            origin: 'ext:agnes/intelligent-ui',
+            trust: 'untrusted',
+            data: { record: { request: { commandId: 'cmd' }, receipt: { status: 'received' } } },
+          },
+        ],
+      ],
+      [
+        'undelivered-ui-receipt',
+        [
+          {
+            type: 'x/agnes/intelligent-ui/action.succeeded',
+            origin: 'ext:agnes/intelligent-ui',
+            trust: 'untrusted',
+            data: { commandId: 'cmd', receipt: { status: 'succeeded' } },
+          },
+        ],
+      ],
       ['unfinished-sub-agent', []],
     ]
     for (const [reason, facts] of blocking) {

@@ -15,6 +15,7 @@ import {
   type ServiceDescriptor,
   type ServicePortFactories,
 } from '@agnes/host-common/assemble/service-binding'
+import { intelligentUiKind } from '@agnes/base/intelligent-ui'
 import { rpcError, type Actor } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import {
@@ -802,6 +803,38 @@ describe('owner ledger', () => {
       }),
     ).toThrow(/owner/)
   })
+
+  it('reads an empty ledger and a row appended after the bind', async () => {
+    const stored: LedgerEvent[] = []
+    let seq = 0
+    const port = createOwnerLedger({
+      kind: 'sample',
+      owner,
+      eventNames: ['note'],
+      watermark: 0,
+      source: {
+        boundarySeq: 0,
+        lane: 'main',
+        alive() {},
+        async *scan(fromSeq, toSeq) {
+          yield stored.filter((row) => row.seq >= fromSeq && row.seq <= toSeq)
+        },
+        async append(type, data) {
+          const row = ledgerRow(++seq, { type, data })
+          stored.push(row)
+          return row.seq
+        },
+      },
+    })
+    await expect(port.scanOwn({ names: ['note'], limit: 10 })).resolves.toMatchObject({
+      events: [],
+      asOfSeq: 0,
+    })
+    await expect(port.appendOwn('note', { ok: true })).resolves.toBe(1)
+    await expect(port.scanOwn({ names: ['note'], limit: 10 })).resolves.toMatchObject({
+      events: [expect.objectContaining({ seq: 1 })],
+    })
+  })
 })
 
 function extensionActor(id: string): Actor {
@@ -1109,7 +1142,11 @@ describe('feedback service binding', () => {
         open(ports) {
           opened.push(id)
           seen = ports
-          return { async execute() { return feedbackResult } }
+          return {
+            async execute() {
+              return feedbackResult
+            },
+          }
         },
       })
     }
@@ -1149,7 +1186,11 @@ describe('feedback service binding', () => {
       open(ports) {
         opened.push(FEEDBACK_PROVIDER_ID)
         seen = ports
-        return { async execute() { return feedbackResult } }
+        return {
+          async execute() {
+            return feedbackResult
+          },
+        }
       },
     })
     try {
@@ -1202,7 +1243,11 @@ describe('feedback service binding', () => {
       version: '1.0.0',
       open(ports) {
         ledger = ports.ledger
-        return { async execute() { return feedbackResult } }
+        return {
+          async execute() {
+            return feedbackResult
+          },
+        }
       },
     })
     try {
@@ -1230,6 +1275,119 @@ describe('feedback service binding', () => {
           actor,
         },
       ])
+    } finally {
+      await finish(root)
+    }
+  })
+})
+
+describe('intelligent UI service binding', () => {
+  const uiOwner = 'agnes/intelligent-ui'
+  const uiPackage = '@agnes/base'
+
+  it('keeps an owner claim until every registration of that provider is released', () => {
+    const bindings = new ServiceBindings(() => {
+      throw new Error('catalog unused')
+    })
+    bindings.noteOwner('sample', 'one', '1.0.0', owner, packageId)
+    bindings.noteOwner('sample', 'one', '1.0.0', owner, packageId)
+    bindings.forget('sample', 'one', '1.0.0')
+    expect(bindings.claimPackage('sample', owner)).toBe(packageId)
+    bindings.forget('sample', 'one', '1.0.0')
+    expect(bindings.claimPackage('sample', owner)).toBeUndefined()
+    bindings.noteOwner('sample', 'one', '1.0.0', owner, packageId)
+    expect(() => bindings.noteOwner('sample', 'one', '1.0.0', otherOwner, packageId)).toThrow(ProviderError)
+  })
+
+  it('keeps an exact result key, guards capabilities, and fails closed without the owner', async () => {
+    const root = new Context()
+    const bindings = new ServiceBindings(() => root.providers)
+    const delivered: string[] = []
+    let task: (() => string) | undefined
+    bindings.install(root, intelligentUiKind, {
+      ports: ['ledger', 'input', 'projections'],
+      eventNames: ['surface.opened'],
+      projectionNames: ['surfaces'],
+      audience: 'callback',
+      delivery: 'follow-steer',
+      dedupeKeys: 'exact',
+      capabilities: () => ({ task: () => 'pinned' }),
+      input: () => ({
+        async deliver(key) {
+          delivered.push(key)
+          return 7
+        },
+      }),
+    })
+    expect(bindings.grants(intelligentUiKind.kind)).toEqual({
+      events: true,
+      projections: ['surfaces'],
+    })
+    root.providers.register(intelligentUiKind, uiPackage, {
+      id: 'agnes/intelligent-ui',
+      version: '0.1.0',
+      open(ports) {
+        task = (ports as { capabilities?: { task?: () => string } }).capabilities?.task
+        return {
+          async mark() {
+            await ports.input!.deliver('ui-result:cmd-1', 'result', new AbortController().signal)
+            return 'ok'
+          },
+        } as never
+      },
+    })
+    const admitted = call({
+      owner: uiOwner,
+      packageId: uiPackage,
+      session: sessionRef,
+      generationId: 'gen-1',
+      watermark: 1,
+      actor: extensionActor(uiOwner),
+    })
+    const factories = {
+      ledger: () =>
+        createOwnerLedger({
+          kind: intelligentUiKind.kind,
+          owner: uiOwner,
+          eventNames: ['surface.opened'],
+          watermark: 1,
+          source: {
+            boundarySeq: 0,
+            lane: 'main',
+            alive() {},
+            async *scan() {},
+            async append() {
+              return 1
+            },
+          },
+        }),
+      projections: unavailableProjections,
+    }
+    try {
+      await expectClosed(bindings.bind(intelligentUiKind, admitted, factories), 'bind', 'intelligent-ui')
+      bindings.noteOwner(intelligentUiKind.kind, 'agnes/intelligent-ui', '0.1.0', uiOwner, uiPackage)
+      const ui = await bindings.bind(intelligentUiKind, admitted, factories)
+      expect(task?.()).toBe('pinned')
+      expect(await (ui as { mark(): Promise<string> }).mark()).toBe('ok')
+      expect(delivered).toEqual(['ui-result:cmd-1'])
+      await ui.dispose?.()
+      expect(() => task?.()).toThrow(ProviderError)
+      await expectClosed(
+        bindings.bind(
+          intelligentUiKind,
+          call({
+            owner: otherOwner,
+            packageId: uiPackage,
+            session: sessionRef,
+            generationId: 'gen-1',
+            watermark: 1,
+            actor: extensionActor(otherOwner),
+          }),
+          factories,
+        ),
+        'bind',
+        'intelligent-ui',
+      )
     } finally {
       await finish(root)
     }

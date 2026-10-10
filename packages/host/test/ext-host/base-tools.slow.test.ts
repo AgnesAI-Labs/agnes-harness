@@ -17,8 +17,8 @@ import type { InferenceEvent, ToolCall } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTestHost } from '../../testkit/index.js'
 
-// The package directory, not an import: host does not depend on @agnes/base, it loads what the
-// profile names off disk.
+// The package directory the profile loads from disk. The service contract is the separate
+// `@agnes/base/intelligent-ui` subpath.
 const baseDir = fileURLToPath(new URL('../../../base', import.meta.url))
 const dirs: string[] = []
 afterEach(() => {
