@@ -97,3 +97,64 @@
 .agnes-custom-ui-frame[hidden] {
   display: none;
 }
+.agnes-intelligent-detail {
+  display: grid;
+  gap: var(--s8);
+  margin: 0;
+}
+.agnes-intelligent-detail div {
+  display: grid;
+  gap: var(--s4);
+}
+.agnes-intelligent-detail dt {
+  color: var(--agnes-text-secondary);
+}
+.agnes-intelligent-detail dd {
+  margin: 0;
+  color: var(--agnes-text-primary);
+}
+.agnes-intelligent-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s8);
+}
+.agnes-intelligent-steps li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s8);
+  align-items: center;
+  color: var(--agnes-text-primary);
+}
+.agnes-intelligent-progress {
+  display: grid;
+  gap: var(--s4);
+}
+.agnes-intelligent-progress-track {
+  height: var(--s8);
+  background: var(--agnes-line-primary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+.agnes-intelligent-progress-fill {
+  height: 100%;
+  background: var(--agnes-brand-primary);
+}
+.agnes-intelligent-image {
+  display: grid;
+  gap: var(--s8);
+  margin: 0;
+  color: var(--agnes-text-primary);
+}
+.agnes-intelligent-image img {
+  max-width: 100%;
+  height: auto;
+  background: var(--agnes-bg-surface);
+}
+.agnes-intelligent-catalog .agnes-ui-tabs [role="tab"] {
+  color: var(--agnes-text-primary);
+}
+.agnes-intelligent-catalog .agnes-ui-tabs [role="tab"][aria-selected="true"] {
+  color: var(--agnes-brand-primary);
+}

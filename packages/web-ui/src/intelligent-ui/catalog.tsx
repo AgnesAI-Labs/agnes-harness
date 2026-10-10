@@ -13,6 +13,7 @@ import { IntelligentChart } from './chart.js'
 import { CustomUiComponent, type CustomUiRenderer } from './custom.js'
 import { SurfaceFormFields } from './form-fields.js'
 import { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
+import { DetailCard, formatFieldValue, ImageView, PresetTabs, ProgressView, StepsView } from './presets.js'
 import { uiObject, validIntelligentSurfaceProjection } from './validate.js'
 
 export interface IntelligentCatalogProps {
@@ -37,17 +38,29 @@ export function IntelligentCatalog(props: IntelligentCatalogProps) {
         {t('ui.unavailable')}
       </SettingsState>
     )
+  const placed = placedComponentIds(props.surface)
   return (
     <div className="agnes-intelligent-catalog" data-agnes-intelligent-ui="catalog">
-      {props.surface.components.map((component) => (
-        <CatalogComponent
-          key={`${component.id}:${props.surface.revision}`}
-          {...props}
-          component={component}
-        />
-      ))}
+      {props.surface.components.map((component) =>
+        placed.has(component.id) ? null : (
+          <CatalogComponent
+            key={`${component.id}:${props.surface.revision}`}
+            {...props}
+            component={component}
+          />
+        ),
+      )}
     </div>
   )
+}
+
+function placedComponentIds(surface: UiSurface): Set<string> {
+  const placed = new Set<string>()
+  for (const component of surface.components) {
+    if ('fallback' in component || component.kind !== 'tabs') continue
+    for (const tab of component.tabs) for (const id of tab.componentIds) placed.add(id)
+  }
+  return placed
 }
 
 function CatalogComponent(props: IntelligentCatalogProps & { component: UiComponent }) {
@@ -78,7 +91,7 @@ function CatalogComponent(props: IntelligentCatalogProps & { component: UiCompon
       })}
     </div>
   )
-  let content: ReactNode
+  let content: ReactNode = null
   if ('fallback' in component) {
     content = (
       <CustomUiComponent
@@ -120,15 +133,41 @@ function CatalogComponent(props: IntelligentCatalogProps & { component: UiCompon
     content = <IntelligentChart component={component} data={surface.data[component.dataKey]!} />
   else if (component.kind === 'text' || component.kind === 'status')
     content = <p>{String(surface.data[component.dataKey])}</p>
-  else {
+  else if (component.kind === 'detail-card')
+    content = (
+      <DetailCard
+        id={component.id}
+        fields={component.fields}
+        data={surface.data[component.dataKey]}
+        {...(component.statusKey ? { statusKey: component.statusKey } : {})}
+        {...(component.secondaryKey ? { secondaryKey: component.secondaryKey } : {})}
+      />
+    )
+  else if (component.kind === 'steps')
+    content = <StepsView id={component.id} data={surface.data[component.dataKey]} />
+  else if (component.kind === 'progress')
+    content = <ProgressView id={component.id} data={surface.data[component.dataKey]} />
+  else if (component.kind === 'image')
+    content = <ImageView id={component.id} alt={component.alt} data={surface.data[component.dataKey]} />
+  else if (component.kind === 'tabs')
+    content = (
+      <PresetTabs
+        id={component.id}
+        tabs={component.tabs}
+        label={t('ui.sections')}
+        renderChild={(id) => {
+          const child = surface.components.find((item) => item.id === id)
+          if (!child || (!('fallback' in child) && child.kind === 'tabs')) return null
+          return <CatalogComponent {...props} component={child} />
+        }}
+      />
+    )
+  else if (component.kind === 'table') {
     const data = surface.data[component.dataKey]
     const rows = Array.isArray(data) ? data.filter(uiObject) : []
     const selection = props.selection[component.id] ?? []
-    const format = (value: JsonValue | undefined, kind?: string): string => {
-      // Currency units and date/time zones are never inferred from display-only hints.
-      if (kind === 'number' && typeof value === 'number') return new Intl.NumberFormat(locale).format(value)
-      return typeof value === 'object' ? JSON.stringify(value) : String(value ?? '')
-    }
+    const format = (value: JsonValue | undefined, kind?: string): string =>
+      formatFieldValue(value, kind, locale)
     content = (
       <div className="agnes-intelligent-table-scroll">
         <table data-testid={`ui-table-${component.id}`}>

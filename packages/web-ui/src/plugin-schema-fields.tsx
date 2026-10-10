@@ -28,6 +28,18 @@ export interface PluginSchemaFieldsProps {
   onInvalid(path: string, invalid: boolean): void
 }
 
+/** datetime-local has no zone. Keep the UTC clock so the controlled value does not shift. */
+function dateControlValue(format: unknown, value: unknown): string {
+  const text = String(value ?? '')
+  if (format !== 'date-time' || text === '') return text
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(text)
+  return match ? `${match[1]}T${match[2]}` : text
+}
+function dateCommitValue(format: unknown, value: string): string {
+  if (format !== 'date-time' || value === '') return value
+  return `${value}:00Z`
+}
+
 export function PluginSchemaFields(props: PluginSchemaFieldsProps) {
   const { root, value, path, issues, onChange, onInvalid, disabled = false, depth = 0 } = props
   const { t } = useUiText(PLUGIN_CONFIG_NAMESPACE, pluginConfigCatalog)
@@ -309,17 +321,30 @@ export function PluginSchemaFields(props: PluginSchemaFieldsProps) {
       />
     )
   } else {
-    const format = node.format === 'email' ? 'email' : node.format === 'uri' ? 'url' : 'text'
+    const format =
+      node.format === 'email'
+        ? 'email'
+        : node.format === 'uri'
+          ? 'url'
+          : node.format === 'date'
+            ? 'date'
+            : node.format === 'date-time'
+              ? 'datetime-local'
+              : 'text'
+    const shown = kind === 'number' ? String(value ?? '') : dateControlValue(node.format, value)
     control = (
       <>
         <SettingsInput
           {...common}
           type={kind === 'number' ? 'number' : format}
           step={node.type === 'integer' ? 1 : 'any'}
-          value={String(value ?? '')}
+          {...(node.format === 'date' || node.format === 'date-time' ? { 'data-format': node.format } : {})}
+          value={shown}
           onChange={(event) => {
             const next = event.currentTarget.value
-            onChange(kind === 'number' ? (next === '' ? null : Number(next)) : next)
+            onChange(
+              kind === 'number' ? (next === '' ? null : Number(next)) : dateCommitValue(node.format, next),
+            )
           }}
         />
       </>

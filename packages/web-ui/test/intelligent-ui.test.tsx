@@ -6,6 +6,7 @@ import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 import { IntelligentCatalog, validIntelligentSurface } from '../src/intelligent-ui/index.js'
+import { type UiLocale, UiLocaleProvider, type UiLocaleSource } from '../src/ui-locale.js'
 
 const surface: UiSurface = {
   id: 'finance',
@@ -271,4 +272,184 @@ it('renders schema choices as radio/checkbox and preserves free text in the form
   } finally {
     await act(async () => root.unmount())
   }
+})
+
+const png =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+const sha = 'a'.repeat(64)
+const presets: UiSurface = {
+  id: 'presets',
+  revision: 1,
+  title: 'Presets',
+  placement: { inline: true, workbench: true },
+  components: [
+    {
+      id: 'card',
+      kind: 'detail-card',
+      title: 'Record',
+      dataKey: 'record',
+      fields: [
+        { key: 'name', label: 'Name', format: 'text' },
+        { key: 'amount', label: 'Amount', format: 'currency' },
+        { key: 'posted', label: 'Posted', format: 'date' },
+      ],
+      statusKey: 'status',
+      secondaryKey: 'note',
+    },
+    { id: 'flow', kind: 'steps', title: 'Flow', dataKey: 'steps' },
+    { id: 'posted', kind: 'progress', dataKey: 'progress' },
+    { id: 'scan', kind: 'image', dataKey: 'scan', alt: 'Receipt scan' },
+    { id: 'proof', kind: 'image', title: 'Proof', dataKey: 'proof', alt: 'Authorized receipt' },
+    {
+      id: 'when',
+      kind: 'form',
+      dataKey: 'when',
+      schema: {
+        type: 'object',
+        properties: {
+          day: { type: 'string', format: 'date', title: 'Day' },
+          at: { type: 'string', format: 'date-time', title: 'At' },
+        },
+      },
+    },
+    { id: 'note', kind: 'text', dataKey: 'note' },
+    { id: 'state', kind: 'status', dataKey: 'state' },
+    {
+      id: 'sections',
+      kind: 'tabs',
+      title: 'Sections',
+      tabs: [
+        { id: 'main', label: 'Main', componentIds: ['note'] },
+        { id: 'more', label: 'More', componentIds: ['state'] },
+      ],
+    },
+  ],
+  data: {
+    record: { name: 'Ada', amount: 250, posted: '2026-10-10', status: 'open', note: 'Draft' },
+    steps: [
+      { id: 'review', label: 'Review', state: 'active', description: 'Check' },
+      { id: 'record', label: 'Record', state: 'pending' },
+    ],
+    progress: { label: 'Posted', value: 1, total: 4 },
+    scan: { source: { kind: 'data-url', dataUrl: png } },
+    proof: { source: { kind: 'artifact', sha256: sha, size: 128, mime: 'image/png' } },
+    when: { day: '2026-10-10', at: '2026-10-09T00:00:00Z' },
+    note: 'Inside the first tab',
+    state: 'Inside the second tab',
+  },
+  actions: [],
+}
+
+function localeSource(locale: UiLocale): UiLocaleSource {
+  return {
+    getSnapshot: () => locale,
+    getVersion: () => 0,
+    subscribe: () => () => undefined,
+    t: (key) => key,
+    bind: () => (key) => key,
+  }
+}
+
+describe('expanded preset catalog', () => {
+  it.each([
+    ['', 'en', 'Active', '(25%)'],
+    ['dark', 'en', 'Active', '(25%)'],
+    ['', 'zh-CN', '进行中', '（25%）'],
+    ['dark', 'zh-CN', '进行中', '（25%）'],
+  ] as const)('renders every new preset in %s %s', async (theme, locale, active, percent) => {
+    if (typeof window.matchMedia !== 'function') {
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        value: (query: string) => ({
+          matches: false,
+          media: query,
+          onchange: null,
+          addListener() {},
+          removeListener() {},
+          addEventListener() {},
+          removeEventListener() {},
+          dispatchEvent() {
+            return false
+          },
+        }),
+      })
+    }
+    document.documentElement.className = theme
+    const host = document.createElement('div')
+    const root = createRoot(host)
+    try {
+      await act(async () =>
+        root.render(
+          createElement(
+            UiLocaleProvider,
+            { source: localeSource(locale) },
+            createElement(IntelligentCatalog, {
+              surface: presets,
+              input: {},
+              selection: {},
+              disabled: false,
+              onInput: vi.fn(),
+              onSelection: vi.fn(),
+              onInvalid: vi.fn(),
+              onAction: vi.fn(),
+            }),
+          ),
+        ),
+      )
+      const rootIds = [
+        ...host.querySelectorAll('.agnes-intelligent-catalog > [data-testid^="ui-component-"]'),
+      ].map((node) => node.getAttribute('data-testid'))
+      expect(rootIds).toContain('ui-component-card')
+      expect(rootIds).toContain('ui-component-sections')
+      expect(rootIds).not.toContain('ui-component-note')
+      expect(host.querySelectorAll('[data-testid="ui-component-note"]')).toHaveLength(1)
+      expect(host.querySelector('[data-testid="ui-detail-status-card"]')?.textContent).toBe('open')
+      expect(host.querySelector('[data-testid="ui-detail-field-card-amount"]')?.textContent).toContain('250')
+      expect(host.querySelector('[data-testid="ui-detail-field-card-posted"]')?.textContent).toContain('2026')
+      expect(host.querySelector('[data-testid="ui-detail-secondary-card"]')?.textContent).toBe('Draft')
+      expect(host.querySelector('[data-testid="ui-step-flow-review"]')?.getAttribute('aria-current')).toBe(
+        'step',
+      )
+      expect(
+        host.querySelector('[data-testid="ui-step-flow-review"] .agnes-ui-badge')?.getAttribute('data-tone'),
+      ).toBe('warn')
+      expect(host.textContent).toContain(active)
+      expect(
+        host
+          .querySelector('[data-testid="ui-progress-posted"] [role="progressbar"]')
+          ?.getAttribute('data-percent'),
+      ).toBe('25')
+      expect(host.querySelector('[data-testid="ui-progress-posted"]')?.textContent).toContain(percent)
+      expect(host.querySelector('.agnes-intelligent-progress-fill')?.getAttribute('style')).toContain('width')
+      expect(host.querySelector('.agnes-ui-badge')?.getAttribute('style')).toContain('var(--agnes-')
+      const proof = host.querySelector('[data-testid="ui-image-proof"]')
+      expect(proof?.querySelector('img')).toBeNull()
+      expect(proof?.textContent).toContain(sha)
+      const img = host.querySelector<HTMLImageElement>('[data-testid="ui-image-img-scan"]')
+      expect(img?.alt).toBe('Receipt scan')
+      expect(img?.getAttribute('src') ?? '').toMatch(/^blob:/)
+      for (const node of host.querySelectorAll('img'))
+        expect(node.getAttribute('src') ?? '').not.toMatch(
+          /^(?:https?:|data:|javascript:|file:|agnes-upload:|artifact:)/,
+        )
+      expect(host.querySelector('[data-testid="ui-tabpanel-sections-main"]')?.textContent).toContain(
+        'Inside the first tab',
+      )
+      const more = host.querySelector<HTMLElement>('[data-testid="ui-tab-sections-more"]')
+      const tab = more?.closest<HTMLElement>('[role="tab"]') ?? more
+      await act(async () => tab?.click())
+      expect((tab ?? more)?.getAttribute('aria-selected')).toBe('true')
+      expect(host.querySelector<HTMLInputElement>('input[data-format="date"]')?.type).toBe('date')
+      expect(host.querySelector<HTMLInputElement>('input[data-format="date"]')?.value).toBe('2026-10-10')
+      expect(host.querySelector<HTMLInputElement>('input[data-format="date-time"]')?.type).toBe(
+        'datetime-local',
+      )
+      expect(host.querySelector<HTMLInputElement>('input[data-format="date-time"]')?.value).toBe(
+        '2026-10-09T00:00',
+      )
+    } finally {
+      document.documentElement.className = ''
+      await act(async () => root.unmount())
+    }
+  })
 })

@@ -219,4 +219,59 @@ describe('plugin schema form projection', () => {
     await act(async () => root.unmount())
     host.remove()
   })
+
+  it('uses native date controls and keeps date-time on the UTC clock', async () => {
+    const schema: PluginSchema = {
+      type: 'object',
+      properties: {
+        day: { type: 'string', format: 'date', title: 'Day' },
+        at: { type: 'string', format: 'date-time', title: 'At' },
+      },
+    }
+    let value: unknown = { day: '2026-10-10', at: '2026-10-09T00:00:00Z' }
+    function Harness() {
+      const [draft, setDraft] = useState(value)
+      return createElement(PluginSchemaFields, {
+        root: schema,
+        schema,
+        value: draft,
+        path: '',
+        issues: [],
+        onInvalid() {},
+        onChange(next) {
+          value = next
+          setDraft(next)
+        },
+      })
+    }
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    try {
+      await act(async () => root.render(createElement(Harness)))
+      const day = host.querySelector<HTMLInputElement>('input[data-format="date"]')!
+      const at = host.querySelector<HTMLInputElement>('input[data-format="date-time"]')!
+      expect(day.type).toBe('date')
+      expect(day.value).toBe('2026-10-10')
+      expect(at.type).toBe('datetime-local')
+      expect(at.value).toBe('2026-10-09T00:00')
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+          at,
+          '2026-10-09T01:30',
+        )
+        at.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      expect((value as Record<string, unknown>).at).toBe('2026-10-09T01:30:00Z')
+      expect((value as Record<string, unknown>).day).toBe('2026-10-10')
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(at, '')
+        at.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      expect((value as Record<string, unknown>).at).toBe('')
+    } finally {
+      await act(async () => root.unmount())
+      host.remove()
+    }
+  })
 })
