@@ -7,7 +7,7 @@ import {
   pluginAdminLocaleCatalog,
 } from '@agnes/web-admin/admin/plugins/locales/admin'
 import { pluginAdminShellLocaleCatalog } from '@agnes/web-admin/admin/plugins/locales/shell'
-import { createDocumentLocaleSource } from '@agnes/web-ui'
+import { createDocumentLocaleSource, materializeSettingsControls } from '@agnes/web-ui'
 import { SettingsPaneBuiltin } from '@agnes/web-units'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
@@ -16,6 +16,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 afterEach(() => {
   document.documentElement.lang = 'en'
+  document.documentElement.removeAttribute('data-agnes-shell')
   document.documentElement.replaceChildren(document.createElement('head'), document.createElement('body'))
   localStorage.clear()
 })
@@ -36,20 +37,29 @@ it('translates the standalone admin shell during the blocking boot script', asyn
   expect(document.querySelector('#source-form button[type="submit"]')?.textContent).toBe('检查内容')
 })
 
-it('translates the resource confirmation kicker on the blocking boot path', async () => {
-  document.documentElement.innerHTML = readFileSync(
-    join(process.cwd(), 'packages/web/public/resources.html'),
-    'utf8',
-  )
-    .replace(/<link rel="stylesheet" href="\/(?:style|antd|tokens)\.css" \/>/g, '')
-    .replace('<script type="module" src="/resources-standalone.js"></script>', '')
-  localStorage.setItem('agnes-locale', 'zh-CN')
-  vi.resetModules()
+it.each(['resources.html', 'index.html'])(
+  'translates the MCP transports and confirmation in %s on the blocking boot path',
+  async (page) => {
+    document.documentElement.innerHTML = readFileSync(
+      join(process.cwd(), 'packages/web/public', page),
+      'utf8',
+    )
+      .replace(/<link rel="stylesheet" href="\/(?:style|antd|tokens)\.css" \/>/g, '')
+      .replace('<script type="module" src="/resources-standalone.js"></script>', '')
+    localStorage.setItem('agnes-locale', 'zh-CN')
+    vi.resetModules()
+    materializeSettingsControls(document)
 
-  await import('../src/theme-boot.js')
+    await import('../src/theme-boot.js')
 
-  expect(document.querySelector('#admin-confirm .eyebrow')?.textContent).toBe('需要确认')
-})
+    expect(document.querySelector('#admin-confirm .eyebrow')?.textContent).toBe('需要确认')
+    const transport = document.querySelector<HTMLSelectElement>('#mcp-transport')
+    expect(Array.from(transport?.options ?? [], (option) => option.value)).toEqual(['stdio', 'http', 'sse'])
+    expect(transport?.querySelector('[value="sse"]')?.textContent).toBe('SSE（远程，旧版协议）')
+    window.dispatchEvent(new CustomEvent('agnes:locale-changed', { detail: 'en' }))
+    expect(transport?.querySelector('[value="sse"]')?.textContent).toBe('SSE (remote, legacy protocol)')
+  },
+)
 
 it('updates the plugin admin static shell when the document locale changes', () => {
   document.documentElement.innerHTML = readFileSync(

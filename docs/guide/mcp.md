@@ -10,6 +10,8 @@ Connect an existing MCP tool service to AGH's task flow. This guide covers addin
 
 Definitions, security approval, desired enablement, and actual connection state remain separate in the control plane. In Web, users review the definition and choose Enable once; AGH completes the approval check before enabling. Inspect the catalog, then verify a real tool call.
 
+The Web connection editor supports local stdio, HTTP and legacy SSE transports. For an existing service, choose **Edit** in its details. HTTP and SSE use the same URL, credential-reference and allowed-tool checks. Choose **View connection status** and **View tool catalog** to inspect actual state after a connection test or reconnect.
+
 **Current implementation:** Session MCP services run as individual Host rows. OAuth bindings are still skipped on this session path; see [runtime behavior and versions](#runtime-behavior-and-versions). Supported and unsupported MCP and Skill behavior, including resources, prompt templates, and OAuth, is listed in [MCP and Skills support](mcp-skills-support.md). See [verification](../maintainers/verification.md) for versioned results.
 
 <a id="在会话中接入"></a>

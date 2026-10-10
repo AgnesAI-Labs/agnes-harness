@@ -681,7 +681,13 @@ it('submits SSE transport with bearer token SecretRef from the form', async () =
   byId('mcp-create').click()
   change('mcp-id', 'created-sse')
   change('mcp-name', 'Created SSE MCP')
-  change('mcp-transport', 'sse')
+  byId('mcp-transport-trigger').click()
+  const sseOption = [
+    ...document.querySelectorAll<HTMLElement>('#mcp-transport-listbox [role="option"]'),
+  ].find((option) => option.textContent?.includes('SSE'))
+  expect(sseOption).toBeDefined()
+  sseOption?.click()
+  expect(byId<HTMLSelectElement>('mcp-transport').value).toBe('sse')
   change('mcp-secret-kind', 'http-bearer')
   expect(byId('mcp-url-row').hidden).toBe(false)
   expect(byId('mcp-executable-row').hidden).toBe(true)
