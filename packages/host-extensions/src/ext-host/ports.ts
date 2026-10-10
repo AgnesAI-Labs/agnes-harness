@@ -8,6 +8,7 @@ import type {
   Seq,
   ServiceInstance,
   ServiceKind,
+  ServiceKindToken,
   ServicePorts,
   ServiceProvider,
   SlotName,
@@ -53,7 +54,7 @@ export interface KernelPorts {
     ): Promise<S>
     /** Present after the kind is installed. Missing means the events check waits until bind. */
     grants?(
-      kind: ServiceKind,
+      kind: ServiceKindToken,
     ): { readonly events: boolean; readonly projections: readonly string[] } | undefined
   }
   /** Live registration ownership for cleanup verification, not an execution snapshot. */

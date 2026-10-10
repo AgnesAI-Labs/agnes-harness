@@ -1,6 +1,7 @@
 import {
   defineServiceKind,
   type ServiceInstance,
+  type ServicePortName,
   type ServicePorts,
 } from '@agnes/extension-api'
 import type { ServiceDescriptor } from '@agnes/host-common/assemble/service-binding'
@@ -73,8 +74,10 @@ export const feedbackKind = defineServiceKind<FeedbackInstance, ServicePorts>({
   versioned: true,
 })
 
+const feedbackPorts: readonly ServicePortName[] = Object.freeze(['ledger'])
+
 export const FEEDBACK_DESCRIPTOR: ServiceDescriptor = Object.freeze({
-  ports: Object.freeze(['ledger']),
+  ports: feedbackPorts,
   audience: 'host',
   eventNames: Object.freeze(['item', 'growth']),
 })

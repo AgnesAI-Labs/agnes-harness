@@ -5,6 +5,7 @@ import {
   ProviderError,
   type ServiceInstance,
   type ServiceKind,
+  type ServiceKindToken,
   type ServicePorts,
   type ServiceProvider,
   unavailableProjections,
@@ -34,7 +35,12 @@ export interface ServiceAdmission {
 export interface ExtensionServiceHost {
   readonly sink: { current?: ExtensionInvocation }
   readonly ports: NonNullable<KernelPorts['serviceProviders']>
-  install(ctx: Context, kind: ServiceKind, descriptor: ServiceDescriptor, origins?: RowOriginLookup): void
+  install<S extends ServiceInstance, P extends ServicePorts>(
+    ctx: Context,
+    kind: ServiceKind<S, P>,
+    descriptor: ServiceDescriptor,
+    origins?: RowOriginLookup,
+  ): void
   /** Registers on the mounting root. The author port cannot register the git worktree kind. */
   registerOn<S extends ServiceInstance, P extends ServicePorts>(
     ctx: Context,
@@ -49,8 +55,13 @@ export interface ExtensionServiceHost {
   ): Promise<S>
   attachBinder(providers: ProvidersService): void
   /** Runs after a provider claims its owner. The returned function runs before the claim is released. */
-  onRegistered(kind: ServiceKind, listener: (owner: string, packageId: string) => () => void): void
-  packageFor(kind: ServiceKind, owner: string): string | undefined
+  onRegistered(kind: ServiceKindToken, listener: (owner: string, packageId: string) => () => void): void
+  packageFor(kind: ServiceKindToken, owner: string): string | undefined
+}
+
+/** Service tokens are invariant, so a generic kind and a concrete token do not overlap. */
+function sameServiceKind(left: object, right: object): boolean {
+  return left === right
 }
 
 function closed(kind: string, operation: string): ProviderError {
@@ -152,10 +163,10 @@ export function createExtensionServiceHost(input: {
       now: () => Date.now(),
     })
   }
-  const claim = (
+  const claim = <S extends ServiceInstance, P extends ServicePorts>(
     providers: ProvidersService,
-    kind: ServiceKind,
-    provider: ServiceProvider,
+    kind: ServiceKind<S, P>,
+    provider: ServiceProvider<S, P>,
     identity: { readonly owner: string; readonly packageId: string },
   ): (() => Promise<void>) => {
     if (!EXTENSION_ID_PATTERN.test(identity.owner) || identity.packageId.trim() === '')
@@ -205,7 +216,7 @@ export function createExtensionServiceHost(input: {
     registerOn(ctx, kind, provider, identity) {
       if (
         kind.kind === gitWorktreeKind.kind &&
-        (kind !== gitWorktreeKind ||
+        (!sameServiceKind(kind, gitWorktreeKind) ||
           identity.owner !== GIT_WORKTREE_OWNER ||
           identity.packageId !== GIT_WORKTREE_PACKAGE)
       )

@@ -1,10 +1,24 @@
-import type { LoopContext, LoopFactory, LoopStepOutcome, ToolResult } from '@agnes/extension-api'
+import type {
+  LoopContext,
+  LoopFactory,
+  LoopServiceReader,
+  LoopStepOutcome,
+  ServiceInstance,
+  ServiceKind,
+  ServicePorts,
+  ToolResult,
+} from '@agnes/extension-api'
 import {
   deferredQueueKind,
   type DeferredInvocationReceipt,
   type DeferredInvocationState,
   type DeferredToolInvocationQueue,
 } from './deferred-contract.js'
+
+/** Service tokens are invariant, so a generic kind and this token do not overlap. Identity still does. */
+function isDeferredQueueToken(kind: object): kind is typeof deferredQueueKind {
+  return kind === deferredQueueKind
+}
 
 const receiptPending = (receipt: DeferredInvocationReceipt) =>
   receipt.state === 'queued' || receipt.state === 'executing'
@@ -145,9 +159,11 @@ export function withDeferredToolInvocations(
   resolve: (sessionKey: string, lane: string) => DeferredToolInvocationQueue | undefined,
 ): LoopFactory {
   const context = (ctx: LoopContext): LoopContext => {
-    const services = {
-      get(kind: Parameters<NonNullable<LoopContext['services']>['get']>[0]) {
-        return kind === deferredQueueKind ? resolve(ctx.sessionKey, ctx.lane) : ctx.services?.get(kind)
+    const services: LoopServiceReader = {
+      get<S extends ServiceInstance, P extends ServicePorts>(kind: ServiceKind<S, P>) {
+        if (!isDeferredQueueToken(kind)) return ctx.services?.get(kind)
+        // Only the queue token reaches here, so the caller's S is the queue instance.
+        return resolve(ctx.sessionKey, ctx.lane) as S | undefined
       },
     }
     return Object.defineProperty(Object.create(ctx), 'services', {

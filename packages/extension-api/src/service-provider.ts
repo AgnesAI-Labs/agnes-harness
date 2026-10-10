@@ -68,14 +68,34 @@ export interface ServiceProvider<
 
 export type ServiceInstanceScope = 'request' | 'session' | 'workspace' | 'process'
 
+const serviceInstance: unique symbol = Symbol('service instance')
+const servicePortGrant: unique symbol = Symbol('service port grant')
+
+/**
+ * Fields every service token has. Specific kinds are invariant, so maps and
+ * binders store this instead of `ServiceKind<ServiceInstance, ServicePorts>`.
+ */
+export interface ServiceKindToken {
+  readonly kind: string
+  readonly cardinality: 'single' | 'multi'
+  readonly instanceScope: ServiceInstanceScope
+  readonly scope: ProviderLifecycleScope
+  readonly ports: readonly ServicePortName[]
+}
+
 /** `ports` is the maximum grant. A host descriptor may only shrink it. */
 export interface ServiceKind<
   S extends ServiceInstance = ServiceInstance,
   P extends ServicePorts = ServicePorts,
-> extends ProviderKind<ServiceProvider<S, P>> {
+> extends ProviderKind<ServiceProvider<S, P>>,
+    ServiceKindToken {
   readonly cardinality: 'single' | 'multi'
   readonly instanceScope: ServiceInstanceScope
   readonly ports: readonly ServicePortName[]
+  /** Type-only. Carries the instance so register and bindOwn infer S. Not installed at runtime. */
+  readonly [serviceInstance]?: S
+  /** Type-only. Carries the port grant so register and bindOwn infer P. Not installed at runtime. */
+  readonly [servicePortGrant]?: P
 }
 
 export interface ServiceKindOptions<S extends ServiceInstance, P extends ServicePorts> {
@@ -134,6 +154,6 @@ export interface ServiceBindingPort {
 export interface ServiceAuthorPort extends ServiceBindingPort {
   register<S extends ServiceInstance, P extends ServicePorts>(
     kind: ServiceKind<S, P>,
-    provider: ServiceProvider<S, P>,
+    provider: NoInfer<ServiceProvider<S, P>>,
   ): () => Promise<void>
 }

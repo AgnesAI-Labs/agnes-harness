@@ -6,18 +6,25 @@ import {
   type AgentInputPort,
   type OwnerLedgerPort,
   type ProjectionReader,
+  type ProjectionReadResult,
   type ProviderCatalogEntry,
   type ServiceBinding,
   type ServiceInstance,
   type ServiceKind,
+  type ServiceKindToken,
   type ServicePortName,
   type ServicePorts,
   type ServiceProvider,
 } from '@agnes/extension-api'
-import type { Actor } from '@agnes/protocol'
+import type { Actor, JsonValue } from '@agnes/protocol'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { ProviderLifetime } from './provider-lifetime.js'
-import { installProviderRegistry, type ProvidersService, providerSource } from './provider-registry.js'
+import {
+  installProviderRegistry,
+  type ProviderRegistry,
+  type ProvidersService,
+  providerSource,
+} from './provider-registry.js'
 
 export type ServiceAudience = 'callback' | 'host'
 export type ServiceDelivery = 'next-turn' | 'follow-steer'
@@ -70,7 +77,7 @@ export interface ServicePortFactories {
 }
 
 interface InstalledService {
-  readonly kind: ServiceKind
+  readonly kind: ServiceKindToken
   readonly descriptor: Required<Pick<ServiceDescriptor, 'ports' | 'dedupeKeys' | 'audience' | 'delivery'>> &
     ServiceDescriptor
 }
@@ -118,7 +125,12 @@ export class ServiceBindings {
   private readonly claims = new Map<string, OwnerClaim>()
   constructor(private readonly current: () => ProvidersService) {}
 
-  install(ctx: Context, kind: ServiceKind, descriptor: ServiceDescriptor, origins?: RowOriginLookup): void {
+  install<S extends ServiceInstance, P extends ServicePorts>(
+    ctx: Context,
+    kind: ServiceKind<S, P>,
+    descriptor: ServiceDescriptor,
+    origins?: RowOriginLookup,
+  ): void {
     const existing = this.installed.get(kind.kind)
     if (existing && existing.kind !== kind)
       throw new ProviderError(
@@ -131,9 +143,10 @@ export class ServiceBindings {
       )
     // The first descriptor wins. A later tree retries registry install without widening the grant.
     if (!existing) this.installed.set(kind.kind, { kind, descriptor: freezeDescriptor(kind, descriptor) })
-    const registry = installProviderRegistry(ctx, kind, (owner, source, provider) => {
+    let registry!: ProviderRegistry<ServiceProvider<S, P>>
+    registry = installProviderRegistry(ctx, kind, (owner, source, provider) => {
       const verified = providerSource(owner, origins, source, true)
-      return registry.register(verified, provider as ServiceProvider, owner, async () => {
+      return registry.register(verified, provider, owner, async () => {
         await provider.dispose?.()
       })
     })
@@ -242,11 +255,11 @@ export class ServiceBindings {
     )
   }
 
-  private choose(
-    kind: ServiceKind,
+  private choose<S extends ServiceInstance, P extends ServicePorts>(
+    kind: ServiceKind<S, P>,
     call: ServiceCall,
     descriptor: InstalledService['descriptor'],
-  ): ServiceProvider {
+  ): ServiceProvider<S, P> {
     if (kind.cardinality === 'single' && call.providerId !== undefined) throw closed(kind.kind, 'bind')
     const scope = serviceBindingScope(kind, call)
     const providers = this.current()
@@ -259,13 +272,13 @@ export class ServiceBindings {
       const matches = owned.filter((entry) => entry.id === id)
       const chosen = matches.length === 1 ? matches[0] : undefined
       if (!chosen) throw closed(kind.kind, 'bind')
-      return providers.resolve(kind, { provider: chosen.id, version: chosen.version }) as ServiceProvider
+      return providers.resolve(kind, { provider: chosen.id, version: chosen.version })
     }
     const selected = owned.filter((entry) => entry.selectedFor.includes(scope))
     const chosen =
       selected.length === 1 ? selected[0] : selected.length === 0 && owned.length === 1 ? owned[0] : undefined
     if (!chosen) throw closed(kind.kind, 'bind')
-    return providers.resolve(kind, { provider: chosen.id, version: chosen.version }) as ServiceProvider
+    return providers.resolve(kind, { provider: chosen.id, version: chosen.version })
   }
 }
 
@@ -293,7 +306,7 @@ function owns(
   return claim?.owner === call.owner && claim.packageId === call.packageId
 }
 
-function assertCall(kind: ServiceKind, call: ServiceCall): void {
+function assertCall(kind: ServiceKindToken, call: ServiceCall): void {
   if (!EXTENSION_ID_PATTERN.test(call.owner) || !clean(call.packageId)) throw closed(kind.kind, 'bind')
   if (kind.instanceScope === 'session') {
     const session = call.session
@@ -331,7 +344,10 @@ function snapshot(call: ServiceCall): ServiceBinding {
   })
 }
 
-function freezeDescriptor(kind: ServiceKind, descriptor: ServiceDescriptor): InstalledService['descriptor'] {
+function freezeDescriptor(
+  kind: ServiceKindToken,
+  descriptor: ServiceDescriptor,
+): InstalledService['descriptor'] {
   const allowed = new Set(kind.ports)
   if (
     descriptor.ports.some((port) => !allowed.has(port)) ||
@@ -399,7 +415,7 @@ function namespaceKey(kind: string, owner: string, key: string, mode: ServiceDed
 }
 
 function buildPorts(
-  kind: ServiceKind,
+  kind: ServiceKindToken,
   call: ServiceCall,
   binding: ServiceBinding,
   descriptor: InstalledService['descriptor'],
@@ -427,9 +443,9 @@ function buildPorts(
     if (!factories.ledger) throw closed(kind.kind, 'bind')
     const raw = factories.ledger(call, binding, descriptor)
     ledger = Object.freeze({
-      scanOwn: (query) =>
+      scanOwn: (query: Parameters<OwnerLedgerPort['scanOwn']>[0]) =>
         guard('scan', () => raw.scanOwn(query)) as Promise<Awaited<ReturnType<OwnerLedgerPort['scanOwn']>>>,
-      appendOwn: (name, data, sourceSeq) =>
+      appendOwn: (name: string, data: JsonValue, sourceSeq?: number) =>
         guard('append', () => raw.appendOwn(name, data, sourceSeq)) as Promise<number>,
     })
   }
@@ -438,7 +454,7 @@ function buildPorts(
     if (!inputFactory) throw closed(kind.kind, 'bind')
     const raw = inputFactory(call, binding, descriptor)
     input = Object.freeze({
-      deliver: (key, text, signal) =>
+      deliver: (key: string, text: string, signal: AbortSignal) =>
         guard('deliver', () => {
           if (typeof text !== 'string' || !(signal instanceof AbortSignal)) throw closed(kind.kind, 'deliver')
           const finalKey = namespaceKey(kind.kind, call.owner, key, descriptor.dedupeKeys)
@@ -457,8 +473,8 @@ function buildPorts(
     if (!factories.projections) throw closed(kind.kind, 'bind')
     const raw = factories.projections
     const allowed = new Set(descriptor.projectionNames)
-    projections = Object.freeze({
-      readOwn: (name: string) =>
+    const reader: ProjectionReader = {
+      readOwn: <T extends JsonValue>(name: string) =>
         guard('read', () => {
           if (!allowed.has(name))
             return Promise.resolve({
@@ -466,9 +482,10 @@ function buildPorts(
               name,
               error: { code: 'E_PROJECTION_STATE' as const, safeMessage: 'projection unavailable' },
             })
-          return raw.readOwn(name)
-        }) as ReturnType<ProjectionReader['readOwn']>,
-    })
+          return raw.readOwn<T>(name)
+        }) as Promise<ProjectionReadResult<T>>,
+    }
+    projections = Object.freeze(reader)
   }
   const ports: ServicePorts & { capabilities?: object } = {
     binding,
@@ -512,6 +529,11 @@ function guardedCall(
   )
 }
 
+/** `typeof fn === 'function'` narrows to `Function`, which this file cannot call. */
+function isCallable(value: unknown): value is (...args: unknown[]) => unknown {
+  return typeof value === 'function'
+}
+
 /** Functions re-check admission. One nested object, such as a queue, keeps its original receiver. */
 function wrapCapabilities(
   value: object,
@@ -521,13 +543,13 @@ function wrapCapabilities(
   const out: Record<string, unknown> = {}
   for (const key of Object.keys(value)) {
     const prop = (value as Record<string, unknown>)[key]
-    if (typeof prop === 'function') {
+    if (isCallable(prop)) {
       out[key] = (...args: unknown[]) => guardedCall(prop, value, args, key, enter, lifetime)
     } else if (prop && typeof prop === 'object' && !Array.isArray(prop)) {
       const nested: Record<string, unknown> = {}
       for (const method of Object.keys(prop)) {
         const fn = (prop as Record<string, unknown>)[method]
-        if (typeof fn === 'function')
+        if (isCallable(fn))
           nested[method] = (...args: unknown[]) => guardedCall(fn, prop, args, method, enter, lifetime)
         else nested[method] = fn
       }

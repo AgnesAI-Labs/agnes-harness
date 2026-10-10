@@ -4,7 +4,6 @@ import type { Logger, PlatformView } from './common.js'
 import type { ToolContext } from './tool.js'
 
 export type { ServiceCapability } from '@agnes/protocol'
-export type ServiceKind = ServiceCapability['kind']
 export interface SessionChildJobs {
   list(): Promise<readonly import('./child-agent.js').ChildAgentListing[]>
   /** Query services receive no cancellation opening. */

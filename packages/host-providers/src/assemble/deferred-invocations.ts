@@ -265,7 +265,7 @@ export type DeferredProducerResolver = (
 export class DeferredInvocationsService {
   private readonly producers = new Map<string, DeferredInvocationProducer>()
   private readonly sessions = new Map<string, DeferredDispatcherQueue>()
-  private resolver?: DeferredProducerResolver
+  private resolver: DeferredProducerResolver | undefined = undefined
   constructor(
     private readonly ownerContext: Context,
     private readonly origins?: RowOriginLookup,

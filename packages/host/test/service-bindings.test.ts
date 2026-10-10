@@ -3,6 +3,7 @@ import {
   defineServiceKind,
   ProviderError,
   type ServiceInstance,
+  type ServiceKind,
   type ServicePorts,
   type ServiceProvider,
   unavailableProjections,
@@ -346,10 +347,12 @@ describe('service binding gate', () => {
       const unknown = defineKind({ kind: 'missing-service' })
       expect(() => mounted.root.providers.bindOwn(unknown)).toThrow(/not registered/)
       let bound = 0
-      mounted.root.providers.installServiceBinder(async () => {
-        bound += 1
-        return { mark: () => 'bound' } as Probe
-      })
+      mounted.root.providers.installServiceBinder(
+        async <S extends ServiceInstance, P extends ServicePorts>(_kind: ServiceKind<S, P>) => {
+          bound += 1
+          return { mark: () => 'bound' } as unknown as S
+        },
+      )
       expect((await mounted.root.providers.bindOwn(kind)).mark()).toBe('bound')
       expect(bound).toBe(1)
     } finally {
@@ -511,12 +514,14 @@ describe('service binding gate', () => {
       expect(() => instance.mark()).toThrow(/service binding is closed/)
       expect(marks).toBe(1)
       active = true
-      const first = instance.dispose()
-      expect(instance.dispose()).toBe(first)
+      const dispose = instance.dispose
+      if (!dispose) throw new Error('bound instance has no dispose')
+      const first = dispose()
+      expect(dispose()).toBe(first)
       await first
       expect(disposed).toBe(1)
       expect(() => instance.mark()).toThrow(/service binding is closed/)
-      await instance.dispose()
+      await dispose()
       expect(disposed).toBe(1)
     } finally {
       await finish(mounted.root)
@@ -712,7 +717,11 @@ describe('owner ledger', () => {
     })
     const first = await port.scanOwn({ names: ['note', 'extra'], limit: 2 })
     expect(first.events.map((event) => event.seq)).toEqual([4, 5])
-    const second = await port.scanOwn({ names: ['extra', 'note'], limit: 2, cursor: first.nextCursor })
+    const second = await port.scanOwn({
+      names: ['extra', 'note'],
+      limit: 2,
+      ...(first.nextCursor === undefined ? {} : { cursor: first.nextCursor }),
+    })
     expect(second.events.map((event) => event.seq)).toEqual([6])
     expect(second.nextCursor).toBeUndefined()
     const mixed = createOwnerLedger({
@@ -725,7 +734,13 @@ describe('owner ledger', () => {
     expect((await mixed.scanOwn({ names: ['note'], limit: 10 })).events.map((event) => event.seq)).toEqual([
       4,
     ])
-    await expect(port.scanOwn({ names: ['note'], limit: 2, cursor: first.nextCursor })).rejects.toThrow(
+    await expect(
+      port.scanOwn({
+        names: ['note'],
+        limit: 2,
+        ...(first.nextCursor === undefined ? {} : { cursor: first.nextCursor }),
+      }),
+    ).rejects.toThrow(
       /cursor/,
     )
     await expect(port.scanOwn({ names: ['note'], limit: 1, cursor: '%%%' })).rejects.toThrow(/cursor/)
@@ -1395,8 +1410,8 @@ describe('feedback service binding', () => {
   it('refuses a forged ledger name and pins the admitted session and actor', async () => {
     const appended: { sessionId: string; type: string; data: unknown; actor: Actor }[] = []
     const actor = extensionActor('human')
-    const authority = feedbackAuthority(async (sessionId, type, data, author) => {
-      appended.push({ sessionId, type, data, author })
+    const authority = feedbackAuthority(async (sessionId, type, data, admitted) => {
+      appended.push({ sessionId, type, data, actor: admitted })
       return appended.length
     })
     const root = new Context()
@@ -1651,7 +1666,7 @@ describe('intelligent UI service binding', () => {
       bindings.noteOwner(intelligentUiKind.kind, 'agnes/intelligent-ui', '0.1.0', uiOwner, uiPackage)
       const ui = await bindings.bind(intelligentUiKind, admitted, factories)
       expect(task?.()).toBe('pinned')
-      expect(await (ui as { mark(): Promise<string> }).mark()).toBe('ok')
+      expect(await (ui as typeof ui & { mark(): Promise<string> }).mark()).toBe('ok')
       expect(delivered).toEqual(['ui-result:cmd-1'])
       await ui.dispose?.()
       expect(() => task?.()).toThrow(ProviderError)

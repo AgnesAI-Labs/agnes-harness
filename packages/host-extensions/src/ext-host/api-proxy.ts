@@ -6,6 +6,10 @@ import {
   ExtensionError,
   type ExtensionManifest,
   extEventType,
+  type ServiceInstance,
+  type ServiceKind,
+  type ServicePorts,
+  type ServiceProvider,
   type SlotPayloadMap,
   type ToolDef,
 } from '@agnes/extension-api'
@@ -213,7 +217,10 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
       },
     }),
     providers: Object.freeze({
-      register(kind, provider) {
+      register<S extends ServiceInstance, P extends ServicePorts>(
+        kind: ServiceKind<S, P>,
+        provider: NoInfer<ServiceProvider<S, P>>,
+      ) {
         registering()
         if (!ports.serviceProviders) refuse('providers not granted')
         const required = ports.serviceProviders.grants?.(kind)
@@ -230,7 +237,7 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
         bag.add(() => dispose())
         return dispose
       },
-      bindOwn(kind) {
+      bindOwn<S extends ServiceInstance, P extends ServicePorts>(kind: ServiceKind<S, P>): Promise<S> {
         alive()
         if (!ports.serviceProviders) refuse('providers not granted')
         return ports.serviceProviders.bindOwn(kind, {

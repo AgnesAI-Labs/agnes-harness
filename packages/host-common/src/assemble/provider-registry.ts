@@ -258,7 +258,9 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
     string,
     (owner: Context, source: string, provider: ProviderIdentity) => () => Promise<void>
   >()
-  private serviceBinder?: (kind: ServiceKind) => Promise<ServiceInstance>
+  private serviceBinder?: <S extends ServiceInstance, P extends ServicePorts>(
+    kind: ServiceKind<S, P>,
+  ) => Promise<S>
   private configuration?: (entry: ProviderCatalogEntry) => readonly string[]
   constructor(ctx: Context) {
     super(ctx, 'providers')
@@ -359,7 +361,9 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
     return registry.select(scope, selection)
   }
   /** Replaced when a new tree is published. The extension facade is the granted author path. */
-  installServiceBinder(binder: (kind: ServiceKind) => Promise<ServiceInstance>): void {
+  installServiceBinder(
+    binder: <S extends ServiceInstance, P extends ServicePorts>(kind: ServiceKind<S, P>) => Promise<S>,
+  ): void {
     this.serviceBinder = binder
   }
   bindOwn<S extends ServiceInstance, P extends ServicePorts>(kind: ServiceKind<S, P>): Promise<S> {
@@ -370,7 +374,7 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
         kind: kind.kind,
         operation: 'bind',
       })
-    return binder(kind) as Promise<S>
+    return binder(kind)
   }
 }
 
