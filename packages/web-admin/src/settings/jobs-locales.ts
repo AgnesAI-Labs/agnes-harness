@@ -16,7 +16,7 @@ export const jobsCatalog: LocaleCatalog = {
     terminalHelp:
       'Open an interactive terminal under this session’s sandbox preset. Refresh reconnects; Close kills the terminal and its processes.',
     jobsHelp:
-      'View shell, persistent shell, PTY and child-agent jobs owned by this session. Jobs survive turns, not a daemon restart.',
+      'View shell, persistent shell, PTY and child-agent jobs owned by this session. Jobs survive turns, not a daemon restart. This panel stops terminals you open here; ask the agent to stop its jobs.',
     session: 'Session key',
     shell: 'Shell',
     open: 'Open terminal',
@@ -34,6 +34,7 @@ export const jobsCatalog: LocaleCatalog = {
     status: 'Status',
     actions: 'Actions',
     kill: 'Kill',
+    agentOwnedControl: 'Ask the agent to stop this job; this panel controls your own terminals.',
     running: 'Running',
     completed: 'Completed',
     failed: 'Failed',
@@ -54,7 +55,7 @@ export const jobsCatalog: LocaleCatalog = {
 
     terminalHelp: '在此会话的沙箱预设下打开交互终端。刷新会重新连接；关闭会终止终端及其进程。',
     jobsHelp:
-      '查看属于此会话的 shell、持久 shell、PTY 和子代理作业。作业可跨轮次保留，守护进程重启后不会恢复。',
+      '查看属于此会话的 shell、持久 shell、PTY 和子代理作业。作业可跨轮次保留，守护进程重启后不会恢复。本面板可终止你打开的终端；Agent 作业请在会话中要求 Agent 停止。',
     session: '会话标识',
     shell: 'Shell',
     open: '打开终端',
@@ -70,6 +71,7 @@ export const jobsCatalog: LocaleCatalog = {
     status: '状态',
     actions: '操作',
     kill: '终止',
+    agentOwnedControl: '请在会话中要求 Agent 停止此作业；本面板仅控制你打开的终端。',
     running: '运行中',
     completed: '已完成',
     failed: '失败',

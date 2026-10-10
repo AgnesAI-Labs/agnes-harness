@@ -1,3 +1,4 @@
+// Jobs settings honor the backend owner field: exact four-line growth; no authorization changes.
 // Account name save state and route recovery: exact measured Web-admin/settings counts.
 // Session-authorized artifact downloads and feedback/turn detail use exact measured scopes.
 // No counting exclusions or spare allocation.
@@ -266,7 +267,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-conversation/src': 4059,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src/settings': 7647,
+  'packages/web-admin/src/settings': 7651,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/permission-picker': 248,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
@@ -274,7 +275,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/admin/plugins/api': 546,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src': 14121,
+  'packages/web-admin/src': 14125,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-foundation/src': 2380,
   'packages/daemon-rpc/src/local/methods/extensions': 199,

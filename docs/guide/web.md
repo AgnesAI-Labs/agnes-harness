@@ -114,3 +114,5 @@ Open Runtime settings → Terminal or Jobs and enter the session key. Choose Bas
 Jobs shows shell commands, persistent interpreters, PTYs and child agents. Select Output to read retained output or Kill to stop a running job. Completion notices appear below the list. All operations use that session's preset and ownership. Native PTY currently supports macOS/Linux; unavailable shells/providers report an error.
 
 The `agnes/jobs-web` extension requires `services` in the profile capability ceiling. New templates include it. Existing profiles can add it explicitly; omitting it keeps the shell/job tools available while Web controls remain unavailable. Live jobs survive page refresh and turn completion, but not a Host restart.
+
+The jobs settings panel can stop human-owned terminals. Agent-owned jobs remain read-only there; ask the agent to use `job_kill` in the owning session. The backend owner check also refuses direct UI control of agent-owned processes.

@@ -104,3 +104,5 @@ Computer Use 显示驱动状态、系统权限、诊断与维护进度。切换�
 作业面板显示 shell 命令、持久解释器、PTY 和子代理，支持读取输出、终止和完成通知。所有操作遵守所属会话的沙箱预设。本地 PTY 支持 macOS/Linux；未安装的 shell 或不支持交互执行的提供方会明确报错。
 
 `agnes/jobs-web` 扩展需要配置 capability ceiling 的 `services`。新模板已包含；旧配置可显式添加。未添加时 shell/作业工具继续可用，Web 控制不可用。作业可跨页面刷新和轮次保留，Host 重启后不会恢复。
+
+任务设置面板可终止用户打开的终端；Agent 所属作业在此保持只读，请在所属会话中要求 Agent 使用 `job_kill` 停止。后端 owner 检查也会拒绝通过 UI 直接控制 Agent 进程。

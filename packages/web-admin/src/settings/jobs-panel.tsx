@@ -256,7 +256,8 @@ export function JobsPanel({
                     {t('output')}
                   </Button>{' '}
                   <Button
-                    disabled={busy || job.status !== 'running'}
+                    disabled={busy || job.status !== 'running' || job.owner !== 'human'}
+                    title={job.owner !== 'human' ? t('agentOwnedControl') : undefined}
                     onClick={() => void control({ operation: 'kill', jobId: job.id })}
                   >
                     {t('kill')}

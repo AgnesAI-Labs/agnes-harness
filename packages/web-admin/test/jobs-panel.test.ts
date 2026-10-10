@@ -17,6 +17,7 @@ it('reconnects a user PTY after refresh; typing and explicit close control that 
   localStorage.setItem('agnes.terminal.session-a', 'pty-a')
   const job: SessionJob = {
     id: 'pty-a',
+    owner: 'human',
     kind: 'pty',
     command: 'bash',
     cwd: '/w',
@@ -28,7 +29,7 @@ it('reconnects a user PTY after refresh; typing and explicit close control that 
   let acknowledge: (() => void) | undefined
   const api = {
     read: vi.fn(async (_scope: string, id?: string) => ({
-      jobs: [job],
+      jobs: [job, { ...job, id: 'agent-a', owner: 'agent' as const, kind: 'shell' as const }],
       completions: [],
       ...(id ? { job } : {}),
     })),
@@ -47,6 +48,11 @@ it('reconnects a user PTY after refresh; typing and explicit close control that 
     await act(async () => root.render(createElement(JobsPanel, { terminal: true, api })))
     await act(async () => {})
     expect(api.read).toHaveBeenCalledWith('session-a', 'pty-a')
+    const stopFor = (id: string) =>
+      container.querySelector('[data-testid="session-job-' + id + '"]')?.querySelectorAll('button')[1]
+    expect(stopFor('agent-a')?.disabled).toBe(true)
+    expect(stopFor('agent-a')?.title).toContain('Ask the agent')
+    expect(stopFor('pty-a')?.disabled).toBe(false)
     expect(container.querySelector<HTMLTextAreaElement>('[data-testid="terminal-output"]')?.value).toContain(
       'ready',
     )

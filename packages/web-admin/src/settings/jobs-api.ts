@@ -1,5 +1,6 @@
 export interface SessionJob {
   id: string
+  owner?: 'human' | 'agent'
   kind: 'shell' | 'shell-session' | 'pty' | 'child'
   command: string
   cwd: string
