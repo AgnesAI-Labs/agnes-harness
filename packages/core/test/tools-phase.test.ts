@@ -1,6 +1,6 @@
 import { createWorkspaceInvocationPort, type FsOps, type WorkspaceInvocationSource } from '@agnes/core'
 import { withPhase } from '@agnes/core-common/step/op-state'
-import type { ToolContext, ToolDef } from '@agnes/extension-api'
+import { defaultToolPolicy, type ToolContext, type ToolDef, type ToolPolicyInput } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it, vi } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
@@ -29,6 +29,25 @@ const subagentCollectTool = (): ToolDef =>
       requiresApproval: 'never' as const,
     },
     execute: async () => ({ content: [{ type: 'text' as const, text: 'collected' }] }),
+  }) as never
+
+/** Mirrors ui_render / ui_update / ui_close: a write that declares requiresApproval 'never'. */
+const uiSurfaceTool = (name: 'ui_render' | 'ui_update' | 'ui_close'): ToolDef =>
+  ({
+    name,
+    description: name,
+    parameters: Type.Object({}),
+    meta: {
+      isReadOnly: false,
+      isDestructive: false,
+      isConcurrencySafe: false,
+      isOpenWorld: false,
+      replay: 'idempotent' as const,
+      costHint: undefined,
+      deferLoading: undefined,
+      requiresApproval: 'never' as const,
+    },
+    execute: async () => ({ content: [{ type: 'text' as const, text: 'surface' }] }),
   }) as never
 
 async function atTools(scripts: Script[], registry: ToolRegistry, seams = fakeSeams()) {
@@ -1073,6 +1092,73 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
       risk: 'destructive',
       kind: 'tool',
     })
+  })
+
+  /**
+   * After a deferred business tool is allowed, SC1 queues the receipt as system input. That taints
+   * the continuation, and the loop then calls ui_update to publish revision + 1. The declaration
+   * is not a second business effect, so it must produce a tool result without another permission.
+   */
+  it('a tainted turn does not escalate ui_update after a deferred business result', async () => {
+    const registry = new ToolRegistry()
+    registry.add(openWorldTool(), { source: 's', trust: 'builtin' })
+    registry.add(uiSurfaceTool('ui_update'), { source: 's', trust: 'builtin' })
+    const asks: Array<{ name?: string; taint: boolean }> = []
+    const seams = fakeSeams({
+      approval: {
+        ask: async (req) => {
+          asks.push({ ...(req.tool ? { name: req.tool.name } : {}), taint: req.taint })
+          return 'allowed-once'
+        },
+        resume: async () => null,
+      },
+    })
+
+    const s = await atTools([toolTurn('fetch_page', {}), toolTurn('ui_update', {})], registry, seams)
+    await s.session.runToolsPhase()
+    expect(s.tracker.state.taint.get('main')).toBe(true)
+    await s.session.step()
+    await s.session.step()
+    expect(await s.session.runToolsPhase()).toEqual({ phase: 'checkpoint' })
+    expect(asks).toEqual([])
+    expect(await s.log.scan({ type: 'approval/asked', limit: 10 })).toHaveLength(0)
+    const results = await s.log.scan({ type: 'tool/result', limit: 10 })
+    expect(results.map((row) => (row.data as { isError?: boolean }).isError)).toEqual([false, false])
+  })
+
+  it('a tainted turn still asks for a business write and a destructive surface declaration', async () => {
+    const signal = new AbortController().signal
+    const decide = (name: string, policy: Partial<ToolPolicyInput['policy']> = {}, tainted = true) =>
+      defaultToolPolicy.decide(
+        {
+          sessionKey: 'k',
+          cwd: '/w',
+          actor,
+          call: { id: 'c', name, args: {} },
+          policy: {
+            isReadOnly: false,
+            isDestructive: false,
+            replay: 'idempotent',
+            requiresApproval: 'never',
+            approvalScopes: [],
+            ...policy,
+          },
+          tainted,
+          fullAccess: false,
+          approvalMode: 'manual',
+        },
+        signal,
+      )
+    for (const name of ['ui_render', 'ui_update', 'ui_close'] as const) {
+      expect(await decide(name)).toMatchObject({ effect: 'allow' })
+    }
+    expect(await decide('write_note')).toMatchObject({ effect: 'ask' })
+    expect(await decide('fde_finance_approve', { requiresApproval: 'always' })).toMatchObject({
+      effect: 'ask',
+    })
+    expect(await decide('ui_update', { isDestructive: true })).toMatchObject({ effect: 'ask' })
+    expect(await decide('ui_update', { requiresApproval: 'always' })).toMatchObject({ effect: 'ask' })
+    expect(await decide('write_note', {}, false)).toMatchObject({ effect: 'allow' })
   })
 
   /**
