@@ -1,0 +1,350 @@
+{
+  "about": "Third-party assets of @agnes/mars-world, fetched by tools/fetch-assets.mjs",
+  "bytes": 26504508,
+  "assets": [
+    {
+      "id": "moon_rock_01",
+      "kind": "model",
+      "name": "Moon Rock 01",
+      "authors": ["Greg Zaal", "Rico Cilliers", "Jenelle van Heerden", "Dario Barresi"],
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/moon_rock_01",
+      "files": [
+        {
+          "path": "models/moon_rock_01/moon_rock_01.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/moon_rock_01/moon_rock_01_1k.gltf",
+          "size": 7088,
+          "md5": "86c6b4f7792f9600ae33cb3b4d42bb20"
+        },
+        {
+          "path": "models/moon_rock_01/textures/moon_rock_01_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/moon_rock_01/moon_rock_01_nor_gl_1k.jpg",
+          "size": 645714,
+          "md5": "5d222c1e40b180e8f376d72aec26703a"
+        },
+        {
+          "path": "models/moon_rock_01/textures/moon_rock_01_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/moon_rock_01/moon_rock_01_diff_1k.jpg",
+          "size": 276354,
+          "md5": "4cd48b9b451eef5f35c7be91deca6ead"
+        },
+        {
+          "path": "models/moon_rock_01/textures/moon_rock_01_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/moon_rock_01/moon_rock_01_arm_1k.jpg",
+          "size": 330395,
+          "md5": "f04ce87fb751ced28add48ad9eb50d0f"
+        },
+        {
+          "path": "models/moon_rock_01/moon_rock_01.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/moon_rock_01/moon_rock_01.bin",
+          "size": 448168,
+          "md5": "5dc30dc1be5e8dd5fff64dd824cad828"
+        }
+      ]
+    },
+    {
+      "id": "moon_rock_03",
+      "kind": "model",
+      "name": "Moon Rock 03",
+      "authors": ["Greg Zaal", "Rico Cilliers", "Jenelle van Heerden"],
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/moon_rock_03",
+      "files": [
+        {
+          "path": "models/moon_rock_03/moon_rock_03.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/moon_rock_03/moon_rock_03_1k.gltf",
+          "size": 2789,
+          "md5": "147dd843eeb4dd7fb661e26befca7f62"
+        },
+        {
+          "path": "models/moon_rock_03/textures/moon_rock_03_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/moon_rock_03/moon_rock_03_nor_gl_1k.jpg",
+          "size": 686128,
+          "md5": "4d5d635dfcaab32267d845e3c6140fa2"
+        },
+        {
+          "path": "models/moon_rock_03/textures/moon_rock_03_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/moon_rock_03/moon_rock_03_diff_1k.jpg",
+          "size": 299288,
+          "md5": "c8c1e94c7004977fe2b8cde7ebf472d5"
+        },
+        {
+          "path": "models/moon_rock_03/textures/moon_rock_03_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/moon_rock_03/moon_rock_03_arm_1k.jpg",
+          "size": 349061,
+          "md5": "96d560db01b47fa5b3572b5f5a2515fd"
+        },
+        {
+          "path": "models/moon_rock_03/moon_rock_03.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/moon_rock_03/moon_rock_03.bin",
+          "size": 131060,
+          "md5": "6d0b79c8e72e2340c0e8be38e78267e2"
+        }
+      ]
+    },
+    {
+      "id": "moon_rock_05",
+      "kind": "model",
+      "name": "Moon Rock 05",
+      "authors": ["Greg Zaal", "Rico Cilliers", "Jenelle van Heerden"],
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/moon_rock_05",
+      "files": [
+        {
+          "path": "models/moon_rock_05/moon_rock_05.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/moon_rock_05/moon_rock_05_1k.gltf",
+          "size": 2789,
+          "md5": "44e295290c047f0024d856e75e18ff6a"
+        },
+        {
+          "path": "models/moon_rock_05/textures/moon_rock_05_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/moon_rock_05/moon_rock_05_nor_gl_1k.jpg",
+          "size": 659695,
+          "md5": "d879a760c613e48cbf74a7654fb1f327"
+        },
+        {
+          "path": "models/moon_rock_05/textures/moon_rock_05_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/moon_rock_05/moon_rock_05_diff_1k.jpg",
+          "size": 288046,
+          "md5": "87b98ba77cef7cfa31b9174d91ccb86d"
+        },
+        {
+          "path": "models/moon_rock_05/textures/moon_rock_05_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/moon_rock_05/moon_rock_05_arm_1k.jpg",
+          "size": 353183,
+          "md5": "057f49510fee9337610a5b90a7d68ac1"
+        },
+        {
+          "path": "models/moon_rock_05/moon_rock_05.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/moon_rock_05/moon_rock_05.bin",
+          "size": 226972,
+          "md5": "c8a01ca26ae5c4692a4ed2af8693233c"
+        }
+      ]
+    },
+    {
+      "id": "moon_rock_07",
+      "kind": "model",
+      "name": "Moon Rock 07",
+      "authors": ["Greg Zaal", "Rico Cilliers", "Jenelle van Heerden"],
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/moon_rock_07",
+      "files": [
+        {
+          "path": "models/moon_rock_07/moon_rock_07.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/moon_rock_07/moon_rock_07_1k.gltf",
+          "size": 2787,
+          "md5": "45dc7ff2046866c694d368d1d1c4ab1a"
+        },
+        {
+          "path": "models/moon_rock_07/textures/moon_rock_07_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/moon_rock_07/moon_rock_07_nor_gl_1k.jpg",
+          "size": 587027,
+          "md5": "ff759a1bda795163ad60b55399792d91"
+        },
+        {
+          "path": "models/moon_rock_07/textures/moon_rock_07_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/moon_rock_07/moon_rock_07_diff_1k.jpg",
+          "size": 318944,
+          "md5": "442dbbeaa3761ceabcf37bccdfbc489c"
+        },
+        {
+          "path": "models/moon_rock_07/textures/moon_rock_07_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/moon_rock_07/moon_rock_07_arm_1k.jpg",
+          "size": 311598,
+          "md5": "78c3a1b3e80e9169509e1d390bafae92"
+        },
+        {
+          "path": "models/moon_rock_07/moon_rock_07.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/moon_rock_07/moon_rock_07.bin",
+          "size": 162168,
+          "md5": "bf2b814936128390ce41ddfce82f55bd"
+        }
+      ]
+    },
+    {
+      "id": "namaqualand_boulder_02",
+      "kind": "model",
+      "name": "Namaqualand Boulder 02",
+      "authors": ["Greg Zaal", "Rico Cilliers"],
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/namaqualand_boulder_02",
+      "files": [
+        {
+          "path": "models/namaqualand_boulder_02/namaqualand_boulder_02.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/namaqualand_boulder_02/namaqualand_boulder_02_1k.gltf",
+          "size": 2818,
+          "md5": "0730814e31f50e85defd7b8833a02070"
+        },
+        {
+          "path": "models/namaqualand_boulder_02/namaqualand_boulder_02.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/namaqualand_boulder_02/namaqualand_boulder_02.bin",
+          "size": 2297768,
+          "md5": "aa8f2212633a07a7e9a805e90977f4fd"
+        },
+        {
+          "path": "models/namaqualand_boulder_02/textures/namaqualand_boulder_02_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/namaqualand_boulder_02/namaqualand_boulder_02_nor_gl_1k.jpg",
+          "size": 1031460,
+          "md5": "afe526a6ff3161fd748834455f24fba4"
+        },
+        {
+          "path": "models/namaqualand_boulder_02/textures/namaqualand_boulder_02_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/namaqualand_boulder_02/namaqualand_boulder_02_arm_1k.jpg",
+          "size": 796910,
+          "md5": "e55ce7ca61d88db276528e7097a21a47"
+        },
+        {
+          "path": "models/namaqualand_boulder_02/textures/namaqualand_boulder_02_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/namaqualand_boulder_02/namaqualand_boulder_02_diff_1k.jpg",
+          "size": 1010348,
+          "md5": "155c01a1e90b8e2a52b287ada98c52d0"
+        }
+      ]
+    },
+    {
+      "id": "dry_ground_rocks",
+      "kind": "texture",
+      "name": "Dry Ground Rocks",
+      "authors": ["Rob Tuytel"],
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/dry_ground_rocks",
+      "files": [
+        {
+          "path": "textures/dry_ground_rocks/diff.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/dry_ground_rocks/dry_ground_rocks_diff_1k.jpg",
+          "size": 826834,
+          "md5": "7cc10e3eb12ce7bb8235d3e3c3041ded"
+        },
+        {
+          "path": "textures/dry_ground_rocks/nor.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/dry_ground_rocks/dry_ground_rocks_nor_gl_1k.jpg",
+          "size": 1263934,
+          "md5": "7f2d336686d4b5e380ba76c5e3ddd4bb"
+        },
+        {
+          "path": "textures/dry_ground_rocks/rough.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/dry_ground_rocks/dry_ground_rocks_rough_1k.jpg",
+          "size": 454494,
+          "md5": "0f5d1be1483fc6ccd5971a724b178129"
+        }
+      ]
+    },
+    {
+      "id": "sandy_gravel_02",
+      "kind": "texture",
+      "name": "Sandy Gravel 02",
+      "authors": ["Dario Barresi"],
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/sandy_gravel_02",
+      "files": [
+        {
+          "path": "textures/sandy_gravel_02/diff.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/sandy_gravel_02/sandy_gravel_02_diff_1k.jpg",
+          "size": 947222,
+          "md5": "e8f0496f1e0e923514470171de033bf9"
+        },
+        {
+          "path": "textures/sandy_gravel_02/nor.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/sandy_gravel_02/sandy_gravel_02_nor_gl_1k.jpg",
+          "size": 1185078,
+          "md5": "a0174cc069d02b825b546d8547b4a49a"
+        },
+        {
+          "path": "textures/sandy_gravel_02/rough.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/sandy_gravel_02/sandy_gravel_02_rough_1k.jpg",
+          "size": 382424,
+          "md5": "bbd5bd1358d0a3f7dbdee52707c126c1"
+        }
+      ]
+    },
+    {
+      "id": "rock_face",
+      "kind": "texture",
+      "name": "Rock Face",
+      "authors": ["Greg Zaal", "Dario Barresi"],
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/rock_face",
+      "files": [
+        {
+          "path": "textures/rock_face/diff.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rock_face/rock_face_diff_1k.jpg",
+          "size": 732721,
+          "md5": "220c637db6056b45e7c0a17e6ed8514e"
+        },
+        {
+          "path": "textures/rock_face/nor.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rock_face/rock_face_nor_gl_1k.jpg",
+          "size": 1139857,
+          "md5": "0d244b69a346db78f06c7b76510bb640"
+        },
+        {
+          "path": "textures/rock_face/rough.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rock_face/rock_face_rough_1k.jpg",
+          "size": 224371,
+          "md5": "9c0ebb95db6ce5ec16abca0899e506a2"
+        }
+      ]
+    },
+    {
+      "id": "metal_plate",
+      "kind": "texture",
+      "name": "Metal Plate",
+      "authors": ["Rob Tuytel"],
+      "license": "CC0-1.0",
+      "source": "https://polyhaven.com/a/metal_plate",
+      "files": [
+        {
+          "path": "textures/metal_plate/diff.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/metal_plate/metal_plate_diff_1k.jpg",
+          "size": 692234,
+          "md5": "bd9daf4c04046ca392a38b8df955ed26"
+        },
+        {
+          "path": "textures/metal_plate/nor.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/metal_plate/metal_plate_nor_gl_1k.jpg",
+          "size": 770307,
+          "md5": "d379e66130ad6ccff217ac9b13de935d"
+        },
+        {
+          "path": "textures/metal_plate/rough.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/metal_plate/metal_plate_rough_1k.jpg",
+          "size": 775206,
+          "md5": "6e1c8672d804b90546a23db621515b16"
+        }
+      ]
+    },
+    {
+      "id": "perseverance",
+      "kind": "model",
+      "name": "Mars 2020 Perseverance Rover",
+      "authors": ["NASA"],
+      "license": "NASA 3D Resources: \"free and without copyright\" (repository README); NASA media usage guidelines apply: no NASA insignia, no implied endorsement",
+      "source": "https://github.com/nasa/NASA-3D-Resources/tree/master/3D%20Models/Mars%202020%20Perseverance%20Rover",
+      "files": [
+        {
+          "path": "nasa/perseverance.glb",
+          "url": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/3D%20Models/Mars%202020%20Perseverance%20Rover/Mars%202020%20Perseverance%20Rover.glb",
+          "size": 4987176,
+          "md5": "e627d30ae5d7094f816bd207cf808002"
+        }
+      ]
+    },
+    {
+      "id": "mark3_suit",
+      "kind": "model",
+      "name": "Mark III Spacesuit",
+      "authors": ["NASA"],
+      "license": "NASA 3D Resources: \"free and without copyright\" (repository README); NASA media usage guidelines apply: no NASA insignia, no implied endorsement",
+      "source": "https://github.com/nasa/NASA-3D-Resources/tree/master/3D%20Models/Mark%20III%20Spacesuit",
+      "files": [
+        {
+          "path": "nasa/mark3_suit.glb",
+          "url": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/3D%20Models/Mark%20III%20Spacesuit/Mark%20III%20Spacesuit.glb",
+          "size": 894092,
+          "md5": "9106e6bde7304d3b82cfd95867131969"
+        }
+      ]
+    }
+  ]
+}

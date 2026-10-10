@@ -30,7 +30,7 @@ If you already have a checkout, enter that directory. Run the following commands
 | Component | Requirement |
 | --- | --- |
 | Node.js | `>=24.10`; see [verification](../maintainers/verification.md) for recorded environments |
-| pnpm | `10.34.5`, pinned by the root `packageManager`; it can be invoked through Corepack |
+| pnpm | `10.34.5`, pinned by the root `packageManager`. Node 24 includes Corepack, which provides it; Node 25 and later do not, so install it with `npm install -g pnpm@10.34.5` |
 | macOS | Xcode Command Line Tools to build native helpers; command sandboxing uses Seatbelt |
 | Linux | Command tools require bubblewrap and usable user namespaces; the presence of a bwrap binary alone is insufficient |
 | Windows | Headers/import library matching Node, Visual Studio C++ Build Tools, and the Windows SDK; see the platform limits below |
@@ -39,13 +39,13 @@ Start with these commands at the repository root:
 
 ```sh
 node --version
-corepack pnpm --version
+pnpm --version
 pnpm install --frozen-lockfile
 pnpm --filter @agnes/cli build:local
 node packages/cli/dist/local/agnes.mjs --help
 ```
 
-If `pnpm` is unavailable, substitute `corepack pnpm` in the following commands. There is no root `pnpm build` script. The CLI package's `build:local` creates the complete local distribution.
+On Node 24 without a `pnpm` command, substitute `corepack pnpm` in the following commands. There is no root `pnpm build` script. The CLI package's `build:local` creates the complete local distribution.
 
 Output is written to `packages/cli/dist/local/`, including `agnes.mjs`, daemon, worker, Web, and platform resources. Move the entire directory when relocating a build. `@agnes/web build` builds only the Web package and cannot replace the full local distribution.
 
@@ -102,7 +102,7 @@ Run from the source repository root. `--output-dir` must be absolute: pnpm's `--
 
 ```sh
 AGH_BUILD_ROOT="$(mktemp -d /tmp/agh-build.XXXXXX)"
-corepack pnpm --filter @agnes/cli build:local --output-dir "$AGH_BUILD_ROOT/runtime"
+pnpm --filter @agnes/cli build:local --output-dir "$AGH_BUILD_ROOT/runtime"
 node "$AGH_BUILD_ROOT/runtime/agnes.mjs" --help
 ```
 
@@ -112,7 +112,7 @@ In PowerShell, also from the source repository root:
 $aghBuildRoot = Join-Path ([IO.Path]::GetTempPath()) ('agh-build-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $aghBuildRoot | Out-Null
 $aghBuildOutput = Join-Path $aghBuildRoot 'runtime'
-corepack.cmd pnpm --filter @agnes/cli build:local --output-dir $aghBuildOutput
+pnpm.cmd --filter @agnes/cli build:local --output-dir $aghBuildOutput
 if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
 node (Join-Path $aghBuildOutput 'agnes.mjs') --help
 ```

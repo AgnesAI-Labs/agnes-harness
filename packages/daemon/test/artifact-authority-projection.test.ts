@@ -199,6 +199,78 @@ describe('artifact authority ledger projection', () => {
   })
 
   it.each([
+    ['a trusted result whose call declared images', true, 'trusted', true],
+    ['a trusted result whose call did not declare images', false, 'trusted', false],
+    ['an untrusted result whose call declared images', true, 'untrusted', false],
+  ] as const)('another tool: projects %s only when allowed', async (_label, declared, trust, projected) => {
+    const f = await fixture()
+    const head = {
+      ts: '2026-09-17T00:00:00.000Z',
+      lane: 'main',
+      v: 1,
+      actor: { id: 'owner-a', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+    }
+    const policy = {
+      isReadOnly: true,
+      isDestructive: false,
+      isConcurrencySafe: true,
+      isOpenWorld: trust === 'untrusted',
+      ...(declared ? { returnsImages: true } : {}),
+      replay: 'safe',
+      requiresApproval: 'never',
+      approvalScopes: [],
+      policyVersion: 'static-v1',
+    }
+    const signal = new AbortController().signal
+    await f.projection.observe(
+      'session-a',
+      {
+        ...head,
+        seq: 2,
+        id: '01J6ZM2Q3R4S5T6V7W8X9Y0Z02',
+        type: 'tool/call',
+        origin: 'model',
+        trust: 'trusted',
+        data: {
+          toolUseId: 'call-1',
+          name: 'read_device',
+          args: {},
+          ordinal: 0,
+          resolvedPolicy: policy,
+          executionDomain: 'workspace',
+          definitionFingerprint: 'e'.repeat(64),
+          policyHash: 'f'.repeat(64),
+        },
+      },
+      signal,
+    )
+    await f.projection.observe(
+      'session-a',
+      {
+        ...head,
+        seq: 3,
+        id: '01J6ZM2Q3R4S5T6V7W8X9Y0Z03',
+        type: 'tool/result',
+        origin: 'tool:read_device',
+        trust,
+        sourceEventSeqs: [2],
+        data: {
+          toolUseId: 'call-1',
+          content: [
+            { type: 'resource_link', name: 'image', uri: `artifact://${f.sha256}`, mimeType: 'image/png' },
+          ],
+          isError: false,
+          enforcement: { level: 'full', scope: [] },
+          authz: { decisionId: 'n/a' },
+        },
+      },
+      signal,
+    )
+    expect(f.index.resolve('session-a', 'main', f.sha256) !== undefined).toBe(projected)
+    await f.tables.close()
+  })
+
+  it.each([
     ['an untrusted request header', { origin: 'system', trust: 'untrusted' }],
     ['a non-system request header', { origin: 'tool:computer_use', trust: 'trusted' }],
   ])('does not project media from %s', async (_label, provenance) => {

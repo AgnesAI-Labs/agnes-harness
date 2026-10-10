@@ -9,6 +9,7 @@ export type {
   JsonRpcResponse,
 } from './rpc.js'
 export { fail, isNotification, isRequest, isResponse, notify, ok } from './rpc.js'
+export { requestMediaOriginIsValid } from './supervisor/artifact-authority-projection.js'
 export {
   type DaemonControlCommandOptions,
   DaemonControlError,

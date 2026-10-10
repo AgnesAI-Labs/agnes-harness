@@ -26,7 +26,7 @@
 | Python | 生产 Python runtime 与 Python thin SDK 仍非本文可用路径 |
 | Desktop/系统集成 | 不包含桌面客户端、系统登录启动注册、自动更新 |
 | 行业/企业 | 业务接口、身份、数据与部署政策需要按[FDE 场景](../guide/why-agh.zh-CN.md)分别集成和验收 |
-| MHS/物理设备 | AGH 的[MHS 接入文档与示例即将开放](../guide/mhs.zh-CN.md)；暂无已验证的通用 MHS 适配器、设备兼容列表或设备端到端示例 |
+| MHS/物理设备 | [MHS 1.0 与 MOS 1.0](../guide/mhs.zh-CN.md) 在源码仓库中运行，AgnesHub 是可选插件。示例设备和模拟设备能通过 `mhs-check`；暂无硬件兼容列表或认证，实时控制与物理安全仍由设备控制器负责 |
 | 性能/Eval | 不提供未经固定模型、预算、任务与测量验证的领先/提升数字 |
 
 当前验证的命令与范围见[验证记录](../maintainers/verification.zh-CN.md)。版本更新时需重新核对当前源码，特别是长期运行、MCP OAuth 会话支持、插件与客户端描述合同、默认安全策略和发行状态。

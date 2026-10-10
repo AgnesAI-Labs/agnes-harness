@@ -45,7 +45,7 @@ export function renderToolsMetaDoc(input: {
     if (!description) throw new Error(`missing tool metadata description: ${key}`)
     return `| \`${key}\` | ${cell(description)} |`
   })
-  return `${header('tooldef.json')}# Tool metadata\n\nAll eight keys must be explicitly present. Authors may explicitly set costHint, deferLoading and requiresApproval to undefined; wire metadata normalizes these to null. A missing key is E_TOOLDEF_META.\n\n| Key | Meaning |\n|---|---|\n${rows.join('\n')}\n`
+  return `${header('tooldef.json')}# Tool metadata\n\nAll eight keys must be explicitly present. Authors may explicitly set costHint, deferLoading and requiresApproval to undefined; wire metadata normalizes these to null. A missing key is E_TOOLDEF_META. returnsImages is the one optional key; absent means false.\n\n| Key | Meaning |\n|---|---|\n${rows.join('\n')}\n`
 }
 type Schema = {
   description?: string
@@ -110,7 +110,10 @@ export function generateAll(): Record<string, string> {
     }),
   ) as Record<SlotName, string>
   const descriptionsMeta = Object.fromEntries(
-    TOOL_META_KEYS.map((key) => [key, tools.$defs.ToolMeta?.properties?.[key]?.description ?? '']),
+    [...TOOL_META_KEYS, 'returnsImages'].map((key) => [
+      key,
+      tools.$defs.ToolMeta?.properties?.[key]?.description ?? '',
+    ]),
   )
   return {
     'services.md': `${header('extension-service.json')}# Extension Services
@@ -127,6 +130,9 @@ registerProjection accepts name, positive stateVersion, plain JSON stateSchema a
 `,
     'hooks.md': renderHooksDoc({ table: HOOK_TABLE, descriptions }),
     'slots.md': renderSlotsDoc({ table: SLOT_TABLE, payloadDescriptions }),
-    'tools-meta.md': renderToolsMetaDoc({ keys: TOOL_META_KEYS, descriptions: descriptionsMeta }),
+    'tools-meta.md': renderToolsMetaDoc({
+      keys: [...TOOL_META_KEYS, 'returnsImages'],
+      descriptions: descriptionsMeta,
+    }),
   }
 }

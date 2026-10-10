@@ -44,6 +44,8 @@ Parameters use a schema with TypeBox kind markers. The example writes `Symbol.fo
 
 Metadata declares read-only, nondestructive, concurrency-safe, closed-world behavior, `replay: 'safe'`, and no approval requirement. If you change the tool to write files or call an external system, redefine effects, approvals, and replay semantics instead of retaining these declarations.
 
+A tool whose results carry pictures for the model, such as a camera reader, also sets `returnsImages: true` in `meta`. It stores the bytes with `ctx.artifacts.put(bytes, { mime })` and returns `{ type: 'image', ref, mime }` in `content`, as PNG or JPEG. The call records the flag in its resolved policy, and request media sends the pictures to the model only when the tool is also closed-world (`isOpenWorld: false`). Without the flag, a tool's images never reach the model and the next request fails; only the built-in `read`, `computer_use` and `document_read` need no flag. The flag adds no separate permission check: a plugin's tools run only after the user has installed, trusted, and enabled its package.
+
 <a id="安装和运行"></a>
 
 ## Install and run

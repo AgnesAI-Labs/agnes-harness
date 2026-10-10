@@ -2,7 +2,7 @@
 
 # Tool metadata
 
-All eight keys must be explicitly present. Authors may explicitly set costHint, deferLoading and requiresApproval to undefined; wire metadata normalizes these to null. A missing key is E_TOOLDEF_META.
+All eight keys must be explicitly present. Authors may explicitly set costHint, deferLoading and requiresApproval to undefined; wire metadata normalizes these to null. A missing key is E_TOOLDEF_META. returnsImages is the one optional key; absent means false.
 
 | Key | Meaning |
 |---|---|
@@ -14,3 +14,4 @@ All eight keys must be explicitly present. Authors may explicitly set costHint, 
 | `costHint` | An estimate for the budget preflight; null means the author declared no hint. Consumed by the budget stage. |
 | `deferLoading` | true keeps the tool out of the default disclosure until a search loads it. null defers to the package default, which the MCP importer reads as true; until that importer lands, null behaves as false. Consumed by disclosure. |
 | `requiresApproval` | The approval band; null lets isDestructive and the command policy table decide. Consumed by the approval stage. |
+| `returnsImages` | Optional; true declares that the tool's results carry pictures for the model. The call records it in its resolved policy, and request media sends a result's images only when the result is closed-world (trusted) and its call declared this. Absent means false: other tools' images, apart from read, computer_use and document_read, stay out of model requests. |

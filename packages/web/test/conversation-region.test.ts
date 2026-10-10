@@ -62,6 +62,33 @@ describe('rendered conversation region', () => {
     }, committed)
   })
 
+  it('keeps a hero entry registered once across new sessions and switches', async () => {
+    runtime = await mountRenderedIndex()
+    // A plugin registers its hero entry once, when it is applied, not once per new session.
+    runtime.registry.register(
+      { name: 'conversation.hero.workspace', id: 'fixture-hero-workspace', owner: 'fixture' },
+      () => createElement('button', { id: 'fixture-hero-workspace', type: 'button' }, '选择工作区'),
+    )
+    // New session sets no session; that remounts the conversation and its empty state, so wait for
+    // the new hero before looking for the entry in it.
+    for (const sessionId of ['session-a', undefined, 'session-b', undefined]) {
+      const before = document.querySelector('[data-agnes-conversation-hero]')
+      runtime.session.setSession(sessionId)
+      if (sessionId !== undefined) {
+        await vi.waitFor(
+          () => expect(document.querySelector('.conversation-session-header')).toBeTruthy(),
+          committed,
+        )
+        continue
+      }
+      await vi.waitFor(() => {
+        const hero = document.querySelector('[data-agnes-conversation-hero]')
+        expect(hero).not.toBe(before)
+        expect(hero?.querySelector('#fixture-hero-workspace')?.textContent).toBe('选择工作区')
+      }, committed)
+    }
+  })
+
   it('mounts session header child outlets only after a session becomes available', async () => {
     runtime = await mountRenderedIndex()
     runtime.session.setSession('session-header-1')

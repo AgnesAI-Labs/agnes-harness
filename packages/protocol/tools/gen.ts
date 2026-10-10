@@ -41,6 +41,9 @@ const TARGETS: Array<{
       { from: 'schema/session-v1.json', defs: ['JsonValue'] },
     ],
   },
+  // Agnes MHS keeps its schema with its own package; it shares this generator so its types follow
+  // the same rules as every other protocol here.
+  { schema: '../mhs/schema/mhs-v1.json', out: '../mhs/gen/ts/mhs-v1.ts', module: 'MhsV1' },
   {
     schema: 'schema/session-v1.json',
     out: 'gen/ts/session-v1.ts',

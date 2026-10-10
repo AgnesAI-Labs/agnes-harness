@@ -108,6 +108,31 @@ describe('resolved tool-call policy envelope', () => {
     })
   })
 
+  it('records returnsImages in the call policy only when the tool declares it', () => {
+    const registry = new ToolRegistry()
+    for (const [name, returnsImages] of [
+      ['plain', undefined],
+      ['pictures', true],
+    ] as const)
+      registry.add(
+        {
+          name,
+          description: 'd',
+          parameters: { type: 'object', properties: {} } as never,
+          meta: returnsImages ? { ...meta, returnsImages } : meta,
+          execute: async () => ({ content: [] }),
+        },
+        { source: 'example/plugin', trust: 'trusted' },
+      )
+    const plain = registry.resolve('plain')
+    const pictures = registry.resolve('pictures')
+    if (!plain || !pictures) throw new Error('missing tool')
+    expect(resolveValidatedToolCallPolicy(plain, {}).resolvedPolicy).not.toHaveProperty('returnsImages')
+    const envelope = resolveValidatedToolCallPolicy(pictures, {})
+    expect(envelope.resolvedPolicy.returnsImages).toBe(true)
+    expect(hasAuthenticToolPolicyHash(envelope)).toBe(true)
+  })
+
   it.each(['isConcurrencySafe', 'isOpenWorld'] as const)(
     'treats a pre-migration policy missing %s as readable but incomplete',
     (field) => {

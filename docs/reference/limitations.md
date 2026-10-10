@@ -28,7 +28,7 @@ Use this page to decide whether AGH fits your trial or integration. It distingui
 | Python | Production Python runtime and the Python thin SDK are not usable paths described by these guides |
 | Desktop / system integration | No desktop client, system-login startup registration, or automatic updates |
 | Domain / enterprise | Business APIs, identity, data, and deployment policies need scenario-specific integration and acceptance; see [FDE](../guide/why-agh.md) |
-| MHS / devices | [AGH MHS guides and examples are coming soon](../guide/mhs.md). No verified general-purpose MHS adapter, compatibility list, or end-to-end device example |
+| MHS / devices | [MHS 1.0 and MOS 1.0](../guide/mhs.md) run from the source repository, and AgnesHub is an optional plugin. Example and simulated devices pass `mhs-check`; there is no hardware compatibility list or certification, and device controllers keep real-time control and physical safety |
 | Performance / evaluation | No leadership or improvement figures without fixed models, budgets, tasks, and reproducible measurement |
 
 See [verification](../maintainers/verification.md) for recorded commands and scope. Recheck current source after upgrades, especially long-running behavior, MCP OAuth session support, plugin/client descriptor contracts, default security policy, and distribution status.

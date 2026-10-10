@@ -1,0 +1,23 @@
+{
+  "name": "@agnes/mars-world",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Agnes MHS 3D world: a small Mars base full of virtual MHS devices, for demos",
+  "license": "Apache-2.0",
+  "scripts": {
+    "assets": "node tools/fetch-assets.mjs",
+    "build": "node tools/build.mjs",
+    "dev": "node tools/dev.mjs",
+    "start": "node start.mjs",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/mhs": "workspace:*",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@types/three": "0.186.0",
+    "esbuild": "0.28.2"
+  }
+}

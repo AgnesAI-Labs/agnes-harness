@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agnes.ai/schema/tooldef.json",
-  "title": "ToolDef (the three model-visible fields plus the eight meta keys)",
+  "title": "ToolDef (the three model-visible fields plus the meta keys)",
   "$ref": "#/$defs/ToolDef",
   "$defs": {
     "JsonValue": { "$ref": "session-v1.json#/$defs/JsonValue" },
@@ -60,6 +60,10 @@
         "requiresApproval": {
           "oneOf": [{ "enum": ["never", "destructive", "always"] }, { "type": "null" }],
           "description": "The approval band; null lets isDestructive and the command policy table decide. Consumed by the approval stage."
+        },
+        "returnsImages": {
+          "type": "boolean",
+          "description": "Optional; true declares that the tool's results carry pictures for the model. The call records it in its resolved policy, and request media sends a result's images only when the result is closed-world (trusted) and its call declared this. Absent means false: other tools' images, apart from read, computer_use and document_read, stay out of model requests."
         }
       }
     },

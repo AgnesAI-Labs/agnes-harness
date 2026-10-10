@@ -1,0 +1,37 @@
+{
+  "name": "@agnes/mhs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./device": "./device/device.ts",
+    "./gen/*": "./gen/ts/*.ts"
+  },
+  "scripts": {
+    "dev": "tsx server/dev.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -b",
+    "build:plugin": "tsx tools/build-plugin.ts",
+    "plugin:install": "tsx tools/install-plugin.ts",
+    "dev-hub": "tsx tools/dev-hub.ts",
+    "smoke": "node tools/panel-smoke.mjs",
+    "brain-eval": "node tools/brain-eval.mjs"
+  },
+  "description": "Agnes MHS: the device protocol specification, its schema, and AgnesHub, the hub that connects devices to Agnes",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@agnes/protocol": "workspace:*",
+    "@sinclair/typebox": "0.34.33",
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@types/ws": "8.18.1",
+    "ajv": "8.20.0",
+    "esbuild": "0.28.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}
