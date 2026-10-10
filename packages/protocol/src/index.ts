@@ -3,6 +3,8 @@ export { type ValidatedRequestMedia, validateRequestMedia } from './request-medi
 export { readSessionTitle, SESSION_TITLE_EVENT, SessionTitleRecord } from './session-title.js'
 export {
   boundedUiJson,
+  componentDataValid,
+  uiDataBinding,
   uiObject,
   validIntelligentSurface,
   validIntelligentSurfaceProjection,
@@ -244,6 +246,7 @@ export type {
   UiColumn,
   UiComponent,
   UiCustomComponent,
+  UiDataBinding,
   UiFailure,
   UiJsonSchema,
   UiKey,
@@ -251,9 +254,11 @@ export type {
   UiReadParams,
   UiReadResult,
   UiRefusal,
+  UiRefreshParams,
   UiRenderParams,
   UiRevision,
   UiRowContext,
+  UiSourceStatus,
   UiSurface,
   UiSurfaceRecord,
   UiUpdateParams,

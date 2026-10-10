@@ -152,6 +152,8 @@ describe('protocol src boundary', () => {
         'validateProjectionReadResult',
         'validateRequestMedia',
         'boundedUiJson',
+        'componentDataValid',
+        'uiDataBinding',
         'uiObject',
         'validIntelligentSurface',
         'validIntelligentSurfaceProjection',

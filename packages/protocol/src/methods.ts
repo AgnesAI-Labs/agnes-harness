@@ -1,7 +1,14 @@
 import type { TSchema } from '@sinclair/typebox'
 import * as Acp from '../gen/ts/acp.js'
 import * as A from '../gen/ts/agnes-v1.js'
-import { UiActionParams, UiActionReceipt, UiReadParams, UiReadResult } from '../gen/ts/intelligent-ui.js'
+import {
+  UiActionParams,
+  UiActionReceipt,
+  UiReadParams,
+  UiReadResult,
+  UiRefreshParams,
+  UiSurfaceRecord,
+} from '../gen/ts/intelligent-ui.js'
 import { ADMIN_METHODS, type AdminMethodName } from './app-server.js'
 import { AutoReviewConfig } from './auto-review.js'
 import { ModelSlotsSnapshot } from './model-slots.js'
@@ -63,6 +70,7 @@ const clientRequest = (params: TSchema, result: TSchema): MethodSpec => ({
 export type MethodName =
   | '_agnes/v1/ui.action'
   | '_agnes/v1/ui.read'
+  | '_agnes/v1/ui.refresh'
   | AdminMethodName
   | PackageAdminMethodName
   | ResourceControlMethodName
@@ -430,6 +438,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   },
   '_agnes/v1/ui.action': clientRequest(UiActionParams, UiActionReceipt),
   '_agnes/v1/ui.read': clientRequest(UiReadParams, UiReadResult),
+  '_agnes/v1/ui.refresh': clientRequest(UiRefreshParams, UiSurfaceRecord),
   // Outbound only. Their params are consulted on both sides: a client validating what it receives
   // reads them, so does the conformance runner, and so does the server before it puts the frame on
   // the wire - daemon's LocalEndpoint refuses an s2c frame this table's schema rejects.

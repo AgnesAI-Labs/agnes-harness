@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { validIntelligentSurface, validIntelligentSurfaceProjection } from '../src/ui-surface-validation.js'
+import {
+  componentDataValid,
+  uiDataBinding,
+  validIntelligentSurface,
+  validIntelligentSurfaceProjection,
+} from '../src/ui-surface-validation.js'
 
 const placement = { inline: true, workbench: true }
 const sha = 'a'.repeat(64)
@@ -317,5 +322,79 @@ describe('reviewed preset components', () => {
     ],
   ])('refuses tabs with %s', (_name, components, data) => {
     expect(accept(surface(components, data))).toBe(false)
+  })
+
+  const boundTable = {
+    id: 'differences',
+    kind: 'table',
+    dataKey: 'rows',
+    rowKey: 'id',
+    columns: [
+      { key: 'id', label: 'Id' },
+      { key: 'amount', label: 'Amount' },
+    ],
+    selection: 'none',
+  }
+  const boundChart = {
+    id: 'amounts',
+    kind: 'chart',
+    chartType: 'bar',
+    dataKey: 'rows',
+    categoryKey: 'label',
+    series: [{ key: 'amount', label: 'Amount' }],
+  }
+  const source = (params: Record<string, unknown> = {}, id = 'finance/differences') => ({
+    $source: id,
+    params,
+  })
+
+  it('accepts one binding shared by a table and a chart, and an empty literal table', () => {
+    const value = surface([boundTable, boundChart], { rows: source() })
+    expect(uiDataBinding(source() as never)).toBe(true)
+    expect(accept(value)).toBe(true)
+    expect(validIntelligentSurfaceProjection(value)).toBe(true)
+    expect(accept(surface([boundTable], { rows: [] }))).toBe(true)
+  })
+
+  it('rejects a binding that widens authority, breaks shape, or disagrees across components', () => {
+    expect(accept(surface([boundTable], { rows: source({ actor: 'root' }) }))).toBe(false)
+    expect(accept(surface([boundTable], { rows: source({ filter: { role: 'admin' } }) }))).toBe(false)
+    expect(accept(surface([boundTable], { rows: { ...source(), note: true } }))).toBe(false)
+    expect(accept(surface([boundTable], { rows: { $source: 'finance/differences' } }))).toBe(false)
+    expect(accept(surface([boundTable], { rows: source({}, 'Finance/differences') }))).toBe(false)
+    expect(accept(surface([boundTable], { rows: source({}, 'finance') }))).toBe(false)
+    expect(accept(surface([boundTable], { rows: source({ blob: 'x'.repeat(5000) }) }))).toBe(false)
+    const wide = Object.fromEntries(Array.from({ length: 17 }, (_, index) => [`k${index}`, 1]))
+    expect(accept(surface([boundTable], { rows: source(wide) }))).toBe(false)
+    let deep: Record<string, unknown> = { leaf: 1 }
+    for (let index = 0; index < 8; index += 1) deep = { child: deep }
+    expect(accept(surface([boundTable], { rows: source(deep) }))).toBe(false)
+    expect(
+      accept(surface([boundTable, { id: 'summary', kind: 'text', dataKey: 'rows' }], { rows: source() })),
+    ).toBe(false)
+    expect(accept(surface([boundTable], { rows: [{ amount: 1 }] }))).toBe(false)
+    const many = Array.from({ length: 9 }, (_, index) => ({
+      id: `t${index}`,
+      kind: 'text',
+      dataKey: `k${index}`,
+    }))
+    expect(accept(surface(many, Object.fromEntries(many.map((item) => [item.dataKey, source()]))))).toBe(
+      false,
+    )
+    expect(
+      accept(
+        surface(
+          many.slice(0, 8),
+          Object.fromEntries(many.slice(0, 8).map((item) => [item.dataKey, source()])),
+        ),
+      ),
+    ).toBe(true)
+  })
+
+  it('checks resolved rows per component and does not treat a binding as rows', () => {
+    const component = boundTable as never
+    expect(componentDataValid(component, source() as never)).toBe(false)
+    expect(componentDataValid(component, [{ id: 'a', amount: 12 }] as never)).toBe(true)
+    expect(componentDataValid(component, [{ amount: 12 }] as never)).toBe(false)
   })
 })

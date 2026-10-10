@@ -50,8 +50,12 @@ describe('constants', () => {
     expect(EXT_EVENT_PATTERN.test('x/approval/forged')).toBe(false)
     expect(EXT_EVENT_PATTERN.test('x/agnes/intelligent-ui/surface.opened')).toBe(true)
     expect(EXT_EVENT_PATTERN.test('x/agnes/intelligent-ui/action.pending-approval')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/agnes/intelligent-ui/source.resolved')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/agnes/intelligent-ui/source.refused')).toBe(true)
+    expect(EXT_EVENT_PATTERN.test('x/agnes/intelligent-ui/source.refreshed')).toBe(true)
     for (const type of [
       'x/agnes/intelligent-ui/action.forged',
+      'x/agnes/intelligent-ui/source.forged',
       'x/vendor/tool/surface.opened',
       'x/agnes/intelligent-ui/surface.opened/extra',
     ])

@@ -39,7 +39,7 @@ export const EVENT_TYPES = [
 export type EventType = (typeof EVENT_TYPES)[number]
 
 export const EXT_EVENT_PATTERN =
-  /^x\/(?:(?:core|agnes)\/[a-z0-9-]+|host\/session-title|feedback\/(?:item|growth)|approval\/(?:review|reservation)|agnes\/intelligent-ui\/(?:surface\.(?:opened|updated|closed)|action\.(?:received|rejected|pending-approval|executing|succeeded|failed|retried|delivered))|[a-z0-9-]+\/[a-z0-9-]+\/[a-z0-9-]+)$/
+  /^x\/(?:(?:core|agnes)\/[a-z0-9-]+|host\/session-title|feedback\/(?:item|growth)|approval\/(?:review|reservation)|agnes\/intelligent-ui\/(?:surface\.(?:opened|updated|closed)|action\.(?:received|rejected|pending-approval|executing|succeeded|failed|retried|delivered)|source\.(?:resolved|refused|refreshed))|[a-z0-9-]+\/[a-z0-9-]+\/[a-z0-9-]+)$/
 export const EXT_EVENT_PATTERN_SOURCE = EXT_EVENT_PATTERN.source // the same string written into the schema
 
 export function isEventType(s: string): boolean {

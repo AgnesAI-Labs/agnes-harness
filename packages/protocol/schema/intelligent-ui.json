@@ -22,7 +22,14 @@
     "liveSurfaces": 16,
     "receiptsPerPage": 64,
     "newCommandsPerMinute": 30,
-    "pendingCommandsPerSession": 8
+    "pendingCommandsPerSession": 8,
+    "sourceParamsBytes": 4096,
+    "sourceResultBytes": 65536,
+    "sourceTimeoutMs": 2000,
+    "sourcesPerSurface": 8,
+    "sourceParamKeys": 16,
+    "sourceParamDepth": 8,
+    "textFallbackRows": 20
   },
   "x-agnes-ui-methods": {
     "_agnes/v1/ui.action": {
@@ -32,6 +39,10 @@
     "_agnes/v1/ui.read": {
       "params": "UiReadParams",
       "result": "UiReadResult"
+    },
+    "_agnes/v1/ui.refresh": {
+      "params": "UiRefreshParams",
+      "result": "UiSurfaceRecord"
     }
   },
   "$defs": {
@@ -643,6 +654,17 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128
+        },
+        "sources": {
+          "type": "object",
+          "maxProperties": 8,
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
         }
       }
     },
@@ -802,6 +824,60 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 256
+        },
+        "sources": {
+          "type": "object",
+          "maxProperties": 8,
+          "propertyNames": {
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/UiSourceStatus"
+          }
+        }
+      }
+    },
+    "UiDataBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["$source", "params"],
+      "properties": {
+        "$source": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9-]+/[a-z0-9-]+$"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        }
+      }
+    },
+    "UiSourceStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "enum": ["ready", "error", "pending"]
+        },
+        "code": {
+          "enum": [
+            "UI_SOURCE_DENIED",
+            "UI_SOURCE_UNKNOWN",
+            "UI_SOURCE_INVALID",
+            "UI_SOURCE_TIMEOUT",
+            "UI_SOURCE_TOO_LARGE",
+            "UI_SOURCE_SHAPE",
+            "UI_SOURCE_UNAVAILABLE"
+          ]
+        },
+        "resultHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
         }
       }
     },
@@ -832,6 +908,21 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 16
+        }
+      }
+    },
+    "UiRefreshParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "surfaceId"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "surfaceId": {
+          "$ref": "#/$defs/UiKey"
         }
       }
     },

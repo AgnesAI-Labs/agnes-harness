@@ -16,13 +16,16 @@ export const IntelligentUiSchema = Type.Module({
   "UiAction": Type.Object({ "id": Type.Ref('UiKey'), "label": Type.String({ minLength: 1, maxLength: 256 }), "tool": Type.String({ minLength: 1, maxLength: 128 }), "argsTemplate": Type.Record(Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_.-]{0,63}$' }), Type.Ref('UiArgument'), { additionalProperties: false, maxProperties: 32 }), "paramsSchema": Type.Ref('UiJsonSchema'), "confirm": Type.Optional(Type.String({ minLength: 1, maxLength: 1024 })), "style": Type.Optional(Type.Union([Type.Literal('primary'), Type.Literal('secondary'), Type.Literal('danger')])) }, { additionalProperties: false }),
   "UiSurface": Type.Object({ "id": Type.Ref('UiKey'), "revision": Type.Ref('UiRevision'), "title": Type.String({ minLength: 1, maxLength: 256 }), "placement": Type.Ref('UiPlacement'), "components": Type.Array(Type.Ref('UiComponent'), { minItems: 1, maxItems: 32 }), "data": Type.Record(Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_.-]{0,63}$' }), JsonValue, { additionalProperties: false, maxProperties: 64 }), "actions": Type.Array(Type.Ref('UiAction'), { minItems: 0, maxItems: 32 }) }, { additionalProperties: false }),
   "UiRowContext": Type.Object({ "tableId": Type.Ref('UiKey'), "rowId": Type.String({ minLength: 1, maxLength: 128 }) }, { additionalProperties: false }),
-  "UiActionParams": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 256 }), "surfaceId": Type.Ref('UiKey'), "revision": Type.Ref('UiRevision'), "actionId": Type.Ref('UiKey'), "commandId": Type.String({ minLength: 1, maxLength: 128 }), "input": Type.Record(Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_.-]{0,63}$' }), JsonValue, { additionalProperties: false, maxProperties: 32 }), "selection": Type.Record(Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_.-]{0,63}$' }), Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { minItems: 0, maxItems: 1000, uniqueItems: true }), { additionalProperties: false, maxProperties: 32 }), "row": Type.Optional(Type.Ref('UiRowContext')), "confirmed": Type.Optional(Type.Boolean()), "retryOf": Type.Optional(Type.String({ minLength: 1, maxLength: 128 })) }, { additionalProperties: false }),
+  "UiActionParams": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 256 }), "surfaceId": Type.Ref('UiKey'), "revision": Type.Ref('UiRevision'), "actionId": Type.Ref('UiKey'), "commandId": Type.String({ minLength: 1, maxLength: 128 }), "input": Type.Record(Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_.-]{0,63}$' }), JsonValue, { additionalProperties: false, maxProperties: 32 }), "selection": Type.Record(Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_.-]{0,63}$' }), Type.Array(Type.String({ minLength: 1, maxLength: 128 }), { minItems: 0, maxItems: 1000, uniqueItems: true }), { additionalProperties: false, maxProperties: 32 }), "row": Type.Optional(Type.Ref('UiRowContext')), "confirmed": Type.Optional(Type.Boolean()), "retryOf": Type.Optional(Type.String({ minLength: 1, maxLength: 128 })), "sources": Type.Optional(Type.Record(Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_.-]{0,63}$' }), Type.String({ pattern: "^[a-f0-9]{64}$" }), { additionalProperties: false, maxProperties: 8 })) }, { additionalProperties: false }),
   "UiActionStatus": Type.Union([Type.Literal('received'), Type.Literal('rejected'), Type.Literal('pending-approval'), Type.Literal('executing'), Type.Literal('succeeded'), Type.Literal('failed')]),
   "UiRefusal": Type.Object({ "reason": Type.Union([Type.Literal('invalid'), Type.Literal('stale'), Type.Literal('closed'), Type.Literal('duplicate'), Type.Literal('unauthorized')]), "code": Type.Union([Type.Literal('UI_INVALID'), Type.Literal('UI_STALE'), Type.Literal('UI_CLOSED'), Type.Literal('UI_COMMAND_CONFLICT'), Type.Literal('UI_UNAUTHORIZED')]), "message": Type.String({ minLength: 1, maxLength: 1024 }), "currentRevision": Type.Optional(Type.Ref('UiRevision')) }, { additionalProperties: false }),
   "UiFailure": Type.Object({ "code": Type.String({ minLength: 1, maxLength: 128 }), "message": Type.String({ minLength: 1, maxLength: 1024 }), "retryable": Type.Boolean(), "outcomeUnknown": Type.Boolean() }, { additionalProperties: false }),
   "UiActionReceipt": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 256 }), "surfaceId": Type.Ref('UiKey'), "revision": Type.Ref('UiRevision'), "actionId": Type.Ref('UiKey'), "commandId": Type.String({ minLength: 1, maxLength: 128 }), "status": Type.Ref('UiActionStatus'), "seq": Type.Integer({ minimum: 1, maximum: 9007199254740991 }), "duplicate": Type.Boolean(), "invocationId": Type.Optional(Type.String({ minLength: 1, maxLength: 256 })), "approvalId": Type.Optional(Type.String({ minLength: 1, maxLength: 256 })), "refusal": Type.Optional(Type.Ref('UiRefusal')), "failure": Type.Optional(Type.Ref('UiFailure')), "resultSeq": Type.Optional(Type.Integer({ minimum: 1, maximum: 9007199254740991 })), "summary": Type.Optional(Type.String({ maxLength: 4096 })), "retryOf": Type.Optional(Type.String({ minLength: 1, maxLength: 128 })) }, { additionalProperties: false }),
-  "UiSurfaceRecord": Type.Object({ "surface": Type.Ref('UiSurface'), "status": Type.Union([Type.Literal('open'), Type.Literal('closed')]), "createdSeq": Type.Integer({ minimum: 1 }), "updatedSeq": Type.Integer({ minimum: 1 }), "owner": Type.String({ minLength: 1, maxLength: 256 }), "lane": Type.String({ minLength: 1, maxLength: 128 }), "taskId": Type.String({ minLength: 1, maxLength: 256 }) }, { additionalProperties: false }),
+  "UiSurfaceRecord": Type.Object({ "surface": Type.Ref('UiSurface'), "status": Type.Union([Type.Literal('open'), Type.Literal('closed')]), "createdSeq": Type.Integer({ minimum: 1 }), "updatedSeq": Type.Integer({ minimum: 1 }), "owner": Type.String({ minLength: 1, maxLength: 256 }), "lane": Type.String({ minLength: 1, maxLength: 128 }), "taskId": Type.String({ minLength: 1, maxLength: 256 }), "sources": Type.Optional(Type.Record(Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_.-]{0,63}$' }), Type.Ref('UiSourceStatus'), { additionalProperties: false, maxProperties: 8 })) }, { additionalProperties: false }),
+  "UiDataBinding": Type.Object({ "$source": Type.String({ minLength: 3, maxLength: 128, pattern: "^[a-z0-9-]+/[a-z0-9-]+$" }), "params": Type.Record(Type.String(), JsonValue) }, { additionalProperties: false }),
+  "UiSourceStatus": Type.Object({ "status": Type.Union([Type.Literal('ready'), Type.Literal('error'), Type.Literal('pending')]), "code": Type.Optional(Type.Union([Type.Literal('UI_SOURCE_DENIED'), Type.Literal('UI_SOURCE_UNKNOWN'), Type.Literal('UI_SOURCE_INVALID'), Type.Literal('UI_SOURCE_TIMEOUT'), Type.Literal('UI_SOURCE_TOO_LARGE'), Type.Literal('UI_SOURCE_SHAPE'), Type.Literal('UI_SOURCE_UNAVAILABLE')])), "resultHash": Type.Optional(Type.String({ pattern: "^[a-f0-9]{64}$" })) }, { additionalProperties: false }),
   "UiReadParams": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 256 }), "surfaceId": Type.Optional(Type.Ref('UiKey')), "commandId": Type.Optional(Type.String({ minLength: 1, maxLength: 128 })), "cursor": Type.Optional(Type.String({ minLength: 1, maxLength: 256 })), "limit": Type.Optional(Type.Integer({ minimum: 1, maximum: 16 })) }, { additionalProperties: false }),
+  "UiRefreshParams": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 256 }), "surfaceId": Type.Ref('UiKey') }, { additionalProperties: false }),
   "UiReadResult": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 256 }), "lastSeq": Type.Integer({ minimum: 0 }), "surfaces": Type.Array(Type.Ref('UiSurfaceRecord'), { minItems: 0, maxItems: 16 }), "actions": Type.Array(Type.Ref('UiActionReceipt'), { minItems: 0, maxItems: 64 }), "nextCursor": Type.Optional(Type.String({ minLength: 1, maxLength: 256 })) }, { additionalProperties: false }),
   "UiRenderParams": Type.Object({ "surface": Type.Ref('UiSurface') }, { additionalProperties: false }),
   "UiUpdateParams": Type.Object({ "surfaceId": Type.Ref('UiKey'), "expectedRevision": Type.Ref('UiRevision'), "surface": Type.Ref('UiSurface') }, { additionalProperties: false }),
@@ -64,8 +67,14 @@ export const UiActionReceipt = IntelligentUiSchema.Import('UiActionReceipt')
 export type UiActionReceipt = Static<typeof UiActionReceipt>
 export const UiSurfaceRecord = IntelligentUiSchema.Import('UiSurfaceRecord')
 export type UiSurfaceRecord = Static<typeof UiSurfaceRecord>
+export const UiDataBinding = IntelligentUiSchema.Import('UiDataBinding')
+export type UiDataBinding = Static<typeof UiDataBinding>
+export const UiSourceStatus = IntelligentUiSchema.Import('UiSourceStatus')
+export type UiSourceStatus = Static<typeof UiSourceStatus>
 export const UiReadParams = IntelligentUiSchema.Import('UiReadParams')
 export type UiReadParams = Static<typeof UiReadParams>
+export const UiRefreshParams = IntelligentUiSchema.Import('UiRefreshParams')
+export type UiRefreshParams = Static<typeof UiRefreshParams>
 export const UiReadResult = IntelligentUiSchema.Import('UiReadResult')
 export type UiReadResult = Static<typeof UiReadResult>
 export const UiRenderParams = IntelligentUiSchema.Import('UiRenderParams')
@@ -97,7 +106,14 @@ export const X_AGNES_UI_LIMITS = {
   "liveSurfaces": 16,
   "receiptsPerPage": 64,
   "newCommandsPerMinute": 30,
-  "pendingCommandsPerSession": 8
+  "pendingCommandsPerSession": 8,
+  "sourceParamsBytes": 4096,
+  "sourceResultBytes": 65536,
+  "sourceTimeoutMs": 2000,
+  "sourcesPerSurface": 8,
+  "sourceParamKeys": 16,
+  "sourceParamDepth": 8,
+  "textFallbackRows": 20
 } as const
 export const X_AGNES_UI_METHODS = {
   "_agnes/v1/ui.action": {
@@ -107,5 +123,9 @@ export const X_AGNES_UI_METHODS = {
   "_agnes/v1/ui.read": {
     "params": "UiReadParams",
     "result": "UiReadResult"
+  },
+  "_agnes/v1/ui.refresh": {
+    "params": "UiRefreshParams",
+    "result": "UiSurfaceRecord"
   }
 } as const

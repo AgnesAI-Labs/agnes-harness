@@ -3112,6 +3112,18 @@
         },
         "ui": {
           "type": "boolean"
+        },
+        "uiData": {
+          "description": "Exact UI data-source permissions. Trust shows each value as the atom uiData:<value>. The capability hash covers this list; resolution accepts only an exact atom, never a glob.",
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9-]*(?:\\.[a-z][a-z0-9-]*)+$"
+          }
         }
       }
     },

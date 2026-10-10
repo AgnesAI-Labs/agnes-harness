@@ -234,6 +234,163 @@ function validTabs(surface: UiSurface): boolean {
   return true
 }
 
+const SOURCE_ID = /^[a-z0-9-]+\/[a-z0-9-]+$/
+const FORBIDDEN_PARAM_KEYS = new Set([
+  'actor',
+  'session',
+  'sessionId',
+  'workspace',
+  'workspaceRoot',
+  'permission',
+  'grant',
+  'role',
+  'generation',
+  'generationId',
+  'packageId',
+  'owner',
+  'userId',
+  'asUser',
+  '__proto__',
+  'prototype',
+  'constructor',
+])
+
+function paramsOk(params: Record<string, JsonValue>): boolean {
+  if (!boundedUiJson(params, X_AGNES_UI_LIMITS.sourceParamsBytes, X_AGNES_UI_LIMITS.sourceParamDepth))
+    return false
+  let keys = 0
+  const visit = (item: JsonValue): boolean => {
+    if (Array.isArray(item)) return item.every((child) => visit(child))
+    if (!uiObject(item)) return true
+    for (const key of Object.keys(item)) {
+      if (FORBIDDEN_PARAM_KEYS.has(key) || ++keys > X_AGNES_UI_LIMITS.sourceParamKeys) return false
+      if (!visit(item[key] as JsonValue)) return false
+    }
+    return true
+  }
+  return visit(params)
+}
+
+/**
+ * A binding is exactly `$source` and `params`. Any other `$source` object is an invalid binding,
+ * not a literal, so the surface fails closed.
+ */
+export function uiDataBinding(
+  value: JsonValue | undefined,
+): value is { $source: string; params: Record<string, JsonValue> } {
+  if (!uiObject(value) || !closed(value, ['$source', 'params'])) return false
+  const source = value.$source
+  const params = value.params
+  return (
+    typeof source === 'string' &&
+    source.length <= 128 &&
+    SOURCE_ID.test(source) &&
+    uiObject(params) &&
+    paramsOk(params)
+  )
+}
+
+function looksLikeBinding(value: JsonValue | undefined): boolean {
+  return uiObject(value) && Object.hasOwn(value, '$source')
+}
+
+function sourceResultKind(
+  component: UiSurface['components'][number],
+): 'rows' | 'object' | 'text' | 'steps' | 'progress' | 'image' | undefined {
+  if ('fallback' in component) return 'object'
+  if (component.kind === 'table' || component.kind === 'chart') return 'rows'
+  if (component.kind === 'detail-card' || component.kind === 'form') return 'object'
+  if (component.kind === 'text' || component.kind === 'status') return 'text'
+  if (component.kind === 'steps' || component.kind === 'progress' || component.kind === 'image')
+    return component.kind
+  return undefined
+}
+
+/** Structural check for one component's literal or resolved data. A binding is not display data. */
+export function componentDataValid(
+  component: UiSurface['components'][number],
+  data: JsonValue | undefined,
+  declarations?: readonly UiComponentDeclaration[],
+): boolean {
+  if ('fallback' in component) {
+    if (!boundedUiJson(data, 16384)) return false
+    if (declarations === undefined) return true
+    const matches = declarations.filter((item) => item.kind === component.kind)
+    if (matches.length !== 1) return false
+    const declaration = matches[0]!
+    if (
+      !validUiComponentDeclaration(declaration) ||
+      declaration.fallback !== component.fallback ||
+      !boundedUiJson(data, declaration.maxPropsBytes)
+    )
+      return false
+    try {
+      const ajv = new Ajv2020({
+        strict: false,
+        validateFormats: false,
+        ownProperties: true,
+        addUsedSchema: false,
+      })
+      return ajv.compile(declaration.propsSchema)(data) === true
+    } catch {
+      return false
+    }
+  }
+  if (component.kind === 'button-group' || component.kind === 'tabs') return true
+  if (component.kind === 'form') {
+    return (
+      boundedUiJson(component.schema, 16384, X_AGNES_UI_LIMITS.schemaDepth) &&
+      safeUiSchema(component.schema) &&
+      formDatesOk(component.schema, data)
+    )
+  }
+  if (component.kind === 'text' || component.kind === 'status') return typeof data === 'string'
+  if (component.kind === 'detail-card') return validDetail(component, data)
+  if (component.kind === 'steps') return validSteps(data)
+  if (component.kind === 'progress') return validProgress(data)
+  if (component.kind === 'image') return validImage(data)
+  if (
+    !Array.isArray(data) ||
+    data.length >
+      (component.kind === 'table' ? X_AGNES_UI_LIMITS.tableRows : X_AGNES_UI_LIMITS.chartPoints) ||
+    !data.every(uiObject)
+  )
+    return false
+  if (component.kind === 'table') {
+    const rows = new Set<string>()
+    for (const row of data) {
+      if (!uiObject(row)) return false
+      const id = row[component.rowKey]
+      if (typeof id !== 'string' || !id.length || id.length > 128 || rows.has(id)) return false
+      rows.add(id)
+      if (component.columns.some((column) => !Object.hasOwn(row, column.key))) return false
+    }
+    return true
+  }
+  if (component.chartType === 'pie' && component.series.length !== 1) return false
+  for (const row of data) {
+    if (!uiObject(row) || typeof row[component.categoryKey] !== 'string') return false
+    for (const series of component.series) {
+      const n = row[series.key]
+      if (typeof n !== 'number' || !Number.isFinite(n) || (component.chartType === 'pie' && n < 0))
+        return false
+    }
+  }
+  return true
+}
+
+function acceptBinding(
+  component: UiSurface['components'][number],
+  dataKey: string,
+  boundKind: Map<string, string>,
+): boolean {
+  const kind = sourceResultKind(component)
+  const previous = boundKind.get(dataKey)
+  if (!kind || (previous !== undefined && previous !== kind)) return false
+  boundKind.set(dataKey, kind)
+  return true
+}
+
 /** Fail closed for backend writes. Only pinned manifest declarations admit custom kinds. */
 export function validIntelligentSurface(
   value: unknown,
@@ -264,6 +421,14 @@ function validSurface(value: unknown, declarations?: readonly UiComponentDeclara
     )
       return false
   }
+  let bindings = 0
+  const boundKind = new Map<string, string>()
+  for (const item of Object.values(surface.data)) {
+    if (!looksLikeBinding(item)) continue
+    if (!uiDataBinding(item)) return false
+    bindings += 1
+    if (bindings > X_AGNES_UI_LIMITS.sourcesPerSurface) return false
+  }
   for (const component of surface.components) {
     if ('fallback' in component) {
       if (
@@ -272,29 +437,18 @@ function validSurface(value: unknown, declarations?: readonly UiComponentDeclara
       )
         return false
       const props = surface.data[component.dataKey]
-      if (!boundedUiJson(props, 16384)) return false
-      if (declarations !== undefined) {
-        const matches = declarations.filter((item) => item.kind === component.kind)
-        if (matches.length !== 1) return false
-        const declaration = matches[0]!
-        if (
-          !validUiComponentDeclaration(declaration) ||
-          declaration.fallback !== component.fallback ||
-          !boundedUiJson(props, declaration.maxPropsBytes)
-        )
-          return false
-        try {
-          const ajv = new Ajv2020({
-            strict: false,
-            validateFormats: false,
-            ownProperties: true,
-            addUsedSchema: false,
-          })
-          if (!ajv.compile(declaration.propsSchema)(props)) return false
-        } catch {
-          return false
+      if (uiDataBinding(props)) {
+        if (declarations !== undefined) {
+          const matches = declarations.filter((item) => item.kind === component.kind)
+          if (matches.length !== 1) return false
+          const declaration = matches[0]!
+          if (!validUiComponentDeclaration(declaration) || declaration.fallback !== component.fallback)
+            return false
         }
+        if (!acceptBinding(component, component.dataKey, boundKind)) return false
+        continue
       }
+      if (!componentDataValid(component, props, declarations)) return false
       continue
     }
     const refs =
@@ -307,52 +461,11 @@ function validSurface(value: unknown, declarations?: readonly UiComponentDeclara
     if (component.kind === 'button-group' || component.kind === 'tabs') continue
     if (!Object.hasOwn(surface.data, component.dataKey)) return false
     const data = surface.data[component.dataKey]
-    if (component.kind === 'form') {
-      if (
-        !boundedUiJson(component.schema, 16384, X_AGNES_UI_LIMITS.schemaDepth) ||
-        !safeUiSchema(component.schema) ||
-        !formDatesOk(component.schema, data)
-      )
-        return false
-    } else if (component.kind === 'text' || component.kind === 'status') {
-      if (typeof data !== 'string') return false
-    } else if (component.kind === 'detail-card') {
-      if (!validDetail(component, data)) return false
-    } else if (component.kind === 'steps') {
-      if (!validSteps(data)) return false
-    } else if (component.kind === 'progress') {
-      if (!validProgress(data)) return false
-    } else if (component.kind === 'image') {
-      if (!validImage(data)) return false
-    } else {
-      if (
-        !Array.isArray(data) ||
-        data.length >
-          (component.kind === 'table' ? X_AGNES_UI_LIMITS.tableRows : X_AGNES_UI_LIMITS.chartPoints) ||
-        !data.every(uiObject)
-      )
-        return false
-      if (component.kind === 'table') {
-        const rows = new Set<string>()
-        for (const row of data) {
-          if (!uiObject(row)) return false
-          const id = row[component.rowKey]
-          if (typeof id !== 'string' || !id.length || id.length > 128 || rows.has(id)) return false
-          rows.add(id)
-          if (component.columns.some((column) => !Object.hasOwn(row, column.key))) return false
-        }
-      } else {
-        if (component.chartType === 'pie' && component.series.length !== 1) return false
-        for (const row of data) {
-          if (!uiObject(row) || typeof row[component.categoryKey] !== 'string') return false
-          for (const series of component.series) {
-            const n = row[series.key]
-            if (typeof n !== 'number' || !Number.isFinite(n) || (component.chartType === 'pie' && n < 0))
-              return false
-          }
-        }
-      }
+    if (uiDataBinding(data)) {
+      if (!acceptBinding(component, component.dataKey, boundKind)) return false
+      continue
     }
+    if (!componentDataValid(component, data, declarations)) return false
   }
   return validTabs(surface)
 }

@@ -1,5 +1,10 @@
 import { Ajv2020 } from 'ajv/dist/2020.js'
-import type { JsonValue, UiSurface } from '../gen/ts/intelligent-ui.js'
+import {
+  X_AGNES_UI_LIMITS,
+  type JsonValue,
+  type UiSourceStatus,
+  type UiSurface,
+} from '../gen/ts/intelligent-ui.js'
 
 const ajv = new Ajv2020({ strict: false, validateFormats: false, addUsedSchema: false, ownProperties: true })
 
@@ -57,9 +62,33 @@ function placedIds(surface: UiSurface): Set<string> {
   }
   return placed
 }
-function componentLines(surface: UiSurface, component: UiSurface['components'][number]): string[] {
+function unresolvedBinding(value: unknown): boolean {
+  return object(value) && Object.hasOwn(value, '$source')
+}
+function bindingLine(
+  surface: UiSurface,
+  dataKey: string,
+  sources: Readonly<Record<string, UiSourceStatus>> | undefined,
+): string | undefined {
+  if (!unresolvedBinding(surface.data[dataKey])) return undefined
+  const status = sources?.[dataKey]
+  return status?.status === 'error' && status.code ? status.code : 'unavailable'
+}
+function componentLines(
+  surface: UiSurface,
+  component: UiSurface['components'][number],
+  sources?: Readonly<Record<string, UiSourceStatus>>,
+): string[] {
   const lines: string[] = []
   if (component.title) lines.push(component.title)
+  if ('dataKey' in component) {
+    const blocked = bindingLine(surface, component.dataKey, sources)
+    if (blocked) {
+      if ('fallback' in component) lines.push(component.fallback)
+      lines.push(blocked)
+      return lines
+    }
+  }
   if ('fallback' in component) {
     lines.push(component.fallback)
     return lines
@@ -69,10 +98,13 @@ function componentLines(surface: UiSurface, component: UiSurface['components'][n
   else if (component.kind === 'table') {
     lines.push(component.columns.map((column) => column.label).join(' | '))
     const rows = surface.data[component.dataKey]
-    if (Array.isArray(rows))
-      for (const row of rows)
+    if (Array.isArray(rows)) {
+      const shown = rows.slice(0, X_AGNES_UI_LIMITS.textFallbackRows)
+      for (const row of shown)
         if (object(row))
           lines.push(component.columns.map((column) => String(row[column.key] ?? '')).join(' | '))
+      if (rows.length > shown.length) lines.push(`… ${rows.length} rows`)
+    }
   } else if (component.kind === 'form' && object(component.schema) && object(component.schema.properties)) {
     const bound = surface.data[component.dataKey]
     const record = object(bound) ? bound : undefined
@@ -130,20 +162,23 @@ function componentLines(surface: UiSurface, component: UiSurface['components'][n
       for (const id of tab.componentIds) {
         const child = byId.get(id)
         if (!child || (!('fallback' in child) && child.kind === 'tabs')) continue
-        lines.push(...componentLines(surface, child))
+        lines.push(...componentLines(surface, child, sources))
       }
     }
   }
   return lines
 }
 
-/** Display committed data; never interpret model text as an action or a permission. */
-export function surfaceText(surface: UiSurface): string {
+/**
+ * Display committed data; never interpret model text as an action or a permission.
+ * `sources` is the read view's status map. An unresolved binding prints its failure code, never the binding.
+ */
+export function surfaceText(surface: UiSurface, sources?: Readonly<Record<string, UiSourceStatus>>): string {
   const placed = placedIds(surface)
   const lines = [`${surface.title} (revision ${surface.revision})`]
   for (const component of surface.components) {
     if (placed.has(component.id)) continue
-    lines.push(...componentLines(surface, component))
+    lines.push(...componentLines(surface, component, sources))
   }
   return lines.join('\n')
 }

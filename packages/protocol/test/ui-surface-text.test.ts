@@ -133,4 +133,55 @@ describe('preset surface text', () => {
     expect(surfaceText(surface)).not.toContain(png)
     expect(surfaceText(surface)).not.toContain('99')
   })
+
+  it('prints a failure code for an unresolved binding and caps a long table', () => {
+    const bound = {
+      id: 'rows',
+      revision: 1,
+      title: 'Rows',
+      placement: { inline: true, workbench: true },
+      components: [
+        {
+          id: 'table',
+          kind: 'table' as const,
+          dataKey: 'rows',
+          rowKey: 'id',
+          selection: 'none' as const,
+          columns: [
+            { key: 'a', label: 'a' },
+            { key: 'b', label: 'b' },
+          ],
+        },
+        {
+          id: 'amounts',
+          kind: 'chart' as const,
+          chartType: 'bar' as const,
+          dataKey: 'chart',
+          categoryKey: 'label',
+          series: [{ key: 'amount', label: 'Amount' }],
+        },
+      ],
+      data: {
+        rows: { $source: 'finance/differences', params: {} },
+        chart: { $source: 'finance/differences', params: { q: 'hidden' } },
+      },
+      actions: [],
+    }
+    expect(surfaceText(bound)).toBe('Rows (revision 1)\nunavailable\nunavailable')
+    expect(surfaceText(bound)).not.toContain('$source')
+    expect(surfaceText(bound)).not.toContain('hidden')
+    expect(surfaceText(bound, { rows: { status: 'error', code: 'UI_SOURCE_DENIED' } })).toContain(
+      'UI_SOURCE_DENIED',
+    )
+    const rows = Array.from({ length: 21 }, (_, index) => ({ id: String(index), a: `r${index}`, b: '22' }))
+    const long = surfaceText({
+      ...bound,
+      components: [bound.components[0]!],
+      data: { rows },
+    })
+    expect(long).toContain('r0 | 22')
+    expect(long).toContain('r19 | 22')
+    expect(long).not.toContain('r20')
+    expect(long.endsWith('… 21 rows')).toBe(true)
+  })
 })

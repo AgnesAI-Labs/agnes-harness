@@ -104,6 +104,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/session.editQueued',
         '_agnes/v1/ui.action',
         '_agnes/v1/ui.read',
+        '_agnes/v1/ui.refresh',
         '_agnes/v1/autoReview.get',
         '_agnes/v1/autoReview.save',
         '_agnes/v1/systemPrompt.get',
@@ -278,7 +279,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(181)
+    expect(Object.keys(METHODS)).toHaveLength(182)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })
