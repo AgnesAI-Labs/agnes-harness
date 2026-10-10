@@ -4,9 +4,10 @@ import {
   setChildAgentAllowlist,
 } from '@agnes/core-child-control/child/allowlist'
 import { externalChildren, trackExternalChild } from '@agnes/core-child-control/child/directory'
+import { CoreError } from '@agnes/core-common/types'
 import { type ChildAgentResult, defineTool } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { type InProcessChildBackend, inProcessChildAgentProvider } from '../src/child/provider.js'
 import { ChildToolRegistry } from '../src/child/tool-filter.js'
 import { Kernel } from '../src/kernel.js'
@@ -167,6 +168,48 @@ it('drains a running resident on disposal without treating cancellation as clean
     await handle.dispose()
     expect(k.get(handle.id)).toBeUndefined()
     await expect(handle.result()).resolves.toMatchObject({ status: 'cancelled' })
+  } finally {
+    await handle.dispose()
+    await k.close()
+  }
+})
+
+it('treats a turn that ends during stop as not accepted, and leaves other errors unchanged', async () => {
+  const { k, parent } = await setupWith(hangingProvider(), Kernel.create)
+  const provider = inProcessChildAgentProvider()
+  const handle = await provider.start('task', {
+    sessionKey: parent.key,
+    cwd: '/w',
+    signal: new AbortController().signal,
+  })
+  try {
+    await expect.poll(() => k.get(handle.id)?.state.openTurn.size).toBe(1)
+    const child = k.get(handle.id)
+    if (!child) throw new Error('missing child session')
+    const realOp = child.op.bind(child)
+    let ended = false
+    vi.spyOn(child, 'op').mockImplementation(() => (ended ? null : realOp()))
+    const realRequire = child.controls.require.bind(child.controls)
+    const requireControl = vi.spyOn(child.controls, 'require')
+    requireControl.mockImplementation(async (action, actor) => {
+      const result = await realRequire(action, actor)
+      ended = true
+      return result
+    })
+    await expect(handle.interrupt()).resolves.toEqual({ accepted: false })
+    expect(k.get(handle.id)?.state.openTurn.size).toBe(1)
+    vi.mocked(child.op).mockImplementation(realOp)
+    requireControl.mockImplementation(async () => {
+      throw new CoreError('E_RELATION', 'unrelated relation', { reason: 'OTHER' })
+    })
+    await expect(handle.interrupt()).rejects.toMatchObject({
+      code: 'E_RELATION',
+      detail: { reason: 'OTHER' },
+    })
+    requireControl.mockImplementation(async () => {
+      throw new CoreError('E_UNSUPPORTED', 'unsupported', { control: 'interrupt' })
+    })
+    await expect(handle.interrupt()).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
   } finally {
     await handle.dispose()
     await k.close()

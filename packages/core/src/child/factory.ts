@@ -1098,7 +1098,13 @@ export class KernelChildren implements ChildrenFactory {
     if (!this.residents.has(childKey)) return this.missingContinuable(childKey)
     const child = this.kernel.get(childKey)
     if (!child?.op() || this.humanStopped.has(childKey)) return { accepted: false }
-    await this.humanControl(childKey, 'stop', child.d.actor, this.kernel.ids.ulid())
+    try {
+      await this.humanControl(childKey, 'stop', child.d.actor, this.kernel.ids.ulid())
+    } catch (error) {
+      // The turn can end after the running check above and before stop is applied.
+      if (controlNotRunning(error)) return { accepted: false }
+      throw error
+    }
     return { accepted: true }
   }
 
@@ -1155,6 +1161,14 @@ export class KernelChildren implements ChildrenFactory {
     }
     return undefined
   }
+}
+
+function controlNotRunning(error: unknown): boolean {
+  return (
+    error instanceof CoreError &&
+    error.code === 'E_RELATION' &&
+    error.detail?.reason === 'CONTROL_NOT_RUNNING'
+  )
 }
 
 function generationDepthOf(session: SessionImpl): number {
