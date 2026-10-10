@@ -1,5 +1,7 @@
+import { trackExternalChild } from '@agnes/core-child-control/child/directory'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
+import type { ChildAgentListing, ChildAgentSessionService } from '@agnes/extension-api'
 import { defaultLoopFactory } from '@agnes/loop-default'
 import type { Provider } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
@@ -359,4 +361,146 @@ describe('human Loop controls', () => {
       await session.close()
     },
   )
+
+  it('stops and continues an external child through the loop port', async () => {
+    const listing: ChildAgentListing = {
+      id: 'ext-1',
+      providerId: 'codex',
+      status: 'running',
+      continuable: true,
+      interrupt: true,
+    }
+    const { parent, k, calls, untrack } = await externalControlSession(listing)
+    try {
+      await parent.controls.apply('child-stop', actor, 'stop-ext', undefined, { id: listing.id })
+      await parent.controls.apply('child-continue', actor, 'continue-ext', undefined, {
+        id: listing.id,
+        text: 'keep going',
+      })
+      expect(calls).toEqual([
+        { op: 'interrupt', id: 'ext-1' },
+        { op: 'send', id: 'ext-1', text: 'keep going' },
+      ])
+      const applied = (await parent.scan({ type: 'x/core/control', limit: 20 }))
+        .map((row) => row.data as { action?: string; outcome?: string })
+        .filter((row) => row.outcome === 'applied')
+        .map((row) => row.action)
+      expect(applied).toEqual(['child-stop', 'child-continue'])
+    } finally {
+      untrack()
+      await k.close()
+    }
+  })
+
+  it('refuses a finished external child', async () => {
+    const listing: ChildAgentListing = {
+      id: 'ext-done',
+      providerId: 'codex',
+      status: 'completed',
+      continuable: false,
+      interrupt: true,
+    }
+    const { parent, k, calls, untrack } = await externalControlSession(listing)
+    try {
+      await expect(
+        parent.controls.apply('child-stop', actor, 'stop-done', undefined, { id: listing.id }),
+      ).rejects.toMatchObject({ code: 'E_RELATION', detail: { reason: 'CONTROL_NOT_RUNNING' } })
+      expect(calls).toEqual([])
+    } finally {
+      untrack()
+      await k.close()
+    }
+  })
+
+  it('refuses a child id that is in both the core store and the external directory', async () => {
+    const calls: string[] = []
+    let listing: ChildAgentListing = {
+      id: 'pending',
+      providerId: 'codex',
+      status: 'running',
+      continuable: true,
+      interrupt: true,
+    }
+    const port: ChildAgentSessionService = {
+      start: async () => handleFor(listing),
+      list: async () => [listing],
+      sendMessage: async () => ({ messageId: 'm1' }),
+      interrupt: async (id) => {
+        calls.push(id)
+        return { accepted: true }
+      },
+      result: async () => ({ status: 'completed', text: '' }),
+      events: async function* () {},
+      dispose: async () => {},
+    }
+    const { k, parent } = await setupWith(fakeProvider([textTurn('ok')]), (options) =>
+      Kernel.create({ ...options, loopChildren: () => port }),
+    )
+    let untrack = () => {}
+    try {
+      await parent.loopChildrenPort()!.start('bind')
+      const handle = await parent.d.children.createWithKind!('spawn', {
+        parent: parent.key,
+        cwd: '/w',
+        input: 'task',
+        start: false,
+      })
+      listing = { ...listing, id: handle.key }
+      untrack = trackExternalChild(parent.key, { listing })
+      await expect(
+        parent.controls.apply('child-stop', actor, 'dup', undefined, { id: handle.key }),
+      ).rejects.toMatchObject({
+        code: 'E_CHILD_CONFLICT',
+        detail: { reason: 'CHILD_OWNERSHIP_AMBIGUOUS' },
+      })
+      expect(calls).toEqual([])
+    } finally {
+      untrack()
+      await k.close()
+    }
+  })
 })
+
+function handleFor(listing: ChildAgentListing): Awaited<ReturnType<ChildAgentSessionService['start']>> {
+  return {
+    id: listing.id,
+    providerId: listing.providerId,
+    capabilities: {
+      continuable: true,
+      interrupt: true,
+      modelSelection: false,
+      inheritsParentContext: false,
+      worktree: false,
+    },
+    sendMessage: async (text) => ({ messageId: text }),
+    interrupt: async () => ({ accepted: true }),
+    result: async () => ({ status: 'completed', text: '' }),
+    events: async function* () {},
+    dispose: async () => {},
+  }
+}
+
+async function externalControlSession(listing: ChildAgentListing) {
+  const calls: Array<{ op: 'interrupt' | 'send'; id: string; text?: string }> = []
+  const port: ChildAgentSessionService = {
+    start: async () => handleFor(listing),
+    list: async () => [listing],
+    sendMessage: async (id, text) => {
+      calls.push({ op: 'send', id, text })
+      return { messageId: 'm1' }
+    },
+    interrupt: async (id) => {
+      calls.push({ op: 'interrupt', id })
+      return { accepted: true }
+    },
+    result: async () => ({ status: 'completed', text: '' }),
+    events: async function* () {},
+    dispose: async () => {},
+  }
+  const { k, parent } = await setupWith(fakeProvider([textTurn('ok')]), (options) =>
+    Kernel.create({ ...options, loopChildren: () => port }),
+  )
+  const untrack = trackExternalChild(parent.key, { listing })
+  await parent.loopChildrenPort()!.start('bind')
+  return { k, parent, calls, untrack }
+}
