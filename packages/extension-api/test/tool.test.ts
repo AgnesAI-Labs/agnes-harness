@@ -127,7 +127,8 @@ describe('checkToolMeta (every one of the eight keys must be written out)', () =
       isPresentational: true,
     })
     expect(openWorld.ok).toBe(false)
-    if (!openWorld.ok) expect(openWorld.problems).toEqual(['isPresentational/isOpenWorld: cannot both be true'])
+    if (!openWorld.ok)
+      expect(openWorld.problems).toEqual(['isPresentational/isOpenWorld: cannot both be true'])
     const wrong = checkToolMeta({ ...fullMeta, isPresentational: 'yes' })
     expect(wrong.ok).toBe(false)
     if (!wrong.ok) expect(wrong.problems).toEqual(['isPresentational: expected boolean | undefined'])
@@ -307,6 +308,38 @@ describe('checkToolDef', () => {
     expect(() => resolveToolCallPolicy(open, { q: 'read' })).toThrow(
       'isPresentational cannot combine with isDestructive or isOpenWorld',
     )
+  })
+  it('keeps presentational true only when static meta declares it', () => {
+    const classify = () => ({
+      isReadOnly: true,
+      isDestructive: false,
+      isPresentational: true,
+      replay: 'safe' as const,
+      requiresApproval: 'never' as const,
+      approvalScopes: [] as string[],
+    })
+    const destructive = defineTool({
+      ...def,
+      meta: { ...fullMeta, isDestructive: true, isReadOnly: false, replay: 'never' },
+      policyVersion: 'surface-v1',
+      classify,
+    })
+    expect(() => resolveToolCallPolicy(destructive, { q: 'read' })).toThrow(
+      'isPresentational cannot combine with isDestructive or isOpenWorld',
+    )
+    const undeclared = defineTool({
+      ...def,
+      policyVersion: 'surface-v1',
+      classify,
+    })
+    expect(resolveToolCallPolicy(undeclared, { q: 'read' }).isPresentational).toBe(false)
+    const declared = defineTool({
+      ...def,
+      meta: { ...fullMeta, isPresentational: true },
+      policyVersion: 'surface-v1',
+      classify,
+    })
+    expect(resolveToolCallPolicy(declared, { q: 'read' }).isPresentational).toBe(true)
   })
   it('rejects classifier/version mismatches, invalid versions, and declared async classifiers', () => {
     const noVersion = checkToolDef({ ...def, classify: () => ({}) })

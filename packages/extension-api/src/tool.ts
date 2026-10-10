@@ -551,10 +551,13 @@ export function resolveToolCallPolicy<P extends TSchema>(
   const checked = checkResolvedToolCallPolicy(value)
   if (!checked.ok) throw new TypeError(`classify: invalid resolved policy: ${checked.problems.join('; ')}`)
   const policy = value as ResolvedToolCallPolicy
+  // The classifier cannot mint presentational on its own, and never against a destructive or open tool.
+  if (policy.isPresentational === true && (def.meta.isDestructive || def.meta.isOpenWorld))
+    throw new TypeError('isPresentational cannot combine with isDestructive or isOpenWorld')
   const resolved = Object.freeze({
     isReadOnly: policy.isReadOnly,
     isDestructive: policy.isDestructive,
-    isPresentational: policy.isPresentational === true,
+    isPresentational: def.meta.isPresentational === true && policy.isPresentational === true,
     replay: policy.replay,
     requiresApproval: policy.requiresApproval,
     approvalScopes: Object.freeze([...policy.approvalScopes]),
