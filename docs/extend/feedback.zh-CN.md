@@ -21,6 +21,8 @@ type FeedbackServiceFactory = (ports: FeedbackPorts) => FeedbackService
 
 协议明确保留这两个平台事件名，拒绝其他 `x/feedback/*` 名称；插件自己的事件继续使用已公开的扩展命名空间。
 
+即使替换服务，append 端口也只接受这两个固定事件名。写入绑定原修改请求的会话，每次 append 重新检查本地写权限、会话归属和 fitted actor，并写入认证 actor。新反馈 ID 必须来自 `id()`；修订只能重用该 actor 在同一会话中的已有条目。成长链接必须绑定已有条目 revision 与其消息。调用方自选 ID、封套 ID 字段、其他事件类型或 actor 均以 `CAPABILITY_DENIED` 拒绝；封套事件 ID 始终由 Host 生成。只读请求不提供写权限。
+
 参见[用户流程](../guide/feedback.zh-CN.md)与[候选评审](agent-built-plugins.zh-CN.md)。默认生成新 Skill；记忆仍走已有的显式差异审批流程。
 
 增长重试先按服务端绑定的 profile/principal/session/反馈 revision command key 恢复 candidate，再决定是否生成草稿。candidate 已保存但账本链接失败时，即使重连也补写同一份完整性校验后的 candidate 链接，不重新生成草稿。实现该流程的 provider 必须提供 `FeedbackPorts.recoverCandidate`。

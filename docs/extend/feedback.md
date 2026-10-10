@@ -21,6 +21,8 @@ The ignorable ledger events `x/feedback/item` and `x/feedback/growth` carry plat
 
 These two names are explicitly reserved platform events in the protocol. Other `x/feedback/*` names are refused; plugin-owned events continue to use the documented extension namespace.
 
+The append port enforces the fixed event family even for a replacement service. It binds writes to the original mutation request's session, re-checks local write authority, session ownership and the fitted actor on every append, and stamps the authenticated actor. `id()` issues new feedback item IDs; revisions may reuse only that actor's existing item in the same session. Growth links must identify an owned item revision and its message. Caller-selected item IDs, envelope ID fields, event types and actors are refused with `CAPABILITY_DENIED`. Envelope event IDs remain Host-generated. A read-only request supplies no write authority.
+
 See [the user flow](../guide/feedback.md) and [candidate review](agent-built-plugins.md). The default drafts a new Skill, while memory continues through its existing explicit diff approval flow.
 
 Growth retries recover the candidate by a server-bound profile/principal/session/feedback revision command key before drafting. Candidate persistence followed by a failed ledger link is repaired by linking that same integrity-checked candidate, including after reconnect; draft content is not regenerated. `FeedbackPorts.recoverCandidate` is required for providers implementing this workflow.

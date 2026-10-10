@@ -15,6 +15,8 @@ export interface FeedbackService {
 export interface FeedbackPorts {
   sessions(): Promise<{ ids: readonly string[]; truncated: boolean }>
   scan(sessionId: string, types: readonly string[]): Promise<readonly EventEnvelope[]>
+  /** Only the two feedback event constants; actor/session authority is re-checked by Host.
+   * New item ids must come from id(); envelope ids are always minted by the Host writer. */
   append(sessionId: string, type: string, data: Record<string, unknown>, actor: Actor): Promise<number>
   draft(
     sessionId: string,

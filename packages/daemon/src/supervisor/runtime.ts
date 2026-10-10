@@ -26,6 +26,7 @@ import {
   type PackageReferenceFactReader,
   type RuntimePinsAdapter,
   registerPackageAdmin,
+  requireLocalAdminAuthority,
   runtimeArtifactsFromStore,
   scopedPackageProfileDirectory,
 } from '@agnes/daemon-admin/packages/index'
@@ -2158,12 +2159,14 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
             return cx.resolveActor(context.conn.credential, 'session', id)
           },
           serialize: (id, signal, work) => runQueued(cx.commandQueue, id, signal, work),
-          ports: (context) => {
-            const authority = (
+          ports: (context, input) => {
+            const sessionId = input.sessionId,
+              writable = input.action !== 'list'
+            const resolveAuthority =
               transport === 'unix'
                 ? (effectivePackageAdmin!.unixAuthority ?? localPackageAdminAuthority())
                 : (effectivePackageAdmin!.webAuthority ?? denyPackageAdminAuthority)
-            )(context)
+            const authority = resolveAuthority(context)
             if (!authority) throw rpcError('CAPABILITY_DENIED')
             return feedbackPorts({
               context,
@@ -2171,6 +2174,15 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
               authority,
               packages: effectivePackageAdmin!.service,
               ids: sessionOwnership.activeSessionIds(context.conn.principalId),
+              authorize: async (id) => {
+                if (!writable || sessionId !== id || !cx.resolveActor) throw rpcError('CAPABILITY_DENIED')
+                requireLocalAdminAuthority(context, resolveAuthority, true)
+                requireSessionOwner(cx)('feedback', id, context)
+                const actor = await cx.resolveActor(context.conn.credential, 'session', id)
+                requireLocalAdminAuthority(context, resolveAuthority, true)
+                requireSessionOwner(cx)('feedback', id, context)
+                return actor
+              },
               session: (id) => registry.require(id).session,
               scan: async (id, types) => {
                 requireSessionOwner(cx)('feedback', id, context)
