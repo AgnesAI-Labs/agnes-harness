@@ -1,7 +1,7 @@
 import { localPackageAdminAuthority } from '@agnes/daemon-admin/packages/index'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { FeedbackInstance } from '@agnes/host'
-import { rpcError, type Actor } from '@agnes/protocol'
+import { type Actor, rpcError } from '@agnes/protocol'
 import type { AdminFeedbackParams, AdminFeedbackResult } from '@agnes/protocol/gen/app-server'
 import { expect, it } from 'vitest'
 import { registerFeedback } from '../src/local/methods/feedback.js'

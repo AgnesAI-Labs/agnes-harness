@@ -1,5 +1,5 @@
-import { createRequire } from 'node:module'
 import { createServer, type Server } from 'node:http'
+import { createRequire } from 'node:module'
 import { connect } from 'node:net'
 import { afterEach, expect, it } from 'vitest'
 import {

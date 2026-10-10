@@ -10,8 +10,8 @@ import {
   type ConfigSaveInput,
   type ConfigSnapshot,
   type ConfigTestInput,
-  rpcError,
   ModelSlotsSnapshot,
+  rpcError,
   validateAgainst,
 } from '@agnes/protocol'
 

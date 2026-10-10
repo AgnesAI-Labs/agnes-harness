@@ -116,9 +116,7 @@ export interface IntelligentUiCapabilities extends IntelligentUiCatalog {
    * Host resolver. A literal surface never calls it.
    * A binding fails closed when this is absent or undefined.
    */
-  resolveSources?:
-    | ((input: UiSourceResolveInput) => Promise<UiSourceResolveResult>)
-    | undefined
+  resolveSources?: ((input: UiSourceResolveInput) => Promise<UiSourceResolveResult>) | undefined
   /** Drops one surface from the host resolution cache. */
   dropSources?(surfaceId: string): void
 }

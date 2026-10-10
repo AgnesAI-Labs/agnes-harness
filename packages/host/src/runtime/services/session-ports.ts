@@ -6,8 +6,8 @@ import {
   type OwnerLedgerSource,
 } from '@agnes/host-common/assemble/owner-ledger'
 import type { ServiceDelivery } from '@agnes/host-common/assemble/service-binding'
-import { enqueueSessionInputOnce } from '../sessions/deferred-invocations.js'
 import type { Actor, JsonValue } from '@agnes/protocol'
+import { enqueueSessionInputOnce } from '../sessions/deferred-invocations.js'
 
 /** The session fields the shared ports read. HostSession satisfies this at the call site. */
 export interface SessionLedgerSession {

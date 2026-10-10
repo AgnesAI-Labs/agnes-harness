@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import { jcs } from '@agnes/protocol'
 import { deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
+import { jcs } from '@agnes/protocol'
 import descriptor from './client/agnes.client.json' with { type: 'json' }
 
 /** Data-only declaration with a reviewed diff renderer and the preset table fallback. Values stay in integer USD cents throughout. */

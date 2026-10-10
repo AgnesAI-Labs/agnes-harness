@@ -1,8 +1,8 @@
 import type { AuxiliaryModelSlots } from '@agnes/protocol'
 import { fallbackT, type Translate } from './locales/index.js'
-import { Field } from './ui/field.js'
-import { Badge } from './ui/badge.js'
 import { SettingsList, SettingsRow, SettingsSelect } from './settings-layout.js'
+import { Badge } from './ui/badge.js'
+import { Field } from './ui/field.js'
 
 export type AuxiliaryModelOption = { route: string; id: string; label?: string }
 export function AuxiliaryModelFields({

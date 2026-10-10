@@ -426,7 +426,9 @@ export async function resolveUiDataSources(
     const failed = resolved.find((item) => item.failure)
     if (failed?.failure) return { ok: false, code: failed.failure, dataKey: failed.dataKey, audits }
     if (input.purpose === 'action') {
-      const stale = resolved.find((item) => sourceHash(input.action?.sources, item.dataKey) !== item.resultHash)
+      const stale = resolved.find(
+        (item) => sourceHash(input.action?.sources, item.dataKey) !== item.resultHash,
+      )
       if (stale) return { ok: false, code: 'UI_STALE', dataKey: stale.dataKey, audits }
     }
   }

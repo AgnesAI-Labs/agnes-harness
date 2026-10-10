@@ -1,6 +1,6 @@
 import { Context } from '@agnes/cordis'
 import type { ProviderCatalogEntry } from '@agnes/extension-api'
-import { observabilityKind, type ObservabilityProvider } from '@agnes/observability'
+import { type ObservabilityProvider, observabilityKind } from '@agnes/observability'
 import type { EventEnvelope } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { createExtensionServiceHost, type ServiceAdmission } from '../src/runtime/services/author-port.js'

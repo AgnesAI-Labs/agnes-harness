@@ -1,7 +1,7 @@
 import { isAbsolute, relative, resolve } from 'node:path'
 import { looksLikeSecret } from '@agnes/error-sanitization'
-import type { ObservabilitySession } from './contract.js'
 import { type ObservabilityConfig, resolveHeaders } from './config.js'
+import type { ObservabilitySession } from './contract.js'
 
 const sensitive = /secret|password|authorization|credential|api.?key|cookie|token/i
 const normalizedPath = (value: string): string => {

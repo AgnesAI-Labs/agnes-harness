@@ -1,9 +1,9 @@
 import { Ajv2020 } from 'ajv/dist/2020.js'
 import {
-  X_AGNES_UI_LIMITS,
   type JsonValue,
   type UiSourceStatus,
   type UiSurface,
+  X_AGNES_UI_LIMITS,
 } from '../gen/ts/intelligent-ui.js'
 
 const ajv = new Ajv2020({ strict: false, validateFormats: false, addUsedSchema: false, ownProperties: true })

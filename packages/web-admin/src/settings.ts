@@ -20,7 +20,6 @@ import {
   unmountRegion,
 } from '@agnes/web-ui'
 import { createElement } from 'react'
-import { ModelSlotsPanel } from './settings/model-slots.js'
 import { oauthControls } from './oauth-controls.js'
 import { createAccountPickers } from './provider-picker.js'
 import { accountNetworkFields } from './settings/account-network.js'
@@ -32,6 +31,7 @@ import {
   optionalElement,
   readElements,
 } from './settings/dialog.js'
+import { ModelSlotsPanel } from './settings/model-slots.js'
 
 export type SettingsControllerOptions = {
   client: Client

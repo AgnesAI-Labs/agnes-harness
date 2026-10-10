@@ -1,6 +1,6 @@
 import { deploymentFetch } from '@agnes/system-node/deployment-network'
-import type { ObservabilityHealth } from './contract.js'
 import { type ObservabilityConfig, resolveHeaders, validateObservability } from './config.js'
+import type { ObservabilityHealth } from './contract.js'
 import { aggregateMetrics } from './metrics.js'
 
 export type Resource = Record<string, string>

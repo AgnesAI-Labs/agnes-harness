@@ -1,13 +1,13 @@
 import type { Context } from '@agnes/cordis'
 import type { Kernel } from '@agnes/core'
 import { memoryPrivateEvent, type ProviderCatalogEntry } from '@agnes/extension-api'
-import { serviceBindingScope, type ServiceCall } from '@agnes/host-common/assemble/service-binding'
 import type { ProvidersService } from '@agnes/host-common/assemble/provider-registry'
+import { type ServiceCall, serviceBindingScope } from '@agnes/host-common/assemble/service-binding'
 import { privateStateRoots } from '@agnes/host-common/paths'
 import {
-  observabilityKind,
   type ObservabilityProvider,
   type ObservabilitySession,
+  observabilityKind,
   withObservedSession,
 } from '@agnes/observability'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'

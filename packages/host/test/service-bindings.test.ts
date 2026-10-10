@@ -740,9 +740,7 @@ describe('owner ledger', () => {
         limit: 2,
         ...(first.nextCursor === undefined ? {} : { cursor: first.nextCursor }),
       }),
-    ).rejects.toThrow(
-      /cursor/,
-    )
+    ).rejects.toThrow(/cursor/)
     await expect(port.scanOwn({ names: ['note'], limit: 1, cursor: '%%%' })).rejects.toThrow(/cursor/)
     await expect(port.scanOwn({ names: ['note'], limit: 1, asOfSeq: 0 })).rejects.toThrow(/watermark/)
     await expect(port.scanOwn({ names: ['note'], limit: 1, asOfSeq: 11 })).rejects.toThrow(/watermark/)

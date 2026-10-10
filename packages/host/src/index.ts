@@ -498,11 +498,11 @@ export {
   FEEDBACK_OWNER,
   FEEDBACK_PACKAGE_ID,
   FEEDBACK_PROVIDER_ID,
-  feedbackKind,
   type FeedbackAuthority,
   type FeedbackInstance,
   type FeedbackRequest,
   type FeedbackResult,
+  feedbackKind,
 } from './runtime/feedback/contract.js'
 export { draftFeedbackSkill, feedbackSkillFiles } from './runtime/feedback/draft.js'
 export { createFeedbackLedger } from './runtime/feedback/ledger.js'

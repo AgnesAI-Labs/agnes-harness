@@ -28,9 +28,7 @@ export type UiSnapshot = Readonly<{
   watermark: number
 }>
 /** `UiSurfaceRecord.sources` is a patterned record. Its generated Static type is `{}`. */
-function typedSources(
-  sources: object | undefined,
-): Readonly<Record<string, UiSourceStatus>> | undefined {
+function typedSources(sources: object | undefined): Readonly<Record<string, UiSourceStatus>> | undefined {
   if (sources === undefined) return undefined
   return sources as Readonly<Record<string, UiSourceStatus>>
 }

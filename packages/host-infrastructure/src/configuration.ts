@@ -40,17 +40,17 @@ import type {
   ModelSettings,
 } from '@agnes/protocol'
 import {
+  AuxiliaryModelSlots,
   childEngineSettingsError,
   DISABLED_CHILD_ENGINES,
   isSessionDefaults,
   isSessionDefaultsSnapshot,
-  minimumContextBudget,
-  AuxiliaryModelSlots,
   ModelSlotsSnapshot,
-  validateAgainst,
+  minimumContextBudget,
   readChildEngineSettings,
   type SessionDefaults,
   type SessionDefaultsSnapshot,
+  validateAgainst,
 } from '@agnes/protocol'
 import { renameWriteThrough, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
 import { deploymentFetch, ensureDeploymentProxy } from '@agnes/system-node/deployment-network'

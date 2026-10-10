@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { HostError } from '@agnes/host-common/errors'
-import { capabilityHash, lockPath, readLock, type RuntimePluginSnapshot } from '@agnes/package-manager'
+import { capabilityHash, lockPath, type RuntimePluginSnapshot, readLock } from '@agnes/package-manager'
 
 /** Code pins preserve an approved snapshot, never a revoked package grant. Enablement is independent. */
 export async function assertGenerationTrust(

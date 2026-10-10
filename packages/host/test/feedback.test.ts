@@ -2,11 +2,11 @@ import { MemoryStorage, SessionLogImpl } from '@agnes/core'
 import { defaultIds } from '@agnes/core-common/ids'
 import { ProviderError } from '@agnes/extension-api'
 import {
-  rpcError,
   type Actor,
   type AuthoringCandidate,
   type InferenceEvent,
   type Provider,
+  rpcError,
 } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import {
@@ -15,8 +15,8 @@ import {
   draftFeedbackSkill,
   FEEDBACK_EVENT,
   FEEDBACK_GROWTH_EVENT,
-  feedbackSkillFiles,
   type FeedbackAuthority,
+  feedbackSkillFiles,
   type HostSession,
 } from '../src/index.js'
 
@@ -579,9 +579,9 @@ it('opens one instance per bind and keeps profiles, actors, and in-flight reads 
         },
       }),
     })
-    await expect(
-      forged.execute(put, { ...actor, id: 'other' }, other.signal),
-    ).rejects.toMatchObject({ data: { reason: 'FEEDBACK_ACTOR_MISMATCH' } })
+    await expect(forged.execute(put, { ...actor, id: 'other' }, other.signal)).rejects.toMatchObject({
+      data: { reason: 'FEEDBACK_ACTOR_MISMATCH' },
+    })
     expect(written).toEqual(['left', 'right'])
     const betaSignal = new AbortController()
     const betaInstance = await beta.bind({

@@ -4,8 +4,8 @@ import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { PluginAdminApi } from '../src/admin/plugins/api.js'
-import { ModelSlotsPanel } from '../src/settings/model-slots.js'
 import { AutoReviewPanel } from '../src/settings/auto-review.js'
+import { ModelSlotsPanel } from '../src/settings/model-slots.js'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 let root: Root | undefined

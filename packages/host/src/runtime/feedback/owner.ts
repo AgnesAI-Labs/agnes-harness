@@ -8,9 +8,9 @@ import {
   FEEDBACK_PACKAGE_ID,
   FEEDBACK_PROVIDER_ID,
   FEEDBACK_PROVIDER_VERSION,
-  feedbackKind,
   type FeedbackAuthority,
   type FeedbackInstance,
+  feedbackKind,
 } from './contract.js'
 import { createFeedbackLedger } from './ledger.js'
 import { createFeedbackService } from './service.js'
@@ -75,8 +75,7 @@ export function createFeedbackOwner(profile: string) {
         watermark: 0,
         actor: input.actor,
         live:
-          input.live ??
-          (() => (input.signal.aborted ? undefined : { owner: FEEDBACK_OWNER, active: true })),
+          input.live ?? (() => (input.signal.aborted ? undefined : { owner: FEEDBACK_OWNER, active: true })),
       }
       try {
         return await bindings.bind(feedbackKind, call, {

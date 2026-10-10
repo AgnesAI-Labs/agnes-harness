@@ -86,9 +86,7 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
       <IntelligentCatalog
         {...(props.renderCustom ? { renderCustom: props.renderCustom } : {})}
         surface={surface}
-        {...(record.sources
-          ? { sources: record.sources as Readonly<Record<string, UiSourceStatus>> }
-          : {})}
+        {...(record.sources ? { sources: record.sources as Readonly<Record<string, UiSourceStatus>> } : {})}
         {...(props.onRefreshSource ? { onRefreshSource: props.onRefreshSource } : {})}
         instance={props.placement}
         input={props.input}

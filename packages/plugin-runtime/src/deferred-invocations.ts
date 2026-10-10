@@ -9,10 +9,10 @@ import type {
   ToolResult,
 } from '@agnes/extension-api'
 import {
-  deferredQueueKind,
   type DeferredInvocationReceipt,
   type DeferredInvocationState,
   type DeferredToolInvocationQueue,
+  deferredQueueKind,
 } from './deferred-contract.js'
 
 /** Service tokens are invariant, so a generic kind and this token do not overlap. Identity still does. */

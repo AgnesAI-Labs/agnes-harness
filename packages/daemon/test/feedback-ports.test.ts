@@ -6,7 +6,7 @@ import {
   FEEDBACK_EVENT,
   FEEDBACK_GROWTH_EVENT,
 } from '@agnes/host'
-import { rpcError, type Actor, type EventEnvelope } from '@agnes/protocol'
+import { type Actor, type EventEnvelope, rpcError } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { feedbackPorts } from '../src/supervisor/feedback-ports.js'
 
@@ -251,9 +251,9 @@ it('pins ledger appends to the admitted session and refuses a forged name', asyn
     await expect(ledger.appendOwn('x/feedback/item', { ok: true })).rejects.toMatchObject({
       data: { reason: 'FEEDBACK_APPEND_FORBIDDEN' },
     })
-    await expect(
-      ledger.appendOwn('item', { actor: 'forged', sessionId: 'foreign' }),
-    ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+    await expect(ledger.appendOwn('item', { actor: 'forged', sessionId: 'foreign' })).rejects.toMatchObject({
+      data: { code: 'CAPABILITY_DENIED' },
+    })
     expect(f.rows).toEqual([])
   } finally {
     await f.endpoint.close()

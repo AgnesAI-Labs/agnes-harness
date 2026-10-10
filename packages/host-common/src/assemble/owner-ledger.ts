@@ -1,13 +1,13 @@
 import {
   EVENT_NAME_PATTERN,
   EXTENSION_ID_PATTERN,
+  extEventType,
   type OwnerLedgerPage,
   type OwnerLedgerPort,
   type OwnerLedgerQuery,
   ProviderError,
-  extEventType,
 } from '@agnes/extension-api'
-import { inspectJsonData, type EventEnvelope, type JsonValue } from '@agnes/protocol'
+import { type EventEnvelope, inspectJsonData, type JsonValue } from '@agnes/protocol'
 
 const PAGE_BUDGET = 262144
 const LIMIT_MAX = 256

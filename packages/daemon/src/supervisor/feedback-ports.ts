@@ -95,19 +95,17 @@ export function feedbackPorts(options: {
       // Reads can await a cold backend: re-check authority immediately before handing off to the writer.
       const currentActor = structuredClone(await options.authorize(id))
       if (jcs(currentActor) !== jcs(authenticated)) denied()
-      const written = await options
-        .session(id)
-        .append([
-          {
-            type,
-            data: value,
-            actor: currentActor,
-            origin: 'system',
-            trust: 'trusted',
-            ignorable: true,
-            lane: 'main',
-          },
-        ])
+      const written = await options.session(id).append([
+        {
+          type,
+          data: value,
+          actor: currentActor,
+          origin: 'system',
+          trust: 'trusted',
+          ignorable: true,
+          lane: 'main',
+        },
+      ])
       if (!written.seqs[0]) throw rpcError('SEMANTIC_REJECTED', { reason: 'FEEDBACK_NOT_PERSISTED' })
       if (type === FEEDBACK_EVENT && typeof value.id === 'string') issuedIds.delete(value.id)
       return written.seqs[0]

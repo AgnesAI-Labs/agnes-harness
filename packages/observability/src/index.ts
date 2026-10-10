@@ -1,16 +1,16 @@
 import type { ProviderPluginContext, ServiceProvider } from '@agnes/extension-api'
-import type { ObservabilityConfig } from './config.js'
 import {
-  observabilityKind,
   type ObservabilityHealth,
   type ObservabilityProvider,
   type ObservabilitySession,
+  observabilityKind,
 } from '@agnes/observability/contract'
+import type { ObservabilityConfig } from './config.js'
 import { acquireObservability } from './runtime.js'
 
 export { type ObservabilityConfig, observabilityConfig, observabilityHome } from './config.js'
-export { observabilityKind, type ObservabilityHealth, type ObservabilityProvider, type ObservabilitySession }
 export { createObservability } from './provider.js'
+export { type ObservabilityHealth, type ObservabilityProvider, type ObservabilitySession, observabilityKind }
 
 function asService(runtime: ObservabilityProvider): ServiceProvider<ObservabilityProvider> {
   return {

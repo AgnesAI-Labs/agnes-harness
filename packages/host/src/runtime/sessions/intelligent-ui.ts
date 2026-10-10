@@ -10,12 +10,12 @@ import {
 import {
   type IntelligentUiInstance,
   intelligentUiKind,
-  type UiSourceResolveInput,
   UI_EVENTS,
   UI_OWNER,
   UI_PROVIDER_ID,
   UI_PROVIDER_VERSION,
   UI_SOURCE_EVENTS,
+  type UiSourceResolveInput,
   uiDataSourceKind,
 } from '@agnes/intelligent-ui-contract'
 import {

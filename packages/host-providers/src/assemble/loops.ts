@@ -7,13 +7,13 @@ import {
   type LoopSelection,
   ProviderError,
 } from '@agnes/extension-api'
-import { withDeferredToolInvocations } from '@agnes/plugin-runtime'
 import { ProviderLifetime } from '@agnes/host-common/assemble/provider-lifetime'
 import {
   installProviderRegistry,
   type ProviderRegistry,
   providerSource,
 } from '@agnes/host-common/assemble/provider-registry'
+import { withDeferredToolInvocations } from '@agnes/plugin-runtime'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import type { DeferredInvocationsService } from './deferred-invocations.js'
 

@@ -23,8 +23,8 @@ import {
   capabilityHash,
   emptyLock,
   hashDirectory,
-  writeLock,
   type RuntimePluginSnapshot,
+  writeLock,
 } from '@agnes/package-manager'
 import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { RuntimeSecurityStatus, SessionCapabilitySet, validateAgainst } from '@agnes/protocol'

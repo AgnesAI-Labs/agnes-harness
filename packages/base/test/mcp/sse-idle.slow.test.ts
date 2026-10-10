@@ -1,6 +1,6 @@
 import { createServer, type Server, type ServerResponse } from 'node:http'
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import { createDeploymentFetch } from '@agnes/system-node/deployment-network'
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import { afterEach, expect, it } from 'vitest'
 
 const servers: Server[] = []

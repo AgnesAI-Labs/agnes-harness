@@ -1,10 +1,10 @@
-import type { ObservabilityProvider } from './contract.js'
 import {
   type ObservabilityConfig,
   observabilityConfig,
   observabilityHome,
   readObservabilityConfig,
 } from './config.js'
+import type { ObservabilityProvider } from './contract.js'
 import { createObservability } from './provider.js'
 
 // Symbol registry survives module replacement; queues belong to a process/home, not a code fiber.

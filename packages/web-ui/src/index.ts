@@ -6,6 +6,7 @@ export * from './admin-text.js'
 export type { AntdRoot } from './antd-root.js'
 export { createAntdRoot } from './antd-root.js'
 export { appServerErrorMessage } from './app-server-errors.js'
+export * from './auxiliary-model-fields.js'
 export * from './config-form.js'
 export * from './config-schema.js'
 export * from './confirm.js'
@@ -63,6 +64,7 @@ export { resourceFailureCatalog, resourceFailureKey, resourceFailureLabel } from
 export * from './resource-list.js'
 export * from './schema-settings.js'
 export * from './select-picker.js'
+export * from './session-auxiliary-models.js'
 export { SettingsAccountDialog } from './settings-account-dialog.js'
 export { SettingsAccounts, type SettingsAccountsProps } from './settings-accounts.js'
 export {
@@ -112,6 +114,3 @@ export {
 export { Switch, type SwitchProps } from './ui/switch.js'
 export { Tabs, type TabsProps } from './ui/tabs.js'
 export * from './ui-locale.js'
-
-export * from './auxiliary-model-fields.js'
-export * from './session-auxiliary-models.js'

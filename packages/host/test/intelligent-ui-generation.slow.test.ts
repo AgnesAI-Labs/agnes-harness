@@ -8,10 +8,10 @@ import {
   capabilityHash,
   emptyLock,
   hashDirectory,
-  writeLock,
   type LockEntry,
   RuntimeGenerationSnapshotStore,
   type RuntimePluginSnapshot,
+  writeLock,
 } from '@agnes/package-manager'
 import { defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { createPluginRow } from '@agnes/plugin-runtime/host'

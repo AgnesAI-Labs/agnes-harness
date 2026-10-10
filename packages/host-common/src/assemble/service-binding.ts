@@ -1,13 +1,13 @@
 import type { Context } from '@agnes/cordis'
 import {
+  type AgentInputPort,
   EVENT_NAME_PATTERN,
   EXTENSION_ID_PATTERN,
-  ProviderError,
-  type AgentInputPort,
   type OwnerLedgerPort,
   type ProjectionReader,
   type ProjectionReadResult,
   type ProviderCatalogEntry,
+  ProviderError,
   type ServiceBinding,
   type ServiceInstance,
   type ServiceKind,
@@ -16,8 +16,8 @@ import {
   type ServicePorts,
   type ServiceProvider,
 } from '@agnes/extension-api'
-import type { Actor, JsonValue } from '@agnes/protocol'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
+import type { Actor, JsonValue } from '@agnes/protocol'
 import { ProviderLifetime } from './provider-lifetime.js'
 import {
   installProviderRegistry,

@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto'
 import type { EventEnvelope } from '@agnes/protocol'
-import type { ObservabilityProvider, ObservabilitySession } from './contract.js'
 import { type ObservabilityConfig, validateObservability } from './config.js'
 import { exportContent } from './content.js'
+import type { ObservabilityProvider, ObservabilitySession } from './contract.js'
 import { OtlpTransport, type Resource } from './transport.js'
 
 type Attributes = Record<string, string | number | boolean>

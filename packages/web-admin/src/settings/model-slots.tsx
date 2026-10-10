@@ -1,8 +1,8 @@
 import {
+  type AdminModelAdapter,
   isAdminModelAdapter,
   ModelSlotsSnapshot,
   validateAgainst,
-  type AdminModelAdapter,
 } from '@agnes/protocol'
 import {
   AuxiliaryModelFields,
