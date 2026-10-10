@@ -105,6 +105,7 @@ export function resolveValidatedToolCallPolicy(
   const resolvedPolicy: CompleteResolvedToolCallPolicy = Object.freeze({
     isReadOnly: callPolicy.isReadOnly,
     isDestructive: callPolicy.isDestructive,
+    isPresentational: callPolicy.isPresentational === true,
     isConcurrencySafe: tool.meta.isConcurrencySafe,
     isOpenWorld: tool.meta.isOpenWorld,
     replay: callPolicy.replay,

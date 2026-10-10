@@ -31,8 +31,8 @@ const subagentCollectTool = (): ToolDef =>
     execute: async () => ({ content: [{ type: 'text' as const, text: 'collected' }] }),
   }) as never
 
-/** Mirrors ui_render / ui_update / ui_close: a write that declares requiresApproval 'never'. */
-const uiSurfaceTool = (name: 'ui_render' | 'ui_update' | 'ui_close'): ToolDef =>
+/** A write that only publishes display state. The name is not what the policy consults. */
+const uiSurfaceTool = (name: string): ToolDef =>
   ({
     name,
     description: name,
@@ -40,6 +40,7 @@ const uiSurfaceTool = (name: 'ui_render' | 'ui_update' | 'ui_close'): ToolDef =>
     meta: {
       isReadOnly: false,
       isDestructive: false,
+      isPresentational: true,
       isConcurrencySafe: false,
       isOpenWorld: false,
       replay: 'idempotent' as const,
@@ -1096,10 +1097,10 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
 
   /**
    * After a deferred business tool is allowed, SC1 queues the receipt as system input. That taints
-   * the continuation, and the loop then calls ui_update to publish revision + 1. The declaration
-   * is not a second business effect, so it must produce a tool result without another permission.
+   * the continuation. ui_update declares isPresentational, so publishing the next revision is not a
+   * second permission. The flag has to be on the policy the tools phase reads; the tool name is not.
    */
-  it('a tainted turn does not escalate ui_update after a deferred business result', async () => {
+  it('a tainted turn does not escalate a presentational ui_update after a deferred business result', async () => {
     const registry = new ToolRegistry()
     registry.add(openWorldTool(), { source: 's', trust: 'builtin' })
     registry.add(uiSurfaceTool('ui_update'), { source: 's', trust: 'builtin' })
@@ -1126,7 +1127,7 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
     expect(results.map((row) => (row.data as { isError?: boolean }).isError)).toEqual([false, false])
   })
 
-  it('a tainted turn still asks for a business write and a destructive surface declaration', async () => {
+  it('a tainted turn allows a presentational tool and still asks when approval is always required', async () => {
     const signal = new AbortController().signal
     const decide = (name: string, policy: Partial<ToolPolicyInput['policy']> = {}, tainted = true) =>
       defaultToolPolicy.decide(
@@ -1149,15 +1150,18 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
         },
         signal,
       )
-    for (const name of ['ui_render', 'ui_update', 'ui_close'] as const) {
-      expect(await decide(name)).toMatchObject({ effect: 'allow' })
-    }
+    expect(await decide('publish_surface', { isPresentational: true })).toMatchObject({ effect: 'allow' })
+    expect(await decide('ui_update')).toMatchObject({ effect: 'ask' })
+    expect(
+      await decide('publish_surface', { isPresentational: true, requiresApproval: 'always' }),
+    ).toMatchObject({ effect: 'ask' })
     expect(await decide('write_note')).toMatchObject({ effect: 'ask' })
     expect(await decide('fde_finance_approve', { requiresApproval: 'always' })).toMatchObject({
       effect: 'ask',
     })
-    expect(await decide('ui_update', { isDestructive: true })).toMatchObject({ effect: 'ask' })
-    expect(await decide('ui_update', { requiresApproval: 'always' })).toMatchObject({ effect: 'ask' })
+    expect(
+      await decide('write_note', { isDestructive: true, requiresApproval: 'destructive' }),
+    ).toMatchObject({ effect: 'ask' })
     expect(await decide('write_note', {}, false)).toMatchObject({ effect: 'allow' })
   })
 

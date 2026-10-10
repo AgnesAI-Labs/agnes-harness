@@ -110,6 +110,29 @@ describe('checkToolMeta (every one of the eight keys must be written out)', () =
   it('preserves legacy static metadata compatibility even for contradictory safety flags', () => {
     expect(checkToolMeta({ ...fullMeta, isDestructive: true })).toEqual({ ok: true })
   })
+  it('rejects presentational metadata combined with a destructive or open-world effect', () => {
+    const destructive = checkToolMeta({
+      ...fullMeta,
+      isReadOnly: false,
+      isDestructive: true,
+      isPresentational: true,
+    })
+    expect(destructive.ok).toBe(false)
+    if (!destructive.ok)
+      expect(destructive.problems).toEqual(['isPresentational/isDestructive: cannot both be true'])
+    const openWorld = checkToolMeta({
+      ...fullMeta,
+      isReadOnly: false,
+      isOpenWorld: true,
+      isPresentational: true,
+    })
+    expect(openWorld.ok).toBe(false)
+    if (!openWorld.ok) expect(openWorld.problems).toEqual(['isPresentational/isOpenWorld: cannot both be true'])
+    const wrong = checkToolMeta({ ...fullMeta, isPresentational: 'yes' })
+    expect(wrong.ok).toBe(false)
+    if (!wrong.ok) expect(wrong.problems).toEqual(['isPresentational: expected boolean | undefined'])
+    expect(checkToolMeta({ ...fullMeta, isReadOnly: false, isPresentational: true })).toEqual({ ok: true })
+  })
 })
 
 describe('checkResolvedToolCallPolicy', () => {
@@ -161,6 +184,27 @@ describe('checkResolvedToolCallPolicy', () => {
         'requiresApproval: expected never | destructive | always',
         'approvalScopes: expected array',
       ])
+  })
+  it('rejects a presentational policy that is also destructive', () => {
+    const r = checkResolvedToolCallPolicy({ ...policy, isPresentational: true })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.problems).toEqual(['isPresentational/isDestructive: cannot both be true'])
+    expect(
+      checkResolvedToolCallPolicy({
+        ...policy,
+        isDestructive: false,
+        requiresApproval: 'never',
+        isPresentational: true,
+      }),
+    ).toEqual({ ok: true })
+    const wrong = checkResolvedToolCallPolicy({
+      ...policy,
+      isDestructive: false,
+      requiresApproval: 'never',
+      isPresentational: 'yes',
+    })
+    expect(wrong.ok).toBe(false)
+    if (!wrong.ok) expect(wrong.problems).toEqual(['isPresentational: expected boolean'])
   })
   it('enforces the bounded approval-scope collection', () => {
     const r = checkResolvedToolCallPolicy({
@@ -230,6 +274,7 @@ describe('checkToolDef', () => {
     expect(resolveToolCallPolicy(dynamic, { q: 'write' })).toEqual({
       isReadOnly: false,
       isDestructive: true,
+      isPresentational: false,
       replay: 'never',
       requiresApproval: 'destructive',
       approvalScopes: ['cua:click:background'],
@@ -239,10 +284,29 @@ describe('checkToolDef', () => {
     expect(resolveToolCallPolicy(def, { q: 'read' })).toEqual({
       isReadOnly: true,
       isDestructive: false,
+      isPresentational: false,
       replay: 'safe',
       requiresApproval: 'never',
       approvalScopes: [],
     })
+  })
+  it('rejects a presentational classifier on an open-world tool', () => {
+    const open = defineTool({
+      ...def,
+      meta: { ...fullMeta, isReadOnly: false, isOpenWorld: true },
+      policyVersion: 'surface-v1',
+      classify: () => ({
+        isReadOnly: false,
+        isDestructive: false,
+        isPresentational: true,
+        replay: 'never' as const,
+        requiresApproval: 'never' as const,
+        approvalScopes: [],
+      }),
+    })
+    expect(() => resolveToolCallPolicy(open, { q: 'read' })).toThrow(
+      'isPresentational cannot combine with isDestructive or isOpenWorld',
+    )
   })
   it('rejects classifier/version mismatches, invalid versions, and declared async classifiers', () => {
     const noVersion = checkToolDef({ ...def, classify: () => ({}) })

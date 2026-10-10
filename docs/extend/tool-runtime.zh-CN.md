@@ -22,6 +22,8 @@ Core 继续负责主体授权、审批票据、沙箱、效果记录和恢复；
 
 设置 `meta.deferLoading: true` 可从初始模型请求中省略工具 schema。官方 `tool_search` 同时搜索当前可用的延迟插件工具与 MCP 索引；`tool_describe` 调用可选端口 `ToolContext.tools.disclose(name): Promise<void>`，使可用 schema 出现在后续请求中。Core 持久化这项选择，并拒绝冻结的 turn 目录之外或当前模型能力不支持的名称。披露与授权独立：调用仍经过原有参数校验、策略、审批与取消通道。已知工作流所需工具的自定义 Loop，可以通过 `prepareRequest({ tools: [...] })` 显式选择确切名称。
 
+可选的 `meta.isPresentational: true` 表示效果只向用户公布展示状态，没有外部副作用。它不能与 `isDestructive` 或 `isOpenWorld` 同时为真。默认工具策略不会仅因 turn 被污染而升级一个非只读的 presentational 工具。`requiresApproval: always` 和破坏性审批档仍然询问。省略该标志时，工具仍受污染写入的审批约束。[工具元数据参考](../../packages/extension-api/docs/tools-meta.md) 与其他元数据键一起列出该标志。
+
 工具可以通过公开 `ToolMeta` 合同声明 `meta.paths: [{ arg: 'path', access: 'read' | 'write' }]`。每项指定顶层字符串参数，可选 `default` 指定省略参数时的路径，`nonWorkspaceSchemes` 将声明的 URI scheme 交给工具自身的资源服务。Core 在选择策略之前通过实时工作区文件系统预检这些路径，manual、smart、auto-review、off 模式使用相同检查，不认识官方工具名或参数名。没有此元数据的工具保持原有行为。预检不替代执行时的文件系统限制；资源 scheme 不扩大文件系统权限。元数据会被快照并纳入工具定义指纹。
 
 ## 模型辅助策略

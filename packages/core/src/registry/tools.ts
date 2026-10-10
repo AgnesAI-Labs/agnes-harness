@@ -171,6 +171,7 @@ function snapshotToolMeta(meta: ToolMeta): ToolMeta {
   return Object.freeze({
     isReadOnly: meta.isReadOnly,
     isDestructive: meta.isDestructive,
+    ...(meta.isPresentational === true ? { isPresentational: true } : {}),
     isConcurrencySafe: meta.isConcurrencySafe,
     isOpenWorld: meta.isOpenWorld,
     replay: meta.replay,
@@ -296,6 +297,8 @@ function fingerprintToolDefinition(def: ToolDef, meta: ToolSource): string {
       policy: {
         isReadOnly: def.meta.isReadOnly,
         isDestructive: def.meta.isDestructive,
+        // False is the historical default, so only an explicit declaration changes this fingerprint.
+        ...(def.meta.isPresentational === true ? { isPresentational: true } : {}),
         isConcurrencySafe: def.meta.isConcurrencySafe,
         isOpenWorld: def.meta.isOpenWorld,
         replay: def.meta.replay,

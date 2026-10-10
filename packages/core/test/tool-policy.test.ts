@@ -58,6 +58,7 @@ describe('resolved tool-call policy envelope', () => {
       resolvedPolicy: {
         isReadOnly: false,
         isDestructive: true,
+        isPresentational: false,
         isConcurrencySafe: false,
         isOpenWorld: false,
         replay: 'never',
@@ -99,6 +100,7 @@ describe('resolved tool-call policy envelope', () => {
     expect(envelope.resolvedPolicy).toEqual({
       isReadOnly: false,
       isDestructive: true,
+      isPresentational: false,
       isConcurrencySafe: false,
       isOpenWorld: false,
       replay: 'never',

@@ -145,7 +145,7 @@ Service 不提供任意工具调度入口。公开[延后工具调用合同](def
 
 回执字段依状态约束：`rejected` 必须有 `refusal`，`failed` 必须有 `failure`，`pending-approval` 必须关联 invocation/票据，`succeeded` 必须关联持久工具结果。不适用的 failure/refusal 字段缺省。后台在结构 Schema 之外验证这些关系。`outcomeUnknown: true` 始终意味着 `retryable: false`。
 
-终态结果/拒绝只通过现有 SC1 queued-input 到达 Agent：活跃 turn 支持 steering 时使用 `next-step`，否则使用 `next-turn` 与既有空闲唤醒。结果持久化恰逢 turn 结束时仍须留在队列，供下一轮领取。队列内容包括 surface id/revision、action/command id、状态、安全摘要和 ledger/tool-result 引用。工具输出仍是不可信证据。Agent 随后可调用 `ui_update` 或 `ui_close`；执行成功本身不生成业务数据，也不增加 surface revision。这段队列输入会污染后续 turn。默认工具策略不会仅因该污染而升级非破坏性的 `ui_render`、`ui_update`、`ui_close`：公布审阅界面不是第二次授权。`requiresApproval: always`、破坏性声明，以及产出该结果的业务工具，仍然要询问。
+终态结果/拒绝只通过现有 SC1 queued-input 到达 Agent：活跃 turn 支持 steering 时使用 `next-step`，否则使用 `next-turn` 与既有空闲唤醒。结果持久化恰逢 turn 结束时仍须留在队列，供下一轮领取。队列内容包括 surface id/revision、action/command id、状态、安全摘要和 ledger/tool-result 引用。工具输出仍是不可信证据。Agent 随后可调用 `ui_update` 或 `ui_close`；执行成功本身不生成业务数据，也不增加 surface revision。这段队列输入会污染后续 turn。工具可以用可选的 `isPresentational` 声明：效果只向用户公布展示状态，没有外部副作用。默认工具策略不会仅因该污染而升级这一声明。`requiresApproval: always`、破坏性声明，以及产出该结果的业务工具，仍然要询问。官方 `ui_render`、`ui_update`、`ui_close` 声明该标志；`ui_submit` 不声明。
 
 ## Ledger 事实与生命周期状态表
 

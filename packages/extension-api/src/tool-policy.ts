@@ -101,18 +101,15 @@ export const defaultToolPolicy: ToolPolicy = {
       'subagent_send_message',
       'subagent_interrupt',
     ].includes(input.call.name)
-    // SC1 queues the business-tool result as untrusted input, so the continuation is tainted.
-    // Publishing the review surface is not a second business effect. A destructive declaration,
-    // or requiresApproval "always", still asks.
-    const surfaceDeclaration =
-      ['ui_render', 'ui_update', 'ui_close'].includes(input.call.name) && !input.policy.isDestructive
+    // A presentational tool only publishes display state. Tainted input does not escalate it.
+    // requiresApproval "always" and a destructive declaration still ask.
     const ask =
       !management &&
       !input.fullAccess &&
       input.approvalMode !== 'off' &&
       (input.policy.requiresApproval === 'always' ||
         (input.policy.requiresApproval === 'destructive' && input.policy.isDestructive) ||
-        (input.tainted && !input.policy.isReadOnly && !surfaceDeclaration))
+        (input.tainted && !input.policy.isReadOnly && !input.policy.isPresentational))
     return {
       effect: ask ? 'ask' : 'allow',
       reason: ask ? 'Tool risk requires approval' : 'Default tool policy',

@@ -24,6 +24,12 @@ export type RiskClass = 'never' | 'destructive' | 'always'
 export interface ResolvedToolCallPolicy {
   readonly isReadOnly: boolean
   readonly isDestructive: boolean
+  /**
+   * The effect only publishes display state to the user and has no external side effect.
+   * Omitted means not presentational. Classifiers may omit it; resolution copies a boolean
+   * the same way it copies `isReadOnly`.
+   */
+  readonly isPresentational?: boolean
   readonly replay: ReplayPolicy
   readonly requiresApproval: RiskClass
   readonly approvalScopes: readonly string[]
@@ -71,6 +77,12 @@ export interface ToolMeta {
   deferLoading: boolean | undefined
   requiresApproval: RiskClass | undefined
   paths?: readonly WorkspacePathArgument[]
+  /**
+   * The effect only publishes display state to the user and has no external side effect.
+   * Optional, like `paths`: omitting it means the tool is not presentational. It cannot be
+   * combined with `isDestructive` or `isOpenWorld`.
+   */
+  isPresentational?: boolean
 }
 export const TOOL_META_KEYS = [
   'isReadOnly',
@@ -407,6 +419,12 @@ export function checkToolMeta(meta: unknown): CheckResult {
     problems.push('deferLoading: expected boolean | undefined')
   if (m.requiresApproval !== undefined && !RISK.has(String(m.requiresApproval)))
     problems.push('requiresApproval: expected never | destructive | always | undefined')
+  if (m.isPresentational !== undefined && typeof m.isPresentational !== 'boolean')
+    problems.push('isPresentational: expected boolean | undefined')
+  if (m.isPresentational === true && m.isDestructive === true)
+    problems.push('isPresentational/isDestructive: cannot both be true')
+  if (m.isPresentational === true && m.isOpenWorld === true)
+    problems.push('isPresentational/isOpenWorld: cannot both be true')
   if (m.paths !== undefined) {
     if (!Array.isArray(m.paths) || m.paths.length > 32)
       problems.push('paths: expected at most 32 declarations')
@@ -460,6 +478,10 @@ export function checkResolvedToolCallPolicy(policy: unknown): CheckResult {
   if (typeof p.isReadOnly !== 'boolean') problems.push('isReadOnly: expected boolean')
   if (typeof p.isDestructive !== 'boolean') problems.push('isDestructive: expected boolean')
   contradictorySafetyFlags(p, problems)
+  if (Object.hasOwn(p, 'isPresentational') && typeof p.isPresentational !== 'boolean')
+    problems.push('isPresentational: expected boolean')
+  if (p.isPresentational === true && p.isDestructive === true)
+    problems.push('isPresentational/isDestructive: cannot both be true')
   if (!REPLAY.has(String(p.replay))) problems.push('replay: expected safe | never | idempotent')
   if (!RISK.has(String(p.requiresApproval)))
     problems.push('requiresApproval: expected never | destructive | always')
@@ -475,7 +497,7 @@ export function checkResolvedToolCallPolicy(policy: unknown): CheckResult {
       else seen.add(scope)
     }
   }
-  const known = new Set<string>(RESOLVED_TOOL_CALL_POLICY_KEYS)
+  const known = new Set<string>([...RESOLVED_TOOL_CALL_POLICY_KEYS, 'isPresentational'])
   const extra = Object.keys(p).filter((key) => !known.has(key))
   if (extra.length) problems.push(`unknown key: ${extra.join(', ')}`)
   return problems.length ? { ok: false, problems } : { ok: true }
@@ -498,6 +520,11 @@ function isDeclaredAsyncFunction(value: (...args: never[]) => unknown): boolean 
   }
 }
 
+function refusePresentationalConflict(policy: ResolvedToolCallPolicy, isOpenWorld: boolean): void {
+  if (policy.isPresentational === true && (policy.isDestructive || isOpenWorld))
+    throw new TypeError('isPresentational cannot combine with isDestructive or isOpenWorld')
+}
+
 /**
  * Resolve one already-schema-validated call. Static tools retain their exact historical safety
  * meaning and receive no additional approval scopes. Invalid or asynchronous classifier output is
@@ -507,26 +534,33 @@ export function resolveToolCallPolicy<P extends TSchema>(
   def: ToolDef<P>,
   args: Readonly<Static<P>>,
 ): ResolvedToolCallPolicy {
-  if (!def.classify)
-    return Object.freeze({
+  if (!def.classify) {
+    const policy = Object.freeze({
       isReadOnly: def.meta.isReadOnly,
       isDestructive: def.meta.isDestructive,
+      isPresentational: def.meta.isPresentational === true,
       replay: def.meta.replay,
       requiresApproval: def.meta.requiresApproval ?? (def.meta.isDestructive ? 'destructive' : 'never'),
       approvalScopes: Object.freeze([]),
     })
+    refusePresentationalConflict(policy, def.meta.isOpenWorld)
+    return policy
+  }
   const value: unknown = def.classify(args)
   if (isPromiseLike(value)) throw new TypeError('classify: expected synchronous function, received Promise')
   const checked = checkResolvedToolCallPolicy(value)
   if (!checked.ok) throw new TypeError(`classify: invalid resolved policy: ${checked.problems.join('; ')}`)
   const policy = value as ResolvedToolCallPolicy
-  return Object.freeze({
+  const resolved = Object.freeze({
     isReadOnly: policy.isReadOnly,
     isDestructive: policy.isDestructive,
+    isPresentational: policy.isPresentational === true,
     replay: policy.replay,
     requiresApproval: policy.requiresApproval,
     approvalScopes: Object.freeze([...policy.approvalScopes]),
   })
+  refusePresentationalConflict(resolved, def.meta.isOpenWorld)
+  return resolved
 }
 
 /** Longest tool description a model is shown, in UTF-16 code units; Core also holds it after sanitizing. */

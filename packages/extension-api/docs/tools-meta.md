@@ -4,6 +4,8 @@
 
 All eight keys must be explicitly present. Authors may explicitly set costHint, deferLoading and requiresApproval to undefined; wire metadata normalizes these to null. A missing key is E_TOOLDEF_META.
 
+`isPresentational` is optional. Omitting it means the tool is not presentational.
+
 | Key | Meaning |
 |---|---|
 | `isReadOnly` | The tool declares no writes. Tainted-call policy and sandbox requirements consult this flag; it does not override explicit approval or concurrency flags. |
@@ -14,3 +16,4 @@ All eight keys must be explicitly present. Authors may explicitly set costHint, 
 | `costHint` | An estimate for the budget preflight; null means the author declared no hint. Consumed by the budget stage. |
 | `deferLoading` | true keeps the tool out of the default disclosure until a search loads it. null defers to the package default, which the MCP importer reads as true; until that importer lands, null behaves as false. Consumed by disclosure. |
 | `requiresApproval` | The approval band; null lets isDestructive and the command policy table decide. Consumed by the approval stage. |
+| `isPresentational` | Optional. The effect only publishes display state to the user and has no external side effect. It cannot be combined with isDestructive or isOpenWorld. Tainted-call policy does not escalate this flag; requiresApproval always and a destructive band still ask. |

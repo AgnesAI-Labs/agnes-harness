@@ -35,7 +35,9 @@ describe('author documentation generation', () => {
     expect(slots.match(/^\| `[a-z.]+` \|/gm)).toHaveLength(4)
     expect((tools.match(/^\| `([^`]+)` \|/gm) ?? []).map((row) => row.split('`')[1])).toEqual([
       ...TOOL_META_KEYS,
+      'isPresentational',
     ])
+    expect(tools).toContain('`isPresentational` is optional')
     expect(tools).toContain('does not override explicit approval or concurrency flags')
   })
   it('escapes table delimiters, newlines and HTML while retaining generated links', () => {

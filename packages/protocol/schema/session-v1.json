@@ -430,6 +430,10 @@
       "properties": {
         "isReadOnly": { "type": "boolean" },
         "isDestructive": { "type": "boolean" },
+        "isPresentational": {
+          "type": "boolean",
+          "description": "Optional. Copied from tool metadata or classifier output like isReadOnly. True means the call only publishes display state. Absent is not presentational."
+        },
         "isConcurrencySafe": { "type": "boolean" },
         "isOpenWorld": { "type": "boolean" },
         "replay": { "enum": ["safe", "never", "idempotent"] },

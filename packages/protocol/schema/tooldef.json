@@ -78,6 +78,10 @@
           ],
           "description": "The approval band; null lets isDestructive and the command policy table decide. Consumed by the approval stage."
         },
+        "isPresentational": {
+          "type": "boolean",
+          "description": "Optional. The effect only publishes display state to the user and has no external side effect. It cannot be combined with isDestructive or isOpenWorld. Tainted-call policy does not escalate this flag; requiresApproval always and a destructive band still ask."
+        },
         "paths": {
           "type": "array",
           "maxItems": 32,

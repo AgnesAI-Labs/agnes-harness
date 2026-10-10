@@ -18,6 +18,8 @@ const meta = {
   deferLoading: true,
   requiresApproval: 'never' as const,
 }
+/** Display-only surface publication. ui_submit collects answers and must not inherit this flag. */
+const presentational = { ...meta, isPresentational: true }
 export default defineExtension((agnes) => {
   if (!agnes.intelligentUi) throw new Error('Host does not support Intelligent UI')
   const runtime = agnes.intelligentUi
@@ -29,7 +31,7 @@ export default defineExtension((agnes) => {
         description:
           'Render a bounded surface with presets or pinned plugin-declared components in the conversation and workbench. Every action must map to a declared tool. No HTML or executable code.',
         parameters: reachableParameters(UiRenderParams),
-        meta,
+        meta: presentational,
         async execute(input, ctx) {
           const record = await runtime.session(ctx.session).render(input, ctx.signal)
           return {
@@ -56,7 +58,7 @@ export default defineExtension((agnes) => {
         description:
           'Replace an open surface at expectedRevision with revision + 1 after the previous action finishes.',
         parameters: reachableParameters(UiUpdateParams),
-        meta,
+        meta: presentational,
         async execute(input, ctx) {
           const record = await runtime.session(ctx.session).update(input, ctx.signal)
           return {
@@ -82,7 +84,7 @@ export default defineExtension((agnes) => {
         name: 'ui_close',
         description: 'Close an open surface after actions finish. Closed actions cannot execute.',
         parameters: reachableParameters(UiCloseParams),
-        meta,
+        meta: presentational,
         async execute(input, ctx) {
           const record = await runtime.session(ctx.session).close(input, ctx.signal)
           return {

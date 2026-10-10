@@ -131,6 +131,7 @@ describe('tool types', () => {
       | 'deferLoading'
       | 'requiresApproval'
       | 'paths'
+      | 'isPresentational'
     >()
     // @ts-expect-error costHint 键不能省略——「声明无」也要显式写 undefined
     const m: ToolMeta = {

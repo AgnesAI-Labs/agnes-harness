@@ -36,6 +36,7 @@ describe('gen-docs', () => {
       'costHint',
       'deferLoading',
       'requiresApproval',
+      'isPresentational',
     ])
       expect(md, k).toMatch(new RegExp(`^\\| \`${k}\` \\|`, 'm'))
     // The description column is what makes the page worth generating; an empty one would render as
