@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -108,8 +109,13 @@ it('retries a busy port every second until it is free, then serves the standalon
 
 it('registers the seven device tools and a context hook, and wakes sessions through the daemon socket', async () => {
   const port = await freePort()
-  // A stand-in for the Agnes daemon: newline-delimited JSON-RPC on a Unix socket named in owner.json.
-  const sock = join(home, 'd.sock')
+  // A stand-in for the Agnes daemon: newline-delimited JSON-RPC on the local socket named in
+  // owner.json. On Windows that is a named pipe, as the real daemon records: a file path is not
+  // a pipe name there.
+  const sock =
+    process.platform === 'win32' // guards-allow-platform: test-only local transport fixture.
+      ? `\\\\.\\pipe\\agnes-hub-test-${randomUUID()}`
+      : join(home, 'd.sock')
   const received: { method: string; params: Record<string, unknown> }[] = []
   const daemon = createServer((socket) => {
     let buffer = ''
@@ -124,7 +130,10 @@ it('registers the seven device tools and a context hook, and wakes sessions thro
       }
     })
   })
-  await new Promise<void>((resolve) => daemon.listen(sock, resolve))
+  await new Promise<void>((resolve, reject) => {
+    daemon.once('error', reject)
+    daemon.listen(sock, resolve)
+  })
   await mkdir(join(home, 'data', 'daemon'), { recursive: true })
   await writeFile(join(home, 'data', 'daemon', 'owner.json'), JSON.stringify({ socketPath: sock }))
 
