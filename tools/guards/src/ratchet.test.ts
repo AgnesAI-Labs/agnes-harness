@@ -258,7 +258,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Deferred receipt types come from the plugin-runtime contract. countLines: 76, exact, no spare.
   // UI data-source kind, result enum, and failure codes. Rebased onto that 76; countLines: 163.
   // Resolve input and source audit names. countLines: 163 -> 205.
-  'packages/intelligent-ui-contract/src': 205,
+  // Structural deferred queue. The package does not import plugin-runtime. Measured 236, exact, no spare.
+  'packages/intelligent-ui-contract/src': 236,
   // Leaf Git worktree kind token so Host does not import Base. countLines: 34, exact, no spare.
   'packages/git-worktree-contract/src': 34,
   // Official plugin process-local serial and cursor MAC. Not a package export. Exact countLines, no spare.

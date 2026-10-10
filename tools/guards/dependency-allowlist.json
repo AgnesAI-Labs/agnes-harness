@@ -312,7 +312,7 @@
     "@agnes/web-units"
   ],
   "@agnes/git-worktree-contract": ["@agnes/extension-api"],
-  "@agnes/intelligent-ui-contract": ["@agnes/extension-api", "@agnes/plugin-runtime", "@agnes/protocol"],
+  "@agnes/intelligent-ui-contract": ["@agnes/extension-api", "@agnes/protocol"],
   "@agnes/observability": [
     "@agnes/extension-api",
     "@agnes/protocol",

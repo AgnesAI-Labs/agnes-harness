@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@agnes/extension-api": "workspace:*",
-    "@agnes/plugin-runtime": "workspace:*",
     "@agnes/protocol": "workspace:*"
   }
 }

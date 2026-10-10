@@ -7,12 +7,8 @@ import {
   type ServicePorts,
   type ServiceProvider,
   type ToolDef,
+  type ToolResult,
 } from '@agnes/extension-api'
-import type {
-  DeferredInvocationReceipt,
-  DeferredToolInvocation,
-  DeferredToolInvocationQueue,
-} from '@agnes/plugin-runtime/deferred-contract'
 import type {
   Actor,
   JsonValue,
@@ -62,13 +58,53 @@ export interface IntelligentUiCatalog {
 }
 
 /**
+ * Structural stand-in for the deferred queue. This leaf does not import plugin-runtime.
+ * Method shapes stay aligned with that queue so either side remains assignable.
+ */
+export interface UiDeferredInvocation {
+  id: string
+  sessionKey: string
+  lane: string
+  source: string
+  sourceSeq: number
+  actor: Actor
+  tool: string
+  args: JsonValue
+}
+export type UiDeferredState = 'queued' | 'executing' | 'pending-approval' | 'succeeded' | 'failed'
+export interface UiDeferredReceipt {
+  invocation: UiDeferredInvocation
+  state: UiDeferredState
+  seq: number
+  resultSeq?: number
+  toolCallSeq?: number
+  approvalId?: string
+  result?: ToolResult
+  error?: { code: string; message: string; outcomeUnknown: boolean; retryable: boolean }
+}
+export interface UiDeferredQueue {
+  readonly sessionKey: string
+  readonly lane: string
+  enqueue(invocation: UiDeferredInvocation, signal: AbortSignal): Promise<UiDeferredReceipt>
+  next(signal: AbortSignal): Promise<UiDeferredReceipt | null>
+  read(id: string, signal: AbortSignal): Promise<UiDeferredReceipt | null>
+  transition(
+    id: string,
+    expectedSeq: number,
+    state: UiDeferredState,
+    outcome?: Pick<UiDeferredReceipt, 'result' | 'error'>,
+  ): Promise<UiDeferredReceipt>
+  notify(signal: AbortSignal): Promise<void>
+}
+
+/**
  * Host-assembled business dependencies. They are not generic service ports:
  * the deferred queue, pinned component declarations, and tool schemas stay here.
  */
 export interface IntelligentUiCapabilities extends IntelligentUiCatalog {
   taskId(): string
   supportsDeferredInvocations: boolean
-  queue: DeferredToolInvocationQueue
+  queue: UiDeferredQueue
   invocationId(toolUseId: string): Promise<string | undefined>
   /** Actor admitted with this bind. A missing or different actor fails closed. */
   authenticatedActor?: Actor
@@ -96,8 +132,8 @@ export interface IntelligentUiInstance extends ServiceInstance {
   read(input: UiReadParams, signal: AbortSignal): Promise<UiReadResult>
   /** Re-queries bindings for one open surface. Does not write a surface revision. */
   refresh(input: UiRefreshParams, signal: AbortSignal): Promise<UiSurfaceRecord>
-  validate(invocation: DeferredToolInvocation, signal: AbortSignal): Promise<void>
-  changed(receipt: DeferredInvocationReceipt, signal: AbortSignal): Promise<void>
+  validate(invocation: UiDeferredInvocation, signal: AbortSignal): Promise<void>
+  changed(receipt: UiDeferredReceipt, signal: AbortSignal): Promise<void>
 }
 
 /**
