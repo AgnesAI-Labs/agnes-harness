@@ -1,3 +1,4 @@
+import type { Context } from '@agnes/cordis'
 import { scanAll } from '@agnes/core'
 import type { ToolResult } from '@agnes/extension-api'
 import {
@@ -11,6 +12,18 @@ import type { Assembled } from '../assemble/assemble.js'
 import type { HostSession } from '../lifecycle/host.js'
 
 const boundQueues = new WeakMap<HostSession, DeferredInvocationsService>()
+const registries = new WeakMap<Context, DeferredInvocationsService>()
+
+/** Host-only handle. The registry is not a context service, so plugins do not inherit it. */
+export function rememberDeferredInvocations(root: Context, service: DeferredInvocationsService): void {
+  registries.set(root, service)
+}
+
+function deferredInvocationsFor(root: Context): DeferredInvocationsService {
+  const service = registries.get(root)
+  if (!service) throw new Error('Deferred invocation registry is unavailable')
+  return service
+}
 
 /** The generation service that bound this session. Unloading a producer does not drop the queue. */
 export function deferredQueueFor(session: HostSession): DeferredInvocationsService | undefined {
@@ -139,7 +152,7 @@ export function bindDeferredInvocations(a: Assembled, session: HostSession): () 
       )
     },
   }
-  const service = a.pluginTree.root.deferredInvocations
+  const service = deferredInvocationsFor(a.pluginTree.root)
   boundQueues.set(session, service)
   const release = service.bind(session.key, session.lane, ports)
   return () => {

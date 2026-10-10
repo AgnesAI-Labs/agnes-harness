@@ -296,6 +296,7 @@ import {
 import { createExtensionServiceHost, type ExtensionServiceHost } from '../services/author-port.js'
 import { installGitWorktreeService } from '../services/git-worktrees.js'
 import { installObservabilityService, startObservabilityFeed } from '../services/observability-feed.js'
+import { rememberDeferredInvocations } from '../sessions/deferred-invocations.js'
 import { createIntelligentUiBridge, type UiDataSourceCatalog } from '../sessions/intelligent-ui.js'
 import {
   applyTelemetryConsent,
@@ -1167,8 +1168,10 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             rowExtensions.installRoot(root, origins)
             rowServices.installRoot(root, origins)
             installModelAdapters(root, origins)
-            intelligentUi.attach(root, origins, new DeferredInvocationsService(root, origins))
-            installLoops(root, origins)
+            const deferred = new DeferredInvocationsService(root, origins)
+            rememberDeferredInvocations(root, deferred)
+            intelligentUi.attach(root, origins, deferred)
+            installLoops(root, origins, deferred)
             installReferenceResolvers(root)
             const promptRegistry: import('@agnes/host-common/assemble/provider-registry').ProviderRegistry<SystemPromptProvider> =
               installProviderRegistry(root, systemPromptKind, (owner, source, provider) =>

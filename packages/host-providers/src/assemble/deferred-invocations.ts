@@ -1,6 +1,7 @@
-import { type Context, Service } from '@agnes/cordis'
+import type { Context } from '@agnes/cordis'
 import type { ToolResult } from '@agnes/extension-api'
 import { providerSource } from '@agnes/host-common/assemble/provider-registry'
+import { isHostError } from '@agnes/host-common/errors'
 import type {
   DeferredActor,
   DeferredInvocationProducer,
@@ -249,11 +250,6 @@ export function ownerDeferredQueue(
   }
 }
 
-declare module '@agnes/cordis' {
-  interface Context {
-    deferredInvocations: DeferredInvocationsService
-  }
-}
 export type DeferredProducerResolver = (
   source: string,
   sessionKey: string,
@@ -261,29 +257,39 @@ export type DeferredProducerResolver = (
   signal: AbortSignal,
 ) => Promise<DeferredInvocationProducer | undefined>
 
-/** Per-generation registry. A producer disappears only with its owning plugin row. */
-export class DeferredInvocationsService extends Service {
+/**
+ * Per-generation registry. Not a context service: a provided name is inherited by every plugin
+ * in the tree, and the raw queue must stay with the host that constructed this registry.
+ * A producer disappears only with its owning plugin row.
+ */
+export class DeferredInvocationsService {
   private readonly producers = new Map<string, DeferredInvocationProducer>()
   private readonly sessions = new Map<string, DeferredDispatcherQueue>()
   private resolver?: DeferredProducerResolver
   constructor(
     private readonly ownerContext: Context,
     private readonly origins?: RowOriginLookup,
-  ) {
-    super(ownerContext, 'deferredInvocations')
-  }
+  ) {}
   /** Opens a producer when this generation has no locally registered callback for that owner. */
   setProducerResolver(resolver: DeferredProducerResolver | undefined): void {
     this.resolver = resolver
   }
   register(producer: DeferredInvocationProducer): () => void {
-    // The Host-created registry context owns its backend adapter registration.
-    // A plugin context still needs the verified row witness.
-    if (this.ctx.fiber !== this.ownerContext.fiber) providerSource(this.ctx, this.origins, producer.source)
-    if (this.producers.has(producer.source)) throw new Error('Duplicate deferred invocation producer')
-    this.producers.set(producer.source, producer)
+    const source = this.admittedSource(producer.source)
+    const admitted: DeferredInvocationProducer = { ...producer, source }
+    if (this.producers.has(source)) throw new Error('Duplicate deferred invocation producer')
+    this.producers.set(source, admitted)
     return () => {
-      if (this.producers.get(producer.source) === producer) this.producers.delete(producer.source)
+      if (this.producers.get(source) === admitted) this.producers.delete(source)
+    }
+  }
+  /** No plugin row: keep the host backend id. A verified row pins source to that package id. */
+  private admittedSource(fallback: string): string {
+    try {
+      return providerSource(this.ownerContext, this.origins, fallback, true)
+    } catch (error) {
+      if (isHostError(error, 'E_EXT_LOAD') && error.message.includes('verified plugin row')) return fallback
+      throw error
     }
   }
   bind(sessionKey: string, lane: string, ports: DeferredInvocationLedgerPort): () => void {

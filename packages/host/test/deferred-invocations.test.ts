@@ -316,28 +316,96 @@ it('settles an original rejected approval after restart even when no turn reopen
   }
 })
 
-it('permits the registry owner bridge while refusing a plugin without a verified row', async () => {
+it('keeps the raw deferred queue off a plugin context', async () => {
   const root = new Context()
   const owner = root.extend()
-  new DeferredInvocationsService(owner, { lookup: () => undefined })
+  const service = new DeferredInvocationsService(owner, { lookup: () => undefined })
   const producer = { source: 'fixture', validate: async () => {}, changed: async () => {} }
+  const { ports } = memoryLedger()
   try {
-    const off = owner.deferredInvocations.register(producer)
-    expect(() => owner.deferredInvocations.register(producer)).toThrow('Duplicate')
+    const off = service.register(producer)
+    expect(() => service.register(producer)).toThrow('Duplicate')
     off()
-    let failure: unknown
-    const plugin = owner.plugin((ctx) => {
+    const release = service.register(producer)
+    service.bind('s', 'main', ports)
+    const raw = service.forSession('s', 'main')
+    const receipt = await raw!.enqueue({ ...call, source: 'fixture' }, signal)
+    const foreign = service.ownerFacade('s', 'main', {
+      owner: 'other',
+      actor,
+      confirmSource: async () => undefined,
+    })
+    let listed = true
+    let visible: unknown = 'present'
+    let refused: unknown
+    const plugin = owner.plugin(async (ctx) => {
+      listed = 'deferredInvocations' in ctx
       try {
-        ctx.deferredInvocations.register(producer)
+        visible = (ctx as { deferredInvocations?: unknown }).deferredInvocations
+      } catch {
+        visible = undefined
+      }
+      try {
+        await foreign!.read(receipt.invocation.id, signal)
       } catch (error) {
-        failure = error
+        refused = error
       }
     })
     await plugin
-    expect(failure).toMatchObject({ code: 'E_EXT_LOAD' })
-    expect(String(failure)).toContain('verified plugin row')
-    const release = owner.deferredInvocations.register(producer)
+    expect(listed).toBe(false)
+    expect(visible).toBeUndefined()
+    expect(String(refused)).toContain('another producer')
+    expect(await raw!.read(receipt.invocation.id, signal)).toMatchObject({ state: 'queued' })
     release()
+  } finally {
+    await root.fiber.dispose()
+  }
+})
+
+it('pins a plugin registration to the verified package id', async () => {
+  const root = new Context()
+  const origin = {
+    trustTier: 'third-party' as const,
+    packageId: 'pkg.alpha',
+    snapshotId: 'snap',
+    rowId: 'row',
+    exportName: 'default',
+    declaredProvides: [] as readonly string[],
+  }
+  let service: DeferredInvocationsService | undefined
+  let mismatch: unknown
+  try {
+    const plugin = root.plugin((ctx) => {
+      const registry = new DeferredInvocationsService(ctx, {
+        lookup: (fiber) => (fiber === ctx.fiber ? origin : undefined),
+      })
+      service = registry
+      try {
+        registry.register({
+          source: 'forged',
+          validate: async () => undefined,
+          changed: async () => undefined,
+        })
+      } catch (error) {
+        mismatch = error
+      }
+      registry.register({
+        source: 'pkg.alpha',
+        validate: async () => undefined,
+        changed: async () => undefined,
+      })
+    })
+    await plugin
+    expect(mismatch).toMatchObject({ code: 'E_EXT_LOAD' })
+    expect(String(mismatch)).toContain('does not match')
+    const { ports } = memoryLedger()
+    service!.bind('s', 'main', ports)
+    const queue = service!.forSession('s', 'main')
+    await expect(queue!.enqueue({ ...call, source: 'forged' }, signal)).rejects.toThrow(
+      'producer is unavailable',
+    )
+    await queue!.enqueue({ ...call, id: 'pinned', source: 'pkg.alpha' }, signal)
+    expect((await queue!.read('pinned', signal))?.invocation.source).toBe('pkg.alpha')
   } finally {
     await root.fiber.dispose()
   }

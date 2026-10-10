@@ -8,7 +8,6 @@ import {
   ProviderError,
 } from '@agnes/extension-api'
 import { withDeferredToolInvocations } from '@agnes/plugin-runtime'
-import './deferred-invocations.js'
 import { ProviderLifetime } from '@agnes/host-common/assemble/provider-lifetime'
 import {
   installProviderRegistry,
@@ -16,6 +15,7 @@ import {
   providerSource,
 } from '@agnes/host-common/assemble/provider-registry'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
+import type { DeferredInvocationsService } from './deferred-invocations.js'
 
 declare module '@agnes/cordis' {
   interface Context {
@@ -29,6 +29,7 @@ export class LoopsService extends Service implements LoopRegistryPort {
   constructor(
     ctx: Context,
     private readonly origins?: RowOriginLookup,
+    private readonly deferred?: DeferredInvocationsService,
   ) {
     super(ctx, 'loops')
     this.registry = installProviderRegistry(
@@ -117,9 +118,8 @@ export class LoopsService extends Service implements LoopRegistryPort {
   }
   resolve(selection: LoopSelection) {
     const factory = this.registry.resolve({ provider: selection.id, version: selection.version })
-    return withDeferredToolInvocations(factory, (key, lane) =>
-      this.ctx.deferredInvocations?.forSession(key, lane),
-    )
+    const deferred = this.deferred
+    return withDeferredToolInvocations(factory, (key, lane) => deferred?.forSession(key, lane))
   }
 
   catalog() {
@@ -133,6 +133,10 @@ export class LoopsService extends Service implements LoopRegistryPort {
   }
 }
 
-export function installLoops(root: Context, origins?: RowOriginLookup): LoopRegistryPort {
-  return new LoopsService(root, origins)
+export function installLoops(
+  root: Context,
+  origins?: RowOriginLookup,
+  deferred?: DeferredInvocationsService,
+): LoopRegistryPort {
+  return new LoopsService(root, origins, deferred)
 }
