@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 /** Finer than the wire error code. Overload stays TRANSPORT on the wire. */
@@ -59,20 +58,34 @@ export function nextRetryDelay(retryNumber: number, options: RetryDelayOptions =
   return Math.max(0, Math.round(base + delta))
 }
 
-export type RetryAttemptRecord = { count: number; updatedAt: number }
+export type RetryAttemptRecord = { count: number; updatedAt: number; resumeAt?: number }
 
 export interface RetryAttemptLedger {
   read(key: string): RetryAttemptRecord | undefined
-  commit(key: string, count: number): void
+  /** `resumeAt` is when a committed sleep ends. The count stays fresh through that wait. */
+  commit(key: string, count: number, resumeAt?: number): void
   clear(key: string): void
+}
+
+/** A count is fresh until its planned resume, then for the usual stale window. */
+export function retryAttemptFresh(record: RetryAttemptRecord, now: number): boolean {
+  const until =
+    record.resumeAt !== undefined
+      ? record.resumeAt + RETRY_ATTEMPT_STALE_MS
+      : record.updatedAt + RETRY_ATTEMPT_STALE_MS
+  return now < until
 }
 
 export function memoryRetryLedger(now: () => number = Date.now): RetryAttemptLedger {
   const records = new Map<string, RetryAttemptRecord>()
   return {
     read: (key) => records.get(key),
-    commit(key, count) {
-      records.set(key, { count, updatedAt: now() })
+    commit(key, count, resumeAt) {
+      records.set(key, {
+        count,
+        updatedAt: now(),
+        ...(resumeAt !== undefined ? { resumeAt } : {}),
+      })
     },
     clear(key) {
       records.delete(key)
@@ -81,24 +94,39 @@ export function memoryRetryLedger(now: () => number = Date.now): RetryAttemptLed
 }
 
 /** Writes the next count before the caller sleeps. A crash during that sleep keeps the count. */
-export function fileRetryLedger(dir = join(tmpdir(), 'agnes-model-retry')): RetryAttemptLedger {
+export function fileRetryLedger(dir: string): RetryAttemptLedger {
   const pathFor = (key: string) => join(dir, `${createHash('sha256').update(key).digest('hex')}.json`)
+  const ensure = () => {
+    mkdirSync(dir, { recursive: true, mode: 0o700 })
+    chmodSync(dir, 0o700)
+  }
   return {
     read(key) {
       try {
         const parsed = JSON.parse(readFileSync(pathFor(key), 'utf8')) as Partial<RetryAttemptRecord>
         if (typeof parsed.count === 'number' && typeof parsed.updatedAt === 'number')
-          return { count: parsed.count, updatedAt: parsed.updatedAt }
+          return {
+            count: parsed.count,
+            updatedAt: parsed.updatedAt,
+            ...(typeof parsed.resumeAt === 'number' ? { resumeAt: parsed.resumeAt } : {}),
+          }
       } catch {
         return undefined
       }
       return undefined
     },
-    commit(key, count) {
-      mkdirSync(dir, { recursive: true })
+    commit(key, count, resumeAt) {
+      ensure()
       const path = pathFor(key)
       const temporary = `${path}.${process.pid}.tmp`
-      writeFileSync(temporary, JSON.stringify({ count, updatedAt: Date.now() }))
+      writeFileSync(
+        temporary,
+        JSON.stringify({
+          count,
+          updatedAt: Date.now(),
+          ...(resumeAt !== undefined ? { resumeAt } : {}),
+        }),
+      )
       renameSync(temporary, path)
     },
     clear(key) {

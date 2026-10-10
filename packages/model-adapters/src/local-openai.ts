@@ -147,7 +147,12 @@ export const localOpenAIAdapter = defineModelAdapter({
         recordFile = file
       }
     }
-    const pi = new PiAdapter({ id: 'local-openai', manualRoutes: routes })
+    const retryDirectory = (config as { retryDirectory?: unknown }).retryDirectory
+    const pi = new PiAdapter({
+      id: 'local-openai',
+      manualRoutes: routes,
+      ...(typeof retryDirectory === 'string' ? { retryDirectory } : {}),
+    })
     const instance: ModelAdapterInstance = {
       id: pi.id,
       routes: () =>

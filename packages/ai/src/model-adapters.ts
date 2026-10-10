@@ -9,6 +9,7 @@ const registrations = [...PI_ADAPTER_APIS, 'openai'].map((api) => ({
   capabilities: { imageInput: true, tools: true, streaming: true },
   create: (config: ModelAdapterConfig, signal?: AbortSignal) => {
     signal?.throwIfAborted()
+    const retryDirectory = (config as { retryDirectory?: unknown }).retryDirectory
     return new PiAdapter({
       manualRoutes: [...config.routes],
       ...(config.id ? { id: config.id } : {}),
@@ -17,6 +18,7 @@ const registrations = [...PI_ADAPTER_APIS, 'openai'].map((api) => ({
       ...(config.credentials?.recoverRejected
         ? { recoverRejectedAuth: config.credentials.recoverRejected }
         : {}),
+      ...(typeof retryDirectory === 'string' ? { retryDirectory } : {}),
     })
   },
 }))

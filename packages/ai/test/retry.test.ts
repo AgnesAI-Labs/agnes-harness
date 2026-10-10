@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -8,6 +8,7 @@ import {
   memoryRetryLedger,
   nextRetryDelay,
   RETRY_ATTEMPT_STALE_MS,
+  retryAttemptFresh,
 } from '../src/retry.js'
 
 describe('classifyModelFailure', () => {
@@ -73,5 +74,20 @@ describe('retry attempt ledger', () => {
     expect(ledger.read('session\0route\0model')?.count).toBe(3)
     ledger.clear('session\0route\0model')
     expect(ledger.read('session\0route\0model')).toBeUndefined()
+  })
+
+  it('keeps a committed sleep fresh and stores the ledger under the injected root', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agh-home-'))
+    dirs.push(root)
+    const dir = join(root, 'model-retry')
+    const ledger = fileRetryLedger(dir)
+    ledger.commit('session\0route\0model', 2, 200_000)
+    const record = ledger.read('session\0route\0model')
+    expect(record).toMatchObject({ count: 2, resumeAt: 200_000 })
+    expect(dir.startsWith(root)).toBe(true)
+    if (process.platform !== 'win32') expect(statSync(dir).mode & 0o777).toBe(0o700)
+    expect(retryAttemptFresh({ count: 2, updatedAt: 0, resumeAt: 200_000 }, 150_000)).toBe(true)
+    expect(retryAttemptFresh({ count: 2, updatedAt: 0 }, RETRY_ATTEMPT_STALE_MS)).toBe(false)
+    expect(record && retryAttemptFresh(record, 200_000 + RETRY_ATTEMPT_STALE_MS - 1)).toBe(true)
   })
 })

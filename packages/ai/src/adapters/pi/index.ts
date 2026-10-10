@@ -16,8 +16,9 @@ import { AiSetupError } from '../../errors.js'
 import { sha256Hex } from '../../hash.js'
 import {
   fileRetryLedger,
+  memoryRetryLedger,
   nextRetryDelay,
-  RETRY_ATTEMPT_STALE_MS,
+  retryAttemptFresh,
   type RetryAttemptLedger,
 } from '../../retry.js'
 import { providerPayloadImageError } from './input-limits.js'
@@ -245,6 +246,8 @@ export class PiAdapter extends WireAdapter {
     maxRetries?: number
     sleep?: (ms: number, signal: AbortSignal) => Promise<void>
     ledger?: RetryAttemptLedger
+    /** Durable attempt counts. The caller supplies this under its home; this package does not read the environment. */
+    retryDirectory?: string
   }) {
     super()
     this.id = cfg.id ?? 'pi'
@@ -255,7 +258,9 @@ export class PiAdapter extends WireAdapter {
     for (const r of cfg.manualRoutes) requireAbsoluteHttpUrl(r)
     this.manual = new Map(cfg.manualRoutes.map((r) => [r.route, r]))
     this.maxRetries = cfg.maxRetries ?? DEFAULT_MAX_RETRIES
-    this.ledger = cfg.ledger ?? fileRetryLedger()
+    this.ledger =
+      cfg.ledger ??
+      (cfg.retryDirectory !== undefined ? fileRetryLedger(cfg.retryDirectory) : memoryRetryLedger())
     this.sleep =
       cfg.sleep ??
       ((ms, signal) =>
@@ -480,10 +485,9 @@ export class PiAdapter extends WireAdapter {
     const onAbort = () => inner.abort()
     if (opts.signal.aborted) inner.abort()
     else opts.signal.addEventListener('abort', onAbort, { once: true })
-    const total = setTimeout(
-      () => inner.abort(),
-      Math.min(opts.timeoutMs.total, networkTimeouts?.requestMs ?? 300_000),
-    )
+    const totalMs = Math.min(opts.timeoutMs.total, networkTimeouts?.requestMs ?? 300_000)
+    const deadline = Date.now() + totalMs
+    const total = setTimeout(() => inner.abort(), totalMs)
     let first: ReturnType<typeof setTimeout> | undefined = setTimeout(
       () => inner.abort(),
       opts.timeoutMs.firstToken,
@@ -503,8 +507,8 @@ export class PiAdapter extends WireAdapter {
     const stopped = abortPromise(inner.signal)
     const ledgerKey = `${opts.sessionKey}\0${route}\0${req.model}`
     const pending = this.ledger.read(ledgerKey)
-    const pendingFresh = pending !== undefined && Date.now() - pending.updatedAt < RETRY_ATTEMPT_STALE_MS
-    if (pending && !pendingFresh) this.ledger.clear(ledgerKey)
+    const pendingFresh = pending !== undefined && retryAttemptFresh(pending, Date.now())
+    if (pending && !pendingFresh) this.forgetAttempt(ledgerKey)
     try {
       let attempt = pending !== undefined && pendingFresh ? pending.count : 0
       let authRecoveryAttempted = false
@@ -537,6 +541,7 @@ export class PiAdapter extends WireAdapter {
         }
         if (opts.reportAttempt) await reportAttempt()
         let retryAfter: number | undefined
+        let retryError: Extract<WireEvent, { type: 'error' }> | undefined
         let requestAuth: ModelAuth | undefined
         if (this.resolveCredential) {
           try {
@@ -681,6 +686,7 @@ export class PiAdapter extends WireAdapter {
                 !inner.signal.aborted
               ) {
                 retryAfter = w.retryAfterMs ?? nextRetryDelay(attempt + 1)
+                retryError = w
                 break
               }
               emitted = true
@@ -739,8 +745,25 @@ export class PiAdapter extends WireAdapter {
           return
         }
         const classifiedRetry = retryAfter > 0
+        // A server wait that outlasts the total deadline would either sleep past the caller's
+        // budget or, if capped, retry before the server allows it. Stop and keep the wait.
+        if (retryError?.retryAfterMs !== undefined && retryAfter > deadline - Date.now()) {
+          yield retryError
+          return
+        }
         attempt++
-        if (classifiedRetry) this.ledger.commit(ledgerKey, attempt)
+        if (classifiedRetry && retryError) {
+          try {
+            this.ledger.commit(ledgerKey, attempt, Date.now() + retryAfter)
+          } catch (error) {
+            const diagnostic = error instanceof Error ? error.message : 'commit failed'
+            yield {
+              ...retryError,
+              message: `${retryError.message} (retry ledger commit failed: ${diagnostic})`,
+            }
+            return
+          }
+        }
         await this.sleep(retryAfter, inner.signal)
         if (!inner.signal.aborted) {
           // The event that caused a retry is suppressed, so it is not a first response from the
@@ -757,7 +780,19 @@ export class PiAdapter extends WireAdapter {
       clearTimeout(total)
       if (first) clearTimeout(first)
       opts.signal.removeEventListener('abort', onAbort)
-      this.ledger.clear(ledgerKey)
+      this.forgetAttempt(ledgerKey)
+    }
+  }
+
+  /** A clear failure must not replace a result the caller already has. */
+  private forgetAttempt(key: string): void {
+    try {
+      this.ledger.clear(key)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'clear failed'
+      process.emitWarning(`model retry ledger clear failed: ${reason}`, {
+        code: 'AGH_RETRY_LEDGER_CLEAR',
+      })
     }
   }
 }

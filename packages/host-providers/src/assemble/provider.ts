@@ -1,4 +1,4 @@
-import { basename, dirname } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import type { ContractStore, ManualRoute, Registry } from '@agnes/ai'
 import {
   API_KEY_CREDENTIAL_REFS,
@@ -246,6 +246,12 @@ export async function buildProvider(
       group.push(route)
       manualByAdapter.set(route.api, group)
     }
+    const retryDirectory =
+      basename(profile.dataDir) === 'data'
+        ? join(dirname(profile.dataDir), 'model-retry')
+        : join(profile.dataDir, 'model-retry')
+    const withRetryDirectory = (config: ModelAdapterConfig): ModelAdapterConfig =>
+      Object.assign({}, config, { retryDirectory })
     for (const [id, selectedRoutes] of manualByAdapter) {
       const entry = catalog.find((candidate) => candidate.id === id)
       if (
@@ -255,12 +261,12 @@ export async function buildProvider(
         throw new HostError('E_DEP_MISSING', `route selects an unavailable model adapter: ${id}`, {
           detail: { reason: 'adapter-unselected', id },
         })
-      instances.push(await modelAdapters.create(id, { routes: selectedRoutes }))
+      instances.push(await modelAdapters.create(id, withRetryDirectory({ routes: selectedRoutes })))
     }
     for (const config of [...apiKeyConfigs, ...oauthConfigs]) {
       const id = config.routes[0]?.api
       if (!id) throw new HostError('E_API_RANGE', 'builtin adapter declares no API')
-      instances.push(await modelAdapters.create(id, config))
+      instances.push(await modelAdapters.create(id, withRetryDirectory(config)))
     }
     const provider = createProvider({
       ...(deps.trace ? { trace: deps.trace } : {}),

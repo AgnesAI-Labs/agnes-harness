@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, statSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type {
   Api,
   AssistantMessage,
@@ -7,7 +10,7 @@ import type {
   ProviderStreamOptions,
   UserMessage,
 } from '@earendil-works/pi-ai'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { redact } from '../src/adapters/pi/errors.js'
 import { toContext } from '../src/adapters/pi/to-context.js'
 import type { WireEvent } from '../src/index.js'
@@ -609,6 +612,125 @@ describe('PiAdapter', () => {
     }
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({ type: 'error', code: 'TRANSPORT', retryable: true })
+  })
+
+  it('stops when the attempt ledger cannot commit and keeps the model error', async () => {
+    const { impl, seen } = fakeStream([
+      [err('503 upstream')],
+      [{ type: 'done', reason: 'stop', message: assistant() }],
+    ])
+    const a = bound({
+      manualRoutes: [route],
+      streamImpl: impl,
+      maxRetries: 2,
+      sleep: async () => {},
+      ledger: {
+        read: () => undefined,
+        commit() {
+          throw new Error('disk full')
+        },
+        clear() {},
+      },
+    })
+    const events = await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
+    expect(seen).toHaveLength(1)
+    expect(events).toMatchObject([
+      {
+        type: 'error',
+        code: 'TRANSPORT',
+        message: 'status=503 (retry ledger commit failed: disk full)',
+      },
+    ])
+  })
+
+  it('keeps a successful result when clearing the retry ledger fails', async () => {
+    const { impl } = fakeStream([[{ type: 'done', reason: 'stop', message: assistant() }]])
+    const warnings: unknown[] = []
+    const spy = vi.spyOn(process, 'emitWarning').mockImplementation((warning, options) => {
+      warnings.push(typeof options === 'object' ? options : warning)
+    })
+    try {
+      const a = bound({
+        manualRoutes: [route],
+        streamImpl: impl,
+        ledger: {
+          read: () => undefined,
+          commit() {},
+          clear() {
+            throw new Error('clear failed')
+          },
+        },
+      })
+      const events = await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
+      expect(events.map((event) => event.type)).toEqual(['usage', 'done'])
+      expect(warnings).toContainEqual(expect.objectContaining({ code: 'AGH_RETRY_LEDGER_CLEAR' }))
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it('stops when retry-after exceeds the remaining deadline and still waits when it fits', async () => {
+    const over = fakeStream([
+      [err('429 Too Many Requests, retry-after: 30')],
+      [{ type: 'done', reason: 'stop', message: assistant() }],
+    ])
+    const stopped = bound({
+      manualRoutes: [route],
+      streamImpl: over.impl,
+      maxRetries: 2,
+      sleep: async () => {},
+    })
+    const refused = await collect(
+      stopped.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), {
+        ...opts(),
+        timeoutMs: { firstToken: 1000, total: 1000 },
+      }),
+    )
+    expect(over.seen).toHaveLength(1)
+    expect(refused).toMatchObject([{ type: 'error', code: 'RATE_LIMIT', retryAfterMs: 30_000 }])
+
+    const waits: number[] = []
+    const within = fakeStream([
+      [err('429 Too Many Requests, retry-after: 1')],
+      [{ type: 'done', reason: 'stop', message: assistant() }],
+    ])
+    const continued = bound({
+      manualRoutes: [route],
+      streamImpl: within.impl,
+      maxRetries: 2,
+      sleep: async (ms) => {
+        waits.push(ms)
+      },
+    })
+    const events = await collect(continued.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
+    expect(within.seen).toHaveLength(2)
+    expect(waits).toEqual([1000])
+    expect(events.map((event) => event.type)).toEqual(['usage', 'done'])
+  })
+
+  it('writes retry state under the injected directory', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agh-home-'))
+    const dir = join(root, 'model-retry')
+    try {
+      const { impl } = fakeStream([
+        [err('503 upstream')],
+        [{ type: 'done', reason: 'stop', message: assistant() }],
+      ])
+      const a = bound({
+        manualRoutes: [route],
+        streamImpl: impl,
+        maxRetries: 1,
+        sleep: async () => {},
+        retryDirectory: dir,
+      })
+      const events = await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
+      expect(events.map((event) => event.type)).toEqual(['usage', 'done'])
+      const stat = statSync(dir)
+      expect(stat.isDirectory()).toBe(true)
+      if (process.platform !== 'win32') expect(stat.mode & 0o777).toBe(0o700)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it.each(['429 Too Many Requests', '503 upstream'])(
