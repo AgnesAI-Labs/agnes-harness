@@ -110,7 +110,7 @@ node agnes.mjs mcp tools docs-tools
 
 每次写操作前都以 `get` 的最新 revision 为准，不假定上一步不会修改它。revision 冲突意味着并行或在途变更，应重新读取，不能反复盲重试。
 
-stdio 使用 `--stdio EXECUTABLE` 与重复的 `--arg VALUE`；不要把完整 shell 命令当 executable，也不能通过 `--arg -c` 绕到 shell。可用 executable 还由部署策略决定。HTTP/SSE 的地址、重定向和 loopback 可达性也受 Host 策略约束。GET SSE 在长时间没有事件时保持连接：部署侧的空闲计时和请求截止时间作用于普通响应和 POST 流，不作用于 GET `text/event-stream`。
+stdio 使用 `--stdio EXECUTABLE` 与重复的 `--arg VALUE`；不要把完整 shell 命令当 executable，也不能通过 `--arg -c` 绕到 shell。可用 executable 还由部署策略决定。HTTP/SSE 的地址、重定向和 loopback 可达性也受 Host 策略约束。GET SSE 在长时间没有事件时保持连接。部署侧的空闲计时和请求截止时间作用于普通响应和 POST 流，不作用于 GET `text/event-stream`；部署客户端同时关闭 undici 的五分钟响应体超时。
 
 凭据使用已有 secret 引用：`--secret-env NAME=secret://namespace/name`（stdio）、`--bearer-ref secret://namespace/name` 或 `--header-ref x-api-key=secret://namespace/name`（HTTP/SSE）。不把真实密钥放在命令行、截图或文档中。`--allow-tool TOOL_NAME` 可以重复指定允许的工具。
 

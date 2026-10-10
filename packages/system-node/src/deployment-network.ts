@@ -55,13 +55,17 @@ export function createDeploymentFetch(
   for (const value of [requestMs, idleMs, timeouts.connectMs ?? 10_000])
     if (!Number.isSafeInteger(value) || value < 1 || value > 3_600_000)
       throw new TypeError('Network timeouts must be integers from 1 to 3600000 milliseconds')
+  const headersTimeout = timeouts.connectMs ?? 10_000
   const dispatcher = new EnvHttpProxyAgent({
     ...proxyOptions(env),
-    connect: { timeout: timeouts.connectMs ?? 10_000 },
-    proxyTls: { timeout: timeouts.connectMs ?? 10_000 },
-    requestTls: { timeout: timeouts.connectMs ?? 10_000 },
-    clientFactory: (origin, options) =>
-      new Client(origin, { ...options, headersTimeout: timeouts.connectMs ?? 10_000 }),
+    connect: { timeout: headersTimeout },
+    proxyTls: { timeout: headersTimeout },
+    requestTls: { timeout: headersTimeout },
+    // Undici's default body gap is 300s. Direct and tunneled origin clients inherit
+    // this option. The proxy hop is built by clientFactory and does not, so both
+    // set it. Non-SSE bodies still stop at the idle timer in fetch below.
+    bodyTimeout: 0,
+    clientFactory: (origin, options) => new Client(origin, { ...options, headersTimeout, bodyTimeout: 0 }),
   })
   const request: typeof globalThis.fetch = async (input, init) => {
     const controller = new AbortController()

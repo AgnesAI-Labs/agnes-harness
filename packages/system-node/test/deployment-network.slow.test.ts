@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module'
 import { createServer, type Server } from 'node:http'
 import { connect } from 'node:net'
 import { afterEach, expect, it } from 'vitest'
@@ -88,6 +89,79 @@ it.each(['request', 'idle', 'abort', 'cancel'] as const)(
     else await expect(work).rejects.toThrow()
   },
 )
+
+const require = createRequire(new URL('../package.json', import.meta.url))
+const { kBodyTimeout, kDispatch } = require('undici/lib/core/symbols.js') as {
+  kBodyTimeout: symbol
+  kDispatch: symbol
+}
+type Dispatch = (this: object, options: unknown, handler: unknown) => boolean
+const UndiciClient = require('undici/lib/dispatcher/client.js') as {
+  prototype: Record<symbol, Dispatch>
+}
+
+it('builds direct and proxy deployment clients with undici bodyTimeout 0', async () => {
+  const seen: number[] = []
+  const prototype = UndiciClient.prototype
+  const original = prototype[kDispatch]
+  if (!original) throw new Error('undici Client dispatch is missing')
+  prototype[kDispatch] = function (this: object, options, handler) {
+    const timeout = (this as Record<symbol, number>)[kBodyTimeout]
+    if (timeout === undefined) throw new Error('undici body timeout is missing')
+    seen.push(timeout)
+    return original.call(this, options, handler)
+  }
+  try {
+    const directEndpoint = await listen(createServer((_request, response) => response.end('direct')))
+    const direct = createDeploymentFetch({ connectMs: 5_000 }, {})
+    clients.push(direct)
+    expect(await (await direct.fetch(directEndpoint)).text()).toBe('direct')
+    expect(seen.length).toBeGreaterThan(0)
+    expect(new Set(seen)).toEqual(new Set([0]))
+
+    seen.length = 0
+    const target = await listen(createServer((_request, response) => response.end('proxied')))
+    const proxy = createServer()
+    proxy.on('connect', (request, downstream, head) => {
+      const url = new URL(`http://${request.url}`)
+      const upstream = connect(Number(url.port), url.hostname, () => {
+        downstream.write('HTTP/1.1 200 Connection Established\r\n\r\n')
+        upstream.write(head)
+        upstream.pipe(downstream)
+        downstream.pipe(upstream)
+      })
+      sockets.add(upstream)
+      sockets.add(downstream)
+      upstream.on('error', () => downstream.destroy())
+    })
+    const proxyUrl = await listen(proxy)
+    const proxied = createDeploymentFetch(
+      { connectMs: 5_000 },
+      { HTTP_PROXY: proxyUrl, HTTPS_PROXY: proxyUrl, NO_PROXY: '' },
+    )
+    clients.push(proxied)
+    expect(await (await proxied.fetch(target)).text()).toBe('proxied')
+    expect(seen.length).toBeGreaterThan(1)
+    expect(new Set(seen)).toEqual(new Set([0]))
+  } finally {
+    prototype[kDispatch] = original
+  }
+})
+
+it('still stops a quiet non-SSE body at the app idle timer', async () => {
+  const endpoint = await listen(
+    createServer((_request, response) => {
+      response.writeHead(200, { 'Content-Type': 'text/plain' })
+      response.write('first')
+    }),
+  )
+  const client = createDeploymentFetch({ streamIdleMs: 30, requestMs: 5_000 }, {})
+  clients.push(client)
+  await expect(client.fetch(endpoint).then((response) => response.text())).rejects.toMatchObject({
+    name: 'TimeoutError',
+    message: 'Stream idle timeout',
+  })
+})
 
 it('enforces the connection deadline during proxied TLS negotiation', async () => {
   const proxy = createServer()
