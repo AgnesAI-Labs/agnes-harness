@@ -129,6 +129,8 @@ Node SDK 提供 `client.packages.migrateSession({ profile, clientId, commandId, 
 
 Intelligent UI 是 generation 作用域、每个会话一个提供者。Host 与官方插件共用 `@agnes/intelligent-ui-contract` 里的 kind 令牌。工具用 `providers.bindOwn` 取得实例。用户动作和读取走会话端口：端口接纳已认证 actor，并从持久的动作事实解析 SC1 投递。结果键保持精确（`ui-result:`）。
 
+UI 数据源是同一合同包里的另一个 kind：`ui-data-source`。基数为 multi，实例作用域为 request，作用域为 generation。会话按 provider id 绑定一个数据源。该 kind 不是 `KindMap` 条目，端口为空。规则见 [UI 数据源](intelligent-ui.zh-CN.md#ui-数据源)。
+
 文件系统加载的每个普通 `agnes.plugins` 条目必须声明 `apiRange`（如 `"^1.4.0"`），Host 在执行模块代码前核验，不再依赖可选的 `hostProvidedExternals`。`ModelAdapter.wireApi` 表示线路格式，旧 `api` 为弃用兼容别名，二者冲突会被拒绝；目录同时提供两个字段。
 
 `ProviderError` 独立于闭合的 extension 调用错误集，稳定 code 为 `E_PROVIDER_DUPLICATE`、`E_PROVIDER_UNKNOWN`、`E_PROVIDER_INVALID`、`E_PROVIDER_INCOMPATIBLE`、`E_PROVIDER_UNAVAILABLE`，携带 kind/provider/operation/retryable/hint/cause。unregister 返回幂等、可等待的 Promise。model、compaction、tool-runtime、policy 的 owner 禁止新准入，取消并等待创建与调用完成，再 dispose 实例、cleanup 注册资源；清理失败聚合返回，不吞错。

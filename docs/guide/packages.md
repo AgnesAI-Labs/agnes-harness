@@ -52,13 +52,14 @@ Declare requested access in `package.json`. The same declaration appears for ins
       "credentials": ["example-account"],
       "model": true,
       "childAgents": true,
-      "ui": true
+      "ui": true,
+      "uiData": ["finance.differences.read"]
     }
   }
 }
 ```
 
-List names/scopes, never secret values. String lists support `*` globs. Filesystem scopes can be absolute, relative, or `workspace/` paths rooted at the tool cwd. Booleans request model access, child agents or UI. An empty object requests no capabilities; an omitted declaration is shown as undeclared for compatibility. Changes to a declaration change the trust hash and require review.
+List names/scopes, never secret values. String lists support `*` globs. `uiData` is the exception: each entry is an exact capability name such as `finance.differences.read` (`^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$`), at most 32 names. Trust shows the atom `uiData:<name>`, and the capability hash covers the list. A glob does not match that pattern. Filesystem scopes can be absolute, relative, or `workspace/` paths rooted at the tool cwd. Booleans request model access, child agents or UI. An empty object requests no capabilities; an omitted declaration is shown as undeclared for compatibility. Changes to a declaration change the trust hash and require review.
 
 Administrators can create `plugin-capabilities.json` beside the profile's `agnes-lock.json`:
 

@@ -141,7 +141,7 @@ Composition 发布是**独立收敛**，不是全局原子事务。Runtime-targe
 | `id`、`runtime`、`default`、`config` | 可选 row id（默认 `ext:<package-id>/<export>`，`web:` 保留）；runtime 默认 `in-process`；default-enabled 声明默认 true；detached JSON config；声明不能绕过包 enablement |
 | `provide`、`inject`、`services` | 可选、有界且唯一的 service 名称列表；提供/注入元数据须与 export 一致；Surface service 名在 dispatch 时再次检查 |
 | `agnes.kinds` | 可选唯一值 `tool`、`loop`、`model-adapter`、`mcp`、`skills`、`ui`、`bundle`；包类别不是八种 provider kind 名称 |
-| `agnes.capabilities` | 可选 network/exec/secrets/credentials scope 数组、filesystem read/write 数组、model/childAgents/ui/device 布尔值；能力 atoms 经审阅及 allow/deny ceilings，deny 优先；省略是未声明，不证明无效果 |
+| `agnes.capabilities` | 可选 network/exec/secrets/credentials scope 数组、filesystem read/write 数组、model/childAgents/ui/device 布尔值，以及 `uiData` 精确能力名列表（无通配；每一项成为 atom `uiData:<permission>` 并计入能力哈希）；能力 atoms 经审阅及 allow/deny ceilings，deny 优先；省略是未声明，不证明无效果 |
 | `agnes.hostProvidedExternals` | 受控 external 依赖兼容声明，不能替代 row `apiRange` |
 | `agnes.bundles` | 静态命名文档 `extends/profile/presets`，要求 kind `bundle`；引用不安装 companion packages |
 | `agnes.contributions`、`surfaces`、`clientDescriptors` | 声明资产/API surfaces/浏览器贡献；loader 校验路径/schema/containment/允许服务；不可变 public client config 不得含凭据 |

@@ -83,4 +83,4 @@ Every page under `docs/` has English and Simplified Chinese editions. Use the la
 
 Frontend maintainers: [UI consistency](develop/ui-consistency.md), [UI registry APIs](develop/ui-extension-registries.md), [UI coverage](develop/ui-coverage.md), [terminology](develop/ui-glossary.md).
 
-Developer contract (proposed): [Intelligent UI contract](develop/intelligent-ui.md).
+Developer contract (proposed): [Intelligent UI contract](develop/intelligent-ui.md), including [UI data sources](develop/ui-data-source.md).

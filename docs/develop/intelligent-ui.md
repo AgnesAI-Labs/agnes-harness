@@ -2,7 +2,7 @@
 
 English | [简体中文](intelligent-ui.zh-CN.md)
 
-[Architecture](architecture.md) · [Plugins](plugins.md) · [Frontend](frontend.md) · [Sessions and recovery](../guide/sessions.md) · [Web renderer](intelligent-ui-web.md)
+[Architecture](architecture.md) · [Plugins](plugins.md) · [Frontend](frontend.md) · [Sessions and recovery](../guide/sessions.md) · [Web renderer](intelligent-ui-web.md) · [UI data sources](ui-data-source.md)
 
 This document defines the preset and reviewed custom-component surface contract. The official backend plugin, authenticated App Server methods and generic deferred execution bridge implement it; client rendering and the finance pilot are described below. Availability still requires the repository-wide validation pass.
 
@@ -34,7 +34,7 @@ The declaration source is [intelligent-ui.json](../../packages/protocol/schema/i
 | `progress` | `dataKey` | `{label, value, total}`. `value` and `total` are finite numbers, `total` is greater than 0, and `value` is from 0 through `total`. A percentage is computed only for display. |
 | `image` | `dataKey`, `alt` | `{source}` is an artifact `{kind:"artifact", sha256, size, mime}`, an `agnes-upload://` attachment, or a png/jpeg data URL. Remote URLs are refused. Alt text is required. |
 
-All components may have `title`. Columns have `key`, `label` and optional `format` (`text`, `number`, `currency`, `date`, `status`); formats only affect display, never change values or infer currency units. Chart series have `key` and `label`. Bound data must exist and match the component shape. Invalid rows, missing fields, duplicate row ids and undeclared component kinds reject the whole render/update; they are not silently omitted.
+All components may have `title`. Columns have `key`, `label` and optional `format` (`text`, `number`, `currency`, `date`, `status`); formats only affect display, never change values or infer currency units. Chart series have `key` and `label`. Literal data must exist and match the component shape. Invalid literal rows, missing fields, duplicate row ids and undeclared component kinds reject the whole render/update. A `$source` binding is resolved by [UI data sources](#ui-data-sources): a malformed source result degrades that component and leaves the rest of the surface up.
 
 Forms reuse the [existing schema renderer](../../packages/web-ui/src/plugin-schema-fields.tsx) and [model](../../packages/web-ui/src/plugin-schema-model.ts): `UiJsonSchema` is a boolean or JSON Schema object; local `$ref`, object/array/variant/enum/scalar controls and lossless JSON fallback keep their existing semantics. A string property with `format: "date"` or `"date-time"` is a date input. `date` is a real `YYYY-MM-DD`. `date-time` is that calendar date plus a time and `Z` or a numeric offset; leap seconds are only `23:59:60`. Empty or missing values remain incomplete drafts. The Web control shows `date-time` on the UTC clock and writes `YYYY-MM-DDTHH:mm:00Z`. The visual recursion threshold remains 6, independent of the backend payload limit. Unsupported assertions use the JSON fallback rather than a misleading partial form. Backend validation compiles the full schema and checks submitted values without coercion or dropping unknown properties. No network `$ref` resolution. Secret input is not a way to acquire authority: surfaces cannot carry raw credentials; any business credential field must use an existing credential-reference contract.
 
@@ -59,6 +59,8 @@ The schema declares structural bounds and exports `X_AGNES_UI_LIMITS`; backend a
 | Id/data key / title/label / confirmation | 64 / 256 / 1,024 characters; tool name 128 |
 | Columns / chart series | 32 / 8 |
 | Table rows / chart points | 1,000 / 1,000 per component |
+| Source bindings | 8 per surface |
+| One source result / one query | 65,536 bytes / 2,000 ms |
 | Detail fields | 32 |
 | Tabs / components in one tab | 8 / 16; nesting depth 1; each component placed at most once |
 | Steps | 32 |
@@ -96,7 +98,7 @@ The following is a complete surface value. Amounts remain exact integer USD cent
 }
 ```
 
-A row action implies selection of that row only. The backend resolves row ids against the displayed table. A business tool that consumes selected rows must declare their actual shape or explicitly project proposals; display-only fields are never stripped to bypass tool validation. The example binds the form's proposal array to the existing tool.
+A row action implies selection of that row only. The backend resolves row ids against the displayed table. A business tool that consumes selected rows must declare their actual shape or explicitly project proposals; display-only fields are never stripped to bypass tool validation. The example binds the form's proposal array to the existing tool. The JSON above is literal data and shows the row shape a resolved `rows` source returns. The finance pilot stores a binding at `differences`; see [UI data sources](#ui-data-sources).
 
 ### Preset catalog example
 
@@ -136,8 +138,9 @@ Detail cards, steps, progress, images and tabs are data only. The percentage bel
 | `ui_close(UiCloseParams)` | Close at the expected revision, retaining the final surface and a tombstone. Revision is unchanged; closing the same revision again is a no-op. No reopening or id reuse. |
 | `_agnes/v1/ui.action(UiActionParams)` | Authenticated submission; returns a durable `UiActionReceipt`, which may be `received` or pending rather than terminal. No caller-supplied tool or authorization. |
 | `_agnes/v1/ui.read(UiReadParams)` | Authenticated recovery read; optional surface/command filter, opaque cursor and limit. Returns `UiReadResult` with a ledger high-water mark and bounded surface/receipt pages. |
+| `_agnes/v1/ui.refresh(UiRefreshParams)` | Authenticated re-query of one open surface. Returns `UiSurfaceRecord`. Revision is unchanged and no surface fact is written. See [UI data sources](#ui-data-sources). |
 
-These methods are registered App Server contracts; SDK sessions expose `uiAction()` and `uiRead()`. Session ownership checks happen before any read or write. Unauthenticated/wrong-session calls use existing authentication/capability RPC failures and expose no surface or previous command result. Malformed envelopes use `INVALID_PARAMS`; only a well-formed, session-bound command can enter the action state machine. Owner plugin is derived from the tool contribution, not model-supplied surface data. Surfaces are scoped to that ongoing session task; a new turn alone does not invalidate them. Backend task completion/retirement closes its surfaces through this contract.
+These methods are registered App Server contracts; SDK sessions expose `uiAction()`, `uiRead()` and `uiRefresh()`. Session ownership checks happen before any read or write. Unauthenticated/wrong-session calls use existing authentication/capability RPC failures and expose no surface or previous command result. Malformed envelopes use `INVALID_PARAMS`; only a well-formed, session-bound command can enter the action state machine. Owner plugin is derived from the tool contribution, not model-supplied surface data. Surfaces are scoped to that ongoing session task; a new turn alone does not invalidate them. Backend task completion/retirement closes its surfaces through this contract.
 
 Intelligent UI is the `intelligentUiKind` service (`@agnes/intelligent-ui-contract`): one provider per session, pinned to that session's generation. Tools obtain an instance with `providers.bindOwn`. Registration still requires the plugin's events grant and `surfaces` projection lease. Host supplies the owner ledger, exact `ui-result:` delivery, and the business dependencies (deferred queue, pinned component declarations, declared tool schemas). User actions and reads enter through the session port, which admits the authenticated actor and resolves SC1 delivery from the durable `action.received` fact. Daemon routes bind authenticated ownership before invoking that same session port. The service owns no dispatch or approval path. The projection retains full surface snapshots, active receipts and as many of the latest 64 terminal receipts as fit its byte limit; older commands remain recoverable by `ui.read({ commandId })` and ledger replay. A 64 KiB receipt reserve is kept inside the total projection budget.
 
@@ -148,6 +151,84 @@ The immutable accepted command binds the surface revision, owner generation, tas
 Receipt fields are state-dependent: `rejected` requires `refusal`, `failed` requires `failure`, `pending-approval` requires invocation/ticket links, and `succeeded` requires a durable tool-result link. Inapplicable failure/refusal fields are absent. These relationships are validated by the backend in addition to the structural receipt schema. `outcomeUnknown: true` always implies `retryable: false`.
 
 A terminal result/refusal is delivered to the Agent only through the existing SC1 queued-input path: `next-step` when an active turn supports steering, otherwise `next-turn` with the existing idle wake. A durable result committed just as a turn ends must remain queued for the next turn. The queued content includes surface id/revision, action/command id, status, safe summary and ledger/tool-result references. Tool output remains untrusted evidence. The Agent may then call `ui_update` or `ui_close`; successful execution alone does not invent new business data or increment the surface revision. That queued input taints the continuation. A tool declares optional `isPresentational` when its effect only publishes display state to the user and has no external side effect. The default tool policy does not escalate that flag for the taint. `requiresApproval: always`, a destructive declaration, and the business tool that produced the result still ask. Official `ui_render`, `ui_update`, and `ui_close` declare the flag; `ui_submit` does not.
+
+## UI data sources
+
+A business plugin can bind one `data[dataKey]` value to a read-only query instead of embedding the rows. The persisted surface stores that binding. The host resolves it for an authenticated read. Literal `data[dataKey]` values stay valid and keep the checks above. Kind, provider and instance types, the result enum and the failure codes live in `@agnes/intelligent-ui-contract` beside `intelligentUiKind`. That package depends only on `@agnes/extension-api` and `@agnes/protocol`. Host reaches the contract without importing `@agnes/base`. The kind is not a `KindMap` entry. A short index of this section is [UI data sources](ui-data-source.md).
+
+| Item | Value |
+| --- | --- |
+| `kind` | `ui-data-source` |
+| `cardinality` | `multi` |
+| `instanceScope` | `request` (one `open` / `dispose` per query) |
+| `scope` | `generation` |
+| `ports` | Empty. A source cannot write the ledger or deliver model input. |
+
+Register one provider per source id, for example `finance/differences` (`^[a-z0-9-]+/[a-z0-9-]+$`, at most 128 characters). `version` is semver. A second registration of the same id is refused. The loader sets `sourcePackage`; the author cannot claim another package. A multi kind binds by that provider id. A single kind still rejects `providerId`.
+
+The provider also declares a closed `paramsSchema` (`type: "object"`, `additionalProperties: false`), `result` (`rows`, `object`, `text`, `steps`, `progress` or `image`), `permission`, and `capabilities` (only `refresh` in this contract). `open(ports).query(params, signal)` returns JSON. Actor, session and generation come from the descriptor capabilities the host injects. They are absent from query parameters.
+
+### Binding
+
+```json
+"differences": { "$source": "finance/differences", "params": {} }
+```
+
+A binding is an object with exactly the own keys `$source` and `params`. `params` has at most 16 keys, 4,096 bytes and depth 8. Any other shape remains a literal and uses the component checks. The shared validator recognizes the binding. It does not compile the source schema in the browser.
+
+`table` and `chart` require `rows`. `detail-card`, a custom component and a form's initial value require `object`. `text` and `status` require `text`. `steps`, `progress` and `image` use the result of the same name. `button-group` and `tabs` cannot bind. One `dataKey` is queried once. A surface holds at most 8 bindings.
+
+These `params` keys are refused even when the schema lists them: `actor`, `session`, `sessionId`, `workspace`, `workspaceRoot`, `permission`, `grant`, `role`, `generation`, `generationId`, `packageId`, `owner`, `userId`, `asUser`, plus `__proto__`, `prototype` and `constructor`.
+
+### Resolution
+
+The host session bridge resolves sources. The official plugin calls that function and appends the audit facts. It has no privilege to bind another package's source. The host binds with owner `agnes/intelligent-ui` and `packageId` equal to the catalog `sourcePackage`.
+
+| When | Behavior |
+| --- | --- |
+| `ui_render` / `ui_update` | Resolve every binding first. The first failure rejects the whole write and stores nothing. An empty array is valid data. The stored surface is the binding. |
+| `ui.read` | The view substitutes ready results and adds `sources[dataKey]`. One failed key degrades that component. Sibling components still render. The stored record keeps the binding. |
+| `_agnes/v1/ui.refresh` | Same authenticated forwarding path as `ui.read`. It re-queries, returns a `UiSurfaceRecord`, and leaves `surface.revision` unchanged. It writes no surface fact. A closed surface returns `UI_CLOSED`. `received`, `pending-approval` or `executing` returns `UI_BUSY`. |
+| Action execution | Re-query only keys the action depends on: `from: "data"`, and `from: "selection"` or `"row"` through that component's `dataKey`. A disabled or untrusted source on one of those keys refuses the action. An unused source does not. |
+| Cold recovery | Restore the binding from facts, then re-query under the same authorization. Failure degrades that component. Previous rows stay out of the view. |
+
+`surface.revision` stays the author's compare-and-set. The bound-data revision is `resultHash`, the SHA-256 of canonical JSON. It is on the read view and in the audit. An unchanged hash leaves an in-flight action valid. A changed hash makes a dependent action `UI_STALE` and requires a new confirmation. The client still submits row ids. The pre-execution re-query compares hashes and does not run the old confirmation against new rows. A bound action that omits `sources` is `UI_STALE`. A surface with no bindings ignores the field. Dependent keys are all queried before a hash mismatch is reported, so a denial stays visible as its own code. Source denial is `SEMANTIC_REJECTED` and is raised before `action.received`. `UI_STALE` still follows the existing refusal path, which records `action.received`.
+
+The process cache key is generation, session, actor, surface, revision, source id and params hash. It covers at most 16 open surfaces. Every hit rechecks enablement and trust and drops the entry when that check fails. Close, disable, revoke, a generation change, and leaving the open set drop entries. A repeated read of an unchanged authorized result does not append another success fact. Refusals, writes, refreshes and action re-queries are always audited.
+
+Each query allows 2,000 ms and then aborts. One key's result allows 65,536 bytes, and the existing table, chart and component bounds still apply. Timeout, oversize and shape mismatch are errors. Results are not truncated.
+
+Failure codes are only `UI_SOURCE_DENIED`, `UI_SOURCE_UNKNOWN`, `UI_SOURCE_INVALID`, `UI_SOURCE_TIMEOUT`, `UI_SOURCE_TOO_LARGE`, `UI_SOURCE_SHAPE` and `UI_SOURCE_UNAVAILABLE`. A degraded component's actions are refused. Its body is replaced by a localized loading, unavailable or shape notice. The notice shows the failure code and omits provider error text and the source id. Literal shape failures, with no source binding, still reject the whole surface. The browser runs the existing structural checks before rendering a ready result.
+
+Text fallback uses `surfaceText` for a resolved value. A table shows at most 20 rows plus the total. A binding or a failure shows the title and the failure code.
+
+Read and refresh bind the existing surface reader (`agnes/intelligent-ui`). Action re-query binds the admitted human actor. A source that returns different rows for those two actors makes the dependent action `UI_STALE`. That refusal stays fail-closed.
+
+A form draft copies a ready object. It skips a `$source` binding. An untouched draft follows a same-revision refresh. A field the user has edited stays.
+
+### Authorization and audit
+
+A binding is allowed when all of the following hold:
+
+1. The provider id is in the session's pinned generation catalog, exactly once.
+2. That catalog `sourcePackage` is still enabled, its trust decision is present, and `capabilityHash` equals the pinned snapshot. Resolution stays on that snapshot when a newer version has a different hash. Disable or revoke stops resolution while the pin still holds the code.
+3. The provider's `permission` is covered by that trust decision.
+
+`permission` is a capability string in the plugin manifest field `agnes.capabilities.uiData`. Each entry matches `^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$`, is 3–128 characters, and the list holds at most 32 unique names. A `*` glob is outside that pattern. Trust review shows the atom `uiData:<permission>`. The capability hash covers the list. Resolution checks that exact atom. The trust decision is the only grant. Surface data and `params` carry no authorization field. This contract adds no role system and no `audience: owner` gate.
+
+Zero catalog entries yield `UI_SOURCE_UNKNOWN`. More than one catalog entry, more than one generation snapshot, a disabled or untrusted package, a hash mismatch, or a missing atom yields `UI_SOURCE_DENIED`. An invalid binding that shares a surface with a valid one yields `UI_SOURCE_INVALID`.
+
+The model cannot widen access through `params`. A source scopes its query to the actor on the descriptor. The pilot schema is an empty object and reads only that package's fixture ledger.
+
+Audit facts use the Intelligent UI owner ledger and the relative names `source.resolved`, `source.refused` and `source.refreshed`. Fields are source id, params hash, result hash, byte count, row count, duration, generation, actor id and failure code. They omit raw params, rows and source-internal error text. A refresh success uses `source.refreshed`. Any other success uses `source.resolved`. Any failure uses `source.refused`. These facts stay out of the `surfaces` projection and out of the folded UI event list. If the audit append fails, the host returns no unaudited rows.
+
+### Model visibility
+
+Resolved rows stay on the authenticated read path. `ui_render` and `ui_update` tool results keep the title, component count and link. `details.surface` keeps the binding. A later opt-in may pass a bounded summary through an authorized business tool. This contract has no summary API.
+
+### Finance pilot
+
+`examples/fde/finance-reconcile` registers `finance/differences` from `@agnes-fde/finance-reconcile`, result `rows`, permission `finance.differences.read`, capability `refresh`, and an empty params object. The query reads the existing CSV fixtures. Row shape matches the differences table in the finance example above (integer USD cents). The table and the amount chart share `differences`. Summary, steps, form, status and the custom diff view stay literal. A session that has the package installed and has not enabled it receives `UI_SOURCE_DENIED` at render. The example playbook tells the user the ledger source is unavailable and does not invent rows. An id absent from the catalog is `UI_SOURCE_UNKNOWN`.
 
 ## Ledger facts and lifecycle state table
 
@@ -196,6 +277,7 @@ Different command ids can still repeat a business intent. The same surface has o
 | Tool failure + retry | Preserve old failure. Require a new command id and `retryOf`, current revision/confirmation, proven retry eligibility and fresh normal authorization; chain both attempts. |
 | Missing pinned plugin/Loop or corrupt projection | Follow existing fail-closed generation/recovery behavior. Rebuild a valid projection from ledger if possible; otherwise show unavailable/evidence-gap state and disable actions. |
 | TUI / channel without preset rendering | Plain-text title, revision, status, rows/amount summary, detail fields, steps, progress, image alt and source identity, tab labels, action labels and an authenticated link to the existing Web session's surface panel. Progress percentages are display-only. Image text never includes a data URL or a remote fetch. Never create a public bearer link or call tools because a text label was displayed. Text “confirm” alone is not a UI submission or approval. |
+| Bound data after restart or reload | Restore the binding from the surface fact, then re-query. Degrade that component when enablement, trust or the query fails. Leave previous rows out of the view. |
 
 Pagination cursors bind a snapshot watermark and filters. Live events during the snapshot are buffered and applied after it; reconnect uses the standard session attach/catch-up mechanism. Cursor expiry causes a fresh read. Projection rebuilds do not append new business facts. Durable commands are never forgotten merely because a display page or cache evicted them.
 
@@ -203,7 +285,7 @@ Pagination cursors bind a snapshot watermark and filters. Live events during the
 
 Fact-chain and trace views must show surface id/revisions and ownership, received command/actor, resolved tool invocation, approval, effect and result, terminal UI fact, queued Agent input and the Agent's next surface update. Link by ledger sequence and stable ids, not nearby event timing. Missing receipt/delivery/revision links are visible gaps. The UI never elevates plugin-authored labels or facts into evidence of a permission decision.
 
-The [finance reconciliation pilot](../../examples/fde/finance-reconcile/index.mjs) keeps synthetic source ledgers and exact integer cents. After reconciliation it renders a detail card and review steps beside the differences table, a bar chart and an adjustment form. “确认调整” maps to the existing `fde_finance_approve` simulated adjustment tool, whose approval-required metadata and policy remain intact. The business tool validates proposals against the committed reconciliation facts and selection, including transaction membership, integer cents, reason, no duplicate ids and whether they were already processed. Form edits cannot override committed differences unnoticed. After permission and a simulated receipt, the queued result resumes the Agent; it updates processed rows to `simulated-approved`, retains unresolved transactions and states `posted: false`. Approval denial/failure never marks rows processed. The generic deferred-invocation drain replaces the pilot's existing business-question stage; it does not require a second free-text “Proceed”.
+The [finance reconciliation pilot](../../examples/fde/finance-reconcile/index.mjs) keeps synthetic source ledgers and exact integer cents. Its differences table and bar chart take rows from `finance/differences` when that package is enabled for the session. An installed package the session has not enabled refuses the render with `UI_SOURCE_DENIED`; the playbook says the ledger source is unavailable and does not invent rows. After reconciliation it renders a detail card and review steps beside the differences table, a bar chart and an adjustment form. “确认调整” maps to the existing `fde_finance_approve` simulated adjustment tool, whose approval-required metadata and policy remain intact. The business tool validates proposals against the committed reconciliation facts and selection, including transaction membership, integer cents, reason, no duplicate ids and whether they were already processed. Form edits cannot override committed differences unnoticed. After permission and a simulated receipt, the queued result resumes the Agent; it updates processed rows to `simulated-approved`, retains unresolved transactions and states `posted: false`. Approval denial/failure never marks rows processed. The generic deferred-invocation drain replaces the pilot's existing business-question stage; it does not require a second free-text “Proceed”.
 
 ### Reviewed custom components
 

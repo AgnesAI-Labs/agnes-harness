@@ -50,13 +50,14 @@ agh plugins add ./hello-tool.tgz
       "credentials": ["example-account"],
       "model": true,
       "childAgents": true,
-      "ui": true
+      "ui": true,
+      "uiData": ["finance.differences.read"]
     }
   }
 }
 ```
 
-只写名称与范围，不写秘密值。字符串列表支持 `*`；文件范围可用绝对路径、相对路径或以工具 cwd 为根的 `workspace/` 路径。布尔值声明模型、子代理或 UI。空对象表示没有请求；省略字段的旧插件显示“未声明”。修改声明会改变信任哈希，需要重新审核。
+只写名称与范围，不写秘密值。字符串列表支持 `*`。`uiData` 是例外：每一项都是精确能力名，例如 `finance.differences.read`（`^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$`），最多 32 个。信任审核展示 atom `uiData:<name>`，能力哈希覆盖该列表。通配符不符合该模式。文件范围可用绝对路径、相对路径或以工具 cwd 为根的 `workspace/` 路径。布尔值声明模型、子代理或 UI。空对象表示没有请求；省略字段的旧插件显示“未声明”。修改声明会改变信任哈希，需要重新审核。
 
 管理员可在 profile 的 `agnes-lock.json` 旁创建 `plugin-capabilities.json`：
 

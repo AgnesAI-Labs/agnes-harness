@@ -2,7 +2,7 @@
 
 [English](intelligent-ui.md) | 简体中文
 
-[架构](architecture.zh-CN.md) · [插件](plugins.zh-CN.md) · [前端](frontend.zh-CN.md) · [会话与恢复](../guide/sessions.zh-CN.md) · [Web 渲染器](intelligent-ui-web.zh-CN.md)
+[架构](architecture.zh-CN.md) · [插件](plugins.zh-CN.md) · [前端](frontend.zh-CN.md) · [会话与恢复](../guide/sessions.zh-CN.md) · [Web 渲染器](intelligent-ui-web.zh-CN.md) · [UI 数据源](ui-data-source.zh-CN.md)
 
 本文定义预设与已审阅自定义组件的 surface 合同。官方后端插件、已认证 App Server 方法与通用 deferred 执行桥已实现该合同；下文描述客户端渲染与财务试点。可用性仍需仓库统一验证。
 
@@ -34,7 +34,7 @@
 | `progress` | `dataKey` | `{label, value, total}`。`value` 与 `total` 为有限数字，`total` 大于 0，`value` 从 0 到 `total`。百分比只在展示时计算。 |
 | `image` | `dataKey`、`alt` | `{source}` 为工件 `{kind:"artifact", sha256, size, mime}`、`agnes-upload://` 附件，或 png/jpeg data URL。拒绝任意远程 URL。替代文本必填。 |
 
-所有组件均可带 `title`。列包含 `key`、`label` 和可选 `format`（`text`、`number`、`currency`、`date`、`status`）；格式只影响展示，不改变值、不推断货币单位。图表序列包含 `key`、`label`。绑定的数据必须存在并符合组件形状。非法行、缺失字段、重复行 id、未声明的组件类型拒绝整个 render/update，不静默省略。
+所有组件均可带 `title`。列包含 `key`、`label` 和可选 `format`（`text`、`number`、`currency`、`date`、`status`）；格式只影响展示，不改变值、不推断货币单位。图表序列包含 `key`、`label`。字面量数据必须存在并符合组件形状。非法的字面量行、缺失字段、重复行 id、未声明的组件类型拒绝整个 render/update。`$source` 绑定由 [UI 数据源](#ui-数据源) 解析：数据源结果形状不符时只降级该组件，surface 的其余部分继续展示。
 
 表单复用[现有 Schema 渲染器](../../packages/web-ui/src/plugin-schema-fields.tsx)与[模型](../../packages/web-ui/src/plugin-schema-model.ts)：`UiJsonSchema` 为布尔值或 JSON Schema 对象；本地 `$ref`、对象/数组/变体/枚举/标量控件、无损 JSON 回退保持既有语义。`format` 为 `"date"` 或 `"date-time"` 的字符串属性是日期输入。`date` 为真实的 `YYYY-MM-DD`。`date-time` 在该日期后加时间和 `Z` 或数字偏移；闰秒只允许 `23:59:60`。空字符串或缺失值仍是未完成草稿。Web 控件按 UTC 时钟显示 `date-time`，并写回 `YYYY-MM-DDTHH:mm:00Z`。展示递归阈值仍为 6，与后台载荷限制独立。无法展示的断言回退到 JSON 编辑器，不展示会误导人的部分表单。后台编译完整 Schema，校验提交值，不做类型转换、不丢弃未知属性。不进行网络 `$ref` 解析。秘密字段不提供权限：surface 不得携带原始凭据；业务凭据字段只能使用现有凭据引用合同。
 
@@ -59,6 +59,8 @@ Schema 声明结构限制并导出 `X_AGNES_UI_LIMITS`；后台与渲染器还�
 | Id/数据键 / 标题/标签 / 确认提示 | 64 / 256 / 1,024 字符；工具名 128 |
 | 列 / 图表序列 | 32 / 8 |
 | 表格行 / 图表数据点 | 每组件 1,000 / 1,000 |
+| 数据源绑定 | 每 surface 8 个 |
+| 单个数据源结果 / 单次查询 | 65,536 字节 / 2,000 毫秒 |
 | 详情字段 | 32 |
 | 分页 / 单个分页内的组件 | 8 / 16；嵌套深度 1；每个组件最多放置一次 |
 | 步骤 | 32 |
@@ -96,7 +98,7 @@ Schema 声明结构限制并导出 `X_AGNES_UI_LIMITS`；后台与渲染器还�
 }
 ```
 
-行内动作隐含只选择该行。后台根据展示表格解析行 id。消费选择行的业务工具必须声明行的实际形状，或显式映射为提案；不能剥掉展示字段来绕过工具校验。示例将表单的提案数组绑定到现有工具。
+行内动作隐含只选择该行。后台根据展示表格解析行 id。消费选择行的业务工具必须声明行的实际形状，或显式映射为提案；不能剥掉展示字段来绕过工具校验。示例将表单的提案数组绑定到现有工具。上面的 JSON 是字面量，也是 `rows` 数据源解析后的行形状。财务试点在 `differences` 上保存绑定，见 [UI 数据源](#ui-数据源)。
 
 ### 预设目录示例
 
@@ -136,8 +138,9 @@ Schema 声明结构限制并导出 `X_AGNES_UI_LIMITS`；后台与渲染器还�
 | `ui_close(UiCloseParams)` | 按 expected revision 关闭，保留最终 surface 和墓碑。revision 不变；再次关闭相同 revision 为无操作。不能重新打开或复用 id。 |
 | `_agnes/v1/ui.action(UiActionParams)` | 已认证提交；返回持久 `UiActionReceipt`，可以是 `received` 或待审批而非终态。不接受调用方指定工具或授权。 |
 | `_agnes/v1/ui.read(UiReadParams)` | 已认证恢复读取；可选 surface/command 筛选、不透明 cursor 和 limit。返回 `UiReadResult`，包含 ledger 水位和有界 surface/回执分页。 |
+| `_agnes/v1/ui.refresh(UiRefreshParams)` | 对一个仍打开的 surface 做已认证重查。返回 `UiSurfaceRecord`。revision 不变，不写 surface 事实。见 [UI 数据源](#ui-数据源)。 |
 
-以上方法名为待评审声明，尚未注册为 App Server 方法。所有读取/写入前检查会话归属。未认证或跨会话调用使用既有认证/能力 RPC 错误，不泄露 surface 或历史命令结果。格式错误的请求使用 `INVALID_PARAMS`；只有形状正确且绑定会话的命令才能进入动作状态机。归属插件由工具贡献确定，不取自模型提供的 surface 数据。Surface 归属该会话持续中的任务；单纯开启新 turn 不使其失效。后台任务完成/退役时通过本合同关闭其 surface。
+以上方法是已注册的 App Server 合同；SDK 会话提供 `uiAction()`、`uiRead()` 与 `uiRefresh()`。所有读取/写入前检查会话归属。未认证或跨会话调用使用既有认证/能力 RPC 错误，不泄露 surface 或历史命令结果。格式错误的请求使用 `INVALID_PARAMS`；只有形状正确且绑定会话的命令才能进入动作状态机。归属插件由工具贡献确定，不取自模型提供的 surface 数据。Surface 归属该会话持续中的任务；单纯开启新 turn 不使其失效。后台任务完成/退役时通过本合同关闭其 surface。
 
 Service 不提供任意工具调度入口。公开[延后工具调用合同](deferred-invocations.zh-CN.md)是唯一的通用执行桥接，可供 UI、webhook、schedule 使用。Host 将持久队列绑定到会话锁定的 session/lane，通过 Loop 的通用 services 读取器接入，Core 不变。默认 Loop 与财务 Loop 在安全步骤边界，通过 `LoopContext.tools.execute`、`tools.resume`、`effects.status` 通用排空；不包含 UI 专用 helper 或组件逻辑。Intelligent UI 是一个生产方：校验动作、持久化绑定、将已声明工具 invocation 入队。队列事实与生产方通知仍基于 ledger。未安装生产插件时，空队列不改变默认 Loop 调度。缺少通用排空能力的自定义 Loop 在工具派发前拒绝提交。禁止直接调用 `ToolDef.execute`、导入 Core 私有模块、依赖模型文字指令执行或消费无关 SC1 输入。
 
@@ -146,6 +149,84 @@ Service 不提供任意工具调度入口。公开[延后工具调用合同](def
 回执字段依状态约束：`rejected` 必须有 `refusal`，`failed` 必须有 `failure`，`pending-approval` 必须关联 invocation/票据，`succeeded` 必须关联持久工具结果。不适用的 failure/refusal 字段缺省。后台在结构 Schema 之外验证这些关系。`outcomeUnknown: true` 始终意味着 `retryable: false`。
 
 终态结果/拒绝只通过现有 SC1 queued-input 到达 Agent：活跃 turn 支持 steering 时使用 `next-step`，否则使用 `next-turn` 与既有空闲唤醒。结果持久化恰逢 turn 结束时仍须留在队列，供下一轮领取。队列内容包括 surface id/revision、action/command id、状态、安全摘要和 ledger/tool-result 引用。工具输出仍是不可信证据。Agent 随后可调用 `ui_update` 或 `ui_close`；执行成功本身不生成业务数据，也不增加 surface revision。这段队列输入会污染后续 turn。工具可以用可选的 `isPresentational` 声明：效果只向用户公布展示状态，没有外部副作用。默认工具策略不会仅因该污染而升级这一声明。`requiresApproval: always`、破坏性声明，以及产出该结果的业务工具，仍然要询问。官方 `ui_render`、`ui_update`、`ui_close` 声明该标志；`ui_submit` 不声明。
+
+## UI 数据源
+
+业务插件可以把某一个 `data[dataKey]` 绑到只读查询上，而不把行写进 surface。持久 surface 只保存该绑定。Host 在已认证读取时解析。字面量 `data[dataKey]` 仍然有效，并继续使用上文的校验。Kind、provider 与实例类型、结果枚举和失败码放在 `@agnes/intelligent-ui-contract`，与 `intelligentUiKind` 并列。该包只依赖 `@agnes/extension-api` 与 `@agnes/protocol`。Host 使用这份合同，不为此导入 `@agnes/base`。该 kind 不是 `KindMap` 条目。本节的短索引是 [UI 数据源](ui-data-source.zh-CN.md)。
+
+| 项 | 值 |
+| --- | --- |
+| `kind` | `ui-data-source` |
+| `cardinality` | `multi` |
+| `instanceScope` | `request`（每次查询单独 `open` / `dispose`） |
+| `scope` | `generation` |
+| `ports` | 空。数据源不能写 ledger，也不能向模型投递输入。 |
+
+每个数据源 id 注册一个 provider，例如 `finance/differences`（`^[a-z0-9-]+/[a-z0-9-]+$`，最长 128 字符）。`version` 为 semver。同一 id 的第二次注册被拒绝。`sourcePackage` 由加载器写入，作者不能改称别人的包。`multi` kind 按该 provider id 绑定。`single` kind 仍然拒绝 `providerId`。
+
+Provider 还声明封闭的 `paramsSchema`（`type: "object"` 且 `additionalProperties: false`）、`result`（`rows`、`object`、`text`、`steps`、`progress` 或 `image`）、`permission`，以及 `capabilities`（本合同只有 `refresh`）。`open(ports).query(params, signal)` 返回 JSON。Actor、session 与 generation 来自 Host 注入的描述符 capabilities，不来自查询参数。
+
+### 绑定
+
+```json
+"differences": { "$source": "finance/differences", "params": {} }
+```
+
+绑定对象恰好拥有 `$source` 与 `params` 两个自有键。`params` 最多 16 个键、4,096 字节、深度 8。其它形状仍是字面量，沿用组件校验。共享校验器只识别绑定，不在浏览器路径编译数据源 Schema。
+
+`table` 与 `chart` 要求 `rows`。`detail-card`、自定义组件和表单初值要求 `object`。`text` 与 `status` 要求 `text`。`steps`、`progress`、`image` 使用同名 result。`button-group` 与 `tabs` 不能绑定。同一个 `dataKey` 只查询一次。每个 surface 最多 8 个绑定。
+
+即使 Schema 列出这些键，`params` 里仍然拒绝：`actor`、`session`、`sessionId`、`workspace`、`workspaceRoot`、`permission`、`grant`、`role`、`generation`、`generationId`、`packageId`、`owner`、`userId`、`asUser`，以及 `__proto__`、`prototype`、`constructor`。
+
+### 解析
+
+Host 会话桥解析数据源。官方插件调用该函数并追加审计事实。它没有替其它包绑定数据源的特权。Host 绑定使用 owner `agnes/intelligent-ui`，`packageId` 等于目录中的 `sourcePackage`。
+
+| 时机 | 行为 |
+| --- | --- |
+| `ui_render` / `ui_update` | 先解析每一个绑定。第一处失败拒绝整次写入，什么都不落盘。空数组是合法数据。落盘的 surface 是绑定。 |
+| `ui.read` | 视图替换已就绪的结果，并附上 `sources[dataKey]`。一个键失败只降级该组件，兄弟组件照常渲染。持久记录仍是绑定。 |
+| `_agnes/v1/ui.refresh` | 与 `ui.read` 相同的已认证转发。重新查询，返回 `UiSurfaceRecord`，`surface.revision` 不变，不写 surface 事实。已关闭的 surface 返回 `UI_CLOSED`。`received`、`pending-approval` 或 `executing` 返回 `UI_BUSY`。 |
+| 动作执行 | 只重查该动作依赖的键：`from: "data"`，以及经组件 `dataKey` 追溯的 `from: "selection"` 或 `"row"`。这些键上的数据源被禁用或失去信任时，动作被拒绝。未被使用的数据源不阻挡动作。 |
+| 冷恢复 | 从事实恢复绑定，再按同一授权重查。失败则降级该组件。上一份行不进入视图。 |
+
+`surface.revision` 仍是作者的比较并交换。绑定数据的版本是 `resultHash`，即规范 JSON 的 SHA-256。它出现在读取视图和审计中。哈希不变时，进行中的动作仍然有效。哈希变化使依赖该数据的动作成为 `UI_STALE`，需要重新确认。客户端仍只提交行 id。执行前重查比较哈希，不用新行执行旧确认。绑定动作省略 `sources` 时为 `UI_STALE`。surface 没有绑定则忽略该字段。全部依赖键都查询之后才报告哈希不一致，因此拒绝码不会被 `UI_STALE` 盖住。数据源拒绝是 `SEMANTIC_REJECTED`，并在 `action.received` 之前抛出。`UI_STALE` 仍走现有拒绝路径，该路径会记录 `action.received`。
+
+进程内缓存键为 generation、session、actor、surface、revision、source id 与 params 哈希。最多覆盖 16 个打开的 surface。每次命中都重新检查启用与信任，检查失败则丢弃该条目。关闭、禁用、撤销、generation 变化，以及离开打开集合，都会丢弃条目。对未变化的已授权结果重复读取，不追加另一条成功事实。拒绝、写入、刷新和动作重查始终审计。
+
+每次查询最多 2,000 毫秒，到点中止。单个键的结果最多 65,536 字节，并继续适用既有的表格、图表和组件上限。超时、超限和形状不符都是错误。结果不截断。
+
+失败码只有 `UI_SOURCE_DENIED`、`UI_SOURCE_UNKNOWN`、`UI_SOURCE_INVALID`、`UI_SOURCE_TIMEOUT`、`UI_SOURCE_TOO_LARGE`、`UI_SOURCE_SHAPE` 与 `UI_SOURCE_UNAVAILABLE`。降级组件上的动作被拒绝。组件正文换成本地化的加载中、不可用或形状不符提示。提示展示失败码，不展示 provider 错误文本，也不展示数据源 id。没有数据源绑定的字面量形状错误仍然拒绝整个 surface。浏览器在渲染就绪结果之前执行既有的结构检查。
+
+文本回退对已解析的值使用 `surfaceText`。表格最多展示 20 行再加总数。仍是绑定或已经失败时，只写标题和失败码。
+
+读取和刷新绑定现有的 surface 读取者（`agnes/intelligent-ui`）。动作重查绑定已接纳的人类 actor。数据源若按这两个 actor 返回不同的行，依赖该数据的动作成为 `UI_STALE`。该拒绝保持失败关闭。
+
+表单草稿复制就绪的对象，跳过 `$source` 绑定。用户未改过的草稿会跟随同一 revision 的刷新。用户已编辑的字段保留。
+
+### 授权与审计
+
+绑定在下列条件全部成立时允许：
+
+1. 该 provider id 在会话钉住的 generation 目录中恰好出现一次。
+2. 目录中的 `sourcePackage` 仍然启用，信任决定存在，且 `capabilityHash` 等于钉住的快照。较新版本的哈希不同时，解析停留在该快照上。禁用或撤销后停止解析，即使 pin 里仍有代码。
+3. Provider 声明的 `permission` 被该信任决定覆盖。
+
+`permission` 是插件清单字段 `agnes.capabilities.uiData` 里的能力字符串。每一项匹配 `^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$`，长度 3–128，列表最多 32 个互不相同的名称。`*` 通配不在该模式内。信任审核展示 atom `uiData:<permission>`。能力哈希覆盖该列表。解析检查这个精确 atom。信任决定是唯一的授权。Surface 数据和 `params` 不携带授权字段。本合同不增加角色系统，也不增加 `audience: owner` 门闩。
+
+目录中没有该 id 时为 `UI_SOURCE_UNKNOWN`。目录条目多于一个、generation 快照多于一个、包已禁用或未信任、哈希不一致，或缺少该 atom，均为 `UI_SOURCE_DENIED`。无效绑定与有效绑定出现在同一 surface 时为 `UI_SOURCE_INVALID`。
+
+模型不能借 `params` 扩大访问。数据源按描述符上的 actor 限定查询。试点 Schema 是空对象，查询只读本包的夹具账本。
+
+审计事实写在 Intelligent UI 所有者 ledger 上，相对名为 `source.resolved`、`source.refused`、`source.refreshed`。字段为 source id、params 哈希、result 哈希、字节数、行数、耗时、generation、actor id 与失败码。其中没有参数原文、行，也没有数据源内部错误文本。刷新成功使用 `source.refreshed`。其它成功使用 `source.resolved`。任何失败使用 `source.refused`。这些事实不进入 `surfaces` 投影，也不进入折叠后的 UI 事件列表。审计追加失败时，Host 不返回未经审计的行。
+
+### 模型可见性
+
+解析后的行只走已认证的读取路径。`ui_render` 与 `ui_update` 的工具结果保留标题、组件数和链接。`details.surface` 保留绑定。以后若要给模型一份有界摘要，须经已授权的业务工具显式选择。本合同没有摘要 API。
+
+### 财务试点
+
+`examples/fde/finance-reconcile` 注册 `finance/differences`，包为 `@agnes-fde/finance-reconcile`，`result` 为 `rows`，`permission` 为 `finance.differences.read`，`capabilities` 为 `refresh`，params 为空对象。查询读取现有 CSV 夹具。行形状与上文财务示例中的差异表相同（整数美元分）。表格与金额图共用 `differences`。摘要、步骤、表单、状态和自定义差异视图保持字面量。包已安装但本会话未启用时，render 得到 `UI_SOURCE_DENIED`。示例 playbook 告诉用户账本数据源不可用，不编造行。目录中不存在的 id 为 `UI_SOURCE_UNKNOWN`。
 
 ## Ledger 事实与生命周期状态表
 
@@ -194,6 +275,7 @@ Render/update/close、提交接纳和执行状态转换沿会话 ledger 既有�
 | 工具失败与重试 | 保留旧失败；要求新 command id、`retryOf`、当前 revision/确认、已证实的重试资格与重新普通授权，串联两次尝试。 |
 | 锁定插件/Loop 缺失或投影损坏 | 遵循既有 generation/恢复的默认拒绝行为。可行时从 ledger 重建合法投影，否则展示不可用/证据缺口并禁用动作。 |
 | 不支持预设渲染的 TUI/channel | 纯文本标题、revision、状态、行/金额摘要、详情字段、步骤、进度、图像替代文本与来源身份、分页标签、动作标签，附指向既有 Web 会话 surface 面板的已认证链接。进度百分比只用于展示。图像文本不包含 data URL，也不发起远程拉取。不能创建公开 bearer 链接，不能因展示文字标签就调用工具。文字“确认”本身不是 UI 提交或审批。 |
+| 重启或刷新后的绑定数据 | 从 surface 事实恢复绑定，再重新查询。启用、信任或查询失败时降级该组件。视图不回放上一份结果。 |
 
 分页 cursor 绑定快照水位与筛选。快照期间实时事件先缓冲，再顺序应用；重连使用标准 session attach/catch-up 机制。Cursor 过期则重新读取。重建投影不新增业务事实。展示分页或缓存淘汰不能遗忘持久命令。
 
@@ -201,7 +283,7 @@ Render/update/close、提交接纳和执行状态转换沿会话 ledger 既有�
 
 Fact-chain 与 trace 展示 surface id/revision 和归属、received 命令/actor、解析后的工具 invocation、审批、效果与结果、终态 UI 事实、Agent 队列输入及 Agent 下一次 surface 更新。按 ledger 序号与稳定 id 关联，不能靠相近时间猜测。缺失回执/投递/revision 链接明确展示为缺口。UI 不能将插件编写的标签/事实提升为授权决定证据。
 
-[财务对账试点](../../examples/fde/finance-reconcile/index.mjs) 保持合成源账本和精确整数分。对账后在差异表、柱状图和调整表单旁渲染详情卡与复核步骤。“确认调整”映射到现有模拟调整工具 `fde_finance_approve`，保留其需要审批的元数据与 policy。业务工具根据已提交对账事实与选择校验提案，包括交易成员、整数分、原因、无重复 id、是否已处理。表单编辑不能悄悄覆盖已提交差异。获得权限与模拟回执后，queued result 恢复 Agent；Agent 将已处理行更新为 `simulated-approved`，保留未解决交易，明确 `posted: false`。审批拒绝/失败不能标记行已处理。通用 deferred-invocation drain 替换试点既有业务提问阶段，不再要求第二次自由文本 “Proceed”。
+[财务对账试点](../../examples/fde/finance-reconcile/index.mjs) 保持合成源账本和精确整数分。该包在会话中启用时，差异表和柱状图的行来自 `finance/differences`。包已安装但本会话未启用时，render 以 `UI_SOURCE_DENIED` 拒绝；playbook 告诉用户账本数据源不可用，不编造行。对账后在差异表、柱状图和调整表单旁渲染详情卡与复核步骤。“确认调整”映射到现有模拟调整工具 `fde_finance_approve`，保留其需要审批的元数据与 policy。业务工具根据已提交对账事实与选择校验提案，包括交易成员、整数分、原因、无重复 id、是否已处理。表单编辑不能悄悄覆盖已提交差异。获得权限与模拟回执后，queued result 恢复 Agent；Agent 将已处理行更新为 `simulated-approved`，保留未解决交易，明确 `posted: false`。审批拒绝/失败不能标记行已处理。通用 deferred-invocation drain 替换试点既有业务提问阶段，不再要求第二次自由文本 “Proceed”。
 
 ### 已审阅的自定义组件
 
