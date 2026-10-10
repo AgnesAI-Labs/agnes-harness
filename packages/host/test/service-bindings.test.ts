@@ -15,7 +15,13 @@ import {
   type ServicePortFactories,
   serviceBindingScope,
 } from '@agnes/host-common/assemble/service-binding'
+import {
+  createDeferredInvocationQueue,
+  type DeferredInvocationLedgerPort,
+  ownerDeferredQueue,
+} from '@agnes/host-providers/assemble/deferred-invocations'
 import { intelligentUiKind } from '@agnes/intelligent-ui-contract'
+import { deferredProducerKind, deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
 import { type Actor, rpcError } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import {
@@ -1388,6 +1394,125 @@ describe('intelligent UI service binding', () => {
         'bind',
         'intelligent-ui',
       )
+    } finally {
+      await finish(root)
+    }
+  })
+})
+
+describe('deferred invocation service binding', () => {
+  it('opens each owner separately and hides the other owner receipt', async () => {
+    const root = new Context()
+    const bindings = new ServiceBindings(() => root.providers)
+    bindings.install(root, deferredProducerKind, { ports: [], audience: 'callback' })
+    bindings.install(root, deferredQueueKind, { ports: [], audience: 'host' })
+    const seen: string[] = []
+    const register = (id: string, sourcePackage: string, name: string) => {
+      root.providers.register(deferredProducerKind, sourcePackage, {
+        id,
+        version: '1.0.0',
+        open: () => ({
+          async validate() {
+            seen.push(name)
+          },
+          async changed() {
+            seen.push(`${name}-changed`)
+          },
+        }),
+      })
+      bindings.noteOwner(
+        deferredProducerKind.kind,
+        id,
+        '1.0.0',
+        name === 'alpha' ? owner : otherOwner,
+        sourcePackage,
+      )
+    }
+    register('producer-alpha', packageId, 'alpha')
+    register('producer-beta', '@fixture/beta', 'beta')
+    const admitted = (who: string, sourcePackage: string) =>
+      call({
+        owner: who,
+        packageId: sourcePackage,
+        session: sessionRef,
+        generationId: 'gen-1',
+        actor: extensionActor(who),
+      })
+    const rows: { seq: number; type: string; data: unknown; origin: string; trust: string; lane: string }[] =
+      []
+    let seq = 0
+    const ports: DeferredInvocationLedgerPort = {
+      scan: async () => rows as never,
+      append: async (type, data, by) => {
+        seq += 1
+        rows.push({ seq, type, data, origin: 'system', trust: 'trusted', lane: 'main', actor: by } as never)
+        return seq
+      },
+      outcome: async () => ({}),
+      wake: async () => undefined,
+    }
+    try {
+      await expectClosed(
+        bindings.bind(deferredQueueKind, admitted(owner, packageId), { now: () => 1 }),
+        'bind',
+        'deferred-invocations',
+      )
+      const alpha = await bindings.bind(deferredProducerKind, admitted(owner, packageId), { now: () => 1 })
+      const beta = await bindings.bind(deferredProducerKind, admitted(otherOwner, '@fixture/beta'), {
+        now: () => 1,
+      })
+      await expectClosed(
+        bindings.bind(deferredProducerKind, admitted(otherOwner, packageId), { now: () => 1 }),
+        'bind',
+        'deferred-producer',
+      )
+      const raw = createDeferredInvocationQueue('sess', 'main', ports, async (source, producerSignal) => {
+        const instance = source === owner ? alpha : source === otherOwner ? beta : undefined
+        if (!instance) return undefined
+        return {
+          source,
+          validate: (invocation, admittedSignal) => instance.validate(invocation, admittedSignal),
+          changed: (receipt, admittedSignal) => instance.changed(receipt, admittedSignal),
+        }
+      })
+      const alphaQueue = ownerDeferredQueue(raw, {
+        owner,
+        actor: extensionActor(owner),
+        confirmSource: async (sourceSeq, source) => {
+          if (source !== owner || sourceSeq !== 1)
+            throw new Error('Deferred invocation source event is missing')
+        },
+      })
+      const betaQueue = ownerDeferredQueue(raw, {
+        owner: otherOwner,
+        actor: extensionActor(otherOwner),
+        confirmSource: async () => undefined,
+      })
+      const invocation = {
+        id: 'deferred:conformance',
+        sessionKey: 'sess',
+        lane: 'main',
+        source: owner,
+        sourceSeq: 1,
+        actor: extensionActor(owner),
+        tool: 'business_adjust',
+        args: { cents: 1 },
+      }
+      const receipt = await alphaQueue.enqueue(invocation, new AbortController().signal)
+      expect(seen).toEqual(['alpha'])
+      await expect(betaQueue.read(receipt.invocation.id, new AbortController().signal)).rejects.toThrow(
+        'another producer',
+      )
+      await expect(betaQueue.transition(receipt.invocation.id, receipt.seq, 'executing')).rejects.toThrow(
+        'another producer',
+      )
+      expect(await raw.read(receipt.invocation.id, new AbortController().signal)).toMatchObject({
+        state: 'queued',
+        seq: receipt.seq,
+      })
+      await alpha.dispose?.()
+      await beta.dispose?.()
+      await expect(raw.notify(new AbortController().signal)).rejects.toThrow(/closed|unavailable/)
     } finally {
       await finish(root)
     }

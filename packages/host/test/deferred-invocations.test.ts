@@ -3,19 +3,24 @@ import { Context } from '@agnes/cordis'
 import { MemoryStorage, SessionLogImpl } from '@agnes/core'
 import { defaultIds } from '@agnes/core-common/ids'
 import type { LoopContext, LoopFactory, ToolResult } from '@agnes/extension-api'
+import { HostError } from '@agnes/host-common/errors'
 import {
   createDeferredInvocationQueue,
+  DEFERRED_INVOCATION_EVENT,
   type DeferredInvocationLedgerPort,
   DeferredInvocationsService,
+  ownerDeferredQueue,
 } from '@agnes/host-providers/assemble/deferred-invocations'
 import { drainDeferredToolInvocations } from '@agnes/plugin-runtime'
 import {
   deferredQueueKind,
+  type DeferredActor,
   type DeferredInvocationReceipt,
   type DeferredToolInvocation,
 } from '@agnes/plugin-runtime/deferred-contract'
 import type { Actor, EventEnvelope } from '@agnes/protocol'
 import { expect, it } from 'vitest'
+import { assertMigrationSettled } from '../src/runtime/generation/migration-state.js'
 
 const actor: Actor = { id: 'human', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 const signal = new AbortController().signal
@@ -54,6 +59,8 @@ async function fixture() {
   const changed: DeferredInvocationReceipt[] = []
   const effects = new Map<string, { resultSeq?: number; approvalId?: string; result?: ToolResult }>()
   let rejectNotification = false
+  let failNextWake = false
+  let wakes = 0
   const ports: DeferredInvocationLedgerPort = {
     scan: async () => (await log.scan({ toSeq: log.lastSeq, limit: 500 })) as EventEnvelope[],
     append: async (type, data, by, sourceSeq) =>
@@ -72,7 +79,13 @@ async function fixture() {
         ])
       ).seqs[0]!,
     outcome: async (id) => effects.get(id) ?? {},
-    wake: async () => undefined,
+    wake: async () => {
+      wakes += 1
+      if (failNextWake) {
+        failNextWake = false
+        throw new Error('Wake interrupted')
+      }
+    },
   }
   const producer = {
     source: 'test',
@@ -138,6 +151,10 @@ async function fixture() {
     allowNotify: () => {
       rejectNotification = false
     },
+    failNextWake: () => {
+      failNextWake = true
+    },
+    wakes: () => wakes,
     close: () => log.close(),
     restart: async () => {
       await log.close()
@@ -326,3 +343,320 @@ it('permits the registry owner bridge while refusing a plugin without a verified
   }
 })
 
+function memoryLedger() {
+  const rows: EventEnvelope[] = []
+  const effects = new Map<string, { resultSeq?: number; approvalId?: string; result?: ToolResult }>()
+  let seq = 0
+  const ports: DeferredInvocationLedgerPort = {
+    scan: async () => rows,
+    append: async (type, data, by, sourceSeq) => {
+      seq += 1
+      rows.push({
+        seq,
+        id: `row-${seq}`,
+        type,
+        data,
+        actor: by,
+        origin: 'system',
+        trust: 'trusted',
+        lane: 'main',
+        ts: seq,
+        ignorable: true,
+        ...(sourceSeq ? { sourceEventSeqs: [sourceSeq] } : {}),
+      } as EventEnvelope)
+      return seq
+    },
+    outcome: async (id) => effects.get(id) ?? {},
+    wake: async () => undefined,
+  }
+  return { ports, effects, rows }
+}
+
+function ownerCall(source: string, id: string, by: Actor): DeferredToolInvocation {
+  return { ...call, id, source, actor: by }
+}
+
+it('keeps each producer inside its own invocations', async () => {
+  const { ports, effects } = memoryLedger()
+  const changed: string[] = []
+  const producers = new Map([
+    [
+      'alpha',
+      {
+        source: 'alpha',
+        validate: async (value: DeferredToolInvocation) => {
+          if (value.tool !== 'business_adjust') throw new Error('Not in the session tool catalog')
+        },
+        changed: async () => {
+          changed.push('alpha')
+        },
+      },
+    ],
+    [
+      'beta',
+      {
+        source: 'beta',
+        validate: async () => undefined,
+        changed: async () => {
+          changed.push('beta')
+        },
+      },
+    ],
+  ])
+  const raw = createDeferredInvocationQueue('s', 'main', ports, (source) => producers.get(source))
+  const sourceChecks = new Map<string, number>()
+  const admit = (owner: string, by: DeferredActor) => ({
+    owner,
+    actor: by,
+    confirmSource: async (seq: number, source: string) => {
+      sourceChecks.set(owner, (sourceChecks.get(owner) ?? 0) + 1)
+      if (source !== owner || seq !== 1) throw new Error('Deferred invocation source event is missing')
+    },
+  })
+  const alpha = ownerDeferredQueue(raw, admit('alpha', actor))
+  const betaActor: Actor = { ...actor, id: 'other-human' }
+  const beta = ownerDeferredQueue(raw, admit('beta', betaActor))
+  const first = await alpha.enqueue(ownerCall('alpha', 'owned-by-alpha', actor), signal)
+  expect(sourceChecks.get('alpha')).toBe(1)
+  await alpha.enqueue(ownerCall('alpha', 'owned-by-alpha', actor), signal)
+  expect(sourceChecks.get('alpha')).toBe(1)
+  expect(await beta.next(signal)).toBeNull()
+  await expect(beta.read(first.invocation.id, signal)).rejects.toThrow('another producer')
+  await expect(beta.transition(first.invocation.id, first.seq, 'executing')).rejects.toThrow(
+    'another producer',
+  )
+  expect(await raw.read(first.invocation.id, signal)).toMatchObject({ state: 'queued', seq: first.seq })
+  await expect(beta.enqueue(ownerCall('alpha', 'forged-source', betaActor), signal)).rejects.toThrow(
+    'another producer',
+  )
+  await expect(
+    alpha.enqueue({ ...ownerCall('alpha', 'forged-actor', actor), actor: betaActor }, signal),
+  ).rejects.toThrow('actor does not match')
+  await expect(
+    alpha.enqueue({ ...ownerCall('alpha', 'forged-seq', actor), sourceSeq: 99 }, signal),
+  ).rejects.toThrow('source event is missing')
+  await expect(alpha.transition(first.invocation.id, 999, 'failed')).rejects.toThrow('stale')
+  expect(await raw.read(first.invocation.id, signal)).toMatchObject({ state: 'queued' })
+  const trusted = { content: [{ type: 'text' as const, text: 'original' }] }
+  effects.set(first.invocation.id, { resultSeq: 8, result: trusted })
+  await expect(
+    alpha.transition(first.invocation.id, first.seq, 'succeeded', {
+      result: { content: [{ type: 'text' as const, text: 'forged' }] },
+    }),
+  ).rejects.toThrow('does not match its durable result')
+  expect(await raw.read(first.invocation.id, signal)).toMatchObject({ state: 'queued' })
+  await beta.notify(signal)
+  expect(changed).toEqual([])
+  await alpha.notify(signal)
+  expect(changed).toEqual(['alpha'])
+  const second = await beta.enqueue(ownerCall('beta', 'owned-by-beta', betaActor), signal)
+  await alpha.notify(signal)
+  expect(changed).toEqual(['alpha'])
+  await beta.notify(signal)
+  expect(changed).toEqual(['alpha', 'beta'])
+  await raw.notify(signal)
+  expect(changed).toEqual(['alpha', 'beta'])
+  expect(second.invocation.source).toBe('beta')
+  await expect(alpha.read(second.invocation.id, signal)).rejects.toThrow('another producer')
+  expect((await alpha.next(signal))?.invocation.id).toBe('owned-by-alpha')
+  expect(await beta.next(signal)).toBeNull()
+})
+
+it('keeps an older generation queue on its original producer', async () => {
+  const root = new Context()
+  const older = new DeferredInvocationsService(root.extend(), { lookup: () => undefined })
+  const newer = new DeferredInvocationsService(root.extend(), { lookup: () => undefined })
+  const seen: string[] = []
+  const producer = (name: string) => ({
+    source: 'fixture',
+    validate: async () => {
+      seen.push(name)
+    },
+    changed: async () => {
+      seen.push(`${name}-changed`)
+    },
+  })
+  try {
+    older.register(producer('old'))
+    newer.register(producer('new'))
+    older.bind('s', 'main', memoryLedger().ports)
+    const queue = older.forSession('s', 'main')
+    await queue!.enqueue({ ...call, source: 'fixture' }, signal)
+    expect(newer.forSession('s', 'main')).toBeUndefined()
+    await queue!.notify(signal)
+    expect(seen).toEqual(['old', 'old-changed'])
+    newer.bind('s', 'main', memoryLedger().ports)
+    await newer.forSession('s', 'main')!.enqueue({ ...call, id: 'new-generation', source: 'fixture' }, signal)
+    expect(seen).toEqual(['old', 'old-changed', 'new'])
+    expect((await queue!.read(call.id, signal))?.invocation.source).toBe('fixture')
+  } finally {
+    await root.fiber.dispose()
+  }
+})
+
+it('repairs wake and notification after close and cold resume', async () => {
+  const f = await fixture()
+  try {
+    f.failNextWake()
+    await expect(f.queue().enqueue(call, signal)).rejects.toThrow('Wake interrupted')
+    expect(await f.queue().read(call.id, signal)).toMatchObject({ state: 'queued' })
+    expect(f.wakes()).toBe(1)
+    await f.restart()
+    const restored = f.queue()
+    const again = await restored.enqueue(call, signal)
+    expect(again.state).toBe('queued')
+    expect(f.wakes()).toBe(2)
+    await restored.transition(call.id, again.seq, 'failed', {
+      error: { code: 'DEFERRED_NOT_DISPATCHED', message: 'closed', outcomeUnknown: false, retryable: true },
+    })
+    f.failNotify()
+    await expect(restored.notify(signal)).rejects.toThrow('Delivery interrupted')
+    expect(f.changed).toEqual([])
+    await f.restart()
+    f.allowNotify()
+    await f.queue().notify(signal)
+    expect(f.changed.at(-1)).toMatchObject({ state: 'failed', invocation: { id: call.id } })
+  } finally {
+    await f.close()
+  }
+})
+
+it('does not repeat an executing, approved, or unknown effect', async () => {
+  const f = await fixture()
+  try {
+    const queue = f.queue()
+    const received = await queue.enqueue(call, signal)
+    await queue.transition(call.id, received.seq, 'executing')
+    const result = { content: [{ type: 'text' as const, text: 'Already recorded' }] }
+    const resultSeq = await f.ports.append('x/test/tool-receipt', { invocationId: call.id }, actor)
+    f.effects.set(call.id, { resultSeq, result })
+    expect(await drainDeferredToolInvocations(f.ctx(queue), signal)).toMatchObject({ outcome: 'running' })
+    expect(f.executed).toEqual([])
+    expect(await queue.read(call.id, signal)).toMatchObject({ state: 'succeeded' })
+    expect(await drainDeferredToolInvocations(f.ctx(queue), signal)).toBeNull()
+  } finally {
+    await f.close()
+  }
+  const parked = await fixture()
+  try {
+    const parkedQueue = parked.queue()
+    await parkedQueue.enqueue({ ...call, id: 'parked-once' }, signal)
+    expect(await drainDeferredToolInvocations(parked.ctx(parkedQueue, true), signal)).toMatchObject({
+      outcome: 'parked',
+    })
+    expect(await parkedQueue.read('parked-once', signal)).toMatchObject({
+      state: 'pending-approval',
+      approvalId: 'ticket-original',
+    })
+    expect(parked.executed).toEqual([])
+  } finally {
+    await parked.close()
+  }
+  const unknown = await fixture()
+  try {
+    const unknownQueue = unknown.queue()
+    const queued = await unknownQueue.enqueue({ ...call, id: 'unknown-once' }, signal)
+    await unknownQueue.transition('unknown-once', queued.seq, 'executing')
+    await drainDeferredToolInvocations(unknown.ctx(unknownQueue, false, true), signal)
+    expect(await unknownQueue.read('unknown-once', signal)).toMatchObject({
+      state: 'failed',
+      error: { outcomeUnknown: true, retryable: false },
+    })
+    expect(unknown.executed).toEqual([])
+    expect(await drainDeferredToolInvocations(unknown.ctx(unknownQueue, false, true), signal)).toBeNull()
+  } finally {
+    await unknown.close()
+  }
+})
+
+it('keeps a bound queue after its producer unloads', async () => {
+  const root = new Context()
+  const service = new DeferredInvocationsService(root.extend(), { lookup: () => undefined })
+  const { ports } = memoryLedger()
+  const releaseProducer = service.register({
+    source: 'test',
+    validate: async () => undefined,
+    changed: async () => undefined,
+  })
+  try {
+    service.bind('s', 'main', ports)
+    const queue = service.forSession('s', 'main')
+    await queue!.enqueue(call, signal)
+    releaseProducer()
+    expect(service.forSession('s', 'main')).toBe(queue)
+    await expect(queue!.enqueue({ ...call, id: 'after-unload' }, signal)).rejects.toThrow(
+      'producer is unavailable',
+    )
+    await expect(queue!.notify(signal)).rejects.toThrow('producer is unavailable during recovery')
+    expect(await queue!.read(call.id, signal)).toMatchObject({ state: 'queued' })
+  } finally {
+    await root.fiber.dispose()
+  }
+})
+
+async function migrationLog() {
+  const storage = new MemoryStorage()
+  const log = await SessionLogImpl.open({
+    storage,
+    key: 's',
+    writerRunId: 'migration',
+    ttlMs: 30000,
+    ids: defaultIds(),
+    clock: Date.now,
+  })
+  return {
+    storage,
+    log,
+    async append(state: string, id = call.id) {
+      await log.append([
+        {
+          type: DEFERRED_INVOCATION_EVENT,
+          data: { invocation: { ...call, id }, state },
+          actor,
+          origin: 'system',
+          trust: 'trusted',
+          lane: 'main',
+          ignorable: true,
+        },
+      ])
+    },
+    close: () => log.close(),
+  }
+}
+
+it('refuses migration while deferred work is unfinished and allows a terminal receipt', async () => {
+  const pending = await migrationLog()
+  try {
+    await assertMigrationSettled(pending.storage, 's', 'generation')
+    await expect(assertMigrationSettled(pending.storage, 's', 'generation', true)).rejects.toBeInstanceOf(
+      HostError,
+    )
+    await pending.append('queued')
+    await expect(assertMigrationSettled(pending.storage, 's', 'generation')).rejects.toMatchObject({
+      code: 'E_GENERATION_EXECUTION_UNSETTLED',
+    })
+    await expect(assertMigrationSettled(pending.storage, 's', 'generation')).rejects.toThrow(
+      'unfinished-deferred-invocation',
+    )
+  } finally {
+    await pending.close()
+  }
+  for (const state of ['executing', 'pending-approval'] as const) {
+    const open = await migrationLog()
+    try {
+      await open.append(state)
+      await expect(assertMigrationSettled(open.storage, 's', 'generation')).rejects.toThrow(
+        'unfinished-deferred-invocation',
+      )
+    } finally {
+      await open.close()
+    }
+  }
+  const done = await migrationLog()
+  try {
+    await done.append('succeeded', 'finished')
+    await assertMigrationSettled(done.storage, 's', 'generation')
+  } finally {
+    await done.close()
+  }
+})
