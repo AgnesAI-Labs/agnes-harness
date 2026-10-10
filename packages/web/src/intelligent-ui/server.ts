@@ -1,4 +1,4 @@
-import type { UiActionReceipt, UiReadResult } from '@agnes/protocol/gen/intelligent-ui'
+import type { UiActionReceipt, UiReadResult, UiSurfaceRecord } from '@agnes/protocol/gen/intelligent-ui'
 import type { Client, Session } from '@agnes/sdk/browser'
 import type { IntelligentUiServer } from './types.js'
 
@@ -6,6 +6,7 @@ export function intelligentUiServer(client: Client, session: Session): Intellige
   let recoveryNotice = () => {}
   return {
     read: (params) => client.call<UiReadResult>('_agnes/v1/ui.read', params),
+    refresh: (params) => client.call<UiSurfaceRecord>('_agnes/v1/ui.refresh', params),
     action: (params) => client.call<UiActionReceipt>('_agnes/v1/ui.action', params),
     listen(onEvent, onGap) {
       recoveryNotice = onGap

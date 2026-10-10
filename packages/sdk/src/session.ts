@@ -640,6 +640,13 @@ export class Session {
     return this.client.call('_agnes/v1/ui.read', { ...input, sessionId: this.id })
   }
 
+  /** Re-queries bound data for one open surface. The stored revision stays the author's. */
+  uiRefresh(
+    input: Omit<import('@agnes/protocol').UiRefreshParams, 'sessionId'>,
+  ): Promise<import('@agnes/protocol').UiSurfaceRecord> {
+    return this.client.call('_agnes/v1/ui.refresh', { ...input, sessionId: this.id })
+  }
+
   tools(): Promise<import('@agnes/protocol').SessionToolsResult> {
     return this.client.call('_agnes/v1/session.tools', { sessionId: this.id })
   }

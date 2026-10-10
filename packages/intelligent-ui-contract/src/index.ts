@@ -21,7 +21,10 @@ import type {
   UiCloseParams,
   UiReadParams,
   UiReadResult,
+  UiRefreshParams,
   UiRenderParams,
+  UiSourceStatus,
+  UiSurface,
   UiSurfaceRecord,
   UiUpdateParams,
 } from '@agnes/protocol'
@@ -45,6 +48,13 @@ export const UI_EVENTS = [
   'action.delivered',
 ] as readonly string[]
 
+/**
+ * Resolution audits on the Intelligent UI ledger. They stay off `UI_EVENTS`,
+ * so fold, projection, and the manifest input list ignore them.
+ */
+export const UI_SOURCE_EVENTS = ['source.resolved', 'source.refused', 'source.refreshed'] as const
+export type UiSourceEventName = (typeof UI_SOURCE_EVENTS)[number]
+
 /** Read-only catalog the surface checker uses. Privileged lookup stays on the host. */
 export interface IntelligentUiCatalog {
   components?(): readonly UiComponentDeclaration[]
@@ -62,6 +72,13 @@ export interface IntelligentUiCapabilities extends IntelligentUiCatalog {
   invocationId(toolUseId: string): Promise<string | undefined>
   /** Actor admitted with this bind. A missing or different actor fails closed. */
   authenticatedActor?: Actor
+  /**
+   * Host resolver. A literal surface never calls it.
+   * A binding fails closed when this is absent.
+   */
+  resolveSources?(input: UiSourceResolveInput): Promise<UiSourceResolveResult>
+  /** Drops one surface from the host resolution cache. */
+  dropSources?(surfaceId: string): void
 }
 
 export interface IntelligentUiServicePorts extends ServicePorts {
@@ -77,6 +94,8 @@ export interface IntelligentUiInstance extends ServiceInstance {
   close(input: UiCloseParams, signal: AbortSignal): Promise<UiSurfaceRecord>
   action(input: UiActionParams, actor: Actor, signal: AbortSignal): Promise<UiActionReceipt>
   read(input: UiReadParams, signal: AbortSignal): Promise<UiReadResult>
+  /** Re-queries bindings for one open surface. Does not write a surface revision. */
+  refresh(input: UiRefreshParams, signal: AbortSignal): Promise<UiSurfaceRecord>
   validate(invocation: DeferredToolInvocation, signal: AbortSignal): Promise<void>
   changed(receipt: DeferredInvocationReceipt, signal: AbortSignal): Promise<void>
 }
@@ -104,6 +123,44 @@ export const UI_SOURCE_FAILURES = Object.freeze([
   'UI_SOURCE_UNAVAILABLE',
 ] as const)
 export type UiSourceFailure = (typeof UI_SOURCE_FAILURES)[number]
+
+/** Fields the ledger may store. No params, rows, or source error text. */
+export interface UiSourceAudit {
+  readonly name: UiSourceEventName
+  readonly data: {
+    readonly sourceId: string
+    readonly paramsHash: string
+    readonly resultHash?: string
+    readonly bytes?: number
+    readonly rows?: number
+    readonly durationMs: number
+    readonly generationId: string
+    readonly actorId: string
+    readonly code?: UiSourceFailure
+  }
+}
+
+export interface UiSourceResolveInput {
+  readonly purpose: 'read' | 'write' | 'refresh' | 'action'
+  readonly surface: UiSurface
+  readonly openSurfaceIds: readonly string[]
+  readonly action?: UiActionParams
+  readonly signal: AbortSignal
+}
+
+export type UiSourceResolveResult =
+  | {
+      readonly ok: true
+      readonly surface: UiSurface
+      readonly sources: Record<string, UiSourceStatus>
+      readonly audits: readonly UiSourceAudit[]
+    }
+  | {
+      readonly ok: false
+      readonly code: UiSourceFailure | 'UI_STALE'
+      readonly dataKey?: string
+      readonly audits: readonly UiSourceAudit[]
+    }
 
 /** Surface `$source` id. One registration uses one id. */
 export const UI_DATA_SOURCE_ID_PATTERN = /^[a-z0-9-]+\/[a-z0-9-]+$/

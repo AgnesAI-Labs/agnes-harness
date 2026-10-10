@@ -14,6 +14,8 @@ import {
   UI_OWNER,
   UI_PROVIDER_ID,
   UI_PROVIDER_VERSION,
+  UI_SOURCE_EVENTS,
+  uiDataSourceKind,
 } from '@agnes/intelligent-ui-contract'
 import {
   type DeferredProducerInstance,
@@ -28,6 +30,8 @@ import {
   type UiActionReceipt,
   type UiReadParams,
   type UiReadResult,
+  type UiRefreshParams,
+  type UiSurfaceRecord,
 } from '@agnes/protocol'
 import type { HostSession } from '../lifecycle/host.js'
 import type { ExtensionServiceHost } from '../services/author-port.js'
@@ -38,9 +42,21 @@ import {
 } from '../services/session-ports.js'
 import { deferredQueueFor, enqueueSessionInputOnce } from './deferred-invocations.js'
 import { readUiComponentDeclarations } from './ui-component-declarations.js'
+import {
+  dropUiDataSourceCache,
+  loadUiDataSourceGrant,
+  lookupUiDataSource,
+  resolveUiDataSources,
+  type UiDataSourceCacheEntry,
+  type UiDataSourceCatalogView,
+  type UiDataSourceLookup,
+} from './ui-data-source.js'
 
 const READER: Actor = { id: UI_OWNER, org: 'local', role: 'extension', deptPath: [], attrs: {} }
 const UNAVAILABLE = 'Intelligent UI plugin unavailable'
+
+/** Live provider catalog. The static resolve() return type does not carry source fields. */
+export type UiDataSourceCatalog = UiDataSourceCatalogView
 
 function denied(reason?: string): never {
   throw rpcError('CAPABILITY_DENIED', reason === undefined ? undefined : { reason })
@@ -97,9 +113,14 @@ async function confirmDeferredSource(
 export function createIntelligentUiBridge(input: {
   extensionHost: ExtensionServiceHost
   profileDir: string
+  profileName: string
+  agnesVersion: string
   sessionGeneration: (sessionKey: string) => string | undefined
   session: (key: string) => HostSession | undefined
+  providers: () => UiDataSourceCatalog
 }) {
+  const sourceCache = new Map<string, UiDataSourceCacheEntry>()
+  const sourceValidators = new Map<string, ((data: unknown) => boolean) | 'invalid'>()
   let hooked = false
   const enabled = () => input.extensionHost.packageFor(intelligentUiKind, UI_OWNER) !== undefined
   const generationOf = (session: HostSession) =>
@@ -236,9 +257,24 @@ export function createIntelligentUiBridge(input: {
       },
     }
   }
+  const findSource = (id: string): UiDataSourceLookup => {
+    try {
+      return lookupUiDataSource(input.providers(), id)
+    } catch {
+      return { status: 'unknown' }
+    }
+  }
+  const sourceDescriptor: ServiceDescriptor = {
+    ports: [],
+    audience: 'host',
+    capabilities(call) {
+      if (!call.actor?.id || !call.session || !call.generationId) denied()
+      return { actor: call.actor, session: call.session, generationId: call.generationId }
+    },
+  }
   const descriptor: ServiceDescriptor = {
     ports: ['ledger', 'input', 'projections'],
-    eventNames: UI_EVENTS,
+    eventNames: [...UI_EVENTS, ...UI_SOURCE_EVENTS],
     projectionNames: ['surfaces'],
     audience: 'callback',
     delivery: 'follow-steer',
@@ -280,6 +316,52 @@ export function createIntelligentUiBridge(input: {
           return (row?.data as { invocationId?: string } | undefined)?.invocationId
         },
         authenticatedActor: call.actor,
+        resolveSources: (request) => {
+          const live = requireSession(session.key, session.lane)
+          const generationId = generationOf(live)
+          const actor = call.actor
+          if (!generationId || !actor?.id || !call.session) denied(UNAVAILABLE)
+          return resolveUiDataSources(request, {
+            actor,
+            generationId,
+            session: call.session,
+            cache: sourceCache,
+            validators: sourceValidators,
+            find: findSource,
+            grant: (packageId) =>
+              loadUiDataSourceGrant({
+                profileDir: input.profileDir,
+                profile: input.profileName,
+                agnesVersion: input.agnesVersion,
+                generationId,
+                packageId,
+              }),
+            declarations: () => readUiComponentDeclarations(input.profileDir, live.key),
+            open: async (registration, signal) => {
+              const instance = await input.extensionHost.bindHost(uiDataSourceKind, {
+                owner: UI_OWNER,
+                packageId: registration.sourcePackage,
+                providerId: registration.id,
+                session: call.session,
+                generationId,
+                signal,
+                actor,
+                live: () => {
+                  if (signal.aborted || live.closingOrClosed) return undefined
+                  if (generationOf(live) !== generationId) return undefined
+                  return { owner: UI_OWNER, active: true, generationId }
+                },
+              })
+              return {
+                query: (params, querySignal) => instance.query(params, querySignal),
+                dispose: async () => {
+                  await instance.dispose?.()
+                },
+              }
+            },
+          })
+        },
+        dropSources: (surfaceId) => dropUiDataSourceCache(sourceCache, session.key, surfaceId),
       }
     },
     input(call) {
@@ -307,6 +389,7 @@ export function createIntelligentUiBridge(input: {
       | {
           action(input: UiActionParams, actor: Actor, signal: AbortSignal): Promise<UiActionReceipt>
           read(input: UiReadParams, signal: AbortSignal): Promise<UiReadResult>
+          refresh(input: UiRefreshParams, signal: AbortSignal): Promise<UiSurfaceRecord>
         }
       | undefined {
       if (!enabled()) return undefined
@@ -314,10 +397,12 @@ export function createIntelligentUiBridge(input: {
         action: (params, actor, signal) =>
           run(session, actor, signal, (ui) => ui.action(params, actor, signal)),
         read: (params, signal) => run(session, READER, signal, (ui) => ui.read(params, signal)),
+        refresh: (params, signal) => run(session, READER, signal, (ui) => ui.refresh(params, signal)),
       }
     },
     attach(root: Context, origins: RowOriginLookup | undefined, deferred: DeferredInvocationsService): void {
       input.extensionHost.install(root, intelligentUiKind, descriptor, origins)
+      input.extensionHost.install(root, uiDataSourceKind, sourceDescriptor, origins)
       input.extensionHost.install(root, deferredQueueKind, { ports: [], audience: 'host' }, origins)
       input.extensionHost.install(root, deferredProducerKind, { ports: [], audience: 'callback' }, origins)
       deferred.setProducerResolver((source, sessionKey, lane, signal) =>

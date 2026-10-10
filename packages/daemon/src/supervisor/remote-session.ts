@@ -84,6 +84,12 @@ export class RemoteSession {
       signal.throwIfAborted()
       return result as import('@agnes/protocol').UiReadResult
     },
+    refresh: async (input: import('@agnes/protocol').UiRefreshParams, signal: AbortSignal) => {
+      signal.throwIfAborted()
+      const result = await this.link.command('ui.refresh', { input })
+      signal.throwIfAborted()
+      return result as import('@agnes/protocol').UiSurfaceRecord
+    },
   }
 
   async draftFeedback(

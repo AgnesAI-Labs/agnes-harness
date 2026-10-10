@@ -38,6 +38,9 @@ it('checks session ownership before state/dedupe, binds the actor and repairs a 
               async read() {
                 return result
               },
+              async refresh() {
+                return { sessionId: 'owned', surfaceId: 'review' }
+              },
             }
           : undefined
       },
@@ -85,6 +88,13 @@ it('checks session ownership before state/dedupe, binds the actor and repairs a 
     expect((await call('_agnes/v1/ui.action', request)).result).toEqual(receipt)
     expect(seen).toContainEqual({ input: request, actor })
     expect((await call('_agnes/v1/ui.read', { sessionId: 'owned' })).result).toEqual(result)
+    expect((await call('_agnes/v1/ui.refresh', { sessionId: 'owned', surfaceId: 'review' })).result).toEqual({
+      sessionId: 'owned',
+      surfaceId: 'review',
+    })
+    expect(
+      (await call('_agnes/v1/ui.refresh', { sessionId: 'foreign', surfaceId: 'review' })).error?.data?.code,
+    ).toBe('CAPABILITY_DENIED')
     expect(seen.filter((value) => typeof value === 'object' && value !== null && 'restart' in value)).toEqual(
       [{ restart: true }, { restart: true }],
     )

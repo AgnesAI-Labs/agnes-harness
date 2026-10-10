@@ -32,6 +32,7 @@ export function capabilityAtoms(value: PluginCapabilities | undefined): string[]
       (value.filesystem?.[key] ?? []).map((scope) => `filesystem.${key}:${scope}`),
     ),
     ...(['model', 'childAgents', 'ui', 'device'] as const).filter((key) => value[key] === true),
+    ...(value.uiData ?? []).map((permission) => `uiData:${permission}`),
   ].sort()
 }
 

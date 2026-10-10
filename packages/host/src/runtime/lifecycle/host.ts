@@ -62,7 +62,7 @@ import { closeHost } from './lifecycle.js'
 export type HostSession = Awaited<ReturnType<Kernel['session']>> & {
   readonly intelligentUi?: Pick<
     import('@agnes/intelligent-ui-contract').IntelligentUiInstance,
-    'action' | 'read'
+    'action' | 'read' | 'refresh'
   >
   readonly pluginGenerationId?: string
   readonly referenceResolvers?: import('@agnes/extension-api').ReferenceResolverPort

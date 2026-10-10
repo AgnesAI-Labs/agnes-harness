@@ -25,7 +25,15 @@ import {
 } from '@agnes/package-manager'
 import { defineLoop } from '@agnes/plugin-runtime'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
-import type { RouteDecl, UiActionParams, UiActionReceipt, UiReadParams, UiReadResult } from '@agnes/protocol'
+import type {
+  RouteDecl,
+  UiActionParams,
+  UiActionReceipt,
+  UiReadParams,
+  UiReadResult,
+  UiRefreshParams,
+  UiSurfaceRecord,
+} from '@agnes/protocol'
 import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/resource-control-runtime'
 import type { Host, HostSession } from '../../src/runtime/lifecycle/host.js'
 import { createTestHost, type TestHostOptions } from '../index.js'
@@ -62,6 +70,7 @@ export interface AuthorSession {
   invoke(name: string, args: unknown, signal?: AbortSignal): Promise<ToolResult>
   uiAction(input: Omit<UiActionParams, 'sessionId'>): Promise<UiActionReceipt>
   uiRead(input?: Omit<UiReadParams, 'sessionId'>): Promise<UiReadResult>
+  uiRefresh(input: Omit<UiRefreshParams, 'sessionId'>): Promise<UiSurfaceRecord>
   facts(): Promise<Event[]>
   effects(): Promise<Event[]>
   assertApproval(verdict: string): Promise<void>
@@ -421,6 +430,19 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
             active = true
             try {
               return await session.intelligentUi.read(
+                { ...input, sessionId: session.key },
+                new AbortController().signal,
+              )
+            } finally {
+              active = false
+            }
+          },
+          async uiRefresh(input) {
+            ready()
+            if (!session.intelligentUi) throw new Error('Intelligent UI plugin unavailable')
+            active = true
+            try {
+              return await session.intelligentUi.refresh(
                 { ...input, sessionId: session.key },
                 new AbortController().signal,
               )

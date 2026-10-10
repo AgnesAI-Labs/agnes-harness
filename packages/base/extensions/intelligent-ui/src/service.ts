@@ -4,15 +4,18 @@ import type { IntelligentUiInstance, IntelligentUiServicePorts } from '@agnes/in
 import {
   jcs,
   rpcError,
+  type UiActionParams as UiActionInput,
   type UiActionReceipt,
   type UiRefusal,
   type UiSurfaceRecord,
+  uiDataBinding,
   validateAgainst,
 } from '@agnes/protocol'
 import {
   UiActionParams,
   UiCloseParams,
   UiReadParams,
+  UiRefreshParams,
   UiRenderParams,
   UiUpdateParams,
   X_AGNES_UI_LIMITS,
@@ -66,6 +69,29 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
       (action) =>
         action.request.surfaceId === id && (unfinished(action) || action.receipt.failure?.outcomeUnknown),
     )
+  const openSurfaceIds = (value: UiState) =>
+    Object.values(value.surfaces)
+      .filter((item) => item.status === 'open')
+      .map((item) => item.surface.id)
+  const present = async (
+    surface: UiSurfaceRecord['surface'],
+    signal: AbortSignal,
+    purpose: 'read' | 'write' | 'refresh' | 'action',
+    ids: readonly string[],
+    action?: UiActionInput,
+  ) => {
+    if (!Object.values(surface.data).some((item) => uiDataBinding(item))) return undefined
+    if (!cap.resolveSources) throw rpcError('CAPABILITY_DENIED')
+    const view = await cap.resolveSources({
+      purpose,
+      surface,
+      openSurfaceIds: ids,
+      signal,
+      ...(action ? { action } : {}),
+    })
+    for (const fact of view.audits) await append(fact.name, fact.data)
+    return view
+  }
   const delivery = async (record: ActionRecord, signal: AbortSignal) => {
     if (!terminal(record) || record.deliveredSeq) return
     const receipt = record.receipt
@@ -247,6 +273,8 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
           X_AGNES_UI_LIMITS.liveSurfaces
         )
           throw rpcError('SEMANTIC_REJECTED', { code: 'UI_LIMIT' })
+        const view = await present(input.surface, signal, 'write', openSurfaceIds(value))
+        if (view && !view.ok) throw rpcError('SEMANTIC_REJECTED', { code: view.code })
         return storeSurface(
           'surface.opened',
           {
@@ -277,6 +305,8 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
         )
           throw rpcError('SEMANTIC_REJECTED', { code: 'UI_STALE' })
         if (blocked(value, input.surfaceId)) throw rpcError('SEMANTIC_REJECTED', { code: 'UI_BUSY' })
+        const view = await present(input.surface, signal, 'write', openSurfaceIds(value))
+        if (view && !view.ok) throw rpcError('SEMANTIC_REJECTED', { code: view.code })
         return storeSurface('surface.updated', { ...old, surface: structuredClone(input.surface) }, value)
       }),
     close: (input, signal) =>
@@ -287,8 +317,12 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
           old = value.surfaces[input.surfaceId]
         if (!old || old.surface.revision !== input.expectedRevision)
           throw rpcError('SEMANTIC_REJECTED', { code: 'UI_STALE' })
-        if (old.status === 'closed') return old
+        if (old.status === 'closed') {
+          cap.dropSources?.(input.surfaceId)
+          return old
+        }
         if (blocked(value, input.surfaceId)) throw rpcError('SEMANTIC_REJECTED', { code: 'UI_BUSY' })
+        cap.dropSources?.(input.surfaceId)
         return storeSurface('surface.closed', { ...old, status: 'closed' }, value, input.reason)
       }),
     action: (input, actor, signal) =>
@@ -354,9 +388,14 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
         }
         if (blocked(value, request.surfaceId))
           throw rpcError('OVERLOADED', { code: 'UI_BUSY', reason: 'surface has an unfinished action' })
+        const view = await present(surface.surface, signal, 'action', openSurfaceIds(value), request)
+        if (view && !view.ok) {
+          if (view.code === 'UI_STALE') return refusal(record, stale(false, surface.surface.revision), signal)
+          throw rpcError('SEMANTIC_REJECTED', { code: view.code })
+        }
         let args: ReturnType<typeof bindArguments>
         try {
-          args = bindArguments(surface.surface, request, cap)
+          args = bindArguments(view?.surface ?? surface.surface, request, cap)
         } catch (error) {
           return refusal(
             record,
@@ -447,7 +486,14 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
             )
             .sort((a, b) => a.createdSeq - b.createdSeq)
         const limit = input.limit ?? 16,
-          surfaces = all.slice(offset, offset + limit)
+          page = all.slice(offset, offset + limit),
+          ids = openSurfaceIds(value),
+          surfaces: UiSurfaceRecord[] = []
+        for (const record of page) {
+          const view = await present(record.surface, signal, 'read', ids)
+          if (view && !view.ok) throw rpcError('SEMANTIC_REJECTED', { code: view.code })
+          surfaces.push(view ? { ...record, surface: view.surface, sources: view.sources } : record)
+        }
         // One bounded receipt page per snapshot, never duplicated on subsequent surface pages.
         const actions = offset
           ? []
@@ -478,6 +524,19 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
         return result
       })
     },
+    refresh: (input, signal) =>
+      serial(async () => {
+        signal.throwIfAborted()
+        if (!validateAgainst(UiRefreshParams, input).ok) throw rpcError('INVALID_PARAMS')
+        boundSession(input.sessionId)
+        const value = await state(),
+          old = value.surfaces[input.surfaceId]
+        if (!old || old.status !== 'open') throw rpcError('SEMANTIC_REJECTED', { code: 'UI_CLOSED' })
+        if (blocked(value, input.surfaceId)) throw rpcError('SEMANTIC_REJECTED', { code: 'UI_BUSY' })
+        const view = await present(old.surface, signal, 'refresh', openSurfaceIds(value))
+        if (view && !view.ok) throw rpcError('SEMANTIC_REJECTED', { code: view.code })
+        return view ? { ...old, surface: view.surface, sources: view.sources } : old
+      }),
     validate: async (invocation, signal) => {
       signal.throwIfAborted()
       if (!cap.supportsDeferredInvocations) throw new Error('Pinned Loop does not drain deferred invocations')
@@ -495,8 +554,13 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
         surface.taskId !== record.taskId ||
         surface.updatedSeq !== record.surfaceSeq ||
         surface.status !== 'open' ||
-        surface.surface.revision !== record.request.revision ||
-        jcs(bindArguments(surface.surface, record.request, cap)) !== jcs(invocation.args)
+        surface.surface.revision !== record.request.revision
+      )
+        throw new Error('UI invocation validation is stale')
+      const view = await present(surface.surface, signal, 'action', openSurfaceIds(value), record.request)
+      if (
+        (view && !view.ok) ||
+        jcs(bindArguments(view?.surface ?? surface.surface, record.request, cap)) !== jcs(invocation.args)
       )
         throw new Error('UI invocation validation is stale')
     },

@@ -295,7 +295,7 @@ import {
   resolveSessionCapabilities,
   type SessionCapabilitySet,
 } from '../profile/session-capabilities.js'
-import { createIntelligentUiBridge } from '../sessions/intelligent-ui.js'
+import { createIntelligentUiBridge, type UiDataSourceCatalog } from '../sessions/intelligent-ui.js'
 import {
   applyTelemetryConsent,
   createSessionHookPort,
@@ -1237,8 +1237,11 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     intelligentUi = createIntelligentUiBridge({
       extensionHost: extensionServices.current,
       profileDir: deps.profileDir,
+      profileName: profile.name,
+      agnesVersion: deps.agnesVersion ?? '0.0.0',
       sessionGeneration: (key) => deps.sessionGeneration?.(key),
       session: (key) => kernel?.get(key),
+      providers: () => publishedOrdinary().root.providers as UiDataSourceCatalog,
     })
     // Host admission for the one ordinary convergence path. `closeHost` seals this synchronously and
     // then joins the queue, so a target already admitted finishes loading and applying before the

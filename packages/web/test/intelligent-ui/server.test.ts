@@ -31,6 +31,8 @@ it('uses authenticated UI methods and preserves the conversation event cursor/fi
   const stop = server.listen(event, gap)
   await server.read({ sessionId: session.id })
   expect(call).toHaveBeenCalledWith('_agnes/v1/ui.read', { sessionId: session.id })
+  await server.refresh({ sessionId: session.id, surfaceId: 'reconcile' })
+  expect(call).toHaveBeenCalledWith('_agnes/v1/ui.refresh', { sessionId: session.id, surfaceId: 'reconcile' })
   await server.attach(10)
   expect(attach).not.toHaveBeenCalled()
   for (const listener of listeners)

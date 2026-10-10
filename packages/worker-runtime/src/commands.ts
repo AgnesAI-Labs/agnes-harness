@@ -302,6 +302,12 @@ export async function handleCommand(
     case 'ui.read':
       if (!session.intelligentUi) throw rpcError('CAPABILITY_DENIED')
       return session.intelligentUi.read(p.input as import('@agnes/protocol').UiReadParams, session.ac.signal)
+    case 'ui.refresh':
+      if (!session.intelligentUi) throw rpcError('CAPABILITY_DENIED')
+      return session.intelligentUi.refresh(
+        p.input as import('@agnes/protocol').UiRefreshParams,
+        session.ac.signal,
+      )
     case 'feedback.draft': {
       const runId = String(p.runId)
       if (p.providerId !== FEEDBACK_PROVIDER_ID)

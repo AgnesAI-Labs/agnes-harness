@@ -6,7 +6,11 @@ import { inspectStaged } from '../src/inspect.js'
 import { capabilityHash } from '../src/integrity.js'
 import { emptyLock, writeLock } from '../src/lockfile.js'
 import { createPackageManager } from '../src/manager.js'
-import { capabilityPolicyBlockers, parsePluginCapabilities } from '../src/plugin-capabilities.js'
+import {
+  capabilityAtoms,
+  capabilityPolicyBlockers,
+  parsePluginCapabilities,
+} from '../src/plugin-capabilities.js'
 import { fetchSource, hashDirectory, parseSource } from '../src/sources.js'
 
 const roots: string[] = []
@@ -57,6 +61,13 @@ function fixture() {
   const manager = createPackageManager({ dataDir: join(root, 'data'), cwd: profile, agnesVersion: '0.0.0' })
   return { root, source, profile, manager }
 }
+
+it('emits a uiData atom for each manifest permission', () => {
+  expect(capabilityAtoms({ ui: true, uiData: ['finance.differences.read'] })).toEqual([
+    'ui',
+    'uiData:finance.differences.read',
+  ])
+})
 
 it('binds declarations to previews/trust and rejects newly disallowed enable requests', async () => {
   const f = fixture(),

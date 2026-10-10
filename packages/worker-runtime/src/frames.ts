@@ -29,6 +29,7 @@ export type SessionMethod =
   | 'feedback.draft'
   | 'ui.action'
   | 'ui.read'
+  | 'ui.refresh'
   | 'references'
   | 'workspaceFiles'
   | 'fileUpload'

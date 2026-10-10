@@ -1,9 +1,13 @@
 import type {
+  IntelligentUiInstance,
+  UiSourceResolveInput,
+  UiSourceResolveResult,
+} from '@agnes/intelligent-ui-contract'
+import type {
   DeferredInvocationReceipt,
   DeferredToolInvocation,
   DeferredToolInvocationQueue,
 } from '@agnes/plugin-runtime/deferred-contract'
-import type { IntelligentUiInstance } from '@agnes/intelligent-ui-contract'
 import {
   type Actor,
   type EventEnvelope,
@@ -122,7 +126,8 @@ function fixture(
     failDelivery = false,
     failAdmission = false,
     invocation: string | undefined,
-    admitted: Actor | undefined = actor
+    admitted: Actor | undefined = actor,
+    resolver: ((input: UiSourceResolveInput) => Promise<UiSourceResolveResult>) | undefined
   const row = (name: string, data: unknown, origin = 'ext:agnes/intelligent-ui') => {
     const seq = rows.length + 1
     rows.push({
@@ -252,6 +257,9 @@ function fixture(
         get authenticatedActor() {
           return admitted
         },
+        get resolveSources() {
+          return resolver
+        },
       },
       now: () => now,
     }))
@@ -273,6 +281,9 @@ function fixture(
     wakeFail: (value: boolean) => (lostWake = value),
     deliveryFail: (value: boolean) => (failDelivery = value),
     admissionFail: (value: boolean) => (failAdmission = value),
+    source: (value: (input: UiSourceResolveInput) => Promise<UiSourceResolveResult>) => {
+      resolver = value
+    },
     async outcome(state: DeferredInvocationReceipt['state'], error?: DeferredInvocationReceipt['error']) {
       const old = [...calls.values()].at(-1)!
       const seq = row('queue', { state })
@@ -789,5 +800,144 @@ describe('question collector on the ordinary surface path', () => {
       code: expect.any(Number),
     })
     expect(f.rows).toHaveLength(before)
+  })
+})
+
+const HASH = 'ab'.repeat(32)
+const bound = (): UiSurface => {
+  const value = surface()
+  value.data.rows = { $source: 'finance/differences', params: {} }
+  return value
+}
+const resolved = (input: UiSourceResolveInput, ok = true): UiSourceResolveResult =>
+  ok
+    ? {
+        ok: true,
+        surface: {
+          ...input.surface,
+          data: { ...input.surface.data, rows: [{ id: 'a', amount: 12 }] },
+        },
+        sources: { rows: { status: 'ready', resultHash: HASH } },
+        audits: [
+          {
+            name: input.purpose === 'refresh' ? 'source.refreshed' : 'source.resolved',
+            data: {
+              sourceId: 'finance/differences',
+              paramsHash: HASH,
+              resultHash: HASH,
+              bytes: 2,
+              rows: 1,
+              durationMs: 1,
+              generationId: 'generation',
+              actorId: 'agnes/intelligent-ui',
+            },
+          },
+        ],
+      }
+    : {
+        ok: false,
+        code: 'UI_SOURCE_DENIED',
+        dataKey: 'rows',
+        audits: [
+          {
+            name: 'source.refused',
+            data: {
+              sourceId: 'finance/differences',
+              paramsHash: HASH,
+              durationMs: 1,
+              generationId: 'generation',
+              actorId: 'agnes/intelligent-ui',
+              code: 'UI_SOURCE_DENIED',
+            },
+          },
+        ],
+      }
+
+describe('bound UI data sources', () => {
+  it('stores the binding and audits the write without keeping rows', async () => {
+    const f = fixture()
+    f.source(async (input) => resolved(input))
+    const record = await f.service().render({ surface: bound() }, signal)
+    expect(record.surface.data.rows).toEqual({ $source: 'finance/differences', params: {} })
+    expect(record.sources).toBeUndefined()
+    const audits = f.rows.filter((item) => item.type.includes('/source.'))
+    expect(audits.map((item) => item.type)).toEqual(['x/agnes/intelligent-ui/source.resolved'])
+    expect(JSON.stringify(audits)).not.toContain('amount')
+    expect(JSON.stringify(audits)).not.toContain('$source')
+  })
+  it('rejects a write when resolution fails and stores nothing', async () => {
+    const f = fixture()
+    f.source(async (input) => resolved(input, false))
+    await expect(f.service().render({ surface: bound() }, signal)).rejects.toMatchObject({
+      data: { code: 'UI_SOURCE_DENIED' },
+    })
+    expect(f.rows.some((item) => item.type.endsWith('/surface.opened'))).toBe(false)
+    expect(f.rows.some((item) => item.type.endsWith('/source.refused'))).toBe(true)
+  })
+  it('fails closed when a binding has no resolver', async () => {
+    const f = fixture()
+    await expect(f.service().render({ surface: bound() }, signal)).rejects.toMatchObject({
+      data: { code: 'CAPABILITY_DENIED' },
+    })
+    expect(f.rows).toEqual([])
+  })
+  it('degrades one component on a later read and does not replay an earlier result', async () => {
+    const f = fixture()
+    let fail = false
+    f.source(async (input) =>
+      fail
+        ? {
+            ok: true,
+            surface: input.surface,
+            sources: { rows: { status: 'error', code: 'UI_SOURCE_UNAVAILABLE' } },
+            audits: [],
+          }
+        : resolved(input),
+    )
+    await f.service().render({ surface: bound() }, signal)
+    const first = (await f.service().read({ sessionId: 'session' }, signal)).surfaces[0]!
+    expect(first.surface.data.rows).toEqual([{ id: 'a', amount: 12 }])
+    expect(first.sources?.rows).toEqual({ status: 'ready', resultHash: HASH })
+    fail = true
+    const second = (await f.service().read({ sessionId: 'session' }, signal)).surfaces[0]!
+    expect(second.surface.data.rows).toEqual({ $source: 'finance/differences', params: {} })
+    expect(second.sources?.rows).toEqual({ status: 'error', code: 'UI_SOURCE_UNAVAILABLE' })
+  })
+  it('refuses a stale bound action and rejects a denied one before action.received', async () => {
+    const f = fixture()
+    let mode: 'ok' | 'stale' | 'denied' = 'ok'
+    f.source(async (input) =>
+      mode === 'ok'
+        ? resolved(input)
+        : { ...resolved(input, false), code: mode === 'stale' ? 'UI_STALE' : 'UI_SOURCE_DENIED' },
+    )
+    await f.service().render({ surface: bound() }, signal)
+    mode = 'stale'
+    expect(await f.service().action(request(), actor, signal)).toMatchObject({
+      status: 'rejected',
+      refusal: { code: 'UI_STALE' },
+    })
+    expect(f.rows.some((item) => item.type.endsWith('/action.received'))).toBe(true)
+    mode = 'denied'
+    const before = f.rows.filter((item) => item.type.endsWith('/action.received')).length
+    await expect(f.service().action(request('two'), actor, signal)).rejects.toMatchObject({
+      data: { code: 'UI_SOURCE_DENIED' },
+    })
+    expect(f.rows.filter((item) => item.type.endsWith('/action.received'))).toHaveLength(before)
+  })
+  it('refuses refresh while an action is unfinished and does not resolve again', async () => {
+    const f = fixture()
+    let calls = 0
+    f.source(async (input) => {
+      calls += 1
+      return resolved(input)
+    })
+    await f.service().render({ surface: bound() }, signal)
+    expect(await f.service().action(request(), actor, signal)).toMatchObject({ status: 'received' })
+    const before = calls
+    await expect(
+      f.service().refresh({ sessionId: 'session', surfaceId: 'reconcile' }, signal),
+    ).rejects.toMatchObject({ data: { code: 'UI_BUSY' } })
+    expect(calls).toBe(before)
   })
 })

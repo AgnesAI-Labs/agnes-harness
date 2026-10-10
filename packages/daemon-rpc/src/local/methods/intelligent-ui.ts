@@ -1,5 +1,5 @@
 import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import { rpcError, type UiActionParams, type UiReadParams } from '@agnes/protocol'
+import { rpcError, type UiActionParams, type UiReadParams, type UiRefreshParams } from '@agnes/protocol'
 import { commandBinding } from '../command-binding.js'
 import { runQueued } from '../command-queue.js'
 import type { AgnesContext } from './agnes.js'
@@ -73,6 +73,17 @@ export function registerIntelligentUi(
         result.actions.some((action) => action.status === 'received'),
       )
       return result
+    })
+  })
+  endpoint.register('_agnes/v1/ui.refresh', async (input, context) => {
+    const params = input as UiRefreshParams
+    owner('ui.refresh', params.sessionId, context)
+    return runQueued(cx.commandQueue, params.sessionId, context.signal, async (signal) => {
+      owner('ui.refresh', params.sessionId, context)
+      const entry = await open(params.sessionId, context),
+        service = entry.session.intelligentUi
+      if (!service) throw rpcError('CAPABILITY_DENIED')
+      return service.refresh(params, signal)
     })
   })
 }

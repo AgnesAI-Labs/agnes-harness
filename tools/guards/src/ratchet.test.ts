@@ -252,11 +252,13 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 const INITIAL_CEILING: Record<string, number> = {
   // GT1: register new round scopes; exact values are remeasured once at the end.
   'packages/base/extensions/references': 21,
-  'packages/base/extensions/intelligent-ui': 1009,
+  // UI data-source resolution. Rebased onto the deferred-producer plugin; countLines: 1065.
+  'packages/base/extensions/intelligent-ui': 1065,
   // Leaf Intelligent UI kind token so Host does not import Base. Exact countLines, no spare.
   // Deferred receipt types come from the plugin-runtime contract. countLines: 76, exact, no spare.
   // UI data-source kind, result enum, and failure codes. Rebased onto that 76; countLines: 163.
-  'packages/intelligent-ui-contract/src': 163,
+  // Resolve input and source audit names. countLines: 163 -> 205.
+  'packages/intelligent-ui-contract/src': 205,
   // Official plugin process-local serial and cursor MAC. Not a package export. Exact countLines, no spare.
   'packages/base/src/intelligent-ui-runtime': 55,
   'packages/observability/src': 1301,
@@ -286,13 +288,15 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-foundation/src': 2380,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
   'packages/daemon-rpc/src/local/auth': 341,
-  'packages/daemon-rpc/src': 8057,
+  // UI refresh forwarding. HEAD was 8143 against the previous 8057 ceiling; this change adds 11.
+  'packages/daemon-rpc/src': 8154,
   'packages/daemon/src/supervisor/startup': 18,
   'packages/daemon/src/supervisor/discovery': 446,
   'packages/daemon/src/supervisor/scope': 254,
   'packages/daemon/src/supervisor/configuration': 45,
   'packages/daemon/src/supervisor/service-worker': 103,
-  'packages/daemon/src/supervisor': 10918,
+  // UI refresh forwarding. HEAD was 11013 against the previous 10918 ceiling; this change adds 6.
+  'packages/daemon/src/supervisor': 11019,
   'packages/daemon-admin/src/packages/project': 43,
   'packages/daemon-admin/src/packages/permissions': 97,
   'packages/daemon-admin/src/packages/operations': 416,
@@ -308,8 +312,10 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host/src/runtime/adapters': 465,
   'packages/host/src/runtime/profile': 1661,
   // Deferred producer binding on the shared service ports. countLines: 11970, exact, no spare.
-  'packages/host/src/runtime': 11970,
-  'packages/host/src/runtime/assemble': 3504,
+  // UI data-source resolution. countLines: 11970 -> 12586 (+616).
+  'packages/host/src/runtime': 12586,
+  // UI data-source catalog wiring on that tree. countLines: 3517.
+  'packages/host/src/runtime/assemble': 3517,
   'packages/host-providers/src/adapters': 477,
   'packages/host-providers/src/profile': 165,
   // Owner-scoped deferred queue facade. countLines: 5162 and assemble 2402, exact, no spare.
@@ -535,7 +541,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 7131 -> 7200; exact measured cap, no exclusions or spare allocation.
   // Acceptance review: Include all runnable FDE examples and loop bundle manifests in the local example catalog.
   // countLines: 7200 -> 7217; exact cap, no exclusions or spare allocation.
-  'packages/package-manager/src': 8424,
+  // uiData capability atoms. HEAD was 8464 against the previous 8424 ceiling; this change adds 1.
+  'packages/package-manager/src': 8465,
   'packages/package-manager/src/catalog': 219,
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
@@ -1781,7 +1788,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 5443 -> 5447; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Typed search, history, context and child-engine administration methods.
   // countLines: 5447 -> 5456; exact cap, no exclusions or spare allocation.
-  'packages/sdk/src': 6020,
+  // UI refresh forwarding. HEAD was 6029 against the previous 6020 ceiling; this change adds 5.
+  'packages/sdk/src': 6034,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 217,
   'packages/sdk/src/surface.browser': 1,
@@ -2155,7 +2163,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 27898 -> 28105; exact cap, no exclusions or spare allocation.
   // Acceptance review: Persist child-engine settings through publication and recover legacy default loop pins when listing sessions.
   // countLines: 28105 -> 28157; exact cap, no exclusions or spare allocation.
-  'packages/daemon/src': 11129,
+  // UI refresh forwarding. HEAD was 11224 against the previous 11129 ceiling; this change adds 6.
+  'packages/daemon/src': 11230,
 
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2424,7 +2433,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 19657 -> 22109; exact cap, no exclusions or spare allocation.
   // Acceptance review: Retain published composition details and stable expanded goal state during admin refresh.
   // countLines: 22109 -> 22110; exact cap, no exclusions or spare allocation.
-  'packages/web/src': 13225,
+  // UI refresh forwarding. HEAD was 13323 against the previous 13225 ceiling; this change adds 4.
+  'packages/web/src': 13327,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2936,7 +2946,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Acceptance review: Restore immutable generation sources and publish child-engine configuration with explicit engine admission.
   // countLines: 46484 -> 46566; exact cap, no exclusions or spare allocation.
   // Deferred queue facade and Intelligent UI producer binding. countLines: 12508, exact, no spare.
-  'packages/host/src': 12508,
+  // UI data-source resolution. countLines: 12508 -> 13124 (+616).
+  'packages/host/src': 13124,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
