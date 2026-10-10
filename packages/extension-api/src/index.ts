@@ -26,12 +26,6 @@ export * from './git-worktrees.js'
 export { HOOK_TABLE } from './generated/hook-table.js'
 export { SLOT_TABLE } from './generated/slot-table.js'
 export * from './hooks.js'
-export type {
-  IntelligentUiExtensionPort,
-  IntelligentUiFactory,
-  IntelligentUiPorts,
-  IntelligentUiService,
-} from './intelligent-ui.js'
 export * from './loop.js'
 export * from './loop-events.js'
 export * from './loop-plugin.js'

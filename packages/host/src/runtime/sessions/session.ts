@@ -457,12 +457,7 @@ export async function createSession(
   const releaseDeferred = bindDeferredInvocations(a, session)
   attachIntelligentUiTrace(session, a.intelligentUi.enabled)
   Object.defineProperty(session, 'intelligentUi', {
-    get: () =>
-      a.intelligentUi.get({
-        key: session.key,
-        lane: session.lane,
-        workspaceRoot: session.d.cwd,
-      }),
+    get: () => a.intelligentUi.view(session),
   })
   const closeDeferredSession = session.close.bind(session)
   session.close = async () => {

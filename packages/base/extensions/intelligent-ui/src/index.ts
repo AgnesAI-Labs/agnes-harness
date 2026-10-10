@@ -1,6 +1,8 @@
 import { defineExtension, defineTool } from '@agnes/extension-api'
 import { UiCloseParams, UiRenderParams, UiUpdateParams } from '@agnes/protocol/gen/intelligent-ui'
 import { Type } from '@sinclair/typebox'
+import { intelligentUiKind, UI_PROVIDER_ID, UI_PROVIDER_VERSION } from '../../../src/intelligent-ui.js'
+import type { IntelligentUiInstance } from '../../../src/intelligent-ui.js'
 import { reachableParameters } from './parameters.js'
 import { createIntelligentUiService } from './service.js'
 import { uiProjection } from './state.js'
@@ -21,9 +23,22 @@ const meta = {
 /** Display-only surface publication. ui_submit collects answers and must not inherit this flag. */
 const presentational = { ...meta, isPresentational: true }
 export default defineExtension((agnes) => {
-  if (!agnes.intelligentUi) throw new Error('Host does not support Intelligent UI')
-  const runtime = agnes.intelligentUi
-  const off = [runtime.register(createIntelligentUiService), agnes.registerProjection(uiProjection)]
+  const bound = async <T>(run: (ui: IntelligentUiInstance) => Promise<T>) => {
+    const ui = await agnes.providers.bindOwn(intelligentUiKind)
+    try {
+      return await run(ui)
+    } finally {
+      await ui.dispose?.()
+    }
+  }
+  const off = [
+    agnes.providers.register(intelligentUiKind, {
+      id: UI_PROVIDER_ID,
+      version: UI_PROVIDER_VERSION,
+      open: createIntelligentUiService,
+    }),
+    agnes.registerProjection(uiProjection),
+  ]
   off.push(
     agnes.registerTool(
       defineTool({
@@ -33,7 +48,7 @@ export default defineExtension((agnes) => {
         parameters: reachableParameters(UiRenderParams),
         meta: presentational,
         async execute(input, ctx) {
-          const record = await runtime.session(ctx.session).render(input, ctx.signal)
+          const record = await bound((ui) => ui.render(input, ctx.signal))
           return {
             content: [
               {
@@ -60,7 +75,7 @@ export default defineExtension((agnes) => {
         parameters: reachableParameters(UiUpdateParams),
         meta: presentational,
         async execute(input, ctx) {
-          const record = await runtime.session(ctx.session).update(input, ctx.signal)
+          const record = await bound((ui) => ui.update(input, ctx.signal))
           return {
             content: [
               {
@@ -86,7 +101,7 @@ export default defineExtension((agnes) => {
         parameters: reachableParameters(UiCloseParams),
         meta: presentational,
         async execute(input, ctx) {
-          const record = await runtime.session(ctx.session).close(input, ctx.signal)
+          const record = await bound((ui) => ui.close(input, ctx.signal))
           return {
             content: [{ type: 'text', text: `Closed ${record.surface.title}.` }],
             details: { surfaceId: record.surface.id, status: 'closed' },
@@ -120,9 +135,7 @@ export default defineExtension((agnes) => {
         ),
         meta: { ...meta, isReadOnly: true },
         async execute(args, ctx) {
-          const accepted = await runtime
-            .session(ctx.session)
-            .submittedInput(ctx.session.toolUseId, args, ctx.signal)
+          const accepted = await bound((ui) => ui.submittedInput(ctx.session.toolUseId, args, ctx.signal))
           return { content: [{ type: 'text', text: JSON.stringify(accepted) }] }
         },
       }),

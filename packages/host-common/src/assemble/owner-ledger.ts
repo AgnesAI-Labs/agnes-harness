@@ -119,7 +119,7 @@ export function createOwnerLedger(options: {
       throw invalid(kind, 'bind', 'invalid service event name')
     relative.set(name, extEventType(owner, name))
   }
-  const watermark = options.watermark
+  let watermark = options.watermark
   if (!Number.isSafeInteger(watermark) || watermark < 0)
     throw invalid(kind, 'bind', 'invalid service watermark')
 
@@ -135,8 +135,13 @@ export function createOwnerLedger(options: {
       if (!Number.isSafeInteger(query.limit) || query.limit < 1 || query.limit > LIMIT_MAX)
         throw invalid(kind, 'scan', 'event page limit is invalid')
       const asOfSeq = query.asOfSeq === undefined ? watermark : query.asOfSeq
-      if (!Number.isSafeInteger(asOfSeq) || asOfSeq < 1 || asOfSeq > watermark)
+      if (!Number.isSafeInteger(asOfSeq) || asOfSeq < 0 || asOfSeq > watermark)
         throw invalid(kind, 'scan', 'event watermark was exceeded')
+      if (asOfSeq < 1) {
+        if (watermark !== 0) throw invalid(kind, 'scan', 'event watermark was exceeded')
+        source.alive()
+        return Object.freeze({ events: Object.freeze([]), asOfSeq })
+      }
       const sorted = [...names].sort()
       const requested = new Set(names.map((name) => relative.get(name) as string))
       let after = source.boundarySeq
@@ -210,7 +215,9 @@ export function createOwnerLedger(options: {
       if (sourceSeq !== undefined && (!Number.isSafeInteger(sourceSeq) || sourceSeq <= 0))
         throw invalid(kind, 'append', 'invalid event source')
       source.alive()
-      return source.append(type, checked.value, sourceSeq)
+      const seq = await source.append(type, checked.value, sourceSeq)
+      if (seq > watermark) watermark = seq
+      return seq
     },
   })
 }

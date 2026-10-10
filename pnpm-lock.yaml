@@ -689,6 +689,9 @@ importers:
       '@agnes/ai':
         specifier: workspace:*
         version: link:../ai
+      '@agnes/base':
+        specifier: workspace:*
+        version: link:../base
       '@agnes/cordis':
         specifier: workspace:*
         version: link:../cordis
@@ -750,9 +753,6 @@ importers:
         specifier: 2.9.0
         version: 2.9.0
     devDependencies:
-      '@agnes/base':
-        specifier: workspace:*
-        version: link:../base
       '@agnes/code':
         specifier: workspace:*
         version: link:../code

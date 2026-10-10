@@ -28,6 +28,11 @@ type Fact = {
   invocation?: unknown
   record?: unknown
   surface?: unknown
+  request?: unknown
+  receipt?: unknown
+  failure?: unknown
+  commandId?: string
+  outcomeUnknown?: boolean
   structured?: unknown
   content?: unknown
 }
@@ -74,6 +79,11 @@ export async function assertMigrationSettled(
     const jobs = new Map<string, { status: string; seq: number }>()
     const questions = new Map<string, number>()
     const closedSurfaces = new Set<string>()
+    const openSurfaces = new Set<string>()
+    const uiActions = new Map<
+      string,
+      { status: string; delivered: boolean; outcomeUnknown: boolean; seq: number }
+    >()
     for (const row of rows) {
       const data = object(row.data)
       if (row.origin === 'system' && row.trust === 'trusted') {
@@ -121,6 +131,63 @@ export async function assertMigrationSettled(
           surface = object(record.surface)
         if (record.status === 'closed' && typeof surface.id === 'string') closedSurfaces.add(surface.id)
       }
+      if (
+        row.origin === 'ext:agnes/intelligent-ui' &&
+        row.trust === 'untrusted' &&
+        row.type.startsWith('x/agnes/intelligent-ui/')
+      ) {
+        const name = row.type.slice('x/agnes/intelligent-ui/'.length)
+        const record = object(data.record)
+        const surface = object(record.surface)
+        if (name === 'surface.opened' || name === 'surface.updated' || name === 'surface.closed') {
+          const id = typeof surface.id === 'string' ? surface.id : undefined
+          const closed = name === 'surface.closed'
+          if (!id || (closed ? record.status !== 'closed' : record.status !== 'open'))
+            add('corrupt-ui-chain', id ?? row.id ?? name, row.seq)
+          else if (closed) openSurfaces.delete(id)
+          else openSurfaces.add(id)
+        } else if (name.startsWith('action.') && name !== 'action.retried') {
+          const request = object(record.request)
+          const commandId =
+            typeof request.commandId === 'string'
+              ? request.commandId
+              : typeof data.commandId === 'string'
+                ? data.commandId
+                : undefined
+          if (!commandId) add('corrupt-ui-chain', row.id ?? name, row.seq)
+          else if (name === 'action.delivered') {
+            const current = uiActions.get(commandId) ?? {
+              status: '',
+              delivered: false,
+              outcomeUnknown: false,
+              seq: row.seq,
+            }
+            current.delivered = true
+            uiActions.set(commandId, current)
+          } else {
+            const receipt = object(record.receipt ?? data.receipt)
+            const status = typeof receipt.status === 'string' ? receipt.status : ''
+            if (!status) add('corrupt-ui-chain', commandId, row.seq)
+            else {
+              const failure = object(receipt.failure)
+              const previous = uiActions.get(commandId)
+              uiActions.set(commandId, {
+                status,
+                delivered: previous?.delivered ?? false,
+                outcomeUnknown: failure.outcomeUnknown === true,
+                seq: row.seq,
+              })
+            }
+          }
+        }
+      }
+    }
+    for (const id of openSurfaces) add('open-surface', id)
+    for (const [id, action] of uiActions) {
+      if (['received', 'pending-approval', 'executing'].includes(action.status) || action.outcomeUnknown)
+        add('unfinished-ui-action', id, action.seq)
+      else if (['rejected', 'succeeded', 'failed'].includes(action.status) && !action.delivered)
+        add('undelivered-ui-receipt', id, action.seq)
     }
     for (const [id, seq] of unknown) add('unknown-external-outcome', id, seq)
     for (const [id, call] of deferred)

@@ -3,23 +3,9 @@ import type { EventEnvelope, JsonValue, UiActionParams, UiSurfaceRecord } from '
 import { jcs, type UiRefusal, validateAgainst } from '@agnes/protocol'
 import { UiActionReceipt } from '@agnes/protocol/gen/intelligent-ui'
 
-export const UI_OWNER = 'agnes/intelligent-ui'
-export const UI_PREFIX = `x/${UI_OWNER}/`
-export const UI_EVENTS = [
-  'surface.opened',
-  'surface.updated',
-  'surface.closed',
-  ...[
-    'received',
-    'rejected',
-    'pending-approval',
-    'executing',
-    'succeeded',
-    'failed',
-    'retried',
-    'delivered',
-  ].map((name) => `action.${name}`),
-]
+import { UI_EVENTS, UI_OWNER, UI_PREFIX } from '../../../src/intelligent-ui.js'
+
+export { UI_EVENTS, UI_OWNER, UI_PREFIX }
 export interface ActionRecord {
   request: UiActionParams
   actor: import('@agnes/protocol').Actor

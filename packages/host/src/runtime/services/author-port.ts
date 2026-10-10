@@ -39,6 +39,9 @@ export interface ExtensionServiceHost {
     factories?: ServicePortFactories,
   ): Promise<S>
   attachBinder(providers: ProvidersService): void
+  /** Runs after a provider claims its owner. The returned function runs before the claim is released. */
+  onRegistered(kind: ServiceKind, listener: (owner: string, packageId: string) => () => void): void
+  packageFor(kind: ServiceKind, owner: string): string | undefined
 }
 
 function closed(kind: string, operation: string): ProviderError {
@@ -60,6 +63,7 @@ export function createExtensionServiceHost(input: {
 }): ExtensionServiceHost {
   const sink: { current?: ExtensionInvocation } = {}
   const bindings = new ServiceBindings(() => input.providers())
+  const listeners = new Map<string, Array<(owner: string, packageId: string) => () => void>>()
   const readAdmission = (): ServiceAdmission | undefined => {
     if (input.readAdmission) return input.readAdmission()
     const admitted = sink.current?.admission()
@@ -143,16 +147,31 @@ export function createExtensionServiceHost(input: {
       if (!EXTENSION_ID_PATTERN.test(identity.owner) || identity.packageId.trim() === '')
         throw closed(kind.kind, 'register')
       const dispose = input.providers().register(kind, identity.packageId, provider)
+      const offs: Array<() => void> = []
       try {
         bindings.noteOwner(kind.kind, provider.id, provider.version, identity.owner, identity.packageId)
+        for (const listener of listeners.get(kind.kind) ?? [])
+          offs.push(listener(identity.owner, identity.packageId))
       } catch (error) {
+        for (const off of offs.reverse()) {
+          try {
+            off()
+          } catch {
+            // A listener that already returned must not hide the registration failure.
+          }
+        }
+        bindings.forget(kind.kind, provider.id, provider.version)
         void dispose()
         throw error
       }
       return async () => {
+        for (const off of offs) off()
         bindings.forget(kind.kind, provider.id, provider.version)
         await dispose()
       }
+    },
+    grants(kind) {
+      return bindings.grants(kind.kind)
     },
     bindOwn(kind, identity) {
       return bindAdmitted(kind, identity)
@@ -166,6 +185,14 @@ export function createExtensionServiceHost(input: {
     },
     bindHost(kind, call, factories) {
       return bindings.bind(kind, call, factories ?? {})
+    },
+    onRegistered(kind, listener) {
+      const list = listeners.get(kind.kind) ?? []
+      list.push(listener)
+      listeners.set(kind.kind, list)
+    },
+    packageFor(kind, owner) {
+      return bindings.claimPackage(kind.kind, owner)
     },
     attachBinder(providers) {
       providers.installServiceBinder((kind) => {

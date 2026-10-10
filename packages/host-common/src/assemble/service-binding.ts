@@ -31,6 +31,14 @@ export interface ServiceDescriptor {
   readonly projectionNames?: readonly string[]
   readonly audience?: ServiceAudience
   readonly delivery?: ServiceDelivery
+  /** Business dependencies the generic ports do not carry. The host attaches them on every bind. */
+  readonly capabilities?: (call: ServiceCall, binding: ServiceBinding) => object
+  /** Replaces the caller input factory for this kind, including bindOwn and bindHost. */
+  readonly input?: (
+    call: ServiceCall,
+    binding: ServiceBinding,
+    descriptor: ServiceDescriptor,
+  ) => AgentInputPort
 }
 
 export interface ServiceCall {
@@ -52,6 +60,8 @@ export interface ServicePortFactories {
   input?: (call: ServiceCall, binding: ServiceBinding, descriptor: ServiceDescriptor) => AgentInputPort
   projections?: ProjectionReader
   now?: () => number
+  /** Live session seq. Falls back to the admission watermark when omitted. */
+  lastSeq?: (call: ServiceCall) => number
 }
 
 interface InstalledService {
@@ -63,6 +73,7 @@ interface InstalledService {
 interface OwnerClaim {
   readonly owner: string
   readonly packageId: string
+  count: number
 }
 
 type Live = ReturnType<ServiceCall['live']>
@@ -129,11 +140,29 @@ export class ServiceBindings {
     const existing = this.claims.get(key)
     if (existing && (existing.owner !== owner || existing.packageId !== packageId))
       throw closed(kind, 'register')
-    this.claims.set(key, { owner, packageId })
+    if (existing) {
+      existing.count += 1
+      return
+    }
+    this.claims.set(key, { owner, packageId, count: 1 })
   }
 
   forget(kind: string, id: string, version: string): void {
-    this.claims.delete(claimKey(kind, id, version))
+    const key = claimKey(kind, id, version)
+    const existing = this.claims.get(key)
+    if (!existing) return
+    existing.count -= 1
+    if (existing.count <= 0) this.claims.delete(key)
+  }
+
+  /** Events and projection names the installed descriptor still grants. Absent until install. */
+  grants(kind: string): { readonly events: boolean; readonly projections: readonly string[] } | undefined {
+    const installed = this.installed.get(kind)
+    if (!installed) return undefined
+    return Object.freeze({
+      events: (installed.descriptor.eventNames?.length ?? 0) > 0,
+      projections: Object.freeze([...(installed.descriptor.projectionNames ?? [])]),
+    })
   }
 
   /** One package for this owner. Mixed packages fail closed instead of picking one. */
@@ -324,6 +353,16 @@ function freezeDescriptor(kind: ServiceKind, descriptor: ServiceDescriptor): Ins
       kind: kind.kind,
       operation: 'install',
     })
+  const capabilities = descriptor.capabilities
+  const input = descriptor.input
+  if (
+    (capabilities !== undefined && typeof capabilities !== 'function') ||
+    (input !== undefined && typeof input !== 'function')
+  )
+    throw new ProviderError('E_PROVIDER_INVALID', 'service descriptor is invalid', {
+      kind: kind.kind,
+      operation: 'install',
+    })
   return Object.freeze({
     ports: Object.freeze([...descriptor.ports]),
     dedupeKeys,
@@ -331,6 +370,8 @@ function freezeDescriptor(kind: ServiceKind, descriptor: ServiceDescriptor): Ins
     delivery,
     eventNames,
     projectionNames,
+    ...(capabilities === undefined ? {} : { capabilities }),
+    ...(input === undefined ? {} : { input }),
   })
 }
 
@@ -367,6 +408,7 @@ function buildPorts(
   let ledger: OwnerLedgerPort | undefined
   let input: AgentInputPort | undefined
   let projections: ProjectionReader | undefined
+  let capabilities: object | undefined
   if (grants.has('ledger')) {
     if (!factories.ledger) throw closed(kind.kind, 'bind')
     const raw = factories.ledger(call, binding, descriptor)
@@ -378,8 +420,9 @@ function buildPorts(
     })
   }
   if (grants.has('input')) {
-    if (!factories.input) throw closed(kind.kind, 'bind')
-    const raw = factories.input(call, binding, descriptor)
+    const inputFactory = descriptor.input ?? factories.input
+    if (!inputFactory) throw closed(kind.kind, 'bind')
+    const raw = inputFactory(call, binding, descriptor)
     input = Object.freeze({
       deliver: (key, text, signal) =>
         guard('deliver', () => {
@@ -390,6 +433,11 @@ function buildPorts(
           return raw.deliver(finalKey, text, joined)
         }) as Promise<number>,
     })
+  }
+  if (descriptor.capabilities) {
+    const raw = descriptor.capabilities(call, binding)
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw closed(kind.kind, 'bind')
+    capabilities = wrapCapabilities(raw, enter, lifetime)
   }
   if (grants.has('projections')) {
     if (!factories.projections) throw closed(kind.kind, 'bind')
@@ -408,17 +456,71 @@ function buildPorts(
         }) as ReturnType<ProjectionReader['readOwn']>,
     })
   }
-  return Object.freeze({
+  const ports: ServicePorts & { capabilities?: object } = {
     binding,
     ...(ledger === undefined ? {} : { ledger }),
     ...(input === undefined ? {} : { input }),
     ...(projections === undefined ? {} : { projections }),
-    ...(grants.has('ledger') ? { lastSeq: call.watermark as number } : {}),
+    ...(capabilities === undefined ? {} : { capabilities }),
     now: () => {
       enter('now')
       return factories.now?.() ?? Date.now()
     },
-  })
+  }
+  if (grants.has('ledger')) {
+    Object.defineProperty(ports, 'lastSeq', {
+      enumerable: true,
+      get() {
+        enter('lastSeq')
+        return factories.lastSeq?.(call) ?? (call.watermark as number)
+      },
+    })
+  }
+  return Object.freeze(ports)
+}
+
+function guardedCall(
+  fn: (...args: unknown[]) => unknown,
+  thisArg: object,
+  args: unknown[],
+  operation: string,
+  enter: (operation: string) => void,
+  lifetime: ProviderLifetime,
+): unknown {
+  enter(operation)
+  const result = Reflect.apply(fn, thisArg, args)
+  if (!isPromise(result)) return result
+  return lifetime.track(
+    Promise.resolve(result).then((value) => {
+      enter(operation)
+      return value
+    }),
+  )
+}
+
+/** Functions re-check admission. One nested object, such as a queue, keeps its original receiver. */
+function wrapCapabilities(
+  value: object,
+  enter: (operation: string) => void,
+  lifetime: ProviderLifetime,
+): object {
+  const out: Record<string, unknown> = {}
+  for (const key of Object.keys(value)) {
+    const prop = (value as Record<string, unknown>)[key]
+    if (typeof prop === 'function') {
+      out[key] = (...args: unknown[]) => guardedCall(prop, value, args, key, enter, lifetime)
+    } else if (prop && typeof prop === 'object' && !Array.isArray(prop)) {
+      const nested: Record<string, unknown> = {}
+      for (const method of Object.keys(prop)) {
+        const fn = (prop as Record<string, unknown>)[method]
+        if (typeof fn === 'function')
+          nested[method] = (...args: unknown[]) => guardedCall(fn, prop, args, method, enter, lifetime)
+        else nested[method] = fn
+      }
+      out[key] = Object.freeze(nested)
+    } else out[key] = prop
+  }
+  return Object.freeze(out)
 }
 
 function methodNames(value: object): string[] {

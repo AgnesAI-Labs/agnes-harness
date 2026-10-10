@@ -17,9 +17,10 @@ The runtime surface snapshot includes the preview plugin config helpers
 The reserved feedback event constants and the feedback service factory moved to `@agnes/host`.
 Release versioning remains pending.
 
-`ExtensionAPI.intelligentUi` adds an optional owner-bound factory adapter for namespace-bound ledger
-projections and idempotent SC1 delivery. It requires existing events/projection grants and provides
-no execution authority; actions use the generic deferred-invocation contract.
+Intelligent UI types moved to `@agnes/base/intelligent-ui`. `ExtensionAPI.intelligentUi` is removed.
+The official plugin registers `intelligentUiKind` and tools bind it with `providers.bindOwn`.
+Session actions still require the existing events and `surfaces` grants and confer no execution
+authority; delivery stays on the generic deferred-invocation contract.
 
 `memoryKind` adds an optional, versioned session memory provider with per-turn snapshots,
 ordinary file ports and explicit human editing. `memoryPrivateEvent` exports structural event

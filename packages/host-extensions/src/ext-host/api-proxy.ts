@@ -102,26 +102,6 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
   })
   return Object.freeze({
     ctx,
-    ...(ports.intelligentUi
-      ? {
-          intelligentUi: Object.freeze({
-            register(factory: import('@agnes/extension-api').IntelligentUiFactory) {
-              registering()
-              if (
-                !caps.events ||
-                !caps.projections?.some((p) => p.name === 'surfaces') ||
-                !lease.allows('event', '')
-              )
-                return refuse('UI requires events and surfaces projection grants')
-              return bag.add(ports.intelligentUi!.register(factory, toolMeta))
-            },
-            session(ref: import('@agnes/extension-api').SessionRef) {
-              alive()
-              return ports.intelligentUi!.get(ref, m.id)
-            },
-          }),
-        }
-      : {}),
     registerService(def) {
       registering()
       return bag.add(ports.services.register(def, { manifest: m, lease, signal }))
@@ -236,6 +216,13 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
       register(kind, provider) {
         registering()
         if (!ports.serviceProviders) refuse('providers not granted')
+        const required = ports.serviceProviders.grants?.(kind)
+        if (required?.events && (!caps.events || !lease.allows('event', '')))
+          refuse('service requires events grant')
+        for (const name of required?.projections ?? []) {
+          if (!caps.projections?.some((item) => item.name === name) || !lease.allows('projection', name))
+            refuse('service projection not declared')
+        }
         const dispose = ports.serviceProviders.register(kind, provider, {
           owner: m.id,
           packageId: input.packageIdentity,

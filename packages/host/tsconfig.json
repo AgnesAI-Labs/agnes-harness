@@ -72,6 +72,9 @@
     },
     {
       "path": "../observability"
+    },
+    {
+      "path": "../base"
     }
   ]
 }

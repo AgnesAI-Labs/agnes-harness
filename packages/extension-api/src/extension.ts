@@ -30,7 +30,8 @@ export interface ExtensionContext {
 }
 
 // Six controlled registrations, the shared provider facade, events and ctx, plus the optional
-// legacy latestExtEvent reader. Required profile components remain deployment-owned.
+// legacy latestExtEvent reader. Feature contracts such as Intelligent UI live on their own
+// service kind. Required profile components remain deployment-owned.
 // test/extension.test-d.ts pins the surface.
 export interface ExtensionAPI {
   registerService<I extends JsonValue, O extends JsonValue>(def: ServiceDef<I, O>): Disposer
@@ -45,8 +46,6 @@ export interface ExtensionAPI {
   // ExtensionAPI 构造点（host `ext-host/api.ts` 的旧 stub、`ext-host/api-proxy.ts` 的
   // Task22 新实现，均不在本次改动范围）还没有实现它；必需会把它们双双钉成编译错误。
   latestExtEvent?(name: string): JsonValue | undefined
-  /** Optional owner-bound adapter for the official preset-surface plugin. */
-  readonly intelligentUi?: import('./intelligent-ui.js').IntelligentUiExtensionPort
   /** Capability-checked facade over the host provider registry. Package and owner are host-supplied. */
   readonly providers: ServiceAuthorPort
   readonly ctx: ExtensionContext

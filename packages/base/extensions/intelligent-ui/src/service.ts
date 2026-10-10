@@ -1,5 +1,5 @@
-import { createHash, createHmac, randomBytes } from 'node:crypto'
-import type { DeferredInvocationReceipt, IntelligentUiFactory } from '@agnes/extension-api'
+import { createHash } from 'node:crypto'
+import type { DeferredInvocationReceipt } from '@agnes/extension-api'
 import {
   jcs,
   rpcError,
@@ -16,6 +16,8 @@ import {
   UiUpdateParams,
   X_AGNES_UI_LIMITS,
 } from '@agnes/protocol/gen/intelligent-ui'
+import { scanOwnUiEvents, uiCursorMac, uiSerial } from '../../../src/intelligent-ui.js'
+import type { IntelligentUiInstance, IntelligentUiServicePorts } from '../../../src/intelligent-ui.js'
 import { type ActionRecord, foldUiEvent, initialUiState, type UiState } from './state.js'
 import { bindArguments, bounded, json, validateSurface } from './validation.js'
 
@@ -38,26 +40,26 @@ const unauthorized = (): UiRefusal => ({
   code: 'UI_UNAUTHORIZED',
   message: 'The declared tool was denied by the existing tool policy.',
 })
-export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
-  let tail = Promise.resolve()
-  const serial = <T>(work: () => Promise<T>) => {
-    const result = tail.then(work, work)
-    tail = result.then(
-      () => undefined,
-      () => undefined,
-    )
-    return result
-  }
-  const cursorSecret = randomBytes(32)
+export function createIntelligentUiService(ports: IntelligentUiServicePorts): IntelligentUiInstance {
+  const { binding, capabilities: cap, ledger, input } = ports
+  const session = binding.session
+  const owner = binding.owner
+  if (!session || !ledger || !input || !cap?.queue) throw rpcError('CAPABILITY_DENIED')
+  const { serial, secret } = uiSerial(ports)
   const state = async (through = ports.lastSeq) => {
     let value = initialUiState()
-    for (const row of await ports.scan()) if (row.seq <= through) value = foldUiEvent(value, row)
+    for (const row of await scanOwnUiEvents(ledger, through)) value = foldUiEvent(value, row)
     return value
   }
-  const append = async (name: string, value: unknown, sourceSeq?: number) =>
-    ports.append(name, json(value), sourceSeq)
+  const append = async (name: string, value: unknown, sourceSeq?: number) => {
+    const data = json(value)
+    return ledger.appendOwn(
+      name,
+      sourceSeq && data && typeof data === 'object' && !Array.isArray(data) ? { ...data, sourceSeq } : data,
+    )
+  }
   const boundSession = (id: string) => {
-    if (id !== ports.session.key) throw rpcError('CAPABILITY_DENIED')
+    if (id !== session.key) throw rpcError('CAPABILITY_DENIED')
   }
   const blocked = (value: UiState, id: string) =>
     Object.values(value.actions).some(
@@ -73,7 +75,7 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
       if (surface?.status === 'open')
         await storeSurface('surface.closed', { ...surface, status: 'closed' }, latest, 'submitted')
     }
-    const inboxSeq = await ports.deliver(
+    const inboxSeq = await input.deliver(
       `ui-result:${receipt.commandId}`,
       'Intelligent UI action result: ' +
         JSON.stringify({
@@ -82,7 +84,6 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
             ? { submitted: record.invocation.args }
             : {}),
         }),
-      record.actor,
       signal,
     )
     await append(
@@ -94,11 +95,11 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
   const queue = async (record: ActionRecord, signal: AbortSignal) => {
     if (record.invocation && unfinished(record)) {
       try {
-        await ports.queue.enqueue({ ...record.invocation, sourceSeq: record.receivedSeq }, signal)
+        await cap.queue.enqueue({ ...record.invocation, sourceSeq: record.receivedSeq }, signal)
       } catch (error) {
         signal.throwIfAborted()
         // A failed wake after admission must keep the original queued invocation executable.
-        const admitted = await ports.queue.read(record.invocation.id, signal)
+        const admitted = await cap.queue.read(record.invocation.id, signal)
         if (
           admitted &&
           jcs(admitted.invocation) === jcs({ ...record.invocation, sourceSeq: record.receivedSeq })
@@ -221,7 +222,7 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
     submittedInput: (toolUseId, args, signal) =>
       serial(async () => {
         signal.throwIfAborted()
-        const id = await ports.invocationId(toolUseId)
+        const id = await cap.invocationId(toolUseId)
         const record = Object.values((await state()).actions).find((item) => item.invocation?.id === id)
         if (
           !record?.invocation ||
@@ -237,7 +238,7 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
       serial(async () => {
         signal.throwIfAborted()
         if (!validateAgainst(UiRenderParams, input).ok) throw rpcError('INVALID_PARAMS')
-        validateSurface(input.surface, ports)
+        validateSurface(input.surface, cap)
         const value = await state(),
           old = value.surfaces[input.surface.id]
         if (old || input.surface.revision !== 1) throw rpcError('SEMANTIC_REJECTED', { code: 'UI_STALE' })
@@ -253,9 +254,9 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
             status: 'open',
             createdSeq: 0,
             updatedSeq: 0,
-            owner: ports.owner,
-            lane: ports.session.lane,
-            taskId: ports.taskId,
+            owner,
+            lane: session.lane,
+            taskId: cap.taskId(),
           },
           value,
         )
@@ -264,7 +265,7 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
       serial(async () => {
         signal.throwIfAborted()
         if (!validateAgainst(UiUpdateParams, input).ok) throw rpcError('INVALID_PARAMS')
-        validateSurface(input.surface, ports)
+        validateSurface(input.surface, cap)
         const value = await state(),
           old = value.surfaces[input.surfaceId]
         if (
@@ -293,6 +294,9 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
     action: (input, actor, signal) =>
       serial(async () => {
         signal.throwIfAborted()
+        const admittedActor = cap.authenticatedActor
+        if (!admittedActor || admittedActor.id !== actor.id || admittedActor.org !== actor.org)
+          throw rpcError('CAPABILITY_DENIED')
         bounded(input, X_AGNES_UI_LIMITS.actionBytes)
         if (!validateAgainst(UiActionParams, input).ok) throw rpcError('INVALID_PARAMS')
         boundSession(input.sessionId)
@@ -333,11 +337,7 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
         const surface = value.surfaces[request.surfaceId]
         if (!surface || surface.surface.revision !== request.revision || surface.status === 'closed')
           return refusal(record, stale(surface?.status === 'closed', surface?.surface.revision), signal)
-        if (
-          !ports.supportsDeferredInvocations ||
-          surface.owner !== ports.owner ||
-          surface.lane !== ports.session.lane
-        )
+        if (!cap.supportsDeferredInvocations || surface.owner !== owner || surface.lane !== session.lane)
           return refusal(record, unauthorized(), signal)
         if (request.retryOf) {
           const prior = value.actions[request.retryOf]
@@ -356,7 +356,7 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
           throw rpcError('OVERLOADED', { code: 'UI_BUSY', reason: 'surface has an unfinished action' })
         let args: ReturnType<typeof bindArguments>
         try {
-          args = bindArguments(surface.surface, request, ports)
+          args = bindArguments(surface.surface, request, cap)
         } catch (error) {
           return refusal(
             record,
@@ -377,9 +377,9 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
         record.receipt.invocationId = id
         record.invocation = {
           id,
-          sessionKey: ports.session.key,
-          lane: ports.session.lane,
-          source: ports.owner,
+          sessionKey: session.key,
+          lane: session.lane,
+          source: owner,
           sourceSeq: 1,
           actor: record.actor,
           tool: action.tool,
@@ -400,7 +400,7 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
       if (!validateAgainst(UiReadParams, input).ok) throw rpcError('INVALID_PARAMS')
       boundSession(input.sessionId)
       await serial(() => recover(signal))
-      await ports.queue.notify(signal)
+      await cap.queue.notify(signal)
       return serial(async () => {
         signal.throwIfAborted()
         const filter = createHash('sha256')
@@ -417,12 +417,7 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
           expires = ports.now() + 60000
         if (input.cursor) {
           const [body, signature, extra] = input.cursor.split('.')
-          if (
-            !body ||
-            !signature ||
-            extra ||
-            createHmac('sha256', cursorSecret).update(body).digest('base64url') !== signature
-          )
+          if (!body || !signature || extra || uiCursorMac(secret, body) !== signature)
             throw rpcError('INVALID_PARAMS', { reason: 'UI cursor invalid' })
           const cursor = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as {
             w: number
@@ -473,13 +468,11 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
               )
             : undefined
         const result = {
-          sessionId: ports.session.key,
+          sessionId: session.key,
           lastSeq: watermark,
           surfaces,
           actions,
-          ...(next
-            ? { nextCursor: next + '.' + createHmac('sha256', cursorSecret).update(next).digest('base64url') }
-            : {}),
+          ...(next ? { nextCursor: next + '.' + uiCursorMac(secret, next) } : {}),
         }
         bounded(result, X_AGNES_UI_LIMITS.projectionBytes, 20)
         return result
@@ -487,8 +480,7 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
     },
     validate: async (invocation, signal) => {
       signal.throwIfAborted()
-      if (!ports.supportsDeferredInvocations)
-        throw new Error('Pinned Loop does not drain deferred invocations')
+      if (!cap.supportsDeferredInvocations) throw new Error('Pinned Loop does not drain deferred invocations')
       const value = await state(),
         record = Object.values(value.actions).find((item) => item.receipt.invocationId === invocation.id)
       if (
@@ -504,7 +496,7 @@ export const createIntelligentUiService: IntelligentUiFactory = (ports) => {
         surface.updatedSeq !== record.surfaceSeq ||
         surface.status !== 'open' ||
         surface.surface.revision !== record.request.revision ||
-        jcs(bindArguments(surface.surface, record.request, ports)) !== jcs(invocation.args)
+        jcs(bindArguments(surface.surface, record.request, cap)) !== jcs(invocation.args)
       )
         throw new Error('UI invocation validation is stale')
     },

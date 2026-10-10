@@ -295,14 +295,13 @@ import {
   resolveSessionCapabilities,
   type SessionCapabilitySet,
 } from '../profile/session-capabilities.js'
-import { createIntelligentUiAdapter } from '../sessions/intelligent-ui.js'
+import { createIntelligentUiBridge } from '../sessions/intelligent-ui.js'
 import {
   applyTelemetryConsent,
   createSessionHookPort,
   readProfileTelemetryConsent,
   readTelemetryConsent,
 } from '../sessions/session-hooks.js'
-import { readUiComponentDeclarations } from '../sessions/ui-component-declarations.js'
 import type { AssembleDeps } from './assembly-deps.js'
 import { childAgentCatalog, installChildAgents, withBuiltinChildAgents } from './child-agents.js'
 import { initStaticSeams } from './seams.js'
@@ -390,7 +389,7 @@ export type Assembled = {
   /** Native, reachability-checked screenshot collector; absent on unsupported platforms. */
   computerUseArtifactGc: ComputerUseArtifactGcRuntime | undefined
   /** Live C1 ordinary Cordis tree containing preset rows and the eight dynamic runtime seams. */
-  intelligentUi: ReturnType<typeof createIntelligentUiAdapter>
+  intelligentUi: ReturnType<typeof createIntelligentUiBridge>
   pluginTree: HostPluginTreeBase
   extHost: ManagedExtHost
   /** The managed host's extensions and the plugin rows', in the order each was first seen. */
@@ -1118,6 +1117,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       pluginCatalogue.replace([...sources.values()])
     }
     const extensionServices: { current?: ExtensionServiceHost } = {}
+    let intelligentUi!: ReturnType<typeof createIntelligentUiBridge>
     const runtimeTargetPublisher = new RuntimeTargetPublisher<
       HostRuntimeTargetResources,
       IsolatedSessionOverlay
@@ -1160,7 +1160,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             rowExtensions.installRoot(root, origins)
             rowServices.installRoot(root, origins)
             installModelAdapters(root, origins)
-            new DeferredInvocationsService(root, origins)
+            intelligentUi.attach(root, origins, new DeferredInvocationsService(root, origins))
             installLoops(root, origins)
             installReferenceResolvers(root)
             const promptRegistry: import('@agnes/host-common/assemble/provider-registry').ProviderRegistry<SystemPromptProvider> =
@@ -1233,6 +1233,12 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     extensionServices.current = createExtensionServiceHost({
       providers: () => publishedOrdinary().root.providers,
       sessionGeneration: (key) => deps.sessionGeneration?.(key),
+    })
+    intelligentUi = createIntelligentUiBridge({
+      extensionHost: extensionServices.current,
+      profileDir: deps.profileDir,
+      sessionGeneration: (key) => deps.sessionGeneration?.(key),
+      session: (key) => kernel?.get(key),
     })
     // Host admission for the one ordinary convergence path. `closeHost` seals this synchronously and
     // then joins the queue, so a target already admitted finishes loading and applying before the
@@ -2443,16 +2449,10 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     // revokes the exact object capability during failure cleanup/shutdown; ordinary Kernel callers
     // retain the public-after-initialization rule.
     const services = new ServiceRegistry()
-    const intelligentUi = createIntelligentUiAdapter(
-      (ref) => kernel.get(ref.key),
-      pluginTree.root.deferredInvocations,
-      (session) => readUiComponentDeclarations(deps.profileDir, session.key),
-    )
     const extensionHost = extensionServices.current
     if (!extensionHost) throw new HostError('E_EXT_LOAD', 'service binding is closed')
     const extPorts = bindExtensionInvocations(
       {
-        intelligentUi,
         services,
         serviceProviders: extensionHost.ports,
         tools: profile.composition

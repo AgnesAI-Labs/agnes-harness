@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./intelligent-ui": "./src/intelligent-ui.ts",
     "./search": "./extensions/tools-web/src/search/index.ts",
     "./computer-use": "./extensions/computer-use/src/index.ts",
     "./schedule": "./extensions/schedule/src/runtime.ts",

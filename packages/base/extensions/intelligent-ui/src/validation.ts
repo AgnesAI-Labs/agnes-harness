@@ -1,4 +1,4 @@
-import type { IntelligentUiPorts } from '@agnes/extension-api'
+import type { IntelligentUiCatalog } from '../../../src/intelligent-ui.js'
 import {
   inspectJsonData,
   type JsonValue,
@@ -50,7 +50,7 @@ export function accepts(schema: JsonValue, value: JsonValue): boolean {
     throw new Error('Invalid UI JSON Schema')
   }
 }
-export function validateSurface(surface: Surface, ports: IntelligentUiPorts): void {
+export function validateSurface(surface: Surface, ports: IntelligentUiCatalog): void {
   bounded(surface, X_AGNES_UI_LIMITS.surfaceBytes)
   const declarations = surface.components.some((item) => 'fallback' in item)
     ? (ports.components?.() ?? [])
@@ -97,7 +97,7 @@ function pointer(root: JsonValue, path = ''): JsonValue {
 export function bindArguments(
   surface: Surface,
   request: UiActionParams,
-  ports: IntelligentUiPorts,
+  ports: IntelligentUiCatalog,
 ): JsonValue {
   const action = surface.actions.find((item) => item.id === request.actionId)
   if (!action) throw new Error('Unknown UI action')

@@ -70,19 +70,6 @@ export function bindExtensionInvocations(
     }
   return {
     services,
-    ...(ports.intelligentUi
-      ? {
-          intelligentUi: {
-            register: ports.intelligentUi.register,
-            get(ref: SessionRef, owner: string) {
-              // Only callbacks with their canonical, active session may use this selector.
-              invocation.assertActive(owner)
-              invocation.assertSession(ref)
-              return ports.intelligentUi!.get(ref, owner)
-            },
-          },
-        }
-      : {}),
     tools: {
       add: (def, meta) =>
         ports.tools.add({ ...def, execute: wrap(def.execute.bind(def), meta.source) }, meta),

@@ -19,7 +19,6 @@ describe('ExtensionAPI surface', () => {
       | 'registerResource'
       | 'providers'
       | 'events'
-      | 'intelligentUi'
       | 'latestExtEvent'
       | 'ctx'
     >()

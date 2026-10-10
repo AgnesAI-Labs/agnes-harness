@@ -20,13 +20,6 @@ export type RegMeta = ToolSource
 
 /** Internal assembly ports, never exposed directly to an extension factory. */
 export interface KernelPorts {
-  intelligentUi?: {
-    register(factory: import('@agnes/extension-api').IntelligentUiFactory, meta: RegMeta): Disposer
-    get(
-      ref: import('@agnes/extension-api').SessionRef,
-      owner: string,
-    ): import('@agnes/extension-api').IntelligentUiService
-  }
   services: Pick<ServiceRegistry, 'register' | 'registerRow'>
   projections: {
     register: ProjectionRegistry['register']
@@ -58,6 +51,10 @@ export interface KernelPorts {
         readonly projections: ProjectionReader
       },
     ): Promise<S>
+    /** Present after the kind is installed. Missing means the events check waits until bind. */
+    grants?(
+      kind: ServiceKind,
+    ): { readonly events: boolean; readonly projections: readonly string[] } | undefined
   }
   /** Live registration ownership for cleanup verification, not an execution snapshot. */
   registrations(source: string): string[]
