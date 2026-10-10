@@ -1,6 +1,6 @@
 import { isAbsolute, relative, resolve } from 'node:path'
 import { looksLikeSecret } from '@agnes/error-sanitization'
-import type { ObservabilitySession } from '@agnes/extension-api'
+import type { ObservabilitySession } from './contract.js'
 import { type ObservabilityConfig, resolveHeaders } from './config.js'
 
 const sensitive = /secret|password|authorization|credential|api.?key|cookie|token/i

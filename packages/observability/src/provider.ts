@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto'
-import type { ObservabilityProvider, ObservabilitySession } from '@agnes/extension-api'
 import type { EventEnvelope } from '@agnes/protocol'
+import type { ObservabilityProvider, ObservabilitySession } from './contract.js'
 import { type ObservabilityConfig, validateObservability } from './config.js'
 import { exportContent } from './content.js'
 import { OtlpTransport, type Resource } from './transport.js'

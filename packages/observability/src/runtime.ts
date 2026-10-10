@@ -1,4 +1,4 @@
-import type { ObservabilityProvider } from '@agnes/extension-api'
+import type { ObservabilityProvider } from './contract.js'
 import {
   type ObservabilityConfig,
   observabilityConfig,

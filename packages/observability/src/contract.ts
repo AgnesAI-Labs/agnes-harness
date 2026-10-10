@@ -1,5 +1,5 @@
+import { defineServiceKind, type ProviderIdentity, type ServicePorts } from '@agnes/extension-api'
 import type { EventEnvelope } from '@agnes/protocol'
-import { defineProviderKind, type ProviderIdentity } from './provider-kind.js'
 
 export interface ObservabilitySession {
   workspace?: string
@@ -9,6 +9,7 @@ export interface ObservabilitySession {
   /** Content involving these private roots is always omitted. */
   privateRoots?: readonly string[]
 }
+
 export interface ObservabilityHealth {
   status: 'disabled' | 'idle' | 'ok' | 'backoff' | 'rejected' | 'closed'
   queued: number
@@ -34,20 +35,15 @@ export interface ObservabilityProvider extends ProviderIdentity {
   flush(): Promise<void>
   dispose(): Promise<void>
 }
-export const observabilityKind = defineProviderKind<ObservabilityProvider>({
+
+/**
+ * Process-scoped exporter. The shared queue stays inside this package's home refcount.
+ * The descriptor grants no ledger, input, or projection ports.
+ */
+export const observabilityKind = defineServiceKind<ObservabilityProvider, ServicePorts>({
   kind: 'observability',
-  scope: 'generation',
-  validate(provider) {
-    for (const method of [
-      'bindSession',
-      'observe',
-      'child',
-      'lifecycle',
-      'queueDepth',
-      'correlation',
-      'flush',
-      'dispose',
-    ] as const)
-      if (typeof provider[method] !== 'function') throw new TypeError('Invalid observability provider')
-  },
+  cardinality: 'single',
+  instanceScope: 'process',
+  scope: 'process',
+  ports: [],
 })

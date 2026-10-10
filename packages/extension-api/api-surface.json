@@ -62,7 +62,6 @@
     "loopShouldStop",
     "memoryKind",
     "memoryPrivateEvent",
-    "observabilityKind",
     "parseSemver",
     "persistenceRegisterKey",
     "providerRestartRequired",

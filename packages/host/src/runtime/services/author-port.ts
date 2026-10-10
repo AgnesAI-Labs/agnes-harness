@@ -13,6 +13,7 @@ import {
   ServiceBindings,
   type ServiceCall,
   type ServiceDescriptor,
+  type ServicePortFactories,
 } from '@agnes/host-common/assemble/service-binding'
 import type { ExtensionInvocation } from '@agnes/host-extensions/ext-host/invocation'
 import type { KernelPorts } from '@agnes/host-extensions/ext-host/ports'
@@ -32,6 +33,11 @@ export interface ExtensionServiceHost {
   readonly sink: { current?: ExtensionInvocation }
   readonly ports: NonNullable<KernelPorts['serviceProviders']>
   install(ctx: Context, kind: ServiceKind, descriptor: ServiceDescriptor, origins?: RowOriginLookup): void
+  bindHost<S extends ServiceInstance, P extends ServicePorts>(
+    kind: ServiceKind<S, P>,
+    call: ServiceCall,
+    factories?: ServicePortFactories,
+  ): Promise<S>
   attachBinder(providers: ProvidersService): void
 }
 
@@ -157,6 +163,9 @@ export function createExtensionServiceHost(input: {
     ports,
     install(ctx, kind, descriptor, origins) {
       bindings.install(ctx, kind, descriptor, origins)
+    },
+    bindHost(kind, call, factories) {
+      return bindings.bind(kind, call, factories ?? {})
     },
     attachBinder(providers) {
       providers.installServiceBinder((kind) => {

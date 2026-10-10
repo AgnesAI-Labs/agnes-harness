@@ -1,5 +1,5 @@
-import type { ObservabilityHealth } from '@agnes/extension-api'
 import { deploymentFetch } from '@agnes/system-node/deployment-network'
+import type { ObservabilityHealth } from './contract.js'
 import { type ObservabilityConfig, resolveHeaders, validateObservability } from './config.js'
 import { aggregateMetrics } from './metrics.js'
 

@@ -444,6 +444,13 @@ function facade<S extends ServiceInstance>(
   setDispose: (promise: Promise<void>) => void,
 ): S {
   const target: Record<string, unknown> = {}
+  // Identity fields only. Objects stay on the raw instance so the facade cannot carry authority.
+  for (const key of Object.keys(raw)) {
+    if (key === 'then' || key === 'catch' || key === 'dispose') continue
+    const value = (raw as Record<string, unknown>)[key]
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
+      target[key] = value
+  }
   for (const key of methodNames(raw)) {
     const fn = (raw as Record<string, unknown>)[key]
     if (typeof fn !== 'function') continue

@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import type { Logger, ObservabilityProvider } from '@agnes/extension-api'
+import type { Logger } from '@agnes/extension-api'
+import type { ObservabilityProvider } from './contract.js'
 
 const scopes = new AsyncLocalStorage<{ provider: ObservabilityProvider; key: string }>()
 export function currentCorrelation(): { traceId: string; spanId: string } | undefined {

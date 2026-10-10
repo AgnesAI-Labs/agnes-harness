@@ -2,7 +2,7 @@
 
 English | [简体中文](observability.zh-CN.md)
 
-AGH includes an official `observability:otel` plugin in `@agnes/base`, implemented by `@agnes/observability` through the public `observabilityKind` provider contract. Export is **off by default**. Setting a collector endpoint alone does not enable it. Core has no exporter dependency.
+AGH includes an official `observability:otel` plugin in `@agnes/base`, implemented by `@agnes/observability` as a process-scoped service kind. Export is **off by default**. Setting a collector endpoint alone does not enable it. Core has no exporter dependency.
 
 ## Enable OTLP export
 
@@ -28,7 +28,7 @@ Batch interval and timeout are 10–30000 ms. Queue size is 1–16384 records; b
 
 ## What is exported
 
-Committed public events generate session → turn → step → model/tool spans and correlated OTLP log records for each ledger event (type, sequence, timestamp). Resources include service/version, hashed workspace/session/pin identities and generation ID when Host supplies them. Child and daemon/worker lifecycle spans and the existing duration/token/tool/queue metrics remain available. Exporters are replaceable through the public `observabilityKind` contract; `bindSession(key, resource)` accepts resource identity and private roots, and optional `health()` exposes delivery health. Core does not perform network export.
+Committed public events generate session → turn → step → model/tool spans and correlated OTLP log records for each ledger event (type, sequence, timestamp). Resources include service/version, hashed workspace/session/pin identities and generation ID when Host supplies them. Child and daemon/worker lifecycle spans and the existing duration/token/tool/queue metrics remain available. Exporters are replaceable through the process-scoped `observabilityKind` in `@agnes/observability`. The host applies the privacy filter before a committed event reaches the exporter. `bindSession(key, resource)` accepts resource identity and private roots, and optional `health()` exposes delivery health. Core does not perform network export.
 
 `metadata` is the default redaction level. `content` explicitly opts into bounded user/assistant/tool content. Credential fields, recognized secret patterns, referenced header values, credential environment values and content mentioning private state roots are omitted or redacted. A tool call mentioning a private root suppresses subsequent content from that session and its children, including results that do not repeat the path. Oversized/deep content is withheld, never partially serialized. Memory-enabled sessions receive structural events only. No exporter reads private files. Content may still include confidential business information; authorize the destination before opting in.
 

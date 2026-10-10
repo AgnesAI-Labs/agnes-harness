@@ -493,6 +493,8 @@ describe('service binding gate', () => {
 
   it('copies prototype methods, skips then, and omits ports the descriptor did not grant', async () => {
     class Box implements Probe {
+      readonly label = 'kept'
+      readonly authority = { allow: true }
       mark() {
         return 'proto'
       }
@@ -533,6 +535,8 @@ describe('service binding gate', () => {
     try {
       const instance = await mounted.bindings.bind(mounted.kind, call(), factories)
       expect(instance.mark()).toBe('proto')
+      expect((instance as Probe & { label?: string; authority?: unknown }).label).toBe('kept')
+      expect((instance as Probe & { authority?: unknown }).authority).toBeUndefined()
       expect('then' in instance).toBe(false)
       expect(captured && 'ledger' in captured).toBe(false)
       expect(captured && 'lastSeq' in captured).toBe(false)

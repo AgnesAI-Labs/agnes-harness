@@ -2290,7 +2290,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
                 'observability.health',
                 {},
                 { timeoutMs: 3000 },
-              )) as import('@agnes/extension-api').ObservabilityHealth,
+              )) as import('@agnes/observability').ObservabilityHealth,
             }
           } catch {
             return { workerState: 'unavailable' }

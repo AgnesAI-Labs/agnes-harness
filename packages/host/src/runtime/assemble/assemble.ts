@@ -27,8 +27,6 @@ import {
   type LeaseView,
   type MemorySession,
   memoryKind,
-  memoryPrivateEvent,
-  observabilityKind,
   ProviderError,
   type ResourceEntry,
   type SystemPromptProvider,
@@ -115,6 +113,7 @@ import {
 } from '@agnes/host-extensions/assemble/ext-rows'
 import { bindExtensionInvocations } from '@agnes/host-extensions/assemble/extension-ports'
 import { createExtensionServiceHost, type ExtensionServiceHost } from '../services/author-port.js'
+import { installObservabilityService, startObservabilityFeed } from '../services/observability-feed.js'
 import type {
   LoadedRuntimePackage,
   OperationDeps,
@@ -256,7 +255,7 @@ import {
   createHostRuntimeTargetResourceFactory,
   type HostRuntimeTargetResources,
 } from '@agnes/host-providers/runtime-target-resource-bootstrap'
-import { correlatedLogger, withObservedSession } from '@agnes/observability'
+import { correlatedLogger } from '@agnes/observability'
 import {
   developmentPluginRows,
   type RuntimePluginSnapshot,
@@ -370,7 +369,7 @@ export type Assembled = {
   /** Read-only metadata for installed model adapter factories. */
   modelAdapterCatalog(): ReturnType<typeof modelAdapterCatalog>
   observeSession(key: string): () => void
-  observability?: import('@agnes/extension-api').ObservabilityProvider
+  observability?: import('@agnes/observability').ObservabilityProvider
   providers: import('@agnes/extension-api').ProvidersCatalogPort
   sessionPresetDefault?(): Promise<string | undefined>
   sessionModelSlots?(): Promise<import('@agnes/protocol').AuxiliaryModelSlots>
@@ -1168,11 +1167,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
               installProviderRegistry(root, systemPromptKind, (owner, source, provider) =>
                 promptRegistry.register(source, provider, owner),
               )
-            const observabilityRegistry: import('@agnes/host-common/assemble/provider-registry').ProviderRegistry<
-              import('@agnes/extension-api').ObservabilityProvider
-            > = installProviderRegistry(root, observabilityKind, (owner, source, provider) =>
-              observabilityRegistry.register(source, provider, owner, () => provider.dispose()),
-            )
+            const extensionHost = extensionServices.current
+            if (!extensionHost) throw new HostError('E_EXT_LOAD', 'service binding is closed')
+            installObservabilityService(extensionHost, root, origins)
             const memoryRegistry: import('@agnes/host-common/assemble/provider-registry').ProviderRegistry<
               import('@agnes/extension-api').MemoryProvider
             > = installProviderRegistry(root, memoryKind, (owner, source, provider) =>
@@ -2373,93 +2370,24 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         },
       })
     }
-    const observabilityEntries = pluginTree.root.providers
-      .catalog()
-      .filter((entry) => entry.kind === 'observability')
-    const selectedObservability =
-      observabilityEntries.find((entry) => entry.active) ??
-      (observabilityEntries.length === 1 ? observabilityEntries[0] : undefined)
-    const observability = selectedObservability
-      ? pluginTree.root.providers.resolve(observabilityKind, selectedObservability.id)
+    const home = deps.homeDir ?? dirname(dirname(deps.profileDir))
+    const observabilityHost = extensionServices.current
+    const observabilityFeed = observabilityHost
+      ? await startObservabilityFeed({
+          providers: pluginTree.root.providers,
+          host: observabilityHost,
+          home,
+          kernel,
+          profileHash: profile.hash,
+          dataDir,
+          profileDir: deps.profileDir,
+          ...(profile.adapters.secrets.path ? { secretsDir: profile.adapters.secrets.path } : {}),
+          ...(deps.sessionGeneration ? { sessionGeneration: deps.sessionGeneration } : {}),
+        })
       : undefined
-    const observations = new Map<string, () => void>()
-    const observeSession = (key: string): (() => void) => {
-      if (observations.has(key) || !observability) return () => undefined
-      const session = kernel.get(key)
-      if (!session) return () => undefined
-      const generation = deps.sessionGeneration?.(key)
-      const release = observability.bindSession(key, {
-        workspace: session.d.cwd,
-        ...(generation ? { generation, pin: generation } : { pin: profile.hash }),
-        privateRoots: [
-          deps.homeDir ?? dirname(dirname(deps.profileDir)),
-          ...privateStateRoots({
-            home: deps.homeDir ?? dirname(dirname(deps.profileDir)),
-            dataDir,
-            workspace: session.d.cwd,
-            profileDir: deps.profileDir,
-            ...(profile.adapters.secrets.path ? { secretsDir: profile.adapters.secrets.path } : {}),
-          }),
-        ],
-      })
-      const stop = session.onAppended((events) => {
-        for (const event of events) {
-          try {
-            if (event.type.startsWith('x/feedback/')) continue
-            observability.observe(key, session.d.memory ? memoryPrivateEvent(event) : event)
-          } catch {
-            /* Passive observation. */
-          }
-        }
-      })
-      const run = session.run.bind(session)
-      session.run = (options) => withObservedSession(observability, key, () => run(options))
-      const cleanup = () => {
-        if (!observations.delete(key)) return
-        stop()
-        release()
-      }
-      observations.set(key, cleanup)
-      return cleanup
-    }
-    if (observability) {
-      const offSession = kernel.hooks.on(
-        'session_start',
-        (_payload, context) => {
-          observeSession(context.session.key)
-        },
-        { source: 'agnes/observability', trust: 'builtin', hookRank: 0 },
-      )
-      const offShutdown = kernel.hooks.on(
-        'shutdown',
-        (_payload, context) => {
-          observations.get(context.session.key)?.()
-        },
-        { source: 'agnes/observability', trust: 'builtin', hookRank: 0 },
-      )
-      const offStart = kernel.hooks.on(
-        'subagent_start',
-        (payload, context) => {
-          observability.child(context.session.key, payload.childKey, 'start')
-          observeSession(payload.childKey)
-        },
-        { source: 'agnes/observability', trust: 'builtin', hookRank: 0 },
-      )
-      const offEnd = kernel.hooks.on(
-        'subagent_end',
-        (payload, context) => {
-          observability.child(context.session.key, payload.childKey, 'end', payload.outcome !== 'completed')
-        },
-        { source: 'agnes/observability', trust: 'builtin', hookRank: 0 },
-      )
-      rollback.push('observability-hooks', () => {
-        offSession()
-        offShutdown()
-        offStart()
-        offEnd()
-        for (const cleanup of [...observations.values()]) cleanup()
-      })
-    }
+    const observability = observabilityFeed?.observability
+    const observeSession = observabilityFeed?.observeSession ?? (() => () => undefined)
+    if (observabilityFeed?.stop) rollback.push('observability-hooks', observabilityFeed.stop)
     if (profile.composition) {
       assertCompositionCompatible(compositionForPreset(), compositionForPreset(profile.presets.default))
       const stopPolicy = kernel.hooks.on(
