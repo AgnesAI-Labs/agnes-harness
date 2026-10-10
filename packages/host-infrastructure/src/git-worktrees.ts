@@ -175,7 +175,12 @@ export function createGitWorktreeService(options: {
           const entry: Owned = { root, path, branch, stage: 'attached', creating: true }
           save(entry, true) // Crash during add retains ownership for inspection/recovery.
           const added = await git(['worktree', 'add', '-b', branch, path, 'HEAD'], root, op)
-          if (added.code !== 0) return { skipped: 'git-error' }
+          // A non-zero exit means Git did not create the worktree. Abort and timeout reject
+          // instead, and the creating record stays for recovery because add may have started.
+          if (added.code !== 0) {
+            rmSync(recordPath(path), { force: true })
+            return { skipped: 'git-error' }
+          }
           delete entry.creating
           save(entry)
           return { id, root, path, branch }
@@ -254,6 +259,44 @@ export function createGitWorktreeService(options: {
         }
       })
     },
+  }
+}
+
+/** Registry rows the migration gate can see, including ones Git does not list yet. */
+export function readGitWorktreeRegistry(dataDir: string): readonly {
+  root: string
+  path: string
+  creating: boolean
+  removing: boolean
+}[] {
+  const registry = join(dataDir, 'git-worktrees')
+  try {
+    return readdirSync(registry)
+      .filter((name) => /^[0-9a-f]{64}\.json$/.test(name))
+      .flatMap((name) => {
+        try {
+          const entry = JSON.parse(readFileSync(join(registry, name), 'utf8')) as {
+            root?: unknown
+            path?: unknown
+            creating?: unknown
+            removing?: unknown
+          }
+          if (typeof entry.root !== 'string' || typeof entry.path !== 'string') return []
+          return [
+            {
+              root: entry.root,
+              path: entry.path,
+              creating: entry.creating === true,
+              removing: entry.removing === true,
+            },
+          ]
+        } catch {
+          return []
+        }
+      })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
   }
 }
 

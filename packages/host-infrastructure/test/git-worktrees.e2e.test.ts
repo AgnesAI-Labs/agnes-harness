@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -180,6 +181,14 @@ describe('Host Git worktree service', () => {
     await expect(restarted.list({ ...op, sessionKey: 'g2' })).resolves.toEqual([
       { root: child.root, path: child.path, branch: child.branch, stage: 'attached' },
     ])
+  })
+  it('deletes the creating record when git worktree add fails', async () => {
+    const h = fixture()
+    h.git(['update-ref', '-d', 'HEAD'])
+    await expect(h.service.create(h.root, op)).resolves.toEqual({ skipped: 'git-error' })
+    const registry = join(h.dataDir, 'git-worktrees')
+    const records = existsSync(registry) ? readdirSync(registry).filter((name) => name.endsWith('.json')) : []
+    expect(records).toEqual([])
   })
   it('classifies missing Git as git-error and cancellation without mutating the repo', async () => {
     const h = fixture()

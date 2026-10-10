@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import {
   foldEvents,
   hasChildControl,
@@ -42,12 +43,25 @@ type Fact = {
 const object = (value: unknown): Fact =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Fact) : {}
 
+export type MigrationWorktreeRecord = {
+  root: string
+  path: string
+  creating?: boolean
+  removing?: boolean
+}
+
+const nested = (from: string, to: string) => {
+  const rel = relative(from, to)
+  return rel !== '' && !isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`)
+}
+
 /** Read only. The caller holds generation admission serialization through the subsequent pin CAS. */
 export async function assertMigrationSettled(
   storage: StorageAdapter,
   sessionKey: string,
   generationId: string,
   recoveryRequired = false,
+  worktrees?: { workspaceRoot: string; records: readonly MigrationWorktreeRecord[] },
 ): Promise<void> {
   const reasons: Reason[] = []
   const visited = new Set<string>()
@@ -266,6 +280,19 @@ export async function assertMigrationSettled(
     }
   }
   if (recoveryRequired) reasons.push({ kind: 'recovery-required', id: generationId, sessionKey })
+  if (worktrees) {
+    const workspace = resolve(worktrees.workspaceRoot)
+    for (const record of worktrees.records) {
+      if (record.creating !== true && record.removing !== true) continue
+      const root = resolve(record.root)
+      if (root !== workspace && !nested(workspace, root) && !nested(root, workspace)) continue
+      reasons.push({
+        kind: record.creating === true ? 'creating-worktree' : 'removing-worktree',
+        id: record.path,
+        sessionKey,
+      })
+    }
+  }
   await inspect(sessionKey)
   if (reasons.length)
     throw new HostError(

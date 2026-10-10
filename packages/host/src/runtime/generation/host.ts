@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { resolve as resolvePath } from 'node:path'
 import { providerRestartRequired } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
+import { readGitWorktreeRegistry } from '@agnes/host-infrastructure/git-worktrees'
 import { modelProfileDeployment } from '@agnes/host-common/profile/model-compatibility'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { composeExtensionRowTarget } from '@agnes/host-extensions/assemble/ext-rows'
@@ -874,6 +875,7 @@ export async function createRuntimeGenerationHost(
           key,
           pin.generationId,
           context?.recoveryRequired?.(),
+          { workspaceRoot: options.workspaceRoot, records: readGitWorktreeRegistry(options.dataDir) },
         )
         if (pin.generationId === head.snapshot.id)
           return { previousGenerationId: pin.generationId, generationId: pin.generationId, changed: false }

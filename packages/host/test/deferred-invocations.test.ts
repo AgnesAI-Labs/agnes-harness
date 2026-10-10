@@ -764,6 +764,37 @@ async function migrationFacts(events: { type: string; data: object }[]) {
   return opened
 }
 
+it('refuses migration while a workspace worktree record is creating or removing', async () => {
+  const idle = await migrationLog()
+  const elsewhere = '/other/workspace'
+  try {
+    await assertMigrationSettled(idle.storage, 's', 'generation', false, {
+      workspaceRoot: '/workspace',
+      records: [{ root: '/workspace', path: '/workspace/.worktrees/agnes-aaaaaaa1', creating: false }],
+    })
+    await assertMigrationSettled(idle.storage, 's', 'generation', false, {
+      workspaceRoot: '/workspace',
+      records: [{ root: elsewhere, path: `${elsewhere}/.worktrees/agnes-aaaaaaa2`, creating: true }],
+    })
+    await expect(
+      assertMigrationSettled(idle.storage, 's', 'generation', false, {
+        workspaceRoot: '/workspace',
+        records: [{ root: '/workspace', path: '/workspace/.worktrees/agnes-aaaaaaa3', creating: true }],
+      }),
+    ).rejects.toThrow('creating-worktree')
+    await expect(
+      assertMigrationSettled(idle.storage, 's', 'generation', false, {
+        workspaceRoot: '/workspace',
+        records: [
+          { root: '/workspace/nested', path: '/workspace/nested/.worktrees/agnes-aaaaaaa4', removing: true },
+        ],
+      }),
+    ).rejects.toThrow('removing-worktree')
+  } finally {
+    await idle.close()
+  }
+})
+
 it('treats a sent tool cancel as an unknown external outcome', async () => {
   const sent = await migrationFacts([
     { type: 'effect/intent', data: toolIntent },
