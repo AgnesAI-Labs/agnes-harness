@@ -179,18 +179,24 @@ export async function* runInference(
           ['usdMicros', 'source', 'subscription'].every((key) => Object.hasOwn(ev.billing ?? {}, key)) &&
           Number.isSafeInteger(ev.billing.usdMicros) &&
           ev.billing.usdMicros >= 0 &&
-          (ev.billing.source === 'gateway' || ev.billing.source === 'estimated') &&
+          (ev.billing.source === 'gateway' ||
+            (ev.billing.source === 'estimated' && resolved.model.pricePolicy === undefined)) &&
           typeof ev.billing.subscription === 'boolean'
             ? ev.billing
             : estimateBilling(resolved.model, ev.tokens)
         // Do not let an invalid runtime billing object survive through the spread below. Adapter
         // implementations are TypeScript-typed, but a remote decoder can still hand one an invalid
         // value; only the closed shape above is allowed onto the public stream.
-        const { billing: _untrustedBilling, response, ...usage } = ev
+        const { billing: _untrustedBilling, credits: _untrustedCredits, response, ...usage } = ev
+        const credits =
+          ev.creditSource === 'gateway' || resolved.model.pricePolicy === undefined
+            ? (ev.credits ?? estimateCredits(resolved.model, ev.tokens, deps.creditsPerUsd))
+            : undefined
         yield {
           ...usage,
           ...checkedResponse(response),
-          credits: ev.credits ?? estimateCredits(resolved.model, ev.tokens, deps.creditsPerUsd),
+          ...(credits === undefined ? {} : { credits }),
+          creditSource: credits === undefined ? 'estimated' : ev.creditSource,
           ...(safeBilling ? { billing: safeBilling } : {}),
           timing: {
             ...(ttftMs !== undefined ? { ttftMs } : {}),

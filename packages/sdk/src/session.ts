@@ -13,9 +13,11 @@ import {
   getHarnessMeta,
   type HarnessMeta,
   META_KEY,
+  type RuntimeTurnOptions,
   type SessionAttachParams,
   type SessionAttachResult,
   type SessionBudgetResult,
+  type SessionModelSlotsResult,
   type SessionPreviewParams,
   type SessionProjectUIHistoryParams,
   type SessionProjectUIOpeningParams,
@@ -25,10 +27,12 @@ import {
   type SessionRuntimeControlParams,
   type SessionRuntimeControlResult,
   type SessionRuntimeState,
+  type SessionSetJevStagesParams,
   type SlotName,
   type ThinkingLevel,
   type ToolCall,
   type ToolResult,
+  TURN_OPTIONS_META_KEY,
   type TurnEndReason,
   toAcpStopReason,
   UI_HISTORY_DEFAULT_LIMIT,
@@ -517,6 +521,21 @@ export class Session {
     return this.client.call<SessionBudgetResult>('_agnes/v1/session.budget', { sessionId: this.id })
   }
 
+  /** Read-only live model-slot state and the effective JevLoop language-stage mapping. */
+  modelSlots(): Promise<SessionModelSlotsResult> {
+    return this.client.call<SessionModelSlotsResult>('_agnes/v1/session.modelSlots', {
+      sessionId: this.id,
+    })
+  }
+
+  /** Bind JevLoop language stages directly for this session; null restores the preset slot. */
+  setJevStages(stages: SessionSetJevStagesParams['stages']): Promise<EffectiveFromResult> {
+    return this.client.call<EffectiveFromResult>('_agnes/v1/session.setJevStages', {
+      sessionId: this.id,
+      stages,
+    })
+  }
+
   /** Reads the durable execution owner without reopening or resuming this session. */
   runtime(): Promise<SessionRuntimeState> {
     return this.client.call('_agnes/v1/session.runtime', { sessionId: this.id })
@@ -624,7 +643,10 @@ export class Session {
     )
   }
 
-  async prompt(input: ContentBlock[] | string, opts: { signal?: AbortSignal } = {}): Promise<TurnResult> {
+  async prompt(
+    input: ContentBlock[] | string,
+    opts: { signal?: AbortSignal; decisionBackend?: RuntimeTurnOptions['decisionBackend'] } = {},
+  ): Promise<TurnResult> {
     // Captured by identity: the outcome of *this* turn is only the record that was
     // installed while the request was in flight, never one left over from a past turn.
     const before = this.lastTurnEnd
@@ -637,7 +659,12 @@ export class Session {
     }
     opts.signal?.addEventListener('abort', onAbort, { once: true })
     try {
-      return await this.requestPrompt(input, before)
+      return await this.requestPrompt(
+        input,
+        before,
+        false,
+        opts.decisionBackend === undefined ? undefined : { decisionBackend: opts.decisionBackend },
+      )
     } finally {
       opts.signal?.removeEventListener('abort', onAbort)
     }
@@ -647,12 +674,17 @@ export class Session {
     input: ContentBlock[] | string,
     before: TurnEndRecord | null,
     restored = false,
+    runtimeOptions?: RuntimeTurnOptions,
   ): Promise<TurnResult> {
     try {
       // No deadline: a turn is bounded by the transport's liveness, not by a stopwatch.
       const r = await this.client.call<{ stopReason: AcpStopReason; _meta?: Record<string, unknown> }>(
         'session/prompt',
-        { sessionId: this.id, prompt: toContentBlocks(input) },
+        {
+          sessionId: this.id,
+          prompt: toContentBlocks(input),
+          ...(runtimeOptions === undefined ? {} : { _meta: { [TURN_OPTIONS_META_KEY]: runtimeOptions } }),
+        },
         { timeoutMs: null },
       )
       const end = this.lastTurnEnd !== before ? this.lastTurnEnd : null
@@ -683,7 +715,7 @@ export class Session {
       // exactly once. No other failure is safe to replay here.
       if (!restored && this.workspace && this.isSessionNotFound(e)) {
         await this.restoreAfterReclaim()
-        return this.requestPrompt(input, before, true)
+        return this.requestPrompt(input, before, true, runtimeOptions)
       }
       // The request itself failing to the transport dropping, not to a cancel or a
       // protocol error, is the one case with anything to wait for: the daemon may already
@@ -739,7 +771,10 @@ export class Session {
     return this.write('steer', input, opts)
   }
 
-  followUp(input: ContentBlock[] | string, opts: { commandId?: string } = {}): Promise<number> {
+  followUp(
+    input: ContentBlock[] | string,
+    opts: { commandId?: string; decisionBackend?: RuntimeTurnOptions['decisionBackend'] } = {},
+  ): Promise<number> {
     return this.write('followUp', input, opts)
   }
 
@@ -766,13 +801,19 @@ export class Session {
   private write(
     kind: 'steer' | 'followUp',
     input: ContentBlock[] | string,
-    opts: { commandId?: string },
+    opts: { commandId?: string; decisionBackend?: RuntimeTurnOptions['decisionBackend'] },
   ): Promise<number> {
     return submitCommand(
       this.client,
       this.id,
       kind,
-      { sessionId: this.id, content: toContentBlocks(input) },
+      {
+        sessionId: this.id,
+        content: toContentBlocks(input),
+        ...(opts.decisionBackend === undefined
+          ? {}
+          : { runtimeOptions: { decisionBackend: opts.decisionBackend } }),
+      },
       opts.commandId,
     )
   }

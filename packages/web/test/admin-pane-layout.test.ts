@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { JEV_SETTINGS_MARKUP } from '@agnes/web-ui'
 import { afterEach, expect, it } from 'vitest'
 
 const packageDirectory = process.cwd().endsWith('/packages/web')
@@ -53,6 +54,29 @@ it('keeps settings DSH and pane mounts inside the content grid column', async ()
   expect(content).toContain('min-height: 0')
   expect(content).toContain('display: flex')
   expect(css).toContain('#settings-dsh-shell-slots > [id^="settings-dsh-slot-"]')
+})
+
+it('keeps Jev fields full-width and scrollable while save actions remain outside the scrolling body', async () => {
+  const css = await readFile(resolve(publicDirectory, 'style.css'), 'utf8')
+  expect(ruleBody(css, '#config-form #jev-settings-pane')).toContain('flex: 1')
+  const body = ruleBody(css, '#config-form #jev-settings-pane .config-workspace')
+  expect(body).toContain('display: block')
+  expect(body).toContain('min-height: 0')
+  expect(body).toContain('overflow-y: auto')
+  expect(ruleBody(css, '#config-form #jev-settings-pane .jev-settings-actions')).toContain('flex: 0 0 auto')
+  expect(ruleBody(css, '#config-form #jev-enabled')).toContain('width: 1.125rem')
+  document.body.innerHTML = JEV_SETTINGS_MARKUP
+  const pane = document.getElementById('jev-settings-pane')
+  const scroll = pane?.querySelector('.config-workspace')
+  const save = document.getElementById('jev-save')
+  expect(scroll?.contains(save)).toBe(false)
+  expect(pane?.querySelector('.jev-settings-actions')?.contains(save)).toBe(true)
+  for (const id of ['jev-state', 'jev-error']) {
+    const feedback = document.getElementById(id)
+    expect(scroll?.contains(feedback)).toBe(false)
+    expect(pane?.querySelector('.jev-settings-actions')?.contains(feedback)).toBe(true)
+  }
+  expect(document.querySelector('#jev-transport option[value="cloudflare"]')?.textContent).toBe('Cloudflare')
 })
 
 it('the iframe-era embedded overrides are gone', async () => {

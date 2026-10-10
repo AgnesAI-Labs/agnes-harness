@@ -84,6 +84,15 @@ describe('Jev environment availability and authentication', () => {
 
   it.each([
     [{}, /未配置/],
+    [{ AGNES_JEV_API_KEY: 'private' }, /配置不完整/],
+    [{ ...configuredEnv, AGNES_JEV_BACKEND: 'unsupported' }, /决策后端无效/],
+    [{ ...configuredEnv, AGNES_JEV_BACKEND: 'laya', AGNES_JEV_TRANSPORT: 'cloudflare' }, /仅支持 native/],
+    [{ ...configuredEnv, AGNES_JEV_BACKEND: 'laya', TYPESAFE_API_KEY: 'private' }, /Laya 缺少 Bearer/],
+    [{ ...configuredEnv, AGNES_JEV_TRANSPORT: 'unsupported' }, /传输类型无效/],
+    [
+      { ...configuredEnv, AGNES_JEV_TRANSPORT: 'cloudflare', AGNES_JEV_AUTHENTICATION: 'none' },
+      /必须使用 Bearer/,
+    ],
     [configuredEnv, /缺少 Bearer 密钥/],
     [{ ...configuredEnv, AGNES_JEV_API_KEY: ' ', TYPESAFE_API_KEY: ' ' }, /缺少 Bearer 密钥/],
     [{ ...configuredEnv, AGNES_JEV_AUTHENTICATION: 'basic' }, /认证方式无效/],
@@ -91,6 +100,14 @@ describe('Jev environment availability and authentication', () => {
     [{ ...configuredEnv, AGNES_JEV_ENDPOINT: 'https://user:private@example.invalid/path' }, /不含凭据/],
     [{ ...configuredEnv, AGNES_JEV_ENDPOINT: `${endpoint}?secret=private` }, /不含凭据/],
     [{ ...configuredEnv, AGNES_JEV_API_KEY: 'one\ntwo' }, /密钥格式无效/],
+    [
+      {
+        ...configuredEnv,
+        AGNES_JEV_ENDPOINT: `https://api.cloudflare.com/client/v4/accounts/${'a'.repeat(32)}/ai/run`,
+        AGNES_JEV_MODEL: 'typesafe/jev',
+      },
+      /必须使用 cloudflare 传输类型/,
+    ],
     [
       { ...configuredEnv, AGNES_JEV_AUTHENTICATION: 'none', AGNES_JEV_DECISION_REQUEST_CREDITS: '0' },
       /有限正数/,
@@ -122,6 +139,19 @@ describe('Jev environment availability and authentication', () => {
     expect(
       createSessionRuntimeRegistry(config)
         .list()
+        .find((item) => item.id === 'jevloop')?.decisionBackends,
+    ).toEqual([
+      { backend: 'jev', label: 'Jev', available: true },
+      { backend: 'laya', label: 'Laya', available: false, unavailableReason: '决策后端未配置或未启用。' },
+    ])
+    expect(
+      createSessionRuntimeRegistry(config)
+        .list()
+        .find((item) => item.id === 'jevloop')?.defaultDecisionBackend,
+    ).toBe('jev')
+    expect(
+      createSessionRuntimeRegistry(config)
+        .list()
         .find((item) => item.id === 'jevloop')?.available,
     ).toBe(true)
     const backend = createDecisionBackend(config.decision)
@@ -143,6 +173,52 @@ describe('Jev environment availability and authentication', () => {
     await expect(backend.invoke(call, signal())).rejects.toThrow('already invoked')
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
+
+  it.each(['none', 'bearer'] as const)(
+    'binds Laya without inheriting TypeSafe authentication in %s mode',
+    async (authentication) => {
+      const fetcher = vi.fn<typeof fetch>(async () => Response.json({ model: 'multilingual', answers: {} }))
+      const endpoint = 'http://127.0.0.1:8791/v1/systemone'
+      const config = jevFromEnvironment(
+        {
+          AGNES_JEV_BACKEND: 'laya',
+          AGNES_JEV_ENDPOINT: endpoint,
+          AGNES_JEV_MODEL: 'multilingual',
+          AGNES_JEV_AUTHENTICATION: authentication,
+          TYPESAFE_API_KEY: 'fixture-unused-cloud-key',
+          ...(authentication === 'bearer' ? { AGNES_JEV_API_KEY: 'fixture-laya-key' } : {}),
+        },
+        fetcher,
+      )
+      if (!config || !('decision' in config)) throw new Error('Missing Laya configuration')
+      expect(
+        createSessionRuntimeRegistry(config)
+          .list()
+          .find((item) => item.id === 'jevloop'),
+      ).toMatchObject({
+        available: true,
+        defaultDecisionBackend: 'laya',
+        decisionBackends: [
+          { backend: 'jev', available: false },
+          { backend: 'laya', available: true },
+        ],
+      })
+      const backend = createDecisionBackend(config.decision)
+      const state = { rules: [{ source: 'test', scope: 'session', text: 'preserve structure' }] }
+      const call = await backend.prepare(
+        { purpose: 'decision', state, questions: {}, inputCursor: null },
+        signal(),
+      )
+      expect(call).toMatchObject({ backend: 'laya', requestedModel: 'multilingual', input: { state } })
+      expect((await backend.invoke(call, signal())).observedModel).toBe('multilingual')
+      const [url, init] = fetcher.mock.calls[0] ?? []
+      expect(url).toBe(endpoint)
+      expect(new Headers(init?.headers).get('authorization')).toBe(
+        authentication === 'bearer' ? 'Bearer fixture-laya-key' : null,
+      )
+      expect(JSON.stringify(call)).not.toContain('fixture-')
+    },
+  )
 
   it('keeps Native Host startup and opening available when Bearer credentials are absent', async () => {
     const root = await mkdtemp(join(tmpdir(), 'agnes-jev-catalog-'))
@@ -176,6 +252,72 @@ describe('Jev environment availability and authentication', () => {
 })
 
 describe('Jev single-attempt bounded transport', () => {
+  it('wraps Cloudflare input and unwraps only a completed scoring result', async () => {
+    const scoring = {
+      model: 'jev-1.13.0',
+      answers: { purpose: { choice: 'RESPOND' } },
+      usage: { input_tokens: 12, output_tokens: 3 },
+    }
+    const fetcher = vi.fn<typeof fetch>(async () =>
+      Response.json({ success: true, errors: [], result: { state: 'Completed', result: scoring } }),
+    )
+    expect(() =>
+      createJevDecisionTransport({ backend: 'laya', transport: 'cloudflare', endpoint, fetcher }),
+    ).toThrow('native transport only')
+    const result = await createJevDecisionTransport({
+      endpoint,
+      transport: 'cloudflare',
+      token: 'private-token',
+      fetcher,
+    }).invoke(request, signal())
+    expect(result.error).toBeUndefined()
+    expect(result.output).toEqual(scoring)
+    expect(result.observedModel).toBe('jev-1.13.0')
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({
+      redirect: 'error',
+      body: JSON.stringify({
+        model: request.model,
+        input: { state: request.state, questions: request.questions },
+      }),
+    })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    [{ success: false, errors: [{ message: 'private-token' }] }, 'DECISION_CLOUDFLARE_FAILED'],
+    [{ success: true, errors: [{ message: 'private-token' }] }, 'DECISION_CLOUDFLARE_FAILED'],
+    [{ success: true, result: {} }, 'DECISION_CLOUDFLARE_FAILED'],
+    [
+      { success: true, errors: [], result: { state: 'Running', result: {} } },
+      'DECISION_CLOUDFLARE_INCOMPLETE',
+    ],
+    [
+      { success: true, errors: [], result: { state: 'Failed', result: {} } },
+      'DECISION_CLOUDFLARE_INCOMPLETE',
+    ],
+    [
+      { success: true, errors: [], result: { state: 'Completed', result: { model: 'jev', answers: [] } } },
+      'DECISION_INVALID_RESPONSE',
+    ],
+    [
+      {
+        success: true,
+        errors: [],
+        result: { state: 'Completed', result: { result: { model: 'jev', answers: {} } } },
+      },
+      'DECISION_INVALID_RESPONSE',
+    ],
+  ])('rejects invalid Cloudflare envelopes without exposing bodies %#', async (body, code) => {
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json(body))
+    const result = await createJevDecisionTransport({ endpoint, transport: 'cloudflare', fetcher }).invoke(
+      request,
+      signal(),
+    )
+    expect(result.error?.code).toBe(code)
+    expect(JSON.stringify(result)).not.toContain('private-token')
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
   it.each([
     ['DECISION_HTTP', () => new Response('private-token and private-path', { status: 401 }), false],
     ['DECISION_HTTP', () => new Response('private-token', { status: 429 }), true],
@@ -198,19 +340,23 @@ describe('Jev single-attempt bounded transport', () => {
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
 
-  it('sanitizes transport exceptions and never dispatches an already cancelled call', async () => {
-    const fetcher = vi.fn<typeof fetch>(async () => {
-      throw new Error('private-token at /private-path')
-    })
-    const transport = createJevDecisionTransport({ endpoint, fetcher })
-    const result = await transport.invoke(request, signal())
-    expect(result.error).toMatchObject({ code: 'DECISION_TRANSPORT', retryable: true })
-    expect(JSON.stringify(result)).not.toMatch(/private-token|private-path/)
-    const aborted = new AbortController()
-    aborted.abort('private-token')
-    expect((await transport.invoke(request, aborted.signal)).error?.code).toBe('DECISION_CANCELLED')
-    expect(fetcher).toHaveBeenCalledTimes(1)
-  })
+  it.each(['jev', 'laya'] as const)(
+    'sanitizes %s transport exceptions and never dispatches an already cancelled call',
+    async (backend) => {
+      const fetcher = vi.fn<typeof fetch>(async () => {
+        throw new Error('private-token at /private-path')
+      })
+      const transport = createJevDecisionTransport({ backend, endpoint, fetcher })
+      const result = await transport.invoke(request, signal())
+      expect(result.error).toMatchObject({ code: 'DECISION_TRANSPORT', retryable: true })
+      expect(result.error?.message).toContain(backend === 'laya' ? '本地 Laya' : 'Jev')
+      expect(JSON.stringify(result)).not.toMatch(/private-token|private-path/)
+      const aborted = new AbortController()
+      aborted.abort('private-token')
+      expect((await transport.invoke(request, aborted.signal)).error?.code).toBe('DECISION_CANCELLED')
+      expect(fetcher).toHaveBeenCalledTimes(1)
+    },
+  )
 
   it('keeps the deadline active while streaming the response body', async () => {
     const timeout = new AbortController()

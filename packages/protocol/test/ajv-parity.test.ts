@@ -349,6 +349,13 @@ const AGNES_DEFS: Record<string, TSchema> = {
   ConfigOAuthResult: AgnesGen.ConfigOAuthResult,
   ConfigOAuthPrompt: AgnesGen.ConfigOAuthPrompt,
   ConfigOAuthNotice: AgnesGen.ConfigOAuthNotice,
+  ConfigCustomModel: AgnesGen.ConfigCustomModel,
+  ConfigCustomVerification: AgnesGen.ConfigCustomVerification,
+  JevSettings: AgnesGen.JevSettings,
+  JevConfigTestInput: AgnesGen.JevConfigTestInput,
+  JevConfigSaveInput: AgnesGen.JevConfigSaveInput,
+  JevConfigSnapshot: AgnesGen.JevConfigSnapshot,
+  JevConfigTestResult: AgnesGen.JevConfigTestResult,
   ConfigProvider: AgnesGen.ConfigProvider,
   ConfigModel: AgnesGen.ConfigModel,
   ConfigSnapshot: AgnesGen.ConfigSnapshot,
@@ -517,6 +524,8 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionEventParams: AgnesGen.SessionEventParams,
   SessionPreviewParams: AgnesGen.SessionPreviewParams,
   DaemonNotice: AgnesGen.DaemonNotice,
+  DecisionBackendStatus: AgnesGen.DecisionBackendStatus,
+  RuntimeTurnOptions: AgnesGen.RuntimeTurnOptions,
   // SlotName is a cross-file alias of model.json's closed seven-value enum, on the same footing as
   // the JsonValue/ContentBlock/Actor/SurfaceOp/EventEnvelope aliases above: spelled in agnes-v1.json
   // as an honest $ref, so the coverage guard demands it registered here too.
@@ -531,6 +540,12 @@ const AGNES_DEFS: Record<string, TSchema> = {
   DiagnosticsEventsResult: AgnesGen.DiagnosticsEventsResult,
   SessionAccountingParams: AgnesGen.SessionAccountingParams,
   SessionAccountingResult: AgnesGen.SessionAccountingResult,
+  SessionModelSlotsParams: AgnesGen.SessionModelSlotsParams,
+  SessionModelSlotsResult: AgnesGen.SessionModelSlotsResult,
+  SessionModelSlot: AgnesGen.SessionModelSlot,
+  JevStageBinding: AgnesGen.JevStageBinding,
+  SessionSetJevStagesParams: AgnesGen.SessionSetJevStagesParams,
+  SessionSetJevStagesResult: AgnesGen.SessionSetJevStagesResult,
   SessionMeta: AgnesGen.SessionMeta,
   SessionListParams: AgnesGen.SessionListParams,
   PageSessionMeta: AgnesGen.PageSessionMeta,
@@ -2434,7 +2449,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   ComparisonPreparedConfiguration: {
     valid: preparedConfiguration,
     invalid: [
-      { ...preparedConfiguration, profile: { apiKey: 'private' } },
+      { ...preparedConfiguration, profile: { secret: 'private' } },
       {
         ...preparedConfiguration,
         effective: {
@@ -2789,6 +2804,144 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'account action requires concurrency revision',
   },
 
+  ConfigCustomModel: {
+    valid: {
+      api: 'openai-completions',
+      contextWindow: 32000,
+      maxTokens: 1024,
+      input: ['text'],
+      reasoning: false,
+      toolCalls: true,
+      maxTokensField: 'max_tokens',
+    },
+    invalid: [
+      {},
+      {
+        ...{
+          api: 'openai-completions',
+          contextWindow: 32000,
+          maxTokens: 1024,
+          input: ['text'],
+          reasoning: false,
+          toolCalls: true,
+          maxTokensField: 'max_tokens',
+        },
+        secret: 'private',
+      },
+    ],
+    note: 'Explicit declaration and secret-free Jev configuration boundary.',
+  },
+  JevSettings: {
+    valid: {
+      transport: 'native',
+      endpoint: 'https://jev.example.invalid/decision',
+      model: 'jev',
+      authentication: 'bearer',
+      enabled: true,
+    },
+    invalid: [
+      {},
+      {
+        ...{
+          transport: 'native',
+          endpoint: 'https://jev.example.invalid/decision',
+          model: 'jev',
+          authentication: 'bearer',
+          enabled: true,
+        },
+        secret: 'private',
+      },
+    ],
+    note: 'Explicit declaration and secret-free Jev configuration boundary.',
+  },
+  JevConfigTestInput: {
+    valid: {
+      settings: {
+        transport: 'native',
+        endpoint: 'https://jev.example.invalid/decision',
+        model: 'jev',
+        authentication: 'bearer',
+        enabled: true,
+      },
+    },
+    invalid: [
+      {},
+      {
+        ...{
+          settings: {
+            transport: 'native',
+            endpoint: 'https://jev.example.invalid/decision',
+            model: 'jev',
+            authentication: 'bearer',
+            enabled: true,
+          },
+        },
+        secret: 'private',
+      },
+    ],
+    note: 'Explicit declaration and secret-free Jev configuration boundary.',
+  },
+  JevConfigSaveInput: {
+    valid: {
+      settings: {
+        transport: 'native',
+        endpoint: 'https://jev.example.invalid/decision',
+        model: 'jev',
+        authentication: 'bearer',
+        enabled: true,
+      },
+      expectedRevision: 0,
+    },
+    invalid: [
+      {},
+      {
+        ...{
+          settings: {
+            transport: 'native',
+            endpoint: 'https://jev.example.invalid/decision',
+            model: 'jev',
+            authentication: 'bearer',
+            enabled: true,
+          },
+          expectedRevision: 0,
+        },
+        secret: 'private',
+      },
+    ],
+    note: 'Explicit declaration and secret-free Jev configuration boundary.',
+  },
+  JevConfigSnapshot: {
+    valid: {
+      profile: 'default',
+      revision: 0,
+      settings: null,
+      configured: false,
+      credentialConfigured: false,
+      source: 'none',
+      effect: 'new-sessions',
+    },
+    invalid: [
+      {},
+      {
+        ...{
+          profile: 'default',
+          revision: 0,
+          settings: null,
+          configured: false,
+          credentialConfigured: false,
+          source: 'none',
+          effect: 'new-sessions',
+        },
+        secret: 'private',
+      },
+    ],
+    note: 'Explicit declaration and secret-free Jev configuration boundary.',
+  },
+  JevConfigTestResult: {
+    valid: { verified: true, model: 'jev' },
+    invalid: [{}, { ...{ verified: true, model: 'jev' }, secret: 'private' }],
+    note: 'Explicit declaration and secret-free Jev configuration boundary.',
+  },
   ConfigProvider: {
     note: 'Configuration RPC rejects malformed revisions and credential disclosure; hand-written boundary cases.',
     valid: { id: 'openai', label: 'OpenAI', api: 'openai-completions', baseUrl: 'https://api.example/v1' },
@@ -2823,6 +2976,43 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { providerId: '' },
       { providerId: 'p', apiKey: rep(65537) },
       { providerId: 'p', baseUrl: rep(2049) },
+    ],
+  },
+  ConfigCustomVerification: {
+    note: 'Custom model probes report acceptance only, never ordering proof or upstream data.',
+    valid: {
+      baseUrl: 'https://custom.example.invalid/v1',
+      model: 'manual',
+      api: 'openai-completions',
+      ordering: 'unverified',
+      checks: [
+        { id: 'inference', status: 'passed' },
+        { id: 'mid-conversation-system', status: 'failed', reason: 'endpoint' },
+      ],
+    },
+    invalid: [
+      {},
+      {
+        baseUrl: 'x',
+        model: 'm',
+        api: 'openai-completions',
+        ordering: 'verified',
+        checks: [{ id: 'inference', status: 'passed' }],
+      },
+      {
+        baseUrl: 'x',
+        model: 'm',
+        api: 'openai-completions',
+        ordering: 'unverified',
+        checks: [{ id: 'inference', status: 'failed', reason: 'raw upstream secret' }],
+      },
+      {
+        baseUrl: 'x',
+        model: 'm',
+        api: 'openai-completions',
+        ordering: 'unverified',
+        checks: [{ id: 'inference', status: 'passed', apiKey: 'private' }],
+      },
     ],
   },
   ConfigTestResult: {
@@ -3750,6 +3940,20 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     ],
     note: 'hand-written; a preview carries no seq because it is never a ledger row',
   },
+  DecisionBackendStatus: {
+    valid: { backend: 'jev', label: 'Jev', available: true },
+    invalid: [
+      { backend: 'other', label: 'x', available: true },
+      { backend: 'jev', label: 'Jev' },
+      { backend: 'jev', label: 'Jev', available: true, extra: true },
+    ],
+    note: 'catalog availability per decision backend; reasons are operator guidance only',
+  },
+  RuntimeTurnOptions: {
+    valid: { decisionBackend: 'laya' },
+    invalid: [{ decisionBackend: 'cloud' }, { decisionBackend: null }, { other: 1 }],
+    note: 'optional per-input runtime metadata; omission keeps the default backend',
+  },
   DaemonNotice: {
     valid: daemonNoticeOk,
     invalid: [
@@ -3926,6 +4130,80 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'one authorized root session',
     valid: { sessionId: 's' },
     invalid: [{ sessionId: '' }, { sessionId: rep(513) }],
+  },
+  SessionModelSlotsParams: {
+    note: 'one authorized open session',
+    valid: { sessionId: 's' },
+    invalid: [{ sessionId: '' }, { sessionId: rep(513) }],
+  },
+  JevStageBinding: {
+    note: 'a stage bound directly to one catalog route/model with an optional thinking level',
+    valid: { route: 'gw', model: 'm1', thinking: 'high' },
+    invalid: [
+      { route: 'gw' },
+      { route: '', model: 'm1' },
+      { route: 'gw', model: 'm1', thinking: 'ultra' },
+      { route: 'gw', model: 'm1', extra: 1 },
+    ],
+  },
+  SessionSetJevStagesParams: {
+    note: 'set or clear per-session stage bindings; null restores the preset slot',
+    valid: {
+      sessionId: 's',
+      stages: { parameters: { route: 'gw', model: 'm1', thinking: 'off' }, arbitration: null },
+    },
+    invalid: [
+      { sessionId: 's' },
+      { sessionId: 's', stages: { parameters: { route: 'gw' } } },
+      { sessionId: 's', stages: { parameters: { route: 'gw', model: 'm1' }, other: null } },
+    ],
+  },
+  SessionSetJevStagesResult: {
+    note: 'the seq the updated bindings apply from',
+    valid: { effectiveFromSeq: 4 },
+    invalid: [{ effectiveFromSeq: 0 }, {}],
+  },
+  SessionModelSlot: {
+    note: 'resolved route/model with nullable session overrides',
+    valid: { slot: 'primary', route: 'default', model: 'm1', thinking: null, contextWindow: null },
+    invalid: [
+      { slot: 'primary', route: 'default', model: 'm1' },
+      { slot: 'primary', route: '', model: 'm1', thinking: null, contextWindow: null },
+      { slot: 'primary', route: 'default', model: 'm1', thinking: null, contextWindow: 0 },
+    ],
+  },
+  SessionModelSlotsResult: {
+    note: 'live per-slot state with the effective language-stage mapping; closed slots and thinking',
+    valid: {
+      sessionId: 's',
+      runtime: { id: 'jevloop', version: '1' },
+      languageSlots: { parameters: 'fast', arbitration: 'escalation', answer: 'primary' },
+      slots: [
+        {
+          slot: 'primary',
+          route: 'default',
+          model: 'm1',
+          thinking: 'high',
+          contextWindow: 32000,
+        },
+        { slot: 'fast', route: 'default', model: 'm2', thinking: null, contextWindow: null },
+      ],
+    },
+    invalid: [
+      { sessionId: 's', runtime: { id: 'jevloop', version: '1' }, slots: [] },
+      {
+        sessionId: 's',
+        runtime: { id: 'jevloop', version: '1' },
+        languageSlots: { parameters: 'fast', arbitration: 'escalation', answer: 'primary' },
+        slots: [{ slot: 'primary2', route: 'r', model: 'm', thinking: null, contextWindow: null }],
+      },
+      {
+        sessionId: 's',
+        runtime: { id: 'jevloop', version: '1' },
+        languageSlots: { parameters: 'fast', arbitration: 'escalation', answer: 'primary' },
+        slots: [{ slot: 'primary', route: 'r', model: 'm', thinking: 'ultra', contextWindow: null }],
+      },
+    ],
   },
   SessionAccountingResult: {
     note: 'durable root accounting projection',
@@ -7064,6 +7342,13 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     result: 'ExtensionCallResult',
   },
   '_agnes/v1/config.get': { fileId: AGNES_ID, params: 'ConfigEmptyParams', result: 'ConfigSnapshot' },
+  '_agnes/v1/config.jevGet': { fileId: AGNES_ID, params: 'ConfigEmptyParams', result: 'JevConfigSnapshot' },
+  '_agnes/v1/config.jevTest': {
+    fileId: AGNES_ID,
+    params: 'JevConfigTestInput',
+    result: 'JevConfigTestResult',
+  },
+  '_agnes/v1/config.jevSave': { fileId: AGNES_ID, params: 'JevConfigSaveInput', result: 'JevConfigSnapshot' },
   '_agnes/v1/config.oauth': { fileId: AGNES_ID, params: 'ConfigOAuthInput', result: 'ConfigOAuthResult' },
   '_agnes/v1/config.providers': {
     fileId: AGNES_ID,
@@ -7199,6 +7484,16 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SessionAccountingParams',
     result: 'SessionAccountingResult',
   },
+  '_agnes/v1/session.modelSlots': {
+    fileId: AGNES_ID,
+    params: 'SessionModelSlotsParams',
+    result: 'SessionModelSlotsResult',
+  },
+  '_agnes/v1/session.setJevStages': {
+    fileId: AGNES_ID,
+    params: 'SessionSetJevStagesParams',
+    result: 'SessionSetJevStagesResult',
+  },
   '_agnes/v1/session.list': { fileId: AGNES_ID, params: 'SessionListParams', result: 'PageSessionMeta' },
   '_agnes/v1/workspace.list': {
     fileId: AGNES_ID,
@@ -7333,6 +7628,10 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/extension.ack': ServiceSamples.ExtensionAckParams as Sample,
   '_agnes/v1/extension.call': ServiceSamples.ExtensionCallParams as Sample,
   '_agnes/v1/config.get': AGNES_SAMPLES.ConfigEmptyParams as Sample,
+  '_agnes/v1/config.jevGet': AGNES_SAMPLES.ConfigEmptyParams as Sample,
+  '_agnes/v1/config.jevTest': AGNES_SAMPLES.JevConfigTestInput as Sample,
+  '_agnes/v1/config.jevSave': AGNES_SAMPLES.JevConfigSaveInput as Sample,
+
   '_agnes/v1/config.oauth': {
     note: 'OAuth operation',
     valid: { action: 'poll', operationId: 'op' },
@@ -7413,6 +7712,8 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/diagnostics.collect': AGNES_SAMPLES.DiagnosticsCollectParams as Sample,
   '_agnes/v1/diagnostics.events': AGNES_SAMPLES.DiagnosticsEventsParams as Sample,
   '_agnes/v1/session.accounting': AGNES_SAMPLES.SessionAccountingParams as Sample,
+  '_agnes/v1/session.modelSlots': AGNES_SAMPLES.SessionModelSlotsParams as Sample,
+  '_agnes/v1/session.setJevStages': AGNES_SAMPLES.SessionSetJevStagesParams as Sample,
   '_agnes/v1/session.list': AGNES_SAMPLES.SessionListParams as Sample,
   '_agnes/v1/workspace.list': AGNES_SAMPLES.WorkspaceListParams as Sample,
   '_agnes/v1/workspace.add': AGNES_SAMPLES.WorkspaceAddParams as Sample,
@@ -7466,6 +7767,8 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
     invalid: [{ events: [], lastSeq: 0 }],
   },
   '_agnes/v1/session.accounting': AGNES_SAMPLES.SessionAccountingResult as Sample,
+  '_agnes/v1/session.modelSlots': AGNES_SAMPLES.SessionModelSlotsResult as Sample,
+  '_agnes/v1/session.setJevStages': AGNES_SAMPLES.SessionSetJevStagesResult as Sample,
   '_agnes/v1/resources.list': ResourceControlSamples.ResourceListResult,
   '_agnes/v1/resources.get': ResourceControlSamples.ResourceDescriptor,
   '_agnes/v1/resources.desired.set': ResourceControlSamples.ResourceOperationReceipt,
@@ -7520,6 +7823,10 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/extension.ack': AGNES_SAMPLES.Empty as Sample,
   '_agnes/v1/extension.call': ServiceSamples.ExtensionCallResult as Sample,
   '_agnes/v1/config.get': AGNES_SAMPLES.ConfigSnapshot as Sample,
+  '_agnes/v1/config.jevGet': AGNES_SAMPLES.JevConfigSnapshot as Sample,
+  '_agnes/v1/config.jevTest': AGNES_SAMPLES.JevConfigTestResult as Sample,
+  '_agnes/v1/config.jevSave': AGNES_SAMPLES.JevConfigSnapshot as Sample,
+
   '_agnes/v1/config.oauth': {
     note: 'OAuth result has no tokens',
     valid: { operationId: 'op', state: 'running' },

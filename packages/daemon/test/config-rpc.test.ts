@@ -31,6 +31,69 @@ function endpoint(local: boolean, configuration?: ConfigurationService) {
 const request = (ep: LocalEndpoint, method: string, params: unknown = {}) =>
   ep.handle({ jsonrpc: '2.0', id: 1, method, params })
 
+it('Jev configuration uses local authority, sanitized errors and independent restart-only saves', async () => {
+  const jevSnapshot = {
+    profile: 'local-dev',
+    revision: 1,
+    settings: null,
+    configured: false,
+    credentialConfigured: false,
+    effect: 'restart-required' as const,
+    source: 'none' as const,
+  }
+  const jev = {
+    get: vi.fn(async () => jevSnapshot),
+    test: vi.fn(async () => ({ verified: true })),
+    save: vi.fn(async () => jevSnapshot),
+    capture: vi.fn(async () => ({ version: 1 as const, revision: 0, settings: null, credentialRef: null })),
+  }
+  const s = { ...service(), jev }
+  const local = endpoint(true, s),
+    remote = endpoint(false, s),
+    missing = endpoint(true, service())
+  const input = {
+    settings: {
+      transport: 'native',
+      endpoint: 'https://jev.example.invalid/decision',
+      model: 'jev',
+      enabled: true,
+      authentication: 'bearer',
+    },
+    apiKey: 'synthetic-key',
+    expectedRevision: 0,
+  }
+  try {
+    for (const method of ['jevGet', 'jevTest', 'jevSave']) {
+      expect(
+        await request(
+          remote,
+          `_agnes/v1/config.${method}`,
+          method === 'jevGet'
+            ? {}
+            : method === 'jevTest'
+              ? { settings: input.settings, apiKey: input.apiKey }
+              : input,
+        ),
+      ).toMatchObject({ error: { message: 'CAPABILITY_DENIED' } })
+    }
+    expect(jev.save).not.toHaveBeenCalled()
+    expect(await request(local, '_agnes/v1/config.jevSave', input)).toMatchObject({ result: jevSnapshot })
+    expect(s.save).not.toHaveBeenCalled()
+    expect(await request(missing, '_agnes/v1/config.jevGet')).toMatchObject({
+      error: { data: { reason: 'CONFIG_UNAVAILABLE' } },
+    })
+    jev.test.mockRejectedValueOnce(new Error('synthetic-key upstream body'))
+    const failed = await request(local, '_agnes/v1/config.jevTest', {
+      settings: input.settings,
+      apiKey: input.apiKey,
+    })
+    expect(JSON.stringify(failed)).not.toContain(input.apiKey)
+    expect(failed).toMatchObject({ error: { data: { reason: 'CONFIG_FAILED' } } })
+  } finally {
+    await Promise.all([local.close(), remote.close(), missing.close()])
+  }
+})
+
 it('gates OAuth locally, supplies connection ownership/lifetime and applies a committed snapshot', async () => {
   const oauth = vi.fn<NonNullable<ConfigurationService['oauth']>>(async () => ({
     operationId: 'op',
@@ -99,17 +162,20 @@ it('redacts provider errors and reports persisted-but-not-applied configuration 
   }
 })
 
-it('applies account changes through the same authenticated configuration callback', async () => {
-  const s = service(),
-    ep = endpoint(true, s),
-    denied = endpoint(false, s)
-  const params = { accountId: 'work', action: 'disable', expectedRevision: 1 }
-  expect(await request(denied, '_agnes/v1/config.account', params)).toMatchObject({
-    error: { message: 'CAPABILITY_DENIED' },
-  })
-  expect(s.account).not.toHaveBeenCalled()
-  expect(await request(ep, '_agnes/v1/config.account', params)).toMatchObject({
-    result: { effect: 'restart-required' },
-  })
-  expect(s.account).toHaveBeenCalledWith(params)
-})
+it.each(['disable', 'refresh-prices'])(
+  'applies %s through the same authenticated configuration callback',
+  async (action) => {
+    const s = service(),
+      ep = endpoint(true, s),
+      denied = endpoint(false, s)
+    const params = { accountId: 'work', action, expectedRevision: 1 }
+    expect(await request(denied, '_agnes/v1/config.account', params)).toMatchObject({
+      error: { message: 'CAPABILITY_DENIED' },
+    })
+    expect(s.account).not.toHaveBeenCalled()
+    expect(await request(ep, '_agnes/v1/config.account', params)).toMatchObject({
+      result: { effect: 'restart-required' },
+    })
+    expect(s.account).toHaveBeenCalledWith(params)
+  },
+)

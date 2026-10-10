@@ -9,6 +9,8 @@ import type {
 
 export type Side = 'left' | 'right'
 export const SIDES: readonly Side[] = ['left', 'right']
+/** The JevLoop decision backend one round selected; the runtime rejects unavailable choices. */
+export type DecisionBackendChoice = NonNullable<ComparisonSubmitParams['decisionBackend']>
 export type TerminalCause = ComparisonRound['terminalCauses'][number]['cause']
 export type SafeError = { code: string; message: string }
 export type Receipt =
@@ -45,6 +47,7 @@ export interface SessionPort {
     lanes: Record<Side, ComparisonLane>
     prepared: Partial<Record<Side, ComparisonPreparedReceipt>>
     permissionMode: NonNullable<ComparisonSubmitParams['permissionMode']>
+    decisionBackend?: DecisionBackendChoice
   }): Promise<{
     prepared?: Partial<Record<Side, ComparisonPreparedReceipt>>
     enqueue(side: Side): Promise<Receipt>
@@ -61,6 +64,8 @@ export interface SessionPort {
     runtime: string
     preset?: ComparisonCreateParams['preset']
     model?: ComparisonCreateParams['model']
+    /** JevLoop lane only; applied before the lane's configuration is prepared and attested. */
+    jevStages?: ComparisonCreateParams['right']['jevStages']
   }): Promise<ComparisonLane & { prepared?: ComparisonPreparedReceipt }>
   /** Must not execute the input. Persist an inputId+payload receipt in this session's ledger. */
   enqueue(input: {
@@ -69,6 +74,9 @@ export interface SessionPort {
     sessionId: string
     inputId: string
     content: ComparisonSubmitParams['content']
+    /** Lane runtime id; the port only attaches turn options to runtimes that accept them. */
+    runtime?: string
+    decisionBackend?: DecisionBackendChoice
   }): Promise<Receipt>
   /** One invocation, no transport retry. Must honor the input cancellation fence. */
   run(input: { sessionId: string; inputId: string }): Promise<SessionObservation>
@@ -112,6 +120,7 @@ export interface RoundRecord {
   inputId: string
   payload: string
   permissionMode?: NonNullable<ComparisonSubmitParams['permissionMode']>
+  decisionBackend?: DecisionBackendChoice
   prepared?: Partial<Record<Side, ComparisonPreparedReceipt>>
   acceptances: Record<Side, ComparisonAcceptance>
   runs: Record<Side, RunRecord>

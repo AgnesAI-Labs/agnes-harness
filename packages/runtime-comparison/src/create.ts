@@ -13,6 +13,9 @@ export async function createComparison(
   ) as ComparisonCreateParams
   if (input.isolation !== 'snapshot')
     throw new ComparisonError('UNSUPPORTED_ISOLATION', 'Worktree isolation is not implemented')
+  for (const side of SIDES)
+    if (input[side].jevStages !== undefined && input[side].runtime !== 'jevloop')
+      throw new ComparisonError('STAGE_BINDING_RUNTIME', 'Stage bindings apply only to a JevLoop lane')
   const createPayload = canonical(input)
   const initial: ComparisonRecord = {
     id: input.requestId,
@@ -73,6 +76,9 @@ export async function createComparison(
           runtime: input[side].runtime,
           ...(selection.preset === undefined ? {} : { preset: selection.preset }),
           ...(selection.model === undefined ? {} : { model: structuredClone(selection.model) }),
+          ...(input[side].jevStages === undefined
+            ? {}
+            : { jevStages: structuredClone(input[side].jevStages) }),
         }),
       ),
     )

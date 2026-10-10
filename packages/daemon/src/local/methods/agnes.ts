@@ -2,6 +2,8 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import {
   ActivationInProgressError,
+  jevLanguageSlots,
+  projectJevModelSlots,
   type QueuedActivationInvocation,
   SCAN_PAGE_MAX,
   type ScanRead,
@@ -20,13 +22,18 @@ import {
   type ExtUiResponseParams,
   type ParticipantListResult,
   type ParticipantParams,
+  type RuntimeTurnOptions,
   rpcError,
+  type SessionModelSlotsParams,
+  type SessionModelSlotsResult,
   type SessionProjectUIHistoryParams,
   type SessionProjectUIOpeningParams,
   type SessionProjectUIParams,
   type SessionProjectUIPatchParams,
   type SessionReadToolDetailParams,
   type SessionRuntimeControlParams,
+  type SessionSetJevStagesParams,
+  type SlotName,
   type ThinkingLevel,
   UI_HISTORY_DEFAULT_LIMIT,
   UI_HISTORY_MAX_LIMIT,
@@ -387,7 +394,7 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
     methods: ['_agnes/v1/questions.pending', '_agnes/v1/questions.answer', '_agnes/v1/questions.cancel'],
     guidance:
       'Live owner-bound questions; answers acknowledge durable settlement and never grant tool permissions.',
-    when: (cx) => !!(cx.questionControl ?? cx.host.questions),
+    when: (cx) => !!(cx.questionControl ?? cx.host?.questions),
   },
   {
     name: 'computer-use',
@@ -844,6 +851,62 @@ export function registerAgnes(
       }
       if (code && reasons[code]) throw rpcError('SEMANTIC_REJECTED', { code: reasons[code] })
       throw error
+    }
+  })
+  // Read-only live model-slot state: the resolved route/model plus thinking/context overrides for
+  // each of the closed slot names, and the effective JevLoop language-stage mapping (defaults
+  // applied by the one shared implementation in Host). Never opens, resumes or mutates a session.
+  ep.register('_agnes/v1/session.modelSlots', async (params, c) => {
+    const p = params as SessionModelSlotsParams
+    requireOwner('session.modelSlots', p.sessionId, c)
+    const { session } = cx.registry.require(p.sessionId)
+    // Worker-hosted sessions surface only commands over the supervisor proxy — their preset is
+    // not readable here — so the projection is computed where the live session is. Both paths
+    // build the body with the same host helper and cannot drift.
+    const remote = (session as { jevModelSlots?: () => Promise<unknown> }).jevModelSlots
+    const body = remote ? await remote.call(session) : projectJevModelSlots(session)
+    return {
+      sessionId: p.sessionId,
+      runtime: session.runtimeIdentity,
+      ...(body as Omit<SessionModelSlotsResult, 'sessionId' | 'runtime'>),
+    } satisfies SessionModelSlotsResult
+  })
+  // Direct per-stage bindings for JevLoop sessions. Each non-null binding passes the same host
+  // route/thinking gate as setModel (attributed to the stage's mapped slot), null restores the
+  // stage's preset slot resolution, and the write is one queued, audited session command.
+  ep.register('_agnes/v1/session.setJevStages', async (params, c) => {
+    const p = params as SessionSetJevStagesParams
+    requireOwner('session.setJevStages', p.sessionId, c)
+    const { session } = cx.registry.require(p.sessionId)
+    // Slot attribution for the gate needs the effective mapping; worker-hosted presets are not
+    // readable here, so fall back to the stage defaults when the projection is remote.
+    const slots = await (async () => {
+      const remote = (session as { jevModelSlots?: () => Promise<unknown> }).jevModelSlots
+      const body = remote
+        ? ((await remote.call(session)) as { languageSlots: Record<string, SlotName> })
+        : projectJevModelSlots(session)
+      return body.languageSlots as Record<'parameters' | 'arbitration' | 'answer', SlotName>
+    })()
+    const entries = Object.entries(p.stages) as Array<
+      [keyof typeof slots, { route: string; model: string; thinking?: ThinkingLevel | null } | null]
+    >
+    if (entries.length === 0) throw rpcError('INVALID_PARAMS', { code: 'STAGE_BINDING_EMPTY' })
+    try {
+      for (const [stage, binding] of entries)
+        if (binding)
+          cx.host.validateModelSwitch({
+            slot: slots[stage],
+            route: binding.route,
+            model: binding.model,
+            ...(binding.thinking === undefined ? {} : { thinking: binding.thinking }),
+          })
+      return {
+        effectiveFromSeq: await runQueued(cx.commandQueue, p.sessionId, neverAbort(), () =>
+          session.setJevStages({ stages: p.stages }),
+        ),
+      }
+    } catch (error) {
+      return mapCore(error)
     }
   })
   ep.register('_agnes/v1/session.budget', async (params, c) => {
@@ -1544,6 +1607,9 @@ export function registerAgnes(
               kind: kind === 'steer' ? 'steer' : 'follow_up',
               commandId,
               admissionId,
+              ...(payload.runtimeOptions === undefined
+                ? {}
+                : { runtimeOptions: payload.runtimeOptions as RuntimeTurnOptions }),
             })
             return { seq }
           })
@@ -1744,8 +1810,18 @@ export function registerAgnes(
     params: unknown,
     c: CallContext,
   ): Promise<{ seq: number }> => {
-    const p = params as { sessionId: string; content: unknown[]; commandId: string; generation?: number }
-    const payload = { sessionId: p.sessionId, content: p.content }
+    const p = params as {
+      sessionId: string
+      content: unknown[]
+      commandId: string
+      generation?: number
+      runtimeOptions?: RuntimeTurnOptions
+    }
+    const payload = {
+      sessionId: p.sessionId,
+      content: p.content,
+      ...(p.runtimeOptions === undefined ? {} : { runtimeOptions: p.runtimeOptions }),
+    }
     const a = await submit(c.conn.clientId, p.commandId, kind, payload, c, p.generation)
     if (a.status === 'uncertain') throw rpcError('INTERNAL_ERROR', { code: 'UNCERTAIN' })
     // SessionSteerResult requires an integer seq, so an absent one is not a result that can ship.

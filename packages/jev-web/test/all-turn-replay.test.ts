@@ -3,7 +3,10 @@ import type { EventEnvelope } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createJevDecisionGraph, type JevReplayCut } from '../src/jev-decision-graph.js'
+import { createJevTranslate } from '../src/jev-locale.js'
 import { createRuntimeRecordTrace } from '../src/runtime-record-trace.js'
+
+const t = createJevTranslate('zh-CN')
 
 afterEach(() => vi.useRealTimers())
 
@@ -174,7 +177,7 @@ it('replays every persisted turn together by ledger seq and drives one shared co
   const events = multiTurnFixture()
   const cuts: Array<JevReplayCut | undefined> = []
   const host = document.createElement('section')
-  const graph = createJevDecisionGraph(host, { onCut: (cut) => cuts.push(cut) })
+  const graph = createJevDecisionGraph(host, { onCut: (cut) => cuts.push(cut) }, t)
   vi.useFakeTimers()
   try {
     graph.update(events, 'session-a')
@@ -269,6 +272,7 @@ it('forwards the conversation cut through the read-only trace and clears it on r
   const host = document.createElement('section')
   const trace = createRuntimeRecordTrace(host, { call } as unknown as Pick<Client, 'call'>, undefined, {
     onCut: (cut) => cuts.push(cut),
+    t,
   })
   trace.select('session-a', 21)
   await vi.waitFor(() =>

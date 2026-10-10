@@ -1,5 +1,6 @@
 import type { ComparisonLane, EventEnvelope } from '@agnes/protocol'
 import type { ComparisonJournalState } from './comparison-journal.js'
+import type { Translate } from './jev-locale.js'
 
 type Side = ComparisonLane['side']
 export type ComparisonCuts = Record<Side, number>
@@ -29,10 +30,11 @@ export function createComparisonReplay(
     atSeq: number | null,
   ) => Promise<boolean>,
   fail: (error: unknown) => void,
+  t: Translate,
 ) {
   const bar = document.createElement('div')
   bar.className = 'comparison-replay'
-  bar.setAttribute('aria-label', '双侧共享账本回放')
+  bar.setAttribute('aria-label', t('replay.aria.label'))
   const makeButton = (text: string, action: () => void) => {
     const value = document.createElement('button')
     value.type = 'button'
@@ -63,7 +65,7 @@ export function createComparisonReplay(
     if (timer !== undefined) clearTimeout(timer)
     timer = undefined
   }
-  const play = makeButton('播放', () => {
+  const play = makeButton(t('replay.play'), () => {
     if (playing) pause()
     else {
       playing = true
@@ -72,13 +74,13 @@ export function createComparisonReplay(
     }
     draw()
   })
-  const restart = makeButton('从头回放', () => {
+  const restart = makeButton(t('replay.restart'), () => {
     pause()
     position = 0
     playing = true
     request()
   })
-  const previous = makeButton('上一项', () => {
+  const previous = makeButton(t('replay.previous'), () => {
     pause()
     position = Math.max(0, (position ?? max()) - 1)
     request()
@@ -86,25 +88,25 @@ export function createComparisonReplay(
   const slider = document.createElement('input')
   slider.type = 'range'
   slider.min = '0'
-  slider.setAttribute('aria-label', '双侧共享回放位置')
+  slider.setAttribute('aria-label', t('replay.aria.position'))
   slider.addEventListener('input', () => {
     pause()
     position = Number(slider.value)
     request()
   })
   bar.append(slider)
-  const next = makeButton('下一项', () => {
+  const next = makeButton(t('replay.next'), () => {
     pause()
     position = Math.min(max(), (position ?? max()) + 1)
     request()
   })
-  makeButton('实时', () => {
+  makeButton(t('replay.live'), () => {
     pause()
     position = null
     request()
   })
   const speed = document.createElement('select')
-  speed.setAttribute('aria-label', '双侧回放速度')
+  speed.setAttribute('aria-label', t('replay.aria.speed'))
   for (const value of [1, 2, 4, 8]) {
     const option = document.createElement('option')
     option.value = String(value)
@@ -128,38 +130,51 @@ export function createComparisonReplay(
     play.disabled = restart.disabled = max() === 0
     previous.disabled = (position ?? max()) <= 0
     next.disabled = (position ?? max()) >= max()
-    play.textContent = playing ? '暂停' : '播放'
+    play.textContent = playing ? t('replay.pause') : t('replay.play')
     play.setAttribute('aria-pressed', String(playing))
     const incomplete = lanes.size < 2 || [...lanes.values()].some((lane) => !lane.complete)
     const prefix = pending
-      ? '正在同步两侧，保留上一位置'
+      ? t('replay.syncing')
       : position === null
-        ? '实时持久记录'
+        ? t('replay.livePrefix')
         : journal.mode === 'journal'
-          ? `共享 journal #${appliedSeq ?? 0}`
-          : `同步步进 ${position}`
+          ? t('replay.journalPrefix', { seq: appliedSeq ?? 0 })
+          : t('replay.stepPrefix', { position })
     const ordering =
       journal.mode === 'journal'
-        ? `后端持久发布顺序 · 共享 cursor #${appliedSeq ?? 0} / #${journal.throughSeq}`
+        ? t('replay.ordering.journal', { seq: appliedSeq ?? 0, through: journal.throughSeq })
         : journal.mode === 'per-lane-only'
-          ? 'per-lane-only：按各侧记录顺序，非全局时序（无共享 journal）'
+          ? t('replay.ordering.perLane')
           : journal.mode === 'error'
-            ? '共享 journal 不可用，保留上一位置'
-            : '正在载入共享 journal'
+            ? t('replay.ordering.error')
+            : t('replay.ordering.loading')
     const checkpoint = journal.entries
       .slice(0, appliedSeq ?? 0)
       .findLast((entry) => entry.fact.kind === 'checkpoint')
     const coverage =
       checkpoint?.fact.kind === 'checkpoint'
-        ? ` · ${checkpoint.fact.reason} checkpoint #${checkpoint.seq}：历史前缀交错未知${checkpoint.fact.coverage === 'per-lane-only' ? '，仅单侧顺序' : ''}`
+        ? t('replay.checkpoint', {
+            reason: checkpoint.fact.reason,
+            seq: checkpoint.seq,
+            perLane: checkpoint.fact.coverage === 'per-lane-only' ? t('replay.checkpoint.perLane') : '',
+          })
         : ''
-    status.textContent = `${prefix} · 左 #${applied.left} / 右 #${applied.right}${max() === 0 ? ' · 尚无账本数据' : ''}${incomplete ? ' · 历史读取中或尚未读全' : ''}；${ordering}${coverage}${journal.loading ? ' · 正在读取固定 journal 前缀' : ''}${journal.error ? ` · ${journal.error}` : ''}`
+    status.textContent = t('replay.status', {
+      prefix,
+      sides: t('replay.sides', { left: applied.left, right: applied.right }),
+      noData: max() === 0 ? t('replay.noData') : '',
+      incomplete: incomplete ? t('replay.incomplete') : '',
+      ordering,
+      coverage,
+      loading: journal.loading ? t('replay.loadingPrefix') : '',
+      error: journal.error ? ` · ${journal.error}` : '',
+    })
     const selected = appliedSeq === null ? undefined : journal.entries[appliedSeq - 1]
     fact.hidden = selected === undefined
     fact.replaceChildren()
     if (selected) {
       const summary = document.createElement('summary')
-      summary.textContent = `共享事实 #${selected.seq} · ${selected.fact.kind}`
+      summary.textContent = t('replay.fact', { seq: selected.seq, kind: selected.fact.kind })
       const raw = document.createElement('pre')
       raw.textContent = JSON.stringify(selected.fact, null, 2)
       fact.append(summary, raw)

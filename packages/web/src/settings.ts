@@ -4,6 +4,7 @@ import type {
   ConfigModel,
   ConfigProvider,
   ConfigSnapshot,
+  ConfigTestInput,
   ConfigTestResult,
   ModelSettings,
   ThinkingLevel,
@@ -21,6 +22,7 @@ import {
 import { createElement } from 'react'
 import { oauthControls } from './oauth-controls.js'
 import { createAccountPickers } from './provider-picker.js'
+import { customConfigurationFields } from './settings-custom.js'
 
 export type SettingsControllerOptions = {
   client: Client
@@ -180,6 +182,15 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   }
   let providers: ConfigProvider[] = []
   const modelDrafts = new Map<string, ModelSettings>()
+  let testedKey: string | undefined
+  let testedKeyScope: string | undefined
+  const keyScope = () =>
+    JSON.stringify([
+      editingId,
+      ui.provider.value,
+      ui.baseUrl.value.trim(),
+      optionalElement('config-custom-api', 'select')?.value,
+    ])
   let tested: ConfigTestResult | undefined
   let testPending = false
   let savePending = false
@@ -230,12 +241,13 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     error: (error) => setError(error),
   })
   const isOAuth = () => ui.authMethod.value === 'oauth'
+  const customFields = customConfigurationFields(providerId, () => resetTest())
 
   const current = (token: number, inputRevision?: number): boolean =>
     token === lifecycle && ui.dialog.open && (inputRevision === undefined || inputRevision === revision)
 
   const setError = (error: unknown): void => {
-    const secret = ui.apiKey.value
+    const secret = ui.apiKey.value || testedKey || ''
     const translated = configurationReason(error)
     const message = translated ?? errorText(error, secret)
     ui.error.textContent = message
@@ -263,6 +275,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   const updateButtons = (): void => {
     const busy = loadPhase === 'loading' || testPending || savePending
     const oauthSelected = isOAuth()
+    customFields.disable(!connected || busy)
     oauth.visible(oauthSelected)
     oauth.disabled(!connected || busy)
     if (ui.apiKey.closest('label')) (ui.apiKey.closest('label') as HTMLElement).hidden = oauthSelected
@@ -279,7 +292,11 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       !connected ||
       busy ||
       (oauthSelected && (oauth.operation() ? !tested?.models.length || !ui.models.value : !selectedAccount()))
-    ui.models.disabled = !connected || busy || !tested?.models.length || (!oauthSelected && !tested.verified)
+    ui.models.disabled =
+      !connected ||
+      busy ||
+      !tested?.models.length ||
+      (!oauthSelected && providerId() !== 'custom-openai' && !tested.verified)
     if (ui.thinking) ui.thinking.disabled = ui.models.disabled
     if (ui.contextWindow) ui.contextWindow.disabled = ui.models.disabled
     ui.save.disabled =
@@ -293,9 +310,15 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       option(models.length ? '选择要保存的默认模型' : '先测试 Provider，再选择默认模型', ''),
       ...models.map((model) => option(`${model.name} · ${model.id}`, model.id)),
     ])
-    const savedModel = models.some((model) => model.id === previousModel)
-      ? previousModel
-      : (savedProvider()?.model ?? (models.length === 1 ? models[0]?.id : undefined))
+    const declaredModel =
+      providerId() === 'custom-openai'
+        ? optionalElement('config-custom-model', 'input')?.value.trim()
+        : undefined
+    const savedModel = models.some((model) => model.id === declaredModel)
+      ? declaredModel
+      : models.some((model) => model.id === previousModel)
+        ? previousModel
+        : (savedProvider()?.model ?? (models.length === 1 ? models[0]?.id : undefined))
     ui.models.value = savedModel && models.some((model) => model.id === savedModel) ? savedModel : ''
     renderModelSettings()
     updateButtons()
@@ -407,31 +430,41 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     ui.baseUrl.value = savedProvider()?.baseUrl ?? selected?.baseUrl ?? ''
     // A saved credential is represented only by credentialConfigured. It is never read back here.
     ui.apiKey.value = ''
+    customFields.fill(selectedAccount())
     renderKeyHint()
   }
 
-  const resetTest = (clearError = true): void => {
+  const resetTest = (clearError = true, preserveModels = false): void => {
+    if (testedKeyScope !== keyScope()) testedKey = undefined
     revision += 1
     testGeneration += 1
     testPending = false
+    const previousModels = tested?.models
     const saved = selectedAccount()
-    tested = isOAuth() && saved?.authType === 'oauth' ? { models: saved.models, verified: false } : undefined
-    ui.models.value = ''
+    tested =
+      preserveModels && previousModels
+        ? { models: previousModels, verified: false }
+        : isOAuth() && saved?.authType === 'oauth'
+          ? { models: saved.models, verified: false }
+          : undefined
+    if (!preserveModels) ui.models.value = ''
+    customFields.invalidate()
     renderModels()
     if (clearError) ui.error.textContent = ''
     ui.state.textContent = '连接信息已变更。请重新测试 Provider；此前的模型列表已失效。'
   }
 
-  const input = (): { providerId: string; accountId?: string; baseUrl?: string; apiKey?: string } => {
+  const input = (): ConfigTestInput => {
     const selectedId = providerId()
     const selected = providers.find((provider) => provider.id === selectedId)
     if (!selectedId || !selected) throw new Error('请选择 Provider')
     const baseUrl = ui.baseUrl.value.trim()
-    const apiKey = ui.apiKey.value
+    const apiKey = ui.apiKey.value || testedKey
     if (!isOAuth() && selectedAccount()?.authType === 'oauth' && !apiKey)
       throw new Error('从订阅登录切换为 API Key 时，请输入新的 API key')
     return {
       providerId: selectedId,
+      ...customFields.request(),
       ...(editingId ? { accountId: editingId } : {}),
       // An explicit provider default must survive the client boundary so Host can reset a saved
       // custom endpoint. An empty field remains an omitted override per Config*Input semantics.
@@ -462,6 +495,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
 
   const close = (): void => {
     oauth.clear()
+    testedKey = undefined
     testPending = false
     closeAccountDialog()
     lifecycle += 1
@@ -512,6 +546,47 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     }
   }
 
+  const discover = async (): Promise<void> => {
+    if (!connected || testPending || savePending || providerId() !== 'custom-openai') return
+    resetTest()
+    const token = lifecycle,
+      inputRevision = revision,
+      generation = ++testGeneration
+    const owns = () => current(token, inputRevision) && generation === testGeneration
+    const apiKey = ui.apiKey.value || testedKey
+    const baseUrl = ui.baseUrl.value.trim()
+    testPending = true
+    ui.error.textContent = ''
+    ui.state.textContent = '正在获取模型 ID 目录；不会从目录推断模型能力…'
+    updateButtons()
+    try {
+      const result = await options.client.config.discover({
+        providerId: 'custom-openai',
+        ...(editingId ? { accountId: editingId } : {}),
+        ...(baseUrl ? { baseUrl } : {}),
+        ...(apiKey ? { apiKey } : {}),
+      })
+      if (!owns()) return
+      if (!result.models.length) throw new Error('服务未返回有效的模型 ID 目录；仍可手工填写并测试模型。')
+      customFields.setCatalogue(result.models)
+      testedKey = apiKey
+      testedKeyScope = keyScope()
+      ui.state.textContent = `获取 ${result.models.length} 个模型 ID。可选择默认模型并一键导入；保存前须实际测试默认模型。`
+    } catch (error) {
+      if (owns()) {
+        testedKey = undefined
+        setError(error)
+      }
+    } finally {
+      if (owns()) {
+        ui.apiKey.value = ''
+        testPending = false
+        updateButtons()
+      }
+    }
+  }
+  optionalElement('config-custom-discover', 'button')?.addEventListener('click', () => void discover())
+
   const test = async (): Promise<void> => {
     if (!connected || testPending || savePending) return
     const token = lifecycle
@@ -547,8 +622,17 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       return
     }
     testPending = true
+    let customResultReceived = false
+    if (providerId() === 'custom-openai') {
+      testedKey = request.apiKey
+      testedKeyScope = keyScope()
+    }
     ui.error.textContent = ''
-    ui.state.textContent = '第 2 步：正在测试 Provider…'
+    ui.state.textContent =
+      providerId() === 'custom-openai'
+        ? '正在验证默认模型的普通推理和消息结构…'
+        : '第 2 步：正在测试 Provider…'
+    if (providerId() === 'custom-openai') customFields.pending()
     updateButtons()
     try {
       const result = await options.client.config.test({
@@ -557,18 +641,39 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       })
       if (!ownsTest()) return
       if (isOAuth()) tested = result
-      if (!result.verified || result.models.length === 0) throw new Error('Provider 未返回可验证的模型目录')
+      if (providerId() === 'custom-openai') {
+        customResultReceived = true
+        customFields.verification(result)
+      }
+      if (!result.verified || result.models.length === 0)
+        throw new Error(
+          providerId() === 'custom-openai'
+            ? '默认模型验证未通过，请查看分项结果并核对协议、模型 ID 和密钥。'
+            : 'Provider 未返回可验证的模型目录',
+        )
       tested = result
-      ui.state.textContent = `第 3 步：连接成功，发现 ${result.models.length} 个模型。确认或选择默认模型后保存；当前会话模型不会改变。`
+      testedKey = request.apiKey
+      testedKeyScope = keyScope()
+      if (providerId() === 'custom-openai') ui.apiKey.value = ''
+      ui.state.textContent =
+        providerId() === 'custom-openai'
+          ? result.customVerification?.checks.some(
+              (check) => check.id === 'mid-conversation-system' && check.status === 'failed',
+            )
+            ? '普通连接验证通过，可以保存此账户。中途 system 请求未通过；当前配置不能用于 JevLoop。'
+            : '默认模型测试通过，可以保存。切换默认模型后需重新测试；导入目录中的其他模型尚未验证。'
+          : `第 3 步：连接成功，发现 ${result.models.length} 个模型。确认或选择默认模型后保存；当前会话模型不会改变。`
       ui.error.textContent = ''
       renderModels(result.models)
     } catch (error) {
       if (!ownsTest()) return
+      if (providerId() === 'custom-openai' && !customResultReceived) customFields.failed()
       tested = isOAuth() && tested ? { ...tested, verified: false } : undefined
       renderModels()
       setError(error)
     } finally {
       if (ownsTest()) {
+        if (providerId() === 'custom-openai') ui.apiKey.value = ''
         testPending = false
         updateButtons()
       }
@@ -651,6 +756,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     } finally {
       // The field is cleared after every save attempt, including a conflict or transport failure.
       ui.apiKey.value = ''
+      testedKey = undefined
       savePending = false
       if (current(token)) updateButtons()
     }
@@ -688,12 +794,14 @@ export function createSettingsController(options: SettingsControllerOptions): Se
 
   const closeAccountDialog = (): void => {
     providerPicker.close()
-    if (oauth.operation() || (testPending && isOAuth())) {
+    if (oauth.operation() || testPending || providerId() === 'custom-openai') {
       oauth.clear()
       testPending = false
       resetTest()
       updateButtons()
     }
+    testedKey = undefined
+    ui.apiKey.value = ''
     if (!accountDialog?.open) return
     try {
       accountDialog.close()
@@ -774,7 +882,17 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       renderAccounts()
     }
   })
+  accountDialog?.addEventListener('close', () => {
+    testedKey = undefined
+    ui.apiKey.value = ''
+    if (testPending) {
+      resetTest()
+      updateButtons()
+    }
+  })
   accountDialog?.addEventListener('cancel', () => {
+    testedKey = undefined
+    ui.apiKey.value = ''
     oauth.clear()
     testPending = false
     resetTest()
@@ -787,6 +905,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       accountName.value = selected?.label ?? ''
       suggestedAccountLabel = accountName.value
     }
+    customFields.fill()
     ui.baseUrl.value = selected?.baseUrl ?? ''
     ui.apiKey.value = ''
     const methods = selected?.authMethods ?? [selected?.authType ?? 'api-key']
@@ -810,8 +929,14 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     resetTest()
     updateButtons()
   })
-  ui.baseUrl.addEventListener('input', () => resetTest())
-  ui.apiKey.addEventListener('input', () => resetTest())
+  ui.baseUrl.addEventListener('input', () => {
+    customFields.clearCatalogue()
+    resetTest()
+  })
+  ui.apiKey.addEventListener('input', () => {
+    testedKey = undefined
+    resetTest()
+  })
   for (const control of [ui.thinking, ui.contextWindow])
     control?.addEventListener('change', () => {
       try {
@@ -824,6 +949,10 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   ui.models.addEventListener('change', () => {
     renderModelSettings()
     if (isOAuth() && !oauth.operation() && tested) tested = { ...tested, verified: false }
+    if (providerId() === 'custom-openai') {
+      customFields.selectModel(ui.models.value)
+      resetTest(true, true)
+    }
     updateButtons()
   })
   ui.test.addEventListener('click', () => void test())
@@ -891,6 +1020,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     }
     connected = value
     if (!value) {
+      testedKey = undefined
       oauth.clear()
       testPending = false
     }

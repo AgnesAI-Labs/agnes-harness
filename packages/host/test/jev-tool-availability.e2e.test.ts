@@ -46,7 +46,13 @@ it('removes unavailable captured capabilities, records refusals before dispatch 
             timeout: options?.timeoutMs,
             signal: options?.signal,
           })
-          return { code: 0, stdout: result.stdout, stderr: result.stderr, truncated: false }
+          return {
+            code: 0,
+            stdout: result.stdout,
+            stderr: result.stderr,
+            truncated: false,
+            timedOut: false,
+          }
         },
       },
     },
@@ -99,6 +105,7 @@ it('removes unavailable captured capabilities, records refusals before dispatch 
   try {
     const session = await host.createSession({ cwd: root, runtime: 'jevloop' })
     const registered = session.currentTools().snapshot(session.lastSeq)
+    const installed = host.kernel.tools.snapshot(session.lastSeq)
     const environment = createJevEnvironment({
       session,
       ledger: {
@@ -121,9 +128,10 @@ it('removes unavailable captured capabilities, records refusals before dispatch 
     })
     await expect(environment.validate(shell, { command, background: true })).rejects.toThrow('backgroundJobs')
     for (const name of ['compact', 'subagent_spawn', 'subagent_fork', 'run_code']) {
-      expect(registered.byName.has(name)).toBe(true)
+      expect(registered.byName.has(name)).toBe(false)
+      expect(installed.byName.has(name)).toBe(true)
       expect(catalog.some((tool) => tool.name === name)).toBe(false)
-      const definition = registered.byName.get(name)
+      const definition = installed.byName.get(name)
       if (!definition) throw new Error('Missing bundled definition')
       await expect(
         environment.validate(
@@ -136,7 +144,7 @@ it('removes unavailable captured capabilities, records refusals before dispatch 
                 ? { question: 'task' }
                 : { task: 'task' },
         ),
-      ).rejects.toThrow('Unavailable runtime capability')
+      ).rejects.toThrow('Tool revision changed')
     }
     // Historical capture supplies the actual advertised baseline; it is not edited or replayed.
     const historical = JSON.parse(
@@ -163,10 +171,11 @@ it('removes unavailable captured capabilities, records refusals before dispatch 
     const customSession = {
       d: { ...session.d, children: customFactory },
       runtimeIdentity: session.runtimeIdentity,
-      currentTools: () => session.currentTools(),
+      currentTools: () => host.kernel.tools,
       lastSeq: session.lastSeq,
     } as SessionImpl
-    const definition = registered.byName.get('subagent_spawn')
+    const installedSession = { ...customSession, d: session.d } as SessionImpl
+    const definition = installed.byName.get('subagent_spawn')
     if (!definition) throw new Error('Missing spawn')
     const descriptor = { ...shell, name: 'subagent_spawn', revision: definition.definitionFingerprint }
     expect(createJevToolAvailability(customSession).project(definition, descriptor)).toBeUndefined()
@@ -189,7 +198,7 @@ it('removes unavailable captured capabilities, records refusals before dispatch 
       }).project(definition, descriptor),
     ).toEqual(descriptor)
     for (const name of ['subagent_send_message', 'subagent_interrupt']) {
-      const control = registered.byName.get(name)
+      const control = installed.byName.get(name)
       if (!control) throw new Error('Missing child control')
       const tool = { ...shell, name, revision: control.definitionFingerprint }
       expect(
@@ -206,7 +215,7 @@ it('removes unavailable captured capabilities, records refusals before dispatch 
         }).project(control, tool),
       ).toBeUndefined()
       expect(
-        createJevToolAvailability(session, {
+        createJevToolAvailability(installedSession, {
           factory: session.d.children,
           supportsRuntime: () => true,
         }).project(control, tool),
@@ -214,7 +223,7 @@ it('removes unavailable captured capabilities, records refusals before dispatch 
     }
     // Host composition supplies a real independent child runtime opener.
     expect(
-      createJevToolAvailability(session, {
+      createJevToolAvailability(installedSession, {
         factory: session.d.children,
         supportsRuntime: () => true,
       }).project(definition, descriptor),
@@ -223,7 +232,7 @@ it('removes unavailable captured capabilities, records refusals before dispatch 
     if (!(session.d.children instanceof KernelChildren)) throw new Error('Expected Kernel factory')
     const capability = vi.spyOn(session.d.children, 'supportsRuntime').mockReturnValue(false)
     expect(
-      createJevToolAvailability(session, {
+      createJevToolAvailability(installedSession, {
         factory: session.d.children,
         supportsRuntime: () => true,
       }).project(definition, descriptor),
@@ -246,7 +255,7 @@ it('removes unavailable captured capabilities, records refusals before dispatch 
     const records = (
       await scanAll((query) => session.scan(query), { type: 'runtime/record', toSeq: session.lastSeq })
     ).map((event) => recordOf(event.data))
-    expect(outcome.reason, JSON.stringify(records.findLast((record) => record.kind === 'run.stopped'))).toBe(
+    expect(outcome.reason, JSON.stringify(records.filter((record) => record.kind === 'action.settled'))).toBe(
       'completed',
     )
     expect(await readFile(join(root, 'foreground.txt'), 'utf8')).toBe('foreground-evidence')
@@ -254,7 +263,7 @@ it('removes unavailable captured capabilities, records refusals before dispatch 
     expect(JSON.stringify(observed)).toContain('agnes.jev-tool-availability.v1')
     if (observed?.kind !== 'environment.observed') throw new Error('Missing observed environment')
     for (const name of ['subagent_spawn', 'subagent_fork'])
-      expect(observed.catalog.some((tool) => tool.name === name)).toBe(true)
+      expect(observed.catalog.some((tool) => tool.name === name)).toBe(false)
     expect(JSON.stringify(observed)).toContain('backgroundJobs')
     expect(records.filter((record) => record.kind === 'action.intended')).toMatchObject([
       { intent: { tool: 'shell', arguments: { command, background: false } } },

@@ -126,13 +126,31 @@ type HarnessDirLiteralExemption = {
   readonly reason: string
 }
 
-// Empty, and pinned empty by a count test below. Before the `.agh` rename this list held six entries
-// (session-workspace.ts, adapters/index.ts, profile/inputs.ts, default-journal.node.ts, discover.ts,
-// skill-bootstrap.ts): workspace-relative `.agnes` paths that were not the home root, and two packages
-// that could not import agnesHome() from @agnes/host. Every one of those lines now imports AGH_DIR or
-// WORKSPACE_SECRET_DIRS from @agnes/protocol, which all of those packages can already depend on, so
-// none of the reasons those entries gave still applies. Adding one back is a decision, not a side effect.
-const HARNESS_DIR_LITERAL_EXEMPTIONS: readonly HarnessDirLiteralExemption[] = []
+// Held no entries from the `.agh` rename until 2026-10-10, and the history still applies to every
+// package: before the rename this list held six entries (session-workspace.ts, adapters/index.ts,
+// profile/inputs.ts, default-journal.node.ts, discover.ts, skill-bootstrap.ts) — workspace-relative
+// `.agnes` paths that were not the home root, and two packages that could not import agnesHome()
+// from @agnes/host. Every one of those lines now imports AGH_DIR or WORKSPACE_SECRET_DIRS from
+// @agnes/protocol, which all of those packages can already depend on, so none of the reasons those
+// entries gave still applies.
+// Empty before 2026-10-10, and pinned empty for most of this guard's life; the history above still
+// applies to every package. The one entry now held is the Terminal-Bench driver, whose reason is the
+// same module-resolution wall as its Rule A sibling: a tools/ fixture that cannot import from
+// @agnes/protocol at vitest runtime. Adding one back remains a decision, not a side effect.
+const HARNESS_DIR_LITERAL_EXEMPTIONS: readonly HarnessDirLiteralExemption[] = [
+  {
+    path: 'tools/benchmarks/terminal-bench/driver.ts',
+    line: "['.agh', '.agents', '.claude', '.codex'].map((name) => join(root, name, 'skills')),",
+    reason:
+      'Benchmark isolation rejects the skill-discovery entrance of every harness this benchmark ' +
+      'knows about — AGH and three others — so only one of the four names even has a constant to ' +
+      'import, and importing AGH_DIR from @agnes/protocol fails vitest module resolution from ' +
+      'tools/ exactly as the sibling Rule A exemption documents (no package.json on the path; ' +
+      'package-boundary rule rules out a relative import). The esbuild bundle resolves the alias, ' +
+      'so this literal again exists only for the in-repo test context. If AGH_DIR is ever renamed, ' +
+      "this line's own skill-path test (assertNoBenchmarkSkillPaths) goes red until it is updated.",
+  },
+]
 
 // Rule A's own exemption list, kept separate from Rule B's rather than merged into one shape: the two
 // rules match different things (a call shape vs. a string literal) and a merged type would need an
@@ -172,6 +190,23 @@ const JOIN_DATA_CACHE_EXEMPTIONS: readonly JoinDataCacheExemption[] = [
       'count-lines.ts), so trimming one would not have helped either. Left exactly as PATH-01 left ' +
       'it. Recommended follow-up: once the in-flight ratchet change lands, re-attempt this migration ' +
       'against whatever ceiling it leaves behind.',
+  },
+  {
+    path: 'tools/benchmarks/terminal-bench/driver.ts',
+    line: "join(request.home, 'data'),",
+    reason:
+      'The Terminal-Bench driver is a standalone benchmark fixture that this repository runs under ' +
+      "vitest from tools/, which has no package.json of its own, so a value import of dataDir() from " +
+      '@agnes/host cannot resolve at test time (typecheck passes; module resolution does not — ' +
+      'verified by running driver.test.ts, which failed with "Cannot find package \'@agnes/host\'"). ' +
+      'Adding a package.json under tools/benchmarks would enrol a benchmark fixture as a pnpm ' +
+      'workspace project and perturb every `pnpm -r` loop, and a relative import into ' +
+      'packages/host/src would cross the package boundary AGENTS.md asks this repo to preserve. ' +
+      'The esbuild bundle (build-driver.mjs) already aliases @agnes/host for the shipped artifact, ' +
+      'so this literal exists only for the in-repo test context. The flag itself must stay ' +
+      "explicit: the daemon's config defaults an omitted --data-dir to the home root, not home/data " +
+      '(packages/daemon/src/config.ts `o.args.dataDir ?? o.home`), so dropping the flag would ' +
+      'silently move the benchmark session tree. Values verified against paths.ts dataDir().',
   },
 ]
 
@@ -274,9 +309,13 @@ describe('the Agnes home directory layout is reconstructed in exactly one place'
     }
   })
 
-  it('HARNESS_DIR_LITERAL_EXEMPTIONS is empty', () => {
+  it('HARNESS_DIR_LITERAL_EXEMPTIONS holds only the named tools-fixture entry', () => {
     // A count pin: a growing exemption list is exactly how this class of guard rots into decoration.
-    expect(HARNESS_DIR_LITERAL_EXEMPTIONS.length).toBe(0)
+    // Two is the reviewed state: the packages-wide zero-entry rule plus the one tools/ benchmark
+    // fixture documented above. A third entry needs this pin moved, which is the point.
+    expect(HARNESS_DIR_LITERAL_EXEMPTIONS.map((e) => e.path)).toEqual([
+      'tools/benchmarks/terminal-bench/driver.ts',
+    ])
   })
 
   it('every JOIN_DATA_CACHE_EXEMPTIONS entry is still consumed by real source', () => {
@@ -302,8 +341,11 @@ describe('the Agnes home directory layout is reconstructed in exactly one place'
     }
   })
 
-  it('exactly the one known JOIN_DATA_CACHE_EXEMPTIONS entry, no more, no fewer', () => {
-    expect(JOIN_DATA_CACHE_EXEMPTIONS.length).toBe(1)
+  it('exactly the two known JOIN_DATA_CACHE_EXEMPTIONS entries, no more, no fewer', () => {
+    expect(JOIN_DATA_CACHE_EXEMPTIONS.map((e) => e.path)).toEqual([
+      'packages/daemon/src/supervisor/scope.ts',
+      'tools/benchmarks/terminal-bench/driver.ts',
+    ])
   })
 })
 

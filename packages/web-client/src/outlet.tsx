@@ -124,7 +124,11 @@ export function SlotOutlet<N extends SlotName>(outletProps: SlotOutletProps<N>):
   const fallback =
     outletProps.fallback ??
     (outletProps.chain?.fallback as ReactNode | undefined) ??
-    createElement('div', { 'data-slot-placeholder': '1' }, '此槽位的插件未就绪')
+    createElement(
+      'div',
+      { 'data-slot-placeholder': '1' },
+      runtime.locale?.t('slot.notReady') ?? 'Plugin for this slot is not ready',
+    )
 
   if (spec?.kind === 'chain') {
     const selected =
@@ -248,7 +252,7 @@ class SlotEntryBoundary extends Component<BoundaryProps, { failed: boolean }> {
       return createElement(
         'div',
         { 'data-slot-entry': this.props.entry.key, 'data-slot-entry-state': 'failed' },
-        '插件渲染失败',
+        this.props.locale?.t('slot.entryFailed') ?? 'Plugin render failed',
       )
     }
     const store = this.props.registry.acquireStore(this.props.entry, this.props.scopeKey)

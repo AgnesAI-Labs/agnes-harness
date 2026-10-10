@@ -88,7 +88,7 @@ function host(overrides: Partial<LanguageHost> = {}): LanguageHost {
         yield { type: 'done', reason: 'stop' }
       },
     },
-    selection: { slot: 'primary', route: 'test', model: 'image', contractId: null },
+    selection: () => ({ slot: 'primary', route: 'test', model: 'image', contractId: null }),
     sessionKey: 's',
     system: '',
     maxFormatRetries: 0,
@@ -211,9 +211,14 @@ describe('Jev settled tool image transport', () => {
     let calls = 0
     const backend = createLanguageBackend({
       ...host(),
-      get selection(): LanguageHost['selection'] {
+      selection(_purpose) {
         selected++
-        return { slot: 'primary', route: 'test', model: selected === 1 ? 'image' : 'other', contractId: null }
+        return {
+          slot: 'primary',
+          route: 'test',
+          model: selected === 1 ? 'image' : 'other',
+          contractId: null,
+        }
       },
       provider: {
         models: () => catalog,

@@ -22,6 +22,7 @@ import {
 import type {
   ConfigAccount,
   ConfigAccountInput,
+  ConfigCustomModel,
   ConfigModel,
   ConfigOAuthInput,
   ConfigOAuthResult,
@@ -31,6 +32,7 @@ import type {
   ConfigSnapshot,
   ConfigTestInput,
   ConfigTestResult,
+  ModelPricePolicy,
   ModelRecord,
   ModelSettings,
 } from '@agnes/protocol'
@@ -44,6 +46,13 @@ import {
 } from './adapters/credential-store.js'
 import { createWin32Platform } from './adapters/platform.js'
 import { type CodexLoginDependencies, createCodexLogin } from './codex-login.js'
+import {
+  CUSTOM_PROVIDER,
+  customModelRecord,
+  customModelVerified,
+  normalizeCustomModel,
+  testCustomModel,
+} from './configuration-custom.js'
 import { withConfigurationLock } from './configuration-lock.js'
 import {
   applyModelConfiguration,
@@ -52,9 +61,11 @@ import {
   normalizeModelSettings,
   supportsModelSettings,
 } from './configuration-models.js'
+import { fetchModelPricePolicies, normalizeModelPricePolicies } from './configuration-pricing.js'
+import { createJevConfigurationService, type JevConfigurationService } from './jev-configuration.js'
 import type { RuntimeProfileManifest } from './profile/types.js'
 
-type ConfigurationProvider = ApiKeyProviderRegistryEntry | SubscriptionProviderEntry
+type ConfigurationProvider = ApiKeyProviderRegistryEntry | SubscriptionProviderEntry | typeof CUSTOM_PROVIDER
 
 /** Fixed setup failures exposed to the local configuration RPC.  Messages never contain input. */
 export type ConfigurationErrorCode =
@@ -108,6 +119,7 @@ export class ConfigurationError extends Error {
 }
 
 export interface ConfigurationService {
+  readonly jev?: JevConfigurationService
   oauth?(input: ConfigOAuthInput, owner: object, signal: AbortSignal): Promise<ConfigOAuthResult>
   get(): Promise<ConfigSnapshot>
   providers(): Promise<ConfigProvidersResult>
@@ -126,6 +138,7 @@ export type ConfigurationServiceOptions = {
   home: string
   profile: string
   /** Injectable transport for focused tests; production uses the platform fetch implementation. */
+  env?: NodeJS.ProcessEnv
   request?: typeof globalThis.fetch
 }
 
@@ -139,6 +152,7 @@ type StoredConfigurationV1 = {
     model: string
     credentialRef: string
     models: ConfigModel[]
+    custom?: ConfigCustomModel
   }
 }
 
@@ -148,6 +162,7 @@ type StoredAccount = StoredConfigurationV1['provider'] & {
   route: string
   enabled: boolean
   authType: 'api-key' | 'oauth'
+  modelPricePolicies?: Record<string, ModelPricePolicy>
 }
 type StoredConfiguration = {
   version: 2
@@ -266,6 +281,7 @@ function parseModel(value: unknown): string {
 
 function providerFor(value: unknown, authType?: 'api-key' | 'oauth'): ConfigurationProvider {
   if (typeof value !== 'string' || !PROVIDER.test(value)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
+  if (value === CUSTOM_PROVIDER.id && authType !== 'oauth') return CUSTOM_PROVIDER
   const entry =
     authType === 'oauth'
       ? getSubscriptionProvider(value)
@@ -275,6 +291,8 @@ function providerFor(value: unknown, authType?: 'api-key' | 'oauth'): Configurat
 }
 
 function providerEndpoint(entry: ConfigurationProvider, value: unknown): string {
+  if (entry.id === CUSTOM_PROVIDER.id && value === undefined)
+    throw new ConfigurationError('CONFIG_INVALID_INPUT')
   const baseUrl = value === undefined ? entry.baseUrl : parseBaseUrl(value)
   const defaultUrl = entry.baseUrl.endsWith('/') ? entry.baseUrl.slice(0, -1) : entry.baseUrl
   const requestedUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl
@@ -293,22 +311,35 @@ function parseTestInput(value: unknown): {
   baseUrl: string
   apiKey?: string
   model?: string
+  custom?: ConfigCustomModel
 } {
   const input = inputObject(value)
   if (
     !Object.keys(input).every((key) =>
-      ['providerId', 'baseUrl', 'apiKey', 'accountId', 'model'].includes(key),
+      ['providerId', 'baseUrl', 'apiKey', 'accountId', 'model', 'custom', 'catalogueOnly'].includes(key),
     )
   )
     throw new ConfigurationError('CONFIG_INVALID_INPUT')
   const entry = providerFor(input.providerId)
-  const baseUrl = providerEndpoint(entry, input.baseUrl)
+  if (
+    input.catalogueOnly !== undefined &&
+    (typeof input.catalogueOnly !== 'boolean' || entry.id !== CUSTOM_PROVIDER.id)
+  )
+    throw new ConfigurationError('CONFIG_INVALID_INPUT')
+  const baseUrl =
+    entry.id === CUSTOM_PROVIDER.id && input.baseUrl === undefined
+      ? entry.baseUrl
+      : providerEndpoint(entry, input.baseUrl)
   if (entry.id === CODEX_ID && input.apiKey !== undefined)
+    throw new ConfigurationError('CONFIG_INVALID_INPUT')
+  const custom = input.custom === undefined ? undefined : normalizeCustomModel(input.custom)
+  if ((input.custom !== undefined && !custom) || (entry.id !== CUSTOM_PROVIDER.id && custom))
     throw new ConfigurationError('CONFIG_INVALID_INPUT')
   const apiKey = input.apiKey === undefined ? undefined : parseApiKey(input.apiKey)
   return {
     entry,
     baseUrl,
+    ...(custom ? { custom } : {}),
     ...(apiKey === undefined ? {} : { apiKey }),
     ...(input.model === undefined ? {} : { model: parseModel(input.model) }),
   }
@@ -319,6 +350,7 @@ function parseSaveInput(value: unknown): {
   baseUrl: string
   model: string
   expectedRevision?: number
+  custom?: ConfigCustomModel
   apiKey?: string
 } {
   const input = inputObject(value)
@@ -335,12 +367,15 @@ function parseSaveInput(value: unknown): {
         'enabled',
         'makeDefault',
         'defaultSettings',
+        'custom',
       ].includes(key),
     )
   )
     throw new ConfigurationError('CONFIG_INVALID_INPUT')
   const parsed = parseTestInput({
     providerId: input.providerId,
+    model: input.model,
+    ...(input.custom === undefined ? {} : { custom: input.custom }),
     ...(input.baseUrl === undefined ? {} : { baseUrl: input.baseUrl }),
     ...(input.apiKey === undefined ? {} : { apiKey: input.apiKey }),
   })
@@ -365,7 +400,8 @@ function decodeConfiguration(value: unknown, profile: string): StoredConfigurati
   if (
     !isRecord(provider) ||
     (!exactKeys(provider, ['id', 'baseUrl', 'model', 'models']) &&
-      !exactKeys(provider, ['id', 'baseUrl', 'model', 'credentialRef', 'models']))
+      !exactKeys(provider, ['id', 'baseUrl', 'model', 'credentialRef', 'models']) &&
+      !exactKeys(provider, ['id', 'baseUrl', 'model', 'models', 'custom']))
   )
     return undefined
   let entry: ConfigurationProvider
@@ -383,6 +419,8 @@ function decodeConfiguration(value: unknown, profile: string): StoredConfigurati
     provider.models.length > MAX_MODELS
   )
     return undefined
+  const custom = provider.custom === undefined ? undefined : normalizeCustomModel(provider.custom)
+  if ((entry.id === CUSTOM_PROVIDER.id) !== (custom !== undefined)) return undefined
   const models = provider.models.map(normalizeConfigModel)
   if (models.some((model) => model === undefined)) return undefined
   const normalized = models as ConfigModel[]
@@ -404,6 +442,7 @@ function decodeConfiguration(value: unknown, profile: string): StoredConfigurati
       model: provider.model,
       credentialRef: ref,
       models: normalized,
+      ...(custom ? { custom } : {}),
     },
   }
 }
@@ -426,7 +465,7 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
   for (const row of value.accounts) {
     if (
       !isRecord(row) ||
-      ![9, 10].includes(Object.keys(row).length) ||
+      ![9, 10, 11, 12].includes(Object.keys(row).length) ||
       !Object.keys(row).every((key) =>
         [
           'id',
@@ -439,6 +478,8 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
           'route',
           'enabled',
           'authType',
+          'custom',
+          'modelPricePolicies',
         ].includes(key),
       ) ||
       typeof row.accountId !== 'string' ||
@@ -455,11 +496,30 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
         version: 1,
         profile,
         revision: value.revision,
-        provider: { id: row.id, baseUrl: row.baseUrl, model: row.model, models: row.models },
+        provider: {
+          id: row.id,
+          baseUrl: row.baseUrl,
+          model: row.model,
+          models: row.models,
+          ...(row.custom === undefined ? {} : { custom: row.custom }),
+        },
       },
       profile,
     )
     if (!decoded) return undefined
+    const modelPricePolicies =
+      row.modelPricePolicies === undefined
+        ? undefined
+        : normalizeModelPricePolicies(
+            row.modelPricePolicies,
+            decoded.provider.models.map((model) => model.id),
+            decoded.provider.baseUrl,
+          )
+    if (
+      row.modelPricePolicies !== undefined &&
+      (!modelPricePolicies || decoded.provider.id !== CUSTOM_PROVIDER.id)
+    )
+      return undefined
     const authType =
       row.authType === 'api-key' || row.authType === 'oauth'
         ? row.authType
@@ -500,6 +560,7 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
       enabled: row.enabled,
       authType,
       credentialRef: ref,
+      ...(modelPricePolicies === undefined ? {} : { modelPricePolicies }),
     })
   }
   if (
@@ -619,7 +680,17 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
     }
   }
 
-  const staticCatalogue = (entry: ConfigurationProvider): Promise<StaticCatalogue> => {
+  const staticCatalogue = (
+    entry: ConfigurationProvider,
+    custom?: ConfigCustomModel,
+    model?: string,
+    baseUrl?: string,
+  ): Promise<StaticCatalogue> => {
+    if (entry.id === CUSTOM_PROVIDER.id) {
+      if (!custom || !model || !baseUrl) return Promise.reject(new ConfigurationError('CONFIG_INVALID_INPUT'))
+      const ids = [...new Set([model, ...(custom.modelIds ?? [])])]
+      return Promise.resolve({ entry, records: ids.map((id) => customModelRecord(id, baseUrl, custom)) })
+    }
     const cacheKey = `${entry.id}:${getSubscriptionProvider(entry.id) === entry ? 'oauth' : 'api-key'}`
     const prior = catalogueCache.get(cacheKey)
     if (prior) return prior
@@ -629,7 +700,11 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
         const records = subscription === entry ? subscription.models() : undefined
         return records
           ? { records }
-          : Promise.resolve(entry.createAdapter()).then((adapter) => ({
+          : Promise.resolve(
+              'createAdapter' in entry
+                ? entry.createAdapter()
+                : Promise.reject(new ConfigurationError('CONFIG_PROVIDER_UNAVAILABLE')),
+            ).then((adapter) => ({
               records: adapter.models(entry.route),
             }))
       })
@@ -746,7 +821,7 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
         route: row.route,
         baseUrl: row.baseUrl,
         model: row.model,
-        models: await staticCatalogue(providerFor(row.id, row.authType))
+        models: await staticCatalogue(providerFor(row.id, row.authType), row.custom, row.model, row.baseUrl)
           .catch(() => ({ records: [] as ModelRecord[] }))
           .then(({ records }) =>
             row.models.map((saved) => {
@@ -756,6 +831,7 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
           ),
         enabled: row.enabled,
         authType: row.authType,
+        ...(row.custom ? { custom: structuredClone(row.custom) } : {}),
         credentialConfigured: await configuredCredential(
           row.credentialRef,
           providerFor(row.id, row.authType),
@@ -777,6 +853,7 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
             route: selected.route,
             baseUrl: selected.baseUrl,
             model: selected.model,
+            ...(selected.custom ? { custom: structuredClone(selected.custom) } : {}),
             credentialConfigured: selected.credentialConfigured,
           }
         : null,
@@ -795,6 +872,13 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
 
   const providers = async (): Promise<ConfigProvidersResult> => ({
     providers: [
+      {
+        id: CUSTOM_PROVIDER.id,
+        label: CUSTOM_PROVIDER.displayName,
+        authMethods: ['api-key'],
+        api: CUSTOM_PROVIDER.api,
+        baseUrl: CUSTOM_PROVIDER.baseUrl,
+      },
       ...API_KEY_PROVIDER_REGISTRY.map((entry): ConfigProvider => {
         const subscription = getSubscriptionProvider(entry.id)
         return {
@@ -824,18 +908,25 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
     const parsed = parseTestInput(input)
     const state = await loadState()
     const row = selectedAccount(state, input)
+    if (parsed.entry.id === CUSTOM_PROVIDER.id && input.baseUrl === undefined && !row)
+      throw new ConfigurationError('CONFIG_INVALID_INPUT')
     const baseUrl = input.baseUrl === undefined ? (row?.baseUrl ?? parsed.baseUrl) : parsed.baseUrl
     // Never forward an existing account's key to an edited destination implicitly.
     const changedEndpoint = row && baseUrl.replace(/\/$/, '') !== row.baseUrl.replace(/\/$/, '')
-    if (changedEndpoint && parsed.apiKey === undefined)
+    const custom = parsed.custom ?? row?.custom
+    const model = parsed.model ?? row?.model
+    const changedProtocol = row?.custom && custom && row.custom.api !== custom.api
+    if ((changedEndpoint || changedProtocol) && parsed.apiKey === undefined)
       throw new ConfigurationError('CONFIG_CREDENTIAL_REQUIRED')
     const storedCredential = row ? await readCredential(row.credentialRef) : null
-    let models = (await staticCatalogue(parsed.entry)).records.map((record) =>
-      configModel(
-        record,
-        row?.models.find((m) => m.id === record.id),
-      ),
-    )
+    let models: ConfigModel[] = input.catalogueOnly
+      ? []
+      : (await staticCatalogue(parsed.entry, custom, model, baseUrl)).records.map((record) =>
+          configModel(
+            record,
+            row?.models.find((m) => m.id === record.id),
+          ),
+        )
     if (row?.authType === 'oauth' && parsed.apiKey === undefined) {
       const provider = getSubscriptionProvider(row.id)
       if (!provider || !isSubscriptionCredential(storedCredential, row.id)) return { models, verified: false }
@@ -870,6 +961,22 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
       return { models, verified: false }
     const key = parsed.apiKey ?? (storedCredential?.kind === 'api-key' ? storedCredential.value : undefined)
     if (key === undefined) return { models, verified: false }
+    if (input.catalogueOnly) {
+      const probed = await fetchProviderModels({
+        api: 'openai-completions',
+        baseUrl,
+        credential: key,
+        request,
+      })
+      if (!probed) throw new ConfigurationError('CONFIG_PROVIDER_UNAVAILABLE')
+      // IDs are directory evidence only. Capability declarations and inference verification are separate.
+      return { verified: false, models: probed.ids.map((id) => ({ id, name: id })) }
+    }
+    if (parsed.entry.id === CUSTOM_PROVIDER.id) {
+      if (!custom || !model) throw new ConfigurationError('CONFIG_INVALID_INPUT')
+      const customVerification = await testCustomModel({ baseUrl, model, custom, apiKey: key, request })
+      return { models, verified: customModelVerified(custom, customVerification), custom, customVerification }
+    }
     const probed = await fetchProviderModels({
       api: parsed.entry.api,
       baseUrl,
@@ -936,6 +1043,8 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
           providerId: parsed.entry.id,
           accountId: id,
           baseUrl,
+          model: parsed.model,
+          ...(parsed.custom === undefined ? {} : { custom: parsed.custom }),
           ...(parsed.apiKey === undefined ? {} : { apiKey: parsed.apiKey }),
         })
     if (!result.verified) throw new ConfigurationError('CONFIG_TEST_FAILED')
@@ -966,6 +1075,16 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
     const nextRevision = revision + 1
     const ref = oauth && existing ? existing.credentialRef : accountRef(entry, profile, id, nextRevision)
     const enabled = input.enabled ?? existing?.enabled ?? true
+    const custom = parsed.custom ?? existing?.custom
+    const modelPricePolicies =
+      custom && key
+        ? await fetchModelPricePolicies({
+            baseUrl,
+            apiKey: key,
+            ids: result.models.map((model) => model.id),
+            request,
+          })
+        : undefined
     const row: StoredAccount = {
       accountId: id,
       label,
@@ -973,6 +1092,8 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
       route: existing?.route ?? (input.accountId === undefined ? entry.route : `account-${id}`),
       baseUrl,
       model: parsed.model,
+      ...(custom ? { custom } : {}),
+      ...(modelPricePolicies === undefined ? {} : { modelPricePolicies }),
       models: result.models.map((model) => {
         const defaults =
           model.id === parsed.model && input.defaultSettings !== undefined
@@ -1008,7 +1129,12 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
       accounts,
       defaultAccountId,
     }
-    await persistState(next)
+    try {
+      await persistState(next)
+    } catch (error) {
+      if (!oauth) await credentialStore.remove(ref).catch(() => undefined)
+      throw error
+    }
     return snapshot(next)
   }
 
@@ -1018,7 +1144,7 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
       !exactKeys(raw, ['accountId', 'action', 'expectedRevision']) ||
       !Number.isSafeInteger(input.expectedRevision) ||
       input.expectedRevision < 0 ||
-      !['enable', 'disable', 'remove', 'default'].includes(input.action)
+      !['enable', 'disable', 'remove', 'default', 'refresh-prices'].includes(input.action)
     )
       throw new ConfigurationError('CONFIG_INVALID_INPUT')
     const id = accountId(input.accountId)
@@ -1027,6 +1153,32 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
       throw new ConfigurationError('CONFIG_REVISION_CONFLICT')
     const row = state.accounts.find((entry) => entry.accountId === id)
     if (!row) throw new ConfigurationError('CONFIG_INVALID_INPUT')
+    if (input.action === 'refresh-prices') {
+      if (row.id !== CUSTOM_PROVIDER.id || row.authType !== 'api-key')
+        throw new ConfigurationError('CONFIG_INVALID_INPUT')
+      const credential = await readCredential(row.credentialRef)
+      if (
+        credential?.kind !== 'api-key' ||
+        credential.provider !== row.id ||
+        !isUsableCredential(credential.value)
+      )
+        throw new ConfigurationError('CONFIG_CREDENTIAL_REQUIRED')
+      const modelPricePolicies = await fetchModelPricePolicies({
+        baseUrl: row.baseUrl,
+        apiKey: credential.value,
+        ids: row.models.map((model) => model.id),
+        request,
+      })
+      const next = {
+        ...state,
+        revision: state.revision + 1,
+        accounts: state.accounts.map((account) =>
+          account.accountId === id ? { ...account, modelPricePolicies } : account,
+        ),
+      }
+      await persistState(next)
+      return snapshot(next)
+    }
     if (input.action === 'default' && !row.enabled) throw new ConfigurationError('CONFIG_INVALID_INPUT')
     if (
       (input.action === 'enable' || input.action === 'default') &&
@@ -1180,6 +1332,12 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
     },
   })
   return {
+    jev: createJevConfigurationService({
+      home,
+      profile,
+      request,
+      ...(options.env ? { env: options.env } : {}),
+    }),
     oauth,
     get,
     providers,
@@ -1200,7 +1358,7 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
           const entry = providerFor(row.id, row.authType)
           if (!(await configuredCredential(row.credentialRef, entry, row.authType)))
             throw new ConfigurationError('CONFIG_CREDENTIAL_REQUIRED')
-          const catalogue = await staticCatalogue(entry)
+          const catalogue = await staticCatalogue(entry, row.custom, row.model, row.baseUrl)
           const byId = new Map(catalogue.records.map((record) => [record.id, record]))
           const records = row.models.map((model) => {
             const record = byId.get(model.id)
@@ -1210,13 +1368,16 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
           const selected = records.find(({ model }) => model.id === row.model)
           if (!selected) throw new ConfigurationError('CONFIG_MODEL_UNAVAILABLE')
           const selectedApi =
-            row.authType === 'oauth' && 'api' in selected.record ? String(selected.record.api) : entry.api
+            row.custom?.api ??
+            (row.authType === 'oauth' && 'api' in selected.record ? String(selected.record.api) : entry.api)
           const apis = [
             selectedApi,
             ...new Set(
               records
-                .map(({ record }) =>
-                  row.authType === 'oauth' && 'api' in record ? String(record.api) : entry.api,
+                .map(
+                  ({ record }) =>
+                    row.custom?.api ??
+                    (row.authType === 'oauth' && 'api' in record ? String(record.api) : entry.api),
                 )
                 .filter((api) => api !== selectedApi),
             ),
@@ -1228,10 +1389,19 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
                 : `${row.route}-${createHash('sha256').update(api).digest('hex').slice(0, 6)}`
             const models = records
               .filter(({ record }) =>
-                row.authType === 'oauth' && 'api' in record ? record.api === api : entry.api === api,
+                row.custom
+                  ? row.custom.api === api
+                  : row.authType === 'oauth' && 'api' in record
+                    ? record.api === api
+                    : entry.api === api,
               )
               .map(({ record, model }) => {
                 const effective = applyModelConfiguration(cloneRecord(record, row.baseUrl, route), model)
+                const pricePolicy =
+                  row.modelPricePolicies && Object.hasOwn(row.modelPricePolicies, model.id)
+                    ? row.modelPricePolicies[model.id]
+                    : undefined
+                if (pricePolicy !== undefined) effective.pricePolicy = structuredClone(pricePolicy)
                 if (effective.defaultSettings && !supportsModelSettings(effective, effective.defaultSettings))
                   throw new ConfigurationError('CONFIG_MODEL_UNAVAILABLE')
                 return effective
@@ -1261,10 +1431,8 @@ export function createConfigurationService(options: ConfigurationServiceOptions)
   }
 
   async function withLock<T>(action: () => Promise<T>): Promise<T> {
-    if (windowsDirectories) {
-      await ensureDirectory(home)
-      await ensureDirectory(join(home, 'profiles'))
-    }
+    await ensureDirectory(home)
+    await ensureDirectory(join(home, 'profiles'))
     await ensureDirectory(profileDir)
     try {
       return await withConfigurationLock(lockPath, action)

@@ -171,6 +171,7 @@ export function snapshot(record: ComparisonRecord): ComparisonSnapshot {
     rounds: record.rounds.map((item) => ({
       inputId: item.inputId,
       ...(item.permissionMode === undefined ? {} : { permissionMode: item.permissionMode }),
+      ...(item.decisionBackend === undefined ? {} : { decisionBackend: item.decisionBackend }),
       ...(item.prepared === undefined ? {} : { prepared: item.prepared }),
       acceptances: SIDES.map((side) => item.acceptances[side]),
       settledSides: SIDES.filter((side) => item.runs[side].status === 'settled'),

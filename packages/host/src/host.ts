@@ -1,4 +1,4 @@
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import {
   hasChildControl,
   type Kernel,
@@ -19,6 +19,11 @@ import {
   type ServiceEffectAdmission,
   type ServiceInspection,
 } from './ext-host/service-invocation.js'
+import {
+  createJevConfigurationService,
+  type JevConfigurationCapture,
+  jevFromCapture,
+} from './jev-configuration.js'
 import { closeHost } from './lifecycle.js'
 import { type ResolvedPreset, resolvePreset } from './presets/resolve.js'
 import type { PresetDoc } from './presets/types.js'
@@ -59,6 +64,8 @@ import {
 export type HostSession = Awaited<ReturnType<Kernel['session']>>
 export type HostOptions = Omit<AssembleDeps, 'audit' | 'loader'> & {
   /** Trusted static runtime assembly; credentials stay in the decision transport closure. */
+  /** Daemon-authored non-secret startup snapshot. Never populated from an RPC parameter. */
+  jevCapture?: JevConfigurationCapture | { unavailableReason: string }
   jev?: JevLoopOptions
   audit?: AuditSink
   loader?: PackageLoader
@@ -182,7 +189,21 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
   const jevConnections = createJevDecisionFetch({
     http2: (hostEnv.AGNES_JEV_HTTP2 ?? '').trim().toLowerCase() !== 'off',
   })
-  const jev = opts.jev ?? jevFromEnvironment(hostEnv, jevConnections.fetch)
+  const environmentJev = jevFromEnvironment(hostEnv, jevConnections.fetch)
+  const jev =
+    opts.jev ??
+    (await (async () => {
+      const home = dirname(dirname(opts.profileDir))
+      try {
+        const capture =
+          opts.jevCapture ??
+          (await createJevConfigurationService({ home, profile: profile.name, env: hostEnv }).capture())
+        if ('unavailableReason' in capture) return environmentJev ?? capture
+        return await jevFromCapture(capture, home, jevConnections.fetch, environmentJev)
+      } catch {
+        return environmentJev ?? { unavailableReason: 'Jev 持久配置不可用，请检查设置后重启。' }
+      }
+    })())
   const sessionRuntimes = createSessionRuntimeRegistry(jev)
   let a!: Assembled
   let closed = false

@@ -323,6 +323,12 @@ export {
   type ServiceInspection,
 } from './ext-host/service-invocation.js'
 export { createHost, type Host, type HostOptions, type HostSession } from './host.js'
+export {
+  createJevConfigurationService,
+  decodeJevConfigurationCapture,
+  type JevConfigurationCapture,
+  type JevConfigurationService,
+} from './jev-configuration.js'
 export { closeHost, Rollback } from './lifecycle.js'
 export {
   defaultVerifyIntegrity,
@@ -447,6 +453,14 @@ export {
   createComparisonWorkspaces,
   verifyComparisonWorkspaceReferences,
 } from './runtime/comparison-workspaces.js'
+// The one effective JevLoop language-stage-to-slot mapping; the Jev loop and the daemon's
+// read-only session.modelSlots projection both read it so a stage never reports and requests
+// through different slots.
+export {
+  type JevLanguageStage,
+  jevLanguageSlots,
+  projectJevModelSlots,
+} from './runtime/jev-language-slots.js'
 export type { SessionIdleGatePort } from './runtime/session-idle-gates.js'
 export * from './runtime-target-publisher.js'
 export * from './runtime-target-report.js'

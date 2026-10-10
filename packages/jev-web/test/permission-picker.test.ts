@@ -3,6 +3,14 @@
 import { createPermissionPicker, permissionLabel, yoloEnabled } from '@agnes/web-session-ui/permission-picker'
 import { afterEach, expect, it, vi } from 'vitest'
 import { COMPARISON_PERMISSION_OPTIONS } from '../src/comparison-permission.js'
+import { createJevTranslate } from '../src/jev-locale.js'
+
+const t = createJevTranslate('zh-CN')
+const comparisonOptions = COMPARISON_PERMISSION_OPTIONS.map((option) => ({
+  ...option,
+  label: t(option.label),
+  description: t(option.description),
+}))
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -50,7 +58,7 @@ it('opens the list and reports the chosen mode', async () => {
   full?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
   await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith('full'))
   await vi.waitFor(() => expect(document.querySelector('[role="listbox"]')).toBeNull())
-  picker.render({ disabled: false, pending: false, selected: 'full', options: COMPARISON_PERMISSION_OPTIONS })
+  picker.render({ disabled: false, pending: false, selected: 'full', options: comparisonOptions })
   expect(label.textContent).toBe('自动审批（保持隔离）')
   trigger.click()
   expect(document.querySelector('[role="listbox"]')?.textContent).toContain('不等同于文件系统只读隔离')

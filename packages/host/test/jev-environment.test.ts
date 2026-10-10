@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { askUserQuestionTool, seams as baseSeams } from '@agnes/base'
+import { askUserQuestionTool, seams as baseSeams, TOOLS_CORE } from '@agnes/base'
 import {
   MemoryStorage,
   openTracked,
@@ -16,8 +16,10 @@ import {
   actor,
   fakeProvider,
   fakeSeams,
+  fencedFs,
   openSession,
   shellTool,
+  testFsPolicy,
   textTurn,
   toolTurn,
 } from '@agnes/core/testkit'
@@ -30,6 +32,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { HostQuestions, QuestionServiceError, readQuestionCancellation } from '../src/questions.js'
 import { comparisonPayloadDigest } from '../src/runtime/comparison-config-admission.js'
 import { createJevEnvironment } from '../src/runtime/jev-environment.js'
+import {
+  observeBuiltinProcess,
+  observedBuiltinProcessDisposition,
+} from '../src/runtime/jev-process-observation.js'
 import {
   jevSystemPromptPolicy,
   promptProjectionChanged,
@@ -48,40 +54,65 @@ async function fixture(
   options: {
     seams?: ReturnType<typeof fakeSeams>
     execute?: ToolDef['execute']
+    meta?: Partial<ToolDef['meta']>
+    classify?: ToolDef['classify']
     session?: Partial<SessionDeps>
     wait?: Parameters<typeof createJevEnvironment>[0]['waitForApproval']
     questions?: boolean
     builtinQuestion?: boolean
     questionSource?: string
     openWorld?: boolean
+    builtinMutation?: 'write' | 'edit'
+    builtinShell?: boolean
+    toolTrust?: 'builtin' | 'trusted'
+    parameters?: ToolDef['parameters']
+    arguments?: FrozenIntent['arguments']
+    fsOps?: NonNullable<Parameters<typeof openSession>[0]>['fsOps']
   } = {},
 ) {
   const registry = new ToolRegistry()
-  const definition = (options.builtinQuestion ? askUserQuestionTool : shellTool()) as ToolDef
+  const definition = (
+    options.builtinShell
+      ? TOOLS_CORE.find((tool) => tool.name === 'shell')
+      : options.builtinMutation
+        ? TOOLS_CORE.find((tool) => tool.name === options.builtinMutation)
+        : options.builtinQuestion
+          ? askUserQuestionTool
+          : shellTool()
+  ) as ToolDef
   registry.add(
     {
       ...definition,
+      ...(options.meta ? { meta: { ...definition.meta, ...options.meta } } : {}),
+      ...(options.classify ? { policyVersion: 'test-call-policy-v1', classify: options.classify } : {}),
       ...(options.openWorld === undefined
         ? {}
         : { meta: { ...definition.meta, isOpenWorld: options.openWorld } }),
-      ...(options.builtinQuestion
+      ...(options.builtinQuestion || options.builtinMutation || options.builtinShell
         ? {}
         : { name: 'write_note', parameters: Type.Object({ text: Type.String() }) }),
       execute:
         options.execute ??
-        (options.builtinQuestion
+        (options.builtinQuestion || options.builtinMutation || options.builtinShell
           ? definition.execute
           : async () => ({ content: [{ type: 'text', text: 'written' }] })),
+      ...(options.parameters ? { parameters: options.parameters } : {}),
     },
     {
-      source: options.questionSource ?? (options.builtinQuestion ? 'agnes/tools-core' : 'test'),
-      trust: 'builtin',
+      ...(options.classify ? { packageIdentity: 'test/fixture', packageVersion: '1.0.0' } : {}),
+      source:
+        options.questionSource ??
+        (options.builtinQuestion || options.builtinMutation || options.builtinShell
+          ? 'agnes/tools-core'
+          : 'test'),
+      trust: options.toolTrust ?? 'builtin',
     },
   )
   const baseline = await openSession({
     provider: fakeProvider([]),
     registry,
     ...options.session,
+    ...(options.fsOps ? { fsOps: options.fsOps } : {}),
     ...(options.seams ? { seams: options.seams } : {}),
   })
   await baseline.session.close()
@@ -136,8 +167,11 @@ async function fixture(
     },
   }
   const environment = createJevEnvironment({
-    ...(options.builtinQuestion
-      ? { isQuestionTool: createJevToolSemantics({ session: s, ledger }).isQuestionTool }
+    ...(options.builtinQuestion || options.builtinMutation || options.builtinShell
+      ? {
+          isQuestionTool: createJevToolSemantics({ session: s, ledger }).isQuestionTool,
+          observeExecution: createJevToolSemantics({ session: s, ledger }).observeExecution,
+        }
       : {}),
     session: s,
     ledger,
@@ -149,9 +183,9 @@ async function fixture(
     id: 'intent-1' as FrozenIntent['id'],
     tool: tool.name,
     toolRevision: tool.revision,
-    arguments: options.builtinQuestion
-      ? { questions: [{ id: 'q', question: 'Continue?' }] }
-      : { text: 'hello' },
+    arguments:
+      options.arguments ??
+      (options.builtinQuestion ? { questions: [{ id: 'q', question: 'Continue?' }] } : { text: 'hello' }),
     effectClass: tool.effectClass,
     environmentEpoch: (await environment.snapshot()).epoch,
   }
@@ -180,6 +214,277 @@ async function fixture(
 }
 
 describe('Jev Host execution environment', () => {
+  it.each([
+    'nonzero',
+    'zero',
+    'timeout',
+    'signal',
+    'cancel',
+    'missing-attestation',
+    'throw-after-exec',
+    'background',
+    'background-error',
+    'deferred',
+    'foreign',
+    'untrusted',
+    'changed-contract',
+    'changed-schema',
+    'forged',
+  ] as const)(
+    'uses genuine builtin foreground exec termination without confusing task success: %s',
+    async (mode) => {
+      const controller = new AbortController()
+      let execCalls = 0
+      const seams = fakeSeams({
+        sandbox: {
+          exec: async () => {
+            execCalls++
+            if (mode === 'cancel') controller.abort(new Error('caller stopped'))
+            return {
+              code: mode === 'zero' ? 0 : 1,
+              stdout: 'synthetic compiler output',
+              stderr: '',
+              truncated: false,
+              ...(mode === 'missing-attestation' ? {} : { timedOut: mode === 'timeout' }),
+              ...(mode === 'signal' ? { signal: 'SIGTERM' } : {}),
+            }
+          },
+        },
+      })
+      const execute: ToolDef['execute'] | undefined =
+        mode === 'throw-after-exec' || mode === 'deferred'
+          ? async (_args, context) => {
+              await context.exec(['$SHELL', 'synthetic'], { cwd: context.cwd })
+              if (mode === 'throw-after-exec') throw new Error('after possible effects')
+              return { content: [{ type: 'text', text: 'deferred' }], deferred: { jobId: 'synthetic' } }
+            }
+          : mode === 'forged'
+            ? async () => ({
+                isError: true,
+                content: [{ type: 'text', text: '[exit 1]' }],
+                details: {
+                  builtinProcessAttempt: { completed: true, code: 1, timedOut: false, foreground: true },
+                },
+              })
+            : undefined
+      const h = await fixture({
+        builtinShell: true,
+        seams,
+        arguments: {
+          command: 'synthetic',
+          ...(mode === 'background' || mode === 'background-error' ? { background: true } : {}),
+        },
+        ...(execute ? { execute } : {}),
+        ...(mode === 'foreign' ? { questionSource: 'foreign/tool' } : {}),
+        ...(mode === 'untrusted' ? { toolTrust: 'trusted' as const } : {}),
+        ...(mode === 'changed-contract' ? { meta: { isDestructive: false } } : {}),
+        ...(mode === 'changed-schema' ? { parameters: Type.Object({ command: Type.String() }) } : {}),
+      })
+      try {
+        h.session.yolo = true
+        if (mode === 'background' || mode === 'background-error') {
+          await expect(h.environment.prepare(h.intent, controller.signal)).rejects.toThrow('backgroundJobs')
+          // Submission remains an ordinary tool receipt, never a foreground process completion.
+          let submissions = 0
+          const context: ToolContext = Object.assign(Object.create(null), {
+            cwd: '/w',
+            signal: controller.signal,
+            session: { toolUseId: h.intent.id },
+            artifacts: {
+              submitJob: async (input: unknown) => {
+                submissions++
+                expect(input).toMatchObject({
+                  idempotencyKey: h.intent.id,
+                  payload: { kind: 'shell', command: 'synthetic', cwd: '/w' },
+                  schedule: { kind: 'once' },
+                })
+                if (mode === 'background-error') throw new Error('submission rejected')
+                return 'synthetic-job'
+              },
+            },
+            exec: async () => {
+              throw new Error('background must not execute foreground')
+            },
+          })
+          const builtin = TOOLS_CORE.find((tool) => tool.name === 'shell')
+          if (!builtin) throw new Error('Missing builtin shell')
+          const observed = await createJevToolSemantics({
+            session: h.session,
+            ledger: h.ledger,
+          }).observeExecution(h.intent, context, (scoped) =>
+            builtin.execute(h.intent.arguments as never, scoped),
+          )
+          expect(submissions).toBe(1)
+          expect(observed.meta).toBeUndefined()
+          expect(observedBuiltinProcessDisposition(h.intent, observed.meta)).toBeUndefined()
+          expect(observed.result.isError).toBe(mode === 'background-error' ? true : undefined)
+          expect(observed.result.content).toEqual([
+            {
+              type: 'text',
+              text:
+                mode === 'background-error'
+                  ? 'background job could not be submitted: submission rejected'
+                  : 'background job synthetic-job started',
+            },
+          ])
+          const direct = await observeBuiltinProcess(h.intent, context, async () => observed.result)
+          expect(observedBuiltinProcessDisposition(h.intent, direct.meta)).toBe('unknown')
+          expect(execCalls).toBe(0)
+          return
+        }
+        expect(await h.environment.prepare(h.intent, controller.signal)).toEqual({ kind: 'ready' })
+        const outcome = await h.dispatch(controller.signal)
+        const normal = mode === 'nonzero' || mode === 'zero'
+        expect(outcome.effect).toBe(normal ? 'acknowledged' : 'unknown')
+        expect(outcome.kind).toBe(mode === 'zero' ? 'success' : mode === 'cancel' ? 'cancelled' : 'error')
+        if (mode === 'nonzero') {
+          expect(outcome.effectEvidence).toMatchObject({
+            phase: 'responded',
+            timedOut: false,
+            cancelled: false,
+          })
+          expect(outcome.content).toEqual([{ kind: 'text', text: 'synthetic compiler output\n[exit 1]' }])
+          expect(outcome.meta).toMatchObject({
+            builtinProcessAttempt: {
+              code: 1,
+              timedOut: false,
+              signal: null,
+              completed: true,
+              foreground: true,
+              execCalls: 1,
+            },
+          })
+          expect(observedBuiltinProcessDisposition(h.intent, outcome.meta)).toBe('acknowledged')
+          expect(observedBuiltinProcessDisposition(h.intent, structuredClone(outcome.meta))).toBeUndefined()
+          expect(
+            observedBuiltinProcessDisposition(
+              { ...h.intent, id: 'other' as FrozenIntent['id'] },
+              outcome.meta,
+            ),
+          ).toBeUndefined()
+        }
+        if (mode === 'forged') expect(execCalls).toBe(0)
+      } finally {
+        await h.session.close()
+      }
+    },
+  )
+
+  it.each([
+    'missing-edit',
+    'ambiguous-edit',
+    'truncated-edit',
+    'truncated-write',
+    'write-failed',
+    'foreign-edit',
+    'success',
+  ] as const)(
+    'uses Host-observed builtin write entry evidence, preserving unknown when needed: %s',
+    async (mode) => {
+      let bytes: Uint8Array = new TextEncoder().encode('x'.repeat(100))
+      const fsOps = fencedFs(
+        {
+          read: async () => bytes,
+          list: async () => [],
+          stat: async () => ({ kind: 'file' as const, size: bytes.byteLength, mtimeMs: 1 }),
+          write: async (_path, content) => {
+            if (mode === 'write-failed') throw new Error('Synthetic write failure')
+            bytes = typeof content === 'string' ? new TextEncoder().encode(content) : content
+          },
+        },
+        testFsPolicy('/w'),
+      )
+      const builtinMutation =
+        mode === 'truncated-write' || mode === 'write-failed' || mode === 'success' ? 'write' : 'edit'
+      const args: FrozenIntent['arguments'] =
+        builtinMutation === 'write'
+          ? { path: 'note.txt', content: mode === 'truncated-write' ? 'short' : 'y'.repeat(100) }
+          : {
+              path: 'note.txt',
+              edits: [
+                {
+                  oldText:
+                    mode === 'missing-edit' || mode === 'foreign-edit'
+                      ? 'missing'
+                      : mode === 'ambiguous-edit'
+                        ? 'x'
+                        : 'x'.repeat(100),
+                  newText: 'short',
+                },
+              ],
+            }
+      const h = await fixture({
+        builtinMutation,
+        arguments: args,
+        fsOps,
+        ...(mode === 'foreign-edit' ? { questionSource: 'foreign/tool' } : {}),
+      })
+      try {
+        h.session.yolo = true
+        expect(await h.environment.prepare(h.intent, new AbortController().signal)).toEqual({ kind: 'ready' })
+        const outcome = await h.dispatch()
+        expect(outcome.effect).toBe(
+          mode === 'success'
+            ? 'acknowledged'
+            : mode === 'write-failed' || mode === 'foreign-edit'
+              ? 'unknown'
+              : 'not_applied',
+        )
+        expect(new TextDecoder().decode(bytes)).toBe(mode === 'success' ? 'y'.repeat(100) : 'x'.repeat(100))
+        if (mode === 'write-failed')
+          expect(outcome).toMatchObject({
+            effectEvidence: { phase: 'may_have_sent' },
+            meta: { fileWriteAttempt: { completed: true, writeCalls: 1 } },
+          })
+        if (mode === 'foreign-edit') expect(outcome.meta).toBeUndefined()
+        if (outcome.effect === 'not_applied')
+          expect(outcome).toMatchObject({
+            kind: 'error',
+            effectEvidence: { builtinWriteNotEntered: true, phase: 'responded' },
+          })
+      } finally {
+        await h.session.close()
+      }
+    },
+  )
+  it.each(['safe-read', 'unsafe-read', 'argument-mutation'] as const)(
+    'publishes only trusted metadata and argument-resolved concurrency eligibility: %s',
+    async (mode) => {
+      const h = await fixture({
+        meta: {
+          isReadOnly: true,
+          isDestructive: false,
+          requiresApproval: 'never',
+          isConcurrencySafe: mode !== 'unsafe-read',
+        },
+        ...(mode === 'argument-mutation'
+          ? {
+              classify: () => ({
+                isReadOnly: false,
+                isDestructive: false,
+                replay: 'never' as const,
+                requiresApproval: 'never' as const,
+                approvalScopes: [],
+              }),
+            }
+          : {}),
+      })
+      try {
+        expect(h.tool.effectClass).toBe('read_only')
+        expect(h.tool.concurrencySafe).toBe(mode !== 'unsafe-read')
+        expect(await h.environment.prepare(h.intent, new AbortController().signal)).toEqual(
+          mode === 'safe-read'
+            ? { kind: 'ready', concurrencySafe: true }
+            : mode === 'argument-mutation'
+              ? { kind: 'ready', readOnly: false }
+              : { kind: 'ready' },
+        )
+        await h.environment.drain(h.intent.id)
+      } finally {
+        await h.session.close()
+      }
+    },
+  )
   it('classifies the captured real child cancellation without clearing the unknown effect or skipping drain', async () => {
     const capture = JSON.parse(
       readFileSync(new URL('./fixtures/jev-real-child-cancel.json', import.meta.url), 'utf8'),
@@ -539,12 +844,28 @@ describe('Jev Host execution environment', () => {
 
 async function nestedHost(
   execute: ToolDef['execute'],
-  options: { readOnly?: boolean; host?: Partial<TestHostOptions>; children?: ToolDef[] } = {},
+  options: {
+    readOnly?: boolean
+    host?: Partial<TestHostOptions>
+    children?: ToolDef[]
+    batchSize?: number
+  } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), 'agnes-jev-nested-'))
-  const rootName = 'compound_note'
+  const rootName = 'shell'
   let decisions = 0
-  const provider = fakeProvider([toolTurn(rootName, {}), textTurn('Completed compound note')])
+  const proposal = toolTurn(rootName, {})
+  if (options.batchSize)
+    proposal.splice(
+      1,
+      1,
+      ...Array.from({ length: options.batchSize }, (_, index) => ({
+        type: 'toolcall_end' as const,
+        via: 'native' as const,
+        call: { toolUseId: `provider-read-${index}`, name: rootName, args: { index }, ordinal: index },
+      })),
+    )
+  const provider = fakeProvider([proposal, textTurn('Completed compound note')])
   const { host } = await createTestHost({
     dataDir: root,
     provider,
@@ -595,11 +916,37 @@ async function nestedHost(
     ...options.host,
   })
   const template = shellTool() as ToolDef
-  host.kernel.tools.add(
+  // Synthetic adapter implementations use enabled operation names; the mounting policy remains active.
+  const addFixtureTool = (definition: ToolDef, source: string) => {
+    const existing = host.kernel.tools.resolve(definition.name)
+    if (existing) {
+      const retained = new ToolRegistry()
+      for (const tool of host.kernel.tools.list()) {
+        const registered = host.kernel.tools.resolve(tool.name)
+        if (
+          !registered ||
+          registered.source.source !== existing.source.source ||
+          tool.name === definition.name
+        )
+          continue
+        retained.add(tool, {
+          ...registered.source,
+          executionDomain: registered.executionDomain,
+          ...(registered.packageIdentity ? { packageIdentity: registered.packageIdentity } : {}),
+          ...(registered.packageVersion ? { packageVersion: registered.packageVersion } : {}),
+        })
+      }
+      const replacement = host.kernel.tools.prepareOwnerReplacement(existing.source.source, retained)
+      replacement.commit()
+      replacement.finalize()
+    }
+    host.kernel.tools.add(definition, { source, trust: 'builtin' })
+  }
+  addFixtureTool(
     {
       ...template,
       name: rootName,
-      parameters: Type.Object({}),
+      parameters: options.batchSize ? Type.Object({ index: Type.Number() }) : Type.Object({}),
       meta: {
         ...template.meta,
         isReadOnly: options.readOnly === true,
@@ -609,10 +956,9 @@ async function nestedHost(
       },
       execute,
     },
-    { source: 'test/compound', trust: 'builtin' },
+    'test/compound',
   )
-  for (const child of options.children ?? [])
-    host.kernel.tools.add(child, { source: 'test/child', trust: 'builtin' })
+  for (const child of options.children ?? []) addFixtureTool(child, 'test/child')
   const session = await host.createSession({ cwd: root, runtime: 'jevloop' })
   const rows = async () => {
     const { scanAll } = await import('@agnes/core')
@@ -646,6 +992,58 @@ const childTool = (name: string, execute: ToolDef['execute']): ToolDef => ({
 })
 
 describe('Jev compound nested tools through Host and SQLite', () => {
+  it('executes a parameter read batch with bounded overlap through real Host authorization and SQLite receipts', async () => {
+    let active = 0
+    let peak = 0
+    const pending: Array<() => void> = []
+    const h = await nestedHost(
+      async (args) => {
+        const index = (args as { index: number }).index
+        active++
+        peak = Math.max(peak, active)
+        await new Promise<void>((resolve) => {
+          pending.push(resolve)
+          if (pending.length === Math.min(4, 6 - index + pending.length - 1)) {
+            for (const release of pending.splice(0).reverse()) release()
+          }
+        })
+        active--
+        return { content: [{ type: 'text', text: `Read result ${index}` }] }
+      },
+      { readOnly: true, batchSize: 6 },
+    )
+    try {
+      expect((await h.run()).reason).toBe('completed')
+      expect(peak).toBe(4)
+      expect(active).toBe(0)
+      const settlements = await h.settlements()
+      expect(settlements).toHaveLength(6)
+      expect(new Set(settlements.map((r) => r.step)).size).toBe(1)
+      expect(settlements.every((r) => r.effect === 'none' && r.outcome.kind === 'success')).toBe(true)
+      const rows = await h.rows()
+      const records = rows
+        .filter((r) => r.type === 'runtime/record')
+        .map((r) => (r.data as unknown as { record: RuntimeRecord }).record)
+      const selected = records.filter(
+        (r): r is Extract<RuntimeRecord, { kind: 'decision.selected' }> =>
+          r.kind === 'decision.selected' && r.parameterDecision !== undefined,
+      )
+      expect(selected.map((r) => r.callIndex)).toEqual([0, 1, 2, 3, 4, 5])
+      expect(selected.every((r) => r.source === 'jev' && r.phase === 'INSPECT')).toBe(true)
+      expect(records.filter((r) => r.kind === 'model.requested').map((r) => r.call.purpose)).toEqual([
+        'decision',
+        'parameters',
+        'decision',
+        'answer',
+      ])
+      const answerRequest = h.provider.requests.at(-1)
+      expect(answerRequest?.messages.filter((m) => m.role === 'tool_result').map((m) => m.toolUseId)).toEqual(
+        Array.from({ length: 6 }, (_, index) => `provider-read-${index}`),
+      )
+    } finally {
+      await h.cleanup()
+    }
+  })
   it('refuses a new owner while parked configuration is pinned and permits exact operator maintenance without execution', async () => {
     let executions = 0
     const h = await nestedHost(async () => {
@@ -741,7 +1139,7 @@ describe('Jev compound nested tools through Host and SQLite', () => {
       const rows = await h.rows()
       const calls = rows.filter((row) => row.type === 'tool/call')
       expect(calls.map((row) => (row.data as { name: string }).name)).toEqual([
-        'compound_note',
+        'shell',
         'read',
         'write',
         'read',
@@ -831,18 +1229,18 @@ describe('Jev compound nested tools through Host and SQLite', () => {
       let executions = 0
       const h = await nestedHost(
         async (_args, context) => {
-          await context.tools.invoke(bridge ? 'middle_unknown' : 'uncertain_write', {}).catch(() => undefined)
+          await context.tools.invoke(bridge ? 'ls' : 'grep', {}).catch(() => undefined)
           return ok()
         },
         {
           children: [
-            childTool('uncertain_write', async (_args, context) => {
+            childTool('grep', async (_args, context) => {
               executions++
               await context.fs.write('unknown.txt', 'effect landed')
               throw new Error('connection lost after effect')
             }),
-            childTool('middle_unknown', async (_args, context) => {
-              await context.tools.invoke('uncertain_write', {})
+            childTool('ls', async (_args, context) => {
+              await context.tools.invoke('grep', {})
               return ok()
             }),
           ],
@@ -959,12 +1357,12 @@ describe('Jev compound nested tools through Host and SQLite', () => {
     const h = await nestedHost(
       async (_args, context) => {
         rootContext = context
-        void context.tools.invoke('delayed_write', {})
+        void context.tools.invoke('grep', {})
         return ok()
       },
       {
         children: [
-          childTool('delayed_write', async (_args, context) => {
+          childTool('grep', async (_args, context) => {
             childContext = context
             entered()
             await gate
@@ -1006,12 +1404,12 @@ describe('Jev compound nested tools through Host and SQLite', () => {
       })
       const h = await nestedHost(
         async (_args, context) => {
-          await context.tools.invoke('interrupted_write', {}, { signal: childAbort.signal })
+          await context.tools.invoke('grep', {}, { signal: childAbort.signal })
           return ok()
         },
         {
           children: [
-            childTool('interrupted_write', async (_args, context) => {
+            childTool('grep', async (_args, context) => {
               await context.fs.write('interrupted.txt', 'effect before interruption')
               entered()
               await new Promise<void>((_resolve, reject) => {
@@ -1025,7 +1423,7 @@ describe('Jev compound nested tools through Host and SQLite', () => {
         },
       )
       try {
-        h.session.preset.tools.timeouts.interrupted_write = kind === 'timeout' ? 1000 : 120000
+        h.session.preset.tools.timeouts.grep = kind === 'timeout' ? 1000 : 120000
         vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
         const running = h.run()
         await started
@@ -1056,49 +1454,29 @@ describe('Jev compound nested tools through Host and SQLite', () => {
     },
   )
 
-  it('inherits managed human-wait ancestry for a real nested question and adopts only its durable cancellation', async () => {
-    let result: unknown
-    const h = await nestedHost(
-      async (_args, context) => {
-        result = await context.tools.invoke('ask_user_question', {
-          questions: [{ id: 'q', question: 'Proceed with nested work?' }],
-        })
-        return ok()
-      },
-      { host: { questionProvider: async () => ({ allowSkip: true }) } },
-    )
+  it('refuses disabled nested tools before creating a call or a human interaction', async () => {
+    const h = await nestedHost(async (_args, context) => {
+      expect(
+        context.tools
+          .list()
+          .map((tool) => tool.name)
+          .sort(),
+      ).toEqual(['edit', 'grep', 'ls', 'read', 'shell', 'write'])
+      await expect(
+        context.tools.invoke('ask_user_question', { questions: [{ id: 'q', question: 'Proceed?' }] }),
+      ).rejects.toThrow('Unavailable nested tool')
+      await expect(context.tools.invoke('todo', { items: [] })).rejects.toThrow('Unavailable nested tool')
+      return ok()
+    })
     try {
-      h.session.preset.tools.timeoutMs = 10000
-      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-      const running = h.run()
-      await vi.waitFor(
-        () => expect(h.host.questions.pending(h.session.key), JSON.stringify(result)).toHaveLength(1),
-        { timeout: 2000, interval: 10 },
-      )
-      const [question] = h.host.questions.pending(h.session.key)
-      expect(question, JSON.stringify(await h.settlements())).toBeDefined()
-      await vi.advanceTimersByTimeAsync(100000)
-      expect(await h.settlements()).toEqual([])
-      if (!question) throw new Error('Missing nested question')
-      const receipt = await h.host.questions.cancel(h.session.key, question.interactionId, actor)
-      expect((await running).reason).toBe('completed')
-      expect(result).toMatchObject({ isError: true, details: { code: 'ASK_CANCELLED' } })
-      expect((await h.settlements())[0]).toMatchObject({
-        effect: 'acknowledged',
-        outcome: {
-          effectEvidence: {
-            nestedTools: [
-              {
-                effect: 'not_applied',
-                phase: 'may_have_sent',
-                questionCancellation: { settledSeq: receipt.settledSeq, toolUseId: question.toolUseId },
-              },
-            ],
-          },
-        },
-      })
+      expect((await h.run()).reason).toBe('completed')
+      expect(h.host.questions.pending(h.session.key)).toEqual([])
+      const rows = await h.rows()
+      expect(
+        rows.filter((row) => row.type === 'tool/call').map((row) => (row.data as { name: string }).name),
+      ).toEqual(['shell'])
+      expect(rows.filter((row) => row.type === 'question/requested')).toEqual([])
     } finally {
-      vi.useRealTimers()
       await h.cleanup()
     }
   })
@@ -1107,13 +1485,13 @@ describe('Jev compound nested tools through Host and SQLite', () => {
     const bytes = new TextEncoder().encode('actual child evidence')
     const h = await nestedHost(
       async (_args, context) => {
-        await context.tools.invoke('artifact_child', {})
+        await context.tools.invoke('grep', {})
         return ok()
       },
       {
         host: { packages: { '@agnes/base': { seams: { artifacts: baseSeams.artifacts } } } },
         children: [
-          childTool('artifact_child', async (_args, context) => {
+          childTool('grep', async (_args, context) => {
             const ref = await context.artifacts.put(bytes, { mime: 'text/plain' })
             return { content: [{ type: 'ref', ref }], structured: { actualEvidence: true } }
           }),
@@ -1123,7 +1501,7 @@ describe('Jev compound nested tools through Host and SQLite', () => {
     try {
       const hooked = h.session.hooks.toolResult?.bind(h.session.hooks)
       vi.spyOn(h.session.hooks, 'toolResult').mockImplementation(async (input) =>
-        input.name === 'artifact_child' ? { result: ok() } : hooked ? hooked(input) : {},
+        input.name === 'grep' ? { result: ok() } : hooked ? hooked(input) : {},
       )
       expect((await h.run()).reason).toBe('completed')
       const [settled] = await h.settlements()
@@ -1149,7 +1527,7 @@ describe('Jev compound nested tools through Host and SQLite', () => {
     let ptcError: unknown
     const h = await nestedHost(
       async (_args, context) => {
-        await context.tools.invoke('middle', {})
+        await context.tools.invoke('ls', {})
         try {
           await context.tools.invoke('run_code', { code: 'write()' })
         } catch (error) {
@@ -1159,11 +1537,11 @@ describe('Jev compound nested tools through Host and SQLite', () => {
       },
       {
         children: [
-          childTool('middle', async (_args, context) => {
-            await context.tools.invoke('deepest', {})
+          childTool('ls', async (_args, context) => {
+            await context.tools.invoke('grep', {})
             return ok()
           }),
-          childTool('deepest', async (_args, context) => {
+          childTool('grep', async (_args, context) => {
             try {
               await context.tools.invoke('write', { path: 'too-deep.txt', content: 'rejected' })
             } catch (error) {

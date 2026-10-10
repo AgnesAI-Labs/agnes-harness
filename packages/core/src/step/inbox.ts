@@ -1,4 +1,4 @@
-import type { Actor, ContentBlock } from '@agnes/protocol'
+import type { Actor, ContentBlock, RuntimeTurnOptions } from '@agnes/protocol'
 import type { Inbox, InboxItem } from '../reduce/shapes.js'
 import type { EventInput } from '../types.js'
 
@@ -7,6 +7,7 @@ export type EnqueueMsg = {
   actor: Actor
   commandId?: string
   admissionId?: string
+  runtimeOptions?: RuntimeTurnOptions
   kind?: 'prompt' | 'steer' | 'follow_up'
   trust?: 'trusted' | 'untrusted'
   /** Replaces `budget.per_request_cap` for the one next turn opened by this inbox item. The value

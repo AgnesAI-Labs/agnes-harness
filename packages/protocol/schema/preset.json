@@ -60,6 +60,16 @@
                 "video": { "$ref": "model.json#/$defs/ThinkingLevel" }
               }
             },
+            "jev_language_slots": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "JevLoop language stages each served by their own model slot; an omitted stage stays on primary.",
+              "properties": {
+                "parameters": { "$ref": "model.json#/$defs/SlotName" },
+                "arbitration": { "$ref": "model.json#/$defs/SlotName" },
+                "answer": { "$ref": "model.json#/$defs/SlotName" }
+              }
+            },
             "retry": {
               "type": "object",
               "additionalProperties": false,

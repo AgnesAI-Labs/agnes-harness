@@ -197,6 +197,7 @@ import { startChildMaintenance } from './child-maintenance.js'
 import { configurationApplication } from './configuration.js'
 import { bindConnection } from './connection.js'
 import { publishDaemonDiscovery, removeDaemonDiscovery } from './discovery.js'
+import { withPendingJevConfiguration } from './jev-availability.js'
 import { type JwksResolver, type JwksTransport, startJwksCache } from './jwks-cache.js'
 import { closeWithAudit, installSignals, shutdownLadder } from './lifecycle.js'
 import { createMcpManageRequests } from './mcp-manage-requests.js'
@@ -1177,7 +1178,19 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       endpoint: (conn) => [...conns].find((entry) => entry.conn === conn)?.ep,
       owner: (key) => sessionOwnership.resolve(key),
     })
+    // Freeze this daemon's configuration before its first worker. A later save must not
+    // change the snapshot used by replacement generations; secret references are versioned.
+    await o.configuration?.jev?.get().catch(() => undefined)
+    const jevCapture = (await o.configuration?.jev
+      ?.capture()
+      .catch(() => ({ unavailableReason: 'Jev 持久配置不可用，请检查设置后重启。' }))) ?? {
+      version: 1,
+      revision: 0,
+      settings: null,
+      credentialRef: null,
+    }
     const pool = new WorkerPool({
+      jevBootstrap: JSON.stringify(jevCapture),
       config: o.config,
       profile: o.profile,
       profileFile: o.profileFile,
@@ -1908,9 +1921,11 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         lister,
         runtimeCatalog: async () => {
           const worker = await pool.acquireSharedWorker()
-          return (
+          const items = (
             (await worker.command('runtime.catalog', {})) as import('@agnes/protocol').RuntimeListResult
           ).items
+          const saved = await o.configuration?.jev?.get().catch(() => undefined)
+          return withPendingJevConfiguration(items, saved)
         },
         readRuntimeState: async (sessionId: string) => {
           const active = supervisorRegistry.get(sessionId)

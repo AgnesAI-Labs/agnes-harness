@@ -6,6 +6,13 @@
 
 The single-line workspace also exposes durable root-session LLM/Jev accounting beside the Jev direct-route count. The accounting reader uses `_agnes/v1/session.accounting`, which applies the same Host pricing and missing-evidence rules as comparison without executing the session.
 
+
+## Decision graph
+
+The graph follows JevLoop's [DecisionFlow visual conventions](https://github.com/parkavenue9639/jevloop/blob/main/frontend/src/components/DecisionFlow.tsx): a horizontal main path, a circular Jev node, and individual candidate branches that fan out and merge. Node positions stay fixed when the candidate pool grows. AGH's trace projection continues to supply every displayed choice, action and result.
+
+The graph opens in an overview fitted to both the pane width and height. Unconsumed branches keep their headings and candidate counts, with options collapsed. Expanding candidates opens a readable, scrollable canvas; **Fit canvas** restores the overview. Manual zoom stays under your control until reset. Playback reserves a stable canvas envelope from already-read session records, so main nodes and overview scale do not jump when a request settles or candidates collapse. Reserved space does not expose future candidates, probabilities or outcomes. Click a candidate or stage for its recorded evidence. Request and settlement positions remain available in those inspectors and tooltips. Live motion marks unsettled records in the latest complete ledger view; it does not prove that a model request reached its endpoint or that a tool started. Archived, stopped and historical replay views remain static apart from a brief pulse when playback reveals new evidence. Reduced-motion preferences disable animation.
+
 ## Build and install
 
 Build the full local distribution first, then use its CLI for the same instance as the Web page. The reserved `file:./jev-web` source resolves to that distribution's bundled payload:

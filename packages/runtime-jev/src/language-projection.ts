@@ -13,7 +13,7 @@ import type {
 } from '@agnes/jev-runtime'
 import { AcceptedAnswers } from '@agnes/jev-runtime'
 import type { ToolCall } from '@agnes/protocol'
-import { nativeAuthoredCall } from './language-provenance.js'
+import { nativeAuthoredCall, nativeExplanation } from './language-provenance.js'
 
 /** One model-visible input, completed action, or genuine final response. */
 export type LanguageEntry =
@@ -29,6 +29,7 @@ export type LanguageEntry =
       readonly effect: string
       readonly nativeCall?: ToolCall
       readonly nativeRequest?: string
+      readonly nativeText?: string
     }
   | {
       readonly kind: 'model-result'
@@ -69,33 +70,6 @@ export function stableJson(value: unknown): string {
   return JSON.stringify(canonical(value))
 }
 
-function recordedRequestNote(call: PreparedModelCall): { id: string; text: string } | undefined {
-  const value = object(call.input)
-  if (
-    ![
-      'agnes-language-v1',
-      'agnes-language-v2',
-      'dsh-language-call-v3',
-      'dsh-language-call-v4',
-      'dsh-language-call-v5',
-      'chat-completions-v4',
-      'chat-completions-v5',
-      'chat-completions-v6',
-    ].includes(call.codec) ||
-    typeof value?.requestNote !== 'string'
-  )
-    return undefined
-  const repair = object(value.repair)
-  if (value.repair !== undefined && (repair === undefined || typeof repair.requested !== 'string')) {
-    throw new Error('Recorded language repair has no request identity')
-  }
-  const requested = typeof repair?.requested === 'string' ? repair.requested : ''
-  return {
-    id: `request:${call.inputCursor ?? 'opening'}:${call.purpose}:${requested}`,
-    text: value.requestNote,
-  }
-}
-
 function selectedFields(value: { [key: string]: JsonValue }, names: readonly string[]): JsonValue {
   return Object.fromEntries(names.flatMap((name) => (value[name] === undefined ? [] : [[name, value[name]]])))
 }
@@ -115,6 +89,8 @@ export function projectLanguage(
   const answers = new AcceptedAnswers()
   const requests = new Map<string, PreparedModelCall>()
   const intents = new Map<string, FrozenIntent>()
+  const intentRequests = new Map<string, string>()
+  const proposalPositions = new Map<string, number>()
   const decisions = new Map<string, Extract<RuntimeRecord, { kind: 'decision.selected' }>>()
   const modelSettlements = new Map<string, ModelSettlement>()
   const nativeCalls = new Map<string, ToolCall>()
@@ -152,6 +128,8 @@ export function projectLanguage(
       },
     })
     settled.add(intentId)
+    const requested = intentRequests.get(intentId)
+    if (requested !== undefined) proposalPositions.set(requested, entries.length)
   }
   for (const record of input.records) {
     const answer = answers.apply(record)
@@ -195,7 +173,11 @@ export function projectLanguage(
           if (text !== system) {
             if (text.length === 0) {
               for (let index = entries.length - 1; index >= 0; index--) {
-                if (entries[index]?.kind === 'system') entries.splice(index, 1)
+                if (entries[index]?.kind === 'system') {
+                  entries.splice(index, 1)
+                  for (const [requested, position] of proposalPositions)
+                    if (position > index) proposalPositions.set(requested, position - 1)
+                }
               }
             } else entries.push({ kind: 'system', id: record.input.id, text })
           }
@@ -252,8 +234,7 @@ export function projectLanguage(
       case 'model.requested': {
         if (record.call.purpose === 'decision') break
         requests.set(record.id, record.call)
-        const note = recordedRequestNote(record.call)
-        if (note !== undefined) entries.push({ kind: 'note', ...note })
+        // Request controls are not conversation: retain identities for provenance only.
         break
       }
       case 'model.settled': {
@@ -276,11 +257,13 @@ export function projectLanguage(
               text: `The requested arguments could not be supplied: ${reason}`,
             })
         }
+        proposalPositions.set(record.requested, entries.length)
         break
       }
       case 'action.intended': {
         intents.set(record.intent.id, record.intent)
         const decision = decisions.get(record.decision)
+        if (decision !== undefined) intentRequests.set(record.intent.id, decision.requested)
         if (decision?.callIndex !== undefined) {
           const indices = admittedBatchCalls.get(decision.requested) ?? new Set<number>()
           indices.add(decision.callIndex)
@@ -301,12 +284,23 @@ export function projectLanguage(
       case 'action.settled': {
         const intent = intents.get(record.intentId)
         if (intent === undefined) throw new Error('Recorded tool result has no committed intent')
+        const nativeCall = nativeCalls.get(record.intentId)
+        const requested = intentRequests.get(record.intentId)
+        const settlement = requested === undefined ? undefined : modelSettlements.get(requested)
+        const nativeText =
+          nativeCall &&
+          settlement &&
+          record.outcome.kind === 'success' &&
+          (record.effect === 'none' || record.effect === 'applied')
+            ? nativeExplanation(settlement, nativeCall)
+            : undefined
         entries.push({
           kind: 'execution',
           id: record.id,
           intent,
           outcome: record.outcome,
           effect: record.effect,
+          ...(nativeText === undefined ? {} : { nativeText }),
           ...(nativeCalls.has(record.intentId)
             ? {
                 nativeCall: nativeCalls.get(record.intentId)!,
@@ -315,6 +309,7 @@ export function projectLanguage(
             : {}),
         })
         settled.add(record.intentId)
+        if (requested !== undefined) proposalPositions.set(requested, entries.length)
         for (const addition of record.outcome.directive.additions) toolAdditions.add(addition.id)
         break
       }
@@ -326,6 +321,12 @@ export function projectLanguage(
           text: `Execution resolution: ${stableJson({
             tool: intents.get(record.intentId)?.tool,
             resolution: record.resolution,
+            ...(record.resolution === 'reconciled_state'
+              ? {
+                  meaning:
+                    'Original execution remains unknown. Host verified the current file state; replan from that state without replaying the original proposal.',
+                }
+              : {}),
             explanation: record.explanation,
             evidence: record.evidence,
           })}`,
@@ -351,6 +352,7 @@ export function projectLanguage(
       }
     }
   }
+  const proposalNotes: { position: number; entry: LanguageEntry }[] = []
   for (const [requested, settlement] of modelSettlements) {
     const output = object(settlement.output)
     if (settlement.error || output?.kind !== 'calls' || !Array.isArray(output.calls)) continue
@@ -358,16 +360,26 @@ export function projectLanguage(
       admittedBatchCalls.get(requested)?.has(index) ? [] : [{ index, name: object(call)?.name ?? null }],
     )
     if (unexecuted.length)
-      entries.push({
-        kind: 'note',
-        id: `${requested}:unexecuted-proposals`,
-        text: `These proposed calls were not admitted or executed: ${stableJson(unexecuted)}. They are not automatically resumed; choose any next action from the recorded results and current input.`,
+      proposalNotes.push({
+        position: proposalPositions.get(requested) ?? entries.length,
+        entry: {
+          kind: 'note',
+          id: `${requested}:unexecuted-proposals`,
+          text: `These proposed calls were not admitted or executed: ${stableJson(unexecuted)}. They are not automatically resumed; choose any next action from the recorded results and current input.`,
+        },
       })
   }
-  const tools = [...(catalog ?? input.tools ?? [])].sort((a, b) =>
+  // Feedback stays beside its execution, rather than moving past every new input on replay.
+  for (const note of proposalNotes.sort((a, b) => a.position - b.position).reverse())
+    entries.splice(note.position, 0, note.entry)
+  const tools = [...(input.recovery ? (input.tools ?? []) : (catalog ?? input.tools ?? []))].sort((a, b) =>
     a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
   )
   const notes: string[] = []
+  if (input.recovery)
+    notes.push(
+      `Inspect these uncertain actions using only the available read-only tools: ${stableJson(input.recovery.intentIds)}. Read the exact current target completely. Do not retry mutations or return a final answer. The Host alone verifies whether inspection permits continuation; your claims cannot resolve an effect.`,
+    )
   if (input.purpose === 'parameters' && input.lockedOperation !== undefined) {
     notes.push(`Call ${JSON.stringify(input.lockedOperation)}. Do not call another tool.`)
   }

@@ -106,10 +106,11 @@ describe('dev options and selected scope', () => {
   })
 
   it('prefers the verified listener scope over saved settings, retaining paths with spaces', () => {
+    const selected = { ...settings, node: process.execPath }
     expect(selectSettings({ port: 4189 }, {}, { ...settings, home: '/stale/home' }, existing)).toEqual(
-      settings,
+      selected,
     )
-    expect(selectSettings({ port: 4189 }, {}, settings, null)).toEqual(settings)
+    expect(selectSettings({ port: 4189 }, {}, settings, null)).toEqual(selected)
   })
 
   it('uses explicit home for the default data directory and permits a new Node for the same scope', () => {
@@ -117,7 +118,18 @@ describe('dev options and selected scope', () => {
       home: '/new home',
       dataDir: '/new home/data',
     })
-    expect(selectSettings({ port: 4189, node: '/new/bin/node' }, {}, undefined, existing)).toEqual({
+    expect(selectSettings({ port: 4189 }, { AGH_DEV_NODE: '/env/bin/node' }, settings, existing)).toEqual({
+      ...settings,
+      node: '/env/bin/node',
+    })
+    expect(
+      selectSettings(
+        { port: 4189, node: '/new/bin/node' },
+        { AGH_DEV_NODE: '/env/bin/node' },
+        settings,
+        existing,
+      ),
+    ).toEqual({
       ...settings,
       node: '/new/bin/node',
     })

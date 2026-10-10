@@ -34,6 +34,8 @@ export type SessionMethod =
   | 'append'
   | 'setPreset'
   | 'setModel'
+  | 'setJevStages'
+  | 'jevModelSlots'
   | 'setYolo'
   | 'manualCompact'
   | 'decideApproval'

@@ -1,6 +1,6 @@
 import type { ComparisonCreateParams } from '@agnes/protocol'
 
-export type ComparisonPendingInput = { inputId: string; text: string }
+export type ComparisonPendingInput = { inputId: string; text: string; decisionBackend?: 'jev' | 'laya' }
 export type ComparisonCreation = { params: ComparisonCreateParams; firstInput?: ComparisonPendingInput }
 export type ComparisonEntry = {
   id: string
@@ -18,7 +18,15 @@ function decode(raw: string | null): ComparisonEntry | undefined {
     const value = JSON.parse(raw) as ComparisonEntry
     if (!value || typeof value.id !== 'string' || !value.id) throw new Error()
     for (const input of [value.pending, value.creation?.firstInput])
-      if (input && (typeof input.inputId !== 'string' || !input.inputId || typeof input.text !== 'string'))
+      if (
+        input &&
+        (typeof input.inputId !== 'string' ||
+          !input.inputId ||
+          typeof input.text !== 'string' ||
+          (input.decisionBackend !== undefined &&
+            input.decisionBackend !== 'jev' &&
+            input.decisionBackend !== 'laya'))
+      )
         throw new Error()
     if (value.creation) {
       const p = value.creation.params

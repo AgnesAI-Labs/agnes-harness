@@ -34,7 +34,13 @@ import {
 import { validateAgainst } from '@agnes/protocol'
 import { readQuestionCancellation } from '../questions.js'
 import { createJevChildRefusalReader } from './jev-child-refusal.js'
+import { observedBuiltinProcessDisposition } from './jev-process-observation.js'
 import { type ChildFactoryRuntimeSupport, createJevToolAvailability } from './jev-tool-availability.js'
+import {
+  observedBuiltinWriteFailure,
+  observedBuiltinWriteNotEntered,
+  observedBuiltinWriteVersionRefusal,
+} from './jev-tool-semantics.js'
 import { observeJevWorkspace } from './jev-workspace-observation.js'
 import { createNestedToolExecutor } from './nested-tool-executor.js'
 
@@ -185,6 +191,7 @@ export function createJevEnvironment(
     parameters: JSON.parse(JSON.stringify(definition.parameters)) as JsonValue,
     output: { type: 'object' },
     revision: definition.definitionFingerprint,
+    concurrencySafe: definition.meta.isConcurrencySafe === true,
     effectClass:
       options.effectClass?.({ name: definition.name, revision: definition.definitionFingerprint }) ??
       (definition.meta.isReadOnly
@@ -384,7 +391,15 @@ export function createJevEnvironment(
           call,
           decisionId: approved.decisionId,
         })
-        return { kind: 'ready' }
+        return {
+          kind: 'ready',
+          ...(descriptor(definition).effectClass === 'read_only' && !policy.resolvedPolicy.isReadOnly
+            ? { readOnly: false }
+            : {}),
+          ...(policy.resolvedPolicy.isReadOnly && policy.resolvedPolicy.isConcurrencySafe
+            ? { concurrencySafe: true }
+            : {}),
+        }
       }
     },
     async execute(intent, signal) {
@@ -542,9 +557,14 @@ export function createJevEnvironment(
                     return definition.execute(intent.arguments as never, scoped)
                   }
                   if (!options.observeExecution) return invoke(context)
-                  const observed = await options.observeExecution(intent, context, invoke)
-                  executionMeta = observed.meta
-                  return observed.result
+                  try {
+                    const observed = await options.observeExecution(intent, context, invoke)
+                    executionMeta = observed.meta
+                    return observed.result
+                  } catch (error) {
+                    executionMeta = observedBuiltinWriteFailure(error)
+                    throw error
+                  }
                 }),
             })
           },
@@ -589,15 +609,38 @@ export function createJevEnvironment(
         // A durable user cancellation proves that no answer/business action was adopted. The
         // request may already have been displayed: retain its actual dispatch phase and receipt.
         // A factory preflight proof concerns child/workspace creation, not earlier tool observations.
+        const nestedEvidence = nested.evidence()
+        const observedProcess = observedBuiltinProcessDisposition(intent, executionMeta)
+        const processEffect =
+          observedProcess === undefined
+            ? undefined
+            : observation.phase !== 'responded' ||
+                attempt.timedOut ||
+                attempt.cancelled ||
+                !Array.isArray(nestedEvidence) ||
+                nestedEvidence.length !== 0 ||
+                'deferred' in result
+              ? 'unknown'
+              : observedProcess
+        const noBuiltinWrite =
+          ((observation.phase === 'responded' && observation.result.isError === true) ||
+            (observation.phase === 'may_have_sent' &&
+              observedBuiltinWriteVersionRefusal(intent, executionMeta))) &&
+          !attempt.timedOut &&
+          !attempt.cancelled &&
+          Array.isArray(nestedEvidence) &&
+          nestedEvidence.length === 0 &&
+          observedBuiltinWriteNotEntered(intent, executionMeta)
         const effect = compoundUnknown
           ? 'unknown'
-          : cancellation || childRefusal || observation.phase === 'not_sent'
+          : cancellation || childRefusal || noBuiltinWrite || observation.phase === 'not_sent'
             ? 'not_applied'
             : intent.effectClass === 'read_only'
               ? 'none'
-              : observation.phase === 'responded' && !result.isError && !('deferred' in result)
-                ? 'acknowledged'
-                : 'unknown'
+              : (processEffect ??
+                (observation.phase === 'responded' && !result.isError && !('deferred' in result)
+                  ? 'acknowledged'
+                  : 'unknown'))
         const verdict = await s.d.runtime.verify(
           'tool',
           await toolVerifyInput(s, call, true),
@@ -636,6 +679,7 @@ export function createJevEnvironment(
             timedOut: attempt.timedOut,
             cancelled: attempt.cancelled,
             nestedTools: nested.evidence(),
+            ...(noBuiltinWrite ? { builtinWriteNotEntered: true } : {}),
             ...(cancellation ? { questionCancellation: cancellation } : {}),
             ...(childRefusal ? { childCreationRefusal: childRefusal } : {}),
           },

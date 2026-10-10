@@ -1,3 +1,4 @@
+import { SettingsCustomModelFields } from './settings-custom.js'
 import { SettingsOptionSelect } from './settings-option-select.js'
 import { Button } from './ui/button.js'
 import { Field } from './ui/field.js'
@@ -22,7 +23,7 @@ export function SettingsAccountDialog() {
             <p className="eyebrow">账户配置</p>
             <h3 id="config-detail-title">账户详情</h3>
           </div>
-          <p id="config-account-context">编辑连接与默认模型</p>
+          <p id="config-account-context">配置连接、选择模型并验证后保存</p>
         </div>
         <div className="config-detail-grid">
           <fieldset className="config-section">
@@ -42,7 +43,7 @@ export function SettingsAccountDialog() {
               <SettingsOptionSelect id="config-auth-method" />
             </Field>
             <Field className="form-field form-field-wide" label="Base URL">
-              <input id="config-base-url" autoComplete="url" />
+              <input id="config-base-url" autoComplete="url" placeholder="https://api.example.com/v1" />
             </Field>
             <Field className="form-field form-field-wide" label="API Key">
               <input
@@ -56,6 +57,7 @@ export function SettingsAccountDialog() {
             <p id="config-key-hint" className="field-hint form-field-wide" />
             <div id="config-oauth-controls" className="form-field-wide" />
           </fieldset>
+          <SettingsCustomModelFields />
           <fieldset className="config-section config-validation-section">
             <legend>验证与默认模型</legend>
             <div className="config-validation-controls">
@@ -69,22 +71,27 @@ export function SettingsAccountDialog() {
                 <span>测试连接</span>
               </Button>
             </div>
-            <Field className="form-field" label="默认思考强度">
-              <SettingsOptionSelect id="config-thinking" />
-            </Field>
-            <Field className="form-field" label="默认上下文预算（Token）">
-              <input
-                id="config-context-window"
-                type="text"
-                maxLength={32}
-                placeholder="自动（模型目录默认值）"
-                aria-describedby="config-model-settings-hint config-error"
-              />
-            </Field>
-            <p id="config-model-settings-hint" className="field-hint">
-              支持 K/M 单位，如 100K 表示 100,000 Token。新会话继承这些默认值；已有会话保留自己的配置。
-            </p>
-            <p id="config-state" aria-live="polite" />
+            <details className="config-session-defaults form-field-wide">
+              <summary>新会话默认值</summary>
+              <div className="config-custom-advanced-grid">
+                <Field className="form-field" label="默认思考强度">
+                  <SettingsOptionSelect id="config-thinking" />
+                </Field>
+                <Field className="form-field" label="默认上下文预算（Token）">
+                  <input
+                    id="config-context-window"
+                    type="text"
+                    maxLength={32}
+                    placeholder="自动（模型目录默认值）"
+                    aria-describedby="config-model-settings-hint config-error"
+                  />
+                </Field>
+                <p id="config-model-settings-hint" className="field-hint form-field-wide">
+                  支持 K/M 单位，如 100K 表示 100,000 Token。新会话继承这些默认值；已有会话保留自己的配置。
+                </p>
+              </div>
+            </details>
+            <p id="config-state" role="status" aria-live="polite" />
             <Button id="config-retry" className="secondary-button compact" htmlType="button" hidden>
               重试读取配置
             </Button>

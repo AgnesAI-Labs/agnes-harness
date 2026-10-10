@@ -1,12 +1,14 @@
 import type { DiagnosticsEventsResult, EventEnvelope } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import type { ComparisonReplayLane } from './comparison-replay.js'
+import type { Translate } from './jev-locale.js'
 
 /** Bounded pages retain the real ledger prefix; live tails never fill a missing historical gap. */
 export function createComparisonLedger(
   client: Pick<Client, 'call'>,
   sessionId: string,
   update: (value: ComparisonReplayLane, note: string) => void,
+  t: Translate,
 ) {
   const records = new Map<number, EventEnvelope>()
   let after = 0
@@ -26,8 +28,12 @@ export function createComparisonLedger(
       },
       error ??
         (complete
-          ? `已载入完整账本 #0–${after}；当前展示范围见回放位置。`
-          : `${loading ? '正在读取' : '部分历史'} #0–${after} / ${bound ?? head}；尚未读全，缺失不表示未执行。`),
+          ? t('cledger.note.complete', { seq: after })
+          : t('cledger.note.partial', {
+              state: loading ? t('cledger.reading') : t('cledger.partialHistory'),
+              after,
+              total: bound ?? head,
+            })),
     )
   }
   async function read() {
@@ -69,7 +75,9 @@ export function createComparisonLedger(
         }
       }
     } catch (failure) {
-      error = `历史读取失败：${failure instanceof Error ? failure.message : String(failure)}`
+      error = t('cledger.readFailed', {
+        message: failure instanceof Error ? failure.message : String(failure),
+      })
     } finally {
       loading = false
       const catchUp = complete && head > after

@@ -1,3 +1,12 @@
+// JEV-TOOL-MOUNT: reviewed six-tool session registry, live owner replacement and attestation;
+// Native registry unchanged; exact Host source count 52821, no headroom or exclusions.
+// JEV-FOREGROUND-EXIT: reviewed Host-owned normal-exit receipts for builtin shell,
+// preserving nonzero error outcomes and unknown timeout/cancellation; exact Host count, no headroom.
+// JEV-EFFECT-RECOVERY: reviewed Host-attested no-write refusals, complete current-file
+// reconciliation and version gates, bounded LLM inspection/replanning, original-turn continuation
+// and durable proof replay; exact measured source counts, no headroom or exclusions.
+// JEV-READ-BATCH 2026-10-09: locked read-only parameter proposals, Host-confirmed safety,
+// four-call windows with ordered admission/settlement and fault drainage; exact source counts.
 // JEV-CONNECTIONS: reviewed Host-owned pooled decision connections (keep-alive, HTTP/2 with an
 // off switch, dead-connection reconnect bounds, header-timeout fast fail) closed with the Host;
 // exact measured count, no headroom.
@@ -224,11 +233,20 @@ describe('ratchet key path-boundary matching (regression: sibling-prefix false m
 // remeasured against the resolved tree with this guard's own countLines() implementation.
 const INITIAL_CEILING: Record<string, number> = {
   'packages/jev-trace/src': 734,
-  'packages/jev-runtime/src': 4845,
-  'packages/runtime-comparison/src': 1574,
+  'packages/jev-runtime/src': 5192,
+  // JEV-STAGE-COMPARISON 2026-10-09: comparison JevLoop-lane stage bindings, measured on the
+  // shared tree (concurrent laya-config work included), no spare.
+  'packages/runtime-comparison/src': 1594,
   // Ordered Host context snapshots and explicit per-key clearing; exact measured source count.
-  'packages/runtime-jev/src': 1183,
-  'packages/runtime-api/src': 203,
+  // JEV-RULES: reviewed wire-only rule rendering; exact countLines() +25, no spare allocation.
+  // JEV-SKILLS: reviewed lossless catalog mapping; exact countLines() +27, no spare allocation.
+  // JEV-QUESTIONS: reviewed wire-only reference reduction; exact countLines() +120, no spare allocation.
+  // JEV-STAGE-MODELS 2026-10-09: per-purpose LanguageHost selection/sampling; 1355 -> 1358 mine, then
+  // re-measured 1433 after the concurrent laya-config model/provenance work landed in the same tree.
+  // JEV-LANGUAGE-PROJECTION: independently reviewed stable prefix/provenance; exact count, no spare.
+  'packages/runtime-jev/src': 1450,
+  // JEV-STAGE-MODELS 2026-10-09: decisionBackends mutable to match the regenerated protocol type.
+  'packages/runtime-api/src': 210,
   // 2026-09-22 M11 browser effect-command closure: exact measured deltas for the explicit
   // authorization facade, private BFF/RPC, durable journal reuse, and cross-platform test repair.
   // No source exclusions or spare budget were added.
@@ -275,13 +293,28 @@ const INITIAL_CEILING: Record<string, number> = {
   // playback advances; web-session-ui measured after behaviour-preserving dedup (-14), exact, no spare.
   'packages/web-session-ui/src': 2558,
   // DSH-REPLAY-VISIBILITY: decision graph releases the conversation cut at the live head (+5), exact.
-  'packages/jev-web/src': 6111,
-  'packages/web-client/src': 2073,
+  // 2026-10-09 JevLoop visual alignment, independently reviewed: 6138 -> 6452, exact; no exclusions or spare.
+  // 2026-10-09 default overview and bounded candidate disclosure, reviewed: 6452 -> 6494, exact.
+  // 2026-10-09 stable replay geometry and keyed DOM reuse, reviewed: 6494 -> 6633, exact.
+  // 2026-10-09 CSP-safe style reconciliation preserves SVG/HTML coordinates: 6633 -> 6646, exact.
+  // JEV-STAGE-MODELS 2026-10-09: stage-models panel, workspace wiring and shared-tree overlay of the
+  // concurrent laya-config session; 6646 -> 6910 exact, re-measured 6916 after their graph labels landed.
+  // JEV-WEB-I18N 2026-10-10: bilingual catalogs (5 locale files) plus t-threading, exact.
+  'packages/jev-web/src': 9031,
+  // JEV-STAGE-COMPARISON 2026-10-09: comparison JevLoop-lane stage bindings, measured on the
+  // shared tree (concurrent laya-config work included), no spare.
+  // JEV-WEB-I18N 2026-10-10: catalog-based LocaleService with en fallback and vars, exact.
+  'packages/web-client/src': 2451,
   'packages/web-slots/src': 605,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
-  'packages/web-ui/src': 5024,
+  // 2026-10-09 custom LLM acceptance and settings, independently reviewed: 5070 -> 5090, exact; no exclusions or spare.
+  // JEV-STAGE-COMPOSER 2026-10-09: stage bindings in the model settings dialog, measured on the
+  // shared tree (concurrent laya-config composer/settings work included), no spare.
+  'packages/web-ui/src': 5188,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
-  'packages/web-units/src': 5117,
+  // JEV-STAGE-COMPOSER 2026-10-09: stage bindings in the model settings dialog, measured on the
+  // shared tree (concurrent laya-config composer/settings work included), no spare.
+  'packages/web-units/src': 5175,
   'packages/base/extensions/tools-core': 1010,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
@@ -446,7 +479,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI integration merge: the default React transcript now receives the inline card claim callback,
   // which lands on top of the diagnostics wiring above. Re-measured with countLines(): 1827, exact.
   // 2026-10-03: connect complete Jev ledger evidence to the shared direct-call reading.
-  'packages/web/src/app': 2234,
+  // JEV-STAGE-COMPOSER 2026-10-09: stage bindings in the model settings dialog, measured on the
+  // shared tree (concurrent laya-config composer/settings work included), no spare.
+  // JEV-STAGE-COMPARISON 2026-10-09: comparison JevLoop-lane stage bindings, measured on the
+  // shared tree (concurrent laya-config work included), no spare.
+  'packages/web/src/app': 2317,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -463,7 +500,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web/src/model-picker': 278,
   // 2026-09-25 UI refactor: settings-owned element construction uses the shared UI host boundary.
   // Re-measured with countLines(): 754, exact, no spare.
-  'packages/web/src/settings': 848,
+  // 2026-10-09 custom LLM acceptance and settings, independently reviewed: 941 -> 977, exact; no exclusions or spare.
+  'packages/web/src/settings': 977,
   // 2026-09-17 rebase 后的重新实测：timeline.ts 的详情弹窗管线已在 WEB-UI-ALIGN-DSH 中删除
   // （原 427 是旧实现的实测值），删码后未跟着收紧会留下 55 行富余，故收到实测精确值 372。
   // 2026-09-24 WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C6 (Web incremental wiring) and its review fixes,
@@ -659,7 +697,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // override a model's reasoning capability when the installed pi-ai catalogue is incomplete or
   // wrong), landing independently of WIN-12c's own +2. Re-measured on the merged tree directly
   // (never summed): 911; exact cap, no spare.
-  'packages/host/src/configuration': 1219,
+  // 2026-10-09 custom LLM acceptance and settings, independently reviewed: 1326 -> 1327, exact; no exclusions or spare.
+  // CUSTOM-AUTO-PRICING: private snapshot save/load/application; reviewed exact +33, no spare.
+  // CUSTOM-PRICE-REFRESH: reviewed local-only price refresh adds exact +26; no spare.
+  'packages/host/src/configuration': 1386,
   'packages/host/src/configuration-lock': 39,
   'packages/daemon/src/supervisor/configuration': 45,
   // S5 service workers reload the profile hash and its immutable snapshot path as one value.
@@ -1003,7 +1044,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // DSH-ALIGNMENT: durable child continuation, interrupt delivery and retirement admission; exact measured allocation.
   // Child-run approval scopes bind the original live admission owner and revoke to manual;
   // collect follows lease renewal. Measured +53 code lines; exact allocation, no spare.
-  'packages/core/src': 29513,
+  // JEV-STAGE-MODELS 2026-10-09: PresetView.model.jevLanguageSlots + resolveModel export; exact
+  // countLines() 29513 -> 29538 stage slots, -> 29615 with direct stage bindings (setJevStages), no spare.
+  'packages/core/src': 29615,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1018,7 +1061,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Response metadata on cost/ledger: per-attempt fetch capture of status, allowlisted header values
   // and header names, plus provider-side shape checks. Measured 3886 (+51).
   // Agnes default output allowance is explicitly serialized to HTTP. Measured +6, exact allocation.
-  'packages/ai/src': 4126,
+  // 2026-10-09 custom LLM acceptance and settings, independently reviewed: 4138 -> 4393, exact; no exclusions or spare.
+  'packages/ai/src': 4393,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
@@ -1310,7 +1354,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // TRACE-INSPECTION-20260925: readToolDetail method types; measured 2201, exact.
   // Response metadata on cost/ledger: ResponseMeta root type export. Re-measured on the rebased
   // tree: 2201, exact.
-  'packages/protocol/src': 2627,
+  // 2026-10-09 custom LLM acceptance and settings, independently reviewed: 2639 -> 2640, exact; no exclusions or spare.
+  // JEV-STAGE-MODELS 2026-10-09: modelSlots method registration + type exports; 2640 -> 2648 exact.
+  'packages/protocol/src': 2653,
   'packages/cli/src/tui': 4000,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1497,7 +1543,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // CHUNK-LEDGER-SLIM final tree: the stream keep-alive and its sizing are gone. Measured 5013, exact, no spare (-61).
   // Permission cancellation distinction on the merged tree: measured 5051, no spare.
   // TRACE-INSPECTION-20260925: bounded, abortable paged detail read; measured 5127, exact.
-  'packages/sdk/src': 5387,
+  // JEV-STAGE-MODELS 2026-10-09: Session.modelSlots() reader; 5387 -> 5438 exact on the shared tree
+  // (concurrent laya-config submit/_meta work included), no spare.
+  'packages/sdk/src': 5445,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 147,
   'packages/sdk/src/surface.browser': 3,
@@ -1856,7 +1904,11 @@ const INITIAL_CEILING: Record<string, number> = {
   // libuv aborts on a directory watched by its 8.3 short name; measured 26451, exact, no spare (+11).
   // TRACE-INSPECTION-20260925: owner-gated detail dispatch; measured 26495, exact.
   // Windows discovery retry adds six counted lines; measured 26501, exact.
-  'packages/daemon/src': 30176,
+  // JEV-STAGE-MODELS 2026-10-09: read-only session.modelSlots handler; 30176 -> 30284 exact on
+  // the shared tree (concurrent laya-config prompt/submit work included), no spare.
+  // JEV-STAGE-COMPARISON 2026-10-09: comparison JevLoop-lane stage bindings, measured on the
+  // shared tree (concurrent laya-config work included), no spare.
+  'packages/daemon/src': 30333,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2104,7 +2156,13 @@ const INITIAL_CEILING: Record<string, number> = {
   // Output-limit and rate-limit presentation adds four counted lines, exact allocation.
   // Jev repair: pure-projection SVG circuit and bounded historical ledger reader (+496), exact.
   // Jev visual polish: candidate group disclosure, measured ports and bounded evidence pulses (+66).
-  'packages/web/src': 11895,
+  // 2026-10-09 custom LLM acceptance and settings, independently reviewed: 12399 -> 12541, exact; no exclusions or spare.
+  // JEV-STAGE-COMPOSER 2026-10-09: stage bindings in the model settings dialog, measured on the
+  // shared tree (concurrent laya-config composer/settings work included), no spare.
+  // JEV-STAGE-COMPARISON 2026-10-09: comparison JevLoop-lane stage bindings, measured on the
+  // shared tree (concurrent laya-config work included), no spare.
+  // JEV-WEB-I18N 2026-10-10: locale-preference + minimal locale catalog + boot switching wiring, exact.
+  'packages/web/src': 14330,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
@@ -2582,7 +2640,15 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-04: comparison snapshot links/dependency revalidation and durable sandbox floor; exact measured cap.
   // JEV-CONNECTIONS: Host-owned pooled decision connections (keep-alive, HTTP/2 off switch,
   // dead-connection reconnect, header-timeout fast fail) closed with the Host; +80 exact, no headroom.
-  'packages/host/src': 50674,
+  // 2026-10-09 custom LLM acceptance and settings, independently reviewed: 51398 -> 51326, exact; no exclusions or spare.
+  // JEV-STAGE-MODELS 2026-10-09: shared jev-language-slots helper + per-purpose loop selection;
+  // 51326 -> 51595 exact on the shared tree (concurrent laya-config pool/config work included).
+  // CUSTOM-AUTO-PRICING: reviewed bounded metadata discovery and frozen per-model estimates;
+  // exact authored +201 (configuration +33, pricing +168); no headroom or counting exclusions.
+  // CUSTOM-PRICE-REFRESH: existing-account metadata refresh adds exact +26; no spare.
+  // JEV-STAGE-COMPARISON 2026-10-09: comparison JevLoop-lane stage bindings, measured on the
+  // shared tree (concurrent laya-config work included), no spare.
+  'packages/host/src': 52821,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

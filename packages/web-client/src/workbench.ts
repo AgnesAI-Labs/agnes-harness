@@ -1,5 +1,6 @@
 import { type Context, Service } from '@agnes/cordis'
 import type {
+  ComparisonCreateParams,
   EventEnvelope,
   RuntimeDescriptor,
   RuntimeIdentity,
@@ -20,6 +21,9 @@ export interface WorkbenchSnapshot {
   workspaces: readonly WorkspaceEntry[]
   selectedMode: string
   permissionMode: WorkbenchPermission
+  decisionBackend?: 'jev' | 'laya'
+  /** Draft JevLoop stage bindings; a dual-line comparison freezes them into its JevLoop lane. */
+  jevStages?: ComparisonCreateParams['right']['jevStages']
   cwd?: string
   model?: { route: string; model: string; thinking?: ThinkingLevel; contextWindow?: number }
   connected: boolean
@@ -37,6 +41,8 @@ export interface WorkbenchTarget {
   hint: string
   modelLabel: string
   workspaceLabel: string
+  decisionBackends?: RuntimeDescriptor['decisionBackends']
+  defaultDecisionBackend?: 'jev' | 'laya'
   /** Provider-owned location fields, encoded by the host. */
   query: Readonly<Record<string, string>>
 }
@@ -73,6 +79,7 @@ export interface WorkbenchClient {
   subscribe(listener: (snapshot: WorkbenchSnapshot) => void): () => void
   observe(listener: (event: EventEnvelope) => void): () => void
   select(target: WorkbenchTarget | undefined): Promise<void>
+  openSettings(pane: 'model' | 'jev'): Promise<void>
   /** Holds the native conversation at a ledger cut this module owns; `undefined` resumes live. */
   setReplayCut(cut: ReplayCut | undefined): void
 }
@@ -109,6 +116,7 @@ export class WorkbenchService extends Service {
   private host?: {
     surfaces: WorkbenchSurfaces
     select(target: WorkbenchTarget | undefined, current?: () => boolean): Promise<void>
+    openSettings?(pane: 'model' | 'jev'): Promise<void>
     changed(): void
   }
   private active: WorkbenchTarget | undefined
@@ -354,6 +362,13 @@ export class WorkbenchService extends Service {
           if (current()) this.active = previous
           throw error
         }
+      },
+      openSettings: async (pane) => {
+        assertActive()
+        if (pane !== 'model' && pane !== 'jev') throw new Error('未知设置页面。')
+        if (!this.host?.openSettings) throw new Error('宿主不支持配置入口。')
+        await this.host.openSettings(pane)
+        assertActive()
       },
       setReplayCut: (cut) => {
         assertActive()

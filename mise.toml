@@ -1,0 +1,6 @@
+[settings]
+activate_aggressive = true
+
+[tools]
+node = "24.21.0"
+pnpm = "10.34.5"

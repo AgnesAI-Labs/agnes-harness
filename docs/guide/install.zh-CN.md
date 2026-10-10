@@ -43,6 +43,23 @@ node packages/cli/dist/local/agnes.mjs --help
 
 输出位于 `packages/cli/dist/local/`，包括 `agnes.mjs`、daemon、worker、Web 与平台所需辅助资源。搬运时保持整个目录，不要只复制入口文件。`@agnes/web build` 仅构建 Web，不能替代完整本地分发。
 
+### 可选：使用 mise 管理项目工具链
+
+如果使用 [mise](https://mise.jdx.dev/)，仓库的 `mise.toml` 会固定开发用的 Node 和 pnpm 版本，不改变其他项目或全局 Node 安装。pnpm 版本应与 `package.json` 的 `packageManager` 保持一致；Node 的 engine 范围仍是兼容性要求。
+
+先审阅项目配置，再在仓库根目录运行：
+
+```sh
+mise trust
+mise install
+mise exec -- node --version
+mise exec -- pnpm --version
+mise exec -- pnpm install --frozen-lockfile
+make dev
+```
+
+`make dev` 和 `make dev-web` 在 PATH 中找到 mise 时会自动使用 `mise exec --`，无需额外前缀或 shell 自动激活。未安装 mise 时使用当前 Node；仍支持 `make dev NODE=/path/to/node` 和 `ARGS` 覆盖。若 mise 可用但配置或工具执行失败，会直接报告错误，不会回退到其他运行时。项目级 `activate_aggressive` 设置确保所选工具在 PATH 中优先。本页其他 Node/pnpm 命令可以加 `mise exec --` 前缀；如果 shell 已为当前项目激活 mise，则可直接运行。mise 不是必需依赖，单独准备满足上述要求的工具链仍可使用。运行时安装目录和长期使用的 AGH home 应放在临时目录之外。
+
 ### 本地开发快捷重启（macOS / Linux）
 
 安装依赖并准备好上述工具链后，在仓库根目录运行：
@@ -51,7 +68,7 @@ node packages/cli/dist/local/agnes.mjs --help
 make dev
 ```
 
-默认端口为 `4189`。命令先在新的目录构建完整前后端，成功后停止旧 daemon 和 Web，再启动新分发；构建失败不会停止旧服务。会优先沿用该端口上已核验的 AGH 实例的 home、profile、dataDir、工作区及 Node，随后使用此 checkout 保存的选择；首次启动无记录时使用 `AGH_HOME`（未设置则 `~/.agh`）、`local-dev` 和当前仓库。不会清空会话或 comparison 数据。重启会中断执行中的任务。
+默认端口为 `4189`。命令先在新的目录构建完整前后端，成功后停止旧 daemon 和 Web，再启动新分发；构建失败不会停止旧服务。会优先沿用该端口上已核验的 AGH 实例的 home、profile、dataDir 和工作区，随后使用此 checkout 保存的选择；首次启动无记录时使用 `AGH_HOME`（未设置则 `~/.agh`）、`local-dev` 和当前仓库。Node 默认使用启动器进程的运行时，覆盖优先级为 `--node`、`AGH_DEV_NODE`；历史实例的 Node 路径不会覆盖当前项目工具链。不会清空会话或 comparison 数据。重启会中断执行中的任务。
 
 ```sh
 make dev ARGS='--check'                 # 只读检查将使用的实例
@@ -61,7 +78,9 @@ make dev ARGS='--node /path/to/node --env-file /private/path/dev.env'
 
 `make dev-web` 是同一入口的别名。需要 `make`、`lsof` 和 `ps`；Windows 使用现有 `start-local-windows.ps1`。新进程继承启动终端的环境；`--env-file` 可补充配置。默认还会加载所选 home 下的 `dev.env`，已有环境变量优先。首次运行 `make dev ARGS='--save-env'` 可将当前终端的 `AGNES_JEV_*` 和 `TYPESAFE_API_KEY` 保存到该文件（`0600`、拒绝覆盖，不保存其他变量）；自动加载拒绝非白名单字段、符号链接及其他用户可读的文件。请将 home 放在仓库外，勿提交凭据。启动器不会读取或复制旧进程的密钥。`Ctrl+C` 结束本次 Web 和对应后台；源码变更后再次运行 `make dev`，此入口不提供自动监听重建。
 
-非 AGH 端口占用、作用域不符、无法核验进程身份或另一个启动器正在切换时会拒绝停机。互斥锁位于所选 `dataDir/daemon/dev-launch.lock`；异常断电等留下的锁需要先核查 owner，不能盲目删除。构建输出保留在 `packages/cli/dist/dev-*/runtime`，实例选择保存在 git 忽略的 `.agnes-tmp/dev/`；此命令不清理旧分发目录。
+新建的 `dataDir/daemon` 目录权限为 `0700`；Unix socket 监听器会拒绝权限不够私密的目录。已有目录权限不会自动修复，调整前应先核查归属和权限。
+
+非 AGH 端口占用、作用域不符、无法核验进程身份或另一个启动器正在切换时会拒绝停机。互斥锁位于所选 `dataDir/daemon/dev-launch.lock`；异常断电等留下的锁需要先核查 owner，不能盲目删除。构建输出保留在 `packages/cli/dist/dev-*/runtime`，实例选择保存在 git 忽略的 `.agnes-tmp/dev/`，其中 Node 路径仅记录上次成功启动的运行时；此命令不清理旧分发目录。
 
 Linux 可由系统包管理器安装 bubblewrap（例如 Debian/Ubuntu 的 `apt install bubblewrap`）；若运行环境禁用 user namespace，默认沙箱会拒绝命令工具，见[排错](troubleshooting.zh-CN.md)。
 

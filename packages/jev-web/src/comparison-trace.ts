@@ -4,6 +4,7 @@ import { Trace, type TraceHandle, type TracePanelOptions } from '@agnes/web-unit
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
+import type { Translate } from './jev-locale.js'
 
 type ComparisonTimeline = Omit<UITimeline, 'generation'> & { generation?: number }
 
@@ -15,6 +16,7 @@ export function createComparisonTrace(
     toggle: HTMLButtonElement
     chatToggle: HTMLButtonElement
     conversation: HTMLElement
+    t: Translate
     readToolDetail: NonNullable<TracePanelOptions['readToolDetail']>
   },
 ) {

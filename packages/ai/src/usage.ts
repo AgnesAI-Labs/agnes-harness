@@ -13,7 +13,14 @@ import type { Billing, ModelRecord, TokenCounts } from '@agnes/protocol'
  * that summing a session's rows does not accumulate binary-float dust. Clamped at zero because the
  * value goes into an event whose schema forbids a negative, and a catalogue is configuration.
  */
-export function estimateCredits(model: ModelRecord, t: TokenCounts, creditsPerUsd: number): number {
+export function estimateCredits(
+  model: ModelRecord,
+  t: TokenCounts,
+  creditsPerUsd: number,
+): number | undefined {
+  // Explicit policies are independently denominated and frozen at call admission. Never fall
+  // back to compatibility cost fields, including zero, when their estimate is unknown.
+  if (model.pricePolicy !== undefined) return undefined
   const usd =
     (t.input * model.cost.input +
       t.output * model.cost.output +
@@ -30,6 +37,7 @@ export function estimateCredits(model: ModelRecord, t: TokenCounts, creditsPerUs
  * instead of clamped: a negative or overflowing result is not a price and must not look like one.
  */
 export function estimateBilling(model: ModelRecord, t: TokenCounts): Billing | undefined {
+  if (model.pricePolicy !== undefined) return undefined
   const tokens = [t.input, t.output, t.cacheRead, t.cacheWrite]
   const rates = [model.cost.input, model.cost.output, model.cost.cacheRead, model.cost.cacheWrite]
   if (

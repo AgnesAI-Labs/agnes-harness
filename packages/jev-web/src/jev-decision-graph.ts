@@ -1,7 +1,9 @@
 import { assertRuntimeRecord } from '@agnes/jev-runtime'
 import { projectTrace, type TraceEntry, type TraceHead, type TraceRequest } from '@agnes/jev-trace'
 import type { EventEnvelope } from '@agnes/protocol'
-import { createJevRequestViewer } from './jev-request-viewer.js'
+import { renderJevCircuit } from './jev-circuit.js'
+import type { Translate } from './jev-locale.js'
+import { createJevRequestViewer, decisionModelLabel } from './jev-request-viewer.js'
 
 const object = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -47,18 +49,20 @@ export function jevTraceEntries(events: readonly EventEnvelope[]): TraceEntry[] 
     })
 }
 
-const status: Record<TraceHead['status'], string> = {
-  pending: '等待采用证据',
-  unconsumed: '未采用',
-  consumed: '已采用',
-  supporting: '门控支持（非采用）',
-  deterministic: '确定常量（无概率）',
-  invalid: '采用证据无效',
-}
-const requestText = (request?: TraceRequest) =>
+const headStatusLabels = (t: Translate): Record<TraceHead['status'], string> => ({
+  pending: t('graph.headStatus.pending'),
+  unconsumed: t('graph.headStatus.unconsumed'),
+  consumed: t('graph.headStatus.consumed'),
+  supporting: t('graph.headStatus.supporting'),
+  deterministic: t('graph.headStatus.deterministic'),
+  invalid: t('graph.headStatus.invalid'),
+})
+const requestModel = (request: Pick<TraceRequest, 'backend'> | undefined, t: Translate) =>
+  request ? decisionModelLabel(request.backend, t) : t('graph.decisionModel')
+const requestText = (request: TraceRequest | undefined, t: Translate) =>
   request
-    ? `${request.observedModel ?? request.requestedModel ?? request.backend}\n请求 #${request.requestedSeq}\n${request.settledSeq ? `结算 #${request.settledSeq} · ${request.status}` : '未观测结算'}`
-    : '未观测请求'
+    ? `${requestModel(request, t)} · ${request.observedModel ?? request.requestedModel ?? t('graph.unknownModel')}\n${t('graph.request.seq', { seq: request.requestedSeq })}\n${request.settledSeq ? t('graph.settlement.seq', { seq: request.settledSeq, status: request.status }) : t('graph.settlement.unobserved')}`
+    : t('graph.request.unobserved')
 
 /** A fixed conversation cut the graph owns while all-turn replay scrubs the durable ledger. */
 export type JevReplayCut = { sessionId: string; through: number }
@@ -66,11 +70,17 @@ export type JevReplayCut = { sessionId: string; through: number }
 /** Instance-local, read-only circuit. Every highlighted edge is backed by committed evidence. */
 export function createJevDecisionGraph(
   host: HTMLElement,
-  options: { sharedReplay?: boolean; onCut?: (cut: JevReplayCut | undefined) => void } = {},
+  options: {
+    sharedReplay?: boolean
+    liveMotion?: () => boolean
+    onCut?: (cut: JevReplayCut | undefined) => void
+  } = {},
+  t: Translate,
 ) {
+  const headStatus = headStatusLabels(t)
   const root = el('section')
   root.className = 'jev-decision-graph'
-  root.setAttribute('aria-label', 'Jev 决策流程图')
+  root.setAttribute('aria-label', t('graph.aria.root'))
   function button(label: string, action: () => void, content = label) {
     const node = el('button', content)
     node.type = 'button'
@@ -82,17 +92,19 @@ export function createJevDecisionGraph(
   const toolbar = el('div')
   toolbar.className = 'jev-graph-toolbar'
   const select = el('select')
-  select.setAttribute('aria-label', 'Jev 轮次与步骤')
+  select.setAttribute('aria-label', t('graph.select.turnStep'))
   const actionSelect = el('select')
-  actionSelect.setAttribute('aria-label', 'Jev 步骤动作')
+  actionSelect.setAttribute('aria-label', t('graph.select.action'))
   actionSelect.hidden = true
-  const previous = button('上一步', () => navigate(-1), '‹')
-  const next = button('下一步', () => navigate(1), '›')
+  const previous = button(t('graph.step.previous'), () => navigate(-1), '‹')
+  const next = button(t('graph.step.next'), () => navigate(1), '›')
   const follow = button(
-    '跟随最新',
+    t('graph.follow'),
     () => {
       through = undefined
       selected = ''
+      followingActive = true
+      lastActiveStage = ''
       replayTurn = ''
       allTurns = false
       scopeSelect.value = 'turn'
@@ -100,21 +112,21 @@ export function createJevDecisionGraph(
       closeInspector()
       draw()
     },
-    '实时',
+    t('graph.live'),
   )
-  const candidatesButton = button('查看候选与采用关系', () => showPanel('candidates'), '候选')
-  const historyButton = button('查看调用轨迹', () => showPanel('history'), '轨迹')
+  const candidatesButton = button(t('graph.candidates.aria'), () => showPanel('candidates'), t('graph.candidates'))
+  const historyButton = button(t('graph.history.aria'), () => showPanel('history'), t('graph.history'))
   let requestViewer: ReturnType<typeof createJevRequestViewer> | undefined
   let activeRequestSeq: number | undefined
   const requestEntries = () => entries.filter((entry) => through === undefined || entry.seq <= through)
   const openRequest = () => {
-    requestViewer ??= createJevRequestViewer()
+    requestViewer ??= createJevRequestViewer(t)
     requestViewer.open(requestEntries(), activeRequestSeq)
   }
-  const requestButton = button('查看 Jev 实际请求体', openRequest, '请求体')
+  const requestButton = button(t('graph.requestBody.aria'), openRequest, t('graph.requestBody'))
   requestButton.disabled = true
   toolbar.append(
-    el('strong', 'Jev'),
+    el('strong', t('graph.toolbar.decision')),
     previous,
     select,
     next,
@@ -129,7 +141,7 @@ export function createJevDecisionGraph(
   const scene = el('div')
   scene.className = 'jev-graph-viewport'
   scene.tabIndex = 0
-  scene.setAttribute('aria-label', '决策电路，可横向滚动')
+  scene.setAttribute('aria-label', t('graph.scene.aria'))
   const pools = el('div')
   pools.className = 'jev-candidate-pools'
   pools.hidden = true
@@ -139,10 +151,10 @@ export function createJevDecisionGraph(
   const detail = el('aside')
   detail.className = 'jev-graph-detail'
   detail.hidden = true
-  detail.setAttribute('aria-label', 'Jev 检查器')
+  detail.setAttribute('aria-label', t('graph.inspector.aria'))
   const detailHeader = el('header')
-  const detailTitle = el('strong', '节点证据')
-  const close = button('关闭检查器', closeInspector, '×')
+  const detailTitle = el('strong', t('graph.evidence.title'))
+  const close = button(t('graph.inspector.close'), closeInspector, '×')
   detailHeader.append(detailTitle, close)
   const evidence = el('div')
   evidence.className = 'jev-node-evidence'
@@ -150,7 +162,7 @@ export function createJevDecisionGraph(
   const facts = el('dl')
   const raw = el('details')
   const detailText = el('pre')
-  raw.append(el('summary', '原始证据'), detailText)
+  raw.append(el('summary', t('graph.evidence.raw')), detailText)
   evidence.append(facts, raw)
   detail.append(detailHeader, pools, history, evidence)
   workspace.append(scene, detail)
@@ -159,34 +171,34 @@ export function createJevDecisionGraph(
   const cursor = el('input')
   cursor.type = 'range'
   cursor.min = '0'
-  cursor.setAttribute('aria-label', 'Jev 账本回放位置')
+  cursor.setAttribute('aria-label', t('graph.replay.cursor.aria'))
   const position = el('output')
   position.setAttribute('role', 'status')
-  const play = button('播放回放', () => {
+  const play = button(t('graph.replay.play'), () => {
     if (playing) pause()
     else startReplay(false)
     draw()
   })
-  const restart = button('从头回放', () => {
+  const restart = button(t('graph.replay.restart'), () => {
     startReplay(true)
     draw()
   })
   const speed = el('select')
-  speed.setAttribute('aria-label', '回放速度')
+  speed.setAttribute('aria-label', t('graph.replay.speed.aria'))
   for (const value of [1, 2, 4, 8]) {
-    const option = el('option', `${value} 事件/秒`)
+    const option = el('option', t('graph.replay.speedOption', { value }))
     option.value = String(value)
     speed.append(option)
   }
   speed.value = '2'
-  const previousEvent = button('上一个事件', () => seek(-1), '‹')
-  const nextEvent = button('下一个事件', () => seek(1), '›')
+  const previousEvent = button(t('graph.replay.previousEvent'), () => seek(-1), '‹')
+  const nextEvent = button(t('graph.replay.nextEvent'), () => seek(1), '›')
   // 单轮 keeps the historical per-turn replay; 全轮 scrubs every persisted event by ledger seq.
   const scopeSelect = el('select')
-  scopeSelect.setAttribute('aria-label', 'Jev 回放范围')
+  scopeSelect.setAttribute('aria-label', t('graph.replay.scope.aria'))
   for (const [value, label] of [
-    ['turn', '单轮'],
-    ['all', '全轮'],
+    ['turn', t('graph.replay.scope.turn')],
+    ['all', t('graph.replay.scope.all')],
   ] as const) {
     const option = el('option', label)
     option.value = value
@@ -200,16 +212,19 @@ export function createJevDecisionGraph(
   const note = el('p')
   note.className = 'jev-graph-evidence'
   const zoomLabel = el('output')
-  zoomLabel.setAttribute('aria-label', '画布缩放比例')
-  const zoomOut = button('缩小画布', () => setZoom(zoom - 0.15), '−')
-  const zoomIn = button('放大画布', () => setZoom(zoom + 0.15), '+')
+  zoomLabel.setAttribute('aria-label', t('graph.zoom.label.aria'))
+  const zoomOut = button(t('graph.zoom.out'), () => setZoom(zoom - 0.15), '−')
+  const zoomIn = button(t('graph.zoom.in'), () => setZoom(zoom + 0.15), '+')
   const fit = button(
-    '适应画布',
+    t('graph.zoom.fit'),
     () => {
       autoFit = true
+      fitCamera = undefined
+      restoreFitAfterExpansion = false
+      expansionPreviousZoom = undefined
       applyZoom()
     },
-    '适应',
+    t('graph.zoom.fitShort'),
   )
   footer.append(zoomOut, zoomLabel, zoomIn, fit)
   root.append(toolbar, workspace, replay, footer, note)
@@ -228,6 +243,25 @@ export function createJevDecisionGraph(
   let canvasHeight = 680
   let zoom = 1
   let autoFit = true
+  let restoreFitAfterExpansion = false
+  let expansionPreviousZoom: number | undefined
+  let expansionStep = ''
+  let lastViewportWidth = 0
+  let reserveWidth = -1
+  let reservedHeads = 0
+  let suppliedHeads = 0
+  let fitCamera:
+    | {
+        width: number
+        windowWidth: number
+        windowHeight: number
+        canvasWidth: number
+        canvasHeight: number
+        zoom: number
+      }
+    | undefined
+  let followingActive = true
+  let lastActiveStage = ''
   let returnFocus: HTMLElement | undefined
   const expanded = new Set<string>()
   const canvasExpanded = new Set<string>()
@@ -322,8 +356,36 @@ export function createJevDecisionGraph(
     const diagram = scene.querySelector<HTMLElement>('.jev-circuit')
     const space = scene.querySelector<HTMLElement>('.jev-canvas-space')
     if (!diagram || !space) return
-    if (autoFit)
-      zoom = Math.min(1, Math.max(0.35, ((scene.clientWidth || canvasWidth + 32) - 32) / canvasWidth))
+    if (autoFit) {
+      const width = Math.max(1, (scene.clientWidth || canvasWidth + 32) - 32)
+      const height = Math.max(1, (scene.clientHeight || canvasHeight + 32) - 32)
+      const fitted = Math.min(1, Math.max(0.15, Math.min(width / canvasWidth, height / canvasHeight)))
+      const view = scene.ownerDocument.defaultView
+      const windowWidth = view?.innerWidth ?? 0
+      const windowHeight = view?.innerHeight ?? 0
+      if (scene.clientWidth && scene.clientHeight) {
+        // Content-driven height changes are not camera gestures during playback.
+        if (
+          !fitCamera ||
+          (!options.sharedReplay &&
+            through === undefined &&
+            !playing &&
+            (fitCamera.canvasWidth !== canvasWidth || fitCamera.canvasHeight !== canvasHeight)) ||
+          Math.abs(fitCamera.width - scene.clientWidth) > 2 ||
+          fitCamera.windowWidth !== windowWidth ||
+          fitCamera.windowHeight !== windowHeight
+        )
+          fitCamera = {
+            width: scene.clientWidth,
+            windowWidth,
+            windowHeight,
+            canvasWidth,
+            canvasHeight,
+            zoom: fitted,
+          }
+        zoom = fitCamera.zoom
+      } else zoom = fitted
+    }
     diagram.style.transform = `scale(${zoom})`
     space.style.width = `${canvasWidth * zoom}px`
     space.style.height = `${canvasHeight * zoom}px`
@@ -333,14 +395,24 @@ export function createJevDecisionGraph(
   }
   function setZoom(value: number) {
     autoFit = false
+    restoreFitAfterExpansion = false
+    expansionPreviousZoom = undefined
     zoom = Math.min(2, Math.max(0.35, value))
     applyZoom()
+  }
+  function finishExpansion() {
+    if (restoreFitAfterExpansion) autoFit = true
+    else if (expansionPreviousZoom !== undefined) zoom = expansionPreviousZoom
+    restoreFitAfterExpansion = false
+    expansionPreviousZoom = undefined
+    expansionStep = ''
   }
   const observer =
     typeof ResizeObserver === 'undefined'
       ? undefined
       : new ResizeObserver(() => {
-          if (Math.abs(Math.max(420, (scene.clientWidth || 632) - 32) - canvasWidth) > 2) draw()
+          const width = scene.clientWidth
+          if (Math.abs(width - lastViewportWidth) > 2) draw()
           else applyZoom()
         })
   function closeInspector() {
@@ -356,7 +428,11 @@ export function createJevDecisionGraph(
     history.hidden = kind !== 'history'
     evidence.hidden = kind !== 'evidence'
     detailTitle.textContent =
-      kind === 'candidates' ? '候选与采用关系' : kind === 'history' ? '调用轨迹' : '节点证据'
+      kind === 'candidates'
+        ? t('graph.panel.candidates')
+        : kind === 'history'
+          ? t('graph.panel.history')
+          : t('graph.evidence.title')
     candidatesButton.setAttribute('aria-expanded', String(kind === 'candidates'))
     historyButton.setAttribute('aria-expanded', String(kind === 'history'))
     detail.hidden = false
@@ -369,28 +445,29 @@ export function createJevDecisionGraph(
     raw.open = false
     facts.replaceChildren()
     const labels: Record<string, string> = {
-      tool: '工具',
-      purpose: '用途',
-      status: '状态',
-      operation: '操作',
-      phase: '目的',
-      requestedModel: '请求模型',
-      observedModel: '实际模型',
-      confidence: '置信度',
-      effect: '效果',
-      requestedSeq: '请求位置',
-      settledSeq: '结算位置',
-      seq: '账本位置',
+      tool: t('graph.field.tool'),
+      purpose: t('graph.field.purpose'),
+      status: t('graph.field.status'),
+      operation: t('graph.field.operation'),
+      phase: t('graph.field.phase'),
+      requestedModel: t('graph.field.requestedModel'),
+      observedModel: t('graph.field.observedModel'),
+      confidence: t('graph.field.confidence'),
+      effect: t('graph.field.effect'),
+      requestedSeq: t('graph.field.requestedSeq'),
+      settledSeq: t('graph.field.settledSeq'),
+      seq: t('graph.field.seq'),
     }
     for (const [key, label] of Object.entries(labels)) {
       const field = object(value)?.[key]
       if (typeof field === 'string' || typeof field === 'number')
         facts.append(el('dt', label), el('dd', String(field)))
     }
-    if (!facts.childElementCount) facts.append(el('dt', '记录'), el('dd', '已观测；展开下方查看完整证据'))
+    if (!facts.childElementCount)
+      facts.append(el('dt', t('graph.field.record')), el('dd', t('graph.field.recordFallback')))
     const serialized = text(value)
     detailText.textContent =
-      serialized.length > 24000 ? `${serialized.slice(0, 24000)}\n（显示截断）` : serialized
+      serialized.length > 24000 ? `${serialized.slice(0, 24000)}\n${t('graph.evidence.truncated')}` : serialized
   }
   function navigate(offset: number) {
     const index = select.selectedIndex + offset
@@ -398,6 +475,31 @@ export function createJevDecisionGraph(
     select.selectedIndex = index
     select.dispatchEvent(new Event('change'))
   }
+  scene.addEventListener(
+    'wheel',
+    () => {
+      followingActive = false
+    },
+    { passive: true },
+  )
+  scene.addEventListener(
+    'touchmove',
+    () => {
+      followingActive = false
+    },
+    { passive: true },
+  )
+  scene.addEventListener('pointerdown', (event) => {
+    if (event.target === scene) followingActive = false
+  })
+  scene.addEventListener('keydown', (event) => {
+    if (
+      ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'].includes(
+        event.key,
+      )
+    )
+      followingActive = false
+  })
   root.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !detail.hidden) {
       event.preventDefault()
@@ -411,6 +513,7 @@ export function createJevDecisionGraph(
     if (event.target === scene && event.key === '0') {
       event.preventDefault()
       autoFit = true
+      fitCamera = undefined
       applyZoom()
     }
   })
@@ -418,7 +521,6 @@ export function createJevDecisionGraph(
     emitCut()
     const scrollTop = scene.scrollTop
     const scrollLeft = scene.scrollLeft
-    scene.replaceChildren()
     pools.replaceChildren()
     history.replaceChildren()
     try {
@@ -429,7 +531,7 @@ export function createJevDecisionGraph(
       )
       select.replaceChildren(
         ...choices.map(({ turn, step, key }) => {
-          const option = el('option', `第 ${turn.number} 轮 · 步骤 ${step.number}`)
+          const option = el('option', t('graph.option.turnStep', { turn: turn.number, step: step.number }))
           option.value = key
           return option
         }),
@@ -443,6 +545,7 @@ export function createJevDecisionGraph(
       const turn =
         active?.turn ?? visible.turns.findLast((turn) => allTurns || !replayTurn || turn.id === replayTurn)
       const step = active?.step
+      if (expansionStep && expansionStep !== active?.key) finishExpansion()
       if (active) select.value = active.key
       select.disabled = options.sharedReplay === true || choices.length === 0
       previous.disabled = options.sharedReplay === true || select.selectedIndex <= 0
@@ -461,12 +564,12 @@ export function createJevDecisionGraph(
       nextEvent.disabled = index >= values.length - 1
       play.disabled = restart.disabled = values.length < 2
       scheduleReplay()
-      play.textContent = playing ? '暂停' : '播放'
-      play.setAttribute('aria-label', playing ? '暂停回放' : '播放回放')
+      play.textContent = playing ? t('graph.replay.pauseShort') : t('graph.replay.playShort')
+      play.setAttribute('aria-label', playing ? t('graph.replay.pause') : t('graph.replay.play'))
       play.setAttribute('aria-pressed', String(playing))
       position.textContent = allTurns
-        ? `${playing ? '全轮播放中' : through === undefined ? '全轮实时' : '全轮回放'} · #${through ?? full.throughSeq ?? 0}`
-        : `${playing ? '播放中' : through === undefined ? '实时' : '回放'} · #${through ?? full.throughSeq ?? 0}`
+        ? `${playing ? t('graph.replay.allPlaying') : through === undefined ? t('graph.replay.allLive') : t('graph.replay.allReplaying')} · #${through ?? full.throughSeq ?? 0}`
+        : `${playing ? t('graph.replay.playing') : through === undefined ? t('graph.live') : t('graph.replay.replaying')} · #${through ?? full.throughSeq ?? 0}`
       const request = step?.requests.findLast((value) => value.purpose === 'decision')
       activeRequestSeq = request?.requestedSeq
       const savedRequests = requestEntries()
@@ -486,15 +589,27 @@ export function createJevDecisionGraph(
         ...actions.map((value, index) => {
           const state =
             value.status === 'settled' && value.outcome
-              ? { success: '成功', error: '失败', cancelled: '已取消' }[value.outcome.outcome.kind]
+              ? {
+                  success: t('graph.action.outcome.success'),
+                  error: t('graph.action.outcome.error'),
+                  cancelled: t('graph.action.outcome.cancelled'),
+                }[value.outcome.outcome.kind]
               : {
-                  intended: '已准备',
-                  dispatching: '执行中',
-                  settled: '已结算',
-                  unknown: '效果未知',
-                  resolved: '已处理',
+                  intended: t('graph.action.state.intended'),
+                  dispatching: t('graph.action.state.dispatching'),
+                  settled: t('graph.action.state.settled'),
+                  unknown: t('graph.action.state.unknown'),
+                  resolved: t('graph.action.state.resolved'),
                 }[value.status]
-          const option = el('option', `动作 ${index + 1}/${actions.length} · ${value.tool} · ${state}`)
+          const option = el(
+            'option',
+            t('graph.action.option', {
+              index: index + 1,
+              total: actions.length,
+              tool: value.tool,
+              state,
+            }),
+          )
           option.value = value.intentId
           return option
         }),
@@ -525,403 +640,329 @@ export function createJevDecisionGraph(
       const routeData = route?.record.kind === 'resource.observed' ? object(route.record.resource) : undefined
       const reasons = Array.isArray(routeData?.reasons) ? routeData.reasons.map(text) : undefined
       const environment = observed.findLast((value) => value.record.kind === 'environment.observed')
+      const recordedLanguageContexts = observed.filter((value) => {
+        if (
+          value.record.kind !== 'model.requested' ||
+          !['agnes-language-v1', 'agnes-language-v2'].includes(value.record.call.codec) ||
+          (value.record.id !== helper?.id && value.record.id !== answer?.id)
+        )
+          return false
+        const native = object(object(value.record.call.input)?.['request'])
+        return Array.isArray(native?.['messages']) && Array.isArray(native?.['tools'])
+      })
+      const languageContext = recordedLanguageContexts.at(-1)
+
       const stop = turn?.stops.at(-1)
-      const diagram = el('div')
-      diagram.className = 'jev-circuit'
       const prefix = through ?? full.throughSeq ?? 0
       const advancing = previousPrefix !== undefined && prefix > previousPrefix
       if (previousPrefix !== undefined && prefix < previousPrefix) edgePulses.clear()
       previousPrefix = entries.length ? prefix : undefined
       for (const [key, started] of edgePulses) if (Date.now() - started >= 900) edgePulses.delete(key)
       const nextEdges = new Set<string>()
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-      // DSH's circuit separates decision, candidate and execution lanes. This layout keeps
-      // those lanes at readable native text size, reflowing to a taller canvas in narrow panes.
-      canvasWidth = Math.max(420, (scene.clientWidth || 632) - 32)
-      const usable = canvasWidth - 64
-      const leftWidth = Math.floor(usable * 0.28)
-      const candidateWidth = Math.floor(usable * 0.39)
-      const rightWidth = usable - leftWidth - candidateWidth
-      const candidateLeft = 32 + leftWidth
-      const right = candidateLeft + candidateWidth + 16
-      type Rect = { x: number; y: number; width: number; height: number }
-      const rect = (x: number, y: number, width: number, height = 82): Rect => ({ x, y, width, height })
-      // Reserve wrapped model/request lines at the native font size instead of clipping an 82px box.
-      const requestHeight = (value: string, width = leftWidth) =>
-        Math.max(
-          82,
-          40 +
-            value
-              .split('\n')
-              .reduce(
-                (lines, line) =>
-                  lines +
-                  Math.max(
-                    1,
-                    Math.ceil(
-                      [...line].reduce((width, char) => width + (char.charCodeAt(0) > 255 ? 15 : 7.5), 0) /
-                        Math.max(60, width - 20),
-                    ),
-                  ),
-                0,
-              ) *
-              18,
-        )
-      const decisionHeight = requestHeight(requestText(request))
-      const helperHeight = requestHeight(requestText(helper))
-      const answerHeight = requestHeight(requestText(answer))
       const gateBody = adopted
-        ? `${adopted.phase} → ${adopted.operation}\n${final && original && final.id !== original.id ? `原始 Jev：${original.operation} → 仲裁：${final.operation}` : reasons ? (reasons.length ? reasons.join(' / ') : '已记录门控通过') : '未观测门控记录'}`
-        : '等待采用选择'
-      const gateHeight = requestHeight(gateBody, rightWidth)
-      const actionY = Math.max(332, 208 + Math.max(decisionHeight, gateHeight) + 30)
-      const hostY = Math.max(444, actionY + Math.max(82, helperHeight) + 30)
-      const resultY = hostY + 112
-      const positions: Record<string, Rect> = {
-        ledger: rect(16, 16, canvasWidth - 32, 52),
-        context: rect(16, 106, leftWidth, 68),
-        decision: rect(16, 208, leftWidth, decisionHeight),
-        candidates: rect(candidateLeft, 80, candidateWidth, 26),
-        gate: rect(right, 208, rightWidth, gateHeight),
-        intent: rect(right, actionY, rightWidth),
-        host: rect(right, hostY, rightWidth, 72),
-        result: rect(right, resultY, rightWidth),
-        helper: rect(16, actionY, leftWidth, helperHeight),
-        answer: rect(16, resultY, leftWidth, answerHeight),
+        ? `${adopted.phase} → ${adopted.operation}\n${final && original && final.id !== original.id ? t('graph.gate.takeover', { model: requestModel(request, t), original: original.operation, final: final.operation }) : reasons ? (reasons.length ? reasons.join(' / ') : t('graph.gate.passed')) : t('graph.gate.unobserved')}`
+        : t('graph.gate.waiting')
+      const live =
+        options.liveMotion?.() === true &&
+        !options.sharedReplay &&
+        through === undefined &&
+        !playing &&
+        !stop &&
+        turn?.id === full.turns.at(-1)?.id &&
+        active?.key === choices.at(-1)?.key
+      const latestRequest = step?.requests.at(-1)
+      const decisionActive = live && request?.status === 'pending' && request === latestRequest
+      const helperActive = live && helper?.status === 'pending' && helper === latestRequest
+      const answerActive = live && answer?.status === 'pending' && answer === latestRequest
+      const hostActive = live && action?.status === 'dispatching' && action === actions.at(-1)
+      const requestState = (value?: TraceRequest) =>
+        value
+          ? value.status === 'pending'
+            ? t('graph.request.pendingSettlement')
+            : value.status === 'failed'
+              ? t('graph.request.failed')
+              : t('graph.request.settled')
+          : t('graph.request.none')
+      const helperTitle =
+        helper?.purpose === 'arbitration'
+          ? t('graph.helper.arbitration')
+          : helper?.purpose === 'parameters'
+            ? t('graph.helper.parameters')
+            : t('graph.helper.either')
+      lastViewportWidth = scene.clientWidth
+      if (reserveWidth !== lastViewportWidth) {
+        reservedHeads = 0
+        reserveWidth = lastViewportWidth
       }
-      const compactPools = el('div')
-      compactPools.className = 'jev-circuit-pools'
-      compactPools.style.left = `${candidateLeft}px`
-      compactPools.style.top = '116px'
-      compactPools.style.width = `${candidateWidth}px`
-      let poolHeight = 0
-      const ports: number[] = []
-      for (const [role, title] of [
-        ['phase', '目的 · Purpose'],
-        ['action', '条件操作 · Operation'],
-        ['binding', '参数绑定 · Binding'],
-      ] as const) {
-        const heads = request?.heads.filter((head) => head.role === role) ?? []
-        const group = el('section')
-        group.className = 'jev-compact-pool'
-        group.dataset.role = role
-        group.append(el('h4', title))
-        ports.push(116 + poolHeight + 16)
-        poolHeight += 40
-        if (!heads.length) {
-          group.append(el('small', '等待记录'))
-          poolHeight += 24
-        }
-        const dormant = heads.filter((head) => head.status === 'unconsumed' || head.status === 'pending')
-        const groupKey = `${active?.key}:${role}:dormant`
-        const showDormant = canvasExpanded.has(groupKey)
-        for (const head of heads.filter((head) => showDormant || !dormant.includes(head))) {
-          const headBlock = el('div')
-          headBlock.className = 'jev-compact-head'
-          headBlock.dataset.compactHead = head.key
-          headBlock.dataset.status = head.status
-          const headTitle = button(
-            `${head.key} · ${status[head.status]}`,
-            () => showPanel('candidates'),
-            head.key,
-          )
-          headTitle.className = 'jev-compact-head-title'
-          headTitle.replaceChildren(el('span', head.key), el('small', status[head.status]))
-          headBlock.append(headTitle)
-          poolHeight += 31
-          const expansionKey = `${active?.key}:${head.key}`
-          const isExpanded = canvasExpanded.has(expansionKey)
-          const defaultVisible = head.status !== 'pending' && head.status !== 'unconsumed' ? 2 : 0
-          if (isExpanded || defaultVisible > 0) {
-            const adopted = head.options.filter(
-              (option) => option.selected || (head.status === 'supporting' && option.key === head.selected),
-            )
-            const visibleOptions = [
-              ...adopted,
-              ...head.options.filter((option) => !adopted.includes(option)),
-            ].slice(0, isExpanded ? head.options.length : defaultVisible)
-            for (const option of visibleOptions) {
-              const optionNode = button(
-                `${option.key} · ${option.probability === undefined ? '概率未知' : `${(option.probability * 100).toFixed(1)}%`}`,
-                () => showDetail(option.key, { ...option, status: head.status }),
-                '',
-              )
-              optionNode.className = 'jev-compact-option'
-              optionNode.dataset.selected = String(option.selected)
-              optionNode.dataset.supporting = String(
-                head.status === 'supporting' && option.key === head.selected,
-              )
-              const line = el('span')
-              line.append(
-                el('strong', option.key),
-                el(
-                  'small',
-                  option.probability === undefined ? '—' : `${(option.probability * 100).toFixed(1)}%`,
-                ),
-              )
-              optionNode.append(line)
-              if (option.probability !== undefined) {
-                const meter = el('meter')
-                meter.min = 0
-                meter.max = 1
-                meter.value = option.probability
-                meter.setAttribute('aria-label', `${option.key} 概率`)
-                optionNode.append(meter)
-              }
-              headBlock.append(optionNode)
-              poolHeight += 40
-            }
+      const knownRequests = full.turns.flatMap((value) =>
+        value.steps.flatMap((item) => item.requests.filter((entry) => entry.purpose === 'decision')),
+      )
+      reservedHeads = Math.max(
+        reservedHeads,
+        suppliedHeads,
+        options.sharedReplay ? 8 : 0,
+        ...knownRequests.map((entry) => entry.heads.length),
+      )
+      const knownRequest = knownRequests.find((entry) => entry.id === request?.id)
+      const slots =
+        request?.heads.map((head, index) => {
+          const slot = knownRequest?.heads.findIndex((entry) => entry.key === head.key)
+          return slot !== undefined && slot >= 0 ? slot : index
+        }) ?? []
+      const circuit = renderJevCircuit({
+        t,
+        viewport: scene,
+        availableWidth: lastViewportWidth,
+        scope,
+        requestKey: request?.id ?? '',
+        reservation: { heads: reservedHeads, slots },
+        heads: request?.heads ?? [],
+        expanded: canvasExpanded,
+        prefix: active?.key ?? '',
+        stages: [
+          {
+            id: 'ledger',
+            title: t('graph.stage.ledger'),
+            body: turn
+              ? t('graph.stage.ledger.turn', {
+                  turn: turn.number,
+                  state: stop ? t('graph.stage.ledger.ended') : t('graph.stage.ledger.observed'),
+                })
+              : t('graph.stage.ledger.waiting'),
+            tone: 'evidence',
+            evidence: turn,
+            tooltip: turn
+              ? t('graph.stage.ledger.tooltip', { first: turn.firstSeq, last: turn.lastSeq })
+              : t('graph.stage.ledger.waitingTooltip'),
+          },
+          {
+            id: 'context',
+            title: t('graph.stage.context'),
+            body: environment ? t('graph.stage.context.observed') : t('graph.stage.context.waiting'),
+            tone: 'evidence',
+            evidence: environment?.record,
+            tooltip: environment
+              ? t('graph.stage.context.tooltip', { seq: environment.seq })
+              : t('graph.stage.context.waitingTooltip'),
+          },
+          {
+            id: 'language-context',
+            title: t('graph.stage.languageContext'),
+            body: languageContext
+              ? t('graph.stage.languageContext.observed')
+              : t('graph.stage.languageContext.waiting'),
+            tone: 'llm',
+            evidence: languageContext?.record,
+            active: (helperActive || answerActive) && languageContext?.record.id === latestRequest?.id,
+            tooltip: languageContext
+              ? t('graph.stage.languageContext.tooltip', { seq: languageContext.seq })
+              : t('graph.stage.languageContext.waitingTooltip'),
+          },
+          {
+            id: 'decision',
+            title: requestModel(request, t),
+            body: requestState(request),
+            tone: 'jev',
+            evidence: request,
+            active: decisionActive,
+            tooltip: requestText(request, t),
+          },
+          {
+            id: 'candidates',
+            title: t('graph.stage.candidates'),
+            body: t('graph.stage.candidates.body', { count: request?.heads.length ?? 0 }),
+            tone: 'jev',
+            evidence: request?.heads,
+          },
+          {
+            id: 'gate',
+            title: t('graph.stage.gate'),
+            body: adopted ? `${adopted.phase} → ${adopted.operation}` : t('graph.gate.waiting'),
+            tone: reasons?.length ? 'critical' : 'jev',
+            evidence: adopted ? { original, adopted, route: routeData } : undefined,
+            tooltip: gateBody,
+          },
+          {
+            id: 'intent',
+            title: t('graph.stage.intent'),
+            body: action
+              ? `${action.tool}${actions.length > 1 ? t('graph.stage.intent.action', { index: actions.indexOf(action) + 1, total: actions.length }) : ''}`
+              : responsePath
+                ? t('graph.stage.intent.answerPath')
+                : t('graph.stage.intent.none'),
+            tone: 'tool',
+            evidence: action,
+            tooltip: action
+              ? t('graph.stage.intent.tooltip', { tool: action.tool, seq: action.intendedSeq })
+              : t('graph.stage.intent.none'),
+          },
+          {
+            id: 'host',
+            title: t('graph.stage.host'),
+            body: hostActive
+              ? t('graph.stage.host.waitingTool')
+              : action?.dispatchingSeq
+                ? t('graph.stage.host.dispatched')
+                : responsePath
+                  ? t('graph.stage.host.noDispatch')
+                  : t('graph.stage.host.waitingDispatch'),
+            tone: 'tool',
+            evidence: action?.dispatchingSeq ? action : undefined,
+            active: hostActive,
+            tooltip: action?.dispatchingSeq
+              ? t('graph.stage.host.tooltip', { seq: action.dispatchingSeq, status: action.status })
+              : t('graph.stage.host.waitingTooltip'),
+          },
+          {
+            id: 'result',
+            title: t('graph.stage.result'),
+            body: action?.outcome
+              ? t('graph.stage.result.body', {
+                  outcome: action.outcome.outcome.kind,
+                  effect: action.outcome.effect,
+                })
+              : responsePath
+                ? t('graph.stage.result.answerPath')
+                : t('graph.stage.result.unobserved'),
+            tone: action?.status === 'unknown' ? 'critical' : 'evidence',
+            evidence: action?.outcome ? action : undefined,
+          },
+          {
+            id: 'helper',
+            title: helperTitle,
+            body: requestState(helper),
+            tone: 'llm',
+            evidence: helper,
+            active: helperActive,
+            tooltip: `${requestText(helper, t)}\n${helper?.purpose === 'arbitration' ? t('graph.helper.tooltip.arbitration') : helper?.purpose === 'parameters' ? t('graph.helper.tooltip.parameters') : t('graph.helper.tooltip.waiting')}`,
+          },
+          {
+            id: 'answer',
+            title: t('graph.stage.answer'),
+            body: requestState(answer),
+            tone: 'llm',
+            evidence: answer,
+            active: answerActive,
+            tooltip: requestText(answer, t),
+          },
+        ],
+        edges: {
+          'ledger-context': { observed: !!environment, tone: 'evidence' },
+          'ledger-language-context': {
+            observed: !!languageContext,
+            active: !!languageContext && (helperActive || answerActive),
+            tone: 'llm',
+          },
+          'language-context-helper': {
+            observed: recordedLanguageContexts.some((value) => value.record.id === helper?.id),
+            active: helperActive && recordedLanguageContexts.some((value) => value.record.id === helper?.id),
+            tone: 'llm',
+          },
+          'language-context-answer': {
+            observed: recordedLanguageContexts.some((value) => value.record.id === answer?.id),
+            active: answerActive && recordedLanguageContexts.some((value) => value.record.id === answer?.id),
+            tone: 'llm',
+          },
+          'context-request': { observed: !!request, active: decisionActive, tone: 'jev' },
+          'request-candidates': { observed: !!request, active: decisionActive, tone: 'jev' },
+          'candidates-gate': { observed: !!original, tone: 'jev' },
+          'gate-intent': { observed: !!action && !helper, tone: 'tool' },
+          'intent-dispatch': {
+            observed: action?.dispatchingSeq !== undefined,
+            active: hostActive,
+            tone: 'tool',
+          },
+          'dispatch-settlement': {
+            observed: action?.settledSeq !== undefined,
+            active: hostActive,
+            tone: 'tool',
+          },
+          'result-ledger': { observed: action?.settledSeq !== undefined, tone: 'evidence' },
+          'gate-helper': { observed: !!helper, active: helperActive, tone: 'llm' },
+          'helper-intent': { observed: !!helper && !!action, tone: 'llm' },
+          'gate-answer': { observed: !!answer, active: answerActive, tone: 'llm' },
+          'answer-ledger': { observed: answer?.settledSeq !== undefined, tone: 'evidence' },
+        },
+        edge(svg, name, pathData, observed, moving, tone) {
+          const path = document.createElementNS(svg.namespaceURI, 'path')
+          path.setAttribute('d', pathData)
+          path.setAttribute('class', observed ? 'jev-edge observed' : 'jev-edge')
+          path.setAttribute('data-edge', name)
+          path.setAttribute('data-observed', String(observed))
+          path.setAttribute('data-active', String(moving))
+          path.setAttribute('data-tone', tone)
+          svg.append(path)
+          if (moving) {
+            const packet = path.cloneNode() as SVGElement
+            packet.removeAttribute('data-edge')
+            packet.setAttribute('data-flow-edge', name)
+            packet.setAttribute('class', 'jev-flow-packet')
+            packet.setAttribute('pathLength', '100')
+            packet.setAttribute('aria-hidden', 'true')
+            svg.append(packet)
           }
-          if (head.options.length > defaultVisible) {
-            const toggle = button(
-              `${isExpanded ? '收起' : '展开'} ${head.key} 候选`,
-              () => {
-                if (isExpanded) canvasExpanded.delete(expansionKey)
-                else canvasExpanded.add(expansionKey)
-                draw()
-                Array.from(scene.querySelectorAll<HTMLButtonElement>('[data-candidate-toggle]'))
-                  .find((element) => element.dataset.candidateToggle === head.key)
-                  ?.focus()
-              },
-              isExpanded ? '收起' : `+${head.options.length - defaultVisible} 候选`,
-            )
-            toggle.dataset.candidateToggle = head.key
-            toggle.className = 'jev-candidate-toggle'
-            toggle.setAttribute('aria-expanded', String(isExpanded))
-            headBlock.append(toggle)
-            poolHeight += 28
-          }
-          group.append(headBlock)
-        }
-        if (dormant.length) {
-          const toggle = button(
-            `${showDormant ? '收起' : '展开'} ${title} 未采用组`,
-            () => {
-              if (showDormant) canvasExpanded.delete(groupKey)
-              else canvasExpanded.add(groupKey)
-              draw()
-              scene.querySelector<HTMLButtonElement>(`[data-group-toggle="${role}"]`)?.focus()
-            },
-            showDormant
-              ? '− 收起其余组'
-              : `+ ${dormant.length} 组${request?.settledSeq === undefined ? '待结算' : '未采用'}候选`,
-          )
-          toggle.className = 'jev-candidate-toggle jev-group-toggle'
-          toggle.dataset.groupToggle = role
-          toggle.setAttribute('aria-expanded', String(showDormant))
-          group.append(toggle)
-          poolHeight += 30
-        }
-        compactPools.append(group)
-        poolHeight += 12
-      }
-      const canvasSpace = el('div')
-      canvasSpace.className = 'jev-canvas-space'
-      diagram.style.width = `${canvasWidth}px`
-      diagram.append(compactPools)
-      canvasSpace.append(diagram)
-      scene.append(canvasSpace)
-      // Use rendered pool geometry so wrapping, fonts and disclosure never detach the ports.
-      if (compactPools.offsetHeight > 0) {
-        poolHeight = compactPools.offsetHeight
-        Array.from(compactPools.children).forEach((group, index) => {
-          ports[index] = 116 + (group as HTMLElement).offsetTop + 16
-        })
-      }
-      canvasHeight = Math.max(680, 116 + poolHeight + 40, resultY + Math.max(82, answerHeight) + 40)
-      diagram.style.width = `${canvasWidth}px`
-      diagram.style.height = `${canvasHeight}px`
-      svg.setAttribute('viewBox', `0 0 ${canvasWidth} ${canvasHeight}`)
-      svg.setAttribute('aria-label', '账本、决策、门控、工具与语言模型分支')
-      svg.setAttribute('role', 'img')
-      const edge = (name: string, d: string, active: boolean) => {
-        const path = document.createElementNS(svg.namespaceURI, 'path')
-        path.setAttribute('d', d)
-        path.setAttribute('class', active ? 'jev-edge observed' : 'jev-edge')
-        path.setAttribute('data-edge', name)
-        path.setAttribute('data-observed', String(active))
-        svg.append(path)
-        const key = `${scope}:${select.value}:${name}`
-        if (active) {
+          const key = `${scope}:${select.value}:${name}`
+          if (!observed) return
           nextEdges.add(key)
           if (advancing && !observedEdges.has(key)) edgePulses.set(key, Date.now())
           const started = edgePulses.get(key)
           if (started !== undefined && Date.now() - started < 900) {
             const pulse = path.cloneNode() as SVGElement
             pulse.removeAttribute('data-edge')
+            pulse.setAttribute('data-pulse-edge', name)
             pulse.removeAttribute('data-observed')
-            pulse.setAttribute('d', d.split(' m')[0]!)
+            pulse.removeAttribute('data-active')
             pulse.setAttribute('class', 'jev-edge-pulse')
             pulse.setAttribute('pathLength', '100')
             pulse.setAttribute('aria-hidden', 'true')
             pulse.style.animationDelay = `-${Date.now() - started}ms`
             svg.append(pulse)
           } else edgePulses.delete(key)
-        }
-      }
-      const center = (id: string) => positions[id]!.x + positions[id]!.width / 2
-      const rightEdge = right + rightWidth
-      const candidateRail = candidateLeft + candidateWidth + 7
-      const requestPort = positions.decision!.y + decisionHeight / 2
-      const gatePort = positions.gate!.y + gateHeight / 2
-      edge('ledger-context', `M${center('context')} 68 V104 m-4 -6 l4 6 4 -6`, !!environment)
-      edge('context-request', `M${center('context')} 174 V206 m-4 -6 l4 6 4 -6`, !!request)
-      edge('request-candidates', `M${16 + leftWidth} ${requestPort} H${candidateLeft - 7}`, !!request)
-      edge('candidates-gate', `M${candidateRail} ${gatePort} H${right - 2} m-6 -4 l6 4 -6 4`, !!original)
-      edge(
-        'gate-intent',
-        `M${center('gate')} ${208 + gateHeight} V${actionY - 2} m-4 -6 l4 6 4 -6`,
-        !!action && !helper,
-      )
-      edge(
-        'intent-dispatch',
-        `M${center('intent')} ${actionY + 82} V${hostY - 2} m-4 -6 l4 6 4 -6`,
-        action?.dispatchingSeq !== undefined,
-      )
-      edge(
-        'dispatch-settlement',
-        `M${center('host')} ${hostY + 72} V${resultY - 2} m-4 -6 l4 6 4 -6`,
-        action?.settledSeq !== undefined,
-      )
-      edge(
-        'result-ledger',
-        `M${rightEdge} ${resultY + 41} H${canvasWidth - 5} V42 H${canvasWidth - 16} m6 -4 l-6 4 6 4`,
-        action?.settledSeq !== undefined,
-      )
-      edge(
-        'gate-helper',
-        `M${right} ${208 + gateHeight - 10} H${candidateRail} V${canvasHeight - 20} H8 V${actionY + helperHeight / 2} H14 m-6 -4 l6 4 -6 4`,
-        !!helper,
-      )
-      edge(
-        'helper-intent',
-        `M${16 + leftWidth} ${actionY + helperHeight / 2} H${candidateLeft - 7} V92 H${center('intent')} V${actionY - 2} m-4 -6 l4 6 4 -6`,
-        !!helper && !!action,
-      )
-      edge(
-        'gate-answer',
-        `M${right} ${208 + gateHeight - 4} H${candidateRail} V${canvasHeight - 12} H${center('answer')} V${resultY + answerHeight + 2} m-4 6 l4 -6 4 6`,
-        !!answer,
-      )
-      edge(
-        'answer-ledger',
-        `M16 ${resultY + answerHeight / 2} H4 V42 H14 m-6 -4 l6 4 -6 4`,
-        answer?.settledSeq !== undefined,
-      )
-      for (const [index, y] of ports.entries()) {
-        const headRole = ['phase', 'action', 'binding'][index]
-        const consumed =
-          request?.heads.some(
-            (head) => head.role === headRole && ['consumed', 'deterministic'].includes(head.status),
-          ) ?? false
-        edge(
-          `candidate-input-${index}`,
-          `M${candidateLeft - 7} ${requestPort} V${y} H${candidateLeft}`,
-          !!request,
-        )
-        edge(
-          `candidate-output-${index}`,
-          `M${candidateLeft + candidateWidth} ${y} H${candidateRail} V${gatePort}`,
-          consumed,
-        )
-      }
-      diagram.append(svg, compactPools)
+        },
+        onStage(stage) {
+          if (stage.id === 'decision') openRequest()
+          else if (stage.id === 'candidates') showPanel('candidates')
+          else showDetail(stage.title, stage.evidence)
+        },
+        onHead() {
+          showPanel('candidates')
+        },
+        onOption(head, option, state) {
+          showDetail(option.key, { ...option, question: head.key, headStatus: head.status, status: state })
+        },
+        onToggle(head) {
+          const key = `${active?.key}:${head.key}`
+          const prefix = `${active?.key}:`
+          const hasVisibleExpansion = () => [...canvasExpanded].some((value) => value.startsWith(prefix))
+          if (canvasExpanded.has(key)) {
+            canvasExpanded.delete(key)
+            if (!hasVisibleExpansion()) finishExpansion()
+          } else {
+            if (!hasVisibleExpansion()) {
+              restoreFitAfterExpansion = autoFit
+              expansionPreviousZoom = zoom
+              expansionStep = active?.key ?? ''
+            }
+            canvasExpanded.add(key)
+            autoFit = false
+            zoom = restoreFitAfterExpansion ? 1 : Math.max(0.65, zoom)
+          }
+          draw()
+          Array.from(scene.querySelectorAll<HTMLButtonElement>('[data-candidate-toggle]'))
+            .find((element) => element.dataset.candidateToggle === head.key)
+            ?.focus()
+        },
+      })
+      canvasWidth = circuit.width
+      canvasHeight = circuit.height
       observedEdges = nextEdges
-      function node(id: string, title: string, body: string, _x: number, _y: number, evidence?: unknown) {
-        const button = el('button')
-        button.type = 'button'
-        button.className = 'jev-stage'
-        button.dataset.stage = id
-        const pos = positions[id]!
-        button.style.left = `${pos.x}px`
-        button.style.top = `${pos.y}px`
-        button.style.width = `${pos.width}px`
-        button.style.height = `${pos.height}px`
-        button.append(el('strong', title), el('span', body))
-        button.disabled = evidence === undefined
-        if (evidence !== undefined) {
-          button.dataset.observed = 'true'
-          button.addEventListener('click', () =>
-            id === 'decision'
-              ? openRequest()
-              : id === 'candidates'
-                ? showPanel('candidates')
-                : showDetail(title, evidence),
-          )
-        }
-        diagram.append(button)
-      }
-      node(
-        'ledger',
-        '① 账本',
-        turn ? `第 ${turn.number} 轮\n#${turn.firstSeq}–${turn.lastSeq}` : '等待记录',
-        20,
-        30,
-        turn,
-      )
-      node(
-        'context',
-        '② 决策上下文',
-        environment ? `环境观察 #${environment.seq}` : '未观测环境记录',
-        200,
-        30,
-        environment?.record,
-      )
-      node('decision', '③ Jev 请求', requestText(request), 380, 30, request)
-      node('candidates', '④ 候选池', `${request?.heads.length ?? 0} 题`, 560, 30, request?.heads)
-      node(
-        'gate',
-        '⑤ 采用与门控',
-        gateBody,
-        560,
-        180,
-        adopted ? { original, adopted, route: routeData } : undefined,
-      )
-      node(
-        'intent',
-        '⑥ 冻结动作意图',
-        action
-          ? `${action.tool}\n${actions.length > 1 ? `动作 ${actions.indexOf(action) + 1}/${actions.length} · ` : ''}意图 #${action.intendedSeq}`
-          : responsePath
-            ? '采用回答路径'
-            : '尚无动作意图',
-        380,
-        180,
-        action,
-      )
-      node(
-        'host',
-        '⑦ 宿主派发',
-        action?.dispatchingSeq
-          ? `派发尝试 #${action.dispatchingSeq}`
-          : responsePath
-            ? '本步骤未派发工具'
-            : '等待派发记录',
-        200,
-        180,
-        action?.dispatchingSeq ? action : undefined,
-      )
-      node(
-        'result',
-        '⑧ 工具结算 → 账本',
-        action?.outcome
-          ? `outcome: ${action.outcome.outcome.kind}\neffect: ${action.outcome.effect}\n${action.resolution ? `resolution: ${action.resolution.resolution}` : action.status}`
-          : responsePath
-            ? '不适用 · 回答路径'
-            : '未观测结算；效果未知',
-        20,
-        180,
-        action?.outcome ? action : undefined,
-      )
-      node('helper', 'LLM 补参 / 仲裁', requestText(helper), 380, 330, helper)
-      node('answer', 'LLM 回答 → 账本', requestText(answer), 560, 330, answer)
       applyZoom()
-      pools.append(el('p', '并行问题 · 实线采用，虚线支持'))
+      pools.append(el('p', t('graph.pools.note')))
       for (const [role, title] of [
-        ['phase', 'Purpose 目的'],
-        ['action', 'Conditional operation 条件操作'],
-        ['binding', 'Binding 参数绑定'],
-        ['other', '其他问题'],
+        ['phase', t('graph.pools.group.phase')],
+        ['action', t('graph.pools.group.action')],
+        ['binding', t('graph.pools.group.binding')],
+        ['other', t('graph.pools.group.other')],
       ] as const) {
         const heads = request?.heads.filter((head) => head.role === role) ?? []
         if (!heads.length) continue
@@ -940,7 +981,7 @@ export function createJevDecisionGraph(
           card.append(
             el(
               'summary',
-              `${head.key} · ${status[head.status]}${head.selected ? ` · ${head.selected}` : ''}`,
+              `${head.key} · ${headStatus[head.status]}${head.selected ? ` · ${head.selected}` : ''}`,
             ),
           )
           const summaryOptions = el(
@@ -962,7 +1003,7 @@ export function createJevDecisionGraph(
               el('strong', option.key),
               el(
                 'span',
-                ` · ${option.selected ? '采用' : head.status === 'supporting' && option.key === head.selected ? '支持' : '候选'} · ${option.probability === undefined ? '概率 —' : `${(option.probability * 100).toFixed(1)}%`}`,
+                ` · ${option.selected ? t('graph.option.adopted') : head.status === 'supporting' && option.key === head.selected ? t('graph.option.supporting') : t('graph.option.candidate')} · ${option.probability === undefined ? t('graph.option.probabilityNone') : `${(option.probability * 100).toFixed(1)}%`}`,
               ),
             )
             if (option.probability !== undefined) {
@@ -970,7 +1011,7 @@ export function createJevDecisionGraph(
               meter.min = 0
               meter.max = 1
               meter.value = option.probability
-              meter.setAttribute('aria-label', `${option.key} 概率`)
+              meter.setAttribute('aria-label', t('graph.option.probability.aria', { key: option.key }))
               item.append(meter)
             }
             item.append(el('pre', text(option.criterion)))
@@ -985,10 +1026,10 @@ export function createJevDecisionGraph(
         }
         pools.append(group)
       }
-      history.append(el('h4', '本步骤调用与回答轨迹'))
+      history.append(el('h4', t('graph.history.title')))
       for (const request of step?.requests ?? []) {
         const item = el('details')
-        item.append(el('summary', requestText(request)))
+        item.append(el('summary', requestText(request, t)))
         const settlement = observed.find(
           (value) => value.record.kind === 'model.settled' && value.record.requested === request.id,
         )
@@ -1002,10 +1043,13 @@ export function createJevDecisionGraph(
           const content = Array.isArray(output?.content) ? output.content : []
           const answerText = content
             .map((block) =>
-              object(block)?.kind === 'text' ? String(object(block)?.text ?? '') : '[非文本内容]',
+              object(block)?.kind === 'text'
+                ? String(object(block)?.text ?? '')
+                : t('graph.history.nonText'),
             )
             .join('\n')
-          if (answerText) history.append(el('p', `已记录模型回答 #${settlement?.seq}：${answerText}`))
+          if (answerText)
+            history.append(el('p', t('graph.history.answer', { seq: String(settlement?.seq), answer: answerText })))
         }
       }
       for (const entry of observed) {
@@ -1015,7 +1059,10 @@ export function createJevDecisionGraph(
           history.append(
             el(
               'p',
-              `回答审核 #${entry.seq}：${text(review.stage)}${review.verdict ? ` · ${text(review.verdict)}` : ''}`,
+              t('graph.history.review', {
+                seq: entry.seq,
+                stage: `${text(review.stage)}${review.verdict ? ` · ${text(review.verdict)}` : ''}`,
+              }),
             ),
           )
       }
@@ -1023,23 +1070,68 @@ export function createJevDecisionGraph(
         history.append(
           el(
             'p',
-            `原始 Jev 选择：${original.operation} · #${original.seq}${final && final.id !== original.id ? `；最终动作选择：${final.operation} · #${final.seq}` : ''}`,
+            `${t('graph.history.original', { operation: original.operation, seq: original.seq })}${final && final.id !== original.id ? t('graph.history.final', { operation: final.operation, seq: final.seq }) : ''}`,
           ),
         )
       if (stop)
         history.append(
           el(
             'p',
-            `轮次停止 #${stop.seq}：${stop.reason} · ${stop.detail}；停止时未决意图：${stop.unresolved.join(', ') || '无'}`,
+            t('graph.history.stop', {
+              seq: stop.seq,
+              reason: stop.reason,
+              detail: stop.detail,
+              unresolved: stop.unresolved.join(', ') || t('graph.history.stopNone'),
+            }),
           ),
         )
-      note.textContent = entries.length ? '实线 · 已观测   虚线 · 待观测' : '等待 Jev 记录'
+      note.textContent = entries.length
+        ? options.sharedReplay
+          ? t('graph.note.shared')
+          : t('graph.note.local')
+        : t('graph.note.waiting')
+      note.title = options.sharedReplay ? t('graph.note.sharedTitle') : t('graph.note.localTitle')
       scene.scrollTop = scrollTop
       scene.scrollLeft = scrollLeft
+      const activeStage = scene.querySelector<HTMLElement>(
+        '.jev-stage[data-active="true"]:not([data-stage="language-context"])',
+      )
+      const activeKey = activeStage
+        ? `${active?.key}:${activeStage.dataset.stage}:${latestRequest?.id}:${action?.intentId}`
+        : ''
+      if (
+        activeStage &&
+        activeKey &&
+        activeKey !== lastActiveStage &&
+        followingActive &&
+        !autoFit &&
+        scene.clientWidth &&
+        scene.clientHeight
+      ) {
+        const x = (parseFloat(activeStage.style.left) + parseFloat(activeStage.style.width) / 2) * zoom
+        const y = (parseFloat(activeStage.style.top) + parseFloat(activeStage.style.height) / 2) * zoom
+        const width = scene.clientWidth,
+          height = scene.clientHeight
+        const marginX = width * 0.18,
+          marginY = height * 0.18
+        const left =
+          x < scrollLeft + marginX || x > scrollLeft + width - marginX
+            ? Math.max(0, Math.min(x - width / 2, canvasWidth * zoom - width + 32))
+            : scrollLeft
+        const top =
+          y < scrollTop + marginY || y > scrollTop + height - marginY
+            ? Math.max(0, Math.min(y - height / 2, canvasHeight * zoom - height + 32))
+            : scrollTop
+        if (left !== scrollLeft || top !== scrollTop) scene.scrollTo({ left, top, behavior: 'auto' })
+      }
+      lastActiveStage = activeKey
     } catch (error) {
       pause()
       closeInspector()
-      note.textContent = `流程图证据不完整或无效：${error instanceof Error ? error.message : String(error)}。可查看原始记录。`
+      scene.replaceChildren()
+      note.textContent = t('graph.error.incomplete', {
+        message: error instanceof Error ? error.message : String(error),
+      })
       note.setAttribute('role', 'alert')
     }
   }
@@ -1073,7 +1165,7 @@ export function createJevDecisionGraph(
     draw()
   })
   return {
-    update(events: readonly EventEnvelope[], sessionId: string) {
+    update(events: readonly EventEnvelope[], sessionId: string, reservation?: { heads: number }) {
       if (options.sharedReplay) {
         pause()
         selected = ''
@@ -1090,7 +1182,16 @@ export function createJevDecisionGraph(
         scopeSelect.value = 'turn'
         scope = sessionId
         autoFit = true
+        restoreFitAfterExpansion = false
+        expansionPreviousZoom = undefined
+        expansionStep = ''
+        zoom = 1
+        followingActive = true
+        lastActiveStage = ''
         canvasHeight = 680
+        reserveWidth = -1
+        reservedHeads = 0
+        suppliedHeads = 0
         observer?.disconnect()
         if (sessionId) observer?.observe(scene)
         selected = ''
@@ -1103,7 +1204,10 @@ export function createJevDecisionGraph(
         observedEdges.clear()
         edgePulses.clear()
         closeInspector()
+        fitCamera = undefined
       }
+      if (reservation && Number.isSafeInteger(reservation.heads) && reservation.heads >= 0)
+        suppliedHeads = Math.max(suppliedHeads, reservation.heads)
       note.removeAttribute('role')
       try {
         entries = jevTraceEntries(events)
@@ -1117,7 +1221,9 @@ export function createJevDecisionGraph(
         pools.replaceChildren()
         history.replaceChildren()
         note.setAttribute('role', 'alert')
-        note.textContent = `无法投影 Jev 记录：${error instanceof Error ? error.message : String(error)}`
+        note.textContent = t('graph.error.project', {
+          message: error instanceof Error ? error.message : String(error),
+        })
         emitCut()
       }
     },

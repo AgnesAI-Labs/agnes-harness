@@ -3,51 +3,85 @@ import type {
   ComparisonPriceDetailsParams,
   ComparisonPriceDetailsResult,
 } from '@agnes/protocol'
+import type { Translate } from './jev-locale.js'
 
 export type PriceDetailsLoader = (
   input: ComparisonPriceDetailsParams,
 ) => Promise<ComparisonPriceDetailsResult>
-const purposes: Record<string, string> = {
-  inference: '原生推理',
-  decision: '决策',
-  parameters: '参数生成',
-  arbitration: '仲裁',
-  answer: '回答',
-  compaction: '压缩摘要',
-  title: '会话标题',
-  media: '媒体',
+
+const purposeKeys: Record<string, string> = {
+  inference: 'price.purpose.inference',
+  decision: 'price.purpose.decision',
+  parameters: 'price.purpose.parameters',
+  arbitration: 'price.purpose.arbitration',
+  answer: 'price.purpose.answer',
+  compaction: 'price.purpose.compaction',
+  title: 'price.purpose.title',
+  media: 'price.purpose.media',
 }
-const labels = { inputUncached: '未缓存输入', cacheRead: '缓存读取', cacheWrite: '缓存写入', output: '输出' }
-const total = (value: ComparisonPriceDetailsResult['entries'][number]['estimate'] | undefined) =>
+
+const outcomeKeys: Record<string, string> = {
+  pending: 'price.outcome.pending',
+  completed: 'price.outcome.completed',
+  failed: 'price.outcome.failed',
+  cancelled: 'price.outcome.cancelled',
+  unknown: 'price.outcome.unknown',
+}
+
+const issueKeys: Record<string, string> = {
+  pending: 'price.issue.pending',
+  missing_quote: 'price.issue.missingQuote',
+  observed_model_mismatch: 'price.issue.modelMismatch',
+  quote_binding_mismatch: 'price.issue.bindingMismatch',
+  invalid_price_interval: 'price.issue.intervalUnknown',
+  missing_usage: 'price.issue.missingUsage',
+  missing_rate: 'price.issue.missingRate',
+  incomplete_evidence: 'price.issue.incompleteEvidence',
+}
+
+const bucketKeys = {
+  inputUncached: 'price.bucket.inputUncached',
+  cacheRead: 'price.bucket.cacheRead',
+  cacheWrite: 'price.bucket.cacheWrite',
+  output: 'price.bucket.output',
+} as const
+
+function labelFor(keys: Record<string, string>, name: string, t: Translate): string {
+  const key = keys[name]
+  return key === undefined ? name : t(key)
+}
+
+const total = (value: ComparisonPriceDetailsResult['entries'][number]['estimate'] | undefined, t: Translate) =>
   value === undefined
-    ? '未知'
+    ? t('price.unknown')
     : value.state === 'complete' && value.value !== null
       ? String(value.value)
       : value.knownSubtotal !== null
-        ? `已知小计 ${value.knownSubtotal}（非总量）`
-        : '未知'
+        ? t('price.subtotal', { value: value.knownSubtotal })
+        : t('price.unknown')
 
 /** Lazy pages belong to this exact committed cursor; disposed or older replies never render. */
 export function createComparisonPriceDetails(
   host: HTMLElement,
   value: ComparisonMetricsResult,
   lane: ComparisonMetricsResult['lanes'][number],
-  load?: PriceDetailsLoader,
-  memberSessionId?: string,
+  load: PriceDetailsLoader | undefined,
+  memberSessionId: string | undefined,
+  t: Translate,
 ) {
   const panel = document.createElement('details')
   panel.className = 'comparison-price-details'
   const summary = document.createElement('summary')
   summary.textContent = memberSessionId
-    ? `子会话 ${memberSessionId} · 报价依据与逐请求费用`
-    : '父会话 · 报价依据与逐请求费用'
+    ? t('price.summary.member', { id: memberSessionId })
+    : t('price.summary.parent')
   const status = document.createElement('p')
   status.setAttribute('role', 'status')
-  status.textContent = load ? '展开读取当前前缀的报价与估算来源。' : '报价详情读取不可用。'
+  status.textContent = load ? t('price.status.idle') : t('price.status.unavailable')
   const body = document.createElement('div')
   const more = document.createElement('button')
   more.type = 'button'
-  more.textContent = '读取更多请求'
+  more.textContent = t('price.more')
   more.hidden = true
   panel.append(summary, status, body, more)
   host.append(panel)
@@ -62,7 +96,10 @@ export function createComparisonPriceDetails(
     if (disposed || pending || complete || !load) return
     pending = true
     more.disabled = true
-    status.textContent = `正在读取共享 journal #${value.atSeq} · 本侧 #${lane.accounting.throughSeq}`
+    status.textContent = t('price.status.reading', {
+      at: value.atSeq,
+      through: lane.accounting.throughSeq,
+    })
     try {
       const page = await load({
         id: value.id,
@@ -107,28 +144,50 @@ export function createComparisonPriceDetails(
         seen.add(entry.attemptId)
         const row = document.createElement('section')
         const heading = document.createElement('h5')
-        heading.textContent = `${entry.family === 'jev' ? 'Jev 决策' : 'LLM 语言'} · ${entry.purpose === null ? '未知用途' : (purposes[entry.purpose] ?? entry.purpose)} · 本侧 #${entry.originSeq}`
+        heading.textContent = t('price.entry.heading', {
+          family: entry.family === 'jev' ? t('price.family.jev') : t('price.family.llm'),
+          purpose:
+            entry.purpose === null
+              ? t('price.purpose.unknown')
+              : labelFor(purposeKeys, entry.purpose, t),
+          seq: entry.originSeq,
+        })
         const model = document.createElement('p')
-        model.textContent = `请求 ${entry.route ?? '未知路由'} / ${entry.model ?? '未知模型'} · 实际 ${entry.observedModel ?? '未知模型'} · ${{ pending: '待定', completed: '完成', failed: '失败', cancelled: '取消', unknown: '未知' }[entry.outcome]}`
+        model.textContent = t('price.entry.model', {
+          route: entry.route ?? t('price.route.unknown'),
+          model: entry.model ?? t('price.model.unknown'),
+          observed: entry.observedModel ?? t('price.model.unknown'),
+          outcome: t(outcomeKeys[entry.outcome] ?? 'price.outcome.unknown'),
+        })
         row.append(heading, model)
         const quote = entry.quote
         const price = document.createElement('p')
         price.textContent = quote
-          ? `${entry.priceBasis === 'current' ? '按当前配置重估（未写入历史记录）' : quote.basis === 'configured' ? '冻结的配置报价' : '冻结的目录估算'} · ${quote.policy.currency} / 百万 token · 倍率 ${entry.multiplier ?? '未知'} · 请求时间 ${new Date(quote.admittedAt).toISOString()}`
-          : '未知（无有效历史报价）'
+          ? t('price.quote', {
+              basis:
+                entry.priceBasis === 'current'
+                  ? t('price.basis.current')
+                  : quote.basis === 'configured'
+                    ? t('price.basis.configured')
+                    : t('price.basis.catalog'),
+              currency: quote.policy.currency,
+              multiplier: entry.multiplier ?? t('price.unknown'),
+              time: new Date(quote.admittedAt).toISOString(),
+            })
+          : t('price.quote.none')
         row.append(price)
         if (quote) {
           const rates = document.createElement('p')
-          rates.textContent = Object.entries(labels)
+          rates.textContent = Object.entries(bucketKeys)
             .map(
-              ([bucket, label]) =>
-                `${label} ${quote.policy.perMillion[bucket as keyof typeof labels] ?? '未知'}`,
+              ([bucket, key]) =>
+                `${t(key)} ${quote.policy.perMillion[bucket as keyof typeof bucketKeys] ?? t('price.unknown')}`,
             )
             .join(' · ')
           row.append(rates)
           if (quote.policy.source) {
             const source = document.createElement('p')
-            source.textContent = `来源核对 ${quote.policy.source.checkedAt} · `
+            source.textContent = t('price.source', { checkedAt: quote.policy.source.checkedAt })
             // Rendering cannot make an untrusted persisted URL executable.
             const link = document.createElement('a')
             link.textContent = quote.policy.source.url
@@ -143,7 +202,9 @@ export function createComparisonPriceDetails(
           const policy = document.createElement('details')
           const caption = document.createElement('summary')
           caption.textContent =
-            entry.priceBasis === 'current' ? '估算政策（当前配置）' : '有效期与峰谷政策（历史快照）'
+            entry.priceBasis === 'current'
+              ? t('price.policy.current')
+              : t('price.policy.historical')
           const raw = document.createElement('pre')
           raw.textContent = JSON.stringify(
             {
@@ -158,38 +219,48 @@ export function createComparisonPriceDetails(
           row.append(policy)
         }
         const amounts = document.createElement('p')
-        const amountLabels = entry.bucketCosts.inputTotal ? { inputTotal: '总输入', output: '输出' } : labels
-        amounts.textContent = `${Object.entries(amountLabels)
+        const amountKeys = entry.bucketCosts.inputTotal
+          ? { inputTotal: 'price.bucket.inputTotal', output: 'price.bucket.output' }
+          : bucketKeys
+        amounts.textContent = `${Object.entries(amountKeys)
           .map(
-            ([bucket, label]) =>
-              `${label} ${total(entry.tokens[bucket as keyof typeof entry.bucketCosts])} token · 费用 ${total(entry.bucketCosts[bucket as keyof typeof entry.bucketCosts])}`,
+            ([bucket, key]) =>
+              `${t(key)} ${total(entry.tokens[bucket as keyof typeof entry.bucketCosts], t)} ${t('price.token')} · ${t('price.cost')} ${total(entry.bucketCosts[bucket as keyof typeof entry.bucketCosts], t)}`,
           )
           .join(
             ' · ',
-          )} · ${entry.priceBasis === 'current' ? '当前配置重估' : '历史报价估算'} ${total(entry.estimate)}${quote ? ` ${quote.policy.currency}` : ''}`
+          )} · ${entry.priceBasis === 'current' ? t('price.basis.currentReprice') : t('price.basis.historical')} ${total(entry.estimate, t)}${quote ? ` ${quote.policy.currency}` : ''}`
         row.append(amounts)
         const reasoning = document.createElement('p')
-        reasoning.textContent = `推理 token（包含于输出，不另计费）${total(entry.tokens.reasoning)}`
+        reasoning.textContent = t('price.reasoning', {
+          total: total(entry.tokens.reasoning, t),
+        })
         row.append(reasoning)
         const billing = document.createElement('p')
         billing.textContent = entry.reportedBilling
-          ? `${entry.reportedBilling.source === 'gateway' ? '网关报告' : '已报告估算'} ${entry.reportedBilling.usdMicros} 微美元 · 订阅 ${entry.reportedBilling.subscription ? '是' : '否'}`
-          : '报告金额未知'
+          ? t('price.billing.reported', {
+              source:
+                entry.reportedBilling.source === 'gateway'
+                  ? t('price.billing.gateway')
+                  : t('price.billing.estimated'),
+              amount: entry.reportedBilling.usdMicros,
+              subscription: entry.reportedBilling.subscription
+                ? t('price.subscription.yes')
+                : t('price.subscription.no'),
+            })
+          : t('price.billing.unknown')
         row.append(billing)
         if (entry.issues.length) {
           const issue = document.createElement('details')
           const caption = document.createElement('summary')
-          const reasons: Record<string, string> = {
-            pending: '请求尚未结算',
-            missing_quote: '缺少历史报价',
-            observed_model_mismatch: '实际模型与报价模型不同',
-            quote_binding_mismatch: '报价归属不匹配',
-            invalid_price_interval: '有效期或峰谷区间无法确认',
-            missing_usage: '缺少用量分桶',
-            missing_rate: '缺少单价',
-            incomplete_evidence: '源证据不完整',
-          }
-          caption.textContent = `费用未知或部分可用：${entry.issues.map((code) => reasons[code] ?? '证据冲突或无效').join('、')}`
+          caption.textContent = t('price.issues.caption', {
+            reasons: entry.issues
+              .map((code) => {
+                const key = issueKeys[code]
+                return key === undefined ? t('price.issue.invalid') : t(key)
+              })
+              .join('、'),
+          })
           const raw = document.createElement('pre')
           raw.textContent = entry.issues.join('\n')
           issue.append(caption, raw)
@@ -202,10 +273,16 @@ export function createComparisonPriceDetails(
       loaded = true
       evidenceComplete &&= page.evidenceComplete
       more.hidden = complete
-      status.textContent = `共享 journal #${value.atSeq} · 本侧 #${page.throughSeq} · ${complete ? '已读完可见请求' : '还有请求'}${evidenceComplete ? '' : '；源证据不完整，费用只代表已知小计'}${seen.size === 0 ? '；暂无可见请求' : ''}`
+      status.textContent = `${t('price.status.done', {
+        at: value.atSeq,
+        through: page.throughSeq,
+        state: complete ? t('price.status.allRead') : t('price.status.more'),
+      })}${evidenceComplete ? '' : t('price.status.incompleteEvidence')}${seen.size === 0 ? t('price.status.noneSeen') : ''}`
     } catch (error) {
       if (!disposed) {
-        status.textContent = `报价详情读取失败：${error instanceof Error ? error.message : String(error)}`
+        status.textContent = t('price.status.failed', {
+          message: error instanceof Error ? error.message : String(error),
+        })
         more.hidden = false
       }
     } finally {

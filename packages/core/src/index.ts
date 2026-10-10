@@ -248,7 +248,7 @@ export {
 export { budgetPreflight, checkpointRoutine, contextTokens, contextWindowFor, stopGate } from './step/gate.js'
 export type { EnqueueMsg } from './step/inbox.js'
 export { budgetOverrideEvent, claimFrom, inboxEvent, TURN_BUDGET_EVENT } from './step/inbox.js'
-export { estimateTokens } from './step/inference.js'
+export { estimateTokens, resolveModel } from './step/inference.js'
 export { runInputToCompletion } from './step/input-completion.js'
 export type {
   CheckpointPhase,

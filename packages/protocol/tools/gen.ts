@@ -242,7 +242,9 @@ const TARGETS: Array<{
     out: 'gen/ts/preset.ts',
     module: 'PresetSchema',
     imports: [
-      { from: 'schema/model.json', defs: ['RouteTable', 'RouteTarget', 'ThinkingLevel'] },
+      // RouteTable/RouteTarget/ThinkingLevel serve model.*, and SlotName serves the JevLoop
+      // language-stage mapping (model.jev_language_slots) — one closed enum, not a second copy.
+      { from: 'schema/model.json', defs: ['RouteTable', 'RouteTarget', 'ThinkingLevel', 'SlotName'] },
       { from: 'schema/hooks.json', defs: ['HookEvent'] },
     ],
   },

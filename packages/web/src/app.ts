@@ -22,6 +22,7 @@ import {
   createConversationCutBanner,
   createConversationCutView,
 } from '@agnes/web-session-ui/conversation-cut'
+import type { StageBindings } from '@agnes/web-ui'
 import { createPendingCoordinator } from './admin-pane-coordinator.js'
 import { bindAppearance, bindSkinGroup } from './appearance.js'
 import type { ApprovalAction } from './approval.js'
@@ -33,7 +34,10 @@ import { bindSlotCardContext } from './client-modules/timeline-slot.js'
 import type { ComposerView } from './composer.js'
 import { rememberWebComposer, selectionFromMemory } from './composer-memory.js'
 import { createComputerUsePaneController } from './computer-use-pane.js'
+import { DecisionSelection } from './decision-selection.js'
 import { createDiagnosticsDialog } from './diagnostics-dialog.js'
+import { createJevSettingsController } from './jev-settings.js'
+import { JevStageBindings } from './jev-stage-bindings.js'
 import {
   APPROVAL_SEARCH_PAGES,
   approvalOutsideWindow,
@@ -100,6 +104,7 @@ const newSessionForm = element('new-session-form', 'form')
 const newSessionCwd = element('new-session-cwd', 'input')
 const newSessionRuntime = element('new-session-runtime', 'select')
 const runtimeSelection = new RuntimeSelection()
+const decisionSelection = new DecisionSelection()
 const newSessionCancel = button('new-session-cancel')
 const newSessionCreate = button('new-session-create')
 const workspacePick = button('workspace-pick')
@@ -301,6 +306,14 @@ const clientModules = await startClientModules({
       runtimeSelection.select(id)
       renderControls()
     },
+    onDecisionBackendSelect: (backend) => {
+      try {
+        decisionSelection.select(backend)
+        renderControls()
+      } catch (error) {
+        showError(error)
+      }
+    },
     onSubmit: submitComposer,
     onWorkspace: handleComposerWorkspace,
   },
@@ -322,6 +335,7 @@ const clientModules = await startClientModules({
     computerUse: computerUseStatus.render(),
     onChange: ({ pane, tab }) => {
       if (pane === 'model') void settings.open()
+      else if (pane === 'jev') void jevSettings.refresh()
       else if (pane === 'plugin') void openAdminPane('plugin')
       else if (pane === 'resources') void openAdminPane('resources', tab ?? 'skills')
       else if (pane === 'archived') void sessionActions.loadArchived()
@@ -529,6 +543,11 @@ async function stopWithTimeout(stop: (() => Promise<void>) | undefined): Promise
   }
 }
 const settings = createSettingsController({ client, onSaved: savedConfiguration, onError: showError })
+const jevStages = new JevStageBindings(client, () => renderControls())
+const jevSettings = createJevSettingsController(client, async () => {
+  await runtimeSelection.refresh(client)
+  renderControls()
+})
 const sessionActions = createSessionActions({
   client,
   changed: () => list(),
@@ -654,14 +673,29 @@ function setConnection(value: 'connecting' | 'connected' | 'reconnecting' | 'clo
   }
   topbarRuntime.setConnectionState(value)
   settings.setConnected(connected)
+  jevSettings.setConnected(connected)
   renderControls()
 }
 function renderControls(): void {
+  const showDecision =
+    currentView?.mode === 'comparison' ||
+    (!currentView && (currentPane?.identity?.id ?? runtimeSelection.selected) === 'jevloop') ||
+    (!current && !currentView && runtimeSelection.selected === 'comparison')
+  decisionSelection.update(
+    workbench.target?.id ?? current?.id ?? 'draft',
+    showDecision ? runtimeSelection.items.find((item) => item.id === 'jevloop') : undefined,
+    workbench.target?.decisionBackends,
+    workbench.target?.defaultDecisionBackend,
+  )
   workbench.publish({
     runtimes: runtimeSelection.items,
     workspaces: workspaceRows,
     selectedMode: runtimeSelection.selected,
     permissionMode: workbench.mode(runtimeSelection.selected) ? extensionPermissionMode : permissionMode,
+    ...(showDecision && decisionSelection.options.length
+      ? { decisionBackend: decisionSelection.selected }
+      : {}),
+    ...comparisonStageDraft(),
     connected,
     sending,
     loading: sessionPending,
@@ -754,6 +788,15 @@ function renderControls(): void {
       placeholder: busy ? '补充下一轮要做的事…' : '描述你想完成的事…',
     },
     loading: sessionPending,
+    ...(showDecision && decisionSelection.options.length
+      ? {
+          decision: {
+            selected: decisionSelection.selected,
+            options: decisionSelection.options,
+            disabled: !connected || sessionPending || initialSubmissionPending || sending,
+          },
+        }
+      : {}),
     runtime: {
       selected: currentView ? currentView.mode : (currentPane?.identity?.id ?? runtimeSelection.selected),
       label: currentView ? currentView.label : runtimeSelection.label(currentPane?.identity),
@@ -783,6 +826,7 @@ function renderControls(): void {
             settings: knownSessionModel.settings ?? modelDefaults(knownSessionModel).settings ?? {},
             contextWindow: selectedRecord.contextWindow,
             thinkingLevelMap: selectedRecord.thinkingLevelMap,
+            ...stageSettings(),
           },
         }
       : {}),
@@ -804,6 +848,7 @@ function renderControls(): void {
     send: {
       disabled:
         !targetAvailable ||
+        !decisionSelection.available ||
         !available ||
         (!currentView && (!configured || !selectedModelAvailable())) ||
         (!current && !currentView && (!canStartDraft || !runtimeSelection.available)) ||
@@ -1675,9 +1720,33 @@ function modelDefaults(option: ModelPickerOption): KnownSessionModel {
     },
   }
 }
-async function selectModelSettings(settings: ModelSettings): Promise<boolean> {
+async function selectModelSettings(settings: ModelSettings, stages?: StageBindings): Promise<boolean> {
   if (!knownSessionModel) return false
-  return selectModel(knownSessionModel, settings)
+  if (!(await selectModel(knownSessionModel, settings))) return false
+  if (!stages) return true
+  try {
+    return await jevStages.apply(current?.id, stages)
+  } catch (error) {
+    showError(error)
+    return false
+  }
+}
+/** JevLoop single-line sessions and drafts expose per-stage bindings in the model settings dialog. */
+function stageSettings(): { stages?: { options: ModelPickerOption[]; value: StageBindings } } {
+  if (currentView) return {}
+  const runtime = currentPane?.identity?.id ?? runtimeSelection.selected
+  // A dual-line draft binds the stages of its JevLoop lane; the plugin freezes them at creation.
+  const comparisonDraft = !current && runtime === 'comparison'
+  if (runtime !== 'jevloop' && !comparisonDraft) return {}
+  const value = jevStages.value(current?.id)
+  return value ? { stages: { options: runtimeModels, value } } : {}
+}
+/** Bound draft stages for the workbench snapshot a dual-line comparison is created from. */
+function comparisonStageDraft(): { jevStages?: Partial<StageBindings> } {
+  if (current || currentView || runtimeSelection.selected !== 'comparison') return {}
+  const draft = jevStages.value(undefined)
+  const bound = Object.fromEntries(Object.entries(draft ?? {}).filter(([, binding]) => binding !== null))
+  return Object.keys(bound).length ? { jevStages: bound } : {}
 }
 async function selectModel(option: ModelPickerOption, settings?: ModelSettings): Promise<boolean> {
   const sameModel = knownSessionModel?.route === option.route && knownSessionModel.id === option.id
@@ -2019,6 +2088,7 @@ function submitComposer(): void {
   let session = current
   if (
     !input ||
+    !decisionSelection.available ||
     !workbench.available ||
     (workbench.hasLocation(new URL(location.href)) && !currentView) ||
     (!currentView && (!configured || !selectedModelAvailable())) ||
@@ -2029,6 +2099,7 @@ function submitComposer(): void {
     !canSubmitComposer({ connected, hasSession: true, sending, stopping, loading: sessionPending })
   )
     return
+  const turnOptions = decisionSelection.submission()
   notice.textContent = ''
   notice.dataset.kind = ''
   const submission = ++submissionGeneration
@@ -2052,6 +2123,7 @@ function submitComposer(): void {
     }
     if (!session) {
       const draftModel = knownSessionModel
+      const draftRuntime = runtimeSelection.selected
       const workspace = selectedWorkspace
       pendingSessionKey = key
       const created = await client.session.new({
@@ -2070,6 +2142,9 @@ function submitComposer(): void {
         ownedSelection = selection
       }
       if (current !== created) throw new Error('会话选择已改变。')
+      if (turnOptions.decisionBackend) decisionSelection.restore(turnOptions.decisionBackend)
+      // Stage bindings chosen in the draft must land before the first prompt reaches the loop.
+      if (draftRuntime === 'jevloop') await jevStages.flush(created.id)
       session = current
     }
     if (!session) throw new Error('会话创建失败。')
@@ -2106,7 +2181,14 @@ function submitComposer(): void {
       throw new Error('连接已变化，请等待权限同步后重新发送。')
     if (current !== session || selection !== ownedSelection) throw new Error('会话选择已改变。')
     if (sessionYoloEnabled === undefined) throw new Error('请先选择本会话权限，确认后再发送。')
-    const result = await (busy ? session.followUp(input) : session.prompt(input))
+    // Preserve the legacy one-argument call shape when no per-round choice was made.
+    const result = await (turnOptions.decisionBackend === undefined
+      ? busy
+        ? session.followUp(input)
+        : session.prompt(input)
+      : busy
+        ? session.followUp(input, turnOptions)
+        : session.prompt(input, turnOptions))
     const submittedId = session.id
     if (typeof result === 'object' && result.reason === 'completed' && !sessionTitles.has(submittedId))
       titleRefresh.start(submittedId)
@@ -2123,6 +2205,7 @@ function submitComposer(): void {
         // Closing the connection on purpose (page unload, manual disconnect) rejects a prompt the daemon
         // already accepted. That is not a failed send, so the sent text must not come back as a draft.
         if (!intentionalClose && !composerRuntime.getDraft()) {
+          if (turnOptions.decisionBackend) decisionSelection.restore(turnOptions.decisionBackend)
           composerRuntime.setDraft(input)
           sessionStorage.setItem(composerDraftKey, input)
           composerRuntime.resize()
@@ -2276,6 +2359,11 @@ workbench.configure({
     overlay: element('workspace-overlay', 'div'),
   },
   select: selectWorkbenchTarget,
+  async openSettings(pane: 'model' | 'jev') {
+    await settings.open()
+    settingsRegion.open(pane)
+    if (pane === 'jev') await jevSettings.refresh()
+  },
   changed() {
     if (!currentView && !runtimeSelection.options.some((item) => item.id === runtimeSelection.selected))
       runtimeSelection.selected = 'native'

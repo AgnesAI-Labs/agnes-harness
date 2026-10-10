@@ -53,6 +53,7 @@ export { FileContractStore, loadContractStore } from './contract/store.js'
 export type { ContractManifest, ContractSyntax } from './contract/types.js'
 export type { ContractStore } from './contract-store.js'
 export { NullContractStore } from './contract-store.js'
+export { probeCustomModel } from './custom-model-probe.js'
 export type { DecodeFixture, FixtureChunk } from './decode/fixtures.js'
 export {
   DECODE_FIXTURE_FILES,

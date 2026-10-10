@@ -1,26 +1,36 @@
 import type { DiagnosticsEventsResult, EventEnvelope, RuntimeIdentity } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import { createJevDecisionGraph, type JevReplayCut } from './jev-decision-graph.js'
+import type { Translate } from './jev-locale.js'
 import type { JevStatsEvidence } from './jev-stats.js'
 
 /** Read-only ledger observation shared by normal chat and comparison lanes. */
 export function createRuntimeRecordTrace(
   host: HTMLElement,
   client: Pick<Client, 'call'>,
-  onRecords?: (evidence: JevStatsEvidence) => void,
-  options: { onCut?: (cut: JevReplayCut | undefined) => void } = {},
+  onRecords: ((evidence: JevStatsEvidence) => void) | undefined,
+  options: { onCut?: (cut: JevReplayCut | undefined) => void; t: Translate },
 ) {
+  const { onCut, t } = options
   const previousHidden = host.hidden
-  const graph = createJevDecisionGraph(host, options.onCut ? { onCut: options.onCut } : {})
+  let motionAllowed = false
+  const graph = createJevDecisionGraph(
+    host,
+    {
+      ...(onCut && { onCut }),
+      liveMotion: () => motionAllowed,
+    },
+    t,
+  )
   const note = document.createElement('p')
   note.className = 'runtime-trace-coverage'
   note.setAttribute('role', 'status')
   const more = document.createElement('button')
   more.type = 'button'
-  more.textContent = '继续读取历史'
+  more.textContent = t('trace.more.initial')
   const details = document.createElement('details')
   const summary = document.createElement('summary')
-  summary.textContent = '原始运行循环记录'
+  summary.textContent = t('trace.summary.raw')
   const rows = document.createElement('ol')
   rows.className = 'runtime-record-rows'
   details.append(summary, rows)
@@ -42,17 +52,14 @@ export function createRuntimeRecordTrace(
   const records = new Map<number, EventEnvelope>()
   function render() {
     const ordered = [...records.values()].sort((a, b) => a.seq - b.seq)
-    onRecords?.({
-      runtime,
-      events: ordered,
-      complete:
-        sessionId !== undefined &&
-        complete &&
-        !loading &&
-        failure === undefined &&
-        latestHead <= (bound ?? 0) &&
-        ordered.every((event) => event.seq <= (bound ?? 0)),
-    })
+    motionAllowed =
+      sessionId !== undefined &&
+      complete &&
+      !loading &&
+      failure === undefined &&
+      latestHead <= (bound ?? 0) &&
+      ordered.every((event) => event.seq <= (bound ?? 0))
+    onRecords?.({ runtime, events: ordered, complete: motionAllowed })
     graph.update(ordered, sessionId ?? '')
     // Raw JSON is a secondary inspector; the diagram retains read records for causal projection.
     rows.replaceChildren(
@@ -64,22 +71,26 @@ export function createRuntimeRecordTrace(
         title.textContent = `#${event.seq} ${event.type}${typeof data.record?.kind === 'string' ? ` · ${data.record.kind}` : ''}`
         const raw = document.createElement('pre')
         const text = JSON.stringify(event.data, null, 2)
-        raw.textContent = text.length > 16_384 ? `${text.slice(0, 16_384)}\n（此记录显示已截断）` : text
+        raw.textContent = text.length > 16_384 ? `${text.slice(0, 16_384)}\n${t('trace.row.truncated')}` : text
         item.append(title, raw)
         row.append(item)
         return row
       }),
     )
-    summary.textContent = `原始记录 · ${records.size}`
+    summary.textContent = t('trace.summary.count', { count: records.size })
     note.textContent =
       failure ??
       (complete
-        ? `完整账本前缀 #0–${bound ?? 0}`
-        : `${loading ? '正在读取' : '部分历史'}：账本 #0–${afterSeq} / ${bound ?? '待确定'}；尚未读全，缺失记录不表示未执行。`)
-    note.title = '只读查看已持久化的运行记录；回放不会重新执行任务。原始记录最多显示最近 100 条。'
+        ? t('trace.note.complete', { bound: bound ?? 0 })
+        : t('trace.note.progress', {
+            state: loading ? t('trace.note.loading') : t('trace.note.partial'),
+            after: afterSeq,
+            bound: bound ?? t('trace.note.pendingBound'),
+          }))
+    note.title = t('trace.note.title')
     more.hidden = complete || sessionId === undefined
     more.disabled = loading
-    more.textContent = failure ? '重试读取历史' : '继续读取历史'
+    more.textContent = failure ? t('trace.more.retry') : t('trace.more.initial')
   }
   function remember(event: EventEnvelope) {
     if (event.type !== 'runtime/record' && event.type !== 'runtime/cancel') return
@@ -131,7 +142,9 @@ export function createRuntimeRecordTrace(
       }
     } catch (error) {
       if (ticket !== generation) return
-      failure = `历史读取失败，当前仅为部分证据：${error instanceof Error ? error.message : String(error)}`
+      failure = t('trace.note.failure', {
+        error: error instanceof Error ? error.message : String(error),
+      })
     } finally {
       if (ticket === generation) {
         loading = false

@@ -175,6 +175,21 @@ export async function replaySwitchesOnOpen(
     // remain possible; new switches and inference still validate the current model catalogue.
     applyModelInMemory(session, slot, to)
   }
+  // Session-level Jev stage bindings follow the same rule as slot switches: the latest full
+  // snapshot wins, and a later preset switch supersedes it wholesale (the fresh view has no
+  // bindings). Restored unvalidated, like slot switches — history must stay openable; new
+  // binding writes and inference still validate against the current catalogue.
+  const stageRows = await session.scan({ type: 'x/core/jev-stage-switch', order: 'desc', limit: 1 })
+  const lastStageRow = stageRows[0]
+  const lastStages = lastStageRow?.data as { to?: unknown } | undefined
+  if (lastStages && (!lastPresetSeq || (lastStageRow && lastStageRow.seq > lastPresetSeq))) {
+    const to = lastStages.to as HostSession['preset']['model']['jevStageBindings']
+    if (to !== undefined && Object.keys(to).length)
+      applyPresetInMemory(session, {
+        ...session.preset,
+        model: { ...session.preset.model, jevStageBindings: to },
+      })
+  }
 }
 
 async function latestModelSwitchPerSlot(

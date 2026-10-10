@@ -714,6 +714,71 @@ describe('WorkerPool', () => {
     }
   }, 60_000)
 
+  it('passes the frozen non-secret Jev bootstrap to real replacement workers instead of inherited or newly saved settings', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-jev-bootstrap-'))
+    const profileFile = join(dir, 'profile.json')
+    writeFileSync(profileFile, JSON.stringify({ name: 'p', hash: 'h1' }))
+    const captured = JSON.stringify({
+      version: 1,
+      revision: 1,
+      settings: {
+        transport: 'native',
+        endpoint: 'http://127.0.0.1:1/decision',
+        model: 'captured',
+        authentication: 'none',
+        enabled: true,
+      },
+      credentialRef: null,
+    })
+    const { spawn } = await import('node:child_process')
+    const bootstraps: (string | undefined)[] = []
+    vi.stubEnv('AGNES_JEV_PROFILE_SNAPSHOT', 'untrusted inherited snapshot')
+    const pool = new WorkerPool({
+      config: {
+        profileName: 'p',
+        dataDir: dir,
+        socketPath: join(dir, 'a.sock'),
+        workersSocketPath: workerSocket(dir),
+        limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS },
+      },
+      profile: { name: 'p', hash: 'h1' } as never,
+      profileFile,
+      jevBootstrap: captured,
+      execPath: process.execPath,
+      workerEntry: fakeWorker,
+      execArgv: ['--import', 'tsx'],
+      clock: () => 0,
+      onEvent: () => undefined,
+      onRequest: async () => undefined,
+      notices: { emit() {} },
+      spawn: ((...args: Parameters<typeof spawn>) => {
+        bootstraps.push(args[2]?.env?.AGNES_JEV_PROFILE_SNAPSHOT)
+        return spawn(...args)
+      }) as typeof spawn,
+    })
+    const server = await listenUnix(workerSocket(dir), (socket) => pool.adopt(socket))
+    try {
+      const key = 'agnes:t:a:x:dm:jev-bootstrap'
+      const first = await acquire(pool, key, { cwd: dir })
+      expect(await first.command('ping', {})).toEqual({ ok: true })
+      writeFileSync(
+        join(dir, 'jev-configuration.json'),
+        JSON.stringify({ revision: 2, settings: { model: 'newly-saved' } }),
+      )
+      vi.stubEnv('AGNES_JEV_PROFILE_SNAPSHOT', 'later inherited snapshot')
+      pool.retireWorker('replace owned test worker')
+      const second = await acquire(pool, key, { cwd: dir })
+      expect(await second.command('ping', {})).toEqual({ ok: true })
+      expect(bootstraps).toEqual([captured, captured])
+    } finally {
+      vi.unstubAllEnvs()
+      await pool.closeAll(1_000).catch(() => undefined)
+      pool.killAll()
+      await server.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
+
   it('does not start a replacement generation before prior exit recovery completes', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-generation-fence-'))
     const profileFile = join(dir, 'profile.json')

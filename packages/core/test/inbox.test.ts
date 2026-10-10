@@ -62,6 +62,29 @@ describe('Inbox segment', () => {
     ).toEqual([1, 2])
   })
 
+  it('rejects runtime turn options on a runtime that does not accept them, without consuming input', async () => {
+    const { session } = await openSession({ provider: fakeProvider([]) })
+    try {
+      await expect(
+        session.enqueue('next-turn', {
+          actor,
+          content: [{ type: 'text', text: 'hi' }],
+          runtimeOptions: { decisionBackend: 'laya' },
+        }),
+      ).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
+      await expect(
+        session.enqueue('next-step', {
+          actor,
+          content: [{ type: 'text', text: 'steer' }],
+          runtimeOptions: { decisionBackend: 'jev' },
+        }),
+      ).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
+      expect((session.latest('inbox') as { items: unknown[] } | undefined)?.items ?? []).toHaveLength(0)
+    } finally {
+      await session.close()
+    }
+  })
+
   it('acceptInput claims one next-turn item into user/message + turn/start + the program counter in one tx', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([]) })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })

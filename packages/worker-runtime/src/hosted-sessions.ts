@@ -65,6 +65,7 @@ const ACTIVE_METHODS = new Set([
   'append',
   'setPreset',
   'setModel',
+  'setJevStages',
   'setYolo',
   'manualCompact',
   'decideApproval',

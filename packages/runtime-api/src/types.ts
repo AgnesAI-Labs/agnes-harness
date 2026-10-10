@@ -22,6 +22,15 @@ export interface RuntimeDescriptor extends RuntimeIdentity {
   readonly available: boolean
   readonly unavailableReason?: string
   readonly capabilities: RuntimeCapabilities
+  readonly defaultDecisionBackend?: 'jev' | 'laya'
+  // Mutable array: the protocol's generated RuntimeDescriptor (schema/agnes-v1.json) types
+  // decisionBackends as a plain array, and Host assigns these descriptors into that shape.
+  decisionBackends?: {
+    backend: 'jev' | 'laya'
+    label: string
+    available: boolean
+    unavailableReason?: string
+  }[]
 }
 
 /**

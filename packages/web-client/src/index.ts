@@ -66,9 +66,12 @@ export type {
   ClientServiceCaller,
   CommandAuthorizer,
   HostAgnesClient,
+  LocaleCatalog,
   LocaleDictionary,
+  LocaleVars,
   ModuleIdentity,
   ResolvedTheme,
+  UiLocale,
 } from './services.js'
 export {
   AgnesClientService,
@@ -76,8 +79,10 @@ export {
   ClientResourceService,
   CommandService,
   LocaleService,
+  resolveUiLocale,
   SessionService,
   ThemeService,
+  UI_LOCALES,
 } from './services.js'
 export type {
   ChainRenderOpts,

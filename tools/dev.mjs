@@ -21,7 +21,8 @@ const HELP = `make dev [ARGS='--port 4189 --home /path --data-dir /path/data --c
 Rebuild both backend and Web, then gracefully replace the selected AGH instance.
 Defaults: port 4189; reuse the verified listener's scope, then this checkout's saved scope,
 otherwise AGH_HOME (or ~/.agh), local-dev, and this checkout as workspace.
---node /path/to/node overrides the runtime Node (requires >=24.10).
+--node /path/to/node overrides the current runtime Node (requires >=24.10).
+AGH_DEV_NODE is also supported; saved instance Node paths are not reused.
 --env-file /path loads environment for the new runtime; existing shell variables win.
 The selected home's private dev.env is loaded automatically (shell variables win).
 --save-env saves this shell's Jev settings to a new home/dev.env (0600; never overwrites).
@@ -76,7 +77,7 @@ export function selectSettings(options, env, saved, existing, repo = root) {
       options.dataDir ?? (explicitHome ? join(home, 'data') : (prior.dataDir ?? join(home, 'data'))),
     ),
     cwd: resolve(options.cwd ?? prior.cwd ?? repo),
-    node: options.node ?? env.AGH_DEV_NODE ?? prior.node ?? process.execPath,
+    node: options.node ?? env.AGH_DEV_NODE ?? process.execPath,
   }
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/u.test(settings.profile)) throw new Error('Invalid profile name')
   if (!isAbsolute(settings.node)) throw new Error('--node / AGH_DEV_NODE must be an absolute path')
@@ -238,7 +239,7 @@ export async function main(args = process.argv.slice(2)) {
     return
   }
   await mkdir(stateDir, { recursive: true })
-  await mkdir(join(settings.dataDir, 'daemon'), { recursive: true })
+  await mkdir(join(settings.dataDir, 'daemon'), { recursive: true, mode: 0o700 })
   const lockPath = join(settings.dataDir, 'daemon', 'dev-launch.lock')
   let release = await acquireLock(lockPath)
   let locked = true
@@ -300,6 +301,37 @@ export async function main(args = process.argv.slice(2)) {
     generation = await readOwner(settings)
     if (!generation) throw new Error('Ready Web has no daemon owner')
     await assertDaemonSelection(settings, generation)
+    // Refresh the profile's installed plugin snapshots from this build: the daemon serves the
+    // installed copies, so without this step bundled-plugin source changes never reach the page.
+    // Best-effort with a visible warning — a stale plugin must not fail an otherwise good restart.
+    try {
+      const discovery = await jsonOrMissing(join(settings.dataDir, 'daemon', 'discovery.json'))
+      if (discovery?.socketPath) {
+        await runCommand(
+          settings.node,
+          [
+            '--import',
+            'tsx',
+            join(root, 'packages/cli/tools/dev-plugin-sync.ts'),
+            '--socket',
+            discovery.socketPath,
+            '--profile',
+            settings.profile,
+            '--runtime',
+            runtime,
+            '--workspace',
+            settings.cwd,
+          ],
+          env,
+          controller.signal,
+        )
+      }
+    } catch (error) {
+      process.stdout.write(
+        `dev plugin sync skipped: ${error instanceof Error ? error.message : String(error)}\n` +
+          'Reinstall the plugin manually to pick up bundled-plugin changes.\n',
+      )
+    }
     await saveSettings(settingsFile, settings)
     await release()
     locked = false

@@ -22,6 +22,28 @@ export type PresetView = {
      * `anthropic/claude-3.5` can satisfy. Empty means the route's own record decides.
      */
     id: Record<string, string>
+    /**
+     * JevLoop language stages (parameters/arbitration/answer) each bound to a model slot by the
+     * preset. Absent means every stage stays on primary; values are slot names validated against
+     * the closed SLOT_NAMES set at the schema layer, read here defensively (unknown names fall
+     * back to primary at the consumer, since this view types them loosely as strings).
+     */
+    jevLanguageSlots?: Readonly<Partial<Record<'parameters' | 'arbitration' | 'answer', string>>>
+    /**
+     * Session-level direct stage bindings, never read from a preset document: setModel's in-memory
+     * pattern, but per language stage. A bound stage resolves its route/model (and thinking, when
+     * set) directly instead of through its preset slot; `thinking: undefined` inherits the slot's
+     * level while `null` asks the provider for its default. Survives reopening only by replaying
+     * the x/core/jev-stage-switch audit rows (host's replaySwitchesOnOpen).
+     */
+    jevStageBindings?: Readonly<
+      Partial<
+        Record<
+          'parameters' | 'arbitration' | 'answer',
+          { route: string; model: string; thinking?: ThinkingLevel | null }
+        >
+      >
+    >
     retry: { maxAttempts: number; baseDelayMs: number }
     timeoutMs: number
     maxTokens?: number
@@ -123,6 +145,15 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
       route: pick(raw, 'model.route', d.model.route),
       thinking: pick(raw, 'model.thinking', d.model.thinking),
       id: pick(raw, 'model.id', d.model.id),
+      ...(get(raw, 'model.jev_language_slots') === undefined
+        ? {}
+        : {
+            jevLanguageSlots: pick<Partial<Record<'parameters' | 'arbitration' | 'answer', string>>>(
+              raw,
+              'model.jev_language_slots',
+              {},
+            ),
+          }),
       retry: {
         maxAttempts: pick(raw, 'model.retry.max_attempts', d.model.retry.maxAttempts),
         baseDelayMs: pick(raw, 'model.retry.base_delay_ms', d.model.retry.baseDelayMs),

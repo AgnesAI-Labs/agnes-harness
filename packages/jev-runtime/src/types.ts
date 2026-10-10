@@ -67,6 +67,8 @@ export interface ToolDescriptor {
   /** Missing permits all operation phases; an explicit list limits availability. */
   readonly phases?: readonly ('INSPECT' | 'ACT' | 'VERIFY')[]
   readonly effectClass?: EffectClass
+  /** Trusted host declaration; absent or false keeps batch execution serial. */
+  readonly concurrencySafe?: boolean
   readonly defaults?: { readonly [key: string]: JsonValue }
   /** Explicit host parameter classification, checked against the current schema. */
   readonly parameterMode?: 'no_arguments' | 'parameterized'
@@ -190,6 +192,8 @@ export interface DecisionInput {
 /** Complete language inputs, independent of decision display budgets. */
 export interface LanguageInput {
   readonly purpose: 'parameters' | 'arbitration' | 'answer'
+  /** Host-gated inspection of uncertain effects; no mutation or final answer is admissible. */
+  readonly recovery?: { readonly intentIds: readonly IntentId[] }
   readonly state: JsonValue
   readonly tools?: readonly ToolDescriptor[]
   readonly lockedOperation?: string
@@ -343,7 +347,10 @@ export interface ExecutionEnvironment {
   prepare?(
     intent: FrozenIntent,
     signal: AbortSignal,
-  ): Promise<{ readonly kind: 'ready' } | { readonly kind: 'settled'; readonly outcome: ToolOutcome }>
+  ): Promise<
+    | { readonly kind: 'ready'; readonly concurrencySafe?: boolean; readonly readOnly?: boolean }
+    | { readonly kind: 'settled'; readonly outcome: ToolOutcome }
+  >
   execute(intent: FrozenIntent, signal: AbortSignal): Promise<ToolOutcome>
   drain(intentId: IntentId): Promise<void>
 }
@@ -424,6 +431,8 @@ export type RuntimeRecord = RecordBase &
         readonly escalation?: string
         /** Index in a multi-call language proposal; absent on legacy single-call decisions. */
         readonly callIndex?: number
+        /** Original Jev selection locking the operation/purpose of a parameter batch. */
+        readonly parameterDecision?: RecordId
       }
     | { readonly kind: 'action.intended'; readonly intent: FrozenIntent; readonly decision: RecordId }
     | { readonly kind: 'action.dispatching'; readonly intentId: IntentId; readonly epoch: EnvironmentEpoch }
@@ -437,7 +446,11 @@ export type RuntimeRecord = RecordBase &
     | {
         readonly kind: 'action.resolved'
         readonly intentId: IntentId
-        readonly resolution: 'confirmed_applied' | 'confirmed_not_applied' | 'accepted_uncertainty'
+        readonly resolution:
+          | 'confirmed_applied'
+          | 'confirmed_not_applied'
+          | 'accepted_uncertainty'
+          | 'reconciled_state'
         readonly actor: string
         readonly explanation: string
         readonly evidence: readonly string[]
@@ -503,6 +516,23 @@ export interface RuntimePorts<C> {
   readonly semantics?: ToolSemantics
   readonly candidatePolicy?: CandidatePolicy
   readonly lifecycle?: RuntimeLifecycle
+  /** Trusted Host reconciliation; model text and tool-authored claims never grant this authority. */
+  readonly effectRecovery?: {
+    reconcile(
+      intent: FrozenIntent,
+      outcome: ToolOutcome,
+      records: readonly RuntimeRecord[],
+      signal: AbortSignal,
+    ): Promise<
+      | {
+          readonly resolution: 'confirmed_applied' | 'confirmed_not_applied' | 'reconciled_state'
+          readonly explanation: string
+          readonly evidence: readonly RecordId[]
+          readonly proof: JsonValue
+        }
+      | undefined
+    >
+  }
 }
 
 /** Host step admission and settlement, including steering and injected context. */
@@ -528,7 +558,7 @@ export interface RuntimeLifecycle {
   beforeStop?(turn: TurnId): Promise<boolean>
 }
 
-/** Terminal result of one attempted turn; unresolved effects block continuation. */
+/** Terminal result of one attempted turn; unresolved effects allow only Host-gated inspection. */
 export interface RunResult {
   readonly status: 'completed' | 'cancelled' | 'failed' | 'blocked' | 'budget'
   readonly reason: string

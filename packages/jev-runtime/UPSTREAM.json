@@ -160,6 +160,8 @@
     "Use .js ESM specifiers and .test.ts test names for Agnes.",
     "Replace dsh-brand dependency with package-local compile-time string brands.",
     "Read skill catalog retrieval operation from the recorded resource instead of hard-coding a host tool name.",
-    "Unicode evidence test uses a UTF-8 round trip instead of ES2024 String.isWellFormed, retaining the Unicode scalar assertion under the Agnes ES2023 target."
+    "Unicode evidence test uses a UTF-8 round trip instead of ES2024 String.isWellFormed, retaining the Unicode scalar assertion under the Agnes ES2023 target.",
+    "Agnes scheduling revision 5 accepts same-tool read-only parameter batches with explicit links to the original Jev decision and unique native proposal indices; mutation completion stays single-call.",
+    "Safe read-only language batches execute in windows of at most four after Host-confirmed argument safety, with ordered durable admission/settlement and in-flight drainage on interruption or persistence failure. Missing safety declarations and mutations remain serial."
   ]
 }

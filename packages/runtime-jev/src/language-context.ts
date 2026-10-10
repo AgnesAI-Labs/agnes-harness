@@ -7,15 +7,14 @@ import { projectLanguage, stableJson } from './language-projection.js'
 const instructions = {
   parameters:
     'Call the specified tool exactly once with a complete argument object matching its schema. If evidence is insufficient, explain what is missing without calling a tool.',
-  arbitration:
-    'Choose the next useful actions. Call 1 to 32 tools with complete arguments; calls execute in the returned order. Later calls must not depend on results that have not yet been observed. Or give the final answer when the task is complete or available actions cannot resolve it. Do not invent execution results.',
+  arbitration: '',
   answer:
     'Answer the user using recorded observations. Distinguish completed work, acknowledgements and unknown effects. Do not claim an action ran unless its recorded result supports that claim. Return the final answer directly without tool calls.',
 } as const
 
 /**
- * Common tail appended to every new request. Committed `model.requested` notes replay verbatim,
- * so persisted instructions are never rewritten to add this text.
+ * Stable ordinary agent constraints, independent of the private request purpose.
+ * Keep them at one fixed position so growing facts preserve the cacheable prefix.
  */
 const versionTokenNote =
   'Workspace directory entry versions are opaque freshness tokens, not content hashes. A changed token alone does not prove changed contents or failed restoration, and an unchanged token alone does not prove identical contents. Base content claims on recorded content and tool results.'
@@ -50,7 +49,17 @@ export function createLanguageContext(
   if (input.purpose === 'parameters' && input.lockedOperation === undefined)
     throw new Error('Parameter completion requires a locked operation')
   const projection = projectLanguage(input, inputPolicies)
-  const messages: RequestMessage[] = []
+  const messages: RequestMessage[] = [
+    {
+      role: 'user',
+      content: [
+        {
+          type: 'text',
+          text: `Tool calls must have complete arguments. Submit at most 32 calls in one response. Independent read-only calls explicitly declared concurrency-safe may execute together; other calls execute in returned order. Later calls must not depend on results that have not yet been observed.\n${versionTokenNote}`,
+        },
+      ],
+    },
+  ]
   const toolImages: { messageIndex: number; contentIndex: number; artifact: ArtifactRef }[] = []
   let nativeGroup: { request: string; calls: ToolCall[] } | undefined
   for (const entry of projection.entries) {
@@ -115,7 +124,19 @@ export function createLanguageContext(
         if (nativeGroup) nativeGroup.calls.push(structuredClone(entry.nativeCall))
         else {
           const calls = [structuredClone(entry.nativeCall)]
-          messages.push({ role: 'assistant', content: [], toolCalls: calls })
+          messages.push({
+            role: 'assistant',
+            content:
+              entry.nativeText === undefined
+                ? []
+                : [
+                    {
+                      type: 'text',
+                      text: `Non-final explanation accompanying this tool proposal; execution facts are in the tool result.\n${entry.nativeText}`,
+                    },
+                  ],
+            toolCalls: calls,
+          })
           if (entry.nativeRequest !== undefined) nativeGroup = { request: entry.nativeRequest, calls }
         }
         messages.push({
@@ -139,10 +160,19 @@ export function createLanguageContext(
       }
     }
   }
-  const requestNote = `${instructions[input.purpose]}${projection.requestNote ? `\n${projection.requestNote}` : ''}${
-    input.repair === undefined ? '' : `\nCorrect the previous response: ${input.repair.error.message}`
-  }\n${versionTokenNote}`
-  messages.push({ role: 'user', content: [{ type: 'text', text: requestNote }] })
+  const parameterInstruction =
+    input.purpose === 'parameters' &&
+    input.tools?.find((tool) => tool.name === input.lockedOperation)?.effectClass === 'read_only'
+      ? 'Call only the specified read-only tool with 1 to 32 complete, independent argument objects matching its schema. Do not include calls whose arguments depend on unobserved results. If evidence is insufficient, explain what is missing without calling a tool.'
+      : instructions[input.purpose]
+  const requestNote = [
+    parameterInstruction,
+    projection.requestNote,
+    input.repair === undefined ? '' : `Correct the previous response: ${input.repair.error.message}`,
+  ]
+    .filter(Boolean)
+    .join('\n')
+  if (requestNote) messages.push({ role: 'user', content: [{ type: 'text', text: requestNote }] })
   return {
     system: '',
     messages,

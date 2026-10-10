@@ -8,7 +8,7 @@ English | [简体中文](README.zh-CN.md)
 
 Run tasks through CLI and Web, connect business capabilities with plugins, capture methods in Skills, and build interfaces for the people doing the work. Choose a path below to get started.
 
-[Project home](../README.md) · [Why AGH](guide/why-agh.md) · [Try the examples](guide/demo.md) · [MHS (coming soon)](guide/mhs.md)
+[Project home](../README.md) · [Why AGH](guide/why-agh.md) · [Try the examples](guide/demo.md) · [MHS and devices](guide/mhs.md)
 
 <a id="选择你的起点"></a>
 
@@ -18,6 +18,7 @@ Run tasks through CLI and Web, connect business capabilities with plugins, captu
 | --- | --- | --- |
 | **Try AGH** | [Install](guide/install.md) → [First run](guide/quickstart.md) → [Continue a session](guide/sessions.md) | Run a task and find its record in both Web and CLI |
 | **Give agents business capabilities** | [Backend plugins](develop/backend.md) · [MCP](guide/mcp.md) · [Skills](guide/skills.md) | Connect tools, external services, or your team's methods |
+| **Explore physical device integration** | [MHS and devices](guide/mhs.md) | Understand the device direction and the boundaries between task orchestration and device control |
 | **Build a business workbench** | [Frontend panels](develop/frontend.md) → [Full-stack integration](develop/fullstack.md) | Add an interface and read results from a backend service |
 | **Explore and extend the runtime** | [Architecture](develop/architecture.md) → [Source map](develop/source-map.md) → [API](reference/api.md) | Understand requests, extensions, and persistent state |
 
@@ -31,6 +32,7 @@ Still choosing? Try the [three examples](guide/demo.md), then use the [extension
 | --- | --- |
 | [CLI and TUI](guide/cli.md) | Run terminal tasks, hold interactive conversations, and handle approvals |
 | [Web workbench](guide/web.md) | Create tasks, inspect history, and manage models and extensions |
+| [Runtime loops](guide/runtime-loops.md) | Configure Native and JevLoop, inspect decision routes, and compare runtime results |
 | [Sessions and recovery](guide/sessions.md) | Continue tasks, export records, and handle interruptions |
 | [Plugin lifecycle](guide/packages.md) | Install, trust, enable, update, and remove plugins |
 | [Security and trust](guide/security.md) | Choose a working directory and understand authorization and execution boundaries |
@@ -60,5 +62,3 @@ Every page under `docs/` has English and Simplified Chinese editions. Use the la
 ## Maintenance and licensing
 
 [Documentation maintenance](maintainers/maintenance.md) · [Release checks](maintainers/release.md) · [Versioning](maintainers/versioning.md) · [Verification](maintainers/verification.md) · [Licensing](maintainers/provenance.md) · [Apache-2.0](../LICENSE) · [NOTICE](../NOTICE)
-
-- [Runtime loops and comparison](guide/runtime-loops.md)

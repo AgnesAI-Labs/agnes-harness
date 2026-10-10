@@ -240,6 +240,25 @@ describe('Host durable comparison accounting', () => {
     }
   })
 
+  it('retains Laya decision usage and backend identity without applying Jev cloud prices', () => {
+    const source = input(structuredClone(required(priced.reports[1]).events))
+    const before = accountComparisonLane(source)
+    for (const row of source.events) {
+      const data = row.data as unknown as { record?: { call?: { purpose: string; backend: string } } }
+      if (data.record?.call?.purpose === 'decision') data.record.call.backend = 'laya'
+    }
+    const evidence = projectComparisonAttemptEvidence(source)
+    const decisions = evidence.events.filter((attempt) => attempt.family === 'jev')
+    expect(evidence.complete).toBe(true)
+    expect(decisions.length).toBeGreaterThan(0)
+    expect(decisions.every((attempt) => attempt.route === 'laya' && attempt.priceQuote === null)).toBe(true)
+    const result = accountComparisonLane(source)
+    expect(result.jev.tokens).toEqual(before.jev.tokens)
+    expect(result.jev.attempts).toBe(before.jev.attempts)
+    expect(result.jev.costs).toEqual({})
+    expect(result.jev.unpricedAttempts).toBe(result.jev.attempts)
+  })
+
   it('fixes pending and incomplete prefixes and refuses mismatched quotes without losing real usage', () => {
     const source = input(required(priced.reports[0]).events)
     const first = required(projectComparisonPriceDetails(source).entries[0])

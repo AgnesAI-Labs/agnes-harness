@@ -419,6 +419,55 @@ describe('comparison through actual local endpoint and SDK', () => {
       await f.close()
     }
   })
+  it('freezes JevLoop stage bindings into the jevloop lane without breaking the common configuration', async () => {
+    const f = await fixture(new ScriptedProvider({ scripts: ['Left answer', 'Right answer'].map(say) }))
+    try {
+      const client = f.connect()
+      const binding = { route: 'gw', model: 'm1' }
+      const created = await client.comparison.create({
+        requestId: 'stage-bindings',
+        cwd: f.cwd,
+        left: { runtime: 'native' },
+        right: { runtime: 'jevloop', jevStages: { arbitration: binding } },
+      })
+      const left = created.prepared?.left?.configuration
+      const right = created.prepared?.right?.configuration
+      if (!left || !right) throw new Error('Missing prepared comparison lanes')
+      // The binding is attested on the JevLoop lane only, outside the shared preset fingerprint.
+      expect(right.runtimeConfig?.languageStages).toEqual({
+        parameters: null,
+        arbitration: binding,
+        answer: null,
+      })
+      expect(left.runtimeConfig).toBeNull()
+      expect(right.fingerprints.preset).toBe(left.fingerprints.preset)
+      const jevLane = created.lanes.find((lane) => lane.side === 'right')
+      const session = jevLane ? f.opened.get(jevLane.sessionId) : undefined
+      expect(session?.preset.model.jevStageBindings).toEqual({ arbitration: binding })
+      // Per-round admission re-prepares both lanes and must still see one common configuration.
+      const round = await client.comparison.submit({
+        id: created.id,
+        inputId: 'stage-round',
+        content: [{ type: 'text', text: 'Answer briefly' }],
+      })
+      expect(round.acceptances.map((item) => item.status)).toEqual(['accepted', 'accepted'])
+      expect(round.prepared?.right?.configuration.runtimeConfig?.languageStages).toEqual(
+        right.runtimeConfig?.languageStages,
+      )
+      // Bindings only make sense where a JevLoop language loop runs.
+      await expect(
+        client.comparison.create({
+          requestId: 'stage-bindings-native',
+          cwd: f.cwd,
+          left: { runtime: 'native', jevStages: { answer: binding } },
+          right: { runtime: 'jevloop' },
+        }),
+      ).rejects.toMatchObject({ data: { code: 'STAGE_BINDING_RUNTIME' } })
+    } finally {
+      await f.close()
+    }
+  })
+
   it('reports frozen configuration drift before accepting any input', async () => {
     const f = await fixture(new ScriptedProvider({ scripts: [] }))
     try {

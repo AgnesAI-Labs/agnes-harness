@@ -1,5 +1,6 @@
 import type { RuntimeRecord } from '@agnes/jev-runtime'
 import type { EventEnvelope, RuntimeIdentity } from '@agnes/protocol'
+import type { Translate } from './jev-locale.js'
 
 export type JevStatsEvidence = {
   runtime?: RuntimeIdentity | undefined
@@ -69,12 +70,18 @@ export function jevDirectCount(events: readonly EventEnvelope[]): number {
 }
 
 /** The caller supplies a complete root-session ledger or a committed comparison replay prefix. */
-export function createJevDirectStats(host: HTMLElement, scope: 'session' | 'comparison' = 'session') {
+export function createJevDirectStats(
+  host: HTMLElement,
+  scope: 'session' | 'comparison' = 'session',
+  t: Translate,
+) {
   const reading = document.createElement('span')
   reading.className = 'jev-direct-stats'
   reading.dataset.jevDirectCount = ''
   reading.dataset.jevDirectScope = scope
-  reading.title = `${scope === 'session' ? '全会话累计' : '当前对比根会话截至回放位置累计'}：无需 LLM 补参或仲裁且已派发的无参或完整候选调用。不表示工具执行成功；派发后失败也计入，派发前拒绝不计入。`
+  reading.title = t('stats.reading.title', {
+    scope: t(scope === 'session' ? 'stats.scope.session' : 'stats.scope.comparison'),
+  })
   reading.hidden = true
   host.append(reading)
   return {
@@ -84,8 +91,8 @@ export function createJevDirectStats(host: HTMLElement, scope: 'session' | 'comp
       reading.textContent = reading.hidden
         ? ''
         : complete
-          ? `Jev 直通 ${jevDirectCount(events)} 次`
-          : 'Jev 直通：待同步'
+          ? t('stats.reading.count', { count: jevDirectCount(events) })
+          : t('stats.reading.pending')
     },
   }
 }

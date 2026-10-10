@@ -32,6 +32,32 @@ it('uses DSH exact Jev prices for both registered models, independently of unkno
     })
   }
 })
+it('uses the official estimate for the explicit Cloudflare typesafe/jev alias without claiming gateway billing', () => {
+  const cloudflare = {
+    ...identity,
+    endpoint: `https://api.cloudflare.com/client/v4/accounts/${'a'.repeat(32)}/ai/run`,
+    model: 'typesafe/jev',
+  }
+  const quote = captureJevPriceQuote(cloudflare)
+  expect(quote?.policy).toEqual(captureJevPriceQuote(identity)?.policy)
+  expect(quote).toMatchObject({ basis: 'configured', model: 'typesafe/jev', route: 'jev' })
+  expect(
+    resolveJevPriceEstimate({
+      ...cloudflare,
+      requestedModel: cloudflare.model,
+      observedModel: 'jev-1.13.0',
+      quote,
+    }),
+  ).toMatchObject({ basis: 'recorded', inputBasis: 'inputTotal', quote })
+  for (const invalid of [
+    { ...cloudflare, model: 'jev-latest' },
+    { ...cloudflare, endpoint: cloudflare.endpoint + '?token=hidden' },
+    { ...cloudflare, endpoint: cloudflare.endpoint + '\n' },
+    { ...identity, model: 'typesafe/jev' },
+  ])
+    expect(captureJevPriceQuote(invalid)).toBeNull()
+})
+
 it.each([
   { backend: 'laya' },
   { endpoint: 'https://other.example/v1/systemone' },

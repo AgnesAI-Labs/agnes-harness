@@ -36,7 +36,8 @@ describe('preset matrix through the host resolver', () => {
     expect(doc.loop).toEqual({ repeat_threshold: 3, no_progress_steps: 4 })
     const view = toPresetView(doc)
     expect(view.budget.maxSteps).toBeNull()
-    expect(view.budget.perRequestCap).toBe(4000)
+    expect(view.budget.perRequestCap).toBeNull()
+    expect(view.treeBudgetMode).toBe('unlimited')
     expect(view.disclosure).toBe('standard')
     const uncapped = resolvePreset('standard-no-credit-cap', docs)
     expect(uncapped.doc).toEqual({

@@ -4,25 +4,30 @@ import type {
   SessionAccountingResult,
 } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
+import type { Translate } from './jev-locale.js'
 import { positionPopover } from '@agnes/web-ui'
 
-function total(value: ComparisonAccountingTotal | undefined, money = false): string {
-  if (!value || value.state === 'unknown') return '未知'
+function total(
+  t: Translate,
+  value: ComparisonAccountingTotal | undefined,
+  money = false,
+): string {
+  if (!value || value.state === 'unknown') return t('acct.unknown')
   const format = (n: number) => (money ? n.toFixed(6) : n.toLocaleString('en-US'))
   if (value.state === 'complete' && value.value !== null) return format(value.value)
   return value.knownSubtotal === null
-    ? '未知'
-    : `已知小计 ${format(value.knownSubtotal)}（非总量，缺失 ${value.missing}）`
+    ? t('acct.unknown')
+    : t('acct.total.partial', { subtotal: format(value.knownSubtotal), missing: value.missing })
 }
 
-function costs(family: ComparisonAccountingFamily): string {
+function costs(t: Translate, family: ComparisonAccountingFamily): string {
   const entries = Object.entries(family.costs)
-  if (!entries.length) return family.attempts === 0 ? '暂无已观测请求' : '未知（无价格证据）'
-  const basis = family.currentPriceAttempts ? ` · ${family.currentPriceAttempts} 次按当前配置重估` : ''
-  return `${entries.map(([currency, amount]) => `${currency} ${total(amount, true)}`).join(' / ')}${basis}`
+  if (!entries.length) return family.attempts === 0 ? t('acct.costs.none') : t('acct.costs.noPrices')
+  const basis = family.currentPriceAttempts ? t('acct.costs.basis', { count: family.currentPriceAttempts }) : ''
+  return `${entries.map(([currency, amount]) => `${currency} ${total(t, amount, true)}`).join(' / ')}${basis}`
 }
 
-function cacheRate(family: ComparisonAccountingFamily): string {
+function cacheRate(t: Translate, family: ComparisonAccountingFamily): string {
   const read = family.tokens.cacheRead
   const input = family.tokens.inputTotal
   if (
@@ -31,18 +36,18 @@ function cacheRate(family: ComparisonAccountingFamily): string {
     read.value === null ||
     input.value === null
   )
-    return '未知'
-  if (input.value === 0) return '不适用'
+    return t('acct.unknown')
+  if (input.value === 0) return t('acct.cache.na')
   return `${((read.value / input.value) * 100).toFixed(1)}%`
 }
 
 /** Plugin-owned reader of the same durable accounting projection used by comparison. */
-export function createSessionAccounting(host: HTMLElement, client: Pick<Client, 'call'>) {
+export function createSessionAccounting(host: HTMLElement, client: Pick<Client, 'call'>, t: Translate) {
   const panel = document.createElement('details')
   panel.className = 'jev-session-accounting'
   panel.hidden = true
   const summary = document.createElement('summary')
-  summary.textContent = '单线计量 · 正在读取'
+  summary.textContent = t('acct.summary.loading')
   const body = document.createElement('div')
   body.className = 'jev-session-accounting-body'
   body.setAttribute('popover', 'manual')
@@ -54,6 +59,7 @@ export function createSessionAccounting(host: HTMLElement, client: Pick<Client, 
   let ticket = 0
   let timer: ReturnType<typeof setTimeout> | undefined
   let loading = false
+  let failed = false
   let disposed = false
   const listeners = new AbortController()
   const place = () => {
@@ -101,30 +107,30 @@ export function createSessionAccounting(host: HTMLElement, client: Pick<Client, 
   const render = (result: SessionAccountingResult) => {
     const { accounting } = result
     const { llm, jev } = accounting
-    const state = accounting.state === 'complete' ? '证据完整' : '证据部分可用'
-    summary.textContent = `单线计量 · LLM ${llm.attempts} 次 / Jev ${jev.attempts} 次 · ${state}`
+    const state = accounting.state === 'complete' ? t('acct.state.complete') : t('acct.state.partial')
+    summary.textContent = t('acct.summary.counts', { llm: llm.attempts, jev: jev.attempts, state })
     const note = document.createElement('p')
-    note.textContent = `根会话账本 #${accounting.throughSeq} · 仅统计已观测请求；缺失用量不按零计算。子会话未纳入。`
+    note.textContent = t('acct.note', { seq: accounting.throughSeq })
     const list = document.createElement('dl')
-    row(list, 'LLM 调用次数', String(llm.attempts))
-    row(list, 'LLM 输入 Token', total(llm.tokens.inputTotal))
-    row(list, 'LLM 缓存读取 Token', total(llm.tokens.cacheRead))
-    row(list, 'LLM 缓存命中率', cacheRate(llm))
-    row(list, 'LLM 输出 Token', total(llm.tokens.output))
-    row(list, 'LLM 估算总成本', costs(llm))
-    row(list, 'Jev 调用次数', String(jev.attempts))
-    row(list, 'Jev 输入 Token', total(jev.tokens.inputTotal))
-    row(list, 'Jev 输出 Token', total(jev.tokens.output))
-    row(list, 'Jev 估算总成本', costs(jev))
+    row(list, t('acct.row.llmAttempts'), String(llm.attempts))
+    row(list, t('acct.row.llmInput'), total(t, llm.tokens.inputTotal))
+    row(list, t('acct.row.llmCacheRead'), total(t, llm.tokens.cacheRead))
+    row(list, t('acct.row.llmCacheRate'), cacheRate(t, llm))
+    row(list, t('acct.row.llmOutput'), total(t, llm.tokens.output))
+    row(list, t('acct.row.llmCost'), costs(t, llm))
+    row(list, t('acct.row.jevAttempts'), String(jev.attempts))
+    row(list, t('acct.row.jevInput'), total(t, jev.tokens.inputTotal))
+    row(list, t('acct.row.jevOutput'), total(t, jev.tokens.output))
+    row(list, t('acct.row.jevCost'), costs(t, jev))
     const combined = Object.entries(accounting.totalCosts ?? {})
     row(
       list,
-      '合计估算成本',
+      t('acct.row.totalCost'),
       combined.length
-        ? combined.map(([currency, amount]) => `${currency} ${total(amount, true)}`).join(' / ')
-        : '未知（无合计费用证据）',
+        ? combined.map(([currency, amount]) => `${currency} ${total(t, amount, true)}`).join(' / ')
+        : t('acct.total.noEvidence'),
     )
-    if (accounting.issues.length) row(list, '证据问题', accounting.issues.join(' · '))
+    if (accounting.issues.length) row(list, t('acct.row.issues'), accounting.issues.join(' · '))
     body.replaceChildren(note, list)
     panel.dataset.throughSeq = String(accounting.throughSeq)
   }
@@ -141,11 +147,13 @@ export function createSessionAccounting(host: HTMLElement, client: Pick<Client, 
         return
       if (result.accounting.throughSeq < seenHead) throw new Error('计量账本水位回退')
       seenHead = result.accounting.throughSeq
+      failed = false
       render(result)
     } catch (error) {
       if (!disposed && generation === ticket) {
         seenHead = targetHead
-        summary.textContent = '单线计量 · 读取失败（点击重试）'
+        failed = true
+        summary.textContent = t('acct.summary.failed')
         body.textContent = error instanceof Error ? error.message : String(error)
       }
     } finally {
@@ -156,7 +164,7 @@ export function createSessionAccounting(host: HTMLElement, client: Pick<Client, 
     }
   }
   const retry = () => {
-    if (sessionId && summary.textContent?.includes('读取失败')) {
+    if (sessionId && failed) {
       seenHead = -1
       schedule(0)
     }
@@ -177,7 +185,8 @@ export function createSessionAccounting(host: HTMLElement, client: Pick<Client, 
         ticket++
         loading = false
         body.replaceChildren()
-        summary.textContent = '单线计量 · 正在读取'
+        failed = false
+        summary.textContent = t('acct.summary.loading')
         if (id) schedule(0)
       } else if (head > targetHead) {
         targetHead = head

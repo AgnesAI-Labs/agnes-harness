@@ -47,6 +47,7 @@
   "mergeDeltas",
   "normalizeError",
   "pollUntilDone",
+  "probeCustomModel",
   "renderPrefixedPrompt",
   "retryHint",
   "runConformance",

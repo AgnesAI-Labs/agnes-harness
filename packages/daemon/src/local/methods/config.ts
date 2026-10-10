@@ -5,6 +5,8 @@ import {
   type ConfigSaveInput,
   type ConfigSnapshot,
   type ConfigTestInput,
+  type JevConfigSaveInput,
+  type JevConfigTestInput,
   rpcError,
 } from '@agnes/protocol'
 import type { CallContext, LocalEndpoint } from '../endpoint.js'
@@ -62,6 +64,21 @@ export function registerConfiguration(
   )
   endpoint.register('_agnes/v1/config.account', (params, context) =>
     invoke(context, async (s) => apply(await s.account(params as ConfigAccountInput))),
+  )
+  const jev = <T>(
+    context: CallContext,
+    action: (service: NonNullable<ConfigurationService['jev']>) => Promise<T>,
+  ) =>
+    invoke(context, (s) => {
+      if (!s.jev) throw Object.assign(new Error('CONFIG_UNAVAILABLE'), { code: 'CONFIG_UNAVAILABLE' })
+      return action(s.jev)
+    })
+  endpoint.register('_agnes/v1/config.jevGet', (_params, context) => jev(context, (s) => s.get()))
+  endpoint.register('_agnes/v1/config.jevTest', (params, context) =>
+    jev(context, (s) => s.test(params as JevConfigTestInput)),
+  )
+  endpoint.register('_agnes/v1/config.jevSave', (params, context) =>
+    jev(context, (s) => s.save(params as JevConfigSaveInput)),
   )
   endpoint.register('_agnes/v1/config.oauth', (params, context) =>
     invoke(context, async (service) => {

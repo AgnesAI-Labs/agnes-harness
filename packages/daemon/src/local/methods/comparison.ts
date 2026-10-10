@@ -139,7 +139,13 @@ export function registerComparison(
           for (const value of acquired) admissions.set(admissionKey(value.sessionId, input.inputId), value)
           return {
             prepared: { left: left.prepared, right: right.prepared },
-            enqueue: (side) => sessions.enqueue({ ...input, side, sessionId: input.lanes[side].sessionId }),
+            enqueue: (side) =>
+              sessions.enqueue({
+                ...input,
+                side,
+                sessionId: input.lanes[side].sessionId,
+                ...(input.lanes[side].runtime ? { runtime: input.lanes[side].runtime.id } : {}),
+              }),
             async ready() {
               await isolationFor(input.comparisonId)
               // All owners are still held while both checks and seals complete. A partial seal
@@ -222,6 +228,22 @@ export function registerComparison(
           cx.host.validateModelSwitch(selection)
           await entry.session.setModel(selection)
         }
+        // JevLoop lane stage bindings land before preparation, so the attested receipt records
+        // them (runtimeConfig.languageStages) exactly as the lane will run.
+        const stages = Object.fromEntries(
+          Object.entries(input.jevStages ?? {}).filter(([, binding]) => binding !== undefined),
+        )
+        if (Object.keys(stages).length) {
+          for (const binding of Object.values(stages))
+            if (binding)
+              cx.host.validateModelSwitch({
+                slot: 'primary',
+                route: binding.route,
+                model: binding.model,
+                ...(binding.thinking === undefined ? {} : { thinking: binding.thinking }),
+              })
+          await entry.session.setJevStages({ stages })
+        }
         const prepared = await cx.host.prepareSessionConfiguration(
           key,
           await isolationFor(input.comparisonId),
@@ -261,6 +283,9 @@ export function registerComparison(
               actor,
               content: input.content,
               commandId: input.inputId,
+              ...(input.decisionBackend !== undefined && input.runtime === 'jevloop'
+                ? { runtimeOptions: { decisionBackend: input.decisionBackend } }
+                : {}),
               admissionId: hash(
                 `comparison\u0000${input.comparisonId}\u0000${input.side}\u0000${input.inputId}\u0000${JSON.stringify(input.content)}`,
               ),

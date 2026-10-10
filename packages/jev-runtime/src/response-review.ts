@@ -1,7 +1,7 @@
 /** Persisted response-review decisions are scoped to substantive evidence rather than model-call history. */
 
 import { readFeedback } from './progress.js'
-import type { DecisionContextPort, JsonValue, RecordId, RuntimeRecord, TurnId } from './types.js'
+import type { DecisionContextPort, IntentId, JsonValue, RecordId, RuntimeRecord, TurnId } from './types.js'
 
 function canonical(value: JsonValue): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
@@ -155,21 +155,26 @@ export function responseReviewState(
 
 /**
  * Select the latest typed current-turn recovery, independently of repeated successful observations.
+ * A success only clears a failure the caller already knew about: a sibling that was dispatched
+ * before the failure settled may finish later, but it never observed the failure, so it proves
+ * nothing about recovery. Dispatch markers supply that ordering without a second state store.
  * @param records - Committed prefix.
  * @param turn - Current turn.
  * @returns An unsettled recoverable failure's source record, or undefined after success or arbitration acceptance.
  */
 export function pendingRecovery(records: readonly RuntimeRecord[], turn: TurnId): RecordId | undefined {
   let pending: RecordId | undefined
+  const pendingAtDispatch = new Map<IntentId, RecordId | undefined>()
   for (const record of records) {
     if (record.turn !== turn) continue
     if (record.kind === 'resource.observed' && readFeedback(record.resource) !== undefined)
       pending = record.id
+    else if (record.kind === 'action.dispatching') pendingAtDispatch.set(record.intentId, pending)
     else if (record.kind === 'action.settled') {
-      pending =
-        record.outcome.kind === 'error' && (record.effect === 'none' || record.effect === 'not_applied')
-          ? record.id
-          : undefined
+      if (record.outcome.kind === 'error' && (record.effect === 'none' || record.effect === 'not_applied'))
+        pending = record.id
+      else if (pending !== undefined && pendingAtDispatch.get(record.intentId) === pending)
+        pending = undefined
     } else if (record.kind === 'decision.selected' && record.source === 'llm_arbitration') pending = undefined
   }
   return pending

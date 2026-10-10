@@ -52,6 +52,9 @@ export type MethodName =
   | '_agnes/v1/config.test'
   | '_agnes/v1/config.save'
   | '_agnes/v1/config.account'
+  | '_agnes/v1/config.jevGet'
+  | '_agnes/v1/config.jevTest'
+  | '_agnes/v1/config.jevSave'
   | '_agnes/v1/computerUse.status'
   | '_agnes/v1/computerUse.permissions.status'
   | '_agnes/v1/computerUse.permissions.grant'
@@ -92,6 +95,8 @@ export type MethodName =
   | '_agnes/v1/session.attach'
   | '_agnes/v1/session.steer'
   | '_agnes/v1/session.budget'
+  | '_agnes/v1/session.modelSlots'
+  | '_agnes/v1/session.setJevStages'
   | '_agnes/v1/session.projectUI'
   | '_agnes/v1/session.projectUIPatch'
   | '_agnes/v1/session.projectUIOpening'
@@ -144,6 +149,9 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/config.test': clientRequest(A.ConfigTestInput, A.ConfigTestResult),
   '_agnes/v1/config.save': clientRequest(A.ConfigSaveInput, A.ConfigSnapshot),
   '_agnes/v1/config.account': clientRequest(A.ConfigAccountInput, A.ConfigSnapshot),
+  '_agnes/v1/config.jevGet': clientRequest(A.ConfigEmptyParams, A.JevConfigSnapshot),
+  '_agnes/v1/config.jevTest': clientRequest(A.JevConfigTestInput, A.JevConfigTestResult),
+  '_agnes/v1/config.jevSave': clientRequest(A.JevConfigSaveInput, A.JevConfigSnapshot),
   '_agnes/v1/computerUse.status': clientRequest(A.Empty, A.ComputerUseStatusResult),
   '_agnes/v1/computerUse.permissions.status': clientRequest(A.Empty, A.ComputerUsePermissionsStatusResult),
   '_agnes/v1/computerUse.permissions.grant': clientRequest(A.Empty, A.ComputerUsePermissionsStatusResult),
@@ -282,6 +290,8 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/diagnostics.collect': clientRequest(A.DiagnosticsCollectParams, A.DiagnosticsCollectResult),
   '_agnes/v1/diagnostics.events': clientRequest(A.DiagnosticsEventsParams, A.DiagnosticsEventsResult),
   '_agnes/v1/session.accounting': clientRequest(A.SessionAccountingParams, A.SessionAccountingResult),
+  '_agnes/v1/session.modelSlots': clientRequest(A.SessionModelSlotsParams, A.SessionModelSlotsResult),
+  '_agnes/v1/session.setJevStages': clientRequest(A.SessionSetJevStagesParams, A.SessionSetJevStagesResult),
   '_agnes/v1/session.list': {
     kind: 'request',
     direction: 'c2s',

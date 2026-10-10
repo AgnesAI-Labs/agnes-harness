@@ -345,6 +345,31 @@
               "additionalProperties": false,
               "required": ["decision", "config"],
               "properties": {
+                "decisionChoices": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["backend", "endpoint", "model"],
+                    "properties": {
+                      "backend": {
+                        "enum": ["jev", "laya"]
+                      },
+                      "endpoint": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^https?://[^/?#@]+(?:/[^?#]*)?$"
+                      },
+                      "model": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512
+                      }
+                    }
+                  }
+                },
                 "decision": {
                   "type": "object",
                   "additionalProperties": false,
@@ -453,6 +478,60 @@
                       "type": "number"
                     }
                   }
+                },
+                "toolMount": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["policy", "baselineDigest", "mountedDigest", "names"],
+                  "properties": {
+                    "policy": { "type": "string", "minLength": 1, "maxLength": 128 },
+                    "baselineDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                    "mountedDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                    "names": {
+                      "type": "array",
+                      "maxItems": 100000,
+                      "uniqueItems": true,
+                      "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+                    }
+                  }
+                },
+                "languageStages": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["parameters", "arbitration", "answer"],
+                  "properties": {
+                    "parameters": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/JevStageBinding"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "arbitration": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/JevStageBinding"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "answer": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/$defs/JevStageBinding"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "description": "Direct JevLoop stage bindings in effect when the lane was prepared; null follows the session model. Lane-specific, so not part of the common preset fingerprint."
                 }
               }
             },
@@ -836,13 +915,22 @@
       "additionalProperties": false,
       "required": ["inputId", "acceptances", "settledSides", "terminalCauses"],
       "properties": {
-        "permissionMode": { "enum": ["view", "workspace", "full"] },
+        "decisionBackend": {
+          "enum": ["jev", "laya"]
+        },
+        "permissionMode": {
+          "enum": ["view", "workspace", "full"]
+        },
         "prepared": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "left": { "$ref": "#/$defs/ComparisonPreparedReceipt" },
-            "right": { "$ref": "#/$defs/ComparisonPreparedReceipt" }
+            "left": {
+              "$ref": "#/$defs/ComparisonPreparedReceipt"
+            },
+            "right": {
+              "$ref": "#/$defs/ComparisonPreparedReceipt"
+            }
           }
         },
         "inputId": {
@@ -900,7 +988,9 @@
         "rounds"
       ],
       "properties": {
-        "permissionMode": { "enum": ["view", "workspace", "full"] },
+        "permissionMode": {
+          "enum": ["view", "workspace", "full"]
+        },
         "id": {
           "type": "string",
           "minLength": 1,
@@ -1007,7 +1097,9 @@
       "additionalProperties": false,
       "required": ["requestId", "cwd", "left", "right"],
       "properties": {
-        "permissionMode": { "enum": ["view", "workspace", "full"] },
+        "permissionMode": {
+          "enum": ["view", "workspace", "full"]
+        },
         "requestId": {
           "type": "string",
           "minLength": 1,
@@ -1026,6 +1118,43 @@
             "runtime": {
               "type": "string",
               "pattern": "^[a-z][a-z0-9-]{0,63}$"
+            },
+            "jevStages": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "parameters": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/JevStageBinding"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "arbitration": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/JevStageBinding"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answer": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/JevStageBinding"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "description": "JevLoop lane only: per-stage model bindings frozen into the lane at creation. Refused on any other runtime."
             }
           }
         },
@@ -1037,6 +1166,43 @@
             "runtime": {
               "type": "string",
               "pattern": "^[a-z][a-z0-9-]{0,63}$"
+            },
+            "jevStages": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "parameters": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/JevStageBinding"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "arbitration": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/JevStageBinding"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "answer": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/JevStageBinding"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "description": "JevLoop lane only: per-stage model bindings frozen into the lane at creation. Refused on any other runtime."
             }
           }
         },
@@ -1307,13 +1473,19 @@
                   "additionalProperties": false,
                   "required": ["inputId", "runs", "terminalCauses", "acceptances", "acceptedSeqs"],
                   "properties": {
-                    "permissionMode": { "enum": ["view", "workspace", "full"] },
+                    "permissionMode": {
+                      "enum": ["view", "workspace", "full"]
+                    },
                     "prepared": {
                       "type": "object",
                       "additionalProperties": false,
                       "properties": {
-                        "left": { "$ref": "#/$defs/ComparisonPreparedReceipt" },
-                        "right": { "$ref": "#/$defs/ComparisonPreparedReceipt" }
+                        "left": {
+                          "$ref": "#/$defs/ComparisonPreparedReceipt"
+                        },
+                        "right": {
+                          "$ref": "#/$defs/ComparisonPreparedReceipt"
+                        }
                       }
                     },
                     "inputId": {
@@ -2136,7 +2308,12 @@
       "additionalProperties": false,
       "required": ["id", "inputId", "content"],
       "properties": {
-        "permissionMode": { "enum": ["view", "workspace", "full"] },
+        "decisionBackend": {
+          "enum": ["jev", "laya"]
+        },
+        "permissionMode": {
+          "enum": ["view", "workspace", "full"]
+        },
         "id": {
           "type": "string",
           "minLength": 1,
@@ -2201,6 +2378,38 @@
         }
       }
     },
+    "RuntimeTurnOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "decisionBackend": {
+          "enum": ["jev", "laya"]
+        }
+      }
+    },
+    "DecisionBackendStatus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "label", "available"],
+      "properties": {
+        "backend": {
+          "enum": ["jev", "laya"]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "unavailableReason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      }
+    },
     "RuntimeDescriptor": {
       "type": "object",
       "additionalProperties": false,
@@ -2234,6 +2443,16 @@
         },
         "capabilities": {
           "$ref": "#/$defs/RuntimeCapabilities"
+        },
+        "defaultDecisionBackend": {
+          "enum": ["jev", "laya"]
+        },
+        "decisionBackends": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/DecisionBackendStatus"
+          }
         }
       }
     },
@@ -2300,6 +2519,9 @@
       "additionalProperties": false,
       "required": ["runtime", "phase"],
       "properties": {
+        "decisionBackend": {
+          "enum": ["jev", "laya"]
+        },
         "runtime": {
           "$ref": "#/$defs/RuntimeIdentity"
         },
@@ -2394,6 +2616,9 @@
       "additionalProperties": false,
       "required": ["sessionId", "content", "commandId"],
       "properties": {
+        "runtimeOptions": {
+          "$ref": "#/$defs/RuntimeTurnOptions"
+        },
         "sessionId": {
           "type": "string",
           "maxLength": 512
@@ -6278,6 +6503,130 @@
       },
       "description": "Read-only bounded root-session ledger accounting at a snapped durable sequence. Does not include child sessions. Incomplete prefixes and missing provider evidence remain unknown."
     },
+    "SessionModelSlotsParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "SessionModelSlot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slot", "route", "model", "thinking", "contextWindow"],
+      "properties": {
+        "slot": {
+          "$ref": "#/$defs/SlotName"
+        },
+        "route": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "$ref": "model.json#/$defs/ThinkingLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contextWindow": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "description": "One model slot's live resolved route/model plus the session's thinking and context window overrides; null means unset, leaving the provider catalog default in force."
+    },
+    "SessionModelSlotsResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "runtime", "languageSlots", "slots"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "runtime": {
+          "$ref": "#/$defs/RuntimeIdentity"
+        },
+        "languageSlots": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["parameters", "arbitration", "answer"],
+          "properties": {
+            "parameters": {
+              "$ref": "#/$defs/SlotName"
+            },
+            "arbitration": {
+              "$ref": "#/$defs/SlotName"
+            },
+            "answer": {
+              "$ref": "#/$defs/SlotName"
+            }
+          }
+        },
+        "slots": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/SessionModelSlot"
+          }
+        },
+        "languageBindings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["parameters", "arbitration", "answer"],
+          "properties": {
+            "parameters": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/JevStageBinding"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "arbitration": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/JevStageBinding"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "answer": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/JevStageBinding"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "description": "Read-only live model-slot state of an open session, including the effective JevLoop language-stage-to-slot mapping with defaults applied. Never opens, resumes or mutates a session."
+    },
     "DiagnosticsEventsResult": {
       "type": "object",
       "additionalProperties": false,
@@ -6749,6 +7098,217 @@
         }
       }
     },
+    "ConfigCustomModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api", "contextWindow", "maxTokens", "input", "reasoning", "toolCalls", "maxTokensField"],
+      "properties": {
+        "api": {
+          "enum": ["openai-completions", "openai-responses"]
+        },
+        "contextWindow": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 10000000
+        },
+        "maxTokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000
+        },
+        "input": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["text", "image"]
+          }
+        },
+        "reasoning": {
+          "type": "boolean"
+        },
+        "toolCalls": {
+          "type": "boolean"
+        },
+        "supportsMidConvoSystemMessages": {
+          "type": "boolean"
+        },
+        "maxTokensField": {
+          "enum": ["max_tokens", "max_completion_tokens"]
+        },
+        "modelIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4096,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[^\\s]+$"
+          }
+        }
+      }
+    },
+    "JevSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transport", "endpoint", "model", "authentication", "enabled"],
+      "properties": {
+        "backend": {
+          "enum": ["jev", "laya"]
+        },
+        "transport": {
+          "enum": ["native", "cloudflare"]
+        },
+        "endpoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "authentication": {
+          "enum": ["bearer", "none"]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "accountId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "decisionRequestCredits": {
+          "type": "number",
+          "minimum": 1e-9
+        },
+        "languageRequestCredits": {
+          "type": "number",
+          "minimum": 1e-9
+        }
+      }
+    },
+    "JevConfigTestInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["settings"],
+      "properties": {
+        "settings": {
+          "$ref": "#/$defs/JevSettings"
+        },
+        "apiKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        }
+      }
+    },
+    "JevConfigSaveInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["settings", "expectedRevision"],
+      "properties": {
+        "settings": {
+          "$ref": "#/$defs/JevSettings"
+        },
+        "apiKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536
+        },
+        "expectedRevision": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "JevConfigSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "revision",
+        "settings",
+        "configured",
+        "credentialConfigured",
+        "effect",
+        "source"
+      ],
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "settings": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/JevSettings"
+            }
+          ]
+        },
+        "backends": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["backend", "settings", "configured", "credentialConfigured"],
+            "properties": {
+              "backend": {
+                "enum": ["jev", "laya"]
+              },
+              "settings": {
+                "$ref": "#/$defs/JevSettings"
+              },
+              "configured": {
+                "type": "boolean"
+              },
+              "credentialConfigured": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "configured": {
+          "type": "boolean"
+        },
+        "credentialConfigured": {
+          "type": "boolean"
+        },
+        "effect": {
+          "enum": ["new-sessions", "restart-required"]
+        },
+        "source": {
+          "enum": ["environment", "profile", "none"]
+        }
+      }
+    },
+    "JevConfigTestResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verified"],
+      "properties": {
+        "verified": {
+          "type": "boolean"
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 256
+        }
+      }
+    },
     "ConfigProvider": {
       "type": "object",
       "additionalProperties": false,
@@ -6870,6 +7430,9 @@
               "additionalProperties": false,
               "required": ["id", "baseUrl", "model", "credentialConfigured"],
               "properties": {
+                "custom": {
+                  "$ref": "#/$defs/ConfigCustomModel"
+                },
                 "id": {
                   "type": "string",
                   "minLength": 1,
@@ -6926,6 +7489,12 @@
       "additionalProperties": false,
       "required": ["providerId"],
       "properties": {
+        "catalogueOnly": {
+          "type": "boolean"
+        },
+        "custom": {
+          "$ref": "#/$defs/ConfigCustomModel"
+        },
         "providerId": {
           "type": "string",
           "minLength": 1,
@@ -6958,6 +7527,9 @@
       "additionalProperties": false,
       "required": ["providerId", "model"],
       "properties": {
+        "custom": {
+          "$ref": "#/$defs/ConfigCustomModel"
+        },
         "defaultSettings": {
           "$ref": "model.json#/$defs/ModelSettings"
         },
@@ -7003,11 +7575,68 @@
         }
       }
     },
+    "ConfigCustomVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseUrl", "model", "api", "ordering", "checks"],
+      "properties": {
+        "baseUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "api": {
+          "enum": ["openai-completions", "openai-responses"]
+        },
+        "ordering": {
+          "const": "unverified"
+        },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "status"],
+            "properties": {
+              "id": {
+                "enum": ["inference", "mid-conversation-system"]
+              },
+              "status": {
+                "enum": ["passed", "failed", "skipped"]
+              },
+              "reason": {
+                "enum": [
+                  "authentication",
+                  "endpoint",
+                  "timeout",
+                  "network",
+                  "invalid-response",
+                  "unsupported-api"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
     "ConfigTestResult": {
       "type": "object",
       "additionalProperties": false,
       "required": ["models", "verified"],
       "properties": {
+        "customVerification": {
+          "$ref": "#/$defs/ConfigCustomVerification"
+        },
+        "custom": {
+          "$ref": "#/$defs/ConfigCustomModel"
+        },
         "models": {
           "type": "array",
           "items": {
@@ -7163,6 +7792,9 @@
         "credentialConfigured"
       ],
       "properties": {
+        "custom": {
+          "$ref": "#/$defs/ConfigCustomModel"
+        },
         "accountId": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9-]{0,47}$",
@@ -7481,7 +8113,7 @@
           "maxLength": 48
         },
         "action": {
-          "enum": ["enable", "disable", "remove", "default"]
+          "enum": ["enable", "disable", "remove", "default", "refresh-prices"]
         },
         "expectedRevision": {
           "type": "integer",
@@ -8351,6 +8983,95 @@
         "$ref": "#/$defs/ComparisonAccountingTotal"
       },
       "description": "Combined LLM and Jev estimates by currency at the exact same prefix. No currency conversion or missing-family zero fill. Absent on legacy responses."
+    },
+    "JevStageBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route", "model"],
+      "properties": {
+        "route": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "$ref": "model.json#/$defs/ThinkingLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "A JevLoop language stage bound directly to a route/model (plus optional thinking level) for this session, overriding the stage's preset slot resolution."
+    },
+    "SessionSetJevStagesParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "stages"],
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "stages": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "parameters": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/JevStageBinding"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "arbitration": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/JevStageBinding"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "answer": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/JevStageBinding"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "description": "Sets or clears per-session direct stage bindings; null restores the stage's preset slot resolution. Each binding takes effect for that stage's next request."
+    },
+    "SessionSetJevStagesResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["effectiveFromSeq"],
+      "properties": {
+        "effectiveFromSeq": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "description": "The ledger sequence from which the updated stage bindings apply."
     }
   }
 }

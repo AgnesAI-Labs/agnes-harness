@@ -44,6 +44,7 @@ async function fixture(
   new ThemeService(ctx, 'light')
   new LocaleService(ctx, 'zh-CN')
   const workbench = new WorkbenchService(ctx)
+  const openSettings = vi.fn(async (_pane: 'model' | 'jev') => {})
   workbench.configure({
     surfaces: Object.fromEntries(
       ['root', 'chat', 'aside', 'divider', 'footer', 'toolbar', 'overlay'].map((name) => [
@@ -52,6 +53,7 @@ async function fixture(
       ]),
     ) as never,
     select,
+    openSettings,
     changed: vi.fn(),
   })
   const state = (patch: Partial<WorkbenchSnapshot> = {}) => {
@@ -71,7 +73,7 @@ async function fixture(
     )
     return { api, fiber }
   }
-  return { ctx, workbench, mount, state, select }
+  return { ctx, workbench, mount, state, select, openSettings }
 }
 
 function provider(id = 'plugin-a', overrides: Partial<WorkbenchProvider> = {}): WorkbenchProvider {
@@ -101,6 +103,18 @@ function target(id = 'plugin-a', record = 'record-1'): WorkbenchTarget {
 const event = { seq: 1, type: 'turn.start', ts: '2026-10-05T00:00:00Z', data: {} } as unknown as EventEnvelope
 
 describe('WorkbenchService fiber ownership', () => {
+  it('opens only supported public settings panes while the module is alive', async () => {
+    const { mount, openSettings } = await fixture()
+    const { api, fiber } = await mount('module-a')
+    await api.openSettings('jev')
+    await api.openSettings('model')
+    expect(openSettings.mock.calls).toEqual([['jev'], ['model']])
+    await expect(api.openSettings('private' as never)).rejects.toThrow('未知')
+    await fiber.dispose()
+    await expect(api.openSettings('jev')).rejects.toThrow('已卸载')
+    expect(openSettings).toHaveBeenCalledTimes(2)
+  })
+
   it('removes providers and both subscriptions across ten real module enable/disable cycles', async () => {
     const { mount, workbench, state } = await fixture()
     state({ session: { id: 'session-a', head: 1 } })

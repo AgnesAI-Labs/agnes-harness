@@ -1,4 +1,12 @@
 import type { TraceEntry } from '@agnes/jev-trace'
+import type { Translate } from './jev-locale.js'
+
+export function decisionModelLabel(backend: unknown, t: Translate): string {
+  if (backend === 'jev') return 'Jev'
+  if (backend === 'laya') return 'Laya'
+  if (backend === 'agnes-provider' || backend === 'llm') return 'LLM'
+  return t('req.model.unknown')
+}
 
 type SavedRequest = {
   key: string
@@ -9,7 +17,7 @@ type SavedRequest = {
   unavailable?: string
 }
 
-function savedRequests(entries: readonly TraceEntry[]): SavedRequest[] {
+function savedRequests(entries: readonly TraceEntry[], t: Translate): SavedRequest[] {
   return entries.flatMap((entry) => {
     const record = entry.record
     if (record.kind !== 'model.requested' || record.call.purpose !== 'decision') return []
@@ -20,15 +28,32 @@ function savedRequests(entries: readonly TraceEntry[]): SavedRequest[] {
         candidate.record.requested === record.id,
     )?.record
     const status =
-      settlement?.kind === 'model.settled' ? (settlement.settlement.error ? '失败' : '已结算') : '未结算'
+      settlement?.kind === 'model.settled'
+        ? settlement.settlement.error
+          ? t('req.status.failed')
+          : t('req.status.settled')
+        : t('req.status.unsettled')
     const result: SavedRequest = {
       key: `${entry.seq}:${record.id}`,
       seq: entry.seq,
-      label: `#${entry.seq} · 第 ${entry.turn} 轮 · 步 ${entry.step ?? '未知'} · ${status}`,
-      metadata: `endpoint: ${record.call.endpoint}\nrequest ID: ${record.id}\ncodec: ${record.call.codec}\n状态: ${status}`,
+      label: t('req.saved.label', {
+        seq: entry.seq,
+        backend: decisionModelLabel(record.call.backend, t),
+        turn: entry.turn,
+        step: entry.step ?? t('req.unknown'),
+        status,
+      }),
+      metadata: t('req.saved.metadata', {
+        backend: decisionModelLabel(record.call.backend, t),
+        model: record.call.requestedModel ?? t('req.unknown'),
+        endpoint: record.call.endpoint,
+        id: record.id,
+        codec: record.call.codec,
+        status,
+      }),
     }
     if (record.call.codec !== 'systemone-json-v1') {
-      result.unavailable = '未知：此请求使用尚不支持的 codec，不能推断实际请求体。'
+      result.unavailable = t('req.unavailable.codec')
       return [result]
     }
     const input = record.call.input
@@ -42,41 +67,41 @@ function savedRequests(entries: readonly TraceEntry[]): SavedRequest[] {
       typeof input.questions !== 'object' ||
       Array.isArray(input.questions)
     ) {
-      result.unavailable = '未知：此记录未保存完整实际请求体，不能从决策或上下文重建。'
+      result.unavailable = t('req.unavailable.missing')
       return [result]
     }
     try {
       result.raw = JSON.stringify(input)
     } catch {
-      result.unavailable = '未知：保存的请求体无法读取为 JSON。'
+      result.unavailable = t('req.unavailable.json')
     }
     return [result]
   })
 }
 
 /** Read only trusted runtime records supplied by the graph, already restricted to its visible prefix. */
-export function createJevRequestViewer() {
+export function createJevRequestViewer(t: Translate) {
   const dialog = document.createElement('dialog')
   dialog.className = 'jev-request-viewer'
-  dialog.setAttribute('aria-label', 'Jev 实际请求体')
+  dialog.setAttribute('aria-label', t('req.title'))
   const header = document.createElement('header')
   const title = document.createElement('h2')
-  title.textContent = 'Jev 实际请求体'
+  title.textContent = t('req.title')
   const close = document.createElement('button')
   close.type = 'button'
-  close.textContent = '关闭'
+  close.textContent = t('req.close')
   header.append(title, close)
   const note = document.createElement('p')
-  note.textContent = '展示已保存的请求准备记录；该记录本身不证明请求已发送或送达。'
+  note.textContent = t('req.note')
   const controls = document.createElement('div')
   controls.className = 'jev-request-viewer-controls'
   const requests = document.createElement('select')
-  requests.setAttribute('aria-label', '已保存的 Jev 请求')
+  requests.setAttribute('aria-label', t('req.requests.label'))
   const format = document.createElement('select')
-  format.setAttribute('aria-label', 'JSON 显示格式')
+  format.setAttribute('aria-label', t('req.format.label'))
   for (const [value, text] of [
-    ['pretty', '格式化 JSON'],
-    ['raw', '紧凑 JSON'],
+    ['pretty', t('req.format.pretty')],
+    ['raw', t('req.format.raw')],
   ] as const) {
     const option = document.createElement('option')
     option.value = value
@@ -85,16 +110,16 @@ export function createJevRequestViewer() {
   }
   const copy = document.createElement('button')
   copy.type = 'button'
-  copy.textContent = '复制完整 JSON'
+  copy.textContent = t('req.copy')
   const download = document.createElement('button')
   download.type = 'button'
-  download.textContent = '下载 JSON'
+  download.textContent = t('req.download')
   controls.append(requests, format, copy, download)
   const metadata = document.createElement('pre')
   metadata.className = 'jev-request-viewer-metadata'
   const body = document.createElement('textarea')
   body.className = 'jev-request-viewer-body'
-  body.setAttribute('aria-label', '完整 Jev 请求体 JSON')
+  body.setAttribute('aria-label', t('req.body.label'))
   body.readOnly = true
   body.spellcheck = false
   const status = document.createElement('p')
@@ -127,7 +152,7 @@ export function createJevRequestViewer() {
       if (!value) {
         const empty = document.createElement('option')
         empty.value = ''
-        empty.textContent = '请选择当前可见的请求'
+        empty.textContent = t('req.empty.option')
         requests.append(empty)
       }
       for (const choice of choices) {
@@ -141,8 +166,8 @@ export function createJevRequestViewer() {
     requests.disabled = choices.length === 0
     status.textContent =
       choices.length === 0
-        ? '当前可见历史中没有已保存的 Jev 决策请求。'
-        : (value?.unavailable ?? (value ? '' : '先前请求已退出当前可见历史，请重新选择。'))
+        ? t('req.status.empty')
+        : (value?.unavailable ?? (value ? '' : t('req.status.stale')))
     metadata.textContent = value?.metadata ?? ''
     const text =
       value?.raw === undefined
@@ -174,10 +199,9 @@ export function createJevRequestViewer() {
     const ticket = revision
     try {
       await navigator.clipboard.writeText(raw)
-      if (!disposed && dialog.open && revision === ticket) status.textContent = '已复制完整请求体 JSON。'
+      if (!disposed && dialog.open && revision === ticket) status.textContent = t('req.status.copied')
     } catch {
-      if (!disposed && dialog.open && revision === ticket)
-        status.textContent = '复制失败，可在文本框中全选复制或下载 JSON。'
+      if (!disposed && dialog.open && revision === ticket) status.textContent = t('req.status.copyFailed')
     }
   })
   download.addEventListener('click', () => {
@@ -198,14 +222,14 @@ export function createJevRequestViewer() {
       revokeTimer = setTimeout(releaseDownload, 0)
     } catch {
       releaseDownload()
-      status.textContent = '下载失败，可复制完整 JSON。'
+      status.textContent = t('req.status.downloadFailed')
     }
   })
   render()
   return {
     open(entries: readonly TraceEntry[], selectedSeq?: number) {
       if (disposed) return
-      choices = savedRequests(entries)
+      choices = savedRequests(entries, t)
       selected = (
         selectedSeq === undefined ? choices.at(-1) : choices.find((choice) => choice.seq === selectedSeq)
       )?.key
@@ -215,7 +239,7 @@ export function createJevRequestViewer() {
     },
     update(entries: readonly TraceEntry[]) {
       if (disposed) return
-      choices = dialog.open ? savedRequests(entries) : []
+      choices = dialog.open ? savedRequests(entries, t) : []
       if (!current()) selected = undefined
       render()
     },

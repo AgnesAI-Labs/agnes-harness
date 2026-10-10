@@ -8,11 +8,10 @@ import { assertRuntimeRecord, type JsonValue } from '@agnes/jev-runtime'
 import { expect, it } from 'vitest'
 import { createTestHost } from '../testkit/index.js'
 
-it('executes a catalog-bound Skill through the real Host without LLM-authored parameters', async () => {
+it('keeps installed Skills off the JevLoop mount and discovery prompt without changing Native tools', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agnes-jev-skill-bind-'))
   const provider = fakeProvider([textTurn('Instructions read.')])
   const resourceId = `skill/user/user-agnes/${'a'.repeat(64)}`
-  let decisions = 0
   const { host } = await createTestHost({
     dataDir: root,
     packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base/', import.meta.url)) },
@@ -45,33 +44,19 @@ it('executes a catalog-bound Skill through the real Host without LLM-authored pa
         model: 'jev-test',
         transport: {
           async invoke({ questions }) {
-            const inspect = decisions++ === 0
+            expect(questions.binding_skill_read).toBeUndefined()
             const answers: Record<string, JsonValue> = {}
             for (const [name, question] of Object.entries(questions)) {
               const criteria = (question as { criteria?: Record<string, unknown> }).criteria
               if (!criteria) continue
-              const selected =
-                name === 'purpose'
-                  ? inspect
-                    ? 'INSPECT'
-                    : 'RESPOND'
-                  : name.startsWith('operation_')
-                    ? inspect
-                      ? 'skill_read'
-                      : 'RESPOND'
-                    : name === 'binding_skill_read'
-                      ? Object.keys(criteria).find(
-                          (key) =>
-                            key !== 'LLM_PARAMETERS' && JSON.stringify(criteria[key]).includes('review'),
-                        )
-                      : undefined
-              if (selected && Object.hasOwn(criteria, selected))
+              expect(criteria).not.toHaveProperty('skill_read')
+              if (name === 'purpose' || name === 'operation_RESPOND')
                 answers[name] = {
                   type: 'choice',
-                  choice: selected,
+                  choice: 'RESPOND',
                   confidence: 1,
                   probabilities: Object.fromEntries(
-                    Object.keys(criteria).map((key) => [key, key === selected ? 1 : 0]),
+                    Object.keys(criteria).map((key) => [key, key === 'RESPOND' ? 1 : 0]),
                   ),
                 }
             }
@@ -82,7 +67,10 @@ it('executes a catalog-bound Skill through the real Host without LLM-authored pa
     },
   })
   try {
+    const native = await host.createSession({ cwd: root, key: 'native-skills', runtime: 'native' })
+    expect(native.currentTools().resolve('skill_read')).toBeDefined()
     const session = await host.createSession({ cwd: root, runtime: 'jevloop' })
+    expect(session.currentTools().resolve('skill_read')).toBeUndefined()
     await session.enqueue('next-turn', {
       actor,
       content: [{ type: 'text', text: 'Review the available code instructions.' }],
@@ -96,11 +84,7 @@ it('executes a catalog-bound Skill through the real Host without LLM-authored pa
         assertRuntimeRecord(record)
         return record
       })
-    expect(records.filter((r) => r.kind === 'action.intended')).toEqual([
-      expect.objectContaining({
-        intent: expect.objectContaining({ tool: 'skill_read', arguments: { name: 'review' } }),
-      }),
-    ])
+    expect(records.filter((r) => r.kind === 'action.intended')).toEqual([])
     expect(
       records.filter(
         (r) => r.kind === 'resource.observed' && JSON.stringify(r.resource).includes('jev.skill-catalog.v1'),
@@ -110,7 +94,10 @@ it('executes a catalog-bound Skill through the real Host without LLM-authored pa
       records.filter((r) => r.kind === 'model.requested' && r.call.purpose === 'parameters'),
     ).toHaveLength(0)
     expect(provider.requests).toHaveLength(1)
-    expect(JSON.stringify(provider.requests[0])).toContain('Inspect the diff before reporting.')
+    expect(JSON.stringify(provider.requests[0])).not.toContain('Inspect the diff before reporting.')
+    expect(JSON.stringify(provider.requests[0])).not.toContain('<available_skills>')
+    expect(provider.requests[0]?.tools.some((tool) => tool.name === 'skill_read')).toBe(false)
+    await native.close()
   } finally {
     await host.close()
     await rm(root, { recursive: true, force: true })

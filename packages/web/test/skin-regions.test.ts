@@ -34,7 +34,7 @@ const EXPECTED: Record<string, Record<string, readonly [string, number]>> = {
     icon: ['svg', 26],
     // 插件详情、资源详情和账户详情/新增都使用独立模态框。
     dialog: ['dialog', 9],
-    'settings-pane': ['section', 6],
+    'settings-pane': ['section', 7],
   },
   // These two pages intentionally use the static sampling path; they do not start the workbench.
   'admin.html': { app: ['body', 1], topbar: ['header', 1], dialog: ['dialog', 4] },

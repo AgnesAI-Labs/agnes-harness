@@ -1,9 +1,13 @@
 /** @vitest-environment happy-dom */
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { projectTrace } from '@agnes/jev-trace'
 import type { EventEnvelope } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
-import { createJevDecisionGraph } from '../src/jev-decision-graph.js'
+import { createJevDecisionGraph, jevTraceEntries } from '../src/jev-decision-graph.js'
+import { createJevTranslate } from '../src/jev-locale.js'
+
+const t = createJevTranslate('zh-CN')
 
 it('replays persisted real provider decisions and tool settlement at their observed prefixes', () => {
   const capture = JSON.parse(
@@ -11,21 +15,165 @@ it('replays persisted real provider decisions and tool settlement at their obser
   )
   const events = capture.events as EventEnvelope[]
   const host = document.createElement('section')
-  const graph = createJevDecisionGraph(host)
+  const graph = createJevDecisionGraph(host, undefined, t)
+  const sharedHost = document.createElement('section')
+  const sharedGraph = createJevDecisionGraph(sharedHost, { sharedReplay: true }, t)
+  const sharedViewport = sharedHost.querySelector<HTMLElement>('.jev-graph-viewport')!
+  Object.defineProperties(sharedViewport, { clientWidth: { value: 900 }, clientHeight: { value: 620 } })
   vi.useFakeTimers()
   try {
     graph.update([], 'agnes:jev-real-fixture')
     graph.update(events, 'agnes:jev-real-fixture')
+    const viewport = host.querySelector<HTMLElement>('.jev-graph-viewport')!
+    Object.defineProperties(viewport, {
+      clientWidth: { value: 900, configurable: true },
+      clientHeight: { value: 620, configurable: true },
+    })
+    graph.update(events, 'agnes:jev-real-fixture')
+    const mainNodes = Array.from(host.querySelectorAll<HTMLElement>('[data-stage]'))
+    const assertCoordinateSpace = () => {
+      const diagram = host.querySelector<HTMLElement>('.jev-circuit')!
+      const svg = diagram.querySelector('svg')!
+      const [x, y, width, height] = svg.getAttribute('viewBox')!.split(' ').map(Number)
+      expect([x, y]).toEqual([0, 0])
+      expect([parseFloat(diagram.style.width), parseFloat(diagram.style.height)]).toEqual([width, height])
+      for (const fan of host.querySelectorAll<HTMLElement>('.jev-flow-fan')) {
+        const panel = [...svg.querySelectorAll('[data-circuit-panel]')].find((element) =>
+          element.getAttribute('data-circuit-panel')?.endsWith(`:${fan.dataset.compactHead}`),
+        )!
+        expect(Number(panel.getAttribute('x'))).toBe(parseFloat(fan.style.left) + 4)
+        expect(Number(panel.getAttribute('y'))).toBe(parseFloat(fan.style.top) + 4)
+      }
+    }
+    const boxes = () =>
+      mainNodes.map((node) => [node.style.left, node.style.top, node.style.width, node.style.height])
+    assertCoordinateSpace()
+    const mainBoxes = boxes()
+    const headSlots = new Map<string, { node: HTMLElement; left: string; top: string }>()
+    const transform = host.querySelector<HTMLElement>('.jev-circuit')!.style.transform
+    const space = host.querySelector<HTMLElement>('.jev-canvas-space')!
+    const reservedSpace = [space.style.width, space.style.height]
+    const entries = jevTraceEntries(events)
+    const reservation = {
+      heads: Math.max(
+        0,
+        ...projectTrace(entries).turns.flatMap((turn) =>
+          turn.steps.flatMap((step) =>
+            step.requests.map((request) => (request.purpose === 'decision' ? request.heads.length : 0)),
+          ),
+        ),
+      ),
+    }
+    sharedGraph.update(
+      events.filter((event) => event.seq <= entries[0]!.seq),
+      'shared-reserve',
+    )
+    const sharedMain = sharedHost.querySelector('[data-stage="decision"]')!
+    const sharedSpace = sharedHost.querySelector<HTMLElement>('.jev-canvas-space')!
+    const sharedGeometry = [
+      sharedSpace.style.width,
+      sharedSpace.style.height,
+      sharedHost.querySelector<HTMLElement>('.jev-circuit')!.style.transform,
+    ]
+    const replayCursor = host.querySelector<HTMLInputElement>('[aria-label="Jev 账本回放位置"]')!
+    // Happy DOM has no layout engine: exposed coordinates and transform establish the box;
+    // browser QA separately checks rendered bounding rectangles and scrollbar behaviour.
+    for (let index = 0; index < entries.length; index++) {
+      replayCursor.value = String(index)
+      replayCursor.dispatchEvent(new Event('input'))
+      sharedGraph.update(
+        events.filter((event) => event.seq <= entries[index]!.seq),
+        'shared-reserve',
+      )
+      expect(sharedHost.querySelector('[data-stage="decision"]')).toBe(sharedMain)
+      expect([
+        sharedSpace.style.width,
+        sharedSpace.style.height,
+        sharedHost.querySelector<HTMLElement>('.jev-circuit')!.style.transform,
+      ]).toEqual(sharedGeometry)
+      if (entries[index]!.seq < 16) expect(sharedHost.querySelector('.jev-flow-fan')).toBeNull()
+      expect(host.querySelector('[role="alert"]')).toBeNull()
+      for (const node of mainNodes)
+        expect(host.querySelector(`[data-stage="${node.dataset.stage}"]`)).toBe(node)
+      for (const head of host.querySelectorAll<HTMLElement>('.jev-flow-fan')) {
+        const key = `${head.dataset.request}:${head.dataset.compactHead}`
+        const previous = headSlots.get(key)
+        if (previous) {
+          expect(head).toBe(previous.node)
+          expect([head.style.left, head.style.top]).toEqual([previous.left, previous.top])
+        } else headSlots.set(key, { node: head, left: head.style.left, top: head.style.top })
+      }
+      assertCoordinateSpace()
+      expect(boxes()).toEqual(mainBoxes)
+      expect(host.querySelector<HTMLElement>('.jev-circuit')!.style.transform).toBe(transform)
+      expect([space.style.width, space.style.height]).toEqual(reservedSpace)
+      if (entries[index]!.seq < 16) expect(host.querySelector('.jev-flow-fan')).toBeNull()
+      if (entries[index]!.seq === 16) {
+        const options = host.querySelectorAll('[data-compact-head="purpose"] .jev-flow-option')
+        expect(options.length).toBeGreaterThan(0)
+        for (const option of options) {
+          expect(option.querySelector('small')?.textContent).not.toContain('%')
+          expect(option.getAttribute('data-selected')).toBe('false')
+        }
+      }
+      if (entries[index]!.seq < 92) {
+        const answerNode = host.querySelector<HTMLButtonElement>('[data-stage="answer"]')!
+        expect(answerNode.disabled).toBe(true)
+        expect(answerNode.onclick).toBeNull()
+        expect(answerNode.title).not.toContain('deepseek-v4-flash')
+      }
+    }
+    // Replay-driven panel reflow must not change the camera; explicit fit and width adjustment can.
+    Object.defineProperty(viewport, 'clientHeight', { value: 400, configurable: true })
+    graph.update(events, 'agnes:jev-real-fixture')
+    expect(host.querySelector<HTMLElement>('.jev-circuit')!.style.transform).toBe(transform)
+    host.querySelector<HTMLButtonElement>('[aria-label="适应画布"]')!.click()
+    expect(host.querySelector<HTMLElement>('.jev-circuit')!.style.transform).not.toBe(transform)
+    Object.defineProperty(viewport, 'clientHeight', { value: 620, configurable: true })
+    host.querySelector<HTMLButtonElement>('[aria-label="适应画布"]')!.click()
+    expect(host.querySelector<HTMLElement>('.jev-circuit')!.style.transform).toBe(transform)
+    Object.defineProperty(viewport, 'clientWidth', { value: 780, configurable: true })
+    graph.update(events, 'agnes:jev-real-fixture')
+    expect(host.querySelector<HTMLElement>('.jev-circuit')!.style.transform).not.toBe(transform)
+    Object.defineProperty(viewport, 'clientWidth', { value: 900, configurable: true })
+    graph.update(events, 'agnes:jev-real-fixture')
+    expect(host.querySelector<HTMLElement>('.jev-circuit')!.style.transform).toBe(transform)
+    sharedGraph.update(events.slice(0, 1), 'known-geometry', reservation)
+    const knownTransform = sharedHost.querySelector<HTMLElement>('.jev-circuit')!.style.transform
+    const knownSpace = sharedHost.querySelector<HTMLElement>('.jev-canvas-space')!
+    const firstKnownHeight = parseFloat(knownSpace.style.height)
+    sharedGraph.update(events.slice(0, 1), 'known-geometry', { heads: 20 })
+    expect(sharedHost.querySelector<HTMLElement>('.jev-circuit')!.style.transform).toBe(knownTransform)
+    expect(parseFloat(knownSpace.style.height)).toBeGreaterThan(firstKnownHeight)
+    expect(sharedHost.querySelector('.jev-flow-fan')).toBeNull()
+    sharedGraph.update(events, 'known-geometry', { heads: 20 })
+    const extendedTransform = sharedHost.querySelector<HTMLElement>('.jev-circuit')!.style.transform
+    sharedGraph.update(events.slice(0, 1), 'known-geometry')
+    expect(sharedHost.querySelector<HTMLElement>('.jev-circuit')!.style.transform).toBe(extendedTransform)
+    expect(sharedHost.querySelector('.jev-flow-fan')).toBeNull()
+    sharedGraph.update(events.slice(0, 1), 'different-shared-session', { heads: 20 })
+    const freshSpace = sharedHost.querySelector<HTMLElement>('.jev-canvas-space')!
+    expect(parseFloat(freshSpace.style.height)).toBeLessThanOrEqual(620 - 32)
+    expect(sharedHost.querySelector('[data-stage="decision"]')).not.toBe(sharedMain)
+    // Reverse seeking keeps the same reserve and never leaves a future request handler behind.
+    replayCursor.value = '0'
+    replayCursor.dispatchEvent(new Event('input'))
+    expect(host.querySelector<HTMLElement>('.jev-circuit')!.style.transform).toBe(transform)
+    expect([space.style.width, space.style.height]).toEqual(reservedSpace)
+    expect(host.querySelector('.jev-flow-fan')).toBeNull()
+    host.querySelector<HTMLButtonElement>('[aria-label="跟随最新"]')!.click()
+    vi.advanceTimersByTime(1000)
+    graph.update(events, 'agnes:jev-real-fixture')
     expect(host.querySelector('[role="alert"]')).toBeNull()
-    expect(host.querySelector('[data-stage="answer"]')?.textContent).toContain('deepseek-v4-flash')
-    expect(host.querySelector('[data-stage="host"]')?.textContent).toContain('本步骤未派发工具')
+    expect(host.querySelector<HTMLElement>('[data-stage="answer"]')?.title).toContain('deepseek-v4-flash')
+    expect(host.querySelector('[data-stage="host"]')?.textContent).toContain('本步不派发工具')
     expect(host.querySelector('[data-stage="result"]')?.textContent).toContain('不适用 · 回答路径')
     const requests = events.filter((event) => {
       const record = (event.data as { record?: { kind: string; call?: { purpose: string } } }).record
       return record?.kind === 'model.requested' && record.call?.purpose === 'decision'
     })
     const lastRequest = requests.at(-1)!
-    host.querySelector<HTMLButtonElement>('[aria-label="查看 Jev 实际请求体"]')!.click()
+    host.querySelector<HTMLButtonElement>('[aria-label="查看决策模型实际请求体"]')!.click()
     const requestDialog = document.querySelector<HTMLDialogElement>('.jev-request-viewer')!
     expect(requestDialog.open).toBe(true)
     const saved = (lastRequest.data as { record: { call: { input: unknown } } }).record.call.input
@@ -50,17 +198,8 @@ it('replays persisted real provider decisions and tool settlement at their obser
     requestDialog.close()
     graph.update(events, 'agnes:jev-real-fixture')
     expect(host.querySelector('.jev-edge-pulse')).toBeNull()
-    expect(host.querySelector('[data-compact-head][data-status="unconsumed"]')).toBeNull()
-    const dormantToggle = host.querySelector<HTMLButtonElement>('[data-group-toggle="action"]')!
-    expect(dormantToggle.getAttribute('aria-expanded')).toBe('false')
-    const compactHeight = host.querySelector<HTMLElement>('.jev-circuit')!.style.height
-    dormantToggle.click()
     expect(host.querySelector('[data-compact-head][data-status="unconsumed"]')).not.toBeNull()
-    expect(parseFloat(host.querySelector<HTMLElement>('.jev-circuit')!.style.height)).toBeGreaterThanOrEqual(
-      parseFloat(compactHeight),
-    )
-    host.querySelector<HTMLButtonElement>('[data-group-toggle="action"]')!.click()
-    expect(host.querySelector<HTMLElement>('.jev-circuit')!.style.height).toBe(compactHeight)
+    expect(host.querySelector('.jev-flow-packet')).toBeNull()
     const select = host.querySelector<HTMLSelectElement>('[aria-label="Jev 轮次与步骤"]')!
     expect(select.options.length).toBe(4)
     select.selectedIndex = 1
@@ -71,9 +210,9 @@ it('replays persisted real provider decisions and tool settlement at their obser
     expect(choices()).toHaveLength(2)
     host.querySelector<HTMLButtonElement>('[aria-label="展开 purpose 候选"]')!.click()
     expect(choices()).toHaveLength(4)
-    expect(host.querySelector('[data-stage="gate"]')?.textContent).toContain('write')
     host.querySelector<HTMLButtonElement>('[aria-label="收起 purpose 候选"]')!.click()
     expect(choices()).toHaveLength(2)
+    expect(host.querySelector('[data-stage="gate"]')?.textContent).toContain('write')
     vi.advanceTimersByTime(1000)
     graph.update(events, 'agnes:jev-real-fixture')
     expect(host.querySelector('.jev-edge-pulse')).toBeNull()
@@ -85,6 +224,7 @@ it('replays persisted real provider decisions and tool settlement at their obser
     expect(vi.getTimerCount()).toBe(0)
   } finally {
     graph.dispose()
+    sharedGraph.dispose()
     vi.useRealTimers()
   }
 })
@@ -109,7 +249,8 @@ it('shows an uncertain effect from a real approved shell cancellation without tr
   })
   expect(capture.runtime.phase).toBe('parked')
   const host = document.createElement('section')
-  const graph = createJevDecisionGraph(host)
+  const graph = createJevDecisionGraph(host, undefined, t)
+  vi.useFakeTimers()
   try {
     graph.update(
       events.filter((event) => event.seq <= asked.seq),
@@ -121,11 +262,25 @@ it('shows an uncertain effect from a real approved shell cancellation without tr
     expect(host.querySelector('[data-stage="result"]')?.textContent).toContain('unknown')
     expect(host.querySelector('[data-edge="intent-dispatch"]')?.getAttribute('data-observed')).toBe('true')
     expect(host.querySelector('.jev-edge-pulse')).not.toBeNull()
+    const pulse = host.querySelector<SVGElement>('[data-pulse-edge="intent-dispatch"]')!
+    const initialDelay = pulse.style.animationDelay
+    vi.advanceTimersByTime(125)
+    graph.update(events, 'agnes:jev-cancel-fixture')
+    expect(host.querySelector('[data-pulse-edge="intent-dispatch"]')).toBe(pulse)
+    expect(pulse.style.animationDelay).toBe(initialDelay)
+    vi.advanceTimersByTime(600)
+    graph.update(events, 'agnes:jev-cancel-fixture')
+    expect(pulse.style.animationDelay).toBe(initialDelay)
+    vi.advanceTimersByTime(175)
+    graph.update(events, 'agnes:jev-cancel-fixture')
+    expect(host.querySelector('[data-pulse-edge="intent-dispatch"]')).toBeNull()
+
     graph.update(events, 'agnes:another-session')
     expect(host.querySelector('.jev-edge-pulse')).toBeNull()
     expect(events.filter((event) => record(event)?.kind === 'action.dispatching')).toHaveLength(1)
   } finally {
     graph.dispose()
+    vi.useRealTimers()
   }
 })
 
@@ -170,7 +325,7 @@ it('keeps every observed action in one step selectable without changing the repl
     }),
   ]
   const host = document.createElement('section')
-  const graph = createJevDecisionGraph(host, { sharedReplay: true })
+  const graph = createJevDecisionGraph(host, { sharedReplay: true }, t)
   try {
     graph.update(prefix, 'batch-session')
     expect(host.querySelector<HTMLSelectElement>('[aria-label="Jev 步骤动作"]')?.hidden).toBe(true)
@@ -185,11 +340,18 @@ it('keeps every observed action in one step selectable without changing the repl
     expect(chooser.value).toBe('batch-intent')
     expect(host.querySelector('[data-stage="intent"]')?.textContent).toContain('write')
     expect(host.querySelector('[data-stage="result"]')?.textContent).toContain('error')
-    expect(host.querySelector('[data-stage="decision"]')?.textContent).toContain('请求 #16')
+    const resultNode = host.querySelector<HTMLButtonElement>('[data-stage="result"]')!
+    resultNode.click()
+    expect(host.querySelector('.jev-node-evidence pre')?.textContent).toContain('batch-intent')
+    expect(host.querySelector<HTMLElement>('[data-stage="decision"]')?.title).toContain('请求 #16')
     chooser.value = 'intent:17'
     chooser.dispatchEvent(new Event('change'))
     expect(host.querySelector('[data-stage="gate"]')?.textContent).toContain('read')
     expect(host.querySelector('[data-stage="result"]')?.textContent).toContain('success')
+    expect(host.querySelector('[data-stage="result"]')).toBe(resultNode)
+    resultNode.click()
+    expect(host.querySelector('.jev-node-evidence pre')?.textContent).toContain('intent:17')
+    expect(host.querySelector('.jev-node-evidence pre')?.textContent).not.toContain('batch-intent')
     expect(host.querySelector('[data-stage="intent"]')?.textContent).toContain('动作 1/2')
     expect(host.querySelector('[role="status"]')?.textContent).toContain('#35')
     graph.update(structuredClone(events), 'batch-session')

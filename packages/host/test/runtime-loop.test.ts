@@ -59,148 +59,106 @@ function respondingJev(onInvoke = () => {}, purposeConfidence = 1): JevLoopOptio
   }
 }
 
-it.each(['complete', 'cancel'] as const)(
-  'waits on a Jev child candidate until %s without polling turns',
-  async (ending) => {
-    const root = await mkdtemp(join(tmpdir(), 'agnes-jev-child-wait-'))
-    let parentKey = ''
-    let parentCalls = 0
-    let decisions = 0
-    let releaseChild!: () => void
-    const childGate = new Promise<void>((resolve) => {
-      releaseChild = resolve
-    })
-    const provider: Provider = {
-      models: () => [fakeModel({ route: 'gw', id: 'm1' })],
-      async *infer(request, options) {
-        const isParent = request.sessionKey === parentKey
-        if (!isParent) await childGate
-        const script =
-          isParent && parentCalls++ === 0
-            ? toolTurn('subagent_spawn', { task: 'WAIT_CHILD', isolation: 'shared' })
-            : textTurn(isParent ? 'PARENT_DONE' : 'CHILD_DONE')
-        yield* fakeProvider([script], '2').infer(request, options)
-      },
+it.each(['subagent_spawn', 'ask_user_question', 'todo', 'find', 'tool_search'])(
+  'mounts only the six JevLoop tools and refuses disabled %s proposals',
+  async (disabled) => {
+    const root = await mkdtemp(join(tmpdir(), 'agnes-jev-tool-mount-'))
+    const provider = fakeProvider([toolTurn(disabled, {}), textTurn('Recovered with the available tools.')])
+    const jev = respondingJev(() => {}, 0.1)
+    const invoke = jev.decision.transport.invoke
+    jev.decision.transport.invoke = async (input, options) => {
+      for (const [name, question] of Object.entries(input.questions)) {
+        if (!name.startsWith('operation_')) continue
+        const criteria = (question as { criteria: Record<string, unknown> }).criteria
+        for (const excluded of ['subagent_spawn', 'ask_user_question', 'todo', 'find', 'tool_search'])
+          expect(criteria).not.toHaveProperty(excluded)
+      }
+      return invoke(input, options)
     }
     const { host } = await createTestHost({
       dataDir: root,
       provider,
-      packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
-      presets: {
-        children: {
-          name: 'children',
-          extends: 'base',
-          model: { route: { primary: 'gw' }, id: { primary: 'm1' } },
-          subagent: {
-            max_depth: 2,
-            max_fan_out: 4,
-            isolation: 'shared',
-            budget_inherit: 'aggregate',
-            tree_budget_credits: 'unlimited',
-          },
-        },
-      },
-      allowed: ['base', 'standard', 'children'],
       disableSessionTitle: true,
-      jev: {
-        decision: {
-          backend: 'jev',
-          endpoint: 'https://jev.invalid/v1',
-          model: 'jev-test',
-          transport: {
-            async invoke({ questions }) {
-              const binding = questions.binding_subagent_collect as
-                | { criteria?: Record<string, unknown> }
-                | undefined
-              const candidate = Object.keys(binding?.criteria ?? {}).find((key) => key !== 'LLM_PARAMETERS')
-              const operation =
-                decisions++ === 0 ? 'subagent_spawn' : candidate ? 'subagent_collect' : 'RESPOND'
-              const purpose = operation === 'subagent_spawn' ? 'ACT' : candidate ? 'INSPECT' : 'RESPOND'
-              const answers: Record<string, JsonValue> = {}
-              for (const [name, question] of Object.entries(questions)) {
-                const criteria = (question as { criteria?: Record<string, unknown> }).criteria
-                if (!criteria) continue
-                const choice =
-                  name === 'purpose'
-                    ? purpose
-                    : name.startsWith('operation_')
-                      ? name === `operation_${purpose}`
-                        ? operation
-                        : 'RESPOND'
-                      : name.startsWith('binding_')
-                        ? name === 'binding_subagent_collect' && candidate
-                          ? candidate
-                          : 'LLM_PARAMETERS'
-                        : undefined
-                if (!choice) continue
-                answers[name] = {
-                  type: 'choice',
-                  choice,
-                  confidence: 1,
-                  probabilities: Object.fromEntries(
-                    Object.keys(criteria).map((key) => [key, key === choice ? 1 : 0]),
-                  ),
-                }
-              }
-              return { output: { answers }, observedModel: 'jev-test' }
-            },
-          },
-        },
-      },
+      jev,
+      packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
     })
-    const controller = new AbortController()
-    let running: Promise<unknown> | undefined
+    const expected = ['edit', 'grep', 'ls', 'read', 'shell', 'write']
     try {
-      const parent = await host.createSession({ cwd: root, runtime: 'jevloop', preset: 'children' })
-      parentKey = parent.key
-      await parent.enqueue('next-turn', {
-        actor,
-        content: [{ type: 'text', text: 'Delegate and wait for the result' }],
-      })
-      let settled = false
-      const run = parent.run({ until: 'turn-end', signal: controller.signal }).finally(() => {
-        settled = true
-      })
-      running = run
-      await vi.waitFor(async () => {
-        const calls = await parent.scan({ type: 'tool/call', limit: 10 })
-        expect(calls.map((row) => row.data)).toContainEqual(
-          expect.objectContaining({
-            name: 'subagent_collect',
-            args: { childKey: expect.any(String), wait: true },
-          }),
-        )
-      })
-      expect(settled).toBe(false)
-      const before = await parent.scan({ type: 'tool/result', limit: 10 })
-      expect(before).toHaveLength(1)
-      if (ending === 'cancel') controller.abort(new Error('Cancel while waiting for child'))
-      else releaseChild()
-      expect((await run).reason).toBe(ending === 'cancel' ? 'aborted' : 'completed')
-      const rows = await scanAll((query) => parent.scan(query), { toSeq: parent.lastSeq })
-      const records = rows
-        .filter((row) => row.type === 'runtime/record')
-        .map((row) => runtimeRecord(row.data))
+      const native = await host.createSession({ cwd: root, key: 'native-tools', runtime: 'native' })
+      const nativeNames = native
+        .currentTools()
+        .list()
+        .map((tool) => tool.name)
+        .sort()
+      expect(nativeNames).toContain(disabled)
+      const session = await host.createSession({ cwd: root, key: 'jev-tools', runtime: 'jevloop' })
       expect(
-        records.filter(
-          (record) => record.kind === 'action.intended' && record.intent.tool === 'subagent_collect',
-        ),
-      ).toHaveLength(1)
-      expect(records.some((record) => record.kind === 'run.stopped' && record.reason === 'budget')).toBe(
-        false,
+        session
+          .currentTools()
+          .list()
+          .map((tool) => tool.name)
+          .sort(),
+      ).toEqual(expected)
+      expect(
+        native
+          .currentTools()
+          .list()
+          .map((tool) => tool.name)
+          .sort(),
+      ).toEqual(nativeNames)
+      const nativePrepared = await host.prepareSessionConfiguration(native.key)
+      const jevPrepared = await host.prepareSessionConfiguration(session.key)
+      expect(jevPrepared.configuration.fingerprints.tools).toBe(
+        nativePrepared.configuration.fingerprints.tools,
       )
-      if (ending === 'complete') {
-        expect(rows.filter((row) => row.type === 'tool/result').map((row) => row.data)).toContainEqual(
-          expect.objectContaining({
-            isError: false,
-            structured: expect.objectContaining({ status: 'completed' }),
-          }),
-        )
+      expect(jevPrepared.configuration.effective.tools.count).toBe(6)
+      expect(nativePrepared.configuration.effective.tools.count).toBe(nativeNames.length)
+      expect(jevPrepared.configuration.effective.tools.digest).not.toBe(
+        nativePrepared.configuration.effective.tools.digest,
+      )
+      expect(jevPrepared.configuration.runtimeConfig).toMatchObject({
+        toolMount: {
+          policy: 'agnes-jev-basic-tools-v1',
+          names: expected,
+          baselineDigest: nativePrepared.configuration.fingerprints.tools,
+          mountedDigest: jevPrepared.configuration.effective.tools.digest,
+        },
+      })
+      await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'Use available tools.' }] })
+      const outcome = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(outcome.reason).toBe('completed')
+      expect(provider.requests.length).toBeGreaterThan(0)
+      for (const request of provider.requests)
+        expect(request.tools.map((tool) => tool.name).sort()).toEqual(expected)
+      const records = (
+        await scanAll((query) => session.scan(query), { type: 'runtime/record', toSeq: session.lastSeq })
+      ).map((row) => runtimeRecord(row.data))
+      for (const record of records) {
+        if (record.kind === 'environment.observed')
+          expect(record.catalog.map((tool) => tool.name).sort()).toEqual(expected)
+        if (record.kind === 'action.intended') expect(record.intent.tool).not.toBe(disabled)
       }
+      expect(await session.scan({ type: 'tool/call', limit: 20 })).toHaveLength(0)
+      expect(host.questions.pending(session.key)).toHaveLength(0)
+      await session.close()
+      const reopened = await host.createSession({ cwd: root, key: 'jev-tools', runtime: 'jevloop' })
+      expect(
+        reopened
+          .currentTools()
+          .list()
+          .map((tool) => tool.name)
+          .sort(),
+      ).toEqual(expected)
+      expect(
+        native
+          .currentTools()
+          .list()
+          .map((tool) => tool.name)
+          .sort(),
+      ).toEqual(nativeNames)
+      await reopened.close()
+      await native.close()
     } finally {
-      controller.abort()
-      releaseChild()
-      await running?.catch(() => undefined)
       await host.close()
       await rm(root, { recursive: true, force: true })
     }
@@ -300,9 +258,10 @@ it('appends changed Jev runtime facts without rewriting the language prefix or r
       if (previous) {
         expect(request.system).toBe(previous.system)
         expect(request.tools).toEqual(previous.tools)
-        expect(JSON.stringify(request.messages.slice(0, previous.messages.length))).toBe(
-          JSON.stringify(previous.messages),
-        )
+        // The purpose instruction is appended per request and is not retained history, so the
+        // comparable prefix is the previous request without its trailing instruction message.
+        const retained = previous.messages.slice(0, -1)
+        expect(JSON.stringify(request.messages.slice(0, retained.length))).toBe(JSON.stringify(retained))
       }
     }
     const rows = await scanAll((query) => session.scan(query), { toSeq: session.lastSeq })
@@ -385,123 +344,11 @@ it('appends changed Jev runtime facts without rewriting the language prefix or r
     if (!previous || !restored) throw new Error('Missing requests around session reopen')
     expect(restored.system).toBe(previous.system)
     expect(restored.tools).toEqual(previous.tools)
-    expect(JSON.stringify(restored.messages.slice(0, previous.messages.length))).toBe(
-      JSON.stringify(previous.messages),
-    )
-    expect(JSON.stringify(restored.messages.slice(previous.messages.length))).toContain('2026-01-04')
+    // Same retained-prefix rule as above: the trailing per-request instruction is not history.
+    const retained = previous.messages.slice(0, -1)
+    expect(JSON.stringify(restored.messages.slice(0, retained.length))).toBe(JSON.stringify(retained))
+    expect(JSON.stringify(restored.messages.slice(retained.length))).toContain('2026-01-04')
     await reopened.close()
-  } finally {
-    await host.close()
-    await rm(root, { recursive: true, force: true })
-  }
-})
-
-it('uses the captured user-cancel failure to verify durable builtin cancellation does not block Jev or replay the question', async () => {
-  const capture = JSON.parse(
-    await readFile(new URL('./fixtures/jev-real-question-cancel.json', import.meta.url), 'utf8'),
-  ) as { events: EventEnvelope[] }
-  const call = capture.events.find((row) => row.type === 'tool/call')
-  if (!call) throw new Error('Missing captured question call')
-  const callData = call.data as { name: string; args: Record<string, JsonValue> }
-  expect(capture.events.find((row) => row.type === 'question/settled')?.data).toMatchObject({
-    status: 'cancelled',
-  })
-  expect(capture.events.find((row) => row.type === 'tool/result')?.data).toMatchObject({
-    code: 'TOOL_OUTCOME_UNKNOWN',
-    isError: true,
-  })
-  expect(capture.events.find((row) => row.type === 'turn/end')?.data).toMatchObject({ reason: 'blocked' })
-  const root = await mkdtemp(join(tmpdir(), 'agnes-question-cancel-'))
-  let decisions = 0
-  const jev = respondingJev()
-  const responding = jev.decision.transport.invoke
-  jev.decision.transport.invoke = async (input, options) => {
-    if (decisions++ > 0) return responding(input, options)
-    const answers: Record<string, JsonValue> = {}
-    for (const [name, value] of Object.entries(input.questions)) {
-      const criteria = (value as { criteria?: Record<string, unknown> }).criteria
-      if (!criteria) continue
-      const selected =
-        name === 'purpose'
-          ? 'INSPECT'
-          : name.startsWith('operation_')
-            ? callData.name
-            : name === `binding_${callData.name}`
-              ? 'LLM_PARAMETERS'
-              : undefined
-      if (!selected) continue
-      answers[name] = {
-        type: 'choice',
-        choice: selected,
-        confidence: 1,
-        probabilities: Object.fromEntries(
-          Object.keys(criteria).map((key) => [key, key === selected ? 1 : 0]),
-        ),
-      }
-    }
-    return { output: { answers }, observedModel: 'jev-test' }
-  }
-  const { host } = await createTestHost({
-    dataDir: root,
-    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base/', import.meta.url)) },
-    provider: fakeProvider([
-      toolTurn(callData.name, callData.args),
-      textTurn('Question cancelled; stopping here.'),
-      textTurn('Next user turn is usable.'),
-    ]),
-    questionProvider: async () => ({ allowSkip: true }),
-    disableSessionTitle: true,
-    jev,
-  })
-  try {
-    const session = await host.createSession({ cwd: root, runtime: 'jevloop' })
-    await session.enqueue('next-turn', {
-      actor,
-      content: [{ type: 'text', text: 'Ask once. If I cancel, stop without asking again.' }],
-    })
-    const running = session.run({ until: 'turn-end', signal: new AbortController().signal })
-    await vi.waitFor(() => expect(host.questions.pending(session.key)).toHaveLength(1))
-    const interaction = host.questions.pending(session.key)[0]
-    if (!interaction) throw new Error('Missing live question')
-    const receipt = await host.questions.cancel(session.key, interaction.interactionId, actor)
-    expect((await running).reason).toBe('completed')
-    let rows = await scanAll((query) => session.scan(query), { toSeq: session.lastSeq })
-    const records = rows.filter((row) => row.type === 'runtime/record').map((row) => runtimeRecord(row.data))
-    expect(records.find((record) => record.kind === 'action.settled')).toMatchObject({
-      effect: 'not_applied',
-      outcome: {
-        kind: 'cancelled',
-        error: { code: 'ASK_CANCELLED' },
-        effectEvidence: {
-          phase: 'may_have_sent',
-          questionCancellation: {
-            settledSeq: receipt.settledSeq,
-            callSeq: interaction.callSeq,
-            requestedSeq: interaction.requestedSeq,
-          },
-        },
-      },
-    })
-    expect(records.findLast((record) => record.kind === 'run.stopped')).toMatchObject({
-      reason: 'completed',
-      unresolved: [],
-    })
-    expect(rows.find((row) => row.type === 'tool/result')?.data).toMatchObject({
-      isError: true,
-      code: 'ASK_CANCELLED',
-    })
-    expect(rows.filter((row) => row.type === 'question/requested')).toHaveLength(1)
-    await session.enqueue('next-turn', {
-      actor,
-      content: [{ type: 'text', text: 'Continue with the next turn.' }],
-    })
-    expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
-      'completed',
-    )
-    rows = await scanAll((query) => session.scan(query), { toSeq: session.lastSeq })
-    expect(rows.filter((row) => row.type === 'question/requested')).toHaveLength(1)
-    expect(rows.filter((row) => row.type === 'tool/call')).toHaveLength(1)
-    await session.close()
   } finally {
     await host.close()
     await rm(root, { recursive: true, force: true })
@@ -1085,6 +932,182 @@ it('keeps captured unresolved effects parked when recovering a cancelled turn', 
   }
 })
 
+it.each(['preflight-refusal', 'partial-write', 'closed-turn', 'closed-cancel', 'shell-exit'] as const)(
+  'continues the real Jev Host task after a builtin operation failure: %s',
+  async (mode) => {
+    const workspace = await mkdtemp(join(tmpdir(), 'agnes-jev-file-recovery-'))
+    await writeFile(join(workspace, 'target.ts'), 'old')
+    const provider = fakeProvider(
+      mode === 'shell-exit'
+        ? [
+            toolTurn('shell', { command: 'exit 1' }),
+            toolTurn('edit', { path: 'target.ts', edits: [{ oldText: 'old', newText: 'fixed' }] }),
+            textTurn('Finished after correcting the failed command.'),
+          ]
+        : mode !== 'preflight-refusal'
+          ? [
+              toolTurn('write', { path: 'target.ts', content: 'intended' }),
+              toolTurn('read', { path: 'target.ts' }),
+              toolTurn('edit', { path: 'target.ts', edits: [{ oldText: 'par', newText: 'fixed' }] }),
+              textTurn('Finished after inspecting and repairing the current file.'),
+            ]
+          : [
+              toolTurn('edit', { path: 'target.ts', edits: [{ oldText: 'missing', newText: 'fixed' }] }),
+              toolTurn('edit', { path: 'target.ts', edits: [{ oldText: 'old', newText: 'fixed' }] }),
+              textTurn('Finished after correcting the refused edit.'),
+            ],
+    )
+    const { host } = await createTestHost({
+      dataDir: workspace,
+      packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base/', import.meta.url)) },
+      provider,
+      disableSessionTitle: true,
+      approval: async () => 'allowed-once',
+      ...(mode === 'shell-exit'
+        ? {
+            seams: {
+              sandbox: {
+                exec: async () => ({
+                  code: 1,
+                  stdout: 'compile failed',
+                  stderr: '',
+                  truncated: false,
+                  timedOut: false,
+                }),
+              },
+            },
+          }
+        : {}),
+      jev: { ...respondingJev(() => {}, 0.8), config: { escalateBelow: 0.9 } },
+    })
+    try {
+      const session = await host.createSession({ cwd: workspace, runtime: 'jevloop' })
+      let fileFailed = false
+      let paused = false
+      if (mode.startsWith('closed-')) {
+        const hooks = session.hooks
+        const beforeStep = hooks.beforeStep.bind(hooks)
+        const beforeStepWithPause: typeof hooks.beforeStep = async (input) => {
+          if (fileFailed && !paused) {
+            paused = true
+            return { block: true, reason: 'synthetic recovery pause' }
+          }
+          return beforeStep(input)
+        }
+        const port = new Proxy(hooks, {
+          get(target, key) {
+            if (key === 'beforeStep') return beforeStepWithPause
+            const value = Reflect.get(target, key, target)
+            return typeof value === 'function' ? value.bind(target) : value
+          },
+        })
+        Object.defineProperty(session, 'hooks', { configurable: true, get: () => port })
+      }
+      if (mode !== 'preflight-refusal' && mode !== 'shell-exit') {
+        const port = session.d.workspaceInvocation
+        if (!port) throw new Error('Missing workspace invocation')
+        let fail = true
+        session.d.workspaceInvocation = {
+          run: (invoke) =>
+            port.run(async (view) => {
+              const fs = view.fs()
+              return invoke({
+                ...view,
+                fs: () => ({
+                  ...fs,
+                  async write(path, bytes) {
+                    if (fail) {
+                      fail = false
+                      fileFailed = true
+                      await fs.write(path, new TextEncoder().encode('par'))
+                      throw new Error('synthetic partial write')
+                    }
+                    return fs.write(path, bytes)
+                  },
+                }),
+              })
+            }),
+        }
+      }
+      await session.enqueue('next-turn', {
+        actor,
+        content: [{ type: 'text', text: 'Repair target.ts so it contains fixed.' }],
+      })
+      if (mode.startsWith('closed-')) {
+        const first = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+        expect(first.reason, JSON.stringify({ fileFailed, paused })).toBe('blocked')
+        expect(session.state.openTurn.has(session.lane)).toBe(false)
+      }
+      if (mode === 'closed-cancel') {
+        const count = provider.requests.length
+        expect((await session.abort(actor)).seq).not.toBeNull()
+        const key = session.key
+        await session.close()
+        const reopened = await host.createSession({ key, cwd: workspace })
+        expect((await reopened.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+          'blocked',
+        )
+        expect(provider.requests).toHaveLength(count)
+        expect(await reopened.scan({ type: 'turn/start', limit: 100 })).toHaveLength(1)
+        const records = (
+          await scanAll((query) => reopened.scan(query), { type: 'runtime/record', toSeq: reopened.lastSeq })
+        ).map((row) => runtimeRecord(row.data))
+        expect(records.some((record) => record.kind === 'action.resolved')).toBe(false)
+        await reopened.close()
+        return
+      }
+      const result = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      const records = (
+        await scanAll((query) => session.scan(query), { type: 'runtime/record', toSeq: session.lastSeq })
+      ).map((row) => runtimeRecord(row.data))
+      expect(result.reason, JSON.stringify(records.findLast((record) => record.kind === 'run.stopped'))).toBe(
+        'completed',
+      )
+      expect(await readFile(join(workspace, 'target.ts'), 'utf8')).toBe('fixed')
+      const actions = records.filter((record) => record.kind === 'action.settled')
+      expect(actions[0]).toMatchObject({
+        effect:
+          mode === 'shell-exit' ? 'acknowledged' : mode !== 'preflight-refusal' ? 'unknown' : 'not_applied',
+      })
+      const resolutions = records.filter((record) => record.kind === 'action.resolved')
+      expect(resolutions).toHaveLength(mode !== 'preflight-refusal' && mode !== 'shell-exit' ? 1 : 0)
+      if (mode !== 'preflight-refusal' && mode !== 'shell-exit') {
+        expect(resolutions[0]).toMatchObject({
+          resolution: 'reconciled_state',
+          actor: 'host:effect-recovery',
+        })
+        expect(
+          provider.requests[1]?.tools.some((tool) => ['write', 'edit', 'shell'].includes(tool.name)),
+        ).toBe(false)
+        expect(
+          records.filter((record) => record.kind === 'action.intended' && record.intent.tool === 'write'),
+        ).toHaveLength(1)
+      }
+      if (mode === 'shell-exit') {
+        expect(actions[0]).toMatchObject({ outcome: { kind: 'error' } })
+        expect(
+          records.filter((record) => record.kind === 'action.intended' && record.intent.tool === 'shell'),
+        ).toHaveLength(1)
+        expect(
+          records.some((record) => record.kind === 'action.settled' && record.effect === 'unknown'),
+        ).toBe(false)
+      }
+      if (mode === 'closed-turn') {
+        const bindings = await session.scan({ type: 'x/host/jev-loop/turn-decision', limit: 100 })
+        expect(bindings.at(-1)?.data).toMatchObject({ turn: 2, runtimeTurn: 1 })
+        expect(new Set(records.map((record) => record.turn))).toEqual(
+          new Set([`${session.key}:${session.lane}:1`]),
+        )
+        expect(await session.scan({ type: 'user/message', limit: 100 })).toHaveLength(1)
+      }
+      await session.close()
+    } finally {
+      await host.close()
+      await rm(workspace, { recursive: true, force: true })
+    }
+  },
+)
+
 it('offers persisted root facts, phase-bound tools and nested write verification through the real Host', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agnes-loop-root-candidates-'))
   const workspace = join(root, 'workspace')
@@ -1108,12 +1131,12 @@ it('offers persisted root facts, phase-bound tools and nested write verification
         const criteria = (questions[`operation_${phase}`] as { criteria: Record<string, unknown> }).criteria
         expect(criteria).not.toHaveProperty('write')
         expect(criteria).not.toHaveProperty('edit')
-        for (const name of ['read', 'find', 'grep', 'ls']) expect(criteria).toHaveProperty(name)
+        for (const name of ['read', 'grep', 'ls']) expect(criteria).toHaveProperty(name)
       }
       const act = (questions.operation_ACT as { criteria: Record<string, unknown> }).criteria
       expect(act).toHaveProperty('write')
       expect(act).toHaveProperty('edit')
-      for (const name of ['read', 'find', 'grep', 'ls']) expect(act).not.toHaveProperty(name)
+      for (const name of ['read', 'grep', 'ls']) expect(act).not.toHaveProperty(name)
     }
     const answers: Record<string, JsonValue> = {}
     for (const [name, value] of Object.entries(questions)) {

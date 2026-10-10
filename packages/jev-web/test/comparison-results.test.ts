@@ -7,6 +7,9 @@ import type {
 } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createComparisonMetrics } from '../src/comparison-metrics.js'
+import { createJevTranslate } from '../src/jev-locale.js'
+
+const t = createJevTranslate('zh-CN')
 
 type Summary = NonNullable<ComparisonMetricsResult['summary']>
 type SummaryLane = Summary['lanes'][number]
@@ -90,7 +93,7 @@ afterEach(() => {
 
 it('keeps the compact two-column results above collapsed detailed metrics', () => {
   const host = document.createElement('div')
-  const view = createComparisonMetrics(host)
+  const view = createComparisonMetrics(host, undefined, t)
   expect(host.firstElementChild?.className).toBe('comparison-results')
   expect(host.querySelector('.comparison-metrics')).toBe(host.lastElementChild)
   expect(host.querySelector<HTMLDetailsElement>('.comparison-metrics')?.open).toBe(false)
@@ -119,7 +122,7 @@ it('keeps the compact two-column results above collapsed detailed metrics', () =
 it('labels live known values as lower bounds and withholds N/A until the prefix is settled', () => {
   const now = vi.spyOn(Date, 'now')
   const host = document.createElement('div')
-  const view = createComparisonMetrics(host)
+  const view = createComparisonMetrics(host, undefined, t)
   view.render(
     metrics({
       atSeq: 18,
@@ -221,7 +224,7 @@ it('labels live known values as lower bounds and withholds N/A until the prefix 
 
 it('keeps mixed-currency estimates separate and never treats missing or partial as zero', () => {
   const host = document.createElement('div')
-  const view = createComparisonMetrics(host)
+  const view = createComparisonMetrics(host, undefined, t)
   view.render(
     metrics({
       atSeq: 80,
@@ -293,7 +296,7 @@ it('keeps mixed-currency estimates separate and never treats missing or partial 
 
 it('treats a legacy payload without summary as unknown and uses N/A only for settled empty families', () => {
   const host = document.createElement('div')
-  const view = createComparisonMetrics(host)
+  const view = createComparisonMetrics(host, undefined, t)
   view.render(
     metrics({
       atSeq: 4,
@@ -340,7 +343,7 @@ it('retains the previous complete summary while a later cut is loading, then dro
   const writeText = vi.fn().mockResolvedValue(undefined)
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
   const host = document.createElement('div')
-  const view = createComparisonMetrics(host)
+  const view = createComparisonMetrics(host, undefined, t)
   const first = metrics({
     atSeq: 40,
     summary: {
@@ -419,7 +422,7 @@ it('retains the previous complete summary while a later cut is loading, then dro
 
 it('aligns DSH bucket, family and total rows without charging Jev output or changing durable sides', () => {
   const host = document.createElement('div')
-  const view = createComparisonMetrics(host)
+  const view = createComparisonMetrics(host, undefined, t)
   const llm = family(
     2,
     {

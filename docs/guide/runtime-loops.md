@@ -33,10 +33,12 @@ Configure the daemon environment before startup:
 
 | Variable | Meaning |
 |---|---|
+| `AGNES_JEV_BACKEND` | `jev` (default) or `laya`. Missing backend in older saved settings also means Jev. |
+| `AGNES_JEV_TRANSPORT` | `native` (default) or `cloudflare`; Laya supports `native` only. |
 | `AGNES_JEV_ENDPOINT` | Credential-free HTTP URL of the System One decision endpoint. |
 | `AGNES_JEV_MODEL` | Decision model identifier. |
 | `AGNES_JEV_AUTHENTICATION` | `bearer` by default. Set `none` explicitly only for an anonymous decision service. |
-| `AGNES_JEV_API_KEY` | Bearer credential; takes precedence over `TYPESAFE_API_KEY`. Retained only in the transport closure. |
+| `AGNES_JEV_API_KEY` | Explicit bearer credential for the selected backend. For Jev only, takes precedence over `TYPESAFE_API_KEY`. Retained only in the transport closure. |
 | `TYPESAFE_API_KEY` | Fallback alias for the Jev bearer credential. |
 | `AGNES_JEV_HTTP2` | Empty by default (HTTP/2 where the endpoint speaks it). Set `off` to force HTTP/1.1 for a proxy that cannot carry HTTP/2. |
 | `AGNES_JEV_DECISION_REQUEST_CREDITS` | Optional finite, positive request-cost upper estimate for the decision backend, in the deployment's credit unit. |
@@ -46,6 +48,61 @@ Missing bearer credentials make JevLoop unavailable with an explanatory catalog 
 startup remains available. Anonymous access is never inferred from a local endpoint. An explicitly
 supplied `HostOptions.jev` transport owns its authentication and does not require these environment keys.
 
+<a id="local-laya"></a>
+
+### Local Laya
+
+Laya is an experimental decision backend inside JevLoop, not a separate runtime or a replacement
+for the language model. Start a compatible `/v1/systemone` service separately. For the original
+JevLoop project, run these commands **in that project's backend directory**, not in AGH:
+
+```sh
+uv sync --extra laya-mlx
+uv run jevloop laya-serve --runtime mlx --port 8791
+```
+
+Apple Silicon uses MLX; NVIDIA deployments use the `laya-cuda` extra and `--runtime cuda`.
+AGH does not install Python dependencies or download weights. First loading may download weights
+inside that service's environment. Alternatively, connect an already running compatible service.
+In AGH settings select Local Laya, or set these variables before starting the daemon:
+
+```sh
+export AGNES_JEV_BACKEND=laya
+export AGNES_JEV_TRANSPORT=native
+export AGNES_JEV_ENDPOINT=http://127.0.0.1:8791/v1/systemone
+export AGNES_JEV_MODEL=multilingual
+export AGNES_JEV_AUTHENTICATION=none
+```
+
+Select `none` only for an explicitly anonymous service; protected services require their own
+`AGNES_JEV_API_KEY`. `TYPESAFE_API_KEY` is never a Laya fallback. Supported original checkpoints
+include `english`, `multilingual` and `typed-decisions`; fixed `multilingual` avoids routing an AGH
+state's English contract text instead of the user's goal. Saved profile configuration still requires
+a daemon restart; runtime ownership stays `jevloop`, and durable decision calls record backend `laya`.
+
+This MVP is for controlled short tasks. The inspected Laya MLX implementation has an 8192-token
+maximum window, a shared question-head budget and roughly 48-token option-description truncation;
+long state tails can be omitted by that service. AGH preserves its original state/questions and
+does not yet provide token-aware Laya projection. Successful connectivity is not proof of full-context
+coverage, correct decisions or production readiness. Missing usage and local cost evidence remain
+unknown, not free; the Jev cloud pricing policy never applies to Laya. There is no automatic cloud
+fallback. The language provider can still be remote and must be configured independently.
+
+### Per-turn decision backend
+
+When both targets are saved and booted, the JevLoop runtime descriptor publishes the available
+decision backends and the default. The composer shows a per-round selector for new JevLoop drafts,
+open JevLoop sessions, and the JevLoop side of a comparison; Native sessions never show it. The
+choice travels with the input, is validated before the input is queued, and is durably bound to that
+input: the runtime records a non-secret binding in the same transaction that opens the turn, so
+interruption and recovery reuse the recorded backend instead of the current default. A retry of the
+same durable command must repeat the same backend; a mismatch is an idempotency conflict. Steering
+cannot change a running turn's backend, and a turn never falls back to the other backend when its
+own becomes unavailable mid-run. Comparison rounds persist the JevLoop side's choice per round, and
+their prepared configuration freezes the boot-time set of selectable targets. The decision graph,
+request viewer and candidate details derive each request's Jev / Laya / LLM label from recorded
+requests, so replayed history never changes when the default changes.
+
 Environment-configured decision calls share Host-owned pooled connections: one warm keep-alive
 connection per origin (HTTP/2 where the endpoint speaks it), created lazily on the first decision
 call and closed together with the Host. A connection that stops answering is detected well before
@@ -54,11 +111,73 @@ decisions; the failed request itself is still settled as a failure and never ret
 An injected `HostOptions.jev` transport keeps whatever connection behaviour its fetcher provides.
 
 The language backend uses the session's existing provider/model selection. The decision transport
-does not substitute the language provider; the runtime may make a separate language arbitration
-request when its policy requires one. The decision gates match DSH: Purpose/Operation (`escalateBelow`),
+does not substitute the language provider; policy can trigger a separate request for LLM takeover
+of the current step’s decision. The decision gates match DSH: Purpose/Operation (`escalateBelow`),
 Binding and mutation/RESPOND thresholds are `0.6`; same-operation support is `0.8`.
 Support does not bypass a low Operation score or rescue RESPOND. `ambiguityGate: null`,
 `responseReviewMode: 'diagnostic'` and `answerProgressFloor: null` leave those diagnostics non-blocking.
+
+<a id="jevloop"></a>
+
+#### Per-stage language models
+
+Each language stage — parameter completion, arbitration and the final answer — can run on its own
+model. A preset may pre-bind stages to slots with `model.jev_language_slots` (see
+[Configuration](../reference/configuration.md#jevloop-per-stage-model-slots)), but no preset edit is
+required: with the JevLoop runtime selected, the composer's **思考 · 环节** button opens the model
+settings dialog, whose **JevLoop 分环节模型** section binds each stage to a model and thinking level
+— before the task starts (applied when the session is created, ahead of the first prompt) or in a
+running session (authorized `session.setJevStages`, audited, effective for that stage's next request,
+durable across reopening). Choosing **跟随会话模型** restores the preset slot resolution. A dual-line comparison draft
+offers the same section: its bindings apply to the JevLoop lane only, are frozen at creation like
+the comparison model, and are attested in that lane's prepared configuration
+(`runtimeConfig.languageStages`). They are deliberately outside the common preset fingerprint both
+lanes must share, so binding JevLoop stages never trips the configuration-mismatch guard. Splitting stages is the experiment switch for the architecture blueprint's tiered-LLM
+proposition — strong models for arbitration, cheap fast models for parameter completion and answers.
+Two properties are worth remembering while experimenting: stages on different models keep separate
+prompt-cache namespaces (each cold stage pays its own full-prefix reads), and stages still on a
+shared preset slot move together when that slot is switched.
+
+JevLoop mounts only `read`, `ls`, `grep`, `edit`, `write` and `shell` under the Host-owned
+`agnes-jev-basic-tools-v1` policy. Other installed tools are disabled for this runtime and are not
+registered in its session tool table. Jev and every language stage use that same mounted catalog;
+Native retains its existing registrations. This does not change shell permissions or Host approval
+rules. Reopening and owner reload preserve the policy, including reloads with unchanged schemas.
+The policy ID is recorded in environment facts, and the mounted catalog is persisted with each
+observation. Built-in Skill discovery instructions are omitted while the Skill loader is disabled;
+workspace and user instructions remain intact. The policy is defined in the Host adapter rather
+than a shared preset or package enable switch.
+
+Comparison receipts retain each lane's actual mounted catalog in `effective.tools`.
+`runtimeConfig.toolMount` records the JevLoop policy, common installed baseline digest, mounted
+digest and names. `fingerprints.tools` compares the source installation before runtime projection;
+Native's tool fingerprint is unchanged. Model, preset, permission and mounted-configuration checks
+remain in place, and different installed baselines still refuse comparison. The actual tool ranges
+differ intentionally as part of the runtime experiment.
+
+Jev normally selects the current step's action. Low-confidence or invalid decisions, recoverable
+failures, or an enabled response-review gate can trigger LLM takeover of the current step’s
+decision. This request includes the complete mounted JevLoop tool catalog and does not lock the original
+operation: the LLM can select another tool, propose 1–32 complete calls in order, or return a final
+answer. The Host still validates and prepares each call under the existing authorization rules.
+If the batch does not complete the turn, the next step returns to Jev. In contrast, `parameters`
+locks the selected operation: it permits 1–32 independent complete calls to that same read-only
+tool, but still requires exactly one call for a mutation or unknown effect class. Every proposed
+member is schema-validated before any batch execution. Parameter-batch selections preserve Jev's
+purpose and tool choice, link the original decision with `parameterDecision`, and bind each native
+proposal with `callIndex`; they are not LLM arbitration. `answer` accepts no tool calls. Actual
+arbitration requests retain purpose `arbitration` and decision source `llm_arbitration`.
+
+Both parameter and arbitration batches run consecutive, explicitly concurrency-safe read-only
+calls in windows of at most four. Host preparation confirms argument-resolved safety; absent or
+unsafe declarations keep calls serial, and mutations are exclusive barriers. Intent creation,
+per-call authorization, fresh binding checks and dispatch markers remain ordered. Tool work may
+overlap, while runtime settlements are committed in proposal order. A refusal, failure, new input,
+cancellation, conclusion or unknown effect stops the remaining batch; already-dispatched siblings
+are drained and settled, never silently discarded or rolled back. A persistence failure invalidates
+the writer but still drains started work; recovery never automatically executes an unadmitted tail.
+Scheduling revision 5 is recorded in `run.opened.runtimeVersion`. Older records remain readable;
+uncompleted turns of an older scheduling revision cannot resume as revision 5.
 
 For providers that support durable preparation, new language calls use `agnes-language-v2`.
 Before `model.requested` is committed, the provider binds the effective route, model capabilities,
@@ -77,21 +196,33 @@ runs before publication and on recovery. Later LLM history preserves the origina
 block order. DeepSeek Completions also restores its plain `reasoning_content` field; opaque
 provider signatures are not synthesized. Snapshot-less legacy records remain readable; contradictory snapshots are refused.
 
-Parameters, arbitration and final-answer requests retain the same complete native tool catalog.
-Their current instructions are appended at the end of the conversation; recorded request notes and
-directory observations retain their original text. New request notes explain that directory-entry
-`version` values are opaque freshness tokens, not content hashes: a changed token alone proves
-neither changed contents nor failed restoration, and an unchanged token does not prove equal contents.
-Content claims require recorded read or tool-result evidence. This clarification does not change
-candidate invalidation or rewrite historical requests. The answer instruction requests text without
-tool calls; this is a model instruction, not a provider-enforced prohibition. Answer tool calls are
-rejected, never executed, and do not enter the parameter/arbitration format-repair loop.
+Parameter completion, LLM takeover and final-answer requests retain the same complete mounted JevLoop tool catalog.
+Language requests use a fixed user-role prefix for ordinary tool execution constraints and directory
+freshness semantics. LLM takeover receives normal agent context without a takeover instruction;
+parameter locks, answer-only instructions and format repair belong only to the current request tail.
+Historical `requestNote` values remain in their original durable snapshots but are not replayed into
+new conversation messages. Internal request, settlement and decision links still validate authorship.
+Directory-entry versions are opaque freshness tokens, not content hashes: content claims require
+recorded content or tool results. Candidate invalidation and Host permissions are unchanged.
+An `answer` tool call is rejected, never executed, and does not enter the format-repair loop.
+
+A successfully completed and verified single native arbitration call may retain its accompanying
+visible text as a non-final explanation, distinct from execution facts. Thinking is excluded here;
+unaccepted answers, failed or uncertain executions, malformed streams and multi-call batch commentary
+are not adopted. Batch completion does not backfill earlier text. Unadmitted-proposal feedback stays
+beside its recorded settlement or execution rather than moving past later inputs on each replay.
+
+With unchanged system text and tools, consecutive ordinary takeover requests preserve the full prior
+message prefix as new facts append. Parameter, answer and repair tails are request-scoped and may be
+replaced; an in-flight batch whose admitted calls change is not an append-only cache boundary.
+Reprojection of existing sessions can change the prefix once. Stored requests are not rewritten.
+These structural checks do not establish provider cache-hit rates; those require actual usage evidence.
 
 Host-declared runtime-context snapshots enter the LLM conversation as user-role facts at their
 recorded positions, not as a mutable top-level system prompt. Each changed snapshot supersedes
 earlier snapshots for its own key; unchanged text adds no message. Clearing a key appends an
 explicit notice that its earlier facts no longer apply, without deleting history. Date, mode and
-working-directory changes therefore preserve the previous language-request message prefix when
+working-directory changes therefore preserve the previous projected fact prefix when
 the tool catalog and system instructions remain unchanged. The decision projection still uses only
 the latest state. User text and tool-provided additions cannot acquire Host-snapshot semantics by
 claiming the same source. Native projection and authorization are unchanged.
@@ -103,11 +234,38 @@ of request bytes do not establish actual cache-hit rates, which require provider
 
 New system-prompt records retain full LLM text plus a section snapshot. Jev separately projects
 known producer persona, environment, skill catalog and constraints. Only an exact identity-only persona
-is omitted; behavioral obligations remain. The exact bundled skill catalog becomes name/description
+is omitted; behavioral obligations remain. When enabled by a future mounting policy, the exact bundled skill catalog becomes name/description
 entries with `instructionsLoaded: false` and `retrieval: 'skill_read'`; usage rules remain separate rules,
 and an omitted catalog window remains explicitly incomplete. This does not implement skill-body loading.
 Unknown sections and modified templates are retained; missing scope is explicitly unspecified.
 This adds no AGENTS.md file loader: `agents-md` remains a reserved Core section.
+
+At Jev request preparation, `state.rules` groups containing only string `source`, `scope` and `text`
+fields are rendered as labeled text blocks: `Source: <source>`, `Scope: <scope>`, then the unchanged
+body, with a blank line between groups. Source, scope, body and order are preserved; the durable
+request records the same view passed to the transport. The internal decision projection, rule
+replacement, response-review checkpoints and LLM inputs retain their original structure. Laya,
+existing text, empty arrays, unknown rule shapes and multiline source/scope labels are passed through
+unchanged. Historical requests are not rewritten. This reduces rule-wrapper input overhead; it does
+not establish decision equivalence across tasks.
+
+In the same Jev-only wire view, a nonempty `state.resources.skills.items` array of exact string
+`name`/`description` entries becomes a name-to-description object. All names, descriptions and their
+order are preserved, along with catalog coverage, loading metadata and other resources. Duplicate
+names, extra entry fields or names that would reorder object keys retain the original array; empty
+arrays and existing mappings are unchanged. Internal resource facts, candidate construction, LLM
+inputs and Laya retain their original representation. Catalog entries still do not mean that a skill
+has been loaded, and no skills are filtered by the task.
+
+Recognized Jev Operation questions use option names to reference the complete `state.operations`
+definitions, replacing repeated `{operation: name}` descriptions with `null` and updating the local
+reference instruction. All Purpose branches, option names and ordering remain present. Recognized
+Binding questions omit the repeated `operation` line only when the question itself locks that tool
+and every candidate has the same identity. Candidate descriptions, complete JSON arguments and the
+`LLM_PARAMETERS` mode and explanation remain unchanged. Unknown or extended templates pass through
+as whole questions. These are Jev-only request representations: internal compiler plans, conditional
+support, parameter routing, gates, permissions and Laya are unchanged. The actual prepared view is
+persisted before invocation; already recorded requests are never reformatted.
 
 New runtime-context records also retain their sanitized structured facts. Jev checks the snapshot
 against the recorded text before presenting named environment facts, omitting only known producer
@@ -121,21 +279,18 @@ set `compat.supportsMidConvoSystemMessages: true`. Set `supportsDeveloperRole: f
 literal system role on reasoning models. Unsupported routes refuse these histories before sending;
 they do not flatten system updates or present Host actions as user instructions.
 
-The `standard` preset limits each model request to 4000 credits. A capped request is refused when its
-price is unknown, including an estimated zero returned without pricing history. A fresh deployment can
-therefore refuse its first request until trusted pricing is available. Configure request-cost upper
-estimates from the deployment's pricing policy. Environment estimates and `HostOptions.jev.requestCredits`
-control admission only: they are not actual usage or amounts charged. Never treat example or test
-estimates as real fees.
+Ordinary `standard` tasks have no mandatory request-credit cap (`budget.per_request_cap: null`) and
+no new delegated-tree credit cap (`subagent.tree_budget_credits: unlimited`). Missing price evidence
+therefore does not block a normal task. Usage recording, tool authorization, timeout, cancellation and
+loop-hygiene protections are unchanged. `standard-no-credit-cap` remains a compatibility name for this
+policy. Restart the service to load changed recipes; new tasks use the new policy, while already
+persisted ancestor caps and explicit child caps remain binding.
 
-To explicitly run without a request-credit cap or a new delegated-tree credit cap, select
-`standard-no-credit-cap`. It inherits `standard`, sets `budget.per_request_cap` to `null` and
-`subagent.tree_budget_credits` to `unlimited`; usage recording, approvals and non-monetary limits
-are unchanged. Finite caps already persisted on an ancestor tree or set for an individual child still
-apply. In the user profile, set
-`presets: { default: standard-no-credit-cap, allowed: [standard, standard-no-credit-cap] }`.
-Restart the local service to load the profile. Existing sessions need an explicit preset switch;
-changing the default does not rewrite their persisted selection.
+Monetary budgets are opt-in. A custom preset can set a positive `budget.per_request_cap` or finite
+`subagent.tree_budget_credits`; those caps still refuse admission when a trustworthy upper estimate is
+missing. Environment estimates and `HostOptions.jev.requestCredits` are admission estimates, not actual
+usage or amounts charged. Never treat examples, operator estimates or token-price projections as a
+supplier bill.
 
 Omitting `subagent.tree_budget_credits`, or setting it to `default`, preserves the existing 20-credit
 default for a newly delegated tree. A numeric value selects a finite tree cap; `unlimited` is the
@@ -295,6 +450,28 @@ A cancelled Jev turn with unresolved effects stays parked after recovery. Cancel
 claiming a queued input leaves that input queued. A session generation change invalidates outstanding
 view reads and previews independently for each comparison lane; it does not run or cancel the loop.
 
+A verified builtin foreground shell command that returns a Host-confirmed normal process-exit
+receipt is acknowledged even when its exit code is nonzero. Its tool outcome remains an error;
+acknowledgement establishes execution completion, not a successful build or completed task. The
+LLM can inspect the error and propose a correction. Timeout, cancellation, signal termination,
+background submission, transport failures and unverified receipts do not gain this acknowledgement.
+
+An uncertain dispatched action first enters a bounded LLM inspection phase. The arbitration
+model receives the original task and execution history, with only read-only tools available;
+inspection uses the normal authorization, validation, dispatch and drain pipeline. Inspection
+and format repairs consume the original turn's step, model and spending budgets. The unfinished
+write batch is discarded. The model cannot clear an effect by claiming success or returning a
+final answer. Host-proven refusals before a builtin `write` or `edit` reaches writing are recorded
+as `not_applied`, allowing the task to continue after the refusal.
+
+For a verified builtin single-file content operation whose invocation has drained, the Host can
+verify a fresh complete read and append `reconciled_state`. This means the current file state is
+known and permits a new plan; the original call's effect remains unknown. The LLM then replans
+before ordinary Jev routing resumes. This automatic resolution is not an operator payload value.
+External effects, uncertain nested effects and old attempts without trustworthy execution evidence
+remain unresolved when inspection cannot establish a safe continuation. Explicit cancellation is
+never revived. A restored continuation retains the original portable turn and its budgets.
+
 For an idle, open Jev session with an UNKNOWN action, the SDK exposes explicit operator
 resolution through `session.controlRuntime({ expectedRuntime: { id: 'jevloop', version: '1' },
 operation: 'jev.resolveUnknown', payload: { intentId, resolution, explanation, evidence } })`.
@@ -357,13 +534,14 @@ Reviewed builtin and bundled-helper tools have revision-bound decision profiles:
 phase, required inputs, result meaning and limits. These summaries complement the native schemas;
 they do not replace parameter validation or grant execution permission. Unrecognized/replaced tool
 definitions retain ordinary catalog fallback. Shell remains available, with dedicated file tools
-preferred for equivalent operations. Management tools retain their names and action workflows;
-`mcp_manage` requires a definition for prepare and a proposal ID for commit/status/cancel. Already
-installed helper packages require an explicit package update to adopt changed contracts.
+preferred for equivalent operations. Management and helper tools remain installed for Native but
+are not mounted under the current JevLoop policy. Their adapter contracts remain available if a
+future Host policy explicitly enables them; package installation alone does not enable them here.
 
 Complete candidates use persisted objective evidence. Initial file reads from directory/search
 results bind only the path; text paging is retained for known text and version-checked continuations.
-Skill catalogs expose name candidates without loading their instructions; skill continuations bind
+The retained Skill adapters, when enabled by a mounting policy, expose name candidates without
+loading their instructions; skill continuations bind
 the returned byte offset and version key. Known child receipts offer `subagent_collect(wait: true)`
 candidates, reusing the native cancellable wait instead of spending decision steps repeatedly polling
 `running`. Waiting follows live writer-lease renewals rather than freezing the initial expiry.
@@ -397,7 +575,22 @@ are available. Missing or unsupported snapshots remain unavailable; the UI never
 current settings. A saved request does not by itself prove delivery to the provider. Credentials and
 HTTP headers are not part of this viewer. Conversation cards remain bounded display summaries.
 
-Replay advances through actual event prefixes, either within the selected turn or across all turns, with play, pause, restart and 1/2/4/8 events per second. In all-turn mode the native conversation is read through `session.projectUI` at the same ledger sequence. Until that projection arrives, or if it fails, the historical conversation stays empty rather than showing later content; the banner identifies the cut or read failure. “Live” restores the latest conversation. Replay never executes tools. Candidate groups expand independently inside the canvas; the final adopted path after arbitration is distinguished from the original Jev selection.
+The graph uses a horizontal main path, a circular Jev node and candidate capsules with individual
+fan-out and merge wires. Purpose, tool and parameter branches keep their hierarchy; unconsumed
+branches are dimmed. Candidate growth extends the canvas without moving the main nodes. The
+canvas opens in an overview fitted to both pane dimensions. Unconsumed branches retain their
+headings and candidate counts with options collapsed. Expanding candidates opens a readable,
+scrollable view; **Fit canvas** restores the overview. Updates preserve manual zoom. Click a candidate or stage to inspect evidence. Request and settlement positions remain
+in tooltips and inspectors. Playback reserves a stable canvas envelope from already-read session
+records, keeping main nodes and overview scale stable as requests settle or candidates collapse.
+Reserved space does not reveal future candidates, probabilities or execution results.
+
+Signal flow and node halos indicate unsettled records in the latest complete live ledger view;
+they do not prove endpoint delivery or actual tool startup. Stopped, archived and historical
+replay views do not show continuous activity. Revealing new evidence during playback may still
+produce a brief pulse. Reduced-motion preferences disable animation.
+
+Replay advances through actual event prefixes, either within the selected turn or across all turns, with play, pause, restart and 1/2/4/8 events per second. In all-turn mode the native conversation is read through `session.projectUI` at the same ledger sequence. Until that projection arrives, or if it fails, the historical conversation stays empty rather than showing later content; the banner identifies the cut or read failure. “Live” restores the latest conversation. Replay never executes tools. Candidate groups expand independently inside the canvas; the final adopted path after LLM takeover is distinguished from the original Jev selection.
 
 Conversation process cards show decision models, selected paths, action settlement, answer generation and stop reasons. Expand a card for its model, request reference and record range. The trace view provides a separate runtime lane with clickable evidence. Historical restoration and live updates use the same backend projection; native messages continue to display tool results and final answers.
 
@@ -422,12 +615,12 @@ Jev estimates follow the DSH exact TypeSafe System One route for `jev-latest` an
 
 The single-line Jev workspace has a bottom accounting disclosure. It reads a snapped, bounded root-session ledger without executing a turn and uses the same Host accounting projection as comparison. It shows observed LLM/Jev request counts, input/output tokens, LLM cached input and hit rate, estimated family costs and a combined estimate. Missing usage remains unknown or an explicitly labeled known subtotal. The displayed root-session scope excludes child sessions; comparison metrics include the observed child-session tree.
 
-The Jev direct count follows DSH: a non-arbitrated selected decision, a persisted direct route, its intent and dispatch must all exist. Language parameter generation, arbitration and pre-dispatch refusal do not count; failure after dispatch does. Single sessions count complete session history; comparison lane headers count only the shared committed playback prefix and show pending synchronization before that prefix is available. This is not a successful-action count.
+The Jev direct count follows DSH: a decision selected without LLM takeover, a persisted direct route, its intent and dispatch must all exist. Language parameter generation, LLM takeover and pre-dispatch refusal do not count; failure after dispatch does. Single sessions count complete session history; comparison lane headers count only the shared committed playback prefix and show pending synchronization before that prefix is available. This is not a successful-action count.
 
 
 ### Multiple tool proposals from one language request
 
-JevLoop arbitration accepts 1–32 complete tool calls in one LLM response. The entire
+JevLoop LLM takeover accepts 1–32 complete tool calls in one LLM response. The entire
 proposal is checked for available tools and valid arguments before execution begins.
 Calls execute in model order, each with its own decision index, intent, approval,
 dispatch barrier and settlement. They are not executed concurrently. Parameter
@@ -441,4 +634,4 @@ result remains complete across restart. Historical single-call records remain re
 The graph action selector exposes every observed action in the selected step; playback
 never exposes later actions. Model usage is counted once per actual LLM request,
 independently of the number of proposed or executed tools. This extends DSH's current
-single-call arbitration contract; it does not change Jev direct-path counting.
+single-call `arbitration` contract; it does not change Jev direct-path counting.

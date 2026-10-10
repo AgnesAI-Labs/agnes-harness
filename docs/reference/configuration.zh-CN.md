@@ -56,6 +56,20 @@ Web 账户设置可为所选模型保存 `defaultSettings`：`thinking` 只能�
 
 API 客户端可通过 `_agnes/v1/session.setModel` 传入可选的 `thinking`、`contextWindow`。同一模型下省略字段会保留会话当前值；`thinking: null` 恢复 Provider 自动思考，`contextWindow: null` 恢复目录容量。`_agnes/v1/config.save` 和 OAuth `commit` 接收 `defaultSettings`，省略时保留已保存默认值，传 `{}` 清除。配置与模型列表接口返回能力和默认值，会话用量投影返回当前生效配置。
 
+### JevLoop 分环节模型槽位
+
+Preset 可以用 `model.jev_language_slots` 把 JevLoop 的每个语言环节绑定到独立模型槽位（`parameters` 补参、`arbitration` 仲裁、`answer` 回答；取值为协议槽位名，未写的环节保持 `primary`）：
+
+```yaml
+model:
+  route: { primary: gw, fast: gw, escalation: gw }
+  id: { primary: answer-model, fast: param-model, escalation: arb-model }
+  thinking: { escalation: high }
+  jev_language_slots: { parameters: fast, arbitration: escalation, answer: primary }
+```
+
+此后每个环节经其绑定的槽位解析 route、模型、thinking 与上下文窗口：对该槽位的授权 `session.setModel` 只影响绑定它的环节，各槽位的 thinking 强度独立生效。映射本身只是部署默认：`_agnes/v1/session.setJevStages` 可把某环节为当前会话直绑到 route/model（可带 thinking），传 `null` 恢复预设槽位解析；直绑有审计、重开保留、下一请求生效，无需改 preset。只读 RPC `_agnes/v1/session.modelSlots` 返回逐槽位实时解析状态、含默认值的生效环节映射与直绑状态，不打开也不恢复会话。`_agnes/v1/comparison.create` 在 JevLoop 一侧的 lane（`left`/`right`）上接受同形的 `jevStages`，其他运行时拒绝。成本提示：分档后各环节不再共享同一前缀缓存命名空间，每个冷环节各自支付全前缀读取——仲裁是少数路径时分档才划算，反之会倒挂。参见[运行循环](../guide/runtime-loops.zh-CN.md#jevloop)。
+
 凭据形式为 `secret://namespace/name`；文件/env/vault adapter 是不同部署面。不要将演示配置里的假 token 复制到真实服务，也不要在 browser `publicConfig`、工具输出或环境 dump 中暴露真实值。
 
 包导出的 [preset 定义](../../packages/protocol/schema/preset.json) 可用正安全整数配置 `model.max_tokens`，例如 `model: { max_tokens: 32768 }`。它设置主模型单次请求的输出额度，与模型目录容量分开；省略时沿用 Provider 默认值。请求 hook 可覆盖它，任务树预算仍可压低额度，应使用所选 Provider 支持的值。该字段属于 preset 定义，不属于 profile 的 `presets` 选择字段或 profile 顶层 `model` 字段。现有会话保留创建时解析的 preset。
@@ -69,12 +83,39 @@ Preset 的 `subagent.tree_budget_credits` 区分三种策略：省略或填写 `
 原始配置中的 `null` 非法，内部旧的 nullable view 仍保留默认行为。继承时省略字段会保留上级值，
 `default` 和 `unlimited` 则显式覆盖上级 preset 的值，但都不会改变祖先 scope 已持久化的有限额度
 或正整数 `subagent_spawn.budget` 子任务额度。零不是无限，不能准入任务树额度预留。Credits 是
-计量单位，不能展示为美元。`standard-no-credit-cap` 显式关闭单请求上限和新任务树上限；普通
-`standard` 保留原有默认行为。
+计量单位，不能展示为美元。常规 `standard` 将两项都设为 `null` / `unlimited`，普通任务无需价格
+估算；`standard-no-credit-cap` 保留为同一策略的兼容名称。自定义 preset 写入正数上限后，才会
+重新启用费用检查。
+
+## 自定义 OpenAI 兼容账户
+
+在 Web **设置 → 模型与账户 → 添加账户**中选择 **自定义 OpenAI 兼容服务**（`custom-openai`），填写 Base URL、API key 和手工模型 ID，选择 Chat Completions 或 Responses。明确声明上下文容量、最大输出、图片输入、推理及原生 OpenAI 工具调用；输出不得超过容量。模型列表不能证明这些能力。连接测试通过实际运行时适配器，对所选 ID 做有界流式推理，无 `/models` 的服务也可使用；测试不证明工具调用或图片能力。未配置价格保持未知，不当作免费估价。 已验证的自定义账户保存时，还会尝试有界认证 GET `<Base URL>/model/info`，按精确模型 ID 匹配 HTTPS 元数据来源的 LiteLLM 格式 USD/token 价格，换算为每百万 token 的估算。同一 ID 的全部部署必须价格一致；条件／阶梯价格或无法识别的其他收费保持未知。缺失单价保持未知，明确零单价保留为零。元数据请求被拒绝、不支持、损坏或超时不阻碍保存。只持久化按账户与模型区分的单价、来源和读取日期，运行时加载不查询价格。重新保存会刷新快照，元数据不可用时清空估算，不静默保留旧单价。每次调用在接纳时冻结自己的报价，新价格不改写历史报价或网关账单。 已有自定义 API-key 账户可通过 `config.account({accountId, action: "refresh-prices", expectedRevision})`，使用保存的端点与凭据仅刷新价格快照。该操作保留模型声明、默认设置、凭据及其他账户，不进行推理或能力验证；普通保存仍执行完整连接检查。
+
+点击 **获取模型列表** 读取服务的有界认证 `/models` 目录，选择默认 ID，再点击 **一键导入模型 ID** 将返回的 ID 加入当前账户。所有导入模型共用你在本页明确设置的能力和容量声明；目录不提供能力或价格证据。保存验证所选默认模型的推理，不逐个调用全部导入 ID。没有 `/models` 的服务仍支持手工 ID。SDK `config.discover` 返回目录证据和 `verified: false`，底层使用带 `catalogueOnly: true` 的 `config.test`，不写入配置。
+
+Chat Completions 的测试分别展示普通推理和 `system → user → assistant → system → user` 请求是否被接受。结果绑定测试时的端点、协议和模型；修改连接或模型声明后，页面结果失效。未声明该能力时，中途 system 检查失败不妨碍保存普通账户。
+
+JevLoop 的语言调用要求明确声明服务 **保留中途 system 消息的顺序**，新自定义账户默认不勾选。推理成功只证明请求可被接受，不证明网关内部没有合并、删除或重排消息；测试不会自动开启该声明。请依据服务契约或实现证据确认保序。保存会按当前配置重新测试；声明该能力时，中途 system 检查也必须通过。Responses 跳过此项，不支持当前 Jev 历史路径。`config.test` 可选返回 `customVerification`，失败理由为固定枚举，`ordering` 始终为 `unverified`；不会返回上游原始错误或密钥。Cloudflare Jev 按操作方策略复用 System One 的配置估算（输入 0.042 USD、输出 0，按每百万 token 且按总输入计），这是配置估算，不是 Cloudflare 账单。费用上限须显式配置，因此常规任务不依赖价格资料即可执行。
+
+非秘密声明随账户保存在 `configuration.json`；密钥仍由当前 home 的凭据存储管理，配置读取不返回密钥。修改目标或协议须明确输入密钥，修改声明使页面旧测试结果失效。新账户默认值不改变既有会话。
+
+## Jev 决策服务
+
+使用 Web **设置 → Jev 决策服务**，或 Jev 插件的 **配置 Jev** 快捷入口。公共设置不依赖插件安装。决策后端可选 **Jev** 或 **本地 Laya（实验性）**，测试后保存。Jev 支持原生 HTTP 和 Cloudflare Workers AI。Cloudflare 要求 32 位小写十六进制 Account ID、Bearer token 和固定地址 `https://api.cloudflare.com/client/v4/accounts/{id}/ai/run`，默认模型 `typesafe/jev`。供应商测试账户勿用于生产。原生 HTTP 允许显式 Bearer 或无认证。
+
+本地 Laya 仅支持原生 HTTP。先另行启动服务，再配置 `http://127.0.0.1:8791/v1/systemone`、模型 `multilingual`；匿名服务须显式选择无认证。受保护的 Laya 服务使用自己的 Bearer 密钥，切换后端不能隐式复用已保存的 Jev 密钥。语言模型账户不变，运行方式仍为 JevLoop。Laya 不继承 `TYPESAFE_API_KEY`，失败也不会回退到云端决策服务。启动与限制见[本地 Laya](../guide/runtime-loops.zh-CN.md#local-laya)。
+
+两套目标可以同时保存：保存一侧后端不会覆盖另一侧的目标或凭据引用。重启后，运行方式目录会公布实际启动的决策后端、默认值和各自不可用原因；配置的默认后端无法启动时，只在启动时一次性解析到另一个已装配目标。每一轮都可以覆盖默认值：输入框旁的“本轮决策”选择器（JevLoop 会话与双线对比的 JevLoop 侧）随输入提交选择，持久队列把选择绑定到该输入；同一 command id 的重试必须沿用相同选择。运行中的轮次不会中途切换——steer 不能改变当前轮的后端。选择不可用后端会在输入被消费前拒绝，不会回退到另一个后端。决策流程图与请求查看器按账本记录标注每个请求的真实后端（Jev、Laya 或语言模型），不读取当前界面状态。
+
+Profile 下的 `jev-configuration.json` 只保存带 revision 的设置和凭据引用；读取永不返回 token。可选每次请求 credits 须为正数，与实际 token 用量分开，仅用于准入。测试只发一次合成评分请求，不保存、不启动 Agent。Revision 冲突需重新读取再保存。
+
+保存后的反馈显示在固定操作栏，不会随表单滚动隐藏。保存成功会重新读取运行方式列表；尚未激活的 Jev 显示“配置已保存，需重启后台后生效”，不会误标为可用。若环境变量覆盖仍生效，提示先检查环境配置再重启。
+
+**保存 Jev 后须手动重启 daemon。** 运行中的 daemon 为所有 worker 代冻结配置，旧凭据引用保留供其运行中的 worker 使用；保存不重启进程、不改变当前会话。嵌入式 Host 在创建时冻结。启动优先级为显式 Host options、显式 Jev 环境配置、持久 profile 配置；部分环境配置会令 Jev 不可用，不与已保存 token 混用。仅 HTTP/2 开关不算目标覆盖。配置异常只禁用 Jev，不阻止 Native。
 
 ## 任务步数限制
 
-普通任务默认不设累计执行步数上限。Core 默认值及内置 `base`、`standard`、`claw` preset 均使用 `budget.max_steps: null`，不会再因为达到 50、80 或 200 步而截停。一“步”是主模型的一轮执行，可包含多个工具调用。任务完成、用户取消、模型请求失败、单次请求超时、费用预算和循环检查仍然生效。冻结的 `minimal-rl` 评测 preset 保留其明确配置的 100 步上限。
+普通任务默认不设累计执行步数上限。Core 默认值及内置 `base`、`standard`、`claw` preset 均使用 `budget.max_steps: null`，不会再因为达到 50、80 或 200 步而截停。一“步”是主模型的一轮执行，可包含多个工具调用。任务完成、用户取消、模型请求失败、单次请求超时、循环检查，以及显式配置的费用上限仍然生效。冻结的 `minimal-rl` 评测 preset 保留其明确配置的 100 步上限。
 
 包导出的 preset 定义可用 `budget: { max_steps: null }` 关闭上限，包括覆盖继承来的上限；只有明确设置正整数，例如 `budget: { max_steps: 80 }`，才启用每轮任务的步数限制，耗尽后仍以 `max_steps` 结束。零、负数、小数和字符串均不合法。省略该字段会继承父 preset 的设置；没有继承值时默认不设上限。它属于 preset 定义，不是 profile 的 `limits` 键。
 

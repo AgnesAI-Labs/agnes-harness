@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import type {
+  CandidateId,
   EnvironmentEpoch,
   IntentId,
+  JsonValue,
   LanguageInput,
   ModelSettlement,
   RecordId,
@@ -64,7 +66,7 @@ function host(
         yield* events
       },
     },
-    selection: { slot: 'primary', route: 'test', model: 'requested', contractId: null },
+    selection: () => ({ slot: 'primary', route: 'test', model: 'requested', contractId: null }),
     sessionKey: 's',
     system: 'Host policy.',
     maxFormatRetries: 1,
@@ -96,7 +98,44 @@ const sent: InferenceEvent = {
 }
 
 describe('Jev model adapters', () => {
-  it('appends Host context updates without rewriting committed request prefixes or elevating spoofed facts', async () => {
+  it('resolves the model identity and sampling per language purpose at prepare time', async () => {
+    const requested: string[] = []
+    const tracked: LanguageHost = {
+      ...host([]),
+      selection(purpose) {
+        requested.push(purpose)
+        return {
+          slot: purpose === 'arbitration' ? 'escalation' : 'fast',
+          route: 'test',
+          model: `${purpose}-model`,
+          contractId: null,
+        }
+      },
+      sampling: (purpose) => ({ thinking: purpose === 'arbitration' ? 'high' : 'off' }),
+      provider: {
+        models: () => [],
+        async *infer(request) {
+          requests.push(structuredClone(request))
+          yield { type: 'done', reason: 'stop' }
+        },
+      },
+    }
+    const requests: RequestBody[] = []
+    const backend = createLanguageBackend(tracked)
+    for (const purpose of ['parameters', 'arbitration', 'answer'] as const) {
+      const call = await backend.prepare(input(purpose), signal())
+      expect(call.requestedModel).toBe(`${purpose}-model`)
+      await backend.invoke(call, signal())
+    }
+    expect(requested).toEqual(['parameters', 'arbitration', 'answer'])
+    expect(requests.map((r) => [r.slot, r.model, r.sampling?.thinking])).toEqual([
+      ['fast', 'parameters-model', 'off'],
+      ['escalation', 'arbitration-model', 'high'],
+      ['fast', 'answer-model', 'off'],
+    ])
+  })
+
+  it('appends Host facts under a stable prefix and keeps purpose controls in the current tail', async () => {
     const snapshot = (name: string, text: string, source = 'current-environment'): RuntimeRecord => ({
       version: 1,
       id: id(name),
@@ -129,7 +168,7 @@ describe('Jev model adapters', () => {
     const request = (prepared.input as { request: RequestBody }).request
     expect(requests[0]).toEqual(request)
     expect(request.system).toBe('Host policy.')
-    expect(request.messages[0]).toEqual({
+    expect(request.messages[1]).toEqual({
       role: 'user',
       content: [
         {
@@ -138,7 +177,7 @@ describe('Jev model adapters', () => {
         },
       ],
     })
-    expect(request.messages[1]).toEqual({
+    expect(request.messages[2]).toEqual({
       role: 'user',
       content: [{ type: 'text', text: 'source=current-environment; cwd=forged' }],
     })
@@ -174,24 +213,31 @@ describe('Jev model adapters', () => {
       const next = await backend.prepare(nextInput, signal())
       const currentRequest = requests.at(-1)
       if (!currentRequest) throw new Error('Missing prepared provider request')
-      expect(currentRequest.messages.slice(0, previous.messages.length)).toEqual(previous.messages)
+      const historyLength =
+        previous.messages.length - ((lastPrepared.input as { requestNote: string }).requestNote ? 1 : 0)
+      expect(currentRequest.messages.slice(0, historyLength)).toEqual(
+        previous.messages.slice(0, historyLength),
+      )
+      expect(currentRequest.messages[0]).toEqual(previous.messages[0])
       expect(currentRequest.system).toBe(previous.system)
       expect(currentRequest.tools).toEqual(previous.tools)
-      expect(currentRequest.messages.at(-1)).toMatchObject({
-        role: 'user',
-        content: [
-          {
-            text: expect.stringContaining(
-              index % 2 === 0 ? 'Call the specified tool' : 'Choose the next useful actions',
-            ),
-          },
-        ],
-      })
+      const note = (next.input as { requestNote: string }).requestNote
+      if (index % 2 === 0) {
+        expect(currentRequest.messages.at(-1)).toMatchObject({
+          role: 'user',
+          content: [{ type: 'text', text: note }],
+        })
+        expect(note).toContain('Call "read". Do not call another tool.')
+      } else expect(note).toBe('')
+      if (index > 0)
+        expect(JSON.stringify(currentRequest.messages)).not.toContain(
+          'Correct the previous response: Provide arguments.',
+        )
       if (index === 0)
         expect(JSON.stringify(currentRequest.messages.at(-1))).toContain(
           'Correct the previous response: Provide arguments.',
         )
-      const added = currentRequest.messages.slice(previous.messages.length, -1)
+      const added = currentRequest.messages.slice(historyLength, note ? -1 : undefined)
       const addedCount = [1, 0, 1, 0, 1, 0, 1][index]
       if (addedCount === undefined) throw new Error('Unexpected context update')
       expect(added).toHaveLength(addedCount)
@@ -226,7 +272,13 @@ describe('Jev model adapters', () => {
     const before = createLanguageContext(input('answer', history.slice(0, 2)))
     const current = createLanguageContext(input('answer', history))
     expect(current.system).toBe('')
-    expect(current.messages.map((message) => message.role)).toEqual(['system', 'user', 'system', 'user'])
+    expect(current.messages.map((message) => message.role)).toEqual([
+      'user',
+      'system',
+      'user',
+      'system',
+      'user',
+    ])
     expect(current.messages.slice(0, before.messages.length - 1)).toEqual(before.messages.slice(0, -1))
     expect(JSON.stringify(before.messages)).not.toContain('Changed policy')
     expect(
@@ -254,24 +306,99 @@ describe('Jev model adapters', () => {
 
   it('binds a distinct single-use decision request and preserves score distributions and attribution', async () => {
     let committed = false
-    const surface = compileQuestions([{ ...tools[0]!, phases: ['INSPECT'] }], [], {
-      maxSteps: 4,
-      maxModelAttempts: 6,
-      maxNoProgress: 2,
-      maxRepeatedFailures: 2,
-      maxCandidates: 10,
-      maxHistory: 100,
-      maxQuestionBytes: 100_000,
-      maxOutputBytes: 100_000,
-      escalateBelow: 0.6,
-      equivalentSupportThreshold: 0.8,
-      bindingBelow: 0.6,
-      mutationEscalateBelow: 0.8,
-      ambiguityGate: null,
-      responseReviewMode: 'review',
-      answerProgressFloor: 2,
-      maxResponseReviewAttempts: 2,
-    })
+    const rules = [
+      { source: 'runtime:instruction-order', scope: 'session', text: 'Host rules precede user requests.' },
+      { source: 'workspace:AGENTS.md', scope: '/repo/subdir', text: 'Read before editing.\n保留原文。' },
+    ]
+    const skills = {
+      items: [
+        { name: 'review', description: 'Review code.\n保留描述。' },
+        { name: 'inspect', description: 'Inspect the workspace.' },
+      ],
+      coverage: { complete: false, omitted: 1, instructionsLoaded: false, retrieval: 'skill_read' },
+    }
+    const surface = compileQuestions(
+      [{ ...tools[0]!, phases: ['INSPECT'] }],
+      [
+        {
+          id: 'read-candidate' as CandidateId,
+          tool: 'read',
+          label: 'Read first page.\n保留提示。',
+          arguments: { path: 'file.txt', offset: 1 },
+          toolRevision: '1',
+          environmentEpoch: 'env' as EnvironmentEpoch,
+          sourceRecordIds: [],
+        },
+      ],
+      {
+        maxSteps: 4,
+        maxModelAttempts: 6,
+        maxNoProgress: 2,
+        maxRepeatedFailures: 2,
+        maxCandidates: 10,
+        maxHistory: 100,
+        maxQuestionBytes: 100_000,
+        maxOutputBytes: 100_000,
+        escalateBelow: 0.6,
+        equivalentSupportThreshold: 0.8,
+        bindingBelow: 0.6,
+        mutationEscalateBelow: 0.8,
+        ambiguityGate: null,
+        responseReviewMode: 'review',
+        answerProgressFloor: 2,
+        maxResponseReviewAttempts: 2,
+      },
+    )
+    const state = {
+      rules,
+      task: { requests: ['Inspect the file.'] },
+      resources: { skills, jobs: [] },
+      operations: surface.catalog,
+    }
+    const originalState = structuredClone(state)
+    const renderedState = {
+      ...state,
+      rules:
+        'Source: runtime:instruction-order\nScope: session\nHost rules precede user requests.\n\n' +
+        'Source: workspace:AGENTS.md\nScope: /repo/subdir\nRead before editing.\n保留原文。',
+      resources: {
+        ...state.resources,
+        skills: {
+          ...skills,
+          items: { review: 'Review code.\n保留描述。', inspect: 'Inspect the workspace.' },
+        },
+      },
+    }
+    const originalQuestions = structuredClone(surface.questions)
+    const operationQuestion = surface.questions.operation_INSPECT as {
+      type: string
+      criteria: JsonValue
+      instructions: string
+    }
+    const bindingQuestion = surface.questions.binding_read as {
+      type: string
+      criteria: JsonValue
+      instructions: string
+    }
+    const renderedQuestions = {
+      ...surface.questions,
+      operation_INSPECT: {
+        ...operationQuestion,
+        criteria: { read: null },
+        instructions: operationQuestion.instructions.replace(
+          "Each criterion's operation names its definition in state.operations.",
+          'Each option name identifies its complete definition in state.operations.',
+        ),
+      },
+      binding_read: {
+        ...bindingQuestion,
+        criteria: {
+          LLM_PARAMETERS:
+            'mode: "author_parameters"\ndescription: "Keep this operation and have the language helper author all arguments when no offered complete call fits."',
+          c1: 'description: "Read first page.\\n保留提示。"\narguments: {"path":"file.txt","offset":1}',
+        },
+      },
+    }
     const price = { version: 1, amount: 0.042 }
     const backend = createDecisionBackend({
       backend: 'jev',
@@ -281,7 +408,9 @@ describe('Jev model adapters', () => {
       transport: {
         async invoke(request) {
           expect(committed).toBe(true)
-          expect(request.questions).toEqual(surface.questions)
+          expect(request.questions).toEqual(renderedQuestions)
+          expect(request.state).toEqual(renderedState)
+          expect(request).toEqual(call.input)
           expect(request).not.toHaveProperty('pricing')
           return decodeDecisionResponse({
             model: 'actual-jev',
@@ -300,6 +429,12 @@ describe('Jev model adapters', () => {
                 confidence: 0.95,
                 probabilities: { read: 1 },
               },
+              binding_read: {
+                type: 'choice',
+                choice: 'c1',
+                confidence: 0.95,
+                probabilities: { LLM_PARAMETERS: 0.1, c1: 0.9 },
+              },
               meta_progress: { type: 'score', score: 2.5 },
               can_end: { type: 'noul', noul: 0.1 },
             },
@@ -308,9 +443,19 @@ describe('Jev model adapters', () => {
       },
     })
     const call = await backend.prepare(
-      { purpose: 'decision', state: {}, questions: surface.questions, inputCursor: '2' },
+      { purpose: 'decision', state, questions: surface.questions, inputCursor: '2' },
       signal(),
     )
+    expect(call.input).toMatchObject({ state: renderedState })
+    expect(call.input).toMatchObject({ questions: renderedQuestions })
+    expect(Object.keys((call.input as { questions: object }).questions)).toEqual(
+      Object.keys(surface.questions),
+    )
+    expect(state).toEqual(originalState)
+    expect(surface.questions).toEqual(originalQuestions)
+    expect(Object.isFrozen(state.rules)).toBe(false)
+    expect(Object.isFrozen(state.resources.skills.items)).toBe(false)
+    expect(Object.isFrozen((call.input as { state: unknown }).state)).toBe(true)
     expect(call.codec).toBe('systemone-json-v1')
     expect(call.input).not.toHaveProperty('pricing')
     expect(call.pricing).toEqual({ version: 1, amount: 0.042 })
@@ -328,8 +473,200 @@ describe('Jev model adapters', () => {
       operationConfidence: 0.95,
       progress: 2.5,
       canEnd: 0.1,
+      bindingMode: 'selected_candidate',
+      candidateId: 'read-candidate',
     })
     await expect(backend.invoke(call, signal())).rejects.toThrow('already invoked')
+    const optimizedAgain = await backend.prepare(
+      { purpose: 'decision', state: renderedState, questions: renderedQuestions, inputCursor: '2' },
+      signal(),
+    )
+    expect(optimizedAgain.input).toMatchObject({ state: renderedState, questions: renderedQuestions })
+    const unknownQuestions: Array<{ input: Record<string, JsonValue>; expected: Record<string, JsonValue> }> =
+      [
+        {
+          input: {
+            ...surface.questions,
+            operation_INSPECT: { ...operationQuestion, criteria: { read: { operation: 'other' } } },
+          },
+          expected: {
+            ...renderedQuestions,
+            operation_INSPECT: { ...operationQuestion, criteria: { read: { operation: 'other' } } },
+          },
+        },
+        {
+          input: {
+            ...surface.questions,
+            operation_INSPECT: { ...operationQuestion, extra: 'Preserve future metadata.' },
+          },
+          expected: {
+            ...renderedQuestions,
+            operation_INSPECT: { ...operationQuestion, extra: 'Preserve future metadata.' },
+          },
+        },
+        {
+          input: {
+            ...surface.questions,
+            operation_INSPECT: {
+              ...operationQuestion,
+              instructions: `${operationQuestion.instructions} Additional guidance.`,
+            },
+          },
+          expected: {
+            ...renderedQuestions,
+            operation_INSPECT: {
+              ...operationQuestion,
+              instructions: `${operationQuestion.instructions} Additional guidance.`,
+            },
+          },
+        },
+      ]
+    const originalBindingCriteria = bindingQuestion.criteria as { c1: string; LLM_PARAMETERS: string }
+    for (const criteria of [
+      { ...originalBindingCriteria, c1: 'operation: "other"\ndescription: "Wrong identity."\narguments: {}' },
+      {
+        ...originalBindingCriteria,
+        c1: 'operation: "read"\ndescription: "Keep array shape."\narguments: []',
+      },
+      { ...originalBindingCriteria, c1: `${originalBindingCriteria.c1}\nextra: true` },
+      { c1: originalBindingCriteria.c1, LLM_PARAMETERS: originalBindingCriteria.LLM_PARAMETERS },
+      { LLM_PARAMETERS: originalBindingCriteria.LLM_PARAMETERS },
+    ]) {
+      const head = { ...bindingQuestion, criteria }
+      unknownQuestions.push({
+        input: { ...surface.questions, binding_read: head },
+        expected: { ...renderedQuestions, binding_read: head },
+      })
+    }
+    const extendedBinding = {
+      ...bindingQuestion,
+      instructions: `${bindingQuestion.instructions} More constraints.`,
+    }
+    unknownQuestions.push({
+      input: { ...surface.questions, binding_read: extendedBinding },
+      expected: { ...renderedQuestions, binding_read: extendedBinding },
+    })
+    for (const { input: questions, expected } of unknownQuestions) {
+      const before = structuredClone(questions)
+      const prepared = await backend.prepare(
+        { purpose: 'decision', state, questions, inputCursor: '2' },
+        signal(),
+      )
+      expect(prepared.input).toMatchObject({ questions: expected })
+      expect(questions).toEqual(before)
+    }
+    const missingDefinitions = await backend.prepare(
+      { purpose: 'decision', state: {}, questions: surface.questions, inputCursor: '2' },
+      signal(),
+    )
+    expect(missingDefinitions.input).toMatchObject({ questions: surface.questions })
+    for (const backendName of ['jev', 'laya'] as const) {
+      const passthrough = createDecisionBackend({
+        backend: backendName,
+        endpoint: 'https://decision.example/run',
+        model: 'system-one',
+        transport: { invoke: async () => ({}) },
+      })
+      if (backendName === 'laya') {
+        const unchanged = await passthrough.prepare(
+          { purpose: 'decision', state, questions: surface.questions, inputCursor: '2' },
+          signal(),
+        )
+        expect(unchanged.input).toMatchObject({ state, questions: surface.questions })
+      }
+      const states: JsonValue[] = [
+        null,
+        {},
+        { rules: [] },
+        { rules: renderedState.rules },
+        { rules: [...rules, { source: 'future', scope: 'session', text: 'Keep this.', extra: true }] },
+        { rules: [{ source: 'unknown', text: 'Missing scope.' }] },
+        {
+          rules: [
+            Object.assign(Object.create({ source: 'inherited' }), {
+              scope: 'session',
+              text: 'Keep the extra field.',
+              extra: true,
+            }),
+          ],
+        },
+        { rules: [{ source: 'runtime\nother', scope: 'session', text: 'Keep this.' }] },
+        { rules: [{ source: 'runtime', scope: 'session\nother', text: 'Keep this.' }] },
+        { rules: [{ source: 'runtime', scope: 'session\rother', text: 'Keep this.' }] },
+        { resources: { skills: { ...skills, items: [] } } },
+        { resources: { skills: { ...skills, items: renderedState.resources.skills.items } } },
+        { resources: { skills: { ...skills, items: [{ name: 'review' }] } } },
+        {
+          resources: {
+            skills: { ...skills, items: [{ name: 'review', description: 'Review.', extra: true }] },
+          },
+        },
+        {
+          resources: {
+            skills: {
+              ...skills,
+              items: [
+                { name: 'review', description: 'First description.' },
+                { name: 'review', description: 'Second description.' },
+              ],
+            },
+          },
+        },
+        {
+          resources: {
+            skills: {
+              ...skills,
+              items: [
+                { name: '2', description: 'First entry.' },
+                { name: '1', description: 'Second entry.' },
+              ],
+            },
+          },
+        },
+        { resources: null },
+        { resources: { skills: null } },
+        ...(backendName === 'laya' ? [state] : []),
+      ]
+      for (const originalState of states) {
+        const prepared = await passthrough.prepare(
+          { purpose: 'decision', state: originalState, questions: {}, inputCursor: '2' },
+          signal(),
+        )
+        expect(prepared.input).toMatchObject({ state: structuredClone(originalState) })
+      }
+      const specialEntries = [
+        { name: '__proto__', description: 'Own catalog entry.' },
+        { name: 'constructor', description: 'Another catalog entry.' },
+      ]
+      for (const unrenderedRules of ['existing rule text', []]) {
+        const originalState = {
+          rules: unrenderedRules,
+          resources: { skills: { ...skills, items: specialEntries }, jobs: [] },
+        }
+        const prepared = await passthrough.prepare(
+          { purpose: 'decision', state: originalState, questions: {}, inputCursor: '2' },
+          signal(),
+        )
+        expect(prepared.input).toMatchObject({
+          state:
+            backendName === 'laya'
+              ? originalState
+              : {
+                  ...originalState,
+                  resources: {
+                    ...originalState.resources,
+                    skills: {
+                      ...skills,
+                      items: Object.fromEntries(
+                        specialEntries.map(({ name, description }) => [name, description]),
+                      ),
+                    },
+                  },
+                },
+        })
+        expect(originalState.resources.skills.items).toEqual(specialEntries)
+      }
+    }
     expect(() =>
       createDecisionBackend({
         backend: 'jev',
@@ -364,6 +701,79 @@ describe('Jev model adapters', () => {
     policy.perMillion.output = 999
     expect(call.input).toMatchObject({ pricing: { policy: { perMillion: { output: 1 } } } })
     expect(Object.isFrozen(call.input)).toBe(true)
+  })
+
+  it('restricts recovery requests to inspection and preserves reconciled-state uncertainty', () => {
+    const intentId = 'pending-write' as IntentId
+    const readDefinition = tools.find((tool) => tool.name === 'read')
+    const writeDefinition = tools.find((tool) => tool.name === 'write')
+    if (!readDefinition || !writeDefinition) throw new Error('Missing test tools')
+    const read = { ...readDefinition, effectClass: 'read_only' as const }
+    const records: RuntimeRecord[] = [
+      task,
+      {
+        version: 1,
+        id: id('environment'),
+        turn,
+        kind: 'environment.observed',
+        epoch: 'epoch' as EnvironmentEpoch,
+        facts: {},
+        catalog: [read, writeDefinition],
+      },
+      {
+        version: 1,
+        id: id('intended'),
+        turn,
+        kind: 'action.intended',
+        decision: id('selection'),
+        intent: {
+          id: intentId,
+          tool: 'write',
+          toolRevision: '1',
+          arguments: { path: '/w/file', content: 'desired' },
+          environmentEpoch: 'epoch' as EnvironmentEpoch,
+          effectClass: 'workspace_mutation',
+        },
+      },
+      {
+        version: 1,
+        id: id('settled'),
+        turn,
+        kind: 'action.settled',
+        intentId,
+        effect: 'unknown',
+        observations: [],
+        outcome: {
+          kind: 'error',
+          content: [{ kind: 'text', text: 'write failed' }],
+          directive: { conclude: false, additions: [] },
+        },
+      },
+    ]
+    const inspection = createLanguageContext({
+      ...input('arbitration', records),
+      tools: [read],
+      recovery: { intentIds: [intentId] },
+    })
+    expect(inspection.tools.map((tool) => tool.name)).toEqual(['read'])
+    expect(inspection.requestNote).toContain('read-only')
+    expect(inspection.requestNote).toContain('Do not retry mutations or return a final answer')
+    records.push({
+      version: 1,
+      id: id('resolved'),
+      turn,
+      kind: 'action.resolved',
+      intentId,
+      resolution: 'reconciled_state',
+      actor: 'host:effect-recovery',
+      explanation: 'Current contents verified',
+      evidence: ['read-proof'],
+    })
+    const replanned = createLanguageContext(input('arbitration', records))
+    expect(replanned.tools.map((tool) => tool.name)).toEqual(['read', 'write'])
+    expect(JSON.stringify(replanned.messages)).toContain('Original execution remains unknown')
+    expect(JSON.stringify(replanned.messages)).toContain('Execution effect: unknown')
+    expect(JSON.stringify(replanned.messages)).not.toContain('Execution effect: applied')
   })
 
   it('uses the complete native tool catalog, keeps purpose private and invokes only after durable preparation', async () => {
@@ -456,7 +866,7 @@ describe('Jev model adapters', () => {
     ).toMatchObject({ error: { code: 'LANGUAGE_INCOMPLETE' }, usage })
   })
 
-  it('does not adopt arbitration text until RESPOND and replays prior request instructions as a stable prefix', async () => {
+  it('keeps a stable agent prefix without replaying request controls or adopting unaccepted answers', async () => {
     const backend = createLanguageBackend(
       host([
         sent,
@@ -498,8 +908,7 @@ describe('Jev model adapters', () => {
         { type: 'text', text: 'Final evidence-based answer.' },
       ],
     })
-    // A request persisted before the version-token tail replays its note byte-for-byte without it;
-    // only the new request's own tail note carries the version-token instruction.
+    // Historical snapshots remain intact, but request controls never become conversation entries.
     const versionTail =
       'Workspace directory entry versions are opaque freshness tokens, not content hashes. A changed token alone does not prove changed contents or failed restoration, and an unchanged token alone does not prove identical contents. Base content claims on recorded content and tool results.'
     const legacyNote =
@@ -523,22 +932,39 @@ describe('Jev model adapters', () => {
       },
     ]
     const subsequent = createLanguageContext(input('arbitration', legacyRecords))
-    expect(subsequent.messages).toContainEqual({
-      role: 'user',
-      content: [{ type: 'text', text: legacyNote }],
-    })
-    expect(JSON.stringify(subsequent.messages.slice(0, -1))).not.toContain('opaque freshness tokens')
-    expect(subsequent.requestNote).toBe(`${legacyNote}\n${versionTail}`)
+    expect(JSON.stringify(subsequent.messages)).not.toContain(legacyNote)
+    expect(JSON.stringify(subsequent.messages[0])).toContain('opaque freshness tokens')
+    expect(subsequent.requestNote).toBe('')
     for (const purpose of ['parameters', 'arbitration', 'answer'] as const) {
       const context = createLanguageContext(input(purpose, legacyRecords))
       expect(context.tools).toEqual(subsequent.tools)
       expect(context.system).toBe(subsequent.system)
-      expect(context.requestNote.endsWith(versionTail)).toBe(true)
-      expect(context.messages).toContainEqual({ role: 'user', content: [{ type: 'text', text: legacyNote }] })
+      expect(JSON.stringify(context.messages[0])).toContain(versionTail)
+      expect(JSON.stringify(context.messages)).not.toContain(legacyNote)
     }
     expect(subsequent.tools.map((tool) => tool.name)).toEqual(['read', 'write'])
+    const steps: RuntimeRecord[] = [task]
+    let previousMessages = createLanguageContext(input('arbitration', steps)).messages
+    for (let index = 0; index < 6; index++) {
+      const call = await backend.prepare(input('arbitration', steps), signal())
+      steps.push(
+        { version: 1, id: id(`step-request-${index}`), turn, kind: 'model.requested', call },
+        {
+          ...task,
+          id: id(`step-fact-${index}`),
+          input: { ...task.input, id: `fact-${index}`, content: [{ kind: 'text', text: `Fact ${index}` }] },
+        },
+      )
+      const next = createLanguageContext(input('arbitration', steps))
+      expect(next.messages.slice(0, previousMessages.length)).toEqual(previousMessages)
+      expect(next.requestNote).toBe('')
+      expect(JSON.stringify(next.messages).match(/opaque freshness tokens/gu)).toHaveLength(1)
+      expect(JSON.stringify(next.messages)).not.toContain(legacyNote)
+      expect(next).toEqual(createLanguageContext(input('arbitration', JSON.parse(JSON.stringify(steps)))))
+      previousMessages = next.messages
+    }
     const firstNote = (first.input as { requestNote: string }).requestNote
-    expect(firstNote.endsWith(versionTail)).toBe(true)
+    expect(firstNote).toBe('')
     const followUp = createLanguageContext(input('answer', records)).messages
     expect(
       followUp.filter(
@@ -546,11 +972,8 @@ describe('Jev model adapters', () => {
           message.role === 'user' &&
           message.content.some((block) => block.type === 'text' && block.text === firstNote),
       ),
-    ).toHaveLength(1)
-    expect(followUp.at(-1)).toMatchObject({
-      role: 'user',
-      content: [{ type: 'text', text: expect.stringContaining('opaque freshness tokens') }],
-    })
+    ).toHaveLength(0)
+    expect(JSON.stringify(followUp[0])).toContain(versionTail)
   })
 
   it('restores verified thinking, refuses stream/output forks, and keeps snapshot-less legacy readable', () => {
@@ -757,6 +1180,7 @@ describe('Jev model adapters', () => {
     'batch-first',
     'batch-second',
     'batch-both',
+    'batch-parameters',
     'batch-user-boundary',
     'batch-note-boundary',
     'batch-host-boundary',
@@ -769,8 +1193,10 @@ describe('Jev model adapters', () => {
     'preserves execution authorship for %s without inventing assistant tool calls',
     async (origin) => {
       const batch = origin.startsWith('batch-')
+      const parameterBatch = origin === 'batch-parameters'
       const completeBatch = [
         'batch-both',
+        'batch-parameters',
         'batch-user-boundary',
         'batch-note-boundary',
         'batch-host-boundary',
@@ -779,6 +1205,7 @@ describe('Jev model adapters', () => {
         'batch-first': 0,
         'batch-second': 1,
         'batch-both': 0,
+        'batch-parameters': 0,
         'batch-user-boundary': 0,
         'batch-note-boundary': 0,
         'batch-host-boundary': 0,
@@ -791,6 +1218,8 @@ describe('Jev model adapters', () => {
       const backend = createLanguageBackend(
         host([
           sent,
+          { type: 'thinking_delta', delta: 'Do not replay private tool reasoning.' },
+          { type: 'text_delta', delta: 'Inspect the evidence before choosing the next action.' },
           {
             type: 'toolcall_end',
             call: { toolUseId: 'provider-original-call', name: 'read', args: { path: 'a' }, ordinal: 0 },
@@ -810,7 +1239,12 @@ describe('Jev model adapters', () => {
         ]),
       )
       const request = await backend.prepare(
-        input(origin === 'parameters' ? 'parameters' : 'arbitration'),
+        {
+          ...input(origin === 'parameters' || parameterBatch ? 'parameters' : 'arbitration'),
+          ...(parameterBatch
+            ? { tools: tools.map((tool) => ({ ...tool, effectClass: 'read_only' as const })) }
+            : {}),
+        },
         signal(),
       )
       const settlement = await backend.invoke(request, signal())
@@ -821,12 +1255,14 @@ describe('Jev model adapters', () => {
         second.via = 'forged'
       }
       if (batch) {
-        expect(request.input).toMatchObject({
-          requestNote: expect.stringContaining('Call 1 to 32 tools'),
-        })
-        expect(request.input).toMatchObject({
-          requestNote: expect.stringContaining('must not depend on results that have not yet been observed'),
-        })
+        if (parameterBatch)
+          expect(request.input).toMatchObject({ requestNote: expect.stringContaining('1 to 32') })
+        else expect(request.input).toMatchObject({ requestNote: '' })
+        const body = (request.input as { request: RequestBody }).request
+        expect(JSON.stringify(body.messages[0])).toContain('Submit at most 32 calls')
+        expect(JSON.stringify(body.messages[0])).toContain(
+          'must not depend on results that have not yet been observed',
+        )
       }
       const intent = {
         id: 'intent' as IntentId,
@@ -853,8 +1289,11 @@ describe('Jev model adapters', () => {
           turn,
           kind: 'decision.selected',
           requested: id('requested'),
+          ...(parameterBatch ? { parameterDecision: id('original-jev-selection') } : {}),
           source:
-            batch || origin === 'arbitration' || origin === 'changed-arguments' ? 'llm_arbitration' : 'jev',
+            !parameterBatch && (batch || origin === 'arbitration' || origin === 'changed-arguments')
+              ? 'llm_arbitration'
+              : 'jev',
           ...(callIndex === undefined ? {} : { callIndex }),
           phase: 'INSPECT',
           operation: 'read',
@@ -884,7 +1323,8 @@ describe('Jev model adapters', () => {
             turn,
             kind: 'decision.selected',
             requested: id('requested'),
-            source: native ? 'llm_arbitration' : 'jev',
+            source: native && !parameterBatch ? 'llm_arbitration' : 'jev',
+            ...(parameterBatch ? { parameterDecision: id('original-jev-selection') } : {}),
             phase: 'INSPECT',
             operation: 'read',
             ...(native ? { callIndex: 1 } : {}),
@@ -938,6 +1378,93 @@ describe('Jev model adapters', () => {
         appendExecution('second', true)
       }
       const messages = createLanguageContext(input('answer', records)).messages
+      expect(JSON.stringify(messages)).not.toContain('Do not replay private tool reasoning.')
+      if (origin !== 'arbitration')
+        expect(JSON.stringify(messages)).not.toContain(
+          'Inspect the evidence before choosing the next action.',
+        )
+      if (origin === 'arbitration') {
+        for (const fault of [
+          'unknown',
+          'acknowledged',
+          'failed',
+          'missing-done',
+          'output-fork',
+          'after-done',
+          'late-text',
+        ] as const) {
+          const altered = structuredClone(records)
+          const ended = altered.find((record) => record.kind === 'model.settled')
+          const executed = altered.find((record) => record.kind === 'action.settled')
+          if (ended?.kind !== 'model.settled' || executed?.kind !== 'action.settled')
+            throw new Error('Missing single-call fixture')
+          const response = ended.settlement.snapshot?.response as { events: JsonValue[] }
+          if (fault === 'unknown' || fault === 'acknowledged')
+            altered[altered.indexOf(executed)] = { ...executed, effect: fault }
+          if (fault === 'failed')
+            altered[altered.indexOf(executed)] = {
+              ...executed,
+              outcome: { ...executed.outcome, kind: 'error' },
+            }
+          if (fault === 'missing-done') response.events.pop()
+          if (fault === 'output-fork')
+            altered[altered.indexOf(ended)] = {
+              ...ended,
+              settlement: {
+                ...ended.settlement,
+                output: { kind: 'call', name: 'read', arguments: { path: 'forged' } },
+              },
+            }
+          if (fault === 'after-done') response.events.push({ type: 'text_delta', delta: 'extra' })
+          if (fault === 'late-text') response.events.splice(-1, 0, { type: 'text_delta', delta: 'extra' })
+          expect(JSON.stringify(createLanguageContext(input('answer', altered)).messages)).not.toContain(
+            'Inspect the evidence before choosing the next action.',
+          )
+        }
+      }
+      if (origin === 'batch-first') {
+        const policy: RuntimeRecord = {
+          ...task,
+          id: id('policy'),
+          input: {
+            ...task.input,
+            id: 'policy',
+            source: 'system-prompt',
+            content: [{ kind: 'text', text: 'Policy to clear.' }],
+          },
+        }
+        const clear: RuntimeRecord = {
+          ...policy,
+          id: id('clear'),
+          input: { ...policy.input, id: 'clear', content: [] },
+        }
+        const later: RuntimeRecord = {
+          ...task,
+          id: id('later'),
+          input: { ...task.input, id: 'later', content: [{ kind: 'text', text: 'Later user fact.' }] },
+        }
+        for (const prefix of [records.slice(0, 3), records]) {
+          const projected = createLanguageContext(
+            input('arbitration', [policy, ...prefix, clear, later]),
+          ).messages
+          const feedback = projected.findIndex((message) =>
+            JSON.stringify(message).includes('These proposed calls were not admitted or executed'),
+          )
+          const fact = projected.findIndex((message) => JSON.stringify(message).includes('Later user fact.'))
+          expect(feedback).toBeGreaterThanOrEqual(0)
+          expect(feedback).toBeLessThan(fact)
+          expect(projected.some((message) => message.role === 'system')).toBe(false)
+        }
+      }
+      const historyBefore = createLanguageContext(input('arbitration', structuredClone(records))).messages
+      records.push({
+        ...task,
+        id: id('next-step'),
+        input: { ...task.input, id: 'next-step-input', content: [{ kind: 'text', text: 'Next step fact.' }] },
+      })
+      const extended = createLanguageContext(input('arbitration', records)).messages
+      expect(extended.slice(0, historyBefore.length)).toEqual(historyBefore)
+      records.pop()
       if (completeBatch) {
         const assistants = messages.filter((message) => message.role === 'assistant')
         const expectedCalls = [
@@ -945,7 +1472,7 @@ describe('Jev model adapters', () => {
           { toolUseId: 'provider-second-call', name: 'read', args: { path: 'a' }, ordinal: 7 },
         ]
         expect(assistants).toEqual(
-          origin === 'batch-both'
+          origin === 'batch-both' || parameterBatch
             ? [{ role: 'assistant', content: [], toolCalls: expectedCalls }]
             : expectedCalls.map((call) => ({ role: 'assistant', content: [], toolCalls: [call] })),
         )
@@ -964,7 +1491,15 @@ describe('Jev model adapters', () => {
         const toolUseId = origin === 'batch-second' ? 'provider-second-call' : 'provider-original-call'
         expect(messages).toContainEqual({
           role: 'assistant',
-          content: [],
+          content:
+            origin === 'arbitration'
+              ? [
+                  {
+                    type: 'text',
+                    text: 'Non-final explanation accompanying this tool proposal; execution facts are in the tool result.\nInspect the evidence before choosing the next action.',
+                  },
+                ]
+              : [],
           toolCalls: [
             {
               toolUseId,

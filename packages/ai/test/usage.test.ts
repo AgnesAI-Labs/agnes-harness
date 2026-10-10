@@ -47,6 +47,20 @@ const usageOf = (events: InferenceEvent[]) =>
   events.find((e) => e.type === 'usage') as Extract<InferenceEvent, { type: 'usage' }>
 
 describe('estimateCredits', () => {
+  it('does not turn an explicit unknown price policy into a free legacy estimate', () => {
+    const model = fakeModel({
+      id: 'm',
+      route: 'r',
+      pricePolicy: {
+        currency: 'USD',
+        unit: 'per-million-tokens',
+        perMillion: { inputUncached: null, output: null },
+      },
+    })
+    expect(estimateCredits(model, tokens(100, 10), 100)).toBeUndefined()
+    expect(estimateBilling(model, tokens(100, 10))).toBeUndefined()
+  })
+
   it('prices from per-million costs', () => {
     const m = fakeModel({
       id: 'm',
@@ -96,6 +110,55 @@ describe('estimateBilling', () => {
 })
 
 describe('the provider completes the usage event', () => {
+  it('omits unknown estimates, including an adapter zero estimate, while retaining gateway billing and credits', async () => {
+    const models = {
+      r: [
+        fakeModel({
+          id: 'm',
+          route: 'r',
+          pricePolicy: {
+            currency: 'USD',
+            unit: 'per-million-tokens',
+            perMillion: { inputUncached: null, output: null },
+          },
+        }),
+      ],
+    }
+    const script: Script = () => [
+      {
+        type: 'usage',
+        tokens: tokens(100, 10),
+        credits: 0,
+        creditSource: 'estimated',
+        billing: { usdMicros: 0, source: 'estimated', subscription: false },
+      },
+      { type: 'done', reason: 'stop' },
+    ]
+    const unknown = usageOf(await run({ models, script }))
+    expect(unknown).not.toHaveProperty('credits')
+    expect(unknown).not.toHaveProperty('billing')
+    const authoritative = usageOf(
+      await run({
+        models,
+        script: () => [
+          {
+            type: 'usage',
+            tokens: tokens(100, 10),
+            credits: 0,
+            creditSource: 'gateway',
+            billing: { usdMicros: 0, source: 'gateway', subscription: false },
+          },
+          { type: 'done', reason: 'stop' },
+        ],
+      }),
+    )
+    expect(authoritative).toMatchObject({
+      credits: 0,
+      creditSource: 'gateway',
+      billing: { usdMicros: 0, source: 'gateway' },
+    })
+  })
+
   it('fills credits and timing from the injected clock', async () => {
     let now = 0
     const events = await run({

@@ -124,6 +124,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "renderRuntimeContext",
   "replacementFor",
   "reserveSessionConfiguration",
+  "resolveModel",
   "resolveValidatedToolCallPolicy",
   "rollbackRefine",
   "runCompaction",

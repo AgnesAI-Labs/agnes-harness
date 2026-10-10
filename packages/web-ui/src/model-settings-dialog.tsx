@@ -31,13 +31,38 @@ export function parseContextBudget(value: string): number | undefined {
   return Number.isSafeInteger(tokens) && tokens > 0 ? tokens : undefined
 }
 
+export type StageModelOption = {
+  route: string
+  id: string
+  label?: string
+  reasoning?: boolean
+  thinkingLevelMap?: Record<string, string>
+}
+export type StageName = 'parameters' | 'arbitration' | 'answer'
+export type StageBinding = { route: string; model: string; thinking?: ThinkingLevel | null }
+export type StageBindings = Record<StageName, StageBinding | null>
+
+const STAGES: ReadonlyArray<{ stage: StageName; label: string }> = [
+  { stage: 'parameters', label: '补参' },
+  { stage: 'arbitration', label: '仲裁' },
+  { stage: 'answer', label: '回答' },
+]
+
 export type ModelSettingsDialogProps = {
   disabled: boolean
   settings: ModelSettings
   contextWindow: number
   thinkingLevelMap?: Record<string, string> | undefined
-  onApply(settings: ModelSettings): Promise<boolean>
+  /**
+   * JevLoop only: per-stage model bindings. A null stage follows the session model. When present
+   * the dialog shows the stage section and onApply receives the edited bindings as its second
+   * argument; without it the dialog and its callback shape are unchanged.
+   */
+  stages?: { options: readonly StageModelOption[]; value: StageBindings } | undefined
+  onApply(settings: ModelSettings, stages?: StageBindings): Promise<boolean>
 }
+
+const stageKey = (binding: StageBinding | null) => (binding ? `${binding.route}|${binding.model}` : '')
 
 /** The dialog owns its draft; the backend-confirmed selection remains in the composer. */
 export function ModelSettingsDialog({
@@ -45,11 +70,22 @@ export function ModelSettingsDialog({
   settings,
   contextWindow,
   thinkingLevelMap,
+  stages,
   onApply,
 }: ModelSettingsDialogProps) {
   const [open, setOpen] = useState(false)
   const [thinking, setThinking] = useState('')
   const [window, setWindow] = useState('')
+  const [stageDraft, setStageDraft] = useState<StageBindings>({
+    parameters: null,
+    arbitration: null,
+    answer: null,
+  })
+  const stageOption = (binding: StageBinding | null) =>
+    binding
+      ? stages?.options.find((option) => option.route === binding.route && option.id === binding.model)
+      : undefined
+  const bound = stages ? STAGES.filter(({ stage }) => stages.value[stage] !== null).length : 0
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const tokens = parseContextBudget(window)
@@ -66,15 +102,21 @@ export function ModelSettingsDialog({
         htmlType="button"
         disabled={disabled}
         aria-haspopup="dialog"
-        aria-label="配置本会话的思考强度和上下文预算"
+        aria-label={
+          stages
+            ? '配置本会话的思考强度、上下文预算和 JevLoop 分环节模型'
+            : '配置本会话的思考强度和上下文预算'
+        }
+        title={stages && bound > 0 ? `已为 ${bound} 个环节单独指定模型` : undefined}
         onClick={() => {
           setThinking(settings.thinking ?? '')
           setWindow(String(settings.contextWindow ?? ''))
+          if (stages) setStageDraft({ ...stages.value })
           setError('')
           setOpen(true)
         }}
       >
-        思考 · 上下文
+        {stages ? (bound > 0 ? `思考 · 环节 ${bound}/3` : '思考 · 环节') : '思考 · 上下文'}
       </Button>
       <Dialog
         title="本会话模型配置"
@@ -89,10 +131,11 @@ export function ModelSettingsDialog({
           setPending(true)
           setError('')
           try {
-            const accepted = await onApply({
+            const next = {
               ...(thinking ? { thinking: thinking as ThinkingLevel } : {}),
               ...(tokens === undefined ? {} : { contextWindow: tokens }),
-            })
+            }
+            const accepted = stages ? await onApply(next, stageDraft) : await onApply(next)
             if (accepted) setOpen(false)
             else setError('配置未保存，请检查连接或重试。')
           } catch (failure) {
@@ -137,6 +180,68 @@ export function ModelSettingsDialog({
           模型容量 {contextWindow.toLocaleString()} Token。可输入 100K（100,000
           Token）或完整数量；留空恢复自动。较小预算会提前整理上下文。
         </p>
+        {stages && (
+          <fieldset className="stage-models" disabled={pending || disabled}>
+            <legend>JevLoop 分环节模型</legend>
+            <p className="field-hint">
+              未指定的环节跟随会话模型。分档后各环节的前缀缓存独立计费，仲裁占比高时可能更贵。
+            </p>
+            {STAGES.map(({ stage, label }) => {
+              const binding = stageDraft[stage]
+              const option = stageOption(binding)
+              return (
+                <div className="stage-model-row" key={stage} data-stage={stage}>
+                  <label htmlFor={`stage-model-${stage}`}>{label}</label>
+                  <select
+                    id={`stage-model-${stage}`}
+                    value={stageKey(binding)}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      const separator = value.indexOf('|')
+                      setStageDraft((draft) => ({
+                        ...draft,
+                        [stage]:
+                          value === ''
+                            ? null
+                            : { route: value.slice(0, separator), model: value.slice(separator + 1) },
+                      }))
+                    }}
+                  >
+                    <option value="">跟随会话模型</option>
+                    {stages.options.map((entry) => (
+                      <option key={`${entry.route}|${entry.id}`} value={`${entry.route}|${entry.id}`}>
+                        {entry.label ? `${entry.label} · ${entry.id}` : entry.id}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    id={`stage-thinking-${stage}`}
+                    aria-label={`${label}思考强度`}
+                    value={binding?.thinking ?? ''}
+                    disabled={!binding || !option?.reasoning}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      setStageDraft((draft) => {
+                        const current = draft[stage]
+                        if (!current) return draft
+                        return {
+                          ...draft,
+                          [stage]: { ...current, thinking: value === '' ? null : (value as ThinkingLevel) },
+                        }
+                      })
+                    }}
+                  >
+                    {modelThinkingOptions(option?.thinkingLevelMap).map((entry) => (
+                      <option key={entry.value} value={entry.value}>
+                        {entry.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )
+            })}
+          </fieldset>
+        )}
         <p id="session-model-settings-error" role="alert">
           {!validWindow
             ? `请输入 ${minimum.toLocaleString()} 至 ${contextWindow.toLocaleString()} 之间的正整数 Token，可使用 K/M 单位。`

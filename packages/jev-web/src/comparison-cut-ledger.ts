@@ -1,12 +1,14 @@
 import type { ComparisonLane, EventEnvelope } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import type { ComparisonReplayLane } from './comparison-replay.js'
+import type { Translate } from './jev-locale.js'
 
 /** Pages belong to an authenticated comparison cut, never an implicitly opened session. */
 export function createComparisonCutLedger(
   client: Client,
   identity: { id: string; side: ComparisonLane['side']; sessionId: string },
   update: (value: ComparisonReplayLane, note: string) => void,
+  t: Translate,
 ) {
   const events: EventEnvelope[] = []
   let target: { atSeq: number; throughSeq: number } | undefined
@@ -21,8 +23,12 @@ export function createComparisonCutLedger(
       { events: [...events], complete: complete(), loading },
       error ??
         (complete()
-          ? `已载入完整账本 #0–${after()}；当前展示范围见回放位置。`
-          : `${loading ? '正在读取' : '部分历史'} #0–${after()} / ${target?.throughSeq ?? 0}；尚未读全，缺失不表示未执行。`),
+          ? t('cut.note.complete', { seq: after() })
+          : t('cut.note.partial', {
+              state: loading ? t('cut.reading') : t('cut.partialHistory'),
+              after: after(),
+              total: target?.throughSeq ?? 0,
+            })),
     )
   }
   async function read() {
@@ -67,7 +73,7 @@ export function createComparisonCutLedger(
         events.push(...page.events)
       }
     } catch (failure) {
-      error = `历史读取失败：${failure instanceof Error ? failure.message : String(failure)}`
+      error = t('cut.readFailed', { message: failure instanceof Error ? failure.message : String(failure) })
     } finally {
       loading = false
       publish()

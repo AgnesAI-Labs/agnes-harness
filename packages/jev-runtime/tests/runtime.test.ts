@@ -215,6 +215,7 @@ function fixture<C>(
               tools: model.tools ?? null,
               locked: model.lockedOperation ?? null,
               ...(model.repair ? { repair: model.repair } : {}),
+              ...(model.recovery ? { recovery: model.recovery } : {}),
             }),
           ) as JsonValue,
           inputCursor: model.inputCursor,
@@ -698,7 +699,7 @@ describe('operation gates and parameter routes', () => {
     expect(records.filter((record) => record.kind === 'action.dispatching')).toHaveLength(1)
   })
 
-  it('resumes a v4 prefix with a settled legacy arbitration proposal without executing that proposal', async () => {
+  it('resumes a current prefix with a settled legacy arbitration proposal without executing that proposal', async () => {
     const { entries, ledger } = ledgerA()
     const initial = await openJevRuntime(fixture(ledger, { confidence: 0.2 }), config)
     expect((await initial.run(turn, [input])).status).toBe('completed')
@@ -744,7 +745,7 @@ describe('operation gates and parameter routes', () => {
     expect(entries.slice(0, legacy.length)).toEqual(legacy)
     expect(
       entries.flatMap((entry) => (entry.payload.kind === 'run.opened' ? [entry.payload.runtimeVersion] : [])),
-    ).toEqual(['4'])
+    ).toEqual(['5'])
   })
 
   it('consumes the shared tool binding across purposes while ignoring an invalid unused operation', async () => {
@@ -1970,6 +1971,147 @@ describe('recovery', () => {
     ).toEqual([])
   })
 
+  it.each([
+    'reconcile',
+    'unverified',
+    'mutation',
+    'answer',
+    'policy-downgrade',
+    'cancel',
+    'conclude-inspection',
+  ] as const)(
+    'gives uncertain effects bounded LLM inspection without replaying mutations: %s',
+    async (mode) => {
+      const { ledger } = ledgerA()
+      const read: ToolDescriptor = { ...tool, name: 'inspect', effectClass: 'read_only' }
+      const executed: string[] = []
+      const requests: LanguageInput[] = []
+      let drained = false
+      let runtime: Awaited<ReturnType<typeof openJevRuntime>>
+      const base = fixture(ledger, {
+        onLanguage(call) {
+          const pending = (call.input as { recovery?: unknown }).recovery
+          if (pending) {
+            if (mode === 'answer')
+              return { output: { kind: 'answer', content: [{ kind: 'text', text: 'done' }] } }
+            return {
+              output: { kind: 'call', name: mode === 'mutation' ? tool.name : read.name, arguments: {} },
+            }
+          }
+          return { output: { kind: 'call', name: tool.name, arguments: { replanned: executed.length > 0 } } }
+        },
+      })
+      const ports: RuntimePorts<number> = {
+        ...base,
+        language: {
+          ...base.language,
+          async prepare(input) {
+            requests.push(input)
+            return base.language.prepare(input, new AbortController().signal)
+          },
+        },
+        environment: {
+          ...base.environment,
+          async catalog() {
+            return [tool, read]
+          },
+          async prepare(intent) {
+            return { kind: 'ready', readOnly: !(mode === 'policy-downgrade' && intent.tool === read.name) }
+          },
+          async execute(intent) {
+            executed.push(intent.tool)
+            drained = false
+            if (intent.tool === read.name)
+              return {
+                ...outcome,
+                effect: 'none',
+                directive: { conclude: mode === 'conclude-inspection', additions: [] },
+              }
+            return executed.length === 1
+              ? {
+                  ...outcome,
+                  kind: 'error',
+                  effect: 'unknown',
+                  directive: { conclude: false, additions: [] },
+                }
+              : outcome
+          },
+          async drain() {
+            drained = true
+          },
+        },
+        effectRecovery: {
+          async reconcile(_intent, _outcome, records) {
+            expect(drained).toBe(true)
+            const inspection = records.findLast(
+              (record) => record.kind === 'action.settled' && record.effect === 'none',
+            )
+            if (mode === 'unverified' || mode === 'conclude-inspection' || !inspection) return undefined
+            if (mode === 'cancel') runtime.cancel()
+            return {
+              resolution: 'reconciled_state',
+              explanation: 'Host verified current file state, not historical execution',
+              evidence: [inspection.id],
+              proof: { path: '/workspace/file', digest: 'observed' },
+            }
+          },
+        },
+      }
+      runtime = await openJevRuntime(ports, { ...config, maxSteps: 5, maxModelAttempts: 10, maxHistory: 100 })
+      const result = await runtime.run(turn, [input])
+      expect(requests.some((request) => request.recovery !== undefined)).toBe(true)
+      for (const request of requests.filter((request) => request.recovery)) {
+        expect(request.purpose).toBe('arbitration')
+        expect(request.tools).toEqual([read])
+        expect(
+          request.records.some((record) => record.kind === 'input.admitted' && record.input.id === input.id),
+        ).toBe(true)
+      }
+      const records = (await ledger.read()).map((entry) => entry.record)
+      const resolutions = records.filter((record) => record.kind === 'action.resolved')
+      if (mode === 'reconcile') {
+        expect(result.status).toBe('completed')
+        expect(executed).toEqual([tool.name, read.name, tool.name])
+        expect(resolutions).toMatchObject([{ resolution: 'reconciled_state', actor: 'host:effect-recovery' }])
+        expect(records.filter((record) => record.kind === 'action.settled')[0]).toMatchObject({
+          effect: 'unknown',
+        })
+        const withoutProof = records.filter(
+          (record) =>
+            record.kind !== 'resource.observed' ||
+            !(
+              record.resource &&
+              typeof record.resource === 'object' &&
+              !Array.isArray(record.resource) &&
+              record.resource.kind === 'jev.effect-recovery.proof.v1'
+            ),
+        )
+        expect(() => replayRecords(withoutProof.map((record, cursor) => ({ record, cursor })))).toThrow(
+          'Reconciled state requires a Host proof',
+        )
+        expect(
+          records.filter((record) => record.kind === 'model.requested').map((record) => record.call.purpose),
+        ).toEqual(['decision', 'parameters', 'arbitration', 'arbitration'])
+        await runtime.close()
+        const reopened = await openJevRuntime(ports, {
+          ...config,
+          maxSteps: 5,
+          maxModelAttempts: 10,
+          maxHistory: 100,
+        })
+        expect((await reopened.run(turn, [])).status).toBe('completed')
+        expect(executed).toEqual([tool.name, read.name, tool.name])
+        await reopened.close()
+      } else {
+        expect(result.status).toBe(mode === 'cancel' ? 'cancelled' : 'blocked')
+        expect(executed.filter((name) => name === tool.name)).toHaveLength(1)
+        expect(resolutions).toHaveLength(0)
+        expect(result.unresolved).toHaveLength(1)
+        await runtime.close()
+      }
+    },
+  )
+
   it('trusts the durable settlement after its acknowledgement was lost', async () => {
     const { ledger } = ledgerA()
     let calls = 0
@@ -2049,6 +2191,294 @@ describe('recovery', () => {
 })
 
 describe('routing and admission', () => {
+  it.each(['parameters', 'arbitration'] as const)(
+    'executes a bounded safe read window from %s with independent causal receipts',
+    async (purpose) => {
+      for (const safety of ['safe', 'undeclared', 'argument-unsafe', 'no-prepare'] as const) {
+        const { ledger } = ledgerA()
+        const read: ToolDescriptor = {
+          ...tool,
+          effectClass: 'read_only',
+          ...(safety === 'undeclared' ? {} : { concurrencySafe: true }),
+        }
+        const ports = fixture(ledger, {
+          confidence: purpose === 'parameters' ? 0.9 : 0.2,
+          helper: {
+            kind: 'calls',
+            calls: Array.from({ length: 7 }, (_, index) => ({
+              kind: 'call',
+              name: read.name,
+              arguments: { index },
+            })),
+          },
+        })
+        ports.environment.catalog = async () => [read]
+        if (safety !== 'no-prepare')
+          ports.environment.prepare = async () => ({
+            kind: 'ready',
+            concurrencySafe: safety !== 'argument-unsafe',
+          })
+        let active = 0
+        let peak = 0
+        const started: number[] = []
+        const finished: number[] = []
+        const pending: Array<() => void> = []
+        const width = safety === 'safe' ? 4 : 1
+        ports.environment.execute = async (intent) => {
+          const index = Number(intent.arguments.index)
+          active++
+          peak = Math.max(active, peak)
+          started.push(index)
+          // No timers: each window can complete only after all expected siblings actually start.
+          await new Promise<void>((resolve) => {
+            pending.push(resolve)
+            if (pending.length === Math.min(width, 7 - index + pending.length - 1)) {
+              for (const release of pending.splice(0).reverse()) release()
+            }
+          })
+          active--
+          finished.push(index)
+          return { ...outcome, value: { index }, directive: { conclude: index === 6, additions: [] } }
+        }
+        const runtime = await openJevRuntime(ports, { ...config, maxSteps: 1 })
+        expect((await runtime.run(turn, [input])).status).toBe('completed')
+        expect(peak).toBe(width)
+        expect(active).toBe(0)
+        expect(started).toEqual([0, 1, 2, 3, 4, 5, 6])
+        expect([...finished].sort((a, b) => a - b)).toEqual(started)
+        if (width === 4) expect(finished).not.toEqual(started)
+        const records = (await ledger.read()).map((e) => e.record)
+        expect(records.filter((r) => r.kind === 'model.requested').map((r) => r.call.purpose)).toEqual([
+          'decision',
+          purpose,
+        ])
+        const selections = records.filter(
+          (r): r is Extract<RuntimeRecord, { kind: 'decision.selected' }> =>
+            r.kind === 'decision.selected' && r.callIndex !== undefined,
+        )
+        expect(selections.map((r) => r.callIndex)).toEqual([0, 1, 2, 3, 4, 5, 6])
+        expect(
+          selections.every((r) => r.source === (purpose === 'parameters' ? 'jev' : 'llm_arbitration')),
+        ).toBe(true)
+        if (purpose === 'parameters') {
+          const original = records.find((r) => r.kind === 'decision.selected' && r.callIndex === undefined)!
+          expect(selections.every((r) => r.parameterDecision === original.id && r.phase === 'ACT')).toBe(true)
+        }
+        expect(records.filter((r) => r.kind === 'action.settled').map((r) => r.outcome.value)).toEqual(
+          started.map((index) => ({ index })),
+        )
+        expect(replayRecords(await ledger.read()).unresolved).toEqual([])
+      }
+    },
+  )
+
+  it.each([
+    'failure',
+    'unknown',
+    'cancel',
+    'steering',
+    'addition',
+    'conclude',
+    'dispatch-commit',
+    'settle-commit',
+    'drain',
+  ] as const)('drains a safe read window and never launches its tail after %s', async (mode) => {
+    const { ledger } = ledgerA()
+    const read: ToolDescriptor = { ...tool, effectClass: 'read_only', concurrencySafe: true }
+    let entered!: () => void
+    const windowStarted = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const pending: Array<() => void> = []
+    let steering = false
+    const executed: number[] = []
+    const drained: string[] = []
+    let fail = true
+    const faultLedger: RuntimeLedger<number> = {
+      ...ledger,
+      async commit(record) {
+        const cursor = await ledger.commit(record)
+        const barrier = mode === 'dispatch-commit' ? 'action.dispatching' : 'action.settled'
+        if (fail && (mode === 'dispatch-commit' || mode === 'settle-commit') && record.kind === barrier) {
+          const count = (await ledger.read()).filter((e) => e.record.kind === barrier).length
+          if (count === (mode === 'dispatch-commit' ? 3 : 2)) {
+            fail = false
+            entered()
+            throw new Error('barrier failed after commit')
+          }
+        }
+        return cursor
+      },
+    }
+    const ports = fixture(faultLedger, {
+      admitStep: {
+        async admitStep(_turn, _step, inputs) {
+          return { kind: 'enter', inputs }
+        },
+        async stepSettled() {},
+        async hasPendingInput() {
+          return steering
+        },
+      },
+      confidence: 0.2,
+      helper: {
+        kind: 'calls',
+        calls: Array.from({ length: 7 }, (_, index) => ({
+          kind: 'call',
+          name: read.name,
+          arguments: { index },
+        })),
+      },
+    })
+    ports.environment.catalog = async () => [read]
+    ports.environment.prepare = async () => ({ kind: 'ready', concurrencySafe: true })
+    ports.environment.execute = async (intent) => {
+      const index = Number(intent.arguments.index)
+      executed.push(index)
+      await new Promise<void>((resolve) => {
+        pending.push(resolve)
+        if (executed.length === 4) entered()
+      })
+      return {
+        ...outcome,
+        kind: mode === 'failure' && index === 1 ? 'error' : 'success',
+        effect: mode === 'unknown' && index === 1 ? 'unknown' : 'none',
+        value: { index },
+        directive: {
+          conclude: mode === 'conclude' && index === 1,
+          additions: mode === 'addition' && index === 1 ? [{ ...input, id: 'window-steering' }] : [],
+        },
+      }
+    }
+    ports.environment.drain = async (id) => {
+      drained.push(id)
+      if (mode === 'drain' && drained.length === 1) throw new Error('drain failed')
+    }
+    const runtime = await openJevRuntime(ports, { ...config, maxSteps: 1 })
+    const running = runtime.run(turn, [input])
+    void running.catch(() => {})
+    await Promise.race([
+      windowStarted,
+      running.then(() => {
+        throw new Error('window never started')
+      }),
+    ])
+    if (mode === 'cancel') runtime.cancel()
+    if (mode === 'steering') steering = true
+    for (const release of pending.splice(0).reverse()) release()
+    if (['dispatch-commit', 'settle-commit', 'drain'].includes(mode)) {
+      await expect(running).rejects.toThrow(mode === 'drain' ? 'drain failed' : 'barrier failed')
+    } else {
+      expect((await running).status).toBe(
+        mode === 'cancel' ? 'cancelled' : mode === 'conclude' ? 'completed' : 'budget',
+      )
+    }
+    expect(executed).toEqual(mode === 'dispatch-commit' ? [0, 1] : [0, 1, 2, 3])
+    expect(new Set(drained).size).toBe(4)
+    const records = (await ledger.read()).map((e) => e.record)
+    const settled = records.filter((r) => r.kind === 'action.settled')
+    expect(settled).toHaveLength(
+      mode === 'dispatch-commit' || mode === 'drain' ? 0 : mode === 'settle-commit' ? 2 : 4,
+    )
+    // Reopening parses all overlapping pending intents without ever resuming the proposal tail.
+    const reopened = await openJevRuntime(fixture(ledger), { ...config, maxSteps: 1 })
+    await reopened.close()
+  })
+
+  it.each(['refused', 'epoch', 'revision', 'policy', 'argument-mutation'] as const)(
+    'does not dispatch a prepared read window invalidated by %s',
+    async (mode) => {
+      const { ledger } = ledgerA()
+      const read: ToolDescriptor = { ...tool, effectClass: 'read_only', concurrencySafe: true }
+      const ports = fixture(ledger, {
+        confidence: mode === 'argument-mutation' ? 0.9 : 0.2,
+        helper: {
+          kind: 'calls',
+          calls: [0, 1, 2].map((index) => ({ kind: 'call', name: read.name, arguments: { index } })),
+        },
+        onExecute() {
+          throw new Error('must not dispatch')
+        },
+      })
+      let prepared = 0
+      ports.environment.prepare = async () => {
+        prepared++
+        if (mode === 'refused' && prepared === 2)
+          return { kind: 'settled', outcome: { ...outcome, kind: 'error' } }
+        return {
+          kind: 'ready',
+          concurrencySafe: true,
+          ...(mode === 'argument-mutation' && prepared === 2 ? { readOnly: false } : {}),
+        }
+      }
+      ports.environment.catalog = async () => [
+        {
+          ...read,
+          ...(prepared === 2 && mode === 'revision' ? { revision: 'v2' } : {}),
+          ...(prepared === 2 && mode === 'policy' ? { concurrencySafe: false } : {}),
+        },
+      ]
+      ports.environment.snapshot = async () => ({
+        epoch: brandString<EnvironmentEpoch>(prepared === 2 && mode === 'epoch' ? 'changed' : epoch),
+        facts: {},
+      })
+      const runtime = await openJevRuntime(ports, { ...config, maxSteps: 1 })
+      await runtime.run(turn, [input])
+      const records = (await ledger.read()).map((e) => e.record)
+      expect(records.filter((r) => r.kind === 'action.dispatching')).toHaveLength(0)
+      expect(records.filter((r) => r.kind === 'action.settled')).toHaveLength(2)
+      expect(
+        records.filter((r) => r.kind === 'action.settled').every((r) => r.effect === 'not_applied'),
+      ).toBe(true)
+    },
+  )
+
+  it('keeps mutations as exclusive barriers between safe read windows', async () => {
+    const { ledger } = ledgerA()
+    const read = { ...tool, effectClass: 'read_only' as const, concurrencySafe: true }
+    const write = { ...tool, name: 'write', concurrencySafe: true }
+    const calls = [read, read, write, read, read]
+    const ports = fixture(ledger, {
+      confidence: 0.2,
+      helper: {
+        kind: 'calls',
+        calls: calls.map((descriptor, index) => ({
+          kind: 'call',
+          name: descriptor.name,
+          arguments: { index },
+        })),
+      },
+    })
+    ports.environment.catalog = async () => [read, write]
+    ports.environment.prepare = async () => ({ kind: 'ready', concurrencySafe: true })
+    let active = 0
+    let writing = false
+    const pending: Array<() => void> = []
+    const started: number[] = []
+    ports.environment.execute = async (intent) => {
+      const index = Number(intent.arguments.index)
+      expect(writing).toBe(false)
+      if (intent.tool === write.name) {
+        expect(active).toBe(0)
+        writing = true
+      }
+      active++
+      started.push(index)
+      if (!writing)
+        await new Promise<void>((resolve) => {
+          pending.push(resolve)
+          if (pending.length === 2) for (const release of pending.splice(0)) release()
+        })
+      active--
+      writing = false
+      return { ...outcome, value: { index }, directive: { conclude: index === 4, additions: [] } }
+    }
+    const runtime = await openJevRuntime(ports, { ...config, maxSteps: 1 })
+    expect((await runtime.run(turn, [input])).status).toBe('completed')
+    expect(started).toEqual([0, 1, 2, 3, 4])
+    expect((await ledger.read()).filter((r) => r.record.kind === 'action.settled')).toHaveLength(5)
+  })
+
   it.each(['complete', 'failure', 'unknown', 'cancel', 'conclude', 'addition', 'refused'] as const)(
     'executes ordered arbitration batches with independent durable actions: %s',
     async (mode) => {
@@ -2125,39 +2555,47 @@ describe('routing and admission', () => {
     },
   )
 
-  it.each(['schema', 'unavailable', 'empty', 'too-many', 'parameters'] as const)(
-    'rejects an invalid complete batch before dispatch: %s',
-    async (mode) => {
-      const { ledger } = ledgerA()
-      const calls = [0, 1].map((index) => ({
-        kind: 'call',
-        name: index === 1 && mode === 'unavailable' ? 'missing' : tool.name,
-        arguments: { index },
-      }))
-      const helper: JsonValue = {
-        kind: 'calls',
-        calls: mode === 'empty' ? [] : mode === 'too-many' ? Array(33).fill(calls[0]) : calls,
-      }
-      let dispatched = false
-      const ports = fixture(ledger, {
-        confidence: mode === 'parameters' ? 0.9 : 0.2,
-        helper,
-        onExecute() {
-          dispatched = true
-        },
-      })
-      ports.environment.validate = async (_tool, args) => {
-        if (args === null || typeof args !== 'object' || Array.isArray(args))
-          throw new InvalidAuthoredArguments('object required')
-        if (mode === 'schema' && args.index === 1) throw new InvalidAuthoredArguments('bad second arguments')
-        return args
-      }
-      const runtime = await openJevRuntime(ports, { ...config, maxSteps: 1 })
-      await runtime.run(turn, [input])
-      expect(dispatched).toBe(false)
-      expect((await ledger.read()).some((e) => e.record.kind === 'action.intended')).toBe(false)
-    },
-  )
+  it.each([
+    'schema',
+    'unavailable',
+    'empty',
+    'too-many',
+    'parameters',
+    'parameter-schema',
+    'parameter-tool',
+  ] as const)('rejects an invalid complete batch before dispatch: %s', async (mode) => {
+    const { ledger } = ledgerA()
+    const calls = [0, 1].map((index) => ({
+      kind: 'call',
+      name: index === 1 && (mode === 'unavailable' || mode === 'parameter-tool') ? 'missing' : tool.name,
+      arguments: { index },
+    }))
+    const helper: JsonValue = {
+      kind: 'calls',
+      calls: mode === 'empty' ? [] : mode === 'too-many' ? Array(33).fill(calls[0]) : calls,
+    }
+    let dispatched = false
+    const ports = fixture(ledger, {
+      confidence: mode.startsWith('parameter') ? 0.9 : 0.2,
+      helper,
+      onExecute() {
+        dispatched = true
+      },
+    })
+    if (mode.startsWith('parameter-'))
+      ports.environment.catalog = async () => [{ ...tool, effectClass: 'read_only' }]
+    ports.environment.validate = async (_tool, args) => {
+      if (args === null || typeof args !== 'object' || Array.isArray(args))
+        throw new InvalidAuthoredArguments('object required')
+      if ((mode === 'schema' || mode === 'parameter-schema') && args.index === 1)
+        throw new InvalidAuthoredArguments('bad second arguments')
+      return args
+    }
+    const runtime = await openJevRuntime(ports, { ...config, maxSteps: 1 })
+    await runtime.run(turn, [input])
+    expect(dispatched).toBe(false)
+    expect((await ledger.read()).some((e) => e.record.kind === 'action.intended')).toBe(false)
+  })
 
   it.each(['intended', 'dispatching', 'settled', 'concluded', 'concluded-addition'] as const)(
     'reopens interrupted batches without replaying the recorded prefix or automatically executing the tail: %s',
@@ -2940,30 +3378,33 @@ describe('routing and admission', () => {
     await expect(changed.run(turn, [])).rejects.toThrow('different runtime configuration')
   })
 
-  it('refuses unfinished routing version 3 before invoking a model or tool', async () => {
-    const { ledger } = ledgerA()
-    await ledger.commit({
-      version: 1,
-      id: brandString<RecordId>('opened-v3'),
-      turn,
-      kind: 'run.opened',
-      config,
-      runtimeVersion: '3',
-    })
-    const runtime = await openJevRuntime(
-      fixture(ledger, {
-        onInvoke() {
-          throw new Error('Old routing version invoked the model')
-        },
-        onExecute() {
-          throw new Error('Old routing version dispatched a tool')
-        },
-      }),
-      config,
-    )
-    await expect(runtime.run(turn, [])).rejects.toThrow('different runtime configuration')
-    expect(await ledger.read()).toHaveLength(1)
-  })
+  it.each(['3', '4'])(
+    'refuses unfinished routing version %s before invoking a model or tool',
+    async (version) => {
+      const { ledger } = ledgerA()
+      await ledger.commit({
+        version: 1,
+        id: brandString<RecordId>('opened-v3'),
+        turn,
+        kind: 'run.opened',
+        config,
+        runtimeVersion: version,
+      })
+      const runtime = await openJevRuntime(
+        fixture(ledger, {
+          onInvoke() {
+            throw new Error('Old routing version invoked the model')
+          },
+          onExecute() {
+            throw new Error('Old routing version dispatched a tool')
+          },
+        }),
+        config,
+      )
+      await expect(runtime.run(turn, [])).rejects.toThrow('different runtime configuration')
+      expect(await ledger.read()).toHaveLength(1)
+    },
+  )
 
   it.each([-0.1, 1.1, Infinity, NaN])(
     'rejects invalid equivalent support threshold %s before opening',

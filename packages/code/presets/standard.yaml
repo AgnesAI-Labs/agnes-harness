@@ -22,8 +22,9 @@ tools: { core: [read, write, edit, shell, grep, find, ls, todo, web_fetch] }
 # on_unavailable must be allow — L0 has no OS backend, and deny would refuse every exec.
 sandbox: { level: L0, required: false, on_unavailable: allow }
 mcp: { defer: true }
-# No cumulative step ceiling: completion, cancellation and failure end a normal task.
-budget: { per_request_cap: 4000, max_steps: null }
+# Normal tasks do not require monetary estimates. Explicitly capped presets remain opt-in.
+# Completion, cancellation, timeout and loop hygiene still bound execution.
+budget: { per_request_cap: null, max_steps: null }
 approval:
   # Editing and writing inside the workspace is pre-approved; every shell command is still asked.
   #
@@ -66,6 +67,6 @@ approval:
     - tool: 'edit|write'
       argv: '^/(?!(?:[\s\S]*/)?\.\.(?:/|$))(?:[^/\\\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+/)*[^/\\\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+$'
       action: allow
-subagent: { max_depth: 1, max_fan_out: 4, isolation: worktree }
+subagent: { max_depth: 1, max_fan_out: 4, isolation: worktree, tree_budget_credits: unlimited }
 ext_ui: { input: prompt, unattended: decline }
 hooks: [session_start, tool_call, tool_result, format_deviation]

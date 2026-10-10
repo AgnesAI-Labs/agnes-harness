@@ -1,5 +1,6 @@
 import type { ComparisonJournalEntry, ComparisonLane } from '@agnes/protocol'
 import { type Client, JsonRpcError } from '@agnes/sdk/browser'
+import type { Translate } from './jev-locale.js'
 
 export type ComparisonJournalState = {
   mode: 'loading' | 'journal' | 'per-lane-only' | 'error'
@@ -18,6 +19,7 @@ export function createComparisonJournal(
   id: string,
   lanes: readonly ComparisonLane[],
   update: (state: ComparisonJournalState) => void,
+  t: Translate,
 ) {
   let entries: ComparisonJournalEntry[] = []
   let mode: ComparisonJournalState['mode'] = 'loading'
@@ -121,7 +123,9 @@ export function createComparisonJournal(
         mode = 'per-lane-only'
       else {
         mode = entries.length > 0 ? 'journal' : 'error'
-        error = `共享 journal 读取失败：${failure instanceof Error ? failure.message : String(failure)}`
+        error = t('journal.readFailed', {
+          message: failure instanceof Error ? failure.message : String(failure),
+        })
       }
     } finally {
       loading = false

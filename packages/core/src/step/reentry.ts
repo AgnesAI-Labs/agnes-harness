@@ -490,3 +490,70 @@ export async function setModel(
     return r.firstSeq
   })
 }
+
+/**
+ * Binds JevLoop language stages (parameters/arbitration/answer) directly to route/model — with an
+ * optional thinking level — for this session, or clears a stage back to its preset slot with null.
+ * The same in-memory + ignorable-audit-row pattern as setModel: `resolveJevLanguageSelection` in
+ * Host's loop reads `s.preset.model.jevStageBindings` fresh per request, a restart replays these
+ * rows (host's job, same note as setModel), and a later `setPreset` replaces the whole view —
+ * clearing bindings the same way it clears slot switches. Catalogue membership is checked here;
+ * profile/policy gating stays host's layer, exactly as for setModel.
+ */
+export async function setJevStages(
+  s: SessionImpl,
+  input: {
+    stages: Partial<
+      Record<
+        'parameters' | 'arbitration' | 'answer',
+        { route: string; model: string; thinking?: ThinkingLevel | null } | null
+      >
+    >
+  },
+): Promise<Seq> {
+  return s.locked(async () => {
+    assertConfigurationMutable(s)
+    const stageUnknown = (message: string, x?: Record<string, unknown>) =>
+      new CoreError('E_MODEL_UNKNOWN', message, { ...x })
+    const entries = Object.entries(input.stages) as Array<
+      [
+        'parameters' | 'arbitration' | 'answer',
+        { route: string; model: string; thinking?: ThinkingLevel | null } | null,
+      ]
+    >
+    if (entries.length === 0) throw new CoreError('E_FORMAT', 'At least one stage binding is required')
+    for (const [stage, binding] of entries) {
+      if (binding === null) continue
+      const known = s.d.provider.models().find((m) => m.route === binding.route && m.id === binding.model)
+      if (!known)
+        throw stageUnknown(`${binding.route}/${binding.model} is not in the provider's sealed catalogue`, {
+          stage,
+          route: binding.route,
+          model: binding.model,
+        })
+      if (binding.thinking !== undefined && binding.thinking !== null) {
+        assertThinking(binding.thinking)
+        if (!known.reasoning || (known.thinkingLevelMap && !(binding.thinking in known.thinkingLevelMap)))
+          throw stageUnknown(
+            `${binding.route}/${binding.model} does not support thinking level '${binding.thinking}'`,
+            { stage, thinking: binding.thinking },
+          )
+      }
+    }
+    const from = { ...s.preset.model.jevStageBindings }
+    const next = { ...from }
+    for (const [stage, binding] of entries) {
+      if (binding === null) delete next[stage]
+      else next[stage] = binding
+    }
+    const r = await s.d.log.append([s.ev('x/core/jev-stage-switch', { from, to: next }, { ignorable: true })])
+    // Unconditional in the same sense as setModel's thinking clear: a conditional spread can only
+    // add or overwrite the key, never drop it, so the last binding would survive its own reset.
+    const { jevStageBindings: _prior, ...modelRest } = s.preset.model
+    s.preset = {
+      ...s.preset,
+      model: Object.keys(next).length ? { ...s.preset.model, jevStageBindings: next } : modelRest,
+    }
+    return r.firstSeq
+  })
+}

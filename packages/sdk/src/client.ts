@@ -45,6 +45,10 @@ import {
   type ConfigTestResult,
   type Credential,
   type Cursor,
+  type JevConfigSaveInput,
+  type JevConfigSnapshot,
+  type JevConfigTestInput,
+  type JevConfigTestResult,
   META_KEY,
   METHODS,
   type MethodName,
@@ -296,6 +300,19 @@ export class Client {
 
   /** Shared deployment configuration. Secrets are submitted only, never returned or journaled. */
   readonly config = {
+    discover: (
+      input: Omit<ConfigTestInput, 'custom' | 'model' | 'catalogueOnly'>,
+    ): Promise<ConfigTestResult> =>
+      this.call(
+        '_agnes/v1/config.test',
+        { ...input, catalogueOnly: true },
+        { timeoutMs: Math.max(this.timeouts.request, 40_000) },
+      ),
+    jevGet: (): Promise<JevConfigSnapshot> => this.call('_agnes/v1/config.jevGet', {}),
+    jevTest: (input: JevConfigTestInput): Promise<JevConfigTestResult> =>
+      this.call('_agnes/v1/config.jevTest', input, { timeoutMs: Math.max(this.timeouts.request, 130_000) }),
+    jevSave: (input: JevConfigSaveInput): Promise<JevConfigSnapshot> =>
+      this.call('_agnes/v1/config.jevSave', input),
     oauth: (input: ConfigOAuthInput): Promise<ConfigOAuthResult> =>
       this.call(
         '_agnes/v1/config.oauth',
@@ -310,7 +327,9 @@ export class Client {
       this.call(
         '_agnes/v1/config.test',
         input,
-        ['anthropic', 'github-copilot', 'kimi-coding', 'openai-codex', 'xai'].includes(input.providerId)
+        ['anthropic', 'github-copilot', 'kimi-coding', 'openai-codex', 'xai', 'custom-openai'].includes(
+          input.providerId,
+        )
           ? { timeoutMs: Math.max(this.timeouts.request, 90_000) }
           : {},
       ),
@@ -318,7 +337,9 @@ export class Client {
       this.call(
         '_agnes/v1/config.save',
         input,
-        ['anthropic', 'github-copilot', 'kimi-coding', 'openai-codex', 'xai'].includes(input.providerId)
+        ['anthropic', 'github-copilot', 'kimi-coding', 'openai-codex', 'xai', 'custom-openai'].includes(
+          input.providerId,
+        )
           ? { timeoutMs: Math.max(this.timeouts.request, 90_000) }
           : {},
       ),

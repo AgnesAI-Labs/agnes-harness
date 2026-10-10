@@ -12,6 +12,7 @@ import { compileQuestions, InvalidDecision, parseDecision } from './decision.js'
 import { DecisionContextProjection } from './decision-context.js'
 import { operationGateReasons, operationSupportUsed, requiresResponseReview } from './decision-gates.js'
 import { decisionToolPhases, decisionToolSnapshot, readDecisionToolSnapshot } from './decision-tools.js'
+import { reconcileEffects } from './effect-recovery.js'
 import {
   assertRuntimeRecord,
   createLedgerReplay,
@@ -52,7 +53,8 @@ import type {
   TurnId,
 } from './types.js'
 
-const VERSION = '4'
+const VERSION = '5'
+const MAX_CONCURRENT_READS = 4
 
 /** A selected operation or durable prefix cannot safely continue. */
 export class RuntimeFault extends Error {
@@ -187,19 +189,22 @@ function parseCall(
 type ParsedCall = Extract<ReturnType<typeof parseCall>, { kind: 'call' }>
 
 /** A batch is an ordered proposal, never a grant to execute its unchecked siblings. */
-function parseArbitration(output: JsonValue | undefined, tools: readonly ToolDescriptor[]) {
+function parseProposal(output: JsonValue | undefined, tools: readonly ToolDescriptor[], locked?: string) {
   const value = object(output)
-  if (value.kind !== 'calls') return parseCall(output, tools)
+  if (value.kind !== 'calls') return parseCall(output, tools, locked)
   if (
     Object.keys(value).length !== 2 ||
     !Array.isArray(value.calls) ||
     value.calls.length < 1 ||
     value.calls.length > 32
   )
-    throw new RuntimeFault('Language arbitration requires between one and 32 complete calls')
+    throw new RuntimeFault('Language proposal requires between one and 32 complete calls')
+  const count = value.calls.length
   const calls = value.calls.map((entry) => {
-    const call = parseCall(entry, tools)
+    const call = parseCall(entry, tools, locked)
     if (call.kind !== 'call') throw new RuntimeFault('A tool batch cannot contain an answer or refusal')
+    if (locked !== undefined && count > 1 && call.tool.effectClass !== 'read_only')
+      throw new RuntimeFault('Parameter batches require a read-only locked operation')
     return call
   })
   return { kind: 'calls' as const, calls }
@@ -522,7 +527,7 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
       ? await ports.lifecycle.admitStep(turn, step, inputs)
       : { kind: 'enter' as const, inputs, resources: [] }
     if (admitted.kind === 'reject') return 'rejected'
-    if (admitted.kind === 'complete') return 'empty'
+    if (admitted.kind === 'complete') return state.unresolved.length ? 'rejected' : 'empty'
     if ((admitted.resources?.length ?? 0) > config.maxHistory)
       throw new RuntimeFault('Current resource history budget exhausted')
     for (const resource of admitted.resources ?? [])
@@ -538,7 +543,17 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
     if (state.observations.length > config.maxHistory)
       throw new RuntimeFault('Observation history budget exhausted')
     const snapshot = await ports.environment.snapshot()
-    const tools = await ports.environment.catalog()
+    const recovery = ports.effectRecovery !== undefined && state.unresolved.length > 0
+    const recoveredAt = records.findLastIndex(
+      (record) =>
+        record.kind === 'action.resolved' && record.turn === turn && record.actor === 'host:effect-recovery',
+    )
+    const replan =
+      !recovery &&
+      recoveredAt >= 0 &&
+      !records.slice(recoveredAt + 1).some((record) => record.kind === 'decision.selected')
+    const catalog = await ports.environment.catalog()
+    const tools = recovery ? catalog.filter((tool) => tool.effectClass === 'read_only') : catalog
     const environmentRecord = (await write(
       'environment.observed',
       turn,
@@ -916,20 +931,21 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
       questions: surface.questions,
       inputCursor,
     }
-    const decisionAttempt = attemptNumber()
-    const decided = await model('decision', decisionInput, turn, step, decisionAttempt)
-    if (decided.settlement.error)
+    const decisionAttempt = recovery || replan ? (id('inspection') as AttemptId) : attemptNumber()
+    const decided =
+      recovery || replan ? undefined : await model('decision', decisionInput, turn, step, decisionAttempt)
+    if (decided?.settlement.error)
       throw new RuntimeFault(`Decision backend failed: ${decided.settlement.error.code}`)
     let selected: ReturnType<typeof parseDecision> | undefined
     let invalidDecision: string | undefined
     try {
-      if (decided.settlement.output !== undefined)
+      if (decided?.settlement.output !== undefined)
         selected = parseDecision(decided.settlement.output, surface)
     } catch (error) {
       if (!(error instanceof InvalidDecision)) throw error
       invalidDecision = error.message
     }
-    if (selected === undefined) {
+    if (!recovery && !replan && selected === undefined && decided) {
       await feedback(
         turn,
         step,
@@ -946,10 +962,10 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
       selected?.kind === 'tool' ? tools.find((item) => item.name === selected.operation) : undefined
     const reasons = selected
       ? [...operationGateReasons(selected, selectedTool, config, recoverable)]
-      : ['invalid_decision']
+      : [recovery ? 'unresolved_effect' : replan ? 'effect_reconciled_replan' : 'invalid_decision']
     const describeObservation = ports.decisionContext.describeObservation?.bind(ports.decisionContext)
     const checkpoint =
-      config.responseReviewMode === 'review'
+      !recovery && config.responseReviewMode === 'review'
         ? await responseCheckpoint(records, turn, projection.state, describeObservation)
         : undefined
     const reviewState = checkpoint === undefined ? undefined : responseReviewState(records, turn, checkpoint)
@@ -961,7 +977,7 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
     if (reviewRequired) reasons.push('response_review')
     const escalation = reasons[0]
     let decisionRecord: RuntimeRecord | undefined
-    if (selected)
+    if (selected && decided)
       decisionRecord = await write(
         'decision.selected',
         turn,
@@ -977,7 +993,7 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
         step,
         decisionAttempt,
       )
-    if (selected)
+    if (selected && decided)
       await write(
         'resource.observed',
         turn,
@@ -1021,7 +1037,14 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
           authoredAttempt?: AttemptId
         }
       | { kind: 'answer'; content?: readonly Content[] }
-    let batch: { calls: ParsedCall[]; requested: RecordId; attempt: AttemptId } | undefined
+    let batch:
+      | {
+          calls: ParsedCall[]
+          requested: RecordId
+          attempt: AttemptId
+          parameterDecision?: Extract<RuntimeRecord, { kind: 'decision.selected' }>
+        }
+      | undefined
     let batchInterrupted = false
     let reviewed = false
     const acceptReview = async (verdict: 'allow_response' | 'continue_call'): Promise<void> => {
@@ -1048,7 +1071,7 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
         {
           resource: {
             kind: 'jev.candidate.route.v1',
-            requested: decided.request.id,
+            requested: decided?.request.id ?? null,
             decisionRecordId: decisionRecord?.id ?? null,
             selectedOperation: selected?.operation ?? null,
             candidateId: selected?.candidateId ?? null,
@@ -1068,8 +1091,18 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
         if ((reviewState?.attempts ?? 0) >= config.maxResponseReviewAttempts) return 'review_stalled'
         reviewCheckpointForAttempt = checkpoint
       }
+      if (recovery)
+        await write(
+          'resource.observed',
+          turn,
+          {
+            resource: { kind: 'jev.effect-recovery.inspection.v1', intentIds: [...state.unresolved] },
+          },
+          step,
+        )
       const input: LanguageInput & { purpose: 'arbitration' } = {
         purpose: 'arbitration',
+        ...(recovery ? { recovery: { intentIds: [...state.unresolved] } } : {}),
         state: stateInput,
         tools,
         history,
@@ -1077,9 +1110,11 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
         inputCursor,
       }
       const { request, settlement, attempt } = await helper(input)
-      let parsed: ReturnType<typeof parseArbitration>
+      let parsed: ReturnType<typeof parseProposal>
       try {
-        parsed = parseArbitration(settlement.output, tools)
+        parsed = parseProposal(settlement.output, tools)
+        if (recovery && parsed.kind === 'answer')
+          throw new RuntimeFault('Uncertain effects require read-only inspection, not a final answer')
         // Validate the complete proposal before allowing even the first side effect.
         if (parsed.kind === 'calls')
           for (const call of parsed.calls) await ports.environment.validate(call.tool, call.arguments)
@@ -1137,7 +1172,7 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
       )
     } else if (selected?.kind === 'respond') {
       chosen = { kind: 'answer' }
-    } else if (selectedTool && selected) {
+    } else if (selectedTool && selected && decided) {
       const candidate = selected.candidateId ? surface.candidates.get(selected.candidateId) : undefined
       const noArguments = selected.parameterMode === 'no_arguments'
       const direct =
@@ -1188,11 +1223,13 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
           inputCursor,
         }
         const result = await helper(input)
-        let parsed: ReturnType<typeof parseCall>
+        let parsed: ReturnType<typeof parseProposal>
         try {
-          parsed = parseCall(result.settlement.output, tools, selectedTool.name)
+          parsed = parseProposal(result.settlement.output, tools, selectedTool.name)
+          if (parsed.kind === 'calls')
+            for (const call of parsed.calls) await ports.environment.validate(call.tool, call.arguments)
         } catch (error) {
-          if (!(error instanceof RuntimeFault)) throw error
+          if (!(error instanceof RuntimeFault) && !(error instanceof InvalidAuthoredArguments)) throw error
           await feedback(
             turn,
             step,
@@ -1204,6 +1241,16 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
             error.message,
           )
           return 'no_progress'
+        }
+        if (parsed.kind === 'calls') {
+          if (decisionRecord?.kind !== 'decision.selected') throw new RuntimeFault('Missing parameter lock')
+          batch = {
+            calls: parsed.calls,
+            requested: result.request.id,
+            attempt: result.attempt,
+            parameterDecision: decisionRecord,
+          }
+          parsed = parsed.calls[0]!
         }
         if (parsed.kind !== 'call') {
           await feedback(
@@ -1254,9 +1301,16 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
       }
       return 'complete'
     }
-    const executeChosen = async (): Promise<'continue' | 'complete' | 'no_progress'> => {
-      if (chosen.kind !== 'call') throw new RuntimeFault('Expected a selected tool call')
-      if (!decisionRecord) throw new RuntimeFault('Tool call lacks a selected decision')
+    type SelectedCall = Extract<typeof chosen, { kind: 'call' }>
+    type Action = {
+      chosen: SelectedCall
+      intent: FrozenIntent
+      concurrencySafe: boolean
+    }
+    const prepareAction = async (
+      chosen: SelectedCall,
+      decisionRecord: Extract<RuntimeRecord, { kind: 'decision.selected' }>,
+    ): Promise<Action | undefined> => {
       let arguments_: { readonly [key: string]: JsonValue }
       try {
         arguments_ = await ports.environment.validate(
@@ -1276,7 +1330,7 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
             chosen.tool.name,
             error.message,
           )
-          return 'no_progress'
+          return undefined
         }
         if (!(error instanceof InvalidAuthoredArguments)) throw error
         await feedback(
@@ -1289,7 +1343,7 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
           chosen.tool.name,
           error.message,
         )
-        return 'no_progress'
+        return undefined
       }
       const intent: FrozenIntent = {
         id: id('intent') as IntentId,
@@ -1313,16 +1367,22 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
           intent.tool,
           'The same invocation yielded the same substantive result twice',
         )
-        return 'no_progress'
+        return undefined
       }
       await acceptReview('continue_call')
       await write('action.intended', turn, { intent, decision: decisionRecord.id }, step)
       let current: Awaited<ReturnType<typeof ports.environment.snapshot>> | undefined
       let preparedOutcome: ToolOutcome | undefined
+      let concurrencySafe = false
       try {
         const preparation = await ports.environment.prepare?.(intent, controller.signal)
         if (preparation?.kind === 'settled') preparedOutcome = preparation.outcome
         else {
+          if (batch?.parameterDecision && batch.calls.length > 1 && preparation?.readOnly === false)
+            throw new RuntimeFault('Parameter batch arguments require a read-only execution policy')
+          if (recovery && preparation?.readOnly === false)
+            throw new RuntimeFault('Effect recovery requires a read-only execution policy')
+          concurrencySafe = preparation?.concurrencySafe === true
           // Approval may have awaited a human. Recheck steering and every frozen binding.
           if (batch && (await ports.lifecycle?.hasPendingInput?.(turn, step)))
             throw new RuntimeFault('New input requires a new decision before batch dispatch')
@@ -1331,7 +1391,9 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
           if (
             controller.signal.aborted ||
             current.epoch !== intent.environmentEpoch ||
-            currentTool?.revision !== intent.toolRevision
+            currentTool?.revision !== intent.toolRevision ||
+            currentTool.effectClass !== chosen.tool.effectClass ||
+            currentTool.concurrencySafe !== chosen.tool.concurrencySafe
           ) {
             throw new RuntimeFault('Environment or tool revision changed before dispatch')
           }
@@ -1364,22 +1426,39 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
         )
         for (const addition of outcome.directive.additions)
           await write('input.admitted', turn, { input: addition }, step)
-        return 'no_progress'
+        return undefined
       }
       if (!current) throw new RuntimeFault('Dispatch preparation did not produce an environment snapshot')
-      await write('action.dispatching', turn, { intentId: intent.id, epoch: current.epoch }, step)
-      let outcome: ToolOutcome
-      try {
-        outcome = await ports.environment.execute(intent, controller.signal)
-      } catch (error) {
-        outcome = failedOutcome('EXECUTION_FAILURE', String(error))
-      }
+      return { chosen, intent, concurrencySafe }
+    }
+    const drained = new Set<IntentId>()
+    const drainAction = async (intent: FrozenIntent): Promise<void> => {
+      if (drained.has(intent.id)) return
+      drained.add(intent.id)
       try {
         await ports.environment.drain(intent.id)
       } catch (error) {
         poisoned = true
         throw error
       }
+    }
+    const runAction = async (action: Action): Promise<ToolOutcome> => {
+      let outcome: ToolOutcome
+      try {
+        outcome = await ports.environment.execute(action.intent, controller.signal)
+      } catch (error) {
+        outcome = failedOutcome('EXECUTION_FAILURE', String(error))
+      }
+      await drainAction(action.intent)
+      if (recovery && outcome.directive.conclude)
+        outcome = { ...outcome, directive: { ...outcome.directive, conclude: false } }
+      return outcome
+    }
+    const settleAction = async (
+      { chosen, intent }: Action,
+      outcome: ToolOutcome,
+      dispatched: boolean,
+    ): Promise<'continue' | 'complete' | 'no_progress'> => {
       let observations: Observation[]
       let contributed: EffectDisposition | undefined
       try {
@@ -1392,7 +1471,7 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
           { kind: 'enrichment.error', source: chosen.tool.name, data: { message: String(error) } },
         ]
       }
-      const effect = normalizeEffect(chosen.tool, outcome, contributed)
+      const effect = dispatched ? normalizeEffect(chosen.tool, outcome, contributed) : 'not_applied'
       try {
         await retainContent(outcome.content)
         for (const addition of outcome.directive.additions) await retainContent(addition.content)
@@ -1403,44 +1482,147 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
       await write('action.settled', turn, { intentId: intent.id, outcome, effect, observations }, step)
       for (const addition of outcome.directive.additions)
         await write('input.admitted', turn, { input: addition }, step)
-      batchInterrupted = outcome.directive.additions.length > 0
-      if (effect === 'unknown') return 'no_progress'
+      batchInterrupted ||= outcome.directive.additions.length > 0
+      if (!dispatched || effect === 'unknown' || outcome.effect === 'unknown' || contributed === 'unknown')
+        return 'no_progress'
       if (outcome.kind === 'success' && outcome.directive.conclude) return 'complete'
       return outcome.kind === 'success' ? 'continue' : 'no_progress'
     }
-    for (let index = 0; ; index++) {
+    const dispatchAction = async (action: Action, recheck: boolean): Promise<boolean> => {
+      const { intent } = action
+      try {
+        if (controller.signal.aborted || (batch && (await ports.lifecycle?.hasPendingInput?.(turn, step))))
+          throw new RuntimeFault('Cancelled or new input before batch dispatch')
+        if (recheck) {
+          const current = await ports.environment.snapshot()
+          const currentTool = (await ports.environment.catalog()).find((item) => item.name === intent.tool)
+          if (
+            current.epoch !== intent.environmentEpoch ||
+            currentTool?.revision !== intent.toolRevision ||
+            currentTool.effectClass !== action.chosen.tool.effectClass ||
+            currentTool.concurrencySafe !== action.chosen.tool.concurrencySafe
+          )
+            throw new RuntimeFault('Environment, tool or policy changed before dispatch')
+          await ports.environment.validate(currentTool, intent.arguments, intent.preconditions)
+        }
+      } catch (_error) {
+        return false
+      }
+      // Persistent writes stay ordered; only execute/drain may overlap.
+      await write('action.dispatching', turn, { intentId: intent.id, epoch: intent.environmentEpoch }, step)
+      return true
+    }
+    const selectBatchCall = async (index: number): Promise<void> => {
+      if (!batch) return
+      const original = batch.parameterDecision
+      if (index === 0 && !original) return // Arbitration already recorded its first selection.
+      const call = batch.calls[index]!
+      chosen = { ...call, authoredRequest: batch.requested, authoredAttempt: batch.attempt }
+      decisionRecord = await write(
+        'decision.selected',
+        turn,
+        {
+          requested: batch.requested,
+          phase: original?.phase ?? 'UNSPECIFIED',
+          operation: call.tool.name,
+          source: original ? 'jev' : 'llm_arbitration',
+          ...(original ? { parameterDecision: original.id, confidence: original.confidence } : {}),
+          callIndex: index,
+          ...(escalation === undefined ? {} : { escalation }),
+        },
+        step,
+        batch.attempt,
+      )
+    }
+    const safeRead = (call: ParsedCall): boolean =>
+      call.tool.effectClass === 'read_only' && call.tool.concurrencySafe === true
+    for (let index = 0; index < (batch?.calls.length ?? 1); ) {
       if (controller.signal.aborted || (batch && (await ports.lifecycle?.hasPendingInput?.(turn, step))))
         return 'no_progress'
-      if (index > 0) {
-        const call = batch?.calls[index]
-        if (!call || !batch) return 'continue'
-        const progress = progressOf(records, turn)
-        if (
-          progress.noProgress >= config.maxNoProgress ||
-          progress.repeatedFailures >= config.maxRepeatedFailures
-        )
-          return 'no_progress'
-        chosen = { ...call, authoredRequest: batch.requested, authoredAttempt: batch.attempt }
-        decisionRecord = await write(
-          'decision.selected',
-          turn,
-          {
-            requested: batch.requested,
-            phase: 'UNSPECIFIED',
-            operation: call.tool.name,
-            source: 'llm_arbitration',
-            callIndex: index,
-            ...(escalation === undefined ? {} : { escalation }),
-          },
-          step,
-          batch.attempt,
-        )
+      const progress = progressOf(records, turn)
+      if (
+        progress.noProgress >= config.maxNoProgress ||
+        progress.repeatedFailures >= config.maxRepeatedFailures
+      )
+        return 'no_progress'
+      let end = index + 1
+      if (batch && safeRead(batch.calls[index]!)) {
+        while (end < batch.calls.length && end - index < MAX_CONCURRENT_READS && safeRead(batch.calls[end]!))
+          end++
       }
-      const result = await executeChosen()
-      // A refusal, failure, uncertain effect, new input or conclusion invalidates the remaining plan.
-      if (result !== 'continue' || !batch || batchInterrupted) return result
+      const actions: Action[] = []
+      const work: Array<{ action: Action; dispatched: boolean; outcome: Promise<ToolOutcome> }> = []
+      let halted = false
+      let result: 'continue' | 'complete' | 'no_progress' = 'continue'
+      try {
+        for (let member = index; member < end; member++) {
+          await selectBatchCall(member)
+          if (chosen.kind !== 'call' || decisionRecord?.kind !== 'decision.selected')
+            throw new RuntimeFault('Tool call lacks a selected decision')
+          const action = await prepareAction(chosen, decisionRecord)
+          if (!action) {
+            halted = true
+            break
+          }
+          actions.push(action)
+        }
+        const parallel = actions.length > 1 && actions.every((a) => a.concurrencySafe && safeRead(a.chosen))
+        for (const action of actions) {
+          const dispatched = !halted && (await dispatchAction(action, end - index > 1))
+          if (!dispatched) halted = true
+          const outcome = dispatched
+            ? runAction(action)
+            : drainAction(action.intent).then(() =>
+                failedOutcome('NOT_DISPATCHED', 'Batch stopped before dispatch'),
+              )
+          // Attach a rejection observer immediately: a later barrier may await durable I/O.
+          void outcome.catch(() => {})
+          work.push({ action, dispatched, outcome })
+          if (!parallel) {
+            const settled = await settleAction(action, await outcome, dispatched)
+            if (settled === 'no_progress' || (settled === 'complete' && result === 'continue'))
+              result = settled
+            if (settled !== 'continue' || batchInterrupted) halted = true
+          }
+        }
+        if (parallel) {
+          // Wait for every in-flight sibling before recording the window in proposal order.
+          const outcomes = await Promise.allSettled(work.map((item) => item.outcome))
+          for (const settled of outcomes) if (settled.status === 'rejected') throw settled.reason
+          for (let member = 0; member < work.length; member++) {
+            const item = work[member]!
+            const settled = await settleAction(item.action, await item.outcome, item.dispatched)
+            if (settled === 'no_progress' || (settled === 'complete' && result === 'continue'))
+              result = settled
+            if (settled !== 'continue' || batchInterrupted) halted = true
+          }
+        }
+      } finally {
+        // Even a failed dispatch/settlement barrier must release already started work and permits.
+        await Promise.allSettled(work.map((item) => item.outcome))
+        for (const action of actions) await drainAction(action.intent)
+      }
+      if (halted || batchInterrupted) return result === 'continue' ? 'no_progress' : result
+      index = end
     }
+    return 'continue'
   }
+
+  const needsInspection = (): boolean =>
+    !!ports.effectRecovery &&
+    state.unresolved.some(
+      (intentId) =>
+        !records.some(
+          (record) =>
+            record.kind === 'resource.observed' &&
+            record.resource !== null &&
+            typeof record.resource === 'object' &&
+            !Array.isArray(record.resource) &&
+            record.resource.kind === 'jev.effect-recovery.inspection.v1' &&
+            Array.isArray(record.resource.intentIds) &&
+            record.resource.intentIds.includes(intentId),
+        ),
+    )
 
   const driver: JevRuntime = {
     run(turn, initialInputs) {
@@ -1448,7 +1630,7 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
       if (poisoned || closed) throw new RuntimeFault('Driver must reopen after a failed commit or close')
       controller = new AbortController()
       active = (async (): Promise<RunResult> => {
-        if (state.unresolved.length)
+        if (state.unresolved.length && !ports.effectRecovery)
           return {
             status: 'blocked',
             reason: 'Unresolved dispatched mutation',
@@ -1517,7 +1699,7 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
               pendingAnswer = true
             }
           }
-          if (pendingAnswer && initialInputs.length === 0) {
+          if (pendingAnswer && initialInputs.length === 0 && !state.unresolved.length) {
             if (isCancelled())
               return await stop(turn, 'cancelled', 'Cancelled before completing the recorded answer')
             if (!(await ports.lifecycle?.beforeStop?.(turn)))
@@ -1525,16 +1707,21 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
           }
           for (let number = previousSteps + 1; number <= config.maxSteps; number++) {
             if (isCancelled()) return await stop(turn, 'cancelled', 'Cancelled before next decision')
-            if (state.unresolved.length)
+            if (state.unresolved.length && !ports.effectRecovery)
               return await stop(turn, 'blocked', 'Dispatched effect requires resolution')
             const before = progressOf(records, turn)
             if (before.invalidDecisions >= config.maxRepeatedFailures)
               return await stop(turn, 'budget', 'Repeated invalid decisions exhausted the recovery budget')
             if (
-              before.noProgress >= config.maxNoProgress ||
-              before.repeatedFailures >= config.maxRepeatedFailures
+              !needsInspection() &&
+              (before.noProgress >= config.maxNoProgress ||
+                before.repeatedFailures >= config.maxRepeatedFailures)
             ) {
-              return await stop(turn, 'budget', 'Progress budget exhausted')
+              return await stop(
+                turn,
+                state.unresolved.length ? 'blocked' : 'budget',
+                'Progress budget exhausted',
+              )
             }
             const step = id(`step-${number}`) as StepId
             let result: 'continue' | 'complete' | 'empty' | 'no_progress' | 'rejected' | 'review_stalled'
@@ -1562,16 +1749,23 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
                 'Response review cannot advance without new substantive evidence',
               )
             if (result === 'rejected') return await stop(turn, 'blocked', 'Host rejected next step')
-            if (state.unresolved.length)
+            if (state.unresolved.length && !ports.effectRecovery)
               return await stop(turn, 'blocked', 'Dispatched effect requires resolution')
+            if (ports.effectRecovery && state.unresolved.length)
+              await reconcileEffects(ports.effectRecovery, state, records, controller.signal, write)
             const after = progressOf(records, turn)
             if (after.invalidDecisions >= config.maxRepeatedFailures)
               return await stop(turn, 'budget', 'Repeated invalid decisions exhausted the recovery budget')
             if (
-              after.noProgress >= config.maxNoProgress ||
-              after.repeatedFailures >= config.maxRepeatedFailures
+              !needsInspection() &&
+              (after.noProgress >= config.maxNoProgress ||
+                after.repeatedFailures >= config.maxRepeatedFailures)
             )
-              return await stop(turn, 'budget', 'Progress budget exhausted')
+              return await stop(
+                turn,
+                state.unresolved.length ? 'blocked' : 'budget',
+                'Progress budget exhausted',
+              )
           }
           return await stop(turn, 'budget', 'Step budget exhausted')
         } catch (error) {
@@ -1588,7 +1782,13 @@ export async function openJevRuntime<C>(ports: RuntimePorts<C>, config: RuntimeC
     },
     async resolveUnknown(intentId, resolution, actor, explanation, evidence) {
       if (active || poisoned || closed) throw new RuntimeFault('Resolution requires an idle open driver')
-      if (!state.unresolved.includes(intentId) || !actor || !explanation || !evidence.length)
+      if (
+        !['confirmed_applied', 'confirmed_not_applied', 'accepted_uncertainty'].includes(resolution) ||
+        !state.unresolved.includes(intentId) ||
+        !actor ||
+        !explanation ||
+        !evidence.length
+      )
         throw new RuntimeFault('Invalid UNKNOWN resolution')
       const source = records.find(
         (record) => record.kind === 'action.intended' && record.intent.id === intentId,

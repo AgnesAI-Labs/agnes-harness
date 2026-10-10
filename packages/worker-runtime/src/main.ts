@@ -28,6 +28,7 @@ import {
   createSecretsEnv,
   createSecretsFile,
   DEFAULT_COMPUTER_USE,
+  decodeJevConfigurationCapture,
   type ExtensionIsolationOptions,
   type Host,
   type HostOptions,
@@ -87,6 +88,7 @@ export type WorkerHostSkillResources = Readonly<{
   skillInstall?: NonNullable<HostOptions['skillInstall']>
   /** The same bounded, session-scoped artifact reader used by the executable-owned Host path. */
   requestMedia: NonNullable<HostOptions['requestMedia']>
+  jevCapture?: NonNullable<HostOptions['jevCapture']>
   skillResources?: NonNullable<HostOptions['skillResources']>
   skillContribution?: NonNullable<HostOptions['skillContribution']>
   runtimePluginSnapshots?: NonNullable<HostOptions['runtimePluginSnapshots']>
@@ -397,10 +399,23 @@ export async function runWorker(
           ),
         }
       : {}
+  const jevCapture: HostOptions['jevCapture'] =
+    env.AGNES_JEV_PROFILE_SNAPSHOT === undefined
+      ? undefined
+      : (() => {
+          try {
+            if (Buffer.byteLength(env.AGNES_JEV_PROFILE_SNAPSHOT) > 64 * 1024)
+              throw new Error('invalid snapshot')
+            return decodeJevConfigurationCapture(JSON.parse(env.AGNES_JEV_PROFILE_SNAPSHOT), profile.name)
+          } catch {
+            return { unavailableReason: 'Jev 持久配置不可用，请检查设置后重启。' }
+          }
+        })()
   const hostCandidate: Promise<WorkerHostLike | undefined> = resourceLifecycleWorker
     ? Promise.resolve(undefined)
     : deps.buildHost
       ? deps.buildHost(profile, prompter, {
+          ...(jevCapture ? { jevCapture } : {}),
           questionProvider,
           skillInstall,
           mcpManage,
@@ -426,6 +441,8 @@ export async function runWorker(
               : createLoader({ cacheDir: profile.cacheDir, hostRoot, agnesVersion: '0.0.0' }))
           return createHost(profile, {
             dataDir: profile.dataDir,
+            env,
+            ...(jevCapture ? { jevCapture } : {}),
             profileDir,
             workspaceRoot: cwd,
             hostRoot,

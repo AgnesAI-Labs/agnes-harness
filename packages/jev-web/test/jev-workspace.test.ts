@@ -3,9 +3,12 @@ import { readFileSync } from 'node:fs'
 import type { EventEnvelope } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import { afterEach, expect, it, vi } from 'vitest'
+import { createJevTranslate } from '../src/jev-locale.js'
 import { createJevDirectStats, jevDirectCount } from '../src/jev-stats.js'
 import { bindJevWorkspace } from '../src/jev-workspace.js'
 import { createRuntimeRecordTrace } from '../src/runtime-record-trace.js'
+
+const t = createJevTranslate('zh-CN')
 
 afterEach(() => {
   document.body.replaceChildren()
@@ -39,6 +42,7 @@ it('keeps one conversation/composer beside the graph and remembers accessible sp
       footer: root.querySelector('[data-workbench-surface="footer"]')!,
     },
     { call: vi.fn() } as unknown as Pick<Client, 'call'>,
+    t,
   )
   workspace.directStats.update({
     runtime: { id: 'jevloop', version: '1' },
@@ -189,7 +193,7 @@ it.each(['session', 'comparison'] as const)(
   'shows complete %s counts and clears native or unknown owners',
   (scope) => {
     const host = document.createElement('div')
-    const stats = createJevDirectStats(host, scope)
+    const stats = createJevDirectStats(host, scope, t)
     const reading = host.querySelector<HTMLElement>('[data-jev-direct-count]')!
     const evidence = { runtime: { id: 'jevloop', version: '1' }, events: withDirectRoutes(), complete: true }
     stats.update({ ...evidence, complete: false })
@@ -214,7 +218,7 @@ it.each(['session', 'comparison'] as const)(
 it('feeds statistics from the existing complete ledger read and ignores late reads after session clearing', async () => {
   const host = document.createElement('div')
   const dock = document.createElement('div')
-  const stats = createJevDirectStats(dock)
+  const stats = createJevDirectStats(dock, 'session', t)
   const reading = dock.querySelector<HTMLElement>('[data-jev-direct-count]')!
   const events = withDirectRoutes()
   let finish!: (value: unknown) => void
@@ -224,7 +228,9 @@ it('feeds statistics from the existing complete ledger read and ignores late rea
         finish = resolve
       }),
   )
-  const trace = createRuntimeRecordTrace(host, { call } as unknown as Pick<Client, 'call'>, stats.update)
+  const trace = createRuntimeRecordTrace(host, { call } as unknown as Pick<Client, 'call'>, stats.update, {
+    t,
+  })
   const owner = { id: 'jevloop', version: '1' }
   trace.select('captured-session', 0, owner)
   expect(reading.hidden).toBe(true)

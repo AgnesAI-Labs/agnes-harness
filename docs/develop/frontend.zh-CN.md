@@ -58,6 +58,8 @@ node packages/cli/dist/local/agnes.mjs install file:./examples/packages/client-p
 
 可选的 `ctx.workbench` 接口提供由客户端 fiber 拥有的执行视图 provider。公开契约见 [WorkbenchClient、WorkbenchProvider 和 WorkbenchSnapshot](../../packages/web-client/src/workbench.ts)。provider 注册执行模式，解析自己的 URL 字段，打开已保存目标并处理提交。每次首次提交由宿主冻结所选工作区、模型与权限快照；`subscribe` 接收宿主状态，`observe` 接收当前会话的事件。provider 注册与订阅随调用模块的 fiber 撤销。
 
+`workbench.openSettings('model' | 'jev')` 请求宿主打开公共配置页，无需查询私有 DOM。调用模块卸载后会拒绝；旧宿主不支持时报告不可用。设置与密钥持久化仍由宿主负责，插件不能将 key 放进 `publicConfig`。
+
 `workbench.surfaces` 明确提供 `root`、`chat`、`aside`、`divider`、`footer`、`toolbar` 和 `overlay`。插件只添加自己拥有的节点并在销毁时移除，不查询宿主私有 ID、不搬动原有 shell 节点。通用 renderer 和 controller 复用 [@agnes/web-session-ui 的公共导出](../../packages/web-session-ui/package.json)。连接、主输入框、会话选择及授权仍由宿主负责。
 
 [JevLoop 浏览器包](../../packages/jev-web/README.md) 通过这个接口提供决策图和双线工作区。`ext:jev-web/main` 后端行拥有客户端描述文件，不注册后端 runtime。构建后的描述文件位于 `client/agnes.client.json`，浏览器 ESM 与样式分别独立加载；平台共享实例使用已有 import map，其余浏览器依赖打包进产物。停用或卸载使包退出名册，撤销 fiber 并移除样式。已绑定到不可用 provider 的目标保持不可用，提交必须拒绝，不能改发 Native；销毁界面不取消后台已经接纳的任务。

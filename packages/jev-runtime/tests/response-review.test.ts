@@ -73,6 +73,12 @@ function action(
         environmentEpoch: brandString<EnvironmentEpoch>('environment'),
       },
     },
+    {
+      ...header(`dispatching-${id}`),
+      kind: 'action.dispatching',
+      intentId,
+      epoch: brandString<EnvironmentEpoch>('environment'),
+    },
     { ...header(`settled-${id}`), kind: 'action.settled', intentId, outcome, effect, observations: [] },
   ]
 }
@@ -430,5 +436,27 @@ describe('pending recovery', () => {
     )
     expect(pendingRecovery([feedback('failure'), accepted, ...failed], turn)).toBe(rid('settled-failed'))
     expect(pendingRecovery(action('unknown', { ...success, kind: 'error' }, 'unknown'), turn)).toBeUndefined()
+  })
+
+  it('keeps a failure that an already-dispatched parallel sibling never observed, and clears it for later work', () => {
+    // Both siblings were dispatched before either settled: the later success proves no recovery.
+    const first = action('window-first')
+    const failing = action(
+      'window-failed',
+      { ...success, kind: 'error', error: { code: 'READ_FAILED', message: 'Unavailable' } },
+      'none',
+    )
+    const second = action('window-second')
+    const window = [
+      ...first.slice(0, 2),
+      ...failing.slice(0, 2),
+      ...second.slice(0, 2),
+      first[2]!,
+      failing[2]!,
+      second[2]!,
+    ]
+    expect(pendingRecovery(window, turn)).toBe(rid('settled-window-failed'))
+    // Work dispatched after the failure settled did observe it, so its success clears recovery.
+    expect(pendingRecovery([...failing, ...action('after-failure')], turn)).toBeUndefined()
   })
 })

@@ -140,7 +140,7 @@ async function fixture() {
         connectionListeners.delete(listener)
       }
     },
-    call: vi.fn(async (method: string, params: { sessionId?: string } = {}) => {
+    call: vi.fn(async (method: string, params: { sessionId?: string } = {}): Promise<unknown> => {
       if (method === '_agnes/v1/session.accounting')
         return {
           sessionId: params.sessionId ?? '',
@@ -214,15 +214,26 @@ async function fixture() {
   surfaces.aside.hidden = true
   surfaces.divider.hidden = true
   document.body.append(root)
-  workbench.configure({ surfaces, select: async () => {}, changed: () => {} })
+  const openSettings = vi.fn(async (_pane: 'model' | 'jev') => {})
+  workbench.configure({ surfaces, select: async () => {}, changed: () => {}, openSettings })
   const publish = (patch: Partial<WorkbenchSnapshot> = {}) =>
     workbench.publish({ ...workbench.snapshot, connected: true, ...patch })
   const mount = () => ctx.plugin(clientModule({ apply }), { packageId: '@agnes/jev-web', revision: '1' })
-  return { ctx, workbench, surfaces, client, mount, publish, activeObservers, connectionListeners }
+  return {
+    ctx,
+    workbench,
+    surfaces,
+    client,
+    mount,
+    publish,
+    activeObservers,
+    connectionListeners,
+    openSettings,
+  }
 }
 
 it('returns Native DOM, observers, timers and subscribers to baseline across ten real module cycles', async () => {
-  const { workbench, surfaces, client, mount, publish, activeObservers, connectionListeners } =
+  const { workbench, surfaces, client, mount, publish, activeObservers, connectionListeners, openSettings } =
     await fixture()
   const baseline = surfaces.root.outerHTML
   const timers = vi.getTimerCount()
@@ -248,6 +259,13 @@ it('returns Native DOM, observers, timers and subscribers to baseline across ten
       data: {},
     } as unknown as EventEnvelope)
     expect(surfaces.aside.querySelectorAll('.runtime-record-rows li')).toHaveLength(1)
+    const oldSettings = required(surfaces.toolbar.querySelector<HTMLButtonElement>('.jev-open-settings'))
+    oldSettings.click()
+    await flush()
+    // Ant Design's shared document-click coordinate timer is bounded to 100 ms.
+    await vi.advanceTimersByTimeAsync(100)
+    expect(openSettings).toHaveBeenLastCalledWith('jev')
+    expect(openSettings).toHaveBeenCalledTimes(cycle + 1)
     const oldButton = required(surfaces.toolbar.querySelector<HTMLButtonElement>('.jev-open-comparison'))
     await fiber.dispose()
     await flush()
@@ -256,7 +274,9 @@ it('returns Native DOM, observers, timers and subscribers to baseline across ten
     expect(activeObservers.size).toBe(0)
     expect(connectionListeners.size).toBe(0)
     expect(vi.getTimerCount()).toBe(timers)
+    oldSettings.click()
     oldButton.click()
+    expect(openSettings).toHaveBeenCalledTimes(cycle + 1)
     publish({ session: { id: `late-${cycle}`, runtime: { id: 'jevloop', version: '1' }, head: 0 } })
     workbench.event(`late-${cycle}`, { seq: 2, type: 'runtime/cancel', data: {} } as unknown as EventEnvelope)
     surfaces.divider.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))

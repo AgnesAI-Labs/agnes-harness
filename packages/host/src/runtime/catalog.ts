@@ -6,6 +6,7 @@ import {
   RuntimeRegistry,
   readRuntimeIdentity,
 } from '@agnes/runtime-api'
+import { decisionBackendStatus } from './jev-decision-pool.js'
 import { JEV_IDENTITY, type JevLoopOptions, openJevLoop } from './jev-loop.js'
 import { createJevDecisionTransport } from './jev-transport.js'
 
@@ -16,7 +17,9 @@ export interface RuntimeOpenContext {
 }
 export type SessionRuntimeRegistry = RuntimeRegistry<RuntimeOpenContext, SessionImpl>
 
-export type JevEnvironmentConfiguration = JevLoopOptions | { readonly unavailableReason: string }
+export type JevEnvironmentConfiguration =
+  | JevLoopOptions
+  | { readonly unavailableReason: string; readonly backend?: 'jev' | 'laya' }
 
 /** The only composition root importing both implementations. No plugin discovery is implied. */
 export function createSessionRuntimeRegistry(
@@ -26,7 +29,7 @@ export function createSessionRuntimeRegistry(
   const unavailableReason =
     configuration && 'unavailableReason' in configuration
       ? configuration.unavailableReason
-      : 'Jev 决策后端未配置（AGNES_JEV_ENDPOINT 与 AGNES_JEV_MODEL）'
+      : 'Jev 决策服务未配置，请在设置中配置并重启后台。'
   const registry = new RuntimeRegistry<RuntimeOpenContext, SessionImpl>()
   registry.register({
     descriptor: {
@@ -44,6 +47,12 @@ export function createSessionRuntimeRegistry(
       apiVersion: 1,
       label: 'JevLoop',
       available: !!jev,
+      ...(jev
+        ? {
+            defaultDecisionBackend: jev.defaultDecisionBackend ?? jev.decision.backend,
+            decisionBackends: decisionBackendStatus(jev),
+          }
+        : {}),
       ...(!jev ? { unavailableReason } : {}),
       capabilities: { prompt: true, cancel: true, resume: true, compact: false, fork: false },
     },
@@ -109,8 +118,29 @@ export function jevFromEnvironment(
 ): JevEnvironmentConfiguration | undefined {
   const endpoint = env.AGNES_JEV_ENDPOINT?.trim()
   const model = env.AGNES_JEV_MODEL?.trim()
-  if (!endpoint || !model) return undefined
-  const unavailable = (unavailableReason: string): JevEnvironmentConfiguration => ({ unavailableReason })
+  const backend = env.AGNES_JEV_BACKEND?.trim() || 'jev'
+  const configured = [
+    'AGNES_JEV_BACKEND',
+    'AGNES_JEV_ENDPOINT',
+    'AGNES_JEV_MODEL',
+    'AGNES_JEV_TRANSPORT',
+    'AGNES_JEV_AUTHENTICATION',
+    'AGNES_JEV_API_KEY',
+    'TYPESAFE_API_KEY',
+    'AGNES_JEV_DECISION_REQUEST_CREDITS',
+    'AGNES_JEV_LANGUAGE_REQUEST_CREDITS',
+  ].some((key) => env[key] !== undefined)
+  if (!configured) return undefined
+  const unavailable = (unavailableReason: string): JevEnvironmentConfiguration => ({
+    unavailableReason,
+    ...(backend === 'jev' || backend === 'laya' ? { backend } : {}),
+  })
+  if (backend !== 'jev' && backend !== 'laya') return unavailable('决策后端无效，请选择 jev 或 laya。')
+  if (!endpoint || !model) return unavailable('Jev 环境配置不完整，请同时配置服务地址与模型。')
+  const transport = env.AGNES_JEV_TRANSPORT?.trim() || 'native'
+  if (backend === 'laya' && transport !== 'native') return unavailable('本地 Laya 仅支持 native 传输。')
+  if (transport !== 'native' && transport !== 'cloudflare')
+    return unavailable('Jev 传输类型无效，请选择 native 或 cloudflare。')
   let url: URL
   try {
     url = new URL(endpoint)
@@ -119,13 +149,24 @@ export function jevFromEnvironment(
   }
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash)
     return unavailable('Jev 决策服务地址须为不含凭据、查询参数或片段的 HTTP 或 HTTPS 地址。')
+  if (
+    transport === 'native' &&
+    url.hostname === 'api.cloudflare.com' &&
+    /^\/client\/v4\/accounts\/[^/]+\/ai\/run$/.test(url.pathname)
+  )
+    return unavailable('Cloudflare 地址必须使用 cloudflare 传输类型，请检查 AGNES_JEV_TRANSPORT。')
   const authentication = env.AGNES_JEV_AUTHENTICATION?.trim() || 'bearer'
   if (authentication !== 'bearer' && authentication !== 'none')
     return unavailable('Jev 认证方式无效，请将 AGNES_JEV_AUTHENTICATION 设为 bearer 或 none。')
-  const configuredToken = env.AGNES_JEV_API_KEY?.trim() || env.TYPESAFE_API_KEY?.trim()
+  if (transport === 'cloudflare' && authentication !== 'bearer')
+    return unavailable('Cloudflare Jev 必须使用 Bearer 认证。')
+  const configuredToken =
+    env.AGNES_JEV_API_KEY?.trim() || (backend === 'jev' ? env.TYPESAFE_API_KEY?.trim() : undefined)
   if (authentication === 'bearer' && !configuredToken)
     return unavailable(
-      'Jev 缺少 Bearer 密钥，请配置 AGNES_JEV_API_KEY 或 TYPESAFE_API_KEY；仅匿名服务可显式设置 AGNES_JEV_AUTHENTICATION=none。',
+      backend === 'laya'
+        ? 'Laya 缺少 Bearer 密钥，请配置 AGNES_JEV_API_KEY；仅匿名服务可显式设置 AGNES_JEV_AUTHENTICATION=none。'
+        : 'Jev 缺少 Bearer 密钥，请配置 AGNES_JEV_API_KEY 或 TYPESAFE_API_KEY；仅匿名服务可显式设置 AGNES_JEV_AUTHENTICATION=none。',
     )
   if (authentication === 'bearer' && /[\r\n]/.test(configuredToken ?? ''))
     return unavailable('Jev Bearer 密钥格式无效。')
@@ -144,11 +185,13 @@ export function jevFromEnvironment(
       ...(languageCredits === undefined ? {} : { language: languageCredits }),
     },
     decision: {
-      backend: 'jev',
+      backend,
       endpoint,
       model,
       transport: createJevDecisionTransport({
+        backend,
         endpoint,
+        transport,
         fetcher,
         ...(authentication === 'bearer' && configuredToken ? { token: configuredToken } : {}),
       }),

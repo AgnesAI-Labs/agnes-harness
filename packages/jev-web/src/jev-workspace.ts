@@ -1,4 +1,5 @@
 import type { Client } from '@agnes/sdk/browser'
+import type { Translate } from './jev-locale.js'
 import { createJevDirectStats } from './jev-stats.js'
 import { createSessionAccounting } from './session-accounting.js'
 
@@ -13,6 +14,7 @@ export function bindJevWorkspace(
     chat: HTMLElement
   },
   client: Pick<Client, 'call'>,
+  t: Translate,
 ) {
   const { root, aside, divider: separator, footer, chat } = surfaces
   const listeners = new AbortController()
@@ -35,7 +37,7 @@ export function bindJevWorkspace(
   )
   separator.setAttribute('role', 'separator')
   separator.setAttribute('tabindex', '0')
-  separator.setAttribute('aria-label', '调整决策图与对话宽度')
+  separator.setAttribute('aria-label', t('ws.divider.label'))
   separator.setAttribute('aria-orientation', 'vertical')
   const navigation = document.createElement('nav')
   navigation.className = 'jev-workspace-views'
@@ -43,7 +45,7 @@ export function bindJevWorkspace(
     const button = document.createElement('button')
     button.type = 'button'
     button.dataset.workspaceView = name
-    button.textContent = name === 'graph' ? '决策图' : '对话'
+    button.textContent = name === 'graph' ? t('ws.view.graph') : t('ws.view.chat')
     navigation.append(button)
     return button
   })
@@ -51,8 +53,8 @@ export function bindJevWorkspace(
   const stats = document.createElement('div')
   stats.className = 'jev-stats-dock'
   footer.append(stats)
-  const directStats = createJevDirectStats(stats)
-  const accounting = createSessionAccounting(stats, client)
+  const directStats = createJevDirectStats(stats, 'session', t)
+  const accounting = createSessionAccounting(stats, client, t)
   const storageKey = 'agnes.jev-workspace.graph-percent'
   const setWidth = (value: number) => {
     if (disposed) return value

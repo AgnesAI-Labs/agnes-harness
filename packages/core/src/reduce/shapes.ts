@@ -1,4 +1,4 @@
-import type { Actor, ApprovalVerdict, Billing, ContentBlock } from '@agnes/protocol'
+import type { Actor, ApprovalVerdict, Billing, ContentBlock, JsonValue } from '@agnes/protocol'
 import type { Seq } from '../types.js'
 
 // The payload shapes of the event types protocol validates by envelope only. They are declared here
@@ -47,6 +47,8 @@ export type InboxItem = {
   actor: Actor
   commandId?: string
   admissionId?: string
+  /** Host-resolved runtime coordinates; not user-authored prompt text. */
+  runtimeSelection?: JsonValue
   enqueuedAt: string
   kind?: 'prompt' | 'steer' | 'follow_up'
   // Set by whoever enqueued the item, and defaulting to 'trusted' when absent. The accept path

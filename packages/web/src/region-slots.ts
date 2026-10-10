@@ -173,6 +173,7 @@ export const SETTINGS_PANE_SLOT = 'ui:settings-pane' as unknown as SlotName
 export const settingsPaneSlot = (pane: SettingsPane) => `ui:settings-pane.${pane}` as unknown as SlotName
 
 const SETTINGS_UNIT_OWNER: Readonly<Record<SettingsPane, string>> = {
+  jev: '@agnes/web-settings-jev',
   model: '@agnes/web-settings-model',
   plugin: '@agnes/web-settings-plugins',
   resources: '@agnes/web-settings-resources',

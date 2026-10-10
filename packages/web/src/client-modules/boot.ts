@@ -54,6 +54,16 @@ import {
   mountTranscriptRegion,
 } from '../region-slots.js'
 import type { SidebarActions, SidebarState } from '../sidebar.js'
+import { WEB_LOCALE_NAMESPACE, webLocaleCatalog } from '../locale-catalog.js'
+import {
+  applyDocumentLocale,
+  isUiLocale,
+  readLocalePreference,
+  LOCALE_STORAGE_KEY,
+  syncLocaleRadios,
+  applyLocaleText,
+  type UiLocale,
+} from '../locale-preference.js'
 import { readThemePreference, resolveTheme, safeThemeStorage, THEME_STORAGE_KEY } from '../theme.js'
 import { type ClientReconciler, createReconciler, type RosterSource } from './reconcile.js'
 
@@ -141,7 +151,10 @@ export async function startClientModules(options: {
   const session = new SessionService(ctx, undefined, options.agnes)
   const workbench = new WorkbenchService(ctx)
   const resources = new ClientResourceService(ctx, options.agnes, session)
-  const locale = new LocaleService(ctx, document.documentElement.lang || 'zh-CN')
+  const storedLocale = readLocalePreference(safeThemeStorage())
+  applyDocumentLocale(document.documentElement, storedLocale)
+  const locale = new LocaleService(ctx, storedLocale)
+  locale.register(WEB_LOCALE_NAMESPACE, webLocaleCatalog)
   const commands = new CommandService(ctx, options.authorizeCommand)
 
   const registry = (ctx as unknown as { slots: SlotRegistry }).slots
@@ -158,6 +171,20 @@ export async function startClientModules(options: {
   })
   window.addEventListener('agnes:theme-changed', () => {
     theme.setTheme(resolveTheme(readThemePreference(safeThemeStorage()), prefersDark.matches))
+  })
+  // 语言：与主题同一模式——跨页 storage 广播 + 同页显式事件。切换即时生效，不重载页面。
+  const applyLocale = (next: UiLocale): void => {
+    applyDocumentLocale(document.documentElement, next)
+    locale.setLocale(next)
+    syncLocaleRadios(document, next)
+    applyLocaleText(document, (key) => locale.t(key))
+  }
+  window.addEventListener('storage', (event) => {
+    if (event.key === LOCALE_STORAGE_KEY) applyLocale(readLocalePreference(safeThemeStorage()))
+  })
+  window.addEventListener('agnes:locale-changed', (event) => {
+    const next = (event as CustomEvent<unknown>).detail
+    if (isUiLocale(next)) applyLocale(next)
   })
 
   // workbench.panel 挂载点：宿主划定的容器 + React root（WC8）。

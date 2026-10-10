@@ -90,3 +90,33 @@ it('preserves unavailable saved thinking until the user chooses a supported valu
   await click('应用到本会话')
   expect(onApply).toHaveBeenCalledWith({ contextWindow: 64000 })
 })
+
+it('edits JevLoop stage bindings alongside session settings and passes them as the second argument', async () => {
+  const onApply = vi.fn(async () => true)
+  const stages = {
+    options: [
+      { route: 'gw', id: 'cheap' },
+      { route: 'gw', id: 'strong', reasoning: true, thinkingLevelMap: { high: 'high' } },
+    ],
+    value: {
+      parameters: null,
+      arbitration: { route: 'gw', model: 'strong', thinking: 'high' as const },
+      answer: null,
+    },
+  }
+  await act(async () => root.render(createElement(ModelSettingsDialog, { ...props, stages, onApply })))
+  // The chip reports how many stages are bound; the full label stays in aria-label.
+  await click('思考·环节1/3')
+  expect((document.getElementById('stage-model-arbitration') as HTMLSelectElement).value).toBe('gw|strong')
+  expect((document.getElementById('stage-thinking-arbitration') as HTMLSelectElement).value).toBe('high')
+  // An unbound stage follows the session model and has no thinking choice of its own.
+  expect((document.getElementById('stage-model-parameters') as HTMLSelectElement).value).toBe('')
+  expect((document.getElementById('stage-thinking-parameters') as HTMLSelectElement).disabled).toBe(true)
+  await input('stage-model-parameters', 'gw|cheap')
+  await input('stage-model-arbitration', '')
+  await click('应用到本会话')
+  expect(onApply).toHaveBeenLastCalledWith(
+    { thinking: 'low', contextWindow: 64000 },
+    { parameters: { route: 'gw', model: 'cheap' }, arbitration: null, answer: null },
+  )
+})

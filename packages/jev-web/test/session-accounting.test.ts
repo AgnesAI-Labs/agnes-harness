@@ -6,7 +6,10 @@ import type {
 } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import { afterEach, expect, it, vi } from 'vitest'
+import { createJevTranslate } from '../src/jev-locale.js'
 import { createSessionAccounting } from '../src/session-accounting.js'
+
+const t = createJevTranslate('zh-CN')
 
 const amount = (value: number | null, missing = 0): ComparisonAccountingTotal => ({
   state: missing ? 'partial' : value === null ? 'unknown' : 'complete',
@@ -51,7 +54,7 @@ it('shows durable Jev and LLM calls, cache rate and cost while retaining partial
     },
   }
   const call = vi.fn(async () => reply)
-  const view = createSessionAccounting(host, { call } as unknown as Pick<Client, 'call'>)
+  const view = createSessionAccounting(host, { call } as unknown as Pick<Client, 'call'>, t)
   view.update('jev-session', 42)
   await vi.advanceTimersByTimeAsync(0)
   expect(call).toHaveBeenCalledWith('_agnes/v1/session.accounting', { sessionId: 'jev-session' })

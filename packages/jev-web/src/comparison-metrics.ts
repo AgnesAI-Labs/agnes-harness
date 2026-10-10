@@ -5,22 +5,45 @@ import type {
 } from '@agnes/protocol'
 import { createComparisonPriceDetails, type PriceDetailsLoader } from './comparison-price-details.js'
 import { createComparisonResults } from './comparison-results.js'
+import type { Translate } from './jev-locale.js'
 
-const tokenLabels: Record<keyof ComparisonAccountingFamily['tokens'], string> = {
-  inputUncached: '未缓存输入',
-  cacheRead: '缓存读取',
-  cacheWrite: '缓存写入',
-  output: '输出',
-  reasoning: '推理（包含于输出）',
-  inputTotal: '总输入（含缓存）',
-  total: '总 token',
+const tokenLabelKeys: Record<keyof ComparisonAccountingFamily['tokens'], string> = {
+  inputUncached: 'metrics.token.inputUncached',
+  cacheRead: 'metrics.token.cacheRead',
+  cacheWrite: 'metrics.token.cacheWrite',
+  output: 'metrics.token.output',
+  reasoning: 'metrics.token.reasoning',
+  inputTotal: 'metrics.token.inputTotal',
+  total: 'metrics.token.total',
 }
-function amount(total: ComparisonAccountingTotal | undefined): string {
-  if (total === undefined) return '未知'
+
+const purposeKeys: Record<string, string> = {
+  inference: 'metrics.purpose.inference',
+  decision: 'metrics.purpose.decision',
+  parameters: 'metrics.purpose.parameters',
+  arbitration: 'metrics.purpose.arbitration',
+  answer: 'metrics.purpose.answer',
+  compaction: 'metrics.purpose.compaction',
+  title: 'metrics.purpose.title',
+  media: 'metrics.purpose.media',
+  unknown: 'metrics.purpose.unknown',
+}
+
+const sideLabelKeys = { left: 'metrics.side.left', right: 'metrics.side.right' } as const
+const sideShortKeys = { left: 'metrics.side.short.left', right: 'metrics.side.short.right' } as const
+const familyKeys = { jev: 'metrics.family.jev', llm: 'metrics.family.llm' } as const
+
+function labelFor(keys: Record<string, string>, name: string, t: Translate): string {
+  const key = keys[name]
+  return key === undefined ? name : t(key)
+}
+
+function amount(total: ComparisonAccountingTotal | undefined, t: Translate): string {
+  if (total === undefined) return t('metrics.unknown')
   if (total.state === 'complete' && total.value !== null) return String(total.value)
   if (total.state === 'partial' && total.knownSubtotal !== null)
-    return `已知小计 ${total.knownSubtotal}（非总量，缺失 ${total.missing}）`
-  return '未知'
+    return t('metrics.partialSubtotal', { value: total.knownSubtotal, missing: total.missing })
+  return t('metrics.unknown')
 }
 
 /** Equivalent fixed-cut replies must not retire expanded detail readers during polling. */
@@ -37,13 +60,17 @@ function metricsSignature(value: ComparisonMetricsResult): string {
 }
 
 /** Render the wire accounting verbatim; rates, baseline windows and missing values stay backend-owned. */
-export function createComparisonMetrics(host: HTMLElement, loadPriceDetails?: PriceDetailsLoader) {
-  const results = createComparisonResults(host)
+export function createComparisonMetrics(
+  host: HTMLElement,
+  loadPriceDetails: PriceDetailsLoader | undefined,
+  t: Translate,
+) {
+  const results = createComparisonResults(host, t)
   const panel = document.createElement('details')
   panel.className = 'comparison-metrics'
   panel.open = false
   const title = document.createElement('summary')
-  title.textContent = '前缀计量 · 正在载入共享 journal'
+  title.textContent = t('metrics.title.loading')
   const note = document.createElement('p')
   note.setAttribute('role', 'status')
   const body = document.createElement('div')
@@ -61,28 +88,44 @@ export function createComparisonMetrics(host: HTMLElement, loadPriceDetails?: Pr
   return {
     loading(seq: number) {
       results.loading(seq)
-      title.textContent = `${appliedTitle ?? '前缀计量'} · 正在同步 #${seq}`
-      note.textContent = `正在同步计量 #${seq}${applied === undefined ? '' : `；仍显示 #${applied} 的结果`}`
+      title.textContent = t('metrics.title.syncing', {
+        title: appliedTitle ?? t('metrics.title.fallback'),
+        seq,
+      })
+      note.textContent =
+        applied === undefined
+          ? t('metrics.note.syncing', { seq })
+          : t('metrics.note.syncingStale', { seq, applied })
     },
     unavailable(reason: string) {
       results.unavailable(reason)
-      title.textContent = `${appliedTitle ?? '前缀计量'} · 读取不可用（展开查看）`
+      title.textContent = t('metrics.title.unavailable', {
+        title: appliedTitle ?? t('metrics.title.fallback'),
+      })
       note.textContent = reason
     },
     render(value: ComparisonMetricsResult) {
       applied = value.atSeq
       const state = (value: string) =>
-        value === 'complete' ? '完整' : value === 'partial' ? '部分可用' : '未知'
+        value === 'complete'
+          ? t('metrics.state.complete')
+          : value === 'partial'
+            ? t('metrics.state.partial')
+            : t('metrics.state.unknown')
       const brief = value.lanes
         .map(
           (lane) =>
-            `${lane.side === 'left' ? '左' : '右'}：Jev ${lane.accounting.jev.attempts} / LLM ${lane.accounting.llm.attempts} 已观测请求（${state(lane.accounting.state)}）`,
+            t('metrics.brief.lane', {
+              side: t(sideShortKeys[lane.side]),
+              jev: lane.accounting.jev.attempts,
+              llm: lane.accounting.llm.attempts,
+              state: state(lane.accounting.state),
+            }),
         )
         .join(' · ')
-      title.textContent = `前缀计量 · 共享 journal #${value.atSeq}${brief ? ` · ${brief}` : ''}`
+      title.textContent = `${t('metrics.title.journal', { n: value.atSeq })}${brief ? ` · ${brief}` : ''}`
       appliedTitle = title.textContent
-      note.textContent =
-        '用量来自持久记录；价格估算、网关报告金额与已报告估算金额分开显示。缺失不表示零，订阅标记不表示免费。'
+      note.textContent = t('metrics.note.render')
       panel.dataset.atSeq = String(value.atSeq)
       const signature = metricsSignature(value)
       const rebuild = signature !== appliedSignature
@@ -98,16 +141,27 @@ export function createComparisonMetrics(host: HTMLElement, loadPriceDetails?: Pr
         section.dataset.side = side
         const heading = document.createElement('h4')
         const lane = value.lanes.find((item) => item.side === side)
-        heading.textContent = `${side === 'left' ? '左侧' : '右侧'}${lane ? ` · ${lane.runtime.id}@${lane.runtime.version}` : ' · 此前缀无会话绑定'}`
+        heading.textContent = lane
+          ? `${t(sideLabelKeys[side])} · ${lane.runtime.id}@${lane.runtime.version}`
+          : `${t(sideLabelKeys[side])} · ${t('metrics.noSessionBinding')}`
         section.append(heading)
         if (lane) {
           const window = document.createElement('p')
-          window.textContent = `父账本 (${lane.accounting.afterSeq}, ${lane.accounting.throughSeq}] · 会话树 ${lane.members?.length ?? 1} 个已观测成员 · ${lane.treeComplete === true ? '树覆盖完整' : '树覆盖不完整或未知'} · ${lane.accounting.state === 'complete' ? '完整' : lane.accounting.state === 'partial' ? '部分可用' : '未知'}`
+          window.textContent = t('metrics.window', {
+            after: lane.accounting.afterSeq,
+            through: lane.accounting.throughSeq,
+            count: lane.members?.length ?? 1,
+            tree: lane.treeComplete === true ? t('metrics.tree.complete') : t('metrics.tree.incomplete'),
+            state: state(lane.accounting.state),
+          })
           section.append(window)
           for (const family of ['jev', 'llm'] as const) {
             const accounting = lane.accounting[family]
             const label = document.createElement('h5')
-            label.textContent = `${family === 'jev' ? 'Jev 决策' : 'LLM 语言'} · 已观测请求 ${accounting.attempts}`
+            label.textContent = t('metrics.familyLabel', {
+              family: t(familyKeys[family]),
+              count: accounting.attempts,
+            })
             const list = document.createElement('dl')
             list.dataset.family = family
             const row = (name: string, text: string) => {
@@ -117,66 +171,68 @@ export function createComparisonMetrics(host: HTMLElement, loadPriceDetails?: Pr
               value.textContent = text
               list.append(key, value)
             }
-            for (const [bucket, label] of Object.entries(tokenLabels))
-              row(label, amount(accounting.tokens[bucket as keyof typeof tokenLabels]))
+            for (const [bucket, tokenKey] of Object.entries(tokenLabelKeys))
+              row(t(tokenKey), amount(accounting.tokens[bucket as keyof typeof tokenLabelKeys], t))
             for (const [currency, total] of Object.entries(accounting.costs))
-              row(`价格估算费用 ${currency}`, amount(total))
+              row(t('metrics.cost.currency', { currency }), amount(total, t))
             if (Object.keys(accounting.costs).length === 0)
-              row('价格估算费用', accounting.attempts === 0 ? '暂无已观测请求' : '未知（无价格证据）')
+              row(
+                t('metrics.cost.none'),
+                accounting.attempts === 0 ? t('metrics.cost.noRequests') : t('metrics.cost.noEvidence'),
+              )
             row(
-              '按当前配置重估请求',
+              t('metrics.currentPrice'),
               accounting.currentPriceAttempts === undefined
-                ? '未知'
+                ? t('metrics.unknown')
                 : String(accounting.currentPriceAttempts),
             )
-            row('缺价请求', String(accounting.unpricedAttempts))
+            row(t('metrics.unpriced'), String(accounting.unpricedAttempts))
             const outcomes = (counts: NonNullable<typeof accounting.outcomes>) =>
-              `完成 ${counts.completed} · 失败 ${counts.failed} · 取消 ${counts.cancelled} · 待定 ${counts.pending} · 未知 ${counts.unknown}`
+              t('metrics.outcomes', {
+                completed: counts.completed,
+                failed: counts.failed,
+                cancelled: counts.cancelled,
+                pending: counts.pending,
+                unknown: counts.unknown,
+              })
             row(
-              '已观测请求结果',
-              accounting.outcomes ? outcomes(accounting.outcomes) : '未知（旧记录未提供）',
+              t('metrics.outcomesRow'),
+              accounting.outcomes ? outcomes(accounting.outcomes) : t('metrics.outcomesUnknown'),
             )
-            const purposes: Record<string, string> = {
-              inference: '原生推理',
-              decision: '决策',
-              parameters: '参数生成',
-              arbitration: '仲裁',
-              answer: '回答',
-              compaction: '压缩摘要',
-              title: '会话标题',
-              media: '媒体',
-              unknown: '未知用途',
-            }
             if (accounting.byPurpose)
               for (const [purpose, value] of Object.entries(accounting.byPurpose))
                 row(
-                  `用途：${Object.hasOwn(purposes, purpose) ? purposes[purpose] : purpose}`,
-                  `${value.attempts} 已观测请求 · ${outcomes(value.outcomes)}`,
+                  t('metrics.purposeRow', { purpose: labelFor(purposeKeys, purpose, t) }),
+                  t('metrics.purposeValue', { attempts: value.attempts, outcomes: outcomes(value.outcomes) }),
                 )
             const billing = accounting.reportedBilling
             if (billing) {
               for (const source of ['gateway', 'estimated'] as const) {
                 const report = billing[source]
-                const label = source === 'gateway' ? '网关报告' : '已报告估算'
+                const billingLabel = source === 'gateway' ? t('metrics.billing.gateway') : t('metrics.billing.estimated')
                 row(
-                  `${label}金额（微美元）`,
+                  t('metrics.billing.amount', { label: billingLabel }),
                   report.attempts === 0 && report.usdMicros.state === 'complete'
-                    ? '暂无该来源金额报告'
-                    : amount(report.usdMicros),
+                    ? t('metrics.billing.noReports')
+                    : amount(report.usdMicros, t),
                 )
                 row(
-                  `${label}覆盖`,
-                  `${report.attempts} 已观测请求 · 订阅 ${report.subscriptionAttempts} · 非订阅 ${report.nonSubscriptionAttempts}`,
+                  t('metrics.billing.coverage', { label: billingLabel }),
+                  t('metrics.billing.coverageValue', {
+                    attempts: report.attempts,
+                    subscription: report.subscriptionAttempts,
+                    nonSubscription: report.nonSubscriptionAttempts,
+                  }),
                 )
               }
-              row('缺少金额报告的请求', String(billing.missingAttempts))
-            } else row('已报告金额', '未知（旧记录未提供）')
+              row(t('metrics.billing.missingRow'), String(billing.missingAttempts))
+            } else row(t('metrics.billing.amountRow'), t('metrics.outcomesUnknown'))
             section.append(label, list)
           }
           if (lane.accounting.issues.length > 0) {
             const issues = document.createElement('details')
             const summary = document.createElement('summary')
-            summary.textContent = '证据不完整，查看读取限制'
+            summary.textContent = t('metrics.issues')
             const raw = document.createElement('pre')
             raw.textContent = lane.accounting.issues.join('\n')
             issues.append(summary, raw)
@@ -198,9 +254,13 @@ export function createComparisonMetrics(host: HTMLElement, loadPriceDetails?: Pr
                   },
                   loadPriceDetails,
                   member.sessionId === lane.sessionId ? undefined : member.sessionId,
+                  t,
                 ),
               )
-          else detailReaders.push(createComparisonPriceDetails(section, value, lane, loadPriceDetails))
+          else
+            detailReaders.push(
+              createComparisonPriceDetails(section, value, lane, loadPriceDetails, undefined, t),
+            )
         }
         body.append(section)
       }
@@ -212,7 +272,7 @@ export function createComparisonMetrics(host: HTMLElement, loadPriceDetails?: Pr
       appliedTitle = undefined
       appliedSignature = undefined
       delete panel.dataset.atSeq
-      title.textContent = '前缀计量 · 正在载入共享 journal'
+      title.textContent = t('metrics.title.loading')
       note.textContent = ''
       body.replaceChildren()
     },

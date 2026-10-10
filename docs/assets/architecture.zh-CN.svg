@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1400" viewBox="0 0 1200 1400" role="img" aria-labelledby="title description" xml:lang="zh-CN">
 <title id="title">Agnes Harness — 一套执行底座，连接企业现场与物理世界</title>
-<desc id="description">AGH 架构动画：LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体，MHS 设备适配器基于 MCP。客户端经 App Server 接入，Agent Runtime 以 Harness 记忆和受控执行运行 Agent 循环，插件扩展运行时，同一底座支撑企业 FDE 交付与物理世界接入。</desc>
+<desc id="description">AGH 架构动画：LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体，设备经 AgnesHub 以 MHS 接入。客户端经 App Server 接入，Agent Runtime 以 Harness 记忆和受控执行运行 Agent 循环，插件扩展运行时，同一底座支撑企业 FDE 交付与物理世界接入。</desc>
 <defs><radialGradient id="bg" cx="50%" cy="0%" r="95%"><stop offset="0" stop-color="#26307a"/><stop offset=".55" stop-color="#121a48"/><stop offset="1" stop-color="#0a0f2b"/></radialGradient><radialGradient id="halo"><stop offset="0" stop-color="#7c8cff" stop-opacity=".9"/><stop offset="1" stop-color="#7c8cff" stop-opacity="0"/></radialGradient><radialGradient id="core"><stop offset="0" stop-color="#2b3690"/><stop offset="1" stop-color="#151c52"/></radialGradient><linearGradient id="sweepGrad" x1="0" x2="1"><stop offset="0" stop-color="#38d6ff" stop-opacity="0"/><stop offset=".5" stop-color="#38d6ff" stop-opacity=".28"/><stop offset="1" stop-color="#38d6ff" stop-opacity="0"/></linearGradient><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="rgba(255,255,255,0.045)" stroke-width="1"/></pattern><clipPath id="memclip"><rect x="880" y="590" width="232" height="196" rx="10"/></clipPath><style>.beat{opacity:0;animation:beat 12s ease-in-out infinite}@keyframes beat{0%,100%{opacity:0}4%{opacity:1}13%{opacity:0}}.pulse{animation:pulse 2.6s ease-in-out infinite}@keyframes pulse{0%,100%{opacity:.35}50%{opacity:.9}}.march{animation:march 1.4s linear infinite}@keyframes march{to{stroke-dashoffset:-28}}.spin{transform-box:fill-box;transform-origin:center;animation:spin 9s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}.comet{animation:comet 6s linear infinite}@keyframes comet{to{stroke-dashoffset:-628.3}}.sweep{animation:sweep 3.6s ease-in-out infinite}@keyframes sweep{0%{transform:translateX(-90px)}60%,100%{transform:translateX(330px)}}.pin{animation:pin 12s ease-in-out infinite}@keyframes pin{0%,46%,62%,100%{opacity:.35}50%{opacity:1}}@media (prefers-reduced-motion:reduce){*{animation:none!important}.motion{display:none}}</style></defs>
 <rect width="1200" height="1400" rx="24" fill="url(#bg)"/>
 <rect width="1200" height="1400" rx="24" fill="url(#grid)"/>
@@ -38,7 +38,7 @@
 <text x="971" y="186" font-size="18" font-weight="800" fill="#eef1ff">MHS</text>
 <text x="1020" y="186" font-size="15" font-weight="600" fill="#fbbf24">身体</text>
 <text x="971" y="210" font-size="12.5" font-weight="400" fill="#9aa6d8">连接物理设备的能力</text>
-<text x="971" y="232" font-size="12" font-weight="600" fill="#fbbf24">经 MCP 接入设备</text>
+<text x="971" y="232" font-size="12" font-weight="600" fill="#fbbf24">经 AgnesHub 接入设备</text>
 <rect x="60" y="284" width="1080" height="140" rx="18" fill="rgba(255,255,255,0.035)" stroke="rgba(132,150,255,0.30)" stroke-width="1.4"/>
 <text x="84" y="316" font-size="14" font-weight="800" fill="#38d6ff" letter-spacing="1.6">APP SERVER · 统一接入</text>
 <text x="84" y="338" font-size="13" font-weight="400" fill="#9aa6d8">共享会话 · 任务提交 · 事件推送 · 审批路由</text>
@@ -182,10 +182,10 @@
 <text x="84" y="1336" font-size="12" font-weight="400" fill="#6f7bb3">具体连接器按现场开发与验证</text>
 <rect x="612" y="1150" width="528" height="196" rx="18" fill="rgba(251,191,36,0.05)" stroke="rgba(251,191,36,0.6)" stroke-width="1.4"/>
 <text x="636" y="1182" font-size="14" font-weight="800" fill="#fbbf24" letter-spacing="1.4">MHS · 物理世界</text>
-<text x="636" y="1204" font-size="13" font-weight="400" fill="#9aa6d8">以 MCP 为基础连接设备</text>
+<text x="636" y="1204" font-size="13" font-weight="400" fill="#9aa6d8">设备通过 MHS 与 MOS 接入</text>
 <rect x="636" y="1222" width="220" height="44" rx="12" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.45)" stroke-width="1.4"/>
 <g transform="translate(651 1233) scale(0.9166666666666666)" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="1.6"/><path d="M10 4v3M14 4v3M10 17v3M14 17v3M4 10h3M4 14h3M17 10h3M17 14h3"/></g>
-<text x="684" y="1249" font-size="14.5" font-weight="600" fill="#eef1ff">MCP 适配器</text>
+<text x="684" y="1249" font-size="14.5" font-weight="600" fill="#eef1ff">AgnesHub</text>
 <rect x="896" y="1222" width="220" height="44" rx="12" fill="rgba(251,191,36,0.07)" stroke="rgba(251,191,36,0.45)" stroke-width="1.4"/>
 <g transform="translate(911 1233) scale(0.9166666666666666)" fill="none" stroke="#fbbf24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16a7.5 7.5 0 1 1 15 0"/><path d="M12 16l3.5-4.5"/><circle cx="12" cy="16" r="1.2"/></g>
 <text x="944" y="1249" font-size="14.5" font-weight="600" fill="#eef1ff">设备控制器</text>

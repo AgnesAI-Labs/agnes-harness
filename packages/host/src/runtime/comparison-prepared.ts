@@ -5,6 +5,7 @@ import {
   type SandboxSeam,
   type SessionImpl,
   sha256Hex,
+  type ToolRegistry,
 } from '@agnes/core'
 import type {
   ComparisonPreparedConfiguration,
@@ -18,6 +19,7 @@ import {
 } from '@agnes/protocol/gen/agnes-v1'
 import { readMountedConfiguration } from '../mounted-attestation.js'
 import { assertComparisonIsolation, type ComparisonIsolation } from './comparison-isolation.js'
+import { JEV_TOOL_MOUNT, jevToolMountBaseline } from './jev-tool-mount.js'
 
 export const SESSION_PREPARED_EVENT = 'x/host/session-prepared'
 const ROUND_PREPARED_EVENT = 'x/host/comparison-round-prepared'
@@ -25,6 +27,16 @@ type RuntimeConfiguration = NonNullable<ComparisonPreparedConfiguration['runtime
 const runtimes = new WeakMap<SessionImpl, () => RuntimeConfiguration>()
 const sandboxes = new WeakMap<SessionImpl, { sandbox: SandboxSeam; policy: FsPolicy }>()
 const isolations = new WeakMap<SessionImpl, ComparisonIsolation>()
+const toolDefinitions = (tools: ToolRegistry) =>
+  tools
+    .list()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+      meta: tool.meta,
+    }))
 
 /** Host-only producer inputs; no environment, transport or profile objects cross this boundary. */
 export function bindPreparedSandbox(
@@ -34,6 +46,22 @@ export function bindPreparedSandbox(
 ): void {
   if (sandbox && policy) sandboxes.set(session, { sandbox, policy: structuredClone(policy) })
 }
+/** Attach bound stages only when any exist, so unbound lanes keep their prior receipt shape. */
+function withLanguageStages(
+  config: ComparisonPreparedConfiguration['runtimeConfig'],
+  bindings: SessionImpl['preset']['model']['jevStageBindings'],
+): ComparisonPreparedConfiguration['runtimeConfig'] {
+  if (!config || !bindings || Object.keys(bindings).length === 0) return config
+  return {
+    ...config,
+    languageStages: {
+      parameters: bindings.parameters ?? null,
+      arbitration: bindings.arbitration ?? null,
+      answer: bindings.answer ?? null,
+    },
+  }
+}
+
 export function bindPreparedRuntime(
   session: SessionImpl,
   value: RuntimeConfiguration | (() => RuntimeConfiguration),
@@ -96,18 +124,18 @@ export function captureSessionConfiguration(
     ...model,
     maxTokens: model.slot === 'primary' ? (preset.model.maxTokens ?? null) : null,
   }))
-  const definitions = session
-    .currentTools()
-    .list()
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters,
-      meta: tool.meta,
-    }))
+  const definitions = toolDefinitions(session.currentTools())
   const toolDigest = digest(JSON.parse(JSON.stringify(definitions)))
-  const presetDigest = digest(JSON.parse(JSON.stringify(preset)))
+  const baseline = jevToolMountBaseline(session)
+  const commonToolDigest = baseline
+    ? digest(JSON.parse(JSON.stringify(toolDefinitions(baseline))))
+    : toolDigest
+  // Direct JevLoop stage bindings are a lane-specific choice (one side of a comparison may bind
+  // stages the other runtime has no notion of). They are attested in runtimeConfig.languageStages
+  // below and kept out of the common preset fingerprint both lanes must share; a view without
+  // bindings hashes exactly as before, so existing receipts stay comparable.
+  const { jevStageBindings, ...commonModel } = preset.model
+  const presetDigest = digest(JSON.parse(JSON.stringify({ ...preset, model: commonModel })))
   const mounted = readMountedConfiguration(session.d.currentRuntime?.current(session.key))
   const fitted = sandboxes.get(session)
   const isolation = isolations.get(session)
@@ -145,6 +173,10 @@ export function captureSessionConfiguration(
       },
     })
   }
+  const languageConfig =
+    state.runtime.id === 'jevloop'
+      ? withLanguageStages(structuredClone(runtimes.get(session)?.()) ?? null, jevStageBindings)
+      : null
   const configuration: ComparisonPreparedConfiguration = {
     runtime: structuredClone(state.runtime),
     effective: {
@@ -161,10 +193,20 @@ export function captureSessionConfiguration(
       },
     },
     runtimeConfig:
-      state.runtime.id === 'jevloop' ? (structuredClone(runtimes.get(session)?.()) ?? null) : null,
+      baseline && languageConfig
+        ? {
+            ...languageConfig,
+            toolMount: {
+              policy: JEV_TOOL_MOUNT.id,
+              baselineDigest: commonToolDigest,
+              mountedDigest: toolDigest,
+              names: definitions.map((tool) => tool.name),
+            },
+          }
+        : languageConfig,
     fingerprints: {
       mounted: mounted?.digest ?? null,
-      tools: toolDigest,
+      tools: commonToolDigest,
       model: modelDigest,
       preset: presetDigest,
       permission: permissionDigest,
@@ -238,6 +280,12 @@ function matchesHistoricalConfiguration(
   // Legacy omission preserves its unknown scope. Do not upgrade its immutable source on resume.
   if (!Object.hasOwn(recorded.effective, 'mounted')) delete compatible.effective.mounted
   if (!Object.hasOwn(recorded.fingerprints, 'mounted')) delete compatible.fingerprints.mounted
+  if (
+    compatible.runtimeConfig &&
+    recorded.runtimeConfig &&
+    !Object.hasOwn(recorded.runtimeConfig, 'decisionChoices')
+  )
+    delete compatible.runtimeConfig.decisionChoices
   for (const model of compatible.effective.models) {
     const prior = recorded.effective.models.find((entry) => entry.slot === model.slot)
     if (prior && !Object.hasOwn(prior, 'maxTokens')) delete model.maxTokens

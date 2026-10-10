@@ -30,7 +30,9 @@ import {
   UI_OPENING_DEFAULT_MAX_NODES,
   UI_PROJECTION_DEFAULT_MAX_BYTES,
   validateActor,
+  validateAgainst,
 } from '@agnes/protocol'
+import { RuntimeTurnOptions as RuntimeTurnOptionsSchema } from '@agnes/protocol/gen/agnes-v1'
 import { hasChildControl } from '../child/store.js'
 import { EffectRuntime } from '../effects/effect.js'
 import { type ExecuteAttempt, ExecutePermitRegistry } from '../effects/execute-permits.js'
@@ -137,7 +139,14 @@ import { newOpState, type OpStateObj, opMark, withPhase } from './op-state.js'
 import { continueParked } from './parked.js'
 import type { PresetView } from './preset.js'
 import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.js'
-import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } from './reentry.js'
+import {
+  type CoreOpName,
+  invokeTool,
+  runCoreReplacement,
+  setJevStages,
+  setModel,
+  setPreset,
+} from './reentry.js'
 import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
 import { assertSessionIdleGateMutable, sessionIdleGateHeld } from './session-idle-gate.js'
 import { runToolsPhase } from './tools.js'
@@ -1111,6 +1120,15 @@ export class SessionImpl {
         if (!Number.isFinite(msg.budget) || msg.budget < 0)
           throw new CoreError('E_ENVELOPE', 'a per-turn budget override must be a finite non-negative number')
       }
+      if (
+        msg.runtimeOptions !== undefined &&
+        (target !== 'next-turn' ||
+          !this.loop?.prepareInput ||
+          !validateAgainst(RuntimeTurnOptionsSchema, msg.runtimeOptions).ok)
+      )
+        throw new CoreError('E_UNSUPPORTED', 'Runtime turn options require a supported next-turn input')
+      const runtimeSelection =
+        msg.runtimeOptions === undefined ? undefined : this.loop?.prepareInput?.(target, msg.runtimeOptions)
       const cur = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
       const item: InboxItem = {
         itemId: this.d.ids.requestId(),
@@ -1120,6 +1138,7 @@ export class SessionImpl {
         enqueuedAt: new Date(this.d.clock()).toISOString(),
         ...(msg.commandId ? { commandId: msg.commandId } : {}),
         ...(msg.admissionId ? { admissionId: msg.admissionId } : {}),
+        ...(runtimeSelection === undefined ? {} : { runtimeSelection: structuredClone(runtimeSelection) }),
         kind: msg.kind ?? (target === 'next-turn' ? 'prompt' : 'steer'),
         trust: msg.trust ?? 'trusted',
       }
@@ -1982,6 +2001,13 @@ export class SessionImpl {
     if (this.loop && this.activeOps > 0)
       return Promise.reject(new CoreError('E_LANE_BUSY', 'runtime is active'))
     return setModel(this, sel)
+  }
+
+  /** Binds JevLoop language stages directly for this session; see reentry's setJevStages. */
+  setJevStages(input: Parameters<typeof setJevStages>[1]): Promise<Seq> {
+    if (this.loop && this.activeOps > 0)
+      return Promise.reject(new CoreError('E_LANE_BUSY', 'runtime is active'))
+    return setJevStages(this, input)
   }
 
   async setYolo(enabled: boolean, operator: Actor): Promise<Seq> {

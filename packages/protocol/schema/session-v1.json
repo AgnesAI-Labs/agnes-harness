@@ -2339,6 +2339,9 @@
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
         },
+        "runtimeSelection": {
+          "$ref": "#/$defs/JsonValue"
+        },
         "enqueuedAt": {
           "type": "string"
         },

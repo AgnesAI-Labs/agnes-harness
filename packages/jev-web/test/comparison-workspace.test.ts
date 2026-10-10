@@ -28,13 +28,16 @@ import { createComparisonMetrics } from '../src/comparison-metrics.js'
 import { createComparisonPriceDetails } from '../src/comparison-price-details.js'
 import { comparisonReplayCuts, createComparisonReplay } from '../src/comparison-replay.js'
 import { createComparisonWorkspace as mountComparisonWorkspace } from '../src/comparison-workspace.js'
+import { createJevTranslate } from '../src/jev-locale.js'
+
+const t = createJevTranslate('zh-CN')
 
 function createComparisonWorkspace(
   client: Parameters<typeof mountComparisonWorkspace>[0],
   defaults: Parameters<typeof mountComparisonWorkspace>[1],
   navigation: Partial<Parameters<typeof mountComparisonWorkspace>[2]> = {},
 ) {
-  return mountComparisonWorkspace(client, defaults, { host: document.body, ...navigation })
+  return mountComparisonWorkspace(client, defaults, { host: document.body, ...navigation, t })
 }
 
 function required<T>(value: T | null | undefined): T {
@@ -174,6 +177,7 @@ it('renders archived child history from a stored cut and retires late reads when
       id: 'archived',
       side: 'right',
     },
+    t,
   )
   try {
     controller.render(parent, 20, true)
@@ -493,11 +497,17 @@ it.each([false, true])(
       slider.value = String(value)
       slider.dispatchEvent(new Event('input'))
     }
+    const stableStage = document.querySelector('.comparison-graph-column [data-stage="decision"]')
+    const stableSpace = document.querySelector<HTMLElement>('.comparison-graph-column .jev-canvas-space')
+    const stableSize = [stableSpace?.style.width, stableSpace?.style.height]
     seek(6)
     await vi.waitFor(() => assertCuts(6, 6))
+    expect(document.querySelector('.comparison-graph-column [data-stage="decision"]')).toBe(stableStage)
+    const cutSpace = document.querySelector<HTMLElement>('.comparison-graph-column .jev-canvas-space')
+    expect([cutSpace?.style.width, cutSpace?.style.height]).toEqual(stableSize)
     expect(document.querySelectorAll('.comparison-transcript article')).toHaveLength(2)
     expect(document.querySelector('.comparison-graph-column [data-stage="answer"]')?.textContent).toContain(
-      '未观测请求',
+      '尚无请求',
     )
     expect(document.querySelector<HTMLTextAreaElement>('.comparison-composer textarea')?.disabled).toBe(true)
     sinks.get(capture.pair.lanes[1]!.sessionId)?.stream?.(full(capture.pair.lanes[1]!.sessionId))
@@ -560,6 +570,7 @@ it.each([false, true])(
         (error) => {
           throw error
         },
+        t,
       )
       playback.updateJournal({ mode: 'per-lane-only', entries: [], throughSeq: 0, loading: false })
       for (const [side, lane] of ranks) playback.update(side, lane)
@@ -598,7 +609,7 @@ it('catches a legacy lane tail arriving during a fixed-prefix read without anoth
     )
     .mockResolvedValueOnce({ events: [event(2)], lastSeq: 2, nextAfterSeq: null })
   const update = vi.fn()
-  const ledger = createComparisonLedger({ call } as unknown as Pick<Client, 'call'>, 'legacy', update)
+  const ledger = createComparisonLedger({ call } as unknown as Pick<Client, 'call'>, 'legacy', update, t)
   ledger.head(1)
   ledger.head(2)
   finish({ events: [event(1)], lastSeq: 1, nextAfterSeq: null })
@@ -633,6 +644,7 @@ it('retries a failed fixed cut only on a later refresh, without duplicating acti
     { comparison: { events } } as unknown as Client,
     { id: 'pair', side: 'left', sessionId: 'lane' },
     update,
+    t,
   )
   ledger.cut(2, 1)
   await vi.waitFor(() => expect(update.mock.lastCall?.[1]).toContain('INTERNAL_ERROR'))
@@ -2303,7 +2315,7 @@ it.each(['full', 'released', 'release'] as const)(
     expect(document.querySelector('.comparison-rounds')?.textContent).not.toContain('已取消')
     expect(document.querySelector('.comparison-rounds')?.textContent).not.toContain('已完成')
     expect(document.querySelector('.comparison-graph-column [data-stage="answer"]')?.textContent).toContain(
-      '未观测请求',
+      '尚无请求',
     )
     seek(85)
     await vi.waitFor(() => assertCursor(85))
@@ -2481,6 +2493,7 @@ it.each(['gap', 'incomplete', 'bytes', 'identity', 'bound', 'permission'] as con
       capture.id,
       capture.reports.map((report) => report.lane),
       (state) => states.push(state),
+      t,
     )
     await journal.read()
     expect(states.at(-1)?.mode).toBe('error')
@@ -2523,6 +2536,7 @@ it('fixes each journal page boundary while new publications arrive, preserving t
     capture.id,
     capture.reports.map((report) => report.lane),
     (state) => states.push(state),
+    t,
   )
   await journal.read()
   expect(states.at(-1)?.throughSeq).toBe(225)
@@ -2574,7 +2588,7 @@ it('renders API partial totals as known subtotals and independent currencies wit
   }
   accounting.issues = ['incomplete_reader']
   const host = document.createElement('div')
-  const metrics = createComparisonMetrics(host)
+  const metrics = createComparisonMetrics(host, undefined, t)
   metrics.render({
     id: 'wire',
     atSeq: 225,
@@ -3208,7 +3222,7 @@ it('renders all four captured accounting members and binds each lazy price reade
     )
   })
   const host = document.createElement('div')
-  const view = createComparisonMetrics(host, load)
+  const view = createComparisonMetrics(host, load, t)
   view.render(captured.metrics)
   expect(host.textContent).toContain('左：Jev 0 / LLM 9')
   expect(host.textContent).toContain('右：Jev 6 / LLM 7')
@@ -3307,7 +3321,7 @@ it.each([
     return result
   })
   const host = document.createElement('div')
-  const view = createComparisonPriceDetails(host, value, lane, load)
+  const view = createComparisonPriceDetails(host, value, lane, load, undefined, t)
   const panel = required(host.querySelector('details'))
   expect(panel.open).toBe(false)
   expect(load).not.toHaveBeenCalled()
@@ -3365,7 +3379,7 @@ it('retains expanded quotes, active reads and loaded data across equivalent fixe
       }),
   )
   const host = document.createElement('div')
-  const metrics = createComparisonMetrics(host, load)
+  const metrics = createComparisonMetrics(host, load, t)
   const lane = {
     side: 'right' as const,
     sessionId: report.sessionId,
@@ -3434,7 +3448,7 @@ it('does not install late price details after the shared cursor changes', async 
       }),
   )
   const host = document.createElement('div')
-  const metrics = createComparisonMetrics(host, load)
+  const metrics = createComparisonMetrics(host, load, t)
   const lane = {
     side: 'right' as const,
     sessionId: 'r',
@@ -3467,4 +3481,32 @@ it('does not install late price details after the shared cursor changes', async 
   expect(host.textContent).not.toContain('已读完可见请求')
   expect(host.textContent).toContain('准备配置：未知')
   metrics.reset()
+})
+
+it('freezes draft JevLoop stage bindings into the jevloop lane of a new comparison', async () => {
+  const create = vi.fn(async () => {
+    throw new Error('create reply lost')
+  })
+  const client = {
+    comparison: {
+      create,
+      get: vi.fn(),
+      submit: vi.fn(),
+      list: async () => ({ items: [], nextCursor: null }),
+    },
+    session: { new: vi.fn(), prompt: vi.fn() },
+  } as unknown as Client
+  const jevStages = { arbitration: { route: 'local', model: 'strong', thinking: 'high' as const } }
+  const workspace = createComparisonWorkspace(client, () => ({
+    runtimes: [descriptor, { ...descriptor, id: 'jevloop', label: 'JevLoop' }],
+    workspaces: [{ path: '/project' }] as never,
+    cwd: '/project',
+    jevStages,
+  }))
+  await workspace.startDraft('stage-draft', 'task with stage bindings').catch(() => undefined)
+  const entry = JSON.parse(sessionStorage.getItem('agnes-web-comparison') ?? 'null')
+  // Only the JevLoop lane carries the bindings; the Native lane stays a plain runtime choice.
+  expect(entry.creation.params.left).toEqual({ runtime: 'native' })
+  expect(entry.creation.params.right).toEqual({ runtime: 'jevloop', jevStages })
+  document.querySelector('dialog')?.remove()
 })

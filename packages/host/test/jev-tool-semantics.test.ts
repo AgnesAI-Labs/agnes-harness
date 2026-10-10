@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { askUserQuestionTool, subagentInterruptTool, subagentSendMessageTool } from '@agnes/base'
+import { askUserQuestionTool, subagentInterruptTool, subagentSendMessageTool, TOOLS_CORE } from '@agnes/base'
 import { type SessionImpl, ToolRegistry } from '@agnes/core'
 import { readTool } from '@agnes/core/testkit'
 import type { ToolContext, ToolDef } from '@agnes/extension-api'
@@ -14,7 +14,11 @@ import type {
 } from '@agnes/jev-runtime'
 import { type TSchema, Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
-import { createJevToolSemantics } from '../src/runtime/jev-tool-semantics.js'
+import {
+  createJevToolSemantics,
+  observedBuiltinWriteFailure,
+  observedBuiltinWriteNotEntered,
+} from '../src/runtime/jev-tool-semantics.js'
 
 const epoch = 'epoch' as FrozenIntent['environmentEpoch']
 type FixtureSchema = {
@@ -42,7 +46,12 @@ function fixtureSchema(value: FixtureSchema): TSchema {
   if (type === 'integer') return Type.Integer(constraints)
   throw new Error(`Unsupported fixture type ${type}`)
 }
-function fixture(sourceOverride?: string, trust: 'builtin' | 'trusted' = 'builtin', changedSchema = false) {
+function fixture(
+  sourceOverride?: string,
+  trust: 'builtin' | 'trusted' = 'builtin',
+  changedSchema = false,
+  realMutation = false,
+) {
   const registry = new ToolRegistry()
   const baseTool = readTool() as ToolDef
   for (const name of ['read', 'find', 'grep', 'ls', 'write', 'edit']) {
@@ -50,12 +59,23 @@ function fixture(sourceOverride?: string, trust: 'builtin' | 'trusted' = 'builti
       readFileSync(new URL(`../../base/fixtures/tool-schemas/${name}.json`, import.meta.url), 'utf8'),
     )
     if (changedSchema) properties.properties.path.minLength = 2
+    const definition =
+      realMutation && ['read', 'write', 'edit'].includes(name)
+        ? TOOLS_CORE.find((tool) => tool.name === name)
+        : baseTool
+    if (!definition) throw new Error(`Missing builtin tool ${name}`)
     registry.add(
       {
-        ...baseTool,
-        meta: { ...baseTool.meta, isReadOnly: name !== 'write' && name !== 'edit' },
+        ...definition,
+        meta: {
+          ...definition.meta,
+          isReadOnly: name !== 'write' && name !== 'edit',
+        },
         name,
-        parameters: fixtureSchema(properties),
+        parameters:
+          realMutation && ['read', 'write', 'edit'].includes(name)
+            ? definition.parameters
+            : fixtureSchema(properties),
       },
       {
         source:
@@ -143,6 +163,7 @@ function fixture(sourceOverride?: string, trust: 'builtin' | 'trusted' = 'builti
     intent,
     context,
     ledger,
+    reopen: () => createJevToolSemantics({ session, ledger, readPageLines: 2 }),
     records,
     candidates,
     replaceBytes: (value: string) => {
@@ -418,6 +439,197 @@ describe('verified Agnes tool companions', () => {
         },
       ),
     ).rejects.toThrow('source changed')
+  })
+
+  it('reconciles only live Host-captured single-file attempts with a later complete trusted read', async () => {
+    const h = fixture(undefined, 'builtin', false, true)
+    const intent = h.intent('write', { path: '/w/a', content: 'new' })
+    const observed = await h.observeExecution(intent, h.context, async (context) => {
+      await context.fs.read('/w/a')
+      await context.fs.write('/w/a', 'new')
+      return { isError: true, content: [] }
+    })
+    const meta = observed.meta
+    const outcome = { kind: 'error', effect: 'unknown', meta, effectEvidence: { nestedTools: [] } } as never
+    const readIntent = { ...h.intent('read', { path: '/w/a' }), id: 'read-intent' as FrozenIntent['id'] }
+    const read = await h.observeExecution(readIntent, h.context, async (context) => {
+      await context.fs.read('/w/a', { limit: 4 * 1024 * 1024 + 1 })
+      return { content: [] }
+    })
+    const records = [
+      { kind: 'action.intended', id: 'mutation-source', intent },
+      { kind: 'action.settled', id: 'unknown-source', intentId: intent.id, effect: 'unknown', outcome },
+      { kind: 'action.intended', id: 'read-source', intent: readIntent },
+      {
+        kind: 'action.settled',
+        id: 'read-result',
+        intentId: readIntent.id,
+        effect: 'none',
+        outcome: { kind: 'success', meta: read.meta },
+      },
+    ] as unknown as RuntimeRecord[]
+    const signal = new AbortController().signal
+    const proof = await h.reconcileEffect(intent, outcome, records, signal)
+    expect(proof).toMatchObject({
+      resolution: 'reconciled_state',
+      evidence: ['unknown-source', 'read-source', 'read-result'],
+      proof: { historyDisposition: 'unknown-retained', complete: true },
+    })
+    expect(
+      await fixture(undefined, 'builtin', false, true).reconcileEffect(intent, outcome, records, signal),
+    ).toBeUndefined()
+    expect(
+      await h.reconcileEffect(
+        intent,
+        { ...(outcome as object), meta: { fileWriteAttempt: { completed: true } } } as never,
+        records,
+        signal,
+      ),
+    ).toBeUndefined()
+    expect(
+      await h.reconcileEffect(
+        intent,
+        { ...(outcome as object), effectEvidence: {} } as never,
+        records,
+        signal,
+      ),
+    ).toBeUndefined()
+    expect(
+      await h.reconcileEffect(
+        intent,
+        outcome,
+        [...records, { kind: 'action.intended', id: 'later-mutation', intent }] as RuntimeRecord[],
+        signal,
+      ),
+    ).toBeUndefined()
+    expect(
+      await h.reconcileEffect(
+        intent,
+        { ...(outcome as object), effectEvidence: { nestedTools: [{ effect: 'unknown' }] } } as never,
+        records,
+        signal,
+      ),
+    ).toBeUndefined()
+    const next = {
+      ...h.intent('write', { path: '/w/a', content: 'updated file contents' }),
+      id: 'next-write' as FrozenIntent['id'],
+    }
+    h.replaceBytes('concurrent change')
+    expect(await h.reconcileEffect(intent, outcome, records, signal)).toBeUndefined()
+    const write = TOOLS_CORE.find((tool) => tool.name === 'write')
+    if (!write) throw new Error('Missing builtin write')
+    const refused = await h.observeExecution(next, h.context, (context) =>
+      write.execute(next.arguments as never, context),
+    )
+    expect(refused.result.isError).toBe(true)
+    expect(observedBuiltinWriteNotEntered(next, refused.meta)).toBe(true)
+    expect(refused.meta).toMatchObject({ fileWriteAttempt: { versionRefusal: true, writeCalls: 0 } })
+    const updatedRead = { ...readIntent, id: 'updated-read' as FrozenIntent['id'] }
+    await h.observeExecution(updatedRead, h.context, async (context) => {
+      await context.fs.read('/w/a', { limit: 4 * 1024 * 1024 + 1 })
+      return { content: [] }
+    })
+    let raced: unknown
+    try {
+      await h.observeExecution(next, h.context, async (context) => {
+        await context.fs.read('/w/a')
+        h.replaceBytes('changed after tool read')
+        await context.fs.write('/w/a', 'must not be written')
+        return { content: [] }
+      })
+    } catch (error) {
+      raced = error
+    }
+    const raceMeta = observedBuiltinWriteFailure(raced)
+    expect(raced).toBeInstanceOf(Error)
+    expect(observedBuiltinWriteNotEntered(next, raceMeta)).toBe(true)
+    expect(raceMeta).toMatchObject({ fileWriteAttempt: { versionRefusal: true, writeCalls: 0 } })
+    await h.observeExecution(
+      { ...updatedRead, id: 'race-read' as FrozenIntent['id'] },
+      h.context,
+      async (context) => {
+        await context.fs.read('/w/a', { limit: 4 * 1024 * 1024 + 1 })
+        return { content: [] }
+      },
+    )
+    const refreshed = await h.observeExecution(next, h.context, (context) =>
+      write.execute(next.arguments as never, context),
+    )
+    expect(refreshed.result.isError).not.toBe(true)
+    for (const record of records) await h.ledger.commit(record)
+    const persistedProof = {
+      kind: 'resource.observed',
+      id: 'recovery-proof',
+      resource: {
+        kind: 'jev.effect-recovery.proof.v1',
+        intentId: intent.id,
+        settlementRecordId: 'unknown-source',
+        resolution: 'reconciled_state',
+        evidence: proof?.evidence,
+        proof: proof?.proof,
+      },
+    } as unknown as RuntimeRecord
+    await h.ledger.commit(persistedProof)
+    const restartedWrite = {
+      ...next,
+      id: 'restarted-write' as FrozenIntent['id'],
+      arguments: { path: '/w/a', content: 'z'.repeat(100) },
+    }
+    h.replaceBytes('changed while Host was closed')
+    const orphan = await h.reopen().observeExecution(restartedWrite, h.context, async (context) => {
+      await context.fs.write('/w/a', 'not guarded by an orphan proof')
+      return { content: [] }
+    })
+    expect(orphan.result.isError).not.toBe(true)
+    await h.ledger.commit({
+      kind: 'action.resolved',
+      id: 'recovery-resolution',
+      intentId: intent.id,
+      actor: 'host:effect-recovery',
+      resolution: 'reconciled_state',
+      evidence: ['unknown-source', 'mutation-source', 'read-source', 'read-result', 'recovery-proof'],
+      explanation: 'Host current-state proof',
+    } as unknown as RuntimeRecord)
+    const reopened = h.reopen()
+    const restartRefusal = await reopened.observeExecution(restartedWrite, h.context, (context) =>
+      write.execute(restartedWrite.arguments as never, context),
+    )
+    expect(restartRefusal.result.isError).toBe(true)
+    expect(observedBuiltinWriteNotEntered(restartedWrite, restartRefusal.meta)).toBe(true)
+    expect(restartRefusal.meta).toMatchObject({ fileWriteAttempt: { versionRefusal: true, writeCalls: 0 } })
+    await reopened.observeExecution(
+      { ...readIntent, id: 'restarted-read' as FrozenIntent['id'] },
+      h.context,
+      async (context) => {
+        await context.fs.read('/w/a', { limit: 4 * 1024 * 1024 + 1 })
+        return { content: [] }
+      },
+    )
+    const restartRetry = await reopened.observeExecution(restartedWrite, h.context, (context) =>
+      write.execute(restartedWrite.arguments as never, context),
+    )
+    expect(restartRetry.result.isError).not.toBe(true)
+    await h.ledger.commit({
+      kind: 'action.intended',
+      id: 'restarted-write-source',
+      intent: restartedWrite,
+    } as unknown as RuntimeRecord)
+    await h.ledger.commit({
+      kind: 'action.settled',
+      id: 'restarted-write-result',
+      intentId: restartedWrite.id,
+      effect: 'acknowledged',
+      outcome: { kind: 'success', meta: restartRetry.meta },
+    } as unknown as RuntimeRecord)
+    h.replaceBytes('new content after completed mutation')
+    const consumed = await h
+      .reopen()
+      .observeExecution(
+        { ...restartedWrite, id: 'after-consumed' as FrozenIntent['id'] },
+        h.context,
+        (context) => write.execute(restartedWrite.arguments as never, context),
+      )
+    expect(consumed.result.isError).not.toBe(true)
   })
 
   it('does not adopt same-named foreign tools or facts predating a mutation', () => {

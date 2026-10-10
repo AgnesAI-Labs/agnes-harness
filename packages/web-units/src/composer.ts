@@ -1,5 +1,5 @@
-import type { ModelSettings, RuntimeDescriptor, UsageView } from '@agnes/protocol'
-import { ModelSettingsDialog } from '@agnes/web-ui'
+import type { DecisionBackendStatus, ModelSettings, RuntimeDescriptor, UsageView } from '@agnes/protocol'
+import { ModelSettingsDialog, type StageBindings, type StageModelOption } from '@agnes/web-ui'
 import {
   type ComponentType,
   createElement,
@@ -77,6 +77,7 @@ export interface ComposerView {
   input: { disabled: boolean; placeholder: string }
   loading: boolean
   model: ModelPickerState
+  decision?: { selected: 'jev' | 'laya'; disabled: boolean; options: readonly DecisionBackendStatus[] }
   runtime?: {
     selected: string
     label: string
@@ -92,6 +93,8 @@ export interface ComposerView {
     settings: ModelSettings
     contextWindow: number
     thinkingLevelMap?: Record<string, string> | undefined
+    /** JevLoop single-line sessions and drafts only: per-stage model bindings. */
+    stages?: { options: readonly StageModelOption[]; value: StageBindings } | undefined
   }
   permission: PermissionPickerState & { hidden?: boolean }
   sending: boolean
@@ -115,8 +118,9 @@ export interface ComposerRegionOptions {
   onDraftChange(value: string): void
   onError(error: unknown): void
   onModelSelect(option: ModelPickerOption): Promise<boolean>
-  onModelSettingsChange?(settings: ModelSettings): Promise<boolean>
+  onModelSettingsChange?(settings: ModelSettings, stages?: StageBindings): Promise<boolean>
   onRuntimeSelect?(runtime: string): void
+  onDecisionBackendSelect?(backend: 'jev' | 'laya'): void
   onPermissionSelect(mode: PermissionMode): Promise<boolean>
   onSubmit(): void
   onWorkspace(): void
@@ -173,6 +177,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     onModelSelect,
     onModelSettingsChange,
     onRuntimeSelect,
+    onDecisionBackendSelect,
     onPermissionSelect,
     onSubmit,
     onWorkspace,
@@ -330,6 +335,39 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 ),
               ),
             )
+        : undefined,
+      view.decision
+        ? createElement(
+            'label',
+            { className: 'composer-decision' },
+            createElement(
+              'select',
+              {
+                className: 'composer-runtime',
+                'aria-label': '选择本轮决策后端',
+                title: '本轮决策后端',
+                value: view.decision.selected,
+                disabled: view.decision.disabled,
+                onChange: (event: FormEvent<HTMLSelectElement>) => {
+                  const backend = event.currentTarget.value
+                  if (backend === 'jev' || backend === 'laya') onDecisionBackendSelect?.(backend)
+                },
+              },
+              ...view.decision.options.map((option) =>
+                createElement(
+                  'option',
+                  {
+                    key: option.backend,
+                    value: option.backend,
+                    disabled: !option.available,
+                  },
+                  option.available
+                    ? option.label
+                    : `${option.label} · ${option.unavailableReason ?? '暂不可用'}`,
+                ),
+              ),
+            ),
+          )
         : undefined,
       createElement(
         'button',

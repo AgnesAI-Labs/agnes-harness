@@ -580,6 +580,16 @@ export class RemoteSession {
     return result.effectiveFromSeq
   }
 
+  /** Read-only model-slot projection; computed worker-side where the live session preset is. */
+  jevModelSlots(): Promise<unknown> {
+    return this.link.command('jevModelSlots', {})
+  }
+  async setJevStages(input: { stages: unknown }): Promise<number> {
+    const result = (await this.link.command('setJevStages', { stages: input.stages })) as {
+      effectiveFromSeq: number
+    }
+    return result.effectiveFromSeq
+  }
   async setModel(sel: unknown): Promise<number> {
     const result = (await this.link.command('setModel', { sel })) as { effectiveFromSeq: number }
     this.lastSeq = Math.max(this.lastSeq, result.effectiveFromSeq)

@@ -20,7 +20,10 @@ import { durableJson, freezeJson } from './model-json.js'
 
 export interface LanguageHost {
   readonly provider: Provider
-  readonly selection: Pick<RequestBody, 'slot' | 'route' | 'model' | 'contractId'>
+  /** Resolves the model identity per language purpose; the host decides the slot, route and model. */
+  readonly selection: (
+    purpose: LanguageInput['purpose'],
+  ) => Pick<RequestBody, 'slot' | 'route' | 'model' | 'contractId'>
   /** Host-resolved exact request pricing, captured before the durable model.requested admission. */
   readonly pricing?: (request: RequestBody) => ModelPriceQuote | null
   readonly sessionKey: string
@@ -30,7 +33,8 @@ export interface LanguageHost {
   readonly maxImageRequestBytes?: number
   /** Exact Host-owned input sources; declared snapshots become chronological facts, not instructions. */
   readonly inputPolicies?: Readonly<Record<string, DecisionInputPolicy>>
-  readonly sampling?: RequestBody['sampling']
+  /** Per-purpose sampling; a stage may carry a different thinking level than another. */
+  readonly sampling?: (purpose: LanguageInput['purpose']) => RequestBody['sampling']
   readonly maxFormatRetries: number
   readonly maxResponseBytes: number
   readonly hashRequest: (body: Omit<RequestBody, 'derivedHash'>) => string
@@ -52,7 +56,8 @@ export function createLanguageBackend(host: LanguageHost): LanguageBackend {
     maxFormatRetries: host.maxFormatRetries,
     async prepare(input, signal) {
       signal.throwIfAborted()
-      const selection = structuredClone(host.selection)
+      const selection = structuredClone(host.selection(input.purpose))
+      const sampling = host.sampling?.(input.purpose)
       const context = createLanguageContext(input, host.inputPolicies)
       if (context.toolImages.length) assertImageModel(host.provider, selection)
       await materializeToolImages(
@@ -69,7 +74,7 @@ export function createLanguageBackend(host: LanguageHost): LanguageBackend {
         system: host.system,
         messages: context.messages,
         tools: context.tools,
-        ...(host.sampling === undefined ? {} : { sampling: structuredClone(host.sampling) }),
+        ...(sampling === undefined ? {} : { sampling: structuredClone(sampling) }),
       }
       const derivedHash = host.hashRequest(structuredClone(body))
       if (!/^[0-9a-f]{64}$/.test(derivedHash)) throw new TypeError('Request hash must be SHA-256 hex')

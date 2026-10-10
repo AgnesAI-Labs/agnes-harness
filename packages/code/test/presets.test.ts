@@ -206,11 +206,16 @@ describe('standard.yaml', () => {
     })
     expect(doc.mcp).toEqual({ defer: true })
     expect(doc.sandbox).toEqual({ level: 'L0', required: false, on_unavailable: 'allow' })
-    // Spend ceiling for one request. Widening it costs money silently; nothing else asserts it.
-    expect(doc.budget).toEqual({ per_request_cap: 4000, max_steps: null })
+    // Ordinary tasks retain usage records without a mandatory monetary ceiling.
+    expect(doc.budget).toEqual({ per_request_cap: null, max_steps: null })
     // `isolation: worktree` is what keeps a subagent's writes off the operator's checkout. `none`
     // parses just as well and is a containment change, so the value is pinned, not just the key.
-    expect(doc.subagent).toEqual({ max_depth: 1, max_fan_out: 4, isolation: 'worktree' })
+    expect(doc.subagent).toEqual({
+      max_depth: 1,
+      max_fan_out: 4,
+      isolation: 'worktree',
+      tree_budget_credits: 'unlimited',
+    })
     expect(doc.ext_ui).toEqual({ input: 'prompt', unattended: 'decline' })
     expect(doc.hooks).toEqual(['session_start', 'tool_call', 'tool_result', 'format_deviation'])
   })
@@ -319,12 +324,12 @@ describe('standard.yaml', () => {
     expect(presets.standard).toEqual(doc)
     expect(Object.keys(presets)).toEqual([...PRESET_NAMES])
   })
-  it('explicitly opts the no-credit-cap recipe out of both request and new tree caps', () => {
+  it('keeps the no-credit-cap compatibility recipe aligned with ordinary standard tasks', () => {
     const unlimited = loadPreset('standard-no-credit-cap')
     expect(unlimited.extends).toBe('standard')
     expect(unlimited.budget).toEqual({ per_request_cap: null })
     expect(unlimited.subagent).toEqual({ tree_budget_credits: 'unlimited' })
-    expect(doc.subagent).not.toHaveProperty('tree_budget_credits')
+    expect(doc.subagent).toHaveProperty('tree_budget_credits', 'unlimited')
   })
 
   it('ships a file for every registered name, each declaring its own name', () => {

@@ -1,15 +1,13 @@
 import type { ComparisonSnapshot } from '@agnes/protocol'
 import type { PermissionMode, PermissionOption } from '@agnes/web-session-ui/permission-picker'
 import type { ComparisonCreation, ComparisonEntry, ComparisonPendingInput } from './comparison-entry.js'
+import type { Translate } from './jev-locale.js'
 
+/** Labels and descriptions are locale keys; translate them through `t` before rendering. */
 export const COMPARISON_PERMISSION_OPTIONS: readonly PermissionOption[] = [
-  { id: 'view', label: '自动拒绝审批', description: '需审批的操作自动拒绝；不等同于文件系统只读隔离' },
-  { id: 'workspace', label: '手动审批', description: '需审批的操作等待确认；两侧保持对比目录隔离' },
-  {
-    id: 'full',
-    label: '自动审批（保持隔离）',
-    description: '跳过交互审批；保留对比目录隔离、安全禁令和系统权限',
-  },
+  { id: 'view', label: 'perm.view.label', description: 'perm.view.description' },
+  { id: 'workspace', label: 'perm.workspace.label', description: 'perm.workspace.description' },
+  { id: 'full', label: 'perm.full.label', description: 'perm.full.description' },
 ]
 
 export type PermissionInput = ComparisonPendingInput & { permissionMode?: PermissionMode }
@@ -19,8 +17,9 @@ type PermissionEntry = Omit<ComparisonEntry, 'pending' | 'creation'> & {
   creation?: PermissionCreation
 }
 
-export function comparisonPermissionLabel(mode: PermissionMode | undefined): string {
-  return COMPARISON_PERMISSION_OPTIONS.find((option) => option.id === mode)?.label ?? '权限模式未记录'
+export function comparisonPermissionLabel(mode: PermissionMode | undefined, t: Translate): string {
+  const option = COMPARISON_PERMISSION_OPTIONS.find((option) => option.id === mode)
+  return option === undefined ? t('perm.label.missing') : t(option.label)
 }
 
 /** Legacy preparation is only a fallback for the current selection, never evidence for a historical round. */

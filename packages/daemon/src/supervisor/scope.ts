@@ -136,7 +136,9 @@ async function profileForScope(
   const home = await canonicalPath(input.home as string)
   const profile = profileName(input.profile as string)
   const workspace = await canonicalPath(input.workspace as string)
-  const configuration = input.configuration ?? createConfigurationService({ home, profile })
+  const configuration =
+    input.configuration ??
+    createConfigurationService({ home, profile, ...(input.env ? { env: input.env } : {}) })
   const inputs = await readConfigurationProfileInputs({
     home,
     cwd: workspace,

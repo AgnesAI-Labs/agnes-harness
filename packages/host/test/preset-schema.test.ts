@@ -70,7 +70,7 @@ describe('shipped presets through host assembly and session creation', () => {
         expect(session.preset.budget).toEqual(resolved.budget)
         expect(session.preset.treeBudgetCredits).toBe(resolved.treeBudgetCredits)
         expect(session.preset.treeBudgetMode).toBe(
-          name === 'standard-no-credit-cap' ? 'unlimited' : 'default',
+          name === 'base' || name === 'minimal-rl' ? 'default' : 'unlimited',
         )
       } finally {
         await host.close()

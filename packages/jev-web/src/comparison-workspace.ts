@@ -1,3 +1,4 @@
+import { projectTrace } from '@agnes/jev-trace'
 import type {
   ComparisonCreateParams,
   ComparisonJournalEntry,
@@ -43,7 +44,8 @@ import {
 } from './comparison-permission.js'
 import { createComparisonReplay } from './comparison-replay.js'
 import { createComparisonTrace } from './comparison-trace.js'
-import { createJevDecisionGraph } from './jev-decision-graph.js'
+import { createJevDecisionGraph, jevTraceEntries } from './jev-decision-graph.js'
+import type { Translate } from './jev-locale.js'
 import { createJevDirectStats } from './jev-stats.js'
 
 type PendingInput = PermissionInput
@@ -54,6 +56,7 @@ export type ComparisonDefaults = {
   cwd?: string
   model?: ComparisonCreateParams['model']
   permissionMode?: PermissionMode
+  jevStages?: ComparisonCreateParams['right']['jevStages']
 }
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] {
@@ -109,13 +112,15 @@ function rejectedBeforeAdmission(error: unknown, id: string, inputId: string): b
 export function createComparisonWorkspace(
   client: Client,
   defaults: () => ComparisonDefaults,
-  navigation: { select?(id: string | undefined): void | Promise<void>; host: HTMLElement },
+  navigation: { select?(id: string | undefined): void | Promise<void>; host: HTMLElement; t: Translate },
 ) {
+  const { t } = navigation
+  const sideText = (side: ComparisonLane['side']) => t(side === 'left' ? 'cmp.sideLeft' : 'cmp.sideRight')
   const dialog = element('dialog')
   dialog.className = 'comparison-workspace'
-  dialog.setAttribute('aria-label', '运行循环对比')
+  dialog.setAttribute('aria-label', t('cmp.title'))
   const heading = element('header')
-  const title = element('h2', '运行循环对比')
+  const title = element('h2', t('cmp.title'))
   const message = element('p')
   message.setAttribute('role', 'status')
   const facts = element('p')
@@ -123,30 +128,30 @@ export function createComparisonWorkspace(
   const setup = element('form')
   setup.className = 'comparison-setup'
   const cwd = element('select')
-  cwd.setAttribute('aria-label', '对比工作区')
+  cwd.setAttribute('aria-label', t('cmp.setupWorkspace'))
   const left = element('select')
-  left.setAttribute('aria-label', '左侧运行循环')
+  left.setAttribute('aria-label', t('cmp.leftRuntime'))
   const right = element('select')
-  right.setAttribute('aria-label', '右侧运行循环')
-  const create = element('button', '创建隔离快照并对比')
+  right.setAttribute('aria-label', t('cmp.rightRuntime'))
+  const create = element('button', t('cmp.createSnapshot'))
   create.type = 'submit'
   setup.append(cwd, left, right, create)
   const permissionControls = element('div')
   permissionControls.className = 'comparison-permission'
   const permissionTrigger = element('button')
   permissionTrigger.type = 'button'
-  permissionTrigger.setAttribute('aria-label', '选择双侧下一轮审批模式')
+  permissionTrigger.setAttribute('aria-label', t('cmp.permissionTriggerLabel'))
   permissionTrigger.setAttribute('aria-haspopup', 'listbox')
   const permissionText = element('span')
   permissionText.dataset.permissionLabel = ''
   permissionTrigger.append(permissionText)
   const permissionHint = element('span')
-  permissionControls.append(element('span', '双侧审批：'), permissionTrigger, permissionHint)
+  permissionControls.append(element('span', t('cmp.permissionHeading')), permissionTrigger, permissionHint)
   const panes = element('div')
   panes.className = 'comparison-panes'
   const mobileLanes = element('nav')
   mobileLanes.className = 'comparison-mobile-lanes'
-  mobileLanes.setAttribute('aria-label', '窄屏对比会话')
+  mobileLanes.setAttribute('aria-label', t('cmp.mobileLanesLabel'))
   let mobileSide: ComparisonLane['side'] | undefined
   function selectMobileSide(side: ComparisonLane['side']) {
     mobileSide = side
@@ -157,10 +162,10 @@ export function createComparisonWorkspace(
   }
   const graphColumn = element('section')
   graphColumn.className = 'comparison-graph-column'
-  graphColumn.setAttribute('aria-label', '双线决策流程图')
-  const graphEmpty = element('p', '等待 JevLoop 决策记录…')
+  graphColumn.setAttribute('aria-label', t('cmp.graphColumnLabel'))
+  const graphEmpty = element('p', t('cmp.graphEmpty'))
   const graphChoice = element('select')
-  graphChoice.setAttribute('aria-label', '流程图所属会话')
+  graphChoice.setAttribute('aria-label', t('cmp.graphChoiceLabel'))
   graphChoice.hidden = true
   graphChoice.addEventListener('change', () => {
     for (const host of graphColumn.querySelectorAll<HTMLElement>(':scope > section'))
@@ -171,9 +176,9 @@ export function createComparisonWorkspace(
   let workspaceView: 'chat' | 'trace' = 'chat'
   const views = element('nav')
   views.className = 'comparison-views'
-  views.setAttribute('aria-label', '双线视图')
-  const chatView = button('对话', () => setWorkspaceView('chat'))
-  const traceView = button('双线轨迹', () => setWorkspaceView('trace'))
+  views.setAttribute('aria-label', t('cmp.viewsLabel'))
+  const chatView = button(t('cmp.chat'), () => setWorkspaceView('chat'))
+  const traceView = button(t('cmp.traceView'), () => setWorkspaceView('trace'))
   views.append(chatView, traceView)
   function setWorkspaceView(view: 'chat' | 'trace') {
     workspaceView = view
@@ -183,7 +188,7 @@ export function createComparisonWorkspace(
   }
   const replayHost = element('div')
   const metricsHost = element('div')
-  const metrics = createComparisonMetrics(metricsHost, client.comparison.priceDetails)
+  const metrics = createComparisonMetrics(metricsHost, client.comparison.priceDetails, t)
   const rounds = element('div')
   rounds.className = 'comparison-rounds'
   rounds.setAttribute('aria-live', 'polite')
@@ -193,17 +198,17 @@ export function createComparisonWorkspace(
   const form = element('form')
   form.className = 'comparison-composer'
   const input = element('textarea')
-  input.setAttribute('aria-label', '发送给两侧的相同输入')
-  input.placeholder = '输入任务，两侧将分别执行。'
-  const submit = element('button', '同时提交两侧')
+  input.setAttribute('aria-label', t('cmp.inputLabel'))
+  input.placeholder = t('cmp.inputPlaceholder')
+  const submit = element('button', t('cmp.submitBoth'))
   submit.type = 'submit'
-  const refresh = button('刷新状态', () => run(refreshSnapshot))
-  const reconcileDurable = button('核对持久状态', () => run(() => refreshSnapshot(true)))
-  const retryPending = button('重试原请求', () => run(() => submitInput(true)))
-  const cancelAll = button('停止两侧', () => run(() => cancelComparison()))
-  const releaseResources = button('释放运行资源', () => run(() => retireComparison('release')))
-  const removeHistory = button('删除对比记录', () => run(() => retireComparison('remove')))
-  const fresh = button('新建对比', () =>
+  const refresh = button(t('cmp.refreshStatus'), () => run(refreshSnapshot))
+  const reconcileDurable = button(t('cmp.reconcileDurable'), () => run(() => refreshSnapshot(true)))
+  const retryPending = button(t('cmp.retryPending'), () => run(() => submitInput(true)))
+  const cancelAll = button(t('cmp.stopBoth'), () => run(() => cancelComparison()))
+  const releaseResources = button(t('cmp.releaseResources'), () => run(() => retireComparison('release')))
+  const removeHistory = button(t('cmp.removeHistory'), () => run(() => retireComparison('remove')))
+  const fresh = button(t('cmp.fresh'), () =>
     run(async () => {
       if (!canSwitch()) return
       const ticket = ++selection
@@ -234,23 +239,23 @@ export function createComparisonWorkspace(
   const management = element('details')
   management.className = 'comparison-management'
   const managementBody = element('div')
-  management.append(element('summary', '管理'), managementBody)
+  management.append(element('summary', t('cmp.management')), managementBody)
   managementBody.append(refresh, reconcileDurable, cancelAll, releaseResources, removeHistory, fresh)
   const results = element('details')
   results.className = 'comparison-results-popover'
-  results.append(element('summary', '对比结果'), metricsHost)
+  results.append(element('summary', t('cmp.resultsSummary')), metricsHost)
   heading.append(
     title,
     views,
     results,
     management,
-    button('关闭', () => dialog.close()),
+    button(t('cmp.close'), () => dialog.close()),
   )
   form.append(input, submit, retryPending)
   const historyHost = element('div')
   const diagnostics = element('details')
   diagnostics.className = 'comparison-diagnostics'
-  diagnostics.append(element('summary', '运行详情与回放'), historyHost, facts, replayHost, rounds)
+  diagnostics.append(element('summary', t('cmp.diagnostics')), historyHost, facts, replayHost, rounds)
   dialog.append(
     heading,
     message,
@@ -354,15 +359,20 @@ export function createComparisonWorkspace(
       return true
     },
     (error) => {
-      metrics.unavailable(`计量或投影读取失败：${error instanceof Error ? error.message : String(error)}`)
+      metrics.unavailable(
+        t('cmp.metricsReadFailed', {
+          message: error instanceof Error ? error.message : String(error),
+        }),
+      )
       fail(error)
     },
+    t,
   )
 
   const fail = (error: unknown) => {
     message.textContent =
-      comparisonCreationMessage(error) ??
-      (error instanceof Error ? error.message : '对比操作失败，请刷新状态。')
+      comparisonCreationMessage(error, t) ??
+      (error instanceof Error ? error.message : t('cmp.operationFailed'))
     pendingFailure = pending ? { input: pending, message: message.textContent } : undefined
   }
   const run = (action: () => Promise<void>) => {
@@ -407,12 +417,17 @@ export function createComparisonWorkspace(
       disabled,
       pending: busy || opening,
       selected: selectedPermission(),
-      options: COMPARISON_PERMISSION_OPTIONS,
+      // Option labels and descriptions are locale keys in COMPARISON_PERMISSION_OPTIONS.
+      options: COMPARISON_PERMISSION_OPTIONS.map((option) => ({
+        ...option,
+        label: t(option.label),
+        description: t(option.description),
+      })),
     })
     permissionHint.textContent =
       snapshot && !canSubmitRound(snapshot)
-        ? `本轮：${comparisonPermissionLabel(activePermission())}；执行或审批中不可切换。`
-        : '只在创建或下一轮提交时生效；两侧始终保持对比目录隔离。'
+        ? t('cmp.permissionHintLocked', { mode: comparisonPermissionLabel(activePermission(), t) })
+        : t('cmp.permissionHintIdle')
   }
   function watchConnection() {
     if (!offConnection && typeof client.on === 'function')
@@ -446,7 +461,7 @@ export function createComparisonWorkspace(
     ) {
       pending = undefined
       creation = undefined
-      message.textContent = '原输入已停止，两侧取消均已确认；草稿已保留。'
+      message.textContent = t('cmp.inputStoppedAck')
       return true
     }
     return false
@@ -485,12 +500,12 @@ export function createComparisonWorkspace(
       if (!current()) return
       if (next.id !== id) throw new Error('停止请求返回了不同的对比记录。')
       if (snapshot && next.revision >= snapshot.revision) snapshot = next
-      message.textContent = `已请求停止${side ? (side === 'left' ? '左侧' : '右侧') : '两侧'}；各侧结束状态以持久记录为准，可核对持久状态。`
+      message.textContent = t('cmp.stopRequested', { target: side ? sideText(side) : t('cmp.bothSides') })
       clearAcknowledgedCancellation()
       save()
       await journal?.read()
     } catch {
-      if (current()) message.textContent = '停止请求结果待确认；输入已保留，请核对持久状态。'
+      if (current()) message.textContent = t('cmp.stopUnconfirmed')
     } finally {
       if (current()) {
         cancelling = false
@@ -544,7 +559,7 @@ export function createComparisonWorkspace(
         if (ticket !== selection || !dialog.open) return
         save()
         await navigation.select?.(id)
-        message.textContent = '已打开保存的对比；切换不会取消另一组的运行。'
+        message.textContent = t('cmp.openedSaved')
       } catch (error) {
         if (ticket === selection && dialog.open) fail(error)
       } finally {
@@ -554,63 +569,94 @@ export function createComparisonWorkspace(
         }
       }
     },
-  })
+  }, t)
   const renderRound = (round: ComparisonRound): HTMLElement => {
-    const row = element('p', `输入 ${round.inputId.slice(0, 8)}：`)
-    row.append(element('span', `审批：${comparisonPermissionLabel(round.permissionMode)}； `))
+    const row = element('p', t('cmp.roundInputLabel', { id: round.inputId.slice(0, 8) }))
+    row.append(
+      element(
+        'span',
+        t('cmp.approvalBlock', {
+          mode: comparisonPermissionLabel(round.permissionMode, t),
+          decision:
+            round.decisionBackend === undefined
+              ? ''
+              : t('cmp.decisionBackend', { backend: round.decisionBackend === 'laya' ? 'Laya' : 'Jev' }),
+        }),
+      ),
+    )
     appendPreparedPermissions(row, round.prepared)
     for (const acceptance of round.acceptances) {
-      const side = acceptance.side === 'left' ? '左侧' : '右侧'
+      const side = sideText(acceptance.side)
       const cause = round.terminalCauses?.find((item) => item.side === acceptance.side)?.cause
       const terminalLabel = {
-        finished: '已完成',
-        cancelled: '已取消',
-        failed: '失败',
-        unknown: '结束原因未知',
+        finished: t('cmp.terminalFinished'),
+        cancelled: t('cmp.terminalCancelled'),
+        failed: t('cmp.terminalFailed'),
+        unknown: t('cmp.terminalUnknown'),
       }
       row.append(
         element(
           'span',
           acceptance.status === 'accepted'
-            ? `${side} 已接收 #${acceptance.seq} · ${cause ? terminalLabel[cause] : round.settledSides.includes(acceptance.side) ? '结束原因未知' : '执行中'}； `
-            : `${side} ${acceptance.status === 'unknown' ? '接收状态待确认' : '接收失败'}${acceptance.error ? ` · ${acceptance.error.message}` : ''}； `,
+            ? t('cmp.acceptedTerminal', {
+                side,
+                seq: acceptance.seq,
+                terminal: cause
+                  ? terminalLabel[cause]
+                  : round.settledSides.includes(acceptance.side)
+                    ? t('cmp.terminalUnknown')
+                    : t('cmp.inProgress'),
+              })
+            : t('cmp.acceptOutcome', {
+                side,
+                status: acceptance.status === 'unknown' ? t('cmp.acceptUnknown') : t('cmp.acceptFailed'),
+                error: acceptance.error ? ` · ${acceptance.error.message}` : '',
+              }),
         ),
       )
     }
     return row
   }
   function renderJournalRound() {
-    const row = element('p', `共享协调事实 · journal #${coordinatorCursor ?? 0}`)
+    const row = element('p', t('cmp.coordinatorFact', { seq: coordinatorCursor ?? 0 }))
     if (!coordinator) {
-      row.append(' · 此前缀尚无协调事实')
+      row.append(t('cmp.noCoordinatorFact'))
       return row
     }
-    row.append(` · 修订 ${coordinator.revision} · ${coordinator.creation} · ${coordinator.roundCount} 轮`)
+    row.append(
+      t('cmp.coordinatorMeta', {
+        revision: coordinator.revision,
+        creation: coordinator.creation,
+        rounds: coordinator.roundCount,
+      }),
+    )
     const round = coordinator.latestRound
     if (round) {
-      row.append(` · 输入 ${round.inputId.slice(0, 8)}：`)
-      row.append(`审批：${comparisonPermissionLabel(round.permissionMode)}； `)
+      row.append(t('cmp.coordinatorInput', { id: round.inputId.slice(0, 8) }))
+      row.append(t('cmp.approvalBlock', { mode: comparisonPermissionLabel(round.permissionMode, t), decision: '' }))
       appendPreparedPermissions(row, round.prepared)
       for (const side of ['left', 'right'] as const) {
         const accepted = round.acceptances[side]
         const cause = round.terminalCauses[side]
         const acceptance =
           accepted === 'accepted'
-            ? `已接收${round.acceptedSeqs[side] === undefined ? '（序号未知）' : ` #${round.acceptedSeqs[side]}`}`
+            ? round.acceptedSeqs[side] === undefined
+              ? t('cmp.acceptedSeqUnknown')
+              : t('cmp.acceptedSeq', { seq: round.acceptedSeqs[side] })
             : accepted === 'rejected'
-              ? '接收失败'
-              : '接收状态待确认'
+              ? t('cmp.acceptFailed')
+              : t('cmp.acceptUnknown')
         const terminal =
           cause === 'finished'
-            ? '已完成'
+            ? t('cmp.terminalFinished')
             : cause === 'cancelled'
-              ? '已取消'
+              ? t('cmp.terminalCancelled')
               : cause === 'failed'
-                ? '失败'
+                ? t('cmp.terminalFailed')
                 : round.runs[side] === 'settled'
-                  ? '结束原因未知'
-                  : `执行状态 ${round.runs[side]}`
-        row.append(element('span', `${side === 'left' ? '左侧' : '右侧'} ${acceptance} · ${terminal}； `))
+                  ? t('cmp.terminalUnknown')
+                  : t('cmp.runState', { state: round.runs[side] })
+        row.append(element('span', t('cmp.journalSideOutcome', { side: sideText(side), acceptance, terminal })))
       }
     }
     for (const side of ['left', 'right'] as const) {
@@ -619,7 +665,15 @@ export function createComparisonWorkspace(
         row.append(
           element(
             'span',
-            `${side === 'left' ? '左侧' : '右侧'}停止请求：${state === 'acknowledged' ? '已确认接收（不代表已结束）' : state === 'unknown' ? '结果待确认' : '已请求'}； `,
+            t('cmp.stopState', {
+              side: sideText(side),
+              state:
+                state === 'acknowledged'
+                  ? t('cmp.stopAcked')
+                  : state === 'unknown'
+                    ? t('cmp.stopUnknown')
+                    : t('cmp.stopRequestedShort'),
+            }),
           ),
         )
     }
@@ -633,7 +687,11 @@ export function createComparisonWorkspace(
         host.append(
           element(
             'span',
-            `${side === 'left' ? '左侧' : '右侧'}实际审批 ${permission.approvalMode ?? '未知'} · YOLO ${permission.yolo ? '启用' : '关闭'}； `,
+            t('cmp.effectiveApproval', {
+              side: sideText(side),
+              mode: permission.approvalMode ?? t('cmp.unknown'),
+              yolo: permission.yolo ? t('cmp.yoloOn') : t('cmp.yoloOff'),
+            }),
           ),
         )
     }
@@ -656,7 +714,7 @@ export function createComparisonWorkspace(
     for (const lane of lanes.values())
       lane.mutable(replay.live() && (snapshot?.storageState ?? 'full') === 'full')
     for (const select of [cwd, left, right]) select.disabled = busy || pendingCreate !== undefined
-    create.textContent = pendingCreate ? '确认上次创建结果' : '创建隔离快照并对比'
+    create.textContent = pendingCreate ? t('cmp.confirmCreation') : t('cmp.createSnapshot')
     create.disabled =
       restoreFailed ||
       busy ||
@@ -670,7 +728,7 @@ export function createComparisonWorkspace(
     cancelAll.disabled = !canCancel()
     const storageState = snapshot?.storageState ?? 'full'
     releaseResources.hidden = !snapshot || !['full', 'releasing'].includes(storageState)
-    releaseResources.textContent = storageState === 'releasing' ? '重试释放资源' : '释放运行资源'
+    releaseResources.textContent = storageState === 'releasing' ? t('cmp.retryRelease') : t('cmp.releaseResources')
     releaseResources.disabled =
       !canSwitch() ||
       refreshPending ||
@@ -690,10 +748,10 @@ export function createComparisonWorkspace(
       !connected()
     submit.textContent =
       storageState !== 'full'
-        ? '此对比已停止继续运行'
+        ? t('cmp.stoppedRunning')
         : snapshot && !canSubmitRound(snapshot)
-          ? '等待两侧完成或核对持久状态'
-          : '同时提交两侧'
+          ? t('cmp.waitingSettle')
+          : t('cmp.submitBoth')
     input.disabled = storageState !== 'full' || pending !== undefined || busy || opening || !replay.live()
     retryPending.hidden = pending === undefined
     retryPending.disabled =
@@ -709,23 +767,45 @@ export function createComparisonWorkspace(
     const cancellation = pendingCancellation()
     inputCancellation.hidden = !cancellation || !replay.live()
     inputCancellation.textContent = cancellation
-      ? `此输入已禁止再次执行；${(['left', 'right'] as const)
-          .map((side) => {
-            const status = cancellation.states.find((item) => item.side === side)?.status
-            return `${side === 'left' ? '左侧' : '右侧'}${status === 'acknowledged' ? '取消已确认' : status === 'requested' ? '正在取消' : status === 'unknown' ? '取消结果待确认' : '尚未请求取消'}`
-          })
-          .join(' · ')}。可停止两侧并核对持久状态。`
+      ? t('cmp.inputCancelled', {
+          states: (['left', 'right'] as const)
+            .map((side) => {
+              const status = cancellation.states.find((item) => item.side === side)?.status
+              return t('cmp.cancelState', {
+                side: sideText(side),
+                state:
+                  status === 'acknowledged'
+                    ? t('cmp.cancelConfirmed')
+                    : status === 'requested'
+                      ? t('cmp.cancelling')
+                      : status === 'unknown'
+                        ? t('cmp.cancelPending')
+                        : t('cmp.cancelNotRequested'),
+              })
+            })
+            .join(' · '),
+        })
       : ''
     refresh.disabled = refreshPending || opening || cancelling
     reconcileDurable.disabled = !snapshot || refreshPending || opening || busy || cancelling || !replay.live()
     facts.textContent = snapshot
-      ? `基线 ${snapshot.baselineId} · 摘要 ${snapshot.baselineDigest.slice(0, 12)} · 策略 ${snapshot.policyHash.slice(0, 12)}${storageState === 'released' ? ' · 运行资源已释放，历史已归档' : storageState === 'releasing' ? ' · 资源回收待完成' : ''}`
-      : '在同一工作区快照、模型和默认预设下创建两个独立会话。每侧单独接收输入，可能部分失败。'
+      ? t('cmp.facts', {
+          baseline: snapshot.baselineId,
+          digest: snapshot.baselineDigest.slice(0, 12),
+          policy: snapshot.policyHash.slice(0, 12),
+          storage:
+            storageState === 'released'
+              ? t('cmp.factsReleased')
+              : storageState === 'releasing'
+                ? t('cmp.factsReleasing')
+                : '',
+        })
+      : t('cmp.factsEmpty')
     if (!snapshot) rounds.replaceChildren()
     else if (journalMode === 'journal') rounds.replaceChildren(renderJournalRound())
     else if (journalMode === 'per-lane-only' && replay.live())
       rounds.replaceChildren(
-        element('p', '当前协调状态（per-lane-only，无共享历史证据）'),
+        element('p', t('cmp.perLaneOnlyStatus')),
         ...snapshot.rounds.map(renderRound),
       )
     else
@@ -733,8 +813,8 @@ export function createComparisonWorkspace(
         element(
           'p',
           journalMode === 'per-lane-only'
-            ? 'per-lane-only：无法还原历史协调、接收或结束状态。'
-            : '共享协调事实尚未载入，当前状态不参与历史回放。',
+            ? t('cmp.perLaneOnlyUnreadable')
+            : t('cmp.journalNotLoaded'),
         ),
       )
   }
@@ -746,7 +826,7 @@ export function createComparisonWorkspace(
       select.replaceChildren(
         ...value.runtimes.map((item) => {
           const itemOption = option(
-            `${item.label}${item.available ? '' : `（${item.unavailableReason ?? '不可用'}）`}`,
+            `${item.label}${item.available ? '' : t('cmp.runtimeUnavailable', { reason: item.unavailableReason ?? t('cmp.unavailable') })}`,
             item.id,
           )
           itemOption.disabled = !item.available
@@ -795,12 +875,12 @@ export function createComparisonWorkspace(
     section.className = 'comparison-lane'
     section.dataset.side = lane.side
     section.dataset.runtime = lane.runtime.id
-    section.setAttribute('aria-label', lane.side === 'left' ? '左侧对比会话' : '右侧对比会话')
+    section.setAttribute('aria-label', t('cmp.laneAria', { side: sideText(lane.side) }))
     const head = element('header')
-    const state = element('p', '正在载入…')
+    const state = element('p', t('cmp.loading'))
     const transcript = element('div')
     transcript.className = 'comparison-transcript'
-    const newContent = element('button', '有新内容')
+    const newContent = element('button', t('cmp.newContent'))
     newContent.type = 'button'
     newContent.hidden = true
     const renderer = createTimelineRenderer({
@@ -817,12 +897,12 @@ export function createComparisonWorkspace(
     questions.enabled(false)
     const runtimeTraceHost = element('section')
     runtimeTraceHost.hidden = lane.runtime.id === 'native'
-    const graph = createJevDecisionGraph(runtimeTraceHost, { sharedReplay: true })
-    const coverage = element('p', '尚无账本数据，正在载入…')
+    const graph = createJevDecisionGraph(runtimeTraceHost, { sharedReplay: true }, t)
+    const coverage = element('p', t('cmp.coverageLoading'))
     coverage.className = 'comparison-coverage'
     coverage.setAttribute('role', 'status')
     const trace = element('details')
-    const traceLabel = element('summary', '原始记录')
+    const traceLabel = element('summary', t('cmp.rawRecords'))
     trace.append(traceLabel)
     const events = element('ol')
     trace.append(events)
@@ -832,9 +912,9 @@ export function createComparisonWorkspace(
     conversationPane.append(transcript, newContent)
     const tracePanel = element('section')
     tracePanel.className = 'comparison-trace-panel'
-    tracePanel.setAttribute('aria-label', `${lane.side === 'left' ? '左侧' : '右侧'}原生轨迹`)
-    const traceTab = button('轨迹', () => {})
-    const chatTab = button('对话', () => {})
+    tracePanel.setAttribute('aria-label', t('cmp.nativeTraceAria', { side: sideText(lane.side) }))
+    const traceTab = button(t('cmp.trace'), () => {})
+    const chatTab = button(t('cmp.chat'), () => {})
     const nativeTrace = createComparisonTrace(tracePanel, {
       sessionId: lane.sessionId,
       toggle: traceTab,
@@ -862,6 +942,7 @@ export function createComparisonWorkspace(
         if (!session || session.id !== sessionId) throw new Error('对比会话已经关闭或切换。')
         return session.readToolDetail(callSeq, resultSeq, signal ? { signal } : undefined)
       },
+      t,
     })
     nativeTrace.setOpen(workspaceView === 'trace')
     let timeline: UITimeline | undefined
@@ -881,6 +962,7 @@ export function createComparisonWorkspace(
     let disposed = false
     let opened = false
     let ledgerEvents: readonly EventEnvelope[] = []
+    let reservedGraphHeads = 0
     let ledgerState: import('./comparison-replay.js').ComparisonReplayLane = {
       events: [],
       complete: false,
@@ -890,8 +972,20 @@ export function createComparisonWorkspace(
       if (disposed) return
       ledgerState = value
       ledgerEvents = value.events
+      if (lane.runtime.id === 'jevloop') {
+        try {
+          const known = projectTrace(jevTraceEntries(ledgerEvents))
+          for (const turn of known.turns)
+            for (const step of turn.steps)
+              for (const request of step.requests)
+                if (request.purpose === 'decision')
+                  reservedGraphHeads = Math.max(reservedGraphHeads, request.heads.length)
+        } catch {
+          // Current-cut rendering owns invalid evidence; future failures cannot change that cut.
+        }
+      }
       coverage.textContent = text
-      earlier.textContent = value.complete ? '加载更早对话' : '继续读取账本与更早对话'
+      earlier.textContent = value.complete ? t('cmp.loadEarlier') : t('cmp.readMoreLedger')
       earlier.disabled = value.loading
       replay.update(lane.side, value)
     }
@@ -900,9 +994,10 @@ export function createComparisonWorkspace(
           client,
           { id: comparisonId, side: lane.side, sessionId: lane.sessionId },
           updateLedger,
+          t,
         )
       : undefined
-    const ledger = cutLedger ?? createComparisonLedger(client, lane.sessionId, updateLedger)
+    const ledger = cutLedger ?? createComparisonLedger(client, lane.sessionId, updateLedger, t)
     // Cancellation or a terminal snapshot retires this round even before the lane ledger catches up.
     // Keep its tickets retired after a new round starts; a delayed old projection is not fresh authority.
     const rememberApprovalFence = () => {
@@ -989,20 +1084,20 @@ export function createComparisonWorkspace(
       if (matchingRequest) {
         const request = matchingRequest
         const labels: Record<string, string> = {
-          allow_once: '仅允许这次',
-          allow_always: '本会话允许',
-          reject_once: '拒绝',
-          reject_always: '始终拒绝',
+          allow_once: t('cmp.allowOnce'),
+          allow_always: t('cmp.allowAlways'),
+          reject_once: t('cmp.rejectOnce'),
+          reject_always: t('cmp.rejectAlways'),
         }
         const rawInput = request.request.toolCall.rawInput
         const preview = rawInput === undefined ? undefined : JSON.stringify(rawInput, null, 2)
         view = {
           key: String(request.request.toolCall.toolCallId),
-          title: interactionsMutable ? '需要确认' : '已记录审批（只读）',
+          title: interactionsMutable ? t('cmp.needsConfirm') : t('cmp.approvalReadonly'),
           summary:
             typeof request.request.toolCall.title === 'string'
               ? request.request.toolCall.title
-              : '允许执行此操作？',
+              : t('cmp.approvePrompt'),
           impact: lane.workspaceLabel,
           ...(preview === undefined ? {} : { preview: preview.slice(0, 2048) }),
           disabled: approvalBusy || !connected() || !interactionsMutable,
@@ -1028,7 +1123,7 @@ export function createComparisonWorkspace(
           liveApproval?.ticket === approvalTicket
         view = {
           key: approvalTicket ?? durable.id,
-          title: actionable ? '需要确认' : '已记录审批（只读）',
+          title: actionable ? t('cmp.needsConfirm') : t('cmp.approvalReadonly'),
           summary: durable.summary,
           impact: lane.workspaceLabel,
           disabled: approvalBusy || !actionable,
@@ -1070,8 +1165,8 @@ export function createComparisonWorkspace(
       )
     }
     let live: ReturnType<SessionPaneController['project']> | undefined
-    const cancel = button('停止此侧', () => run(() => cancelComparison(lane.side)))
-    const earlier = button('加载更早记录', () =>
+    const cancel = button(t('cmp.stopThisSide'), () => run(() => cancelComparison(lane.side)))
+    const earlier = button(t('cmp.earlierRecords'), () =>
       run(async () => {
         await Promise.all([ledger.read(), live?.loadEarlier()])
       }),
@@ -1079,11 +1174,11 @@ export function createComparisonWorkspace(
     head.append(
       element(
         'h3',
-        `${lane.runtime.id === 'jevloop' ? 'JevLoop' : lane.runtime.id === 'native' ? 'Native' : lane.runtime.id} · ${lane.side === 'left' ? '左侧' : '右侧'}`,
+        `${lane.runtime.id === 'jevloop' ? 'JevLoop' : lane.runtime.id === 'native' ? 'Native' : lane.runtime.id} · ${sideText(lane.side)}`,
       ),
       cancel,
     )
-    const directStats = createJevDirectStats(head, 'comparison')
+    const directStats = createJevDirectStats(head, 'comparison', t)
     const pendingStats = () => directStats.update({ runtime: lane.runtime, events: [], complete: false })
     pendingStats()
     const body = element('div')
@@ -1097,18 +1192,18 @@ export function createComparisonWorkspace(
       !permission.yolo
     info.append(
       element('p', lane.workspaceLabel),
-      element('p', confined ? '写入沙箱已启用（准备时验证）' : '历史记录未证明完整写入沙箱，建议新建对比'),
+      element('p', confined ? t('cmp.sandboxOn') : t('cmp.sandboxOff')),
       state,
       earlier,
     )
     body.append(info, conversationPane, tracePanel, approval, coverage, trace)
-    const childHistory = createComparisonChildHistory(info, client, { id: comparisonId, side: lane.side })
+    const childHistory = createComparisonChildHistory(info, client, { id: comparisonId, side: lane.side }, t)
     section.append(head, questionHost, body)
     if (lane.runtime.id === 'jevloop') {
       graphEmpty.hidden = true
       runtimeTraceHost.dataset.side = lane.side
       const previous = graphChoice.value
-      graphChoice.append(option(`JevLoop · ${lane.side === 'left' ? '左侧' : '右侧'}`, lane.side))
+      graphChoice.append(option(`JevLoop · ${sideText(lane.side)}`, lane.side))
       graphChoice.value = previous || lane.side
       graphChoice.hidden = graphChoice.options.length < 2
       runtimeTraceHost.hidden = graphChoice.value !== lane.side
@@ -1239,7 +1334,7 @@ export function createComparisonWorkspace(
         }
       }
       questions.project([...pendingQuestions.values()])
-      graph.update(prefix, lane.sessionId)
+      graph.update(prefix, lane.sessionId, { heads: reservedGraphHeads })
       section.dataset.cut = String(cut)
       const view = webView(value)
       state.textContent = `${view.status} · #${value.upto}`
@@ -1259,13 +1354,16 @@ export function createComparisonWorkspace(
           )
           const raw = JSON.stringify(event.data, null, 2)
           item.append(
-            element('pre', raw.length > 16_384 ? `${raw.slice(0, 16_384)}\n（此记录显示已截断）` : raw),
+            element(
+              'pre',
+              raw.length > 16_384 ? `${raw.slice(0, 16_384)}\n${t('cmp.recordTruncated')}` : raw,
+            ),
           )
           row.append(item)
           return row
         }),
       )
-      traceLabel.textContent = `原始记录 · #0–${cut} · ${prefix.length} 条记录`
+      traceLabel.textContent = t('cmp.rawRecordsRange', { cut, count: prefix.length })
       drawApproval()
     }
     const draw = (value: UITimeline) => {
@@ -1394,10 +1492,9 @@ export function createComparisonWorkspace(
       }
       replay.updateJournal(value)
       render()
-      if (value.mode === 'per-lane-only')
-        metrics.unavailable('per-lane-only：此对比无共享 journal，无法选择共享前缀计量。')
+      if (value.mode === 'per-lane-only') metrics.unavailable(t('cmp.perLaneOnlyMetrics'))
       else if (value.error) metrics.unavailable(value.error)
-    })
+    }, t)
     await journal.read()
     if (ticket !== epoch || snapshot?.id !== id || journalMode === 'error') return
     opening = true
@@ -1434,12 +1531,12 @@ export function createComparisonWorkspace(
         if (found?.acceptances.every((item) => item.status !== 'unknown')) {
           pending = undefined
           creation = undefined
-          message.textContent = '已确认两侧接收结果。'
+          message.textContent = t('cmp.receiptsConfirmed')
         } else
           message.textContent =
             pendingFailure?.input === pending && message.textContent === pendingFailure.message
               ? pendingFailure.message
-              : '上次输入的接收结果待确认；保留输入标识，可核对持久状态。'
+              : t('cmp.receiptsPending')
       }
       save()
       if (storageChanged) await mount(true)
@@ -1460,14 +1557,7 @@ export function createComparisonWorkspace(
         : !['released', 'removing'].includes(state)
     )
       return
-    if (
-      !window.confirm(
-        operation === 'release'
-          ? '永久结束此对比的继续运行，并释放其私有运行资源？已记录的对话、轨迹和子任务历史会保留。'
-          : '永久删除此对比的对话、轨迹和子任务历史？删除后无法恢复。',
-      )
-    )
-      return
+    if (!window.confirm(operation === 'release' ? t('cmp.confirmRelease') : t('cmp.confirmRemove'))) return
     busy = true
     render()
     try {
@@ -1486,14 +1576,14 @@ export function createComparisonWorkspace(
           await navigation.select?.(undefined)
           input.value = ''
           fillSetup()
-          message.textContent = '准备失败的运行资源已释放；此记录没有完整双侧历史。'
+          message.textContent = t('cmp.releasedFailedPrep')
           await history.refresh()
           return
         }
         snapshot = next
         save()
         await mount(true)
-        message.textContent = '运行资源已释放；可以继续查看已归档的对话、轨迹和子任务。'
+        message.textContent = t('cmp.releasedDone')
       } else {
         const result = await client.comparison.remove(request)
         if (snapshot?.id !== current.id) return
@@ -1508,11 +1598,13 @@ export function createComparisonWorkspace(
         await navigation.select?.(undefined)
         input.value = ''
         fillSetup()
-        message.textContent = '对比记录已删除。'
+        message.textContent = t('cmp.removedDone')
       }
       await history.refresh()
     } catch (error) {
-      message.textContent = `操作未确认，保留当前记录，可刷新状态后重试：${error instanceof Error ? error.message : '请重试'}`
+      message.textContent = t('cmp.operationUnconfirmed', {
+        message: error instanceof Error ? error.message : t('cmp.retryHint'),
+      })
     } finally {
       busy = false
       render()
@@ -1525,14 +1617,19 @@ export function createComparisonWorkspace(
       const ticket = selection
       busy = true
       render()
-      message.textContent = '正在准备工作区快照…'
+      message.textContent = t('cmp.preparingSnapshot')
       try {
-        const model = defaults().model
+        const { model, jevStages } = defaults()
+        // Stage bindings belong to whichever lane runs JevLoop; the backend refuses them elsewhere.
+        const lane = (runtime: string) => ({
+          runtime,
+          ...(runtime === 'jevloop' && jevStages ? { jevStages } : {}),
+        })
         pendingCreate ??= {
           requestId: crypto.randomUUID(),
           cwd: cwd.value,
-          left: { runtime: left.value },
-          right: { runtime: right.value },
+          left: lane(left.value),
+          right: lane(right.value),
           isolation: 'snapshot',
           permissionMode: selectedPermission(),
           ...(model ? { model } : {}),
@@ -1560,11 +1657,12 @@ export function createComparisonWorkspace(
       }
     })
   })
+  let roundDecision: 'jev' | 'laya' | undefined
   form.addEventListener('submit', (event) => {
     event.preventDefault()
-    run(() => submitInput())
+    run(() => submitInput(false, roundDecision))
   })
-  async function submitInput(retry = false) {
+  async function submitInput(retry = false, decisionBackend?: 'jev' | 'laya') {
     if (
       !snapshot ||
       (snapshot.storageState ?? 'full') !== 'full' ||
@@ -1602,6 +1700,7 @@ export function createComparisonWorkspace(
       inputId: crypto.randomUUID(),
       text,
       permissionMode: selectedPermission(),
+      ...(decisionBackend === undefined ? {} : { decisionBackend }),
     }
     renderPermission()
     try {
@@ -1619,6 +1718,7 @@ export function createComparisonWorkspace(
         inputId: submitted.inputId,
         content: [{ type: 'text', text: submitted.text }],
         ...(submitted.permissionMode === undefined ? {} : { permissionMode: submitted.permissionMode }),
+        ...(submitted.decisionBackend === undefined ? {} : { decisionBackend: submitted.decisionBackend }),
       })
       if (!current()) return
       pendingFailure = undefined
@@ -1634,7 +1734,7 @@ export function createComparisonWorkspace(
         creation = undefined
         input.value = ''
       }
-      message.textContent = pending ? '部分接收结果待确认，请刷新查询。' : '已返回两侧接收结果。'
+      message.textContent = pending ? t('cmp.partialReceipts') : t('cmp.receiptsReturned')
       save()
     } catch (error) {
       if (!current()) return
@@ -1648,12 +1748,14 @@ export function createComparisonWorkspace(
         const reason = error instanceof JsonRpcError ? error.data.admissionReason : undefined
         message.textContent =
           reason === 'configuration-changed' || reason === 'prepared-source-invalid'
-            ? '本次输入尚未接收，草稿已保留。准备配置已变化或无法核验，请新建对比；刷新不会更新这组冻结配置。'
+            ? t('cmp.refusedConfigChanged')
             : reason === 'resource-recovery-required'
-              ? '本次输入尚未接收，草稿已保留。运行资源需要恢复，请核对后台状态后再提交。'
-              : '本次输入尚未接收，草稿已保留。等待两侧完成或刷新状态后可再次提交。'
+              ? t('cmp.refusedResourceRecovery')
+              : t('cmp.refusedWaitSettle')
       } else {
-        message.textContent = `连接未确认提交结果，已保留输入标识。可核对持久状态或显式重试原请求。${error instanceof Error ? error.message : ''}`
+        message.textContent = t('cmp.submitUnconfirmed', {
+          message: error instanceof Error ? error.message : '',
+        })
         if (pending) pendingFailure = { input: pending, message: message.textContent }
       }
     } finally {
@@ -1715,7 +1817,7 @@ export function createComparisonWorkspace(
           if (ticket !== selection || !dialog.open) return false
           if (creation && error instanceof JsonRpcError && error.data.code === 'COMPARISON_NOT_FOUND') {
             snapshot = undefined
-            message.textContent = '首次创建尚未确认；已保留原工作区、配置和输入，可显式重试创建。'
+            message.textContent = t('cmp.creationUnconfirmed')
             restoreFailed = false
             return true
           }
@@ -1754,7 +1856,7 @@ export function createComparisonWorkspace(
       }
     }
   }
-  async function startDraft(requestId: string, text: string) {
+  async function startDraft(requestId: string, text: string, decisionBackend?: 'jev' | 'laya') {
     if (disposed) throw new Error('对比视图已卸载。')
     if (dialog.open || busy || opening || cancelling) throw new Error('请先关闭当前对比视图。')
     const previous = comparisonPermissionEntry(readComparisonEntry(requestId))
@@ -1771,12 +1873,17 @@ export function createComparisonWorkspace(
         requestId,
         cwd: value.cwd ?? '',
         left: { runtime: 'native' },
-        right: { runtime: 'jevloop' },
+        right: { runtime: 'jevloop', ...(value.jevStages ? { jevStages: value.jevStages } : {}) },
         isolation: 'snapshot',
         permissionMode: value.permissionMode ?? 'workspace',
         ...(value.model ? { model: value.model } : {}),
       },
-      firstInput: { inputId: crypto.randomUUID(), text, permissionMode: value.permissionMode ?? 'workspace' },
+      firstInput: {
+        inputId: crypto.randomUUID(),
+        text,
+        permissionMode: value.permissionMode ?? 'workspace',
+        ...(decisionBackend === undefined ? {} : { decisionBackend }),
+      },
     }
     if (creation.firstInput && creation.firstInput.text !== text)
       throw new Error('首次输入尚待确认，请使用保留的原输入重试。')
@@ -1806,7 +1913,7 @@ export function createComparisonWorkspace(
       input.value = creation.firstInput?.text ?? text
       fillSetup()
       if (!snapshot) {
-        message.textContent = '正在准备双线工作区…'
+        message.textContent = t('cmp.preparingDual')
         const created = await client.comparison.create(pendingCreate)
         assertCurrent()
         if (created.id !== requestId) throw new Error('创建返回了不同的对比身份。')
@@ -1851,12 +1958,12 @@ export function createComparisonWorkspace(
     close() {
       if (dialog.open) dialog.close()
     },
-    async submitDraft(id: string, text: string) {
+    async submitDraft(id: string, text: string, decisionBackend?: 'jev' | 'laya') {
       if (!(await openEntry(id))) throw new Error('对比视图已关闭或切换；输入保留，请显式重新提交。')
       if (pending) throw new Error('上次输入接收结果待确认，请先核对或重试原请求。')
       if (!snapshot && creation) {
         dialog.close()
-        await startDraft(id, text)
+        await startDraft(id, text, decisionBackend)
         return
       }
       if (
@@ -1871,7 +1978,7 @@ export function createComparisonWorkspace(
         throw new Error('当前对比尚不能接收新输入，请等待两侧结束或核对状态。')
       input.value = text
       save()
-      await submitInput()
+      await submitInput(false, decisionBackend)
     },
   }
 }

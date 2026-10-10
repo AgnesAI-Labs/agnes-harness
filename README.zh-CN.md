@@ -3,7 +3,7 @@
 [English](README.md) | 简体中文
 
 <p align="center">
-  <img src="docs/assets/readme/banner.png" alt="Agnes Harness：面向前线交付工程（FDE）的插件化智能体框架。LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。" width="100%" />
+  <img src="docs/assets/readme/banner.zh-CN.png" alt="Agnes Harness：面向前线交付工程（FDE）的插件化智能体框架。LLM 是大脑，Jev 是小脑，Harness 是记忆，MHS 是身体。" width="100%" />
 </p>
 
 <div align="center">
@@ -17,14 +17,14 @@
 <img src="https://img.shields.io/badge/node-%E2%89%A5%2024.10-339933" alt="Node.js 24.10 及以上" />
 <img src="https://img.shields.io/badge/local%20checks-macOS-3b8fff" alt="已记录的本地检查：macOS" />
 
-[快速开始](docs/guide/quickstart.zh-CN.md) · [架构](#architecture) · [体验示例](docs/guide/demo.zh-CN.md) · [开发插件](docs/develop/plugins.zh-CN.md) · [完整文档](docs/README.zh-CN.md) · [MHS（即将开放）](docs/guide/mhs.zh-CN.md)
+[快速开始](docs/guide/quickstart.zh-CN.md) · [架构](#architecture) · [体验示例](docs/guide/demo.zh-CN.md) · [开发插件](docs/develop/plugins.zh-CN.md) · [完整文档](docs/README.zh-CN.md) · [MHS 与设备](docs/guide/mhs.zh-CN.md)
 
 开发者预览（pre-alpha） · [源码构建](#从源码开始) · [Apache-2.0](LICENSE)
 
 </div>
 
 <p align="center">
-  <img src="docs/assets/readme/trailer.webp" alt="动画介绍：大脑（LLM）、小脑（Jev）、记忆（Harness）与身体（MHS，经 MCP 连接设备）合为 Agnes Harness，一套执行底座支撑企业 FDE 交付与物理世界的 MHS 接入" width="100%" />
+  <img src="docs/assets/readme/trailer.zh-CN.webp" alt="动画介绍：大脑（LLM）、小脑（Jev）、记忆（Harness）与身体（MHS，经 MCP 连接设备）合为 Agnes Harness，一套执行底座支撑企业 FDE 交付与物理世界的 MHS 接入" width="100%" />
 </p>
 
 <p align="center">
@@ -35,7 +35,7 @@
 把 AI 带进真实现场，难点往往不在模型本身，而在客户的业务系统、负责审批的人，以及每个现场都不一样的细节。Agnes Harness（AGH）把模型、工具、任务状态和业务界面连接在一起：**把现场差异写进插件，让 Harness 负责执行并留下记录，把验证过的能力带到下一个项目。**
 
 <p align="center">
-  <img src="docs/assets/readme/hero.gif" alt="AGH 在真实项目中工作：Agent 读取退款规则与订单数据，运行命令前请求审批，实际验证结果，给出可核对的表格，并在轨迹视图中记录每一步" width="100%" />
+  <img src="docs/assets/readme/hero.zh-CN.gif" alt="AGH 在真实项目中工作：Agent 读取退款规则与订单数据，运行命令前请求审批，实际验证结果，给出可核对的表格，并在轨迹视图中记录每一步" width="100%" />
 </p>
 
 <p align="center"><sub>读代码、运行命令前先审批、验证、作答，每一步都留痕。</sub></p>
@@ -45,6 +45,7 @@
 
 - [AGH 是什么，不是什么](#agh-是什么不是什么)
 - [架构：大脑、小脑、记忆与身体](#architecture)
+- [JevLoop 运行时：先决策，后生成](#jevloop-runtime)
 - [在现场交付中，AGH 能帮上什么](#在现场交付中agh-能帮上什么)
 - [公开评测](#公开评测)
 - [适合谁](#适合谁)
@@ -65,7 +66,7 @@
 
 - **不是托管服务。** AGH 是开发者预览版，需要从源码构建，在你自己的环境中运行。
 - **不是任意插件代码的沙箱。** 普通后端插件作为受信代码在进程内运行；审批与命令沙箱作用于相应的受支持执行路径。详见[安全与信任](docs/guide/security.zh-CN.md)。
-- **不是经过认证的设备驱动。** MHS 设备接入以 MCP 为基础，即将开放；目前没有可供认证的公开 MHS 规范，实时控制与物理安全仍由设备控制器负责。
+- **不是经过认证的设备驱动。** MHS 是 AGH 自己的设备协议，独立于 MCP。通过它的一致性测试并不证明设备安全，实时控制与物理安全仍由设备控制器负责。
 - **还没有定型。** API、配置与插件接口仍在演进，可能出现破坏兼容性的变更。
 
 <a id="architecture"></a>
@@ -80,9 +81,9 @@
 | 角色 | 在 AGH 中意味着什么 | 当前范围 |
 | --- | --- | --- |
 | **LLM / 大脑** | 理解请求、推理任务、提出行动建议 | 经 AI Provider 接入模型 |
-| **Jev / 小脑** | 路由、评分等结构化决策，协助协调执行 | 接入进行中；main 当前使用内置 Core 循环 |
+| **Jev / 小脑** | 路由、评分等结构化决策，协助协调执行 | JevLoop 已作为实验性运行时提供；Native 仍是默认选项 |
 | **Harness / 记忆** | 保存会话历史、任务状态、执行记录，以及沉淀在 Skills 中的可复用方法 | 已有任务上下文与恢复机制；Harness 同时负责执行与治理 |
-| **MHS / 身体** | 连接设备能力，让任务读取物理状态、请求设备动作 | 通过基于 MCP 的适配器接入设备；AGH 接入文档与示例即将开放 |
+| **MHS / 身体** | 连接设备能力，让任务读取物理状态、请求设备动作 | MHS 与 MOS 1.0 规范、设备库、`mhs-check` 一致性测试，以及作为可选插件运行、为大脑提供设备工具的 AgnesHub |
 
 FDE 是交付方式，MHS 负责把设备接进来。两者使用同一套底座，FDE 的现场交付也可以包含设备场景。
 
@@ -91,11 +92,60 @@ FDE 是交付方式，MHS 负责把设备接进来。两者使用同一套底座
 | **App Server / 统一接入** | 为 CLI、Web、SDK 提供共享会话、任务提交、事件推送与审批路由 | 任务入口、人工确认与状态展示 |
 | **Agent Loop / 执行循环** | 模型与工具执行、任务状态、事件记录、中断处理与恢复 | 高层设备任务编排与结果记录 |
 | **Sandbox / 执行约束** | 工具授权，以及适用的命令、文件、网络与进程约束 | 软件侧执行边界；运动控制、互锁与急停仍由设备控制器负责 |
-| **Plugins / 插件体系** | 后端工具与服务、Web 面板、Skills、hooks、MCP，由 Cordis 和包治理组织 | 基于 MCP 的设备适配器与设备操作界面的扩展入口；具体适配仍需开发与验证 |
+| **Plugins / 插件体系** | 后端工具与服务、Web 面板、Skills、hooks、MCP，由 Cordis 和包治理组织 | AgnesHub 作为可选插件运行：为大脑提供设备工具，在工作台中提供设备面板 |
 
-具体业务连接器与工作台通过这些扩展入口按现场需求构建。当前仓库没有已验证的通用 MHS 适配器或端到端设备示例。
+具体业务连接器与工作台通过这些扩展入口按现场需求构建。设备经 MHS 接入；仓库附带示例设备和开发中枢，不接硬件也能试用。
 
 实际请求链路与源码归属见[架构说明](docs/develop/architecture.zh-CN.md)，深入实现可从[源码地图](docs/develop/source-map.zh-CN.md)开始。
+
+<a id="jevloop-runtime"></a>
+
+## JevLoop 运行时：先决策，后生成
+
+AGH 提供两套运行循环。**Native（原生运行时）**是默认选项：由 LLM 选择行动，生成工具参数或回答。**JevLoop** 将两种职责分开：决策模型在每步的一次请求中，从有限选项里选择目的、工具和参数绑定；LLM 按需负责补参、仲裁与回答。
+
+**潜在收益来自替换，而不是多加一个模型：决策调用能替换多少生成调用？** 无参工具，以及从已记录事实重建的完整候选，在门控达标时可以跳过生成。仍需 LLM 的步骤则保留其开销，再加上决策开销。
+
+<p align="center">
+  <img src="docs/assets/readme/jevloop.zh-CN.webp" alt="实际 JevLoop 决策图中的四个步骤：工具直通、LLM 补参、LLM 接管与 LLM 回答；高亮路径随步骤变化，同时展示已记录的候选、门控与 Host 执行" width="100%" />
+</p>
+
+<p align="center"><sub>界面实拍，选取四个已记录步骤；不是连续回放或性能评测。每帧停留约 0.67 秒（原速的 6 倍）。<a href="docs/assets/readme/jevloop.zh-CN.png">查看直通路径静态截图 →</a></sub></p>
+
+### 一步中发生了什么变化
+
+| 路由 | 何时使用 | LLM 负责什么 |
+| --- | --- | --- |
+| **直通** | 门控通过，工具无参，或完整候选绑定达标 | 不发起生成调用；意图进入执行准入 |
+| **补参** | 工具已选定，但参数仍需生成 | 为该工具生成完整参数，不更换工具 |
+| **仲裁 / 接管** | 决策门控未过，或可恢复失败需要仲裁 | 从完整原生工具目录中选择行动或直接回答；任务未结束时，下一步仍回到 Jev |
+| **回答** | 决策选择 `RESPOND` | 根据已记录证据生成正文 |
+
+**所有工具路由都经过同一套 Host 执行边界。** Schema 与新鲜度校验、授权、审批及适用的沙箱约束仍然生效。置信度只决定路由，不授予权限。LLM 接管受运行时预算约束，不是无限兜底。
+
+### 优势，以及成立的条件
+
+- **决策与生成分离。** 把工具选择变成有限选项的分类题，参数和正文仍保留生成能力。
+- **符合条件的步骤跳过生成。** 完整、高置信的绑定可以直接进入执行准入；每步仍有一次决策请求。
+- **开放任务仍有出路。** 困难步骤可交给拥有完整工具目录的 LLM 仲裁。这保留了灵活性，并不保证与 Native 同等的任务质量。
+
+也要考虑这些代价：
+
+- **候选覆盖限制替换率。** 候选来自已记录的客观事实，每步重建，不从用户话语中猜测任意参数。替换率低时，决策层主要是增量开销。
+- **额外请求和持久化都有开销。** 决策题随工具目录增长，每步还要记录分阶段推进；**不保证更省钱或更快**。
+- **长会话可能出现成本倒挂。** 当前 Jev 决策路径没有提示词前缀缓存，累积的决策上下文需要重发；应与语言 Provider 的实际缓存用量比较。
+- **两套运行时能力并不完全相同。** JevLoop 需要配置决策后端，当前不支持会话压缩或分叉，Native 支持两者。会话创建后保留所选运行时。
+
+### 何时选哪套运行时？
+
+| 任务或要求 | 建议从哪套开始 |
+| --- | --- |
+| 开放探索、不熟悉的工具，或多数步骤都需要新生成参数 | **Native**：更简单的基线，不增加决策服务依赖 |
+| 可重复的工作流，候选可从事实稳定重建，且有较多符合直通条件的步骤 | **JevLoop**：验证替换生成是否划算 |
+| 长会话依赖压缩或提示词缓存复用，或任务需要分叉 | **Native**：JevLoop 当前没有压缩与分叉能力 |
+| 对费用或延迟敏感的部署 | **实测两者**：用内置双线对比跑代表性任务，比较回答质量、耗时、生成替换情况，以及决策 + LLM 的总费用 |
+
+创建 Web 会话时选择运行时。JevLoop 决策图是持久记录的只读视图，回放不会再次执行工具。配置方法、分环节语言模型、实验性 Local Laya 与对比隔离边界见[运行循环指南 →](docs/guide/runtime-loops.zh-CN.md)。
 
 ## 在现场交付中，AGH 能帮上什么
 
@@ -106,7 +156,7 @@ Agent 需要调用你的订单查询、知识库、内部接口。如果把这�
 在 AGH 里，业务能力就是插件：通过[后端插件](docs/develop/backend.zh-CN.md)注册工具，或通过 [MCP](docs/guide/mcp.zh-CN.md) 连接已有服务。安装前会先展示版本、来源、完整性摘要、能力哈希和许可证；启用时绑定并校验这些哈希。之后 Agent 就能调用它，每次调用的输入和结构化输出都有记录。
 
 <p align="center">
-  <img src="docs/assets/readme/plugins.gif" alt="在 Web 工作台安装插件：检查来源，核对完整性、能力与许可，确认启用，随后 Agent 调用新工具 demo_text_stats，其输入与结构化输出都被记录" width="100%" />
+  <img src="docs/assets/readme/plugins.zh-CN.gif" alt="在 Web 工作台安装插件：检查来源，核对完整性、能力与许可，确认启用，随后 Agent 调用新工具 demo_text_stats，其输入与结构化输出都被记录" width="100%" />
 </p>
 
 ### 2. 任务在 Web 上开始，在终端里继续
@@ -116,7 +166,7 @@ Agent 需要调用你的订单查询、知识库、内部接口。如果把这�
 CLI、Web 与 SDK 共享同一套后台会话。在终端用 `/resume <id>` 恢复 Web 上的会话，历史、工具记录和结论都在；在终端里追加的内容，回到 Web 同样能看到。详见[会话与恢复](docs/guide/sessions.zh-CN.md)。
 
 <p align="center">
-  <img src="docs/assets/readme/terminal.gif" alt="终端界面恢复在 Web 上开始的会话，显示历史、工具记录与结论表，回答追问；回到 Web，同一条对话已经更新" width="100%" />
+  <img src="docs/assets/readme/terminal.zh-CN.gif" alt="终端界面恢复在 Web 上开始的会话，显示历史、工具记录与结论表，回答追问；回到 Web，同一条对话已经更新" width="100%" />
 </p>
 
 ### 3. "AI 改了什么？谁批准的？"
@@ -126,7 +176,7 @@ CLI、Web 与 SDK 共享同一套后台会话。在终端用 `/resume <id>` 恢�
 默认情况下，运行命令要先经你批准：仅允许这次、本会话允许或拒绝。轨迹视图按时间轴记录模型调用、工具与审批，逐步可查。包信任、工具审批、执行约束与会话记录，让集成有明确的控制点。详见[安全与信任](docs/guide/security.zh-CN.md)。
 
 <p align="center">
-  <img src="docs/assets/readme/trajectory.png" alt="轨迹视图：输入、模型与工具的时间轴，以及逐步记录，包括用户请求、文件读取、shell 命令及其审批记录和最终回答" width="100%" />
+  <img src="docs/assets/readme/trajectory.zh-CN.png" alt="轨迹视图：输入、模型与工具的时间轴，以及逐步记录，包括用户请求、文件读取、shell 命令及其审批记录和最终回答" width="100%" />
 </p>
 
 ### 4. 不同岗位需要不同的界面
@@ -139,7 +189,7 @@ CLI、Web 与 SDK 共享同一套后台会话。在终端用 `/resume <id>` 恢�
 
 ### 6. 现场还有设备
 
-从巡检到仪器协作，现场工作需要把设备状态、人的判断与业务流程连接起来。AGH 的设备接入方向以 MCP（Model Context Protocol）为基础，而不是厂商专属 SDK，让状态读取、动作请求和执行回执进入同一套任务流程。**MHS 接入文档与示例即将开放。**[了解设备接入方向 →](docs/guide/mhs.zh-CN.md)
+从巡检到仪器协作，现场工作需要把设备状态、人的判断与业务流程连接起来。Agnes MHS（Model Hardware Standard）是 AGH 自己的开放设备协议，独立于 MCP，也不依赖厂商专属 SDK：设备通过 WebSocket 连接 AgnesHub，登记自己的状态、工具和数据源，然后接受调用。配套的 MOS（Model Observation Standard）实时推送设备观测到的内容，例如相机画面、地图与地点。状态读取、动作请求和结果都进入同一套任务流程。[不接硬件先试用设备 →](docs/guide/mhs.zh-CN.md)
 
 ## 公开评测
 
@@ -149,14 +199,14 @@ CLI、Web 与 SDK 共享同一套后台会话。在终端用 `/resume <id>` 恢�
   <img src="docs/assets/readme/ale-leaderboard.png" alt="Agents' Last Exam 中 Agnes Harness 搭配 Agnes 2.5 Pro Beta 的成绩：总通过率 21.7%，总得分 42.7%，Near-term 通过率 31.3%，Full-Spectrum 通过率 23.6%，ALE-CLI 通过率 25.7%、得分 50.2%；旁边是榜单上相近条目的节选，各条目的模型与设置不同" width="100%" />
 </p>
 
-<p align="center"><sub>成绩随模型版本、设置与工具配置而变化，以榜单最新数据为准。</sub></p>
+<p align="center"><sub>成绩随模型版本、设置与工具配置而变化；这些数据不是 Native 与 JevLoop 的对比结果，以榜单最新数据为准。</sub></p>
 
 ## 适合谁
 
 - **FDE 与解决方案工程师**：把 Agent 交付进客户的业务系统和流程
 - **插件开发者**：把业务工具、服务与界面打包复用
 - **需要过程可控的团队**：命令先审批、每一步有记录、插件包信任明确
-- **现场与实验室团队**：为设备场景提前准备，跟进 MHS 接入的开放
+- **现场与实验室团队**：通过 MHS 把设备接入任务
 
 如果你现在就需要托管服务、已签名的安装包或生产级承诺，AGH 暂时还不适合：它目前是开发者预览版。
 
@@ -209,8 +259,8 @@ AGH 当前为开发者预览。
 | 插件：后端工具与服务、Web 面板、Skills、hooks、MCP | 可用，有已记录的限制 |
 | 命令沙箱与执行约束 | 取决于平台 |
 | 平台 | 已在 macOS + Node 24 上记录本地检查；Linux 与 Windows 需另行验收 |
-| Jev 结构化决策 | 接入中 |
-| MHS 设备接入（基于 MCP） | 即将开放 |
+| JevLoop 结构化决策运行时 | 已作为实验选项提供；Native 仍是默认选项 |
+| 经 AgnesHub 的 MHS 设备接入 | 可用，作为可选插件 |
 
 [支持范围与已知限制](docs/reference/limitations.zh-CN.md)帮助你选择试用环境；[验证与复现](docs/maintainers/verification.zh-CN.md)提供检查命令与验收范围。
 
@@ -223,10 +273,10 @@ AGH 当前为开发者预览。
 普通后端插件作为受信代码在进程内运行，所以只安装你信任的插件包。审批与命令沙箱作用于相应的受支持执行路径，并不隔离任意插件代码。
 
 **可以用哪些模型？**
-模型经 AI Provider 接入，可用能力由各 Provider 的模型目录决定。本页演示使用 Agnes AI `agnes-3.0-flash` 录制；不同模型的质量与工具选择会有差异。
+模型经 AI Provider 接入，可用能力由各 Provider 的模型目录决定。本页任务、插件、终端与轨迹演示使用 Agnes AI `agnes-3.0-flash` 录制；JevLoop 截图展示已记录的路由，而非模型性能。不同模型的质量与工具选择会有差异。
 
 **MHS 现在能控制设备吗？**
-还不能。MHS 接入文档与示例即将开放，以 MCP 为基础。在 AGH 中取消任务不等于设备已安全停止；互锁与急停由设备控制器负责。
+能，通过 AgnesHub：大脑调用设备声明的工具，AgnesHub 按设备的声明检查每一次调用。[MHS 指南](docs/guide/mhs.zh-CN.md)从示例设备开始。在 AGH 中取消任务不等于设备已安全停止；互锁与急停由设备控制器负责。
 
 **接受外部 PR 吗？**
 当前代码与文档 PR 仅限受邀内部开发者。欢迎通过 Issues 提交普通问题与场景建议，详见[反馈与协作规则](docs/develop/contributing.zh-CN.md)。

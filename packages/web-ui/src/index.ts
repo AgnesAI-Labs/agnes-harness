@@ -26,6 +26,7 @@ export {
   type SettingsComputerUseActions,
   type SettingsComputerUseView,
 } from './settings-computer-use.js'
+export * from './settings-custom.js'
 export { SettingsModelPane } from './settings-model-pane.js'
 export {
   mountSettingsSelectOptions,

@@ -3,14 +3,21 @@ import { type DecisionTransport, decodeDecisionResponse } from '@agnes/runtime-j
 
 const TIMEOUT_MS = 120_000
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+const record = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
 
 /** One Host-owned attempt. Retryability is classification only; this transport never retries.
  * Secrets remain in headers, never in durable request/response errors. */
 export function createJevDecisionTransport(options: {
+  backend?: 'jev' | 'laya'
   endpoint: string
   token?: string
+  transport?: 'native' | 'cloudflare'
   fetcher: typeof fetch
 }): DecisionTransport {
+  if (options.backend === 'laya' && options.transport === 'cloudflare')
+    throw new TypeError('Local Laya supports native transport only')
+  const label = options.backend === 'laya' ? '本地 Laya' : 'Jev'
   return {
     async invoke(request, signal) {
       const started = performance.now()
@@ -22,14 +29,18 @@ export function createJevDecisionTransport(options: {
       const combined = AbortSignal.any([signal, timeout])
       const aborted = () =>
         signal.aborted
-          ? failed('DECISION_CANCELLED', 'Jev 决策请求已取消。')
-          : failed('DECISION_TIMEOUT', 'Jev 决策请求超时。', true)
+          ? failed('DECISION_CANCELLED', `${label} 决策请求已取消。`)
+          : failed('DECISION_TIMEOUT', `${label} 决策请求超时。`, true)
       if (combined.aborted) return aborted()
       let body: string
       try {
-        body = JSON.stringify(request)
+        body = JSON.stringify(
+          options.transport === 'cloudflare'
+            ? { model: request.model, input: { state: request.state, questions: request.questions } }
+            : request,
+        )
       } catch {
-        return failed('DECISION_INVALID_REQUEST', 'Jev 决策请求无法编码。')
+        return failed('DECISION_INVALID_REQUEST', `${label} 决策请求无法编码。`)
       }
       try {
         const response = await options.fetcher(options.endpoint, {
@@ -46,12 +57,12 @@ export function createJevDecisionTransport(options: {
           await response.body?.cancel().catch(() => undefined)
           return failed(
             'DECISION_HTTP',
-            `Jev 决策服务返回 HTTP ${response.status}。`,
+            `${label} 决策服务返回 HTTP ${response.status}。`,
             response.status === 429 || response.status >= 500,
           )
         }
         const reader = response.body?.getReader()
-        if (!reader) return failed('DECISION_EMPTY_RESPONSE', 'Jev 决策服务未返回响应正文。')
+        if (!reader) return failed('DECISION_EMPTY_RESPONSE', `${label} 决策服务未返回响应正文。`)
         const parts: Uint8Array[] = []
         let bytes = 0
         try {
@@ -61,7 +72,7 @@ export function createJevDecisionTransport(options: {
             if (part.done) break
             bytes += part.value.byteLength
             if (bytes > MAX_RESPONSE_BYTES)
-              return failed('DECISION_RESPONSE_TOO_LARGE', 'Jev 决策响应超过大小上限。')
+              return failed('DECISION_RESPONSE_TOO_LARGE', `${label} 决策响应超过大小上限。`)
             parts.push(part.value)
           }
         } finally {
@@ -69,28 +80,39 @@ export function createJevDecisionTransport(options: {
           reader.releaseLock()
         }
         if (combined.aborted) return aborted()
-        if (bytes === 0) return failed('DECISION_EMPTY_RESPONSE', 'Jev 决策服务未返回响应正文。')
+        if (bytes === 0) return failed('DECISION_EMPTY_RESPONSE', `${label} 决策服务未返回响应正文。`)
         let text: string
         try {
           text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(parts))
         } catch {
-          return failed('DECISION_INVALID_UTF8', 'Jev 决策响应不是有效的 UTF-8。')
+          return failed('DECISION_INVALID_UTF8', `${label} 决策响应不是有效的 UTF-8。`)
         }
         let value: unknown
         try {
           value = JSON.parse(text)
         } catch {
-          return failed('DECISION_INVALID_JSON', 'Jev 决策响应不是有效的 JSON。')
+          return failed('DECISION_INVALID_JSON', `${label} 决策响应不是有效的 JSON。`)
+        }
+        if (options.transport === 'cloudflare') {
+          if (!record(value) || value.success !== true || !Array.isArray(value.errors) || value.errors.length)
+            return failed('DECISION_CLOUDFLARE_FAILED', 'Cloudflare Jev 决策请求失败。')
+          const run = value.result
+          if (!record(run) || run.state !== 'Completed')
+            return failed('DECISION_CLOUDFLARE_INCOMPLETE', 'Cloudflare Jev 决策请求未完成。')
+          const result = run.result
+          if (!record(result) || typeof result.model !== 'string' || !record(result.answers))
+            return failed('DECISION_INVALID_RESPONSE', `${label} 决策响应格式无效。`)
+          value = result
         }
         try {
           return { ...decodeDecisionResponse(value), latencyMs: performance.now() - started }
         } catch {
-          return failed('DECISION_INVALID_RESPONSE', 'Jev 决策响应格式无效。')
+          return failed('DECISION_INVALID_RESPONSE', `${label} 决策响应格式无效。`)
         }
       } catch {
         return combined.aborted
           ? aborted()
-          : failed('DECISION_TRANSPORT', '无法完成 Jev 决策服务请求。', true)
+          : failed('DECISION_TRANSPORT', `无法完成 ${label} 决策服务请求。`, true)
       }
     },
   }

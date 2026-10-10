@@ -203,47 +203,66 @@ describe('incremental ledger replay', () => {
     ])
   })
 
-  it('binds each batch decision to a unique index of its settled arbitration proposal', () => {
-    const replay = createLedgerReplay()
-    replay.append({ ...request, call: { ...request.call, purpose: 'arbitration' } })
-    replay.append({
-      ...settlement,
-      settlement: {
-        output: {
-          kind: 'calls',
-          calls: [
-            { kind: 'call', name: 'native', arguments: {} },
-            { kind: 'call', name: 'other', arguments: {} },
-          ],
+  it.each(['arbitration', 'parameters'] as const)(
+    'binds each batch decision to a unique index of its settled %s proposal',
+    (purpose) => {
+      const replay = createLedgerReplay()
+      const parent = { ...selected, id: rid('original-jev-selection'), source: 'jev' as const }
+      if (purpose === 'parameters') {
+        const originalRequest = { ...request, id: rid('original-request') }
+        replay.append(originalRequest)
+        replay.append({ ...settlement, id: rid('original-settlement'), requested: originalRequest.id })
+        replay.append({ ...parent, requested: originalRequest.id })
+      }
+      replay.append({ ...request, call: { ...request.call, purpose } })
+      replay.append({
+        ...settlement,
+        settlement: {
+          output: {
+            kind: 'calls',
+            calls: [
+              { kind: 'call', name: 'native', arguments: {} },
+              { kind: 'call', name: purpose === 'parameters' ? 'native' : 'other', arguments: {} },
+            ],
+          },
         },
-      },
-    })
-    const decision: Extract<RuntimeRecord, { kind: 'decision.selected' }> = {
-      version: 1,
-      id: rid('batch-first'),
-      turn,
-      step,
-      attempt,
-      kind: 'decision.selected',
-      requested: request.id,
-      phase: 'UNSPECIFIED',
-      operation: 'native',
-      source: 'llm_arbitration',
-      callIndex: 0,
-    }
-    for (const [index, invalid] of [
-      { ...decision, callIndex: -1 },
-      { ...decision, callIndex: 32 },
-      { ...decision, callIndex: 1 },
-      { ...decision, turn: brandString<TurnId>('other-turn') },
-    ].entries())
-      expect(() => replay.append({ ...invalid, id: rid(`invalid-batch-${index}`) })).toThrow()
-    expect(replay.state.records).toHaveLength(2)
-    replay.append(decision)
-    expect(() => replay.append({ ...decision, id: rid('duplicate') })).toThrow('unique matching proposal')
-    replay.append({ ...decision, id: rid('batch-second'), callIndex: 1, operation: 'other' })
-    expect(replay.state.records).toHaveLength(4)
-  })
+      })
+      const decision: Extract<RuntimeRecord, { kind: 'decision.selected' }> = {
+        version: 1,
+        id: rid('batch-first'),
+        turn,
+        step,
+        attempt,
+        kind: 'decision.selected',
+        requested: request.id,
+        phase: 'UNSPECIFIED',
+        operation: 'native',
+        source: purpose === 'parameters' ? 'jev' : 'llm_arbitration',
+        ...(purpose === 'parameters'
+          ? { parameterDecision: parent.id, confidence: parent.confidence, phase: parent.phase }
+          : {}),
+        callIndex: 0,
+      }
+      for (const [index, invalid] of [
+        { ...decision, callIndex: -1 },
+        { ...decision, callIndex: 32 },
+        { ...decision, operation: 'missing' },
+        { ...decision, source: 'jev' as const, parameterDecision: rid('missing-parent') },
+        { ...decision, turn: brandString<TurnId>('other-turn') },
+      ].entries())
+        expect(() => replay.append({ ...invalid, id: rid(`invalid-batch-${index}`) })).toThrow()
+      expect(replay.state.records).toHaveLength(purpose === 'parameters' ? 5 : 2)
+      replay.append(decision)
+      expect(() => replay.append({ ...decision, id: rid('duplicate') })).toThrow('unique matching proposal')
+      replay.append({
+        ...decision,
+        id: rid('batch-second'),
+        callIndex: 1,
+        operation: purpose === 'parameters' ? 'native' : 'other',
+      })
+      expect(replay.state.records).toHaveLength(purpose === 'parameters' ? 7 : 4)
+    },
+  )
 
   it('refuses broken causality without publishing the rejected record', () => {
     const replay = createLedgerReplay()

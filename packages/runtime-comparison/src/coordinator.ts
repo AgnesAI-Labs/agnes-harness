@@ -107,7 +107,8 @@ export class ComparisonCoordinator {
       if (previous !== undefined) {
         if (
           previous.payload !== payload ||
-          (params.permissionMode !== undefined && params.permissionMode !== previous.permissionMode)
+          (params.permissionMode !== undefined && params.permissionMode !== previous.permissionMode) ||
+          (params.decisionBackend ?? undefined) !== (previous.decisionBackend ?? undefined)
         )
           throw new ComparisonError(
             'IDEMPOTENCY_CONFLICT',
@@ -146,6 +147,7 @@ export class ComparisonCoordinator {
           lanes: { left: current.lanes.left!, right: current.lanes.right! },
           prepared: current.prepared ?? {},
           permissionMode,
+          ...(params.decisionBackend === undefined ? {} : { decisionBackend: params.decisionBackend }),
         })
       } catch (error) {
         throw new ComparisonError('COMPARISON_NOT_READY', 'Common configuration admission unavailable', {
@@ -159,6 +161,7 @@ export class ComparisonCoordinator {
         inputId: params.inputId,
         payload,
         permissionMode,
+        ...(params.decisionBackend === undefined ? {} : { decisionBackend: params.decisionBackend }),
         ...(admission?.prepared ? { prepared: structuredClone(admission.prepared) } : {}),
         acceptances: {
           left: { side: 'left', sessionId: current.lanes.left!.sessionId, status: 'unknown' },
@@ -192,6 +195,10 @@ export class ComparisonCoordinator {
                   sessionId: next.lanes[side]!.sessionId,
                   inputId: params.inputId,
                   content: structuredClone(content),
+                  ...(next.lanes[side]!.runtime ? { runtime: next.lanes[side]!.runtime.id } : {}),
+                  ...(params.decisionBackend === undefined
+                    ? {}
+                    : { decisionBackend: structuredClone(params.decisionBackend) }),
                 }),
           ),
         ),

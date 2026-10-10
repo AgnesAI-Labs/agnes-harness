@@ -161,6 +161,7 @@ export function assertRuntimeRecord(value: unknown): asserts value is RuntimeRec
                 item.phases.every((phase: unknown) => oneOf(phase, ['INSPECT', 'ACT', 'VERIFY'])))) &&
             (item.effectClass === undefined ||
               oneOf(item.effectClass, ['read_only', 'workspace_mutation', 'external_write'])) &&
+            (item.concurrencySafe === undefined || typeof item.concurrencySafe === 'boolean') &&
             (item.defaults === undefined || (object(item.defaults) && json(item.defaults))),
         )
       )
@@ -233,7 +234,7 @@ export function assertRuntimeRecord(value: unknown): asserts value is RuntimeRec
         !oneOf(value.phase, ['INSPECT', 'ACT', 'VERIFY', 'RESPOND', 'UNSPECIFIED']) ||
         (value.source !== undefined && !oneOf(value.source, ['jev', 'llm_arbitration'])) ||
         (value.callIndex !== undefined &&
-          (value.source !== 'llm_arbitration' ||
+          ((value.source !== 'llm_arbitration' && !nonempty(value.parameterDecision)) ||
             !Number.isSafeInteger(value.callIndex) ||
             Number(value.callIndex) < 0 ||
             Number(value.callIndex) >= 32)) ||
@@ -243,6 +244,8 @@ export function assertRuntimeRecord(value: unknown): asserts value is RuntimeRec
             !Number.isFinite(value.confidence) ||
             value.confidence < 0 ||
             value.confidence > 1)) ||
+        (value.parameterDecision !== undefined &&
+          (!nonempty(value.parameterDecision) || value.source !== 'jev' || value.callIndex === undefined)) ||
         (value.candidateId !== undefined && !nonempty(value.candidateId))
       )
         break
@@ -294,7 +297,12 @@ export function assertRuntimeRecord(value: unknown): asserts value is RuntimeRec
     case 'action.resolved':
       if (
         !nonempty(value.intentId) ||
-        !oneOf(value.resolution, ['confirmed_applied', 'confirmed_not_applied', 'accepted_uncertainty']) ||
+        !oneOf(value.resolution, [
+          'confirmed_applied',
+          'confirmed_not_applied',
+          'accepted_uncertainty',
+          'reconciled_state',
+        ]) ||
         !nonempty(value.actor) ||
         !nonempty(value.explanation) ||
         !Array.isArray(value.evidence) ||
@@ -329,7 +337,7 @@ export function createLedgerReplay(): {
   const ids = new Set<RecordId>()
   const requests = new Map<RecordId, RuntimeRecord & { kind: 'model.requested' }>()
   const modelSettlements = new Map<RecordId, ModelSettlement>()
-  const selected = new Set<RecordId>()
+  const selected = new Map<RecordId, Extract<RuntimeRecord, { kind: 'decision.selected' }>>()
   const batchSelections = new Set<string>()
   const intents = new Map<IntentId, FrozenIntent>()
   const dispatching = new Set<IntentId>()
@@ -371,8 +379,24 @@ export function createLedgerReplay(): {
               ? output.calls[record.callIndex]
               : undefined
           const key = JSON.stringify([record.requested, record.callIndex])
+          const parameterSelection =
+            record.parameterDecision === undefined ? undefined : selected.get(record.parameterDecision)
+          const parameterBatch =
+            request?.call.purpose === 'parameters' &&
+            parameterSelection?.source === 'jev' &&
+            parameterSelection.parameterDecision === undefined &&
+            requests.get(parameterSelection.requested)?.call.purpose === 'decision' &&
+            parameterSelection.operation === record.operation &&
+            parameterSelection.phase === record.phase &&
+            parameterSelection.turn === record.turn &&
+            parameterSelection.step === record.step
           if (
-            request?.call.purpose !== 'arbitration' ||
+            !(
+              (request?.call.purpose === 'arbitration' &&
+                record.source === 'llm_arbitration' &&
+                record.parameterDecision === undefined) ||
+              parameterBatch
+            ) ||
             settlement?.error ||
             !object(proposal) ||
             proposal.kind !== 'call' ||
@@ -385,7 +409,7 @@ export function createLedgerReplay(): {
             throw new InvalidLedger('Batch decision has no unique matching proposal')
           batchSelections.add(key)
         }
-        selected.add(record.id)
+        selected.set(record.id, record)
         break
       case 'action.intended':
         if (!selected.has(record.decision) || intents.has(record.intent.id))
@@ -433,6 +457,45 @@ export function createLedgerReplay(): {
           !Array.isArray(record.evidence)
         ) {
           throw new InvalidLedger('Resolution does not name one unresolved mutating intent')
+        }
+        if (record.resolution === 'reconciled_state') {
+          const proof = records.find(
+            (source) =>
+              source.kind === 'resource.observed' &&
+              record.evidence.includes(source.id) &&
+              object(source.resource) &&
+              source.resource.kind === 'jev.effect-recovery.proof.v1' &&
+              source.resource.intentId === record.intentId &&
+              source.resource.settlementRecordId === action.id &&
+              source.resource.resolution === 'reconciled_state',
+          )
+          const sources =
+            proof?.kind === 'resource.observed' &&
+            object(proof.resource) &&
+            Array.isArray(proof.resource.evidence)
+              ? proof.resource.evidence
+              : []
+          const settledIndex = records.indexOf(action)
+          const inspected = records.some(
+            (source, index) =>
+              index > settledIndex &&
+              source.kind === 'action.settled' &&
+              sources.includes(source.id) &&
+              record.evidence.includes(source.id) &&
+              source.outcome.kind === 'success' &&
+              source.effect === 'none' &&
+              intents.get(source.intentId)?.effectClass === 'read_only',
+          )
+          if (
+            intent.effectClass !== 'workspace_mutation' ||
+            record.actor !== 'host:effect-recovery' ||
+            !proof ||
+            !inspected ||
+            !sources.every((id) => typeof id === 'string' && record.evidence.includes(id))
+          )
+            throw new InvalidLedger(
+              'Reconciled state requires a Host proof bound to the uncertain action and fresh inspection',
+            )
         }
         resolutions.set(record.intentId, record)
         unresolved.splice(unresolved.indexOf(record.intentId), 1)

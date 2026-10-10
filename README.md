@@ -17,7 +17,7 @@ English | [简体中文](README.zh-CN.md)
 <img src="https://img.shields.io/badge/node-%E2%89%A5%2024.10-339933" alt="Node.js 24.10 or later" />
 <img src="https://img.shields.io/badge/local%20checks-macOS-3b8fff" alt="Recorded local checks: macOS" />
 
-[Quickstart](docs/guide/quickstart.md) · [Architecture](#architecture) · [Try the examples](docs/guide/demo.md) · [Build a plugin](docs/develop/plugins.md) · [Documentation](docs/README.md) · [MHS (coming soon)](docs/guide/mhs.md)
+[Quickstart](docs/guide/quickstart.md) · [Architecture](#architecture) · [Try the examples](docs/guide/demo.md) · [Build a plugin](docs/develop/plugins.md) · [Documentation](docs/README.md) · [MHS and devices](docs/guide/mhs.md)
 
 Developer preview (pre-alpha) · [Source build](#run-from-source) · [Apache-2.0](LICENSE)
 
@@ -35,16 +35,17 @@ Developer preview (pre-alpha) · [Source build](#run-from-source) · [Apache-2.0
 Taking AI into a real deployment is rarely about the model alone. It is about the customer's systems, the people who approve the work, and the details that differ at every site. Agnes Harness (AGH) connects models, tools, task state, and business interfaces: **put the differences into plugins, let the harness run and record the work, and carry what you validated into the next deployment.**
 
 <p align="center">
-  <img src="docs/assets/readme/hero.gif" alt="AGH working in a real project: the agent reads the refund rules and order data, asks for approval before running a command, verifies the result, returns a checkable table, and records every step in the trajectory view" width="100%" />
+  <img src="docs/assets/readme/hero.gif" alt="AGH working in a real project: the agent reads the refund rules and order data, asks for approval before running a command, verifies the result, returns a checkable table, and records every step in the Trace view" width="100%" />
 </p>
 
-<p align="center"><sub>Read the code, ask before running a command, verify, answer, and record every step. The Web interface currently ships in Chinese, so captions are bilingual.</sub></p>
+<p align="center"><sub>Read the code, ask before running a command, verify, answer, and record every step.</sub></p>
 
 <details>
 <summary><kbd>Contents</kbd></summary>
 
 - [What AGH is, and what it is not](#what-agh-is-and-what-it-is-not)
 - [Architecture: brain, cerebellum, memory and body](#architecture)
+- [JevLoop runtime: decide first, generate second](#jevloop-runtime)
 - [What AGH does for a deployment team](#what-agh-does-for-a-deployment-team)
 - [Public benchmark](#public-benchmark)
 - [Who it is for](#who-it-is-for)
@@ -65,7 +66,7 @@ What it is not, so you can choose the right trial:
 
 - **Not a hosted service.** AGH is a developer preview that you build from source and run in your own environment.
 - **Not a sandbox for arbitrary plugin code.** Ordinary backend plugins run as trusted in-process code; approvals and the command sandbox apply to the supported execution paths. See [security and trust](docs/guide/security.md).
-- **Not a certified device driver.** MHS device integration builds on MCP and is coming soon. No public MHS specification is open for certification, and device controllers keep real-time control and physical safety.
+- **Not a certified device driver.** MHS is AGH's own device protocol, independent of MCP. Passing its conformance suite does not certify a device as safe, and device controllers keep real-time control and physical safety.
 - **Not finished.** APIs, configuration, and plugin interfaces are evolving and may change.
 
 <a id="architecture"></a>
@@ -80,9 +81,9 @@ The brain, cerebellum, memory and body describe AGH's vision: combine reasoning,
 | Role | What it means in AGH | Current scope |
 | --- | --- | --- |
 | **LLM / brain** | Understand requests, reason about the task, and propose actions | Model integration through AI providers |
-| **Jev / cerebellum** | Structured decisions such as routing and scoring to help coordinate execution | Integration in progress; main currently uses the built-in Core loop |
+| **Jev / cerebellum** | Structured decisions such as routing and scoring to help coordinate execution | JevLoop is available as an experimental runtime; Native remains the default |
 | **Harness / memory** | Retain session history, task state, execution records, and reusable methods in Skills | Existing task context and recovery mechanisms; Harness also runs and governs execution |
-| **MHS / body** | Connect device capabilities so tasks can read physical state and request actions | Device integration through MCP-based adapters; AGH guides and examples are coming soon |
+| **MHS / body** | Connect device capabilities so tasks can read physical state and request actions | MHS and MOS 1.0 specifications, device libraries, the `mhs-check` conformance suite, and AgnesHub as an optional plugin with device tools for the brain |
 
 FDE is a delivery approach; MHS brings devices into the same work. Both build on the same foundation, and an FDE deployment can include devices.
 
@@ -91,11 +92,60 @@ FDE is a delivery approach; MHS brings devices into the same work. Both build on
 | **App Server** | Shared sessions, task submission, event delivery, and approval routing for CLI, Web, and SDK clients | Task entry points, human confirmation, and status presentation |
 | **Agent Loop** | Model/tool execution, task state, event records, interruption handling, and recovery | High-level device task orchestration and result records |
 | **Sandbox / execution constraints** | Tool authorization and applicable command, file, network, and process constraints | Software execution boundaries; device controllers retain motion control, interlocks, and emergency stops |
-| **Plugins** | Backend tools/services, Web panels, Skills, hooks, and MCP connections, organized with Cordis and package governance | An extension path for MCP-based device adapters and device-facing interfaces; adapters still require implementation and validation |
+| **Plugins** | Backend tools/services, Web panels, Skills, hooks, and MCP connections, organized with Cordis and package governance | AgnesHub runs as an optional plugin: device tools for the brain and a Devices panel in the workbench |
 
-Business connectors and workbenches are built through these extension paths for each deployment. The current repository has no verified general-purpose MHS adapter or end-to-end device example.
+Business connectors and workbenches are built through these extension paths for each deployment. Devices connect through MHS; the repository includes sample devices and a development hub for trying them without hardware.
 
 Follow the actual request path and source ownership in the [architecture guide](docs/develop/architecture.md), or explore the [source map](docs/develop/source-map.md).
+
+<a id="jevloop-runtime"></a>
+
+## JevLoop runtime: decide first, generate second
+
+AGH offers two runtime loops. **Native** is the default: the LLM chooses actions and generates tool arguments or answers. **JevLoop** separates those responsibilities: a decision model selects the purpose, tool and argument binding from finite options in one request per step; the LLM handles parameter completion, arbitration and answers when needed.
+
+**The potential gain comes from replacement, not from adding another model:** how often can a decision call replace a generation call? No-argument tools and complete candidates rebuilt from recorded facts can skip generation when the gates pass. Steps that still need the LLM retain its cost and add decision overhead.
+
+<p align="center">
+  <img src="docs/assets/readme/jevloop.webp" alt="Four selected steps in the actual JevLoop decision graph: direct tool execution, LLM parameter completion, LLM takeover and an LLM answer; highlighted paths change while the recorded candidates, gates and Host execution remain visible" width="100%" />
+</p>
+
+<p align="center"><sub>Recorded UI, four selected steps—not continuous playback or a performance benchmark. Each frame holds for about 0.67 seconds (6× the original speed). <a href="docs/assets/readme/jevloop.png">Open the static direct-path screenshot →</a></sub></p>
+
+### What changes in a step
+
+| Route | When it is used | What the LLM does |
+| --- | --- | --- |
+| **Direct** | Gates pass and the tool needs no arguments, or a complete candidate binding qualifies | No generation call; the intent proceeds to execution admission |
+| **Parameter completion** | The tool is selected but its arguments need generation | Generate complete arguments for that tool; do not change the tool |
+| **Arbitration / takeover** | Decision gates fail or a recoverable failure requires arbitration | Choose from the full native tool catalog or answer; unfinished work returns to Jev on the next step |
+| **Answer** | The decision selects `RESPOND` | Generate the answer from recorded evidence |
+
+**All tool routes share the Host's execution boundary.** Schema and freshness checks, authorization, approvals and applicable sandbox constraints still apply. Confidence selects a route; it never grants permission. LLM takeover is bounded by the runtime's budgets, not an unlimited fallback.
+
+### Advantages—and their limits
+
+- **Separate decision from generation.** Tool choice becomes a finite classification problem; generation remains available for arguments and prose.
+- **Skip generation on eligible steps.** Complete, high-confidence bindings can go straight to execution admission. Every such step still makes a decision request.
+- **Keep an escape path for open-ended work.** The LLM can arbitrate difficult steps with the full tool catalog. This retains flexibility, not a guarantee of Native-equivalent quality.
+
+The trade-offs matter:
+
+- **Candidate coverage limits replacement.** Candidates come from recorded objective facts and are rebuilt each step; they do not infer arbitrary arguments from the user's wording. Low replacement means the decision layer is mostly extra work.
+- **Extra calls and persistence add overhead.** Decision questions grow with the tool catalog, and each step records its phases. Lower cost or latency is **not guaranteed**.
+- **Long sessions can reverse the cost advantage.** The current Jev decision path has no prompt-prefix cache: accumulated decision context is resent. Compare it with the actual cache usage of your language provider.
+- **Runtime capabilities differ.** JevLoop requires a configured decision backend and currently supports neither session compaction nor forking; Native supports both. A session keeps the runtime chosen at creation.
+
+### Which runtime should you choose?
+
+| Your task or requirement | Start with |
+| --- | --- |
+| Open-ended investigation, unfamiliar tools or mostly novel arguments | **Native**—a simpler baseline without an extra decision service |
+| Repeatable workflows with reliable fact-derived candidates and many eligible direct steps | **JevLoop**—evaluate whether replacing generation pays off |
+| Long-running sessions where compaction or prompt-cache reuse matters, or tasks that need forking | **Native**—JevLoop does not currently offer compaction or forking |
+| Cost- or latency-sensitive deployments | **Measure both**—use the built-in two-runtime comparison with representative tasks; compare answer quality, elapsed time, generation replaced and total decision + LLM cost |
+
+Select the runtime when creating a Web session. The JevLoop decision graph is a read-only view of persisted records; replay does not execute tools again. Configuration, per-stage language models, experimental Local Laya and comparison isolation limits are covered in the [runtime loops guide →](docs/guide/runtime-loops.md).
 
 ## What AGH does for a deployment team
 
@@ -123,10 +173,10 @@ CLI, Web, and SDK share the same backend sessions. Resume a Web session in the t
 
 In a customer environment, a result is not enough: you need to show how it was produced.
 
-Running a command waits for your approval by default: allow once, allow for the session, or deny. The trajectory view keeps a timeline of model calls, tools, and approvals, step by step. Package trust, tool approvals, execution constraints, and session records give the integration explicit points of control. See [security and trust](docs/guide/security.md).
+Running a command waits for your approval by default: allow once, allow for the session, or deny. The Trace view keeps a timeline of model calls, tools, and approvals, step by step. Package trust, tool approvals, execution constraints, and session records give the integration explicit points of control. See [security and trust](docs/guide/security.md).
 
 <p align="center">
-  <img src="docs/assets/readme/trajectory.png" alt="The trajectory view: a timeline of input, model and tool activity, followed by step records that include the user request, file reads, the shell command and its approval record, and the final answer" width="100%" />
+  <img src="docs/assets/readme/trajectory.png" alt="The Trace view: a timeline of input, model and tool activity, followed by step records that include the user request, file reads, the shell command and its approval record, and the final answer" width="100%" />
 </p>
 
 ### 4. Each role needs its own screen
@@ -139,7 +189,7 @@ Capture task methods in [Skills](docs/guide/skills.md) and package reusable busi
 
 ### 6. The site also has devices
 
-From inspection to instrument coordination, field work connects device state, human judgment, and business workflows. AGH's device integration direction builds on MCP (Model Context Protocol) rather than a vendor-specific SDK, bringing state reads, action requests, and execution receipts into the same task flow. **MHS integration documentation and examples are coming soon.** [Explore the device integration direction →](docs/guide/mhs.md)
+From inspection to instrument coordination, field work connects device state, human judgment, and business workflows. Agnes MHS (Model Hardware Standard) is AGH's own open device protocol, independent of MCP and of vendor-specific SDKs: a device connects to AgnesHub over WebSocket, registers its state, tools, and data sources, and takes calls. Its companion MOS (Model Observation Standard) streams what the device observes, such as camera images, maps, and places. State reads, action requests, and results join the same task flow. [Try devices without hardware →](docs/guide/mhs.md)
 
 ## Public benchmark
 
@@ -149,14 +199,14 @@ On the public [Agents' Last Exam (ALE) leaderboard](https://agents-last-exam.org
   <img src="docs/assets/readme/ale-leaderboard.png" alt="Agents' Last Exam results for Agnes Harness with Agnes 2.5 Pro Beta: 21.7% overall pass rate, 42.7% overall score, 31.3% near-term pass rate, 23.6% full-spectrum pass rate, 25.7% ALE-CLI pass rate and 50.2% ALE-CLI score, beside an excerpt of nearby leaderboard entries whose models and settings differ" width="100%" />
 </p>
 
-<p align="center"><sub>Results depend on model versions, settings, and tool configurations. See the leaderboard for current figures.</sub></p>
+<p align="center"><sub>Results depend on model versions, settings, and tool configurations. These figures are not a Native–JevLoop comparison. See the leaderboard for current figures.</sub></p>
 
 ## Who it is for
 
 - **FDE and solution engineers** delivering agents into customer systems and workflows
 - **Plugin developers** packaging business tools, services, and interfaces for reuse
 - **Teams that need oversight**: approvals before commands, records of every step, and explicit package trust
-- **Field and lab teams** preparing for device scenarios as MHS integration opens up
+- **Field and lab teams** bringing devices into tasks through MHS
 
 Not a fit yet if you need a hosted service, signed installers, or a production commitment today: AGH is a developer preview.
 
@@ -209,8 +259,8 @@ AGH is a developer preview.
 | Plugins: backend tools and services, Web panels, Skills, hooks, MCP | Available, with documented constraints |
 | Command sandbox and execution constraints | Platform-dependent |
 | Platforms | Recorded local checks on macOS with Node 24; Linux and Windows need separate acceptance |
-| Jev structured decisions | Integration in progress |
-| MHS device integration (MCP-based) | Coming soon |
+| JevLoop structured decision runtime | Available as an experimental option; Native remains the default |
+| MHS device integration through AgnesHub | Available as an optional plugin |
 
 Use [supported scope and known limitations](docs/reference/limitations.md) to choose your trial environment, and the [verification guide](docs/maintainers/verification.md) for reproducible checks and their scope.
 
@@ -223,10 +273,10 @@ Not yet. AGH is a developer preview without a public package release, installer,
 Ordinary backend plugins run as trusted in-process code, so install only packages you trust. Approvals and the command sandbox apply to the supported execution paths; they do not isolate arbitrary plugin code.
 
 **Which models can I use?**
-Models connect through AI providers, and each provider's catalog determines the available capabilities. The demos on this page were recorded with Agnes AI `agnes-3.0-flash`; quality and tool selection vary by model.
+Models connect through AI providers, and each provider's catalog determines the available capabilities. The task, plugin, terminal and Trace demos on this page were recorded with Agnes AI `agnes-3.0-flash`; the JevLoop screenshots illustrate recorded routing rather than model performance. Quality and tool selection vary by model.
 
 **Can MHS control devices today?**
-No. MHS documentation and examples are coming soon, built on MCP. Canceling an AGH task does not establish that a device stopped safely; device controllers keep interlocks and emergency stops.
+Yes, through AgnesHub: the brain calls the tools a device declares, and AgnesHub checks every call against that declaration. The [MHS guide](docs/guide/mhs.md) starts with sample devices. Canceling an AGH task does not establish that a device stopped safely; device controllers keep interlocks and emergency stops.
 
 **Do you accept pull requests?**
 Code and documentation pull requests are currently limited to invited internal developers. Issues for bug reports and use-case suggestions are welcome; see the [feedback and development policy](CONTRIBUTING.md).

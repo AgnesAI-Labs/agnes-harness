@@ -6,6 +6,7 @@ import type {
   DiagnosticsEventsResult,
   EventEnvelope,
   SessionAccountingResult,
+  SessionModelSlotsResult,
 } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import { openTestHost } from './host.js'
@@ -274,6 +275,74 @@ describe('diagnostics.events', () => {
         maxBytes: 65536,
       }),
     ).toHaveProperty('error.data.code', 'SESSION_NOT_FOUND')
+  })
+})
+
+describe('session.modelSlots', () => {
+  it('reports live slot state and default language mapping without writing, and refuses strangers', async () => {
+    const { h, ep } = await setup()
+    const sessionId = await newSession(ep, h.dataDir)
+    const session = h.host.kernel.get(sessionId)
+    if (!session) throw new Error('session not open')
+    const head = session.lastSeq
+    const result = await call<SessionModelSlotsResult>(ep, '_agnes/v1/session.modelSlots', { sessionId })
+    expect(result.result).toMatchObject({
+      sessionId,
+      runtime: { id: 'native' },
+      languageSlots: { parameters: 'primary', arbitration: 'primary', answer: 'primary' },
+    })
+    const slots = result.result?.slots ?? []
+    expect(slots).toHaveLength(7)
+    expect(slots.map((slot) => slot.slot)).toContain('primary')
+    for (const slot of slots) {
+      expect(typeof slot.route).toBe('string')
+      expect(typeof slot.model).toBe('string')
+      expect(slot.thinking === null || typeof slot.thinking === 'string').toBe(true)
+      expect(slot.contextWindow === null || Number.isSafeInteger(slot.contextWindow)).toBe(true)
+    }
+    expect(result.result?.languageBindings).toEqual({
+      parameters: null,
+      arbitration: null,
+      answer: null,
+    })
+    expect(session.lastSeq).toBe(head)
+    const stranger = h.endpoint({
+      pollMs: 5,
+      identity: { principalId: 'other-principal', authKind: 'local', credentialKind: 'local' },
+    })
+    cleanups.push(() => stranger.close())
+    await stranger.handle(initialize)
+    expect(await call(stranger, '_agnes/v1/session.modelSlots', { sessionId })).toHaveProperty(
+      'error.data.code',
+      'CAPABILITY_DENIED',
+    )
+    expect(await call(stranger, '_agnes/v1/session.setJevStages', { sessionId, stages: {} })).toHaveProperty(
+      'error.data.code',
+      'CAPABILITY_DENIED',
+    )
+  })
+
+  it('refuses empty or unlisted stage bindings through the same gate as setModel', async () => {
+    const { h, ep } = await setup()
+    const sessionId = await newSession(ep, h.dataDir)
+    expect(await call(ep, '_agnes/v1/session.setJevStages', { sessionId, stages: {} })).toHaveProperty(
+      'error.data.code',
+      'STAGE_BINDING_EMPTY',
+    )
+    expect(
+      await call(ep, '_agnes/v1/session.setJevStages', {
+        sessionId,
+        stages: { answer: { route: 'gw', model: 'not-in-catalogue' } },
+      }),
+    ).toHaveProperty('error.data.code', 'PRESET_SWITCH_REJECTED')
+    // A refused write leaves the projection untouched.
+    const after = await call<SessionModelSlotsResult>(ep, '_agnes/v1/session.modelSlots', { sessionId })
+    expect(after.result?.languageBindings).toEqual({
+      parameters: null,
+      arbitration: null,
+      answer: null,
+    })
+    void h
   })
 })
 

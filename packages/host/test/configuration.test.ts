@@ -1,8 +1,9 @@
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer, type IncomingMessage } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getApiKeyProvider } from '@agnes/ai'
+import { captureModelPriceQuote } from '@agnes/core'
 import * as systemNode from '@agnes/system-node'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -49,6 +50,260 @@ async function home(): Promise<string> {
   createPrivateDirectorySync(root)
   return root
 }
+
+it('round-trips a declared custom model without /models, preserves unknown price and rejects key forwarding to changed targets or protocols', async () => {
+  const root = await home()
+  // A legacy home may be public while its configuration profile is already private.
+  if (process.platform !== 'win32') await chmod(root, 0o755)
+  let rejectSystem = false
+  let priceMetadata = false
+  const inferenceRequests: Request[] = []
+  const request = vi.fn<typeof fetch>(async (_url, init) => {
+    const wire = new Request(_url, init)
+    expect(wire.redirect).toBe('error')
+    if (wire.url.endsWith('/model/info')) {
+      expect(wire.method).toBe('GET')
+      expect(wire.headers.get('authorization')).toBe('Bearer custom-test')
+      return priceMetadata
+        ? Response.json({
+            data: [
+              {
+                model_name: 'outside-vendor-directory',
+                model_info: {
+                  input_cost_per_token: 3e-7,
+                  output_cost_per_token: 1.2e-6,
+                  cache_read_input_token_cost: 6e-9,
+                  cache_creation_input_token_cost: 0,
+                },
+              },
+            ],
+          })
+        : Response.json({}, { status: 404 })
+    }
+    if (wire.url.endsWith('/models'))
+      return Response.json({ data: [{ id: 'outside-vendor-directory' }, { id: 'another-manual-model' }] })
+    inferenceRequests.push(wire.clone())
+    const body = await wire.json()
+    if (
+      rejectSystem &&
+      body.messages.some((message: { role: string }, index: number) => index > 0 && message.role === 'system')
+    )
+      return Response.json({ error: { message: 'custom-test private upstream detail' } }, { status: 400 })
+    const chunk = {
+      id: 'c',
+      model: body.model,
+      choices: [{ index: 0, delta: { role: 'assistant', content: 'OK' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }
+    return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, {
+      headers: { 'content-type': 'text/event-stream' },
+    })
+  })
+  const service = createConfigurationService({ home: root, profile: 'local-dev', request })
+  const custom = {
+    api: 'openai-completions' as const,
+    contextWindow: 32768,
+    maxTokens: 1024,
+    input: ['text' as const],
+    reasoning: false,
+    toolCalls: true,
+    maxTokensField: 'max_tokens' as const,
+  }
+  const input = {
+    providerId: 'custom-openai',
+    baseUrl: 'https://custom.example.invalid/v1',
+    model: 'outside-vendor-directory',
+    custom,
+    apiKey: 'custom-test',
+  }
+  expect((await service.providers()).providers).toContainEqual(
+    expect.objectContaining({ id: 'custom-openai' }),
+  )
+  expect(await service.test(input)).toMatchObject({ verified: true, models: [{ id: input.model }], custom })
+  expect(inferenceRequests[0]?.url).toBe(`${input.baseUrl}/chat/completions`)
+  expect(await inferenceRequests[0]?.json()).toMatchObject({
+    model: input.model,
+    stream: true,
+    max_tokens: 64,
+  })
+  const saved = await service.save({ ...input, expectedRevision: 0 })
+  if (process.platform !== 'win32') expect((await stat(root)).mode & 0o7777).toBe(0o700)
+  expect(saved.accounts?.[0]?.custom).toEqual(custom)
+  expect(JSON.stringify(saved)).not.toContain(input.apiKey)
+  const fresh = createConfigurationService({ home: root, profile: 'local-dev', request })
+  expect(await fresh.get()).toEqual(saved)
+  const record = (await fresh.profileInput()).provider?.routes?.[0]?.models?.[0]
+  expect(record).toMatchObject({
+    id: input.model,
+    api: custom.api,
+    contextWindow: 32768,
+    maxTokens: 1024,
+    toolCallFormats: ['native'],
+    pricePolicy: { perMillion: { inputUncached: null, output: null } },
+  })
+  await expect(fresh.test({ providerId: input.providerId, model: input.model })).resolves.toMatchObject({
+    verified: true,
+  })
+  const count = request.mock.calls.length
+  for (const update of [
+    { baseUrl: 'https://changed.example.invalid/v1' },
+    { custom: { ...custom, api: 'openai-responses' as const } },
+  ]) {
+    await expect(
+      fresh.test({ providerId: input.providerId, model: input.model, ...update }),
+    ).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_REQUIRED' })
+  }
+  expect(request.mock.calls.length).toBe(count)
+  priceMetadata = true
+  await expect(
+    fresh.save({ providerId: input.providerId, model: input.model, expectedRevision: 1 }),
+  ).resolves.toMatchObject({ revision: 2 })
+  const priced = createConfigurationService({ home: root, profile: 'local-dev', request })
+  expect((await priced.profileInput()).provider?.routes?.[0]?.models?.[0]?.pricePolicy).toMatchObject({
+    currency: 'USD',
+    perMillion: { inputUncached: 0.3, output: 1.2, cacheRead: 0.006, cacheWrite: 0 },
+    source: { url: `${input.baseUrl}/model/info` },
+  })
+  const directory = await fresh.test({ providerId: input.providerId, catalogueOnly: true })
+  expect(directory).toEqual({
+    verified: false,
+    models: [
+      { id: input.model, name: input.model },
+      { id: 'another-manual-model', name: 'another-manual-model' },
+    ],
+  })
+  expect(String(request.mock.calls.at(-1)?.[0])).toBe(`${input.baseUrl}/models`)
+  expect(request.mock.calls.at(-1)?.[1]).toMatchObject({
+    method: 'GET',
+    headers: { Authorization: 'Bearer custom-test' },
+  })
+  await expect(
+    fresh.test({
+      providerId: input.providerId,
+      catalogueOnly: true,
+      baseUrl: 'https://changed.example.invalid/v1',
+    }),
+  ).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_REQUIRED' })
+  await fresh.save({
+    providerId: input.providerId,
+    model: input.model,
+    custom: { ...custom, modelIds: directory.models.map((model) => model.id) },
+    expectedRevision: 2,
+  })
+  expect((await fresh.get()).accounts?.[0]?.models.map((model) => model.id)).toEqual([
+    input.model,
+    'another-manual-model',
+  ])
+  expect((await fresh.profileInput()).provider?.routes?.[0]?.models?.map((model) => model.id)).toEqual([
+    input.model,
+    'another-manual-model',
+  ])
+  const priceRecords = (await priced.profileInput()).provider?.routes?.[0]?.models
+  expect(
+    priceRecords?.find((record) => record.id === input.model)?.pricePolicy?.perMillion.inputUncached,
+  ).toBe(0.3)
+  expect(
+    priceRecords?.find((record) => record.id === 'another-manual-model')?.pricePolicy?.perMillion
+      .inputUncached,
+  ).toBeNull()
+  const pricedRecord = priceRecords?.find((record) => record.id === input.model)
+  if (!pricedRecord?.route || !pricedRecord.pricePolicy) throw new Error('Missing priced model')
+  const quote = captureModelPriceQuote(
+    { models: () => priceRecords ?? [], async *infer() {} },
+    { route: pricedRecord.route, model: pricedRecord.id },
+    1,
+  )
+  expect(quote).toMatchObject({
+    basis: 'configured',
+    policy: { perMillion: { inputUncached: 0.3, output: 1.2 } },
+  })
+  pricedRecord.pricePolicy.perMillion.inputUncached = 9
+  expect(quote?.policy.perMillion.inputUncached).toBe(0.3)
+  const declaration = { ...custom, supportsMidConvoSystemMessages: true }
+  expect(
+    await fresh.test({ providerId: input.providerId, model: input.model, custom: declaration }),
+  ).toMatchObject({
+    verified: true,
+    customVerification: {
+      baseUrl: input.baseUrl,
+      model: input.model,
+      ordering: 'unverified',
+      checks: [
+        { id: 'inference', status: 'passed' },
+        { id: 'mid-conversation-system', status: 'passed' },
+      ],
+    },
+  })
+  // Saving never trusts an earlier successful browser test or persists a failed declaration.
+  rejectSystem = true
+  const rejected = await fresh.test({ providerId: input.providerId, model: input.model, custom: declaration })
+  expect(rejected).toMatchObject({
+    verified: false,
+    customVerification: {
+      checks: [
+        { id: 'inference', status: 'passed' },
+        { id: 'mid-conversation-system', status: 'failed', reason: 'endpoint' },
+      ],
+    },
+  })
+  expect(JSON.stringify(rejected)).not.toContain('custom-test')
+  await expect(
+    fresh.save({
+      providerId: input.providerId,
+      model: input.model,
+      custom: declaration,
+      expectedRevision: 3,
+    }),
+  ).rejects.toMatchObject({ code: 'CONFIG_TEST_FAILED' })
+  expect((await fresh.get()).revision).toBe(3)
+  expect((await fresh.get()).accounts?.[0]?.custom?.supportsMidConvoSystemMessages).not.toBe(true)
+  priceMetadata = false
+  await fresh.save({ providerId: input.providerId, model: input.model, expectedRevision: 3 })
+  expect(
+    (await fresh.profileInput()).provider?.routes?.[0]?.models?.[0]?.pricePolicy?.perMillion.inputUncached,
+  ).toBeNull()
+  expect(quote?.policy.perMillion.inputUncached).toBe(0.3)
+  const storedBeforeRefresh = JSON.parse(
+    await readFile(join(root, 'profiles/local-dev/configuration.json'), 'utf8'),
+  )
+  const inferenceCount = inferenceRequests.length
+  priceMetadata = true
+  const refreshAccountId = (await fresh.get()).accounts?.[0]?.accountId
+  if (!refreshAccountId) throw new Error('Missing refresh account')
+  const refreshed = await fresh.account({
+    accountId: refreshAccountId,
+    action: 'refresh-prices',
+    expectedRevision: 4,
+  })
+  expect(refreshed.revision).toBe(5)
+  expect(inferenceRequests.length).toBe(inferenceCount)
+  const storedAfterRefresh = JSON.parse(
+    await readFile(join(root, 'profiles/local-dev/configuration.json'), 'utf8'),
+  )
+  const withoutPrices = (account: { modelPricePolicies?: unknown }) => {
+    const { modelPricePolicies: _prices, ...rest } = account
+    return rest
+  }
+  expect(storedAfterRefresh.accounts.map(withoutPrices)).toEqual(
+    storedBeforeRefresh.accounts.map(withoutPrices),
+  )
+  expect(storedAfterRefresh.defaultAccountId).toBe(storedBeforeRefresh.defaultAccountId)
+  expect(
+    (await fresh.profileInput()).provider?.routes?.[0]?.models?.[0]?.pricePolicy?.perMillion.inputUncached,
+  ).toBe(0.3)
+  await expect(
+    fresh.account({ accountId: refreshAccountId, action: 'refresh-prices', expectedRevision: 4 }),
+  ).rejects.toMatchObject({ code: 'CONFIG_REVISION_CONFLICT' })
+  for (const declaration of [
+    { ...custom, maxTokens: custom.contextWindow + 1 },
+    { ...custom, contextWindow: 1.5 },
+    { ...custom, input: ['image'] },
+  ]) {
+    await expect(fresh.test({ ...input, custom: declaration as never })).rejects.toMatchObject({
+      code: 'CONFIG_INVALID_INPUT',
+    })
+  }
+})
 
 it('tests a real provider catalogue, saves an atomic non-secret record, and exposes the Host overlay', async () => {
   const entry = getApiKeyProvider('openai')

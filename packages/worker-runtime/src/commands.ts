@@ -1,4 +1,5 @@
 import type { Host, HostSession, ResolvedProfile } from '@agnes/host'
+import { projectJevModelSlots } from '@agnes/host'
 import type { LocalGate } from '@agnes/plugin-runtime/host'
 import {
   type Actor,
@@ -463,6 +464,14 @@ export async function handleCommand(
       const sel = p.sel as { slot: string; route: string; model: string }
       o.host.validateModelSwitch(sel)
       return { effectiveFromSeq: await session.setModel(sel) }
+    }
+    case 'setJevStages': {
+      // The daemon already gated each binding against the deployment's route table; core's
+      // setJevStages re-checks catalogue membership before the durable write.
+      return { effectiveFromSeq: await session.setJevStages({ stages: p.stages as never }) }
+    }
+    case 'jevModelSlots': {
+      return projectJevModelSlots(session)
     }
     case 'setYolo': {
       if (typeof p.enabled !== 'boolean') throw new TypeError('invalid setYolo command')

@@ -14,6 +14,30 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
+it('mounts Jev through the builtin height-chain wrapper with a separate action footer', () => {
+  const dialog = document.createElement('dialog')
+  dialog.id = 'config'
+  document.body.append(dialog)
+  const shellRoot = createRoot(dialog)
+  flushSync(() => shellRoot.render(createElement(SettingsBuiltin, { options: {} })))
+  const slot = dialog.querySelector<HTMLElement>('#settings-pane-slot-jev')
+  if (!slot) throw new Error('Jev pane slot missing')
+  const paneRoot = createRoot(slot)
+  try {
+    flushSync(() => paneRoot.render(createElement(SettingsPaneBuiltin, { pane: 'jev' })))
+    const wrapper = slot.querySelector(
+      '[data-agnes-region-owner="builtin"][data-agnes-region-unit="settings-jev"]',
+    )
+    expect(wrapper?.querySelector('#jev-settings-pane')).toBeTruthy()
+    const save = dialog.querySelector('#jev-save')
+    expect(save?.closest('.jev-settings-actions')).toBeTruthy()
+    expect(save?.closest('.config-workspace')).toBeNull()
+  } finally {
+    paneRoot.unmount()
+    shellRoot.unmount()
+  }
+})
+
 it('operates the React settings pane and account dialog without losing native form semantics', async () => {
   const dialog = document.createElement('dialog')
   dialog.id = 'config'

@@ -12,14 +12,16 @@ import {
   type HarnessMeta,
   type RpcError,
   type RuntimeDescriptor,
+  type RuntimeTurnOptions,
   rpcError,
   type SessionRuntimeState,
   setHarnessMeta,
+  TURN_OPTIONS_META_KEY,
   type TurnEndReason,
   toAcpStopReason,
   validateAgainst,
 } from '@agnes/protocol'
-import { NewSessionMeta } from '@agnes/protocol/gen/agnes-v1'
+import { NewSessionMeta, RuntimeTurnOptions as RuntimeTurnOptionsSchema } from '@agnes/protocol/gen/agnes-v1'
 import type { PreviewSnapshotEntry, PreviewUpdate, Registry } from '../../registry.js'
 import { notify } from '../../rpc.js'
 import type { SessionPrincipalOwnership } from '../../storage/session-ownership.js'
@@ -598,7 +600,15 @@ export function registerAcp(
   })
 
   ep.register('session/prompt', async (params, c) => {
-    const p = params as { sessionId: string; prompt: unknown[] }
+    const p = params as { sessionId: string; prompt: unknown[]; _meta?: Record<string, unknown> }
+    const rawOptions = p._meta?.[TURN_OPTIONS_META_KEY]
+    const checkedOptions =
+      rawOptions === undefined
+        ? undefined
+        : validateAgainst<RuntimeTurnOptions>(RuntimeTurnOptionsSchema, rawOptions)
+    if (checkedOptions && !checkedOptions.ok)
+      throw rpcError('INVALID_PARAMS', { reason: 'Invalid runtime turn options' })
+    const runtimeOptions = checkedOptions?.ok ? checkedOptions.value : undefined
     requireOwner('session/prompt', p.sessionId)
     const entry = cx.registry.require(p.sessionId)
     const abort = new AbortController()
@@ -631,6 +641,7 @@ export function registerAcp(
           enqueuedSeq = await entry.session.enqueue('next-turn', {
             commandId: `acp:${randomUUID()}`,
             content: p.prompt as never,
+            ...(runtimeOptions === undefined ? {} : { runtimeOptions }),
             actor: connActor(c.conn),
             kind: 'prompt',
           })

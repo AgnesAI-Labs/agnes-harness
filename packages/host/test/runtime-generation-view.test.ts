@@ -1,10 +1,15 @@
-import { noopHooks, ResourceRegistry, ToolRegistry } from '@agnes/core'
+import { noopHooks, ResourceRegistry, type SessionImpl, ToolRegistry } from '@agnes/core'
 import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { buildPresetRows } from '../src/assemble/preset-rows.js'
 import { assembleOrdinaryPluginTree } from '../src/assemble/seams-cordis.js'
-import { mountedConfigurationSource, readMountedConfiguration } from '../src/mounted-attestation.js'
+import {
+  bindMountedConfiguration,
+  mountedConfigurationSource,
+  readMountedConfiguration,
+} from '../src/mounted-attestation.js'
+import { mountJevTools } from '../src/runtime/jev-tool-mount.js'
 import {
   generationRegistries,
   prepareGenerationOwnerReplacement,
@@ -12,6 +17,114 @@ import {
 } from '../src/runtime-generation-view.js'
 
 describe('published generation runtime view', () => {
+  it('keeps the Jev mount isolated across same-schema reload, revocation and runtime view changes', async () => {
+    const tools = new ToolRegistry()
+    const resources = new ResourceRegistry()
+    const owner = {
+      source: 'agnes/tools-core',
+      trust: 'builtin' as const,
+      executionDomain: 'workspace' as const,
+    }
+    const tool = (name: string, text: string) => ({
+      name,
+      description: name,
+      parameters: Type.Object({}),
+      meta: {
+        isReadOnly: true,
+        isDestructive: false,
+        isConcurrencySafe: true,
+        isOpenWorld: false,
+        replay: 'safe' as const,
+        costHint: undefined,
+        deferLoading: undefined,
+        requiresApproval: undefined,
+      },
+      execute: async () => ({ content: [{ type: 'text' as const, text }] }),
+    })
+    tools.add(tool('read', 'old'), owner)
+    tools.add(tool('todo', 'disabled'), owner)
+    let source = {
+      tools,
+      resources,
+      hooks: noopHooks,
+      runtimePromptPreloader: () => ({ note: 'old', key: 'old' }),
+    }
+    const evidence = {
+      scope: 'active-host-rows-and-selected-preset' as const,
+      digest: 'a'.repeat(64),
+      count: 1,
+    }
+    let currentEvidence: typeof evidence | null = evidence
+    bindMountedConfiguration(source, () => currentEvidence)
+    let published = true
+    const lookup = { current: () => (published ? source : undefined) }
+    const dependencies: Pick<SessionImpl['d'], 'registry' | 'currentRuntime'> = {
+      registry: tools,
+      currentRuntime: lookup,
+    }
+    const session = {
+      key: 'jev-mount',
+      hooks: noopHooks,
+      d: dependencies,
+      currentResources: () => resources,
+      currentTools: () => dependencies.currentRuntime?.current('jev-mount')?.tools ?? tools,
+    } as unknown as SessionImpl
+    mountJevTools(session)
+    const mounted = session.d.currentRuntime?.current(session.key)
+    expect(mounted?.tools.list().map((tool) => tool.name)).toEqual(['read'])
+    expect(mounted?.tools.resolve('todo')).toBeUndefined()
+    expect(tools.resolve('todo')).toBeDefined()
+    expect(mounted?.tools.resolve('read')?.definitionFingerprint).toBe(
+      tools.resolve('read')?.definitionFingerprint,
+    )
+    expect(readMountedConfiguration(mounted)).toEqual(evidence)
+    expect(session.d.currentRuntime?.current(session.key)).toBe(mounted)
+    expect(session.d.currentRuntime?.current('other-session')).toBe(source)
+
+    const refreshed = new ToolRegistry()
+    refreshed.add(tool('read', 'new'), owner)
+    refreshed.add(tool('todo', 'still disabled'), owner)
+    const replacement = tools.prepareOwnerReplacement(owner.source, refreshed)
+    replacement.commit()
+    replacement.finalize()
+    const reloaded = session.currentTools()
+    expect(reloaded).not.toBe(mounted?.tools)
+    expect(reloaded.list().map((tool) => tool.name)).toEqual(['read'])
+    expect(reloaded.resolve('read')?.definitionFingerprint).toBe(
+      mounted?.tools.resolve('read')?.definitionFingerprint,
+    )
+    expect(await reloaded.resolve('read')?.execute({}, {} as never)).toMatchObject({
+      content: [{ text: 'new' }],
+    })
+
+    source = {
+      ...source,
+      resources: new ResourceRegistry(),
+      hooks: { ...noopHooks },
+      runtimePromptPreloader: () => ({ note: 'new', key: 'new' }),
+    }
+    bindMountedConfiguration(source, () => currentEvidence)
+    const changed = session.d.currentRuntime?.current(session.key)
+    expect(changed?.tools).toBe(reloaded)
+    expect(changed?.hooks).toBe(source.hooks)
+    expect(changed?.resources).toBe(source.resources)
+    expect(changed?.runtimePromptPreloader).toBe(source.runtimePromptPreloader)
+    expect(readMountedConfiguration(changed)).toEqual(evidence)
+    currentEvidence = null
+    expect(readMountedConfiguration(changed)).toBeNull()
+    published = false
+    const fallback = session.d.currentRuntime?.current(session.key)
+    expect(fallback?.tools.list().map((tool) => tool.name)).toEqual(['read'])
+    expect(fallback?.hooks).toBe(noopHooks)
+    expect(fallback?.resources).toBe(resources)
+    expect(fallback?.runtimePromptPreloader).toBeUndefined()
+    expect(readMountedConfiguration(fallback)).toBeNull()
+    const revoked = tools.prepareOwnerReplacement(owner.source, new ToolRegistry())
+    revoked.commit()
+    revoked.finalize()
+    expect(session.currentTools().size).toBe(0)
+  })
+
   it('binds actual mounted config to the exact runtime pointer and refuses in-place drift', async () => {
     const presets = buildPresetRows({ standard: { name: 'standard', model: { id: 'm' } } })
     const row = createPluginRow({

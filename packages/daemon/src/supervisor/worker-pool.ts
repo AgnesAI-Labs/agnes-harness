@@ -111,6 +111,8 @@ export class WorkerPool {
       profile: ResolvedProfile
       profileFile: string
       /** Daemon-authored resource inputs copied privately to new worker generations. */
+      /** Frozen non-secret Jev profile metadata; credentials are resolved by the worker. */
+      jevBootstrap?: string
       resourceBootstrap?: ResourceWorkerBootstrapConfiguration
       spawn?: typeof nodeSpawn
       execPath?: string
@@ -458,6 +460,7 @@ export class WorkerPool {
             env: {
               ...process.env,
               ...(this.o.config.home !== undefined ? { AGH_HOME: this.o.config.home } : {}),
+              AGNES_JEV_PROFILE_SNAPSHOT: this.o.jevBootstrap,
               AGNES_WORKER_TOKEN: token,
               AGNES_SUPERVISOR_SOCKET: this.o.config.workersSocketPath,
               AGNES_SUPERVISOR_PID: supervisorStartId ? String(process.pid) : undefined,

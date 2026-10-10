@@ -67,6 +67,7 @@ describe('protocol src boundary', () => {
         'validModelPriceQuote',
         'SESSION_TITLE_EVENT',
         'SessionTitleRecord',
+        'TURN_OPTIONS_META_KEY',
         'readSessionTitle',
         'minimumContextBudget',
         'BRIDGE_ERRORS',

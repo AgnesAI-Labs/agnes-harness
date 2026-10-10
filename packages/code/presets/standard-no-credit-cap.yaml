@@ -1,4 +1,4 @@
-# Explicit opt-in without a request-credit cap or a new delegated-tree credit cap.
+# Compatibility name for the standard recipe's unpriced ordinary-task policy.
 # Usage is still recorded; tools, approvals and all non-monetary limits inherit standard.
 name: standard-no-credit-cap
 extends: standard

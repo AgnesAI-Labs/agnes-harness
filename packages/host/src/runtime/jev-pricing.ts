@@ -4,6 +4,9 @@ import { type ModelPricePolicy, type ModelPriceQuote, validModelPriceQuote } fro
  * These are explicit route/model estimates, not provider-reported billing or credits. */
 const ENDPOINT = 'https://api.typesafe.ai/v1/systemone'
 const MODELS = new Set(['jev-latest', 'jev-1.13.0'])
+const MODEL_ALIASES = new Set([...MODELS, 'typesafe/jev'])
+const CLOUDFLARE_ENDPOINT = /^https:\/\/api\.cloudflare\.com\/client\/v4\/accounts\/[a-f0-9]{32}\/ai\/run$/
+// Cloudflare uses this same configured estimate by operator policy, not gateway billing.
 const POLICY: ModelPricePolicy = {
   currency: 'USD',
   unit: 'per-million-tokens',
@@ -23,8 +26,10 @@ interface JevPriceIdentity {
 function supported(input: JevPriceIdentity): boolean {
   return (
     input.backend === 'jev' &&
-    input.endpoint === ENDPOINT &&
-    MODELS.has(input.model) &&
+    ((input.endpoint === ENDPOINT && MODELS.has(input.model)) ||
+      (input.endpoint === input.endpoint.trim() &&
+        CLOUDFLARE_ENDPOINT.test(input.endpoint) &&
+        input.model === 'typesafe/jev')) &&
     Number.isSafeInteger(input.admittedAt) &&
     Number.isFinite(new Date(input.admittedAt).getTime())
   )
@@ -60,7 +65,7 @@ export function resolveJevPriceEstimate(input: {
   quote?: unknown
 }): JevPriceEstimate | null {
   const current = captureJevPriceQuote({ ...input, model: input.requestedModel })
-  if (!current || (input.observedModel != null && !MODELS.has(input.observedModel))) return null
+  if (!current || (input.observedModel != null && !MODEL_ALIASES.has(input.observedModel))) return null
   const recorded = input.quote !== undefined && input.quote !== null
   const quote = recorded ? input.quote : current
   if (

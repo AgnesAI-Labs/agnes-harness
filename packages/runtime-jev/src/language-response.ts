@@ -30,14 +30,11 @@ export function decodeLanguageResponse(
           ? { kind: 'cannot_bind', reason: sentence }
           : { kind: 'answer', content: [{ kind: 'text', text }] },
     }
-  if (calls.length === 0 || calls.length > (purpose === 'parameters' ? 1 : 32))
+  if (calls.length === 0 || calls.length > 32)
     return {
       error: {
         code: 'LANGUAGE_TOOL_CALL',
-        message:
-          purpose === 'parameters'
-            ? 'Call exactly one tool, or explain why no tool call is appropriate.'
-            : 'Call between 1 and 32 tools, or explain why no tool call is appropriate.',
+        message: 'Call between 1 and 32 tools, or explain why no tool call is appropriate.',
         retryable: true,
       },
     }

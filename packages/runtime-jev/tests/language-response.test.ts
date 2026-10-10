@@ -80,21 +80,32 @@ describe('native language proposals', () => {
     })
   })
 
-  it('rejects multiple parameter proposals and oversized arbitration batches', () => {
-    expect(
-      decodeLanguageResponse('parameters', '', [
-        { name: 'read', arguments: '{"path":"a"}' },
-        { name: 'read', arguments: '{"path":"b"}' },
-      ]).error,
-    ).toMatchObject({ code: 'LANGUAGE_TOOL_CALL', retryable: true })
-    expect(
-      decodeLanguageResponse(
-        'arbitration',
-        '',
-        Array.from({ length: 33 }, () => ({ name: 'read', arguments: '{}' })),
-      ),
-    ).toEqual({
-      error: { code: 'LANGUAGE_TOOL_CALL', message: expect.any(String), retryable: true },
-    })
-  })
+  it.each(['parameters', 'arbitration'] as const)(
+    'preserves bounded %s proposals for runtime admission',
+    (purpose) => {
+      for (const count of [2, 32]) {
+        const calls = Array.from({ length: count }, (_, index) => ({
+          name: 'read',
+          arguments: JSON.stringify({ path: `file-${index}` }),
+        }))
+        expect(decodeLanguageResponse(purpose, '', calls).output).toEqual({
+          kind: 'calls',
+          calls: calls.map((call) => ({
+            kind: 'call',
+            name: call.name,
+            arguments: JSON.parse(call.arguments),
+          })),
+        })
+      }
+      expect(
+        decodeLanguageResponse(
+          purpose,
+          '',
+          Array.from({ length: 33 }, () => ({ name: 'read', arguments: '{}' })),
+        ),
+      ).toEqual({
+        error: { code: 'LANGUAGE_TOOL_CALL', message: expect.any(String), retryable: true },
+      })
+    },
+  )
 })

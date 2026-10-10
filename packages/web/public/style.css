@@ -3548,8 +3548,23 @@ body {
   color: var(--agnes-text-tertiary);
   font-size: var(--font-size-xs);
 }
+.composer-decision {
+  display: inline-flex;
+  align-items: center;
+  color: var(--agnes-text-secondary);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
 .composer-runtime {
-  max-width: 16rem;
+  /* A select sizes to its longest option, so a long comparison label used to widen the runtime
+     select and squeeze its neighbours (the decision select read "Je"). field-sizing sizes it to the
+     selected option where supported; the tight cap with an ellipsis keeps the row compact where it
+     is not. The open list still shows every option in full. */
+  field-sizing: content;
+  flex: none;
+  max-width: 8.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 0.2rem 0.5rem;
   border: 1px solid var(--agnes-line-emphasis);
   border-radius: 1rem;
@@ -5189,6 +5204,77 @@ body.admin-page {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+#config-form #jev-settings-pane {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+#config-form #jev-settings-pane > .config-heading {
+  flex: 0 0 auto;
+}
+#config-form #jev-settings-pane .config-workspace {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+#config-form #jev-settings-pane .config-card {
+  padding: 1rem;
+}
+#config-form #jev-settings-pane .form-field-wide {
+  grid-column: 1 / -1;
+}
+#config-form #jev-settings-pane .jev-enabled-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+#config-form #jev-enabled {
+  width: 1.125rem;
+  height: 1.125rem;
+  min-height: 0;
+  flex: 0 0 auto;
+  padding: 0;
+  margin: 0;
+}
+#config-form #jev-settings-pane .jev-settings-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.875rem 1.5rem;
+  border-top: 1px solid var(--agnes-line-primary);
+  background: var(--agnes-bg-surface);
+}
+#config-form #jev-settings-pane .jev-settings-feedback {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+#config-form #jev-settings-pane .jev-settings-feedback p {
+  margin: 0;
+}
+#config-form #jev-settings-pane .jev-settings-feedback p:empty {
+  display: none;
+}
+#config-form #jev-settings-pane .jev-settings-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+#config-form #jev-settings-pane .jev-settings-actions button {
+  min-height: 2.5rem;
+}
+#config-form #jev-settings-pane :is(#jev-source, #jev-state, #jev-error) {
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+#config-form #jev-error {
+  color: var(--agnes-status-danger-text);
+}
 #computer-use-settings-pane .config-workspace {
   display: flex;
   flex-direction: column;
@@ -5467,7 +5553,7 @@ body.admin-page {
 /* 账户详情 / 新增弹窗：外壳沿用全局 dialog 口径（宽度 / 圆角 / 阴影 / 遮罩），
    这里只补内部排版 —— 内容可滚动、关闭按钮浮在右上、页脚保留原分隔线样式。 */
 #account-dialog {
-  width: min(30rem, calc(100vw - 3rem));
+  width: min(42rem, calc(100vw - 3rem));
 }
 .select-picker-trigger {
   display: flex;
@@ -5596,7 +5682,7 @@ body.admin-page {
   color: var(--agnes-brand-primary);
   text-align: center;
 }
-.account-dialog-close {
+#account-dialog .account-dialog-close {
   position: absolute;
   top: 0.75rem;
   right: 0.75rem;
@@ -5638,6 +5724,121 @@ body.admin-page {
 #account-dialog .config-detail-footer {
   position: sticky;
   bottom: 0;
+}
+/* Custom endpoints share the account form contract and theme tokens. */
+#account-dialog .config-custom-section[hidden] {
+  display: none;
+}
+.config-custom-model-card,
+.config-capability-card,
+.config-custom-verification {
+  min-width: 0;
+  padding: 0.875rem;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-md);
+  background: var(--agnes-bg-card);
+}
+.config-custom-model-card,
+.config-custom-advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+}
+.config-custom-model-card :is(.config-actions, .field-hint) {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.config-custom-model-card .config-actions {
+  flex-wrap: wrap;
+  justify-content: start;
+}
+.config-custom-section .field-hint {
+  margin: 0;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+:is(#config-form, #account-dialog) .config-capability-option {
+  display: flex;
+  align-items: start;
+  gap: 0.625rem;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+}
+:is(#config-form, #account-dialog) .config-capability-option input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  min-height: 1rem;
+  margin-top: 0.125rem;
+  padding: 0;
+  accent-color: var(--agnes-text-emphasis);
+}
+.config-capability-option strong {
+  display: block;
+  color: var(--agnes-text-primary);
+  font-weight: 500;
+}
+.config-capability-option small {
+  color: var(--agnes-text-tertiary);
+}
+.config-capability-card .field-hint {
+  margin-top: 0.5rem;
+}
+.config-custom-advanced,
+.config-session-defaults {
+  border-top: 1px solid var(--agnes-line-primary);
+  padding-top: 0.75rem;
+}
+:is(.config-custom-advanced, .config-session-defaults) summary {
+  cursor: pointer;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+}
+:is(.config-custom-advanced, .config-session-defaults)[open] summary {
+  margin-bottom: 0.875rem;
+}
+.config-verification-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: var(--font-size-xs);
+}
+.config-verification-heading strong {
+  font-weight: 500;
+  color: var(--agnes-text-primary);
+}
+.config-verification-heading span,
+.config-verification-checks {
+  color: var(--agnes-text-tertiary);
+}
+.config-verification-checks {
+  margin: 0.5rem 0;
+  padding-left: 1.125rem;
+  font-size: var(--font-size-xs);
+  line-height: 1.8;
+}
+.config-verification-checks:empty,
+#config-custom-verification-target:empty {
+  display: none;
+}
+.config-custom-verification[data-state="failed"] #config-custom-verification-state,
+.config-verification-checks [data-state="failed"] {
+  color: var(--agnes-status-danger-text);
+}
+.config-custom-verification[data-state="passed"] #config-custom-verification-state,
+.config-verification-checks [data-state="passed"] {
+  color: var(--agnes-status-success-text);
+}
+@media (max-width: 560px) {
+  .config-custom-model-card,
+  .config-custom-advanced-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 /* 模型账户页的字段整行铺开（用户要求改成上下结构）；
    设置弹窗整体在 #config-form 内，故用面板 id 收窄作用范围。 */
@@ -5818,6 +6019,10 @@ body.admin-page {
 }
 
 @media (max-width: 840px) {
+  #config-form:has(#jev-settings-pane:not([hidden])) .settings-rail {
+    max-height: 8rem;
+    overflow-y: auto;
+  }
   #config {
     width: 100vw;
     max-width: none;
@@ -5933,6 +6138,20 @@ body.admin-page {
   #config-form #config-test,
   #config-save {
     width: 100%;
+  }
+  #account-dialog .config-detail-footer {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  #account-dialog #config-account-guard {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+  }
+  #account-dialog #config-save {
+    height: 2.5rem;
+    min-height: 2.5rem;
+    align-self: stretch;
   }
 }
 .usage-disclosure {
@@ -6162,4 +6381,26 @@ main {
 /* An open extension workspace replaces the ordinary workspace, without moving its children. */
 main:has(> [data-workbench-surface="overlay"] > [open]) > [data-workbench-surface="workspace"] {
   display: none;
+}
+
+/* JevLoop per-stage models inside the model settings dialog. */
+.stage-models {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 0 0;
+  border: 0;
+  border-top: 1px solid var(--agnes-line-primary);
+}
+.stage-models > legend {
+  padding: 0;
+  font-weight: 600;
+}
+.stage-model-row {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr) minmax(7rem, auto);
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+.stage-model-row select {
+  min-width: 0;
 }

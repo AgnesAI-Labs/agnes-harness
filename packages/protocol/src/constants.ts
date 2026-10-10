@@ -62,6 +62,7 @@ export const AGH_DIR = '.agh'
 export const WORKSPACE_SECRET_DIRS = ['.agh/secrets', '.agnes/secrets'] as const
 
 export const META_KEY = 'ai.agnes.harness' as const
+export const TURN_OPTIONS_META_KEY = 'ai.agnes.harness.turn' as const
 export const AGNES_NS = '_agnes/v1' as const
 export const SESSION_FORMAT = 'agnes-session/v1' as const
 /** UTF-8 JSON message bytes, excluding the JSONL delimiter (LF). */

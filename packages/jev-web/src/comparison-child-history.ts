@@ -3,6 +3,7 @@ import type { Client } from '@agnes/sdk/browser'
 import { createTimelineRenderer } from '@agnes/web-session-ui/timeline'
 import { createComparisonTrace } from './comparison-trace.js'
 import { createJevDecisionGraph } from './jev-decision-graph.js'
+import type { Translate } from './jev-locale.js'
 
 type Timeline = Omit<UITimeline, 'generation'>
 function children(value: Timeline): string[] {
@@ -25,13 +26,14 @@ export function createComparisonChildHistory(
   host: HTMLElement,
   client: Client,
   scope: { id: string; side: 'left' | 'right' },
+  t: Translate,
 ) {
   const links = element('div')
   links.className = 'comparison-child-history-links'
   host.append(links)
   const dialog = element('dialog')
   dialog.className = 'comparison-child-history'
-  dialog.setAttribute('aria-label', '子任务历史')
+  dialog.setAttribute('aria-label', t('child.ariaLabel'))
   document.body.append(dialog)
   let generation = 0
   let selectedCut: number | null = null
@@ -48,12 +50,12 @@ export function createComparisonChildHistory(
     close()
     const ticket = generation
     const header = element('header')
-    const closeButton = element('button', '关闭子任务历史')
+    const closeButton = element('button', t('child.close'))
     closeButton.type = 'button'
     closeButton.addEventListener('click', close)
-    const status = element('p', '正在读取已归档的子任务…')
+    const status = element('p', t('child.loading'))
     status.setAttribute('role', 'status')
-    header.append(element('strong', '子任务历史'), closeButton)
+    header.append(element('strong', t('child.title')), closeButton)
     dialog.replaceChildren(header, status)
     dialog.showModal()
     const current = () => !disposed && ticket === generation && selectedCut === atSeq
@@ -91,15 +93,15 @@ export function createComparisonChildHistory(
         afterSeq = page.nextAfterSeq
       }
       const tabs = element('nav')
-      const chat = element('button', '对话')
-      const traceToggle = element('button', '轨迹')
+      const chat = element('button', t('child.chat'))
+      const traceToggle = element('button', t('child.trace'))
       chat.type = traceToggle.type = 'button'
       tabs.append(chat, traceToggle)
       const graphHost = element('section')
       const transcript = element('section')
       transcript.className = 'transcript'
       const traceHost = element('section')
-      const latest = element('button', '回到最新')
+      const latest = element('button', t('child.latest'))
       latest.type = 'button'
       const renderer = createTimelineRenderer({
         transcript,
@@ -111,6 +113,7 @@ export function createComparisonChildHistory(
         toggle: traceToggle,
         chatToggle: chat,
         conversation: transcript,
+        t,
         readToolDetail: (_id, callSeq, resultSeq, signal) =>
           client.comparison.toolDetail(
             {
@@ -124,14 +127,14 @@ export function createComparisonChildHistory(
             },
           ),
       })
-      const graph = createJevDecisionGraph(graphHost)
+      const graph = createJevDecisionGraph(graphHost, {}, t)
       graphHost.hidden = !rows.some((row) => row.type === 'runtime/record')
       graph.update(rows, memberSessionId)
       renderer.render(response.timeline.nodes, response.timeline.turns)
       trace.render(response.timeline, response.throughSeq)
       const descendants = element('nav')
       drawLinks(descendants, response.timeline, atSeq)
-      status.textContent = `已归档 · ${response.throughSeq} 条记录`
+      status.textContent = t('child.archived', { count: response.throughSeq })
       dialog.append(descendants, tabs, graphHost, transcript, traceHost, latest)
       disposeView = () => {
         renderer.dispose?.()
@@ -140,13 +143,15 @@ export function createComparisonChildHistory(
       }
     } catch (error) {
       if (current())
-        status.textContent = `读取子任务历史失败：${error instanceof Error ? error.message : '请重试'}`
+        status.textContent = t('child.readFailed', {
+          message: error instanceof Error ? error.message : t('child.retry'),
+        })
     }
   }
   function drawLinks(target: HTMLElement, timeline: Timeline, atSeq: number) {
     target.replaceChildren(
       ...children(timeline).map((key, index) => {
-        const button = element('button', `查看子任务 ${index + 1}`)
+        const button = element('button', t('child.link', { index: index + 1 }))
         button.type = 'button'
         button.title = key
         button.addEventListener('click', () => void open(key, atSeq))

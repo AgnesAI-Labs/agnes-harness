@@ -2,11 +2,14 @@
 import { readFileSync } from 'node:fs'
 import type { TraceEntry } from '@agnes/jev-trace'
 import { afterEach, expect, it, vi } from 'vitest'
+import { createJevTranslate } from '../src/jev-locale.js'
 import { createJevRequestViewer } from '../src/jev-request-viewer.js'
+
+const t = createJevTranslate('zh-CN')
 
 const viewers: ReturnType<typeof createJevRequestViewer>[] = []
 function viewer() {
-  const result = createJevRequestViewer()
+  const result = createJevRequestViewer(t)
   viewers.push(result)
   return result
 }
@@ -132,7 +135,7 @@ it('retires an invisible selection immediately and ignores a late clipboard comp
   await Promise.resolve()
   expect(copy).toHaveBeenCalledTimes(1)
   expect(document.querySelector('[role="status"]')?.textContent).toContain('退出当前可见历史')
-  const select = document.querySelector<HTMLSelectElement>('[aria-label="已保存的 Jev 请求"]')
+  const select = document.querySelector<HTMLSelectElement>('[aria-label="已保存的决策请求"]')
   if (!select) throw new Error('Missing request selector')
   select.value = '1:request-1'
   select.dispatchEvent(new Event('change'))
@@ -153,7 +156,7 @@ it.each([
   expect(button('复制完整 JSON').disabled).toBe(true)
   expect(button('下载 JSON').disabled).toBe(true)
   expect(document.querySelector('[role="status"]')?.textContent).toContain(explanation)
-  expect(document.querySelector('[aria-label="已保存的 Jev 请求"]')?.children).toHaveLength(1)
+  expect(document.querySelector('[aria-label="已保存的决策请求"]')?.children).toHaveLength(1)
 })
 
 it('downloads only the complete request body and revokes its URL on history retirement and dispose', async () => {

@@ -1,6 +1,8 @@
 import type {
   Actor,
+  JsonValue,
   RuntimeIdentity,
+  RuntimeTurnOptions,
   SessionRuntimeControlParams,
   SessionRuntimeControlResult,
   SessionRuntimeState,
@@ -20,6 +22,8 @@ import type { StepOutcome, TurnOutcome } from '../step/session.js'
  */
 export interface SessionLoop {
   readonly identity: RuntimeIdentity
+  /** Validate and freeze runtime-specific input metadata before the durable inbox append. */
+  prepareInput?(target: 'next-turn' | 'next-step', options?: RuntimeTurnOptions): JsonValue | undefined
   state(): SessionRuntimeState
   control?(input: RuntimeControl): Promise<Omit<SessionRuntimeControlResult, 'runtime'>>
   resume(options: { mode?: ResumeMode }): Promise<ResumeReport>

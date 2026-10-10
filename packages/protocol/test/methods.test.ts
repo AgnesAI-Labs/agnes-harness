@@ -67,6 +67,9 @@ describe('methods (I1 set)', () => {
       '_agnes/v1/computerUse.status',
       '_agnes/v1/config.account',
       '_agnes/v1/config.get',
+      '_agnes/v1/config.jevGet',
+      '_agnes/v1/config.jevSave',
+      '_agnes/v1/config.jevTest',
       '_agnes/v1/config.oauth',
       '_agnes/v1/config.providers',
       '_agnes/v1/config.save',
@@ -137,6 +140,7 @@ describe('methods (I1 set)', () => {
       '_agnes/v1/session.followUp',
       '_agnes/v1/session.fork',
       '_agnes/v1/session.list',
+      '_agnes/v1/session.modelSlots',
       '_agnes/v1/session.preview',
       '_agnes/v1/session.projectUI',
       '_agnes/v1/session.projectUIHistory',
@@ -146,6 +150,7 @@ describe('methods (I1 set)', () => {
       '_agnes/v1/session.rename',
       '_agnes/v1/session.runtime',
       '_agnes/v1/session.runtimeControl',
+      '_agnes/v1/session.setJevStages',
       '_agnes/v1/session.setModel',
       '_agnes/v1/session.setPreset',
       '_agnes/v1/session.setYolo',
@@ -171,7 +176,7 @@ describe('methods (I1 set)', () => {
       'session/set_mode',
       'session/update',
     ])
-    expect(Object.keys(METHODS)).toHaveLength(138)
+    expect(Object.keys(METHODS)).toHaveLength(143)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })

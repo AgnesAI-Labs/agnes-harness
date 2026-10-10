@@ -203,6 +203,7 @@ export function toPiModel(
 export class PiAdapter extends WireAdapter {
   readonly id: string
   private readonly streamImpl: PiStream
+  private readonly fetchImpl: typeof fetch | undefined
   private readonly providerId: string | undefined
   private readonly resolveCredential:
     | ((route: string, signal: AbortSignal) => Promise<string | ModelAuth>)
@@ -220,6 +221,8 @@ export class PiAdapter extends WireAdapter {
     providerId?: string
     manualRoutes: ManualRoute[]
     streamImpl?: PiStream
+    /** Per-adapter transport injection; the default fetch is resolved when a request is sent. */
+    fetchImpl?: typeof fetch
     resolveCredential?: (route: string, signal: AbortSignal) => Promise<string | ModelAuth>
     /**
      * Called once when an authenticated request is rejected before any output. Returning true says
@@ -234,6 +237,7 @@ export class PiAdapter extends WireAdapter {
     this.id = cfg.id ?? 'pi'
     this.providerId = cfg.providerId
     this.streamImpl = cfg.streamImpl ?? streamOverApi
+    this.fetchImpl = cfg.fetchImpl
     this.resolveCredential = cfg.resolveCredential
     this.recoverRejectedAuth = cfg.recoverRejectedAuth
     for (const r of cfg.manualRoutes) requireAbsoluteHttpUrl(r)
@@ -304,6 +308,7 @@ export class PiAdapter extends WireAdapter {
       ...(this.providerId ? { providerId: this.providerId } : {}),
       manualRoutes: [{ ...decl, models: [record] }],
       streamImpl: this.streamImpl,
+      ...(this.fetchImpl ? { fetchImpl: this.fetchImpl } : {}),
       ...(boundAuth ? { resolveCredential: async () => structuredClone(boundAuth) } : {}),
       maxRetries: 0,
       sleep: this.sleep,
@@ -518,7 +523,7 @@ export class PiAdapter extends WireAdapter {
         const request = new Request(input, init)
         const bytes = new Uint8Array(await request.clone().arrayBuffer())
         opts.reportSent?.({ sentHash: sha256Hex(bytes), transforms })
-        const response = await globalThis.fetch(request)
+        const response = await (this.fetchImpl ?? globalThis.fetch)(request)
         Object.assign(wire, responseMeta(response))
         return response
       }

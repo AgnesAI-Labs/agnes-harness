@@ -3,6 +3,9 @@ import type { UINode, UITimeline } from '@agnes/protocol'
 import type { TracePanelOptions } from '@agnes/web-units'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createComparisonTrace } from '../src/comparison-trace.js'
+import { createJevTranslate } from '../src/jev-locale.js'
+
+const t = createJevTranslate('zh-CN')
 
 afterEach(() => document.body.replaceChildren())
 it('pins comparison tool detail reads to committed nodes and retires replies from a future cut', async () => {
@@ -43,6 +46,7 @@ it('pins comparison tool detail reads to committed nodes and retires replies fro
     toggle,
     chatToggle,
     conversation,
+    t,
     readToolDetail,
   })
   try {

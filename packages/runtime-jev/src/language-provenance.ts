@@ -2,7 +2,7 @@ import type { FrozenIntent, ModelSettlement, PreparedModelCall, RuntimeRecord } 
 import type { ToolCall } from '@agnes/protocol'
 import { stableJson } from './language-projection.js'
 
-/** Only a causally linked, recorded native arbitration call owns an assistant tool turn. */
+/** Only a causally linked native arbitration or parameter-batch call owns an assistant tool turn. */
 export function nativeAuthoredCall(
   decision: Extract<RuntimeRecord, { kind: 'decision.selected' }> | undefined,
   request: PreparedModelCall | undefined,
@@ -10,8 +10,13 @@ export function nativeAuthoredCall(
   intent: FrozenIntent,
 ): ToolCall | undefined {
   if (
-    decision?.source !== 'llm_arbitration' ||
-    request?.purpose !== 'arbitration' ||
+    !(
+      (decision?.source === 'llm_arbitration' && request?.purpose === 'arbitration') ||
+      (decision?.source === 'jev' &&
+        decision.parameterDecision !== undefined &&
+        decision.callIndex !== undefined &&
+        request?.purpose === 'parameters')
+    ) ||
     settlement?.error !== undefined ||
     settlement?.snapshot?.codec !== 'agnes-inference-v1'
   )
@@ -63,4 +68,55 @@ export function nativeAuthoredCall(
     args: structuredClone(intent.arguments),
     ordinal: call.ordinal,
   }
+}
+
+/** Single-call commentary only: never backfill text when a batch is admitted incrementally. */
+export function nativeExplanation(settlement: ModelSettlement, call: ToolCall): string | undefined {
+  const output = settlement.output
+  const response = settlement.snapshot?.response
+  if (
+    settlement.error !== undefined ||
+    settlement.snapshot?.codec !== 'agnes-inference-v1' ||
+    output === null ||
+    typeof output !== 'object' ||
+    Array.isArray(output) ||
+    output.kind !== 'call' ||
+    output.name !== call.name ||
+    stableJson(output.arguments) !== stableJson(call.args) ||
+    response === null ||
+    typeof response !== 'object' ||
+    Array.isArray(response) ||
+    !Array.isArray(response.events)
+  )
+    return
+  let text = ''
+  let calls = 0
+  let finished = false
+  for (const event of response.events) {
+    if (finished || event === null || typeof event !== 'object' || Array.isArray(event)) return
+    switch (event.type) {
+      case 'sent':
+      case 'usage':
+      case 'deviation':
+      case 'toolcall_delta':
+        break
+      case 'thinking_delta':
+        if (typeof event.delta !== 'string') return
+        break
+      case 'text_delta':
+        if (calls || typeof event.delta !== 'string') return
+        text += event.delta
+        break
+      case 'toolcall_end':
+        if (++calls !== 1 || event.via !== 'native' || stableJson(event.call) !== stableJson(call)) return
+        break
+      case 'done':
+        if (event.reason !== 'toolUse') return
+        finished = true
+        break
+      default:
+        return
+    }
+  }
+  return finished && calls === 1 && text.trim() ? text : undefined
 }

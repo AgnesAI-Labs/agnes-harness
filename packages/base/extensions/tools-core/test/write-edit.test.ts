@@ -45,11 +45,17 @@ describe('write', () => {
     })
   })
 
-  it.each(['', 'x'.repeat(10)])('overwrites existing content %j and says overwrote', async (old) => {
+  it.each([
+    ['', 'y'.repeat(10)],
+    ['x'.repeat(10), 'y'.repeat(10)],
+    ['const quote = "a";', `const quote = '"';`],
+  ])('overwrites existing content %j and says overwrote', async (old, content) => {
     const ctx = fakeToolContext({ files: { 'a.txt': old } })
-    const r = await writeTool.execute({ path: 'a.txt', content: 'y'.repeat(10) }, ctx)
-    expect(textOf(r)).toBe('overwrote a.txt (10 chars)')
-    expect(dec.decode(ctx.mem.files.get('/work/proj/a.txt'))).toBe('y'.repeat(10))
+    const r = await writeTool.execute({ path: 'a.txt', content }, ctx)
+    expect(r.isError).toBeUndefined()
+    expect(textOf(r)).toBe(`overwrote a.txt (${content.length} chars)`)
+    expect(dec.decode(ctx.mem.files.get('/work/proj/a.txt'))).toBe(content)
+    expect(r.structured).toMatchObject({ write: { acknowledged: true } })
   })
 
   it('refuses a truncated overwrite and leaves the file alone', async () => {
@@ -148,13 +154,21 @@ describe('edit', () => {
     expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe(original)
   })
 
-  it('replaces the match literally, not as a replacement pattern', async () => {
-    // String.replace expands `$&` and friends in the replacement, so a newText carrying one would
-    // otherwise write text that appears nowhere in the model's request.
-    const ctx = fakeToolContext({ files: { 'a.ts': 'const a = 1\n' } })
-    await editTool.execute({ path: 'a.ts', edits: [{ oldText: 'a = 1', newText: 'a = "$&"' }] }, ctx)
-    expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe('const a = "$&"\n')
-  })
+  it.each([
+    ['const a = 1\n', 'a = 1', 'a = "$&"', 'const a = "$&"\n'],
+    ['const quote = "a";', '"a"', `'"'`, `const quote = '"';`],
+  ])(
+    'replaces the match literally, not as a replacement pattern in %j',
+    async (before, oldText, newText, after) => {
+      // String.replace expands `$&` and friends in the replacement, so a newText carrying one would
+      // otherwise write text that appears nowhere in the model's request.
+      const ctx = fakeToolContext({ files: { 'a.ts': before } })
+      const result = await editTool.execute({ path: 'a.ts', edits: [{ oldText, newText }] }, ctx)
+      expect(result.isError).toBeUndefined()
+      expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe(after)
+      expect(result.structured).toMatchObject({ write: { acknowledged: true } })
+    },
+  )
 
   it('reports a read failure instead of writing', async () => {
     const ctx = fakeToolContext()
