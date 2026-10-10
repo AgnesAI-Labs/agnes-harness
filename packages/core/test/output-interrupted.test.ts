@@ -296,11 +296,14 @@ describe('the ledger keeps counts, not streamed text', () => {
       { type: 'text_delta', delta: 'first try' },
       { type: 'error', reason: 'error', code: 'TRANSPORT', message: 'reset', retryable: true },
     ]
+    // Timers that fire at once, and a clock that moves on every read: the backoff is a wall-clock
+    // deadline the run loop re-checks, so a clock that barely moves keeps it spinning until the
+    // no-progress guard ends the turn.
+    let now = 1_757_203_200_000
     const { session, log } = await openSession({
       provider: fakeProvider([flaky, textTurn('second')]),
       preset,
-      // A moving clock and timers that fire at once, so the retry's wait ends without real time.
-      clock: () => Date.now(),
+      clock: () => (now += 400),
       timers: immediateTimers,
     })
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
