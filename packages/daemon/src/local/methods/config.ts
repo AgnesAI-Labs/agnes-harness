@@ -9,6 +9,30 @@ import {
 } from '@agnes/protocol'
 import type { CallContext, LocalEndpoint } from '../endpoint.js'
 
+const PERMISSION_TARGETS = new Set(['home', 'secrets', 'auth', 'locks', 'provider', 'file'])
+const OCTAL_MODE = /^[0-7]{4}$/
+
+/**
+ * The only detail a setup failure may carry: which credential store part has the wrong permission
+ * bits and what they are. Anything else on the error, paths included, is dropped.
+ */
+function permissionDetail(error: unknown): Record<string, string> | undefined {
+  const facts =
+    error !== null && typeof error === 'object' && 'facts' in error && error.facts !== null
+      ? (error.facts as Record<string, unknown>)
+      : undefined
+  if (facts === undefined || typeof facts !== 'object') return undefined
+  const { target, actualMode, expectedMode } = facts
+  return typeof target === 'string' &&
+    PERMISSION_TARGETS.has(target) &&
+    typeof actualMode === 'string' &&
+    OCTAL_MODE.test(actualMode) &&
+    typeof expectedMode === 'string' &&
+    OCTAL_MODE.test(expectedMode)
+    ? { target, actualMode, expectedMode }
+    : undefined
+}
+
 /** Configuration is deployment-local authority, not a capability granted by an RPC parameter. */
 export function registerConfiguration(
   endpoint: LocalEndpoint,
@@ -37,7 +61,8 @@ export function registerConfiguration(
       // Never forward an upstream body, URL, path or credential through a setup failure.
       const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
       const reason = typeof code === 'string' && /^CONFIG_[A-Z_]{1,48}$/.test(code) ? code : 'CONFIG_FAILED'
-      throw rpcError('SEMANTIC_REJECTED', { reason })
+      const detail = reason === 'CONFIG_CREDENTIAL_PERMISSIONS' ? permissionDetail(error) : undefined
+      throw rpcError('SEMANTIC_REJECTED', detail ? { reason, detail } : { reason })
     }
   }
   endpoint.register('_agnes/v1/config.get', (_params, context) =>

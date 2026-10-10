@@ -2,7 +2,14 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path'
 import { isSea } from 'node:sea'
 import { DatabaseSync } from 'node:sqlite'
-import { dataDir, cacheDir as defaultCacheDir, hasLegacySessionsDb, legacySessionsDbPath } from '@agnes/host'
+import {
+  type CredentialInspectionFinding,
+  dataDir,
+  cacheDir as defaultCacheDir,
+  hasLegacySessionsDb,
+  inspectCredentialStore,
+  legacySessionsDbPath,
+} from '@agnes/host'
 import type { BootDeps } from '../types.js'
 
 export type Section = { name: string; status: 'ok' | 'warn' | 'fail'; detail: string[] }
@@ -53,6 +60,79 @@ export async function doctorStorage(d: BootDeps): Promise<Section> {
         'to the old file.',
     )
   return result
+}
+
+const TARGET_LABEL: Record<CredentialInspectionFinding['target'], string> = {
+  home: 'AGH_HOME',
+  secrets: 'secrets directory',
+  auth: 'auth directory',
+  locks: 'locks directory',
+  provider: 'provider directory',
+  file: 'credential file',
+}
+
+function credentialFindingLine(finding: CredentialInspectionFinding, windows: boolean): string {
+  const subject = `${TARGET_LABEL[finding.target]} ${finding.path}`
+  const octal = finding.target === 'file' ? '600' : '700'
+  switch (finding.reason) {
+    case 'mode': {
+      const hint = windows
+        ? ''
+        : finding.narrowable
+          ? `; the next credential save narrows it, or run: chmod ${octal} '${finding.path}'`
+          : `; run: chmod ${octal} '${finding.path}'`
+      return `${subject}: mode ${finding.actualMode ?? 'unknown'}, must be ${finding.expectedMode ?? octal}${hint}`
+    }
+    case 'owner':
+      return `${subject}: owned by a different user; it must belong to the user running Agnes`
+    case 'symlink':
+      return `${subject}: is a symbolic link; the credential store refuses links`
+    case 'not-directory':
+      return `${subject}: is not a directory`
+    case 'not-file':
+      return `${subject}: is not a regular file`
+    case 'link-count':
+      return `${subject}: has more than one hard link`
+    case 'too-large':
+      return `${subject}: is larger than the credential size limit`
+    case 'io':
+      return `${subject}: could not be read`
+    default:
+      return `${subject}: ${finding.reason}`
+  }
+}
+
+/** Read-only: the same rules the credential store applies, with nothing created, changed or read. */
+export async function doctorCredentials(d: BootDeps): Promise<Section> {
+  try {
+    const result = await inspectCredentialStore(d.home)
+    if (result.enforcement === 'unavailable')
+      return {
+        name: 'credentials',
+        status: 'warn',
+        detail: [`credential permission checks are unavailable: ${result.unavailableReason ?? 'unknown'}`],
+      }
+    if (result.homeMissing)
+      return {
+        name: 'credentials',
+        status: 'ok',
+        detail: ['no credential store yet: AGH_HOME does not exist'],
+      }
+    if (result.findings.length === 0)
+      return {
+        name: 'credentials',
+        status: 'ok',
+        detail: [`${result.checked} credential store entries checked: owner and permissions as required`],
+      }
+    const repairable = result.findings.every((finding) => finding.narrowable)
+    return {
+      name: 'credentials',
+      status: repairable ? 'warn' : 'fail',
+      detail: result.findings.map((finding) => credentialFindingLine(finding, result.windows)),
+    }
+  } catch {
+    return failure('credentials')
+  }
 }
 
 /** The command supplies resolved cacheDir; direct callers default to the home cache. */

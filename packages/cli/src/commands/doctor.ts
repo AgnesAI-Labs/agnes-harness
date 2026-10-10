@@ -11,7 +11,7 @@ import { profileNameFrom } from '../boot/inputs.js'
 import { assembleLocalHost, type LocalBootDeps } from '../boot/local.js'
 import { doctorCodeRuntime } from './doctor-code-runtime.js'
 import { doctorExtensions } from './doctor-extensions.js'
-import { doctorBinary, doctorStorage, type Section } from './doctor-local.js'
+import { doctorBinary, doctorCredentials, doctorStorage, type Section } from './doctor-local.js'
 import { doctorPlatform, doctorResolvedProfile, resolveDoctorProfile } from './doctor-profile.js'
 import { doctorProvider } from './doctor-provider.js'
 import { doctorSubagents } from './doctor-subagents.js'
@@ -23,6 +23,7 @@ export const DOCTOR_SECTIONS = [
   'platform',
   'provider',
   'storage',
+  'credentials',
   'profile',
   'extensions',
   'daemon',
@@ -137,6 +138,9 @@ export async function doctorCommand(
           break
         case 'storage':
           sections.push(await doctorStorage(commandDeps))
+          break
+        case 'credentials':
+          sections.push(await doctorCredentials(commandDeps))
           break
         case 'daemon':
           sections.push(await doctorDaemon(commandDeps))

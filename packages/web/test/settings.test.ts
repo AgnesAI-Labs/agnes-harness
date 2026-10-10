@@ -388,7 +388,7 @@ describe('settings controller', () => {
         test: async () => {
           throw {
             code: -32011,
-            data: { code: 'SEMANTIC_REJECTED', reason: 'CONFIG_REVISION_CONFLICT' },
+            data: { code: 'SEMANTIC_REJECTED', reason },
           }
         },
       }),
@@ -399,10 +399,80 @@ describe('settings controller', () => {
     node('config-test').dispatch('click')
     await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce())
 
-    expect(node('config-error').textContent).toBe('配置已被其他客户端修改，请重新打开设置后再试。')
+    expect(node('config-error').textContent).toBe(message)
     const reported = onError.mock.calls[0]?.[0]
     expect(reported).toBeInstanceOf(Error)
-    expect((reported as Error).message).toBe('配置已被其他客户端修改，请重新打开设置后再试。')
+    expect((reported as Error).message).toBe(message)
+  })
+
+  const permissionText =
+    '凭据存储权限不符合要求。请确认 AGH_HOME 及 secrets/auth 目录属于当前用户，目录权限为 0700、文件权限为 0600；具体路径见 data/audit/configuration.jsonl。'
+  it.each([
+    [
+      { target: 'secrets', actualMode: '0755', expectedMode: '0700' },
+      'AGH_HOME/secrets 当前权限为 0755，需要为 0700。 ',
+    ],
+    [
+      { target: 'home', actualMode: '0750', expectedMode: '0700' },
+      'AGH_HOME 当前权限为 0750，需要为 0700。 ',
+    ],
+    [
+      { target: 'file', actualMode: '0644', expectedMode: '0600' },
+      'AGH_HOME 下的凭据文件 当前权限为 0644，需要为 0600。 ',
+    ],
+    // Anything off the expected shape is ignored: no free text from the daemon reaches the page.
+    [{ target: '../PRIVATE-PATH-MARKER', actualMode: '0755', expectedMode: '0700' }, ''],
+    [{ target: 'secrets', actualMode: '0755; rm -rf', expectedMode: '0700' }, ''],
+    [{ target: 'secrets', actualMode: '0755' }, ''],
+    ['0755', ''],
+  ])('shows the actual permission bits from %j', async (detail, prefix) => {
+    installDom()
+    const onError = vi.fn()
+    const settings = createSettingsController({
+      client: client({
+        test: async () => {
+          throw {
+            code: -32011,
+            data: { code: 'SEMANTIC_REJECTED', reason: 'CONFIG_CREDENTIAL_PERMISSIONS', detail },
+          }
+        },
+      }),
+      onSaved: vi.fn(async () => undefined),
+      onError,
+    })
+    await settings.open()
+    node('config-test').dispatch('click')
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce())
+
+    expect(node('config-error').textContent).toBe(`${prefix}${permissionText}`)
+  })
+
+  it('does not attach permission detail to other failures', async () => {
+    installDom()
+    const onError = vi.fn()
+    const settings = createSettingsController({
+      client: client({
+        test: async () => {
+          throw {
+            code: -32011,
+            data: {
+              code: 'SEMANTIC_REJECTED',
+              reason: 'CONFIG_CREDENTIAL_READ_ONLY',
+              detail: { target: 'secrets', actualMode: '0755', expectedMode: '0700' },
+            },
+          }
+        },
+      }),
+      onSaved: vi.fn(async () => undefined),
+      onError,
+    })
+    await settings.open()
+    node('config-test').dispatch('click')
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce())
+
+    expect(node('config-error').textContent).toBe(
+      '凭据存储位于只读文件系统。请将 AGH_HOME 移至可写的本地目录并重启。',
+    )
   })
 
   it('submits the provider default explicitly when replacing a saved custom endpoint', async () => {
