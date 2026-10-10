@@ -3,7 +3,7 @@ import { constants } from 'node:fs'
 import { access, mkdir, readFile, realpath, rename, writeFile } from 'node:fs/promises'
 import { delimiter, isAbsolute, join } from 'node:path'
 import { type ConnectionState, connActor, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import { PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
+import { type PrompterAnswer, PrompterRouter } from '@agnes/daemon-rpc/local/prompter'
 import {
   jcs,
   type McpServerDefinitionInput,
@@ -22,6 +22,7 @@ import {
   type ResourceControlStore,
 } from '@agnes/resource-control-store'
 
+type ReceiptVia = 'rejected' | 'cancelled' | 'unavailable' | 'timeout'
 type Receipt = {
   proposalId: string
   owner: string
@@ -30,6 +31,17 @@ type Receipt = {
   serverId: string
   state: 'prepared' | 'registered' | 'submitted' | 'cancelled' | 'failed'
   operationId?: string
+  /** Why a non-allow ended. A user decision stays terminal; a deadline or no approver can be asked again. */
+  via?: ReceiptVia
+}
+/** Collapse a prompter answer onto the receipt. A deadline is not a user rejection. */
+function receiptVia(answer: PrompterAnswer): ReceiptVia {
+  if (typeof answer === 'object') {
+    if (answer.reason === 'timeout') return 'timeout'
+    if (answer.verdict === 'cancelled') return 'cancelled'
+    if (answer.verdict === 'rejected') return 'rejected'
+  }
+  return answer === 'cancelled' ? 'cancelled' : 'unavailable'
 }
 type Proposal = { receipt: Receipt; definition: McpServerDefinitionInput; expires: number; busy: boolean }
 const digest = (value: unknown) => createHash('sha256').update(jcs(value)).digest('hex')
@@ -165,7 +177,12 @@ export function createMcpManageRequests(options: {
     }
     const publicReceipt = async (receipt: Receipt) => {
       if (receipt.state === 'prepared' || receipt.state === 'cancelled' || receipt.state === 'failed')
-        return { proposalId: receipt.proposalId, state: receipt.state, serverId: receipt.serverId }
+        return {
+          proposalId: receipt.proposalId,
+          state: receipt.state,
+          serverId: receipt.serverId,
+          ...(receipt.via ? { via: receipt.via } : {}),
+        }
       const row = await get(receipt.serverId)
       const status = (await call('_agnes/v1/mcp.servers.status', { serverId: receipt.serverId })) as {
         connectionState: string
@@ -289,10 +306,14 @@ export function createMcpManageRequests(options: {
             `${receipt.proposalId}-cancel`,
           )
         receipt.state = 'cancelled'
+        receipt.via = 'cancelled'
         await save(receipt)
         return publicReceipt(receipt)
       }
-      if (receipt.state !== 'prepared') return publicReceipt(receipt)
+      // A deadline or a missing approver is not a decision, so the next commit asks again.
+      const unanswered =
+        receipt.state === 'cancelled' && (receipt.via === 'timeout' || receipt.via === 'unavailable')
+      if (receipt.state !== 'prepared' && !unanswered) return publicReceipt(receipt)
       if (!proposal || proposal.expires < Date.now())
         throw rpcError('SEMANTIC_REJECTED', { code: 'MCP_PROPOSAL_EXPIRED' })
       proposal.busy = true
@@ -313,7 +334,7 @@ export function createMcpManageRequests(options: {
             return ep
           },
         })
-        const verdict = await prompt.askVerdict(
+        const answer = await prompt.ask(
           {
             requestId: `mcp-${randomUUID()}`,
             kind: 'tool',
@@ -330,15 +351,18 @@ export function createMcpManageRequests(options: {
           },
           { signal },
         )
+        const verdict = typeof answer === 'string' ? answer : answer.verdict
         authority()
         if (!['allowed-once', 'allowed-session', 'allowed-permanent'].includes(verdict)) {
           receipt.state = 'cancelled'
+          receipt.via = receiptVia(answer)
           await save(receipt)
           return publicReceipt(receipt)
         }
         const prior = (await list()).find((row) => row.serverId === receipt.serverId)
         if (prior && prior.revision !== receipt.revision) fail('MCP_DEFINITION_CONFLICT')
         // Persist intent before admission. Recovery never silently repeats approval or an unknown write.
+        delete receipt.via
         receipt.state = 'registered'
         await save(receipt)
         if (!prior)

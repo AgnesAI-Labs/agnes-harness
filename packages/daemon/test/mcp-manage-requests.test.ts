@@ -143,7 +143,23 @@ it('denial and malformed identity never register or authorize a server', async (
   s.ask.mockResolvedValue({ outcome: { outcome: 'selected', optionId: 'reject_once' } })
   expect(await s.request({ action: 'commit', proposalId: p.proposalId })).toMatchObject({
     state: 'cancelled',
+    via: 'rejected',
   })
+  expect(await s.request({ action: 'commit', proposalId: p.proposalId })).toMatchObject({
+    state: 'cancelled',
+    via: 'rejected',
+  })
+  expect(s.ask).toHaveBeenCalledTimes(1)
+  const held = await s.request({ action: 'prepare', definition })
+  expect(await s.request({ action: 'cancel', proposalId: held.proposalId })).toMatchObject({
+    state: 'cancelled',
+    via: 'cancelled',
+  })
+  expect(await s.request({ action: 'commit', proposalId: held.proposalId })).toMatchObject({
+    state: 'cancelled',
+    via: 'cancelled',
+  })
+  expect(s.ask).toHaveBeenCalledTimes(1)
   expect((await s.request({ action: 'list' })).items).toEqual([])
   await expect(s.request({ action: 'prepare', definition }, { sessionKey: 'other' })).rejects.toMatchObject({
     message: 'INVALID_PARAMS',
@@ -152,6 +168,36 @@ it('denial and malformed identity never register or authorize a server', async (
   await expect(s.request({ action: 'prepare', definition })).rejects.toMatchObject({
     message: 'CAPABILITY_DENIED',
   })
+})
+
+it('asks again when the connect approval timed out or never reached an approver', async () => {
+  vi.stubEnv('AGNES_MCP_STDIO_ALLOWLIST', undefined)
+  const timed = await setup()
+  timed.ask.mockRejectedValueOnce(Object.assign(new Error('deadline'), { data: { code: 'TIMEOUT' } }))
+  const p = await timed.request({ action: 'prepare', definition })
+  expect(await timed.request({ action: 'commit', proposalId: p.proposalId })).toMatchObject({
+    state: 'cancelled',
+    via: 'timeout',
+  })
+  expect((await timed.request({ action: 'list' })).items).toEqual([])
+  expect(timed.ask).toHaveBeenCalledTimes(1)
+  expect(['submitted', 'ready']).toContain(
+    (await timed.request({ action: 'commit', proposalId: p.proposalId })).state,
+  )
+  expect(timed.ask).toHaveBeenCalledTimes(2)
+
+  const missed = await setup()
+  missed.ask.mockRejectedValueOnce(new Error('reset'))
+  const q = await missed.request({ action: 'prepare', definition })
+  expect(await missed.request({ action: 'commit', proposalId: q.proposalId })).toMatchObject({
+    state: 'cancelled',
+    via: 'unavailable',
+  })
+  expect(missed.ask).toHaveBeenCalledTimes(1)
+  expect(['submitted', 'ready']).toContain(
+    (await missed.request({ action: 'commit', proposalId: q.proposalId })).state,
+  )
+  expect(missed.ask).toHaveBeenCalledTimes(2)
 })
 
 it('an explicitly empty deployment ceiling cannot be overridden by a conversation', async () => {
