@@ -12,7 +12,13 @@ import { AGH_DIR } from '../../packages/protocol/src/index.js'
 import { packNpxPackage } from './pack-npx.js'
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
-const authorPackages = ['extension-api', 'plugin-runtime', 'resource-control-runtime']
+const authorPackages = [
+  'extension-api',
+  'plugin-runtime',
+  'resource-control-runtime',
+  // UI data-source plugins import this kind token. Pack it with the other author tarballs.
+  'intelligent-ui-contract',
+]
 type Manifest = {
   name: string
   version: string
