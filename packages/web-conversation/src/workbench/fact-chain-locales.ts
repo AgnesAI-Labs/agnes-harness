@@ -1,6 +1,8 @@
 import type { LocaleCatalog } from '@agnes/web-ui'
 export const factChainCatalog: LocaleCatalog = {
   en: {
+    'facts.download': 'Download artifact',
+    'facts.downloadFailed': 'Artifact unavailable. Try again or check its retention status.',
     'facts.title': 'Execution evidence',
     'facts.empty': 'Choose a request, tool or artifact to view its record.',
     'facts.loading': 'Loading execution records…',
@@ -97,6 +99,8 @@ export const factChainCatalog: LocaleCatalog = {
     'facts.interrupted': 'Interrupted',
   },
   'zh-CN': {
+    'facts.download': '下载产物',
+    'facts.downloadFailed': '产物不可用。请重试或检查保留状态。',
     'facts.reviewHumanRule': '已应用显式人工规则',
     'facts.cost.estimated': '估算',
     'facts.cost.gateway': '已报告',

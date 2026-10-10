@@ -4,6 +4,7 @@ import type { UiExtensionContext } from '@agnes/web-client'
 import { Button, SettingsState } from '@agnes/web-ui'
 import { FeedbackProvenance } from '@agnes/web-units/message-feedback'
 import { useEffect, useState } from 'react'
+import { ArtifactDownload } from './artifact-download.js'
 import { panelContext } from './context.js'
 import { ReviewEvidence } from './review-evidence.js'
 
@@ -145,9 +146,17 @@ export function FactChainPanel({ context }: { context: UiExtensionContext }) {
                   </>
                 )}
                 {node.kind === 'artifact' && (
-                  <p>
-                    {t(`facts.${node.relation}`)} · {node.ref.mime}
-                  </p>
+                  <>
+                    <p>
+                      {t(`facts.${node.relation}`)} · {node.ref.mime}
+                    </p>
+                    <ArtifactDownload
+                      artifact={node.ref}
+                      laneId={target.laneId}
+                      sessionId={session.id}
+                      context={context}
+                    />
+                  </>
                 )}
                 {node.kind === 'authoring' && (
                   <>

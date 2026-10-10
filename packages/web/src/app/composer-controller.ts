@@ -20,6 +20,7 @@ export function createComposerController(
   context: Pick<
     AppSessionContext,
     | 'beginNewDraft'
+    | 'clientModules'
     | 'composerDraftKey'
     | 'composerRuntime'
     | 'configured'
@@ -95,6 +96,8 @@ export function createComposerController(
       if (workbench.session)
         renderWorkbench(dockHost, {
           t: context.t,
+          resources: context.clientModules.resources,
+          session: context.clientModules.session,
           data: workbench,
           openRecord: (sessionId, callSeq, resultSeq) => {
             if (context.current?.id !== sessionId) return false

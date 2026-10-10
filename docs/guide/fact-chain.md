@@ -12,6 +12,8 @@ Select **View execution evidence** on a model trace, **View execution record** o
 
 The panel is read only. It never runs a tool, imports old plugin code, changes trust or migrates a session. Reads use the authenticated session owner and exact anchor. A request uses its captured plugin generation, even if the session was later migrated. See [capture privacy and retention](system-prompt-trace.md).
 
+To download a presented file, open **View execution record** on its `present` tool and select **Download artifact** on the linked artifact. The download reads the retained reference through session authorization and checks its digest; it does not read the current workspace file. Downloads up to 32 MiB are supported. Text files use a digest-based `.txt` filename, PDF files use `.pdf`, and other formats use `.bin`. Unavailable or reclaimed artifacts report an error.
+
 ## Read gaps honestly
 
 | Evidence | What it proves |
