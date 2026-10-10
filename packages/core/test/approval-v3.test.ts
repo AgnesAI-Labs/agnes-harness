@@ -811,6 +811,25 @@ describe('v3 approval modes and grants', () => {
     const preset = presetDefaults()
     preset.model.route.fast = 'cheap'
     preset.model.id.fast = 'scripted-cheap'
+    // Session start keeps an auxiliary slot only when the provider catalogue publishes that model.
+    provider.models = () => [
+      {
+        id: 'scripted-cheap',
+        name: 'scripted-cheap',
+        api: 'openai-completions',
+        route: 'cheap',
+        baseUrl: 'https://example.invalid/v1',
+        reasoning: false,
+        input: ['text'],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 8_000,
+        maxTokens: 1024,
+        toolCallFormats: ['native'],
+        thinkingReplay: 'native',
+        contract_id: null,
+        slot: 'fast',
+      },
+    ]
     const opened = await atTools({
       provider,
       preset,
