@@ -7,12 +7,18 @@ import {
   type ConfigurationService,
   createConfigurationService,
   createPlatform,
+  type ResolvedProfile,
 } from '@agnes/host'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { describe, expect, it } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import { doctorBinary } from '../src/commands/doctor-local.js'
-import { doctorPlatform, doctorProfile, resolveDoctorProfile } from '../src/commands/doctor-profile.js'
+import {
+  doctorPlatform,
+  doctorProfile,
+  doctorResolvedProfile,
+  resolveDoctorProfile,
+} from '../src/commands/doctor-profile.js'
 import { TEST_LOCK } from './boot-host.js'
 
 const setup = () => {
@@ -83,6 +89,30 @@ describe('profile and platform doctor', () => {
     } finally {
       rmSync(d.home, { recursive: true, force: true })
     }
+  })
+  it('fails the profile section when the default preset is not in presets.allowed, and says so', () => {
+    const profile = (presets: { default: string; allowed: string[] }) =>
+      ({
+        name: 'local-dev',
+        hash: 'sha256-x',
+        packages: [{ id: '@agnes/base' }],
+        dataDir: '/data',
+        cacheDir: '/cache',
+        presets,
+      }) as unknown as ResolvedProfile
+
+    const ok = doctorResolvedProfile(profile({ default: 'chtd', allowed: ['chtd', 'standard'] }))
+    expect(ok.status).toBe('ok')
+    expect(ok.detail).toContain('presets default chtd, allowed chtd, standard')
+
+    const bad = doctorResolvedProfile(profile({ default: 'chtd', allowed: ['cthd'] }))
+    expect(bad.status).toBe('fail')
+    expect(bad.detail).toContain('presets default chtd, allowed cthd')
+    expect(bad.detail.join('\n')).toContain('presets.default "chtd" is not in presets.allowed')
+
+    expect(doctorResolvedProfile(profile({ default: 'chtd', allowed: [] })).detail).toContain(
+      'presets default chtd, allowed (none)',
+    )
   })
   it('uses the default local-dev path and passes the resolved custom cache to the actual binary check', async () => {
     const d = setup()

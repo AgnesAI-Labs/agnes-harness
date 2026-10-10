@@ -191,6 +191,41 @@ describe('main', () => {
     expect(safeExpectedSessionRpcFailureLine(new Error('PRESET_SWITCH_REJECTED'))).toBeUndefined()
   })
 
+  // The daemon names why a preset or model was refused from a closed set, and the CLI answers each
+  // with its own fixed sentence. A cause outside the set, or free text posing as one, gets the
+  // general sentence, so nothing the server sends is printed.
+  it.each([
+    ['not-allowed', /presets\.allowed.*default preset has to be listed too/],
+    ['preset-unsupported', /not provided by an installed package.*agh doctor platform/],
+    ['preset-unresolved', /did not assemble.*agh doctor provider/],
+    ['model-unsupported', /requested model is not served/],
+    ['model-unknown', /requested model is not known/],
+  ])('says why a preset was refused when the daemon names the cause %s', (cause, expected) => {
+    const line = safeExpectedSessionRpcFailureLine({
+      kind: 'json-rpc',
+      code: -32008,
+      data: { code: 'PRESET_SWITCH_REJECTED', cause, reason: 'secret=not-safe /private/path' },
+    })
+    expect(line).toMatch(expected)
+    expect(line).not.toContain('secret=not-safe')
+    expect(line).not.toContain('/private')
+  })
+
+  it.each(['secret=not-safe', '__proto__', 'toString', '', undefined, 7])(
+    'falls back to the general sentence for the cause %j',
+    (cause) => {
+      expect(
+        safeExpectedSessionRpcFailureLine({
+          kind: 'json-rpc',
+          code: -32008,
+          data: { code: 'PRESET_SWITCH_REJECTED', cause },
+        }),
+      ).toBe(
+        'PRESET_SWITCH_REJECTED: the requested preset or model is not available in this profile; `agh doctor provider` lists the configured routes.',
+      )
+    },
+  )
+
   it('renders a daemon disconnect as one safe retry line without transport diagnostics', () => {
     const closed = new TransportClosed({ reason: 'error', stderrTail: 'secret=/private/worker.log' })
     expect(safeDaemonDisconnectLine(closed)).toBe(
@@ -348,9 +383,7 @@ describe('main', () => {
     const dir = scratch()
     const h = harness(dir)
     expect(await main(['-p', '--model', 'primary=no-such-route/foo', 'hello'], h.io, h.boot)).toBe(1)
-    expect(h.err()).toContain(
-      'PRESET_SWITCH_REJECTED: the requested preset or model is not available in this profile',
-    )
+    expect(h.err()).toContain('PRESET_SWITCH_REJECTED: the requested model is not served by this profile')
     expect(h.err()).not.toMatch(/^\s+at /m)
     expect(h.out()).toBe('')
   })

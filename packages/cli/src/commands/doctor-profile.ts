@@ -105,12 +105,22 @@ export async function doctorProfile(d: BootDeps & { lock?: LockState }, p: Parse
 
 /** Projects the one profile resolved by the aggregate command without resolving it a second time. */
 export function doctorResolvedProfile(profile: ResolvedProfile): Section {
+  // A session opens under the default preset unless one is named, and the host refuses any preset
+  // that is not listed, so a default outside the list leaves no preset a session can start under.
+  const { default: defaultPreset, allowed } = profile.presets
+  const unlisted = !allowed.includes(defaultPreset)
   return {
     name: 'profile',
-    status: 'ok',
+    status: unlisted ? 'fail' : 'ok',
     detail: [
       `${profile.name} hash ${profile.hash}`,
       `packages ${profile.packages.map((pkg) => pkg.id).join(', ')}`,
+      `presets default ${defaultPreset}, allowed ${allowed.join(', ') || '(none)'}`,
+      ...(unlisted
+        ? [
+            `presets.default "${defaultPreset}" is not in presets.allowed: no session can start under it, and a preset that is not listed is refused when named. List it in presets.allowed.`,
+          ]
+        : []),
       `dataDir ${profile.dataDir}`,
       `cacheDir ${profile.cacheDir}`,
     ],
