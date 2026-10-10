@@ -131,7 +131,11 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
   }
   const detach = (id: string) => {
     setIds((values) => values.filter((value) => value !== id))
-    setActive((value) => (value === id ? '' : value))
+    setActive((value) =>
+      value === id
+        ? (ids.find((next) => next !== id && snapshot.jobs.some((job) => job.id === next)) ?? '')
+        : value,
+    )
   }
   const control = async (input: Input, closeId?: string) => {
     if (!session) return false

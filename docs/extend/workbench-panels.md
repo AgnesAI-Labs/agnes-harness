@@ -36,7 +36,7 @@ Open and input obey the active session tool policy, including read-only and plan
 
 If the OS backend cannot enforce the preset, `session/new` and `session/load` refuse with JSON-RPC `SEMANTIC_REJECTED` (-32011), `data.code: E_SANDBOX_WORKSPACE`, the same fixed cause code and `messageKey: appServer.errors.unavailable`. Later execution refusals retain `SANDBOX_UNAVAILABLE`. Exception messages, paths and backend output are not returned. Explicit full-access retains its existing behavior; unrecognized failures remain errors.
 
-The built-in terminal serializes and batches keyboard/paste input per session and job, with at most 64 Ki characters waiting to send. A full buffer refuses the new input and reports it. A failed send discards the unsent remainder without retrying uncertain bytes. Detaching or switching tabs/sessions discards only unsent UI input; accepted bytes and processes remain owned by the backend.
+The built-in terminal serializes and batches keyboard/paste input per session and job, with at most 64 Ki characters waiting to send. A full buffer refuses the new input and reports it. A failed send discards the unsent remainder without retrying uncertain bytes. Detaching or switching tabs/sessions discards only unsent UI input; accepted bytes and processes remain owned by the backend. Closing the active terminal tab selects a remaining attached job. Short docks scroll the terminal controls and output together.
 
 ## Live goal panel
 

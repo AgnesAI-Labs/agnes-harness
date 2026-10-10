@@ -282,7 +282,7 @@ it('orders rapid terminal input, drops unsent input on detach and restores read-
   }
 })
 
-it('renders kill receipts immediately and keeps a running tab until close is confirmed', async () => {
+it('renders kill receipts immediately, confirms close and selects the remaining terminal', async () => {
   localStorage.clear()
   const job = {
     id: 'human-close',
@@ -297,19 +297,20 @@ it('renders kill receipts immediately and keeps a running tab until close is con
     stdout: 'Live terminal output',
     stderr: '',
   }
+  const other = { ...job, id: 'human-other', stdout: 'Other terminal output' }
   let confirm: (() => void) | undefined,
     holdPolling = false
-  const jobsControl = vi.fn(async () => {
+  const jobsControl = vi.fn(async (input: { jobId: string }) => {
     await new Promise<void>((resolve) => {
       confirm = resolve
     })
-    return { output: { ...job, status: 'killed' as const } }
+    return { output: { ...(input.jobId === job.id ? job : other), status: 'killed' as const } }
   })
   const session = {
     id: 's',
-    jobsRead: async () => {
+    jobsRead: async (id?: string) => {
       if (holdPolling) await new Promise<void>(() => {})
-      return { jobs: [job], completions: [], job }
+      return { jobs: [job, other], completions: [], job: id === other.id ? other : job }
     },
     jobsControl,
   } as unknown as Session
@@ -335,6 +336,13 @@ it('renders kill receipts immediately and keeps a running tab until close is con
     await vi.waitFor(() => expect(host.querySelector('[data-testid=terminal-tab-close]')).not.toBeNull())
     flushSync(() => (host.querySelector('[data-testid=terminal-tab-close]') as HTMLButtonElement).click())
     expect(host.querySelector('[role=tab]')).not.toBeNull()
+    confirm?.()
+    await vi.waitFor(() => expect(host.querySelectorAll('[role=tab]')).toHaveLength(1))
+    expect(host.querySelector('[role=tab]')?.getAttribute('aria-selected')).toBe('true')
+    await vi.waitFor(() => expect(host.querySelector('textarea')?.value).toContain('Other terminal output'))
+    flushSync(() => (host.querySelector('[data-testid=terminal-tab-close]') as HTMLButtonElement).click())
+    expect(host.querySelector('[role=tab]')).not.toBeNull()
+    expect(jobsControl).toHaveBeenLastCalledWith({ operation: 'kill', jobId: other.id })
     confirm?.()
     await vi.waitFor(() => expect(host.querySelector('[role=tab]')).toBeNull())
   } finally {

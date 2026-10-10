@@ -1,11 +1,21 @@
 /** @vitest-environment happy-dom */
+import { resolve } from 'node:path'
 import { workbenchPanels } from '@agnes/web-client'
 import { renderRegion, unmountRegion } from '@agnes/web-ui'
 import { flushSync } from 'react-dom'
 import { expect, it } from 'vitest'
+import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { Dock } from '../src/workbench/dock.js'
 
 it('restores focus on Escape, resizes with keys, retires registrations and detaches on unmount', () => {
+  const css = readWebStyleSource(resolve(__dirname, '../public/style.css'))
+  // Short docks must scroll terminal controls together, instead of shrinking the job below them.
+  const terminalJob = [...css.matchAll(/\.workbench-terminal-job \{([^}]*)\}/g)].at(-1)?.[1]
+  expect(terminalJob).toContain('flex: 1 0 auto')
+  expect(terminalJob).toContain('min-height: min-content')
+  expect(/\.workbench-terminal,\s*\.workbench-terminal-job \{([^}]*)\}/.exec(css)?.[1]).not.toContain(
+    'height: 100%',
+  )
   localStorage.clear()
   document.body.innerHTML =
     '<div class="workbench-split"><div id="controls"></div><aside id="workbench-right" hidden><div id="workbench-right-content"></div></aside><aside id="workbench-bottom" hidden><div id="workbench-bottom-content"></div></aside></div>'
