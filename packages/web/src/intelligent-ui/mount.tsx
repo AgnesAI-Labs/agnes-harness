@@ -12,6 +12,7 @@ import type { CustomUiModuleSource } from './custom-host.js'
 import {
   IntelligentInline,
   IntelligentPanel,
+  newSurfacePlacements,
   openIntelligentPanel,
   type UiPlacementBinding,
 } from './placements.js'
@@ -25,8 +26,12 @@ export function mountIntelligentUi(options: {
   session: SessionService
   locale: LocaleService
   approval(receipt: UiActionReceipt): void
+  /** Bring the conversation card out from under the trace pane. */
+  revealInline?(): void
 }): () => void {
   let current: IntelligentUiClient | undefined
+  let stopWatch: (() => void) | undefined
+  let seenSurfaces = new Set<string>()
   let target: ReturnType<UiPlacementBinding['target']>
   const listeners = new Set<() => void>()
   const documentLocale = createDocumentLocaleSource({ [INTELLIGENT_UI_NAMESPACE]: intelligentUiCatalog })
@@ -60,6 +65,9 @@ export function mountIntelligentUi(options: {
     },
   }
   const switchSession = () => {
+    stopWatch?.()
+    stopWatch = undefined
+    seenSurfaces = new Set()
     current?.dispose()
     current = undefined
     target = undefined
@@ -72,12 +80,21 @@ export function mountIntelligentUi(options: {
       } catch {
         /* browser policy may disallow storage */
       }
-      current = new IntelligentUiClient(
+      const client = new IntelligentUiClient(
         sdkSession.id,
         intelligentUiServer(options.client, sdkSession),
         storage,
       )
-      void current.start()
+      current = client
+      stopWatch = client.subscribe(() => {
+        const snapshot = client.getSnapshot()
+        if (!snapshot.ready) return
+        const next = newSurfacePlacements(seenSurfaces, snapshot.surfaces)
+        for (const key of next.keys) seenSurfaces.add(key)
+        if (next.showConversation) options.revealInline?.()
+        if (next.showWorkbench) openIntelligentPanel()
+      })
+      void client.start()
     }
     notify()
   }
@@ -109,6 +126,7 @@ export function mountIntelligentUi(options: {
   switchSession()
   return () => {
     stopSession()
+    stopWatch?.()
     current?.dispose()
     current = undefined
     removeInline()

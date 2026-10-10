@@ -982,6 +982,7 @@ const unmountIntelligentUi = mountIntelligentUi({
   registry: clientModules.registry,
   session: clientModules.session,
   locale: clientModules.locale,
+  revealInline: () => tracePanel.setOpen(false),
   approval: () => {
     searchApproval()
     const approval = document.getElementById('approval')

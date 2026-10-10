@@ -1,4 +1,4 @@
-import type { UiActionReceipt } from '@agnes/protocol/gen/intelligent-ui'
+import type { UiActionReceipt, UiSurfaceRecord } from '@agnes/protocol/gen/intelligent-ui'
 import { type UiExtensionContext, workbenchNavigation } from '@agnes/web-client'
 import {
   Button,
@@ -168,3 +168,25 @@ export function BoundSurface({
 }
 
 export const openIntelligentPanel = () => workbenchNavigation.open('intelligent-ui')
+
+/**
+ * A newly opened revision must show up in both placements. `preferred` only chooses which one
+ * is brought forward; it cannot leave the conversation card inside a hidden trace pane.
+ */
+export function newSurfacePlacements(
+  seen: ReadonlySet<string>,
+  surfaces: readonly UiSurfaceRecord[],
+): { keys: string[]; showConversation: boolean; showWorkbench: boolean } {
+  const keys: string[] = []
+  let showConversation = false
+  let showWorkbench = false
+  for (const record of surfaces) {
+    if (record.status !== 'open') continue
+    const key = `${record.surface.id}:${record.surface.revision}`
+    if (seen.has(key)) continue
+    keys.push(key)
+    if (record.surface.placement.inline) showConversation = true
+    if (record.surface.placement.workbench) showWorkbench = true
+  }
+  return { keys, showConversation, showWorkbench }
+}

@@ -9,13 +9,28 @@ import { IntelligentUiClient } from '../../src/intelligent-ui/client.js'
 import {
   IntelligentInline,
   IntelligentPanel,
+  newSurfacePlacements,
   type UiPlacementBinding,
 } from '../../src/intelligent-ui/placements.js'
 import { financeRecord, uiPage, uiReceipt } from './fixture.js'
 
-const mounted = async (receipt = uiReceipt('pending-approval')) => {
+const deliverablesRecord = () => {
+  const record = financeRecord()
+  record.surface = {
+    ...record.surface,
+    id: 'card-deliverable',
+    title: 'Deliverables / 交付物',
+    placement: { inline: true, workbench: true, preferred: 'inline' },
+    components: [{ id: 'file-0', kind: 'text', dataKey: 'file-0' }],
+    data: { 'file-0': 'report.md — contract-review: final (457 bytes; artifact abc)' },
+    actions: [],
+  }
+  return record
+}
+
+const mounted = async (receipt = uiReceipt('pending-approval'), record = financeRecord()) => {
   const client = new IntelligentUiClient('session-finance', {
-    read: async () => uiPage(financeRecord(), [receipt], 20),
+    read: async () => uiPage(record, [receipt], 20),
     action: async () => receipt,
     listen: () => () => {},
     attach: async () => {},
@@ -60,6 +75,27 @@ const mounted = async (receipt = uiReceipt('pending-approval')) => {
 }
 
 describe('shared Intelligent UI placements', () => {
+  it('shows a deliverables text surface in the conversation and the workbench', async () => {
+    const { host, cleanup } = await mounted(uiReceipt('succeeded'), deliverablesRecord())
+    try {
+      const articles = [...host.querySelectorAll('[data-testid="ui-surface-card-deliverable"]')]
+      expect(articles.map((node) => node.getAttribute('data-placement'))).toEqual(['inline', 'workbench'])
+      for (const article of articles) {
+        expect(article.hasAttribute('hidden')).toBe(false)
+        expect((article as HTMLElement).hidden).toBe(false)
+        expect(article.textContent).toContain('Deliverables / 交付物')
+        expect(article.textContent).toContain('report.md — contract-review: final')
+      }
+      const seen = new Set<string>()
+      const hiddenConversation = newSurfacePlacements(seen, [deliverablesRecord()])
+      expect(hiddenConversation).toMatchObject({ showConversation: true, showWorkbench: true })
+      for (const key of hiddenConversation.keys) seen.add(key)
+      expect(newSurfacePlacements(seen, [deliverablesRecord()]).keys).toEqual([])
+    } finally {
+      await cleanup()
+    }
+  })
+
   it('renders the same revision/receipt in both places and opens the original approval', async () => {
     const { host, binding, cleanup } = await mounted()
     try {
