@@ -36,6 +36,8 @@ type Fact = {
   outcomeUnknown?: boolean
   structured?: unknown
   content?: unknown
+  partial?: boolean
+  tool?: unknown
 }
 const object = (value: unknown): Fact =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Fact) : {}
@@ -76,6 +78,9 @@ export async function assertMigrationSettled(
       if (!completedCalls.has(id)) add('unfinished-tool-call', id, call.seq)
 
     const unknown = new Map<string, number>()
+    const intents = new Map<string, { kind?: string; toolUseId?: string }>()
+    const results = new Map<string, { code?: string; partial: boolean }>()
+    const settlements: { effectId: string; outcome: string; seq: number }[] = []
     const deferred = new Map<string, { state: string; seq: number }>()
     const jobs = new Map<string, { status: string; seq: number }>()
     const questions = new Map<string, number>()
@@ -88,12 +93,25 @@ export async function assertMigrationSettled(
     for (const row of rows) {
       const data = object(row.data)
       if (row.origin === 'system' && row.trust === 'trusted') {
-        if (row.type === 'effect/settled' && typeof data.effectId === 'string') {
-          if (data.outcome === 'unknown') unknown.set(data.effectId, row.seq)
-          // Cancellation cannot establish whether an external effect happened.
-          else if (data.outcome === 'ok' || data.outcome === 'error') unknown.delete(data.effectId)
+        if (row.type === 'effect/intent' && typeof data.effectId === 'string') {
+          const tool = object(data.tool)
+          intents.set(data.effectId, {
+            ...(typeof data.kind === 'string' ? { kind: data.kind } : {}),
+            ...(typeof tool.toolUseId === 'string' ? { toolUseId: tool.toolUseId } : {}),
+          })
         }
+        if (
+          row.type === 'effect/settled' &&
+          typeof data.effectId === 'string' &&
+          typeof data.outcome === 'string'
+        )
+          settlements.push({ effectId: data.effectId, outcome: data.outcome, seq: row.seq })
         if (row.type === 'tool/result') {
+          if (typeof data.toolUseId === 'string')
+            results.set(data.toolUseId, {
+              ...(typeof data.code === 'string' ? { code: data.code } : {}),
+              partial: data.partial === true,
+            })
           const details = object(data.structured)
           if (typeof details.jobId === 'string' && typeof details.status === 'string')
             jobs.set(details.jobId, { status: details.status, seq: row.seq })
@@ -183,6 +201,27 @@ export async function assertMigrationSettled(
         }
       }
     }
+    const receiptFor = (effectId: string) => {
+      const toolUseId = intents.get(effectId)?.toolUseId
+      return toolUseId ? results.get(toolUseId) : undefined
+    }
+    const toolEffect = (effectId: string) => {
+      const intent = intents.get(effectId)
+      return intent?.kind === 'tool' || typeof intent?.toolUseId === 'string'
+    }
+    for (const event of settlements) {
+      const receipt = receiptFor(event.effectId)
+      const sentCancel = receipt?.code === 'CANCELLED' && receipt?.partial === true
+      // A CANCELLED receipt without partial is the not-sent proof. Anything weaker may have run.
+      const neverSent = receipt?.code === 'CANCELLED' && receipt?.partial !== true
+      if (event.outcome === 'unknown') unknown.set(event.effectId, event.seq)
+      else if ((event.outcome === 'ok' || event.outcome === 'error') && !sentCancel)
+        unknown.delete(event.effectId)
+      else if (event.outcome === 'aborted' && toolEffect(event.effectId) && !neverSent)
+        unknown.set(event.effectId, event.seq)
+    }
+    for (const [toolUseId, receipt] of results)
+      if (receipt.code === 'CANCELLED' && receipt.partial) unknown.set(`tool:${toolUseId}`, receipt.seq)
     for (const id of openSurfaces) add('open-surface', id)
     for (const [id, action] of uiActions) {
       if (['received', 'pending-approval', 'executing'].includes(action.status) || action.outcomeUnknown)

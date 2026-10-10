@@ -728,3 +728,96 @@ it('refuses migration while deferred work is unfinished and allows a terminal re
     await done.close()
   }
 })
+
+const toolIntent = {
+  effectId: 'effect',
+  kind: 'tool',
+  replay: 'never',
+  tool: { toolUseId: 'call', name: 'read' },
+}
+
+function cancelledReceipt(partial?: boolean) {
+  return {
+    toolUseId: 'call',
+    content: [],
+    isError: true,
+    code: 'CANCELLED',
+    enforcement: { level: 'none', scope: [] },
+    authz: { decisionId: 'fixture' },
+    ...(partial === undefined ? {} : { partial }),
+  }
+}
+
+async function migrationFacts(events: { type: string; data: object }[]) {
+  const opened = await migrationLog()
+  await opened.log.append(
+    events.map((event) => ({
+      type: event.type,
+      data: event.data,
+      actor,
+      origin: 'system' as const,
+      trust: 'trusted' as const,
+      lane: 'main',
+      ignorable: true,
+    })),
+  )
+  return opened
+}
+
+it('treats a sent tool cancel as an unknown external outcome', async () => {
+  const sent = await migrationFacts([
+    { type: 'effect/intent', data: toolIntent },
+    { type: 'tool/result', data: cancelledReceipt(true) },
+    { type: 'effect/settled', data: { effectId: 'effect', outcome: 'aborted' } },
+  ])
+  try {
+    await expect(assertMigrationSettled(sent.storage, 's', 'generation')).rejects.toThrow(
+      'unknown-external-outcome',
+    )
+  } finally {
+    await sent.close()
+  }
+  for (const partial of [false, undefined] as const) {
+    const notSent = await migrationFacts([
+      { type: 'effect/intent', data: toolIntent },
+      { type: 'tool/result', data: cancelledReceipt(partial) },
+      { type: 'effect/settled', data: { effectId: 'effect', outcome: 'aborted' } },
+    ])
+    try {
+      await assertMigrationSettled(notSent.storage, 's', 'generation')
+    } finally {
+      await notSent.close()
+    }
+  }
+  const unproven = await migrationFacts([
+    { type: 'effect/intent', data: toolIntent },
+    { type: 'effect/settled', data: { effectId: 'effect', outcome: 'aborted' } },
+  ])
+  try {
+    await expect(assertMigrationSettled(unproven.storage, 's', 'generation')).rejects.toThrow(
+      'unknown-external-outcome',
+    )
+  } finally {
+    await unproven.close()
+  }
+  const inference = await migrationFacts([
+    { type: 'effect/intent', data: { effectId: 'model', kind: 'inference', replay: 'safe' } },
+    { type: 'effect/settled', data: { effectId: 'model', outcome: 'aborted' } },
+  ])
+  try {
+    await assertMigrationSettled(inference.storage, 's', 'generation')
+  } finally {
+    await inference.close()
+  }
+  const stillUnknown = await migrationFacts([
+    { type: 'effect/settled', data: { effectId: 'effect', outcome: 'unknown' } },
+    { type: 'effect/settled', data: { effectId: 'effect', outcome: 'aborted' } },
+  ])
+  try {
+    await expect(assertMigrationSettled(stillUnknown.storage, 's', 'generation')).rejects.toThrow(
+      'unknown-external-outcome',
+    )
+  } finally {
+    await stillUnknown.close()
+  }
+})
