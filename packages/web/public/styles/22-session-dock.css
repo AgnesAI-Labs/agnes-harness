@@ -59,6 +59,15 @@
   min-width: 0;
   gap: 0.25rem;
   overflow-x: auto;
+  padding-inline: var(--s8);
+  scroll-padding-inline: var(--s8);
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black var(--s8),
+    black calc(100% - var(--s8)),
+    transparent
+  );
 }
 .workbench-panel-tabs > .agnes-ui-button {
   flex: 0 0 auto;

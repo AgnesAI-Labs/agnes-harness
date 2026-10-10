@@ -56,7 +56,7 @@ export function Turn({
     return node && ownerByNodeId.get(id) === turn.id ? [node] : []
   })
   const users = members.filter((node) => node.kind === 'user')
-  const others = members.filter((node) => node.kind !== 'user')
+  const others = members.filter((node) => node.kind !== 'user' && node.kind !== 'cost')
   const attention = (node: UINode) =>
     (node.kind === 'approval' && node.state === 'pending') || props.keepNodeVisible?.(node) === true
   const pendingApproval = others.some((node) => node.kind === 'approval' && node.state === 'pending')

@@ -1,3 +1,4 @@
+// Feedback icons and per-turn usage detail: exact measured counts, no exclusions or spare allocation.
 // Responsibility splits transfer existing scopes and add only the reviewed binding/import delta.
 // Exact integrated workflow receipts, fact links and sandbox refusal counts; no headroom.
 // FC1 rebase: exact combined counts for bounded evidence projection and four UI entries; no headroom.
@@ -394,7 +395,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Approval reasons: the approval card label reads the decision reason (+22). Measured 6651, exact cap.
   // 2026-10-07 reviewed growth: plugin state badges and session default controls.
   // countLines: 6640 -> 6681 (+41); exact cap, no exclusions or spare allocation.
-  'packages/web-ui/src': 10910,
+  'packages/web-ui/src': 10937,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
@@ -408,7 +409,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 6192 -> 6208 (+16); exact cap, no exclusions or spare allocation.
   // 2026-10-07 integration review: Inline conversation cards and approval/trace rendering.
   // countLines: 6208 -> 6222; exact measured cap, no exclusions or spare allocation.
-  'packages/web-units/src': 9270,
+  'packages/web-units/src': 9283,
   // Write staleness guard: a per-session table of what each file looked like when read, checked by
   // `write` (+55 counted lines, measured 855, exact cap).
   // 2026-10-07 integration review: Official job tools and bounded execution/output handling.

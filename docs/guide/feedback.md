@@ -2,7 +2,7 @@
 
 English | [简体中文](feedback.zh-CN.md)
 
-Rate a completed assistant message with **Thumbs up** or **Thumbs down**. Expand **Feedback note** to add an optional category and note, then save. Use the **Session feedback** workbench panel for the whole session. You can edit your feedback or withdraw it; withdrawal preserves the earlier ledger facts and does not remove an already reviewed Skill.
+Rate a completed assistant message with the **Thumbs up** or **Thumbs down** icon. Message feedback controls appear on hover or keyboard focus on desktop and remain visible on touch widths; their tooltips and accessible labels describe each action. Expand **Feedback note** to add an optional category and note, then save. Use the **Session feedback** workbench panel for the whole session. You can edit your feedback or withdraw it; withdrawal preserves the earlier ledger facts and does not remove an already reviewed Skill.
 
 Feedback stays in this installation. It is excluded from observability, does not enter ordinary model history, and never authorizes log uploads. The native session export includes feedback revisions and growth links, subject to its normal privacy redaction. Withdrawal is a tombstone rather than physical erasure.
 

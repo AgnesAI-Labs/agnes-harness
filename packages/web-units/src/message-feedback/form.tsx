@@ -102,11 +102,14 @@ export function MessageFeedback({
       aria-label={t(target.messageSeq === null ? 'session' : 'title')}
       data-testid={target.messageSeq === null ? 'session-feedback' : 'message-feedback'}
     >
-      <fieldset className="agnes-settings-actions" aria-label={t('title')}>
+      <fieldset className="agnes-settings-actions feedback-actions" aria-label={t('title')}>
         {(['up', 'down'] as const).map((value) => (
           <Button
             key={value}
             size="small"
+            type="text"
+            aria-label={t(value)}
+            title={t(value)}
             data-testid={`feedback-${value}`}
             aria-pressed={item?.withdrawn === false && item.rating === value}
             disabled={busy || error}
@@ -116,16 +119,26 @@ export function MessageFeedback({
               void mutate('put', value)
             }}
           >
-            {t(value)}
+            <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                transform={value === 'down' ? 'rotate(180 12 12)' : undefined}
+                d="M7 10v11H3V10ZM7 10l5-7c2 0 2 2 2 3l-1 4h6a2 2 0 0 1 2 2l-2 7a2 2 0 0 1-2 2H7"
+              />
+            </svg>
           </Button>
         ))}
         <Button
           size="small"
+          type="text"
+          aria-label={t('note')}
+          title={t('note')}
           data-testid="feedback-details"
           aria-expanded={expanded}
           onClick={() => setExpanded(!expanded)}
         >
-          {t('note')}
+          <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 4h16v16H4ZM8 8h8M8 12h8M8 16h5" />
+          </svg>
         </Button>
       </fieldset>
       {expanded && (

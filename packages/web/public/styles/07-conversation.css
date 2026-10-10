@@ -555,3 +555,24 @@
   gap: 0.5rem;
   margin-top: 0.875rem;
 }
+
+/* Message feedback remains keyboard reachable while quiet in the conversation. */
+[data-testid="message-feedback"] .feedback-actions {
+  border: 0;
+  padding: 0;
+  margin: var(--s4) 0;
+  color: var(--agnes-text-secondary);
+}
+.feedback-actions [aria-pressed="true"] {
+  color: var(--agnes-text-emphasis);
+  background: var(--agnes-bg-hover);
+}
+@media (hover: hover) and (min-width: 768px) {
+  [data-testid="message-feedback"] .feedback-actions {
+    opacity: 0;
+  }
+  .timeline-node.assistant:hover .feedback-actions,
+  [data-testid="message-feedback"]:focus-within .feedback-actions {
+    opacity: 1;
+  }
+}

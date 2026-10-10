@@ -45,7 +45,7 @@ export function AssistantMessage({
   return (
     <>
       <p className="node-label">{t('brand.agent')}</p>
-      {!hideThinking && (
+      {!hideThinking && shownThinking && (
         <details ref={disclosure} className="thinking" hidden={!shownThinking}>
           <summary>{t('timeline.thinkingSummary')}</summary>
           <div ref={thinkingHost} className="thinking-content markdown">
@@ -105,7 +105,7 @@ export function AssistantReasoningPart({ text }: { text: string }) {
   useLayoutEffect(() => {
     if (disclosure.current) disclosure.current.open = initiallyActive.current
   }, [])
-  if (!context || !assistant || context.hideThinking) return null
+  if (!context || !assistant || context.hideThinking || !shownThinking) return null
   const t = context.props.t ?? fallbackT
   return (
     <details ref={disclosure} className="thinking" data-assistant-ui-part="reasoning" hidden={!shownThinking}>

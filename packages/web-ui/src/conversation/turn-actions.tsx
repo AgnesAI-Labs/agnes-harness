@@ -9,6 +9,7 @@ import {
   useState,
 } from 'react'
 import { fallbackT, type Translate } from '../locales/index.js'
+import { ConversationCost } from './cost.js'
 
 export interface ConversationTurnFeedback {
   clear(): void
@@ -258,6 +259,14 @@ export function ConversationTurnActions({
     latestModel(turn),
   ].filter(Boolean)
   const { totals, cost, credits, billingComplete } = turn.usage
+  // Reuse the backend's authoritative turn totals, including partial accounting.
+  if (totals.input || totals.output || (cost?.usdMicros ?? 0) || (credits?.amount ?? 0)) {
+    facts.push(t('cost.summary.input', { n: totals.input }), t('cost.summary.output', { n: totals.output }))
+    if (cost)
+      facts.push(
+        `$${(cost.usdMicros / 1e6).toFixed(6)}${billingComplete ? '' : t('turnactions.billingPartial')}`,
+      )
+  }
   const duration = durationLabel(turn.durationMs, t)
   const rows: Array<[string, string]> = [
     [t('turnactions.rows.tokensIn'), totals.input.toLocaleString()],
@@ -354,6 +363,25 @@ export function ConversationTurnActions({
                 <dd>{value}</dd>
               </Fragment>
             ))}
+          {settled &&
+            turn.usage.calls
+              .filter(
+                (call) =>
+                  call.creditSource !== 'estimated' ||
+                  !call.tokens ||
+                  Object.values(call.tokens).some((value) => value !== 0) ||
+                  (call.billing?.usdMicros ?? 0) !== 0 ||
+                  (call.credits ?? 0) !== 0 ||
+                  call.interrupted,
+              )
+              .map((call) => (
+                <Fragment key={call.id}>
+                  <dt>{t('cost.rows.singleRecord')}</dt>
+                  <dd>
+                    <ConversationCost node={{ ...call, kind: 'cost', source: call.creditSource }} t={t} />
+                  </dd>
+                </Fragment>
+              ))}
         </dl>
       </details>
       <span className="turn-feedback" role="status">

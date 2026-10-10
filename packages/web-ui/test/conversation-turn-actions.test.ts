@@ -109,7 +109,7 @@ it('shows complete usage facts as text and keeps the disclosure nodes through re
   const list = required<HTMLElement>('dl')
   expect(summary.textContent).toContain(model)
   expect(summary.textContent).toContain('继承历史')
-  expect(rows()).toEqual([
+  expect(rows().slice(0, 6)).toEqual([
     ['输入 Token', '1,234'],
     ['输出 Token', '0'],
     ['缓存读取 / 写入', '600 / 0'],
@@ -118,6 +118,8 @@ it('shows complete usage facts as text and keeps the disclosure nodes through re
     ['用时', '3.0 秒'],
   ])
   expect(host.querySelector('img, strong')).toBeNull()
+  expect(host.querySelectorAll('.call-usage')).toHaveLength(1)
+  expect(host.querySelector('.call-usage')?.textContent).toContain('输入 1')
   details.open = true
   summary.focus()
   await render({
@@ -134,6 +136,8 @@ it('shows complete usage facts as text and keeps the disclosure nodes through re
   expect(rows()).toContainEqual(['用时', '4.0 秒'])
   await render({ turn: turn('one'), finalText: 'answer', settled: true })
   expect(rows()).toHaveLength(3)
+  expect(required('summary').textContent).toContain('输入 12')
+  expect(required('summary').textContent).toContain('输出 4')
   expect(host.textContent).not.toContain('$')
 })
 
@@ -247,7 +251,7 @@ it('uses the latest non-adjustment inference model and omits absent costs withou
   })
   await render({ turn: base, finalText: 'answer', settled: true })
   expect(required('summary').textContent).toBe('second')
-  expect(rows()).toEqual([
+  expect(rows().slice(0, 3)).toEqual([
     ['输入 Token', '0'],
     ['输出 Token', '0'],
     ['缓存读取 / 写入', '0 / 0'],
