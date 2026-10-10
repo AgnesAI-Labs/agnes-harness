@@ -232,5 +232,28 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
         return ports.extEvents.append(type, data.value, meta)
       },
     }),
+    providers: Object.freeze({
+      register(kind, provider) {
+        registering()
+        if (!ports.serviceProviders) refuse('providers not granted')
+        const dispose = ports.serviceProviders.register(kind, provider, {
+          owner: m.id,
+          packageId: input.packageIdentity,
+        })
+        bag.add(() => dispose())
+        return dispose
+      },
+      bindOwn(kind) {
+        alive()
+        if (!ports.serviceProviders) refuse('providers not granted')
+        return ports.serviceProviders.bindOwn(kind, {
+          owner: m.id,
+          packageId: input.packageIdentity,
+          trust: input.trust,
+          projections,
+          recheck: () => alive(),
+        })
+      },
+    }),
   } satisfies ExtensionAPI)
 }

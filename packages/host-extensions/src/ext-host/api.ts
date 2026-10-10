@@ -6,7 +6,7 @@ import type { KernelPorts } from './ports.js'
 /** The one kernel registry this host hands to an extension. It is `Kernel.tools`, nothing wider. */
 export type ToolPort = KernelPorts['tools']
 
-// Five of the six members of ExtensionAPI are capabilities this host does not grant. They are
+// Members other than registerTool are capabilities this host does not grant. They are
 // present and throw, rather than absent or silently doing nothing: an extension that reaches for a
 // hook gets a refusal naming the member, at the moment it reaches, instead of a handler that is
 // never called and a turn that quietly behaves as though it had been.
@@ -30,7 +30,7 @@ function checkDeclared(m: ExtensionManifest, name: string): void {
 }
 
 /**
- * The extension API object for one extension: `registerTool` and five refusals.
+ * The extension API object for one extension: `registerTool` and refusals for every other member.
  *
  * The manifest is an upper bound in one direction only. Registering a name it does not declare is
  * refused, because that is authority escaping the file the deployment reviewed; declaring a name
@@ -60,6 +60,10 @@ export function buildExtensionApi(
     registerResource: () => ungranted(m.id, 'registerResource'),
     get events(): never {
       return ungranted(m.id, 'events')
+    },
+    providers: {
+      register: () => ungranted(m.id, 'providers'),
+      bindOwn: () => ungranted(m.id, 'providers'),
     },
     get ctx(): never {
       return ungranted(m.id, 'ctx')

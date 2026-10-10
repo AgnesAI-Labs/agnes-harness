@@ -9,7 +9,7 @@ describe('ExtensionAPI surface', () => {
   it('registerHook is constrained by the HookEvent on the root surface', () => {
     expectTypeOf<Parameters<ExtensionAPI['registerHook']>[0]>().toEqualTypeOf<RootHookEvent>()
   })
-  it('has six register methods plus events, ctx and the legacy optional reader', () => {
+  it('has six register methods plus providers, events, ctx and the legacy optional reader', () => {
     expectTypeOf<keyof ExtensionAPI>().toEqualTypeOf<
       | 'registerService'
       | 'registerProjection'
@@ -17,6 +17,7 @@ describe('ExtensionAPI surface', () => {
       | 'registerHook'
       | 'registerSlot'
       | 'registerResource'
+      | 'providers'
       | 'events'
       | 'intelligentUi'
       | 'latestExtEvent'

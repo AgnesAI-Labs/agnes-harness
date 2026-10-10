@@ -7,6 +7,9 @@ import type {
   ProviderRegistrationPort,
   ProviderSelection,
   ProvidersCatalogPort,
+  ServiceInstance,
+  ServiceKind,
+  ServicePorts,
 } from '@agnes/extension-api'
 import { ProviderError, parseSemver } from '@agnes/extension-api'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
@@ -252,6 +255,7 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
     string,
     (owner: Context, source: string, provider: ProviderIdentity) => () => Promise<void>
   >()
+  private serviceBinder?: (kind: ServiceKind) => Promise<ServiceInstance>
   private configuration?: (entry: ProviderCatalogEntry) => readonly string[]
   constructor(ctx: Context) {
     super(ctx, 'providers')
@@ -350,6 +354,20 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
   select(kind: string, selection: string | ProviderSelection, scope = 'profile'): ProviderIdentity {
     const registry = this.lookup(kind, 'select')
     return registry.select(scope, selection)
+  }
+  /** Replaced when a new tree is published. The extension facade is the granted author path. */
+  installServiceBinder(binder: (kind: ServiceKind) => Promise<ServiceInstance>): void {
+    this.serviceBinder = binder
+  }
+  bindOwn<S extends ServiceInstance, P extends ServicePorts>(kind: ServiceKind<S, P>): Promise<S> {
+    this.lookup(kind, 'bind')
+    const binder = this.serviceBinder
+    if (!binder)
+      throw new ProviderError('E_PROVIDER_UNAVAILABLE', 'service binding is closed', {
+        kind: kind.kind,
+        operation: 'bind',
+      })
+    return binder(kind) as Promise<S>
   }
 }
 

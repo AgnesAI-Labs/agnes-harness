@@ -5,8 +5,10 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./assemble/owner-ledger": "./src/assemble/owner-ledger.ts",
     "./assemble/provider-lifetime": "./src/assemble/provider-lifetime.ts",
     "./assemble/provider-registry": "./src/assemble/provider-registry.ts",
+    "./assemble/service-binding": "./src/assemble/service-binding.ts",
     "./command-policy": "./src/command-policy.ts",
     "./configuration-lock": "./src/configuration-lock.ts",
     "./errors": "./src/errors.ts",

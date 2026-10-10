@@ -1,5 +1,6 @@
 import type { LoopFactory, ToolPolicy, WebhookTriggerProvider } from '../src/index.js'
 import { defineProviderKind, type ProviderRegistrationPort } from '../src/provider-kind.js'
+import { defineServiceKind, type ServiceInstance, type ServicePorts } from '../src/service-provider.js'
 
 function providerTypes(
   port: ProviderRegistrationPort,
@@ -25,4 +26,22 @@ function providerTypes(
   // @ts-expect-error Tokens are invariant in their provider type.
   port.register(token, 'test', loop)
 }
+function serviceBinding(port: ProviderRegistrationPort, loop: LoopFactory) {
+  const kind = defineServiceKind<ServiceInstance & { ready(): boolean }, ServicePorts>({
+    kind: 'sample-service',
+    cardinality: 'single',
+    instanceScope: 'request',
+    ports: ['ledger'],
+  })
+  const dispose: () => Promise<void> = port.register(kind, 'test', {
+    id: 'one',
+    version: '1.0.0',
+    open: () => ({ ready: () => true }),
+  })
+  const bound: Promise<ServiceInstance & { ready(): boolean }> = port.bindOwn(kind)
+  void [dispose, bound]
+  // @ts-expect-error A service token does not accept an unrelated provider.
+  port.register(kind, 'test', loop)
+}
 void providerTypes
+void serviceBinding

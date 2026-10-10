@@ -114,6 +114,7 @@ import {
   MIGRATED_EXTENSION_IDS,
 } from '@agnes/host-extensions/assemble/ext-rows'
 import { bindExtensionInvocations } from '@agnes/host-extensions/assemble/extension-ports'
+import { createExtensionServiceHost, type ExtensionServiceHost } from '../services/author-port.js'
 import type {
   LoadedRuntimePackage,
   OperationDeps,
@@ -1117,6 +1118,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       }
       pluginCatalogue.replace([...sources.values()])
     }
+    const extensionServices: { current?: ExtensionServiceHost } = {}
     const runtimeTargetPublisher = new RuntimeTargetPublisher<
       HostRuntimeTargetResources,
       IsolatedSessionOverlay
@@ -1150,6 +1152,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           requiredRowIds: REQUIRED_SEAM_ROW_IDS,
           rootServices: (root, origins) => {
             const providers = installProviders(root)
+            extensionServices.current?.attachBinder(providers)
             providers.configurationSource((entry) =>
               providerConfigurationScopes(entry, profile, defaultPreset.view),
             )
@@ -1230,6 +1233,10 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       }
       return current.ordinary.pluginTree
     }
+    extensionServices.current = createExtensionServiceHost({
+      providers: () => publishedOrdinary().root.providers,
+      sessionGeneration: (key) => deps.sessionGeneration?.(key),
+    })
     // Host admission for the one ordinary convergence path. `closeHost` seals this synchronously and
     // then joins the queue, so a target already admitted finishes loading and applying before the
     // rollback disposes the tree it is mounting into, and a target handed in after that is refused.
@@ -2513,10 +2520,13 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       pluginTree.root.deferredInvocations,
       (session) => readUiComponentDeclarations(deps.profileDir, session.key),
     )
+    const extensionHost = extensionServices.current
+    if (!extensionHost) throw new HostError('E_EXT_LOAD', 'service binding is closed')
     const extPorts = bindExtensionInvocations(
       {
         intelligentUi,
         services,
+        serviceProviders: extensionHost.ports,
         tools: profile.composition
           ? compositionTools(kernel.tools, profile.composition, profile.compositionToolScope)
           : kernel.tools,
@@ -2534,6 +2544,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       kernel.projections,
       activationBarrier,
       publicationDispatch,
+      extensionHost.sink,
     )
     rowServices.activate(extPorts)
     // One snapshot for factory contexts and the isolated bootstrap; hooks get theirs from the kernel.

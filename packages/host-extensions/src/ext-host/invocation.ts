@@ -62,6 +62,27 @@ export class ExtensionInvocation {
     return admitted ? admitted.run(run) : run()
   }
 
+  /** Snapshot of the admitted callback. `token` identifies that callback, not a later one. */
+  admission():
+    | {
+        readonly token: object
+        readonly owner?: string
+        readonly active: boolean
+        readonly signal: AbortSignal
+        readonly session: SessionImpl
+      }
+    | undefined {
+    const invocation = this.current.getStore()
+    if (!invocation) return undefined
+    return {
+      token: invocation,
+      ...(invocation.owner === undefined ? {} : { owner: invocation.owner }),
+      active: invocation.active,
+      signal: invocation.signal,
+      session: invocation.session,
+    }
+  }
+
   assertSession(ref: SessionRef): void {
     const invocation = this.current.getStore()
     if (

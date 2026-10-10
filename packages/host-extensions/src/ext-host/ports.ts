@@ -3,8 +3,13 @@ import type {
   Disposer,
   HookEvent,
   HookHandler,
+  ProjectionReader,
   ResourceEntry,
   Seq,
+  ServiceInstance,
+  ServiceKind,
+  ServicePorts,
+  ServiceProvider,
   SlotName,
   ToolDef,
 } from '@agnes/extension-api'
@@ -36,6 +41,24 @@ export interface KernelPorts {
   slots: { register<S extends SlotName>(slot: S, fill: NoInfer<RuntimeSlotFill<S>>, meta: RegMeta): Disposer }
   resources: { register(entry: ResourceEntry, meta: RegMeta): Disposer }
   extEvents: { append(type: string, data: JsonValue, meta: RegMeta): Promise<Seq> }
+  /** Host grant for the shared service facade. Absent on hosts that do not install it. */
+  serviceProviders?: {
+    register<S extends ServiceInstance, P extends ServicePorts>(
+      kind: ServiceKind<S, P>,
+      provider: ServiceProvider<S, P>,
+      identity: { readonly owner: string; readonly packageId: string },
+    ): () => Promise<void>
+    bindOwn<S extends ServiceInstance, P extends ServicePorts>(
+      kind: ServiceKind<S, P>,
+      identity: {
+        readonly owner: string
+        readonly packageId: string
+        readonly trust: 'builtin' | 'trusted'
+        readonly recheck: () => void
+        readonly projections: ProjectionReader
+      },
+    ): Promise<S>
+  }
   /** Live registration ownership for cleanup verification, not an execution snapshot. */
   registrations(source: string): string[]
 }

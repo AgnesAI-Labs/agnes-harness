@@ -23,8 +23,10 @@ export function bindExtensionInvocations(
   readProjections: ProjectionRegistry = ports.projections,
   activationBarrier?: ExtensionActivationBarrier,
   publication?: PublicationDispatch,
+  invocationSink?: { current?: ExtensionInvocation },
 ): KernelPorts {
   const invocation = new ExtensionInvocation(activationBarrier)
+  if (invocationSink) invocationSink.current = invocation
   const services = ports.services ?? new ServiceRegistry()
   const wrap =
     <P, C extends Context, R>(callback: (payload: P, context: C) => R, owner: string) =>
@@ -172,5 +174,6 @@ export function bindExtensionInvocations(
     resources: ports.resources,
     registrations: (owner) => [...ports.registrations(owner), ...services.registrations(owner)].sort(),
     extEvents: { append: invocation.append },
+    ...(ports.serviceProviders ? { serviceProviders: ports.serviceProviders } : {}),
   }
 }

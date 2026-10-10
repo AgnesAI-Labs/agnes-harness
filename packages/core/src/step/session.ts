@@ -1039,9 +1039,9 @@ export class SessionImpl {
   }
 
   /** Serializes work against every other writer on this session, transitions and inbox alike. */
-  appendExtensionEvent(type: string, data: unknown, meta: ToolSource): Promise<Seq> {
+  appendExtensionEvent(type: string, data: unknown, meta: ToolSource, sourceSeq?: number): Promise<Seq> {
     const event = prepareExtensionEvent(type, data, meta)
-    return this.locked(() => appendExtensionEvent(this, event))
+    return this.locked(() => appendExtensionEvent(this, event, sourceSeq === undefined ? {} : { sourceSeq }))
   }
 
   /**

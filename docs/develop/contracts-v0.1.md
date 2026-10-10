@@ -184,7 +184,7 @@ The current `api-surface.json` owns the root runtime export inventory; types and
 | Hooks/UI/JSON | `HOOK_EVENTS`, `HOOK_TABLE`, `SLOT_NAMES`, `SLOT_TABLE`, `THEME_TOKEN_NAMES`, `SLOT_PAYLOAD_MAX_BYTES`, `isJsonPayload` |
 | Tool validation/policy | `defineTool`, `checkToolDef`, `checkToolMeta`, `checkResolvedToolCallPolicy`, `resolveToolCallPolicy`, `TOOL_META_KEYS`, `RESOLVED_TOOL_CALL_POLICY_KEYS`, `TOOL_NAME_PATTERN`, `TOOL_POLICY_VERSION_PATTERN`, `APPROVAL_SCOPE_PATTERN`, `MAX_APPROVAL_SCOPES`, `TOOL_DESCRIPTION_MAX_LENGTH`, `TOOL_PARAMETERS_MAX_BYTES`, `TOOL_PARAMETERS_MAX_DEPTH`, `DEFAULT_OUTPUT_MAX_BYTES`, `MIN_OUTPUT_MAX_BYTES`, `MAX_OUTPUT_MAX_BYTES` |
 | Services/projections/resources | `checkServiceDef`, `unavailableProjections`, `RESOURCE_KINDS` |
-| Loop/provider registration | `DEFAULT_LOOP`, `LOOP_EVENTS`, `loopCheckpointCodec`, `loopShouldStop`, `registerLoopPlugin`, `registerToolRuntimePlugin`, `registerToolPolicyPlugin`, `defineProviderKind`, `PROVIDER_LIFECYCLE_SCOPES`, `providerRestartRequired` |
+| Loop/provider registration | `DEFAULT_LOOP`, `LOOP_EVENTS`, `loopCheckpointCodec`, `loopShouldStop`, `registerLoopPlugin`, `registerToolRuntimePlugin`, `registerToolPolicyPlugin`, `defineProviderKind`, `defineServiceKind`, `PROVIDER_LIFECYCLE_SCOPES`, `providerRestartRequired` |
 | Public default algorithms | `createCompactionThreshold`, `defaultToolPolicy` (experimental; no Core dependency) |
 | Persistence/sandbox | `DEFAULT_PERSISTENCE_PROVIDER_ID`, `PERSISTENCE_EFFECT`, `PERSISTENCE_SCAN_PAGE_MAX`, `definePersistenceProvider`, `persistenceRegisterKey`, `isPersistenceTombstone`, `LOCAL_SANDBOX_PROVIDER_ID`, `sandboxUnavailable` |
 

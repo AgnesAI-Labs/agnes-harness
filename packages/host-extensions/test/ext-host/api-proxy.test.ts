@@ -8,7 +8,7 @@ import {
   ToolRegistry,
 } from '@agnes/core'
 import type { ExtensionManifest, HookContext, SlotFill, ToolContext } from '@agnes/extension-api'
-import { unavailableProjections } from '@agnes/extension-api'
+import { defineServiceKind, ExtensionError, unavailableProjections } from '@agnes/extension-api'
 import { projectionFixture, serviceFixture } from '@agnes/extension-api/testkit'
 import { describe, expect, it, vi } from 'vitest'
 import { fixtureTool } from '../../../host/test/fixtures/tool.js'
@@ -46,6 +46,7 @@ function setup(
     packageVersion: string
     trust: 'builtin' | 'trusted'
   } = { packageIdentity: '@fixture/package', packageVersion: m.version, trust: 'trusted' },
+  serviceProviders?: KernelPorts['serviceProviders'],
 ) {
   let registering = true
   let now = 1000
@@ -85,6 +86,7 @@ function setup(
     registrations() {
       throw new Error('not a persistence acceptance adapter')
     },
+    ...(serviceProviders === undefined ? {} : { serviceProviders }),
   }
   const lease = overrideLease ?? leaseFor(m, { now, ttlMs: 1000, clock: () => now })
   const bag = new DisposerBag(),
@@ -540,4 +542,58 @@ it('projects an API-registered slot through the real core registry and projectUI
   )
   await h.bag.disposeAllAsync()
   expect(slots.registrations('fixture/proxy')).toEqual([])
+})
+
+it('refuses service registration when the host did not grant providers', () => {
+  const h = setup()
+  const kind = defineServiceKind({
+    kind: 'sample-service',
+    cardinality: 'single',
+    instanceScope: 'request',
+  })
+  const provider = { id: 'one', version: '1.0.0', open: () => ({}) }
+  expect(() => h.api.providers.register(kind, provider)).toThrow(ExtensionError)
+  expect(() => h.api.providers.register(kind, provider)).toThrow('providers not granted')
+  expect(() => h.api.providers.bindOwn(kind)).toThrow('providers not granted')
+})
+
+it('forwards the manifest owner and loader package, and rechecks the lease on bind', async () => {
+  const seen: { op: string; owner: string; packageId: string; trust?: string }[] = []
+  let recheck: (() => void) | undefined
+  const h = setup(manifest(), undefined, undefined, {
+    register(_kind, provider, identity) {
+      seen.push({ op: 'register', owner: identity.owner, packageId: identity.packageId, trust: provider.id })
+      return async () => {}
+    },
+    async bindOwn(_kind, identity) {
+      recheck = identity.recheck
+      seen.push({ op: 'bind', owner: identity.owner, packageId: identity.packageId, trust: identity.trust })
+      identity.recheck()
+      return {} as never
+    },
+  })
+  const kind = defineServiceKind({
+    kind: 'sample-service',
+    cardinality: 'single',
+    instanceScope: 'request',
+  })
+  const dispose = h.api.providers.register(kind, { id: 'one', version: '1.0.0', open: () => ({}) })
+  expect(seen).toEqual([
+    { op: 'register', owner: 'fixture/proxy', packageId: '@fixture/package', trust: 'one' },
+  ])
+  expect(h.bag.size).toBe(1)
+  h.seal()
+  expect(() => h.api.providers.register(kind, { id: 'two', version: '1.0.0', open: () => ({}) })).toThrow(
+    'registration outside factory',
+  )
+  await h.api.providers.bindOwn(kind)
+  expect(seen[1]).toEqual({
+    op: 'bind',
+    owner: 'fixture/proxy',
+    packageId: '@fixture/package',
+    trust: 'trusted',
+  })
+  h.expire()
+  expect(() => recheck?.()).toThrow('E_LEASE_EXPIRED')
+  await dispose()
 })

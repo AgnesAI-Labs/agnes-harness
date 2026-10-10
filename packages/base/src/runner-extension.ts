@@ -93,6 +93,10 @@ export async function loadRunnerExtension(
     registerSlot: reject,
     registerService: reject,
     registerProjection: reject,
+    providers: Object.freeze({
+      register: unavailable,
+      bindOwn: unavailable,
+    }),
     events: Object.freeze({
       append: (name: string, value: protocol.JsonValue) =>
         capability('events.append', { name, data: value }) as Promise<extensionApi.Seq>,

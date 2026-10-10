@@ -51,6 +51,7 @@
     "defineExtension",
     "definePersistenceProvider",
     "defineProviderKind",
+    "defineServiceKind",
     "defineTool",
     "extEventType",
     "isExtensionError",

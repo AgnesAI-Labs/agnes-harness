@@ -3,6 +3,7 @@ import type { Disposer, LeaseView, Logger, PlatformFacts, Seq } from './common.j
 import type { HookEvent, HookHandler } from './hooks.js'
 import type { ProjectionDef } from './projections.js'
 import type { ResourceEntry } from './resources.js'
+import type { ServiceAuthorPort } from './service-provider.js'
 import type { ServiceDef } from './services.js'
 import type { SlotFill, SlotName } from './slots.js'
 import type { ToolDef } from './tool.js'
@@ -28,8 +29,9 @@ export interface ExtensionContext {
   readonly platform: PlatformFacts // assembly-time snapshot; terminal.width is not live (spec §5.2)
 }
 
-// Six controlled registrations, events and ctx, plus the optional legacy latestExtEvent reader.
-// Required profile components remain deployment-owned. test/extension.test-d.ts pins the surface.
+// Six controlled registrations, the shared provider facade, events and ctx, plus the optional
+// legacy latestExtEvent reader. Required profile components remain deployment-owned.
+// test/extension.test-d.ts pins the surface.
 export interface ExtensionAPI {
   registerService<I extends JsonValue, O extends JsonValue>(def: ServiceDef<I, O>): Disposer
   registerProjection<S extends JsonValue>(def: ProjectionDef<S>): Disposer
@@ -45,6 +47,8 @@ export interface ExtensionAPI {
   latestExtEvent?(name: string): JsonValue | undefined
   /** Optional owner-bound adapter for the official preset-surface plugin. */
   readonly intelligentUi?: import('./intelligent-ui.js').IntelligentUiExtensionPort
+  /** Capability-checked facade over the host provider registry. Package and owner are host-supplied. */
+  readonly providers: ServiceAuthorPort
   readonly ctx: ExtensionContext
 }
 

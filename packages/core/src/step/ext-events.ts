@@ -30,8 +30,10 @@ export function prepareExtensionEvent(type: string, data: unknown, meta: ToolSou
 export async function appendExtensionEvent(
   session: SessionImpl,
   event: ReturnType<typeof prepareExtensionEvent>,
-  options: { loopTrigger?: boolean } = {},
+  options: { loopTrigger?: boolean; sourceSeq?: number } = {},
 ): Promise<Seq> {
+  if (options.sourceSeq !== undefined && (!Number.isSafeInteger(options.sourceSeq) || options.sourceSeq <= 0))
+    invalid('invalid extension event source')
   const op = session.op()
   let trigger: Event | undefined
   if (op) {
@@ -73,6 +75,7 @@ export async function appendExtensionEvent(
       trust: 'untrusted',
       lane: session.lane,
       ignorable: true,
+      ...(options.sourceSeq === undefined ? {} : { sourceEventSeqs: [options.sourceSeq] }),
     },
   ])
   return result.firstSeq

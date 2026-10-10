@@ -1,4 +1,5 @@
 import type { ChildAgentProvider } from './child-agent.js'
+import type { ServiceInstance, ServiceKind, ServicePorts } from './service-provider.js'
 import type { CompactionEngine } from './compaction-engine.js'
 import type { LoopFactory } from './loop.js'
 import type { MemoryProvider } from './memory.js'
@@ -122,6 +123,8 @@ export interface ProviderRegistrationPort extends ProvidersCatalogPort {
   ): () => Promise<void>
   resolve<K extends keyof KindMap>(kind: K, selection: string | ProviderSelection): KindMap[K]
   resolve<T extends ProviderIdentity>(kind: ProviderKind<T>, selection: string | ProviderSelection): T
+  /** Binds the admitted callback. A host without a binder fails closed. */
+  bindOwn<S extends ServiceInstance, P extends ServicePorts>(kind: ServiceKind<S, P>): Promise<S>
 }
 
 export interface ProviderPluginContext {

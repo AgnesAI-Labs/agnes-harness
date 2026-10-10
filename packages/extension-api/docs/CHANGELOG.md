@@ -4,6 +4,10 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+`defineServiceKind` and `ExtensionAPI.providers` add the shared service-provider contract. Host grants
+on the existing provider registry supply the owner-scoped ledger, agent input, projection read, and
+generation pin. Authors do not pass a package id. `API_VERSION` stays `1.4.0`.
+
 The runtime surface snapshot includes the preview plugin config helpers
 (`DEFAULT_PLUGIN_CONFIG_RELOAD`, `PLUGIN_SECRET_REF_PATTERN`, `compilePluginConfig`,
 `redactPluginConfig`), the two reserved feedback event constants, and `webhookTriggerKind`.
