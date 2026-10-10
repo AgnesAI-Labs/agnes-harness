@@ -116,7 +116,7 @@ node agnes.mjs mcp tools docs-tools
 
 Before each write, obtain the latest revision with `get`. Do not assume the previous operation left it unchanged. A revision conflict indicates a concurrent or in-flight change; read again instead of retrying blindly.
 
-For stdio, use `--stdio EXECUTABLE` and repeat `--arg VALUE` as needed. Do not pass a complete shell command as the executable or bypass the policy through `--arg -c`. Deployment policy also controls allowed executables. Host policy constrains HTTP/SSE addresses, redirects, and loopback reachability.
+For stdio, use `--stdio EXECUTABLE` and repeat `--arg VALUE` as needed. Do not pass a complete shell command as the executable or bypass the policy through `--arg -c`. Deployment policy also controls allowed executables. Host policy constrains HTTP/SSE addresses, redirects, and loopback reachability. A GET SSE connection stays open when it is quiet: the deployment idle timer and request deadline apply to ordinary responses and POST streams, not to a GET `text/event-stream`.
 
 Use existing secret references: `--secret-env NAME=secret://namespace/name` for stdio, or `--bearer-ref secret://namespace/name` and `--header-ref x-api-key=secret://namespace/name` for HTTP/SSE. Keep real keys out of command lines, screenshots, and documentation. Repeat `--allow-tool TOOL_NAME` to restrict allowed tools.
 

@@ -86,12 +86,21 @@ export function createDeploymentFetch(
         signal: controller.signal,
         dispatcher,
       } as RequestInit)
+      // MCP's long-lived stream is a GET event-stream. Silence is normal, and a transport
+      // error retires the server, so this response keeps neither the idle timer nor the
+      // request deadline. POST streams, including model SSE, keep both.
+      const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
+      const sseGet =
+        method === 'GET' &&
+        (response.headers.get('content-type') ?? '').toLowerCase().startsWith('text/event-stream')
+      if (sseGet) clearTimeout(total)
       if (!response.body) {
         clear()
         return response
       }
       const reader = response.body.getReader()
       const resetIdle = () => {
+        if (sseGet) return
         clearTimeout(idle)
         idle = setTimeout(
           () => controller.abort(new DOMException('Stream idle timeout', 'TimeoutError')),
