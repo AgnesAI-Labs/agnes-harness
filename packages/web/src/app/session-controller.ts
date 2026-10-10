@@ -179,6 +179,8 @@ export function createSessionController(
           context.workspaceRows.find((entry) => entry.path === workspacePath) ??
           (options.workspace?.path === workspacePath ? options.workspace : undefined)
       const url = new URL(location.href)
+      // Launch parameters describe a draft; replaying them would replace this session on refresh.
+      for (const key of ['new', 'bundle', 'preset', 'loop', 'prompt']) url.searchParams.delete(key)
       url.searchParams.set('session', id)
       history.replaceState(null, '', `${url.pathname}${url.search}`)
       context.offPermission = binding.offPermission

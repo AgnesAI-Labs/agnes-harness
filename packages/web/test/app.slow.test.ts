@@ -1431,6 +1431,11 @@ describe('web session selection', () => {
     expect(newSession.open).toBe(false)
     expect(create).not.toHaveBeenCalled()
 
+    history.replaceState(
+      null,
+      '',
+      '/?new=1&bundle=acme%23report&preset=workspace-write&loop=acme%401&prompt=launch&settings=examples',
+    )
     newButton.click()
     newSessionCwd.value = ' /workspace/agnes '
     await vi.waitFor(() => expect(newSessionCreate.disabled).toBe(false))
@@ -1454,6 +1459,10 @@ describe('web session selection', () => {
         references: [],
       }),
     )
+    expect(new URL(location.href).searchParams.get('session')).toBe('fresh')
+    for (const key of ['new', 'bundle', 'preset', 'loop', 'prompt'])
+      expect(new URL(location.href).searchParams.has(key)).toBe(false)
+    expect(new URL(location.href).searchParams.get('settings')).toBe('examples')
   })
 
   it('opens directory confirmation before creation and explains an unavailable path', async () => {
