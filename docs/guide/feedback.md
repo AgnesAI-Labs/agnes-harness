@@ -14,4 +14,4 @@ Use **Execution evidence** on the rated message to see the feedback revision, tu
 
 **Settings → Feedback** lists feedback from sessions owned by the authenticated local administrator, including cold history. Filter by session ID, category, rating or presence of a candidate. Counts reflect the filtered rows: positive/negative counts exclude withdrawn items, while withdrawn and candidate counts include their retained tombstones. The view is bounded to 256 sessions and 4096 current items/growth links; partial aggregate reads are marked. Oversized per-session evidence is refused. Reopen a saved session before editing or generating feedback for it.
 
-The replaceable public service is described in [Feedback services](../extend/feedback.md). Learned memory retains its separate [memory approval policy](memory.md).
+The profile feedback provider is described in [Feedback services](../extend/feedback.md). Learned memory retains its separate [memory approval policy](memory.md).

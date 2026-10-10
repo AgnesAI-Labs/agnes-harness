@@ -125,6 +125,8 @@ Node SDK 提供 `client.packages.migrateSession({ profile, clientId, commandId, 
 
 服务提供者共用这套注册表。`defineServiceKind()` 增加基数、实例作用域和最大端口授权（`ledger`、`input`、`projections`）。Host 安装一份只能缩小授权的描述，并通过 `ExtensionAPI.providers` 准入当前 callback。包身份来自加载器，owner 来自清单。每次获准的调用各自打开实例。callback、generation 或 dispose 之后继续使用句柄会失败关闭。进程级共享仍留在已经做引用计数的功能里。
 
+反馈是这条路径上的第一个功能：每个 profile 一个提供者，每个请求一个新实例，作用域为 workspace，因此更换该提供者的代码要等进程重启。提交反馈、起草 Skill 候选和实时配置不会重启。
+
 文件系统加载的每个普通 `agnes.plugins` 条目必须声明 `apiRange`（如 `"^1.4.0"`），Host 在执行模块代码前核验，不再依赖可选的 `hostProvidedExternals`。`ModelAdapter.wireApi` 表示线路格式，旧 `api` 为弃用兼容别名，二者冲突会被拒绝；目录同时提供两个字段。
 
 `ProviderError` 独立于闭合的 extension 调用错误集，稳定 code 为 `E_PROVIDER_DUPLICATE`、`E_PROVIDER_UNKNOWN`、`E_PROVIDER_INVALID`、`E_PROVIDER_INCOMPATIBLE`、`E_PROVIDER_UNAVAILABLE`，携带 kind/provider/operation/retryable/hint/cause。unregister 返回幂等、可等待的 Promise。model、compaction、tool-runtime、policy 的 owner 禁止新准入，取消并等待创建与调用完成，再 dispose 实例、cleanup 注册资源；清理失败聚合返回，不吞错。
