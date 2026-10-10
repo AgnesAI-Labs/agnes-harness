@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
+import { hashDirectory, lockPath, RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
+import { createPluginRow } from '@agnes/plugin-runtime/host'
 import { type JsonValue, jcs, type UiActionParams, type UiSurface } from '@agnes/protocol'
 import { X_AGNES_UI_LIMITS } from '@agnes/protocol/gen/intelligent-ui'
 import { describe, expect, it } from 'vitest'
@@ -500,6 +503,93 @@ describe('ui data source resolution', () => {
       expect(existsSync(join(profile, '.runtime-generations'))).toBe(false)
     } finally {
       rmSync(profile, { recursive: true, force: true })
+    }
+  })
+
+  it('accepts a trusted generation when the author host has no lock, and keeps a lock authoritative', () => {
+    const root = mkdtempSync(join(tmpdir(), 'agh-ui-source-grant-'))
+    const profile = join(root, 'profile')
+    const packageDir = join(root, 'pkg')
+    mkdirSync(profile, { recursive: true })
+    mkdirSync(packageDir, { recursive: true })
+    writeFileSync(
+      join(packageDir, 'package.json'),
+      JSON.stringify({
+        name: '@agnes-fde/finance-reconcile',
+        version: '1.1.0',
+        agnes: { capabilities: { uiData: ['finance.differences.read'] } },
+      }),
+    )
+    const packageId = '@agnes-fde/finance-reconcile'
+    const integrity = hashDirectory(packageDir, { exclude: [] })
+    const source = {
+      snapshot: {
+        packageId,
+        profile: 'local-dev',
+        version: '1.1.0',
+        directory: packageDir,
+        snapshotId: integrity,
+        integrity,
+        treeIntegrity: integrity,
+        capabilityHash: 'ab'.repeat(32),
+        contributions: [],
+      },
+      generation: 1,
+      trusted: true,
+    }
+    const row = (disabled: boolean) =>
+      createPluginRow({
+        id: 'ext:finance/main',
+        plugin: `${packageId}@${integrity}/main`,
+        snapshotDigest: integrity,
+        exportName: 'main',
+        entryRevision: '1',
+        extrasRevision: 'none',
+        mountRevision: '1',
+        disabled,
+      })
+    const pin = (disabled: boolean) =>
+      new RuntimeGenerationSnapshotStore(profile).create(
+        buildCompleteRuntimeTarget({ rows: [row(disabled)], resources: { mcp: [], skills: {} } }).target,
+        [source],
+        'test',
+      )
+    const ask = (generationId: string) =>
+      loadUiDataSourceGrant({
+        profileDir: profile,
+        profile: 'local-dev',
+        agnesVersion: '0.0.0',
+        generationId,
+        packageId,
+      })
+    try {
+      const open = pin(false)
+      expect(ask(open.id)).toEqual({
+        enabled: true,
+        trusted: true,
+        hashMatches: true,
+        inGeneration: true,
+        atoms: ['uiData:finance.differences.read'],
+      })
+      expect(existsSync(lockPath(profile))).toBe(false)
+      const disabled = pin(true)
+      expect(ask(disabled.id)).toMatchObject({
+        enabled: false,
+        trusted: true,
+        hashMatches: true,
+        inGeneration: false,
+        atoms: ['uiData:finance.differences.read'],
+      })
+      writeFileSync(lockPath(profile), 'not-a-lock')
+      expect(ask(open.id)).toEqual({
+        enabled: false,
+        trusted: false,
+        hashMatches: false,
+        inGeneration: false,
+        atoms: [],
+      })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 

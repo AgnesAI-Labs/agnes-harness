@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs'
+import { uiDataSourceKind } from '@agnes/intelligent-ui-contract'
 import { Type } from '@sinclair/typebox'
+import { fixtureDifferenceRows, keyed, ledger, reconcile, readLedgers } from './ledgers.mjs'
 import { makeBundle, modelText, tool, value, writeMeta } from './runtime.mjs'
 import { actionOutcome, guardAdjustment, recordAdjustment, reviewSurface } from './surface.mjs'
 
@@ -14,94 +15,18 @@ const proposal = Type.Object(
   { id: Type.String(), amountCents: Type.Integer(), reason: Type.String({ minLength: 1, maxLength: 256 }) },
   { additionalProperties: false },
 )
-function ledger(file) {
-  const [header, ...lines] = readFileSync(new URL(`./fixtures/${file}`, import.meta.url), 'utf8')
-    .trim()
-    .split(/\r?\n/)
-  if (header !== 'id,date,amount,currency,description') throw new Error('Unsupported ledger CSV header')
-  return lines.map((line) => {
-    const parts = line.split(',')
-    const [id, date, amount, currency, description] = parts
-    if (
-      parts.length !== 5 ||
-      line.includes('"') ||
-      !id ||
-      !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
-      !/^-?\d+\.\d{2}$/.test(amount) ||
-      currency !== 'USD'
-    )
-      throw new Error('Fixture CSV requires unquoted fields, ISO dates and USD amounts with two decimals')
-    const amountCents = Number(amount.replace('.', ''))
-    if (!Number.isSafeInteger(amountCents)) throw new Error('Ledger amount exceeds safe integer cents')
-    return { id, date, amountCents, currency, description }
-  })
-}
-function keyed(rows) {
-  const map = new Map()
-  for (const item of rows) {
-    if (map.has(item.id)) throw new Error(`Duplicate transaction ID: ${item.id}; reconcile manually`)
-    if (!Number.isSafeInteger(item.amountCents)) throw new Error('Unsafe integer cents')
-    map.set(item.id, item)
-  }
-  return map
-}
 export const tools = [
   tool(
     'fde_finance_ledgers',
     'Read the synthetic bank and book CSV ledgers using exact integer cents.',
     Type.Object({}),
-    () => ({
-      bank: ledger('bank.csv'),
-      book: ledger('book.csv'),
-      currency: 'USD',
-    }),
+    () => readLedgers(),
   ),
   tool(
     'fde_finance_reconcile',
     'Match unique IDs, flag differences and propose reviewed adjustments; no ledger mutation.',
     Type.Object({ bank: Type.Array(row), book: Type.Array(row) }),
-    ({ bank, book }) => {
-      const banks = keyed(bank),
-        books = keyed(book),
-        mismatches = [],
-        proposals = [],
-        matched = []
-      for (const id of new Set([...banks.keys(), ...books.keys()])) {
-        const a = banks.get(id),
-          b = books.get(id)
-        if (a && b && a.date !== b.date) {
-          mismatches.push({ id, kind: 'date-mismatch', bank: a, book: b })
-          continue
-        }
-        if (a && b && a.amountCents === b.amountCents) {
-          matched.push(id)
-          continue
-        }
-        const kind = !a ? 'book-only' : !b ? 'bank-only' : 'amount-mismatch'
-        mismatches.push({ id, kind, bank: a ?? null, book: b ?? null })
-        if (a) {
-          const amountCents = a.amountCents - (b?.amountCents ?? 0)
-          if (!Number.isSafeInteger(amountCents)) throw new Error('Adjustment exceeds safe integer cents')
-          proposals.push({ id, amountCents, reason: kind })
-        }
-      }
-      return {
-        matched,
-        mismatches,
-        proposals,
-        markdown:
-          '# Reconciliation draft (USD cents)\n\n' +
-          mismatches
-            .map(
-              (item) =>
-                `- ${item.id}: ${item.kind}; bank ${item.bank?.amountCents ?? 'missing'}, book ${item.book?.amountCents ?? 'missing'}`,
-            )
-            .join('\n'),
-        unresolved: mismatches
-          .filter((item) => ['book-only', 'date-mismatch'].includes(item.kind))
-          .map((item) => item.id),
-      }
-    },
+    ({ bank, book }) => reconcile(bank, book),
   ),
   // Preset UI collects the business choice; policy separately owns tool authorization.
   tool(
@@ -220,10 +145,30 @@ const stages = [
     },
   },
 ]
+const sourceParams = { type: 'object', additionalProperties: false, properties: {} }
 export const { main, factory, createFactory, policy } = makeBundle({
   name: 'finance-reconcile',
   tools,
   stages,
   guardToolCall: guardAdjustment,
   recordToolResult: recordAdjustment,
+  onApply(ctx) {
+    const off = ctx.providers.register(uiDataSourceKind, '@agnes-fde/finance-reconcile', {
+      id: 'finance/differences',
+      version: '1.0.0',
+      paramsSchema: sourceParams,
+      result: 'rows',
+      permission: 'finance.differences.read',
+      capabilities: ['refresh'],
+      open() {
+        return {
+          async query(_params, signal) {
+            signal.throwIfAborted()
+            return fixtureDifferenceRows()
+          },
+        }
+      },
+    })
+    ctx.effect(() => off)
+  },
 })

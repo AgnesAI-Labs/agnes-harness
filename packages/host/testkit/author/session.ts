@@ -44,6 +44,8 @@ export interface AuthorPluginVersion {
   config?: unknown
   /** Reviewed browser declaration and self-contained code, copied into the synthetic package. */
   clientModule?: { declaration: import('@agnes/protocol').ClientContribution; code: string }
+  /** Manifest capabilities written before the development capability hash. Omission leaves the hash unchanged. */
+  capabilities?: { readonly uiData?: readonly string[] }
 }
 export interface AuthorTestOptions extends AuthorPluginVersion {
   packageId?: string
@@ -118,6 +120,7 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
         type: 'module',
         exports: './index.mjs',
         agnes: {
+          ...(next.capabilities ? { capabilities: next.capabilities } : {}),
           ...(next.clientModule
             ? { clientDescriptors: [{ rowId: `ext:${id}/main`, path: './client/agnes.client.json' }] }
             : {}),

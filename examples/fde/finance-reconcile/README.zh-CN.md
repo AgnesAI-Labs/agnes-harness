@@ -31,7 +31,7 @@ agh serve
 
 在本目录执行 `npm pack`，通过 `agh plugins add ./NAME.tgz` 安装分发包。运行文件、夹具、Skill 和可选面板一同打包，没有工作区或相邻示例导入。
 
-同一 preset surface 在对话与工作台展示差异表、金额图和调整表单。勾选行可标记正在审阅的差异，并在表单中编辑提案理由；确认覆盖该表单内的全部提案。点击 **确认调整**，后台再通过原工具路径申请模拟调整权限。刷新恢复同一个审阅状态和待审批回执；无交互运行在此边界等待。TUI／渠道展示文本摘要与工作台链接。
+同一 preset surface 在对话与工作台展示差异表、金额图和调整表单。差异表和金额图绑定账本数据源 `finance/differences`。本会话未注册该源时，render 以 `UI_SOURCE_UNKNOWN` 拒绝；信任未覆盖 `finance.differences.read` 时，以 `UI_SOURCE_DENIED` 拒绝。不要编造行。勾选行可标记正在审阅的差异，并在表单中编辑提案理由；确认覆盖该表单内的全部提案。点击 **确认调整**，后台再通过原工具路径申请模拟调整权限。刷新恢复同一个审阅状态和待审批回执；无交互运行在此边界等待。TUI／渠道展示文本摘要与工作台链接。
 
 Web：打开 serve 地址，进入 **Admin → Plugins → Bundles**，选择 `@agnes-fde/finance-reconcile#finance-reconcile`，保存并按提示重启 Host。新建会话，选择 `finance-reconcile` 预设与 Demo 模型，粘贴 `fixtures/prompt.txt`。旧会话保留固定 loop。查看依据与轨迹。
 
@@ -77,4 +77,4 @@ npm test
 
 ## 已审阅的对账差异组件
 
-差异视图在 `client/agnes.client.json` 中声明，由自包含的 `client/reconciliation-diff.mjs` 实现。安装审阅覆盖 namespace/version、本地 props Schema、字节上限、文本回退与键盘/语义标签要求。会话保留 generation 锁定的已审阅模块。旁边的预设账簿差异表继续可用；TUI/channels 使用声明的文本回退。“审阅调整”按钮触发现有 `approve` surface action、确认及 `fde_finance_approve` 审批流程，组件不能写账簿、fetch 数据或访问会话。详见[自定义组件合同](../../../docs/develop/intelligent-ui.zh-CN.md#已审阅的自定义组件)。
+差异视图在 `client/agnes.client.json` 中声明，由自包含的 `client/reconciliation-diff.mjs` 实现。安装审阅覆盖 namespace/version、本地 props Schema、字节上限、文本回退与键盘/语义标签要求。会话保留 generation 锁定的已审阅模块。旁边的预设账簿差异表和金额图绑定 `finance/differences`。自定义视图保留带有回执状态的字面行。TUI/channels 使用声明的文本回退。“审阅调整”按钮触发现有 `approve` surface action、确认及 `fde_finance_approve` 审批流程，组件不能写账簿、fetch 数据或访问会话。详见[自定义组件合同](../../../docs/develop/intelligent-ui.zh-CN.md#已审阅的自定义组件)。

@@ -119,6 +119,7 @@ export function makeBundle({
   validateSettings = () => ({}),
   guardToolCall = () => {},
   recordToolResult = () => false,
+  onApply,
 }) {
   const source = `@agnes-fde/${name}`
   const outputPath = new RegExp(`^fde-output/${name}/[a-f0-9]{64}/[0-9]+-report\\.(md|html)$`)
@@ -433,7 +434,7 @@ export function makeBundle({
     })
   }
   const main = defineAgnesPlugin({
-    inject: ['extension', 'loops', 'toolPolicies', 'skills'],
+    inject: ['extension', 'loops', 'toolPolicies', 'skills', 'providers'],
     apply(ctx, config = {}) {
       for (const definition of tools) {
         const off = ctx.extension().registerTool(definition)
@@ -454,6 +455,7 @@ export function makeBundle({
         body: readFileSync(new URL('./skills/playbook/SKILL.md', import.meta.url), 'utf8'),
       })
       ctx.effect(() => off)
+      onApply?.(ctx)
     },
   })
   return { main, factory: createFactory(), createFactory, policy }

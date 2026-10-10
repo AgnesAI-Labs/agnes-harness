@@ -1,5 +1,6 @@
 /** Session-scoped UI data-source resolution. The plugin calls this and writes the audit. */
 import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import type { UiComponentDeclaration } from '@agnes/protocol/gen/extension-manifest'
 import { X_AGNES_UI_LIMITS } from '@agnes/protocol/gen/intelligent-ui'
 import {
@@ -22,6 +23,7 @@ import {
 import { pluginSnapshotIdentity } from '@agnes/host-providers/runtime-plugin-catalogue'
 import {
   capabilityAtoms,
+  lockPath,
   readLock,
   readPluginCapabilities,
   RuntimeGenerationSnapshotStore,
@@ -311,6 +313,9 @@ interface ResolvedKey {
  * Re-reads the pinned generation and the current lock.
  * A missing generation, a disabled row, or a hash that no longer matches the pin is denied.
  * Live config rows win over the immutable generation artifact when the session has accepted them.
+ * An author host with no agnes-lock.json can own trust the same way generation restore does:
+ * one trusted snapshot and a non-disabled row are the authority, and atoms still come from that
+ * snapshot. Once a lock file exists, the lock stays authoritative.
  */
 export function loadUiDataSourceGrant(input: {
   profileDir: string
@@ -336,16 +341,26 @@ export function loadUiDataSourceGrant(input: {
         // A malformed plugin string does not enable this package.
       }
     }
-    const entry = readLock(input.profileDir, {
-      profile: input.profile,
-      agnesVersion: input.agnesVersion,
-    }).packages[input.packageId]
     let atoms: readonly string[] = []
     try {
       atoms = capabilityAtoms(readPluginCapabilities(source.snapshot.directory))
     } catch {
       atoms = []
     }
+    if (!existsSync(lockPath(input.profileDir))) {
+      const trusted = source.trusted === true
+      return {
+        enabled: active,
+        trusted,
+        hashMatches: trusted,
+        inGeneration: trusted && active,
+        atoms,
+      }
+    }
+    const entry = readLock(input.profileDir, {
+      profile: input.profile,
+      agnesVersion: input.agnesVersion,
+    }).packages[input.packageId]
     const decisionHash = entry?.trustDecision?.capabilityHash
     return {
       enabled: entry?.state.enabled === true,

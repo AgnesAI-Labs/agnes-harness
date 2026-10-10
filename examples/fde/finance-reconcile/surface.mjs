@@ -2,22 +2,11 @@ import { createHash } from 'node:crypto'
 import { jcs } from '@agnes/protocol'
 import { deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
 import descriptor from './client/agnes.client.json' with { type: 'json' }
+import { differenceRows } from './ledgers.mjs'
 
 /** Data-only declaration with a reviewed diff renderer and the preset table fallback. Values stay in integer USD cents throughout. */
 export function reviewSurface(id, report, revision = 1, receipt = null) {
-  const approved = new Set(receipt?.entries.map((entry) => entry.id) ?? [])
-  const rows = report.mismatches.map((item) => ({
-    id: item.id,
-    kind: item.kind,
-    bankCents: item.bank?.amountCents ?? null,
-    bookCents: item.book?.amountCents ?? null,
-    differenceCents: (item.bank?.amountCents ?? 0) - (item.book?.amountCents ?? 0),
-    status: approved.has(item.id)
-      ? 'simulated-approved'
-      : report.unresolved.includes(item.id)
-        ? 'unresolved'
-        : 'needs-review',
-  }))
+  const rows = differenceRows(report, receipt)
   const schema = {
     type: 'object',
     additionalProperties: false,
@@ -117,7 +106,7 @@ export function reviewSurface(id, report, revision = 1, receipt = null) {
     ],
     data: {
       diffProps: { rows, actionable },
-      differences: rows,
+      differences: { $source: 'finance/differences', params: {} },
       summary: {
         mismatchCount: report.mismatches.length,
         proposalCount: report.proposals.length,

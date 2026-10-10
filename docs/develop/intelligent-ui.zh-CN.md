@@ -226,7 +226,7 @@ Host 会话桥解析数据源。官方插件调用该函数并追加审计事实
 
 ### 财务试点
 
-`examples/fde/finance-reconcile` 注册 `finance/differences`，包为 `@agnes-fde/finance-reconcile`，`result` 为 `rows`，`permission` 为 `finance.differences.read`，`capabilities` 为 `refresh`，params 为空对象。查询读取现有 CSV 夹具。行形状与上文财务示例中的差异表相同（整数美元分）。表格与金额图共用 `differences`。摘要、步骤、表单、状态和自定义差异视图保持字面量。包已安装但本会话未启用时，render 得到 `UI_SOURCE_DENIED`。示例 playbook 告诉用户账本数据源不可用，不编造行。目录中不存在的 id 为 `UI_SOURCE_UNKNOWN`。
+`examples/fde/finance-reconcile` 注册 `finance/differences`，包为 `@agnes-fde/finance-reconcile`，`result` 为 `rows`，`permission` 为 `finance.differences.read`，`capabilities` 为 `refresh`，params 为空对象。查询读取现有 CSV 夹具。行形状与上文财务示例中的差异表相同（整数美元分）。表格与金额图共用 `differences`。摘要、步骤、表单、状态和自定义差异视图保持字面量。本会话未启用该包时不会注册数据源，render 得到 `UI_SOURCE_UNKNOWN`。已注册但信任未覆盖 `finance.differences.read` 时为 `UI_SOURCE_DENIED`。示例 playbook 告诉用户账本数据源不可用，不编造行。
 
 ## Ledger 事实与生命周期状态表
 
@@ -283,7 +283,7 @@ Render/update/close、提交接纳和执行状态转换沿会话 ledger 既有�
 
 Fact-chain 与 trace 展示 surface id/revision 和归属、received 命令/actor、解析后的工具 invocation、审批、效果与结果、终态 UI 事实、Agent 队列输入及 Agent 下一次 surface 更新。按 ledger 序号与稳定 id 关联，不能靠相近时间猜测。缺失回执/投递/revision 链接明确展示为缺口。UI 不能将插件编写的标签/事实提升为授权决定证据。
 
-[财务对账试点](../../examples/fde/finance-reconcile/index.mjs) 保持合成源账本和精确整数分。该包在会话中启用时，差异表和柱状图的行来自 `finance/differences`。包已安装但本会话未启用时，render 以 `UI_SOURCE_DENIED` 拒绝；playbook 告诉用户账本数据源不可用，不编造行。对账后在差异表、柱状图和调整表单旁渲染详情卡与复核步骤。“确认调整”映射到现有模拟调整工具 `fde_finance_approve`，保留其需要审批的元数据与 policy。业务工具根据已提交对账事实与选择校验提案，包括交易成员、整数分、原因、无重复 id、是否已处理。表单编辑不能悄悄覆盖已提交差异。获得权限与模拟回执后，queued result 恢复 Agent；Agent 将已处理行更新为 `simulated-approved`，保留未解决交易，明确 `posted: false`。审批拒绝/失败不能标记行已处理。通用 deferred-invocation drain 替换试点既有业务提问阶段，不再要求第二次自由文本 “Proceed”。
+[财务对账试点](../../examples/fde/finance-reconcile/index.mjs) 保持合成源账本和精确整数分。该包在会话中启用时，差异表和柱状图的行来自 `finance/differences`。本会话未启用该包时目录中没有该源，render 以 `UI_SOURCE_UNKNOWN` 拒绝；已注册但缺少 `finance.differences.read` 时为 `UI_SOURCE_DENIED`。playbook 告诉用户账本数据源不可用，不编造行。绑定的差异表重新读取夹具。自定义差异视图保留回执状态，例如 `simulated-approved`。对账后在差异表、柱状图和调整表单旁渲染详情卡与复核步骤。“确认调整”映射到现有模拟调整工具 `fde_finance_approve`，保留其需要审批的元数据与 policy。业务工具根据已提交对账事实与选择校验提案，包括交易成员、整数分、原因、无重复 id、是否已处理。表单编辑不能悄悄覆盖已提交差异。获得权限与模拟回执后，queued result 恢复 Agent；Agent 将已处理行更新为 `simulated-approved`，保留未解决交易，明确 `posted: false`。审批拒绝/失败不能标记行已处理。通用 deferred-invocation drain 替换试点既有业务提问阶段，不再要求第二次自由文本 “Proceed”。
 
 ### 已审阅的自定义组件
 

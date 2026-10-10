@@ -18,11 +18,12 @@
     "real-model.bundle.json"
   ],
   "scripts": {
-    "build": "node --check index.mjs && node --check runtime.mjs",
+    "build": "node --check index.mjs && node --check runtime.mjs && node --check ledgers.mjs && node --check surface.mjs",
     "test": "vitest run test/workflow.test.mjs --maxWorkers=1"
   },
   "dependencies": {
     "@agnes/extension-api": "1.4.0",
+    "@agnes/intelligent-ui-contract": "0.0.0",
     "@agnes/plugin-runtime": "0.0.0",
     "@sinclair/typebox": "0.34.33",
     "@agnes/protocol": "0.0.0"
@@ -46,7 +47,10 @@
         "write": [
           "fde-output/finance-reconcile/**"
         ]
-      }
+      },
+      "uiData": [
+        "finance.differences.read"
+      ]
     },
     "plugins": [
       {
@@ -56,7 +60,8 @@
           "extension",
           "loops",
           "toolPolicies",
-          "skills"
+          "skills",
+          "providers"
         ],
         "apiRange": "^1.4.0",
         "metadata": {
