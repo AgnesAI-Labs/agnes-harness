@@ -150,6 +150,8 @@ export type SeamProfileView = {
 }
 
 export type SeamInitContext = {
+  /** Host-owned Git service, supplied only to the exact bundled subagent factory. */
+  gitWorktrees?: import('@agnes/extension-api').GitWorktreeService
   searchProvider?: import('@agnes/extension-api').SearchProvider
   /** Deployment grants, supplied only to the exact bundled hooks-runner factory. */
   trustedHookCommands?: Readonly<{

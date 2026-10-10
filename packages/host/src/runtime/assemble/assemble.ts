@@ -1,6 +1,7 @@
 import { lstatSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { createSessionGitWorktreeService } from '@agnes/host-infrastructure/git-worktrees'
 import { pathToFileURL } from 'node:url'
 import type { ToolRegistry } from '@agnes/core'
 import {
@@ -1794,6 +1795,12 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     const computerUseStatus = lazyComputerUse.controls
     rollback.push('computer-use', () => lazyComputerUse.dispose())
     say('seams.assembled', { seams: profile.seams, fsDigest: adapters.fs.fence().digest })
+    const gitWorktrees = createSessionGitWorktreeService({
+      workspaceInvocationFor,
+      dataDir,
+      remote: adapters.transport !== undefined,
+      signal: ac.signal,
+    })
     let privacyTrajectory: SeamInitContext['privacyTrajectory']
     const hookCommands =
       adapters.platform.os === 'win32'
@@ -1828,6 +1835,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       return {
         ...baseContext(owner),
         sandbox: seams.sandbox,
+        ...(owner === '@agnes/base' && extensionId === 'agnes/subagent' ? { gitWorktrees } : {}),
         ...(owner === '@agnes/base' && extensionId === 'agnes/tools-web' && deps.searchProvider
           ? { searchProvider: deps.searchProvider }
           : {}),

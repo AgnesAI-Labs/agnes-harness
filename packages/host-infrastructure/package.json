@@ -44,6 +44,7 @@
     "./workspace-hook-loader": "./src/workspace-hook-loader.ts",
     "./workspace-invocation-resolver": "./src/workspace-invocation-resolver.ts",
     "./workspace-seam-contexts": "./src/workspace-seam-contexts.ts",
+    "./git-worktrees": "./src/git-worktrees.ts",
     "./workspace": "./src/workspace.ts",
     "./doctor": "./src/doctor.ts",
     "./system-prompt-settings": "./src/system-prompt-settings.ts",

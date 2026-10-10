@@ -46,6 +46,8 @@ type BoundSkillRuntimeInput = SkillRuntimeInput & Required<Pick<SkillRuntimeInpu
 export type SkillRuntimeDiscovery = Readonly<Pick<BoundSkillRuntimeInput, 'list' | 'runInWorkspace'>>
 
 export type SeamInitContext = {
+  /** Host-owned Git service, supplied only to the exact bundled subagent factory. */
+  gitWorktrees?: import('@agnes/extension-api').GitWorktreeService
   searchProvider?: import('@agnes/extension-api').SearchProvider
   /** Deployment grants, supplied only to the exact bundled hooks-runner factory. */
   trustedHookCommands?: Readonly<{

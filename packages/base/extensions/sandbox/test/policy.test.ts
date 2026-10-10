@@ -125,11 +125,16 @@ describe('L0 path precedence', () => {
   })
 
   it('keeps host-integrity paths hard-denied', () => {
-    expect(decidePath(policy(), p('/work/project/.git/config'))).toMatchObject({
-      effect: 'deny',
-      reason: 'hard-deny',
-      rule: { source: 'host-integrity' },
-    })
+    for (const path of [
+      '/work/project/.git',
+      '/work/project/.git/config',
+      '/work/project/.git/worktrees/child/HEAD',
+    ])
+      expect(decidePath(policy(), p(path))).toMatchObject({
+        effect: 'deny',
+        reason: 'hard-deny',
+        rule: { source: 'host-integrity' },
+      })
   })
 
   it('refuses a dataTmp identity outside canonical dataDir', () => {
@@ -364,10 +369,15 @@ describe('resolvePolicy compiles the full L0 rule set through the injected canon
     })
     const integrity = policy.rules.filter((r) => r.source === 'host-integrity')
     expect(integrity.map((r) => r.path.value).sort()).toEqual([
+      '/home/u/.agh/git-worktrees',
       '/work/project/.agh/secrets',
       '/work/project/.git',
     ])
     expect(integrity.every((r) => r.hard && r.effect === 'deny')).toBe(true)
+    expect(decidePath(policy, p('/home/u/.agh/git-worktrees/ownership.json'))).toMatchObject({
+      effect: 'deny',
+      reason: 'hard-deny',
+    })
     // The projection is the whole contract: plain strings, one digest, no CanonicalPath wrappers.
     expect(fsPolicy.workspaceRoot).toBe('/work/project')
     expect(fsPolicy.digest).toBe(policy.digest)

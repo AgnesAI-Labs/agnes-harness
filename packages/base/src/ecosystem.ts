@@ -201,7 +201,11 @@ function defineSubagentExtension(init: SeamInitContext): ExtensionFactory {
   return (agnes) =>
     createSubagentExtension({
       limits,
-      worktrees: gitWorktrees({ events: agnes.events, persist: sqliteWorktreePersist(init.profile.dataDir) }),
+      worktrees: gitWorktrees({
+        events: agnes.events,
+        persist: sqliteWorktreePersist(init.profile.dataDir),
+        ...(init.gitWorktrees ? { service: init.gitWorktrees } : {}),
+      }),
     })(agnes)
 }
 

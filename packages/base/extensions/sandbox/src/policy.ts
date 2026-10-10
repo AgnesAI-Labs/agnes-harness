@@ -60,6 +60,7 @@ export type L0PolicyInput = Readonly<{
   dataTmp: CanonicalPath
   homeSsh: CanonicalPath
   dataSecrets: CanonicalPath
+  dataWorktrees?: CanonicalPath
   hostIntegrityDeny: readonly CanonicalPath[]
   extraAllow: readonly CanonicalPath[]
   configuredDeny: readonly CanonicalPath[]
@@ -183,6 +184,7 @@ export function compileL0Policy(input: L0PolicyInput): PathPolicy {
     input.dataTmp,
     input.homeSsh,
     input.dataSecrets,
+    ...(input.dataWorktrees ? [input.dataWorktrees] : []),
     ...input.hostIntegrityDeny,
     ...input.extraAllow,
     ...input.configuredDeny,
@@ -194,6 +196,8 @@ export function compileL0Policy(input: L0PolicyInput): PathPolicy {
   )
     throw fault('data tmp must be below data dir')
   if (!contains(input.dataDir, input.dataSecrets)) throw fault('data secrets must be below data dir')
+  if (input.dataWorktrees && !contains(input.dataDir, input.dataWorktrees))
+    throw fault('worktree ownership must be below data dir')
   if (input.hostIntegrityDeny.some((path) => !contains(input.workspaceRoot, path)))
     throw fault('host integrity deny must be below workspace')
 
@@ -203,6 +207,16 @@ export function compileL0Policy(input: L0PolicyInput): PathPolicy {
     { effect: 'allow', hard: false, path: input.dataTmp, source: 'data-tmp' },
     { effect: 'deny', hard: true, path: input.homeSsh, source: 'home-ssh' },
     { effect: 'deny', hard: true, path: input.dataSecrets, source: 'data-secrets' },
+    ...(input.dataWorktrees
+      ? [
+          {
+            effect: 'deny' as const,
+            hard: true,
+            path: input.dataWorktrees,
+            source: 'host-integrity' as const,
+          },
+        ]
+      : []),
     ...input.hostIntegrityDeny.map(
       (path): RuleInput => ({ effect: 'deny', hard: true, path, source: 'host-integrity' }),
     ),
@@ -355,6 +369,7 @@ export async function resolvePolicy(input: {
       dataTmp: await below(dataDir, 'tmp', 'data tmp directory'),
       homeSsh: await below(homeDir, '.ssh', 'home ssh directory'),
       dataSecrets: await below(dataDir, 'secrets', 'data secrets directory'),
+      dataWorktrees: await below(dataDir, 'git-worktrees', 'host worktree ownership'),
       hostIntegrityDeny: [
         await below(workspaceRoot, '.git', 'host integrity path'),
         ...(await Promise.all(

@@ -90,6 +90,7 @@ function worktrees(
         ? handlers.create(ctx)
         : {
             id: '1234abcd',
+            root: '/work/proj',
             path: '/work/proj/.worktrees/agnes-1234abcd',
             branch: 'agnes/subagent-1234abcd',
           }

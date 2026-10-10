@@ -38,6 +38,8 @@ return await tools.workflow({
 子任务使用官方 subagent_spawn 工具，继承深度、扇出、预算和 worktree 策略。
 后续阶段收到上一阶段的有界结果；成员失败后停止工作流。
 
+默认子 Agent 和工作流使用专属 Host 服务管理的 Git worktree。请先在仓库忽略规则中加入 `.worktrees/`。服务生成分支，仅列出自己登记的 worktree，并在不强制删除的前提下清理干净的工作树；脏工作树和未合并分支保留供审查，所有权及清理阶段在重启后继续有效。创建、列举、删除和清理拒绝以 `worktree-*` 事实呈现在 trace 中。Agent 工具仍不能读取或修改 `.git`。非 Git 仓库、缺少 Git 和远程沙箱分别报告 `not-git`、`git-error`、`remote-sandbox`；请求 worktree 隔离失败时明确拒绝。如确实需要共享工作目录，请显式选择 `isolation: "shared"`。
+
 `ctx.subagent.collect()` 可返回可选的 `receipt`：工作区隔离信息、最多 32 条近期工具结果（名称、账本序号和错误状态），以及 `truncated` 标记。旧版本或外部子代理 provider 可省略该字段；缺失的证据不能视为执行成功回执。
 
 Workflow 回执区分后端工具结果和子代理自行撰写的报告。父代理及后续阶段通过上下文 section 收到当前执行事实，包含工作区隔离方式，以及工具证据是否不完整或不可用。worktree 产物仍留在子工作区，Workflow 不会将子分支合并到主工作区，Web 卡片会明确标注。另行验证集成操作后才能声称文件已进入主工作区；子代理说“已经合并”不构成集成回执。

@@ -160,6 +160,7 @@ describe('fs adapter', () => {
     await expect(f.write('.git/config', new Uint8Array())).rejects.toThrow(/E_FS_DENIED/)
     await expect(f.list('.git')).rejects.toThrow(/E_FS_DENIED/)
     writeFileSync(join(root, '.git', 'synthetic-state'), 'keep')
+    await expect(f.read('.git/synthetic-state')).rejects.toMatchObject({ code: 'E_FS_DENIED' })
     await withSessionFileAccess(
       f,
       () => true,
