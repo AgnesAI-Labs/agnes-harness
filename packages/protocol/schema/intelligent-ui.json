@@ -12,6 +12,13 @@
     "schemaDepth": 16,
     "tableRows": 1000,
     "chartPoints": 1000,
+    "detailFields": 32,
+    "tabs": 8,
+    "tabItems": 16,
+    "steps": 32,
+    "imageAlt": 1024,
+    "imageDataUrlBytes": 16384,
+    "imageArtifactBytes": 33554432,
     "liveSurfaces": 16,
     "receiptsPerPage": 64,
     "newCommandsPerMinute": 30,
@@ -281,6 +288,156 @@
             },
             "dataKey": {
               "$ref": "#/$defs/UiKey"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "kind", "dataKey", "fields"],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "kind": {
+              "const": "detail-card"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "dataKey": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/UiColumn"
+              },
+              "minItems": 1,
+              "maxItems": 32
+            },
+            "statusKey": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "secondaryKey": {
+              "$ref": "#/$defs/UiKey"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "kind", "tabs"],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "kind": {
+              "const": "tabs"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "tabs": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "label", "componentIds"],
+                "properties": {
+                  "id": {
+                    "$ref": "#/$defs/UiKey"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "componentIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "uniqueItems": true,
+                    "items": {
+                      "$ref": "#/$defs/UiKey"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "kind", "dataKey"],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "kind": {
+              "const": "steps"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "dataKey": {
+              "$ref": "#/$defs/UiKey"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "kind", "dataKey"],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "kind": {
+              "const": "progress"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "dataKey": {
+              "$ref": "#/$defs/UiKey"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "kind", "dataKey", "alt"],
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "kind": {
+              "const": "image"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "dataKey": {
+              "$ref": "#/$defs/UiKey"
+            },
+            "alt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
             }
           }
         },

@@ -1374,6 +1374,26 @@
         "$ref": "#/$defs/_agnes_v1_config_childEngines_saveResult"
       }
     },
+    "_agnes/v1/config.modelSlots.get": {
+      "kind": "request",
+      "direction": "c2s",
+      "params": {
+        "$ref": "#/$defs/_agnes_v1_config_modelSlots_getParams"
+      },
+      "result": {
+        "$ref": "#/$defs/_agnes_v1_config_modelSlots_getResult"
+      }
+    },
+    "_agnes/v1/config.modelSlots.save": {
+      "kind": "request",
+      "direction": "c2s",
+      "params": {
+        "$ref": "#/$defs/_agnes_v1_config_modelSlots_saveParams"
+      },
+      "result": {
+        "$ref": "#/$defs/_agnes_v1_config_modelSlots_saveResult"
+      }
+    },
     "_agnes/v1/computerUse.status": {
       "kind": "request",
       "direction": "c2s",
@@ -29292,6 +29312,245 @@
         "engines"
       ]
     },
+    "_agnes_v1_config_modelSlots_getParams": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {}
+    },
+    "_agnes_v1_config_modelSlots_getResult": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "revision": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "slots": {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "fast": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "route": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+                      "type": "string"
+                    },
+                    "model": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "route",
+                    "model"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "verifier": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "route": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+                      "type": "string"
+                    },
+                    "model": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "route",
+                    "model"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "required": [
+        "revision",
+        "slots"
+      ]
+    },
+    "_agnes_v1_config_modelSlots_saveParams": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "revision": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "slots": {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "fast": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "route": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+                      "type": "string"
+                    },
+                    "model": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "route",
+                    "model"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "verifier": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "route": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+                      "type": "string"
+                    },
+                    "model": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "route",
+                    "model"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "required": [
+        "revision",
+        "slots"
+      ]
+    },
+    "_agnes_v1_config_modelSlots_saveResult": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "revision": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "slots": {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "fast": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "route": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+                      "type": "string"
+                    },
+                    "model": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "route",
+                    "model"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "verifier": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "type": "object",
+                  "properties": {
+                    "route": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+                      "type": "string"
+                    },
+                    "model": {
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "pattern": "^[^\\s\\u0000-\\u001f\\u007f]+$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "route",
+                    "model"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "required": [
+        "revision",
+        "slots"
+      ]
+    },
     "_agnes_v1_computerUse_statusParams": {
       "$ref": "#/$defs/D9ea9f48b7214_Empty"
     },
@@ -37468,7 +37727,7 @@
     "_agnes_v1_auth_claimResult": {
       "$ref": "#/$defs/D9ea9f48b7214_AuthClaimResult"
     },
-    "Da848451f0676_UiKey": {
+    "Dd78553d298e1_UiKey": {
       "$ref": "#/$defs/R17019853db81"
     },
     "R17019853db81": {
@@ -37477,7 +37736,7 @@
       "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$",
       "type": "string"
     },
-    "Da848451f0676_UiRevision": {
+    "Dd78553d298e1_UiRevision": {
       "$ref": "#/$defs/R74a73fa64fa9"
     },
     "R74a73fa64fa9": {
@@ -37485,7 +37744,7 @@
       "maximum": 9007199254740991,
       "type": "integer"
     },
-    "Da848451f0676_UiJsonSchema": {
+    "Dd78553d298e1_UiJsonSchema": {
       "$ref": "#/$defs/R72bd05bc8505"
     },
     "R72bd05bc8505": {
@@ -37533,7 +37792,7 @@
         }
       ]
     },
-    "Da848451f0676_UiPlacement": {
+    "Dd78553d298e1_UiPlacement": {
       "$ref": "#/$defs/R07cbcebe0ad1"
     },
     "R07cbcebe0ad1": {
@@ -37566,7 +37825,7 @@
         "workbench"
       ]
     },
-    "Da848451f0676_UiColumn": {
+    "Dd78553d298e1_UiColumn": {
       "$ref": "#/$defs/R28550a83419f"
     },
     "R28550a83419f": {
@@ -37574,7 +37833,7 @@
       "type": "object",
       "properties": {
         "key": {
-          "$ref": "#/$defs/Da848451f0676_UiKey"
+          "$ref": "#/$defs/Dd78553d298e1_UiKey"
         },
         "label": {
           "minLength": 1,
@@ -37611,7 +37870,7 @@
         "label"
       ]
     },
-    "Da848451f0676_UiChartSeries": {
+    "Dd78553d298e1_UiChartSeries": {
       "$ref": "#/$defs/Rf3477d31fed3"
     },
     "Rf3477d31fed3": {
@@ -37619,7 +37878,7 @@
       "type": "object",
       "properties": {
         "key": {
-          "$ref": "#/$defs/Da848451f0676_UiKey"
+          "$ref": "#/$defs/Dd78553d298e1_UiKey"
         },
         "label": {
           "minLength": 1,
@@ -37632,17 +37891,17 @@
         "label"
       ]
     },
-    "Da848451f0676_UiComponent": {
-      "$ref": "#/$defs/R41a1ff05ac77"
+    "Dd78553d298e1_UiComponent": {
+      "$ref": "#/$defs/R472ed6a6b633"
     },
-    "R41a1ff05ac77": {
+    "R472ed6a6b633": {
       "anyOf": [
         {
           "additionalProperties": false,
           "type": "object",
           "properties": {
             "id": {
-              "$ref": "#/$defs/Da848451f0676_UiKey"
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
             },
             "kind": {
               "const": "form",
@@ -37654,17 +37913,17 @@
               "type": "string"
             },
             "dataKey": {
-              "$ref": "#/$defs/Da848451f0676_UiKey"
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
             },
             "schema": {
-              "$ref": "#/$defs/Da848451f0676_UiJsonSchema"
+              "$ref": "#/$defs/Dd78553d298e1_UiJsonSchema"
             },
             "actionIds": {
               "minItems": 0,
               "maxItems": 16,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/Da848451f0676_UiKey"
+                "$ref": "#/$defs/Dd78553d298e1_UiKey"
               }
             }
           },
@@ -37680,7 +37939,7 @@
           "type": "object",
           "properties": {
             "id": {
-              "$ref": "#/$defs/Da848451f0676_UiKey"
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
             },
             "kind": {
               "const": "table",
@@ -37692,17 +37951,17 @@
               "type": "string"
             },
             "dataKey": {
-              "$ref": "#/$defs/Da848451f0676_UiKey"
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
             },
             "rowKey": {
-              "$ref": "#/$defs/Da848451f0676_UiKey"
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
             },
             "columns": {
               "minItems": 1,
               "maxItems": 32,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/Da848451f0676_UiColumn"
+                "$ref": "#/$defs/Dd78553d298e1_UiColumn"
               }
             },
             "selection": {
@@ -37726,7 +37985,7 @@
               "maxItems": 16,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/Da848451f0676_UiKey"
+                "$ref": "#/$defs/Dd78553d298e1_UiKey"
               }
             }
           },
@@ -37744,7 +38003,7 @@
           "type": "object",
           "properties": {
             "id": {
-              "$ref": "#/$defs/Da848451f0676_UiKey"
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
             },
             "kind": {
               "const": "chart",
@@ -37756,7 +38015,7 @@
               "type": "string"
             },
             "dataKey": {
-              "$ref": "#/$defs/Da848451f0676_UiKey"
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
             },
             "chartType": {
               "anyOf": [
@@ -37775,14 +38034,14 @@
               ]
             },
             "categoryKey": {
-              "$ref": "#/$defs/Da848451f0676_UiKey"
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
             },
             "series": {
               "minItems": 1,
               "maxItems": 8,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/Da848451f0676_UiChartSeries"
+                "$ref": "#/$defs/Dd78553d298e1_UiChartSeries"
               }
             }
           },
@@ -37800,7 +38059,7 @@
           "type": "object",
           "properties": {
             "id": {
-              "$ref": "#/$defs/Da848451f0676_UiKey"
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
             },
             "kind": {
               "const": "button-group",
@@ -37816,7 +38075,7 @@
               "maxItems": 16,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/Da848451f0676_UiKey"
+                "$ref": "#/$defs/Dd78553d298e1_UiKey"
               }
             }
           },
@@ -37831,7 +38090,7 @@
           "type": "object",
           "properties": {
             "id": {
-              "$ref": "#/$defs/Da848451f0676_UiKey"
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
             },
             "kind": {
               "const": "text",
@@ -37843,7 +38102,7 @@
               "type": "string"
             },
             "dataKey": {
-              "$ref": "#/$defs/Da848451f0676_UiKey"
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
             }
           },
           "required": [
@@ -37857,7 +38116,7 @@
           "type": "object",
           "properties": {
             "id": {
-              "$ref": "#/$defs/Da848451f0676_UiKey"
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
             },
             "kind": {
               "const": "status",
@@ -37869,7 +38128,7 @@
               "type": "string"
             },
             "dataKey": {
-              "$ref": "#/$defs/Da848451f0676_UiKey"
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
             }
           },
           "required": [
@@ -37879,11 +38138,192 @@
           ]
         },
         {
-          "$ref": "#/$defs/Da848451f0676_UiCustomComponent"
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
+            },
+            "kind": {
+              "const": "detail-card",
+              "type": "string"
+            },
+            "title": {
+              "minLength": 1,
+              "maxLength": 256,
+              "type": "string"
+            },
+            "dataKey": {
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
+            },
+            "fields": {
+              "minItems": 1,
+              "maxItems": 32,
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Dd78553d298e1_UiColumn"
+              }
+            },
+            "statusKey": {
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
+            },
+            "secondaryKey": {
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "dataKey",
+            "fields"
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
+            },
+            "kind": {
+              "const": "tabs",
+              "type": "string"
+            },
+            "title": {
+              "minLength": 1,
+              "maxLength": 256,
+              "type": "string"
+            },
+            "tabs": {
+              "minItems": 1,
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "#/$defs/Dd78553d298e1_UiKey"
+                  },
+                  "label": {
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "type": "string"
+                  },
+                  "componentIds": {
+                    "minItems": 1,
+                    "maxItems": 16,
+                    "uniqueItems": true,
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/Dd78553d298e1_UiKey"
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "label",
+                  "componentIds"
+                ]
+              }
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "tabs"
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
+            },
+            "kind": {
+              "const": "steps",
+              "type": "string"
+            },
+            "title": {
+              "minLength": 1,
+              "maxLength": 256,
+              "type": "string"
+            },
+            "dataKey": {
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "dataKey"
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
+            },
+            "kind": {
+              "const": "progress",
+              "type": "string"
+            },
+            "title": {
+              "minLength": 1,
+              "maxLength": 256,
+              "type": "string"
+            },
+            "dataKey": {
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "dataKey"
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "id": {
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
+            },
+            "kind": {
+              "const": "image",
+              "type": "string"
+            },
+            "title": {
+              "minLength": 1,
+              "maxLength": 256,
+              "type": "string"
+            },
+            "dataKey": {
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
+            },
+            "alt": {
+              "minLength": 1,
+              "maxLength": 1024,
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "kind",
+            "dataKey",
+            "alt"
+          ]
+        },
+        {
+          "$ref": "#/$defs/Dd78553d298e1_UiCustomComponent"
         }
       ]
     },
-    "Da848451f0676_UiArgument": {
+    "Dd78553d298e1_UiArgument": {
       "$ref": "#/$defs/R84f9c4891dab"
     },
     "R84f9c4891dab": {
@@ -37925,7 +38365,7 @@
               ]
             },
             "key": {
-              "$ref": "#/$defs/Da848451f0676_UiKey"
+              "$ref": "#/$defs/Dd78553d298e1_UiKey"
             },
             "pointer": {
               "maxLength": 256,
@@ -37940,7 +38380,7 @@
         }
       ]
     },
-    "Da848451f0676_UiAction": {
+    "Dd78553d298e1_UiAction": {
       "$ref": "#/$defs/Ra533b656f012"
     },
     "Ra533b656f012": {
@@ -37948,7 +38388,7 @@
       "type": "object",
       "properties": {
         "id": {
-          "$ref": "#/$defs/Da848451f0676_UiKey"
+          "$ref": "#/$defs/Dd78553d298e1_UiKey"
         },
         "label": {
           "minLength": 1,
@@ -37966,12 +38406,12 @@
           "type": "object",
           "patternProperties": {
             "^[A-Za-z][A-Za-z0-9_.-]{0,63}$": {
-              "$ref": "#/$defs/Da848451f0676_UiArgument"
+              "$ref": "#/$defs/Dd78553d298e1_UiArgument"
             }
           }
         },
         "paramsSchema": {
-          "$ref": "#/$defs/Da848451f0676_UiJsonSchema"
+          "$ref": "#/$defs/Dd78553d298e1_UiJsonSchema"
         },
         "confirm": {
           "minLength": 1,
@@ -38003,7 +38443,7 @@
         "paramsSchema"
       ]
     },
-    "Da848451f0676_UiSurface": {
+    "Dd78553d298e1_UiSurface": {
       "$ref": "#/$defs/Ra7d490068828"
     },
     "Ra7d490068828": {
@@ -38011,10 +38451,10 @@
       "type": "object",
       "properties": {
         "id": {
-          "$ref": "#/$defs/Da848451f0676_UiKey"
+          "$ref": "#/$defs/Dd78553d298e1_UiKey"
         },
         "revision": {
-          "$ref": "#/$defs/Da848451f0676_UiRevision"
+          "$ref": "#/$defs/Dd78553d298e1_UiRevision"
         },
         "title": {
           "minLength": 1,
@@ -38022,14 +38462,14 @@
           "type": "string"
         },
         "placement": {
-          "$ref": "#/$defs/Da848451f0676_UiPlacement"
+          "$ref": "#/$defs/Dd78553d298e1_UiPlacement"
         },
         "components": {
           "minItems": 1,
           "maxItems": 32,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Da848451f0676_UiComponent"
+            "$ref": "#/$defs/Dd78553d298e1_UiComponent"
           }
         },
         "data": {
@@ -38047,7 +38487,7 @@
           "maxItems": 32,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Da848451f0676_UiAction"
+            "$ref": "#/$defs/Dd78553d298e1_UiAction"
           }
         }
       },
@@ -38061,7 +38501,7 @@
         "actions"
       ]
     },
-    "Da848451f0676_UiRowContext": {
+    "Dd78553d298e1_UiRowContext": {
       "$ref": "#/$defs/R25cf8e9568f8"
     },
     "R25cf8e9568f8": {
@@ -38069,7 +38509,7 @@
       "type": "object",
       "properties": {
         "tableId": {
-          "$ref": "#/$defs/Da848451f0676_UiKey"
+          "$ref": "#/$defs/Dd78553d298e1_UiKey"
         },
         "rowId": {
           "minLength": 1,
@@ -38082,7 +38522,7 @@
         "rowId"
       ]
     },
-    "Da848451f0676_UiActionParams": {
+    "Dd78553d298e1_UiActionParams": {
       "$ref": "#/$defs/Rb1ab17d37fc1"
     },
     "Rb1ab17d37fc1": {
@@ -38095,13 +38535,13 @@
           "type": "string"
         },
         "surfaceId": {
-          "$ref": "#/$defs/Da848451f0676_UiKey"
+          "$ref": "#/$defs/Dd78553d298e1_UiKey"
         },
         "revision": {
-          "$ref": "#/$defs/Da848451f0676_UiRevision"
+          "$ref": "#/$defs/Dd78553d298e1_UiRevision"
         },
         "actionId": {
-          "$ref": "#/$defs/Da848451f0676_UiKey"
+          "$ref": "#/$defs/Dd78553d298e1_UiKey"
         },
         "commandId": {
           "minLength": 1,
@@ -38137,7 +38577,7 @@
           }
         },
         "row": {
-          "$ref": "#/$defs/Da848451f0676_UiRowContext"
+          "$ref": "#/$defs/Dd78553d298e1_UiRowContext"
         },
         "confirmed": {
           "type": "boolean"
@@ -38158,7 +38598,7 @@
         "selection"
       ]
     },
-    "Da848451f0676_UiActionStatus": {
+    "Dd78553d298e1_UiActionStatus": {
       "$ref": "#/$defs/Rd8fd2bd56e22"
     },
     "Rd8fd2bd56e22": {
@@ -38189,7 +38629,7 @@
         }
       ]
     },
-    "Da848451f0676_UiRefusal": {
+    "Dd78553d298e1_UiRefusal": {
       "$ref": "#/$defs/Re90db4e7e0e3"
     },
     "Re90db4e7e0e3": {
@@ -38250,7 +38690,7 @@
           "type": "string"
         },
         "currentRevision": {
-          "$ref": "#/$defs/Da848451f0676_UiRevision"
+          "$ref": "#/$defs/Dd78553d298e1_UiRevision"
         }
       },
       "required": [
@@ -38259,7 +38699,7 @@
         "message"
       ]
     },
-    "Da848451f0676_UiFailure": {
+    "Dd78553d298e1_UiFailure": {
       "$ref": "#/$defs/Rc5dbf94f859b"
     },
     "Rc5dbf94f859b": {
@@ -38290,7 +38730,7 @@
         "outcomeUnknown"
       ]
     },
-    "Da848451f0676_UiActionReceipt": {
+    "Dd78553d298e1_UiActionReceipt": {
       "$ref": "#/$defs/R63eda31ad601"
     },
     "R63eda31ad601": {
@@ -38303,13 +38743,13 @@
           "type": "string"
         },
         "surfaceId": {
-          "$ref": "#/$defs/Da848451f0676_UiKey"
+          "$ref": "#/$defs/Dd78553d298e1_UiKey"
         },
         "revision": {
-          "$ref": "#/$defs/Da848451f0676_UiRevision"
+          "$ref": "#/$defs/Dd78553d298e1_UiRevision"
         },
         "actionId": {
-          "$ref": "#/$defs/Da848451f0676_UiKey"
+          "$ref": "#/$defs/Dd78553d298e1_UiKey"
         },
         "commandId": {
           "minLength": 1,
@@ -38317,7 +38757,7 @@
           "type": "string"
         },
         "status": {
-          "$ref": "#/$defs/Da848451f0676_UiActionStatus"
+          "$ref": "#/$defs/Dd78553d298e1_UiActionStatus"
         },
         "seq": {
           "minimum": 1,
@@ -38338,10 +38778,10 @@
           "type": "string"
         },
         "refusal": {
-          "$ref": "#/$defs/Da848451f0676_UiRefusal"
+          "$ref": "#/$defs/Dd78553d298e1_UiRefusal"
         },
         "failure": {
-          "$ref": "#/$defs/Da848451f0676_UiFailure"
+          "$ref": "#/$defs/Dd78553d298e1_UiFailure"
         },
         "resultSeq": {
           "minimum": 1,
@@ -38369,7 +38809,7 @@
         "duplicate"
       ]
     },
-    "Da848451f0676_UiSurfaceRecord": {
+    "Dd78553d298e1_UiSurfaceRecord": {
       "$ref": "#/$defs/R6ca628e18c00"
     },
     "R6ca628e18c00": {
@@ -38377,7 +38817,7 @@
       "type": "object",
       "properties": {
         "surface": {
-          "$ref": "#/$defs/Da848451f0676_UiSurface"
+          "$ref": "#/$defs/Dd78553d298e1_UiSurface"
         },
         "status": {
           "anyOf": [
@@ -38425,7 +38865,7 @@
         "taskId"
       ]
     },
-    "Da848451f0676_UiReadParams": {
+    "Dd78553d298e1_UiReadParams": {
       "$ref": "#/$defs/Raab23c08361b"
     },
     "Raab23c08361b": {
@@ -38438,7 +38878,7 @@
           "type": "string"
         },
         "surfaceId": {
-          "$ref": "#/$defs/Da848451f0676_UiKey"
+          "$ref": "#/$defs/Dd78553d298e1_UiKey"
         },
         "commandId": {
           "minLength": 1,
@@ -38460,7 +38900,7 @@
         "sessionId"
       ]
     },
-    "Da848451f0676_UiReadResult": {
+    "Dd78553d298e1_UiReadResult": {
       "$ref": "#/$defs/R2e7cdc28109a"
     },
     "R2e7cdc28109a": {
@@ -38481,7 +38921,7 @@
           "maxItems": 16,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Da848451f0676_UiSurfaceRecord"
+            "$ref": "#/$defs/Dd78553d298e1_UiSurfaceRecord"
           }
         },
         "actions": {
@@ -38489,7 +38929,7 @@
           "maxItems": 64,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Da848451f0676_UiActionReceipt"
+            "$ref": "#/$defs/Dd78553d298e1_UiActionReceipt"
           }
         },
         "nextCursor": {
@@ -38505,7 +38945,7 @@
         "actions"
       ]
     },
-    "Da848451f0676_UiRenderParams": {
+    "Dd78553d298e1_UiRenderParams": {
       "$ref": "#/$defs/R27716a3fe2da"
     },
     "R27716a3fe2da": {
@@ -38513,14 +38953,14 @@
       "type": "object",
       "properties": {
         "surface": {
-          "$ref": "#/$defs/Da848451f0676_UiSurface"
+          "$ref": "#/$defs/Dd78553d298e1_UiSurface"
         }
       },
       "required": [
         "surface"
       ]
     },
-    "Da848451f0676_UiUpdateParams": {
+    "Dd78553d298e1_UiUpdateParams": {
       "$ref": "#/$defs/R781908159458"
     },
     "R781908159458": {
@@ -38528,13 +38968,13 @@
       "type": "object",
       "properties": {
         "surfaceId": {
-          "$ref": "#/$defs/Da848451f0676_UiKey"
+          "$ref": "#/$defs/Dd78553d298e1_UiKey"
         },
         "expectedRevision": {
-          "$ref": "#/$defs/Da848451f0676_UiRevision"
+          "$ref": "#/$defs/Dd78553d298e1_UiRevision"
         },
         "surface": {
-          "$ref": "#/$defs/Da848451f0676_UiSurface"
+          "$ref": "#/$defs/Dd78553d298e1_UiSurface"
         }
       },
       "required": [
@@ -38543,7 +38983,7 @@
         "surface"
       ]
     },
-    "Da848451f0676_UiCloseParams": {
+    "Dd78553d298e1_UiCloseParams": {
       "$ref": "#/$defs/Rf750c2671c58"
     },
     "Rf750c2671c58": {
@@ -38551,10 +38991,10 @@
       "type": "object",
       "properties": {
         "surfaceId": {
-          "$ref": "#/$defs/Da848451f0676_UiKey"
+          "$ref": "#/$defs/Dd78553d298e1_UiKey"
         },
         "expectedRevision": {
-          "$ref": "#/$defs/Da848451f0676_UiRevision"
+          "$ref": "#/$defs/Dd78553d298e1_UiRevision"
         },
         "reason": {
           "minLength": 1,
@@ -38567,7 +39007,7 @@
         "expectedRevision"
       ]
     },
-    "Da848451f0676_UiCustomComponent": {
+    "Dd78553d298e1_UiCustomComponent": {
       "$ref": "#/$defs/R7958c91162cf"
     },
     "R7958c91162cf": {
@@ -38575,7 +39015,7 @@
       "type": "object",
       "properties": {
         "id": {
-          "$ref": "#/$defs/Da848451f0676_UiKey"
+          "$ref": "#/$defs/Dd78553d298e1_UiKey"
         },
         "kind": {
           "minLength": 5,
@@ -38589,7 +39029,7 @@
           "type": "string"
         },
         "dataKey": {
-          "$ref": "#/$defs/Da848451f0676_UiKey"
+          "$ref": "#/$defs/Dd78553d298e1_UiKey"
         },
         "fallback": {
           "minLength": 1,
@@ -38601,7 +39041,7 @@
           "uniqueItems": true,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Da848451f0676_UiKey"
+            "$ref": "#/$defs/Dd78553d298e1_UiKey"
           }
         }
       },
@@ -38614,16 +39054,16 @@
       ]
     },
     "_agnes_v1_ui_actionParams": {
-      "$ref": "#/$defs/Da848451f0676_UiActionParams"
+      "$ref": "#/$defs/Dd78553d298e1_UiActionParams"
     },
     "_agnes_v1_ui_actionResult": {
-      "$ref": "#/$defs/Da848451f0676_UiActionReceipt"
+      "$ref": "#/$defs/Dd78553d298e1_UiActionReceipt"
     },
     "_agnes_v1_ui_readParams": {
-      "$ref": "#/$defs/Da848451f0676_UiReadParams"
+      "$ref": "#/$defs/Dd78553d298e1_UiReadParams"
     },
     "_agnes_v1_ui_readResult": {
-      "$ref": "#/$defs/Da848451f0676_UiReadResult"
+      "$ref": "#/$defs/Dd78553d298e1_UiReadResult"
     },
     "_agnes_v1_session_eventParams": {
       "$ref": "#/$defs/D9ea9f48b7214_SessionEventParams"
