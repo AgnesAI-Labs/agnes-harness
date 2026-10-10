@@ -1,4 +1,4 @@
-import type { ChildProcess } from 'node:child_process'
+import { type ChildProcess, spawn as nodeSpawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -420,6 +420,101 @@ describe('WorkerPool', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   }, 5_000)
+
+  it('bounds identical pre-hello seam failures across concurrent acquirers and resets on changed inputs', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-boot-breaker-'))
+    let bootCode = 'E_SEAM_INIT'
+    let spawns = 0
+    let active = 0
+    let peak = 0
+    const children: ChildProcess[] = []
+    const pool = new WorkerPool({
+      workerEntry: fileURLToPath(new URL('./fixtures/seam-failing-worker.mjs', import.meta.url)),
+      config: {
+        profileName: 'p',
+        dataDir: dir,
+        socketPath: join(dir, 'c.sock'),
+        workersSocketPath: workerSocket(dir),
+        limits: DEFAULT_LIMITS,
+      },
+      profile: { name: 'p', hash: 'h1' } as never,
+      profileFile: join(dir, 'profile.json'),
+      clock: Date.now,
+      spawn: (command, args, options) => {
+        spawns++
+        active++
+        peak = Math.max(peak, active)
+        const child = nodeSpawn(command, args, {
+          ...options,
+          env: { ...options?.env, AGNES_TEST_BOOT_CODE: bootCode },
+        })
+        children.push(child)
+        child.once('exit', () => {
+          active--
+        })
+        return child
+      },
+      onEvent: () => undefined,
+      onRequest: async () => undefined,
+      notices: { emit() {} },
+    })
+    const clients = () => Promise.allSettled(Array.from({ length: 10 }, () => pool.acquireSharedWorker()))
+    const blocked = {
+      code: -32603,
+      data: { code: 'WORKER_BOOT_BLOCKED', bootCode: 'E_SEAM_INIT', failures: 3, retryable: false },
+    }
+    try {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const results = await clients()
+        expect(results.every((result) => result.status === 'rejected')).toBe(true)
+        if (attempt === 2)
+          for (const result of results) expect(result).toMatchObject({ status: 'rejected', reason: blocked })
+      }
+      for (let attempt = 0; attempt < 5; attempt++)
+        await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
+      expect(spawns).toBe(3)
+      expect(peak).toBe(1)
+      expect(active).toBe(0)
+      pool.reloadProfile({ profile: { name: 'p', hash: 'h1' } as never, profileFile: 'same-profile.json' })
+      await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
+      expect(spawns).toBe(3)
+      pool.reloadProfile({ profile: { name: 'p', hash: 'h2' } as never, profileFile: 'changed-profile.json' })
+      await clients()
+      expect(spawns).toBe(4)
+      pool.noteRuntimeTarget('new-package-target')
+      await clients()
+      expect(spawns).toBe(5)
+      pool.retryWorkerBoot()
+      await clients()
+      expect(spawns).toBe(6)
+      bootCode = 'E_EXT_LOAD'
+      await clients()
+      bootCode = 'E_SEAM_INIT'
+      await clients()
+      await clients()
+      expect(spawns).toBe(9) // A different code starts a new consecutive streak.
+      await clients()
+      await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
+      expect(spawns).toBe(10)
+      pool.noteRuntimeTarget('new-package-target') // Re-delivery of unchanged inputs cannot reset.
+      await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
+      pool.retryWorkerBoot()
+      bootCode = 'untrusted-code-with-credential-marker'
+      for (let attempt = 0; attempt < 4; attempt++) await clients()
+      expect(spawns).toBe(14) // Unknown code stays transient and never enters the closed breaker.
+      expect(peak).toBe(1)
+    } finally {
+      pool.killAll()
+      await Promise.all(
+        children.map((child) =>
+          child.exitCode !== null || child.signalCode !== null
+            ? Promise.resolve()
+            : new Promise<void>((resolve) => child.once('exit', () => resolve())),
+        ),
+      )
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 10_000)
 
   it('reloads the profile hash and snapshot path together for a new service worker', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-profile-reload-'))

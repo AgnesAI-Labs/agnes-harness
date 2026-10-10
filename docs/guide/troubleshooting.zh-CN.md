@@ -53,6 +53,8 @@ macOS daemon identity 使用内核 boot-session UUID、PID 和进程保存的启
 
 `E_SEAM_INIT` 会话初始化失败返回 `INTERNAL_ERROR`，其 `data.code` 为稳定的 `E_SEAM_INIT`；若 Provider 注册或初始化失败，则保留具体的 `E_PROVIDER_*` 原因码。daemon 审计记录该码，不记录异常消息或请求参数。缺少 loop 时，检查其精确 id/version 是否已安装、启用，并被会话 bundle 选中。
 
+如果 worker 在 `hello` 前连续三次因相同的确定性启动错误退出，daemon 停止拉起该 worker。请求返回 `INTERNAL_ERROR`，包含 `data.code: WORKER_BOOT_BLOCKED`、`bootCode`、`failures` 和 `retryable: false`。并发请求共用一次启动。修正配置或发布变更后的插件 target 会重置熔断；重启 daemon 可显式重试。临时退出仍保留有上限的退避重试。
+
 意外 daemon 错误可能附 `diagnosticId`；用它匹配所选 dataDir 下 `audit/daemon.jsonl` 的记录。审计写入失败时可能返回 `diagnosticUnavailable`，不能因此声称不存在错误。记录应只含安全的 method/code/时间等，分享前仍检查私有上下文。
 
 布局不受支持时，请通过 AGH_HOME 选择新的私有空目录。已有文件不会被修改。

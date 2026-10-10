@@ -1289,6 +1289,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       notices,
     })
     runtimeStore?.onDesired((artifact) => {
+      pool.noteRuntimeTarget(artifact.digest)
       notices.emit('tree_changed', {
         detail: {
           profile: o.profile.name,
@@ -1891,7 +1892,11 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       startupCleanup.push(() => watcher.close())
     }
     // The shared worker is up from here on rather than from the first session.
-    const keeper = keepSharedWorker({ acquire: () => pool.acquireSharedWorker(), log: console })
+    const keeper = keepSharedWorker({
+      acquire: () => pool.acquireSharedWorker(),
+      onRetry: (listener) => pool.onBootRetry(listener),
+      log: console,
+    })
     sharedKeeper = keeper
     startupCleanup.push(() => keeper.close())
 

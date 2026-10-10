@@ -55,6 +55,8 @@ The local launcher includes a child's startup refusal (such as `daemon or packag
 
 `E_SEAM_INIT` session initialization failures return `INTERNAL_ERROR` with a stable `data.code`: `E_SEAM_INIT`, or the specific `E_PROVIDER_*` cause when a provider fails to register or initialize. The daemon audit records that code without exception messages or request parameters. For a missing loop, check that its exact id/version is installed, enabled, and selected by the session bundle.
 
+If a worker fails before `hello` three consecutive times with the same deterministic boot code, the daemon stops spawning that worker. Requests return `INTERNAL_ERROR` with `data.code: WORKER_BOOT_BLOCKED`, `bootCode`, `failures` and `retryable: false`. Concurrent requests share one startup attempt. Correct the configuration or publish a changed package target to reset the breaker; restarting the daemon is an explicit retry. Transient exits retain the capped retry backoff.
+
 Unexpected daemon errors may include a `diagnosticId`. Match it against `audit/daemon.jsonl` under the selected dataDir. Failed audit writes may instead return `diagnosticUnavailable`; this does not prove there was no error. Records should contain safe method/code/time fields, but still review them for private context before sharing.
 
 The supported home layout is described in [first run](getting-started.md). If AGH reports an unsupported layout, choose a new empty private directory with AGH_HOME; existing files remain untouched. `agh doctor --json` performs local checks; `agh doctor --probe` additionally contacts configured model services only when requested.

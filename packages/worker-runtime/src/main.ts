@@ -12,6 +12,7 @@ import {
   syncManagedMcpExecutableAllowlist,
   type WorkerResourceBootstrapInput,
 } from '@agnes/resource-control-worker'
+import { reportWorkerBootFailure } from './boot-failure.js'
 import { generationExtensionRestorer } from './runtime-generation-restore.js'
 import { connectSupervisor } from './supervisor-connection.js'
 
@@ -907,7 +908,8 @@ if (
   process.argv[1] &&
   pathToFileURL(process.argv[1]).href === import.meta.url
 ) {
-  void runWorkerExecutable().catch((error: unknown) => {
+  void runWorkerExecutable().catch(async (error: unknown) => {
+    await reportWorkerBootFailure(error)
     console.error('agnes worker failed to start:', error)
     process.exit(1)
   })

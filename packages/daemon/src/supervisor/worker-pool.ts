@@ -24,12 +24,14 @@ import {
   resourceWorkerObservation,
 } from '@agnes/resource-control-daemon'
 import { windowsProcessStartTimeSync } from '@agnes/system-node'
+import { workerBootFailureCode } from '@agnes/worker-runtime'
 import type { DaemonConfig } from './config.js'
 import type { RequestFrame } from './frames.js'
 import type {
   CompositeRuntimeDelivery,
   RuntimeBootDelivery,
 } from './publication/composite-runtime-delivery.js'
+import { WorkerBootFailures } from './worker-boot-failures.js'
 import { WorkerLink, type WorkerSessionChannel } from './worker-link.js'
 
 /**
@@ -105,6 +107,12 @@ export class WorkerPool {
   private readonly crashes = new Map<string, number[]>()
   private readonly quarantined = new Set<string>()
   private readonly backoffUntil = new Map<string, number>()
+  private readonly acquisitions = new Map<
+    string,
+    { resourceControl: boolean; promise: Promise<WorkerLink> }
+  >()
+  private readonly bootFailures = new WorkerBootFailures()
+  private runtimeTargetDigest: string | undefined
   private stopping = false
   private nextGeneration = 1
   private activationOperation: string | undefined
@@ -261,7 +269,24 @@ export class WorkerPool {
     }
   }
 
-  private async acquireWorker(workerKey: string, opts: WorkerAcquireOptions): Promise<WorkerLink> {
+  private acquireWorker(workerKey: string, opts: WorkerAcquireOptions): Promise<WorkerLink> {
+    const existing = this.acquisitions.get(workerKey)
+    if (existing) {
+      if (existing.resourceControl !== (opts.resourceControl === true))
+        return Promise.reject(new Error(`worker ${workerKey} already exists with a different worker kind`))
+      return existing.promise
+    }
+    // Own the complete admission/backoff/exit wait, not just the hello handshake.
+    const promise = Promise.resolve()
+      .then(() => this.startWorker(workerKey, opts))
+      .finally(() => {
+        if (this.acquisitions.get(workerKey)?.promise === promise) this.acquisitions.delete(workerKey)
+      })
+    this.acquisitions.set(workerKey, { resourceControl: opts.resourceControl === true, promise })
+    return promise
+  }
+
+  private async startWorker(workerKey: string, opts: WorkerAcquireOptions): Promise<WorkerLink> {
     const assertAdmission = (): void => {
       if (this.stopping) throw new Error('worker pool is shutting down')
       if (this.activationOperation)
@@ -270,6 +295,8 @@ export class WorkerPool {
           reason: 'activation-in-progress',
           operationId: this.activationOperation,
         })
+      const blocked = this.bootFailures.blocked(workerKey)
+      if (blocked) throw blocked
       if (this.quarantined.has(workerKey)) throw new Error(`worker ${workerKey} is quarantined`)
     }
     assertAdmission()
@@ -285,12 +312,12 @@ export class WorkerPool {
     if (cur?.child?.exitCode === null && cur.child.signalCode === null) {
       await new Promise<void>((resolve) => cur.child?.once('exit', () => resolve()))
       await cur.exitRecovery
-      return this.acquireWorker(workerKey, opts)
+      return this.startWorker(workerKey, opts)
     }
     if (cur?.exitRecovery) {
       await cur.exitRecovery
       if (this.slots.get(workerKey) === cur) this.slots.delete(workerKey)
-      return this.acquireWorker(workerKey, opts)
+      return this.startWorker(workerKey, opts)
     }
     const until = this.backoffUntil.get(workerKey) ?? 0
     if (until > this.o.clock()) await new Promise((r) => setTimeout(r, until - this.o.clock()))
@@ -300,7 +327,7 @@ export class WorkerPool {
     // process and silently overwriting it (a slot left behind by a startup failure that never
     // reached `link`/`starting` is still fair game to retry over, same as the checks above).
     const raced = this.slots.get(workerKey)
-    if (raced?.link?.alive || raced?.starting) return this.acquireWorker(workerKey, opts)
+    if (raced?.link?.alive || raced?.starting) return this.startWorker(workerKey, opts)
     const selected = { profile: this.o.profile, profileFile: this.o.profileFile }
     // Activation may have frozen membership while admission was in progress; re-check before
     // inserting the slot so waitForStarting cannot miss a late old-revision worker.
@@ -330,11 +357,15 @@ export class WorkerPool {
     slot.starting = new Promise<WorkerLink>((resolve, reject) => {
       let child: ChildProcess | undefined
       let startupFinished = false
+      let helloReceived = false
+      let bootFailureCode: string | undefined
+      const bootEpoch = this.bootFailures.epoch
       // Set from the moment a runtime target is offered until the worker proves it can run it.
       let bootOffer: RuntimeBootDelivery | undefined
       const failStarting = (error: Error): void => {
         if (startupFinished) return
         startupFinished = true
+        if (!helloReceived && !this.stopping) this.bootFailures.record(workerKey, bootFailureCode, bootEpoch)
         // A start that dies on the very target it was given says something about that target, not
         // about the worker; only then is the exit expected rather than a crash to count.
         if (bootOffer && this.o.runtimeDelivery?.recordBootFailure(slot.generation, bootOffer, error))
@@ -346,7 +377,7 @@ export class WorkerPool {
         if (slot.startupTimer !== undefined) clearTimeout(slot.startupTimer)
         slot.startupTimer = undefined
         if (child?.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
-        reject(error)
+        reject(this.bootFailures.blocked(workerKey) ?? error)
       }
       slot.failStarting = failStarting
       const timer = setTimeout(() => {
@@ -360,6 +391,7 @@ export class WorkerPool {
           link.close('startup already failed')
           return
         }
+        helloReceived = true
         clearTimeout(timer)
         slot.startupTimer = undefined
         slot.initializingLink = link
@@ -450,6 +482,7 @@ export class WorkerPool {
           if (!link.alive) return
           slot.initializingLink = undefined
           startupFinished = true
+          this.bootFailures.succeeded(workerKey)
           try {
             this.o.onLifecycle?.('start', `${workerKey}:${generation}`)
           } catch {
@@ -491,7 +524,7 @@ export class WorkerPool {
               AGNES_WORKER_ROOT: opts.kind === 'service' && opts.cwd ? opts.cwd : undefined,
             },
             windowsHide: true,
-            stdio: ['ignore', 'inherit', 'inherit', 'pipe'],
+            stdio: ['ignore', 'inherit', 'inherit', 'pipe', 'ipc'],
           },
         )
       } catch (error) {
@@ -508,6 +541,11 @@ export class WorkerPool {
       }
       const spawnedChild = child
       slot.child = spawnedChild
+      spawnedChild.on('message', (message: unknown) => {
+        if (startupFinished || slot.initializingLink || !message || typeof message !== 'object') return
+        const frame = message as { kind?: unknown; code?: unknown }
+        if (frame.kind === 'worker-boot-failure') bootFailureCode = workerBootFailureCode(frame.code)
+      })
       spawnedChild.once('error', (error) => {
         if (!slot.link)
           failStarting(
@@ -525,7 +563,7 @@ export class WorkerPool {
         } catch {
           /* passive observer */
         }
-        if (startupFinished) {
+        if (startupFinished && helloReceived) {
           slot.link = undefined
           if (!slot.intentionalExit) this.crashed(workerKey)
           slot.exitRecovery = Promise.resolve()
@@ -543,7 +581,7 @@ export class WorkerPool {
         }
         failStarting(
           new Error(
-            `worker ${workerKey} exited before hello (${code === null ? 'signal' : `code ${code}`}${signal ? `, ${signal}` : ''})`,
+            `worker ${workerKey} exited before hello${bootFailureCode ? `: ${bootFailureCode}` : ''} (${code === null ? 'signal' : `code ${code}`}${signal ? `, ${signal}` : ''})`,
           ),
         )
       })
@@ -558,6 +596,21 @@ export class WorkerPool {
 
   acquireSharedWorker(): Promise<WorkerLink> {
     return this.acquireWorker('@shared', { kind: 'session' })
+  }
+
+  /** Explicit retry, also used after configuration or package inputs change. */
+  retryWorkerBoot(): void {
+    this.bootFailures.reset()
+  }
+
+  onBootRetry(listener: () => void): () => void {
+    return this.bootFailures.onReset(listener)
+  }
+
+  noteRuntimeTarget(digest: string): void {
+    if (digest === this.runtimeTargetDigest) return
+    this.runtimeTargetDigest = digest
+    this.retryWorkerBoot()
   }
 
   /** Whether `link` is the live worker that currently carries `sessionKey`'s channel. */
@@ -581,6 +634,7 @@ export class WorkerPool {
 
   /** Apply a new default for workers acquired after this point. Live links retain their snapshot. */
   reloadProfile(selected: WorkerProfile): void {
+    if (selected.profile.hash !== this.o.profile.hash) this.retryWorkerBoot()
     this.o.profile = selected.profile
     this.o.profileFile = selected.profileFile
   }

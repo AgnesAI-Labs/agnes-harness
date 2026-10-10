@@ -1,5 +1,9 @@
 import { pathToFileURL } from 'node:url'
-import { runRuntimeTargetProbeExecutable, runWorkerExecutable } from '@agnes/worker-runtime'
+import {
+  reportWorkerBootFailure,
+  runRuntimeTargetProbeExecutable,
+  runWorkerExecutable,
+} from '@agnes/worker-runtime'
 
 export * from '@agnes/worker-runtime'
 
@@ -13,7 +17,8 @@ if (
 ) {
   void (
     process.env.AGNES_WORKER_KIND === 'probe' ? runRuntimeTargetProbeExecutable() : runWorkerExecutable()
-  ).catch((error: unknown) => {
+  ).catch(async (error: unknown) => {
+    await reportWorkerBootFailure(error)
     console.error('agnes worker failed to start:', error)
     process.exit(1)
   })

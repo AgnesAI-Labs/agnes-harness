@@ -1,23 +1,28 @@
 import { strictEqual } from 'node:assert'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createRequire } from 'node:module'
-import { createLoader, feedbackKind } from '@agnes/host'
+import { createLoader } from '@agnes/host'
+import { observabilityKind } from '@agnes/observability/contract'
+import {
+  providedExternalModules,
+  providedExternalVersions,
+  checkProvidedExternals,
+} from '@agnes/plugin-runtime/provided-externals'
+import { deferredProducerKind, deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
+
 const hostRequire = createRequire(createRequire(import.meta.url).resolve('@agnes/host'))
 const { gitWorktreeKind } = await import(hostRequire.resolve('@agnes/git-worktree-contract'))
 const { intelligentUiKind, uiDataSourceKind } = await import(
   hostRequire.resolve('@agnes/intelligent-ui-contract')
 )
-import { observabilityKind } from '@agnes/observability/contract'
-import { deferredProducerKind, deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
 
 // Run outside Vitest's shared module graph. Decoy dependencies must never supply kind tokens.
 const root = mkdtempSync(join(tmpdir(), 'agnes-kind-audit-'))
 const kinds = {
   observabilityKind,
-  feedbackKind,
   intelligentUiKind,
   uiDataSourceKind,
   gitWorktreeKind,
@@ -25,9 +30,19 @@ const kinds = {
   deferredQueueKind,
 }
 try {
+  for (const name of ['@agnes/host', '@agnes/host/feedback-contract']) {
+    strictEqual(Object.hasOwn(providedExternalModules, name), false)
+    strictEqual(Object.hasOwn(providedExternalVersions, name), false)
+    let refused = false
+    try {
+      checkProvidedExternals({ [name]: '*' })
+    } catch {
+      refused = true
+    }
+    strictEqual(refused, true, 'Host modules cannot be provided to plugins')
+  }
   for (const name of [
     '@agnes/observability',
-    '@agnes/host',
     '@agnes/intelligent-ui-contract',
     '@agnes/git-worktree-contract',
     '@agnes/plugin-runtime',
@@ -41,7 +56,6 @@ try {
         exports: {
           '.': './index.js',
           './contract': './index.js',
-          './feedback-contract': './index.js',
           './deferred-contract': './index.js',
         },
       }),
@@ -53,7 +67,6 @@ try {
     entry,
     `
     export { observabilityKind } from '@agnes/observability/contract'
-    export { feedbackKind } from '@agnes/host/feedback-contract'
     export { intelligentUiKind, uiDataSourceKind } from '@agnes/intelligent-ui-contract'
     export { gitWorktreeKind } from '@agnes/git-worktree-contract'
     export { deferredProducerKind, deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'

@@ -8,7 +8,6 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./feedback-contract": "./src/runtime/feedback/contract.ts",
     "./testkit": "./testkit/index.ts",
     "./testkit/plugin-registration": "./testkit/plugin-registration.ts",
     "./author-testkit": "./testkit/author/index.ts"

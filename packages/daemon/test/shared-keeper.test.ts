@@ -81,3 +81,30 @@ it('stops retrying once closed', async () => {
   await vi.advanceTimersByTimeAsync(60_000)
   expect(acquire).toHaveBeenCalledTimes(1)
 })
+
+it('stops on a boot breaker and resumes only when the pool announces changed inputs', async () => {
+  vi.useFakeTimers()
+  let retry!: () => void
+  const acquire = vi.fn(async () => {
+    throw { code: -32603, data: { code: 'WORKER_BOOT_BLOCKED' } }
+  })
+  const offRetry = vi.fn()
+  const keeper = keepSharedWorker({
+    acquire,
+    onRetry: (listener) => {
+      retry = listener
+      return offRetry
+    },
+    log: { warn() {} },
+  })
+  await vi.advanceTimersByTimeAsync(120_000)
+  expect(acquire).toHaveBeenCalledTimes(1)
+  retry()
+  await vi.advanceTimersByTimeAsync(120_000)
+  expect(acquire).toHaveBeenCalledTimes(2)
+  keeper.close()
+  expect(offRetry).toHaveBeenCalledOnce()
+  retry()
+  await vi.advanceTimersByTimeAsync(120_000)
+  expect(acquire).toHaveBeenCalledTimes(2)
+})
