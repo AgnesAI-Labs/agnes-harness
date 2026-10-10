@@ -1,3 +1,4 @@
+import '../provided-contracts.js'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import {

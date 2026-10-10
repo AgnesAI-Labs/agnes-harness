@@ -5,7 +5,7 @@ import {
   type ObservabilityHealth,
   type ObservabilityProvider,
   type ObservabilitySession,
-} from './contract.js'
+} from '@agnes/observability/contract'
 import { acquireObservability } from './runtime.js'
 
 export { type ObservabilityConfig, observabilityConfig, observabilityHome } from './config.js'

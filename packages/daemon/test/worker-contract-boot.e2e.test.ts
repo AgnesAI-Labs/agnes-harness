@@ -80,3 +80,43 @@ it('boots the source worker through the real extension loader and answers after 
     rmSync(root, { recursive: true, force: true })
   }
 }, 45_000)
+
+it('shares every service-kind token with loader-loaded plugins in a fresh process', async () => {
+  const child = spawn(
+    process.execPath,
+    ['--import', 'tsx', fileURLToPath(new URL('./fixtures/worker-contract-audit.ts', import.meta.url))],
+    { stdio: ['ignore', 'pipe', 'pipe'] },
+  )
+  let output = ''
+  let error = ''
+  child.stdout.on('data', (data) => {
+    output += String(data)
+  })
+  child.stderr.on('data', (data) => {
+    error += String(data)
+  })
+  const code = await new Promise<number | null>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL')
+      reject(new Error('contract audit timed out'))
+    }, 20_000)
+    child.once('error', (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
+    child.once('exit', (code) => {
+      clearTimeout(timer)
+      resolve(code)
+    })
+  })
+  expect(code, error).toBe(0)
+  expect(JSON.parse(output)).toEqual([
+    'observabilityKind',
+    'feedbackKind',
+    'intelligentUiKind',
+    'uiDataSourceKind',
+    'gitWorktreeKind',
+    'deferredProducerKind',
+    'deferredQueueKind',
+  ])
+}, 30_000)

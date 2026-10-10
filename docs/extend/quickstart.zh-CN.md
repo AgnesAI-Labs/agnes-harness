@@ -84,6 +84,6 @@ linker 可重复执行。model-adapter 模板使用公共合同测试数据，�
 
 该字段可选，按精确的公共模块名声明兼容版本。范围语法同扩展 `apiRange`：精确版本、`*`、`^`、`~`、空格连接的比较条件和 `x` 通配；不支持范围并集或预发布版本。AGH 在执行模块前校验。
 
-Host 提供 `@agnes/plugin-runtime` 作者导出、`@agnes/extension-api`、`@agnes/protocol`、`@agnes/cordis`、`@sinclair/typebox` 及其 `/value`、`/compiler` 子路径，不提供 Host 内部或 testkit。安装快照、本地插件与隔离扩展 runner 共用这些公共命名空间。
+Host 提供 `@agnes/plugin-runtime` 作者导出、`@agnes/extension-api`、`@agnes/protocol`、`@agnes/observability/contract`、`@agnes/host/feedback-contract`、`@agnes/intelligent-ui-contract`、`@agnes/git-worktree-contract`、`@agnes/plugin-runtime/deferred-contract`、`@agnes/cordis`、`@sinclair/typebox` 及其 `/value`、`/compiler` 子路径，不提供 Host 内部或 testkit。安装快照和本地插件共用这些公共命名空间。隔离扩展 runner 提供自身拥有的公共合同；feedback 合同只在 Host 进程提供。请从这些合同路径导入 kind token，保持 loader 重载前后的身份一致。
 
 其他依赖由作者打包，或放入包自身声明的依赖树。本地发现不安装依赖，源码快照省略 `node_modules`，所以复制插件前执行 npm install 不足以分发它。缺模块错误指出依赖并建议打包／安装；版本错误提示调整 SDK 范围或升级 AGH。

@@ -21,6 +21,8 @@ const builtins: Readonly<Record<string, object>> = Object.freeze({
 // cordis, cordis-loader and extension-api. A later binder registers the one process copy.
 const contractSpecifiers = new Set([
   '@agnes/protocol',
+  '@agnes/observability/contract',
+  '@agnes/host/feedback-contract',
   '@agnes/intelligent-ui-contract',
   '@agnes/git-worktree-contract',
 ])
@@ -69,6 +71,8 @@ export const providedExternalVersions: Readonly<Record<string, string>> = Object
   '@agnes/extension-api': API_VERSION,
   '@agnes/cordis': '0.0.0',
   '@agnes/protocol': '0.0.0',
+  '@agnes/observability/contract': '0.0.0',
+  '@agnes/host/feedback-contract': '0.0.0',
   '@agnes/intelligent-ui-contract': '0.0.0',
   '@agnes/git-worktree-contract': '0.0.0',
   '@sinclair/typebox': '0.34.33',
