@@ -444,7 +444,7 @@ describe('WorkerPool', () => {
         spawns++
         active++
         peak = Math.max(peak, active)
-        const child = nodeSpawn(command, args, {
+        const child = nodeSpawn(command, bootCode === 'hello' ? ['--import', 'tsx', fakeWorker] : args, {
           ...options,
           env: { ...options?.env, AGNES_TEST_BOOT_CODE: bootCode },
         })
@@ -458,6 +458,7 @@ describe('WorkerPool', () => {
       onRequest: async () => undefined,
       notices: { emit() {} },
     })
+    const server = await listenUnix(workerSocket(dir), (socket) => pool.adopt(socket))
     const clients = () => Promise.allSettled(Array.from({ length: 10 }, () => pool.acquireSharedWorker()))
     const blocked = {
       code: -32603,
@@ -502,6 +503,27 @@ describe('WorkerPool', () => {
       bootCode = 'untrusted-code-with-credential-marker'
       for (let attempt = 0; attempt < 4; attempt++) await clients()
       expect(spawns).toBe(14) // Unknown code stays transient and never enters the closed breaker.
+      pool.reloadProfile({
+        profile: { name: 'p', hash: 'h1' } as never,
+        profileFile: join(dir, 'profile.json'),
+      })
+      pool.retryWorkerBoot()
+      bootCode = 'E_SEAM_INIT'
+      await clients()
+      await clients()
+      writeFileSync(join(dir, 'profile.json'), JSON.stringify({ name: 'p', hash: 'h1' }))
+      pool.setLinkInitializer(async () => {
+        throw new Error('synthetic post-hello refusal')
+      })
+      bootCode = 'hello'
+      await expect(pool.acquireSharedWorker()).rejects.toThrow('activation initialization failed')
+      bootCode = 'E_SEAM_INIT'
+      await clients()
+      await clients()
+      expect(spawns).toBe(19) // Valid hello breaks the streak even when later initialization fails.
+      await clients()
+      await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
+      expect(spawns).toBe(20)
       expect(peak).toBe(1)
     } finally {
       pool.killAll()
@@ -512,6 +534,7 @@ describe('WorkerPool', () => {
             : new Promise<void>((resolve) => child.once('exit', () => resolve())),
         ),
       )
+      await server.close()
       rmSync(dir, { recursive: true, force: true })
     }
   }, 10_000)

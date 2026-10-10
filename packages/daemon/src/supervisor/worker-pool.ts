@@ -420,6 +420,8 @@ export class WorkerPool {
             failStarting(new Error('worker kind mismatch'))
             return
           }
+          // A verified hello ends the pre-hello failure streak, even if admission later fails.
+          this.bootFailures.succeeded(workerKey)
           try {
             await this.initializeLink?.({ sessionKey: workerKey, generation: slot.generation, link })
           } catch (error) {
@@ -482,7 +484,6 @@ export class WorkerPool {
           if (!link.alive) return
           slot.initializingLink = undefined
           startupFinished = true
-          this.bootFailures.succeeded(workerKey)
           try {
             this.o.onLifecycle?.('start', `${workerKey}:${generation}`)
           } catch {
