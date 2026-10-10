@@ -20,7 +20,11 @@ import {
   type DeferredInvocationLedgerPort,
   ownerDeferredQueue,
 } from '@agnes/host-providers/assemble/deferred-invocations'
-import { intelligentUiKind } from '@agnes/intelligent-ui-contract'
+import {
+  intelligentUiKind,
+  uiDataSourceKind,
+  type UiDataSourceProvider,
+} from '@agnes/intelligent-ui-contract'
 import { deferredProducerKind, deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
 import { type Actor, rpcError } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
@@ -79,6 +83,7 @@ function call(
     actor?: Actor
     processKey?: string
     workspaceKey?: string
+    providerId?: string
   } = {},
 ): ServiceCall {
   const admitted = input.owner ?? owner
@@ -99,6 +104,7 @@ function call(
     ...(input.actor === undefined ? {} : { actor: input.actor }),
     ...(input.processKey === undefined ? {} : { processKey: input.processKey }),
     ...(input.workspaceKey === undefined ? {} : { workspaceKey: input.workspaceKey }),
+    ...(input.providerId === undefined ? {} : { providerId: input.providerId }),
   }
 }
 
@@ -1281,6 +1287,124 @@ describe('feedback service binding', () => {
           actor,
         },
       ])
+    } finally {
+      await finish(root)
+    }
+  })
+})
+
+describe('ui data source bind by id', () => {
+  it('refuses providerId on a single kind that would otherwise open', async () => {
+    let opens = 0
+    const kind = defineKind({})
+    const mounted = await mount({
+      kind,
+      descriptor: { ports: [], audience: 'host' },
+      entries: [
+        {
+          id: 'one',
+          packageId,
+          open: () => {
+            opens += 1
+            return { mark: () => 'ok' }
+          },
+        },
+      ],
+    })
+    try {
+      await expectClosed(mounted.bindings.bind(kind, call({ providerId: 'one' }), {}), 'bind')
+      expect(opens).toBe(0)
+      expect((await mounted.bindings.bind(kind, call(), {})).mark()).toBe('ok')
+      expect(opens).toBe(1)
+    } finally {
+      await finish(mounted.root)
+    }
+  })
+
+  it('opens the named multi provider without select and refuses a missing or foreign id', async () => {
+    const opened: string[] = []
+    const kind = defineKind({ cardinality: 'multi' })
+    const mounted = await mount({
+      kind,
+      descriptor: { ports: [], audience: 'host' },
+      entries: ['finance/differences', 'finance/balances'].map((id) => ({
+        id,
+        packageId,
+        open: () => {
+          opened.push(id)
+          return { mark: () => id }
+        },
+      })),
+    })
+    try {
+      await expectClosed(mounted.bindings.bind(kind, call(), {}), 'bind')
+      await expectClosed(mounted.bindings.bind(kind, call({ providerId: '' }), {}), 'bind')
+      await expectClosed(mounted.bindings.bind(kind, call({ providerId: 'missing/source' }), {}), 'bind')
+      await expectClosed(
+        mounted.bindings.bind(
+          kind,
+          call({ providerId: 'finance/differences', packageId: '@other/package' }),
+          {},
+        ),
+        'bind',
+      )
+      expect(opened).toEqual([])
+      const bound = await mounted.bindings.bind(kind, call({ providerId: 'finance/differences' }), {})
+      expect(bound.mark()).toBe('finance/differences')
+      expect(opened).toEqual(['finance/differences'])
+    } finally {
+      await finish(mounted.root)
+    }
+  })
+
+  it('rejects a bad data-source registration and accepts a closed finance source', async () => {
+    expect(uiDataSourceKind.cardinality).toBe('multi')
+    expect(uiDataSourceKind.instanceScope).toBe('request')
+    expect(uiDataSourceKind.scope).toBe('generation')
+    expect([...uiDataSourceKind.ports]).toEqual([])
+    expect(uiDataSourceKind.restartRequired).toBe(false)
+    const root = new Context()
+    const bindings = new ServiceBindings(() => root.providers)
+    bindings.install(root, uiDataSourceKind, { ports: [], audience: 'host' })
+    const source = (patch: Partial<UiDataSourceProvider> = {}): UiDataSourceProvider =>
+      ({
+        id: 'finance/differences',
+        version: '1.0.0',
+        paramsSchema: { type: 'object', additionalProperties: false, properties: {} },
+        result: 'rows',
+        permission: 'finance.differences.read',
+        capabilities: ['refresh'],
+        open: () => ({ query: async () => [] }),
+        ...patch,
+      }) as UiDataSourceProvider
+    const expectInvalid = (provider: UiDataSourceProvider, detail: string) => {
+      try {
+        root.providers.register(uiDataSourceKind, packageId, provider)
+      } catch (error) {
+        expect(error).toBeInstanceOf(ProviderError)
+        const providerError = error as ProviderError
+        expect(providerError.code).toBe('E_PROVIDER_INVALID')
+        expect(providerError.kind).toBe('ui-data-source')
+        expect(providerError.operation).toBe('register')
+        expect(providerError.message).toContain(detail)
+        return
+      }
+      throw new Error(`expected registration to reject ${detail}`)
+    }
+    expectInvalid(source({ id: 'Finance/differences' }), 'ui data source id is invalid')
+    expectInvalid(
+      source({ paramsSchema: { type: 'object', additionalProperties: true } as never }),
+      'additionalProperties to false',
+    )
+    expectInvalid(source({ result: 'table' as never }), 'ui data source result is invalid')
+    expectInvalid(source({ permission: 'read' }), 'ui data source permission is invalid')
+    expectInvalid(
+      source({ capabilities: ['refresh', 'admin'] as never }),
+      'ui data source capabilities are invalid',
+    )
+    try {
+      root.providers.register(uiDataSourceKind, packageId, source())
+      expect(root.providers.catalog().map((entry) => entry.id)).toEqual(['finance/differences'])
     } finally {
       await finish(root)
     }

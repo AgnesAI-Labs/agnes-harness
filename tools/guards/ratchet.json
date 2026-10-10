@@ -111,8 +111,8 @@
   "packages/core-child-control/src": 397,
   "packages/core-ledger/src": 6496,
   "packages/core-effects/src": 2638,
-  "packages/host-common/src/assemble": 439,
-  "packages/host-common/src": 3774,
+  "packages/host-common/src/assemble": 1219,
+  "packages/host-common/src": 4555,
   "packages/host-common/src/profile": 1847,
   "packages/host-common/src/configuration-lock": 39,
   "packages/host-infrastructure/src": 10522,
@@ -185,6 +185,6 @@
   "packages/base/extensions/references": 21,
   "packages/base/extensions/intelligent-ui": 1009,
   "packages/observability/src": 1301,
-  "packages/intelligent-ui-contract/src": 76,
+  "packages/intelligent-ui-contract/src": 163,
   "packages/base/src/intelligent-ui-runtime": 55
 }

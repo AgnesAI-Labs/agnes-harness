@@ -52,6 +52,11 @@ export interface ServiceCall {
   readonly workspaceKey?: string
   readonly watermark?: number
   readonly actor?: Actor
+  /**
+   * Provider id inside `packageId`. A multi kind requires it and ignores selection.
+   * A single kind rejects it and keeps the sole or selected provider.
+   */
+  readonly providerId?: string
   live(): { readonly owner: string; readonly active: boolean; readonly generationId?: string } | undefined
 }
 
@@ -242,11 +247,20 @@ export class ServiceBindings {
     call: ServiceCall,
     descriptor: InstalledService['descriptor'],
   ): ServiceProvider {
+    if (kind.cardinality === 'single' && call.providerId !== undefined) throw closed(kind.kind, 'bind')
     const scope = serviceBindingScope(kind, call)
     const providers = this.current()
     const owned = providers
       .catalog()
       .filter((entry) => entry.kind === kind.kind && owns(entry, call, descriptor, this.claims))
+    if (kind.cardinality === 'multi') {
+      const id = call.providerId
+      if (!clean(id)) throw closed(kind.kind, 'bind')
+      const matches = owned.filter((entry) => entry.id === id)
+      const chosen = matches.length === 1 ? matches[0] : undefined
+      if (!chosen) throw closed(kind.kind, 'bind')
+      return providers.resolve(kind, { provider: chosen.id, version: chosen.version }) as ServiceProvider
+    }
     const selected = owned.filter((entry) => entry.selectedFor.includes(scope))
     const chosen =
       selected.length === 1 ? selected[0] : selected.length === 0 && owned.length === 1 ? owned[0] : undefined

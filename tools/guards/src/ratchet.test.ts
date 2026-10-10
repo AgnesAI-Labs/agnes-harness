@@ -255,7 +255,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/base/extensions/intelligent-ui': 1009,
   // Leaf Intelligent UI kind token so Host does not import Base. Exact countLines, no spare.
   // Deferred receipt types come from the plugin-runtime contract. countLines: 76, exact, no spare.
-  'packages/intelligent-ui-contract/src': 76,
+  // UI data-source kind, result enum, and failure codes. Rebased onto that 76; countLines: 163.
+  'packages/intelligent-ui-contract/src': 163,
   // Official plugin process-local serial and cursor MAC. Not a package export. Exact countLines, no spare.
   'packages/base/src/intelligent-ui-runtime': 55,
   'packages/observability/src': 1301,
@@ -342,8 +343,11 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-infrastructure/src': 10522,
   'packages/host-common/src/configuration-lock': 39,
   'packages/host-common/src/profile': 1847,
-  'packages/host-common/src': 3774,
-  'packages/host-common/src/assemble': 439,
+  // UI data-source bind-by-id.
+  // countLines on this tree: 4555 (HEAD was 4545 against the previous 3774 ceiling; this change adds 10).
+  'packages/host-common/src': 4555,
+  // countLines on this tree: 1219 (HEAD was 1209 against the previous 439 ceiling; this change adds 10).
+  'packages/host-common/src/assemble': 1219,
   'packages/core/src/artifacts': 744,
   'packages/core-effects/src': 2638,
   'packages/core-ledger/src': 6496,

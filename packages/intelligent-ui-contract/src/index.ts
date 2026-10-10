@@ -5,6 +5,7 @@ import {
   type OwnerLedgerPort,
   type ServiceInstance,
   type ServicePorts,
+  type ServiceProvider,
   type ToolDef,
 } from '@agnes/extension-api'
 import type {
@@ -90,4 +91,117 @@ export const intelligentUiKind = defineServiceKind<IntelligentUiInstance, Intell
   instanceScope: 'session',
   scope: 'generation',
   ports: ['ledger', 'input', 'projections'],
+})
+
+/** Closed set returned to callers. Raw source errors stay off this list. */
+export const UI_SOURCE_FAILURES = Object.freeze([
+  'UI_SOURCE_DENIED',
+  'UI_SOURCE_UNKNOWN',
+  'UI_SOURCE_INVALID',
+  'UI_SOURCE_TIMEOUT',
+  'UI_SOURCE_TOO_LARGE',
+  'UI_SOURCE_SHAPE',
+  'UI_SOURCE_UNAVAILABLE',
+] as const)
+export type UiSourceFailure = (typeof UI_SOURCE_FAILURES)[number]
+
+/** Surface `$source` id. One registration uses one id. */
+export const UI_DATA_SOURCE_ID_PATTERN = /^[a-z0-9-]+\/[a-z0-9-]+$/
+export const UI_DATA_SOURCE_ID_MAX_LENGTH = 128
+/**
+ * Manifest `uiData` item. Trust covers the atom `uiData:<permission>`.
+ * Resolution accepts that exact atom and no other grant.
+ */
+export const UI_DATA_PERMISSION_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/
+export const UI_DATA_PERMISSION_MAX_LENGTH = 128
+
+export const UI_DATA_SOURCE_RESULTS = Object.freeze([
+  'rows',
+  'object',
+  'text',
+  'steps',
+  'progress',
+  'image',
+] as const)
+export type UiDataSourceResult = (typeof UI_DATA_SOURCE_RESULTS)[number]
+
+/** Descriptor capabilities attached on bind. Not a service port, and not taken from query params. */
+export interface UiDataSourceCapabilities {
+  readonly actor: Actor
+  readonly session: {
+    readonly key: string
+    readonly lane: string
+    readonly workspaceRoot: string
+  }
+  readonly generationId: string
+}
+
+export interface UiDataSourcePorts extends ServicePorts {
+  readonly capabilities: UiDataSourceCapabilities
+}
+
+export interface UiDataSourceInstance extends ServiceInstance {
+  query(params: JsonValue, signal: AbortSignal): Promise<JsonValue>
+}
+
+/** Closed object schema. Registration requires `additionalProperties: false`. */
+export interface UiDataSourceParamsSchema {
+  readonly type: 'object'
+  readonly additionalProperties: false
+  readonly properties?: Readonly<Record<string, unknown>>
+  readonly required?: readonly string[]
+}
+
+export interface UiDataSourceProvider extends ServiceProvider<UiDataSourceInstance, UiDataSourcePorts> {
+  readonly paramsSchema: UiDataSourceParamsSchema
+  readonly result: UiDataSourceResult
+  /** Manifest `uiData` permission. The trust decision's capability hash covers `uiData:<permission>`. */
+  readonly permission: string
+  /** Optional `refresh`. Any other name is rejected. Distinct from descriptor capabilities. */
+  readonly capabilities: readonly 'refresh'[]
+}
+
+const UI_DATA_SOURCE_RESULT_SET = new Set<string>(UI_DATA_SOURCE_RESULTS)
+
+function closedParamsSchema(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const schema = value as Record<string, unknown>
+  return schema.type === 'object' && schema.additionalProperties === false
+}
+
+function permissionOk(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length >= 3 &&
+    value.length <= UI_DATA_PERMISSION_MAX_LENGTH &&
+    UI_DATA_PERMISSION_PATTERN.test(value)
+  )
+}
+
+function refreshCapabilities(value: unknown): value is readonly 'refresh'[] {
+  return (
+    Array.isArray(value) && new Set(value).size === value.length && value.every((item) => item === 'refresh')
+  )
+}
+
+/**
+ * Many sources per generation. Each source is its own provider id.
+ * The host binds one id inside the verified source package. Ports stay empty.
+ */
+export const uiDataSourceKind = defineServiceKind<UiDataSourceInstance, UiDataSourcePorts>({
+  kind: 'ui-data-source',
+  cardinality: 'multi',
+  instanceScope: 'request',
+  scope: 'generation',
+  ports: [],
+  validate(provider) {
+    const source = provider as UiDataSourceProvider
+    if (source.id.length > UI_DATA_SOURCE_ID_MAX_LENGTH || !UI_DATA_SOURCE_ID_PATTERN.test(source.id))
+      throw new Error('ui data source id is invalid')
+    if (!closedParamsSchema(source.paramsSchema))
+      throw new Error('ui data source params schema must set additionalProperties to false')
+    if (!UI_DATA_SOURCE_RESULT_SET.has(source.result)) throw new Error('ui data source result is invalid')
+    if (!permissionOk(source.permission)) throw new Error('ui data source permission is invalid')
+    if (!refreshCapabilities(source.capabilities)) throw new Error('ui data source capabilities are invalid')
+  },
 })
