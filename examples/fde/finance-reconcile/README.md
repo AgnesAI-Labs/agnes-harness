@@ -31,7 +31,7 @@ agh serve
 
 Run `npm pack` here to distribute a tarball and install it with `agh plugins add ./NAME.tgz`. Runtime, fixtures, Skill and any panel travel together, without workspace or sibling-example imports.
 
-The draft appears as one preset surface in both the conversation and workbench: a differences table, amount chart and adjustment form. Select rows to track the differences you are reviewing and edit the proposal reasons in the form. The confirmation covers every proposal in that form. Choose **确认调整**; the backend then requests permission for the simulated adjustment tool. Refresh restores the same review and pending receipt. Unattended runs stop at this interactive boundary. TUI/channel users receive a text summary and workbench link.
+The draft appears as one preset surface in both the conversation and workbench: a review summary detail card, progress steps, a differences table, an amount chart and an adjustment form. Select rows to track the differences you are reviewing and edit the proposal reasons in the form. The confirmation covers every proposal in that form. Choose **确认调整**; the backend then requests permission for the simulated adjustment tool. Refresh restores the same review and pending receipt. Unattended runs stop at this interactive boundary. TUI/channel users receive a text summary and workbench link.
 
 Web: open the serve URL, use **Admin → Plugins → Bundles**, select `@agnes-fde/finance-reconcile#finance-reconcile`, save and restart Host as requested. Start a new session with preset `finance-reconcile` and Demo model; paste `fixtures/prompt.txt`. Existing sessions keep their pinned loop. Inspect evidence and the trace.
 

@@ -60,7 +60,16 @@ for (const verdict of ['allowed-once', 'rejected'])
       assert.ok(requests.every((request) => request.tools.length === 0))
       assert.deepEqual(
         surface.components.map((component) => component.kind),
-        [descriptor.client.intelligentComponents[0].kind, 'table', 'chart', 'form', 'button-group', 'status'],
+        [
+          descriptor.client.intelligentComponents[0].kind,
+          'steps',
+          'detail-card',
+          'table',
+          'chart',
+          'form',
+          'button-group',
+          'status',
+        ],
       )
       const request = {
         surfaceId: surface.id,
@@ -118,11 +127,36 @@ test('exact cents, duplicate IDs and unresolved evidence retain their original a
   const review = reviewSurface('finance-review', report)
   assert.equal(review.components.find((component) => component.id === 'differences').selection, 'multiple')
   assert.deepEqual(review.data.adjustment.proposals, report.proposals)
+  assert.equal(review.data.summary.mismatchCount, report.mismatches.length)
+  assert.equal(review.data.summary.proposalCount, 2)
+  assert.equal(review.data.summary.unresolvedCount, 1)
+  assert.equal(review.data.summary.status, 'needs-review')
+  assert.equal(review.data.summary.note, 'Amounts stay integer USD cents. Nothing is posted.')
+  assert.deepEqual(
+    review.data.steps.map((step) => step.state),
+    ['done', 'active', 'pending', 'pending'],
+  )
+  assert.match(review.data.steps.at(-1).description, /posted: false/)
   const { receipt } = value(await tools[2].execute({ proposals: report.proposals }, { signal }))
   assert.equal(receipt.posted, false)
   const completed = reviewSurface('finance-review', report, 2, receipt)
   assert.equal(completed.components.find((component) => component.id === 'differences').selection, 'none')
   assert.deepEqual(completed.actions, [])
+  assert.equal(completed.data.summary.status, 'simulated-approved')
+  assert.equal(
+    completed.components.some((component) => component.kind === 'form'),
+    false,
+  )
+  assert.equal(
+    completed.components.some((component) => component.kind === 'detail-card'),
+    true,
+  )
+  assert.equal(
+    completed.components.some((component) => component.kind === 'steps'),
+    true,
+  )
+  assert.equal(completed.data.steps.find((step) => step.id === 'record').state, 'done')
+  assert.equal(completed.data.steps.find((step) => step.id === 'review').state, 'active')
   for (const entry of receipt.entries)
     assert.equal(
       entry.lines.reduce((sum, line) => sum + line.signedCents, 0),

@@ -44,10 +44,63 @@ export const financeRecord = (revision = 1): UiSurfaceRecord => ({
         series: [{ key: 'amountCents', label: 'USD cents' }],
       },
       { id: 'buttons', kind: 'button-group', actionIds: ['confirm'] },
+      {
+        id: 'summary',
+        kind: 'detail-card',
+        title: 'Review summary',
+        dataKey: 'summary',
+        fields: [
+          { key: 'amountCents', label: 'USD cents', format: 'currency' },
+          { key: 'posted', label: 'Posted', format: 'date' },
+        ],
+        statusKey: 'status',
+        secondaryKey: 'note',
+      },
+      { id: 'flow', kind: 'steps', title: 'Review progress', dataKey: 'steps' },
+      { id: 'posted', kind: 'progress', title: 'Reviewed share', dataKey: 'progress' },
+      { id: 'scan', kind: 'image', title: 'Receipt', dataKey: 'scan', alt: 'Receipt scan' },
+      {
+        id: 'when',
+        kind: 'form',
+        title: 'Posted on',
+        dataKey: 'when',
+        schema: {
+          type: 'object',
+          properties: { day: { type: 'string', format: 'date', title: 'Day' } },
+          additionalProperties: false,
+        },
+      },
+      { id: 'note', kind: 'text', dataKey: 'note' },
+      {
+        id: 'sections',
+        kind: 'tabs',
+        title: 'Context',
+        tabs: [{ id: 'context', label: 'Context', componentIds: ['note'] }],
+      },
     ],
     data: {
       rows: [{ id: 'txn-1', amountCents: 250 }],
       draft: { reason: revision === 1 ? 'Mismatch' : 'Updated difference' },
+      summary: {
+        amountCents: 250,
+        posted: '2026-10-10',
+        status: 'needs-review',
+        note: 'Nothing is posted.',
+      },
+      steps: [
+        { id: 'review', label: 'Review', state: 'active' },
+        { id: 'confirm', label: 'Confirm', state: 'pending' },
+      ],
+      progress: { label: 'Reviewed', value: 1, total: 2 },
+      scan: {
+        source: {
+          kind: 'data-url',
+          dataUrl:
+            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        },
+      },
+      when: { day: '2026-10-10' },
+      note: 'Amounts stay integer USD cents.',
     },
     actions: [
       {

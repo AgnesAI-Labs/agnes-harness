@@ -1,6 +1,6 @@
 import type { JsonValue } from '@agnes/protocol/gen/intelligent-ui'
 import { decodeSafeImage, type SafeImageLimits } from '@agnes/protocol-validation'
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useId, useState } from 'react'
 import { Badge } from '../ui/badge.js'
 import type { StateTone } from '../ui/state-lights.js'
 import { Tabs } from '../ui/tabs.js'
@@ -101,6 +101,7 @@ export function PresetTabs({
   label: string
   renderChild(componentId: string): ReactNode
 }) {
+  const reactId = useId()
   const [active, setActive] = useState(tabs[0]?.id ?? '')
   if (tabs.length === 0) return null
   return (
@@ -114,7 +115,7 @@ export function PresetTabs({
           children: (
             <div
               role="tabpanel"
-              id={`ui-tabpanel-${id}-${tab.id}`}
+              id={`${reactId}-ui-tabpanel-${id}-${tab.id}`}
               data-testid={`ui-tabpanel-${id}-${tab.id}`}
             >
               {tab.componentIds.map((componentId) => (

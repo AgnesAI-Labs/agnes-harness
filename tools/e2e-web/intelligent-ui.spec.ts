@@ -41,6 +41,22 @@ for (const locale of ['en', 'zh-CN'])
     const card = page.getByTestId('intelligent-ui-inline'),
       panel = page.getByTestId('intelligent-ui-panel')
     await expect(card.getByTestId('ui-surface-finance-review')).toHaveAttribute('data-revision', '1')
+    await expect(card.getByTestId('ui-detail-summary')).toBeVisible()
+    await expect(card.getByTestId('ui-detail-status-summary')).toContainText('needs-review')
+    await expect(card.getByTestId('ui-step-flow-review')).toHaveAttribute('aria-current', 'step')
+    await expect(card.getByTestId('ui-progress-posted').getByRole('progressbar')).toHaveAttribute(
+      'data-percent',
+      '50',
+    )
+    await expect(card.getByTestId('ui-image-scan')).toContainText('Receipt scan')
+    await expect(card.locator('input[data-format="date"]')).toHaveValue('2026-10-10')
+    await expect(card.getByTestId('ui-tab-sections-context')).toBeVisible()
+    await expect(card.getByTestId('ui-tabpanel-sections-context')).toContainText(
+      'Amounts stay integer USD cents.',
+    )
+    await expect(
+      card.getByTestId('ui-tabpanel-sections-context').getByTestId('ui-form-adjustment'),
+    ).toHaveCount(0)
     await card.getByTestId('ui-select-differences-txn-1').check()
     await card.getByTestId('ui-form-adjustment').getByRole('textbox').fill('Human reviewed mismatch')
     await card.getByTestId('ui-expand').click()

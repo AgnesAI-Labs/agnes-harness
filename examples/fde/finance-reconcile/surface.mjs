@@ -40,6 +40,7 @@ export function reviewSurface(id, report, revision = 1, receipt = null) {
     },
   }
   const actionable = !receipt && report.proposals.length > 0
+  const openReview = rows.some((row) => row.status === 'needs-review' || row.status === 'unresolved')
   return {
     id,
     revision,
@@ -53,6 +54,25 @@ export function reviewSurface(id, report, revision = 1, receipt = null) {
         dataKey: 'diffProps',
         fallback: descriptor.client.intelligentComponents[0].fallback,
         actionIds: actionable ? ['approve'] : [],
+      },
+      {
+        id: 'flow',
+        kind: 'steps',
+        title: 'Review progress / 复核进度',
+        dataKey: 'steps',
+      },
+      {
+        id: 'summary',
+        kind: 'detail-card',
+        title: 'Review summary / 复核摘要',
+        dataKey: 'summary',
+        fields: [
+          { key: 'mismatchCount', label: 'Mismatches / 差异', format: 'number' },
+          { key: 'proposalCount', label: 'Proposals / 提案', format: 'number' },
+          { key: 'unresolvedCount', label: 'Unresolved / 未解决', format: 'number' },
+        ],
+        statusKey: 'status',
+        secondaryKey: 'note',
       },
       {
         id: 'differences',
@@ -97,6 +117,24 @@ export function reviewSurface(id, report, revision = 1, receipt = null) {
     data: {
       diffProps: { rows, actionable },
       differences: rows,
+      summary: {
+        mismatchCount: report.mismatches.length,
+        proposalCount: report.proposals.length,
+        unresolvedCount: report.unresolved.length,
+        status: receipt ? 'simulated-approved' : rows.length ? 'needs-review' : 'clear',
+        note: 'Amounts stay integer USD cents. Nothing is posted.',
+      },
+      steps: [
+        { id: 'reconcile', label: 'Reconcile / 对账', state: 'done' },
+        { id: 'review', label: 'Review / 复核', state: openReview ? 'active' : 'done' },
+        { id: 'confirm', label: 'Confirm / 确认', state: receipt ? 'done' : 'pending' },
+        {
+          id: 'record',
+          label: 'Record / 记录',
+          state: receipt ? 'done' : 'pending',
+          description: 'posted: false',
+        },
+      ],
       adjustment: { proposals: report.proposals },
       status: receipt
         ? 'Simulated approval recorded; posted: false. Unresolved rows still require review.'
