@@ -426,8 +426,10 @@
 .composer-workspace:hover:not(:disabled),
 #model:hover:not(:disabled) {
   border-color: transparent;
-  color: var(--agnes-text-emphasis);
   background: var(--agnes-bg-hover);
+}
+.composer-workspace:hover:not(:disabled) {
+  color: var(--agnes-text-emphasis);
 }
 .composer-workspace [data-workspace-label],
 #model [data-model-label],
@@ -435,6 +437,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Brand emphasis on the hover fill is 4.35:1 in dark (13px). Primary stays above 4.5:1. */
+#model:hover:not(:disabled),
+#model:hover:not(:disabled) [data-model-label] {
+  color: var(--agnes-text-primary);
 }
 .composer-permission {
   align-items: center;

@@ -169,7 +169,13 @@ function CatalogComponent(props: IntelligentCatalogProps & { component: UiCompon
     const format = (value: JsonValue | undefined, kind?: string): string =>
       formatFieldValue(value, kind, locale)
     content = (
-      <div className="agnes-intelligent-table-scroll">
+      <div
+        className="agnes-intelligent-table-scroll"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: the wide table scrolls on its own axis.
+        tabIndex={0}
+        role="region"
+        aria-label={component.title ?? surface.title}
+      >
         <table data-testid={`ui-table-${component.id}`}>
           <caption>{component.title ?? surface.title}</caption>
           <thead>

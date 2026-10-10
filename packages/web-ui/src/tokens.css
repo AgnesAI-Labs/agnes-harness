@@ -172,6 +172,13 @@
   color: var(--agnes-text-secondary);
   line-height: 1.6;
 }
+/* A link inside settings copy must be identifiable without comparing two text colors. */
+.agnes-settings-card p a {
+  color: var(--agnes-text-emphasis);
+  text-decoration-line: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.16em;
+}
 .agnes-settings-actions {
   display: flex;
   gap: var(--s8);

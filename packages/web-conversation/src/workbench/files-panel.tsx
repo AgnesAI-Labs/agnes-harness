@@ -187,7 +187,14 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
         {file?.binary && <SettingsState tone="empty">{t('workbench.files.binary')}</SettingsState>}
         {file?.truncated && <SettingsState tone="empty">{t('workbench.files.large')}</SettingsState>}
         {file?.text !== undefined && (
-          <pre data-testid="file-preview">
+          // biome-ignore lint/a11y/useSemanticElements: the pre is the scrollport, so it keeps the region role.
+          <pre
+            data-testid="file-preview"
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: the file preview scrolls on its own axis.
+            tabIndex={0}
+            role="region"
+            aria-label={t('workbench.files.preview')}
+          >
             <Highlight path={selected} text={file.text} />
           </pre>
         )}

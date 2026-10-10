@@ -64,6 +64,8 @@ it('loads directories lazily, previews text and mentions a relative path without
     await vi.waitFor(() => expect(host.querySelector('[data-path="src/main.ts"]')).not.toBeNull())
     flushSync(() => (host.querySelector('[data-path="src/main.ts"]') as HTMLButtonElement).click())
     await vi.waitFor(() => expect(host.querySelector('pre')?.textContent).toBe('export const answer = 42'))
+    expect(host.querySelector('pre')?.tabIndex).toBe(0)
+    expect(host.querySelector('pre')?.getAttribute('role')).toBe('region')
     flushSync(() => (host.querySelector('[data-testid="file-mention"]') as HTMLButtonElement).click())
     expect(mention).toHaveBeenCalledWith('src/main.ts')
     expect(host.querySelector('output')?.textContent).toBe('src/main.ts:source-hash')
