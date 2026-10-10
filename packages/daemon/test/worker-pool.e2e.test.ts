@@ -440,20 +440,28 @@ describe('WorkerPool', () => {
       profile: { name: 'p', hash: 'h1' } as never,
       profileFile: join(dir, 'profile.json'),
       clock: Date.now,
-      spawn: (command, args, options) => {
+      // Node's spawn overloads cannot be implemented by the three-argument call the pool makes.
+      spawn: ((...spawnArgs: Parameters<typeof nodeSpawn>) => {
         spawns++
         active++
         peak = Math.max(peak, active)
-        const child = nodeSpawn(command, bootCode === 'hello' ? ['--import', 'tsx', fakeWorker] : args, {
-          ...options,
-          env: { ...options?.env, AGNES_TEST_BOOT_CODE: bootCode },
-        })
+        const options = spawnArgs[2]
+        const spawnOptions = options && typeof options === 'object' ? options : {}
+        const args = spawnArgs[1]
+        const child = nodeSpawn(
+          spawnArgs[0],
+          bootCode === 'hello' ? ['--import', 'tsx', fakeWorker] : Array.isArray(args) ? args : [],
+          {
+            ...spawnOptions,
+            env: { ...spawnOptions.env, AGNES_TEST_BOOT_CODE: bootCode },
+          },
+        )
         children.push(child)
         child.once('exit', () => {
           active--
         })
         return child
-      },
+      }) as typeof nodeSpawn,
       onEvent: () => undefined,
       onRequest: async () => undefined,
       notices: { emit() {} },
