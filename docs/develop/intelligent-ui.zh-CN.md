@@ -12,7 +12,7 @@
 
 每个 surface 同时出现在对话卡片和工作台面板中。展开卡片打开同一个 `(sessionId, surfaceId, revision)` 的面板。两处共享动作回执和草稿；展开只改变展示状态，不产生第二个 surface 或第二次执行。`placement.preferred` 只是布局提示，不能隐藏其中一个位置。
 
-第一阶段支持表单、表格、仅包含数据的图表、按钮组、纯文本和状态。没有生成 HTML、JavaScript、表达式求值器、远程组件加载器或任意 CSS。外部 UI 依赖留在 `packages/web-ui`，客户端保持其主题、无障碍、CSP 和皮肤钩子。业务插件提供的标签属于内容；渲染器控件与拒绝提示提供英文及简体中文目录、键盘操作、状态朗读和稳定 test id。
+第一阶段支持表单、表格、仅包含数据的图表、按钮组、纯文本、状态、详情卡、分页、步骤、进度和图像。日期与日期时间是表单字段格式，不是单独的组件。没有生成 HTML、JavaScript、表达式求值器、远程组件加载器或任意 CSS。外部 UI 依赖留在 `packages/web-ui`，客户端保持其主题、无障碍、CSP 和皮肤钩子。业务插件提供的标签属于内容；渲染器控件与拒绝提示提供英文及简体中文目录、键盘操作、状态朗读和稳定 test id。
 
 ## Schema 与绑定
 
@@ -28,10 +28,15 @@
 | `button-group` | `actionIds` | 按钮引用 surface 的动作列表。 |
 | `text` | `dataKey` | 纯字符串，按文本渲染。 |
 | `status` | `dataKey` | 纯字符串；处理/审批状态来自回执，不能由该业务标签决定。 |
+| `detail-card` | `dataKey`、`fields` | `data[dataKey]` 是一个对象。每个字段复用列（`key`、`label`、可选 `format`）并且必须存在。可选 `statusKey` 与 `secondaryKey` 为非空字符串，最长分别为 256 与 1,024 字符。 |
+| `tabs` | `tabs` | 把同一 surface 的其他组件分组。每个分页有 `id`、`label` 与 `componentIds`。被引用的组件必须存在，每个组件最多放入一个分页，分页内不能再放分页。 |
+| `steps` | `dataKey` | 有序数组 `{id, label, state, description?}`。`state` 为 `pending`、`active`、`done` 或 `error`。 |
+| `progress` | `dataKey` | `{label, value, total}`。`value` 与 `total` 为有限数字，`total` 大于 0，`value` 从 0 到 `total`。百分比只在展示时计算。 |
+| `image` | `dataKey`、`alt` | `{source}` 为工件 `{kind:"artifact", sha256, size, mime}`、`agnes-upload://` 附件，或 png/jpeg data URL。拒绝任意远程 URL。替代文本必填。 |
 
 所有组件均可带 `title`。列包含 `key`、`label` 和可选 `format`（`text`、`number`、`currency`、`date`、`status`）；格式只影响展示，不改变值、不推断货币单位。图表序列包含 `key`、`label`。绑定的数据必须存在并符合组件形状。非法行、缺失字段、重复行 id、未声明的组件类型拒绝整个 render/update，不静默省略。
 
-表单复用[现有 Schema 渲染器](../../packages/web-ui/src/plugin-schema-fields.tsx)与[模型](../../packages/web-ui/src/plugin-schema-model.ts)：`UiJsonSchema` 为布尔值或 JSON Schema 对象；本地 `$ref`、对象/数组/变体/枚举/标量控件、无损 JSON 回退保持既有语义。展示递归阈值仍为 6，与后台载荷限制独立。无法展示的断言回退到 JSON 编辑器，不展示会误导人的部分表单。后台编译完整 Schema，校验提交值，不做类型转换、不丢弃未知属性。不进行网络 `$ref` 解析。秘密字段不提供权限：surface 不得携带原始凭据；业务凭据字段只能使用现有凭据引用合同。
+表单复用[现有 Schema 渲染器](../../packages/web-ui/src/plugin-schema-fields.tsx)与[模型](../../packages/web-ui/src/plugin-schema-model.ts)：`UiJsonSchema` 为布尔值或 JSON Schema 对象；本地 `$ref`、对象/数组/变体/枚举/标量控件、无损 JSON 回退保持既有语义。`format` 为 `"date"` 或 `"date-time"` 的字符串属性是日期输入。`date` 为真实的 `YYYY-MM-DD`。`date-time` 在该日期后加时间和 `Z` 或数字偏移；闰秒只允许 `23:59:60`。空字符串或缺失值仍是未完成草稿。Web 控件按 UTC 时钟显示 `date-time`，并写回 `YYYY-MM-DDTHH:mm:00Z`。展示递归阈值仍为 6，与后台载荷限制独立。无法展示的断言回退到 JSON 编辑器，不展示会误导人的部分表单。后台编译完整 Schema，校验提交值，不做类型转换、不丢弃未知属性。不进行网络 `$ref` 解析。秘密字段不提供权限：surface 不得携带原始凭据；业务凭据字段只能使用现有凭据引用合同。
 
 `UiAction` 必填 `id`、`label`、`tool`、`argsTemplate`、`paramsSchema`；可选 `confirm` 是业务确认提示，`style` 为 `primary`、`secondary`、`danger`。目标工具必须已声明并在会话锁定的组合中可见。标签和模板不能选择其他工具、工作区、会话、actor、通道或权限。改变动作目标必须生成新 surface revision。
 
@@ -54,6 +59,12 @@ Schema 声明结构限制并导出 `X_AGNES_UI_LIMITS`；后台与渲染器还�
 | Id/数据键 / 标题/标签 / 确认提示 | 64 / 256 / 1,024 字符；工具名 128 |
 | 列 / 图表序列 | 32 / 8 |
 | 表格行 / 图表数据点 | 每组件 1,000 / 1,000 |
+| 详情字段 | 32 |
+| 分页 / 单个分页内的组件 | 8 / 16；嵌套深度 1；每个组件最多放置一次 |
+| 步骤 | 32 |
+| 图像替代文本 | 1,024 字符 |
+| 图像 data URL | 16,384 字节；仅 `image/png` 或 `image/jpeg` |
+| 图像工件或附件 | 33,554,432 字节；png 或 jpeg；不允许远程 URL |
 | JSON / Schema 嵌套深度 | 16 / 16；拒绝不受控外部引用 |
 | 未关闭 surface / 待处理命令 | 每会话 16 / 8；每 surface 最多一个待处理命令 |
 | 恢复分页 | 16 个 surface、64 个回执；响应合计不超过 262,144 字节 |
@@ -86,6 +97,35 @@ Schema 声明结构限制并导出 `X_AGNES_UI_LIMITS`；后台与渲染器还�
 ```
 
 行内动作隐含只选择该行。后台根据展示表格解析行 id。消费选择行的业务工具必须声明行的实际形状，或显式映射为提案；不能剥掉展示字段来绕过工具校验。示例将表单的提案数组绑定到现有工具。
+
+### 预设目录示例
+
+详情卡、步骤、进度、图像和分页都只携带数据。下面的百分比不属于 surface；渲染器和文本回退只在展示时计算。图像来源是已授权工件身份，不是远程 URL。
+
+```json
+{
+  "id": "case", "revision": 1, "title": "Case review",
+  "placement": { "inline": true, "workbench": true },
+  "components": [
+    { "id": "card", "kind": "detail-card", "title": "Record", "dataKey": "record", "fields": [{ "key": "name", "label": "Name" }, { "key": "amount", "label": "Amount", "format": "currency" }], "statusKey": "status", "secondaryKey": "note" },
+    { "id": "flow", "kind": "steps", "dataKey": "steps" },
+    { "id": "posted", "kind": "progress", "dataKey": "progress" },
+    { "id": "scan", "kind": "image", "dataKey": "scan", "alt": "Receipt scan" },
+    { "id": "when", "kind": "form", "dataKey": "when", "schema": { "type": "object", "properties": { "day": { "type": "string", "format": "date", "title": "Day" } } } },
+    { "id": "note", "kind": "text", "dataKey": "note" },
+    { "id": "sections", "kind": "tabs", "tabs": [{ "id": "main", "label": "Main", "componentIds": ["note"] }] }
+  ],
+  "data": {
+    "record": { "name": "Ada", "amount": 250, "status": "open", "note": "Draft" },
+    "steps": [{ "id": "review", "label": "Review", "state": "active", "description": "Check the draft" }],
+    "progress": { "label": "Posted", "value": 1, "total": 4 },
+    "scan": { "source": { "kind": "artifact", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 128, "mime": "image/png" } },
+    "when": { "day": "2026-10-10" },
+    "note": "Inside the tab"
+  },
+  "actions": []
+}
+```
 
 ## 公开操作与执行桥接
 
@@ -153,7 +193,7 @@ Render/update/close、提交接纳和执行状态转换沿会话 ledger 既有�
 | 结果写入与 Agent 入队之间崩溃 | 扫描尚未投递的终态事实，使用同一 SC1 去重键入队。若入队先于投递标记成功，恢复已有队列项并补标记，不产生第二次结果输入。 |
 | 工具失败与重试 | 保留旧失败；要求新 command id、`retryOf`、当前 revision/确认、已证实的重试资格与重新普通授权，串联两次尝试。 |
 | 锁定插件/Loop 缺失或投影损坏 | 遵循既有 generation/恢复的默认拒绝行为。可行时从 ledger 重建合法投影，否则展示不可用/证据缺口并禁用动作。 |
-| 不支持预设渲染的 TUI/channel | 纯文本标题、revision、状态、行/金额摘要、动作标签，附指向既有 Web 会话 surface 面板的已认证链接。不能创建公开 bearer 链接，不能因展示文字标签就调用工具。文字“确认”本身不是 UI 提交或审批。 |
+| 不支持预设渲染的 TUI/channel | 纯文本标题、revision、状态、行/金额摘要、详情字段、步骤、进度、图像替代文本与来源身份、分页标签、动作标签，附指向既有 Web 会话 surface 面板的已认证链接。进度百分比只用于展示。图像文本不包含 data URL，也不发起远程拉取。不能创建公开 bearer 链接，不能因展示文字标签就调用工具。文字“确认”本身不是 UI 提交或审批。 |
 
 分页 cursor 绑定快照水位与筛选。快照期间实时事件先缓冲，再顺序应用；重连使用标准 session attach/catch-up 机制。Cursor 过期则重新读取。重建投影不新增业务事实。展示分页或缓存淘汰不能遗忘持久命令。
 

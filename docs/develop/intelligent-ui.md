@@ -12,7 +12,7 @@ The official `agnes/intelligent-ui` plugin belongs in `packages/base/extensions/
 
 Every surface appears as both a conversation card and a workbench panel. Expanding the card opens the panel for the same `(sessionId, surfaceId, revision)`. They share action receipts and drafts; expansion is presentation state, not a second surface or another execution. `placement.preferred` is a layout hint and cannot remove either placement.
 
-Phase 1 supports forms, tables, data-only charts, button groups, plain text and status. There is no generated HTML, JavaScript, expression evaluator, remote component loader or arbitrary CSS. External UI dependencies stay in `packages/web-ui`; clients preserve its theme, accessibility, CSP and skin hooks. Labels supplied by business plugins are content; renderer controls and refusal messages have English and Simplified Chinese catalogs, keyboard access, live status announcements and stable test ids.
+Phase 1 supports forms, tables, data-only charts, button groups, plain text, status, detail cards, tabs, steps, progress and images. Date and date-time values are form field formats, not a separate component. There is no generated HTML, JavaScript, expression evaluator, remote component loader or arbitrary CSS. External UI dependencies stay in `packages/web-ui`; clients preserve its theme, accessibility, CSP and skin hooks. Labels supplied by business plugins are content; renderer controls and refusal messages have English and Simplified Chinese catalogs, keyboard access, live status announcements and stable test ids.
 
 ## Schema and bindings
 
@@ -28,10 +28,15 @@ The declaration source is [intelligent-ui.json](../../packages/protocol/schema/i
 | `button-group` | `actionIds` | Buttons resolve to the surface's action list. |
 | `text` | `dataKey` | A plain string, rendered as text. |
 | `status` | `dataKey` | A plain string; processing/approval state comes from receipts, never this business label. |
+| `detail-card` | `dataKey`, `fields` | One object in `data[dataKey]`. Each field reuses a column (`key`, `label`, optional `format`) and must be present. Optional `statusKey` and `secondaryKey` are nonempty strings of at most 256 and 1,024 characters. |
+| `tabs` | `tabs` | Groups other components of the same surface. Each tab has `id`, `label` and `componentIds`. Every referenced component exists, each component is placed at most once, and a tab cannot contain another tabs component. |
+| `steps` | `dataKey` | An ordered array of `{id, label, state, description?}`. `state` is `pending`, `active`, `done` or `error`. |
+| `progress` | `dataKey` | `{label, value, total}`. `value` and `total` are finite numbers, `total` is greater than 0, and `value` is from 0 through `total`. A percentage is computed only for display. |
+| `image` | `dataKey`, `alt` | `{source}` is an artifact `{kind:"artifact", sha256, size, mime}`, an `agnes-upload://` attachment, or a png/jpeg data URL. Remote URLs are refused. Alt text is required. |
 
 All components may have `title`. Columns have `key`, `label` and optional `format` (`text`, `number`, `currency`, `date`, `status`); formats only affect display, never change values or infer currency units. Chart series have `key` and `label`. Bound data must exist and match the component shape. Invalid rows, missing fields, duplicate row ids and undeclared component kinds reject the whole render/update; they are not silently omitted.
 
-Forms reuse the [existing schema renderer](../../packages/web-ui/src/plugin-schema-fields.tsx) and [model](../../packages/web-ui/src/plugin-schema-model.ts): `UiJsonSchema` is a boolean or JSON Schema object; local `$ref`, object/array/variant/enum/scalar controls and lossless JSON fallback keep their existing semantics. The visual recursion threshold remains 6, independent of the backend payload limit. Unsupported assertions use the JSON fallback rather than a misleading partial form. Backend validation compiles the full schema and checks submitted values without coercion or dropping unknown properties. No network `$ref` resolution. Secret input is not a way to acquire authority: surfaces cannot carry raw credentials; any business credential field must use an existing credential-reference contract.
+Forms reuse the [existing schema renderer](../../packages/web-ui/src/plugin-schema-fields.tsx) and [model](../../packages/web-ui/src/plugin-schema-model.ts): `UiJsonSchema` is a boolean or JSON Schema object; local `$ref`, object/array/variant/enum/scalar controls and lossless JSON fallback keep their existing semantics. A string property with `format: "date"` or `"date-time"` is a date input. `date` is a real `YYYY-MM-DD`. `date-time` is that calendar date plus a time and `Z` or a numeric offset; leap seconds are only `23:59:60`. Empty or missing values remain incomplete drafts. The Web control shows `date-time` on the UTC clock and writes `YYYY-MM-DDTHH:mm:00Z`. The visual recursion threshold remains 6, independent of the backend payload limit. Unsupported assertions use the JSON fallback rather than a misleading partial form. Backend validation compiles the full schema and checks submitted values without coercion or dropping unknown properties. No network `$ref` resolution. Secret input is not a way to acquire authority: surfaces cannot carry raw credentials; any business credential field must use an existing credential-reference contract.
 
 `UiAction` requires `id`, `label`, `tool`, `argsTemplate` and `paramsSchema`; optional `confirm` is a business confirmation prompt and `style` is `primary`, `secondary` or `danger`. The named tool must be declared and visible in the session's pinned composition. Neither labels nor templates can select another tool, workspace, session, actor, lane or permission. Action target changes require a new surface revision.
 
@@ -54,6 +59,12 @@ The schema declares structural bounds and exports `X_AGNES_UI_LIMITS`; backend a
 | Id/data key / title/label / confirmation | 64 / 256 / 1,024 characters; tool name 128 |
 | Columns / chart series | 32 / 8 |
 | Table rows / chart points | 1,000 / 1,000 per component |
+| Detail fields | 32 |
+| Tabs / components in one tab | 8 / 16; nesting depth 1; each component placed at most once |
+| Steps | 32 |
+| Image alt | 1,024 characters |
+| Image data URL | 16,384 bytes; `image/png` or `image/jpeg` only |
+| Image artifact or attachment | 33,554,432 bytes; png or jpeg; no remote URL |
 | JSON / schema nesting | 16 / 16; reject unbounded external references |
 | Live surfaces / pending commands | 16 / 8 per session, at most one pending command per surface |
 | Recovery page | 16 surfaces, 64 receipts; aggregate response is bounded to 262,144 bytes |
@@ -86,6 +97,35 @@ The following is a complete surface value. Amounts remain exact integer USD cent
 ```
 
 A row action implies selection of that row only. The backend resolves row ids against the displayed table. A business tool that consumes selected rows must declare their actual shape or explicitly project proposals; display-only fields are never stripped to bypass tool validation. The example binds the form's proposal array to the existing tool.
+
+### Preset catalog example
+
+Detail cards, steps, progress, images and tabs are data only. The percentage below is not part of the surface; the renderer and text fallback compute it. The image source is an authorized artifact identity, not a remote URL.
+
+```json
+{
+  "id": "case", "revision": 1, "title": "Case review",
+  "placement": { "inline": true, "workbench": true },
+  "components": [
+    { "id": "card", "kind": "detail-card", "title": "Record", "dataKey": "record", "fields": [{ "key": "name", "label": "Name" }, { "key": "amount", "label": "Amount", "format": "currency" }], "statusKey": "status", "secondaryKey": "note" },
+    { "id": "flow", "kind": "steps", "dataKey": "steps" },
+    { "id": "posted", "kind": "progress", "dataKey": "progress" },
+    { "id": "scan", "kind": "image", "dataKey": "scan", "alt": "Receipt scan" },
+    { "id": "when", "kind": "form", "dataKey": "when", "schema": { "type": "object", "properties": { "day": { "type": "string", "format": "date", "title": "Day" } } } },
+    { "id": "note", "kind": "text", "dataKey": "note" },
+    { "id": "sections", "kind": "tabs", "tabs": [{ "id": "main", "label": "Main", "componentIds": ["note"] }] }
+  ],
+  "data": {
+    "record": { "name": "Ada", "amount": 250, "status": "open", "note": "Draft" },
+    "steps": [{ "id": "review", "label": "Review", "state": "active", "description": "Check the draft" }],
+    "progress": { "label": "Posted", "value": 1, "total": 4 },
+    "scan": { "source": { "kind": "artifact", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 128, "mime": "image/png" } },
+    "when": { "day": "2026-10-10" },
+    "note": "Inside the tab"
+  },
+  "actions": []
+}
+```
 
 ## Public operations and execution bridge
 
@@ -155,7 +195,7 @@ Different command ids can still repeat a business intent. The same surface has o
 | Crash between result and Agent enqueue | Scan terminal facts lacking delivery; enqueue using the same SC1 dedupe key. If enqueue succeeded before the delivery marker, recover the existing item and append the missing marker. No second result input. |
 | Tool failure + retry | Preserve old failure. Require a new command id and `retryOf`, current revision/confirmation, proven retry eligibility and fresh normal authorization; chain both attempts. |
 | Missing pinned plugin/Loop or corrupt projection | Follow existing fail-closed generation/recovery behavior. Rebuild a valid projection from ledger if possible; otherwise show unavailable/evidence-gap state and disable actions. |
-| TUI / channel without preset rendering | Plain-text title, revision, status, rows/amount summary, action labels and an authenticated link to the existing Web session's surface panel. Never create a public bearer link or call tools because a text label was displayed. Text “confirm” alone is not a UI submission or approval. |
+| TUI / channel without preset rendering | Plain-text title, revision, status, rows/amount summary, detail fields, steps, progress, image alt and source identity, tab labels, action labels and an authenticated link to the existing Web session's surface panel. Progress percentages are display-only. Image text never includes a data URL or a remote fetch. Never create a public bearer link or call tools because a text label was displayed. Text “confirm” alone is not a UI submission or approval. |
 
 Pagination cursors bind a snapshot watermark and filters. Live events during the snapshot are buffered and applied after it; reconnect uses the standard session attach/catch-up mechanism. Cursor expiry causes a fresh read. Projection rebuilds do not append new business facts. Durable commands are never forgotten merely because a display page or cache evicted them.
 
