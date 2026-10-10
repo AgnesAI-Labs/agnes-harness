@@ -149,29 +149,10 @@ it('keeps a batch through upload session opening, stores references and cleans a
   await vi.waitFor(() => expect(handle.current?.getAttachmentBlocks()).toHaveLength(2))
   expect(handle.current?.getAttachmentBlocks().every((block) => block.type === 'resource_link')).toBe(true)
   expect(cancelled).not.toHaveBeenCalled()
-  cancelled.mockRejectedValue(new Error('cleanup unavailable'))
   const remove = host.querySelector<HTMLButtonElement>('[data-testid="attachment-remove"]')
   await act(async () => remove?.click())
   expect(handle.current?.getAttachmentBlocks()).toHaveLength(1)
-  expect(cancelled).toHaveBeenCalledWith('owned-session', expect.any(String))
-  await vi.waitFor(() =>
-    expect(host.querySelector('[data-testid="attachment-upload"]')?.getAttribute('data-state')).toBe(
-      'failed',
-    ),
-  )
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('[data-testid="attachment-upload-dismiss"]')?.click(),
-  )
-  expect(host.querySelector('[data-testid="attachment-upload"]')?.getAttribute('data-state')).toBe('failed')
-  cancelled.mockResolvedValue(undefined)
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('[data-testid="attachment-upload-retry"]')?.click(),
-  )
-  await vi.waitFor(() =>
-    expect(host.querySelector('[data-testid="attachment-upload"]')?.getAttribute('data-state')).toBe(
-      'cancelled',
-    ),
-  )
+  expect(cancelled).not.toHaveBeenCalled()
 })
 
 it.each([

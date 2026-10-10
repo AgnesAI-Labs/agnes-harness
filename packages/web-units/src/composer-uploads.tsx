@@ -104,7 +104,7 @@ export function useComposerUploads(
     return () => {
       alive.current = false
       for (const entry of current.current) {
-        if (entry.state !== 'cancelled') void cancelRef.current(entry)
+        if (entry.state !== 'cancelled' && entry.state !== 'ready') void cancelRef.current(entry)
       }
     }
   }, [])
@@ -157,32 +157,16 @@ export function useComposerUploads(
       current.current = current.current.filter((entry) => entry.preparing && !entry.controller.signal.aborted)
       publish()
     },
-    remove(id: string, uri?: string, name = '', size = 0) {
+    remove(id: string) {
       const entry = current.current.find((entry) => entry.id === id)
-      if (entry) void cancel(entry)
-      else if (uri && prepare) {
-        const restored: Entry = {
-          id: uri.split('/').at(-1) ?? '',
-          file: new File([], name),
-          loaded: size,
-          total: size,
-          phase: 'verifying',
-          state: 'ready',
-          controller: new AbortController(),
-        }
-        current.current.push(restored)
-        void prepare()
-          .then((sessionId) => {
-            restored.sessionId = sessionId
-            return cancel(restored)
-          })
-          .catch(() => {
-            restored.controller.abort()
-            restored.state = 'failed'
-            restored.error = t('composer.upload.cleanupFailed')
-            publish()
-          })
+      if (!entry) return
+      // A ready upload is already published. Dropping it removes the draft reference only.
+      if (entry.state === 'ready') {
+        current.current = current.current.filter((item) => item !== entry)
+        publish()
+        return
       }
+      void cancel(entry)
     },
     chips: entries
       .filter((entry) => entry.state !== 'ready')

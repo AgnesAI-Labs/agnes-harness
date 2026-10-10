@@ -168,6 +168,8 @@ export class FileUploadStore {
     const upload = this.uploads.get(input.uploadId)
     if (!upload) {
       if (input.operation === 'cancel') {
+        // The memory record is gone after a restart or cache eviction. The receipt directory is durable.
+        if (await this.published(input.uploadId, root, fs)) return fail('UPLOAD_ALREADY_PUBLISHED')
         await this.cancelFiles(input.uploadId, root, fs)
         this.cancelled.set(input.uploadId, Date.now())
         return {}
@@ -181,6 +183,8 @@ export class FileUploadStore {
       .catch(() => undefined)
       .then(async () => {
         if (input.operation === 'cancel') {
+          if (upload.attachment || (await this.published(input.uploadId, root, fs)))
+            return fail('UPLOAD_ALREADY_PUBLISHED')
           await this.cancelFiles(input.uploadId, root, fs)
           upload.cancelled = true
           this.cancelled.set(input.uploadId, Date.now())
@@ -371,6 +375,23 @@ export class FileUploadStore {
       if ((await lstat(current)).isSymbolicLink()) return fail('UPLOAD_PATH_DENIED')
     }
     if ((await realpath(path)) !== path) return fail('UPLOAD_PATH_DENIED')
+  }
+  /** A finished upload has dropped its partial and left a content-addressed receipt. */
+  private async published(id: string, root: string, fs: Fs): Promise<boolean> {
+    const directory = join(root, '.agnes-attachments', hash(Buffer.from(this.sessionId)))
+    try {
+      await fs.stat(join(directory, `.partial-${id}`))
+      return false
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    try {
+      const entries = await fs.list(join(directory, id))
+      return entries.some((entry) => SHA.test(entry.name))
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      return false
+    }
   }
   /** Caller cancellation never borrows the maintenance cleanup authority. */
   private async cancelFiles(id: string, root: string, fs: Fs): Promise<void> {
