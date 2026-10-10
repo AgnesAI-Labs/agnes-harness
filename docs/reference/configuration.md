@@ -20,7 +20,7 @@ Configuration files and model credentials are separate. Prefer CLI `config` or W
 | `AGNES_HOME` | Legacy compatibility variable with a deprecation warning; AGH_HOME takes precedence, with no automatic migration |
 | `AGNES_PROFILE` / `--profile` | Profile selection, usually `local-dev` |
 | `AGH_HOME/profiles/NAME/profile.yaml` | User profile layer |
-| `AGH_HOME/profiles/NAME/configuration.json` | Accounts, default model, and references managed by the Host configuration service; not a manual configuration template |
+| `AGH_HOME/profiles/NAME/configuration.json` | Accounts, default model, auxiliary slot defaults, and references managed by the Host configuration service; not a manual configuration template |
 | `PROJECT/.agh/profile.local.yaml` | Workspace overrides, subject to trust and permissions |
 | `PROJECT/.agh/skills` / `PROJECT/.agh/hooks.json` | Workspace Skill and command-hook resources |
 | `AGH_HOME/data`, `cache`, `secrets`, `auth` | Data, cache, credentials, and identity state |

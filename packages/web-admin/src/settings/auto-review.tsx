@@ -1,6 +1,7 @@
 import { AutoReviewConfig, validateAgainst } from '@agnes/protocol'
 import {
   Button,
+  Badge,
   Field,
   SettingsCard,
   SettingsCheckbox,
@@ -15,6 +16,7 @@ import { useEffect, useState } from 'react'
 export { reviewCatalog } from './auto-review-locale.js'
 
 import { reviewCatalog } from './auto-review-locale.js'
+import { modelSlotsSettings, modelSlotOptions, type ModelSlotsState } from './model-slots.js'
 
 export async function reviewSettings(
   config?: AutoReviewConfig,
@@ -34,6 +36,8 @@ export async function reviewSettings(
 }
 export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
   const { t } = useUiText('@agnes/web/auto-review', reviewCatalog)
+  const [slots, setSlots] = useState<ModelSlotsState>()
+  const [slotsFailed, setSlotsFailed] = useState(false)
   const [config, setConfig] = useState<AutoReviewConfig>({})
   const [tools, setTools] = useState('')
   const [categories, setCategories] = useState('')
@@ -54,6 +58,34 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
       })
     return () => controller.abort()
   }, [])
+  useEffect(() => {
+    const controller = new AbortController()
+    let epoch = 0
+    const refresh = () => {
+      const request = ++epoch
+      void modelSlotsSettings(undefined, controller.signal)
+        .then((value) => {
+          if (!controller.signal.aborted && request === epoch) {
+            setSlots(value)
+            setSlotsFailed(false)
+          }
+        })
+        .catch(() => {
+          if (!controller.signal.aborted && request === epoch) setSlotsFailed(true)
+        })
+    }
+    refresh()
+    window.addEventListener('agnes:model-slots-changed', refresh)
+    return () => {
+      controller.abort()
+      window.removeEventListener('agnes:model-slots-changed', refresh)
+    }
+  }, [])
+  const reviewer = slots?.slots[config.modelSlot ?? 'fast']
+  const configured =
+    !!reviewer &&
+    !!slots &&
+    modelSlotOptions(slots).some((model) => model.route === reviewer.route && model.id === reviewer.model)
   const update = (patch: Partial<AutoReviewConfig>) => {
     setConfig((value) => ({ ...value, ...patch }))
     setMessage('')
@@ -110,7 +142,38 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
           ))}
         </SettingsSelect>
       </Field>
-      <p>{t('profileHelp')}</p>
+      <p>
+        {t('profileHelp')}{' '}
+        <a
+          href="?settings=model#auxiliary-models"
+          data-testid="auto-review-model-link"
+          onClick={(event) => {
+            if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
+            event.preventDefault()
+            event.currentTarget.dispatchEvent(
+              new CustomEvent('agnes:settings-route', { detail: 'model', bubbles: true }),
+            )
+            requestAnimationFrame(() => {
+              const section = document.getElementById('auxiliary-models')
+              section?.scrollIntoView({ block: 'start' })
+              section?.focus()
+            })
+          }}
+        >
+          {t('modelLink')}
+        </a>
+      </p>
+      <p className="model-slot-current" data-testid="auto-review-slot-status" role="status">
+        <Badge tone={slotsFailed ? 'bad' : !slots ? 'unknown' : configured ? 'ok' : 'warn'}>
+          {slotsFailed
+            ? t('slotFailed')
+            : !slots
+              ? t('slotLoading')
+              : configured
+                ? `${t('slotConfigured')}: ${reviewer?.route} / ${reviewer?.model}`
+                : t('slotUnset')}
+        </Badge>
+      </p>
       <Field label={t('tools')} htmlFor="auto-review-tools">
         <SettingsInput
           id="auto-review-tools"

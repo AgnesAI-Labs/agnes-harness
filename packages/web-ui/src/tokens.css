@@ -983,3 +983,14 @@ select.agnes-settings-input {
 [data-testid="plugin-provides"] {
   flex-wrap: wrap;
 }
+
+/* Auxiliary model identifiers remain readable at narrow settings and picker widths. */
+.model-slot-current {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.model-slot-current .agnes-ui-badge {
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}

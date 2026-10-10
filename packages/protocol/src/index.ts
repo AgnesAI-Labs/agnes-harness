@@ -576,6 +576,7 @@ export * from './methods.js'
 //     './migrate.js' directly.
 export { CURRENT_V, listMigrations, normalize, registerMigration, supportedVersions } from './migrate.js'
 export * from './model.js'
+export * from './model-slots.js'
 export * from './package-admin.js'
 export {
   compilePluginConfig,

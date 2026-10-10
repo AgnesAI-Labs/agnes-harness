@@ -124,3 +124,47 @@ it('applies account changes through the same authenticated configuration callbac
   })
   expect(s.account).toHaveBeenCalledWith(params)
 })
+
+it('validates auxiliary routes against the live catalog and denies nonlocal writes', async () => {
+  const slots = { revision: 2, slots: { fast: { route: 'local', model: 'reviewer' } } }
+  const configuration = {
+    ...service(),
+    modelSlots: vi.fn(async () => slots),
+    saveModelSlots: vi.fn(async (input: import('@agnes/protocol').ModelSlotsSnapshot) => ({
+      ...input,
+      revision: 3,
+    })),
+  }
+  const local = new LocalEndpoint({ clock: Date.now, principalId: 'local' })
+  local.conn.initialized = true
+  local.conn.authKind = 'local'
+  local.conn.credentialKind = 'local'
+  registerConfiguration(local, configuration, undefined, undefined, undefined, async () => [
+    { route: 'local', id: 'reviewer' },
+  ])
+  const remote = endpoint(false, configuration)
+  try {
+    expect(await request(local, '_agnes/v1/config.modelSlots.get')).toMatchObject({ result: slots })
+    expect(
+      await request(local, '_agnes/v1/config.modelSlots.save', {
+        revision: 2,
+        slots: { verifier: { route: 'other', model: 'reviewer' } },
+      }),
+    ).toMatchObject({ error: { data: { reason: 'CONFIG_MODEL_UNAVAILABLE' } } })
+    expect(await request(remote, '_agnes/v1/config.modelSlots.save', slots)).toMatchObject({
+      error: { message: 'CAPABILITY_DENIED' },
+    })
+    expect(
+      await request(local, '_agnes/v1/config.modelSlots.save', {
+        revision: 2,
+        slots: { primary: { route: 'local', model: 'reviewer' } },
+      }),
+    ).toHaveProperty('error')
+    expect(configuration.saveModelSlots).not.toHaveBeenCalled()
+    expect(await request(local, '_agnes/v1/config.modelSlots.save', slots)).toMatchObject({
+      result: { revision: 3, slots: slots.slots },
+    })
+  } finally {
+    await Promise.all([local.close(), remote.close()])
+  }
+})

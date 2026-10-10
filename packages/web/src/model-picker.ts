@@ -48,6 +48,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
   let selecting = false
   let selectingFromPointer = false
   let popover: HTMLElement | undefined
+  let auxiliary: HTMLElement | undefined
   let help: HTMLElement | undefined
   let listbox: HTMLElement | undefined
   let detailPanel: HTMLElement | undefined
@@ -172,6 +173,18 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     if (help) {
       help.hidden = state.selected !== undefined
       help.textContent = tr('settings.modelPicker.help')
+    }
+    if (auxiliary && options.onAuxiliaryRead && options.onAuxiliarySelect && state.auxiliaryAvailable) {
+      webUi.renderRegion(
+        auxiliary,
+        createElement(webUi.SessionAuxiliaryModels, {
+          models: state.options,
+          load: options.onAuxiliaryRead,
+          save: options.onAuxiliarySelect,
+          disabled: state.disabled || busy(),
+          t: tr,
+        }),
+      )
     }
     webUi.renderRegion(
       listbox,
@@ -544,6 +557,8 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     closeDetail()
     if (help) webUi.unmountRegion(help)
     if (listbox) webUi.unmountRegion(listbox)
+    if (auxiliary) webUi.unmountRegion(auxiliary)
+    auxiliary = undefined
     popover?.remove()
     popover = undefined
     help = undefined
@@ -732,6 +747,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
       return
     }
     // Tab 收起整条菜单，把焦点交回触发按钮，浏览器从那里继续 Tab。
+    if (event.key === 'Tab' && auxiliary && event.currentTarget === listbox && !event.shiftKey) return
     if (event.key === 'Tab') {
       event.preventDefault()
       close({ returnFocus: true })
@@ -836,6 +852,14 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     listbox.setAttribute('aria-label', tr('settings.modelPicker.listAria'))
     listbox.tabIndex = -1
     listbox.addEventListener('keydown', listKeydown)
+    if (state.auxiliaryAvailable && options.onAuxiliaryRead && options.onAuxiliarySelect)
+      auxiliary = webUi.createRegionHost(popover, 'div', 'model-picker-auxiliary')
+    popover.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && auxiliary?.contains(event.target as Node)) {
+        event.preventDefault()
+        close({ returnFocus: true })
+      }
+    })
     popover.addEventListener('mouseenter', cancelDetailClose)
     popover.addEventListener('mouseleave', scheduleDetailClose)
     trigger.setAttribute('aria-controls', listbox.id)

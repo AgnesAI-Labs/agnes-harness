@@ -230,6 +230,7 @@ export function createComposerController(
       },
       loading: context.sessionPending,
       model: {
+        auxiliaryAvailable: !!context.current,
         accessibleName: modelSelectAccessibleName(context.knownSessionModel, context.t),
         disabled:
           !available ||

@@ -371,6 +371,7 @@ export type Assembled = {
   observability?: import('@agnes/extension-api').ObservabilityProvider
   providers: import('@agnes/extension-api').ProvidersCatalogPort
   sessionPresetDefault?(): Promise<string | undefined>
+  sessionModelSlots?(): Promise<import('@agnes/protocol').AuxiliaryModelSlots>
   sessionLoopDefault?(): Promise<import('@agnes/protocol').LoopSelection | undefined>
   compactionEngineCatalog(): ReturnType<typeof compactionEngineCatalog>
   /** Read-only metadata for installed child agent providers. */
@@ -3148,6 +3149,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       modelAdapterCatalog: () => modelAdapterCatalog(pluginTree.root),
       sessionPresetDefault: async () => (await sessionConfiguration.sessionDefaults()).defaults.preset,
       sessionLoopDefault: () => readAdminLoopDefault(sessionConfiguration),
+      sessionModelSlots: async () => (await sessionConfiguration.modelSlots()).slots,
       compactionEngineCatalog: () => compactionEngineCatalog(pluginTree.root),
       childAgentCatalog: () => childAgentCatalog(pluginTree.root),
       compositionForPreset,

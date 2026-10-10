@@ -164,6 +164,33 @@ afterEach(() => {
 })
 
 describe('model picker', () => {
+  it('offers explicit auxiliary session overrides without selecting primary and cleans up the advanced panel', async () => {
+    const trigger = document.createElement('button')
+    document.body.append(trigger)
+    const onSelect = vi.fn(async () => true)
+    const onAuxiliarySelect = vi.fn(async () => true)
+    const picker = createModelPicker({
+      trigger,
+      onSelect,
+      onError: vi.fn(),
+      onAuxiliaryRead: async () => ({ fast: null, verifier: null }),
+      onAuxiliarySelect,
+    })
+    picker.render(state({ auxiliaryAvailable: true }))
+    trigger.click()
+    await vi.waitFor(() => expect(document.querySelector('#session-model-slot-fast')).not.toBeNull())
+    const select = document.querySelector<HTMLSelectElement>('#session-model-slot-fast')!
+    select.value = JSON.stringify(['local', 'local-model'])
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    document.querySelector<HTMLButtonElement>('[data-testid="session-model-slot-fast-save"]')?.click()
+    await vi.waitFor(() =>
+      expect(onAuxiliarySelect).toHaveBeenCalledWith('fast', { route: 'local', id: 'local-model' }),
+    )
+    expect(onSelect).not.toHaveBeenCalled()
+    picker.destroy()
+    expect(document.querySelector('[data-testid="session-auxiliary-models"]')).toBeNull()
+  })
+
   it('opens one flat model list whose rows do not carry an entry menu', () => {
     const { picker, trigger } = mountPicker()
     trigger.click()

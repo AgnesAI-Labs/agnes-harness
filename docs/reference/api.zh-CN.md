@@ -100,3 +100,9 @@ Node SDK 与服务端提供以下管理接口；调用者必须持有对应控�
 `ToolContext.fs.read` 使用从零开始的字节偏移，最大字节数由底层读取执行。Host 旧的行窗口适配器仍从第一行开始，只有选择 `unit: 'bytes'` 才使用字节窗口；不支持有界读取的 provider 会拒绝该模式，而不是读取全文。`ToolContext.net.fetch` 合并调用取消、可选的调用方 signal 和受调用期限及剩余 writer lease 约束的期限。省略 timeout 时使用调用的默认期限；显式 timeout 不能延长调用或 lease。调用已到期时，在建立连接前拒绝。Fetch provider 必须让连接和响应体（包括已锁定的 reader）遵守传入 signal；默认 provider 已实现。调用结束时也会取消尚未读取的响应体。
 
 默认 Host 文件系统对 canonical 名称授权，再通过不跟随链接的目录或文件句柄执行读、写、元数据查询、列举、创建和删除。允许的符号链接在授权前解析；授权后被替换为链接的路径组件会被拒绝，没有按路径重新打开的后备实现。本地操作需要当前版本的 `@agnes/system-node` 原生产物。POSIX 原生入口和远端适配器对含有未配对 Unicode 代理码元的路径返回 `EINVAL`，避免 UTF-8 编码改变文件名。POSIX 远端适配器要求 Python 3 支持相对描述符的文件操作，通过 transport 的 `exec` 端口执行，包括用 stdin 传输二进制写入，不再调用基于路径的 upload/download。自定义文件系统 provider 负责同样的边界。递归删除拒绝硬拒绝路径的祖先目录，即使会话具有完全文件权限。此边界覆盖文件工具；命令和 MCP 进程仍遵循各自的沙箱合同。
+
+## 辅助模型默认值
+
+本地 Node SDK 提供 `client.config.modelSlots.get()` 与 `client.config.modelSlots.save({ revision, slots })`，均返回 `{ revision, slots }`。`slots` 仅接受 `fast` 和 `verifier`，值为显式 `{ route, model }` 或 `null`（未设置）；省略的槽位保留预设定义行为。保存会替换辅助模型默认值映射，检查共享配置 revision，并按 Host 实时目录校验完整路由／模型组合；模型不可用或 revision 冲突时拒绝。
+
+这两个方法属于部署本地管理权限，浏览器 SDK 禁止调用。Web 通过同源 `/admin/api/model-slots` GET/POST 管理桥接，沿用读取／激活权限和恢复只读检查。默认值写入新会话初始选择；已有会话通过 `Session.setModel({ slot, route, model })` 显式覆盖。参见[审查模型配置](../guide/security.zh-CN.md)。

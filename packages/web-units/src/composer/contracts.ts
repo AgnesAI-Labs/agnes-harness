@@ -30,6 +30,7 @@ export type ModelPickerSettings = {
 }
 
 export type ModelPickerState = {
+  auxiliaryAvailable?: boolean
   accessibleName: string
   disabled: boolean
   label: string
@@ -67,6 +68,8 @@ export interface ComposerDependencies {
     onSelect(option: ModelPickerOption): Promise<boolean>
     /** 面板内改档位或预算时的提交口；缺省时面板只渲染模型列表。 */
     onSettingsChange?(settings: ModelSettings): Promise<boolean>
+    onAuxiliaryRead?(): Promise<import('@agnes/protocol').AuxiliaryModelSlots>
+    onAuxiliarySelect?(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean>
   }): ModelPicker
   createPermissionPicker(options: {
     trigger: HTMLButtonElement
@@ -161,6 +164,8 @@ export interface ComposerRegionOptions {
   prepareUploadSession?(): Promise<string>
   onDraftChange(value: string): void
   onError(error: unknown): void
+  onAuxiliaryRead?(): Promise<import('@agnes/protocol').AuxiliaryModelSlots>
+  onAuxiliarySelect?(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean>
   onModelSelect(option: ModelPickerOption): Promise<boolean>
   onModelSettingsChange?(settings: ModelSettings): Promise<boolean>
   onPermissionSelect(mode: PermissionMode): Promise<boolean>

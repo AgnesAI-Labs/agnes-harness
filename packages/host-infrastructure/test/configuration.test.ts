@@ -719,3 +719,30 @@ it.runIf(process.getuid !== undefined).each([
   expect(audit).not.toContain('private exception marker')
   expect(audit).not.toContain('sk-test-value')
 })
+
+it('persists explicit auxiliary defaults under the shared revision without changing provider selection', async () => {
+  const root = await home()
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  expect(await service.modelSlots()).toEqual({ revision: 0, slots: {} })
+  const slots = { fast: { route: 'local', model: 'reviewer' }, verifier: null }
+  expect(await service.saveModelSlots({ revision: 0, slots })).toEqual({ revision: 1, slots })
+  expect(await service.profileInput()).toEqual({})
+  const reopened = createConfigurationService({ home: root, profile: 'local-dev' })
+  expect(await reopened.modelSlots()).toEqual({ revision: 1, slots })
+  await expect(reopened.saveModelSlots({ revision: 0, slots: {} })).rejects.toMatchObject({
+    code: 'CONFIG_REVISION_CONFLICT',
+  })
+  await expect(
+    reopened.saveModelSlots({
+      revision: 1,
+      slots: { primary: { route: 'local', model: 'reviewer' } },
+    } as never),
+  ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
+  const saved = await reopened.saveSessionDefaults({ revision: 1, defaults: {} })
+  expect((await reopened.modelSlots()).slots).toEqual(slots)
+  expect(saved.revision).toBe(2)
+  expect(await reopened.saveModelSlots({ revision: 2, slots: { fast: null, verifier: null } })).toEqual({
+    revision: 3,
+    slots: { fast: null, verifier: null },
+  })
+})

@@ -899,6 +899,8 @@ const clientModules = await startClientModules({
     onDraftChange: handleComposerDraftChange,
     onError: showError,
     onModelSelect: selectModel,
+    onAuxiliaryRead: readAuxiliaryModels,
+    onAuxiliarySelect: selectAuxiliaryModel,
     onModelSettingsChange: selectModelSettings,
     onPermissionSelect: selectPermission,
     onSubmit: submitComposer,
@@ -1069,6 +1071,7 @@ let accountProvider: { route?: string; id?: string; model?: string } | null = nu
 let knownSessionModel: KnownSessionModel | undefined
 let initialModelPending: KnownSessionModel | undefined
 let modelChangePending = false
+let auxiliaryModelPending = false
 let modelSelectionSeq = 0
 let draftModelSettingsEdited = false
 let draftModelExplicit = false
@@ -1795,6 +1798,31 @@ function modelDefaults(option: ModelPickerOption): KnownSessionModel {
     },
   }
 }
+async function readAuxiliaryModels(): Promise<import('@agnes/protocol').AuxiliaryModelSlots> {
+  const session = current
+  if (!session) throw new Error('Session unavailable')
+  const capabilities = await session.capabilities()
+  if (current !== session || !capabilities?.modelRoutes.value) throw new Error('Session unavailable')
+  const routes = capabilities.modelRoutes.value
+  return { fast: routes.fast ?? null, verifier: routes.verifier ?? null }
+}
+async function selectAuxiliaryModel(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean> {
+  const session = current
+  const epoch = selection
+  if (!session || !connected || sending || sessionPending || modelChangePending || auxiliaryModelPending)
+    return false
+  auxiliaryModelPending = true
+  try {
+    await session.setModel({ slot, route: option.route, model: option.id })
+    if (current !== session || selection !== epoch || sessionPending) return false
+    return true
+  } catch (error) {
+    if (current === session && selection === epoch) showError(error)
+    return false
+  } finally {
+    auxiliaryModelPending = false
+  }
+}
 async function selectModelSettings(settings: ModelSettings): Promise<boolean> {
   if (!knownSessionModel) return false
   return selectModel(knownSessionModel, settings)
@@ -1815,7 +1843,7 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
           settings: { ...settings, ...(window === undefined ? {} : { contextWindow: window }) },
         }
   const session = current
-  if (sessionPending || modelChangePending) return false
+  if (sessionPending || modelChangePending || auxiliaryModelPending) return false
   if (!session && draftingNew) {
     draftModelExplicit = true
     if (settings !== undefined) draftModelSettingsEdited = true

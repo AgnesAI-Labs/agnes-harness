@@ -350,6 +350,14 @@ export class Client {
           ? { timeoutMs: Math.max(this.timeouts.request, 90_000) }
           : {},
       ),
+    modelSlots: {
+      get: (): Promise<import('@agnes/protocol').ModelSlotsSnapshot> =>
+        this.call('_agnes/v1/config.modelSlots.get', {}),
+      save: (
+        input: import('@agnes/protocol').ModelSlotsSnapshot,
+      ): Promise<import('@agnes/protocol').ModelSlotsSnapshot> =>
+        this.call('_agnes/v1/config.modelSlots.save', input),
+    },
     childEngines: {
       get: (): Promise<ChildEnginesState> => this.call('_agnes/v1/config.childEngines.get', {}),
       save: (input: ChildEnginesSaveParams): Promise<ChildEnginesState> =>

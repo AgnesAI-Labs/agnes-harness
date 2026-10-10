@@ -14,6 +14,7 @@ import type {} from '@agnes/host-providers/assemble/loops'
 import type { ProviderBuildOptions } from '@agnes/host-providers/assemble/provider'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { ModelRecord, RouteDecl } from '@agnes/protocol'
+import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AssembleDeps, Assembled } from '../src/runtime/assemble/assemble.js'
 import { assemble } from '../src/runtime/assemble/assemble.js'
@@ -332,17 +333,38 @@ describe('replaySwitchesOnOpen', () => {
         ],
         scripts: [],
       })
+    const configuration = createConfigurationService({ home: dataDir, profile: 'local-dev' })
     const first = await createTestHost(twoRouteHostOptions(dataDir, provider(4096, 'high')))
     const original = await first.host.createSession({ cwd: dataDir, key: 'defaults-original' })
     expect(original.preset.model.thinking.primary).toBe('high')
     expect(original.preset.model.contextWindow?.primary).toBe(4096)
+    // Missing auxiliary slots are also a persisted choice.
+    expect(original.preset.model.route.fast).toBeUndefined()
+    await configuration.saveModelSlots({
+      revision: 0,
+      slots: { fast: { route: 'alt', model: 'm2' }, verifier: { route: 'gw', model: 'm1' } },
+    })
+    const reviewer = await first.host.createSession({ cwd: dataDir, key: 'reviewer-defaults' })
+    expect(reviewer.preset.model.id.fast).toBe('m2')
+    await reviewer.setModel({ slot: 'fast', route: 'gw', model: 'm1' })
+    await configuration.saveModelSlots({
+      revision: 1,
+      slots: { fast: null, verifier: { route: 'removed', model: 'missing' } },
+    })
     await first.host.close()
     const second = await createTestHost(twoRouteHostOptions(dataDir, provider(6144, 'low')))
     try {
       const restored = await second.host.createSession({ cwd: dataDir, key: 'defaults-original' })
+      expect(restored.preset.model.route.fast).toBeUndefined()
+      expect(restored.preset.model.route.verifier).toBeUndefined()
+      const resumedReviewer = await second.host.createSession({ cwd: dataDir, key: 'reviewer-defaults' })
+      expect(resumedReviewer.preset.model.id.fast).toBe('m1')
+      expect(resumedReviewer.preset.model.id.verifier).toBe('m1')
       expect(restored.preset.model.thinking.primary).toBe('high')
       expect(restored.preset.model.contextWindow?.primary).toBe(4096)
       const fresh = await second.host.createSession({ cwd: dataDir, key: 'defaults-new' })
+      expect(fresh.preset.model.route.fast).toBeUndefined()
+      expect(fresh.preset.model.route.verifier).toBeUndefined()
       expect(fresh.preset.model.thinking.primary).toBe('low')
       expect(fresh.preset.model.contextWindow?.primary).toBe(6144)
     } finally {

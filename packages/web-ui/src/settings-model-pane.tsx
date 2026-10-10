@@ -48,6 +48,7 @@ export function SettingsModelPane({
         />
         <p className="config-list-note">{t('settings-shell.accountsNote')}</p>
       </SettingsCard>
+      <div id="config-auxiliary-models" />
       {afterAccounts}
     </SettingsPage>
   )

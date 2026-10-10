@@ -2125,6 +2125,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         profileApplication?.apply,
         profileApplication?.present,
         publishChildEngines,
+        async () => (await sessionSelection?.modelAdapters())?.flatMap((adapter) => adapter.models) ?? [],
       )
       registerAppServerAdmin(
         ep,

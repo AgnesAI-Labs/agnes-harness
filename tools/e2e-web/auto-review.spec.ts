@@ -47,3 +47,61 @@ test('auto review settings persist and exhausted budget escalates visibly', asyn
   await expect(page.getByTestId('auto-review-maxReviews')).toHaveValue('0')
   await expect(page.getByTestId('auto-review-settings')).toContainText('显式未来规则: 1')
 })
+
+test('reviewer defaults and session overrides are configurable from Web in both locales', async ({
+  page,
+  runtime,
+}, info) => {
+  await preferences(page, 'en', 'light')
+  await page.goto(runtime.url)
+  await chooseWorkspace(page, runtime, 'en')
+  await page.getByRole('button', { name: 'New session', exact: true }).click()
+  await settings(page, 'en')
+  await section(page, 'security')
+  await expect(page.getByTestId('auto-review-slot-status')).toContainText('not set')
+  await page.getByTestId('auto-review-model-link').click()
+  await expect(page.getByTestId('auxiliary-models')).toBeVisible()
+  const fast = page.getByTestId('model-slot-fast')
+  await expect(fast).toBeEnabled()
+  const selected = await fast.locator('option').evaluateAll((options) => {
+    const model = options.find(
+      (option) => (option as HTMLOptionElement).value && !(option as HTMLOptionElement).disabled,
+    )
+    return (model as HTMLOptionElement | undefined)?.value
+  })
+  expect(selected).toBeTruthy()
+  await fast.selectOption(selected!)
+  await page.getByTestId('model-slot-verifier').selectOption(selected!)
+  await page.getByTestId('model-slots-save').click()
+  await expect(page.getByTestId('model-slots-status')).toContainText('new sessions')
+  await section(page, 'security')
+  await expect(page.getByTestId('auto-review-slot-status')).toContainText('configured')
+  await closeSettings(page, 'en')
+  const input = page.getByRole('textbox', { name: 'Task content', exact: true })
+  await input.fill('hello')
+  await input.press('Enter')
+  await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed', {
+    timeout: 25000,
+  })
+  const primaryLabel = await page.locator('#model').textContent()
+  await page.locator('#model').click()
+  await page.getByTestId('session-auxiliary-models').locator('summary').click()
+  await expect(page.getByTestId('session-model-slot-fast')).toHaveValue(selected!)
+  await page.getByTestId('session-model-slot-verifier').selectOption(selected!)
+  await page.getByTestId('session-model-slot-verifier-save').click()
+  await expect(page.getByTestId('session-model-slot-status')).toContainText('saved')
+  await expect(page.locator('#model')).toHaveText(primaryLabel!)
+  await page.getByTestId('session-model-slot-verifier').press('Escape')
+  await preferences(page, 'zh-CN', 'dark')
+  await page.reload()
+  await settings(page, 'zh-CN')
+  await section(page, 'model')
+  await expect(page.getByTestId('auxiliary-models')).toContainText('辅助模型')
+  await expect(page.getByTestId('model-slot-fast')).toHaveValue(selected!)
+  await page.getByTestId('model-slot-fast').selectOption('')
+  await page.getByTestId('model-slots-save').click()
+  await expect(page.getByTestId('model-slots-status')).toContainText('新会话')
+  await section(page, 'security')
+  await expect(page.getByTestId('auto-review-slot-status')).toContainText('转交人工')
+  await accessible(page, info, 'auxiliary-model-reviewer-status')
+})

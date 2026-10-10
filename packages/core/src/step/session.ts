@@ -956,6 +956,13 @@ export class SessionImpl {
       thinking: { ...this.preset.model.thinking },
       contextWindow: { ...this.preset.model.contextWindow },
     }
+    // Absence is part of the initial auxiliary selection, not permission to adopt new defaults.
+    for (const slot of ['fast', 'verifier']) {
+      delete model.route[slot]
+      delete model.id[slot]
+      delete model.thinking[slot]
+      delete model.contextWindow[slot]
+    }
     for (const selection of models) {
       const slot = selection.slot
       model.route[slot] = selection.route

@@ -35,6 +35,7 @@ export function sameSettings(left?: ModelPickerSettings, right?: ModelPickerSett
 
 export function sameState(left: ModelPickerState, right: ModelPickerState): boolean {
   return (
+    left.auxiliaryAvailable === right.auxiliaryAvailable &&
     left.accessibleName === right.accessibleName &&
     left.disabled === right.disabled &&
     left.label === right.label &&

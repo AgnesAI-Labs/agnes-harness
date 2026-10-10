@@ -235,6 +235,16 @@ export function localPackageAdmin(
       await initialize()
       return client.factChain(input)
     },
+    modelSlots: {
+      get: async () => {
+        await initialize()
+        return client.config.modelSlots.get()
+      },
+      save: async (input) => {
+        await initialize()
+        return client.config.modelSlots.save(input)
+      },
+    },
     autoReview: {
       get: async () => {
         await initialize()

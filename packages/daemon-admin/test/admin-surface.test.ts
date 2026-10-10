@@ -27,6 +27,7 @@ async function server(
     sessionTools?: NonNullable<AdminSurfaceOptions['sessionTools']>
     diagnostics?: NonNullable<AdminSurfaceOptions['diagnostics']>
     systemPrompt?: NonNullable<AdminSurfaceOptions['systemPrompt']>
+    modelSlots?: NonNullable<AdminSurfaceOptions['modelSlots']>
     factChain?: NonNullable<AdminSurfaceOptions['factChain']>
     runtimeAdmin?: NonNullable<AdminSurfaceOptions['runtimeAdmin']>
   } = {},
@@ -401,9 +402,27 @@ it('reads real selection catalogs and protects defaults with the existing admin 
     getDefaults: async () => snapshot,
     saveDefaults: vi.fn(async (input) => ({ ...input, revision: input.revision + 1 })),
   }
-  const s = await server(undefined, undefined, { sessionSelection: provider })
+  const slots = { revision: 4, slots: { fast: { route: 'local', model: 'reviewer' }, verifier: null } }
+  const modelSlots = {
+    get: vi.fn(async () => slots),
+    save: vi.fn(async (input: import('@agnes/protocol').ModelSlotsSnapshot) => ({ ...input, revision: 5 })),
+  }
+  const s = await server(undefined, undefined, { sessionSelection: provider, modelSlots })
+  expect((await s.selectionRequest('model-slots', 'POST', slots)).status).toBe(409)
   expect((await s.selectionRequest('defaults', 'PUT', snapshot)).status).toBe(409)
   await s.request('context')
+  expect(await (await s.selectionRequest('model-slots')).json()).toMatchObject({ ...slots, canSave: true })
+  expect(
+    (await s.selectionRequest('model-slots', 'POST', slots, { Origin: 'https://foreign.example' })).status,
+  ).toBe(403)
+  expect((await s.selectionRequest('model-slots', 'POST', { ...slots, actor: 'forged' })).status).toBe(400)
+  expect(await (await s.selectionRequest('model-slots', 'POST', slots)).json()).toMatchObject({
+    revision: 5,
+    slots: slots.slots,
+  })
+  expect(modelSlots.save).toHaveBeenCalledWith(slots)
+  modelSlots.save.mockRejectedValueOnce({ rpc: { data: { reason: 'CONFIG_REVISION_CONFLICT' } } })
+  expect((await s.selectionRequest('model-slots', 'POST', slots)).status).toBe(409)
   expect(await (await s.selectionRequest('loops')).json()).toEqual({ loops: [loop], ...snapshot })
   expect(await (await s.selectionRequest('model-adapters')).json()).toEqual({ modelAdapters: [adapter] })
   expect((await s.selectionRequest('defaults', 'PUT', { ...snapshot, actor: 'forged' })).status).toBe(400)
@@ -418,8 +437,11 @@ it('reads real selection catalogs and protects defaults with the existing admin 
   const denied = await server(undefined, undefined, {
     sessionSelection: provider,
     permissions: ['packages.read'],
+    modelSlots,
   })
   await denied.request('context')
+  expect((await denied.selectionRequest('model-slots', 'POST', slots)).status).toBe(403)
+  expect(await (await denied.selectionRequest('model-slots')).json()).toMatchObject({ canSave: false })
   expect((await denied.selectionRequest('defaults', 'PUT', snapshot)).status).toBe(403)
 })
 

@@ -20,6 +20,7 @@ import {
   unmountRegion,
 } from '@agnes/web-ui'
 import { createElement } from 'react'
+import { ModelSlotsPanel } from './settings/model-slots.js'
 import { oauthControls } from './oauth-controls.js'
 import { createAccountPickers } from './provider-picker.js'
 import { accountNetworkFields } from './settings/account-network.js'
@@ -710,7 +711,13 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       if (current(token)) updateButtons()
     }
   }
+  let renderedSlots: HTMLElement | undefined
   const renderAccounts = (): void => {
+    const slotsHost = optionalElement('config-auxiliary-models', 'div')
+    if (renderedSlots && renderedSlots !== slotsHost) unmountRegion(renderedSlots)
+    renderedSlots = slotsHost
+    if (slotsHost)
+      renderRegion(slotsHost, createElement(ModelSlotsPanel, { key: configuration?.revision ?? 0, t: tr }))
     const guard = optionalElement('config-account-guard', 'p')
     if (guard) guard.hidden = !editingId || editingId !== configuration?.defaultAccountId
     const currentAccountList = accountList()

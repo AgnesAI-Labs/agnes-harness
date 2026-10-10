@@ -4,6 +4,7 @@ import * as A from '../gen/ts/agnes-v1.js'
 import { UiActionParams, UiActionReceipt, UiReadParams, UiReadResult } from '../gen/ts/intelligent-ui.js'
 import { ADMIN_METHODS, type AdminMethodName } from './app-server.js'
 import { AutoReviewConfig } from './auto-review.js'
+import { ModelSlotsSnapshot } from './model-slots.js'
 import {
   PACKAGE_ADMIN_METHODS,
   type PackageAdminAccessPolicy,
@@ -75,6 +76,8 @@ export type MethodName =
   | '_agnes/v1/sessionSelection.defaults.save'
   | '_agnes/v1/config.childEngines.get'
   | '_agnes/v1/config.childEngines.save'
+  | '_agnes/v1/config.modelSlots.get'
+  | '_agnes/v1/config.modelSlots.save'
   | '_agnes/v1/autoReview.get'
   | '_agnes/v1/autoReview.save'
   | '_agnes/v1/systemPrompt.get'
@@ -192,6 +195,8 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/config.account': clientRequest(A.ConfigAccountInput, A.ConfigSnapshot),
   '_agnes/v1/config.childEngines.get': clientRequest(RuntimeAdminEmpty, ChildEnginesState),
   '_agnes/v1/config.childEngines.save': clientRequest(ChildEnginesSaveParams, ChildEnginesState),
+  '_agnes/v1/config.modelSlots.get': clientRequest(RuntimeAdminEmpty, ModelSlotsSnapshot),
+  '_agnes/v1/config.modelSlots.save': clientRequest(ModelSlotsSnapshot, ModelSlotsSnapshot),
   '_agnes/v1/computerUse.status': clientRequest(A.Empty, A.ComputerUseStatusResult),
   '_agnes/v1/computerUse.permissions.status': clientRequest(A.Empty, A.ComputerUsePermissionsStatusResult),
   '_agnes/v1/computerUse.permissions.grant': clientRequest(A.Empty, A.ComputerUsePermissionsStatusResult),

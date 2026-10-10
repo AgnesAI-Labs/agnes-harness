@@ -45,6 +45,9 @@ import {
   isSessionDefaults,
   isSessionDefaultsSnapshot,
   minimumContextBudget,
+  AuxiliaryModelSlots,
+  ModelSlotsSnapshot,
+  validateAgainst,
   readChildEngineSettings,
   type SessionDefaults,
   type SessionDefaultsSnapshot,
@@ -138,6 +141,8 @@ export class ConfigurationError extends Error {
 }
 
 export interface ConfigurationService {
+  modelSlots?(): Promise<ModelSlotsSnapshot>
+  saveModelSlots?(input: ModelSlotsSnapshot): Promise<ModelSlotsSnapshot>
   oauth?(input: ConfigOAuthInput, owner: object, signal: AbortSignal): Promise<ConfigOAuthResult>
   get(): Promise<ConfigSnapshot>
   providers(): Promise<ConfigProvidersResult>
@@ -198,6 +203,7 @@ type StoredAccount = StoredConfigurationV1['provider'] & {
   networkTimeouts?: import('@agnes/protocol').ConfigSaveInput['networkTimeouts']
 }
 type StoredConfiguration = {
+  modelSlots?: AuxiliaryModelSlots
   version: 2
   profile: string
   revision: number
@@ -274,6 +280,7 @@ function acceptedChildEngines(value: unknown): ChildEngineSettings | undefined {
 
 function retainedConfiguration(current: StoredConfiguration | undefined) {
   return {
+    ...(current?.modelSlots === undefined ? {} : { modelSlots: current.modelSlots }),
     ...(current?.sessionDefaults === undefined ? {} : { sessionDefaults: current.sessionDefaults }),
     ...(current?.childEngines === undefined ? {} : { childEngines: current.childEngines }),
   }
@@ -490,8 +497,10 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
       ...(value.sessionDefaults === undefined ? [] : ['sessionDefaults']),
       ...(value.inheritProvider === undefined ? [] : ['inheritProvider']),
       ...(value.childEngines === undefined ? [] : ['childEngines']),
+      ...(value.modelSlots === undefined ? [] : ['modelSlots']),
     ]) ||
     (value.sessionDefaults !== undefined && !isSessionDefaults(value.sessionDefaults)) ||
+    (value.modelSlots !== undefined && !validateAgainst(AuxiliaryModelSlots, value.modelSlots).ok) ||
     (value.inheritProvider !== undefined &&
       (value.inheritProvider !== true || !Array.isArray(value.accounts) || value.accounts.length !== 0)) ||
     value.version !== 2 ||
@@ -609,6 +618,7 @@ function decodeState(value: unknown, profile: string): StoredConfiguration | und
       ? {}
       : { sessionDefaults: value.sessionDefaults as SessionDefaults }),
     ...(childEngines === undefined ? {} : { childEngines }),
+    ...(value.modelSlots === undefined ? {} : { modelSlots: value.modelSlots as AuxiliaryModelSlots }),
   }
 }
 
@@ -674,7 +684,10 @@ async function atomicWrite(path: string, contents: string): Promise<void> {
 
 export function createConfigurationService(
   options: ConfigurationServiceOptions,
-): ConfigurationService & SessionDefaultsConfigurationService & ChildEnginesConfigurationService {
+): ConfigurationService &
+  SessionDefaultsConfigurationService &
+  ChildEnginesConfigurationService &
+  Required<Pick<ConfigurationService, 'modelSlots' | 'saveModelSlots'>> {
   const home = resolve(options.home)
   if (!PROFILE.test(options.profile)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
   const profile = options.profile
@@ -1344,6 +1357,30 @@ export function createConfigurationService(
     test,
     save: (input) => serialized(() => saveInternal(input)),
     account: (input) => serialized(() => changeAccount(input)),
+    async modelSlots() {
+      const state = await loadState()
+      return { revision: state?.revision ?? 0, slots: structuredClone(state?.modelSlots ?? {}) }
+    },
+    saveModelSlots: (input) =>
+      serialized(async () => {
+        if (!validateAgainst(ModelSlotsSnapshot, input).ok)
+          throw new ConfigurationError('CONFIG_INVALID_INPUT')
+        const current = await loadState()
+        if (input.revision !== (current?.revision ?? 0))
+          throw new ConfigurationError('CONFIG_REVISION_CONFLICT')
+        const next: StoredConfiguration = {
+          version: 2,
+          profile,
+          accounts: [],
+          defaultAccountId: null,
+          ...current,
+          ...(!current ? { inheritProvider: true as const } : {}),
+          revision: input.revision + 1,
+          modelSlots: structuredClone(input.slots),
+        }
+        await persistState(next)
+        return { revision: next.revision, slots: structuredClone(next.modelSlots ?? {}) }
+      }),
     async sessionDefaults() {
       const state = await loadState()
       return { revision: state?.revision ?? 0, defaults: structuredClone(state?.sessionDefaults ?? {}) }

@@ -14,6 +14,8 @@ export function useComposerPickers({
   dependencies,
   onError,
   onModelSelect,
+  onAuxiliaryRead,
+  onAuxiliarySelect,
   onModelSettingsChange,
   onPermissionSelect,
   view,
@@ -21,7 +23,13 @@ export function useComposerPickers({
   permission,
   usage,
 }: ComposerOptions<
-  'dependencies' | 'onError' | 'onModelSelect' | 'onModelSettingsChange' | 'onPermissionSelect'
+  | 'dependencies'
+  | 'onError'
+  | 'onModelSelect'
+  | 'onModelSettingsChange'
+  | 'onPermissionSelect'
+  | 'onAuxiliaryRead'
+  | 'onAuxiliarySelect'
 > & {
   view: ComposerView
   model: RefObject<HTMLButtonElement>
@@ -37,6 +45,8 @@ export function useComposerPickers({
       trigger: model.current,
       onError,
       onSelect: onModelSelect,
+      ...(onAuxiliaryRead ? { onAuxiliaryRead } : {}),
+      ...(onAuxiliarySelect ? { onAuxiliarySelect } : {}),
       ...(onModelSettingsChange ? { onSettingsChange: onModelSettingsChange } : {}),
     })
     permissionPicker.current = dependencies.createPermissionPicker({
@@ -58,6 +68,8 @@ export function useComposerPickers({
     dependencies,
     onError,
     onModelSelect,
+    onAuxiliaryRead,
+    onAuxiliarySelect,
     onModelSettingsChange,
     onPermissionSelect,
     model,

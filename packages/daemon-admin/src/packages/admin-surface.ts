@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
   type AdminSessionSelection,
   AutoReviewConfig,
+  ModelSlotsSnapshot,
   ChildEnginesSaveParams,
   ChildEnginesState,
   httpRpcError,
@@ -126,6 +127,12 @@ export type AdminSurfaceOptions = {
       input: import('@agnes/protocol').DiagnosticsExportParams,
     ): Promise<import('@agnes/protocol').DiagnosticsExportResult>
     doctor?: () => Promise<unknown>
+  }
+  modelSlots?: {
+    get(): Promise<import('@agnes/protocol').ModelSlotsSnapshot>
+    save(
+      input: import('@agnes/protocol').ModelSlotsSnapshot,
+    ): Promise<import('@agnes/protocol').ModelSlotsSnapshot>
   }
   autoReview?: {
     get(): Promise<import('@agnes/protocol').AutoReviewConfig>
@@ -271,6 +278,61 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
             reply(response, 200, result)
           } catch {
             error(response, 502, 'E_ADMIN_BACKEND', '')
+          }
+          return true
+        }
+        if (route === 'model-slots') {
+          const write = request.method === 'POST'
+          if (request.method !== 'GET' && !write) {
+            error(response, 404, 'E_ADMIN_ROUTE', '')
+            return true
+          }
+          if (!configuredPermissions.includes(write ? 'packages.activate' : 'packages.read')) {
+            error(response, 403, 'E_ADMIN_FORBIDDEN', '')
+            return true
+          }
+          if (write && readOnly) {
+            error(response, 409, 'E_ADMIN_READ_ONLY', '')
+            return true
+          }
+          if (!options.modelSlots || !options.sessionSelection) {
+            error(response, 503, 'E_ADMIN_CATALOG_UNAVAILABLE', '')
+            return true
+          }
+          try {
+            const input = write ? await readBody(request) : undefined
+            if (write && !validateAgainst(ModelSlotsSnapshot, input).ok) {
+              error(response, 400, 'CONFIG_INVALID_INPUT', '')
+              return true
+            }
+            const snapshot = write
+              ? await options.modelSlots.save(input as import('@agnes/protocol').ModelSlotsSnapshot)
+              : await options.modelSlots.get()
+            const modelAdapters = await options.sessionSelection.modelAdapters()
+            if (
+              !validateAgainst(ModelSlotsSnapshot, snapshot).ok ||
+              modelAdapters.length > 4096 ||
+              !modelAdapters.every(isAdminModelAdapter)
+            )
+              throw new Error('Invalid model slots')
+            reply(response, 200, {
+              ...snapshot,
+              modelAdapters,
+              canSave: !readOnly && configuredPermissions.includes('packages.activate'),
+            })
+          } catch (cause) {
+            const rpc = (cause as { rpc?: RpcError })?.rpc
+            const data = rpc?.data
+            const reason = record(data) ? data.reason : undefined
+            const code = (record(cause) ? cause.code : undefined) ?? reason
+            const conflict = code === 'CONFIG_REVISION_CONFLICT'
+            const invalid = code === 'CONFIG_MODEL_UNAVAILABLE' || code === 'CONFIG_INVALID_INPUT'
+            error(
+              response,
+              conflict ? 409 : invalid ? 400 : 502,
+              conflict ? 'CONFIG_REVISION_CONFLICT' : invalid ? 'CONFIG_INVALID_INPUT' : 'E_ADMIN_BACKEND',
+              '',
+            )
           }
           return true
         }

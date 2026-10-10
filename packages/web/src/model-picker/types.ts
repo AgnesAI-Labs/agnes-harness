@@ -24,6 +24,7 @@ export type ModelPickerSettings = {
 }
 
 export type ModelPickerState = {
+  auxiliaryAvailable?: boolean
   accessibleName: string
   disabled: boolean
   label: string
@@ -40,6 +41,8 @@ export type ModelPicker = {
 }
 
 export type ModelPickerOptions = {
+  onAuxiliaryRead?(): Promise<import('@agnes/protocol').AuxiliaryModelSlots>
+  onAuxiliarySelect?(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean>
   onError(error: unknown): void
   onSelect(option: ModelPickerOption): Promise<boolean>
   /**

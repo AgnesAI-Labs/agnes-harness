@@ -112,3 +112,6 @@ export {
 export { Switch, type SwitchProps } from './ui/switch.js'
 export { Tabs, type TabsProps } from './ui/tabs.js'
 export * from './ui-locale.js'
+
+export * from './auxiliary-model-fields.js'
+export * from './session-auxiliary-models.js'

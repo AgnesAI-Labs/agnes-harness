@@ -30,7 +30,7 @@ import type { HostSession } from '../lifecycle/host.js'
 import { resolveSessionCapabilities } from '../profile/session-capabilities.js'
 import { bindDeferredInvocations } from './deferred-invocations.js'
 import { attachIntelligentUiTrace } from './intelligent-ui-trace.js'
-import { replaySwitchesOnOpen } from './session-switch.js'
+import { replaySwitchesOnOpen, validateModelSwitch } from './session-switch.js'
 
 /**
  * What opening a session reported putting right. Taken from the method rather than pinned by name,
@@ -328,7 +328,37 @@ export async function createSession(
   // point `materializeRoutes` is known to succeed and this is just fetching its answer back to pin
   // into the view core runs on.
   const wanted = resolveSessionCapabilities({ profile, presetView: preset.view }).modelRoutes.value!
-  const view = parentSession?.preset ?? pinPresetRoutes(preset.view, wanted)
+  let view = parentSession?.preset ?? pinPresetRoutes(preset.view, wanted)
+  // Defaults are captured by session/start; resumed ledgers restore their own model selections.
+  if (!parentSession && a.sessionModelSlots) {
+    const slots = await a.sessionModelSlots()
+    const model = {
+      ...view.model,
+      route: { ...view.model.route },
+      id: { ...view.model.id },
+      thinking: { ...view.model.thinking },
+      contextWindow: { ...view.model.contextWindow },
+    }
+    for (const slot of ['fast', 'verifier'] as const) {
+      const target = slots[slot]
+      if (target === undefined) continue
+      delete model.route[slot]
+      delete model.id[slot]
+      delete model.thinking[slot]
+      delete model.contextWindow[slot]
+      if (target) {
+        // A removed route must leave review unavailable, never select a different paid model.
+        try {
+          validateModelSwitch(profile, a, { slot, ...target })
+          model.route[slot] = target.route
+          model.id[slot] = target.model
+        } catch (error) {
+          if (!(error instanceof HostError) || error.code !== 'E_MODEL_UNSUPPORTED') throw error
+        }
+      }
+    }
+    view = { ...view, model }
+  }
 
   if (workspace && opts.seams?.sandbox)
     throw new HostError('E_SEAM_IMMUTABLE', 'the sandbox seam cannot override a workspace runtime', {

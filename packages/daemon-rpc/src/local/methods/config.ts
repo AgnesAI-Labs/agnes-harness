@@ -11,6 +11,8 @@ import {
   type ConfigSnapshot,
   type ConfigTestInput,
   rpcError,
+  ModelSlotsSnapshot,
+  validateAgainst,
 } from '@agnes/protocol'
 
 export type PublishChildEngines = (
@@ -34,6 +36,7 @@ export function registerConfiguration(
   applied?: (snapshot: ConfigSnapshot) => Promise<ConfigSnapshot>,
   present?: (snapshot: ConfigSnapshot) => ConfigSnapshot,
   publishChildEngines?: PublishChildEngines,
+  modelSlotCatalog?: () => Promise<readonly { route?: string; id: string }[]>,
 ): void {
   let restartRevision: number | undefined
   const status = (snapshot: ConfigSnapshot): ConfigSnapshot =>
@@ -61,6 +64,29 @@ export function registerConfiguration(
   }
   endpoint.register('_agnes/v1/config.get', (_params, context) =>
     invoke(context, async (s) => status(await s.get())),
+  )
+  endpoint.register('_agnes/v1/config.modelSlots.get', (_params, context) =>
+    invoke(context, async (s) => {
+      if (!s.modelSlots) throw new Error('model slots unavailable')
+      return s.modelSlots()
+    }),
+  )
+  endpoint.register('_agnes/v1/config.modelSlots.save', (params, context) =>
+    invoke(context, async (s) => {
+      if (!s.saveModelSlots) throw new Error('model slots unavailable')
+      if (!validateAgainst(ModelSlotsSnapshot, params).ok)
+        throw Object.assign(new Error('invalid model slots'), { code: 'CONFIG_INVALID_INPUT' })
+      const input = params as ModelSlotsSnapshot
+      const targets = Object.values(input.slots).filter((target) => target != null)
+      const catalog = targets.length ? await modelSlotCatalog?.() : []
+      if (
+        targets.some(
+          (target) => !catalog?.some((model) => model.route === target.route && model.id === target.model),
+        )
+      )
+        throw Object.assign(new Error('model unavailable'), { code: 'CONFIG_MODEL_UNAVAILABLE' })
+      return s.saveModelSlots(input)
+    }),
   )
   endpoint.register('_agnes/v1/config.providers', (_params, context) => invoke(context, (s) => s.providers()))
   endpoint.register('_agnes/v1/config.test', (params, context) =>

@@ -1,6 +1,12 @@
 export const reviewCatalog = {
   en: {
     title: 'Auto review',
+    modelLink: 'Configure auxiliary models',
+    slotConfigured: 'Profile default configured',
+    slotUnset:
+      'Reviewer slot not set or unavailable. Calls escalate to a human; the main model is never used.',
+    slotLoading: 'Checking reviewer slot…',
+    slotFailed: 'Reviewer slot status unavailable',
     help: 'A reviewer handles calls that need approval. Hard limits remain enforced. Invalid results and exhausted budgets go to you. Changes apply to future calls; nothing is learned silently.',
     enabled: 'Use model review',
     modelSlot: 'Reviewer model profile',
@@ -16,12 +22,18 @@ export const reviewCatalog = {
     save: 'Save policy',
     saved: 'Policy saved',
     failed: 'Policy unavailable or save failed',
-    profileHelp: 'Configure the selected profile in model settings. A missing profile asks you instead.',
+    profileHelp:
+      'Set the selected slot in Auxiliary models. Defaults apply to new sessions; existing sessions can override it in the model picker.',
     overrides: 'Explicit future rules',
     clear: 'Clear future rules',
   },
   'zh-CN': {
     title: '自动审查',
+    modelLink: '配置辅助模型',
+    slotConfigured: 'Profile 默认值已配置',
+    slotUnset: '审查档位未设置或不可用。调用将转交人工，绝不使用主模型。',
+    slotLoading: '正在检查审查档位…',
+    slotFailed: '无法读取审查档位状态',
     help: '审查模型处理原本需要批准的调用。硬限制仍然有效。无效结果或预算耗尽会转交你决定。修改只影响未来调用，不会静默学习。',
     enabled: '使用模型审查',
     modelSlot: '审查模型档位',
@@ -37,7 +49,7 @@ export const reviewCatalog = {
     save: '保存策略',
     saved: '策略已保存',
     failed: '策略不可用或保存失败',
-    profileHelp: '在模型设置中配置所选档位。档位未配置时会转交你决定。',
+    profileHelp: '在辅助模型中配置所选档位。默认值用于新会话；已有会话可在模型选择器中覆盖。',
     overrides: '显式未来规则',
     clear: '清除未来规则',
   },

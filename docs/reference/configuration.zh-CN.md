@@ -22,7 +22,7 @@
 | `AGNES_HOME` | 旧兼容变量，有弃用警告；AGH_HOME 优先，无自动迁移 |
 | `AGNES_PROFILE` / `--profile` | Profile 选择，通常为 `local-dev` |
 | `AGH_HOME/profiles/NAME/profile.yaml` | 用户 profile 层 |
-| `AGH_HOME/profiles/NAME/configuration.json` | Host 配置服务管理的账号、默认模型与引用，不能当成手工配置模板 |
+| `AGH_HOME/profiles/NAME/configuration.json` | Host 配置服务管理的账号、默认模型、辅助模型档位默认值与引用，不能当成手工配置模板 |
 | `PROJECT/.agh/profile.local.yaml` | 工作区覆盖，按信任/权限规则使用 |
 | `PROJECT/.agh/skills` / `PROJECT/.agh/hooks.json` | 工作区 Skill 与命令 hook 资源 |
 | `AGH_HOME/data`、`cache`、`secrets`、`auth` | 数据、缓存、凭据与身份状态 |
