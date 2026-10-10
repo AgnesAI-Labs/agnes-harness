@@ -1,4 +1,4 @@
-# ToolDef meta, the eight keys
+# ToolDef meta, eight required keys and one optional
 
 Generated from schema/tooldef.json by tools/gen-docs.ts. Do not edit by hand.
 
@@ -12,3 +12,4 @@ Generated from schema/tooldef.json by tools/gen-docs.ts. Do not edit by hand.
 | `costHint` | `{"oneOf":[{"type":"null"},{"type":"object","additionalProperties":false,"properties":{"credits":{"type":"number","minimum":0},"wallMs":{"type":"integer","minimum":0}}}]}` | An estimate for the budget preflight; null means the author declared no hint. Consumed by the budget stage. |
 | `deferLoading` | `{"type":["boolean","null"]}` | true keeps the tool out of the default disclosure until a search loads it. null defers to the package default, which the MCP importer reads as true; until that importer lands, null behaves as false. Consumed by disclosure. |
 | `requiresApproval` | `{"oneOf":[{"enum":["never","destructive","always"]},{"type":"null"}]}` | The approval band; null lets isDestructive and the command policy table decide. Consumed by the approval stage. |
+| `returnsImages` | `{"type":"boolean"}` | Optional; true declares that the tool's results carry pictures for the model. The call records it in its resolved policy, and request media sends a result's images only when the result is closed-world (trusted) and its call declared this. Absent means false: other tools' images, apart from read, computer_use and document_read, stay out of model requests. |

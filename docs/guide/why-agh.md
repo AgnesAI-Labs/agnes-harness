@@ -69,9 +69,9 @@ Ordinary third-party plugins run as trusted in-process code. Review their source
 
 ## From business systems to physical devices
 
-AGH plans to explore integration through MHS (Model Hardware Standard), bringing device state, human confirmation, and execution receipts into task workflows. The aim is to make integrations reusable across inspection, instrument coordination, and field operations.
+Devices connect through MHS (Model Hardware Standard), AGH's own device protocol, independent of MCP. A device registers its state, tools, and data sources with AgnesHub; the brain reads its state and calls its tools, so device state, human confirmation, and results join task workflows across inspection, instrument coordination, and field operations.
 
-**MHS integration documentation and examples are coming soon.** [Explore the device integration direction →](mhs.md)
+[Try devices without hardware →](mhs.md)
 
 <a id="带着你的问题开始"></a>
 

@@ -15,7 +15,7 @@ Root [README.md](../../README.md) is the default English project overview; [READ
 - Lead with what AGH helps people do, with clear paths to try, build, and give feedback. Connect claims to tutorials, implementation, or reproducible evidence.
 - Keep both README editions and every documentation pair aligned on positioning, supported scope, commands, and collaboration policy.
 - Describe concrete scenarios without unsupported performance figures, customer claims, or compatibility promises.
-- Keep MHS goals and availability in the [device direction](../guide/mhs.md). “Coming soon” describes AGH's integration guides and examples.
+- Keep MHS goals and availability in the [MHS guide](../guide/mhs.md); the README and other pages follow it.
 - Retain third-party licensing and attribution in LICENSE, NOTICE, and [licensing](provenance.md). Research narratives, internal tasks, and writing references do not belong in user guides.
 
 <a id="随代码更新"></a>

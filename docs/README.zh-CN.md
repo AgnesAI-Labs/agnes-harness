@@ -6,7 +6,7 @@
 
 用 CLI 和 Web 跑通任务，用插件接入业务能力，用 Skills 积累方法，再为岗位打造自己的界面。从下面选择一条路径开始。
 
-[项目首页](../README.zh-CN.md) · [为什么选择 AGH](guide/why-agh.zh-CN.md) · [体验示例](guide/demo.zh-CN.md) · [MHS（即将开放）](guide/mhs.zh-CN.md)
+[项目首页](../README.zh-CN.md) · [为什么选择 AGH](guide/why-agh.zh-CN.md) · [体验示例](guide/demo.zh-CN.md) · [MHS 与设备](guide/mhs.zh-CN.md)
 
 ## 选择你的起点
 
@@ -14,6 +14,7 @@
 | --- | --- | --- |
 | **体验 AGH** | [安装](guide/install.zh-CN.md) → [首次运行](guide/quickstart.zh-CN.md) → [继续会话](guide/sessions.zh-CN.md) | 跑通一个任务，并在 Web 与 CLI 中找到记录 |
 | **把业务能力交给 Agent** | [后端插件](develop/backend.zh-CN.md) · [MCP](guide/mcp.zh-CN.md) · [Skills](guide/skills.zh-CN.md) | 接入工具、外部服务或团队任务方法 |
+| **接入物理设备** | [MHS 与设备接入](guide/mhs.zh-CN.md) → [编写设备](guide/mhs-device.zh-CN.md) → [火星基地](guide/mars-world.zh-CN.md) | 不接硬件先试用设备，编写设备并按协议检查，并让 Agent 使用它 |
 | **做一个业务工作台** | [前端面板](develop/frontend.zh-CN.md) → [前后端联动](develop/fullstack.zh-CN.md) | 为工作台增加界面，读取后端服务结果 |
 | **研究与扩展运行时** | [架构](develop/architecture.zh-CN.md) → [源码地图](develop/source-map.zh-CN.md) → [API](reference/api.zh-CN.md) | 看清请求、扩展与持久状态的实现路径 |
 
