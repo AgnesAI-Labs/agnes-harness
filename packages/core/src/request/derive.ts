@@ -719,6 +719,58 @@ function noteEvent(text: string): EventInput {
 }
 
 /**
+ * Mint surface nodes as provider messages, with one reorder: an assistant that asked for tools
+ * keeps its results immediately after it.
+ *
+ * A steer or a runtime note is a real surface row and may land between the call and its results.
+ * Pairing already treats that row as inside the pair. OpenAI-style providers do not: a user
+ * message between `tool_calls` and the tool result is rejected. The ledger order stays; only the
+ * minted request closes the pair and then emits the notes. A span with no result, or no note
+ * inside it, is left in surface order so an already-valid prefix does not move.
+ */
+function closeToolResultMessages(
+  surface: readonly SurfaceNode[],
+  render: (node: SurfaceNode) => RequestMessage,
+  toolCalls: DeriveInput['toolCalls'],
+): RequestMessage[] {
+  const owners = new Set<Seq>()
+  for (const call of toolCalls ?? []) owners.add(call.assistantSeq)
+  const messages: RequestMessage[] = []
+  for (let k = 0; k < surface.length; k++) {
+    const node = surface[k]
+    if (node === undefined) continue
+    if (node.kind === 'summary' && surface[k + 1]?.kind === 'assistant') {
+      messages.push(render(node), {
+        role: 'user',
+        seq: 0,
+        content: [{ type: 'text', text: SUMMARY_BRIDGE_TEXT }],
+      })
+      continue
+    }
+    if (node.kind !== 'assistant' || !owners.has(node.seq)) {
+      messages.push(render(node))
+      continue
+    }
+    const results: SurfaceNode[] = []
+    const between: SurfaceNode[] = []
+    let end = k + 1
+    while (end < surface.length) {
+      const next = surface[end]
+      if (next === undefined || next.kind === 'assistant' || next.kind === 'summary') break
+      if (next.kind === 'tool_result') results.push(next)
+      else between.push(next)
+      end++
+    }
+    messages.push(render(node))
+    if (results.length === 0 || between.length === 0) continue
+    for (const result of results) messages.push(render(result))
+    for (const note of between) messages.push(render(note))
+    k = end - 1
+  }
+  return messages
+}
+
+/**
  * The one place a request is assembled, in four segments: the contract slot, the prompt sections,
  * the surface as messages, and the runtime context delta. Everything the header stamps is computed
  * from the body that was actually minted, so the stamp cannot describe a request that was not sent.
@@ -770,14 +822,11 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   ]
   // A summary renders as an assistant message, and a replace may now end just before an assistant, so
   // a fixed user line keeps two assistant messages from meeting. Written by core, never from input.
-  const messages = input.surface.flatMap((n, k) => {
-    const message = toMessage(n, input.envelopeNonceFor(n.seq) ?? input.nonce, input.envelopeCache)
-    if (n.kind !== 'summary' || input.surface[k + 1]?.kind !== 'assistant') return [message]
-    return [
-      message,
-      { role: 'user' as const, seq: 0, content: [{ type: 'text' as const, text: SUMMARY_BRIDGE_TEXT }] },
-    ]
-  })
+  const messages = closeToolResultMessages(
+    input.surface,
+    (node) => toMessage(node, input.envelopeNonceFor(node.seq) ?? input.nonce, input.envelopeCache),
+    input.toolCalls,
+  )
   if (input.media !== undefined) validatePreparedMedia(messages, input.surface, input.media)
   let auxiliaryVisionBindingHash: string | undefined
   if (input.auxiliaryVision !== undefined) {

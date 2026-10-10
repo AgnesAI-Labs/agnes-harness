@@ -622,6 +622,39 @@ describe('deriveRequest', () => {
     })
   })
 
+  it('closes an assistant tool call before a steer that landed between the call and its results', () => {
+    seq = 0
+    const assistant = ev('assistant/message', { content: [], stopReason: 'tool_use' })
+    const steer = ev('user/message', {
+      content: [{ type: 'text', text: 'also check the window' }],
+      kind: 'steer',
+    })
+    const first = toolResult('refund window')
+    const second = toolResult('verified')
+    const surface = computeSurface(
+      [assistant, steer, first, ev('user/message', { content: [{ type: 'text', text: 'note' }] }), second],
+      {},
+    )
+    const out = deriveRequest({
+      ...base(),
+      surface,
+      ...NO_RC,
+      toolCalls: [{ assistantSeq: assistant.seq, toolUseId: 't', name: 'read', args: {}, ordinal: 0 }],
+    })
+    expect(out.request.messages.map((message) => message.role)).toEqual([
+      'assistant',
+      'tool',
+      'tool',
+      'user',
+      'user',
+    ])
+    expect(out.request.messages[0]?.toolCalls?.map((call) => call.toolUseId)).toEqual(['t'])
+    expect(out.request.messages[1]?.seq).toBe(first.seq)
+    expect(out.request.messages[2]?.seq).toBe(second.seq)
+    expect(textAt(out, 3)).toBe('also check the window')
+    expect(textAt(out, 4)).toBe('note')
+  })
+
   it('puts the harness sections in with the contributed ones, ordered', () => {
     seq = 0
     const input: DeriveInput = {
