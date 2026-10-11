@@ -2,7 +2,6 @@ import type { SessionWorkspaceChangesResult } from '@agnes/protocol'
 import { factChainLinks, type UiExtensionContext } from '@agnes/web-client'
 import { appServerErrorMessage, Button, Select, SettingsState, SettingsToolbar } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
-import { createPortal } from 'react-dom'
 import { panelContext } from './context.js'
 
 type Selection = { sessionId: string; path: string; revision?: string }
@@ -29,7 +28,7 @@ export function ChangesPanel({ context, headerId }: { context: UiExtensionContex
   )
 }
 
-function SessionChangesPanel({ context, headerId }: { context: UiExtensionContext; headerId?: string }) {
+function SessionChangesPanel({ context }: { context: UiExtensionContext; headerId?: string }) {
   const { session, mention } = panelContext(context),
     { t } = context
   const incoming = fileSelection(context.selection, session?.id)
@@ -80,7 +79,6 @@ function SessionChangesPanel({ context, headerId }: { context: UiExtensionContex
       clearTimeout(timer)
     }
   }, [session, scope, path, expectedRevision, refresh, t])
-  const header = headerId ? document.getElementById(headerId) : null
   const refreshButton = (
     <Button
       type="text"
@@ -102,7 +100,6 @@ function SessionChangesPanel({ context, headerId }: { context: UiExtensionContex
       data-testid="changes-panel"
       aria-label={t('workbench.changes.title')}
     >
-      {header ? createPortal(refreshButton, header) : refreshButton}
       {!session ? (
         <SettingsState tone="empty">{t('workbench.session')}</SettingsState>
       ) : (
@@ -121,7 +118,12 @@ function SessionChangesPanel({ context, headerId }: { context: UiExtensionContex
               }))}
             />
           </SettingsToolbar>
-          {error && <SettingsState tone="error">{error}</SettingsState>}
+          {error && (
+            <SettingsState tone="error">
+              {error}
+              {refreshButton}
+            </SettingsState>
+          )}
           {loading && !snapshot && (
             <SettingsState tone="loading">{t('workbench.changes.loading')}</SettingsState>
           )}

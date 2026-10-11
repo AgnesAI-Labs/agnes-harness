@@ -36,3 +36,7 @@ Registration returns an idempotent, identity-bound disposer. Bind it to the clie
 Session tool-group/session-info shapes remain backend-owned. `SessionToolsPanel` is the isolated renderer for `SessionCapabilitySet`, including enabled/disabled items and `source`/`rule` provenance, with an optional legacy `toolGroups` fallback; the registries do not normalize, expand or persist this data. Declare configuration sections with `createSchemaSettingsComponent` from the [configuration UI API](../extend/configuration-ui.md); save/test adapters do not change backend permissions.
 
 [Session workbench panels](../extend/workbench-panels.md) describes registered right/bottom dock contributions.
+
+### Contextual workbench panels
+
+`WorkbenchPanel.visibility` defaults to `always`. Use `contextual` with a presentation-only `when(context)` predicate for panels that need session content. `icon` names a shared icon; optional `title(context)` supplies a content title. Neither field changes authorization. Built-in panels use the right dock; the `bottom` edge remains available to plugins.

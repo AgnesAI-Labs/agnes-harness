@@ -258,3 +258,25 @@
     display: none;
   }
 }
+
+.workbench-dock-heading {
+  gap: var(--s4);
+  padding: var(--s8);
+}
+.workbench-header-actions {
+  flex-shrink: 0;
+}
+.workbench-panel-tabs {
+  flex: 1;
+}
+.workbench-panel-tabs [aria-selected="true"] {
+  color: var(--agnes-text-emphasis);
+  background: transparent;
+  border-bottom: 2px solid var(--agnes-brand-primary);
+  border-radius: 0;
+}
+@media (max-width: 767px) {
+  .workbench-toggle-label {
+    display: none;
+  }
+}

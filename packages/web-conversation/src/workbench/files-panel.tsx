@@ -1,6 +1,13 @@
 import type { SessionWorkspaceListResult, SessionWorkspaceReadResult } from '@agnes/protocol'
 import { fileViewerActions, type UiExtensionContext } from '@agnes/web-client'
-import { appServerErrorMessage, Button, SettingsState, SettingsToolbar } from '@agnes/web-ui'
+import {
+  appServerErrorMessage,
+  Button,
+  EmptyState,
+  Icon,
+  SettingsState,
+  SettingsToolbar,
+} from '@agnes/web-ui'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { panelContext } from './context.js'
@@ -103,16 +110,10 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
               <span className="workbench-file-chevron" aria-hidden="true">
                 {directory ? (open ? '▾' : '▸') : ''}
               </span>
-              <svg className="workbench-file-icon" viewBox="0 0 24 24" aria-hidden="true">
-                {directory ? (
-                  <path d="M3 7V5h7l2 2h9v13H3Z" />
-                ) : (
-                  <>
-                    <path d="M6 3h8l4 4v14H6Z" />
-                    <path d="M14 3v5h4" />
-                  </>
-                )}
-              </svg>
+              <Icon
+                name={directory ? (open ? 'folder-open' : 'folder') : 'file'}
+                className="workbench-file-icon"
+              />
               <span className="workbench-file-name">{entry.name}</span>
               {entry.git && <span className="workbench-git-mark">{t(`workbench.git.${entry.git}`)}</span>}
             </Button>
@@ -145,11 +146,22 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
           </Button>,
           header,
         )}
-      {error && <SettingsState tone="error">{error}</SettingsState>}
+      {error && (
+        <SettingsState tone="error">
+          {error}
+          <Button size="small" onClick={() => setRefresh((value) => value + 1)}>
+            {t('workbench.retry')}
+          </Button>
+        </SettingsState>
+      )}
       <div className="workbench-tree-scroll">
         {tree('')}
         {directories['']?.entries.length === 0 && (
-          <SettingsState tone="empty">{t('workbench.files.empty')}</SettingsState>
+          <EmptyState
+            icon={<Icon name="folder" size={48} />}
+            title={t('workbench.files.empty')}
+            description={t('workbench.files.emptyHelp')}
+          />
         )}
       </div>
       <section className="workbench-file-preview" aria-label={t('workbench.files.preview')}>

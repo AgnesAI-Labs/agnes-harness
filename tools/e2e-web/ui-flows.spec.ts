@@ -29,6 +29,13 @@ function surfaceCard(page: Page, title: string) {
     .locator('[data-testid^="ui-surface-"]')
     .filter({ hasText: title })
 }
+async function workbenchSurface(page: Page, title: string) {
+  await surfaceCard(page, title).getByTestId('ui-expand').click()
+  return page
+    .getByTestId('intelligent-ui-panel')
+    .locator('[data-testid^="ui-surface-"]')
+    .filter({ hasText: title })
+}
 async function artifactText(page: Page, runtime: Runtime) {
   const session = await current(page, runtime)
   const presented = await toolResult(session, 'present')
@@ -69,7 +76,7 @@ test('UI first run, Agent selection, demo read/cancel, account save and restart 
 }, info) => {
   test.setTimeout(120_000)
   await open(page, runtime)
-  await expect(page.getByTestId('composer-agent')).toContainText('Agent')
+  await expect(page.getByTestId('composer-agent')).toContainText('More')
   await turn(page, 'call read {"path":"report.md"}')
   const demo = await current(page, runtime)
   expect(JSON.stringify(await toolResult(demo, 'read'))).toContain('Synthetic delivery')
@@ -264,7 +271,7 @@ test('UI ask, plan approval, deliverable, child and goal cards perform their act
     page,
     `call present ${JSON.stringify({ files: [{ path: resolve(runtime.workspace, 'report.md') }] })}`,
   )
-  const card = surfaceCard(page, 'Deliverables / 交付物')
+  const card = await workbenchSurface(page, 'Deliverables / 交付物')
   await expect(card).toContainText('report.md')
   expect(await artifactText(page, runtime)).toContain('Synthetic delivery')
   await quality(page, info, 'deliverable-surface')
@@ -561,7 +568,7 @@ test('UI FDE bundle selection runs and restores its durable deliverable', async 
     throw new Error('FDE write must have a persisted output path')
   expect(await readFile(join(runtime.workspace, args.path), 'utf8')).toContain('Source-backed answer')
   await info.attach('fde-projection.json', { body: JSON.stringify(output), contentType: 'application/json' })
-  const card = surfaceCard(page, 'Deliverables / 交付物')
+  const card = await workbenchSurface(page, 'Deliverables / 交付物')
   await expect(card).toContainText('report.md')
   expect(await artifactText(page, runtime)).toContain('Source-backed answer')
   const url = page.url()

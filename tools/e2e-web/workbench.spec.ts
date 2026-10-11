@@ -72,6 +72,22 @@ test('workspace dock previews and mentions a file that the agent reads', async (
     data: { code: 'WORKSPACE_PATH_DENIED' },
   })
   await expect(files.locator('[data-path="report.md"] .workbench-git-mark')).toHaveText('Added')
+  await expect(page.getByTestId('workbench-bottom-toggle')).toHaveCount(0)
+  await expect(page.locator('#composer-workspace')).toBeHidden()
+  await page.getByTestId('workbench-tab-files').focus()
+  await page.keyboard.press('F6')
+  expect(await page.locator('#composer').evaluate((node) => node.contains(document.activeElement))).toBe(true)
+  await page.keyboard.press('Shift+F6')
+  expect(
+    await page.locator('#workbench-right').evaluate((node) => node.contains(document.activeElement)),
+  ).toBe(true)
+  await page.getByRole('button', { name: 'Expand', exact: true }).click()
+  expect(
+    await page
+      .locator('.workbench-split')
+      .evaluate((node) => (node as HTMLElement).style.getPropertyValue('--workbench-width')),
+  ).toBe('60vw')
+  await page.getByRole('button', { name: 'Collapse', exact: true }).click()
   expect(JSON.stringify(await toolResult(session, 'read'))).toContain('Synthetic delivery')
   await translated(page)
   await accessible(page, info, 'workspace-files')
@@ -170,14 +186,15 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await expect(session.jobsControl({ operation: 'kill', jobId: agent.id })).rejects.toMatchObject({
     data: { code: 'CAPABILITY_DENIED' },
   })
-  await page.getByTestId('workbench-bottom-toggle').click()
+  await page.getByTestId('workbench-right-toggle').click()
   const panel = page.getByTestId('terminal-panel')
+  await page.getByTestId('workbench-tab-terminal').click()
   await expect(page.getByTestId('workbench-tab-terminal')).toBeFocused()
-  const resize = page.locator('#workbench-bottom .workbench-resize')
-  await expect(resize).toHaveAttribute('aria-valuenow', '220')
+  const resize = page.locator('#workbench-right .workbench-resize')
+  await expect(resize).toHaveAttribute('aria-valuenow', '320')
   for (let i = 0; i < 8; i++) {
-    await resize.press('ArrowUp')
-    await expect(resize).toHaveAttribute('aria-valuenow', String(220 + (i + 1) * 16))
+    await resize.press('ArrowLeft')
+    await expect(resize).toHaveAttribute('aria-valuenow', String(320 + (i + 1) * 16))
   }
   await panel
     .getByRole('button', { name: /Attach.*Agent/ })
@@ -202,12 +219,12 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await expect(panel.getByRole('tab')).toHaveCount(2)
   await panel.getByRole('tab').last().press('ArrowLeft')
   await expect(panel.getByRole('tab').first()).toBeFocused()
-  await page.getByTestId('workbench-bottom-toggle').click()
+  await page.getByTestId('workbench-right-toggle').click()
   expect((await session.jobsRead(human.id)).job?.status).toBe('running')
   await session.detach()
   expect((await session.jobsRead(human.id)).job?.status).toBe('running')
   await page.reload()
-  await page.getByTestId('workbench-bottom-toggle').click()
+  await page.getByTestId('workbench-right-toggle').click()
   await expect(panel.getByRole('tab')).toHaveCount(2)
   await panel.getByRole('tab').first().click()
   await expect(output).toHaveValue(/WB1_TERMINAL_OK/)
@@ -238,9 +255,9 @@ test('session terminal survives UI detachment, follows agent output and honors p
         await expect(output).toHaveValue(/WB1_AFTER_INTERRUPT/)
         await settled(page)
         await workbenchScreen(page, info, `p2-${locale}-${theme}-${width}-after`, folder)
-        await page.getByTestId('workbench-bottom-toggle').click()
+        await page.getByTestId('workbench-right-toggle').click()
         await workbenchScreen(page, info, `p2-${locale}-${theme}-${width}-before`, folder)
-        await page.getByTestId('workbench-bottom-toggle').click()
+        await page.getByTestId('workbench-right-toggle').click()
       }
   await page.evaluate(() => {
     localStorage.setItem('agnes-locale', 'en')
@@ -317,7 +334,7 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await expect(panel.getByRole('status').filter({ hasText: 'Killed' })).toBeVisible({ timeout: 30_000 })
   await page.getByTestId('workbench-tab-terminal').press('Escape')
   await expect(panel).toBeHidden()
-  await expect(page.getByTestId('workbench-bottom-toggle')).toBeFocused()
+  await expect(page.getByTestId('workbench-right-toggle')).toBeFocused()
 })
 
 test('goal panel follows durable progress and shares authorized human controls', async ({
@@ -513,7 +530,7 @@ test('changed files review follows confirmed agent effects and preserves current
   await expect(panel.getByTestId('changes-diff')).toContainText('+export const answer = 2')
   // An external human change is never rolled into the agent's historical diff.
   await writeFile(join(runtime.workspace, 'review.ts'), 'export const answer = 99\n')
-  await page.getByTestId('changes-refresh').click()
+  // Polling refresh observes external edits without a manual refresh action.
   await expect(panel).toContainText('changed after the recorded agent edit')
   await expect(panel).toContainText('changed since the preview was read')
   const newer = await session.workspaceChanges({ path: 'review.ts', expectedRevision: preview.revision })

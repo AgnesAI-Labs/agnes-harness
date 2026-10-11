@@ -139,7 +139,7 @@ export interface ComposerView {
   send: { disabled: boolean; label: string; mode: 'idle' | 'busy' | 'pending'; title: string }
   stopping: boolean
   usage: UsageView | undefined
-  workspace: { disabled: boolean; label: string; title: string }
+  workspace: { disabled: boolean; label: string; title: string; visible?: boolean }
 }
 
 export interface ComposerHandle {

@@ -43,7 +43,7 @@ async function usable(page: Page, info: TestInfo, name: string) {
     const dialogs = [...document.querySelectorAll('dialog[open], [role="dialog"][aria-modal="true"]')].filter(
       visible,
     )
-    const sheet = [...document.querySelectorAll<HTMLElement>('#workbench-right, #workbench-bottom')].find(
+    const sheet = [...document.querySelectorAll<HTMLElement>('#workbench-right, #workbench-right')].find(
       (node) => visible(node) && getComputedStyle(node).position === 'fixed',
     )
     const root = dialogs.at(-1) ?? sheet ?? document
@@ -390,7 +390,8 @@ for (const locale of ['en', 'zh-CN'])
           await expect(page.locator('#prompt')).toBeFocused()
           await expect(page.locator('#prompt')).toHaveValue('"review notes.ts"')
           await page.locator('#prompt').fill('')
-          await page.getByTestId('workbench-bottom-toggle').click()
+          await page.getByTestId('workbench-right-toggle').click()
+          await page.getByTestId('workbench-tab-terminal').click()
           await expect(page.getByTestId('terminal-panel')).toBeVisible()
           await usable(page, info, `terminal-${viewport.width}`)
           await page.getByTestId('terminal-new').click()
@@ -408,15 +409,15 @@ for (const locale of ['en', 'zh-CN'])
           await usable(page, info, `terminal-running-${viewport.width}`)
           if (viewport.width === 375) await capture('workbench', viewport.width)
           if (viewport.width === 768) {
-            await page.locator('#workbench-bottom .workbench-resize').press('Shift+Tab')
+            await page.locator('#workbench-right .workbench-resize').press('Shift+Tab')
             await expect
               .poll(() =>
-                page.locator('#workbench-bottom').evaluate((host) => host.contains(document.activeElement)),
+                page.locator('#workbench-right').evaluate((host) => host.contains(document.activeElement)),
               )
-              .toBe(false)
+              .toBe(true)
           }
           await page.getByTestId('workbench-tab-terminal').press('Escape')
-          await expect(page.getByTestId('workbench-bottom-toggle')).toBeFocused()
+          await expect(page.getByTestId('workbench-right-toggle')).toBeFocused()
           expect(
             (await session.jobsRead()).jobs
               .filter((job) => job.owner === 'human')
@@ -447,9 +448,10 @@ for (const locale of ['en', 'zh-CN'])
           await page.keyboard.press('Escape')
           await expect(page.locator('.sidebar')).toBeHidden()
           if (viewport.width === 768) {
-            await page.getByTestId('workbench-bottom-toggle').click()
             await page.getByTestId('workbench-right-toggle').click()
-            await expect(page.locator('#workbench-bottom')).toBeVisible()
+            await expect(page.getByTestId('workbench-bottom-toggle')).toHaveCount(0)
+            await expect(page.locator('#workbench-bottom')).toBeHidden()
+            await expect(page.locator('#workbench-right')).toBeVisible()
             await page.setViewportSize(phone)
             await expect(page.locator('#workbench-bottom')).toBeHidden()
             await expect(page.locator('#workbench-right')).toBeVisible()

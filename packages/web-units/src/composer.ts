@@ -17,7 +17,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
 import { USER_MESSAGE_ATTACHMENT_LIMITS } from '@agnes/protocol-validation'
-import { Button, SettingsTextArea } from '@agnes/web-ui'
+import { Button, Icon, SettingsTextArea } from '@agnes/web-ui'
 import {
   type ChangeEvent,
   createElement,
@@ -42,6 +42,7 @@ import {
   INITIAL_VIEW,
 } from './composer/contracts.js'
 import type { ComposerAttachment } from './composer/image-files.js'
+import { ComposerExtras } from './composer/extras.js'
 import { useComposerPickers } from './composer/pickers.js'
 import { renderComposerQueue } from './composer/queue.js'
 import { ReferencePicker } from './reference-picker.js'
@@ -310,30 +311,27 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       createElement(
         'div',
         { className: 'composer-controls' },
-        slots?.left,
+        createElement(
+          ComposerExtras,
+          { label: dependencies.translate('composer.extra.title') },
+          slots?.left,
+          slots?.right,
+          slots?.plan,
+        ),
         createElement(
           Button,
           {
             id: 'composer-workspace',
             className: 'composer-workspace',
+            appearance: 'ghost',
+            hidden: !(view.workspace.visible ?? !view.hasSession),
             htmlType: 'button',
             'aria-haspopup': 'dialog',
             title: view.workspace.title,
             disabled: view.workspace.disabled,
             onClick: onWorkspace,
           },
-          createElement(
-            'svg',
-            {
-              className: 'icon icon-folder',
-              'data-agnes-region': 'icon',
-              viewBox: '0 0 16 16',
-              'aria-hidden': true,
-            },
-            createElement('path', {
-              d: 'M5.37012 2.8418C5.52719 2.84178 5.68146 2.88387 5.81641 2.96289C5.95148 3.04201 6.06232 3.15581 6.13672 3.29199L6.74414 4.40137H12.7383C13.2166 4.40139 13.6084 4.78249 13.6084 5.25391V12.6631C13.6082 13.1343 13.2165 13.5146 12.7383 13.5146H2.7627C2.28458 13.5146 1.89277 13.1343 1.89258 12.6631V3.69434C1.89258 3.22297 2.28447 2.84189 2.7627 2.8418H5.37012ZM2.83496 11.4932V12.5908H12.667V11.5645H12.666V8.00488L2.84961 7.99121L2.83496 11.4932ZM2.83496 7.06738H12.666V5.32617H6.18066L6.16016 5.28809L5.32715 3.76562H2.83496V7.06738Z',
-            }),
-          ),
+          createElement(Icon, { name: 'folder' }),
           createElement('span', { 'data-workspace-label': true }, view.workspace.label),
           createElement(
             'svg',
@@ -353,6 +351,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             ref: permission,
             id: 'composer-permission',
             className: 'composer-permission',
+            appearance: 'ghost',
+            'data-permission': view.permission.selected ?? 'unknown',
             htmlType: 'button',
             'aria-haspopup': 'listbox',
             'aria-expanded': false,
@@ -360,13 +360,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             title: dependencies.translate('composer.permission.workspace'),
             disabled: view.permission.disabled,
           },
-          createElement(
-            'svg',
-            { className: 'icon', 'data-agnes-region': 'icon', viewBox: '0 0 24 24', 'aria-hidden': true },
-            createElement('path', {
-              d: 'M12 3 5 6.5v5.2c0 4.4 2.9 8.4 7 9.8 4.1-1.4 7-5.4 7-9.8V6.5L12 3zm0 2.1 5 2.5v4.1c0 3.4-2.2 6.5-5 7.7-2.8-1.2-5-4.3-5-7.7V7.6l5-2.5z',
-            }),
-          ),
+          createElement(Icon, { name: 'shield' }),
           createElement(
             'span',
             { 'data-permission-label': true },
@@ -384,8 +378,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           ),
         ),
         slots?.model,
-        slots?.right,
-        slots?.plan,
         createElement(
           'div',
           { className: 'model-field' },
@@ -418,7 +410,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             ref: usage,
             id: 'session-usage',
             'aria-label': dependencies.translate('composer.usage.label'),
-            hidden: dependencies.UsagePanel ? !view.usage : true,
+            hidden: !view.usage || view.usage.context.tokens / view.usage.context.window < 0.6,
           },
           dependencies.UsagePanel
             ? createElement(dependencies.UsagePanel, {
@@ -459,7 +451,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           {
             'data-testid': 'composer-cancel',
             id: 'cancel',
-            className: 'secondary-button compact',
+            appearance: 'ghost',
+            size: 'small',
             htmlType: 'button',
             hidden: view.cancel.hidden,
             disabled: view.cancel.disabled,
@@ -486,7 +479,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           {
             id: 'composer-attach',
             htmlType: 'button',
-            className: 'secondary-button compact',
+            appearance: 'ghost',
+            size: 'small',
             'aria-label': dependencies.translate('composer.attachment.add'),
             'aria-describedby': 'composer-image-hint',
             'aria-disabled':
@@ -514,19 +508,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               fileInput.current?.click()
             },
           },
-          createElement(
-            'svg',
-            { className: 'icon', viewBox: '0 0 24 24', 'aria-hidden': true },
-            createElement('path', {
-              d: 'm16 6l-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551',
-            }),
-          ),
+          createElement(Icon, { name: 'plus' }),
         ),
         createElement(
           Button,
           {
             id: 'send',
-            className: 'primary-button',
+            appearance: 'primary',
             htmlType: 'submit',
             disabled: view.send.disabled,
             'data-mode': view.send.mode,

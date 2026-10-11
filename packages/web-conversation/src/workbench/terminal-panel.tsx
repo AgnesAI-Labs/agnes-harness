@@ -255,6 +255,7 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
         <Button
           size="small"
           disabled={busy}
+          appearance="primary"
           data-testid="terminal-new"
           onClick={() => void control({ operation: 'open', shell, columns: 100, rows: 30 })}
         >

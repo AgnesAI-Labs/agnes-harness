@@ -43,11 +43,16 @@ it('restores focus on Escape, resizes with keys, retires registrations and detac
     order: 2,
     edge: 'right',
     titleKey: 'Second',
+    visibility: 'contextual',
+    when: (context) => context.data === 'show',
     component: ({ context }) => <p>Second panel {(context.selection as { path?: string })?.path}</p>,
   })
   let replacement: (() => void) | undefined
+  const plugins: Array<() => void> = []
   try {
     renderRegion(host, <Dock context={{ t: (key) => key }} />)
+    expect(document.getElementById('workbench-tab-test.second')).toBeNull()
+    renderRegion(host, <Dock context={{ t: (key) => key, data: 'show' }} />)
     const toggle = host.querySelector('[data-edge="right"]') as HTMLButtonElement
     flushSync(() => toggle.click())
     const dock = document.getElementById('workbench-right') as HTMLElement
@@ -89,6 +94,36 @@ it('restores focus on Escape, resizes with keys, retires registrations and detac
     })
     flushSync(first)
     expect(dock.textContent).toContain('Replacement panel')
+    expect(host.querySelector('[data-edge="bottom"]')).toBeNull()
+    flushSync(() => {
+      for (let index = 0; index < 6; index++)
+        plugins.push(
+          workbenchPanels.register({
+            id: `test.extra.${index}`,
+            order: index + 10,
+            edge: 'right',
+            titleKey: `Extra ${index}`,
+            component: () => <p>Extra content {index}</p>,
+          }),
+        )
+      plugins.push(
+        workbenchPanels.register({
+          id: 'test.bottom',
+          order: 1,
+          edge: 'bottom',
+          titleKey: 'Plugin bottom',
+          component: () => <p>Bottom plugin content</p>,
+        }),
+      )
+    })
+    expect(dock.querySelectorAll('[role="tab"]')).toHaveLength(5)
+    const firstTab = dock.querySelector('[role="tab"]') as HTMLButtonElement
+    flushSync(() => firstTab.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true })))
+    expect(document.activeElement?.id).toBe('workbench-tab-test.extra.5')
+    expect(dock.textContent).toContain('Extra content 5')
+    expect(dock.querySelectorAll('[role="tab"]')).toHaveLength(5)
+    flushSync(() => (host.querySelector('[data-edge="bottom"]') as HTMLButtonElement).click())
+    expect(document.getElementById('workbench-bottom')?.textContent).toContain('Bottom plugin content')
     const consumedEscape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
     consumedEscape.preventDefault()
     flushSync(() => dock.dispatchEvent(consumedEscape))
@@ -107,6 +142,7 @@ it('restores focus on Escape, resizes with keys, retires registrations and detac
     first()
     second()
     replacement?.()
+    for (const remove of plugins) remove()
     document.body.replaceChildren()
     localStorage.clear()
   }

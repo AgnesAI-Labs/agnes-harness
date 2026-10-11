@@ -1220,6 +1220,15 @@ function stopWithTimeout(stop: (() => Promise<void>) | undefined): Promise<boole
   return sessionController.stopWithTimeout(stop)
 }
 const settings = createSettingsController({ client, onSaved: savedConfiguration, onError: showError })
+document.addEventListener('agnes:permission-settings', () =>
+  run(async () => {
+    settingsRegion.open('model')
+    await settings.open()
+    document
+      .getElementById('config-form')
+      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'security', bubbles: true }))
+  }),
+)
 clientModules.locale.subscribe(() => settings.refreshLocale())
 const firstRun = createFirstRunController({
   host: element('first-run-root', 'div'),
@@ -1262,6 +1271,12 @@ const sessionActions = createSessionActions({
     showError(error)
   },
   translate: t,
+})
+document.addEventListener('agnes:rename-current-session', (event) => {
+  if (!current || draftingNew || sessionPending) return
+  const trigger = event.target
+  if (trigger instanceof HTMLElement)
+    void sessionActions.act('rename', current.id, trigger.textContent ?? '', trigger)
 })
 let sessionRecovery: { id: string; message: string } | undefined
 function errorMessage(error: unknown): string {

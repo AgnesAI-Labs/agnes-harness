@@ -4,7 +4,7 @@ English | [简体中文](workbench.zh-CN.md)
 
 [Documentation](../README.md) · [Web sessions](web.md) · [Execution evidence](fact-chain.md)
 
-Use the session's right and bottom docks to inspect files and execution alongside the conversation. A fresh browser starts with the docks closed. Open a panel, select its tab, resize the separator or collapse it; sizes are remembered locally. On smaller screens panels use a sheet. Tabs support arrow/Home/End keys, resize separators support arrows, and Escape closes a dock.
+Open **Workbench** in the session header to inspect **Files**, **Changes**, the **Activity record** and **Terminal** alongside the conversation. Goals and business views appear when the session has that content; additional panels are in **More**. A fresh browser starts with the workbench closed. Select a tab, resize the separator or expand to 60% of the window; size and tab selection are remembered locally. On narrow screens it fills the screen. Tabs support arrow/Home/End keys, resize separators support arrows, and Escape closes the workbench and returns focus. F6 and Shift+F6 cycle the task regions. Opening the terminal panel does not start a process; choose **New terminal** to start one.
 
 ## Inspect files
 

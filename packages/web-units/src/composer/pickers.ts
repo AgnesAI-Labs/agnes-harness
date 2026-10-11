@@ -82,5 +82,7 @@ export function useComposerPickers({
     modelPicker.current?.render(pickerState(view))
     permissionPicker.current?.render(view.permission)
     renderUsage.current?.(view.usage, view.connected)
+    if (usage.current)
+      usage.current.hidden = !view.usage || view.usage.context.tokens / view.usage.context.window < 0.6
   }, [view, dependencies, onError, onModelSelect, onPermissionSelect])
 }

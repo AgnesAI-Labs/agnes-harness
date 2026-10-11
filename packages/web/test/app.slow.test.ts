@@ -453,33 +453,33 @@ describe('web permission synchronization', () => {
       })
     publish(false)
     await vi.waitFor(() => expect(old.projectUIPatch).toHaveBeenCalledTimes(1))
-    choose('完全权限')
-    await vi.waitFor(() => expect(label()).toBe('完全权限'))
+    choose('完全访问')
+    await vi.waitFor(() => expect(label()).toBe('完全访问'))
     expect(old.setYolo).toHaveBeenLastCalledWith(true)
     staleReady.resolve()
     await vi.waitFor(() => expect(old.projectUIPatch).toHaveBeenCalledTimes(2))
-    expect(label()).toBe('完全权限')
+    expect(label()).toBe('完全访问')
     freshReady.resolve()
     const opened = old.projectUIOpening.mock.calls.length
     document.querySelector<HTMLButtonElement>('[data-session="old"]')?.click()
     await vi.waitFor(() => expect(old.projectUIOpening.mock.calls.length).toBeGreaterThan(opened))
-    await vi.waitFor(() => expect(label()).toBe('完全权限'))
+    await vi.waitFor(() => expect(label()).toBe('完全访问'))
     expect(old.setYolo.mock.calls.some(([enabled]) => enabled === false)).toBe(false)
 
-    choose('工作区内修改')
+    choose('可修改工作区')
     await vi.waitFor(() => expect(old.setYolo).toHaveBeenLastCalledWith(false))
-    await vi.waitFor(() => expect(label()).toBe('工作区内修改'))
+    await vi.waitFor(() => expect(label()).toBe('可修改工作区'))
     const applied = old.setYolo.mock.calls.length
-    choose('工作区内修改')
+    choose('可修改工作区')
     await vi.waitFor(() => expect(old.setYolo.mock.calls.length).toBe(applied + 1))
     expect(old.setYolo).toHaveBeenLastCalledWith(false)
 
     await vi.waitFor(() => expect(document.querySelector('[role="listbox"]')).toBeNull())
     const calls = old.setYolo.mock.calls.length
     publish(true)
-    await vi.waitFor(() => expect(label()).toBe('完全权限'))
+    await vi.waitFor(() => expect(label()).toBe('完全访问'))
     publish(false)
-    await vi.waitFor(() => expect(label()).toBe('工作区内修改'))
+    await vi.waitFor(() => expect(label()).toBe('可修改工作区'))
     submit('use the remotely selected workspace permissions')
     await vi.waitFor(() => expect(old.prompt).toHaveBeenCalled())
     expect(old.setYolo).toHaveBeenCalledTimes(calls)
@@ -533,7 +533,7 @@ describe('web permission synchronization', () => {
       submit('wait after the opening failed')
       const submittedAfterFailure = old.prompt.mock.calls.length
       ready.resolve()
-      await vi.waitFor(() => expect(label()).toBe(before ? '工作区内修改' : '完全权限'))
+      await vi.waitFor(() => expect(label()).toBe(before ? '可修改工作区' : '完全访问'))
       old.prompt.mockClear()
       submit('use the current permission')
       await vi.waitFor(() =>
@@ -634,12 +634,12 @@ describe('web permission synchronization', () => {
     expect(old.prompt).not.toHaveBeenCalled()
     const applied = deferred<{ effectiveFromSeq: number }>()
     old.setYolo.mockImplementationOnce(() => applied.promise)
-    choose('工作区内修改')
+    choose('可修改工作区')
     await vi.waitFor(() => expect(old.setYolo).toHaveBeenCalledWith(false))
     submit('still waiting')
     expect(old.prompt).not.toHaveBeenCalled()
     applied.resolve({ effectiveFromSeq: 11 })
-    await vi.waitFor(() => expect(label()).toBe('工作区内修改'))
+    await vi.waitFor(() => expect(label()).toBe('可修改工作区'))
     submit('confirmed permission')
     await vi.waitFor(() =>
       expect(old.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'confirmed permission' }], {
@@ -659,8 +659,8 @@ describe('web permission synchronization', () => {
     expect(old.prompt).not.toHaveBeenCalled()
     expect(old.setYolo).toHaveBeenCalledTimes(1)
     old.setYolo.mockImplementationOnce(async () => ({ effectiveFromSeq: ++timeline.upto }))
-    choose('工作区内修改')
-    await vi.waitFor(() => expect(label()).toBe('工作区内修改'))
+    choose('可修改工作区')
+    await vi.waitFor(() => expect(label()).toBe('可修改工作区'))
     submit('confirmed after reconnect')
     await vi.waitFor(() =>
       expect(old.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'confirmed after reconnect' }], {
@@ -803,7 +803,7 @@ describe('web session selection', () => {
         expect(model.disabled).toBe(false)
         expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-b')
       })
-      expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全权限')
+      expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全访问')
       // 会话参数在模型行展开的详情里：模型列表 → 详情 → 参数选项三级。
       const row = (index: number) =>
         document.querySelectorAll<HTMLElement>('#model-listbox [role="option"]')[index]
@@ -903,17 +903,17 @@ describe('web session selection', () => {
         const permissionCalls = fresh.setYolo.mock.calls.length
         ready.resolve()
         await vi.waitFor(() =>
-          expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('工作区内修改'),
+          expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('可修改工作区'),
         )
         expect.soft(submittedBeforeOpening).toBe(0)
         expect.soft(permissionCalls).toBe(reconnectDuring === 'model' ? 0 : 1)
         expect.soft(prompt.value).toBe('use the remembered selection')
         permission.click()
         ;[...document.querySelectorAll<HTMLElement>('[role="option"]')]
-          .find((row) => row.querySelector('.permission-picker-label')?.textContent === '完全权限')
+          .find((row) => row.querySelector('.permission-picker-label')?.textContent === '完全访问')
           ?.click()
         await vi.waitFor(() =>
-          expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全权限'),
+          expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全访问'),
         )
         submit('use the remembered selection')
       }
@@ -924,7 +924,7 @@ describe('web session selection', () => {
           references: [],
         }),
       )
-      expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全权限')
+      expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全访问')
     },
     20_000,
   )
@@ -2532,9 +2532,7 @@ describe('session action review regressions', () => {
 
   it('retains a renamed paged-out current session through the next transcript render', async () => {
     const { rename, old, on } = await boot({ value: false })
-    // 菜单项只在展开后存在（面板挂在 body 上），所以先点开触发按钮。
-    document.querySelector<HTMLButtonElement>('[data-session-action-id="old"]')?.click()
-    menuItem('重命名')?.click()
+    document.querySelector<HTMLButtonElement>('#task-title')?.click()
     const dialog = document.querySelector('.session-rename-dialog') as HTMLDialogElement
     ;(dialog.querySelector('input') as HTMLInputElement).value = '改名后'
     dialog.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }))

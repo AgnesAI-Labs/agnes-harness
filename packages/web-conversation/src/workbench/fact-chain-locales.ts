@@ -3,7 +3,7 @@ export const factChainCatalog: LocaleCatalog = {
   en: {
     'facts.download': 'Download artifact',
     'facts.downloadFailed': 'Artifact unavailable. Try again or check its retention status.',
-    'facts.title': 'Execution evidence',
+    'facts.title': 'Activity record',
     'facts.empty': 'Choose a request, tool or artifact to view its record.',
     'facts.loading': 'Loading execution records…',
     'facts.error': 'Execution records could not load.',
@@ -113,7 +113,7 @@ export const factChainCatalog: LocaleCatalog = {
     'facts.futureDeny': '拒绝未来同参数调用',
     'facts.ruleSaved': '显式未来规则已保存',
     'facts.ruleFailed': '无法保存未来规则',
-    'facts.title': '执行依据',
+    'facts.title': '执行记录',
     'facts.empty': '选择请求、工具或产物，查看对应记录。',
     'facts.loading': '正在读取执行记录…',
     'facts.error': '无法读取执行记录。',

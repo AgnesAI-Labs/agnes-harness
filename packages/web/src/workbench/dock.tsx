@@ -6,11 +6,22 @@ import {
   workbenchPanels,
 } from '@agnes/web-client'
 import type { WorkbenchContext } from '@agnes/web-conversation/workbench'
-import { Button, renderRegion, unmountRegion } from '@agnes/web-ui'
+import {
+  Button,
+  Icon,
+  IconButton,
+  type IconName,
+  icons,
+  Menu,
+  Tooltip,
+  renderRegion,
+  unmountRegion,
+} from '@agnes/web-ui'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 
 type Layout = { rightOpen: boolean; bottomOpen: boolean; rightWidth: number; bottomHeight: number }
+const sharedIcon = (name: string | undefined): name is IconName => !!name && Object.hasOwn(icons, name)
 const edges = ['right', 'bottom'] as const
 const key = 'agnes.workbench.layout.v1'
 const defaults: Layout = { rightOpen: false, bottomOpen: false, rightWidth: 320, bottomHeight: 220 }
@@ -34,11 +45,22 @@ function readLayout(): Layout {
 export function Dock({ context }: { context: UiExtensionContext }) {
   useSyncExternalStore(workbenchPanels.subscribe, workbenchPanels.getSnapshot)
   const [layout, setLayout] = useState(readLayout)
+  const [expanded, setExpanded] = useState(false)
   const [factTarget, setFactTarget] = useState<FactChainParams>()
   const returnFocus = useRef<Partial<Record<'right' | 'bottom', HTMLElement>>>({})
   const sessionId = (context.data as WorkbenchContext)?.session?.id
   const [selection, setSelection] = useState<unknown>()
-  const [selected, setSelected] = useState({ right: 'files', bottom: 'terminal' })
+  const [selected, setSelected] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('agnes.workbench.selection.v1') ?? '{}')
+      return {
+        right: typeof saved.right === 'string' ? saved.right : 'files',
+        bottom: typeof saved.bottom === 'string' ? saved.bottom : 'terminal',
+      }
+    } catch {
+      return { right: 'files', bottom: 'terminal' }
+    }
+  })
   const surfaces = useMemo(
     () => ({
       split: document.querySelector<HTMLElement>('.workbench-split'),
@@ -71,6 +93,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       target.focus()
     else controls.current?.querySelector<HTMLButtonElement>(`[data-edge="${edge}"]`)?.focus()
   }, [])
+  useEffect(() => setFactTarget(undefined), [sessionId])
   useEffect(() => {
     const sheet = window.matchMedia('(max-width: 767px)')
     const reconcile = () => {
@@ -87,10 +110,9 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     return () => sheet.removeEventListener('change', reconcile)
   }, [surfaces])
   useEffect(() => {
-    setFactTarget(undefined)
     const openPanel = (id: string) => {
       const panel = workbenchPanels.get(id)
-      if (!panel) return false
+      if (!panel || (panel.visibility === 'contextual' && !panel.when?.(context))) return false
       rememberFocus(panel.edge)
       setSelected((value) => ({ ...value, [panel.edge]: id }))
       setLayout((value) => ({
@@ -113,7 +135,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
       removeFacts()
       removePanel()
     }
-  }, [sessionId, rememberFocus])
+  }, [sessionId, rememberFocus, context])
   useEffect(
     () => () => {
       surfaces.split?.classList.remove('workbench-right-open', 'workbench-bottom-open')
@@ -124,6 +146,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   useEffect(() => {
     try {
       localStorage.setItem(key, JSON.stringify(layout))
+      localStorage.setItem('agnes.workbench.selection.v1', JSON.stringify(selected))
     } catch {
       /* in-memory layout remains usable */
     }
@@ -131,14 +154,14 @@ export function Dock({ context }: { context: UiExtensionContext }) {
     if (!split) return
     split.classList.toggle('workbench-right-open', layout.rightOpen)
     split.classList.toggle('workbench-bottom-open', layout.bottomOpen)
-    split.style.setProperty('--workbench-width', `${layout.rightWidth}px`)
-    split.parentElement?.style.setProperty('--workbench-width', `${layout.rightWidth}px`)
+    split.style.setProperty('--workbench-width', expanded ? '60vw' : `${layout.rightWidth}px`)
+    split.parentElement?.style.setProperty('--workbench-width', expanded ? '60vw' : `${layout.rightWidth}px`)
     split.style.setProperty('--workbench-height', `${layout.bottomHeight}px`)
     for (const edge of edges) {
       const host = surfaces[edge]
       if (host) host.hidden = !layout[`${edge}Open`]
     }
-  }, [layout, surfaces])
+  }, [layout, surfaces, expanded, selected])
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
       const edge = edges.find(
@@ -179,7 +202,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   }, [layout, surfaces, restoreFocus])
   const openPanel = (id: string, payload?: unknown) => {
     const panel = workbenchPanels.get(id)
-    if (!panel) return
+    if (!panel || (panel.visibility === 'contextual' && !panel.when?.(context))) return
     const edge = panel.edge
     rememberFocus(edge)
     setSelection(payload)
@@ -208,10 +231,30 @@ export function Dock({ context }: { context: UiExtensionContext }) {
         ? { rightWidth: Math.max(240, Math.min(480, value.rightWidth + amount)) }
         : { bottomHeight: Math.max(120, Math.min(window.innerHeight / 2, value.bottomHeight + amount)) }),
     }))
+  const workspaceHost = document.querySelector('.topbar')
   return (
     <div ref={controls} className="workbench-controls">
+      {workbench?.workspace &&
+        workspaceHost &&
+        createPortal(
+          <Tooltip title={t('workbench.workspace')}>
+            <Button
+              appearance="ghost"
+              className="topbar-workspace"
+              onClick={() => void navigator.clipboard?.writeText(workbench.workspace!.path)}
+            >
+              <Icon name="folder" />
+              {workbench.workspace.name}
+            </Button>
+          </Tooltip>,
+          workspaceHost,
+        )}
       {edges.map((edge) => {
-        const entries = workbenchPanels.entries().filter((panel) => panel.edge === edge)
+        const entries = workbenchPanels
+          .entries()
+          .filter(
+            (panel) => panel.edge === edge && (panel.visibility !== 'contextual' || panel.when?.(context)),
+          )
         if (entries.length === 0 && edge === 'bottom') return null
         const active = entries.find((panel) => panel.id === selected[edge]) ?? entries[0]
         const Component = active?.component
@@ -227,6 +270,7 @@ export function Dock({ context }: { context: UiExtensionContext }) {
               aria-controls={`workbench-${edge}`}
               aria-expanded={open}
               aria-label={t(`workbench.${edge}`)}
+              title={t(`workbench.${edge}`)}
               onClick={() => {
                 rememberFocus(edge)
                 setLayout((value) => ({
@@ -242,25 +286,15 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                   )
               }}
             >
-              <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
-                {edge === 'right' ? (
-                  <>
-                    <rect x="3" y="4" width="18" height="16" rx="2" />
-                    <path d="M15 4v16" />
-                  </>
-                ) : (
-                  <>
-                    <rect x="3" y="4" width="18" height="16" rx="2" />
-                    <path d="M3 14h18" />
-                  </>
-                )}
-              </svg>
+              <Icon name={edge === 'right' ? 'panel-right' : 'terminal'} size={18} />
+              <span className="workbench-toggle-label">{t(`workbench.${edge}`)}</span>
             </Button>
             {host &&
               createPortal(
                 <div className="workbench-dock-body">
                   <hr
                     className="workbench-resize"
+                    hidden={edge === 'right' && expanded}
                     tabIndex={0}
                     aria-label={t('workbench.resize')}
                     aria-orientation={edge === 'right' ? 'vertical' : 'horizontal'}
@@ -295,49 +329,74 @@ export function Dock({ context }: { context: UiExtensionContext }) {
                   />
                   <div className="workbench-dock-heading">
                     <div role="tablist" aria-label={t(`workbench.${edge}`)} className="workbench-panel-tabs">
-                      {entries.map((panel, index) => (
-                        <Button
-                          type="text"
-                          size="small"
-                          key={panel.id}
-                          role="tab"
-                          id={`workbench-tab-${panel.id}`}
-                          data-testid={`workbench-tab-${panel.id}`}
-                          aria-selected={active?.id === panel.id}
-                          aria-controls={`workbench-panel-${edge}`}
-                          tabIndex={active?.id === panel.id ? 0 : -1}
-                          onClick={() => setSelected((value) => ({ ...value, [edge]: panel.id }))}
-                          onKeyDown={(event) => {
-                            const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
-                            if (!step && event.key !== 'Home' && event.key !== 'End') return
-                            event.preventDefault()
-                            const next =
-                              entries[
-                                event.key === 'Home'
-                                  ? 0
-                                  : event.key === 'End'
-                                    ? entries.length - 1
-                                    : (index + step + entries.length) % entries.length
-                              ]
-                            if (next) {
-                              setSelected((value) => ({ ...value, [edge]: next.id }))
-                              document.getElementById(`workbench-tab-${next.id}`)?.focus()
-                            }
-                          }}
-                        >
-                          {t(panel.titleKey)}
-                        </Button>
-                      ))}
+                      {entries
+                        .slice(0, entries.length > 5 ? 4 : 5)
+                        .concat(
+                          entries.length > 5
+                            ? [active && entries.indexOf(active) >= 4 ? active : entries[4]!]
+                            : [],
+                        )
+                        .map((panel) => (
+                          <Button
+                            type="text"
+                            size="small"
+                            key={panel.id}
+                            role="tab"
+                            id={`workbench-tab-${panel.id}`}
+                            data-testid={`workbench-tab-${panel.id}`}
+                            aria-selected={active?.id === panel.id}
+                            aria-controls={`workbench-panel-${edge}`}
+                            tabIndex={active?.id === panel.id ? 0 : -1}
+                            onClick={() => setSelected((value) => ({ ...value, [edge]: panel.id }))}
+                            onKeyDown={(event) => {
+                              const index = entries.indexOf(panel)
+                              const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
+                              if (!step && event.key !== 'Home' && event.key !== 'End') return
+                              event.preventDefault()
+                              const next =
+                                entries[
+                                  event.key === 'Home'
+                                    ? 0
+                                    : event.key === 'End'
+                                      ? entries.length - 1
+                                      : (index + step + entries.length) % entries.length
+                                ]
+                              if (next) {
+                                flushSync(() => setSelected((value) => ({ ...value, [edge]: next.id })))
+                                document.getElementById(`workbench-tab-${next.id}`)?.focus()
+                              }
+                            }}
+                          >
+                            {sharedIcon(panel.icon) && <Icon name={panel.icon} />}
+                            {panel.title?.(context) ?? t(panel.titleKey)}
+                          </Button>
+                        ))}
                     </div>
+                    {entries.length > 5 && (
+                      <Menu
+                        label={t('workbench.more')}
+                        trigger={
+                          <Button appearance="ghost" size="small">
+                            {t('workbench.more')}
+                          </Button>
+                        }
+                        items={entries.slice(4).map((panel) => ({
+                          id: panel.id,
+                          label: panel.title?.(context) ?? t(panel.titleKey),
+                          onSelect: () => openPanel(panel.id),
+                        }))}
+                      />
+                    )}
                     <div id={`workbench-header-actions-${edge}`} className="workbench-header-actions" />
-                    <Button
-                      type="text"
-                      size="small"
-                      aria-label={t('workbench.close')}
-                      onClick={() => close(edge)}
-                    >
-                      ×
-                    </Button>
+                    {edge === 'right' && (
+                      <IconButton
+                        name="maximize-2"
+                        label={t(expanded ? 'workbench.collapse' : 'workbench.expand')}
+                        aria-pressed={expanded}
+                        onClick={() => setExpanded((value) => !value)}
+                      />
+                    )}
+                    <IconButton name="x" label={t('workbench.close')} onClick={() => close(edge)} />
                   </div>
                   <div
                     role="tabpanel"

@@ -3,6 +3,7 @@ import type { LocaleCatalog } from './index.js'
 /** 组件内置可访问性文案。经 `ComposerDependencies.translate` 注入，命名空间 `@agnes/web-units`。 */
 export const composerLocaleCatalog: LocaleCatalog = {
   en: {
+    'composer.extra.title': 'More controls',
     'composer.child.title': 'Sub-agents / workflows',
     'composer.child.metrics': 'Usage: {tokens} tokens · duration: {seconds} s',
     'composer.child.unknown': 'Unknown',
@@ -66,7 +67,7 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.attachment.tooMany': 'A message can hold at most {count} attachments.',
     'composer.input.label': 'Task content',
     'composer.permission.accessible': 'Choose permission for this session',
-    'composer.permission.workspace': 'Changes apply within the workspace',
+    'composer.permission.workspace': 'Edit workspace',
     'composer.usage.label': 'Context usage',
     'composer.queue.label': 'Queued messages',
     'composer.queue.count': 'Queued · {count}',
@@ -100,6 +101,7 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.image.tooLarge': 'Attachments in one message must total no more than 100 MiB.',
   },
   'zh-CN': {
+    'composer.extra.title': '更多控件',
     'composer.child.title': '子代理 / 工作流',
     'composer.child.metrics': '用量：{tokens} tokens · 耗时：{seconds} 秒',
     'composer.child.unknown': '未知',
@@ -163,7 +165,7 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.attachment.tooMany': '一条消息最多添加 {count} 个附件。',
     'composer.input.label': '任务内容',
     'composer.permission.accessible': '选择本会话权限',
-    'composer.permission.workspace': '工作区内修改',
+    'composer.permission.workspace': '可修改工作区',
     'composer.usage.label': '上下文用量',
     'composer.queue.label': '待执行消息',
     'composer.queue.count': '待执行 · {count}',

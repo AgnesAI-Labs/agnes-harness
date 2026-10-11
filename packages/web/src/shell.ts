@@ -1,3 +1,4 @@
+import { cycleTaskFocus } from './workbench/focus.js'
 import { tr } from '@agnes/web-foundation/locale-bridge'
 
 const getButton = (id: string) => {
@@ -52,9 +53,10 @@ export function bindSidebar(narrow: MediaQueryList): { close(): void; dismiss():
     if (narrow.matches && document.body.classList.contains('sidebar-open'))
       getButton('sidebar-close').focus({ preventScroll: true })
   }
-  const onDismiss = () => dismiss()
+  const onDismiss = () => (narrow.matches ? dismiss() : onToggle())
   const onMediaChange = () => sync()
   const onKeydown = (event: KeyboardEvent) => {
+    cycleTaskFocus(event)
     if (
       !event.defaultPrevented &&
       !document.querySelector('dialog[open]') &&

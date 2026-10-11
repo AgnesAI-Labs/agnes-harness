@@ -86,7 +86,9 @@ describe('rendered composer region', () => {
     expect(document.querySelector('#composer-workspace')).toBeTruthy()
     expect(document.querySelector('#composer-permission')).toBeTruthy()
     expect(document.querySelector('#model')).toBeTruthy()
-    expect(document.querySelector<HTMLElement>('#session-usage')?.hidden).toBe(false)
+    expect(document.querySelector<HTMLElement>('#session-usage')?.hidden).toBe(
+      usage.context.tokens / usage.context.window < 0.6,
+    )
 
     if (!prompt) throw new Error('missing composer input')
     prompt.value = '键盘提交'
@@ -147,7 +149,12 @@ describe('rendered composer region', () => {
     try {
       localStorage.setItem('agnes-locale', 'zh-CN')
       runtime = await mountRenderedIndex()
-      const render = (next: Partial<ComposerView>) => runtime?.composer?.render({ ...readyView, ...next })
+      const render = (next: Partial<ComposerView>) =>
+        runtime?.composer?.render({
+          ...readyView,
+          usage: { ...usage, context: { ...usage.context, tokens: Math.ceil(usage.context.window * 0.6) } },
+          ...next,
+        })
       const host = () => required(document.querySelector<HTMLElement>('#session-usage'))
       expect(host().hidden).toBe(true)
       render({})
@@ -178,7 +185,7 @@ describe('rendered composer region', () => {
           model: { route: 'local', id: 'next', thinking: 'off' },
         },
       })
-      expect(host().hidden).toBe(false)
+      expect(host().hidden).toBe(true)
       expect(host().textContent).toContain('0 Token')
       expect(host().textContent).not.toContain('1,024')
       expect(details.open).toBe(false)
@@ -261,7 +268,16 @@ describe('rendered composer region', () => {
     runtime = await mountRenderedIndex()
     const removeLeft = runtime.registry.register(
       { name: 'conversation.input.left', id: 'fixture-input-left', owner: 'fixture' },
-      () => createElement('span', { id: 'fixture-input-left-content' }, '左侧扩展'),
+      () =>
+        createElement(
+          'span',
+          { id: 'fixture-input-left-content' },
+          '左侧扩展',
+          ...[1, 2, 3].map((index) =>
+            createElement('button', { key: index, type: 'button' }, `Extra ${index}`),
+          ),
+          createElement('input', { id: 'fixture-extra-draft', defaultValue: 'keep draft' }),
+        ),
     )
     const removeOverlay = runtime.registry.register(
       { name: 'conversation.input.overlay', id: 'fixture-input-overlay', owner: 'fixture' },
@@ -279,6 +295,19 @@ describe('rendered composer region', () => {
       expect(document.querySelector('#composer-workspace')).toBeTruthy()
       expect(document.querySelector('#send')).toBeTruthy()
     }, slotRender)
+    await vi.waitFor(() =>
+      expect(document.querySelector('.composer-extras')?.getAttribute('data-overflow')).toBe('true'),
+    )
+    const extras = required(
+      document.querySelector<HTMLDetailsElement>('[data-testid="composer-extra-controls"]'),
+    )
+    const extraDraft = required(document.querySelector<HTMLInputElement>('#fixture-extra-draft'))
+    extras.open = true
+    extraDraft.value = 'unfinished plugin input'
+    extras.open = false
+    extras.open = true
+    expect(document.querySelector('#fixture-extra-draft')).toBe(extraDraft)
+    expect(extraDraft.value).toBe('unfinished plugin input')
     removeLeft()
     removeOverlay()
   })

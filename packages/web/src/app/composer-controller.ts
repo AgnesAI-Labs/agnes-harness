@@ -90,6 +90,7 @@ export function createComposerController(
         context.submitComposer()
       },
     }
+    if (context.selectedWorkspace) workbench.workspace = context.selectedWorkspace
     const dockHost = context.dockControlsHost
     if (dockHost) {
       dockHost.hidden = !workbench.session
@@ -341,6 +342,7 @@ export function createComposerController(
       stopping: context.stopping,
       usage: context.projection?.usage,
       workspace: {
+        visible: !context.current || context.draftingNew,
         disabled: !available || context.sending || context.sessionPending,
         label:
           context.selectedWorkspace?.name ??

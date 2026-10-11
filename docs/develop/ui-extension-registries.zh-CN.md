@@ -40,3 +40,7 @@ register 返回幂等且绑定该注册项身份的卸载函数，须绑定到�
 设置项可声明 `runtimeCatalog: false`，由自身服务提供刷新、加载和错误状态，不读取插件目录；标题与导航仍由统一 shell 管理。
 
 [会话工作台面板](../extend/workbench-panels.zh-CN.md)介绍右侧和底部停靠面板的注册方式。
+
+### 按需工作台面板
+
+`WorkbenchPanel.visibility` 缺省为 `always`。依赖会话内容的面板可选择 `contextual`，并以仅用于呈现的 `when(context)` 判断是否显示。`icon` 指定共享图标名；可选的 `title(context)` 提供内容标题。这些字段不改变授权。内置面板使用右侧工作台；`bottom` 仍可供插件使用。

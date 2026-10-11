@@ -11,15 +11,15 @@ export type PermissionOption = {
 }
 
 const PERMISSION_OPTION_LABEL_KEYS: Record<PermissionMode, string> = {
-  view: 'settings.picker.view',
-  workspace: 'settings.picker.workspace',
-  full: 'settings.picker.full',
+  view: 'composer.permission.view',
+  workspace: 'composer.permission.workspace',
+  full: 'composer.permission.full',
 }
 
 const PERMISSION_OPTION_DESCRIPTION_KEYS: Record<PermissionMode, string> = {
-  view: 'settings.picker.viewDescription',
-  workspace: 'settings.picker.workspaceDescription',
-  full: 'settings.picker.fullDescription',
+  view: 'composer.permission.viewDescription',
+  workspace: 'composer.permission.workspaceDescription',
+  full: 'composer.permission.fullDescription',
 }
 
 /** 静态 id 行：label/description 渲染时经 tr 取词，不在模块加载期写死。 */
@@ -126,6 +126,7 @@ export function createPermissionPicker(options: {
   let selectingFromPointer = false
   let popover: HTMLElement | undefined
   let listbox: HTMLElement | undefined
+  let help: HTMLElement | undefined
 
   function selectedIndex(): number {
     const index = PERMISSION_OPTIONS.findIndex((option) => option.id === state.selected)
@@ -167,9 +168,11 @@ export function createPermissionPicker(options: {
     selecting = false
     const wasOpen = popover !== undefined
     if (listbox) webUi.unmountRegion(listbox)
+    if (help) webUi.unmountRegion(help)
     popover?.remove()
     popover = undefined
     listbox = undefined
+    help = undefined
     trigger.removeAttribute('aria-controls')
     setTrigger()
     if (wasOpen && closeOptions.returnFocus) trigger.focus({ preventScroll: true })
@@ -217,6 +220,22 @@ export function createPermissionPicker(options: {
     listbox.setAttribute('role', 'listbox')
     listbox.setAttribute('aria-label', tr('settings.picker.listAria'))
     listbox.tabIndex = -1
+    help = webUi.createRegionHost(popover, 'div', 'permission-picker-help')
+    webUi.renderRegion(
+      help,
+      createElement(
+        webUi.Button,
+        {
+          appearance: 'ghost',
+          size: 'small',
+          onClick: () => {
+            close()
+            document.dispatchEvent(new CustomEvent('agnes:permission-settings'))
+          },
+        },
+        tr('composer.permission.help'),
+      ),
+    )
     webUi.bindListboxKeys(listbox, (intent) => {
       if (intent.kind === 'move') setActive(activeIndex + intent.delta)
       else if (intent.kind === 'first') setActive(0)

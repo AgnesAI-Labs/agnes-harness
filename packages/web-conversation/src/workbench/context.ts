@@ -7,6 +7,7 @@ export type WorkbenchContext = {
   session?: Session | undefined
   timeline?: UITimeline | undefined
   factChain?: import('@agnes/protocol').FactChainParams | undefined
+  workspace?: { name: string; path: string }
   disabled: boolean
   mention(path: string): void
   command(command: string): void

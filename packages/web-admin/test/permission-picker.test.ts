@@ -14,9 +14,9 @@ afterEach(() => {
 })
 
 it('labels the three session permission modes', () => {
-  expect(permissionLabel('view')).toBe('仅可查看')
-  expect(permissionLabel('workspace')).toBe('工作区内修改')
-  expect(permissionLabel('full')).toBe('完全权限')
+  expect(permissionLabel('view')).toBe('只读')
+  expect(permissionLabel('workspace')).toBe('可修改工作区')
+  expect(permissionLabel('full')).toBe('完全访问')
   expect(yoloEnabled('full')).toBe(true)
   expect(yoloEnabled('workspace')).toBe(false)
 })
@@ -32,7 +32,7 @@ it('opens the list and reports the chosen mode', async () => {
   picker.render({ disabled: false, pending: false, selected: null })
   expect(label.textContent).toBe('请选择权限')
   picker.render({ disabled: false, pending: false, selected: 'workspace' })
-  expect(label.textContent).toBe('工作区内修改')
+  expect(label.textContent).toBe('可修改工作区')
   trigger.click()
   expect(document.querySelector<HTMLElement>('.permission-picker')?.style.width).toBe('360px')
   const listbox = document.querySelector('[role="listbox"]')
@@ -43,13 +43,13 @@ it('opens the list and reports the chosen mode', async () => {
     'option',
   ])
   const full = [...document.querySelectorAll('[role="option"]')].find(
-    (row) => row.querySelector('.permission-picker-label')?.textContent === '完全权限',
+    (row) => row.querySelector('.permission-picker-label')?.textContent === '完全访问',
   )
   expect(full).toBeDefined()
   expect(full?.textContent).toContain('工作区内外文件读写')
   expect(full?.textContent).toContain('保留安全禁令和系统权限')
   const workspace = [...document.querySelectorAll('[role="option"]')].find(
-    (row) => row.querySelector('.permission-picker-label')?.textContent === '工作区内修改',
+    (row) => row.querySelector('.permission-picker-label')?.textContent === '可修改工作区',
   )
   expect(workspace?.textContent).toContain('越界需切换完全权限或选择目录')
   full?.dispatchEvent(new MouseEvent('click', { bubbles: true }))

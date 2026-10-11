@@ -278,8 +278,8 @@ export function LoopPicker() {
         aria-label={tr('composer.agent.title')}
         aria-describedby={stale || state.error ? 'new-session-loop-error' : undefined}
       >
-        <span>{tr('composer.agent.chip')}</span>
-        <span className="agent-chip-value">
+        <span>{tr(state.loops.length >= 2 ? 'composer.agent.chip' : 'composer.agent.more')}</span>
+        <span className="agent-chip-value" hidden={state.loops.length < 2}>
           {active ? choiceName(active, tr) : tr('composer.agent.unresolved')}
         </span>
         <svg className="icon model-chevron" viewBox="0 0 24 24" aria-hidden="true">

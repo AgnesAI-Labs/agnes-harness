@@ -40,6 +40,12 @@ export type WorkbenchPanel = Readonly<{
   order: number
   edge: 'right' | 'bottom'
   titleKey: string
+  /** Presentation only. Omitted visibility keeps existing panels always visible. */
+  visibility?: 'always' | 'contextual'
+  icon?: string
+  when?(context: UiExtensionContext): boolean
+  /** Optional dynamic presentation title, e.g. a business surface title. */
+  title?(context: UiExtensionContext): string
   /** Optional presentation-only destination for panel header actions. */
   component: ComponentType<{ context: UiExtensionContext; headerId?: string }>
 }>

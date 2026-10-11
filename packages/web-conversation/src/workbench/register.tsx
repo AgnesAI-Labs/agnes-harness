@@ -1,8 +1,9 @@
 import { fileViewerActions, workbenchPanels } from '@agnes/web-client'
 import { ChangesPanel, ReviewFileAction } from './changes-panel.js'
 import { FactChainPanel } from './fact-chain-panel.js'
-import { FeedbackPanel } from './feedback-panel.js'
 import { FilesPanel } from './files-panel.js'
+import { goalSlot } from '../goal-card.js'
+import { panelContext } from './context.js'
 import { GoalPanel } from './goal-panel.js'
 import { TerminalPanel } from './terminal-panel.js'
 
@@ -30,8 +31,8 @@ export { workbenchLocaleCatalog } from './locales.js'
 if (!workbenchPanels.get('terminal'))
   workbenchPanels.register({
     id: 'terminal',
-    order: 10,
-    edge: 'bottom',
+    order: 50,
+    edge: 'right',
     titleKey: 'workbench.terminal.title',
     component: TerminalPanel,
   })
@@ -39,9 +40,11 @@ if (!workbenchPanels.get('terminal'))
 if (!workbenchPanels.get('goal'))
   workbenchPanels.register({
     id: 'goal',
-    order: 20,
+    order: 60,
     edge: 'right',
     titleKey: 'workbench.goal.title',
+    visibility: 'contextual',
+    when: (context) => !!goalSlot(panelContext(context)?.timeline)?.goal,
     component: GoalPanel,
   })
 
@@ -55,12 +58,3 @@ if (!workbenchPanels.get('changed-files'))
   })
 if (!fileViewerActions.get('review'))
   fileViewerActions.register({ id: 'review', order: 10, component: ReviewFileAction })
-
-if (!workbenchPanels.get('feedback'))
-  workbenchPanels.register({
-    id: 'feedback',
-    order: 45,
-    edge: 'right',
-    titleKey: 'workbench.feedback.title',
-    component: FeedbackPanel,
-  })

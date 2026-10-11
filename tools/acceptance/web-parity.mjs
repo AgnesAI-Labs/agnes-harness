@@ -840,7 +840,7 @@ async function setupState(page, runtime, stateId) {
 
 async function selectWorkspacePermission(page) {
   await page.locator('#composer-permission').click()
-  const option = page.getByRole('option', { name: /工作区内修改/ })
+  const option = page.getByRole('option', { name: /可修改工作区/ })
   await option.waitFor()
   await option.click()
   await page.waitForFunction(
