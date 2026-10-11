@@ -572,10 +572,11 @@ async function configureWorkbench(page, runtime) {
       .catch(() => false))
   ) {
     if (
-      await page
+      (await page
         .locator('#prompt')
         .isDisabled()
-        .catch(() => false)
+        .catch(() => false)) ||
+      !(await visible(page, '#composer-workspace'))
     ) {
       await openMobileSidebar(page)
       await page.locator('#new').click()
@@ -686,16 +687,13 @@ async function setupState(page, runtime, stateId) {
         .isVisible()
         .catch(() => false))
     ) {
-      if (
-        await page
-          .locator('body.sidebar-open')
-          .isVisible()
-          .catch(() => false)
-      )
-        await page.locator('#sidebar-close').click()
-      // The composer workspace control is the product path that always opens the workspace
-      // picker, even when the current session already has a selected workspace.
-      await page.locator('#composer-workspace').click()
+      if (!(await visible(page, '#composer-workspace'))) {
+        await openMobileSidebar(page)
+        await page.locator('#new').click()
+      } else {
+        if (await visible(page, 'body.sidebar-open')) await page.locator('#sidebar-close').click()
+        await page.locator('#composer-workspace').click()
+      }
     }
     await page.locator('#new-session[open]').waitFor()
     return
