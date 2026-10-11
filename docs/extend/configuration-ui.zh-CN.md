@@ -132,3 +132,5 @@ Schema 使用同步 JSON Schema 2020-12、标准 format 和本地引用。安装
 适配器可抛出公开 App Server 错误 envelope（包括携带 `data.messageKey` 的 SDK 错误）。共享表单通过 `appServerErrorMessage` 提供安全、随语言切换的反馈；未知错误使用通用翻译并保留草稿。HTTP 适配器传递响应的 `error` 对象，不显示原始异常文案。
 
 插件配置验证器实现在 `@agnes/protocol`；`@agnes/extension-api` 仅保留公开声明、默认值和薄导出。官方 observability 插件的 header 配置继续使用现有 `env:NAME` 密钥引用合同（不存明文 header），schema 同时声明这些引用及遥测选项。
+
+[UI 作者短指南](../develop/ui-author-guide.zh-CN.md)：共享按钮、工作台显示条件、设置分组、界面摘要与 token 规则。

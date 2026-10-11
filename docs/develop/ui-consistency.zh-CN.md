@@ -40,7 +40,7 @@
 
 使用 `SettingsState` 并明确指定 loading、empty、error、success tone。加载保留上下文并标记 aria-busy；空态说明缺少什么，有现成有用操作时提供入口；错误包含本地化说明及既有重试；成功确认操作。失败保留草稿。仅给段落设置 role=alert 不会获得错误视觉样式。会话卡片使用 `ConversationCardLayout` 对应状态。资源空态已有的多条操作指引应保留，再统一其呈现。
 
-使用 `Badge` / `StateLights` 和可见的本地化状态文字：ok 表示成功，warn 表示注意，bad 表示失败，off/unknown 表示中性或未知。颜色只是补充。读取 `--agnes-status-success-*`、`--agnes-status-warning-*`、`--agnes-status-danger-*`、`--agnes-status-info-text` 与中性文字 token；不用页面自定义色，也不能将读取失败显示为成功。
+需要处理的异常用 `Tag tone="warn|bad|info"`，每行或卡最多一个；正常启用、连接和运行无需标签，描述信息用 MetaText。既有 Badge / StateLights 保留公共 tone。状态色同时配本地化文字。读取 `--agnes-status-success-*`、`--agnes-status-warning-*`、`--agnes-status-danger-*`、`--agnes-status-info-text` 与中性文字 token；不用页面自定义色，也不能将读取失败显示为成功。
 
 ## 对话框与图标
 
@@ -79,7 +79,7 @@ SettingsPage 的 `headingId` / `bodyClassName` 保留原有标题 ID 与正文�
 ## 共享呈现原语
 
 `@agnes/web-ui` 提供 `Button`、`IconButton`、`Icon`、`Tag`、`MetaText`、`Count`、
-`Menu`、`Tooltip`、`Toast`、`EmptyState`、`Banner`、`ListRow`、`Drawer`、`Field`、
+`Menu`、`Tooltip`、`Toast`、`EmptyState`、`Banner`、`ListRow`、`Drawer`、`Skeleton`、`Field`、
 `SettingsPageHeader`、`SettingsSaveBar`，保留既有 props 和钩子。
 `Button` 新增 `appearance="primary|secondary|ghost|danger|link"`；
 `dangerFilled` 只用于破坏性确认。用 `disabledReason` 解释不可用动作。
@@ -104,3 +104,9 @@ Web 主题桥已包含规则，静态按钮可使用相同契约类。
 `.primary-button`、`.secondary-button`、`.icon-button` 是内部别名；新增业务代码
 使用公共组件/契约类和语义颜色。呈现守卫只允许已登记的旧页面基线，迁移时删除对应项，
 不得为新增页面样式增加豁免。
+
+## 导航、加载与键盘
+
+[UI 作者指南](ui-author-guide.zh-CN.md)说明公共注册与类契约。设置为八类日常设置与高级；工作台固定文件、目标、改动、执行记录，业务界面与终端按内容显示。双位置 Intelligent UI 在对话中用摘要。加载使用共享 SettingsState/Skeleton，不另造私有骨架。F6/Shift+F6 在可见侧栏、对话或轨迹、工作台、插件面板及输入区间循环；弹窗不参与。关闭抽屉或对话框须还焦点。窄屏测试保留 375/768px，并增加 390px；手机命中区检查为 44px（计入实际可点击伪元素），图标必须有无障碍名。
+
+新增代码使用 `--s4/8/12/16/24/32/48`、`--radius-control/card/surface/pill`、`--elevation-0/1/2`、三档共享字重和 `--motion-fast/base/ease`；旧尺度保留为既有调用的别名。

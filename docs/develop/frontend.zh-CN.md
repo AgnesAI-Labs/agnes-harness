@@ -39,7 +39,7 @@ export function apply(ctx, config) {
 
 该单实例槽的较小 priority 优先，示例替换内置侧栏。停用后应恢复内置侧栏。正式插件选择合适槽位，不能指望覆盖未迁移区域，也不要依赖宿主私有 DOM/CSS 结构。
 
-`publicConfig` 来自随包内容，是公开展示元数据，不是后端 runtime config。客户端 entry/styles 必须是经过校验的包内路径；不能逃出快照、任意 import 本机模块或获取连接凭据。需要 React/第三方库时应生成可独立加载的浏览器产物。
+`publicConfig` 来自随包内容，是公开展示元数据，不是后端 runtime config。客户端 entry/styles 必须是经过校验的包内路径；不能逃出快照、任意 import 本机模块或获取连接凭据。React 与共享 Agnes 包使用宿主的平台 externals，仅将其它依赖打入浏览器产物。
 
 ## 安装与观察
 
@@ -65,3 +65,7 @@ pnpm exec vitest run tools/public-docs/examples.test.ts packages/web/test/client
 下一步：[为面板接入后端服务](fullstack.zh-CN.md)。需要公开配置的字段和可调用服务要分别声明；密钥留在后端。
 
 实现依据：[加载协调](../../packages/web/src/client-modules/reconcile.ts)、[ClientContext](../../packages/web-client/src/client-module.ts)、[资源检查](../../packages/package-manager/src/client-assets.ts)、[槽位](../../packages/web-client/src/slots.ts)。
+
+## 一致的界面
+
+遵循[UI 作者短指南](ui-author-guide.zh-CN.md)：使用共享组件与 `.agh-btn*` 契约，按需工作台标签、设置分组和 Intelligent UI 摘要。设置分为八类日常设置与高级；技术控件进入 Agent 行为或诊断。公共注册表只管理呈现，后台事实与授权仍走原服务。

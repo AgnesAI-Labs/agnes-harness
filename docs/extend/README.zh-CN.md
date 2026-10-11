@@ -65,3 +65,5 @@ Host 必须提供对应注册服务，循环或适配器插件才能加载。安
 [提案：插件用途 metadata 与页面卡片](plugin-presentation/DESIGN.zh-CN.md) 定义可选的作者用途说明与运行时派生贡献事实，尚未实现。
 
 [用途元数据](plugin-metadata.zh-CN.md)定义可选的插件用途双语文案。
+
+[UI 作者短指南](../develop/ui-author-guide.zh-CN.md)：共享按钮、工作台显示条件、设置分组、界面摘要与 token 规则。

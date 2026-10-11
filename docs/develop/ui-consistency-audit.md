@@ -165,3 +165,7 @@ The presentation migration now uses shared controls for conversation drafts, sea
 A static consumer declaration scan at `668328619` finds seven remaining controls: the upload exception, one plugin-search input in `packages/web-units/src/settings.ts`, two source controls in `packages/web/public/index.html`, and three plugin-search/source controls in `packages/web/public/admin.html`. The plugin area remains unfinished; the zero-native-control acceptance criterion is not yet satisfied. The earlier 98-family table is the audit baseline, including renderer families that subsequent work may replace. Reconcile those families against the current registry during final acceptance.
 
 Four existing behavior-contract files contain additional form/ref/keyboard assertions; no tests, builds or browser runs have been executed for this migration. Visual acceptance must use a real build and record its revision, en/zh-CN, both themes and desktop/390 px coverage. There are no before captures; the acceptance stage will capture after evidence.
+
+## Current presentation contract
+
+The inventory above retains its original source baseline. Current navigation, shared skeletons, button targets and keyboard rules are in the [consistency contract](ui-consistency.md) and [UI author guide](ui-author-guide.md). Historical page counts are not current navigation counts, and a source inventory is not visual acceptance.

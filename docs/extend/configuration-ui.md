@@ -126,3 +126,5 @@ If persistence fails after a live apply, the publisher restores the previous run
 Preserve the existing controls, DOM/test IDs and locale catalogs when migrating a built-in form. Validate real saved payloads and failure/read-only paths; compare the light/dark, English/Chinese, 1440×900 and 1280×800 screens with the approved UI. Do not update another stream's visual baselines without a documented reason.
 
 Adapters can reject with the public App Server error envelope (including SDK errors carrying `data.messageKey`). Shared forms use `appServerErrorMessage` for safe, locale-aware feedback; unknown failures use the generic translated message and retain the draft. HTTP adapters pass the response's `error` object, never raw exception text.
+
+[Short UI author guide](../develop/ui-author-guide.md): shared buttons, contextual panels, settings groups, surface summaries and token rules.

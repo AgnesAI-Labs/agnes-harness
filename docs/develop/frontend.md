@@ -43,7 +43,7 @@ export function apply(ctx, config) {
 
 For this singleton slot, a lower priority wins. The example replaces the built-in sidebar. After disabling it, a new session uses the built-in sidebar; a session pinned to the example retains its version. Choose a suitable slot for a production plugin. Do not assume unexposed regions can be replaced or depend on private Host DOM/CSS structure.
 
-`publicConfig` is public presentation metadata from package contents, not backend runtime configuration. Client entry/styles must be validated paths inside the package. They cannot escape the snapshot, import arbitrary local modules, or obtain connection credentials. Bundle React or third-party libraries into independently loadable browser artifacts when needed.
+`publicConfig` is public presentation metadata from package contents, not backend runtime configuration. Client entry/styles must be validated paths inside the package. They cannot escape the snapshot, import arbitrary local modules, or obtain connection credentials. Use the host platform externals for React and shared Agnes packages; bundle only other dependencies into browser artifacts.
 
 <a id="安装与观察"></a>
 
@@ -73,3 +73,7 @@ These tests check actual example ESM, Cordis bindings, slots, cleanup, and updat
 Next: [Connect a backend service to the panel](fullstack.md). Declare public configuration fields and callable services separately. Keep secrets on the backend.
 
 Implementation: [loading coordination](../../packages/web/src/client-modules/reconcile.ts), [ClientContext](../../packages/web-client/src/client-module.ts), [asset checks](../../packages/package-manager/src/client-assets.ts), [slots](../../packages/web-client/src/slots.ts).
+
+## Consistent interfaces
+
+Follow the [short UI author guide](ui-author-guide.md): shared components and `.agh-btn*` contracts, contextual workbench tabs, settings groups and Intelligent UI summaries. Settings has eight everyday groups and Advanced; technical controls belong in Agent behavior or Diagnostics. Registries control presentation; backend facts and authorization remain with their services.

@@ -4,7 +4,7 @@ English | [简体中文](ui-consistency.zh-CN.md)
 
 [Documentation](../README.md) · [Frontend](frontend.md) · [Skins](skins.md) · [UI coverage](ui-coverage.md)
 
-This is a presentation contract for the existing Web interface. It reuses `@agnes/web-ui`, its public exports and the existing theme. It does not change navigation, backend decisions, form values or permissions. The [source inventory and implementation sequence](ui-consistency-audit.md) distinguish existing components from work still needed.
+This is a presentation contract for the existing Web interface. It reuses `@agnes/web-ui`, its public exports and the existing theme. It keeps backend decisions, form values and permissions with their owning modules. The [source inventory and implementation sequence](ui-consistency-audit.md) distinguish existing components from work still needed.
 
 ## Page and panel structure
 
@@ -40,7 +40,7 @@ Reuse `PluginList`, `ResourceListContent`, `SettingsList` and `SettingsRow`. Row
 
 Use `SettingsState` with explicit `loading`, `empty`, `error` or `success` tone. Loading keeps context and uses `aria-busy`; empty explains what is absent and provides an existing useful action when available; error gives a localized failure and an existing retry action; success confirms the operation. Preserve a draft on failure. A paragraph with `role="alert"` alone does not receive the error visual style. Conversation cards use the equivalent `ConversationCardLayout` state. Keep complex existing resource empty-state guidance when wrapping it in the shared presentation.
 
-Use `Badge` or `StateLights`, with visible localized text: `ok` for success, `warn` for caution, `bad` for failure, `off` / `unknown` for neutral or unknown state. Status color is supplementary. Read `--agnes-status-success-*`, `--agnes-status-warning-*`, `--agnes-status-danger-*`, `--agnes-status-info-text` and neutral text tokens; do not invent page-specific colors or map a failed read to success.
+Use `Tag tone="warn|bad|info"` for actionable exceptions, at most one per row/card. Normal enabled/connected/running states do not need badges; descriptive information uses `MetaText`. Existing `Badge` / `StateLights` retain their public tones. Status color always accompanies localized text. Read `--agnes-status-success-*`, `--agnes-status-warning-*`, `--agnes-status-danger-*`, `--agnes-status-info-text` and neutral text tokens; do not invent page-specific colors or map a failed read to success.
 
 ## Dialogs and icons
 
@@ -60,7 +60,7 @@ The authority is `packages/web/public/styles/01-tokens.css`; `packages/web-ui/sr
 | Controls | `--control-height`, `--control-height-form`, `--control-height-touch` |
 | Surface geometry | `--radius-*`, `--shadow-*`, `--admin-content-width`, `--dialog-max-height` |
 
-Prefer 8–12 px within a field/row, 16–24 px between sections, and 24–32 px for page insets, through the corresponding tokens. Reuse shared component spacing before adding CSS. Do not round specialized trace/diff geometry into this scale if that changes its behavior.
+New code uses `--s4/8/12/16/24/32/48`, `--radius-control/card/surface/pill`, `--elevation-0/1/2`, three shared font weights and `--motion-fast/base/ease`; old scales remain aliases for existing callers. Prefer 8–12 px within a field/row, 16–24 px between sections, and 24–32 px for page insets, through the corresponding tokens. Reuse shared component spacing before adding CSS. Do not round specialized trace/diff geometry into this scale if that changes its behavior.
 
 Consume semantic `--agnes-*` colors. `.dark` supplies theme overrides and `color-scheme`; do not add a second theme switch or runtime ConfigProvider palette. Use `--agnes-input-surface` for editable fields and preserve focused, hovered, disabled and validation states. Any newly needed semantic color must have both light and dark values and follow the existing public skin-token generation contract. Keep `data-agnes-region` hooks and their surface specificity. Honor reduced motion and retain keyboard focus indicators.
 
@@ -77,7 +77,7 @@ Review each inventory surface in en and zh-CN, light and dark, at desktop and 39
 ## Shared presentation primitives
 
 `@agnes/web-ui` owns `Button`, `IconButton`, `Icon`, `Tag`, `MetaText`, `Count`,
-`Menu`, `Tooltip`, `Toast`, `EmptyState`, `Banner`, `ListRow`, `Drawer`, `Field`,
+`Menu`, `Tooltip`, `Toast`, `EmptyState`, `Banner`, `ListRow`, `Drawer`, `Skeleton`, `Field`,
 `SettingsPageHeader` and `SettingsSaveBar`. Existing props and hooks remain supported.
 `Button` additionally accepts `appearance="primary|secondary|ghost|danger|link"`;
 `dangerFilled` is reserved for destructive confirmations. Use `disabledReason` to
@@ -108,3 +108,7 @@ The Web theme bridge includes these rules. Static buttons can use the same class
 new business code must use the public components/contracts and semantic colors.
 The presentation guard permits only the recorded legacy baseline until those pages
 migrate. Do not add new allowances for page styling.
+
+## Navigation, loading and keyboard
+
+The [UI author guide](ui-author-guide.md) describes public registrations and classes. Settings has eight everyday groups plus Advanced. The workbench keeps Files, Goal, Changes and Activity record, with business views and terminals shown contextually. Dual-placement Intelligent UI uses a conversation summary. Use shared SettingsState/Skeleton for loading. F6/Shift+F6 cycles visible sidebar, conversation or trace, workbench, plugin panels and composer; modals retain their focus. Closing drawers/dialogs returns focus. Narrow tests retain 375/768px and add 390px; phone targets must reach 44px, including clickable pseudo-elements, and icon controls need accessible names.

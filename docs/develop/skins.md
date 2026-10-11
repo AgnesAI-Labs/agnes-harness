@@ -341,3 +341,7 @@ Rules:
 - **Temporarily disable a skin:** Add `?skin=none` to the page URL to force the built-in appearance, or `?skin=<id>` to select a specific skin. These are one-time overrides without a cached preference change. Reopen the URL without the parameter to return to your saved selection. Use this if a skin makes settings inaccessible.
 - **CSS changes do not appear:** Stylesheets are cached by manifest `revision`. Disable/re-enable the package or reselect the skin to load current content.
 - **Inspect available skins:** Open Settings → General → Appearance → Skin. The list includes skins declared by **enabled and trusted** packages.
+
+## Shared controls and readability
+
+Follow the [UI author guide](ui-author-guide.md) token rules. Shared `.agh-btn*` controls, states, forms, skeletons and drawers consume semantic tokens. Do not target private antd classes or remove focus rings and 44px narrow hit targets. Body/icon/status text needs 4.5:1 contrast; control boundaries and focus need 3:1 in both themes. Start with the [token contrast table](../../packages/web-ui/test/token-contrast.test.ts); validate a custom skin’s actual overridden colors separately. Respect reduced motion.

@@ -55,3 +55,5 @@ OS 后端无法落实 preset 时，`session/new` 与 `session/load` 返回 JSON-
 可选 `context.openPanel(id, selection)` 导航到已注册面板，不授予后端权限。可选 `context.openRecord(sessionId, callSeq, resultSeq?)` 在既有执行视图中选中实际已加载的工具记录，并返回是否找到。跨会话导航会被拒绝；记录超出已加载历史时打开执行视图并提示加载更早记录，不生成虚构轨迹。两个钩子都不授予写入、恢复或进程控制权限。
 
 更改文件路径显示为普通文本，保留空格与 Unicode；diff header 对控制字符转义，防止带换行的名称伪造 header 行。执行证据通过 `factChainLinks.open({ sessionId, laneId, anchor: { kind: 'tool', toolUseId } })` 打开；可选证据字段 `laneId` 仅来自相互匹配的 call、receipt、result 账本 lane。缺失或不匹配的 lane、不可用的导航均提示无法关联，不通过路径推断 request 或 artifact 来源。
+
+[UI 作者短指南](../develop/ui-author-guide.zh-CN.md)：共享按钮、工作台显示条件、设置分组、界面摘要与 token 规则。

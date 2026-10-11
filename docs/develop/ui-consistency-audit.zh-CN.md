@@ -164,3 +164,7 @@ C 原生控件；B 手写按钮/选择呈现；H 骨架/标题；S 尺度与字�
 `668328619` 的调用方静态声明扫描剩 7 处：上传例外 1 处；`packages/web-units/src/settings.ts` 的插件搜索 1 处；`packages/web/public/index.html` 的来源字段 2 处；`packages/web/public/admin.html` 的插件搜索/来源字段 3 处。插件区域尚未完成，因此尚未满足零原生控件验收。上述 98 界面族表是审计基线；同期实现可能替换部分卡片族，最终验收需按当前 registry 再对齐。
 
 4 个既有行为合同文件增加了 form/ref/键盘断言，本次未执行测试、构建或浏览器。视觉验收必须使用真实构建，并记录 revision、en/zh-CN、两主题、桌面/390 px 覆盖。本次 before 为 0，after 证据由验收阶段采集。
+
+## 当前呈现合同
+
+上表保留原审计基线；当前导航、共享骨架、按钮命中区和键盘规则见[一致性合同](ui-consistency.zh-CN.md)与[UI 作者指南](ui-author-guide.zh-CN.md)。历史页面数量不是当前导航数量，源码清单也不代表视觉验收。
