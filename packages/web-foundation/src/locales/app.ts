@@ -222,7 +222,7 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.session.notFound': '当前后台中找不到这个任务。请从侧栏选择，或新建任务。',
     'runtime.import': '插件 UI 入口加载失败，可重试',
     'runtime.styles': '插件 UI 样式加载失败，可重试',
-    'runtime.unsupportedSlot': '插件 UI 使用了当前宿主未实现的槽位',
+    'runtime.unsupportedSlot': '当前安装不支持此插件的界面位置',
     'runtime.moduleShape': '插件 UI 模块格式无效，可重试',
     'runtime.apply': '插件 UI 启动失败，可重试',
     'runtime.render': '插件 UI 渲染失败，可重试',

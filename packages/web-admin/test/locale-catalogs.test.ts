@@ -33,6 +33,10 @@ it('keeps every exported frontend catalog paired across all frontend packages', 
         if (!value || typeof value !== 'object' || !('en' in value)) continue
         const catalog = value as Record<string, Record<string, unknown>>
         if (!catalog.en || Array.isArray(catalog.en)) continue
+        if (name === 'factChainCatalog') {
+          expect(catalog.en['facts.title']).toBe('Activity record')
+          expect(catalog['zh-CN']?.['facts.title']).toBe('执行记录')
+        }
         count += 1
         discovered.add(name)
         expect(Object.keys(catalog.en), `${pkg}/${name}: nonempty English keys`).not.toHaveLength(0)
@@ -66,6 +70,17 @@ it('keeps every exported frontend catalog paired across all frontend packages', 
     ]),
   )
   expect(count).toBeGreaterThan(25)
+  const { settingsCatalog } = await import('../src/settings/locales.js')
+  const { adminListLocaleCatalog } = await import('@agnes/web-ui')
+  for (const [locale, execution, edit, leftover] of [
+    ['en', 'How the agent works (Agent Loop)', 'Edit workspace', 'Leftover usage'],
+    ['zh-CN', '执行方式（Agent Loop）', '可修改工作区', '遗留占用'],
+  ] as const) {
+    expect(settingsCatalog[locale]['provider.loop']).toBe(execution)
+    expect(settingsCatalog[locale]['choice.workspace-write']).toBe(edit)
+    expect(settingsCatalog[locale].workspaceWrite).toBe(edit)
+    expect(adminListLocaleCatalog[locale]['orphan.title']).toBe(leftover)
+  }
   const css = readWebStyleSource(resolve('packages/web/public/style.css'))
   expect(css.match(/content:\s*["'][^"']*\p{Script=Han}[^"']*["']/gu)).toBeNull()
 })

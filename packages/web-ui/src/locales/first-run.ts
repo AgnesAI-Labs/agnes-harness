@@ -23,7 +23,7 @@ export const firstRunCatalog: LocaleCatalog = {
       'This account and model will be used for new sessions. Existing sessions keep their choices.',
     'firstRun.examples': 'Add capabilities, optionally',
     'firstRun.examplesHelp':
-      'Official examples add Agent Loops, tools and panels. Installation includes capability review and trust. You can add them later.',
+      'Official examples add execution methods, tools and panels. Review their capabilities and trust before installation. You can add them later.',
     'firstRun.ready': 'Ready for your first task',
     'firstRun.readyHelp': 'Describe a small task. You can switch models in the conversation.',
     'firstRun.progress': 'Setup progress',
@@ -108,7 +108,7 @@ export const firstRunCatalog: LocaleCatalog = {
     'firstRun.modelHelp': '新会话将使用此账户和模型；已有会话保留原来的选择。',
     'firstRun.examples': '按需添加能力',
     'firstRun.examplesHelp':
-      '官方示例可添加 Agent Loop、工具与面板。安装时会审阅能力并确认信任，也可以稍后再添加。',
+      '官方示例可添加执行方式、工具与面板。安装时会审阅能力并确认信任，也可以稍后再添加。',
     'firstRun.ready': '开始你的第一个任务',
     'firstRun.readyHelp': '描述一个小任务。你可以在对话中切换模型。',
     'firstRun.progress': '配置进度',

@@ -13,13 +13,13 @@ export const operationsCatalog: LocaleCatalog = {
     exampleStart: 'Start a new session',
     exampleSummary: 'Adds',
     exampleHint: 'Available for new sessions.',
-    examplePending: 'Waiting for runtime activation. Check the plugin status before starting a new session.',
+    examplePending: 'The plugin is not ready yet. Check its status before starting a new session.',
 
     examples: 'Examples',
     schedules: 'Schedules',
     schedulesHelp:
       'Reminders start or resume a session. A recurring reminder delivers only its latest missed run after downtime. Archiving does not retract a message that is already queued.',
-    schedulesUnavailable: 'Schedules are unavailable until the daemon is connected.',
+    schedulesUnavailable: 'Reminders are unavailable. Reconnect and try again.',
     schedulesEmpty: 'No reminders yet.',
     schedulesScope: 'Reminder scope',
     schedulesSession: 'This session',
@@ -77,13 +77,13 @@ export const operationsCatalog: LocaleCatalog = {
     exampleStart: '开始新会话',
     exampleSummary: '新增能力',
     exampleHint: '可用于新会话。',
-    examplePending: '等待运行时生效。请先检查插件状态，再启动新会话。',
+    examplePending: '插件尚未就绪，请先检查状态，再启动新会话。',
 
     examples: '示例',
     schedules: '日程',
     schedulesHelp:
       '提醒会启动或恢复会话。停机后，重复提醒只补上最近一次错过的运行。归档不会撤回已经排队的消息。',
-    schedulesUnavailable: '未连接守护进程时无法使用日程。',
+    schedulesUnavailable: '提醒暂不可用，请重新连接后重试。',
     schedulesEmpty: '还没有提醒。',
     schedulesScope: '提醒范围',
     schedulesSession: '当前会话',

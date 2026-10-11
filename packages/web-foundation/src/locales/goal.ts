@@ -33,7 +33,7 @@ export const goalLocaleCatalog = {
     'goal.reason.usageUnavailable': '无法获取额度使用情况。',
     'goal.reason.budgetExhausted': '额度预算已用完。',
     'goal.reason.roundLimit': '已达到自动续轮上限。',
-    'goal.reason.continuationUnavailable': '当前宿主不支持自动续轮。',
+    'goal.reason.continuationUnavailable': '当前安装不支持自动继续任务。',
     'goal.create': '创建目标',
     'goal.edit': '保存目标',
     'goal.objective': '目标内容',

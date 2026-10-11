@@ -12,7 +12,7 @@ export const securityCatalog: LocaleCatalog = {
     securityProbeIssue:
       'The platform probe reports a limitation. Check the enforcement level and required policy below.',
     security: 'Security',
-    securityUnavailable: 'Measured security status is unavailable. Refresh after the runtime is ready.',
+    securityUnavailable: 'Security status is unavailable. Reconnect and refresh.',
     platformProbe: 'Most recent platform L1 probe',
     probeHelp:
       'This result comes from backend probes. Workspace posture below is specific to each open session; a platform result alone does not confirm its enforcement. Refresh reads existing facts and does not run a command.',
@@ -41,9 +41,9 @@ export const securityCatalog: LocaleCatalog = {
     policyDigest: 'Bound policy digest',
     securityHelp:
       'Permissions are enforced by the backend. Availability below comes from the running profile. A sandbox provider declaration does not confirm workspace enforcement; execution probes the chosen workspace and fails closed when required enforcement is unavailable.',
-    readOnly: 'Read-only',
-    workspaceWrite: 'Workspace-write',
-    fullAccess: 'Full-access',
+    readOnly: 'Read only',
+    workspaceWrite: 'Edit workspace',
+    fullAccess: 'Full access',
     notAllowed: 'Not allowed by this profile',
     sandbox: 'Sandbox providers',
     securityStart: 'Use this permission preset',
@@ -58,7 +58,7 @@ export const securityCatalog: LocaleCatalog = {
 
     securityProbeIssue: '平台探测报告了限制。请检查下方执行级别与所需策略。',
     security: '安全',
-    securityUnavailable: '实测安全状态不可用。请在运行时就绪后刷新。',
+    securityUnavailable: '安全状态暂不可用。请重新连接后刷新。',
     platformProbe: '最近的平台 L1 探测',
     probeHelp:
       '结果来自后台探测。下方工作区状态属于各自打开的会话；平台结果不能单独证明会话的隔离。刷新仅读取已有事实，不执行命令。',
@@ -88,7 +88,7 @@ export const securityCatalog: LocaleCatalog = {
     securityHelp:
       '权限由后台执行。下方可用性来自当前运行配置档。沙箱插件实现的能力声明不代表工作区已隔离；执行时会探测所选工作区，所需隔离不可用时拒绝执行。',
     readOnly: '只读',
-    workspaceWrite: '工作区写入',
+    workspaceWrite: '可修改工作区',
     fullAccess: '完全访问',
     notAllowed: '当前配置档未放行',
     sandbox: '沙箱插件实现',
