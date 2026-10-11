@@ -2,7 +2,7 @@ import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import type { MemoryFilePort, MemoryProposal } from '@agnes/extension-api'
+import type { MemoryApprovalResult, MemoryFilePort, MemoryProposal } from '@agnes/extension-api'
 import { afterEach, describe, expect, it } from 'vitest'
 import { fileMemoryProvider } from '../src/index.js'
 
@@ -26,7 +26,12 @@ async function fixture() {
   homes.push(home)
   const open = (sessionKey: string) => fileMemoryProvider.open({ home, workspaceRoot: home, sessionKey })
   const session = open('one')
-  const files = (turn: number, approve: (proposal: MemoryProposal) => Promise<boolean> = async () => true) =>
+  const files = (
+    turn: number,
+    approve: (proposal: MemoryProposal) => Promise<MemoryApprovalResult> = async () => ({
+      status: 'approved',
+    }),
+  ) =>
     session.files(
       fallback,
       { sessionKey: 'one', turn, toolUseId: 'write' },
@@ -67,7 +72,7 @@ describe('file memory contract', () => {
       f
         .files(1, async (value) => {
           proposal = value
-          return false
+          return { status: 'rejected' }
         })
         .write(f.index, 'Prefer concise answers.'),
     ).rejects.toMatchObject({ code: 'MEMORY_APPROVAL_REJECTED' })
@@ -78,12 +83,28 @@ describe('file memory contract', () => {
     expect(proposal?.baseHash).not.toBe(proposal?.newHash)
     expect(proposal?.diff).toContain('+Prefer concise answers.')
     expect((await f.session.snapshot(1))?.content).not.toContain('Prefer concise answers.')
+    for (const reason of [
+      'deadline',
+      'no-handler',
+      'transport',
+      'detached',
+      'stopped',
+      'invalid-answer',
+    ] as const) {
+      await expect(
+        f
+          .files(1, async () => ({ status: 'unanswered' as const, reason }))
+          .write(f.index, 'Unanswered candidate'),
+      ).rejects.toMatchObject({ code: 'MEMORY_APPROVAL_UNANSWERED', reason })
+      expect((await f.session.readFile('MEMORY.md')).content).toBe('')
+    }
+
     await expect(
       f
         .files(2, async () => {
           const before = await f.session.readFile('MEMORY.md')
           await f.session.editFile('MEMORY.md', 'Human preference', before.hash)
-          return true
+          return { status: 'approved' }
         })
         .write(f.index, 'Agent preference'),
     ).rejects.toMatchObject({ code: 'MEMORY_CONFLICT' })
@@ -105,7 +126,7 @@ describe('file memory contract', () => {
       f
         .files(3, async () => {
           await f.session.configure({ mode: 'off' })
-          return true
+          return { status: 'approved' }
         })
         .write(f.index, 'Approved too late'),
     ).rejects.toMatchObject({ code: 'MEMORY_DISABLED' })
@@ -114,7 +135,7 @@ describe('file memory contract', () => {
     const abort = new AbortController()
     const cancelled = f.session.files(fallback, { sessionKey: 'one', turn: 4 }, abort.signal, async () => {
       abort.abort(new Error('cancelled'))
-      return true
+      return { status: 'approved' }
     })
     await expect(cancelled.write(f.index, 'Cancelled candidate')).rejects.toThrow('cancelled')
     expect((await f.session.readFile('MEMORY.md')).content).toBe('Human preference')
@@ -130,7 +151,7 @@ describe('file memory contract', () => {
       fallback,
       { sessionKey: 'two', turn: 1 },
       new AbortController().signal,
-      async () => true,
+      async () => ({ status: 'approved' }),
     )
     await two.snapshot(1)
     const outcomes = await Promise.allSettled([
@@ -161,7 +182,7 @@ describe('file memory contract', () => {
         f
           .files(1, async () => {
             approved = true
-            return true
+            return { status: 'approved' }
           })
           .write(f.index, content),
       ).rejects.toMatchObject({

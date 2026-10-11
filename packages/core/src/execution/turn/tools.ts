@@ -456,7 +456,7 @@ export async function approveAndExecute(
               },
               { sessionKey: s.key, turn: op.meta.turn, toolUseId: call.toolUseId },
               o.signal ?? s.ac.signal,
-              async () => false,
+              async () => ({ status: 'unanswered', reason: 'no-approver' }),
             )
             await files.stat(target)
           } else await preflight(target)

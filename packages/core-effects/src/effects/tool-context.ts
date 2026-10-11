@@ -108,7 +108,9 @@ export type ToolContextDeps = {
   /** Private preference files have their own approval/CAS owner, outside workspace rewind. */
   memory?: {
     session: import('@agnes/extension-api').MemorySession
-    approve(proposal: import('@agnes/extension-api').MemoryProposal): Promise<boolean>
+    approve(
+      proposal: import('@agnes/extension-api').MemoryProposal,
+    ): Promise<import('@agnes/extension-api').MemoryApprovalResult>
   }
   /** Capabilities from the one tool-level WorkspaceInvocationPort lease. */
   workspace?: Readonly<{

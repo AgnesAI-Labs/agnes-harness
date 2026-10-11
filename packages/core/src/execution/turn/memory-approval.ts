@@ -1,5 +1,7 @@
+import { sha256Hex } from '@agnes/core-common/request/hash'
 import { isPending } from '@agnes/core-effects/effects/approval-answer'
-import type { MemoryProposal, ToolMeta } from '@agnes/extension-api'
+import type { MemoryApprovalResult, MemoryProposal, ToolMeta } from '@agnes/extension-api'
+import { validateActor } from '@agnes/protocol'
 import type { SessionImpl } from '../../step/session.js'
 
 /** A file candidate has its own one-shot binding; full access and session grants cannot approve it. */
@@ -9,7 +11,7 @@ export async function approveMemoryFile(
   tool: { name: string; meta: ToolMeta },
   step: number,
   signal: AbortSignal,
-): Promise<boolean> {
+): Promise<MemoryApprovalResult> {
   const asked = {
     requestId: session.d.ids.requestId(),
     kind: 'tool' as const,
@@ -18,6 +20,11 @@ export async function approveMemoryFile(
     risk: 'always' as const,
     bindingHash: proposal.newHash,
     scope: `memory:${proposal.baseHash}:${proposal.newHash}`,
+    approval: {
+      reviewerRequirement: 'human' as const,
+      grantConstraints: 'once' as const,
+      subjectRevision: sha256Hex(`${proposal.baseHash}:${proposal.newHash}`),
+    },
     options: ['allowed-once', 'rejected'] as Array<'allowed-once' | 'rejected'>,
     deadline: new Date(session.d.clock() + session.preset.approval.timeoutMs).toISOString(),
   }
@@ -35,7 +42,22 @@ export async function approveMemoryFile(
   )
   // Pending leaves the request unanswered here rather than parking a mutation: the candidate was not committed and a later
   // tool invocation must review a fresh base. Do not resurrect a lost approval after restart.
-  const verdict = isPending(answer) ? 'unavailable' : answer.verdict
+  const human =
+    !isPending(answer) &&
+    answer.answeredBy &&
+    validateActor(answer.answeredBy).ok &&
+    answer.answeredBy.role !== 'agent'
+  const validChoice = human && !isPending(answer) && ['allowed-once', 'rejected'].includes(answer.verdict)
+  const verdict = validChoice ? answer.verdict : 'unavailable'
+  const reason = isPending(answer)
+    ? ('invalid-answer' as const)
+    : answer.verdict === 'unavailable' || answer.verdict === 'cancelled'
+      ? (answer.reason ?? (answer.verdict === 'cancelled' ? ('stopped' as const) : ('no-approver' as const)))
+      : !validChoice &&
+          answer.verdict === 'rejected' &&
+          (answer.reason === 'policy_denied' || answer.reason === 'subagent_scope')
+        ? answer.reason
+        : ('invalid-answer' as const)
   await session.d.log.append([
     session.ev('approval/asked', asked),
     session.ev('approval/decided', {
@@ -43,13 +65,12 @@ export async function approveMemoryFile(
       verdict,
       via: 'sync',
       scope: asked.scope,
-      ...(!isPending(answer) && answer.answeredBy ? { answeredBy: answer.answeredBy } : {}),
-      ...(isPending(answer)
-        ? { reason: 'invalid-answer' as const }
-        : answer.reason
-          ? { reason: answer.reason }
-          : {}),
+      ...(validChoice ? { answeredBy: answer.answeredBy } : {}),
+      ...(!validChoice ? { reason } : {}),
     }),
   ])
-  return !signal.aborted && verdict === 'allowed-once'
+  if (signal.aborted) return { status: 'unanswered', reason: 'stopped' }
+  if (verdict === 'allowed-once') return { status: 'approved' }
+  if (verdict === 'rejected') return { status: 'rejected' }
+  return { status: 'unanswered', reason }
 }

@@ -28,6 +28,13 @@ export type MemoryFilePort = Readonly<{
 }>
 export type MemoryInspection = Readonly<import('@agnes/protocol/gen/app-server').MemoryInspection>
 
+/** A refusal is a human answer; delivery/cancellation failures remain unanswered. */
+export type MemoryApprovalResult = Readonly<
+  | { status: 'approved' }
+  | { status: 'rejected' }
+  | { status: 'unanswered'; reason: import('@agnes/protocol').ApprovalReason }
+>
+
 /** One implementation pinned to a session. Settings are live; revision snapshots are per turn. */
 export interface MemorySession {
   readonly root: string
@@ -38,7 +45,7 @@ export interface MemorySession {
     fallback: MemoryFilePort,
     source: MemorySource,
     signal: AbortSignal,
-    approve: (proposal: MemoryProposal) => Promise<boolean>,
+    approve: (proposal: MemoryProposal) => Promise<MemoryApprovalResult>,
   ): MemoryFilePort
   /** Human inspection/editing is explicit and independent of the agent's off switch. */
   inspect(): Promise<MemoryInspection>
