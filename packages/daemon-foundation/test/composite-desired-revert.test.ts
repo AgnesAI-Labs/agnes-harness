@@ -119,10 +119,20 @@ describe('revertTarget', () => {
     const previous = target([
       builtinRow('seam:approval', 'host'),
       row('ext:pkg-a/main', 'pkg-a', snapshot('1'), { disabled: true }),
+      createPluginRow({
+        id: 'web:pkg-a:c1',
+        plugin: `pkg-a@${snapshot('1')}/client/acme/primary`,
+        snapshotDigest: snapshot('1'),
+        exportName: 'client',
+        entryRevision: snapshot('1'),
+        extrasRevision: 'none',
+        mountRevision: 'client-row:v1',
+      }),
     ])
     expect([...rowIds(revertTarget(previous, previous, loadable))].sort()).toEqual([
       'ext:pkg-a/main',
       'seam:approval',
+      'web:pkg-a:c1',
     ])
   })
 

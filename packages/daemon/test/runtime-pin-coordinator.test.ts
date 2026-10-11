@@ -12,21 +12,21 @@ const treeIntegrity = `sha256-${'b'.repeat(64)}`
 const revision = 'c'.repeat(64)
 const packageId = '@acme/pin-test'
 
-function artifact(disabled = false) {
+function artifact(disabled = false, exports = ['main']) {
   return encodeRuntimeTargetArtifact(
     buildRuntimeTarget({
-      rows: [
+      rows: exports.map((exportPath, index) =>
         createPluginRow({
-          id: 'ext:acme/pin-test',
-          plugin: `${packageId}@${integrity}/main`,
+          id: exportPath.startsWith('client') ? `web:acme/pin-test:${index}` : 'ext:acme/pin-test',
+          plugin: `${packageId}@${integrity}/${exportPath}`,
           snapshotDigest: integrity,
-          exportName: 'main',
+          exportName: exportPath.split('/')[0]!,
           entryRevision: integrity,
           extrasRevision: 'none',
           mountRevision: 'test:v1',
           disabled,
         }),
-      ],
+      ),
       resources: { mcp: [], skills: {} },
       resourceRevision: revision,
       compositeRevision: revision,
@@ -100,17 +100,28 @@ function fixture() {
 }
 
 describe('runtime active pin coordinator', () => {
-  it('creates an immutable pin before probing and retains it for the published target', async () => {
-    const f = fixture()
-    const value = artifact()
-    await f.coordinator.publish(value, async () => {
-      expect(f.active.has(activeRuntimePinId({ packageId, integrity }))).toBe(true)
-      expect(f.store.pins()).toEqual([activeRuntimePinId({ packageId, integrity })])
-    })
-    expect(f.store.desired()).toEqual(value)
-    expect(f.store.pins()).toEqual([])
-    expect(f.active.size).toBe(1)
-  })
+  it.each([['main'], ['client'], ['client/acme/primary', 'client/acme/secondary']])(
+    'publishes and recovers snapshot pins for %j',
+    async (...exports) => {
+      const f = fixture()
+      const value = artifact(false, exports)
+      await f.coordinator.publish(value, async () => {
+        expect(f.active.has(activeRuntimePinId({ packageId, integrity }))).toBe(true)
+        expect(f.store.pins()).toEqual([activeRuntimePinId({ packageId, integrity })])
+      })
+      expect(f.store.desired()).toEqual(value)
+      expect(f.store.pins()).toEqual([])
+      expect(f.active.size).toBe(1)
+      const recovered = createRuntimePinCoordinator({
+        store: f.store,
+        manager: f.manager,
+        profileDirectory: '/profile',
+      })
+      await recovered.recover()
+      expect(f.store.desired()).toEqual(value)
+      expect(f.active.size).toBe(1)
+    },
+  )
 
   it('releases a new pin after a failed probe without publishing the target', async () => {
     const f = fixture()

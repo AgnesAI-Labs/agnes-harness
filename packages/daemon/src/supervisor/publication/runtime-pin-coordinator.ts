@@ -7,7 +7,11 @@ import {
   type RuntimePin,
   type RuntimeSnapshotSelector,
 } from '@agnes/package-manager'
-import { decodeRuntimeTargetArtifact, type RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
+import {
+  decodeRuntimeTargetArtifact,
+  parseSnapshotPluginLocator,
+  type RuntimeTargetArtifact,
+} from '@agnes/plugin-runtime/host'
 import { publishProbedRuntimeTarget, type RuntimeTargetApplyReceipt } from './runtime-target-publisher.js'
 
 type SnapshotRef = Readonly<{ packageId: string; integrity: string }>
@@ -17,10 +21,9 @@ function references(artifact: RuntimeTargetArtifact | undefined): readonly Snaps
   const refs = new Map<string, SnapshotRef>()
   for (const row of decodeRuntimeTargetArtifact(artifact).tree.rows) {
     if (row.plugin.startsWith('builtin:')) continue
-    const slash = row.plugin.lastIndexOf('/')
-    const at = row.plugin.lastIndexOf('@', slash)
-    if (slash < 0 || at < 1) continue
-    const ref = { packageId: row.plugin.slice(0, at), integrity: row.plugin.slice(at + 1, slash) }
+    const locator = parseSnapshotPluginLocator(row.plugin)
+    if (!locator) throw new Error('E_RUNTIME_TARGET_SNAPSHOT_MISMATCH')
+    const ref = { packageId: locator.packageId, integrity: locator.snapshotId }
     if (ref.integrity !== row.entryRevision) throw new Error('E_RUNTIME_TARGET_SNAPSHOT_MISMATCH')
     refs.set(activeRuntimePinId(ref), ref)
   }

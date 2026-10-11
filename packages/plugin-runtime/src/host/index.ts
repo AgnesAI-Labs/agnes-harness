@@ -94,4 +94,9 @@ export {
   DYNAMIC_SEAM_NAMES,
   type DynamicSeamName,
 } from '../seam-implementations.js'
+export {
+  formatSnapshotPluginLocator,
+  parseSnapshotPluginLocator,
+  type SnapshotPluginLocator,
+} from '../snapshot-locator.js'
 export { typeBoxStandardSchema } from '../standard-schema.js'

@@ -14,8 +14,10 @@ import {
   createPluginRow,
   decodeRuntimeTargetArtifact,
   encodeRuntimeTargetArtifact,
+  formatSnapshotPluginLocator,
   isResourceOwnedRowId,
   type PluginRow,
+  parseSnapshotPluginLocator,
   type RuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
 
@@ -33,7 +35,7 @@ export function ownsRow(plugin: string, packageId: string): boolean {
 }
 
 /**
- * The package a row's plugin string names. Mirrors how the Host parses it, but answers undefined for
+ * The package a row's plugin locator names. Answers undefined for
  * a malformed string: a row that cannot be attributed must not break a revert.
  */
 export function packageOfRow(plugin: string): string | undefined {
@@ -43,10 +45,7 @@ export function packageOfRow(plugin: string): string | undefined {
     if (slash <= 0 || slash === value.length - 1) return undefined
     return value.slice(0, slash)
   }
-  const slash = plugin.lastIndexOf('/')
-  const at = slash > 0 ? plugin.lastIndexOf('@', slash) : -1
-  if (at <= 0 || slash <= at + 1 || slash === plugin.length - 1) return undefined
-  return plugin.slice(0, at)
+  return parseSnapshotPluginLocator(plugin)?.packageId
 }
 
 /**
@@ -88,7 +87,7 @@ function rowsForPackage(pkg: InstalledPackage, disabled: boolean): readonly Read
     rows.push(
       createPluginRow({
         id: entry.id,
-        plugin: `${pkg.id}@${snapshotId}/${entry.export}`,
+        plugin: formatSnapshotPluginLocator({ packageId: pkg.id, snapshotId, exportName: entry.export }),
         snapshotDigest: snapshotId,
         exportName: entry.export,
         entryRevision: snapshotId,
@@ -122,10 +121,12 @@ function rowsForPackage(pkg: InstalledPackage, disabled: boolean): readonly Read
           clientContributions.length,
           contribution.client?.id ?? contribution.id,
         ),
-        plugin:
-          clientContributions.length === 1
-            ? `${pkg.id}@${snapshotId}/client`
-            : `${pkg.id}@${snapshotId}/client/${contribution.id}`,
+        plugin: formatSnapshotPluginLocator({
+          packageId: pkg.id,
+          snapshotId,
+          exportName: 'client',
+          ...(clientContributions.length === 1 ? {} : { contributionId: contribution.id }),
+        }),
         snapshotDigest: snapshotId,
         exportName: 'client',
         entryRevision: snapshotId,
@@ -292,9 +293,9 @@ export function loadableSnapshotsFromInventory(inventory: InstalledInventory): L
 
 function loadableRow(row: Readonly<PluginRow>, loadable: LoadableSnapshots): boolean {
   if (row.plugin.startsWith('builtin:')) return true
-  const slash = row.plugin.lastIndexOf('/')
-  if (slash <= 0) return false
-  const snapshotId = loadable.get(row.plugin.slice(0, slash))
+  const locator = parseSnapshotPluginLocator(row.plugin)
+  if (!locator) return false
+  const snapshotId = loadable.get(`${locator.packageId}@${locator.snapshotId}`)
   return snapshotId !== undefined && row.entryRevision === snapshotId
 }
 
