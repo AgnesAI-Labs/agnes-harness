@@ -2,6 +2,7 @@ packages:
   - packages/*
   - packages/package-manager/bundled-plugins/document-reader
   - examples/packages/cordis-greeting
+  - examples/loops/decision-loop
   - examples/loops/dag-loop
   - examples/loops/react-loop
   - examples/demos
