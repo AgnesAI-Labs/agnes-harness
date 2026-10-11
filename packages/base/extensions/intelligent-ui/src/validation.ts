@@ -10,9 +10,12 @@ import {
   validateAgainst,
 } from '@agnes/protocol'
 import { X_AGNES_UI_LIMITS } from '@agnes/protocol/gen/intelligent-ui'
-import { validIntelligentSurface } from '@agnes/protocol/intelligent-ui'
+import { componentDataValid, validIntelligentSurface } from '@agnes/protocol/intelligent-ui'
 import type { TSchema } from '@sinclair/typebox'
 import { Ajv2020 } from 'ajv/dist/2020.js'
+
+import { UI_DATA_CONTRACTS } from './data-contracts.js'
+import { rejectUiInput, type UiInputIssue } from './input-rejection.js'
 
 const ajv = new Ajv2020({ strict: false, allErrors: false, validateFormats: false, addUsedSchema: false })
 export const json = (value: unknown): JsonValue => JSON.parse(jcs(value))
@@ -51,45 +54,111 @@ export function accepts(schema: JsonValue, value: JsonValue): boolean {
     throw new Error('Invalid UI JSON Schema')
   }
 }
+export function validateUiParameters(schema: TSchema, input: unknown): void {
+  const checked = validateAgainst(schema, input)
+  if (!checked.ok)
+    rejectUiInput(
+      checked.errors.map((issue) => ({
+        path: issue.code === 'MISSING' && issue.key ? `${issue.path}/${issue.key}` : issue.path || '/',
+        expected: issue.message,
+      })),
+    )
+}
+function inputSchema(schema: JsonValue, value: JsonValue, path: string): void {
+  try {
+    accepts(schema, value) // compile even when an incomplete instance is not valid
+  } catch {
+    rejectUiInput([
+      {
+        path,
+        expected:
+          'Valid local synchronous JSON Schema, <=16384 bytes, no remote refs, $id, $async or prototype keys.',
+      },
+    ])
+  }
+}
 export function validateSurface(surface: Surface, ports: IntelligentUiCatalog): void {
-  bounded(surface, X_AGNES_UI_LIMITS.surfaceBytes)
+  try {
+    bounded(surface, X_AGNES_UI_LIMITS.surfaceBytes)
+  } catch {
+    rejectUiInput([
+      {
+        path: '/surface',
+        expected: `JSON data <=${X_AGNES_UI_LIMITS.surfaceBytes} bytes and depth <=${X_AGNES_UI_LIMITS.jsonDepth}.`,
+      },
+    ])
+  }
   const declarations = surface.components.some((item) => 'fallback' in item)
     ? (ports.components?.() ?? [])
     : []
-  if (!validIntelligentSurface(surface, declarations)) throw rpcError('INVALID_PARAMS')
+  if (!validIntelligentSurface(surface as unknown, declarations)) {
+    const issues: UiInputIssue[] = []
+    for (const component of surface.components) {
+      if (!('dataKey' in component)) continue
+      const data = surface.data[component.dataKey]
+      if (uiDataBinding(data) || componentDataValid(component, data, declarations)) continue
+      issues.push({
+        path: `/surface/data/${component.dataKey}`,
+        expected:
+          'fallback' in component
+            ? 'Props matching one pinned declaration, its propsSchema/maxPropsBytes and exact fallback.'
+            : UI_DATA_CONTRACTS[component.kind],
+      })
+    }
+    rejectUiInput(
+      issues.length
+        ? issues
+        : [
+            {
+              path: '/surface',
+              expected:
+                'Valid component data, unique component/action/tab ids, declared action and component references, local schemas and compatible source bindings.',
+            },
+          ],
+    )
+  }
   const actionIds = new Set<string>()
   const catalog = new Map(ports.tools().map((tool) => [tool.name, tool]))
-  for (const action of surface.actions) {
+  for (const [index, action] of surface.actions.entries()) {
+    const path = `/surface/actions/${index}`
     if (
       actionIds.has(action.id) ||
       !catalog.has(action.tool) ||
       ['ui_render', 'ui_update', 'ui_close'].includes(action.tool)
     )
-      throw rpcError('INVALID_PARAMS', {
-        reason: 'UI action must reference a distinct declared business tool',
-      })
+      rejectUiInput([
+        {
+          path: `${path}/tool`,
+          expected:
+            'A distinct action id referencing a declared business tool, not ui_render/ui_update/ui_close.',
+        },
+      ])
     actionIds.add(action.id)
-    safeSchema(action.paramsSchema)
-    accepts(action.paramsSchema, {}) // compile even when an empty instance is not valid
+    inputSchema(action.paramsSchema, {}, `${path}/paramsSchema`)
     for (const key of Object.keys(action.argsTemplate))
-      if (dangerous.has(key)) throw rpcError('INVALID_PARAMS')
-    for (const binding of Object.values(action.argsTemplate)) {
+      if (dangerous.has(key))
+        rejectUiInput([
+          { path: `${path}/argsTemplate`, expected: 'JSON argument keys without prototype keys.' },
+        ])
+    for (const [key, binding] of Object.entries(action.argsTemplate)) {
       if (!('from' in binding)) continue
       const dataKey = sourceDataKey(surface, binding)
-      // A source binding with an empty pointer would copy the resolved rows into tool arguments.
       if (dataKey && uiDataBinding(surface.data[dataKey]) && !binding.pointer)
-        throw rpcError('INVALID_PARAMS', {
-          code: 'UI_INVALID',
-          reason: 'UI source binding must select a scalar field',
-        })
+        rejectUiInput(
+          [
+            {
+              path: `${path}/argsTemplate/${key}/pointer`,
+              expected: 'A nonempty JSON pointer selecting a scalar source field.',
+            },
+          ],
+          'UI_INVALID',
+        )
     }
   }
-  for (const component of surface.components) {
+  for (const [index, component] of surface.components.entries()) {
     if ('fallback' in component) continue
-    if (component.kind === 'form') {
-      safeSchema(component.schema)
-      accepts(component.schema, surface.data[component.dataKey]!) // incomplete defaults are allowed
-    }
+    if (component.kind === 'form')
+      inputSchema(component.schema, surface.data[component.dataKey]!, `/surface/components/${index}/schema`)
   }
 }
 function sourceDataKey(surface: Surface, binding: { from: string; key: string }): string | undefined {

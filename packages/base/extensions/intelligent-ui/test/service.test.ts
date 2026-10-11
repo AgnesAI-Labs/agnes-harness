@@ -324,8 +324,9 @@ async function opened() {
 describe('preset surface contract and ledger lifecycle', () => {
   it('exposes bounded deferred data contracts and keeps nested argument validation', async () => {
     const tools: ToolDef[] = []
+    const f = fixture()
     intelligentUi({
-      providers: { register: () => () => {} },
+      providers: { register: () => () => {}, bindOwn: async () => f.service() },
       registerProjection: () => () => {},
       registerTool: (tool: ToolDef) => {
         tools.push(tool)
@@ -394,6 +395,38 @@ describe('preset surface contract and ledger lifecycle', () => {
       }
       expect(JSON.stringify(compact).length).toBeLessThan(JSON.stringify(schema).length)
     }
+    for (const name of ['ui_render', 'ui_update', 'ui_close']) {
+      const result = await tools.find((tool) => tool.name === name)!.execute({}, ctx)
+      expect(result).toMatchObject({
+        isError: true,
+        structured: {
+          code: 'UI_INVALID',
+          effect: 'none',
+          issues: expect.arrayContaining([
+            { path: expect.stringMatching(/^\//), expected: expect.any(String) },
+          ]),
+        },
+      })
+      expect(result.content[0]).toMatchObject({
+        type: 'text',
+        text: expect.stringContaining('Correct the input and retry'),
+      })
+    }
+    const invalid = { ...surface(), data: { ...surface().data, status: { label: 'Ready' } } }
+    const invalidResult = await tools
+      .find((tool) => tool.name === 'ui_render')!
+      .execute({ surface: invalid }, ctx)
+    expect(invalidResult).toMatchObject({
+      isError: true,
+      structured: { issues: [{ path: '/surface/data/status', expected: expect.stringContaining('string') }] },
+    })
+    expect((await f.service().read({ sessionId: 'session' }, signal)).surfaces).toEqual([])
+    // Stateful failures and cancellation still propagate; they do not carry the private rejection marker.
+    await expect(
+      tools
+        .find((tool) => tool.name === 'ui_update')!
+        .execute({ surfaceId: 'reconcile', expectedRevision: 1, surface: replacement }, ctx),
+    ).rejects.toMatchObject({ data: { code: 'UI_STALE' } })
     const submit = tools.find((tool) => tool.name === 'ui_submit')!.parameters
     expect(validateAgainst(submit, { surfaceId: 'reconcile', answers: { choice: 'yes' } }).ok).toBe(true)
     expect(validateAgainst(submit, { surfaceId: 'reconcile', answers: { choice: 42 } }).ok).toBe(false)

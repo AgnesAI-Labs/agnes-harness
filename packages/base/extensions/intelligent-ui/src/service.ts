@@ -22,7 +22,7 @@ import {
 } from '@agnes/protocol/gen/intelligent-ui'
 import { scanOwnUiEvents, uiCursorMac, uiSerial } from '../../../src/intelligent-ui-runtime.js'
 import { type ActionRecord, foldUiEvent, initialUiState, type UiState } from './state.js'
-import { bindArguments, bounded, json, validateSurface } from './validation.js'
+import { bindArguments, bounded, json, validateSurface, validateUiParameters } from './validation.js'
 
 const unfinished = (record: ActionRecord) =>
   ['received', 'executing', 'pending-approval'].includes(record.receipt.status)
@@ -268,7 +268,7 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
     render: (input, signal) =>
       serial(async () => {
         signal.throwIfAborted()
-        if (!validateAgainst(UiRenderParams, input).ok) throw rpcError('INVALID_PARAMS')
+        validateUiParameters(UiRenderParams, input)
         validateSurface(input.surface, cap)
         const value = await state(),
           old = value.surfaces[input.surface.id]
@@ -297,7 +297,7 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
     update: (input, signal) =>
       serial(async () => {
         signal.throwIfAborted()
-        if (!validateAgainst(UiUpdateParams, input).ok) throw rpcError('INVALID_PARAMS')
+        validateUiParameters(UiUpdateParams, input)
         validateSurface(input.surface, cap)
         const value = await state(),
           old = value.surfaces[input.surfaceId]
@@ -317,7 +317,7 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
     close: (input, signal) =>
       serial(async () => {
         signal.throwIfAborted()
-        if (!validateAgainst(UiCloseParams, input).ok) throw rpcError('INVALID_PARAMS')
+        validateUiParameters(UiCloseParams, input)
         const value = await state(),
           old = value.surfaces[input.surfaceId]
         if (!old || old.surface.revision !== input.expectedRevision)

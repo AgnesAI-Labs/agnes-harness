@@ -32,7 +32,7 @@ const call = (name: string, args: Record<string, JsonValue>): InferenceEvent[] =
   { type: 'done', reason: 'toolUse' },
 ]
 
-it('updates a surface to revision 2 in the same turn after an approved plugin tool', async () => {
+it('retries rejected UI input and updates revision 2 in the same turn after approval', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-ui-approval-'))
   let approvalAsked!: () => void
   const asked = new Promise<void>((resolve) => {
@@ -163,6 +163,7 @@ it('updates a surface to revision 2 in the same turn after an approved plugin to
     script: [
       call('tool_describe', { name: 'ui_render' }),
       call('tool_describe', { name: 'ui_update' }),
+      call('ui_render', { surface: { ...surface(1), data: { status: { label: 'Ready' } } } }),
       call('ui_render', { surface: surface(1) }),
       call('review_commit', {}),
       call('ui_update', { surfaceId: 'generic-review', expectedRevision: 1, surface: surface(2) }),
@@ -220,12 +221,35 @@ it('updates a surface to revision 2 in the same turn after an approved plugin to
       'tool_describe',
       'tool_describe',
       'ui_render',
+      'ui_render',
       'review_commit',
       'ui_update',
     ])
     const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
-    expect(results).toHaveLength(5)
-    expect(results.every((row) => !(row.data as { isError?: boolean }).isError)).toBe(true)
+    expect(results).toHaveLength(6)
+    expect(results[2]?.data).toMatchObject({
+      isError: true,
+      structured: {
+        code: 'UI_INVALID',
+        effect: 'none',
+        issues: [{ path: '/surface/data/status', expected: expect.stringContaining('string') }],
+      },
+    })
+    expect(results[2]?.data).toMatchObject({
+      content: [{ type: 'text', text: expect.stringContaining('/surface/data/status') }],
+    })
+    expect(JSON.stringify(results[2]?.data)).not.toContain('TOOL_OUTCOME_UNKNOWN')
+    expect(
+      results.filter((_, index) => index !== 2).every((row) => !(row.data as { isError?: boolean }).isError),
+    ).toBe(true)
+    expect(
+      await session.scan({ type: 'x/agnes/intelligent-ui/surface.opened', toSeq: session.lastSeq }),
+    ).toHaveLength(1)
+    expect(
+      (await session.scan({ type: 'effect/settled', toSeq: session.lastSeq })).every(
+        (row) => (row.data as { outcome: string }).outcome !== 'unknown',
+      ),
+    ).toBe(true)
     expect(await session.scan({ type: 'turn/start', toSeq: session.lastSeq })).toHaveLength(1)
   } finally {
     ac.abort()

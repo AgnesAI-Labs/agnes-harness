@@ -133,6 +133,8 @@ Detail cards, steps, progress, images and tabs are data only. The percentage bel
 
 `ui_render` and `ui_update` stay deferred. Their `tool_describe` descriptions include the data contract and a compact example for every preset kind, including steps `{id,label,state}` and progress `{label,value,total}`. Values belong in `surface.data[component.dataKey]`; button groups and tabs have no data value. The eager catalog does not carry these details.
 
+Deterministic input validation for the three surface tools runs before state, source resolution or ledger writes. Rejected input returns `isError` with `UI_INVALID`, `effect: "none"`, and bounded issues containing JSON paths and expected shapes; the model can correct and retry. RPC callers still receive `INVALID_PARAMS`. Stateful failures, cancellation and persistence failures retain their existing error paths.
+
 | Entry | Contract |
 | --- | --- |
 | `ui_render(UiRenderParams)` | Create revision 1; backend binds owner plugin/generation, task and lane. Re-entering the same normal tool invocation uses its existing receipt, not a second render. |

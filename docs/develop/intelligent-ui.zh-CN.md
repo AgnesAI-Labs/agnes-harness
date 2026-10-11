@@ -133,6 +133,8 @@ Schema 声明结构限制并导出 `X_AGNES_UI_LIMITS`；后台与渲染器还�
 
 `ui_render` 与 `ui_update` 保持延迟加载。`tool_describe` 描述包含每种预设组件的数据契约与紧凑示例，包括 steps 的 `{id,label,state}` 与 progress 的 `{label,value,total}`。值放在 `surface.data[component.dataKey]`；按钮组与 tabs 没有数据值。这些细节不进入 eager 工具目录。
 
+三个 surface 工具的确定性输入验证发生在读取状态、解析 source 或写入 ledger 之前。拒绝输入时返回 `isError`，包含 `UI_INVALID`、`effect: "none"` 和有界 issues（JSON 路径与期望形状），模型可以修正后重试。RPC 调用方仍收到 `INVALID_PARAMS`。状态错误、取消及持久化失败继续走原有错误路径。
+
 | 入口 | 合同 |
 | --- | --- |
 | `ui_render(UiRenderParams)` | 创建 revision 1；后台绑定归属插件/generation、任务和通道。同一普通工具 invocation 重入时使用已有回执，不重复 render。 |
