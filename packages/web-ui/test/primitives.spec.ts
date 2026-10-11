@@ -42,6 +42,8 @@ test.beforeAll(async () => {
     import { createAntdRoot } from './src/antd-root.js'
     import { Button } from './src/ui/button.js'
     import { IconButton } from './src/ui/icon-button.js'
+    import { Icon } from './src/ui/icon.js'
+    import { ListRow } from './src/ui/list-row.js'
     import { Menu } from './src/ui/menu.js'
     import { Drawer } from './src/ui/drawer.js'
     import { Dialog } from './src/ui/dialog.js'
@@ -66,12 +68,17 @@ test.beforeAll(async () => {
         <Button onClick={() => setDialog(true)}>Open confirmation</Button>
         <Button onClick={() => native.current.showModal()}>Open native details</Button>
         <dialog ref={native} aria-labelledby="native-heading" onCancel={event => { if (locked) event.preventDefault() }}>
-          <h2 id="native-heading">Native details</h2><Button onClick={() => lock(value => !value)}>{locked ? 'Unlock' : 'Lock'}</Button>
+          <section className="account-dialog-body">
+            <h2 id="native-heading">Native details</h2>
+            <div style={{overflow:'auto', minHeight:0, flex:'1 1 auto'}}>{Array.from({length:50}, (_, index) => <p key={index}>Synthetic native content {index}</p>)}</div>
+            <footer><Button onClick={() => lock(value => !value)}>{locked ? 'Unlock' : 'Lock'}</Button></footer>
+          </section>
         </dialog>
         <Drawer open={drawer} title="Details" onClose={() => setDrawer(false)}><Field label="Name"><input /></Field></Drawer>
         <Dialog open={dialog} title="Confirm changes" size="sm" onCancel={() => setDialog(false)} footer={<Button onClick={() => setDialog(false)}>Cancel</Button>}>
           <p>Review your changes.</p><Field label="Name" error="Enter a name"><input /></Field>
         </Dialog>
+        <ListRow title="Synthetic row" icon={<Icon name="plug" size={20}/>} description="A short description" onOpen={() => setDrawer(true)} actions={<Button>Open</Button>}/>
       </main>
     }
     createAntdRoot(document.getElementById('fixture')).render(<Fixture />)
@@ -122,6 +129,11 @@ test('native and React buttons converge; keyboard menu restores focus', async ({
   await page.getByRole('menuitem', { name: 'Copy' }).click()
   await expect(page.getByRole('status')).toHaveText('Copied')
   await expect(trigger).toBeFocused()
+  await expect(page.locator('.agh-list-row')).toHaveCSS('height', '56px')
+  await page.locator('.agh-list-row p').click()
+  await expect(page.getByRole('dialog', { name: 'Details', exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('button', { name: 'Synthetic row', exact: true })).toBeFocused()
   await settled(page)
   const scan = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze()
   expect(scan.violations).toEqual([])
@@ -155,6 +167,9 @@ test('narrow icon hit area, focus tooltip and draggable bottom sheet', async ({ 
   // A real click outside the 28px visual confirms that the expanded target receives input.
   await page.mouse.click(iconBounds.x + iconBounds.width + 4, iconBounds.y + iconBounds.height / 2)
   await expect(page.locator('#refresh-count')).toHaveText('Refreshed 1')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.mouse.click(iconBounds.x - 4, iconBounds.y + iconBounds.height / 2)
+  await expect(page.locator('#refresh-count')).toHaveText('Refreshed 2')
   await page.getByRole('button', { name: 'Open confirmation' }).click()
   const dialog = page.getByRole('dialog', { name: 'Confirm changes' })
   await expect(dialog).toBeVisible()
@@ -178,11 +193,16 @@ test('narrow icon hit area, focus tooltip and draggable bottom sheet', async ({ 
   await page.keyboard.press('Escape')
   await expect(drawer).toBeHidden()
   const nativeTrigger = page.getByRole('button', { name: 'Open native details', exact: true })
+  await page.setViewportSize({ width: 390, height: 667 })
   await nativeTrigger.click()
   const native = page.getByRole('dialog', { name: 'Native details', exact: true })
   const nativeHandle = native.locator('.agh-native-sheet-handle')
   await expect(nativeHandle).toBeVisible()
   await settled(page)
+  const nativeBounds = await native.boundingBox()
+  const footerBounds = await native.getByRole('button', { name: 'Lock', exact: true }).boundingBox()
+  if (!nativeBounds || !footerBounds) throw new Error('Native sheet or footer is missing')
+  expect(footerBounds.y + footerBounds.height).toBeLessThanOrEqual(nativeBounds.y + nativeBounds.height)
   await native.getByRole('button', { name: 'Lock', exact: true }).click()
   const dragNative = async () => {
     const handleBounds = await nativeHandle.boundingBox()

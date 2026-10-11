@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode } from 'react'
+import { type HTMLAttributes, type ReactNode, useRef } from 'react'
 import { Button } from './button.js'
 
 export type ListRowProps = Omit<HTMLAttributes<HTMLElement>, 'title'> & {
@@ -23,6 +23,7 @@ export function ListRow({
   className,
   ...props
 }: ListRowProps) {
+  const trigger = useRef<HTMLButtonElement>(null)
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: the real title button owns keyboard activation; row key handlers would also activate trailing actions.
     <article
@@ -33,8 +34,10 @@ export function ListRow({
         if (
           !event.defaultPrevented &&
           !(event.target as Element).closest('button, a, input, select, textarea, summary, [role="button"]')
-        )
+        ) {
+          trigger.current?.focus()
           onOpen?.()
+        }
       }}
     >
       {icon && (
@@ -46,7 +49,7 @@ export function ListRow({
         <div className="agh-list-row-heading">
           <h3>
             {onOpen ? (
-              <Button appearance="ghost" className="agh-list-row-title" onClick={onOpen}>
+              <Button ref={trigger} appearance="ghost" className="agh-list-row-title" onClick={onOpen}>
                 {title}
               </Button>
             ) : (

@@ -115,6 +115,7 @@ it('keeps row actions separate from its detail button', () => {
   const host = render(
     createElement(ListRow, {
       title: 'Plugin',
+      description: 'A short description',
       onOpen: open,
       actions: createElement(Button, { onClick: action }, 'Enable'),
     }),
@@ -125,6 +126,9 @@ it('keeps row actions separate from its detail button', () => {
   expect(open).not.toHaveBeenCalled()
   buttons[0]!.click()
   expect(open).toHaveBeenCalledTimes(1)
+  host.querySelector('p')!.click()
+  expect(open).toHaveBeenCalledTimes(2)
+  expect(document.activeElement).toBe(buttons[0])
 })
 it('closes the native detail drawer on Escape and returns focus to its trigger', async () => {
   function Fixture() {
