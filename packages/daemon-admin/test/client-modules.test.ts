@@ -1339,3 +1339,50 @@ describe('client module immutable snapshots', () => {
     service.closeClientModules()
   })
 })
+
+it.each([
+  { actual: 'running', actualIntegrity: `sha256-${'1'.repeat(64)}` },
+  { actual: 'running' },
+  { actual: 'starting' },
+  { actual: 'failed' },
+  { actual: 'restart-required' },
+  { actual: 'running', generationRestart: true },
+] as const)('projects the generation owner state for a pending local edit: $actual', async (observation) => {
+  const files = fixture()
+  const base = installed({ directory: files.packageDirectory, backend: true })
+  const row: InstalledPackage = {
+    ...base,
+    localReloadRequired: true,
+    entry: { ...base.entry, version: '1.0.0', source: { type: 'local', ref: 'local:workspace/panel' } },
+    capabilityHash: 'a'.repeat(64),
+    contributions: [],
+  }
+  const service = createPackageAdminService({
+    manager: { inventory: async () => inventory(row) } as unknown as PackageManager,
+    profileDirectory: async () => files.root,
+    operations: new FilePackageOperationStore(join(files.root, 'operations')),
+    activation: {
+      actual: async () => observation,
+      generations: async () => ({
+        generations: [],
+        plugins:
+          'generationRestart' in observation
+            ? [{ id: row.id, state: 'restart-required', boundSessions: 0, drainingSessions: 0 }]
+            : [],
+      }),
+    } as never,
+  })
+  const result = (await service.call(
+    '_agnes/v1/packages.list',
+    { profile: 'local-dev' },
+    {
+      audience: 'admin',
+      principalId: 'test',
+      clientId: 'test',
+      permissions: ['packages.read'],
+    },
+  )) as { packages: { actual: string }[] }
+  expect(result.packages[0]?.actual).toBe(
+    'generationRestart' in observation ? 'restart-required' : observation.actual,
+  )
+})

@@ -340,11 +340,9 @@ function projectPackage(
     ...(row.entry.provenance ? { provenance: row.entry.provenance } : {}),
     ...(row.kinds === undefined ? {} : { kinds: [...row.kinds] }),
     desired: row.enabled ? 'enabled' : 'installed-disabled',
-    actual: row.localFailure
-      ? 'failed'
-      : row.localReloadRequired && observation.actualIntegrity !== row.entry.integrity
-        ? 'restart-required'
-        : observation.actual,
+    // A pending local scan is not a restart requirement. The generation owner decides
+    // whether the replacement is running, activating, failed, or genuinely needs a restart.
+    actual: row.localFailure ? 'failed' : observation.actual,
     ...(observation.actualVersion === undefined ? {} : { actualVersion: observation.actualVersion }),
     ...(observation.actualIntegrity === undefined ? {} : { actualIntegrity: observation.actualIntegrity }),
     ...(row.localFailure
