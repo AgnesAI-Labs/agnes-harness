@@ -86,11 +86,16 @@ export function mountIntelligentUi(options: {
         storage,
       )
       current = client
+      let loaded = false
       stopWatch = client.subscribe(() => {
         const snapshot = client.getSnapshot()
         if (!snapshot.ready) return
         const next = newSurfacePlacements(seenSurfaces, snapshot.surfaces)
         for (const key of next.keys) seenSurfaces.add(key)
+        if (!loaded) {
+          loaded = true
+          return
+        }
         if (next.showConversation) options.revealInline?.()
         if (next.showWorkbench) openIntelligentPanel()
       })

@@ -2443,7 +2443,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 22109 -> 22110; exact cap, no exclusions or spare allocation.
   // UI refresh forwarding. HEAD was 13323 against the previous 13225 ceiling; this change adds 4.
   // UI data-source refresh and form drafts. countLines: 13327 -> 13395 (+68).
-  'packages/web/src': 13404,
+  'packages/web/src': 13409,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the

@@ -27,7 +27,7 @@
   "packages/daemon/src/supervisor/service-worker": 103,
   "packages/daemon/src/surfaces": 7,
   "packages/daemon/src/worker/service-authority": 1,
-  "packages/web/src": 13404,
+  "packages/web/src": 13409,
   "packages/bridges/src": 1728,
   "packages/channels/src": 5314,
   "packages/code/src": 1805,
