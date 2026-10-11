@@ -25,6 +25,20 @@ const key = 'intelligent-ui-fixture'
 const state: { page: UiReadResult; requests: UiActionParams[] } = JSON.parse(
   localStorage.getItem(key) ?? 'null',
 ) ?? { page: uiPage(), requests: [] }
+const sourceMode = new URL(location.href).searchParams.has('source')
+let sourceRefreshes = 0
+if (sourceMode) {
+  const record = state.page.surfaces[0]!
+  record.surface.data.rows = { $source: 'finance/differences', params: {} }
+  record.sources = { rows: { status: 'pending' } }
+  const action = record.surface.actions[0]!
+  action.argsTemplate.amountCents = { from: 'data', key: 'rows', pointer: '/0/amountCents' }
+  action.paramsSchema = {
+    type: 'object',
+    required: ['reason', 'amountCents'],
+    properties: { reason: { type: 'string' }, amountCents: { type: 'integer' } },
+  }
+}
 const customMode = new URL(location.href).searchParams.get('custom')
 const customDeclaration = {
   kind: 'finance/reconcile/diff@1',
@@ -105,7 +119,19 @@ const server: IntelligentUiServer = {
     notify()
     return structuredClone(receipt)
   },
-  refresh: async () => structuredClone(state.page.surfaces[0]!),
+  refresh: async () => {
+    const record = state.page.surfaces[0]!
+    if (sourceMode) {
+      record.updatedSeq = ++state.page.lastSeq
+      if (++sourceRefreshes === 1) record.sources = { rows: { status: 'error', code: 'UI_SOURCE_DENIED' } }
+      else {
+        record.surface.data.rows = [{ id: 'txn-1', amountCents: 275 }]
+        record.sources = { rows: { status: 'ready', resultHash: 'ab'.repeat(32) } }
+      }
+      save()
+    }
+    return structuredClone(record)
+  },
   listen: (listener) => {
     onEvent = listener
     return () => {
@@ -257,6 +283,9 @@ function Fixture() {
         Simulate concurrent revision without event delivery
       </button>
       <p data-testid="fixture-command-count">{state.requests.length}</p>
+      {sourceMode && (
+        <p data-testid="fixture-source-hashes">{JSON.stringify(state.requests.at(-1)?.sources ?? {})}</p>
+      )}
       <aside id="workbench-right" hidden>
         <div id="workbench-right-content" />
       </aside>

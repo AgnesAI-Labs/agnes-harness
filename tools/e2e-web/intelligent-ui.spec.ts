@@ -103,6 +103,44 @@ for (const locale of ['en', 'zh-CN'])
     expect(errors).toEqual([])
   })
 
+for (const locale of ['en', 'zh-CN'])
+  test(`source loading and denial retain siblings; refresh restores bound actions (${locale})`, async ({
+    page,
+  }) => {
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await page.goto(`${url}/?source=1&locale=${locale}`)
+    const card = page.getByTestId('intelligent-ui-inline')
+    const actions = card.getByTestId('ui-action-confirm')
+    await expect(actions).toHaveCount(2)
+    await expect(card.getByTestId('ui-source-loading').first()).toHaveAttribute('aria-busy', 'true')
+    await expect(card.getByTestId('ui-tabpanel-sections-context')).toContainText(
+      'Amounts stay integer USD cents.',
+    )
+    await expect(card.getByTestId('ui-form-adjustment').getByRole('textbox')).toHaveValue('Mismatch')
+    for (const action of await actions.all()) await expect(action).toBeDisabled()
+    await expect(card.getByTestId('ui-table-differences')).toHaveCount(0)
+    const refresh = card.getByTestId('ui-source-refresh').first()
+    await expect(refresh).toContainText(locale === 'en' ? 'Refresh' : '刷新')
+    await refresh.click()
+    await expect(card.getByTestId('ui-source-error').first()).toHaveAttribute('role', 'alert')
+    await expect(card.getByTestId('ui-source-error').first()).toContainText('UI_SOURCE_DENIED')
+    for (const action of await actions.all()) await expect(action).toBeDisabled()
+    await expect(card.getByTestId('ui-table-differences')).toHaveCount(0)
+    await refresh.click()
+    await expect(card.getByTestId('ui-source-error')).toHaveCount(0)
+    await expect(card.getByTestId('ui-source-loading')).toHaveCount(0)
+    await expect(card.getByTestId('ui-table-differences')).toContainText('275')
+    for (const action of await actions.all()) await expect(action).toBeEnabled()
+    await actions.first().click()
+    await card.getByTestId('ui-confirm').click()
+    await expect(page.getByTestId('fixture-command-count')).toHaveText('1')
+    await expect(page.getByTestId('fixture-source-hashes')).toHaveText(
+      JSON.stringify({ rows: 'ab'.repeat(32) }),
+    )
+    expect(errors).toEqual([])
+  })
+
 for (const mode of ['ready', 'blocked', 'error'])
   test(`reviewed custom renderer preserves fallback and the normal action flow (${mode})`, async ({
     page,
