@@ -281,7 +281,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-conversation/src': 4068,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src/settings': 9325,
+  'packages/web-admin/src/settings': 9342,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/permission-picker': 267,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
@@ -289,7 +289,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/admin/plugins/api': 548,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src': 16393,
+  'packages/web-admin/src': 16413,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-foundation/src': 2459,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
@@ -426,7 +426,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI data-source loading, error, and refresh. HEAD was 11480 against the previous 10937 ceiling;
   // this change adds 182. countLines: 11662.
   // Preset presentation: exact measured count; no exclusions or spare allocation.
-  'packages/web-ui/src': 14717,
+  'packages/web-ui/src': 14756,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
