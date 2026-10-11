@@ -2,6 +2,7 @@ import type {
   McpServerDefinitionInput,
   McpServerDescriptor,
   ResourceOperation,
+  ResourceOperationReceipt,
   SkillDescriptor,
   SkillRootStatus,
 } from '@agnes/protocol'
@@ -20,6 +21,7 @@ import {
   ResourceListContent,
   type ResourceProgress,
   renderRegion,
+  releaseDialogModal,
   resourceDesiredEnabled,
   resourceDetailLocaleCatalog,
   resourceFailureKey,
@@ -36,6 +38,7 @@ import { ResourceAdminApi, ResourceAdminApiError } from './api.js'
 import { RESOURCE_ADMIN_LOCALE_NAMESPACE, resourceAdminLocaleCatalog } from './locales/admin.js'
 import { createMcpForm, McpFormValidationError } from './mcp-form.js'
 import { mountMcpPresets } from './mcp-presets.js'
+import { mountMcpWizard } from './mcp-wizard.js'
 import { watchMcpPanel } from './mcp-refresh.js'
 import { SKILL_LOCATION_HINTS } from './skill-copy.js'
 import type { ResourceAdminContext, ResourceAdminError } from './types.js'
@@ -49,6 +52,7 @@ let mcpTransport!: HTMLSelectElement
 let mcpSecretKind!: HTMLSelectElement
 let mcpForm!: ReturnType<typeof createMcpForm>
 let mcpPickers: SelectPicker[] = []
+let mcpWizard: ReturnType<typeof mountMcpWizard> | undefined
 let mcpPresets: ReturnType<typeof mountMcpPresets> | undefined
 let stopMcpRefresh: (() => void) | undefined
 const terminal = new Set<ResourceOperation['state']>(['succeeded', 'failed', 'cancelled'])
@@ -146,6 +150,7 @@ class ResourceAdminPage {
       syncResourcePickers(this.#t)
       syncTransport(this.#t)
       mcpPresets?.localize()
+      mcpWizard?.localize()
       if (dialog?.open)
         $('mcp-dialog-title', 'h2').textContent = editing
           ? this.#t('form.title.edit', { name: editing.displayName })
@@ -452,6 +457,24 @@ class ResourceAdminPage {
           onToggleDesired={(item, next) => void this.toggleDesired(item, next)}
           onLoadMore={() => void this.loadMore()}
           onRetry={() => void this.reload()}
+          mcpActions={(item) => ({
+            edit: () => {
+              this.closeDetail()
+              openMcpDialog(item, this.#t)
+            },
+            test: () => {
+              const action = this.#detailActions(item).find(
+                (action) => action.label === this.#t('action.test-mcp'),
+              )
+              if (action) void this.#runAction(action)
+            },
+            remove: () => {
+              const action = this.#detailActions(item).find(
+                (action) => action.label === this.#t('action.remove-mcp'),
+              )
+              if (action) void this.#runAction(action)
+            },
+          })}
         />
       </UiLocaleProvider>,
     )
@@ -747,6 +770,10 @@ class ResourceAdminPage {
     stopMcpRefresh = undefined
     for (const picker of mcpPickers) picker.destroy()
     mcpPickers = []
+    mcpWizard?.dispose()
+    mcpWizard = undefined
+    restoreMcpHost?.()
+    restoreMcpHost = undefined
     mcpPresets?.dispose()
     mcpPresets = undefined
     unmountRegion(list)
@@ -754,6 +781,8 @@ class ResourceAdminPage {
   }
 }
 
+let mcpConfirming = false
+let restoreMcpHost: (() => void) | undefined
 let editing: McpServerDescriptor | undefined
 function writeDefinition(definition: McpServerDefinitionInput): void {
   $('mcp-workspace', 'input').value =
@@ -794,14 +823,19 @@ function openMcpDialog(server?: McpServerDescriptor, t: LocaleTranslator = activ
   form.reset()
   mcpPresets?.reset()
   if (server) writeDefinition(server.definition)
+  mcpWizard?.reset(!!server)
   syncTransport(t)
   $('mcp-dialog-title', 'h2').textContent = server
     ? t('form.title.edit', { name: server.displayName })
     : t('form.title.create')
   $('mcp-id', 'input').disabled = !!server
   $('mcp-error', 'p').textContent = ''
+  restoreMcpHost ??= releaseDialogModal(document.querySelector<HTMLDialogElement>('dialog#config'))
   dialog.showModal()
-  $('mcp-name', 'input').focus()
+  const focus = server
+    ? $('mcp-name', 'input')
+    : (document.getElementById('mcp-method-local') ?? $('mcp-name', 'input'))
+  focus.focus()
 }
 function syncResourcePickers(t: LocaleTranslator = activeResourceText): void {
   for (const picker of mcpPickers) picker.destroy()
@@ -861,6 +895,12 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
     text: () => activeResourceText,
   })
   const page = new ResourceAdminPage(options.workspaceId, options.tab, options.locale)
+  mcpWizard?.dispose()
+  mcpWizard = mountMcpWizard(
+    () => activeResourceText,
+    () => syncTransport(),
+  )
+  mcpWizard.localize()
   syncResourcePickers(activeResourceText)
   mcpPresets?.dispose()
   mcpPresets = mountMcpPresets({
@@ -869,6 +909,7 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
     open: () => openMcpDialog(),
     fill: (definition) => {
       writeDefinition(definition)
+      mcpWizard?.filled()
       syncTransport()
     },
     locale: () => page.locale(),
@@ -920,6 +961,12 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
   )
   $('mcp-create', 'button').addEventListener('click', () => openMcpDialog(undefined, activeResourceText))
   $('mcp-cancel', 'button').addEventListener('click', () => dialog.close())
+  dialog.addEventListener('close', () => {
+    if (!mcpConfirming && !dialog.open) {
+      restoreMcpHost?.()
+      restoreMcpHost = undefined
+    }
+  })
   mcpTransport.addEventListener('change', () => syncTransport(activeResourceText))
   mcpSecretKind.addEventListener('change', () => syncTransport(activeResourceText))
   // input/change 都在 form 上冒泡：文本框逐字触发 input，select 触发 change。
@@ -944,11 +991,28 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
         'sandboxProfile' in definition
           ? '\n' + activeResourceText('sandbox.' + definition.sandboxProfile)
           : ''
-      if (!(await page.confirm(summary + sandboxSummary))) return
-      const receipt = editing
-        ? await page.api().mcpUpdate(editing.serverId, editing.revision, definition)
-        : await page.api().mcpCreate(definition)
+      // Close the form host before confirmation; the draft remains in the mounted form.
+      mcpConfirming = true
       dialog.close()
+      let confirmed = false
+      try {
+        confirmed = await page.confirm(summary + sandboxSummary)
+      } finally {
+        mcpConfirming = false
+        if (!confirmed) dialog.showModal()
+      }
+      if (!confirmed) return
+      let receipt: ResourceOperationReceipt
+      try {
+        receipt = editing
+          ? await page.api().mcpUpdate(editing.serverId, editing.revision, definition)
+          : await page.api().mcpCreate(definition)
+      } catch (cause) {
+        dialog.showModal()
+        throw cause
+      }
+      restoreMcpHost?.()
+      restoreMcpHost = undefined
       editing = undefined
       await page.track(receipt)
       // track() already reported success generically; a new server still needs an explicit enable.

@@ -53,7 +53,11 @@ let shellLocaleBootScheduled = false
 function staticShellCatalog() {
   if (document.body?.id === 'plugin-admin-page') return pluginAdminShellLocaleCatalog
   if (document.body?.id === 'resource-admin-page') return resourceAdminShellLocaleCatalog
-  if (document.documentElement.dataset.agnesShell === 'workbench') return workbenchShellLocaleCatalog
+  if (document.documentElement.dataset.agnesShell === 'workbench')
+    return {
+      en: { ...resourceAdminShellLocaleCatalog.en, ...workbenchShellLocaleCatalog.en },
+      'zh-CN': { ...resourceAdminShellLocaleCatalog['zh-CN'], ...workbenchShellLocaleCatalog['zh-CN'] },
+    }
   return undefined
 }
 

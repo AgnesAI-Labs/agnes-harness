@@ -2,6 +2,8 @@ import { createMcpPreset } from '@agnes/resource-control-contracts/mcp-presets'
 import { describe, expect, it } from 'vitest'
 import { MCP_FORM_LIMITS, type McpFormFieldSnapshot, mcpFormIssues } from '../src/mcp-form-validation.js'
 
+import { formatMcpCommand, parseMcpCommand } from '../src/mcp-command.js'
+
 const base: McpFormFieldSnapshot = {
   transport: 'stdio',
   secretKind: 'none',
@@ -25,6 +27,10 @@ const messages = (snapshot: McpFormFieldSnapshot, mode = live): string[] =>
 
 describe('MCP form live validation mirrors the runtime schema', () => {
   it('passes the documented examples through every field', () => {
+    const tokens = ['npx', '-y', '--mode test', 'C:\\tools\\server.exe', '']
+    expect(parseMcpCommand(formatMcpCommand(tokens))).toEqual(tokens)
+    expect(parseMcpCommand('npx -y "--mode test"')).toEqual(['npx', '-y', '--mode test'])
+    expect(() => parseMcpCommand('npx "unterminated')).toThrow('Unclosed quote')
     const preset = createMcpPreset('playwright')
     if (preset.transport.kind !== 'stdio') throw new Error('expected stdio preset')
     expect(

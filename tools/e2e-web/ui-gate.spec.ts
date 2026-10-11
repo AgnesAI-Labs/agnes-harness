@@ -145,6 +145,9 @@ for (const locale of ['en', 'zh-CN'])
             .evaluate((input) => getComputedStyle(input).backgroundColor)
         }
         if (id === 'search') {
+          await quality('settings-search', true)
+          await page.getByTestId('search-settings-brave').click()
+          await page.getByTestId('search-advanced').locator('summary').click()
           await expect(page.getByTestId('search-api-key')).toBeEnabled()
           for (const control of [
             'search-api-key',
@@ -154,7 +157,8 @@ for (const locale of ['en', 'zh-CN'])
           ]) {
             await expect(page.locator(`#${control}`)).toHaveCSS('background-color', fieldSurface)
           }
-          await quality('settings-search', true)
+          await accessible(page, info, 'search-editor')
+          await page.getByRole('button', { name: locale === 'en' ? 'Cancel' : '取消', exact: true }).click()
         }
         if (id === 'memory') {
           await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
@@ -176,12 +180,19 @@ for (const locale of ['en', 'zh-CN'])
             .click()
           await expect(page.locator('#mcp-dialog')).toBeVisible()
           await expect(page.locator('#mcp-dialog .dialog-intro')).not.toContainText('<code>')
-          await expect(page.locator('#mcp-dialog .dialog-intro')).toContainText('secret://')
+          await expect(page.locator('#mcp-dialog .dialog-intro')).toContainText(
+            locale === 'en' ? 'Connect external tools' : '连接外部工具',
+          )
+          await expect(page.locator('#mcp-secret')).toBeHidden()
+          await page.locator('#mcp-advanced > summary').click()
+          await expect(page.locator('#mcp-secret')).toBeVisible()
           await page.mouse.move(0, 0)
           for (const control of ['mcp-name', 'mcp-executable', 'mcp-args', 'mcp-secret', 'mcp-tools']) {
             await expect(page.locator(`#${control}`)).toHaveCSS('background-color', fieldSurface)
           }
           await expect(page.locator('#mcp-sandbox-trigger')).toHaveCSS('background-color', fieldSurface)
+          await accessible(page, info, 'mcp-advanced')
+          await page.locator('#mcp-advanced > summary').click()
           await quality('mcp-form', true)
           await page.locator('#mcp-cancel').click()
           await page.keyboard.press('Escape')

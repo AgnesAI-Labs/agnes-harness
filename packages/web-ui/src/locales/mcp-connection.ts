@@ -1,0 +1,29 @@
+import { resourceFailureCatalog } from '../resource-failure.js'
+export const mcpConnectionCatalog = {
+  en: {
+    ...resourceFailureCatalog.en,
+    local: 'Local command',
+    remote: 'Remote service',
+    actions: 'Actions',
+    edit: 'Edit',
+    test: 'Test connection',
+    remove: 'Remove',
+    retry: 'Retry',
+    open: 'View details for {name}',
+    enable: 'Enable {name}',
+    disable: 'Disable {name}',
+  },
+  'zh-CN': {
+    ...resourceFailureCatalog['zh-CN'],
+    local: '本地命令',
+    remote: '远程服务',
+    actions: '操作',
+    edit: '编辑',
+    test: '测试连接',
+    remove: '移除',
+    retry: '重试',
+    open: '查看 {name} 的详情',
+    enable: '启用 {name}',
+    disable: '停用 {name}',
+  },
+}

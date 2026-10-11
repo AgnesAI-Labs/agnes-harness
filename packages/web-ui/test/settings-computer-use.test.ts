@@ -27,7 +27,7 @@ const view: SettingsComputerUseView = {
   },
 }
 
-it('renders four sections, safe text and snapshot controls through stable accessible buttons', async () => {
+it('renders one summary with folded maintenance, safe text and snapshot controls through stable accessible buttons', async () => {
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
@@ -45,7 +45,8 @@ it('renders four sections, safe text and snapshot controls through stable access
     flushSync(() => root.render(createElement(SettingsComputerUse, { view: next, actions })))
   try {
     render(view)
-    expect(host.querySelectorAll('.config-card')).toHaveLength(4)
+    expect(host.querySelectorAll('.config-card')).toHaveLength(1)
+    expect(host.querySelector<HTMLDetailsElement>('[data-testid="computer-use-more"]')?.open).toBe(false)
     expect(host.querySelector('#computer-use-state')?.getAttribute('role')).toBe('status')
     expect(host.querySelector('#computer-use-summary')?.textContent).toBe('<script>unsafe</script>')
     expect(host.querySelector('script')).toBeNull()

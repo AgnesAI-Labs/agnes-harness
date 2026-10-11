@@ -1,5 +1,6 @@
 import type { McpServerDefinitionInput } from '@agnes/protocol'
 import type { LocaleTranslator } from '@agnes/web-ui'
+import { parseMcpCommand } from './mcp-command.js'
 import { $ } from './admin-dom.js'
 import { type McpFormFieldId, type McpFormFieldSnapshot, mcpFormIssues } from './mcp-form-validation.js'
 
@@ -49,15 +50,41 @@ export function createMcpForm(input: {
       if (control) $(control[0], control[1]).setAttribute('aria-invalid', 'true')
     }
     $('mcp-error', 'p').textContent = issues[0]?.message ?? ''
+    const command = document.getElementById('mcp-command')
+    if (command) {
+      const commandIssue = issues.some(
+        (issue) => issue.field === 'mcp-executable' || issue.field === 'mcp-args',
+      )
+      if (commandIssue) {
+        command.setAttribute('aria-invalid', 'true')
+        command.setAttribute('aria-describedby', 'mcp-error')
+      } else {
+        command.removeAttribute('aria-invalid')
+        command.removeAttribute('aria-describedby')
+      }
+    }
+    if (requireFilled && issues[0]) {
+      const field = issues[0].field
+      if (command && (field === 'mcp-executable' || field === 'mcp-args')) command.focus()
+      else {
+        const advanced = document.getElementById('mcp-advanced') as HTMLDetailsElement | null
+        if (advanced && document.getElementById(field)?.closest('#mcp-advanced')) advanced.open = true
+        document.getElementById(field)?.focus()
+      }
+    }
     return issues
   }
   function definitionFromForm(t: LocaleTranslator = input.text()): McpServerDefinitionInput {
     const serverId = $('mcp-id', 'input').value.trim()
     const displayName = $('mcp-name', 'input').value.trim()
-    const args = $('mcp-args', 'textarea')
-      .value.split('\n')
-      .map((value) => value.trim())
-      .filter(Boolean)
+    const command = document.getElementById('mcp-command') as HTMLInputElement | null
+    const args =
+      command && mcpTransport.value === 'stdio'
+        ? parseMcpCommand(command.value).slice(1)
+        : $('mcp-args', 'textarea')
+            .value.split('\n')
+            .map((value) => value.trim())
+            .filter(Boolean)
     const allow = $('mcp-tools', 'textarea')
       .value.split('\n')
       .map((value) => value.trim())

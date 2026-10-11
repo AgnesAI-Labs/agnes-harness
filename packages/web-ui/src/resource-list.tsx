@@ -1,5 +1,6 @@
 import type { SkillDescriptor, SkillRootStatus } from '@agnes/protocol'
 import type { JSX } from 'react'
+import { McpConnectionRow, type McpRowActions } from './mcp-connection-row.js'
 import { RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog } from './locales/resource-list.js'
 import { SettingsState, SettingsToolbar } from './settings-layout.js'
 import { Button } from './ui/button.js'
@@ -29,6 +30,7 @@ export function ResourceListContent({
   onToggleDesired,
   onLoadMore,
   onRetry,
+  mcpActions,
 }: {
   tab: ResourceTab
   loadState: ResourceLoadState
@@ -46,6 +48,7 @@ export function ResourceListContent({
   onToggleDesired(item: ResourceItem, next: boolean): void
   onLoadMore(): void
   onRetry(): void
+  mcpActions?(item: import('@agnes/protocol').McpServerDescriptor): McpRowActions
 }): JSX.Element {
   const { t } = useUiText(RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog)
   if (loadState === 'loading' && !items.length) {
@@ -94,17 +97,30 @@ export function ResourceListContent({
           }
         />
       )}
-      {items.map((item) => (
-        <ResourceRow
-          key={item.resourceId}
-          item={item}
-          selected={item.resourceId === selectedId}
-          switchDisabled={switchDisabled}
-          itemName={itemNameOf(item)}
-          onOpen={onOpen}
-          onToggleDesired={onToggleDesired}
-        />
-      ))}
+      {items.map((item) =>
+        item.kind === 'mcp' ? (
+          <McpConnectionRow
+            key={item.resourceId}
+            item={item}
+            itemName={itemNameOf(item)}
+            selected={item.resourceId === selectedId}
+            disabled={switchDisabled}
+            onOpen={() => onOpen(item)}
+            onToggle={(next) => onToggleDesired(item, next)}
+            actions={mcpActions?.(item)}
+          />
+        ) : (
+          <ResourceRow
+            key={item.resourceId}
+            item={item}
+            selected={item.resourceId === selectedId}
+            switchDisabled={switchDisabled}
+            itemName={itemNameOf(item)}
+            onOpen={onOpen}
+            onToggleDesired={onToggleDesired}
+          />
+        ),
+      )}
       {nextCursor && (
         <Button
           htmlType="button"
