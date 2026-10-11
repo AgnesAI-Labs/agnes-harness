@@ -287,7 +287,8 @@ export function TriggersPanel({ canSave }: { canSave: boolean }) {
         ))}
       </div>
       <Dialog
-        focusTriggerAfterClose={false}
+        focusable={{ focusTriggerAfterClose: false }}
+        scrollLock={false}
         getContainer={() => document.body}
         open={formOpen}
         title={editing ? t('edit') : t('new')}
@@ -523,7 +524,8 @@ export function TriggersPanel({ canSave }: { canSave: boolean }) {
         </ul>
       </SettingsDetails>
       <Dialog
-        focusTriggerAfterClose={false}
+        focusable={{ focusTriggerAfterClose: false }}
+        scrollLock={false}
         getContainer={() => document.body}
         open={!!removing}
         title={t('remove')}

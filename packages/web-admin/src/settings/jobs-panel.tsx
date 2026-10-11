@@ -266,7 +266,8 @@ export function JobsPanel({
         ))}
       </div>
       <Dialog
-        focusTriggerAfterClose={false}
+        focusable={{ focusTriggerAfterClose: false }}
+        scrollLock={false}
         getContainer={() => document.body}
         open={!!pending}
         title={t('confirmStop')}

@@ -59,7 +59,7 @@ for (const locale of ['en', 'zh-CN']) {
     )
     const policyTable = page.getByTestId('permission-preset-status')
     if (await policyTable.count()) {
-      await page.getByTestId('security-details').locator('summary').click()
+      await page.getByTestId('security-details-toggle').click()
       const scrollRegion = policyTable.locator('..')
       await scrollRegion.focus()
       await scrollRegion.press('ArrowRight')

@@ -647,7 +647,8 @@ export function SearchPanel({
         )}
       </Drawer>
       <Dialog
-        focusTriggerAfterClose={false}
+        focusable={{ focusTriggerAfterClose: false }}
+        scrollLock={false}
         getContainer={() => document.body}
         open={!!confirmClear}
         title={t('searchClearKey')}
