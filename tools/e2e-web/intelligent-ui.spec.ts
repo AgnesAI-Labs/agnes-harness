@@ -224,9 +224,12 @@ for (const [locale, theme, width] of [
     ).toBe('end')
     const scroll = panel.getByRole('region', { name: 'Reconciliation (USD cents)', exact: true })
     await scroll.focus()
+    await page.keyboard.press('Tab')
+    await page.keyboard.press('Shift+Tab')
     await expect(scroll).toBeFocused()
     expect(await scroll.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe('solid')
-    const tab = panel.getByRole('tab', { name: 'Context', exact: true })
+    // Ant adds a live ordinal announcement to the accessible name after focus.
+    const tab = panel.getByRole('tab').filter({ hasText: 'Context' })
     await tab.focus()
     await tab.press('Enter')
     await expect(tab).toBeFocused()
