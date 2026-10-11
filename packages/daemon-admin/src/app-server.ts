@@ -10,6 +10,7 @@ import {
   createCredentialStore,
   createSecretsEnv,
   createSecretsFile,
+  fileSecretsDir,
   type ResolvedProfile,
   resolveFileSecretsDirectory,
 } from '@agnes/host'
@@ -23,6 +24,8 @@ import type {
   AdminPlanParams,
 } from '@agnes/protocol/gen/app-server'
 import { credentialRefFor } from '@agnes/resource-control-runtime'
+import { type CredentialConfiguration, savedCredentialConfigurations } from './credential-references.js'
+import { createCredentialAdmin } from './credentials.js'
 import { createWebhookService, type TriggerSessionInput } from './webhooks/service.js'
 
 /** Local settings owner exposes only read/save operations to authenticated RPC adapters. */
@@ -44,6 +47,7 @@ export function createAppServerAdmin(options: {
     input: AdminMemoryParams,
   ): Promise<Pick<import('@agnes/protocol/gen/app-server').AdminMemoryResult, 'inspection' | 'file'>>
   triggerSession?(input: TriggerSessionInput): Promise<void>
+  credentialConfigurations?(): Promise<CredentialConfiguration[]>
   workspaces(): Promise<{ items: { path: string; available: boolean }[] }>
 }) {
   const composition = createCompositionAdmin({
@@ -92,8 +96,41 @@ export function createAppServerAdmin(options: {
       return refs.sort().slice(0, 4096)
     },
   })
+  const genericCredentials = createCredentialAdmin({
+    home: options.home,
+    dataDir: options.dataDir,
+    writableStore: async () => {
+      const config = (await options.resolveProfile()).adapters.secrets
+      return (
+        config.kind === 'file' &&
+        resolveFileSecretsDirectory({
+          home: options.home,
+          dataDir: options.dataDir,
+          ...(config.path ? { path: config.path } : {}),
+        }) === fileSecretsDir(options.home)
+      )
+    },
+    configurations: async () => {
+      if (!options.credentialConfigurations) throw new Error('credential reference inspection unavailable')
+      const profile = await options.resolveProfile()
+      const snapshot = await triggers.handle({ action: 'list' })
+      if (!snapshot.snapshot) throw new Error('trigger reference inspection unavailable')
+      return [
+        { kind: 'profile', profile: profile.name, configId: 'resolved', value: profile },
+        ...(await savedCredentialConfigurations(options.home, options.dataDir)),
+        ...snapshot.snapshot.rules.map((rule) => ({
+          kind: 'trigger' as const,
+          profile: profile.name,
+          configId: rule.id,
+          value: rule,
+        })),
+        ...(await options.credentialConfigurations()),
+      ]
+    },
+  })
   return {
     triggers: triggers.handle,
+    credentials: genericCredentials.call,
     bundles: () => composition.bundles(),
     saveBundles: (input: AdminBundlesSave) => composition.saveBundles(input),
     composition: (preset?: string) => composition.dump(preset),

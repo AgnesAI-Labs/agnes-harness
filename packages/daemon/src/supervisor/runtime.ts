@@ -2052,6 +2052,10 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     startupCleanup.push(() => triggerSessions.close())
     const appServerAdmin = createAppServerAdmin({
       triggerSession: triggerSessions.create,
+      credentialConfigurations: async () => {
+        if (!runtimeStore) throw new Error('credential reference inspection unavailable')
+        return runtimeStore.credentialConfigurations()
+      },
       home: o.config.home ?? dirname(dirname(o.profileDir)),
       dataDir: o.config.dataDir,
       profileDir: o.profileDir,
@@ -2194,6 +2198,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         transport === 'unix'
           ? (effectivePackageAdmin?.unixAuthority ?? localPackageAdminAuthority())
           : denyPackageAdminAuthority,
+        effectivePackageAdmin?.service,
       )
       registerSessionPreferences(ep, lister, preferences)
       registerWorkspaces(ep, workspaceCatalog)

@@ -209,6 +209,66 @@ export class CompositeTargetStore {
     if (report) for (const listener of this.#reportListeners) listener(report)
   }
 
+  /** Home-wide live/rollback configuration references, including disabled plugin saved values. */
+  credentialConfigurations(): {
+    kind: 'plugin' | 'mcp'
+    profile: string
+    configId: string
+    value: unknown
+  }[] {
+    const values: { kind: 'plugin' | 'mcp'; profile: string; configId: string; value: unknown }[] = []
+    for (const row of this.#table.all<{
+      profile: string
+      desired_json: unknown
+      previous_json: unknown
+      last_good_json: unknown
+    }>('SELECT profile, desired_json, previous_json, last_good_json FROM composite_targets')) {
+      for (const raw of [row.desired_json, row.previous_json, row.last_good_json]) {
+        const artifact = parseArtifact(raw)
+        if (raw !== null && raw !== undefined && !artifact) throw unavailable()
+        if (!artifact) continue
+        const target = decodeRuntimeTargetArtifact(artifact)
+        values.push({
+          kind: 'mcp',
+          profile: row.profile,
+          configId: 'runtime-resources',
+          value: target.resource.resources.mcp,
+        })
+        for (const item of [
+          ...target.tree.rows,
+          ...Object.values(target.resource.rows).flatMap((item) => (item ? [item] : [])),
+        ])
+          values.push({ kind: 'plugin', profile: row.profile, configId: item.id, value: item.config })
+      }
+    }
+    for (const row of this.#table.all<{ profile: string; row_id: string; value_json: string }>(
+      'SELECT profile, row_id, value_json FROM plugin_config_values',
+    ))
+      values.push({
+        kind: 'plugin',
+        profile: row.profile,
+        configId: row.row_id,
+        value: JSON.parse(row.value_json),
+      })
+    for (const row of this.#table.all<{ profile: string; session_key: string; overlay_json: string }>(
+      'SELECT profile, session_key, overlay_json FROM composite_target_overlays',
+    ))
+      values.push({
+        kind: 'plugin',
+        profile: row.profile,
+        configId: `session-overlay:${row.session_key}`,
+        value: JSON.parse(row.overlay_json),
+      })
+    for (const row of this.#table.all<{ profile: string; value_json: string | null }>(
+      'SELECT profile, value_json FROM plugin_config_intents',
+    ))
+      if (row.value_json) {
+        const pending = JSON.parse(row.value_json) as { rowId: string; value: unknown }
+        values.push({ kind: 'plugin', profile: row.profile, configId: pending.rowId, value: pending.value })
+      }
+    return values
+  }
+
   desired(): RuntimeTargetArtifact | undefined {
     return parseArtifact(this.#row().desired_json)
   }

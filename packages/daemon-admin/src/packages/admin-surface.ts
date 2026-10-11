@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import {
+  ADMIN_METHODS,
   type AdminSessionSelection,
   AutoReviewConfig,
   ChildEnginesSaveParams,
@@ -111,6 +112,9 @@ export type AdminSurfaceOptions = {
     reloadLocal(): Promise<void>
   }
   /** Official web-search settings. The handler returns JSON and never includes credential values. */
+  credentials?: {
+    call(action: 'list' | 'create' | 'set' | 'rename' | 'delete', input: unknown): Promise<unknown>
+  }
   searchAdmin?: {
     handle(method: string, path: string, body: unknown): Promise<{ status: number; body: unknown }>
   }
@@ -252,6 +256,70 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
       }
       if (selectionRoute) {
         const route = url.pathname.slice('/admin/api/'.length)
+        if (route === 'credentials' || route.startsWith('credentials/')) {
+          const action = route === 'credentials' ? 'list' : route.slice('credentials/'.length)
+          if (
+            !['list', 'create', 'set', 'rename', 'delete'].includes(action) ||
+            request.method !== (action === 'list' ? 'GET' : 'POST')
+          ) {
+            error(response, 404, 'E_ADMIN_ROUTE', '')
+            return true
+          }
+          const name = `_agnes/v1/admin.credentials.${action}` as keyof typeof ADMIN_METHODS
+          const write = action !== 'list'
+          if (
+            !configuredPermissions.includes(write ? 'credentials.write' : 'credentials.read') ||
+            !configuredPermissions.includes(write ? 'packages.activate' : 'packages.read')
+          ) {
+            error(response, 403, 'E_ADMIN_FORBIDDEN', '')
+            return true
+          }
+          // Check live control-plane health on each write, even before a browser asks for context.
+          if (
+            write &&
+            (await configurationReadOnly(() => options.invoke('list', { profile: options.profile })))
+          ) {
+            error(response, 409, 'E_ADMIN_READ_ONLY', '')
+            return true
+          }
+          if (!options.credentials) {
+            error(response, 503, 'E_ADMIN_CATALOG_UNAVAILABLE', '')
+            return true
+          }
+          try {
+            const input = write ? await readBody(request) : {}
+            const spec = ADMIN_METHODS[name]
+            if (!validateAgainst(spec.params, input).ok) {
+              error(response, 400, 'E_ADMIN_REQUEST', '')
+              return true
+            }
+            const result = await options.credentials.call(
+              action as 'list' | 'create' | 'set' | 'rename' | 'delete',
+              input,
+            )
+            if (!validateAgainst(spec.result, result).ok) throw new Error('Invalid credential response')
+            reply(response, 200, result)
+          } catch (cause) {
+            const rpc = (cause as { rpc?: RpcError })?.rpc
+            if (rpc) {
+              const normalized = normalizeRpcError(rpc)
+              // This write-only boundary never forwards arbitrary backend error details.
+              reply(response, 409, {
+                error: {
+                  code: normalized.code,
+                  message: normalized.message,
+                  data: {
+                    code: normalized.message,
+                    messageKey: normalized.data.messageKey,
+                    diagnosticId: normalized.data.diagnosticId,
+                    ...(normalized.data.cause ? { cause: normalized.data.cause } : {}),
+                  },
+                },
+              })
+            } else error(response, 502, 'E_ADMIN_BACKEND', '')
+          }
+          return true
+        }
         if (route === 'fact-chain') {
           if (request.method !== 'POST') {
             error(response, 404, 'E_ADMIN_ROUTE', '')
@@ -836,9 +904,9 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
         const context: PackageAdminContext = {
           ...configuredContext,
           permissions: readOnly
-            ? configuredPermissions.includes('packages.read')
-              ? ['packages.read']
-              : []
+            ? configuredPermissions.filter(
+                (permission) => permission === 'packages.read' || permission === 'credentials.read',
+              )
             : configuredPermissions,
           readOnly,
         }

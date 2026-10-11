@@ -1,3 +1,6 @@
+import { readdir } from 'node:fs/promises'
+import { join } from 'node:path'
+import { fileSecretsDir } from '@agnes/host-common/paths'
 import {
   atomicWriteCredentialFile,
   type CredentialFileEnforcement,
@@ -16,6 +19,9 @@ export type ApiKeyCredentialV1 = {
   kind: 'api-key'
   provider: string
   value: string
+  /** Present together only for daemon-managed generic credentials. */
+  label?: string
+  createdAt?: string
 }
 
 export type OAuthCredential = {
@@ -59,6 +65,22 @@ export interface CredentialWriter {
 export interface CredentialStore extends CredentialWriter {
   readonly enforcement: CredentialFileEnforcement
   read(ref: string): Promise<StoredCredential | null>
+  listGeneric(): Promise<GenericCredentialMetadata[]>
+  putGeneric(ref: string, value: string, metadata: { label: string; createdAt: string }): Promise<void>
+}
+
+export type GenericCredentialMetadata = { id: string; label: string; kind: 'api-key'; createdAt: string }
+
+export function isGenericCredential(
+  value: unknown,
+): value is ApiKeyCredentialV1 & { label: string; createdAt: string } {
+  return (
+    isApiKeyCredential(value) &&
+    value.provider === 'generic' &&
+    value.value.trim().length > 0 &&
+    typeof value.label === 'string' &&
+    typeof value.createdAt === 'string'
+  )
 }
 
 export type CreateCredentialStoreOptions = {
@@ -98,7 +120,16 @@ const isScopes = (value: unknown): value is string[] =>
 function isApiKeyCredential(value: unknown): value is ApiKeyCredentialV1 {
   return (
     isRecord(value) &&
-    exactKeys(value, ['version', 'kind', 'provider', 'value']) &&
+    (exactKeys(value, ['version', 'kind', 'provider', 'value']) ||
+      (exactKeys(value, ['version', 'kind', 'provider', 'value', 'label', 'createdAt']) &&
+        value.provider === 'generic' &&
+        typeof value.label === 'string' &&
+        value.label.length > 0 &&
+        value.label.length <= 128 &&
+        SAFE_VALUE.test(value.label) &&
+        typeof value.createdAt === 'string' &&
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value.createdAt) &&
+        Number.isFinite(Date.parse(value.createdAt)))) &&
     value.version === 1 &&
     value.kind === 'api-key' &&
     isProvider(value.provider) &&
@@ -222,6 +253,45 @@ export function createCredentialStore(options: CreateCredentialStoreOptions): Cr
 
   return {
     enforcement,
+    async listGeneric() {
+      // Validate parents through the existing reader before enumerating; absence is an empty store.
+      await readRaw('secret://generic/probe', 'api-key')
+      let names: string[]
+      try {
+        names = await readdir(join(fileSecretsDir(options.root), 'generic'))
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+        throw new CredentialStoreError('secret://generic/probe', 'io')
+      }
+      const items: GenericCredentialMetadata[] = []
+      for (const name of names.sort()) {
+        if (!/^[a-f0-9-]{36}$/.test(name)) continue
+        const id = `secret://generic/${name}`
+        const raw = await readRaw(id, 'api-key')
+        if (raw === null) continue
+        if ((await readRaw(id, 'oauth')) !== null) throw new CredentialStoreError(id, 'kind-conflict')
+        const value = parseEnvelope(id, raw, 'api-key')
+        if (!isGenericCredential(value)) throw schemaError(id)
+        items.push({ id, label: value.label, kind: 'api-key', createdAt: value.createdAt })
+        if (items.length > 4096) throw new CredentialStoreError(id, 'too-large')
+      }
+      return items
+    },
+    async putGeneric(ref, value, metadata) {
+      const { provider, name } = parseCredentialRef(ref)
+      const envelope: ApiKeyCredentialV1 = { version: 1, kind: 'api-key', provider, value, ...metadata }
+      if (provider !== 'generic' || !/^[a-f0-9-]{36}$/.test(name) || !isGenericCredential(envelope))
+        throw schemaError(ref)
+      await prepareCredentialWrite(options.root, ref, 'api-key', enforcement)
+      if ((await readRaw(ref, 'oauth')) !== null) throw new CredentialStoreError(ref, 'kind-conflict')
+      await atomicWriteCredentialFile({
+        root: options.root,
+        ref,
+        kind: 'api-key',
+        contents: encode(envelope),
+        enforcement,
+      })
+    },
     async read(ref) {
       // Inspect both locations before returning either one. A stale or attacker-created counterpart
       // is not ignored: one ref naming two credentials is ambiguous and therefore unsafe.

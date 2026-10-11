@@ -41,6 +41,8 @@ export const PACKAGE_ADMIN_ALL_PERMISSIONS = Object.freeze([
   'packages.remove',
   'catalog.configure',
   'extensions.execute',
+  'credentials.read',
+  'credentials.write',
 ] as const satisfies readonly PackageAdminPermission[])
 
 /** Unix/in-process composition may opt in explicitly; WebSocket transport must use a different resolver. */

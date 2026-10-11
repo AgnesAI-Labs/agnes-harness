@@ -1,6 +1,8 @@
 import type { AppServerAdmin } from '@agnes/daemon-admin/app-server'
 import {
+  configurationReadOnly,
   type PackageAdminAuthorityResolver,
+  type PackageAdminService,
   requireLocalAdminAuthority,
 } from '@agnes/daemon-admin/packages/index'
 import type { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
@@ -21,6 +23,7 @@ export function registerAppServerAdmin(
   endpoint: LocalEndpoint,
   service: AppServerAdmin,
   authority: PackageAdminAuthorityResolver,
+  administration?: PackageAdminService,
 ): void {
   const register = (name: AdminMethodName, write: boolean, action: (input: unknown) => Promise<unknown>) =>
     endpoint.register(name, async (input, ctx) => {
@@ -38,6 +41,23 @@ export function registerAppServerAdmin(
         })
       }
     })
+  for (const action of ['list', 'create', 'set', 'rename', 'delete'] as const) {
+    endpoint.register(`_agnes/v1/admin.credentials.${action}`, async (input, ctx) => {
+      const write = action !== 'list'
+      requireLocalAdminAuthority(ctx, authority, write)
+      const grant = authority(ctx)
+      if (!grant?.permissions.includes(write ? 'credentials.write' : 'credentials.read'))
+        throw rpcError('CAPABILITY_DENIED')
+      if (
+        write &&
+        (await configurationReadOnly(async () =>
+          administration?.call('_agnes/v1/packages.list', { profile: ctx.conn.profile }, grant),
+        ))
+      )
+        throw rpcError('SEMANTIC_REJECTED', { reason: 'CONFIG_CREDENTIAL_READ_ONLY' })
+      return service.credentials(action, input, ctx.conn.principalId)
+    })
+  }
   register('_agnes/v1/admin.bundles.get', false, () => service.bundles())
   register('_agnes/v1/admin.bundles.save', true, (input) => service.saveBundles(input as AdminBundlesSave))
   register('_agnes/v1/admin.composition.get', false, (input) =>

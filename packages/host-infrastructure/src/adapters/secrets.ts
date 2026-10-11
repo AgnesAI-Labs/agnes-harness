@@ -1,6 +1,7 @@
 import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { HostError } from '@agnes/host-common/errors'
+import { isGenericCredential } from './credential-store.js'
 import { createWin32Platform } from './platform.js'
 import { readWindowsSecret } from './secrets-win32.js'
 
@@ -54,7 +55,8 @@ export function createSecretsFile(opts: { dir: string; checkMode?: boolean }): S
             const value = parsed as Record<string, unknown>
             if (value.kind === 'api-key') {
               if (
-                Object.keys(value).sort().join(',') !== 'kind,provider,value,version' ||
+                (Object.keys(value).sort().join(',') !== 'kind,provider,value,version' &&
+                  !isGenericCredential(value)) ||
                 value.version !== 1 ||
                 value.kind !== 'api-key' ||
                 value.provider !== ns ||
