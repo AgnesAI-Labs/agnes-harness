@@ -319,6 +319,8 @@ export const PACKAGE_ADMIN_PERMISSIONS = Object.freeze([
   'packages.remove',
   'catalog.configure',
   'extensions.execute',
+  'credentials.read',
+  'credentials.write',
 ] as const)
 export type PackageAdminAccessPolicy = Readonly<{
   execution: 'read' | 'effect' | 'unblock'

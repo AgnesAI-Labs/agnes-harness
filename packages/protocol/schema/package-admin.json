@@ -428,7 +428,9 @@
         "packages.activate",
         "packages.remove",
         "catalog.configure",
-        "extensions.execute"
+        "extensions.execute",
+        "credentials.read",
+        "credentials.write"
       ]
     },
     "PackageSource": {
@@ -1198,7 +1200,7 @@
           "items": {
             "$ref": "#/$defs/PackageAdminPermission"
           },
-          "maxItems": 7,
+          "maxItems": 9,
           "uniqueItems": true
         },
         "readOnly": {

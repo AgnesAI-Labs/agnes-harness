@@ -6460,6 +6460,97 @@ const webhookRuleSample = {
 }
 const webhookConfigSample = { enabled: false, path: '/hooks/events', maxPayloadBytes: 262144 }
 const AppSamples: Record<string, Sample> = {
+  AdminCredentialDelete: {
+    valid: { id: 'secret://generic/11111111-1111-4111-8111-111111111111', force: true, confirm: true },
+    invalid: [{ id: 'secret://generic/11111111-1111-4111-8111-111111111111', actor: 'forged' }],
+    note: 'Closed write-only credential contract',
+  },
+  AdminCredentialRename: {
+    valid: { id: 'secret://generic/11111111-1111-4111-8111-111111111111', label: 'New label' },
+    invalid: [{ id: 'secret://generic/11111111-1111-4111-8111-111111111111', label: '' }],
+    note: 'Closed write-only credential contract',
+  },
+  AdminCredentialSet: {
+    valid: { id: 'secret://generic/11111111-1111-4111-8111-111111111111', value: 'canary' },
+    invalid: [
+      { id: 'secret://generic/11111111-1111-4111-8111-111111111111' },
+      { id: 'secret://other/default', value: 'canary' },
+    ],
+    note: 'Closed write-only credential contract',
+  },
+  AdminCredentialCreate: {
+    valid: { label: 'Work key', value: 'canary' },
+    invalid: [{ label: 'Work key' }, { label: 'Work key', value: 'x\ncanary' }],
+    note: 'Closed write-only credential contract',
+  },
+  AdminCredentialsList: {
+    valid: {
+      items: [
+        {
+          id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+          label: 'Work key',
+          kind: 'api-key',
+          createdAt: '2026-10-11T00:00:00.000Z',
+          references: [],
+        },
+      ],
+    },
+    invalid: [
+      {
+        items: [
+          {
+            id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+            label: 'Work key',
+            kind: 'api-key',
+            createdAt: '2026-10-11T00:00:00.000Z',
+            references: [],
+            value: 'canary',
+          },
+        ],
+      },
+    ],
+    note: 'Closed write-only credential contract',
+  },
+  AdminCredentialMetadata: {
+    valid: {
+      id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+      label: 'Work key',
+      kind: 'api-key',
+      createdAt: '2026-10-11T00:00:00.000Z',
+      references: [],
+    },
+    invalid: [
+      {
+        id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+        label: 'Work key',
+        kind: 'api-key',
+        createdAt: '2026-10-11T00:00:00.000Z',
+        references: [],
+        value: 'canary',
+      },
+      {
+        id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+        label: 'Work key',
+        kind: 'api-key',
+        createdAt: 'not-a-date',
+        references: [],
+      },
+      {
+        id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+        label:
+          'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        kind: 'api-key',
+        createdAt: '2026-10-11T00:00:00.000Z',
+        references: [],
+      },
+    ],
+    note: 'Closed write-only credential contract',
+  },
+  AdminCredentialReference: {
+    valid: { kind: 'mcp', profile: 'local-dev', configId: 'example' },
+    invalid: [{ kind: 'mcp', profile: 'local-dev', configId: 'example', value: 'canary' }],
+    note: 'Closed write-only credential contract',
+  },
   FeedbackTarget: {
     valid: { messageSeq: 1, turn: 1 },
     invalid: [{ messageSeq: 0, turn: 1 }],
@@ -7165,6 +7256,31 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/admin.credentials.delete': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminCredentialDelete',
+    result: 'AdminEmpty',
+  },
+  '_agnes/v1/admin.credentials.rename': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminCredentialRename',
+    result: 'AdminCredentialMetadata',
+  },
+  '_agnes/v1/admin.credentials.set': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminCredentialSet',
+    result: 'AdminCredentialMetadata',
+  },
+  '_agnes/v1/admin.credentials.create': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminCredentialCreate',
+    result: 'AdminCredentialMetadata',
+  },
+  '_agnes/v1/admin.credentials.list': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminEmpty',
+    result: 'AdminCredentialsList',
+  },
   '_agnes/v1/ui.action': {
     fileId: 'https://agnes.ai/schema/intelligent-ui.json',
     params: 'UiActionParams',
@@ -7935,6 +8051,34 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/admin.credentials.delete': {
+    note: 'Write-only generic credential contract',
+    valid: { id: 'secret://generic/11111111-1111-4111-8111-111111111111', force: true, confirm: true },
+    invalid: [{ id: 'secret://generic/11111111-1111-4111-8111-111111111111', actor: 'forged' }],
+  },
+  '_agnes/v1/admin.credentials.rename': {
+    note: 'Write-only generic credential contract',
+    valid: { id: 'secret://generic/11111111-1111-4111-8111-111111111111', label: 'New label' },
+    invalid: [{ id: 'secret://generic/11111111-1111-4111-8111-111111111111', label: '' }],
+  },
+  '_agnes/v1/admin.credentials.set': {
+    note: 'Write-only generic credential contract',
+    valid: { id: 'secret://generic/11111111-1111-4111-8111-111111111111', value: 'replacement' },
+    invalid: [
+      { id: 'secret://generic/11111111-1111-4111-8111-111111111111' },
+      { id: '../../bad', value: 'replacement' },
+    ],
+  },
+  '_agnes/v1/admin.credentials.create': {
+    note: 'Write-only generic credential contract',
+    valid: { label: 'Work key', value: 'canary-value' },
+    invalid: [{ label: 'Work key' }, { label: 'Work key', value: 'canary-value', actor: 'forged' }],
+  },
+  '_agnes/v1/admin.credentials.list': {
+    note: 'Write-only generic credential contract',
+    valid: {},
+    invalid: [{ actor: 'forged' }],
+  },
   '_agnes/v1/ui.action': {
     note: 'Durable UI command with bounded input and unique selection',
     valid: {
@@ -8631,6 +8775,99 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/admin.credentials.delete': {
+    note: 'Metadata-only response',
+    valid: {},
+    invalid: [{ value: 'must-not-return' }],
+  },
+  '_agnes/v1/admin.credentials.rename': {
+    note: 'Metadata-only response',
+    valid: {
+      id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+      label: 'Work key',
+      kind: 'api-key',
+      createdAt: '2026-10-11T00:00:00.000Z',
+      references: [],
+    },
+    invalid: [
+      {
+        id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+        label: 'Work key',
+        kind: 'api-key',
+        createdAt: '2026-10-11T00:00:00.000Z',
+        references: [],
+        value: 'must-not-return',
+      },
+    ],
+  },
+  '_agnes/v1/admin.credentials.set': {
+    note: 'Metadata-only response',
+    valid: {
+      id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+      label: 'Work key',
+      kind: 'api-key',
+      createdAt: '2026-10-11T00:00:00.000Z',
+      references: [],
+    },
+    invalid: [
+      {
+        id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+        label: 'Work key',
+        kind: 'api-key',
+        createdAt: '2026-10-11T00:00:00.000Z',
+        references: [],
+        value: 'must-not-return',
+      },
+    ],
+  },
+  '_agnes/v1/admin.credentials.create': {
+    note: 'Metadata-only response',
+    valid: {
+      id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+      label: 'Work key',
+      kind: 'api-key',
+      createdAt: '2026-10-11T00:00:00.000Z',
+      references: [],
+    },
+    invalid: [
+      {
+        id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+        label: 'Work key',
+        kind: 'api-key',
+        createdAt: '2026-10-11T00:00:00.000Z',
+        references: [],
+        value: 'must-not-return',
+      },
+    ],
+  },
+  '_agnes/v1/admin.credentials.list': {
+    note: 'Metadata-only response',
+    valid: {
+      items: [
+        {
+          id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+          label: 'Work key',
+          kind: 'api-key',
+          createdAt: '2026-10-11T00:00:00.000Z',
+          references: [],
+        },
+      ],
+    },
+    invalid: [
+      {
+        items: [
+          {
+            id: 'secret://generic/11111111-1111-4111-8111-111111111111',
+            label: 'Work key',
+            kind: 'api-key',
+            createdAt: '2026-10-11T00:00:00.000Z',
+            references: [],
+          },
+        ],
+        value: 'must-not-return',
+      },
+    ],
+  },
   '_agnes/v1/admin.feedback': AppSamples.AdminFeedbackResult!,
   '_agnes/v1/admin.triggers': AppSamples.WebhookResult!,
   '_agnes/v1/plugins.config.get': PackageAdminSamples.PluginConfigSnapshot!,

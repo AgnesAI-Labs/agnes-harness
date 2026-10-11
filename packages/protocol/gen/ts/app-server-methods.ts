@@ -2,6 +2,11 @@
 import type { Static } from '@sinclair/typebox'
 export interface AppServerMethods {
   "_agnes/v1/admin.feedback": { params: Static<typeof import("./app-server.js").AdminFeedbackParams>; result: Static<typeof import("./app-server.js").AdminFeedbackResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/admin.credentials.list": { params: Static<typeof import("./app-server.js").AdminEmpty>; result: Static<typeof import("./app-server.js").AdminCredentialsList>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/admin.credentials.create": { params: Static<typeof import("./app-server.js").AdminCredentialCreate>; result: Static<typeof import("./app-server.js").AdminCredentialMetadata>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/admin.credentials.set": { params: Static<typeof import("./app-server.js").AdminCredentialSet>; result: Static<typeof import("./app-server.js").AdminCredentialMetadata>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/admin.credentials.rename": { params: Static<typeof import("./app-server.js").AdminCredentialRename>; result: Static<typeof import("./app-server.js").AdminCredentialMetadata>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/admin.credentials.delete": { params: Static<typeof import("./app-server.js").AdminCredentialDelete>; result: Static<typeof import("./app-server.js").AdminEmpty>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.bundles.get": { params: Static<typeof import("./app-server.js").AdminEmpty>; result: Static<typeof import("./app-server.js").AdminBundlesResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.bundles.save": { params: Static<typeof import("./app-server.js").AdminBundlesSave>; result: Static<typeof import("./app-server.js").AdminBundlesResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.composition.get": { params: Static<typeof import("./app-server.js").AdminCompositionParams>; result: Static<typeof import("./app-server.js").AdminCompositionResult>; direction: "c2s"; kind: "request" }

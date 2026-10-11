@@ -42,6 +42,10 @@
             "CONFIG_AUTH_FAILED",
             "CONFIG_AUTH_UNAVAILABLE",
             "CONFIG_CREDENTIAL_INVALID",
+            "CONFIG_CREDENTIAL_NOT_FOUND",
+            "CONFIG_CREDENTIAL_REFERENCED",
+            "CONFIG_CREDENTIAL_CONFIRMATION_REQUIRED",
+            "CONFIG_CREDENTIAL_UNAVAILABLE",
             "CONFIG_CREDENTIAL_NO_SPACE",
             "CONFIG_CREDENTIAL_PERMISSIONS",
             "CONFIG_CREDENTIAL_READ_ONLY",
@@ -169,6 +173,145 @@
       },
       "required": ["code", "message", "data"],
       "additionalProperties": false
+    },
+    "AdminCredentialReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": ["mcp", "plugin", "trigger", "profile"]
+        },
+        "profile": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "configId": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "required": ["kind", "profile", "configId"]
+    },
+    "AdminCredentialMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^secret://generic/[a-f0-9-]{36}$",
+          "maxLength": 64
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "kind": {
+          "const": "api-key"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "references": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AdminCredentialReference"
+          },
+          "maxItems": 4096
+        }
+      },
+      "required": ["id", "label", "kind", "createdAt", "references"]
+    },
+    "AdminCredentialsList": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AdminCredentialMetadata"
+          },
+          "maxItems": 4096
+        }
+      },
+      "required": ["items"]
+    },
+    "AdminCredentialCreate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "description": "Write-only secret value. Never included in responses or diagnostics."
+        }
+      },
+      "required": ["label", "value"]
+    },
+    "AdminCredentialSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^secret://generic/[a-f0-9-]{36}$",
+          "maxLength": 64
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 65536,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$",
+          "description": "Write-only secret value. Never included in responses or diagnostics."
+        }
+      },
+      "required": ["id", "value"]
+    },
+    "AdminCredentialRename": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^secret://generic/[a-f0-9-]{36}$",
+          "maxLength": 64
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+        }
+      },
+      "required": ["id", "label"]
+    },
+    "AdminCredentialDelete": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^secret://generic/[a-f0-9-]{36}$",
+          "maxLength": 64
+        },
+        "force": {
+          "type": "boolean"
+        },
+        "confirm": {
+          "type": "boolean"
+        }
+      },
+      "required": ["id"]
     },
     "AdminEmpty": {
       "type": "object",
@@ -1752,6 +1895,20 @@
   },
   "x-methods": {
     "_agnes/v1/admin.feedback": { "params": "AdminFeedbackParams", "result": "AdminFeedbackResult" },
+    "_agnes/v1/admin.credentials.list": { "params": "AdminEmpty", "result": "AdminCredentialsList" },
+    "_agnes/v1/admin.credentials.create": {
+      "params": "AdminCredentialCreate",
+      "result": "AdminCredentialMetadata"
+    },
+    "_agnes/v1/admin.credentials.set": {
+      "params": "AdminCredentialSet",
+      "result": "AdminCredentialMetadata"
+    },
+    "_agnes/v1/admin.credentials.rename": {
+      "params": "AdminCredentialRename",
+      "result": "AdminCredentialMetadata"
+    },
+    "_agnes/v1/admin.credentials.delete": { "params": "AdminCredentialDelete", "result": "AdminEmpty" },
     "_agnes/v1/admin.bundles.get": {
       "params": "AdminEmpty",
       "result": "AdminBundlesResult"
