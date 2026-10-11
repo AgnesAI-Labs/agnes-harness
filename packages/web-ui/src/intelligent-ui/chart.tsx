@@ -14,7 +14,7 @@ const colors = [
 
 export function IntelligentChart({ component, data }: { component: Chart; data: JsonValue }) {
   const titleId = useId()
-  const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
+  const { t, locale } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
   const rows = Array.isArray(data) ? data.filter(uiObject) : []
   const values = rows.flatMap((row) => component.series.map((series) => Number(row[series.key])))
   const min = Math.min(0, ...values),
@@ -25,7 +25,7 @@ export function IntelligentChart({ component, data }: { component: Chart; data: 
   const total = values.reduce((a, b) => a + b / scale, 0)
   let angle = -Math.PI / 2
   return (
-    <figure data-testid={`ui-chart-${component.id}`}>
+    <figure className="agnes-intelligent-chart" data-testid={`ui-chart-${component.id}`}>
       <svg viewBox="0 0 600 210" width="100%" role="img" aria-labelledby={titleId}>
         <title id={titleId}>
           {component.title ?? component.series.map((series) => series.label).join(', ')}
@@ -104,32 +104,59 @@ export function IntelligentChart({ component, data }: { component: Chart; data: 
               </g>
             ))}
       </svg>
+      <figcaption className="agnes-intelligent-chart-legend">
+        {(component.chartType === 'pie'
+          ? rows.map((row, i) => ({ key: String(i), label: String(row[component.categoryKey]) }))
+          : component.series
+        ).map((item, index) => (
+          <span key={item.key}>
+            <span
+              aria-hidden="true"
+              className="agnes-intelligent-chart-key"
+              style={{ background: `var(${colors[index % colors.length]})` }}
+            />
+            {item.label}
+          </span>
+        ))}
+      </figcaption>
       <details>
         <summary>{t('ui.chartData')}</summary>
-        <table>
-          <caption>{component.title ?? t('ui.chartData')}</caption>
-          <thead>
-            <tr>
-              <th scope="col">{component.categoryKey}</th>
-              {component.series.map((series) => (
-                <th scope="col" key={series.key}>
-                  {series.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: chart marks are stateless ordinal positions, and categories may repeat.
-              <tr key={i}>
-                <th scope="row">{String(row[component.categoryKey])}</th>
+        <div
+          className="agnes-intelligent-table-scroll"
+          role="region"
+          aria-label={component.title ?? t('ui.chartData')}
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: chart data tables scroll within their labeled region.
+          tabIndex={0}
+        >
+          <table>
+            <caption>{component.title ?? t('ui.chartData')}</caption>
+            <thead>
+              <tr>
+                <th scope="col">{component.categoryKey}</th>
                 {component.series.map((series) => (
-                  <td key={series.key}>{String(row[series.key])}</td>
+                  <th scope="col" key={series.key} data-numeric>
+                    {series.label}
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((row, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: chart marks are stateless ordinal positions, and categories may repeat.
+                <tr key={i}>
+                  <th scope="row">{String(row[component.categoryKey])}</th>
+                  {component.series.map((series) => (
+                    <td key={series.key} data-numeric>
+                      {typeof row[series.key] === 'number'
+                        ? new Intl.NumberFormat(locale).format(row[series.key])
+                        : String(row[series.key])}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </details>
     </figure>
   )

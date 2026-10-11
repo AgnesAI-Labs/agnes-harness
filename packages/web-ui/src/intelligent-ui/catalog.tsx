@@ -14,7 +14,15 @@ import { IntelligentChart } from './chart.js'
 import { CustomUiComponent, type CustomUiRenderer } from './custom.js'
 import { SurfaceFormFields } from './form-fields.js'
 import { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
-import { DetailCard, formatFieldValue, ImageView, PresetTabs, ProgressView, StepsView } from './presets.js'
+import {
+  DetailCard,
+  formatFieldValue,
+  ImageView,
+  PresetStatus,
+  PresetTabs,
+  ProgressView,
+  StepsView,
+} from './presets.js'
 import {
   actionNeedsDegradedData,
   componentSourceCode,
@@ -143,7 +151,11 @@ function CatalogComponent(
   } else if (component.kind === 'form')
     content = (
       <>
-        <fieldset disabled={disabled} data-testid={`ui-form-${component.id}`}>
+        <fieldset
+          className="agnes-intelligent-form"
+          disabled={disabled}
+          data-testid={`ui-form-${component.id}`}
+        >
           <SurfaceFormFields
             root={component.schema}
             schema={component.schema}
@@ -165,8 +177,14 @@ function CatalogComponent(
   else if (component.kind === 'button-group') content = actionButtons(component.actionIds)
   else if (component.kind === 'chart')
     content = <IntelligentChart component={component} data={surface.data[component.dataKey]!} />
-  else if (component.kind === 'text' || component.kind === 'status')
-    content = <p>{String(surface.data[component.dataKey])}</p>
+  else if (component.kind === 'text')
+    content = <p className="agnes-intelligent-text">{String(surface.data[component.dataKey])}</p>
+  else if (component.kind === 'status')
+    content = (
+      <p className="agnes-intelligent-status">
+        <PresetStatus value={String(surface.data[component.dataKey])} />
+      </p>
+    )
   else if (component.kind === 'detail-card')
     content = (
       <DetailCard

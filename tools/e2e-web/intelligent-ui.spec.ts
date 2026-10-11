@@ -179,3 +179,68 @@ for (const mode of ['ready', 'blocked', 'error'])
     await expect(card.getByTestId('ui-open-approval')).toBeVisible()
     await expect(card.getByTestId('ui-table-differences')).toBeVisible()
   })
+
+for (const [locale, theme, width] of [
+  ['en', 'light', 1280],
+  ['zh-CN', 'dark', 1280],
+  ['en', 'dark', 390],
+  ['zh-CN', 'light', 390],
+] as const)
+  test(`preset layout contains overflow and retains keyboard focus (${locale}, ${theme}, ${width})`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await page.goto(`${url}/?locale=${locale}&theme=${theme}`)
+    const inline = page.getByTestId('intelligent-ui-inline')
+    const surface = inline.getByTestId('ui-surface-finance-review')
+    await expect(surface.locator('header')).toContainText(locale === 'en' ? 'Interactive' : '可操作')
+    await expect(surface.locator('h3')).toHaveAttribute('title', locale === 'en' ? 'Revision 1' : '版本 1')
+    await expect(surface.locator('header')).not.toContainText(locale === 'en' ? 'Revision 1' : '版本 1')
+    await inline.getByTestId('ui-expand').click()
+    const panel = page.getByTestId('intelligent-ui-panel')
+    const detail = panel.getByTestId('ui-detail-summary')
+    await expect(detail).toBeVisible()
+    expect(await detail.evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe('1px')
+    const field = detail.getByTestId('ui-detail-field-summary-amountCents')
+    const label = await field.locator('dt').boundingBox()
+    const value = await field.locator('dd').boundingBox()
+    expect(label).not.toBeNull()
+    expect(value).not.toBeNull()
+    const narrow = await detail.evaluate(
+      (element) =>
+        element.clientWidth -
+          parseFloat(getComputedStyle(element).paddingLeft) -
+          parseFloat(getComputedStyle(element).paddingRight) <=
+        320,
+    )
+    if (narrow) expect(value!.y).toBeGreaterThan(label!.y)
+    else expect(Math.abs(value!.y - label!.y)).toBeLessThan(2)
+    const table = panel.getByTestId('ui-table-differences')
+    expect(
+      await table
+        .locator('tbody td[data-numeric]')
+        .first()
+        .evaluate((element) => getComputedStyle(element).textAlign),
+    ).toBe('end')
+    const scroll = panel.getByRole('region', { name: 'Reconciliation (USD cents)', exact: true })
+    await scroll.focus()
+    await expect(scroll).toBeFocused()
+    expect(await scroll.evaluate((element) => getComputedStyle(element).outlineStyle)).toBe('solid')
+    const tab = panel.getByRole('tab', { name: 'Context', exact: true })
+    await tab.focus()
+    await tab.press('Enter')
+    await expect(tab).toBeFocused()
+    await expect(tab).toHaveAttribute('aria-selected', 'true')
+    await expect(panel.getByTestId('ui-tabpanel-sections-context')).toContainText(
+      'Amounts stay integer USD cents.',
+    )
+    expect(await surface.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+    expect(
+      await panel
+        .getByTestId('ui-surface-finance-review')
+        .evaluate((element) => element.scrollWidth <= element.clientWidth + 1),
+    ).toBe(true)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(
+      true,
+    )
+  })

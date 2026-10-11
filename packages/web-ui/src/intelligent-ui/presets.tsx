@@ -131,7 +131,7 @@ export function PresetTabs({
   const [active, setActive] = useState(tabs[0]?.id ?? '')
   if (tabs.length === 0) return null
   return (
-    <div data-testid={`ui-tabs-${id}`} role="group" aria-label={label}>
+    <div className="agnes-intelligent-tabs" data-testid={`ui-tabs-${id}`} role="group" aria-label={label}>
       {/* Two placements mount the same tabs. A shared rc-tabs id would duplicate the tab, panel, and overflow ids. */}
       <Tabs
         id={reactId}
@@ -165,6 +165,7 @@ export function StepsView({ id, data }: { id: string; data: JsonValue | undefine
           <li
             key={stepId}
             data-testid={`ui-step-${id}-${stepId}`}
+            data-state={state}
             aria-current={state === 'active' ? 'step' : undefined}
           >
             <span>{String(step.label ?? '')}</span>
@@ -195,6 +196,7 @@ export function ProgressView({ id, data }: { id: string; data: JsonValue | undef
   const text = t('ui.progressValue', { label: data.label, value: data.value, total: data.total, percent })
   return (
     <div className="agnes-intelligent-progress" data-testid={`ui-progress-${id}`}>
+      <p>{text}</p>
       <div
         role="progressbar"
         aria-valuemin={0}
@@ -207,7 +209,6 @@ export function ProgressView({ id, data }: { id: string; data: JsonValue | undef
           <div className="agnes-intelligent-progress-fill" style={{ width: `${percent}%` }} />
         </div>
       </div>
-      <p>{text}</p>
     </div>
   )
 }
