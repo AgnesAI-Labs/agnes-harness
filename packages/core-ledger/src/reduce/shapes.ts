@@ -99,6 +99,7 @@ export type ApprovalAsked = {
   bindingHash: string
   scope?: string
   policyVersion?: string
+  policyBinding?: import('@agnes/protocol/gen/session-v1').ApprovalAsked['policyBinding']
   profileHash?: string
   options?: Array<'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected'>
   deadline?: string
