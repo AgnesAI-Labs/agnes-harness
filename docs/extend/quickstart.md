@@ -2,7 +2,7 @@
 
 English | [简体中文](quickstart.zh-CN.md)
 
-[Author kit](README.md) · [Local plugins](local-plugins.md) · [Testing guide](testing.md)
+[Author kit](README.md) · [Local plugins](local-plugins.md) · [Testing guide](testing.md) · [Import map](imports.md)
 
 Use Node.js 24.10 or later and an AGH source installation following [installation](../guide/install.md). The shortest path uses a local TypeScript plugin and the built-in keyless **Demo (local tool-aware, no API key)** model. No plugin build, SDK links or API key is needed.
 

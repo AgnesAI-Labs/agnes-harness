@@ -2,7 +2,7 @@
 
 English | [简体中文](testing.zh-CN.md)
 
-[Author kit](README.md) · [Quickstart](quickstart.md)
+[Author kit](README.md) · [Quickstart](quickstart.md) · [Import map](imports.md)
 
 Business agents can ship as plugins with offline, repeatable author tests. Import the helpers from **`@agnes/host/author-testkit`**. The preview SDK is source-only; link matching packages with [the quickstart](quickstart.md) before running tests. No model account or API key is needed for scripted or replay tests.
 

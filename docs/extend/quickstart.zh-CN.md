@@ -2,7 +2,7 @@
 
 [English](quickstart.md) | 简体中文
 
-[作者工具包](README.zh-CN.md) · [本地插件](local-plugins.zh-CN.md) · [测试指南](testing.zh-CN.md)
+[作者工具包](README.zh-CN.md) · [本地插件](local-plugins.zh-CN.md) · [测试指南](testing.zh-CN.md) · [导入选择图](imports.zh-CN.md)
 
 需要 Node.js 24.10 或更新版本，并按[安装指南](../guide/install.zh-CN.md)准备 AGH 源码运行环境。最短路径使用本地 TypeScript 插件和内置免密钥 **Demo（本地工具演示，免 API key）**模型，不需要构建插件、连接 SDK 或配置 API key。
 

@@ -1,0 +1,76 @@
+# 插件作者应该从哪里导入
+
+[English](imports.md) | 简体中文
+
+[作者工具包](README.zh-CN.md) · [快速上手](quickstart.zh-CN.md) · [测试](testing.zh-CN.md)
+
+从 `@agnes/plugin-runtime` 导入作者 helper，从 `@agnes/extension-api` 导入合同，**作者测试统一使用 `@agnes/host/author-testkit`**。只有需要某项服务时，才从对应合同包导入 kind token。当前没有统一 SDK 包，也没有公开 npm 发行；请使用匹配的源码 checkout 与[本地 SDK linker](quickstart.zh-CN.md#4-可选的构建和测试)。
+
+下文的**作者面**表示预览版支持的公开作者入口，不代表 API 已冻结。**专用合同**用于明确的合同或集成任务。**内部/旧入口——不要使用**表示新作者模板应避开该入口，现有导出仍保留。
+
+## 任务 → 包 → 符号
+
+标为“类型”的符号使用 `import type`。注册方法由 Host context 提供，不是独立导入的函数。
+
+| 任务 | 导入包 | 导出符号 | 入口与用法 |
+| --- | --- | --- | --- |
+| 定义工具及其插件 | `@agnes/plugin-runtime` | `defineAgnesPlugin`、`defineTool`、`toolError`、`toolCancelled`；类型 `Context`、`TypedToolDef`、`TypedToolResult` | 作者面。注入 `extension`，调用 `ctx.extension().registerTool(tool)`；见[工具模板](../../templates/tool/src/index.ts)。 |
+| 描述工具输入、结果与调用端口 | `@agnes/extension-api` | 类型 `ToolDef`、`ToolMeta`、`ToolContext`、`ToolResult`、`PluginExtensionAPI` | 作者合同。结果 schema 推导优先使用 runtime 的 `defineTool`；不要用同一本地名称导入两个版本。 |
+| 构造 TypeBox schema | `@sinclair/typebox` | `Type`；类型 `Static`、`TSchema` | 作者面。工具输入 schema 必须带 TypeBox Kind 符号，普通 JSON Schema 不够。 |
+| 校验或编译 schema | `@sinclair/typebox/value`、`@sinclair/typebox/compiler` | 分别为 `Value`、`TypeCompiler` | 作者面，按需使用。它们是独立子路径，不是 Agnes helper 的导出。 |
+| 添加浏览器面板或 UI 资产 | `@agnes/web-client` | 类型 `ClientContext`、`ClientModule`；`workbenchPanels` | 作者面，仅浏览器。导出 `apply(ctx, config)`，通过 `ctx.slots` 或 `workbenchPanels` 注册，在客户端描述文件声明 entry/styles/slots。简单 JS 侧栏无需导入 SDK；见[前端模块](../develop/frontend.zh-CN.md)和[工作台面板](workbench-panels.zh-CN.md)。 |
+| 描述客户端资产 manifest | `@agnes/extension-api` | 类型 `ExtensionManifest` | 描述文件 `client` 部分的作者合同。`agnes.clientDescriptors` 将描述文件绑定到后端 row；路径必须位于包内。 |
+| 定义 Agent Loop | `@agnes/plugin-runtime` | `defineLoop`、`defineAgnesPlugin`；类型 `LoopPluginContext` | 作者面。注入 `loops`，通过 `ctx.loops.register(packageName, loop)` 注册。 |
+| 实现 Loop 步骤与 checkpoint | `@agnes/extension-api` | `loopCheckpointCodec`；类型 `LoopFactory`、`LoopContext`、`LoopDriver`、`LoopCheckpoint` | 作者合同；见 [Loop 模板](../../templates/loop/src/index.ts)。使用受控模型/工具端口和传入的取消信号。 |
+| 定义模型适配器 | `@agnes/plugin-runtime` | `defineModelAdapter`、`defineAgnesPlugin`；类型 `ModelAdapterPluginContext` | 作者面。注入 `modelAdapters`，调用 `ctx.modelAdapters.register(adapter)`。 |
+| 实现适配器配置和流式输出 | `@agnes/extension-api` | 类型 `ModelAdapter`、`ModelAdapterConfig`、`ModelAdapterInstance`、`ModelAdapterEvent` | 作者合同；见[适配器模板](../../templates/model-adapter/src/index.ts)。 |
+| 打包 MCP + Skills | `@agnes/plugin-runtime`、`@agnes/protocol` | 分别为 `defineAgnesPlugin`、类型 `Context`；类型 `McpServerDefinitionInput` | 作者面。MCP 定义和 `SKILL.md` 是包数据，不是工具 helper。注入 `skills`，调用 `ctx.skills.register(...)`；源码模板导入 `@agnes/resource-control-runtime` 以获得 context 类型。该包不是 Host 提供的 external；候选 creator 会省略此导入。见[模板](../../templates/mcp-skills/src/index.ts)和 [MCP 管理](../guide/mcp.zh-CN.md)。 |
+| 声明包 capabilities / scopes | `@agnes/protocol` | 类型 `PluginCapabilities` | 作者面。描述 `package.json` → `agnes.capabilities`（文件系统路径、网络主机、exec 命令、model/UI 标记）。见[能力格式](../guide/packages.zh-CN.md#能力声明)；metadata 不授予授权。 |
+| 描述扩展能力 / 工具审批策略 | `@agnes/extension-api` | 类型 `ExtensionCapabilities`、`ExtensionManifest`、`ToolMeta`、`ResolvedToolCallPolicy` | 作者合同。描述文件能力与包能力的形状不同。使用调用时的 `ToolContext` 端口执行已授权 I/O；见[工具策略](tool-runtime.zh-CN.md)。 |
+| 通过 kind token 使用 Host 服务 | 下表中的所属合同包 | 从 `@agnes/extension-api` 导入类型 `ServiceKind`、`ServiceAuthorPort`、`LoopServiceReader` | 专用合同。使用实际提供的服务端口；导入 token 不会安装、选择或授权 provider。 |
+| 测试工具、Skills、Loop 和适配器 | `@agnes/host/author-testkit` | `createPluginTestHost`、`driveLoop`、`scriptedModel`、`runModelAdapter` | 作者面，仅测试文件。自动提供 Host 注册桥；轻量合同测试可显式提供服务替身。 |
+| 测试会话、代际绑定、模型回放或 HTTP/SSE 故障 | `@agnes/host/author-testkit` | `createAuthorTestkit`、`recordModelFixture`、`replayModelFixture`、`startModelFaultServer`、`ScriptedProvider`、`fakeModel`、`fakeRequest` | 作者面，仅测试文件；[测试指南](testing.zh-CN.md)解释 fixture 的边界与清理。 |
+| 检查专用 provider 生命周期合同 | `@agnes/extension-api/testkit` | `runProviderConformance`、`loopConformance`、`modelAdapterConformance`、`compactionConformance`、`toolRuntimeConformance`、`toolPolicyConformance`、`persistenceConformance`、`sandboxConformance`、`childAgentConformance` | 专用合同。需要真实 Host 注册/会话 probe，不是第二套 starter testkit。可选 Vitest 持久化 suites 位于 `@agnes/extension-api/testkit/persistence-contract`。 |
+
+## Host 服务 kind token
+
+Host 提供的公开作者命名空间共有以下六个 service kind token。请从准确的所属路径导入，以保留重载时的 token 身份；不要复制 token 或用 `defineServiceKind` 重建它。
+
+| 服务 | 导入包 | 导出 token | 合同源码 |
+| --- | --- | --- | --- |
+| 任务遥测 | `@agnes/observability/contract` | `observabilityKind` | [contract](../../packages/observability/src/contract.ts) |
+| 智能 UI | `@agnes/intelligent-ui-contract` | `intelligentUiKind` | [index](../../packages/intelligent-ui-contract/src/index.ts) |
+| UI 数据源 | `@agnes/intelligent-ui-contract` | `uiDataSourceKind` | [index](../../packages/intelligent-ui-contract/src/index.ts) |
+| Git worktree | `@agnes/git-worktree-contract` | `gitWorktreeKind` | [index](../../packages/git-worktree-contract/src/index.ts) |
+| 延迟工具队列 | `@agnes/plugin-runtime/deferred-contract` | `deferredQueueKind` | [contract](../../packages/plugin-runtime/src/deferred-contract.ts) |
+| 延迟调用 producer | `@agnes/plugin-runtime/deferred-contract` | `deferredProducerKind` | [contract](../../packages/plugin-runtime/src/deferred-contract.ts) |
+
+当提供了该端口时，`ServiceAuthorPort.bindOwn(kind)` 绑定已准入 owner 的实例。Loop 使用可选的 `LoopContext.services.get(kind)` reader，并必须处理服务缺失。普通 `ctx.extension()` 返回 `PluginExtensionAPI`，不包含完整扩展的服务 facade；不要强转为 `ExtensionAPI` 获取额外权限。部分 token 属于 Host 自有服务；出现在公共命名空间不代表任意插件均可调用其所有实例。
+
+`@agnes/extension-api` 还导出 `memoryKind`、`systemPromptKind`、`webhookTriggerKind`。它们是 **provider 注册 token**，不是用于 `bindOwn` 或 Loop service reader 的 `ServiceKind` token。应使用对应 provider 合同与注册路径。
+
+## 新作者代码应避开的入口
+
+| 入口 | 状态 | 改用 |
+| --- | --- | --- |
+| `@agnes/plugin-runtime/testkit` + `@agnes/host/testkit`（`createPluginTestHost` + `createPluginTestRegistration`） | 旧组合，新作者模板不要使用。保留供已有集成测试及显式注册桥使用。 | 从 `@agnes/host/author-testkit` 导入 `createPluginTestHost(plugin)`。 |
+| `@agnes/plugin-runtime/testkit` 的 provider conformance 重导出 | 旧别名，新文档不要使用。 | 所属合同入口 `@agnes/extension-api/testkit`。 |
+| `@agnes/plugin-runtime/host`、`@agnes/plugin-runtime/provided-externals`、Host 实现路径、Core/daemon 私有模块 | 内部入口，插件不要使用。基础设施的导出不等于作者合同。 | 公开作者 helper、合同与受控 context 端口。 |
+| Host 内部 `feedbackKind` | 内部入口，不要使用；不是公开合同导出。 | 受支持的工具/服务；此内部绑定没有可供作者导入的 token。 |
+
+生产后端加载仅提供[列出的公开 externals](quickstart.zh-CN.md#host-提供的依赖)，不提供 testkit 或浏览器模块。testkit 导入应留在测试文件中。浏览器资产使用受支持的浏览器 externals 或打包其依赖。固定的候选测试 runner 单独提供 `@agnes/host/author-testkit`，也支持 bounded helper 的 `.mjs` 测试。
+
+Bounded helper 仍只接受其自包含的 tool/Skill/skin 格式。它的 manifest/文件白名单与普通 scaffold 不同；更换 testkit 导入不会使该格式接受 `kinds`、`capabilities`、dependencies、scripts 或高级客户端贡献。见 [Agent 创建插件](agent-built-plugins.zh-CN.md)。
+
+## 导入定义在哪里
+
+包的 `exports` 映射选择入口，入口的导出选择符号。复制导入前应同时核对：
+
+- [plugin-runtime 包](../../packages/plugin-runtime/package.json)与[作者 index](../../packages/plugin-runtime/src/index.ts)。
+- [extension-api 包](../../packages/extension-api/package.json)与[合同 index](../../packages/extension-api/src/index.ts)。
+- [protocol 包](../../packages/protocol/package.json)与 [index](../../packages/protocol/src/index.ts)。
+- [web-client 包](../../packages/web-client/package.json)与 [index](../../packages/web-client/src/index.ts)。
+- [Host 包](../../packages/host/package.json)与[作者 testkit index](../../packages/host/testkit/author/index.ts)。
+- [observability 包](../../packages/observability/package.json)、[智能 UI 合同包](../../packages/intelligent-ui-contract/package.json)、[Git worktree 合同包](../../packages/git-worktree-contract/package.json)。
+
+TypeBox 来自声明的 `@sinclair/typebox` 依赖；它自己的包导出提供根入口、`/value` 和 `/compiler`。[运行时模块表](../../packages/plugin-runtime/src/provided-externals.ts)提供相同命名空间。

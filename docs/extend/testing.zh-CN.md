@@ -2,7 +2,7 @@
 
 [English](testing.md) | 简体中文
 
-[作者工具包](README.zh-CN.md) · [快速上手](quickstart.zh-CN.md)
+[作者工具包](README.zh-CN.md) · [快速上手](quickstart.zh-CN.md) · [导入选择图](imports.zh-CN.md)
 
 业务 Agent 可以作为插件交付，并通过可重复的离线测试验证。作者统一从 **`@agnes/host/author-testkit`** 导入 helper。当前 SDK 为源码预览版，先按[快速上手](quickstart.zh-CN.md)链接匹配的依赖；脚本模型和回放测试不需要模型账号或 API key。
 
