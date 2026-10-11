@@ -1,4 +1,4 @@
-import { checkToolDef } from '@agnes/extension-api'
+import { checkToolDef, type JobInfo, type JobOutput, type ToolContext } from '@agnes/extension-api'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { OUTPUT_LIMITS } from '../src/guards/output.js'
@@ -14,9 +14,10 @@ describe('shell', () => {
     expect(shellTool.description).not.toMatch(/bash|powershell|windows|posix/i)
   })
 
-  it('does not promise background execution while the job runner refuses every job', () => {
-    expect(shellTool.description).not.toMatch(/background=true|poll the returned job/i)
-    expect(shellTool.description).toMatch(/background.*unavailable/i)
+  it('says what background does and that nothing a foreground command starts outlives the call', () => {
+    expect(shellTool.description).toMatch(/foreground command starts does not outlive the call/)
+    expect(shellTool.description).toMatch(/background: true starts the command as a background job/)
+    expect(shellTool.description).toMatch(/job tool/)
   })
 
   it('declares itself destructive, open-world and left to the command policy for approval', () => {
@@ -36,7 +37,11 @@ describe('shell', () => {
     const ctx = fakeToolContext({ exec: (cmd) => ({ code: 0, stdout: `ran ${cmd[1]}`, stderr: '' }) })
     const r = await shellTool.execute({ command: 'echo hi' }, ctx)
     expect(ctx.calls.exec[0]).toEqual([SHELL_SENTINEL, 'echo hi'])
-    expect(ctx.calls.execOpts[0]).toEqual({ cwd: ctx.cwd, timeoutMs: ctx.timeoutMs })
+    expect(ctx.calls.execOpts[0]).toEqual({
+      cwd: ctx.cwd,
+      timeoutMs: ctx.timeoutMs,
+      env: { PYTHONUNBUFFERED: '1' },
+    })
     expect(r.isError).toBeUndefined()
     expect(r.content[0]).toEqual({ type: 'text', text: 'ran echo hi\n[exit 0]' })
   })
@@ -328,33 +333,124 @@ describe('shell timeout', () => {
   )
 })
 
+const job: JobInfo = {
+  id: 'job-1',
+  command: 'serve',
+  cwd: '/work/proj',
+  status: 'running',
+  startedAt: '2026-10-11T00:00:00.000Z',
+}
+
+/** Jobs that answer `output` from a script, then wait out `waitMs` with nothing new. */
+function scriptedJobs(script: { outputs?: Partial<JobOutput>[]; startError?: Error } = {}) {
+  const calls = { start: [] as unknown[][], output: [] as unknown[][] }
+  let read = 0
+  const jobs: NonNullable<ToolContext['jobs']> = {
+    async start(cmd, opts) {
+      calls.start.push([cmd, opts])
+      if (script.startError) throw script.startError
+      return { ...job }
+    },
+    async output(id, opts) {
+      calls.output.push([id, opts])
+      const next = script.outputs?.[read++]
+      if (!next) await new Promise((wait) => setTimeout(wait, opts?.waitMs ?? 0))
+      return { ...job, text: '', next: 0, dropped: 0, ...next }
+    },
+    stop: async () => ({ ...job, status: 'stopped' }),
+    list: async () => [{ ...job }],
+  }
+  return { jobs, calls }
+}
+
 describe('shell background jobs', () => {
-  it('submits a background job instead of blocking', async () => {
-    const ctx = fakeToolContext()
-    const r = await shellTool.execute({ command: 'sleep 100', background: true }, ctx)
-    expect(ctx.calls.exec).toHaveLength(0)
-    expect(r.content[0]).toEqual({ type: 'text', text: 'background job job-1 started' })
-    expect(r.isError).toBeUndefined()
-  })
+  afterEach(() => vi.useRealTimers())
 
-  it('submits the command and cwd under the tool call id as its idempotency key', async () => {
-    const ctx = fakeToolContext()
-    await shellTool.execute({ command: 'sleep 100', background: true, cwd: '/tmp' }, ctx)
-    expect(ctx.calls.jobs[0]).toEqual({
-      idempotencyKey: ctx.session.toolUseId,
-      payload: { kind: 'shell', command: 'sleep 100', cwd: '/tmp' },
-      schedule: { kind: 'once' },
+  it('starts the command as a job and returns what it printed in its first second', async () => {
+    vi.useFakeTimers()
+    const { jobs, calls } = scriptedJobs({
+      outputs: [{ text: 'Uvicorn running on http://127.0.0.1:8000\n' }],
     })
+    const ctx = fakeToolContext({ jobs })
+    const pending = shellTool.execute({ command: 'uvicorn app:app', background: true, cwd: 'srv' }, ctx)
+    await vi.advanceTimersByTimeAsync(1000)
+    const r = await pending
+    expect(ctx.calls.exec).toHaveLength(0)
+    expect(calls.start).toEqual([
+      [[SHELL_SENTINEL, 'uvicorn app:app'], { cwd: 'srv', env: { PYTHONUNBUFFERED: '1' } }],
+    ])
+    expect(r.isError).toBeUndefined()
+    expect(textOf(r)).toBe(
+      'background job job-1 started: uvicorn app:app\nUvicorn running on http://127.0.0.1:8000\n[job-1 running]\nRead its output with the job tool (action output, id job-1; waitMs waits for more) and stop it with action stop. It ends when the session closes.',
+    )
   })
 
-  it('reports a job that could not be submitted as an error', async () => {
-    const ctx = fakeToolContext()
-    ctx.artifacts.submitJob = () => Promise.reject(new Error('job store offline'))
-    const r = await shellTool.execute({ command: 'sleep 100', background: true }, ctx)
+  it('reports a job that failed within its first second as an error', async () => {
+    const { jobs } = scriptedJobs({
+      outputs: [{ text: 'Address already in use\n', status: 'exited', code: 1 }],
+    })
+    const r = await shellTool.execute({ command: 'serve', background: true }, fakeToolContext({ jobs }))
     expect(r.isError).toBe(true)
-    expect(textOf(r)).toContain('job store offline')
-    // The advice has to be something the model can do today, and background=true is not.
+    expect(textOf(r)).toContain('Address already in use\n[job-1 exited 1]')
+  })
+
+  it('does not call a job that finished cleanly at once a failure', async () => {
+    const { jobs } = scriptedJobs({ outputs: [{ text: 'done\n', status: 'exited', code: 0 }] })
+    const r = await shellTool.execute({ command: 'true', background: true }, fakeToolContext({ jobs }))
+    expect(r.isError).toBeUndefined()
+    expect(textOf(r)).toContain('done\n[job-1 exited 0]')
+  })
+
+  it('reports a job that could not be started, with the way out', async () => {
+    const { jobs } = scriptedJobs({
+      startError: new Error('E_JOB_LIMIT: 8 background jobs are already running'),
+    })
+    const r = await shellTool.execute({ command: 'serve', background: true }, fakeToolContext({ jobs }))
+    expect(r.isError).toBe(true)
+    expect(textOf(r)).toContain('E_JOB_LIMIT: 8 background jobs are already running')
     expect(textOf(r)).toMatch(/background execution is unavailable here; run the command in the foreground/)
-    expect(textOf(r)).not.toContain('background=true')
+  })
+
+  it('says background execution is unavailable where the session keeps no jobs', async () => {
+    const ctx = fakeToolContext()
+    const r = await shellTool.execute({ command: 'serve', background: true }, ctx)
+    expect(r.isError).toBe(true)
+    expect(textOf(r)).toContain('this session keeps no background jobs')
+    expect(ctx.calls.exec).toHaveLength(0)
+  })
+})
+
+// An executor that owns every process a command starts stops what the command left running when it
+// returns. Unsaid, the model found the server it had just started gone a call later and spent the
+// next hour blaming the command.
+describe('shell says what was stopped when the command returned', () => {
+  it('names the processes before the exit line, which stays last', async () => {
+    const ctx = fakeToolContext({
+      exec: () => ({ code: 0, stdout: 'started', stderr: '', stoppedProcesses: 2 }),
+    })
+    const r = await shellTool.execute({ command: 'start-server' }, ctx)
+    expect(r.isError).toBeUndefined()
+    expect(textOf(r)).toBe(
+      'started\n[2 processes this command started were still running when it returned and were stopped with it: nothing a foreground command starts outlives the call. Run a process that has to keep going (a server, a watcher) with background: true.]\n[exit 0]',
+    )
+  })
+
+  it('speaks of one process in the singular', async () => {
+    const ctx = fakeToolContext({ exec: () => ({ code: 0, stdout: '', stderr: '', stoppedProcesses: 1 }) })
+    expect(textOf(await shellTool.execute({ command: 'start-server' }, ctx))).toContain(
+      '[1 process this command started was still running when it returned and was stopped with it:',
+    )
+  })
+
+  it.each([0, undefined])('says nothing when the executor stopped %j', async (stoppedProcesses) => {
+    const ctx = fakeToolContext({
+      exec: () => ({
+        code: 0,
+        stdout: 'ok',
+        stderr: '',
+        ...(stoppedProcesses === undefined ? {} : { stoppedProcesses }),
+      }),
+    })
+    expect(textOf(await shellTool.execute({ command: 'true' }, ctx))).toBe('ok\n[exit 0]')
   })
 })

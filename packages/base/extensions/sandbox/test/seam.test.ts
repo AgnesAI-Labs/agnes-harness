@@ -58,6 +58,28 @@ describe('Host-bound sandbox seam', () => {
     })
   })
 
+  it('starts a background command with the same expansion, confinement and binding as exec', async () => {
+    const factory = await sandboxSeam(fakeSeamInit())
+    const process = { pid: 7, onOutput: () => {}, done: new Promise<never>(() => {}), stop: async () => {} }
+    const start = vi.fn(async () => process)
+    const ws = workspace({ start })
+    const seam = await factory.forWorkspace(ws.value)
+    await expect(
+      seam.start?.(['$SHELL', 'serve'], { cwd: '/work/proj/app', env: { PYTHONUNBUFFERED: '1' } }),
+    ).resolves.toBe(process)
+    expect(ws.confine).toHaveBeenCalledWith({ argv: ['sh', '-c', 'serve'], cwd: '/work/proj/app' })
+    expect(start).toHaveBeenCalledWith(['sandbox', 'sh', '-c', 'serve'], {
+      cwd: '/work/proj/app',
+      env: { PYTHONUNBUFFERED: '1' },
+      sandbox: { policyDigest: ws.value.policy.digest, backend: 'l1' },
+    })
+  })
+
+  it('offers no start where the Host workspace cannot own a background process', async () => {
+    const seam = await (await sandboxSeam(fakeSeamInit())).forWorkspace(workspace().value)
+    expect(seam.start).toBeUndefined()
+  })
+
   it('reports enforcement only while Host confirms the same bound digest', async () => {
     const factory = await sandboxSeam(fakeSeamInit())
     const ws = workspace()

@@ -81,6 +81,7 @@ export function createRemoteExec(transport: RemoteTransport): ExecAdapter {
         truncated: r.truncated || stdout.truncated || stderr.truncated,
         timedOut: r.timedOut ?? false,
         ...(r.signal === undefined ? {} : { signal: r.signal }),
+        ...(r.stoppedProcesses ? { stoppedProcesses: r.stoppedProcesses } : {}),
       }
     },
     // Remote process termination is deferred to B2; closing a channel does not attest it.

@@ -300,3 +300,52 @@ describe('exec adapter, process lifecycle', () => {
     )
   })
 })
+
+// A command's own process ending ends the command: what it left in its group goes with it and is
+// counted, as the Job does on Windows. Before, a background child kept running unowned, and one that
+// still held the output pipes held the call open until the deadline.
+describe.skipIf(process.platform === 'win32')('exec adapter, what a finished command leaves behind', () => {
+  const exec = createExec()
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+  const leaving = (stdio: 'ignore' | 'inherit') =>
+    `const { spawn } = require("node:child_process"); const c = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], { env: process.env, stdio: "${stdio}" }); process.stdout.write(String(c.pid)); setTimeout(() => process.exit(0), 100)`
+
+  it('stops a child left running and counts it', async () => {
+    const r = await runTestNode(exec, ['-e', leaving('ignore')], { cwd, timeoutMs: 30_000 })
+    expect(r).toMatchObject({ code: 0, timedOut: false, stoppedProcesses: 1 })
+    expect(r.stdout).toMatch(/^[0-9]+$/)
+    await vi.waitFor(() => expect(alive(Number(r.stdout))).toBe(false), { timeout: 2000 })
+  })
+
+  it('returns at once when the child left behind still holds the output pipes', async () => {
+    const began = Date.now()
+    const r = await runTestNode(exec, ['-e', leaving('inherit')], { cwd, timeoutMs: 30_000 })
+    expect(Date.now() - began).toBeLessThan(10_000)
+    expect(r).toMatchObject({ code: 0, timedOut: false, stoppedProcesses: 1 })
+  })
+
+  it('says nothing about a command that left nothing behind', async () => {
+    const r = await runTestNode(exec, ['-e', 'process.stdout.write("ok")'], { cwd })
+    expect(r).toEqual({ code: 0, stdout: 'ok', stderr: '', truncated: false, timedOut: false })
+  })
+
+  it('leaves the count out of a command cut off by its deadline, which kills the group itself', async () => {
+    const r = await runTestNode(
+      exec,
+      ['-e', leaving('ignore').replace('setTimeout(() => process.exit(0), 100)', 'setInterval(()=>{},1000)')],
+      {
+        cwd,
+        timeoutMs: 300,
+      },
+    )
+    expect(r.timedOut).toBe(true)
+    expect(r.stoppedProcesses).toBeUndefined()
+  })
+})

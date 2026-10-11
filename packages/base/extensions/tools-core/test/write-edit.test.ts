@@ -597,3 +597,104 @@ describe('a file longer than read returns in full', () => {
     expect((await overwrite(ctx, 'b'.repeat(MAX_READ_BYTES))).isError).toBeUndefined()
   })
 })
+
+// Models write `\n`. cmd.exe misparses a batch file with bare LF line breaks (a parenthesized block
+// fails with ". was unexpected at this time." and the window closes before anyone sees it), and an
+// edit whose oldText spans lines never matched a CRLF file, because read shows each line with its
+// `\r` still on it and nobody types that back.
+describe('line endings', () => {
+  const file = (ctx: ReturnType<typeof ctxOf>, path: string) =>
+    dec.decode(ctx.mem.files.get(`/work/proj/${path}`))
+
+  it.each(['run.bat', 'stop.cmd', 'START.BAT'])('writes a new %s with CRLF and says so', async (path) => {
+    const ctx = ctxOf()
+    const r = await writeTool.execute({ path, content: '@echo off\nif 1==1 (\n  echo ok\n)\n' }, ctx)
+    expect(file(ctx, path)).toBe('@echo off\r\nif 1==1 (\r\n  echo ok\r\n)\r\n')
+    expect(textOf(r)).toBe(`created ${path} (36 chars, CRLF line endings)`)
+    expect(r.details).toEqual({ path, bytes: 36 })
+  })
+
+  it('leaves CRLF already in a batch file as it is and turns only the bare LF', async () => {
+    const ctx = ctxOf()
+    await writeTool.execute({ path: 'run.bat', content: 'a\r\nb\nc' }, ctx)
+    expect(file(ctx, 'run.bat')).toBe('a\r\nb\r\nc')
+  })
+
+  it('repairs a batch file that was written with LF when it is overwritten', async () => {
+    const ctx = ctxOf({ files: { 'run.bat': '@echo off\necho old\n' } })
+    await writeTool.execute({ path: 'run.bat', content: '@echo off\necho new\n' }, ctx)
+    expect(file(ctx, 'run.bat')).toBe('@echo off\r\necho new\r\n')
+  })
+
+  it('keeps an existing file CRLF when every line break in it is CRLF', async () => {
+    const ctx = ctxOf({ files: { 'notes.txt': 'one\r\ntwo\r\n' } })
+    const r = await writeTool.execute({ path: 'notes.txt', content: 'one\ntwo\nthree\n' }, ctx)
+    expect(file(ctx, 'notes.txt')).toBe('one\r\ntwo\r\nthree\r\n')
+    expect(textOf(r)).toBe('overwrote notes.txt (17 chars, CRLF line endings)')
+  })
+
+  it.each([
+    ['an LF file', 'one\ntwo\n'],
+    ['a file with both kinds of line break', 'one\r\ntwo\n'],
+    ['a file without a line break', 'one'],
+  ])('writes over %s exactly as given', async (_, old) => {
+    const ctx = ctxOf({ files: { 'notes.txt': old } })
+    const r = await writeTool.execute({ path: 'notes.txt', content: 'one\ntwo\nthree\n' }, ctx)
+    expect(file(ctx, 'notes.txt')).toBe('one\ntwo\nthree\n')
+    expect(textOf(r)).toBe('overwrote notes.txt (14 chars)')
+  })
+
+  it('writes a new file of any other kind exactly as given', async () => {
+    const ctx = ctxOf()
+    await writeTool.execute({ path: 'run.sh', content: 'echo a\necho b\n' }, ctx)
+    expect(file(ctx, 'run.sh')).toBe('echo a\necho b\n')
+  })
+
+  it('records what it wrote, so the next write of the session is not taken for a stale one', async () => {
+    const ctx = ctxOf()
+    await writeTool.execute({ path: 'run.bat', content: 'echo a\n' }, ctx)
+    const again = await writeTool.execute({ path: 'run.bat', content: 'echo b\n' }, ctx)
+    expect(again.isError).toBeUndefined()
+    expect(file(ctx, 'run.bat')).toBe('echo b\r\n')
+  })
+
+  it('matches an oldText that spans lines against a CRLF file and keeps the file CRLF', async () => {
+    const ctx = ctxOf({ files: { 'run.bat': '@echo off\r\ntimeout /t 1\r\nstart x\r\n' } })
+    const r = await editTool.execute(
+      {
+        path: 'run.bat',
+        edits: [{ oldText: 'timeout /t 1\nstart x\n', newText: 'ping -n 2 127.0.0.1\nstart x\necho done\n' }],
+      },
+      ctx,
+    )
+    expect(r.isError).toBeUndefined()
+    expect(file(ctx, 'run.bat')).toBe('@echo off\r\nping -n 2 127.0.0.1\r\nstart x\r\necho done\r\n')
+    expect(textOf(r)).toBe('applied 1 edit(s) to run.bat (+1 lines)')
+  })
+
+  it('also matches an oldText that carries the CRLF it was shown', async () => {
+    const ctx = ctxOf({ files: { 'a.txt': 'one\r\ntwo\r\n' } })
+    const r = await editTool.execute(
+      { path: 'a.txt', edits: [{ oldText: 'one\r\ntwo', newText: 'uno\ndos' }] },
+      ctx,
+    )
+    expect(r.isError).toBeUndefined()
+    expect(file(ctx, 'a.txt')).toBe('uno\r\ndos\r\n')
+  })
+
+  it('does not translate line breaks in a file that mixes both kinds', async () => {
+    const ctx = ctxOf({ files: { 'a.txt': 'one\r\ntwo\nthree\n' } })
+    const crossing = await editTool.execute(
+      { path: 'a.txt', edits: [{ oldText: 'one\ntwo', newText: 'x' }] },
+      ctx,
+    )
+    expect(crossing.isError).toBe(true)
+    expect(textOf(crossing)).toContain('not found')
+    const r = await editTool.execute(
+      { path: 'a.txt', edits: [{ oldText: 'two\nthree', newText: '2\n3' }] },
+      ctx,
+    )
+    expect(r.isError).toBeUndefined()
+    expect(file(ctx, 'a.txt')).toBe('one\r\n2\n3\n')
+  })
+})

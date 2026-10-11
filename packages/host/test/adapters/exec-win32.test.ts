@@ -123,6 +123,59 @@ describe.skipIf(process.platform !== 'win32')('Host Windows Job execution', () =
     expect(windowsProcessStartTimeSync(Number(text))).toBeNull()
   })
 
+  it('counts what a finished command left running, and stops it', async () => {
+    const { cwd, exec } = setup()
+    const marker = join(cwd, 'left')
+    const leaves = [
+      process.execPath,
+      '-e',
+      `
+      const {spawn}=require('node:child_process');
+      const child=spawn(process.execPath,['-e','setTimeout(()=>{},15000)'],
+        {detached:true,windowsHide:true,stdio:'ignore'});
+      child.once('spawn',()=>{require('node:fs').writeFileSync(${JSON.stringify(marker)},String(child.pid));process.exit(0)});
+    `,
+    ]
+    const result = await exec.run(leaves, { cwd, timeoutMs: 30_000 })
+    expect(result).toMatchObject({ code: 0, timedOut: false, stoppedProcesses: 1 })
+    expect(windowsProcessStartTimeSync(Number(readFileSync(marker, 'utf8')))).toBeNull()
+    const clean = await exec.run([process.execPath, '-e', 'process.exit(0)'], { cwd })
+    expect(clean.stoppedProcesses).toBeUndefined()
+  })
+
+  it('keeps a background job running after start returns, and stop ends its whole Job', async () => {
+    const { cwd, exec } = setup()
+    const marker = join(cwd, 'bg')
+    const job = await (exec.start as NonNullable<ExecAdapter['start']>)(tree(marker), { cwd })
+    let text = ''
+    for (let n = 0; n < 200 && !existsSync(marker); n++) await new Promise((wait) => setTimeout(wait, 50))
+    text = readFileSync(marker, 'utf8')
+    expect(text).toMatch(/^[1-9][0-9]*$/)
+    expect(windowsProcessStartTimeSync(job.pid as number)).not.toBeNull()
+    expect(windowsProcessStartTimeSync(Number(text))).not.toBeNull()
+    await job.stop()
+    await job.done
+    expect(windowsProcessStartTimeSync(job.pid as number)).toBeNull()
+    expect(windowsProcessStartTimeSync(Number(text))).toBeNull()
+  })
+
+  it('stops background jobs on killAll', async () => {
+    const { cwd, exec } = setup()
+    const job = await (exec.start as NonNullable<ExecAdapter['start']>)(
+      [process.execPath, '-e', 'process.stdout.write("up"); setTimeout(()=>{},15000)'],
+      { cwd },
+    )
+    let out = ''
+    job.onOutput((chunk) => {
+      out += chunk
+    })
+    for (let n = 0; n < 200 && out !== 'up'; n++) await new Promise((wait) => setTimeout(wait, 50))
+    expect(out).toBe('up')
+    await exec.killAll()
+    await job.done
+    expect(windowsProcessStartTimeSync(job.pid as number)).toBeNull()
+  })
+
   it('includes a not-yet-started command in killAll and never runs its business code', async () => {
     const { cwd, exec } = setup()
     const marker = join(cwd, 'must-not-run')

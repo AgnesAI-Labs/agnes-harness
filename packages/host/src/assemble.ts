@@ -710,6 +710,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             execBackend: posture.execBackend,
             enforcement: posture.enforcement,
             exec: fence.exec,
+            ...(fence.start ? { start: fence.start } : {}),
             binding: fence.binding,
           })
         },

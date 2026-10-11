@@ -100,7 +100,25 @@ export type ExecResult = {
    * was killed and the output is what it had printed so far. Absent means the executor did not say.
    */
   timedOut?: boolean
+  /**
+   * How many processes the command started (a server sent to the background, a detached child) were
+   * still running when it returned and were stopped with it. Set, and positive, only by an executor
+   * that owns every process a command starts; absent means it stopped none, or the executor did not say.
+   */
+  stoppedProcesses?: number
 }
+/** A background job: a command started to keep running after the call that started it returned. */
+export type JobInfo = {
+  id: string
+  command: string
+  cwd: string
+  /** `exited` on its own (with `code`), or `stopped` by a `stop` or by its session closing. */
+  status: 'running' | 'exited' | 'stopped'
+  code?: number
+  startedAt: string
+}
+/** Output read from a job: `text` from `since` on, `next` to continue from, `dropped` no longer kept. */
+export type JobOutput = JobInfo & { text: string; next: number; dropped: number }
 export type FsEntry = { name: string; kind: 'file' | 'dir' | 'symlink' | 'other' }
 export type FsStat = { kind: FsEntry['kind']; size: number; mtimeMs: number }
 export type FetchInit = {
@@ -202,6 +220,18 @@ export interface ToolContext {
     cmd: string[],
     opts?: { cwd?: string; env?: Record<string, string>; stdin?: string; timeoutMs?: number },
   ): Promise<ExecResult>
+  /**
+   * The session's background jobs: `start` runs `cmd` as `exec` would (same shell, sandbox and
+   * policy) but returns once it is running. The session owns them and stops them when it closes.
+   * Absent where the kernel keeps none; `start` rejects where the workspace cannot run one.
+   */
+  readonly jobs?: {
+    start(cmd: string[], opts?: { cwd?: string; env?: Record<string, string> }): Promise<JobInfo>
+    /** Output after `since` (default: where the last read ended), waiting up to `waitMs` for some. */
+    output(id: string, opts?: { since?: number; waitMs?: number }): Promise<JobOutput>
+    stop(id: string): Promise<JobInfo>
+    list(): Promise<JobInfo[]>
+  }
   readonly fs: {
     read(path: string, opts?: { offset?: number; limit?: number }): Promise<Bytes>
     write(path: string, data: Bytes | string): Promise<void>

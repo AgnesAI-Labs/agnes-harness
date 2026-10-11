@@ -2,6 +2,7 @@ import { defineTool, type ToolResult } from '@agnes/extension-api'
 import { withFileLock } from '../guards/mutation-queue.js'
 import { observe, versionOf } from '../guards/observed.js'
 import { looksTruncated } from '../guards/truncation.js'
+import { toCrlf, usesCrlf } from '../line-endings.js'
 import { normalizeWorkspacePath } from '../paths.js'
 import { isBinary, MAX_READ_BYTES } from './read.js'
 import { EditParams } from './schemas.js'
@@ -60,8 +61,13 @@ export const editTool = defineTool({
       } catch {
         return fail('edit failed: file is not valid UTF-8')
       }
+      // read shows each line of a CRLF file with its `\r` still on it, and a model writes `\n`, so
+      // an oldText spanning lines would never match. In a file that is CRLF throughout, both sides
+      // are taken in its line breaks; a file that mixes the two kinds is matched exactly as given.
+      const crlf = usesCrlf(original)
       let text = original
-      for (const [i, e] of args.edits.entries()) {
+      for (const [i, edit] of args.edits.entries()) {
+        const e = crlf ? { oldText: toCrlf(edit.oldText), newText: toCrlf(edit.newText) } : edit
         const n = occurrences(text, e.oldText)
         if (n === 0) return fail(`edit ${i + 1}: oldText not found`)
         if (n > 1) return fail(`edit ${i + 1}: ambiguous (${n} matches); include more context`)

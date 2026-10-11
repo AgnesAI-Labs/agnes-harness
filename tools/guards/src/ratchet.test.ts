@@ -321,7 +321,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/web-units/src': 6242,
   // Write staleness guard: a per-session table of what each file looked like when read, checked by
   // `write` (+55 counted lines, measured 855, exact cap).
-  'packages/base/extensions/tools-core': 922,
+  // Windows line endings, processes stopped with a command, session background jobs; measured 1034, exact.
+  'packages/base/extensions/tools-core': 1034,
   // MCP-ROWS stage 2b, steps 1-2 (D118): connection supervisor, catalog hub, and the per-server
   // extension row wiring them together. New extension at the shared default cap; measured 276.
   'packages/base/extensions/mcp-server': 800,
@@ -356,7 +357,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host/src/adapters/powershell-file': 47,
   'packages/host/src/adapters/powershell-temporary': 43,
   'packages/host/src/adapters/process-identity-win32': 18,
-  'packages/host/src/adapters/exec-win32': 84,
+  // Windows line endings, processes stopped with a command, session background jobs; measured 122, exact.
+  'packages/host/src/adapters/exec-win32': 122,
   'packages/host/src/adapters/exec-output': 32,
   'packages/host/src/adapters/secrets-win32': 56,
   // WIN-TITLE-REPAIR: +3 for peer-only rejection backoff; no counting exclusions changed.
@@ -366,7 +368,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-21: add Linux same-handle artifact deletion dispatch and availability. Exact 1122.
   // 2026-09-22: no-replace directory publication, +17 measured lines; no fallback.
   // SKILL-DELETE-PRIORITY: +47 counted lines for 64-bit deletion and platform path preflight; no spare.
-  'packages/system-node/src': 1186,
+  // Windows line endings, processes stopped with a command, session background jobs; measured 1210, exact.
+  'packages/system-node/src': 1210,
   // 2026-09-13 in-process ecosystem: verified snapshots, rollback journal/GC and the local examples
   // catalogue are the PackageManager-owned state machine. Exact post-integration total; no spare.
   // 2026-09-14: Task 1 orphaned-pin-cleanup adds listRuntimePinsStore() function and
@@ -1071,7 +1074,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // with countLines() after the merge: 26102, exact, no spare.
   // 2026-10-06: reject oversized inbox records before durable append; 26424, exact.
   // Clock envelope, validation error paths and secret diagnostics merged with main; measured 26566, exact.
-  'packages/core/src': 26566,
+  // Windows line endings, processes stopped with a command, session background jobs; measured 26757, exact.
+  'packages/core/src': 26757,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1304,7 +1308,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // A returning package must not be served a cached generation bound to revoked leases (+7), and the
   // full-access read-only roots reach the fence from the assembly (+7). Measured 4207, exact.
   // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 4211, exact.
-  'packages/host/src/assemble': 4211,
+  // Windows line endings, processes stopped with a command, session background jobs; measured 4212, exact.
+  'packages/host/src/assemble': 4212,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -1499,7 +1504,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // exported as constants. Measured 981 (+3), exact, no spare.
   // Optional ExecResult.timedOut and the soft-deadline note on timeoutMs. Measured 987 (+6), exact cap.
   // Optional ToolContext.defaultTimeoutMs. Measured 988 (+1), exact cap.
-  'packages/extension-api/src': 1000, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  // Windows line endings, processes stopped with a command, session background jobs; measured 1016, exact.
+  'packages/extension-api/src': 1016, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -2679,7 +2685,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Approval reasons: the Prompter type may answer with a reason (+2). Measured 38398 (combined tree), exact cap.
   // Combined diagnostics fixes (credential store detail, preset refusal, startup reason, secrets) on main; measured 38668, exact.
   // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 38672, exact.
-  'packages/host/src': 38672,
+  // Windows line endings, processes stopped with a command, session background jobs; measured 38888, exact.
+  'packages/host/src': 38888,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.
@@ -2848,7 +2855,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // exact, no spare (+19).
   // Approval reasons: the Prompter type may answer with a reason (+2). Measured 5055, exact cap.
   // Combined diagnostics fixes (credential store detail, preset refusal, startup reason, secrets) on main; measured 5248, exact.
-  'packages/host/src/adapters': 5248,
+  // Windows line endings, processes stopped with a command, session background jobs; measured 5457, exact.
+  'packages/host/src/adapters': 5457,
 
   // C1b Task 5 persists child creation attempts and deferred recovery; exact total, no spare.
   // Task 17 review: sqlite_master scan + table-name refuse. Re-measured: 674, exact.
@@ -2910,7 +2918,9 @@ const EXTENSION_CEILING_EXCEPTIONS = new Map([
   // Skill description bounds and paged reads. Measured 1121, exact.
   ['skills', 1121],
   // Write staleness guard, session images and bounded attachment text reads. Measured 922, exact.
-  ['tools-core', 922],
+  // CRLF-preserving write/edit, the stopped-process notice, background shell and the job tool;
+  // measured 1034, exact (a sibling extension for `job` alone would still leave this above 922).
+  ['tools-core', 1034],
 ])
 
 describe('bundled extension line budgets (default ≤ 800, named reviewed exceptions)', () => {

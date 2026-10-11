@@ -93,3 +93,14 @@ export const TodoParams = Type.Object(
   },
   { additionalProperties: false },
 )
+
+// One tool for the three things a background job needs after it is started; `id` names the job for
+// output and stop, and `waitMs` lets one output call wait for a server to say it is ready.
+export const JobParams = Type.Object(
+  {
+    action: Type.Union([Type.Literal('list'), Type.Literal('output'), Type.Literal('stop')]),
+    id: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
+    waitMs: Type.Optional(Type.Integer({ minimum: 1 })),
+  },
+  { additionalProperties: false },
+)

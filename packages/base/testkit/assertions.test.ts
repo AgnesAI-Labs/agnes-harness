@@ -53,9 +53,9 @@ describe('expectToolMetaComplete', () => {
 })
 
 describe('usedCapabilities reads call sites, not every word in the file', () => {
-  it('finds the five tools tools-core defines, and no hooks or slots', () => {
+  it('finds the six tools tools-core defines, and no hooks or slots', () => {
     const used = usedCapabilities(fileURLToPath(new URL('../extensions/tools-core/src', import.meta.url)))
-    expect([...used.tools].sort()).toEqual(['edit', 'read', 'shell', 'todo', 'write'])
+    expect([...used.tools].sort()).toEqual(['edit', 'job', 'read', 'shell', 'todo', 'write'])
     expect([...used.hooks]).toEqual([])
     expect([...used.slots]).toEqual([])
   })

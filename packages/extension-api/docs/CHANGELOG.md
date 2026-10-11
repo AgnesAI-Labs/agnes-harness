@@ -4,6 +4,24 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+`ToolContext` gains the optional `jobs`: the session's background jobs. `start(cmd, { cwd?, env? })` runs a
+command the way `exec` does (same shell, sandbox and policy) but returns once it is running, with a `JobInfo`
+(`id`, `command`, `cwd`, `status` of `running`, `exited` or `stopped`, `code` once it exited, `startedAt`);
+`output(id, { since?, waitMs? })` returns what it printed after `since` (by default, where the last read
+ended), with `next` to continue from and `dropped` for output no longer kept, waiting up to `waitMs` for
+something new; `stop(id)` ends the job and everything it started; `list()` names them all. The session owns
+its jobs and stops them when it closes. The field is absent where the kernel keeps no jobs, and `start`
+rejects where the workspace cannot run one, so a tool or test double that never touches it keeps conforming.
+`JobInfo` and `JobOutput` are exported.
+
+`ExecResult` gains the optional `stoppedProcesses`: the number of processes a command started that were
+still running when it returned and were stopped with it, because the executor owns every process a command
+starts (the local executor does, on every platform; on POSIX a process that left its process group with
+`setsid` is out of its reach). A tool can tell the model that what it left running is gone,
+instead of the model finding the port closed later and guessing why. It is set only when positive; absent
+means none were stopped or the executor did not say, so an `exec` implementation or test double that never
+sets it keeps conforming.
+
 `ToolMeta` gains the optional `returnsImages`. A tool that sets it to true declares that its results carry
 pictures for the model: the call records `returnsImages: true` in its resolved policy, and request media
 sends a result's images to the model when the result is closed-world (trusted) and its call declared this.

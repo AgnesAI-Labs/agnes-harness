@@ -21,6 +21,7 @@ function assertWorkspace(workspace: SeamWorkspace): void {
     typeof workspace.readiness?.ready !== 'function' ||
     typeof workspace.exec !== 'function' ||
     typeof workspace.binding !== 'function' ||
+    (workspace.start !== undefined && typeof workspace.start !== 'function') ||
     (workspace.execBackend !== 'none' &&
       workspace.execBackend !== 'l1' &&
       workspace.execBackend !== 'remote') ||
@@ -44,6 +45,20 @@ async function bindWorkspace(workspace: SeamWorkspace): Promise<SandboxSeam> {
         sandbox: { policyDigest: policy.digest, backend: workspace.execBackend },
       })
     },
+    // The same expansion, confinement and binding as exec: a background job is a command like any
+    // other, it just returns once it is running.
+    ...(workspace.start
+      ? {
+          async start(cmd: string[], opts: { cwd: string; env?: Record<string, string> }) {
+            const raw = expandShell(cmd, workspace.shell, workspace.shellCommand)
+            const argv = await backend.confine({ argv: raw, cwd: opts.cwd })
+            return (workspace.start as NonNullable<SeamWorkspace['start']>)([...argv], {
+              ...opts,
+              sandbox: { policyDigest: policy.digest, backend: workspace.execBackend },
+            })
+          },
+        }
+      : {}),
     async confine(argv) {
       return [...(await backend.confine({ argv, cwd: workspace.root }))]
     },

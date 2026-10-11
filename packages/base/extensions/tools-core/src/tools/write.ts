@@ -2,6 +2,7 @@ import { type Bytes, defineTool, type ToolResult } from '@agnes/extension-api'
 import { withFileLock } from '../guards/mutation-queue.js'
 import { ABSENT, observe, observedVersion, versionOf } from '../guards/observed.js'
 import { looksTruncated } from '../guards/truncation.js'
+import { isBatchFile, toCrlf, usesCrlf } from '../line-endings.js'
 import { normalizeWorkspacePath } from '../paths.js'
 import { MAX_READ_BYTES } from './read.js'
 import { WriteParams } from './schemas.js'
@@ -12,7 +13,7 @@ const enc = new TextEncoder()
 export const writeTool = defineTool({
   name: 'write',
   description:
-    'Create or overwrite a file with the given content. For large generated files, first write a small valid scaffold with unique section markers, then fill the sections with multiple edit calls. Aim for at most 8 KiB of generated content per call to avoid model output truncation; do not generate a whole large file in one call. Overwriting an existing file is destructive, and content that looks like a partial copy of what is already there is refused rather than written.',
+    'Create or overwrite a file with the given content. For large generated files, first write a small valid scaffold with unique section markers, then fill the sections with multiple edit calls. Aim for at most 8 KiB of generated content per call to avoid model output truncation; do not generate a whole large file in one call. Overwriting an existing file is destructive, and content that looks like a partial copy of what is already there is refused rather than written. A .bat or .cmd file is written with CRLF line breaks, and so is a file whose line breaks are already all CRLF.',
   parameters: WriteParams,
   meta: {
     isReadOnly: false,
@@ -66,7 +67,11 @@ export const writeTool = defineTool({
             details: { code: 'FS_STALE_VERSION', path: args.path },
           }
       }
-      const t = looksTruncated(old, args.content)
+      // A batch file is always CRLF, and a file that is CRLF throughout stays so; everything else is
+      // written exactly as given. The content written is the one every later check compares with.
+      const crlf = isBatchFile(abs) || (existed && usesCrlf(old))
+      const content = crlf ? toCrlf(args.content) : args.content
+      const t = looksTruncated(old, content)
       if (t.truncated)
         return {
           content: [
@@ -78,7 +83,7 @@ export const writeTool = defineTool({
           isError: true,
         }
       try {
-        await ctx.fs.write(args.path, args.content)
+        await ctx.fs.write(args.path, content)
       } catch (e) {
         // A file the fence lets the model read but not replace fails here, not at the read above.
         // Left to propagate, a refusal that wrote nothing would reach the model as a call whose
@@ -90,15 +95,16 @@ export const writeTool = defineTool({
         }
       }
       // What was just written is what this session now knows of the file.
-      observe(ctx.session.key, abs, await versionOf(ctx, args.path, enc.encode(args.content), MAX_READ_BYTES))
+      const bytes = enc.encode(content)
+      observe(ctx.session.key, abs, await versionOf(ctx, args.path, bytes, MAX_READ_BYTES))
       return {
         content: [
           {
             type: 'text',
-            text: `${existed ? 'overwrote' : 'created'} ${args.path} (${args.content.length} chars)`,
+            text: `${existed ? 'overwrote' : 'created'} ${args.path} (${content.length} chars${crlf ? ', CRLF line endings' : ''})`,
           },
         ],
-        details: { path: args.path, bytes: enc.encode(args.content).byteLength },
+        details: { path: args.path, bytes: bytes.byteLength },
       }
     })
   },

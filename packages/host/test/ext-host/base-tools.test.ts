@@ -316,7 +316,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
           .filter((t) => t.source.source === id)
           .map((t) => t.name)
           .sort()
-      expect(namesFrom('agnes/tools-core')).toEqual(['edit', 'read', 'shell', 'todo', 'write'])
+      expect(namesFrom('agnes/tools-core')).toEqual(['edit', 'job', 'read', 'shell', 'todo', 'write'])
       expect(namesFrom('agnes/tools-search')).toEqual(['find', 'grep', 'ls'])
       expect(namesFrom('agnes/tools-web')).toEqual(['web_fetch'])
       expect(namesFrom('agnes/compaction')).toEqual(['compact'])
@@ -677,8 +677,9 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     })
     // The skills extension is loaded but inert until a daemon worker supplies a private runtime
     // snapshot. An empty resource-control view must not alter the legacy Host tool surface.
-    // Seventeen plus the computer-use tool the default enabled profile now mounts as a row.
-    expect(host.kernel.tools.size).toBe(18)
+    // Seventeen plus the computer-use tool the default enabled profile now mounts as a row, plus
+    // `job` for background shell jobs.
+    expect(host.kernel.tools.size).toBe(19)
     expect(host.kernel.tools.resolve('computer_use')).toMatchObject({ name: 'computer_use' })
     expect(host.kernel.tools.resolve('subagent_cancel')).toMatchObject({ name: 'subagent_cancel' })
     await host.close()

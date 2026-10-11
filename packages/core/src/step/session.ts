@@ -35,6 +35,7 @@ import { hasChildControl } from '../child/store.js'
 import { isPending, normalizeApproval } from '../effects/approval-answer.js'
 import { EffectRuntime } from '../effects/effect.js'
 import { type ExecuteAttempt, ExecutePermitRegistry } from '../effects/execute-permits.js'
+import { JobRegistry } from '../effects/jobs.js'
 import { type NestedToolLease, NestedToolScheduler } from '../effects/scheduler.js'
 import type { ApprovalAnswer, ApprovalRequest, Pending, Verdict, VerifierVerdict } from '../effects/seams.js'
 import type { ChildrenFactory, ToolContextDeps } from '../effects/tool-context.js'
@@ -523,6 +524,8 @@ export class SessionImpl {
    * A fresh instance rebuilds validated session grants from approval and call records before use.
    */
   readonly sessionAllows = new Set<string>()
+  /** Background processes the session's tool calls started; closing the session stops them. */
+  readonly jobs = new JobRegistry()
   readonly preview = new PreviewHub()
   /** Wrapping memo is optional; the durable header epochs determine historical envelope ids. */
   readonly envelopeCache: EnvelopeCache = createEnvelopeCache()
@@ -2313,6 +2316,7 @@ export class SessionImpl {
     this.closePromise = Promise.resolve().then(async () => {
       const failures: unknown[] = []
       await this.hooks.shutdown?.().catch((error: unknown) => failures.push(error))
+      await this.jobs.stopAll().catch((error: unknown) => failures.push(error))
       await this.d.log.close().catch((error: unknown) => failures.push(error))
       await this.d.workspaceLease?.close().catch((error: unknown) => failures.push(error))
       if (failures.length === 1) throw failures[0]

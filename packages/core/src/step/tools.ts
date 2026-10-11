@@ -1033,6 +1033,7 @@ export async function approveAndExecute(
           runtime: s.d.runtime,
           preset: s.preset,
           children: s.d.children,
+          jobs: s.jobs,
           fsOps,
           ...(workspace ? { workspace } : {}),
           netFetch: s.d.netFetch,

@@ -127,6 +127,19 @@ export type SandboxExecBackend = 'none' | 'l1' | 'remote'
  * Host-owned, already-authorized inputs for fitting a sandbox seam to one session workspace.
  * Base consumes this object; it neither compiles policy nor receives the raw probe capability.
  */
+/**
+ * A process started to outlive the call that started it: a session's background job. Whoever holds
+ * it owns it and must stop it; `stop` takes down everything the process started as well.
+ */
+export type SandboxProcess = Readonly<{
+  pid: number | undefined
+  /** Output as it arrives, stdout and stderr together; what arrived before the first listener is replayed. */
+  onOutput(listener: (text: string) => void): void
+  /** Settles when the process itself has exited; `stop` resolves only once its descendants are gone too. */
+  done: Promise<{ code: number | null; signal?: string }>
+  stop(): Promise<void>
+}>
+
 export interface SeamWorkspace {
   readonly root: string
   /** Task 6 invocation owner. Legacy fitting fields remain during the Host/Base migration only. */
@@ -149,8 +162,24 @@ export interface SeamWorkspace {
       maxOutputBytes?: number
       sandbox: Readonly<{ policyDigest: string; backend: SandboxExecBackend }>
     },
-  ) => Promise<{ code: number; stdout: string; stderr: string; truncated: boolean; timedOut?: boolean }>
+  ) => Promise<{
+    code: number
+    stdout: string
+    stderr: string
+    truncated: boolean
+    timedOut?: boolean
+    stoppedProcesses?: number
+  }>
   readonly binding: () => Readonly<{ policyDigest: string | null }>
+  /** Starts a long-lived process under the same policy gate as `exec`; absent where none can be owned. */
+  readonly start?: (
+    argv: string[],
+    opts: {
+      cwd: string
+      env?: Record<string, string>
+      sandbox: Readonly<{ policyDigest: string; backend: SandboxExecBackend }>
+    },
+  ) => Promise<SandboxProcess>
 }
 
 export interface SandboxSeam {
@@ -166,7 +195,19 @@ export interface SandboxSeam {
       signal?: AbortSignal
       maxOutputBytes?: number
     },
-  ): Promise<{ code: number; stdout: string; stderr: string; truncated: boolean; timedOut?: boolean }>
+  ): Promise<{
+    code: number
+    stdout: string
+    stderr: string
+    truncated: boolean
+    timedOut?: boolean
+    stoppedProcesses?: number
+  }>
+  /**
+   * Starts `cmd` the way `exec` runs it - same shell, same confinement, same policy binding - and
+   * returns once it is running instead of when it ends. Absent where the workspace cannot own one.
+   */
+  start?(cmd: string[], opts: { cwd: string; env?: Record<string, string> }): Promise<SandboxProcess>
   // Wraps one argv into a confined argv. `exec` uses it internally, and it is the same opening a
   // tool that spawns its own process reaches through ToolContext.sandbox.
   confine(argv: string[]): Promise<string[]>

@@ -79,6 +79,8 @@ export type FakeToolContextOpts = {
    * the kinds a listing tool has to be able to show - has no other way into a test.
    */
   entries?: Record<string, FsEntry[]>
+  /** The session's background jobs the tool sees; omitted leaves `ctx.jobs` out, as a kernel without them does. */
+  jobs?: ToolContext['jobs']
 }
 
 const enc = new TextEncoder()
@@ -205,6 +207,7 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
       },
       list: () => [],
     },
+    ...(opts.jobs ? { jobs: opts.jobs } : {}),
     artifacts: {
       async put(bytes: Uint8Array, meta?: { mime?: string; name?: string }): Promise<ArtifactRef> {
         if (opts.artifactsFail !== undefined) throw new Error(opts.artifactsFail)

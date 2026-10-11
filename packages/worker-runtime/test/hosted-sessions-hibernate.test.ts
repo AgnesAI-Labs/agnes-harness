@@ -188,6 +188,26 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     expect(t.hibernated('prompter')).toBe(true)
   })
 
+  it('stays open while a background job runs, and hibernates once it has ended', async () => {
+    const t = await setup()
+    const session = await t.open('job')
+    let exit!: (status: { code: number | null }) => void
+    const done = new Promise<{ code: number | null }>((resolve) => {
+      exit = resolve
+    })
+    const process = { pid: 1, onOutput: () => {}, done, stop: async () => exit({ code: null }) }
+    await session.jobs.start({ start: async () => process }, ['$SHELL', 'serve'], {
+      cwd: '/w',
+      command: 'serve',
+    })
+    await t.idle(10 * T)
+    expect(t.hibernated('job')).toBe(false)
+    exit({ code: 0 })
+    await vi.waitFor(() => expect(session.jobs.running()).toBe(0))
+    await t.idle(T)
+    expect(t.hibernated('job')).toBe(true)
+  })
+
   it('stays open once its log has faulted', async () => {
     const t = await setup()
     const session = await t.open('faulted')
