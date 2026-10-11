@@ -160,6 +160,10 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
         const listFail = listErrors.get(dir)
         if (listFail)
           throw Object.assign(new Error(listFail.message ?? 'list failed'), { code: listFail.code })
+        // A real listing refuses a file. Answering it as an empty directory would hide a tool that
+        // lists what it was asked to open.
+        if (mem.files.has(dir))
+          throw Object.assign(new Error(`ENOTDIR: not a directory, scandir '${p}'`), { code: 'ENOTDIR' })
         const names = new Map<string, 'file' | 'dir'>()
         for (const k of mem.files.keys()) {
           if (!k.startsWith(`${dir}/`)) continue
