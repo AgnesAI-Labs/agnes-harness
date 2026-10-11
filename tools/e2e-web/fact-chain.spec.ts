@@ -179,6 +179,10 @@ for (const locale of ['en', 'zh-CN'])
       await composer.press('Enter')
       const card = page.getByTestId('intelligent-ui-inline')
       await expect(card.getByTestId('ui-surface-evidence-review')).toHaveAttribute('data-revision', '1')
+      await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed', {
+        timeout: 25_000,
+      })
+      await expect(composer).toBeEnabled()
       await card.getByTestId('ui-action-read-report').click()
       await card.getByTestId('ui-confirm').click()
       await expect(card.locator('[data-status="succeeded"]')).toBeVisible()

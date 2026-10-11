@@ -281,6 +281,7 @@ for (const locale of ['en', 'zh-CN'])
         await expect(delivery).toContainText('Delivery report.md')
         const rightToggle = page.getByTestId('workbench-right-toggle')
         if ((await rightToggle.getAttribute('aria-expanded')) !== 'true') await rightToggle.click()
+        await page.getByTestId('workbench-tab-intelligent-ui').click()
         await expect(page.getByTestId('intelligent-ui-panel')).toContainText('Delivery report.md')
         await page
           .locator('#workbench-right')
