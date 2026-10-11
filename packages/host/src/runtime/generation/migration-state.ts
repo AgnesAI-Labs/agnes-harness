@@ -74,6 +74,9 @@ export async function assertMigrationSettled(
     const add = (kind: string, id: string, seq?: number) =>
       reasons.push({ kind, id, sessionKey: key, ...(seq === undefined ? {} : { seq }) })
     for (const [id, approval] of state.pendingApprovals) add('pending-approval', id, approval.seq)
+    for (const [id, { value, seq }] of state.registers.decisionStates)
+      if (!value.consumption && !value.invalidation && (!value.result || value.result.reason === 'answered'))
+        add('pending-decision', id, seq)
     for (const [id, decision] of state.decisions) {
       if (decision.via === 'sync' || decision.via === 'guardian' || state.resumedRequests.has(id)) continue
       const asked = rows.find((row) => row.seq === decision.askedSeq)

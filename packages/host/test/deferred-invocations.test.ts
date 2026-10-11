@@ -2,6 +2,7 @@ import { defaultLoopPlugin } from '@agnes/base'
 import { Context } from '@agnes/cordis'
 import { CoreError, MemoryStorage, SessionLogImpl } from '@agnes/core'
 import { defaultIds } from '@agnes/core-common/ids'
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import type { LoopContext, LoopFactory, ToolResult } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 import {
@@ -18,7 +19,7 @@ import {
   type DeferredToolInvocation,
   deferredQueueKind,
 } from '@agnes/plugin-runtime/deferred-contract'
-import type { Actor, EventEnvelope, JsonValue } from '@agnes/protocol'
+import type { Actor, DecisionSnapshot, EventEnvelope, JsonValue } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { assertMigrationSettled } from '../src/runtime/generation/migration-state.js'
 
@@ -773,6 +774,78 @@ it('refuses migration while deferred work is unfinished and allows a terminal re
     await assertMigrationSettled(done.storage, 's', 'generation')
   } finally {
     await done.close()
+  }
+})
+
+it('keeps pending and answered but unconsumed decisions on their original generation pin', async () => {
+  const f = await migrationLog()
+  const subject = { text: 'Complete review content' }
+  const snapshot: DecisionSnapshot = {
+    handle: { id: 'review', sessionId: 's' },
+    revision: 1,
+    request: {
+      spec: {
+        key: 'review',
+        purpose: 'business.confirm',
+        subject,
+        prompt: 'Continue?',
+        options: ['continue', 'reject'],
+      },
+      subjectDigest: sha256Hex(canonicalJson(subject)),
+      owner: 'community.review',
+      sourcePackage: '@community/review',
+      packageVersion: '1.0.0',
+      operationId: 'loop:community.review',
+      requestedBy: actor,
+      lane: 'main',
+      createdAt: '2030-01-01T00:00:00.000Z',
+      expiresAt: '2030-01-02T00:00:00.000Z',
+    },
+    result: null,
+    answerCommand: null,
+    consumption: null,
+    invalidation: null,
+  }
+  const append = (value: DecisionSnapshot) =>
+    f.log.append([
+      {
+        type: 'decision/state',
+        register: 'decision/state',
+        data: value,
+        actor,
+        origin: 'system',
+        trust: 'trusted',
+        lane: 'main',
+      },
+    ])
+  try {
+    await append(snapshot)
+    await expect(assertMigrationSettled(f.storage, 's', 'generation')).rejects.toThrow(
+      'pending-decision:review',
+    )
+    const answered: DecisionSnapshot = {
+      ...snapshot,
+      revision: 2,
+      result: {
+        reason: 'answered',
+        at: '2030-01-01T01:00:00.000Z',
+        response: { option: 'continue', value: null },
+        answeredBy: actor,
+      },
+      answerCommand: { commandId: 'human', digest: 'a'.repeat(64), revision: 2, seq: f.log.lastSeq + 1 },
+    }
+    await append(answered)
+    await expect(assertMigrationSettled(f.storage, 's', 'generation')).rejects.toThrow(
+      'pending-decision:review',
+    )
+    await append({
+      ...answered,
+      revision: 3,
+      invalidation: { at: '2030-01-02T00:00:00.000Z', code: 'deadline' },
+    })
+    await assertMigrationSettled(f.storage, 's', 'generation')
+  } finally {
+    await f.close()
   }
 })
 
