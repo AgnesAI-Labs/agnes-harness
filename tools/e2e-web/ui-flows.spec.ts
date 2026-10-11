@@ -995,7 +995,12 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     await expect(rows.first()).toContainText(locale === 'en' ? 'Plugin · Update' : '插件 · 更新')
     await expect(rows.getByTestId('candidate-list-facts').first()).toContainText('0.1.0')
     await expect(page.getByTestId('plugin-drain-summary')).toHaveCount(0)
-    await page.getByRole('button', { name: `View details for ${draft.packageId}`, exact: true }).click()
+    const installed = (await client.packages.list({ profile: 'local-dev' })).packages
+    const draining = (await client.packages.generations({ profile: 'local-dev' })).plugins.find(
+      (plugin) => plugin.drainingSessions > 0 && installed.some((item) => item.id === plugin.id),
+    )
+    expect(draining).toBeDefined()
+    await page.locator(`.plugin-row[data-plugin-id="${draining!.id}"] .plugin-details-button`).click()
     await page.getByTestId('plugin-versions-tab').click()
     await expect(page.getByTestId('plugin-drain-summary')).toHaveCount(1)
     await expect(page.getByTestId('plugin-drain-summary')).not.toContainText('@agnes/')

@@ -606,24 +606,24 @@ class ResourceAdminPage {
         onToggleDesired={(item, next) => void this.toggleDesired(item, next)}
         onLoadMore={() => void this.loadMore()}
         onRetry={() => void this.reload()}
-          mcpActions={(item) => ({
-            edit: () => {
-              this.closeDetail()
-              openMcpDialog(item, this.#t)
-            },
-            test: () => {
-              const action = this.#detailActions(item).find(
-                (action) => action.label === this.#t('action.test-mcp'),
-              )
-              if (action) void this.#runAction(action)
-            },
-            remove: () => {
-              const action = this.#detailActions(item).find(
-                (action) => action.label === this.#t('action.remove-mcp'),
-              )
-              if (action) void this.#runAction(action)
-            },
-          })}
+        mcpActions={(item) => ({
+          edit: () => {
+            this.closeDetail()
+            openMcpDialog(item, this.#t)
+          },
+          test: () => {
+            const action = this.#detailActions(item).find(
+              (action) => action.label === this.#t('action.test-mcp'),
+            )
+            if (action) void this.#runAction(action)
+          },
+          remove: () => {
+            const action = this.#detailActions(item).find(
+              (action) => action.label === this.#t('action.remove-mcp'),
+            )
+            if (action) void this.#runAction(action)
+          },
+        })}
         onImport={onImport ?? (() => undefined)}
         filtered={!!this.#skillQuery}
         menuOf={(item) =>
