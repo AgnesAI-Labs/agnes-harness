@@ -257,5 +257,15 @@ for (const locale of ['zh-CN', 'en'])
         await expect(confirm).toBeHidden()
         await expect(page.locator('#config-form')).toBeVisible()
         await expect(page.getByTestId('schedules-archive').first()).toBeFocused()
+        await page.getByTestId('schedules-archive').first().click()
+        await page.getByRole('menuitem', { name: locale === 'en' ? 'Archive' : '归档', exact: true }).click()
+        await expect(confirm).toBeVisible()
+        // The owner can close its native host during a detail surface's lifetime.
+        // Detail cleanup must preserve that closed state rather than reopening settings.
+        await page.locator('#config').evaluate((host: HTMLDialogElement) => host.close())
+        const cancel = page.getByTestId('schedules-archive-cancel')
+        if (await cancel.isVisible()) await cancel.click()
+        await expect(confirm).toBeHidden()
+        await expect(page.locator('#config')).toBeHidden()
       })
     }

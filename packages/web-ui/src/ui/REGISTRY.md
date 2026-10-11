@@ -73,4 +73,4 @@ release their own listeners. Existing IDs and controllers remain authoritative.
 
 | `SessionPicker` | Shared | Select | Caller-owned session titles, workspace names and relative dates; identities only in values; searchable above seven choices. |
 
-`releaseDialogModal(host)` temporarily keeps a native settings host visible without modal focus, then restores it after an owned detail surface closes.
+`releaseDialogModal(host)` temporarily keeps a native settings host visible without modal focus, then restores it after an owned detail surface closes if its owner has kept it open. Cleanup is idempotent and preserves an owner's closed state.

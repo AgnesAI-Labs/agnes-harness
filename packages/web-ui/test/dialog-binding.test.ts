@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { bindAutoDismissDisclosure, bindDismissibleDialog } from '../src/dom/dialog-binding.js'
+import { releaseDialogModal } from '../src/dom/dialog-host.js'
 import { bindDialogSheets } from '../src/dom/dialog-sheets.js'
 
 /** The admin panes own pending-state policy; this helper owns only when a modal may be dismissed. */
@@ -28,6 +29,43 @@ function setup(canClose: () => boolean = () => true) {
 
 beforeEach(() => {
   document.body.innerHTML = ''
+})
+
+describe('releaseDialogModal', () => {
+  it.each([false, true])('preserves the native host lifecycle when its owner closes it: %s', (closed) => {
+    document.body.innerHTML = '<dialog><button type="button">Details</button></dialog>'
+    const host = document.querySelector('dialog')!
+    const trigger = host.querySelector('button')!
+    // happy-dom has no native top layer. Model the native API state, while retaining
+    // real connected DOM nodes and focus; assertions cover the observable host state.
+    let modal = false
+    const matches = host.matches.bind(host)
+    host.matches = (selector) => (selector === ':modal' ? modal : matches(selector))
+    host.showModal = () => {
+      host.open = true
+      modal = true
+    }
+    host.show = () => {
+      host.open = true
+      modal = false
+    }
+    host.close = () => {
+      host.open = false
+      modal = false
+    }
+    host.showModal()
+    trigger.focus()
+    const restore = releaseDialogModal(host)
+    expect(host.open).toBe(true)
+    expect(host.matches(':modal')).toBe(false)
+    if (closed) host.close()
+    restore()
+    expect(host.open).toBe(!closed)
+    expect(host.matches(':modal')).toBe(!closed)
+    if (!closed) expect(document.activeElement).toBe(trigger)
+    restore()
+    expect(host.open).toBe(!closed)
+  })
 })
 
 describe('bindDismissibleDialog', () => {
