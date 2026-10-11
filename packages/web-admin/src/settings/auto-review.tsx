@@ -1,17 +1,19 @@
 import { AutoReviewConfig, validateAgainst } from '@agnes/protocol'
 import {
-  Badge,
+  MetaText,
+  StateSwitch,
+  SettingsDetails,
+  SettingsSaveBar,
   Button,
   Field,
   SettingsCard,
-  SettingsCheckbox,
   SettingsInput,
   SettingsSelect,
   SettingsState,
   SettingsToolbar,
   useUiText,
 } from '@agnes/web-ui'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 export { reviewCatalog } from './auto-review-locale.js'
 
@@ -38,6 +40,9 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
   const { t } = useUiText('@agnes/web/auto-review', reviewCatalog)
   const [slots, setSlots] = useState<ModelSlotsState>()
   const [slotsFailed, setSlotsFailed] = useState(false)
+  const lifetime = useRef<AbortController>()
+  const stored = useRef<AutoReviewConfig>({})
+  const [dirty, setDirty] = useState(false)
   const [config, setConfig] = useState<AutoReviewConfig>({})
   const [tools, setTools] = useState('')
   const [categories, setCategories] = useState('')
@@ -46,8 +51,11 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
   const [message, setMessage] = useState('')
   useEffect(() => {
     const controller = new AbortController()
+    lifetime.current = controller
     void reviewSettings(undefined, controller.signal)
       .then((value) => {
+        if (controller.signal.aborted) return
+        stored.current = value
         setConfig(value)
         setTools(value.eligibleTools?.join(', ') ?? '')
         setCategories(value.eligibleCategories?.join(', ') ?? '')
@@ -89,8 +97,10 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
   const update = (patch: Partial<AutoReviewConfig>) => {
     setConfig((value) => ({ ...value, ...patch }))
     setMessage('')
+    setDirty(true)
   }
   async function save() {
+    if (busy || !loaded || !canSave) return
     setBusy(true)
     try {
       const list = (text: string) =>
@@ -109,133 +119,164 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
         ...(tools.trim() ? { eligibleTools: list(tools) } : {}),
         ...(eligibleCategories.length ? { eligibleCategories } : {}),
       }
-      setConfig(await reviewSettings(next))
+      const value = await reviewSettings(next, lifetime.current?.signal)
+      if (lifetime.current?.signal.aborted) return
+      stored.current = value
+      setConfig(value)
+      setDirty(false)
       setMessage('saved')
     } catch {
-      setMessage('failed')
+      if (!lifetime.current?.signal.aborted) setMessage('failed')
     } finally {
-      setBusy(false)
+      if (!lifetime.current?.signal.aborted) setBusy(false)
     }
   }
   return (
     <SettingsCard title={t('title')} data-testid="auto-review-settings">
       <p>{t('help')}</p>
-      <SettingsCheckbox
-        checked={config.enabled ?? false}
+      <StateSwitch
+        checked={stored.current.enabled ?? false}
         disabled={!canSave || !loaded || busy}
-        onChange={(event) => update({ enabled: event.target.checked })}
-        data-testid="auto-review-enabled"
+        testId="auto-review-enabled"
         label={t('enabled')}
+        onToggle={(enabled) => {
+          if (busy || !loaded || !canSave) return
+          setBusy(true)
+          void reviewSettings({ ...stored.current, enabled }, lifetime.current?.signal)
+            .then((value) => {
+              if (lifetime.current?.signal.aborted) return
+              stored.current = value
+              setConfig((draft) => ({ ...draft, enabled: value.enabled }))
+              setMessage('saved')
+            })
+            .catch(() => {
+              if (!lifetime.current?.signal.aborted) setMessage('failed')
+            })
+            .finally(() => {
+              if (!lifetime.current?.signal.aborted) setBusy(false)
+            })
+        }}
       />
-      <Field label={t('modelSlot')} htmlFor="auto-review-model">
-        <SettingsSelect
-          id="auto-review-model"
-          data-testid="auto-review-model"
-          value={config.modelSlot ?? 'fast'}
-          disabled={!canSave || !loaded || busy}
-          onChange={(event) => update({ modelSlot: event.target.value as 'fast' | 'verifier' })}
-        >
-          {['fast', 'verifier'].map((value) => (
-            <option key={value} value={value}>
-              {t(value)}
-            </option>
-          ))}
-        </SettingsSelect>
-      </Field>
-      <p>
-        {t('profileHelp')}{' '}
-        <Button href="?settings=model#auxiliary-models" data-testid="auto-review-model-link">
-          {t('modelLink')}
-        </Button>
-      </p>
-      <p className="model-slot-current" data-testid="auto-review-slot-status" role="status">
-        <Badge tone={slotsFailed ? 'bad' : !slots ? 'unknown' : configured ? 'ok' : 'warn'}>
-          {slotsFailed
-            ? t('slotFailed')
-            : !slots
-              ? t('slotLoading')
-              : configured
-                ? `${t('slotConfigured')}: ${reviewer?.route} / ${reviewer?.model}`
-                : t('slotUnset')}
-        </Badge>
-      </p>
-      <Field label={t('tools')} htmlFor="auto-review-tools">
-        <SettingsInput
-          id="auto-review-tools"
-          data-testid="auto-review-tools"
-          value={tools}
-          disabled={!canSave || !loaded || busy}
-          onChange={(event) => {
-            setTools(event.target.value)
-            setMessage('')
-          }}
-        />
-      </Field>
-      <Field label={t('categories')} htmlFor="auto-review-categories">
-        <SettingsInput
-          id="auto-review-categories"
-          data-testid="auto-review-categories"
-          value={categories}
-          disabled={!canSave || !loaded || busy}
-          onChange={(event) => {
-            setCategories(event.target.value)
-            setMessage('')
-          }}
-        />
-      </Field>
-      <Field label={t('maxRisk')} htmlFor="auto-review-risk">
-        <SettingsSelect
-          id="auto-review-risk"
-          data-testid="auto-review-risk"
-          value={config.maxRisk ?? 'low'}
-          disabled={!canSave || !loaded || busy}
-          onChange={(event) => update({ maxRisk: event.target.value as 'low' | 'medium' })}
-        >
-          {['low', 'medium'].map((value) => (
-            <option key={value} value={value}>
-              {t(value)}
-            </option>
-          ))}
-        </SettingsSelect>
-      </Field>
-      {(['maxReviews', 'timeoutMs'] as const).map((name) => (
-        <Field
-          key={name}
-          label={t(name === 'maxReviews' ? 'budget' : 'timeout')}
-          htmlFor={`auto-review-${name}`}
-        >
-          <SettingsInput
-            id={`auto-review-${name}`}
-            data-testid={`auto-review-${name}`}
-            type="number"
-            min={name === 'maxReviews' ? 0 : 1}
-            max={name === 'maxReviews' ? 1000 : 60000}
-            value={config[name] ?? (name === 'maxReviews' ? 20 : 10000)}
+      <SettingsDetails title={t('customize')} data-testid="auto-review-customize">
+        <Field label={t('modelSlot')} htmlFor="auto-review-model">
+          <SettingsSelect
+            id="auto-review-model"
+            data-testid="auto-review-model"
+            value={config.modelSlot ?? 'fast'}
             disabled={!canSave || !loaded || busy}
-            onChange={(event) => update({ [name]: Number(event.target.value) })}
+            onChange={(event) => update({ modelSlot: event.target.value as 'fast' | 'verifier' })}
+          >
+            {['fast', 'verifier'].map((value) => (
+              <option key={value} value={value}>
+                {t(value)}
+              </option>
+            ))}
+          </SettingsSelect>
+        </Field>
+        <p>
+          {t('profileHelp')}{' '}
+          <Button href="?settings=model#auxiliary-models" data-testid="auto-review-model-link">
+            {t('modelLink')}
+          </Button>
+        </p>
+        <p className="model-slot-current" data-testid="auto-review-slot-status" role="status">
+          <MetaText>
+            {slotsFailed
+              ? t('slotFailed')
+              : !slots
+                ? t('slotLoading')
+                : configured
+                  ? `${t('slotConfigured')}: ${reviewer?.route} / ${reviewer?.model}`
+                  : t('slotUnset')}
+          </MetaText>
+        </p>
+        <Field label={t('tools')} htmlFor="auto-review-tools">
+          <SettingsInput
+            id="auto-review-tools"
+            data-testid="auto-review-tools"
+            value={tools}
+            disabled={!canSave || !loaded || busy}
+            onChange={(event) => {
+              setTools(event.target.value)
+              setDirty(true)
+              setMessage('')
+            }}
           />
         </Field>
-      ))}
-      <p>
-        {t('overrides')}: {config.overrides?.length ?? 0}
-      </p>
-      <SettingsToolbar>
-        <Button
-          data-testid="auto-review-clear-overrides"
-          disabled={!canSave || busy || !config.overrides?.length}
-          onClick={() => update({ overrides: [] })}
-        >
-          {t('clear')}
-        </Button>
-        <Button
-          data-testid="auto-review-save"
-          disabled={!canSave || !loaded || busy}
-          loading={busy}
-          onClick={() => void save()}
-        >
-          {t('save')}
-        </Button>
-      </SettingsToolbar>
+        <Field label={t('categories')} htmlFor="auto-review-categories">
+          <SettingsInput
+            id="auto-review-categories"
+            data-testid="auto-review-categories"
+            value={categories}
+            disabled={!canSave || !loaded || busy}
+            onChange={(event) => {
+              setCategories(event.target.value)
+              setDirty(true)
+              setMessage('')
+            }}
+          />
+        </Field>
+        <Field label={t('maxRisk')} htmlFor="auto-review-risk">
+          <SettingsSelect
+            id="auto-review-risk"
+            data-testid="auto-review-risk"
+            value={config.maxRisk ?? 'low'}
+            disabled={!canSave || !loaded || busy}
+            onChange={(event) => update({ maxRisk: event.target.value as 'low' | 'medium' })}
+          >
+            {['low', 'medium'].map((value) => (
+              <option key={value} value={value}>
+                {t(value)}
+              </option>
+            ))}
+          </SettingsSelect>
+        </Field>
+        {(['maxReviews', 'timeoutMs'] as const).map((name) => (
+          <Field
+            key={name}
+            label={t(name === 'maxReviews' ? 'budget' : 'timeout')}
+            htmlFor={`auto-review-${name}`}
+          >
+            <SettingsInput
+              id={`auto-review-${name}`}
+              data-testid={`auto-review-${name}`}
+              type="number"
+              min={name === 'maxReviews' ? 0 : 1}
+              max={name === 'maxReviews' ? 1000 : 60000}
+              value={config[name] ?? (name === 'maxReviews' ? 20 : 10000)}
+              disabled={!canSave || !loaded || busy}
+              onChange={(event) => update({ [name]: Number(event.target.value) })}
+            />
+          </Field>
+        ))}
+        <p>
+          {t('overrides')}: {config.overrides?.length ?? 0}
+        </p>
+        <SettingsToolbar>
+          <Button
+            data-testid="auto-review-clear-overrides"
+            disabled={!canSave || busy || !config.overrides?.length}
+            onClick={() => update({ overrides: [] })}
+          >
+            {t('clear')}
+          </Button>
+        </SettingsToolbar>
+      </SettingsDetails>
+      <div data-testid="auto-review-save">
+        <SettingsSaveBar
+          dirty={dirty && canSave && loaded}
+          busy={busy}
+          saved={message === 'saved'}
+          onSave={() => void save()}
+          onDiscard={() => {
+            setConfig(stored.current)
+            setTools(stored.current.eligibleTools?.join(', ') ?? '')
+            setCategories(stored.current.eligibleCategories?.join(', ') ?? '')
+            setDirty(false)
+            setMessage('')
+          }}
+        />
+      </div>
       {message && (
         <SettingsState
           tone={message === 'failed' ? 'error' : 'success'}

@@ -1,13 +1,14 @@
 export const reviewCatalog = {
   en: {
     title: 'Auto review',
+    customize: 'Customize review',
     modelLink: 'Configure auxiliary models',
     slotConfigured: 'Profile default configured',
     slotUnset:
       'Reviewer slot not set or unavailable. Calls escalate to a human; the main model is never used.',
     slotLoading: 'Checking reviewer slot…',
     slotFailed: 'Reviewer slot status unavailable',
-    help: 'A reviewer handles calls that need approval. Hard limits remain enforced. Invalid results and exhausted budgets go to you. Changes apply to future calls; nothing is learned silently.',
+    help: 'Let AI review eligible low-risk operations first. Higher risks and review failures still go to you. Hard limits remain enforced.',
     enabled: 'Use model review',
     modelSlot: 'Reviewer model profile',
     fast: 'Fast (lower cost)',
@@ -28,13 +29,14 @@ export const reviewCatalog = {
     clear: 'Clear future rules',
   },
   'zh-CN': {
-    title: '自动审查',
+    title: '自动审阅',
+    customize: '自定义审阅',
     modelLink: '配置辅助模型',
     slotConfigured: 'Profile 默认值已配置',
     slotUnset: '审查档位未设置或不可用。调用将转交人工，绝不使用主模型。',
     slotLoading: '正在检查审查档位…',
     slotFailed: '无法读取审查档位状态',
-    help: '审查模型处理原本需要批准的调用。硬限制仍然有效。无效结果或预算耗尽会转交你决定。修改只影响未来调用，不会静默学习。',
+    help: '让 AI 先审阅符合条件的低风险操作，高风险和审阅失败仍然问你。后台硬限制始终有效。',
     enabled: '使用模型审查',
     modelSlot: '审查模型档位',
     fast: '快速（低成本）',

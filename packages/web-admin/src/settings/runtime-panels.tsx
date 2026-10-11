@@ -6,12 +6,15 @@ import {
   SettingsCard,
   SettingsDetails,
   SettingsInput,
+  MetaText,
+  Tag,
   SettingsList,
   SettingsRow,
   SettingsState,
 } from '@agnes/web-ui'
 import { useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
+import { PermissionDefaults } from './permission-defaults.js'
 import { SecurityStatusPanel } from './security-status.js'
 
 export const PROVIDER_KINDS = [
@@ -61,21 +64,18 @@ export function ProvidersPanel({
                 <SettingsRow
                   key={`${entry.id}@${entry.version}`}
                   title={label('providerName', entry.id) ?? entry.id}
-                  actions={
-                    <>
-                      <Badge tone={kind === 'model-adapter' || entry.active ? 'ok' : 'off'}>
-                        {t(kind === 'model-adapter' ? 'available' : entry.active ? 'active' : 'inactive')}
-                      </Badge>
-                      {entry.restartRequired && <Badge tone="warn">{t('restart')}</Badge>}
-                    </>
-                  }
+                  actions={entry.restartRequired ? <Tag tone="warn">{t('restart')}</Tag> : undefined}
                 >
-                  <div className="agnes-settings-capabilities">
-                    {entry.capabilities.flatMap((capability) => {
-                      const name = label('providerCapability', capability)
-                      return name ? [<Badge key={capability}>{name}</Badge>] : []
-                    })}
-                  </div>
+                  <MetaText>
+                    {[
+                      entry.version,
+                      ...entry.capabilities.flatMap(
+                        (capability) => label('providerCapability', capability) ?? [],
+                      ),
+                    ]
+                      .slice(0, 3)
+                      .join(' · ')}
+                  </MetaText>
                   <SettingsDetails title={t('technicalDetails')} data-testid="provider-technical-details">
                     <dl>
                       <dt>{t('providerName')}</dt>
@@ -357,24 +357,11 @@ export function PresetsPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapshot; 
 export function SecurityPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapshot; t: Text }) {
   return (
     <>
-      <p>{t('securityHelp')}</p>
-      <div className="runtime-grid">
-        {(['read-only', 'workspace-write', 'full-access'] as const).map((id, index) => (
-          <SettingsCard key={id} className="runtime-card" data-testid={`security-${id}`}>
-            <h3>{t(['readOnly', 'workspaceWrite', 'fullAccess'][index] ?? id)}</h3>
-            <p>
-              {snapshot.presets.some((preset) => preset.id === id) ? (
-                <Button href={sessionStartUrl(id)}>{t('securityStart')}</Button>
-              ) : (
-                t('notAllowed')
-              )}
-            </p>
-          </SettingsCard>
-        ))}
-      </div>
       <SecurityStatusPanel status={snapshot.security} t={t} />
-      <h3>{t('sandbox')}</h3>
-      <ProvidersPanel snapshot={snapshot} kinds={['sandbox']} t={t} />
+      <PermissionDefaults available={snapshot.presets.map((preset) => preset.id)} />
+      <SettingsDetails title={t('sandbox')}>
+        <ProvidersPanel snapshot={snapshot} kinds={['sandbox']} t={t} />
+      </SettingsDetails>
     </>
   )
 }

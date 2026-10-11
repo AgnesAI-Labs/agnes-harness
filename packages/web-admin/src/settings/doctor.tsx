@@ -6,13 +6,16 @@ import {
   FIRST_RUN_NAMESPACE,
   firstRunCatalog,
   SettingsState,
+  SettingsDetails,
   SettingsToolbar,
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
+import { DIAGNOSTICS_NAMESPACE, diagnosticsCatalog } from './diagnostics-locale.js'
 import { DiagnosticsRequestError } from './diagnostics-api.js'
 
 export function DoctorPanel({ load }: { load(probe: boolean, signal: AbortSignal): Promise<DoctorResult> }) {
+  const { t: ux } = useUiText(DIAGNOSTICS_NAMESPACE, diagnosticsCatalog)
   const { t, locale } = useUiText(FIRST_RUN_NAMESPACE, firstRunCatalog)
   const [report, setReport] = useState<DoctorResult>(),
     [busy, setBusy] = useState(false),
@@ -64,7 +67,18 @@ export function DoctorPanel({ load }: { load(probe: boolean, signal: AbortSignal
             t('doctor.failed')}
         </SettingsState>
       )}
-      {report && <DoctorChecks report={report} t={t} locale={locale} />}
+      {report && (
+        <>
+          <p role="status" data-testid="diagnostics-health-summary">
+            {report.checks.every((check) => check.status === 'ok')
+              ? ux('healthy')
+              : `${new Intl.NumberFormat(locale).format(report.checks.filter((check) => check.status !== 'ok').length)} ${ux('needsAttention')}`}
+          </p>
+          <SettingsDetails title={ux('checkDetails')} data-testid="diagnostics-check-details">
+            <DoctorChecks report={report} t={t} locale={locale} />
+          </SettingsDetails>
+        </>
+      )}
     </section>
   )
 }

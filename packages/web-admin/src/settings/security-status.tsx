@@ -1,8 +1,19 @@
 import type { RuntimeSecurityStatus } from '@agnes/protocol'
-import { Badge, SettingsDetails, SettingsList, SettingsRow, SettingsState } from '@agnes/web-ui'
+import {
+  Banner,
+  Icon,
+  useUiText,
+  SettingsDetails,
+  SettingsList,
+  SettingsRow,
+  SettingsState,
+} from '@agnes/web-ui'
+
+import { SECURITY_NAMESPACE, securityUxCatalog } from './security-locale.js'
 
 type Text = (key: string) => string
 export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStatus | undefined; t: Text }) {
+  const { t: ux } = useUiText(SECURITY_NAMESPACE, securityUxCatalog)
   if (!status)
     return (
       <SettingsState tone="empty" data-testid="sandbox-status-unavailable">
@@ -25,102 +36,110 @@ export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStat
       .join(' · ')
   return (
     <section data-testid="sandbox-security-status">
-      <h3>{t('platformProbe')}</h3>
-      <p>
-        {t(`platform.${status.platform.os}`) === `platform.${status.platform.os}`
-          ? status.platform.os
-          : t(`platform.${status.platform.os}`)}{' '}
-        <Badge tone={status.platform.l1.level === 'full' ? 'ok' : 'warn'}>
-          {t(`enforcement.${status.platform.l1.level}`)}
-        </Badge>{' '}
-        {scopes(status.platform.l1.scope) || '—'}
-      </p>
-      {status.platform.l1.reason && <p>{t('securityProbeIssue')}</p>}
-      <p>{t('probeHelp')}</p>
-      <h3>{t('permissionRequirements')}</h3>
-      <section
-        className="runtime-table-scroll"
-        aria-label={t('permissionRequirements')}
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users need to scroll the wide permission table.
-        tabIndex={0}
-      >
-        <table data-testid="permission-preset-status">
-          <thead>
-            <tr>
-              <th>{t('presets')}</th>
-              <th>{t('sandboxLevel')}</th>
-              <th>{t('required')}</th>
-              <th>{t('onUnavailable')}</th>
-              <th>{t('approvalPolicy')}</th>
-              <th>{t('commandNetwork')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {status.presetPolicies.map((preset) => (
-              <tr key={preset.id}>
-                <td>{choice(preset.id)}</td>
-                <td>{preset.level}</td>
-                <td>{t(preset.required ? 'yes' : 'no')}</td>
-                <td>{t(preset.onUnavailable)}</td>
-                <td>{provider(preset.approvalPolicy)}</td>
-                <td>{t(`network.${preset.networkMode}`)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-      <h3>{t('workspacePosture')}</h3>
-      {!status.workspaces.length ? (
-        <p>{t('noWorkspacePosture')}</p>
+      {status.platform.l1.level === 'full' ? (
+        <p>
+          <Icon name="check" /> {ux('protected')} · {t(`platform.${status.platform.os}`)}
+          <br />
+          {ux('platformOnly')}
+        </p>
       ) : (
-        <SettingsList>
-          {status.workspaces.map((workspace) => (
-            <SettingsRow
-              key={workspace.sessionId}
-              data-testid="workspace-sandbox-status"
-              title={workspace.path}
-            >
-              <dl>
-                <dt>{t('workspace')}</dt>
-                <dd>{workspace.path}</dd>
-                <dt>{t('presets')}</dt>
-                <dd>{choice(workspace.preset)}</dd>
-                <dt>{t('sandboxProvider')}</dt>
-                <dd>{provider(workspace.provider)}</dd>
-                <dt>{t('readiness')}</dt>
-                <dd>{t(`readiness.${workspace.state}`)}</dd>
-                <dt>{t('enforcement')}</dt>
-                <dd>
-                  <span data-testid="workspace-enforcement">
-                    {workspace.enforcement ? (
-                      <>
-                        <Badge tone={workspace.enforcement.level === 'full' ? 'ok' : 'warn'}>
-                          {t(`enforcement.${workspace.enforcement.level}`)}
-                        </Badge>{' '}
-                        {scopes(workspace.enforcement.scope) || '—'}
-                      </>
-                    ) : (
-                      t('unmeasured')
-                    )}
-                  </span>
-                </dd>
-              </dl>
-              <SettingsDetails title={t('technicalDetails')}>
+        <Banner
+          tone="warning"
+          action={
+            <a href="https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/docs/guide/sandbox-providers.md">
+              {ux('protectionHelp')}
+            </a>
+          }
+        >
+          {ux('partial')} {t(`enforcement.${status.platform.l1.level}`)}
+          {status.platform.l1.reason ? ` · ${t('securityProbeIssue')}` : ''}
+        </Banner>
+      )}
+      <SettingsDetails title={ux('details')} data-testid="security-details">
+        <p>{t('probeHelp')}</p>
+        <h3>{t('permissionRequirements')}</h3>
+        <section
+          className="runtime-table-scroll"
+          aria-label={t('permissionRequirements')}
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users need to scroll the wide permission table.
+          tabIndex={0}
+        >
+          <table data-testid="permission-preset-status">
+            <thead>
+              <tr>
+                <th>{t('presets')}</th>
+                <th>{t('sandboxLevel')}</th>
+                <th>{t('required')}</th>
+                <th>{t('onUnavailable')}</th>
+                <th>{t('approvalPolicy')}</th>
+                <th>{t('commandNetwork')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {status.presetPolicies.map((preset) => (
+                <tr key={preset.id}>
+                  <td>{choice(preset.id)}</td>
+                  <td>{preset.level}</td>
+                  <td>{t(preset.required ? 'yes' : 'no')}</td>
+                  <td>{t(preset.onUnavailable)}</td>
+                  <td>{provider(preset.approvalPolicy)}</td>
+                  <td>{t(`network.${preset.networkMode}`)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+        <h3>{t('workspacePosture')}</h3>
+        {!status.workspaces.length ? (
+          <p>{t('noWorkspacePosture')}</p>
+        ) : (
+          <SettingsList>
+            {status.workspaces.map((workspace) => (
+              <SettingsRow
+                key={workspace.sessionId}
+                data-testid="workspace-sandbox-status"
+                title={workspace.path}
+              >
                 <dl>
-                  <dt>{t('sessionKey')}</dt>
+                  <dt>{t('workspace')}</dt>
+                  <dd>{workspace.path}</dd>
+                  <dt>{t('presets')}</dt>
+                  <dd>{choice(workspace.preset)}</dd>
+                  <dt>{t('sandboxProvider')}</dt>
+                  <dd>{provider(workspace.provider)}</dd>
+                  <dt>{t('readiness')}</dt>
+                  <dd>{t(`readiness.${workspace.state}`)}</dd>
+                  <dt>{t('enforcement')}</dt>
                   <dd>
-                    <code>{workspace.sessionId}</code>
-                  </dd>
-                  <dt>{t('policyDigest')}</dt>
-                  <dd>
-                    <code>{workspace.policyDigest ?? '—'}</code>
+                    <span data-testid="workspace-enforcement">
+                      {workspace.enforcement ? (
+                        <>
+                          <span>{t(`enforcement.${workspace.enforcement.level}`)}</span>{' '}
+                          {scopes(workspace.enforcement.scope) || '—'}
+                        </>
+                      ) : (
+                        t('unmeasured')
+                      )}
+                    </span>
                   </dd>
                 </dl>
-              </SettingsDetails>
-            </SettingsRow>
-          ))}
-        </SettingsList>
-      )}
+                <SettingsDetails title={t('technicalDetails')}>
+                  <dl>
+                    <dt>{t('sessionKey')}</dt>
+                    <dd>
+                      <code>{workspace.sessionId}</code>
+                    </dd>
+                    <dt>{t('policyDigest')}</dt>
+                    <dd>
+                      <code>{workspace.policyDigest ?? '—'}</code>
+                    </dd>
+                  </dl>
+                </SettingsDetails>
+              </SettingsRow>
+            ))}
+          </SettingsList>
+        )}
+      </SettingsDetails>
     </section>
   )
 }

@@ -1,7 +1,8 @@
 import { type DiagnosticRecord, type DiagnosticsExportResult, errorMessageKey } from '@agnes/protocol'
 import {
   appServerErrorMessage,
-  Badge,
+  SettingsToolbar,
+  MetaText,
   Button,
   Field,
   SettingsCard,
@@ -33,6 +34,7 @@ export function DiagnosticsPanel({
   download?: (bundle: DiagnosticsExportResult) => void
 }) {
   const { t } = useUiText(DIAGNOSTICS_NAMESPACE, diagnosticsCatalog)
+  const [showAll, setShowAll] = useState(false)
   const [bundle, setBundle] = useState<DiagnosticsExportResult>()
   const [doctorAvailable, setDoctorAvailable] = useState(false)
   const loadChecks = useCallback((probe: boolean, signal: AbortSignal) => api.doctor(signal, probe), [api])
@@ -113,7 +115,58 @@ export function DiagnosticsPanel({
   const workerIdle = boundSessions === 0 && (!workerStatus || workerStatus === 'unavailable')
   return (
     <>
-      <p>{t('help')}</p>
+      <SettingsToolbar
+        controls={
+          <>
+            <Button
+              data-testid="diagnostics-summary-copy"
+              disabled={!bundle}
+              onClick={() => {
+                if (!bundle) return
+                const summary = [
+                  t('title'),
+                  `${t('recent')}: ${bundle.errors.length}`,
+                  ...bundle.doctor.map(
+                    (check) =>
+                      `${t(`check.${check.name}`) === `check.${check.name}` ? t('otherCheck') : t(`check.${check.name}`)}: ${t(`state.${check.status}`)}`,
+                  ),
+                ].join('\n')
+                void navigator.clipboard.writeText(summary).then(
+                  () => {
+                    if (alive.current) setNotice('summaryCopied')
+                  },
+                  () => {
+                    if (alive.current) setNotice('copyFailed')
+                  },
+                )
+              }}
+            >
+              {t('copySummary')}
+            </Button>
+            <Button
+              appearance="primary"
+              data-testid="diagnostics-export"
+              disabled={busy || !bundle}
+              onClick={() =>
+                void run(async () => {
+                  const value = await api.export(
+                    selected ? { diagnosticId: selected } : {},
+                    controller.current?.signal,
+                  )
+                  if (alive.current) {
+                    download(value)
+                    setNotice('exported')
+                  }
+                })
+              }
+            >
+              {t('export')}
+            </Button>
+          </>
+        }
+      >
+        <p>{t('help')}</p>
+      </SettingsToolbar>
       {doctorAvailable && (
         <SettingsCard title={t('doctor')} data-testid="diagnostics-doctor">
           <DoctorPanel load={loadChecks} />
@@ -133,52 +186,68 @@ export function DiagnosticsPanel({
           {t(notice)}
         </SettingsState>
       )}
-      <SettingsCard title={t('recent')} data-testid="diagnostics-errors" aria-busy={busy}>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault()
-            void search()
-          }}
+      <section data-testid="diagnostics-errors" aria-busy={busy}>
+        <SettingsToolbar
+          controls={
+            bundle &&
+            bundle.errors.length > 5 && (
+              <Button data-testid="diagnostics-view-all" onClick={() => setShowAll((value) => !value)}>
+                {t(showAll ? 'showLess' : 'viewAll')}
+              </Button>
+            )
+          }
         >
-          <Field label={t('id')} htmlFor="diagnostics-query">
-            <SettingsInput
-              id="diagnostics-query"
-              surface="surface"
-              data-testid="diagnostics-query"
-              value={query}
-              maxLength={36}
-              disabled={busy}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </Field>
-          <div className="agnes-settings-actions">
-            <Button htmlType="submit" data-testid="diagnostics-search" disabled={busy}>
-              {t('search')}
-            </Button>
-            <Button
-              disabled={busy}
-              data-testid="diagnostics-refresh"
-              onClick={() => {
-                setQuery('')
-                void run(async () => {
-                  const value = await api.read(controller.current?.signal)
-                  if (alive.current) {
-                    setBundle(value.bundle)
-                    setDoctorAvailable(value.doctorAvailable)
-                    setSelected('')
-                  }
-                })
-              }}
-            >
-              {t('refresh')}
-            </Button>
-          </div>
-        </form>
+          <h3>
+            {t('recent')} ({new Intl.NumberFormat(locale).format(bundle?.errors.length ?? 0)})
+          </h3>
+        </SettingsToolbar>
+        <SettingsDetails title={t('findById')} data-testid="diagnostics-find-id">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              void search()
+            }}
+          >
+            <Field label={t('id')} htmlFor="diagnostics-query">
+              <SettingsInput
+                id="diagnostics-query"
+                surface="surface"
+                data-testid="diagnostics-query"
+                value={query}
+                maxLength={36}
+                disabled={busy}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </Field>
+            <div className="agnes-settings-actions">
+              <Button htmlType="submit" data-testid="diagnostics-search" disabled={busy}>
+                {t('search')}
+              </Button>
+              <Button
+                disabled={busy}
+                data-testid="diagnostics-refresh"
+                onClick={() => {
+                  setQuery('')
+                  void run(async () => {
+                    const value = await api.read(controller.current?.signal)
+                    if (alive.current) {
+                      setBundle(value.bundle)
+                      setDoctorAvailable(value.doctorAvailable)
+                      setSelected('')
+                    }
+                  })
+                }}
+              >
+                {t('refresh')}
+              </Button>
+            </div>
+          </form>
+        </SettingsDetails>
         <p>{t('latest')}</p>
         {!busy && bundle && bundle.errors.length === 0 && <SettingsState>{t('empty')}</SettingsState>}
         <SettingsList>
           {bundle?.errors
-            .slice(-100)
+            .slice(showAll ? -100 : -5)
             .reverse()
             .map((record) => (
               <SettingsRow
@@ -192,7 +261,11 @@ export function DiagnosticsPanel({
                     )}
                   </time>
                 }
-                actions={
+              >
+                <SettingsDetails title={t('details')} compact>
+                  <p>
+                    {t('id')}: <code data-testid="diagnostics-error-id">{record.diagnosticId}</code>
+                  </p>
                   <Button
                     data-testid="diagnostics-copy"
                     onClick={() => {
@@ -210,52 +283,31 @@ export function DiagnosticsPanel({
                   >
                     {t('copy')}
                   </Button>
-                }
-              >
-                <p>
-                  {t('id')}: <code data-testid="diagnostics-error-id">{record.diagnosticId}</code>
-                </p>
-                <SettingsDetails title={t('technical')} compact>
-                  <p>
-                    {t('code')}: <code data-testid="diagnostics-error-code">{record.code}</code>
-                  </p>
-                  <code>{record.name}</code>
-                  {record.cause && (
+                  <SettingsDetails title={t('technical')} compact>
                     <p>
-                      <code>{record.cause}</code>
+                      {t('code')}: <code data-testid="diagnostics-error-code">{record.code}</code>
                     </p>
-                  )}
+                    <code>{record.name}</code>
+                    {record.cause && (
+                      <p>
+                        <code>{record.cause}</code>
+                      </p>
+                    )}
+                  </SettingsDetails>
                 </SettingsDetails>
               </SettingsRow>
             ))}
         </SettingsList>
-      </SettingsCard>
-      <SettingsCard title={t('export')}>
+      </section>
+      <SettingsDetails title={t('exportContents')} data-testid="diagnostics-export-details">
         <p>{t('exportHelp')}</p>
         <p>{t('exportReview')}</p>
-        <Button
-          data-testid="diagnostics-export"
-          disabled={busy || !bundle}
-          onClick={() =>
-            void run(async () => {
-              const value = await api.export(
-                selected ? { diagnosticId: selected } : {},
-                controller.current?.signal,
-              )
-              if (alive.current) {
-                download(value)
-                setNotice('exported')
-              }
-            })
-          }
-        >
-          {t('export')}
-        </Button>
-      </SettingsCard>
-      <ObservabilityPanel />
-      <SettingsCard title={t('runtime')} data-testid="diagnostics-runtime">
+      </SettingsDetails>
+      <SettingsDetails title={t('runtime')} data-testid="diagnostics-runtime">
+        <ObservabilityPanel />
+
         <SettingsRow title={t('worker')}>
-          <Badge>{workerIdle ? t('workerIdle') : t(`state.${workerStatus ?? 'unavailable'}`)}</Badge>
+          <MetaText>{workerIdle ? t('workerIdle') : t(`state.${workerStatus ?? 'unavailable'}`)}</MetaText>
         </SettingsRow>
         <SettingsRow title={t('generations')}>
           <span>{bundle?.generations.available ? bundle.generations.items.length : t('unknown')}</span>
@@ -280,7 +332,7 @@ export function DiagnosticsPanel({
             </p>
           ))}
         </SettingsDetails>
-      </SettingsCard>
+      </SettingsDetails>
     </>
   )
 }
