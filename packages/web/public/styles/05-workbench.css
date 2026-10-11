@@ -50,7 +50,13 @@ main {
 #status[data-state="running"] {
   color: var(--agnes-text-emphasis);
 }
-#status[data-state="error"] {
+#status:is(
+  [data-state="error"],
+  [data-state="failed"],
+  [data-state="blocked"],
+  [data-state="budget"],
+  [data-state="max_steps"]
+) {
   color: var(--agnes-status-danger-text);
 }
 .connection-group {
@@ -224,11 +230,20 @@ body:not([data-connection="reconnecting"]):not([data-connection="closed"]) .conn
   border-radius: var(--radius-full);
   background: currentColor;
 }
-#status[data-state="approval"] {
+#status:is([data-state="approval"], [data-state="parked"]) {
   color: var(--agnes-status-warning-text);
 }
-#status:not([data-state="running"]):not([data-state="error"]):not([data-state="failed"]):not(
-  [data-state="approval"]
+#status:not(
+  :is(
+    [data-state="running"],
+    [data-state="error"],
+    [data-state="failed"],
+    [data-state="blocked"],
+    [data-state="budget"],
+    [data-state="max_steps"],
+    [data-state="approval"],
+    [data-state="parked"]
+  )
 ) {
   display: none;
 }

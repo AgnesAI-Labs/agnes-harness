@@ -1,6 +1,12 @@
 /** Cycle the four task regions without entering a modal or a hidden surface. */
 export function cycleTaskFocus(event: KeyboardEvent): void {
-  if (event.key !== 'F6' || event.defaultPrevented || document.querySelector('dialog[open]')) return
+  if (event.key !== 'F6' || event.defaultPrevented) return
+  const modal = [
+    ...document.querySelectorAll<HTMLElement>(
+      'dialog[open], [role="dialog"][aria-modal="true"], [role="alertdialog"][aria-modal="true"]',
+    ),
+  ].some((node) => node.getClientRects().length > 0 && !node.closest('[hidden]'))
+  if (modal) return
   const regions = ['.sidebar', '.conversation-shell', '#workbench-right:not([hidden])', '#composer']
     .map((selector) => document.querySelector<HTMLElement>(selector))
     .filter(

@@ -41,6 +41,8 @@ for (const locale of ['en', 'zh-CN']) {
       await expect(modal).toHaveAttribute('aria-modal', 'true')
       await expect(page.locator('.agnes-first-run-layer .ant-modal-mask')).toBeVisible()
       await expect.poll(() => modal.evaluate((node) => node.contains(document.activeElement))).toBe(true)
+      await page.keyboard.press('F6')
+      await expect.poll(() => modal.evaluate((node) => node.contains(document.activeElement))).toBe(true)
       const names = await page.locator('.workspace-heading .workspace-name').allTextContents()
       await quality('setup-welcome')
       expect(await page.locator('.workspace-heading .workspace-name').allTextContents()).toEqual(names)
