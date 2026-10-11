@@ -1741,7 +1741,9 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   if (cleanupError) throw cleanupError
 }
 async function refreshWorkspaces(): Promise<void> {
-  const page = await client.workspace.list()
+  applyWorkspaces(await client.workspace.list())
+}
+function applyWorkspaces(page: { items: WorkspaceEntry[] }): void {
   workspaceRows = page.items
   if (selectedWorkspace) selectedWorkspace = workspaceRows.find((row) => row.path === selectedWorkspace?.path)
   updateWorkspaceOptions()
@@ -2450,18 +2452,25 @@ run(async () => {
   accountLabels = new Map(
     (snapshot.accounts ?? []).map((row) => [row.route, `${row.label} · ${row.providerId}`]),
   )
-  await refreshModels()
-  if (!configured && snapshot.accounts?.length) {
+  // The sidebar can show usable sessions while models are slow. Navigation and draft defaults
+  // still wait for models, then workspaces; failures are isolated to their own read.
+  const [models, workspaces, sessions] = await Promise.allSettled([
+    refreshModels(),
+    client.workspace.list(),
+    list(),
+  ])
+  if (models.status === 'rejected') showError(models.reason)
+  if (workspaces.status === 'fulfilled') applyWorkspaces(workspaces.value)
+  else showError(new Error(t('app.workspaceList.unreadable'), { cause: workspaces.reason }))
+  if (sessions.status === 'rejected') throw sessions.reason
+  const page = sessions.value
+  // A user choice also owns whether the account setup dialog may open.
+  if (selection !== startupSelection) return
+  if (models.status === 'fulfilled' && !configured && snapshot.accounts?.length) {
     renderControls()
     notice.textContent = t('app.firstRun.configure')
     await settings.open()
   }
-  try {
-    await refreshWorkspaces()
-  } catch (error) {
-    showError(new Error(t('app.workspaceList.unreadable'), { cause: error }))
-  }
-  const page = await list()
   const guided =
     !startupRequest.get('settings') &&
     !startupRequest.get('session') &&

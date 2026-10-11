@@ -435,6 +435,65 @@ describe('web permission synchronization', () => {
     })
   })
 
+  it.each(['slow-models', 'failed-models', 'failed-workspaces'])(
+    'keeps the session list usable during startup with %s',
+    async (kind) => {
+      installPublicFixture()
+      const models = deferred<void>()
+      const old = session('old', async () => idleTimeline('old'))
+      const client = {
+        initialize: vi.fn(async () => undefined),
+        on: vi.fn(),
+        close: vi.fn(async () => undefined),
+        apis: vi.fn(async () => {
+          await models.promise
+          if (kind === 'failed-models') throw new Error('models unavailable')
+          return { profile: { models: [{ route: 'local', id: 'model-a' }] } }
+        }),
+        config: {
+          get: vi.fn(async () => ({ configured: true })),
+          providers: vi.fn(async () => ({ providers: [] })),
+        },
+        workspace: {
+          list: vi.fn(async () => {
+            if (kind === 'failed-workspaces') throw new Error('workspaces unavailable')
+            return { items: [] }
+          }),
+        },
+        session: {
+          list: vi.fn(async () => ({ items: [{ sessionId: 'old' }] })),
+          load: vi.fn(async () => old),
+        },
+      }
+      sdk.createClient.mockReturnValue(client)
+      binding.loadWebSession.mockResolvedValue({ session: old, offPermission: vi.fn() })
+      await import('../src/app.js')
+      await vi.waitFor(() => expect(document.querySelector('[data-session="old"]')).not.toBeNull())
+      expect(client.workspace.list).toHaveBeenCalled()
+      expect(binding.loadWebSession).not.toHaveBeenCalled()
+      if (kind === 'slow-models') {
+        document.getElementById('new')?.click()
+        await vi.waitFor(() =>
+          expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(true),
+        )
+      }
+      models.resolve()
+      if (kind === 'slow-models') {
+        await vi.waitFor(() =>
+          expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false),
+        )
+        expect(binding.loadWebSession).not.toHaveBeenCalled()
+        expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(true)
+      } else {
+        await vi.waitFor(() => expect(binding.loadWebSession).toHaveBeenCalled())
+        expect(document.querySelector('[data-session="old"]')).not.toBeNull()
+        expect(document.getElementById('notice')?.textContent).toContain(
+          kind === 'failed-models' ? 'models unavailable' : '工作区列表',
+        )
+      }
+    },
+  )
+
   it('restores full access on reopening, applies workspace selections, and follows remote patches', async () => {
     const { old, publish } = await boot(false)
     const staleReady = deferred<void>()
