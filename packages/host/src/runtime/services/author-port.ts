@@ -8,6 +8,7 @@ import {
   type ServiceKindToken,
   type ServicePorts,
   type ServiceProvider,
+  type SessionRef,
   unavailableProjections,
 } from '@agnes/extension-api'
 import { GIT_WORKTREE_OWNER, GIT_WORKTREE_PACKAGE, gitWorktreeKind } from '@agnes/git-worktree-contract'
@@ -29,7 +30,7 @@ export interface ServiceAdmission {
   readonly owner?: string
   readonly active: boolean
   readonly signal: AbortSignal
-  readonly session: SessionLedgerSession & { readonly key: string }
+  readonly session: SessionLedgerSession & Pick<SessionRef, 'key' | 'workspaceRoot'>
 }
 
 export interface ExtensionServiceHost {

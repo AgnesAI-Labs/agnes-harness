@@ -49,7 +49,7 @@ import {
 import { createFeedbackLedger } from '../src/runtime/feedback/ledger.js'
 import { createExtensionServiceHost, type ServiceAdmission } from '../src/runtime/services/author-port.js'
 import { installGitWorktreeService } from '../src/runtime/services/git-worktrees.js'
-import { type SessionLedgerSession, sessionInputTarget } from '../src/runtime/services/session-ports.js'
+import { sessionInputTarget } from '../src/runtime/services/session-ports.js'
 
 interface Probe extends ServiceInstance {
   mark(): string | Promise<string>
@@ -908,9 +908,10 @@ describe('extension service host', () => {
     let steer = false
     let closing = false
     let lastSeq = 10
-    const session: SessionLedgerSession & { key: string } = {
+    const session: ServiceAdmission['session'] = {
       key: 'sess',
       lane: 'main',
+      workspaceRoot: '/work',
       get lastSeq() {
         return lastSeq
       },
@@ -918,7 +919,7 @@ describe('extension service host', () => {
         return closing
       },
       d: {
-        cwd: '/work',
+        cwd: '/work/nested',
         log: { parent: { boundarySeq: 2 } },
         loopFactory: {
           controls: {
@@ -1026,6 +1027,7 @@ describe('extension service host', () => {
       const instance = await host.ports.bindOwn(kind, identity)
       expect(instance.mark()).toBe('ok')
       expect(opens).toBe(1)
+      expect(captured?.binding.session).toEqual(sessionRef)
       fixture.events.push(
         ledgerRow(2),
         ledgerRow(3, { data: { owner: 'other/person' } }),
