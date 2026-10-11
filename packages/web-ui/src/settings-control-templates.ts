@@ -11,10 +11,13 @@ export function createSettingsControl<K extends SettingsControlTag>(
 }
 
 /** Controller-owned actions share the button skin without introducing a second event owner. */
-export function createSettingsButton(owner: Document): HTMLButtonElement {
+export function createSettingsButton(
+  owner: Document,
+  appearance: 'primary' | 'secondary' | 'ghost' | 'danger' | 'link' = 'secondary',
+): HTMLButtonElement {
   const button = owner.createElement('button')
   button.type = 'button'
-  button.className = 'agnes-ui-button'
+  button.className = `agnes-ui-button agh-btn agh-btn--${appearance} agh-btn--md`
   return button
 }
 

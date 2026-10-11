@@ -4,14 +4,14 @@ import { resolve } from 'node:path'
 import AxeBuilder from '@axe-core/playwright'
 import { expect, type Page, test } from '@playwright/test'
 import { build } from 'esbuild'
-import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
+import { readWebStyleSource, readWebUiStyleSource } from '../../../tools/web-style-source.mjs'
 
 const root = resolve(import.meta.dirname, '../../..')
 const require = createRequire(import.meta.url)
 const css = [
   readWebStyleSource(resolve(root, 'packages/web/public/style.css')),
   readFileSync(require.resolve('antd/dist/antd.css'), 'utf8'),
-  readFileSync(resolve(root, 'packages/web-ui/src/tokens.css'), 'utf8'),
+  readWebUiStyleSource(resolve(root, 'packages/web-ui/src/tokens.css')),
 ].join('\n')
 let fixture: string
 

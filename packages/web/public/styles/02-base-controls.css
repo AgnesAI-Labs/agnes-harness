@@ -197,37 +197,4 @@ textarea {
   white-space: nowrap;
   clip-path: inset(50%);
 }
-.primary-button {
-  border-color: var(--agnes-button-primary-bg);
-  color: var(--agnes-button-primary-content);
-  background: var(--agnes-button-primary-bg);
-}
-.primary-button:hover:not(:disabled) {
-  border-color: var(--agnes-button-primary-bg-hover);
-  background: var(--agnes-button-primary-bg-hover);
-  box-shadow: var(--shadow-elevation);
-}
-.secondary-button {
-  color: var(--agnes-button-outline-content);
-  background: transparent;
-}
-.secondary-button.compact {
-  min-height: 2rem;
-  padding: 0.25rem 0.625rem;
-}
-.icon-button {
-  width: 1.75rem;
-  min-width: 1.75rem;
-  height: 1.75rem;
-  min-height: 1.75rem;
-  padding: 0;
-  border-color: transparent;
-  border-radius: 50%;
-  color: var(--agnes-text-secondary);
-  background: transparent;
-}
-.icon-button:hover:not(:disabled) {
-  border-color: transparent;
-  color: var(--agnes-text-emphasis);
-  background: var(--agnes-bg-hover);
-}
+/* Button variants are shared with React in web-ui/components.css. */

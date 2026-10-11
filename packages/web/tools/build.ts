@@ -4,7 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type BuildResult, build } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
-import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
+import { readWebStyleSource, readWebUiStyleSource } from '../../../tools/web-style-source.mjs'
 import { buildConversationCss } from '../../web-ui/tools/build-conversation-css.js'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -130,7 +130,10 @@ export async function buildWeb(options: { clean?: boolean } = {}): Promise<Build
   await Promise.all(
     ['index.html', 'admin.html', 'resources.html', 'brand-mark.png']
       .map((file) => cp(join(root, 'public', file), join(out, file)))
-      .concat([cp(antdCss, join(out, 'antd.css')), cp(tokensCss, join(out, 'tokens.css'))]),
+      .concat([
+        cp(antdCss, join(out, 'antd.css')),
+        writeFile(join(out, 'tokens.css'), readWebUiStyleSource(tokensCss)),
+      ]),
   )
   await writeFile(join(out, 'style.css'), readWebStyleSource(join(root, 'public', 'style.css')))
   // Conversation rules share the existing style.css URL on all three pages. The local CLI build

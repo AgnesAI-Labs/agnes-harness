@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { BUNDLED_EXAMPLES, BUNDLED_HELPERS } from '@agnes/package-manager'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
-import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
+import { readWebStyleSource, readWebUiStyleSource } from '../../../tools/web-style-source.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { buildConversationCss } from '../../web-ui/tools/build-conversation-css.js'
 import { prepareDocumentReader } from './document-reader.js'
@@ -304,7 +304,7 @@ export async function buildLocalWeb(webOut: string): Promise<void> {
   const antdCss = require.resolve('antd/dist/antd.css', { paths: [webUi] })
   await Promise.all([
     copyFile(antdCss, join(webOut, 'antd.css')),
-    copyFile(join(webUi, 'src', 'tokens.css'), join(webOut, 'tokens.css')),
+    writeFile(join(webOut, 'tokens.css'), readWebUiStyleSource(join(webUi, 'src', 'tokens.css'))),
   ])
   const conversationCss = await readFile(join(webUi, 'src', 'conversation', 'messages.css'), 'utf8')
   await appendFile(join(webOut, 'style.css'), `\n${conversationCss}`)

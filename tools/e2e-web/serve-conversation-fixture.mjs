@@ -1,3 +1,4 @@
+import { readWebUiStyleSource } from '../web-style-source.mjs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
@@ -42,7 +43,7 @@ const server = createServer(async (request, response) => {
   try {
     response
       .writeHead(200, { 'Content-Type': asset[1], 'Cache-Control': 'no-store' })
-      .end(await readFile(asset[0]))
+      .end(path === '/tokens.css' ? readWebUiStyleSource(asset[0]) : await readFile(asset[0]))
   } catch {
     response.writeHead(500).end('Build the web assets before starting the fixture.')
   }

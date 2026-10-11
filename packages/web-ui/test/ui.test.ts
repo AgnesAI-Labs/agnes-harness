@@ -140,3 +140,29 @@ it('lists only reported skill roots and explains optional user-agent imports', a
   expect(host.textContent).not.toContain('Legacy')
   dispose()
 })
+
+it('maps public and native button entries to the same variants and reports busy state', async () => {
+  const ui = await import('../src/index.js')
+  const host = document.createElement('div')
+  const native = ui.createSettingsButton(document, 'primary')
+  expect(native.classList.contains('agh-btn--primary')).toBe(true)
+  let clicks = 0
+  const dispose = ui.mountRegion(
+    host,
+    createElement(
+      ui.Button,
+      {
+        type: 'primary',
+        loading: true,
+        onClick: () => clicks++,
+      },
+      'Save',
+    ),
+  )
+  const button = host.querySelector('button')!
+  expect(button.classList.contains('agh-btn--primary')).toBe(true)
+  expect(button.getAttribute('aria-busy')).toBe('true')
+  button.click()
+  expect(clicks).toBe(0)
+  dispose()
+})

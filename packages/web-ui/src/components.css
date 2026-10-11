@@ -1,0 +1,125 @@
+/* Public component contracts and native aliases share one declaration source. */
+:is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button) {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s8);
+  height: var(--control-height);
+  min-height: var(--control-height);
+  padding: 0 var(--s12);
+  border: 1px solid var(--agnes-input-border);
+  border-radius: var(--radius-control);
+  color: var(--agnes-text-primary);
+  background: transparent;
+  box-shadow: none;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-sm);
+  cursor: pointer;
+  /* Surface and text change together, including when enabled under the pointer. */
+  transition: box-shadow var(--transition-fast);
+}
+:is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button):hover:not(:disabled):not(
+  [aria-disabled="true"]
+) {
+  color: var(--agnes-text-primary);
+  background: var(--agnes-bg-hover);
+  border-color: var(--agnes-input-border-emphasis);
+}
+:is(.agh-btn--primary, .primary-button):not(:disabled):not([aria-disabled="true"]) {
+  color: var(--agnes-button-primary-content);
+  background: var(--agnes-button-primary-bg);
+  border-color: var(--agnes-button-primary-bg);
+}
+:is(.agh-btn--primary, .primary-button):hover:not(:disabled):not([aria-disabled="true"]) {
+  color: var(--agnes-button-primary-content);
+  background: var(--agnes-button-primary-bg-hover);
+  border-color: var(--agnes-button-primary-bg-hover);
+}
+:is(.agh-btn--ghost, .agh-btn--link, .icon-button):not(:disabled):not([aria-disabled="true"]) {
+  border-color: transparent;
+  background: transparent;
+  color: var(--agnes-text-secondary);
+}
+:is(.agh-btn--ghost, .icon-button):hover:not(:disabled):not([aria-disabled="true"]) {
+  border-color: transparent;
+  background: var(--agnes-bg-hover);
+  color: var(--agnes-text-primary);
+}
+.agh-btn--link:not(:disabled):not([aria-disabled="true"]) {
+  padding-inline: var(--s4);
+  color: var(--agnes-text-emphasis);
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+.agh-btn--danger:not(:disabled):not([aria-disabled="true"]) {
+  color: var(--agnes-status-danger-text);
+  border-color: var(--agnes-status-danger-text);
+  background: transparent;
+}
+.agh-btn--danger:hover:not(:disabled):not([aria-disabled="true"]) {
+  color: var(--agnes-status-danger-text);
+  border-color: var(--agnes-status-danger-text);
+  background: var(--agnes-status-danger-bg);
+}
+/* Filled danger is reserved for destructive confirmation footers. */
+.agh-btn--danger-filled:not(:disabled):not([aria-disabled="true"]),
+.agh-btn--danger-filled:hover:not(:disabled):not([aria-disabled="true"]) {
+  color: var(--agnes-text-inverse);
+  background: var(--agnes-status-danger-text);
+  border-color: var(--agnes-status-danger-text);
+}
+:is(.agh-btn--sm, .secondary-button.compact, .icon-button) {
+  height: var(--control-height-sm);
+  min-height: var(--control-height-sm);
+  padding-inline: var(--s8);
+}
+:is(.agh-btn--icon, .icon-button) {
+  width: var(--control-height-sm);
+  min-width: var(--control-height-sm);
+  padding: 0;
+  border-radius: var(--radius-control);
+}
+:is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button):focus-visible {
+  outline: 2px solid var(--agnes-input-border-focus);
+  outline-offset: 2px;
+}
+:is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button):disabled,
+:is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button)[aria-disabled="true"] {
+  color: var(--agnes-text-tertiary);
+  background: var(--agnes-bg-card);
+  border-color: var(--agnes-line-primary);
+  opacity: 1;
+  cursor: not-allowed;
+}
+.agh-btn[aria-busy="true"] {
+  cursor: progress;
+}
+.agh-btn--loading-no-icon > .ant-btn-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+}
+.agh-btn--loading-no-icon > span:not(.ant-btn-icon) {
+  visibility: hidden;
+}
+@media (max-width: 767px) {
+  :is(.agh-btn, .agnes-ui-button, .primary-button, .secondary-button, .icon-button)::after {
+    content: "";
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: max(100%, var(--control-height-touch));
+    height: max(100%, var(--control-height-touch));
+    transform: translate(-50%, -50%);
+  }
+}
+.agh-btn--secondary:not(:disabled):not([aria-disabled="true"]) {
+  color: var(--agnes-text-primary);
+  background: transparent;
+  border-color: var(--agnes-input-border);
+}

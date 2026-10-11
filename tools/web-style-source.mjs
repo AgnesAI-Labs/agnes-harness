@@ -20,3 +20,12 @@ export function readWebStyleSource(manifest) {
     .map((file) => readFileSync(file, 'utf8'))
     .join('')
 }
+
+/** Emit one theme-bridge asset, with public component CSS before its existing overrides. */
+export function readWebUiStyleSource(file) {
+  const source = readFileSync(file, 'utf8')
+  return source.replace(
+    '@import "./components.css";',
+    readFileSync(join(dirname(file), 'components.css'), 'utf8'),
+  )
+}

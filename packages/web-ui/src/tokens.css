@@ -1,3 +1,4 @@
+@import "./components.css";
 /* ═══════════════════════════════════════════════════════════════════════
    Web UI 组件层 · 主题桥：--agnes-* → --ant-*
    组件消费统一的语义主题变量。
@@ -503,17 +504,6 @@ textarea.agnes-settings-input {
   background: transparent;
 }
 
-/* Static Ant styles must use the same contrast-safe brand colors as native controls. */
-.agnes-ui-button.ant-btn-primary:not(:disabled) {
-  color: var(--agnes-text-inverse);
-  background: var(--agnes-brand-primary);
-  border-color: var(--agnes-brand-primary);
-}
-.agnes-ui-button.ant-btn-primary:not(:disabled):hover,
-.agnes-ui-button.ant-btn-primary:not(:disabled):focus-visible {
-  background: var(--agnes-brand-primary);
-  border-color: var(--agnes-brand-primary);
-}
 .plugin-details-button {
   color: inherit;
   font: inherit;
@@ -527,11 +517,6 @@ textarea.agnes-settings-input {
   outline: 2px solid var(--agnes-brand-focus-ring);
   outline-offset: 4px;
   border-radius: var(--radius-sm);
-}
-.primary-button:not(:disabled):hover {
-  color: var(--agnes-button-primary-content);
-  background: var(--agnes-button-primary-bg-hover);
-  border-color: var(--agnes-button-primary-bg-hover);
 }
 .agnes-ui-popover .ant-popover-container,
 .agnes-ui-popover .ant-popover-inner {
