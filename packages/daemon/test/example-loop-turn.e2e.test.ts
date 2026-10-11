@@ -116,6 +116,13 @@ async function runExample(kind: 'react' | 'dag') {
   let socketPath: string | undefined
   let stage = 'boot'
   const failures: unknown[] = []
+  let cancelSessionId: string | undefined
+  const cancellation: {
+    requestedAt: number | null
+    acknowledgedAt: number | null
+    turnReturnedAt: number | null
+    turnReason: string | null
+  } = { requestedAt: null, acknowledgedAt: null, turnReturnedAt: null, turnReason: null }
   try {
     await bounded(ready, 'source daemon boot')
     const owner = JSON.parse(readFileSync(join(root, 'daemon', 'owner.json'), 'utf8'))
@@ -182,8 +189,14 @@ async function runExample(kind: 'react' | 'dag') {
     const cancelled = session.prompt('Cancel this blocked turn')
     void cancelled.catch(() => undefined)
     await bounded(blocked.entered, `${kind} active inference`)
+    cancelSessionId = session.id
+    cancellation.requestedAt = Date.now()
     await bounded(session.cancel(), `${kind} cancel acknowledgement`)
-    expect((await bounded(cancelled, `${kind} cancelled turn`)).reason).toBe('aborted')
+    cancellation.acknowledgedAt = Date.now()
+    const cancelledTurn = await bounded(cancelled, `${kind} cancelled turn`)
+    cancellation.turnReturnedAt = Date.now()
+    cancellation.turnReason = cancelledTurn.reason
+    expect(cancelledTurn.reason).toBe('aborted')
     await bounded(blocked.disconnected, `${kind} provider abort`)
     provider.unblock()
     stage = 'recover'
@@ -191,8 +204,32 @@ async function runExample(kind: 'react' | 'dag') {
       (await bounded(session.prompt('Summarize again after cancellation.'), `${kind} recovery`)).reason,
     ).toBe('completed')
   } catch (error) {
+    let signalEvidence: unknown = { unavailable: true }
+    if (sdk && cancelSessionId) {
+      try {
+        const trace = await sdk.requestTrace.get({ sessionId: cancelSessionId }, { timeoutMs: 2_000 })
+        signalEvidence = {
+          // Passive adapter evidence; the worker's in-memory signal is not exposed by RPC.
+          source: 'provider-attempt-status',
+          workerSignalState: 'not-directly-observed',
+          callId: trace.snapshot?.id,
+          attempts: trace.snapshot?.attempts.map(({ attemptId, status, index }) => ({
+            attemptId,
+            status,
+            index,
+          })),
+          unavailable: trace.unavailable,
+        }
+      } catch {
+        signalEvidence = { unavailable: 'trace-read-failed' }
+      }
+    }
+    const diagnostics = { cancellation, signalEvidence, sockets: provider.diagnostics() }
     failures.push(
-      new Error(`${kind} ${stage}: ${String(error)}\nSource daemon stderr:\n${stderr}`, { cause: error }),
+      new Error(
+        `${kind} ${stage}: ${String(error)}\nCancellation diagnostics: ${JSON.stringify(diagnostics)}\nSource daemon stderr:\n${stderr}`,
+        { cause: error },
+      ),
     )
   } finally {
     for (const close of [

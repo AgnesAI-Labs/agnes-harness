@@ -221,3 +221,39 @@ it.each([true, false])(
     if (!succeeds) expect(p.batches).toEqual([])
   },
 )
+
+it.each(['plan', 'summary'] as const)(
+  'propagates turn cancellation into the %s model request',
+  async (stage) => {
+    const p = ports('[]')
+    const driver = await createDagLoop().create(p.ctx)
+    const turn = new AbortController()
+    await driver.step(turn.signal)
+    if (stage === 'summary') {
+      await driver.step(turn.signal)
+      await driver.step(turn.signal)
+    }
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let observed: AbortSignal | undefined
+    p.ctx.model.complete = async (_request, signal) => {
+      observed = signal
+      entered()
+      return new Promise((_, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    }
+    const pending = driver.step(turn.signal)
+    void pending.catch(() => {})
+    await started
+    expect(observed?.aborted).toBe(false)
+    const reason = new Error('turn cancelled')
+    turn.abort(reason)
+    driver.cancel()
+    await expect(pending).rejects.toBe(reason)
+    expect(observed?.aborted).toBe(true)
+    await driver.dispose()
+  },
+)

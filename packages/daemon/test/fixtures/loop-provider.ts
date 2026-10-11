@@ -6,6 +6,15 @@ export async function startLoopProvider() {
   let entered: (() => void) | undefined
   let disconnected: (() => void) | undefined
   const requests: string[] = []
+  const attempts: {
+    requestIndex: number
+    enteredAt: number
+    responseCloseAt: number | null
+    requestAborted: boolean
+    socketClosedAt: number | null
+    socketDestroyed: () => boolean
+    responseDestroyed: () => boolean
+  }[] = []
   const server = createServer(async (request, response) => {
     if (request.method !== 'POST' || request.url !== '/v1/chat/completions') {
       response.writeHead(404).end()
@@ -19,7 +28,26 @@ export async function startLoopProvider() {
     response.writeHead(200, { 'Content-Type': 'text/event-stream' })
     response.flushHeaders()
     if (blocking && messages.includes('Cancel this blocked turn')) {
-      response.once('close', () => disconnected?.())
+      const attempt = {
+        requestIndex: requests.length - 1,
+        enteredAt: Date.now(),
+        responseCloseAt: null as number | null,
+        requestAborted: request.aborted,
+        socketClosedAt: null as number | null,
+        socketDestroyed: () => request.socket.destroyed,
+        responseDestroyed: () => response.destroyed,
+      }
+      attempts.push(attempt)
+      request.once('aborted', () => {
+        attempt.requestAborted = true
+      })
+      request.socket.once('close', () => {
+        attempt.socketClosedAt = Date.now()
+      })
+      response.once('close', () => {
+        attempt.responseCloseAt = Date.now()
+        disconnected?.()
+      })
       entered?.()
       return
     }
@@ -45,6 +73,12 @@ export async function startLoopProvider() {
   return {
     baseUrl: `http://127.0.0.1:${address.port}/v1`,
     requests,
+    diagnostics: () =>
+      attempts.map(({ socketDestroyed, responseDestroyed, ...row }) => ({
+        ...row,
+        socketDestroyed: socketDestroyed(),
+        responseDestroyed: responseDestroyed(),
+      })),
     block() {
       blocking = true
       return {
