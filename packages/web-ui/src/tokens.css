@@ -80,6 +80,7 @@
   --ant-color-warning-bg: var(--agnes-status-warning-bg);
   --ant-color-warning-text: var(--agnes-status-warning-text);
   --ant-color-info: var(--agnes-status-info-text);
+  --ant-color-info-bg: var(--agnes-status-info-bg);
 
   /* 尺度（无深浅维度） */
   --ant-font-size: var(--font-size-body);
@@ -89,7 +90,7 @@
   --ant-border-radius-sm: var(--radius-sm);
   --ant-border-radius-lg: var(--radius-lg);
   --ant-control-height: var(--control-height);
-  --ant-control-height-sm: calc(var(--control-height) - 8px);
+  --ant-control-height-sm: var(--control-height-sm);
   --ant-control-height-lg: var(--control-height-form);
 
   /* Component defaults also contain light colors in Ant Design's static CSS. */

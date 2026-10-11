@@ -4,51 +4,58 @@
    ═══════════════════════════════════════════════════════════════════════ */
 :root {
   --agnes-color-transparent: transparent;
-  --agnes-color-white: #ffffff;
+  --agnes-color-white: var(--agnes-color-neutral-0);
+  /* Twelve neutral steps; historic palette names resolve to the nearest step. */
+  --agnes-color-neutral-0: #ffffff;
+  --agnes-color-neutral-50: #fafafa;
+  --agnes-color-neutral-100: #e2e2e2;
+  --agnes-color-neutral-200: #d2dfe3;
+  --agnes-color-neutral-300: #c4cbd7;
+  --agnes-color-neutral-400: #aec1c7;
+  --agnes-color-neutral-500: #8d98b3;
+  --agnes-color-neutral-600: #626978;
+  --agnes-color-neutral-700: #424656;
+  --agnes-color-neutral-800: #22252c;
+  --agnes-color-neutral-900: #1c2026;
+  --agnes-color-neutral-950: #161b21;
+  --agnes-color-neutral-025: var(--agnes-color-neutral-0);
+  --agnes-color-neutral-050: var(--agnes-color-neutral-50);
+  --agnes-color-neutral-075: var(--agnes-color-neutral-50);
+  --agnes-color-neutral-150: var(--agnes-color-neutral-100);
+  --agnes-color-neutral-250: var(--agnes-color-neutral-200);
+  --agnes-color-neutral-275: var(--agnes-color-neutral-300);
+  --agnes-color-neutral-325: var(--agnes-color-neutral-300);
+  --agnes-color-neutral-350: var(--agnes-color-neutral-300);
+  --agnes-color-neutral-360: var(--agnes-color-neutral-400);
+  --agnes-color-neutral-375: var(--agnes-color-neutral-400);
+  --agnes-color-neutral-425: var(--agnes-color-neutral-400);
+  --agnes-color-neutral-450: var(--agnes-color-neutral-400);
+  --agnes-color-neutral-475: var(--agnes-color-neutral-500);
+  --agnes-color-neutral-550: var(--agnes-color-neutral-500);
+  --agnes-color-neutral-560: var(--agnes-color-neutral-600);
+  --agnes-color-neutral-575: var(--agnes-color-neutral-600);
+  --agnes-color-neutral-625: var(--agnes-color-neutral-600);
+  --agnes-color-neutral-650: var(--agnes-color-neutral-600);
+  --agnes-color-neutral-675: var(--agnes-color-neutral-700);
+  --agnes-color-neutral-725: var(--agnes-color-neutral-700);
+  --agnes-color-neutral-750: var(--agnes-color-neutral-700);
+  --agnes-color-neutral-775: var(--agnes-color-neutral-800);
+  --agnes-color-neutral-790: var(--agnes-color-neutral-800);
+  --agnes-color-neutral-850: var(--agnes-color-neutral-900);
+
   --agnes-color-black-a06: rgb(0 0 0 / 6%);
   --agnes-color-black-a85: rgb(0 0 0 / 85%);
-
-  --agnes-color-neutral-025: #fdfeff;
-  --agnes-color-neutral-050: #fbfbfb;
-  --agnes-color-neutral-075: #fafafa;
-  --agnes-color-neutral-100: #e2e2e2;
-  --agnes-color-neutral-150: #d9d9d9;
-  --agnes-color-neutral-200: #d2dfe3;
-  --agnes-color-neutral-250: #c6cfd6;
-  --agnes-color-neutral-275: #c5c7d1;
-  --agnes-color-neutral-300: #c4cbd7;
-  --agnes-color-neutral-325: #b9c1ce;
-  --agnes-color-neutral-350: #b3b9c3;
-  --agnes-color-neutral-360: #b1b1b1;
-  --agnes-color-neutral-375: #b2bcd0;
-  --agnes-color-neutral-400: #aec1c7;
-  --agnes-color-neutral-425: #a1a6bd;
-  --agnes-color-neutral-450: #a0acb1;
-  --agnes-color-neutral-475: #909aa4;
-  --agnes-color-neutral-500: #8d98b3;
-  --agnes-color-neutral-550: #6b7280;
-  --agnes-color-neutral-560: #626978;
-  --agnes-color-neutral-575: #676d83;
-  --agnes-color-neutral-600: #667188;
-  --agnes-color-neutral-625: #4e586a;
-  --agnes-color-neutral-650: #4a556b;
-  --agnes-color-neutral-675: #485054;
-  --agnes-color-neutral-700: #464e5c;
-  --agnes-color-neutral-725: #424656;
-  --agnes-color-neutral-750: #2c303b;
-  --agnes-color-neutral-775: #2b313c;
-  --agnes-color-neutral-790: #2a2e35;
-  --agnes-color-neutral-800: #22252c;
-  --agnes-color-neutral-850: #1c2026;
-  --agnes-color-neutral-900: #191c1d;
-  --agnes-color-neutral-950: #161b21;
 
   --agnes-color-brand-indigo-300: #849aff;
   --agnes-color-brand-indigo-400: #6983fc;
   --agnes-color-brand-indigo-450: #3c57d5;
   --agnes-color-brand-indigo-500: #3248af;
   --agnes-color-brand-blue-400: #5c9eff;
-  --agnes-color-brand-blue-500: #0066ff;
+  --agnes-color-brand-blue-500: #005bd4;
+  --agnes-color-blue-bg-light: #edf4ff;
+  --agnes-color-blue-bg-dark: #162d4d;
+  --agnes-color-yellow-bg-light: #f8f1df;
+  --agnes-color-yellow-bg-dark: #3a2f18;
   --agnes-color-brand-cyan-100: #cff2ff;
   --agnes-color-brand-cyan-200: #baeafb;
   --agnes-color-brand-cyan-300: #b5e5ff;
@@ -103,14 +110,14 @@
 
   /* Brand */
   --agnes-brand-primary: var(--agnes-color-brand-indigo-500);
-  --agnes-brand-focus-ring: var(--agnes-color-brand-indigo-500-a30);
+  --agnes-brand-focus-ring: var(--agnes-color-brand-indigo-500);
   --agnes-brand-emphasis-soft: var(--agnes-color-brand-indigo-500-a10);
 
   /* Text */
   --agnes-text-primary: var(--agnes-color-neutral-900);
   --agnes-text-secondary: var(--agnes-color-neutral-725);
   /* Keep tertiary copy readable on both hover surfaces and soft selected backgrounds. */
-  --agnes-text-tertiary: var(--agnes-color-neutral-560);
+  --agnes-text-tertiary: var(--agnes-color-neutral-600);
   --agnes-text-disabled: var(--agnes-color-neutral-350);
   --agnes-text-inverse: var(--agnes-color-white);
   /* 强调文字：桌面端 token 集无此角色，本次补齐（设计 §5.4） */
@@ -138,8 +145,8 @@
   --agnes-input-surface: var(--agnes-bg-surface);
   --agnes-input-content-strong: var(--agnes-color-neutral-900);
   --agnes-input-placeholder: var(--agnes-color-neutral-725-a60);
-  --agnes-input-border: var(--agnes-color-line-light-a30);
-  --agnes-input-border-emphasis: var(--agnes-color-line-light-a80);
+  --agnes-input-border: var(--agnes-color-neutral-600);
+  --agnes-input-border-emphasis: var(--agnes-color-neutral-700);
   --agnes-input-border-focus: var(--agnes-color-brand-indigo-500);
 
   /* Line */
@@ -159,20 +166,28 @@
   --agnes-status-success-bg: var(--agnes-color-green-bg-light);
   --agnes-status-warning-text: var(--agnes-color-yellow-700);
   /* 警告背景：桌面端只有 warning 文字色，本次补齐（设计 §5.4） */
-  --agnes-status-warning-bg: #f8f1df;
+  --agnes-status-warning-bg: var(--agnes-color-yellow-bg-light);
   --agnes-status-danger-text: var(--agnes-color-red-700);
   --agnes-status-danger-bg: var(--agnes-color-red-bg-light);
   --agnes-status-info-text: var(--agnes-color-brand-blue-500);
+  --agnes-status-info-bg: var(--agnes-color-blue-bg-light);
+  --agnes-bg-subtle: var(--agnes-color-neutral-50);
+  --agnes-status-success-border: color-mix(in srgb, var(--agnes-status-success-text) 30%, transparent);
+  --agnes-status-warning-border: color-mix(in srgb, var(--agnes-status-warning-text) 30%, transparent);
+  --agnes-status-danger-border: color-mix(in srgb, var(--agnes-status-danger-text) 30%, transparent);
+  --agnes-status-info-border: color-mix(in srgb, var(--agnes-status-info-text) 30%, transparent);
 
   /* Shadow —— 阴影内含颜色，必须随主题切换，故归语义层而不是尺度层：
      尺度层的 :root 在文件更后方，与 .dark 特异性相同，会把深色值覆盖回浅色。 */
-  --shadow-elevation: 0 4px 20px -12px rgb(0 0 0 / 12%);
-  --shadow-hairline: 0 0 0 1px rgb(0 0 0 / 5%);
+  --shadow-elevation: var(--elevation-1);
+  --shadow-hairline: var(--elevation-0);
   --shadow-dialog: 0 28px 80px rgb(22 30 25 / 20%);
   --shadow-elevation-soft:
     0 0 0 0.5px var(--agnes-line-primary), 0 4px 16px rgb(0 0 0 / 3%), 0 0 24px rgb(0 0 0 / 3%);
-  --shadow-elevation-prominent:
-    0 0 0 0.5px var(--agnes-line-primary), 0 3px 8px rgb(0 0 0 / 4%), 0 0 20px rgb(0 0 0 / 5%);
+  --shadow-elevation-prominent: var(--elevation-1);
+  --elevation-0: none;
+  --elevation-1: var(--shadow-elevation-soft);
+  --elevation-2: var(--shadow-dialog);
 
   /* 品牌填充不使用内高光，--agnes-highlight-inset 已删除。 */
 
@@ -213,7 +228,7 @@
 
   /* Brand */
   --agnes-brand-primary: var(--agnes-color-brand-indigo-400);
-  --agnes-brand-focus-ring: var(--agnes-color-brand-indigo-400-a30);
+  --agnes-brand-focus-ring: var(--agnes-color-brand-indigo-400);
   --agnes-brand-emphasis-soft: var(--agnes-color-brand-indigo-400-a10);
 
   /* Text */
@@ -248,8 +263,8 @@
   --agnes-input-surface: var(--agnes-bg-surface);
   --agnes-input-content-strong: var(--agnes-color-neutral-050);
   --agnes-input-placeholder: var(--agnes-color-neutral-300-a60);
-  --agnes-input-border: var(--agnes-color-line-dark-primary);
-  --agnes-input-border-emphasis: var(--agnes-color-line-dark-primary);
+  --agnes-input-border: var(--agnes-color-neutral-500);
+  --agnes-input-border-emphasis: var(--agnes-color-neutral-500);
   --agnes-input-border-focus: var(--agnes-color-brand-indigo-400);
 
   /* Line */
@@ -266,19 +281,27 @@
   --agnes-status-success-text: var(--agnes-color-green-400);
   --agnes-status-success-bg: var(--agnes-color-green-bg-dark);
   --agnes-status-warning-text: var(--agnes-color-yellow-400);
-  --agnes-status-warning-bg: #3a2f18;
+  --agnes-status-warning-bg: var(--agnes-color-yellow-bg-dark);
   --agnes-status-danger-text: var(--agnes-color-red-400);
   --agnes-status-danger-bg: var(--agnes-color-red-bg-dark);
   --agnes-status-info-text: var(--agnes-color-brand-blue-400);
+  --agnes-status-info-bg: var(--agnes-color-blue-bg-dark);
+  --agnes-bg-subtle: var(--agnes-color-neutral-800);
+  --agnes-status-success-border: color-mix(in srgb, var(--agnes-status-success-text) 30%, transparent);
+  --agnes-status-warning-border: color-mix(in srgb, var(--agnes-status-warning-text) 30%, transparent);
+  --agnes-status-danger-border: color-mix(in srgb, var(--agnes-status-danger-text) 30%, transparent);
+  --agnes-status-info-border: color-mix(in srgb, var(--agnes-status-info-text) 30%, transparent);
 
   /* Shadow —— 深色底上浅色阴影看不见，改用更强的黑；hairline 反过来用浅环 */
-  --shadow-elevation: 0 4px 20px -12px rgb(0 0 0 / 55%);
-  --shadow-hairline: 0 0 0 1px rgb(255 255 255 / 8%);
+  --shadow-elevation: var(--elevation-1);
+  --shadow-hairline: var(--elevation-0);
   --shadow-dialog: 0 28px 80px rgb(0 0 0 / 55%);
   --shadow-elevation-soft:
     0 0 0 0.5px var(--agnes-line-primary), 0 4px 16px rgb(0 0 0 / 3%), 0 0 24px rgb(0 0 0 / 3%);
-  --shadow-elevation-prominent:
-    0 0 0 0.5px var(--agnes-line-primary), 0 3px 8px rgb(0 0 0 / 4%), 0 0 20px rgb(0 0 0 / 5%);
+  --shadow-elevation-prominent: var(--elevation-1);
+  --elevation-0: none;
+  --elevation-1: var(--shadow-elevation-soft);
+  --elevation-2: var(--shadow-dialog);
 
   /* 与浅色同值：品牌填充仍是靛蓝，顶部高光的角色不变 */
 
@@ -337,11 +360,14 @@
   --radius-lg: 12px;
   --radius-xl: 16px;
   --radius-2xl: 24px;
-  --radius-main-page: 32px;
-  --radius-modal: 28px;
+  --radius-main-page: var(--radius-surface);
+  --radius-modal: var(--radius-surface);
   --radius-full: 9999px;
-  --radius-card: 1.125rem;
-  --radius-panel: 1.375rem;
+  --radius-control: var(--radius-md);
+  --radius-card: var(--radius-lg);
+  --radius-surface: var(--radius-xl);
+  --radius-pill: var(--radius-full);
+  --radius-panel: var(--radius-surface);
   --s2: 2px;
   --s4: 4px;
   --s8: 8px;
@@ -356,13 +382,32 @@
   --composer-card-max-width: calc(var(--chat-content-width) + 2rem);
   --admin-content-width: 70rem;
   --control-height: 2.25rem;
-  --control-height-form: 2.75rem;
+  --control-height-sm: 28px;
+  --control-height-form: var(--control-height-touch);
   --control-height-touch: 44px;
   --dialog-max-height: min(46rem, calc(100dvh - 3rem));
   /* 阴影已上移到语义层（第 2 节 Shadow 组）：内含颜色，需要 .dark 覆盖。
      三档仍是极简口径，只是不再属于"无深浅维度"的尺度层。 */
-  --transition-fast: 140ms ease-out;
-  --transition: 170ms ease-out;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --motion-fast: 120ms;
+  --motion-base: 200ms;
+  --motion-ease: cubic-bezier(0.2, 0, 0, 1);
+  --transition-fast: var(--motion-fast) var(--motion-ease);
+  --transition: var(--motion-base) var(--motion-ease);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-property: opacity !important;
+    transform: none !important;
+    scroll-behavior: auto !important;
+  }
+}
