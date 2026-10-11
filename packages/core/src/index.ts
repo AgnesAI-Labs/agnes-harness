@@ -98,6 +98,7 @@ export type {
   HostDispatchObservation,
   HostToolDispatchInput,
   HostToolDispatchPort,
+  RejectedBeforeEffectError,
 } from '@agnes/core-effects/effects/tool-dispatch'
 export {
   defaultToolPolicy,

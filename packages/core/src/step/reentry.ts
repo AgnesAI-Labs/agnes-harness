@@ -1,6 +1,7 @@
 import { withPhase } from '@agnes/core-common/step/op-state'
 import type { PresetView } from '@agnes/core-common/step/preset'
 import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
+import { isPending, normalizeApproval } from '@agnes/core-effects/effects/approval-answer'
 import { type NestedToolLease, NestedToolSchedulingError } from '@agnes/core-effects/effects/scheduler'
 import type { ToolResult } from '@agnes/extension-api'
 import { type JsonValue, minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
@@ -18,7 +19,6 @@ import type {
 } from './session.js'
 import { toolArgumentError } from './tool-args.js'
 import { approveAndExecute, refuse } from './tools.js'
-import { isPending, normalizeApproval } from '@agnes/core-effects/effects/approval-answer'
 
 /** The six names a `{ replace: name }` Operation may stand in for. Closed, not a bare string. */
 export const CORE_OPS = ['Inbox', 'Budget', 'Inference', 'Approval', 'ToolExecution', 'StopGate'] as const
@@ -151,7 +151,12 @@ export async function invokeTool(
   }
   if (park) {
     await s.transition([], (cur) => {
-      if (cur?.phase.kind !== 'tools') return cur
+      // An uncertain call is already completed; reconciliation must never make it dispatchable.
+      if (
+        cur?.phase.kind !== 'tools' ||
+        (park?.type === 'approval/asked' && (park.data as { kind?: string }).kind === 'unknown-outcome')
+      )
+        return cur
       return withPhase(cur, {
         ...cur.phase,
         batch: {

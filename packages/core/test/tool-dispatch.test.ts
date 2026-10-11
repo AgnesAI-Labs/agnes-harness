@@ -45,6 +45,53 @@ describe('tool dispatch attestation', () => {
     expect(hostPort.dispatch).not.toHaveBeenCalled()
   })
 
+  it.each([
+    { code: 'INVALID_PARAMS', message: 'invalid', issues: [{ path: '$.x' }] },
+    { code: 'INVALID_PARAMS', message: 'invalid', expected: 1 },
+    { code: 'INVALID_PARAMS', message: 'invalid', effect: 'none' },
+    { code: 'INVALID_PARAMS', message: 'x'.repeat(4097) },
+    {
+      code: 'INVALID_PARAMS',
+      message: 'invalid',
+      issues: Array(9).fill({ path: '$.x', expected: 'string' }),
+    },
+    new Error('INVALID_PARAMS'),
+  ])('keeps an invalid platform preflight diagnostic uncertain (%#)', async (diagnostic) => {
+    const invoke = vi.fn(async () => result)
+    const observation = await dispatchTool({
+      name: 'synthetic_write',
+      args: {},
+      context: {} as never,
+      attempt: 1,
+      executionDomain: 'workspace',
+      invoke,
+      hostPort: { preflight: async () => diagnostic, dispatch: vi.fn() },
+    })
+    expect(observation.phase).toBe('may_have_sent')
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('does not classify an author throw by its error code after platform preflight passes', async () => {
+    const claim = Object.assign(new Error('invalid'), {
+      code: 'INVALID_PARAMS',
+      path: '$.x',
+      expected: 'string',
+      effect: 'none',
+    })
+    const observation = await dispatchTool({
+      name: 'synthetic_write',
+      args: {},
+      context: {} as never,
+      attempt: 1,
+      executionDomain: 'workspace',
+      invoke: async () => {
+        throw claim
+      },
+      hostPort: { preflight: async () => undefined, dispatch: vi.fn() },
+    })
+    expect(observation).toEqual({ phase: 'may_have_sent', error: claim })
+  })
+
   it('does not let a tool result forge a dispatch phase', async () => {
     const forged = { ...result, phase: 'not_sent', error: new Error('forged') }
     const observation = await dispatchTool({

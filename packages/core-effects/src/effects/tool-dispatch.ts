@@ -4,8 +4,18 @@ import type { ToolContext, ToolResult, ToolRuntime } from '@agnes/extension-api'
 import { type ExecutionDomain, inspectJsonData } from '@agnes/protocol'
 import type { ExecuteAttempt } from './execute-permits.js'
 
+/** Bounded diagnostic data; only a platform adapter's preflight can attest no effect. */
+export type RejectedBeforeEffectError = Readonly<{
+  code: string
+  message: string
+  path?: string
+  expected?: string
+  issues?: Array<{ path: string; expected: string }>
+}>
+
 export type HostDispatchObservation =
   | Readonly<{ phase: 'responded'; result: ToolResult }>
+  | Readonly<{ phase: 'rejected_before_effect'; error: RejectedBeforeEffectError }>
   | Readonly<{ phase: 'not_sent'; error: unknown }>
   | Readonly<{ phase: 'may_have_sent'; error: unknown }>
 
@@ -24,6 +34,13 @@ export type HostToolDispatchInput = Readonly<{
  */
 export type HostToolDispatchPort = Readonly<{
   dispatch(input: HostToolDispatchInput): Promise<unknown>
+  /**
+   * Optional platform validation for either execution domain, before runtime or author code.
+   * Return undefined to dispatch, or diagnostic data only when the adapter proves rejection
+   * before ANY observable effect. Throws and invalid diagnostics remain uncertain. This is
+   * Host-owned authority, never a plugin error-code classifier or a ToolContext capability.
+   */
+  preflight?(input: Omit<HostToolDispatchInput, 'invoke'>): Promise<unknown>
 }>
 
 type DispatchInput = Omit<HostToolDispatchInput, 'invoke'> &
@@ -121,6 +138,33 @@ export function isToolResult(value: unknown): value is ToolResult {
   return true
 }
 
+function rejectedBeforeEffect(value: unknown): RejectedBeforeEffectError | undefined {
+  const parsed = inspectJsonData(value, 16_384)
+  if (!parsed.ok || !isRecord(parsed.value)) return undefined
+  const data = parsed.value
+  const text = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 4096
+  if (
+    !hasOnlyKeys(data, new Set(['code', 'message', 'path', 'expected', 'issues'])) ||
+    typeof data.code !== 'string' ||
+    !/^[A-Z][A-Z0-9_]{0,63}$/.test(data.code) ||
+    !text(data.message) ||
+    (data.path !== undefined && !text(data.path)) ||
+    (data.expected !== undefined && !text(data.expected)) ||
+    (data.issues !== undefined &&
+      (!Array.isArray(data.issues) ||
+        data.issues.length > 8 ||
+        !data.issues.every(
+          (issue) =>
+            isRecord(issue) &&
+            hasOnlyKeys(issue, new Set(['path', 'expected'])) &&
+            text(issue.path) &&
+            text(issue.expected),
+        )))
+  )
+    return undefined
+  return data as RejectedBeforeEffectError
+}
+
 function invalidObservation(reason: string): HostDispatchObservation {
   return {
     phase: 'may_have_sent',
@@ -156,6 +200,24 @@ export function assertToolDispatchAvailable(
 
 /** Dispatches one already-authorized attempt and returns only Core-minted phase observations. */
 export async function dispatchTool(input: DispatchInput): Promise<HostDispatchObservation> {
+  if (input.hostPort?.preflight) {
+    try {
+      const value = await input.hostPort.preflight({
+        name: input.name,
+        args: input.args,
+        context: input.context,
+        attempt: input.attempt,
+      })
+      if (value !== undefined) {
+        const error = rejectedBeforeEffect(value)
+        return error
+          ? { phase: 'rejected_before_effect', error }
+          : invalidObservation('invalid pre-effect rejection diagnostic')
+      }
+    } catch (error) {
+      return { phase: 'may_have_sent', error }
+    }
+  }
   if (input.runtime) {
     const runtime = input.runtime
     const parsed = inspectJsonData(input.args)

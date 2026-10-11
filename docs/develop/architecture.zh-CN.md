@@ -57,6 +57,8 @@ flowchart LR
 
 一次 prompt 经 SDK 到 daemon，路由到 session worker。Host 为该会话提供模型、工具、审批、沙箱、存储等接缝；Core 生成下一步、记录状态，再消费模型或工具结果。客户端读取事件或派生投影。取消、失败、停驻、恢复都由后台状态决定。
 
+Core 只接受 Host 所有的平台适配器可选 `HostToolDispatchPort.preflight` 在 ToolRuntime 或插件执行前提供的 rejected-before-effect 诊断。Core 在运行时验证封闭且有界的 `RejectedBeforeEffectError` 数据，原子记录失败工具结果、`effect: "none"` 和 `error` 结算。可纠正的 `path`、`expected`、`issues` 同时进入模型可见文字和结构化数据。插件自报 `INVALID_PARAMS` 不构成无效果证明。适配器抛错、超时、断连、部分持久化及不完整返回继续保留不确定性；mutation/never-replay 调用结算为 unknown 并发起人工 reconciliation，不自动重派。
+
 ## 接缝与扩展
 
 Seam 是必要执行位置的实现，例如审批、账本、沙箱；缺失必须按合同拒绝，不能静默跳过。Extension 是可选贡献，例如工具、观察 hook、客户端槽位。它们虽可通过 Cordis 装配，但权限面并不相同。

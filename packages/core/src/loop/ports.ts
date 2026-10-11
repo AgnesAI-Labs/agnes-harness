@@ -22,6 +22,7 @@ import {
 import { releaseTreeReservation, settleTreeSpend } from '../child/runtime-budget.js'
 import { approvalContinuation, continueParked } from '../execution/turn/parked.js'
 import { approveAndExecute } from '../execution/turn/tools.js'
+import { unrecordedParkEvents } from '../execution/turn/unknown-outcome.js'
 import { hasCompleteToolPolicyEnvelope } from '../registry/tool-policy.js'
 import type { DeriveOutput } from '../request/derive.js'
 import { toProviderRequest } from '../request/to-provider.js'
@@ -286,7 +287,10 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
   async function closeParked(events: import('@agnes/core-common/types').EventInput[]) {
     const step = s.state.openStep.get(s.lane)
     await s.endTurn('parked', {
-      events: [...events, ...(step ? [s.ev('step/end', { turn: step.turn, step: step.step })] : [])],
+      events: [
+        ...unrecordedParkEvents(s, events),
+        ...(step ? [s.ev('step/end', { turn: step.turn, step: step.step })] : []),
+      ],
     })
   }
   function invoke(

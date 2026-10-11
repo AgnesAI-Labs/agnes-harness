@@ -362,7 +362,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines on this tree: 1219 (HEAD was 1209 against the previous 439 ceiling; this change adds 10).
   'packages/host-common/src/assemble': 1283,
   'packages/core/src/artifacts': 744,
-  'packages/core-effects/src': 2696,
+  'packages/core-effects/src': 2749,
   'packages/core-ledger/src': 6749,
   'packages/core-child-control/src': 397,
   'packages/core-common/src': 530,
@@ -1244,7 +1244,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-08 freeze-close review: Await async loop construction, propagate session cancellation and drain initialization before storage closes.
   // countLines: 30048 -> 30103 (+55); exact measured cap, no exclusions or spare allocation.
   // Empty loop services reader. countLines: 22444, exact, no spare.
-  'packages/core/src': 23710,
+  'packages/core/src': 23769,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.

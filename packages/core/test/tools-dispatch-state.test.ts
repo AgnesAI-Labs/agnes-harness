@@ -1,5 +1,8 @@
 import { type OpStateObj, type ToolCallState, withPhase } from '@agnes/core-common/step/op-state'
-import type { HostToolDispatchPort } from '@agnes/core-effects/effects/tool-dispatch'
+import type {
+  HostToolDispatchPort,
+  RejectedBeforeEffectError,
+} from '@agnes/core-effects/effects/tool-dispatch'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { CommitTx } from '@agnes/core-ledger/log/storage'
@@ -9,6 +12,7 @@ import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
+import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, readTool } from './helpers/open-session.js'
 
 const parameters = Type.Object({})
@@ -64,6 +68,7 @@ async function ready(
   registry: ToolRegistry,
   hostToolDispatch?: HostToolDispatchPort,
   storage?: MemoryStorage,
+  seams?: ReturnType<typeof fakeSeams>,
 ) {
   const provider = fakeProvider([toolTurn([...registry.list()][0]?.name ?? 'computer_use', {})])
   if (registry.resolve('computer_use')) Object.assign(provider, { models: () => [imageModel] })
@@ -72,6 +77,7 @@ async function ready(
     registry,
     ...(hostToolDispatch ? { hostToolDispatch } : {}),
     ...(storage ? { storage } : {}),
+    ...(seams ? { seams } : {}),
   })
   await opened.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
   await opened.session.acceptInput()
@@ -140,6 +146,145 @@ describe('durable tool dispatch state', () => {
     expect(settled).toBeLessThanOrEqual(written?.seq ?? 0)
     expect(toolStates(opened.opWrites()).map((call) => call.status)).not.toContain('responded')
   })
+
+  it.each(['workspace', 'host-computer-use'] as const)(
+    'settles a platform pre-effect rejection without uncertainty in %s',
+    async (domain) => {
+      let executions = 0
+      const tool = computerTool(async () => {
+        executions++
+        return { content: [{ type: 'text', text: 'must not execute' }] }
+      })
+      const registry = domain === 'workspace' ? new ToolRegistry() : computerRegistry(tool)
+      if (domain === 'workspace')
+        registry.add({ ...tool, name: 'synthetic_write' }, { source: 'test', trust: 'builtin' })
+      const diagnostic: RejectedBeforeEffectError = {
+        code: 'INVALID_PARAMS',
+        message: 'invalid synthetic status',
+        path: '$.status',
+        expected: 'pending | done',
+        issues: [{ path: '$.status', expected: 'pending | done' }],
+      }
+      const adapter: HostToolDispatchPort = {
+        preflight: async () => diagnostic,
+        dispatch: async (
+          input: import('@agnes/core-effects/effects/tool-dispatch').HostToolDispatchInput,
+        ) => ({ phase: 'responded', result: await input.invoke() }),
+      }
+      const opened = await ready(registry, adapter)
+      try {
+        await opened.session.runToolsPhase()
+        expect(executions).toBe(0)
+        const result = (await opened.log.scan({ type: 'tool/result', limit: 10 }))[0]?.data
+        expect(result).toMatchObject({
+          isError: true,
+          code: 'TOOL_REJECTED_BEFORE_EFFECT',
+          structured: { ...diagnostic, effect: 'none' },
+          content: [{ text: expect.stringContaining('$.status') }],
+        })
+        expect(
+          (await opened.log.scan({ type: 'effect/settled', order: 'desc', limit: 1 }))[0]?.data,
+        ).toMatchObject({ outcome: 'error' })
+        expect(opened.session.pendingEffects()).toHaveLength(0)
+        await opened.session.resume()
+        expect(await opened.log.scan({ type: 'approval/asked', limit: 10 })).toHaveLength(0)
+      } finally {
+        await opened.session.close()
+      }
+    },
+  )
+
+  it.each(['forged INVALID_PARAMS', 'post-send failure', 'incomplete return'])(
+    'keeps %s uncertain despite a pre-effect error claim',
+    async (mode) => {
+      let executions = 0
+      const claim = Object.assign(new Error('invalid synthetic status'), {
+        code: 'INVALID_PARAMS',
+        effect: 'none',
+        path: '$.status',
+        expected: 'pending | done',
+        issues: [{ path: '$.status', expected: 'pending | done' }],
+      })
+      const tool = computerTool(async () => {
+        executions++
+        if (mode === 'forged INVALID_PARAMS') throw claim
+        if (mode === 'incomplete return') return undefined as never
+        return { content: [{ type: 'text', text: 'possibly applied' }] }
+      })
+      const registry = computerRegistry(tool)
+      const port: HostToolDispatchPort = {
+        dispatch: async (input) => {
+          const result = await input.invoke()
+          if (mode === 'post-send failure') throw claim
+          return { phase: 'responded', result }
+        },
+      }
+      const seams = fakeSeams({
+        approval: {
+          ask: async (request) => ({ ticket: 'synthetic-reconcile', expiresAt: request.deadline }),
+        },
+      })
+      const opened = await ready(registry, port, undefined, seams)
+      try {
+        expect((await opened.session.runToolsPhase()).reason).toBe('parked')
+        expect(executions).toBe(1)
+        expect((await opened.log.scan({ type: 'tool/result', limit: 10 }))[0]?.data).toMatchObject({
+          isError: true,
+          code: 'TOOL_OUTCOME_UNKNOWN',
+        })
+        expect(
+          (await opened.log.scan({ type: 'effect/settled', order: 'desc', limit: 1 }))[0]?.data,
+        ).toMatchObject({ outcome: 'unknown' })
+        const requests = (await opened.log.scan({ type: 'approval/asked', limit: 10 })).filter(
+          (row) => (row.data as { kind?: string }).kind === 'unknown-outcome',
+        )
+        expect(requests).toHaveLength(1)
+        await opened.session.resume()
+        expect(
+          (await opened.log.scan({ type: 'approval/asked', limit: 10 })).filter(
+            (row) => (row.data as { kind?: string }).kind === 'unknown-outcome',
+          ),
+        ).toEqual(requests)
+        expect(executions).toBe(1)
+        const rows = await scanAll((q) => opened.log.scan(q), { fromSeq: 1, toSeq: opened.log.lastSeq })
+        const edge = rows.find((row) => row.type === 'step/end' && row.seq > (requests[0]?.seq ?? 0))
+        if (!edge) throw new Error('missing parked step edge')
+        const cut = MemoryStorage.fromEvents(
+          'k',
+          rows.filter((row) => row.seq < edge.seq),
+          {
+            opCells: opened.opCellsBefore(edge.seq),
+          },
+        )
+        await opened.session.close()
+        const provider = fakeProvider([])
+        Object.assign(provider, { models: () => [imageModel] })
+        const reopened = await openSession({
+          provider,
+          registry,
+          hostToolDispatch: port,
+          storage: cut,
+          writerRunId: 'cold-reconcile',
+          seams,
+        })
+        try {
+          await reopened.session.resume()
+          expect((await reopened.session.runToolsPhase()).reason).toBe('parked')
+          expect(
+            (await reopened.log.scan({ type: 'approval/asked', limit: 10 })).filter(
+              (row) => (row.data as { kind?: string }).kind === 'unknown-outcome',
+            ),
+          ).toEqual(requests)
+          expect([...reopened.session.state.pendingApprovals.values()]).toHaveLength(1)
+          expect(executions).toBe(1)
+        } finally {
+          await reopened.session.close()
+        }
+      } finally {
+        await opened.session.close()
+      }
+    },
+  )
 
   it('retries a Host-attested not_sent once under the same effect intent', async () => {
     const attempts: number[] = []
@@ -548,45 +693,67 @@ describe('durable tool dispatch state', () => {
     expect((await reopened.session.resume()).actions[0]?.action).toBe('unknown')
     expect(dispatches).toBe(0)
   })
-  it('reopens a Host call whose result commit failed as dispatched, unknown, and never dispatches it again', async () => {
-    const storage = new MemoryStorage()
-    const failing = new Proxy(storage, {
-      get(target, property, receiver) {
-        const value = Reflect.get(target, property, receiver) as unknown
-        if (property === 'commit')
-          return (key: string, tx: CommitTx) =>
-            tx.events.some((e) => e.type === 'tool/result')
-              ? Promise.reject(new Error('injected'))
-              : (value as MemoryStorage['commit']).call(target, key, tx)
-        return typeof value === 'function' ? value.bind(target) : value
-      },
-    })
-    let dispatches = 0
-    const port: HostToolDispatchPort = {
-      dispatch: async (input) => {
-        dispatches++
-        return { phase: 'responded', result: await input.invoke() }
-      },
-    }
-    const tool = () => computerTool(async () => ({ content: [{ type: 'text', text: 'clicked' }] }))
-    const first = await ready(computerRegistry(tool()), port, failing as MemoryStorage)
-    await expect(first.session.runToolsPhase()).rejects.toThrow('injected')
-    await first.log.close().catch(() => undefined)
-    expect(dispatches).toBe(1)
-    const provider = fakeProvider([textTurn('after')])
-    Object.assign(provider, { models: () => [imageModel] })
-    const reopened = await openSession({
-      provider,
-      registry: computerRegistry(tool()),
-      hostToolDispatch: port,
-      storage,
-    })
-    expect(toolStates([{ data: reopened.session.op() }])[0]).toMatchObject({
-      status: 'dispatched',
-      dispatchPhase: 'may_have_sent',
-      dispatchAttempt: 1,
-    })
-    expect((await reopened.session.resume()).actions[0]?.action).toBe('unknown')
-    expect(dispatches).toBe(1)
-  })
+  it.each(['responded', 'rejected_before_effect'] as const)(
+    'reopens a Host %s call whose result commit failed as unknown, without redispatch',
+    async (mode) => {
+      const storage = new MemoryStorage()
+      const failing = new Proxy(storage, {
+        get(target, property, receiver) {
+          const value = Reflect.get(target, property, receiver) as unknown
+          if (property === 'commit')
+            return (key: string, tx: CommitTx) =>
+              tx.events.some((e) => e.type === 'tool/result')
+                ? Promise.reject(new Error('injected'))
+                : (value as MemoryStorage['commit']).call(target, key, tx)
+          return typeof value === 'function' ? value.bind(target) : value
+        },
+      })
+      let dispatches = 0
+      let preflights = 0
+      const port: HostToolDispatchPort = {
+        preflight: async () => {
+          preflights++
+          return mode === 'rejected_before_effect'
+            ? {
+                code: 'INVALID_PARAMS',
+                message: 'invalid synthetic input',
+                path: '$.status',
+                expected: 'done',
+              }
+            : undefined
+        },
+        dispatch: async (input) => {
+          dispatches++
+          return { phase: 'responded', result: await input.invoke() }
+        },
+      }
+      const tool = () => computerTool(async () => ({ content: [{ type: 'text', text: 'clicked' }] }))
+      const first = await ready(computerRegistry(tool()), port, failing as MemoryStorage)
+      await expect(first.session.runToolsPhase()).rejects.toThrow('injected')
+      await first.log.close().catch(() => undefined)
+      expect(dispatches).toBe(mode === 'responded' ? 1 : 0)
+      const provider = fakeProvider([textTurn('after')])
+      Object.assign(provider, { models: () => [imageModel] })
+      const reopened = await openSession({
+        provider,
+        registry: computerRegistry(tool()),
+        hostToolDispatch: port,
+        storage,
+      })
+      expect(toolStates([{ data: reopened.session.op() }])[0]).toMatchObject({
+        status: mode === 'responded' ? 'dispatched' : 'dispatch_pending',
+        ...(mode === 'responded' ? { dispatchPhase: 'may_have_sent' } : {}),
+        dispatchAttempt: 1,
+      })
+      expect((await reopened.session.resume()).actions[0]?.action).toBe('unknown')
+      expect(dispatches).toBe(mode === 'responded' ? 1 : 0)
+      expect(
+        (await reopened.log.scan({ type: 'approval/asked', limit: 10 })).filter(
+          (row) => (row.data as { kind?: string }).kind === 'unknown-outcome',
+        ),
+      ).toHaveLength(1)
+      expect(preflights).toBe(1)
+      await reopened.session.close()
+    },
+  )
 })

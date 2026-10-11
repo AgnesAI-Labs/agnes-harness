@@ -1,5 +1,5 @@
-import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { hasChildControl, transitionChildState } from '@agnes/core-child-control/child/store'
+import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { type OpStateObj, type ToolCallState, withPhase } from '@agnes/core-common/step/op-state'
 import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
 import { approvalRefusal } from '@agnes/core-effects/effects/approval-answer'
@@ -41,8 +41,9 @@ import { resolveModel } from './inference.js'
 import { approveMemoryFile } from './memory-approval.js'
 import { approvalContinuation } from './parked.js'
 import { decideToolPolicy } from './policy-review.js'
-import { discloseTool } from './tool-disclosure.js'
 import { deliverToolDecision, requestToolDecision, toolDecisionSource } from './tool-decision.js'
+import { discloseTool } from './tool-disclosure.js'
+import { unknownOutcomeRows, unrecordedParkEvents } from './unknown-outcome.js'
 
 export type ExecOpts = {
   depth: number
@@ -237,14 +238,19 @@ async function settleSyntheticDispatch(
   phase: 'not_sent' | 'may_have_sent',
   decisionId: string,
   input: {
-    code: 'CANCELLED' | 'TOOL_DISPATCH_FAILED' | 'TOOL_DISPATCH_NOT_SENT' | 'TOOL_OUTCOME_UNKNOWN'
+    code: string
     message: string
+    structured?: JsonValue
+    reconciliation?: EventInput[]
     outcome: EffectOutcome
     cancelledBy?: Actor
     partial?: boolean
   },
 ): Promise<ToolResult> {
-  const result = dispatchErrorResult(input.code, input.message)
+  const result = {
+    ...dispatchErrorResult(input.code, input.message),
+    ...(input.structured ? { structured: input.structured } : {}),
+  }
   await s.transition(
     [
       s.ev(
@@ -254,6 +260,7 @@ async function settleSyntheticDispatch(
           content: toLedgerContent(result.content),
           isError: true,
           code: input.code,
+          ...(input.structured ? { structured: input.structured } : {}),
           ...(input.code === 'CANCELLED'
             ? { partial: input.partial ?? false, cancelledBy: input.cancelledBy ?? s.d.actor }
             : {}),
@@ -263,6 +270,7 @@ async function settleSyntheticDispatch(
         { sourceEventSeqs: [call.argsSeq] },
       ),
       effect.settle(input.outcome),
+      ...(input.reconciliation ?? []),
     ],
     (cur) =>
       updateCall(cur, call.toolUseId, {
@@ -1509,6 +1517,17 @@ export async function approveAndExecute(
           }
         }
       }
+      if (observation.phase === 'rejected_before_effect') {
+        const diagnostic: JsonValue = { ...observation.error, effect: 'none' }
+        return {
+          result: await settleSyntheticDispatch(s, call, effect, attempt, 'not_sent', decisionId, {
+            code: 'TOOL_REJECTED_BEFORE_EFFECT',
+            message: `${observation.error.message}\n${JSON.stringify(diagnostic)}`,
+            structured: diagnostic,
+            outcome: 'error',
+          }),
+        }
+      }
       if (observation.phase !== 'not_sent') break
       await s.transition([], (cur) =>
         updateCall(cur, call.toolUseId, {
@@ -1587,8 +1606,10 @@ export async function approveAndExecute(
           }
         }
         // Code and `unknown` settlement stay: the call may have changed the world, so it is never replayed.
+        const reconciliation = await unknownOutcomeRows(s, call.toolUseId, call.name)
         const result = await settleSyntheticDispatch(s, call, effect, attempt, 'may_have_sent', decisionId, {
           code: 'TOOL_OUTCOME_UNKNOWN',
+          reconciliation,
           message: unknownOutcomeMessage(
             call.name,
             timedOut ? 'timeout' : cancelled ? 'cancelled' : undefined,
@@ -1598,7 +1619,7 @@ export async function approveAndExecute(
         })
         return {
           result,
-          ...(nestedParks[0] ? { park: nestedParks[0] } : {}),
+          ...(reconciliation[0] ? { park: reconciliation[0] } : {}),
         }
       }
       if (timedOut || cancelled) {
@@ -1943,10 +1964,17 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
         ]
       : []
   })
-  // One writer closes the batch. The asks, the step's close and the turn's end are one transaction,
+  // One writer closes the batch. Unrecorded asks, step close and turn end are one transaction;
+  // uncertain results already committed their reconciliation asks with the effect settlement.
   // because a turn left open around an unanswered question is a turn no resume can tell apart from
   // a crash — and a second member writing its own would be writing into a turn already closed.
-  if (parks.length) {
+  const pendingReconciliation = [...s.state.pendingApprovals.values()].some(
+    (asked) =>
+      asked.lane === s.lane &&
+      asked.kind === 'unknown-outcome' &&
+      batch.calls.some((call) => call.toolUseId === asked.toolUseId),
+  )
+  if (parks.length || pendingReconciliation) {
     const cur = s.op() as OpStateObj
     const deferredClosers = deferredJobs.flatMap((job) => {
       const callSeq = s.state.toolCalls.get(job.toolUseId)?.seq
@@ -1977,7 +2005,11 @@ export async function runToolsPhase(s: SessionImpl): Promise<StepOutcome> {
       return rows
     })
     await s.endTurn('parked', {
-      events: [...parks, ...deferredClosers, s.ev('step/end', { turn: cur.meta.turn, step: cur.step })],
+      events: [
+        ...unrecordedParkEvents(s, parks),
+        ...deferredClosers,
+        s.ev('step/end', { turn: cur.meta.turn, step: cur.step }),
+      ],
     })
     return { phase: 'terminal', reason: 'parked' }
   }

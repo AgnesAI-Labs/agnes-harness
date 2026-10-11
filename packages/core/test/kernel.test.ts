@@ -566,31 +566,43 @@ describe('Kernel (fix round 1)', () => {
    */
   it('drives an open-world result into an escalated approval for the next write', async () => {
     const asked: Array<{ tool: string | undefined; taint: boolean }> = []
+    const seams = fakeSeams({
+      approval: {
+        ask: async (req) => {
+          asked.push({ tool: req.tool?.name, taint: req.taint })
+          return { verdict: 'allowed-once' as const, answeredBy: actor }
+        },
+        resume: async () => null,
+      },
+    })
     const k = base({
       provider: fakeProvider([
         toolTurn('fetch_page', {}),
         toolTurn('write_note', { text: 'from the page' }),
         textTurn('done'),
       ]),
-      seams: fakeSeams({
-        approval: {
-          ask: async (req) => {
-            asked.push({ tool: req.tool?.name, taint: req.taint })
-            return { verdict: 'allowed-once' as const, answeredBy: actor }
-          },
-          resume: async () => null,
-        },
-      }),
+      seams,
     })
     k.tools.add(openWorldTool(), { source: 's', trust: 'builtin' })
-    k.tools.add(writeTool(), { source: 's', trust: 'builtin' })
-    const s = await k.session('taint', sessionOpts)
+    let writes = 0
+    k.tools.add(
+      writeTool(async () => {
+        writes++
+        return { content: [{ type: 'text', text: 'written' }] }
+      }),
+      { source: 's', trust: 'builtin' },
+    )
+    const s = await k.session('taint', {
+      ...sessionOpts,
+      workspaceInvocation: testWorkspaceInvocation(testFsOps(), seams),
+    })
     const ops = opHistory(s.d.log)
     await s.enqueue('next-turn', { content: [{ type: 'text', text: 'read the page and note it' }], actor })
     const out = await s.run({ until: 'turn-end', signal: new AbortController().signal })
     expect(out.reason).toBe('completed')
     // Exactly one question, and it is the one the untrusted text made necessary.
     expect(asked).toEqual([{ tool: 'write_note', taint: true }])
+    expect(writes).toBe(1)
     const rows = await s.scan({ fromSeq: 1, limit: 300 })
     const untrusted = rows.filter((e) => e.type === 'tool/result' && e.trust === 'untrusted')
     expect(untrusted).toHaveLength(1)
