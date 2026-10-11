@@ -1196,6 +1196,18 @@ describe('Inference segment', () => {
       kind: 'inference',
       gen: { status: 'retry_wait', attempt: 1, code: 'RATE_LIMIT' },
     })
+    // A retried failure ends no turn, so no turn error ever names it; this row is its only record,
+    // and without it a long wait that was retried reads as a gap nobody can explain.
+    const [effect] = await s.log.scan({ type: 'effect/intent', limit: 5 })
+    expect((await s.log.scan({ type: 'x/core/inference-retry', limit: 5 })).map((e) => e.data)).toEqual([
+      {
+        effectId: (effect?.data as { effectId?: string } | undefined)?.effectId,
+        attempt: 1,
+        code: 'RATE_LIMIT',
+        message: 'slow',
+        notBefore: new Date(now + 1000).toISOString(),
+      },
+    ])
     // The interrupted attempt is still billed, and its effect is settled rather than left pending.
     expect((await s.log.scan({ type: 'cost/ledger', limit: 5 }))[0]?.data).toMatchObject({
       interrupted: true,

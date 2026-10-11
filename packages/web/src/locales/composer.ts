@@ -40,6 +40,10 @@ export const composerLocaleCatalog: LocaleCatalog = {
       'The model reply reached its output allowance and this turn stopped. Ask for step-by-step output, or raise the output allowance.',
     'session.error.rateLimit':
       'The model service returned a rate limit (HTTP 429). Retry later; if it persists, check the account quota or contact the model provider.',
+    'session.error.transport':
+      'The request to the model service failed (network or service error). Check the network or proxy and try again; the failed turn shows where it failed.',
+    'session.error.timeout':
+      'The model service did not answer in time. Check the network or proxy, or try again later; the failed turn shows which timeout fired.',
     'session.error.internal': 'The backend could not complete the request. Try again later.',
     'session.error.diagnosticId': ' Diagnostic ID: {id}',
     'session.error.diagnosticUnavailable': ' Diagnostic records could not be saved.',
@@ -86,6 +90,10 @@ export const composerLocaleCatalog: LocaleCatalog = {
       '模型回复达到输出额度，本轮已停止。请要求分步生成，或调整请求输出额度后继续。',
     'session.error.rateLimit':
       '模型服务返回限流错误（HTTP 429）。请稍后重试；若持续出现，请检查该账号的服务额度或联系模型服务方。',
+    'session.error.transport':
+      '模型服务请求失败（网络或服务端错误）。请检查网络或代理后重试；失败的回合会显示出错的环节。',
+    'session.error.timeout':
+      '模型服务未能在时限内响应。请检查网络或代理，或稍后重试；失败的回合会显示触发的是哪种超时。',
     'session.error.internal': '后台未能完成请求，请稍后重试。',
     'session.error.diagnosticId': ' 诊断编号：{id}',
     'session.error.diagnosticUnavailable': ' 诊断记录未能保存。',

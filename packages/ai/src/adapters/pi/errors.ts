@@ -1,5 +1,6 @@
 import type { AiErrorCode } from '@agnes/protocol'
 import { type AssistantMessage, isContextOverflow } from '@earendil-works/pi-ai'
+import { describeNetworkFailure, type NetFailure, networkCodeIn } from './network.js'
 
 export type Classified = { code: AiErrorCode; message: string; retryable: boolean; retryAfterMs?: number }
 
@@ -31,19 +32,30 @@ const TABLE: Array<[RegExp, AiErrorCode, boolean]> = [
  * `contextWindow` comes from the catalogue record for the model the request actually went to. It is
  * what separates an overflow a provider spelled out - which the patterns catch on their own - from
  * one it never mentioned, where the only signal is that the input filled the declared window.
+ *
+ * `net` is what the fetch under this request saw, when it saw a known network failure. It outranks
+ * the text, because the text is the client library's summary of that same failure - "Connection
+ * error." or "terminated" - with the code that says what happened already dropped. Without it, a
+ * known code in the text refines a transport or timeout reading the same way.
  */
-export function classifyPiError(msg: AssistantMessage, contextWindow?: number): Classified {
+export function classifyPiError(msg: AssistantMessage, contextWindow?: number, net?: NetFailure): Classified {
   if (msg.stopReason === 'aborted') return { code: 'ABORTED', message: 'aborted', retryable: false }
   const text = msg.errorMessage ?? ''
   if (isContextOverflow(msg, contextWindow))
     return { code: 'OVERFLOW', message: redact(text), retryable: false }
+  if (net) return describeNetworkFailure(net)
+  // A 5xx means the far end answered, and a code quoted in its text is about its own upstream: a
+  // gateway's 502 that reports a refused connection is still a 502.
+  const seen = /\b5\d{2}\b/.test(text) ? undefined : networkCodeIn(text)
   for (const [re, code, retryable] of TABLE) {
     if (re.test(text)) {
+      if (seen && (code === 'TRANSPORT' || code === 'TIMEOUT')) return describeNetworkFailure(seen)
       const c: Classified = { code, message: redact(text), retryable }
       if (code === 'RATE_LIMIT') c.retryAfterMs = retryAfterMs(text)
       return c
     }
   }
+  if (seen) return describeNetworkFailure(seen)
   return { code: 'TRANSPORT', message: redact(text), retryable: false }
 }
 
@@ -58,7 +70,8 @@ function retryAfterMs(text: string): number {
  * fragment, sometimes the key itself - and these messages are going into an event that is stored
  * and displayed. So nothing is forwarded: the text is replaced by the two facts that are useful for
  * diagnosis and safe to keep, a status code and a request id, both matched out of the original
- * rather than copied through.
+ * rather than copied through. A failure below HTTP has neither, and is described from its network
+ * code instead (see `describeNetworkFailure`).
  */
 export function redact(text: string): string {
   const status = /\b([1-5]\d{2})\b/.exec(text)?.[1]

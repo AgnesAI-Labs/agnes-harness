@@ -141,6 +141,9 @@ export function errorNotice(
     return t('session.error.outputLimit')
   if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'RATE_LIMIT')
     return t('session.error.rateLimit')
+  if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'TRANSPORT')
+    return t('session.error.transport')
+  if (message === 'INTERNAL_ERROR (-32603)' && turnErrorCode === 'TIMEOUT') return t('session.error.timeout')
   if (message !== 'INTERNAL_ERROR (-32603)') return message
   const id =
     typeof diagnosticId === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(diagnosticId)
