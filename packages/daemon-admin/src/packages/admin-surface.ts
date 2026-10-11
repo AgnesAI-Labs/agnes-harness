@@ -87,8 +87,6 @@ export type AdminSurfaceLink = Readonly<{
 
 export type AdminSurfaceOptions = {
   origin: string
-  /** @deprecated Ignored legacy input; local admin access is exact-origin/Host bound. */
-  token?: string
   profile: string
   clientId: string
   permissions?: readonly PackageAdminPermission[]

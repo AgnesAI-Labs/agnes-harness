@@ -153,7 +153,6 @@ describe('search configured through the admin surface', () => {
     handler = createAdminSurface({
       searchAdmin,
       origin: admin.origin,
-      token: 'search-session-token',
       profile: 'local-dev',
       clientId: 'admin-web',
       invoke: async () => ({ packages: [] }),
@@ -286,7 +285,6 @@ describe('search configured through the admin surface', () => {
     handler = createAdminSurface({
       searchAdmin,
       origin: admin.origin,
-      token: 'search-session-token',
       profile: 'local-dev',
       clientId: 'admin-web',
       invoke: async () => ({ packages: [] }),

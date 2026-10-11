@@ -45,7 +45,6 @@ async function server(
   handler = createAdminSurface({
     ...selectionOptions,
     origin,
-    token,
     profile: 'local-dev',
     clientId: 'admin-web',
     invoke,
@@ -170,7 +169,6 @@ describe('local package admin surface trust boundary', () => {
     expect(() =>
       createAdminSurface({
         origin: 'http://127.0.0.1:43210',
-        token: 'context-token',
         profile: 'local-dev',
         clientId: 'admin-web',
         features: ['Packages.Not-Canonical'],

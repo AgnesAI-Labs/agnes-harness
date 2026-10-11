@@ -92,7 +92,6 @@ it('installs actual bytes through authenticated HTTP → Node SDK → shared han
   }
   admin = createAdminSurface({
     origin,
-    token: 'local-lifecycle-test-token',
     profile: 'local-dev',
     clientId: 'admin-web',
     invoke,
