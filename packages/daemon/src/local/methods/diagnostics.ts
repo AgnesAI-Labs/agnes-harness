@@ -3,6 +3,7 @@ import { release } from 'node:os' // guards-allow-platform: diagnostics report
 import { join } from 'node:path'
 import { redactDetail } from '@agnes/host'
 import {
+  type DiagnosticsCollectParams,
   type DiagnosticsCollectResult,
   type DiagnosticsEventsParams,
   type DiagnosticsEventsResult,
@@ -10,6 +11,7 @@ import {
   rpcError,
 } from '@agnes/protocol'
 import type { Registry } from '../../registry.js'
+import { RUNTIME_LOG } from '../../runtime-log.js'
 import type { CallContext, LocalEndpoint } from '../endpoint.js'
 import type { SessionEntry } from '../sessions.js'
 
@@ -17,7 +19,9 @@ import type { SessionEntry } from '../sessions.js'
 declare const AGNES_VERSION: string | undefined
 
 const TAIL_BYTES = 1024 * 1024
-const LOGS = ['daemon.jsonl', 'host.jsonl'] as const
+// `daemon.jsonl` is the request audit: failed requests only. The runtime log is opt-in, because a
+// client built before it existed rejects a result that carries a third log.
+const AUDITS = ['daemon.jsonl', 'host.jsonl'] as const
 type Log = DiagnosticsCollectResult['logs'][number]
 
 // Same semantics as cli/src/commands/export.ts sanitizeExportValue; the daemon does not depend on cli.
@@ -55,28 +59,48 @@ function redactLine(line: string): string {
   }
 }
 
-async function readTail(dataDir: string | undefined, name: Log['name']): Promise<Log> {
-  const missing: Log = { name, size: 0, text: '', truncated: false, missing: true }
-  if (dataDir === undefined) return missing
+/** The last `maxBytes` of a file as whole lines, or undefined when there is no such file. */
+async function readSpan(
+  file: string,
+  maxBytes: number,
+): Promise<{ size: number; lines: string[]; cut: boolean } | undefined> {
   let fh: Awaited<ReturnType<typeof open>>
   try {
-    fh = await open(join(dataDir, 'audit', name), 'r')
+    fh = await open(file, 'r')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return missing
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
     throw error
   }
   try {
     const { size } = await fh.stat()
-    const start = Math.max(0, size - TAIL_BYTES)
+    const start = Math.max(0, size - Math.max(0, maxBytes))
     const buf = Buffer.alloc(size - start)
     const { bytesRead } = await fh.read(buf, 0, buf.length, start)
     let text = buf.subarray(0, bytesRead).toString('utf8')
     // A tail that starts mid-file starts mid-line: drop everything up to the first newline.
     if (start > 0) text = text.slice(text.indexOf('\n') + 1 || text.length)
-    const lines = text.split('\n').filter((line) => line.length > 0)
-    return { name, size, text: lines.map(redactLine).join('\n'), truncated: start > 0, missing: false }
+    return { size, lines: text.split('\n').filter((line) => line.length > 0), cut: start > 0 }
   } finally {
     await fh.close()
+  }
+}
+
+/** `rotated`: a log bounded by rotation, whose previous generation fills a short live file's window. */
+async function readTail(dataDir: string | undefined, name: Log['name'], rotated = false): Promise<Log> {
+  const missing: Log = { name, size: 0, text: '', truncated: false, missing: true }
+  if (dataDir === undefined) return missing
+  const live = await readSpan(join(dataDir, 'audit', name), TAIL_BYTES)
+  const older = rotated
+    ? await readSpan(join(dataDir, 'audit', `${name}.1`), TAIL_BYTES - (live?.size ?? 0))
+    : undefined
+  if (!live && !older) return missing
+  const lines = [...(older?.lines ?? []), ...(live?.lines ?? [])]
+  return {
+    name,
+    size: (live?.size ?? 0) + (older?.size ?? 0),
+    text: lines.map(redactLine).join('\n'),
+    truncated: Boolean(live?.cut || older?.cut),
+    missing: false,
   }
 }
 
@@ -90,10 +114,12 @@ export function registerDiagnostics(
 ): void {
   endpoint.register(
     '_agnes/v1/diagnostics.collect',
-    async (_params, c): Promise<DiagnosticsCollectResult> => {
+    async (request, c): Promise<DiagnosticsCollectResult> => {
       localOwner(c)
       const logs: Log[] = []
-      for (const name of LOGS) logs.push(await readTail(deps.dataDir, name))
+      for (const name of AUDITS) logs.push(await readTail(deps.dataDir, name))
+      if ((request as DiagnosticsCollectParams).runtimeLog === true)
+        logs.push(await readTail(deps.dataDir, RUNTIME_LOG, true))
       return {
         collectedAt: new Date(c.clock()).toISOString(),
         agh: { version: typeof AGNES_VERSION === 'string' ? AGNES_VERSION : 'dev' },

@@ -174,10 +174,12 @@ const RUNTIME_SCRIPT = `
   function renderLogs() {
     var root = document.getElementById('tab-logs');
     if (!bundle.logs) { notIncluded(root); return; }
-    ['daemon', 'host', 'browser'].forEach(function (key) {
+    ['runtime', 'requestAudit', 'host', 'browser'].forEach(function (key) {
       var value = bundle.logs[key];
       if (!value) return;
-      root.appendChild(el('h3', key));
+      root.appendChild(el('h3', L.logs[key].title));
+      // Says what the log holds, so an empty request audit is not read as an empty daemon log.
+      if (L.logs[key].hint) root.appendChild(el('p', L.logs[key].hint));
       if (key === 'browser') {
         var lines = (value.entries || []).map(function (entry) {
           return '[' + entry.ts + '] ' + entry.level + ' ' + entry.text;

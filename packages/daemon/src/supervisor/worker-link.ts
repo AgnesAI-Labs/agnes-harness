@@ -87,6 +87,8 @@ export class WorkerLink {
   >()
   private nextId = 1
   alive = true
+  /** Why this side closed the link; unset when the worker went away first. */
+  closeReason: string | undefined
   private readonly exitHandlers: Array<() => void> = []
   private readonly frameChains = new Map<string, Promise<void>>()
   private readonly failedSessions = new Set<string>()
@@ -119,7 +121,10 @@ export class WorkerLink {
       for (const frame of frames) this.enqueue(frame)
     })
     socket.on('close', () => this.markDead())
-    socket.on('error', () => this.markDead())
+    socket.on('error', (error: NodeJS.ErrnoException) => {
+      if (this.alive) this.closeReason ??= `socket error ${error.code ?? error.name}`
+      this.markDead()
+    })
   }
 
   private enqueue(frame: WorkerToSupervisor): void {
@@ -431,6 +436,7 @@ export class WorkerLink {
 
   close(reason: string): void {
     if (!this.alive) return
+    this.closeReason = reason
     this.send({ kind: 'close', reason })
     this.socket.end()
     this.markDead()

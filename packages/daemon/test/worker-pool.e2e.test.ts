@@ -15,7 +15,7 @@ import { NoticeSink } from '../src/local/notice.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
 import { encodeFrame } from '../src/supervisor/framing.js'
 import { listenUnix } from '../src/supervisor/socket.js'
-import { WorkerPool } from '../src/supervisor/worker-pool.js'
+import { type WorkerLifecycleRecord, WorkerPool } from '../src/supervisor/worker-pool.js'
 import { sqliteTables } from './sqlite-tables.js'
 import { workspaceBinding } from './workspace-authority.js'
 
@@ -37,6 +37,19 @@ const fakeWorker = fileURLToPath(new URL('./fake-worker.ts', import.meta.url))
 // daemon's own default (30 s), and each test allows 60 s to leave room for it.
 const REAL_WORKER_STARTUP_MS = DEFAULT_LIMITS.workerStartupMs
 const exitingWorker = fileURLToPath(new URL('./fixtures/exiting-worker.mjs', import.meta.url))
+const stderrExitingWorker = fileURLToPath(new URL('./fixtures/stderr-exiting-worker.mjs', import.meta.url))
+
+async function lifecycleRecord(
+  records: WorkerLifecycleRecord[],
+  kind: WorkerLifecycleRecord['kind'],
+): Promise<WorkerLifecycleRecord> {
+  for (let waited = 0; waited < 5_000; waited += 20) {
+    const found = records.find((record) => record.kind === kind)
+    if (found) return found
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  throw new Error(`no ${kind} record`)
+}
 
 const workerSocket = (dir: string): string =>
   process.platform === 'win32' ? `\\\\.\\pipe\\${basename(dir)}-workers` : join(dir, 'w.sock')
@@ -501,6 +514,117 @@ describe('WorkerPool', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   }, 5_000)
+
+  it('records a worker that dies before hello with its exit code and the stderr it left', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-exit-record-'))
+    const profileFile = join(dir, 'profile.json')
+    writeFileSync(profileFile, JSON.stringify({ name: 'p', hash: 'h1' }))
+    const records: WorkerLifecycleRecord[] = []
+    const pool = new WorkerPool({
+      config: {
+        profileName: 'p',
+        dataDir: dir,
+        socketPath: join(dir, 'a.sock'),
+        workersSocketPath: join(dir, 'never-listening.sock'),
+        limits: { ...DEFAULT_LIMITS, workerStartupMs: 30_000 },
+      },
+      profile: { name: 'p', hash: 'h1' } as never,
+      profileFile,
+      execPath: process.execPath,
+      workerEntry: stderrExitingWorker,
+      clock: () => 0,
+      onEvent: () => undefined,
+      onRequest: async () => undefined,
+      onLifecycle: (record) => records.push(record),
+      notices: { emit() {} },
+    })
+    try {
+      await expect(acquire(pool, 'agnes:t:a:x:dm:exit-record')).rejects.toThrow(
+        /exited before hello \(code 7\)/,
+      )
+      const exited = await lifecycleRecord(records, 'worker.exited')
+      expect(exited.detail).toMatchObject({
+        worker: '@shared',
+        code: 7,
+        signal: null,
+        phase: 'startup',
+        expected: false,
+        link: 'never connected',
+        sessions: [],
+      })
+      expect(exited.kind === 'worker.exited' && exited.detail.stderr).toEqual([
+        'worker boot failed: cannot load module',
+        'at load (worker.mjs:1:1)',
+      ])
+      expect((await lifecycleRecord(records, 'worker.start_failed')).detail).toMatchObject({
+        worker: '@shared',
+        reason: expect.stringMatching(/exited before hello/),
+      })
+    } finally {
+      pool.killAll()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 10_000)
+
+  it('records a live shared worker crash with the sessions it carried', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-crash-record-'))
+    const profileFile = join(dir, 'profile.json')
+    writeFileSync(profileFile, JSON.stringify({ name: 'p', hash: 'h1' }))
+    const config: DaemonConfig = {
+      profileName: 'p',
+      dataDir: dir,
+      socketPath: join(dir, 'a.sock'),
+      workersSocketPath: workerSocket(dir),
+      limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS },
+    }
+    const records: WorkerLifecycleRecord[] = []
+    const pool = new WorkerPool({
+      config,
+      profile: { name: 'p', hash: 'h1' } as never,
+      profileFile,
+      execPath: process.execPath,
+      workerEntry: fakeWorker,
+      execArgv: ['--import', 'tsx'],
+      clock: () => 0,
+      onEvent: () => undefined,
+      onRequest: async () => undefined,
+      onLifecycle: (record) => records.push(record),
+      notices: { emit() {} },
+    })
+    const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
+    try {
+      await Promise.all([
+        acquire(pool, 'agnes:t:a:x:dm:crash-a', { cwd: dir }),
+        acquire(pool, 'agnes:t:a:x:dm:crash-b', { cwd: dir }),
+      ])
+      const link = pool.businessWorker()?.link
+      const command = link?.command.bind(link) as unknown as (
+        method: string,
+        params: object,
+      ) => Promise<unknown>
+      await command('crash', {}).catch(() => undefined)
+      const exited = await lifecycleRecord(records, 'worker.exited')
+      expect(exited.detail).toMatchObject({
+        worker: '@shared',
+        code: 1,
+        phase: 'running',
+        expected: false,
+        link: 'closed by the worker side',
+      })
+      expect(exited.kind === 'worker.exited' && [...exited.detail.sessions].sort()).toEqual([
+        'agnes:t:a:x:dm:crash-a',
+        'agnes:t:a:x:dm:crash-b',
+      ])
+      expect(exited.kind === 'worker.exited' && exited.detail.stderr).toContain(
+        'fake worker: crashing on request',
+      )
+      expect(records.some((record) => record.kind === 'worker.start_failed')).toBe(false)
+    } finally {
+      await pool.closeAll(1_000).catch(() => undefined)
+      await server.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
 
   it('spawns a real worker, gates it, answers a ping, and quarantines after three qualifying crashes', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-'))
@@ -968,6 +1092,7 @@ describe('WorkerPool', () => {
     writeFileSync(profileFile, JSON.stringify({ name: 'p', hash: 'h1' }))
     let now = 0
     const notices: string[] = []
+    const records: WorkerLifecycleRecord[] = []
     const config: DaemonConfig = {
       profileName: 'p',
       dataDir: dir,
@@ -985,6 +1110,7 @@ describe('WorkerPool', () => {
       clock: () => now,
       onEvent: () => undefined,
       onRequest: async () => undefined,
+      onLifecycle: (record) => records.push(record),
       notices: { emit: (kind) => notices.push(kind) },
     })
     const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
@@ -999,6 +1125,14 @@ describe('WorkerPool', () => {
       expect(pool.businessWorker()?.link.alive).toBe(true)
       expect(notices).not.toContain('worker_crashed')
       expect(notices).not.toContain('worker_quarantined')
+      await pool.closeAll(1_000)
+      // A shutdown retires the worker on purpose, and the record says the daemon closed it.
+      expect((await lifecycleRecord(records, 'worker.exited')).detail).toMatchObject({
+        worker: '@shared',
+        phase: 'running',
+        expected: true,
+        link: 'shutdown',
+      })
     } finally {
       await pool.closeAll(1_000)
       await server.close()

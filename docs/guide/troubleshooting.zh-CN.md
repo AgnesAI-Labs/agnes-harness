@@ -49,4 +49,6 @@ node packages/cli/dist/local/agnes.mjs doctor provider --json
 
 意外 daemon 错误可能附 `diagnosticId`；用它匹配所选 dataDir 下 `audit/daemon.jsonl` 的记录。审计写入失败时可能返回 `diagnosticUnavailable`，不能因此声称不存在错误。记录应只含安全的 method/code/时间等，分享前仍检查私有上下文。
 
+`audit/daemon.jsonl` 是请求审计，只记录失败的请求；文件为空表示没有请求失败，不表示 daemon 没有日志。工作进程退出（退出码或信号、它承载的会话、它最后写到 stderr 的几行）、工作进程启动失败、会话中断及原因、工作进程日志，以及 daemon 的启动、停止、崩溃和错误，记在同一 dataDir 下的 `audit/runtime.jsonl`。该日志与审计一样脱敏，超过 2 MiB 前轮转为 `audit/runtime.jsonl.1`，不保留更早的一代。一次 daemon 启动之前若没有停止记录，说明上一个 daemon 未经关闭流程就结束了。Web 诊断包分别以 `logs/daemon-runtime.jsonl` 和 `logs/daemon-request-audit.jsonl` 收录两者。运行日志出现之前的旧 daemon 无法提供它，诊断包会提示 `runtime.jsonl` 不可用。
+
 没有自动修复所有 home 迁移的命令。不要删除 owner、锁、SQLite 或回滚快照来让错误消失。要做版本切换，先结束任务、停止对应后台并备份自有数据，再按[安装指南](install.zh-CN.md)启动完整新分发。
