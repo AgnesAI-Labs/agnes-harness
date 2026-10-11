@@ -105,8 +105,8 @@
   outline-offset: -2px;
   border-radius: var(--radius-control);
 }
-.settings-shell .settings-nav-group [hidden],
-.settings-shell #settings-search-empty[hidden] {
+#config-form.settings-shell .settings-nav-group [hidden],
+#config-form.settings-shell #settings-search-empty[hidden] {
   display: none;
 }
 .settings-shell #settings-search {
@@ -182,8 +182,8 @@
     grid-column: 1;
     grid-row: 1;
   }
-  .settings-shell[data-settings-view="list"] #settings-content-slots,
-  .settings-shell[data-settings-view="detail"] .settings-rail {
+  #config-form.settings-shell[data-settings-view="list"] #settings-content-slots,
+  #config-form.settings-shell[data-settings-view="detail"] .settings-rail {
     display: none;
   }
   .settings-shell #settings-back,
