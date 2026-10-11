@@ -154,25 +154,44 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
         }
         await lifecycle('invalidate', rowId)
         await lifecycle('prefetch', rowId)
-        mod = await withTimeout(importer(target.entryUrl), timeouts.import, `import ${rowId}`)
-      } catch (error) {
-        if (epoch === state.epoch)
-          fail(
-            rowId,
-            state,
-            error instanceof Error && error.message.includes('timeout') ? 'timeout' : 'import',
-          )
-        return
-      }
-      try {
-        stagedStyles = await prepareStyles(target, timeouts.styles)
+        // Preparation is independent within this module. Settle both sides before failure or
+        // replacement so a late stylesheet cannot escape cleanup; activation stays serial.
+        const [script, styles] = await Promise.allSettled([
+          Promise.resolve().then(() =>
+            withTimeout(importer(target.entryUrl), timeouts.import, `import ${rowId}`),
+          ),
+          Promise.resolve().then(() => prepareStyles(target, timeouts.styles)),
+        ])
+        if (styles.status === 'fulfilled') stagedStyles = styles.value
+        if (script.status === 'rejected' || styles.status === 'rejected') {
+          stagedStyles?.dispose()
+          const error =
+            script.status === 'rejected'
+              ? script.reason
+              : styles.status === 'rejected'
+                ? styles.reason
+                : undefined
+          if (epoch === state.epoch)
+            fail(
+              rowId,
+              state,
+              error instanceof Error && error.message.includes('timeout')
+                ? 'timeout'
+                : script.status === 'rejected'
+                  ? 'import'
+                  : 'styles',
+            )
+          return
+        }
+        mod = script.value
+        stagedStyles = styles.value
       } catch (error) {
         stagedStyles?.dispose()
         if (epoch === state.epoch)
           fail(
             rowId,
             state,
-            error instanceof Error && error.message.includes('timeout') ? 'timeout' : 'styles',
+            error instanceof Error && error.message.includes('timeout') ? 'timeout' : 'import',
           )
         return
       }

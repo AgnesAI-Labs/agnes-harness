@@ -9,8 +9,10 @@ import {
   SlotRegistry,
   ThemeService,
 } from '@agnes/web-client'
+import { Window } from 'happy-dom'
 import { createElement } from 'react'
 import { describe, expect, it, vi } from 'vitest'
+import { prepareDocumentStyles } from '../src/client-modules/reconcile/styles.js'
 import {
   type ClientRoster,
   createReconciler,
@@ -310,6 +312,96 @@ describe('client reconciler（WC10 前端状态机）', () => {
       'activate:v2',
       'dispose:v2',
     ])
+  })
+
+  it.each([
+    'success',
+    'script-first-fails',
+    'script-last-fails',
+    'styles-first-fail',
+    'styles-last-fail',
+    'revoked',
+  ])('prepares one module concurrently and settles both resources: %s', async (kind) => {
+    const h = await harness()
+    const log = { loaded: [] as string[], disposed: [] as string[] }
+    stubPlugin(h.ctx, log)
+    const fixture = new Window({ settings: { disableCSSFileLoading: true } })
+    vi.stubGlobal('document', fixture.document)
+    let scriptDone!: () => void
+    const script = new Promise<void>((done) => {
+      scriptDone = done
+    })
+    let scriptStarted = false
+    let current = roster([styledMod('a', 'v1')])
+    const link = () => fixture.document.querySelector('link[data-plugin="a"]')
+    const stylesDone = () =>
+      link()?.dispatchEvent(new fixture.Event(kind.startsWith('styles-') ? 'error' : 'load'))
+    const reconciler = createReconciler({
+      ctx: h.ctx,
+      source: { list: async () => current },
+      importer: async () => {
+        scriptStarted = true
+        await script
+        if (kind.startsWith('script-')) throw new Error('script unavailable')
+        return { inject: [], apply() {} }
+      },
+      prepareStyles: prepareDocumentStyles,
+    })
+    const loading = reconciler.reconcileNow()
+    try {
+      await vi.waitFor(() => {
+        expect(scriptStarted).toBe(true)
+        expect(link()).not.toBeNull()
+      })
+      expect(link()?.getAttribute('media')).not.toBe('all')
+      let removed: Promise<void> | undefined
+      if (kind === 'revoked') {
+        current = roster([])
+        removed = reconciler.invalidate()
+        await vi.waitFor(() => expect(reconciler.snapshot().get('a')?.phase).toBe('idle'))
+      }
+      const scriptFirst = kind === 'script-first-fails' || kind === 'styles-last-fail'
+      if (scriptFirst) scriptDone()
+      else stylesDone()
+      await Promise.resolve()
+      expect(log.loaded).toEqual([])
+      expect(link()?.getAttribute('media')).not.toBe('all')
+      scriptDone()
+      stylesDone()
+      await loading
+      await removed
+      if (kind === 'success') {
+        expect(reconciler.snapshot().get('a')?.phase).toBe('active')
+        expect(log.loaded).toEqual(['apply:a'])
+        expect(link()?.getAttribute('media')).toBe('all')
+        current = roster([])
+        await reconciler.invalidate()
+      } else {
+        expect(reconciler.snapshot().get('a')).toMatchObject({
+          phase: kind === 'revoked' ? 'idle' : 'failed',
+          revision: undefined,
+          ...(kind === 'revoked'
+            ? {}
+            : {
+                error: {
+                  code: kind.startsWith('script-')
+                    ? 'CLIENT_MODULE_IMPORT_FAILED'
+                    : 'CLIENT_MODULE_STYLES_FAILED',
+                },
+              }),
+        })
+        expect(log.loaded).toEqual([])
+      }
+      expect(link()?.getAttribute('media')).not.toBe('all')
+      expect(fixture.document.querySelectorAll('link[data-plugin]')).toHaveLength(0)
+    } finally {
+      scriptDone()
+      stylesDone()
+      await loading
+      await h.ctx.fiber.dispose()
+      await fixture.happyDOM.abort()
+      vi.unstubAllGlobals()
+    }
   })
 
   it('样式加载失败保留旧版，并允许同 revision 再次触发时重试', async () => {
