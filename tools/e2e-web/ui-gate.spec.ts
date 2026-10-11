@@ -83,6 +83,8 @@ for (const locale of ['en', 'zh-CN'])
         exact: true,
       })
       await expect(add).toBeEnabled()
+      await expect(page.getByTestId('model-slot-fast')).toHaveValue('')
+      await expect(page.getByTestId('model-slot-verifier')).toHaveValue('')
       await quality('accounts', true)
       await add.click()
       const account = page.getByRole('dialog', {
@@ -183,6 +185,7 @@ for (const locale of ['en', 'zh-CN'])
         }
         if (id === 'providers') {
           const disclosures = page.getByTestId('provider-technical-details')
+          await expect(disclosures.first()).toBeVisible()
           expect(await disclosures.count()).toBeGreaterThan(0)
           const excess = await disclosures.evaluateAll((details) =>
             details.map((detail) => {
