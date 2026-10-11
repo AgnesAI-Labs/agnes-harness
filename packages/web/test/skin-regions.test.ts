@@ -117,7 +117,11 @@ describe('skin region hooks', () => {
     // the EXPECTED contract rather than the static markup.
     const packageRoot = resolve(import.meta.dirname, '..')
     const doc = readFileSync(resolve(packageRoot, '../../docs/develop', docName), 'utf8')
-    const listed = new Set([...doc.matchAll(/^\| `([a-z-]+)` \|/gm)].map((match) => match[1] as string))
+    const regionTable = doc.match(/^\| (?:Hook|钩子) \|[^\n]*\n(?:\|[^\n]*\n)+/m)?.[0]
+    expect(regionTable, `${docName}: region contract table is present`).toBeDefined()
+    const listed = new Set(
+      [...(regionTable ?? '').matchAll(/^\| `([a-z-]+)` \|/gm)].map((match) => match[1] as string),
+    )
     const contracted = new Set<string>()
     for (const page of Object.keys(EXPECTED))
       for (const region of Object.keys(EXPECTED[page] as Record<string, readonly [string, number]>))
