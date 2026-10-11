@@ -101,6 +101,8 @@ export function SkillDetailContent({
   const { t } = useUiText(RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog)
   const [priority, setPriority] = useState(String(skill.priority))
   const priorityChanged = priority !== String(skill.priority)
+  const priorityValid =
+    Number.isInteger(Number(priority)) && Number(priority) >= 50 && Number(priority) <= 500
   const removing = skill.lastSafeError?.code === 'SKILL_REMOVAL_PENDING'
   return (
     <>
@@ -147,7 +149,10 @@ export function SkillDetailContent({
         )}
         {skill.sourceIdentity.scope !== 'runtime' && !removing && (
           <SettingsDetails title={t('priority.options')}>
-            <Field label={t('priority.label')}>
+            <Field
+              label={t('priority.label')}
+              error={priorityChanged && !priorityValid ? t('priority.invalid') : undefined}
+            >
               <SettingsInput
                 type="number"
                 min={50}
@@ -181,7 +186,7 @@ export function SkillDetailContent({
             {...(action.className ? { className: action.className } : {})}
             danger={action.className?.includes('danger') ?? false}
             disabled={action.disabled ?? false}
-            {...(action.title === undefined ? {} : { title: action.title })}
+            {...(action.title === undefined ? {} : { title: action.title, disabledReason: action.title })}
             onClick={() => onAction(action)}
           >
             {action.label}
@@ -319,7 +324,7 @@ export function McpDetailContent({
             {...(action.className ? { className: action.className } : {})}
             danger={action.className?.includes('danger') ?? false}
             disabled={action.disabled ?? false}
-            {...(action.title === undefined ? {} : { title: action.title })}
+            {...(action.title === undefined ? {} : { title: action.title, disabledReason: action.title })}
             onClick={() => onAction(action)}
           >
             {action.label}

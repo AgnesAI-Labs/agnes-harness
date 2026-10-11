@@ -801,10 +801,15 @@ it('offers permanent skill deletion and validates priority without submitting in
     setter?.call(element, value)
     element.dispatchEvent(new Event('input', { bubbles: true }))
   }
-  setNativeValue(input, '501')
-  action('Save priority')
-  await settle()
-  expect(submitted('skills/priority')).toHaveLength(0)
+  input.closest('details')?.querySelector('summary')?.click()
+  for (const invalid of ['501', '450.5', '']) {
+    setNativeValue(input, invalid)
+    action('Save priority')
+    await settle()
+    expect(submitted('skills/priority')).toHaveLength(0)
+    expect(input.getAttribute('aria-invalid')).toBe('true')
+    expect(input.closest('label')?.textContent).toContain('Enter a whole number from 50 to 500.')
+  }
   setNativeValue(input, '450')
   action('Save priority')
   await vi.waitFor(() => expect(submitted('skills/priority')).toHaveLength(1))

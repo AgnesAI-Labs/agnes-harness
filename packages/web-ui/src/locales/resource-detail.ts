@@ -4,6 +4,7 @@ export const RESOURCE_DETAIL_LOCALE_NAMESPACE = '@agnes/web-ui/resource-detail'
 
 export const resourceDetailLocaleCatalog: LocaleCatalog = {
   en: {
+    'priority.invalid': 'Enter a whole number from 50 to 500.',
     technical: 'Technical details',
     'priority.options': 'Advanced options',
     ...resourceFailureCatalog.en,
@@ -37,6 +38,7 @@ export const resourceDetailLocaleCatalog: LocaleCatalog = {
     'mcp.edit': 'Edit',
   },
   'zh-CN': {
+    'priority.invalid': '请输入 50–500 的整数。',
     technical: '技术详情',
     'priority.options': '高级选项',
     ...resourceFailureCatalog['zh-CN'],
