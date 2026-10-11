@@ -37,6 +37,8 @@ This package exports \`dist/index.js\`. Build it with the source-preview SDK lin
 
 ## Optional compilation and author tests
 
+If the source preview has no agh command, replace agh in the examples with node /absolute/path/to/agnes-harness/agnes.mjs, keeping the daemon workspace as your working directory.
+
 The preview Agnes SDK packages are not on npm. Use an installed source checkout to supply types and testkit modules through their public package names; do not run npm install to fetch them. Replace both absolute paths below. From the checkout:
 
 \`\`\`sh
@@ -46,7 +48,7 @@ cd "$AGH_SOURCE"
 nice -n 10 pnpm exec tsc -b packages/plugin-runtime packages/protocol packages/resource-control-runtime
 node templates/link-local.mjs "$AGH_PLUGIN"
 npm --prefix "$AGH_PLUGIN" run build
-agh plugin test "$AGH_PLUGIN"
+node "$AGH_SOURCE/agnes.mjs" plugin test "$AGH_PLUGIN"
 \`\`\`
 
 The linker is safe to repeat and uses the checkout's dependencies and built declarations. Edit \`agnes.kinds\` and \`agnes.capabilities\` when you add functionality or side effects. See the [extension quickstart](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/docs/extend/quickstart.md).

@@ -38,6 +38,7 @@ describe('plugin scaffolder', () => {
         expect(readme).toContain('agh dev .agh/plugins/local-plugin')
         expect(readme).toContain('agh plugins reload local-plugin')
         expect(readme).toContain('node templates/link-local.mjs "$AGH_PLUGIN"')
+        expect(readme).toContain('node "$AGH_SOURCE/agnes.mjs" plugin test "$AGH_PLUGIN"')
         expect(readme).not.toMatch(/__[A-Z_]+__|npm install\n|start\/restart/)
         expect(await readFile(join(target, 'src/index.ts'), 'utf8')).not.toMatch(
           /__PACKAGE_NAME__|__TOOL_NAME__|__SKILL_NAME__|\.\.\/.*packages\//,
@@ -68,12 +69,10 @@ describe('plugin scaffolder', () => {
     }
   })
 
-  it.each(
-    ['tool', 'loop', 'model-adapter'].flatMap((kind) => [
-      { kind, local: false },
-      { kind, local: true },
-    ]),
-  )(
+  it.each([
+    ...['tool', 'loop', 'model-adapter'].map((kind) => ({ kind, local: false })),
+    ...templateNames.map((kind) => ({ kind, local: true })),
+  ])(
     'runs a $kind template outside the workspace (local=$local)',
     async ({ kind, local }) => {
       const temp = await mkdtemp(join(tmpdir(), 'agh-template-build-'))
@@ -81,9 +80,9 @@ describe('plugin scaffolder', () => {
         const target = await scaffold(kind, '@acme/hello', join(temp, 'plugin'), { local })
         await linkLocal(target)
         await linkLocal(target) // repeating a partial/completed link is supported
-        const run = (script: string) => {
+        const run = (script: string, args: string[] = []) => {
           try {
-            return execFileSync('npm', ['run', script], {
+            return execFileSync('npm', ['run', script, ...args], {
               cwd: target,
               encoding: 'utf8',
               timeout: 20000,
@@ -101,7 +100,11 @@ describe('plugin scaffolder', () => {
           }
         }
         if (!local) expect(run('build')).toContain('tsc')
-        expect(run('test')).toContain('pass 1')
+        expect(run('test')).toContain(`pass ${kind === 'tool-with-panel' ? 2 : 1}`)
+        if (kind === 'tool' && local)
+          expect(run('test', ['--', '--test-name-pattern=does-not-match-any-test'])).not.toContain(
+            'register, invoke, reject invalid inputs and unload',
+          )
       } finally {
         await rm(temp, { recursive: true, force: true })
       }

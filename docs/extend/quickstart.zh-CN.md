@@ -23,7 +23,7 @@ node "$AGH_SOURCE/templates/create-agh-plugin.mjs" tool hello-tool .agh/plugins/
 
 包入口是 `./src/index.ts`。AGH 用 jiti 按需转译，并提供公共作者 SDK 和 TypeBox。也可以放到 `$AGH_HOME/plugins/hello-tool`，每个终端使用同一个配置 home。本地目录意味着选择信任并执行其中代码，只放你愿意运行的插件。
 
-工具模板声明 `agnes.kinds: ["tool"]` 与 `agnes.capabilities: {}`，预览无需执行代码即可展示类型与请求的能力范围。新增功能或副作用时请更新这些声明；面板模板声明 UI 能力，Loop 模板声明模型能力。
+工具模板声明 `agnes.kinds: ["tool"]` 与 `agnes.capabilities: {}`，预览无需执行代码即可展示类型与请求的能力范围。新增功能或副作用时请更新这些声明；面板模板声明 UI 能力，Loop 模板声明模型能力。能力字段的完整格式和示例见[声明能力](../guide/packages.zh-CN.md#能力声明)；空对象适合此纯回声工具，增加文件、网络或进程访问前应按实际范围声明。
 
 ## 2. 启动并打开新会话
 
@@ -48,7 +48,7 @@ Web 中新建会话，选择 **Demo (local tool-aware, no API key)**，提交 `c
 
 ## 3. 修改并重试
 
-修改 `src/index.ts`。保留 `ctx.signal.throwIfAborted()`，异步操作传入 signal。预期业务拒绝用 `toolError('message')`；客户端和订阅通过 `ctx.effect()` 释放。
+在工作区编辑 `.agh/plugins/hello-tool/src/index.ts`，例如在返回结果前加上 ``message = `hot-v2:${message}` ``。再次提交 `call plugin_hello_tool {"message":"hello"}`，新会话应返回 `hot-v2:hello`。保留 `ctx.signal.throwIfAborted()`，异步操作传入 signal。预期业务拒绝用 `toolError('message')`；客户端和订阅通过 `ctx.effect()` 释放。
 
 运行中的 daemon 会发现新本地目录并监听修改；普通插件改动无需重启，会激活新代际。在 `/admin/plugins` 检查启用错误，也可立即请求重载：
 

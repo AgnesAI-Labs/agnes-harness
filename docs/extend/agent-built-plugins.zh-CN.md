@@ -8,6 +8,19 @@
 
 Agent 创作的文件走 **候选 → 测试 → 人工审阅 → 发布**。Host 将有界纯文本文件集合写入 profile 的私有 `.authoring-candidates` 区。发现流程不会加载它，即使自定义发现根目录指向候选区内部。创建或提交候选不安装、不信任、不启用插件。
 
+## 免密钥 Demo 练习
+
+沿用[快速上手](quickstart.zh-CN.md)的独立 home 和工作区，在 Web 新建 **Demo** 会话，提交 `create a plugin` 并确认保存候选的工具审批。Demo 复制版本匹配的文本统计示例，不会根据需求设计新代码。`agh -p` 没有交互审批处理器，创作调用会被拒绝；不要通过放宽策略绕过。
+
+在候选列表审阅生成的源码和测试，记下返回的 `proposalId`（即 `candidateId`），然后在同一个 Web 会话依次提交以下消息，把 `CANDIDATE_ID` 换成实际值，并逐次确认工具和测试执行审批：
+
+```text
+call plugin_helper_install {"action":"test","proposalId":"CANDIDATE_ID"}
+call plugin_helper_install {"action":"commit","proposalId":"CANDIDATE_ID"}
+```
+
+确认候选为 `state: review`、`tests.state: passed` 且 `tests.count >= 1` 后，再使用下方 CLI 审阅命令。`draft` 的 `reviewHash` 为 `null`，不能直接批准。发布后在新会话提交 `call my_text_stats {"text":"hello world"}`，预期结果为 `{"characters":11,"words":2}`。也可按[成长演示](../../examples/demos/growing-skills/README.zh-CN.md)运行独立的离线练习。
+
 默认 **Plugin Helper** 提供三个工具：
 
 1. `plugin_helper_guide`（`kind: tool|skill|skin`）返回版本匹配的 JavaScript 模板和 Node 合同测试。实现需求后，加强测试，包括无效输入。

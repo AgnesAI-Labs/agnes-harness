@@ -287,6 +287,7 @@ describe('home inspection and startup guidance', () => {
       'EACCES',
       'CONFIG_CREDENTIAL_STORE',
       'E_HOME_VERSION',
+      'E_HOME_UNSAFE',
       'E_DAEMON_SCOPE_CONFLICT',
       'E_DAEMON_BUSY',
       'E_DAEMON_STARTUP_BUSY',
@@ -298,6 +299,11 @@ describe('home inspection and startup guidance', () => {
       expect(zh).toBeTruthy()
       expect(en).not.toBe(zh)
       expect(en + String(zh)).not.toContain('PRIVATE UPSTREAM BODY')
+      if (code === 'E_HOME_UNSAFE') {
+        expect(en).toContain('parent directory')
+        expect(en).toContain('pwd -P')
+        expect(zh).toContain('pwd -P')
+      }
     }
     expect(startupFailure(new Error('unmapped'), {})).toBeUndefined()
   })

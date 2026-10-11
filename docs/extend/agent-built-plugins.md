@@ -8,6 +8,19 @@ Ask a tool-capable model to implement a reusable tool or Skill, including determ
 
 Agent-authored files follow **candidate → tests → human review → publish**. The Host saves bounded text trees in the profile’s private `.authoring-candidates` area. Discovery never loads that area, including when a custom discovery root points inside it. Creating or submitting a candidate does not install, trust or enable it.
 
+## Keyless Demo exercise
+
+Use the isolated home and workspace from the [quickstart](quickstart.md). Create a **Demo** session in Web, submit `create a plugin`, and confirm the tool approval to save its candidate. Demo copies the version-matched text statistics example; it does not design new code for your request. `agh -p` has no interactive permission handler and rejects the authoring call; do not bypass this by weakening policy.
+
+Inspect the generated source and tests in the candidate list. Note the returned `proposalId` (the `candidateId`), then submit these messages in the same Web session, replacing `CANDIDATE_ID` with the actual value and confirming each tool and test-execution approval:
+
+```text
+call plugin_helper_install {"action":"test","proposalId":"CANDIDATE_ID"}
+call plugin_helper_install {"action":"commit","proposalId":"CANDIDATE_ID"}
+```
+
+Before using the CLI review commands below, confirm `state: review`, `tests.state: passed` and `tests.count >= 1`. A draft has `reviewHash: null` and cannot be approved directly. After publication, submit `call my_text_stats {"text":"hello world"}` in a new session; expect `{"characters":11,"words":2}`. The [growing-skills demo](../../examples/demos/growing-skills/README.md) also provides an isolated offline exercise.
+
 The default **Plugin Helper** exposes three tools:
 
 1. `plugin_helper_guide` (`kind: tool|skill|skin`) returns a version-matched JavaScript template and Node contract test. Implement the requested behavior and strengthen the test, including invalid inputs.

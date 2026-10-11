@@ -11,10 +11,12 @@
 ```sh
 npm run build                       # 分发模板先构建；源码模板可跳过
 agh plugin test .
-agh plugin test ./my-plugin -- --test-name-pattern approval
+agh plugin test ./my-plugin -- --test-name-pattern register
 ```
 
 `agh plugin test [folder] [-- <测试运行器参数>]` 薄封装插件已有的 `scripts.test`，使用已安装的 Node/npm 和测试依赖，透传退出码和输出。它使用临时 home，去掉继承的凭据和 Node 注入选项，禁止 npm 下载及 pre/post test 生命周期脚本；不安装依赖、不启动后台。`--` 后的参数交给插件测试运行器。[模板](../../templates/)使用 Node test runner，[知识问答](../../examples/fde/knowledge-qa/)和[运维手册](../../examples/fde/ops-runbook/)使用 Vitest。
+
+模板用 Node 自动发现 `test/*.test.mjs`，因此追加的 `--test-name-pattern` 会作为运行器选项解析；自己编写脚本时将 Node 选项放在文件参数前。筛选后检查实际执行数，零个测试不能证明插件通过。Vitest 使用 `-t` 筛选测试名。
 
 ## 挂载并调用工具
 

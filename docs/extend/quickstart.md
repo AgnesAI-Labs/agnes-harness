@@ -23,7 +23,7 @@ node "$AGH_SOURCE/templates/create-agh-plugin.mjs" tool hello-tool .agh/plugins/
 
 The package exports `./src/index.ts`. AGH transpiles it with jiti and provides the public author SDK imports, including TypeBox. You can also place it in `$AGH_HOME/plugins/hello-tool`; use the same configured home in every terminal. Local folders opt into trusted execution, so put only code you intend to run there.
 
-The tool starter declares `agnes.kinds: ["tool"]` and `agnes.capabilities: {}` so inspection can show its type and requested capability scope without executing it. Update these declarations when adding functionality or side effects; the panel starter declares UI access and the loop starter declares model access.
+The tool starter declares `agnes.kinds: ["tool"]` and `agnes.capabilities: {}` so inspection can show its type and requested capability scope without executing it. Update these declarations when adding functionality or side effects; the panel starter declares UI access and the loop starter declares model access. See [capability declarations](../guide/packages.md#capabilities) for the field format and examples; the empty object suits this pure echo tool. Declare the actual scope before adding file, network or process access.
 
 ## 2. Start AGH and open a new session
 
@@ -48,7 +48,7 @@ In Web, create a new session using **Demo (local tool-aware, no API key)** and s
 
 ## 3. Edit and try again
 
-Edit `src/index.ts`. Keep `ctx.signal.throwIfAborted()` and pass its signal into asynchronous work. Use `toolError('message')` for expected business refusal, and release clients/subscriptions through `ctx.effect()`.
+Edit `.agh/plugins/hello-tool/src/index.ts` in the workspace, for example by adding ``message = `hot-v2:${message}` `` before the return. Submit `call plugin_hello_tool {"message":"hello"}` again; a new session should return `hot-v2:hello`. Keep `ctx.signal.throwIfAborted()` and pass its signal into asynchronous work. Use `toolError('message')` for expected business refusal, and release clients/subscriptions through `ctx.effect()`.
 
 The running daemon discovers new local folders and watches edits. Ordinary plugin changes activate a new generation without restart. Check `/admin/plugins` for activation errors, or request an immediate reload:
 

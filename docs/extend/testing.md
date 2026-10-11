@@ -11,10 +11,12 @@ Business agents can ship as plugins with offline, repeatable author tests. Impor
 ```sh
 npm run build                       # distribution starters; source starters can skip this
 agh plugin test .
-agh plugin test ./my-plugin -- --test-name-pattern approval
+agh plugin test ./my-plugin -- --test-name-pattern register
 ```
 
 `agh plugin test [folder] [-- <runner arguments>]` is a thin wrapper around the package's existing `scripts.test` using installed Node/npm and test dependencies. It propagates the runner's exit code, streams output, uses a temporary home, strips inherited credentials and Node injection options, and disables npm downloads and pre/post test lifecycle scripts. It does not install dependencies or start the backend. Arguments after `--` belong to your runner. The [starters](../../templates/) use Node's test runner; the [knowledge QA](../../examples/fde/knowledge-qa/) and [ops runbook](../../examples/fde/ops-runbook/) examples use Vitest.
+
+The starters let Node discover `test/*.test.mjs`, so appended `--test-name-pattern` arguments are parsed as runner options. In your own scripts, put Node options before file arguments. Check the executed test count after filtering; zero tests do not establish that the plugin passed. Vitest uses `-t` to filter test names.
 
 ## Mount and invoke a tool
 

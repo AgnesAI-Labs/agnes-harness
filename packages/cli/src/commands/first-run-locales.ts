@@ -18,7 +18,7 @@ const en = {
   version:
     'This home layout is unsupported. Set AGH_HOME to a new empty private directory; existing files were not changed.',
   unsafe:
-    'The home contains unsafe links or files. Check ownership and restore a private regular directory before retrying.',
+    'The home or its parent directory contains unsafe links or files. Use a private regular directory and its physical absolute path (pwd -P on POSIX); check ownership before retrying.',
 } as const
 const zh: Record<keyof typeof en, string> = {
   home: '运行目录',
@@ -34,7 +34,8 @@ const zh: Record<keyof typeof en, string> = {
   writable: 'AGH 运行目录不可写。通过 AGH_HOME 选择私有可写目录，并检查所有者和权限。',
   credentials: '凭据存储不可用或不安全。检查目录权限 0700、文件权限 0600，然后运行 agh doctor。',
   version: '此运行目录的布局不受支持。请通过 AGH_HOME 选择新的私有空目录；已有文件未被修改。',
-  unsafe: '运行目录包含不安全的链接或文件。请检查所有者，并恢复为私有普通目录后重试。',
+  unsafe:
+    '运行目录或其父目录包含不安全的链接或文件。请使用私有普通目录及其真实绝对路径（POSIX 可用 pwd -P），检查所有者后重试。',
 }
 export const firstRunText = (env: Readonly<Record<string, string | undefined>>, key: keyof typeof en) =>
   (env.AGNES_LOCALE === 'zh-CN' ? zh : en)[key]
