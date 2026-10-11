@@ -54,7 +54,7 @@ async function timed<T>(work: () => Promise<T>): Promise<{ value: T; wall: numbe
 
 const home = mkdtempSync(join(tmpdir(), 'agnes-bench-packages-'))
 try {
-  const dataDir = join(home, 'data')
+  const dataDir = join(home, 'store')
   const profileDir = join(home, 'profiles', 'local-dev')
   mkdirSync(profileDir, { recursive: true })
   writeLock(profileDir, {
