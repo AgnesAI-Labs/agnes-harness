@@ -92,7 +92,7 @@ async function openConfiguration(page: Page, runtime: Runtime, locale: 'en' | 'z
   await section(page, 'plugins')
   await page.locator(`.plugin-row[data-plugin-id="${pkg.id}"] .plugin-details-button`).click()
   const tab = page.getByTestId('plugin-config-tab')
-  await expect(tab).toHaveText(locale === 'en' ? 'Configuration' : '配置')
+  await expect(tab).toHaveText(locale === 'en' ? 'Settings' : '设置')
   await tab.click()
   const panel = page.getByTestId('plugin-config-panel')
   const name = panel.getByTestId('plugin-config-field/name')
