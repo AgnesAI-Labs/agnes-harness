@@ -1,11 +1,13 @@
+import { Context } from '@agnes/cordis'
 import type { UiActionParams, UiActionReceipt, UiReadResult } from '@agnes/protocol'
+import { LocaleService, workbenchNavigation, workbenchPanels } from '@agnes/web-client'
 import {
   createAntdRoot,
   createDocumentLocaleSource,
   INTELLIGENT_UI_NAMESPACE,
   intelligentUiCatalog,
 } from '@agnes/web-ui'
-import { useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { questionSurface } from '../../../packages/base/extensions/interaction/src/question.js'
 import { IntelligentUiClient } from '../../../packages/web/src/intelligent-ui/client.js'
 import {
@@ -14,6 +16,7 @@ import {
   type UiPlacementBinding,
 } from '../../../packages/web/src/intelligent-ui/placements.js'
 import type { IntelligentUiServer } from '../../../packages/web/src/intelligent-ui/types.js'
+import { Dock } from '../../../packages/web/src/workbench/dock.js'
 
 // Synthetic authenticated server; production placements/client. No provider or real execution.
 const key = 'question-surface-fixture'
@@ -102,6 +105,8 @@ const server: IntelligentUiServer = {
 const language = new URL(location.href).searchParams.get('locale') === 'zh-CN' ? 'zh-CN' : 'en'
 document.documentElement.lang = language
 const locale = createDocumentLocaleSource({ [INTELLIGENT_UI_NAMESPACE]: intelligentUiCatalog })
+const dockLocale = new LocaleService(new Context(), language)
+dockLocale.register(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
 const client = new IntelligentUiClient('session-question', server, sessionStorage)
 let target: ReturnType<UiPlacementBinding['target']>,
   version = 0
@@ -121,21 +126,30 @@ const binding: UiPlacementBinding = {
     target = { sessionId: client.sessionId, surfaceId, revision }
     version++
     for (const fn of listeners) fn()
+    workbenchNavigation.open('intelligent-ui')
   },
   approval: () => {},
 }
+workbenchPanels.register({
+  id: 'intelligent-ui',
+  order: 1,
+  edge: 'right',
+  titleKey: 'ui.title',
+  component: ({ context }) => <IntelligentPanel binding={binding} context={context} />,
+})
 function Fixture() {
+  const [dockReady, setDockReady] = useState(false)
+  useEffect(() => setDockReady(true), [])
   useSyncExternalStore(client.subscribe, client.getVersion)
   useSyncExternalStore(binding.subscribe, binding.getVersion)
   return (
-    <main>
+    <main className="workbench-split" style={{ overflow: 'auto', height: '100vh' }}>
+      <div id="fixture-controls">
+        {dockReady && (
+          <Dock context={{ t: (key) => dockLocale.t(key), data: { session: { id: client.sessionId } } }} />
+        )}
+      </div>
       <IntelligentInline binding={binding} />
-      {target && (
-        <IntelligentPanel
-          binding={binding}
-          context={{ t: (key) => key, data: { session: { id: client.sessionId } } }}
-        />
-      )}
       <output data-testid="fixture-requests">{JSON.stringify(state.requests)}</output>
       <button
         type="button"
@@ -175,6 +189,12 @@ function Fixture() {
       >
         Deny next collector
       </button>
+      <aside id="workbench-right" hidden>
+        <div id="workbench-right-content" />
+      </aside>
+      <aside id="workbench-bottom" hidden>
+        <div id="workbench-bottom-content" />
+      </aside>
     </main>
   )
 }

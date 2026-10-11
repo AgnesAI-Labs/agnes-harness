@@ -235,7 +235,7 @@ test('UI ask, plan approval, deliverable, child and goal cards perform their act
     page,
     'call ask_user_question {"questions":[{"id":"channel","question":"Choose a delivery channel","options":["Web","Email"],"allowFreeText":true}]}',
   )
-  const question = surfaceCard(page, 'Questions / 问题')
+  const question = await workbenchSurface(page, 'Questions / 问题')
   await question.getByRole('radio', { name: 'Web', exact: true }).check()
   await quality(page, info, 'ask-card')
   await question.getByTestId('ui-action-submit').click()
@@ -315,7 +315,7 @@ test('UI background jobs and schedule cards persist observable results', async (
     page,
     'call schedule_create {"title":"E2E tool reminder","prompt":"Inspect delivery","selector":{"every_seconds":86400}}',
   )
-  await expect(surfaceCard(page, 'Reminder / 提醒')).toContainText('E2E tool reminder')
+  await expect(await workbenchSurface(page, 'Reminder / 提醒')).toContainText('E2E tool reminder')
   await quality(page, info, 'schedule-card')
   await settings(page)
   await section(page, 'jobs')

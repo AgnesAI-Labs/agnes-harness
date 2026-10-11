@@ -57,6 +57,7 @@ for (const locale of ['en', 'zh-CN'])
       '"answers":{"single":"B","multi":["A","B","C"],"text":"Human answer"}',
     )
     await page.reload()
+    await inline.getByTestId('ui-expand').click()
     await expect(card.locator('[data-status=received]')).toBeVisible()
     await expect(card.getByTestId('ui-action-submit')).toBeDisabled()
     await page.getByTestId('fixture-complete').evaluate((button) => (button as HTMLButtonElement).click())
