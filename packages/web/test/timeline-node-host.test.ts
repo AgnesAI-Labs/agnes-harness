@@ -807,16 +807,17 @@ it('preserves complete React cost details, focus and order through the opt-in ti
     model: 'model',
     timing: { ttftMs: 0, durationMs: 2000 },
   }
-  const call = {
+  type Usage = NonNullable<UITurn['usage']>
+  const call: Usage['calls'][number] = {
     id: 'call:1',
     seq: 3,
     purpose: 'inference' as const,
     model: 'model',
     creditSource: 'estimated' as const,
-    tokens: cost.tokens,
-    billing: cost.billing,
-    credits: cost.credits,
-    timing: cost.timing,
+    ...(cost.tokens ? { tokens: cost.tokens } : {}),
+    ...(cost.billing ? { billing: cost.billing } : {}),
+    ...(cost.credits === undefined ? {} : { credits: cost.credits }),
+    ...(cost.timing ? { timing: cost.timing } : {}),
   }
   const disclosed = (
     next: typeof call,
@@ -834,13 +835,13 @@ it('preserves complete React cost details, focus and order through the opt-in ti
     ...(next.timing ? { timing: next.timing } : {}),
     ...('interrupted' in next && next.interrupted ? { interrupted: true } : {}),
   })
-  const usageFor = (next: typeof call) => ({
+  const usageFor = (next: typeof call): Usage => ({
     totals: { input: 1234, output: 20, cacheRead: 10, cacheWrite: 0, reasoning: 5 },
     reasoningComplete: true,
     billingComplete: true,
     calls: [next],
-    cost: next.billing,
-    credits: { amount: next.credits ?? 0, source: next.creditSource, complete: true },
+    ...(next.billing ? { cost: next.billing } : {}),
+    credits: { amount: next.credits ?? 0, source: next.creditSource ?? 'estimated', complete: true },
   })
   const running = turn({ nodeIds: ['user', 'assistant', 'cost'], usage: usageFor(call) })
   await act(async () => mount.render([user, say('assistant', 2), cost], [running]))
