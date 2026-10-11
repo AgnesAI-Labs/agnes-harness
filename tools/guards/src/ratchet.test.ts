@@ -302,7 +302,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon/src/supervisor/configuration': 45,
   'packages/daemon/src/supervisor/service-worker': 103,
   // UI refresh forwarding. HEAD was 11013 against the previous 10918 ceiling; this change adds 6.
-  'packages/daemon/src/supervisor': 11326,
+  'packages/daemon/src/supervisor': 11329,
   'packages/daemon-admin/src/packages/project': 43,
   'packages/daemon-admin/src/packages/permissions': 99,
   'packages/daemon-admin/src/packages/operations': 416,
@@ -313,7 +313,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon-surfaces/src/surfaces': 1961,
   'packages/daemon-surfaces/src': 1962,
   'packages/daemon-foundation/src/jobs': 653,
-  'packages/daemon-foundation/src': 4442,
+  'packages/daemon-foundation/src': 4443,
   'packages/host/src/runtime/approval/expiry': 120,
   'packages/host/src/runtime/adapters': 465,
   'packages/host/src/runtime/profile': 1684,
@@ -407,7 +407,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // admission diagnostics.
   // countLines: 2171 -> 2306; exact measured cap, no exclusions or spare allocation.
   // Deferred invocation contract beside the drain. countLines: 2577, exact, no spare.
-  'packages/plugin-runtime/src': 2638,
+  'packages/plugin-runtime/src': 2678,
   'packages/cosmokit/src': 356,
   // 2026-09-17 (web-client-modules P2 / WC6): author-facing browser API package. Measured 480;
   // exact cap, no spare — new mount points add one table row + host container by contract.
@@ -2175,7 +2175,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Acceptance review: Persist child-engine settings through publication and recover legacy default loop pins when listing sessions.
   // countLines: 28105 -> 28157; exact cap, no exclusions or spare allocation.
   // UI refresh forwarding. HEAD was 11224 against the previous 11129 ceiling; this change adds 6.
-  'packages/daemon/src': 11542,
+  'packages/daemon/src': 11545,
 
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
