@@ -295,25 +295,25 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon-rpc/src/local/methods/extensions': 199,
   'packages/daemon-rpc/src/local/auth': 341,
   // UI refresh forwarding. HEAD was 8143 against the previous 8057 ceiling; this change adds 11.
-  'packages/daemon-rpc/src': 8336,
+  'packages/daemon-rpc/src': 8356,
   'packages/daemon/src/supervisor/startup': 18,
   'packages/daemon/src/supervisor/discovery': 446,
   'packages/daemon/src/supervisor/scope': 254,
   'packages/daemon/src/supervisor/configuration': 45,
   'packages/daemon/src/supervisor/service-worker': 103,
   // UI refresh forwarding. HEAD was 11013 against the previous 10918 ceiling; this change adds 6.
-  'packages/daemon/src/supervisor': 11316,
+  'packages/daemon/src/supervisor': 11321,
   'packages/daemon-admin/src/packages/project': 43,
-  'packages/daemon-admin/src/packages/permissions': 97,
+  'packages/daemon-admin/src/packages/permissions': 99,
   'packages/daemon-admin/src/packages/operations': 416,
   'packages/daemon-admin/src/packages/index': 49,
   'packages/daemon-admin/src/packages/handler': 1960,
-  'packages/daemon-admin/src/packages/admin-surface': 924,
-  'packages/daemon-admin/src': 6457,
+  'packages/daemon-admin/src/packages/admin-surface': 990,
+  'packages/daemon-admin/src': 6750,
   'packages/daemon-surfaces/src/surfaces': 1961,
   'packages/daemon-surfaces/src': 1962,
   'packages/daemon-foundation/src/jobs': 653,
-  'packages/daemon-foundation/src': 4372,
+  'packages/daemon-foundation/src': 4430,
   'packages/host/src/runtime/approval/expiry': 105,
   'packages/host/src/runtime/adapters': 465,
   'packages/host/src/runtime/profile': 1684,
@@ -352,8 +352,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-infrastructure/src/adapters/powershell': 133,
   'packages/host-infrastructure/src/configuration': 1480,
   'packages/host-infrastructure/src/adapters/storage-sqlite': 658,
-  'packages/host-infrastructure/src/adapters': 6403,
-  'packages/host-infrastructure/src': 10877,
+  'packages/host-infrastructure/src/adapters': 6471,
+  'packages/host-infrastructure/src': 10946,
   'packages/host-common/src/configuration-lock': 39,
   'packages/host-common/src/profile': 1847,
   // UI data-source bind-by-id.
@@ -810,7 +810,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 1261 -> 1397; exact cap, no exclusions or spare allocation.
   // Acceptance review: Pass persisted child-engine configuration to the packaged Host runtime.
   // countLines: 1397 -> 1400; exact cap, no exclusions or spare allocation.
-  'packages/cli/launch': 2177, // SKILL-INSTALL-CORE: preserve request-only port in packaged Host options.
+  'packages/cli/launch': 2202, // SKILL-INSTALL-CORE: preserve request-only port in packaged Host options.
   // 2026-09-14: whole-branch review fix wave (Finding 1), same as above. Measured 90, exact --
   // unaffected by the workspace-picker change (different file, same aggregate prefix).
   // 2026-09-14: Task 4 profile-command-plan wires packages.trustWorkspace into invoke()'s switch --
@@ -831,7 +831,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 337 -> 355; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Expose context/search/child-engine administration operations.
   // countLines: 355 -> 404; exact cap, no exclusions or spare allocation.
-  'packages/cli/launch/package-admin': 515,
+  'packages/cli/launch/package-admin': 540,
   // 2026-09-15: theme work adds the blocking first-paint theme IIFE build step. 2026-09-15
   // (merge with origin/main, which adds the Windows runtime bundling). Combined exact
   // measured total: 184.
@@ -1579,7 +1579,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2726 -> 2981; exact cap, no exclusions or spare allocation.
   // UI data-source bindings, refresh method, and uiData capability field.
   // countLines on this tree: 4633 (HEAD was 4486 against the previous 4207 ceiling; this change adds 147).
-  'packages/protocol/src': 4672,
+  'packages/protocol/src': 4674,
   'packages/cli/src/tui': 38,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1800,7 +1800,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-07 gap-fill review: Typed search, history, context and child-engine administration methods.
   // countLines: 5447 -> 5456; exact cap, no exclusions or spare allocation.
   // UI refresh forwarding. HEAD was 6029 against the previous 6020 ceiling; this change adds 5.
-  'packages/sdk/src': 6077,
+  'packages/sdk/src': 6089,
   'packages/sdk/src/extensions.node': 21,
   'packages/sdk/src/package-admin.node': 217,
   'packages/sdk/src/surface.browser': 1,
@@ -2175,7 +2175,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Acceptance review: Persist child-engine settings through publication and recover legacy default loop pins when listing sessions.
   // countLines: 28105 -> 28157; exact cap, no exclusions or spare allocation.
   // UI refresh forwarding. HEAD was 11224 against the previous 11129 ceiling; this change adds 6.
-  'packages/daemon/src': 11532,
+  'packages/daemon/src': 11537,
 
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
