@@ -521,8 +521,32 @@ export class PiAdapter extends WireAdapter {
     const pending = this.ledger.read(ledgerKey)
     const pendingFresh = pending !== undefined && retryAttemptFresh(pending, Date.now())
     if (pending && !pendingFresh) this.forgetAttempt(ledgerKey)
+    let preservePending = pendingFresh && (pending?.resumeAt ?? 0) > Date.now()
     try {
       let attempt = pending !== undefined && pendingFresh ? pending.count : 0
+      if (preservePending) {
+        // A restored server wait consumes the total budget, but is not provider response time.
+        clearTimeout(first)
+        first = undefined
+        const remaining = (pending?.resumeAt ?? 0) - Date.now()
+        const budgetExceeded = remaining > deadline - Date.now()
+        if (!budgetExceeded && !inner.signal.aborted)
+          await Promise.race([this.sleep(remaining, inner.signal), stopped])
+        if (budgetExceeded || inner.signal.aborted) {
+          const aborted = opts.signal.aborted
+          yield {
+            type: 'error',
+            reason: aborted ? 'aborted' : 'error',
+            code: aborted ? 'ABORTED' : 'TIMEOUT',
+            message: aborted ? 'aborted' : 'persisted retry wait exceeds total deadline',
+            retryable: !aborted,
+            ...(!aborted ? { retryAfterMs: Math.max(0, (pending?.resumeAt ?? 0) - Date.now()) } : {}),
+          }
+          return
+        }
+        preservePending = false
+        first = setTimeout(() => inner.abort(), opts.timeoutMs.firstToken)
+      }
       let authRecoveryAttempted = false
       for (;;) {
         // Per attempt, not shared: two streams in flight in one process must not draw tool-call
@@ -792,7 +816,7 @@ export class PiAdapter extends WireAdapter {
       clearTimeout(total)
       if (first) clearTimeout(first)
       opts.signal.removeEventListener('abort', onAbort)
-      this.forgetAttempt(ledgerKey)
+      if (!preservePending) this.forgetAttempt(ledgerKey)
     }
   }
 

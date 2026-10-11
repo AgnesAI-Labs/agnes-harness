@@ -18,6 +18,7 @@ import { toContext } from '../src/adapters/pi/to-context.js'
 import type { WireEvent } from '../src/index.js'
 import { createProvider, NullContractStore, PiAdapter, toPiModel } from '../src/index.js'
 import { fakeModel, fakeRequest } from '../testkit/index.js'
+import { memoryRetryLedger } from '../src/retry.js'
 
 const route = {
   route: 'gw',
@@ -625,6 +626,49 @@ describe('PiAdapter', () => {
     }
     expect(ordinals).toEqual([0, 0, 1, 1])
   })
+
+  it.each(['resume', 'cancel', 'deadline'] as const)(
+    'honors a persisted retry wait on %s before sending',
+    async (outcome) => {
+      vi.useFakeTimers()
+      try {
+        const ledger = memoryRetryLedger()
+        const key = 'k\0gw\0flash'
+        ledger.commit(key, 2, Date.now() + 1500)
+        const ac = new AbortController()
+        const wire = fakeStream([[{ type: 'done', reason: 'stop', message: assistant() }]])
+        const a = bound({ manualRoutes: [route], streamImpl: wire.impl, ledger })
+        const run = collect(
+          a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), {
+            ...opts(ac.signal),
+            timeoutMs: { firstToken: 1000, total: outcome === 'deadline' ? 1000 : 5000 },
+          }),
+        )
+        await vi.advanceTimersByTimeAsync(1499)
+        expect(wire.seen).toHaveLength(0)
+        if (outcome === 'cancel') ac.abort()
+        await vi.advanceTimersByTimeAsync(1)
+        const events = await run
+        if (outcome === 'resume') {
+          expect(wire.seen).toHaveLength(1)
+          expect(events.map((event) => event.type)).toEqual(['usage', 'done'])
+          expect(ledger.read(key)).toBeUndefined()
+        } else {
+          expect(wire.seen).toHaveLength(0)
+          expect(events).toMatchObject([
+            {
+              type: 'error',
+              code: outcome === 'cancel' ? 'ABORTED' : 'TIMEOUT',
+              retryable: outcome !== 'cancel',
+            },
+          ])
+          expect(ledger.read(key)?.count).toBe(2)
+        }
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
 
   it('retries before the first event but never after a delta', async () => {
     const { impl, seen } = fakeStream([
