@@ -10,7 +10,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
 
 /** Workspace-owned durable plan state. revision binds the exact file bytes, including the write nonce. */
@@ -58,12 +58,75 @@ export function readPlanMode(workspaceRoot: string): PlanModeState {
     return (error as NodeJS.ErrnoException).code === 'ENOENT' ? inactive() : blocked()
   }
 }
-/** All writers share the exclusive lock. A stale/busy lock refuses mutation; it never clears a plan. */
+const startToken = `${Math.trunc(Date.now() - process.uptime() * 1000)}-${randomUUID()}`
+type LockOwner = { pid: number; startToken: string }
+function deadOwner(lock: string): LockOwner | undefined {
+  try {
+    const owner = JSON.parse(readFileSync(lock, 'utf8')) as LockOwner
+    if (
+      !Number.isSafeInteger(owner?.pid) ||
+      owner.pid <= 0 ||
+      owner.pid > 2_147_483_647 ||
+      typeof owner.startToken !== 'string' ||
+      !/^\d{1,16}-[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(owner.startToken)
+    )
+      return undefined
+    try {
+      process.kill(owner.pid, 0)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ESRCH') return owner
+    }
+  } catch {
+    // An unreadable/incomplete owner record does not prove that its process is dead.
+  }
+  return undefined
+}
+function releaseLock(lock: string, fd: number): void {
+  try {
+    closeSync(fd)
+  } finally {
+    unlinkSync(lock)
+  }
+}
+function acquireLock(lock: string): number {
+  const create = () => {
+    const fd = openSync(lock, 'wx', 0o600)
+    try {
+      writeFileSync(fd, `${JSON.stringify({ pid: process.pid, startToken })}\n`, { flush: true })
+      return fd
+    } catch (error) {
+      releaseLock(lock, fd)
+      throw error
+    }
+  }
+  try {
+    return create()
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    const owner = deadOwner(lock)
+    if (!owner) throw error
+    // Token-scoped reclaim locks serialize removers. They use the same recovery rule if killed.
+    const reclaim = join(
+      dirname(lock),
+      `.plan-mode-reclaim-${createHash('sha256').update(`${lock}\0${owner.startToken}`).digest('hex')}`,
+    )
+    const fd = acquireLock(reclaim)
+    try {
+      const current = deadOwner(lock)
+      if (!current || current.pid !== owner.pid || current.startToken !== owner.startToken) throw error
+      unlinkSync(lock)
+      return create() // One retry; a competing writer is never removed.
+    } finally {
+      releaseLock(reclaim, fd)
+    }
+  }
+}
+/** All writers share the exclusive lock; only a proven-dead owner permits lock recovery. */
 function mutate(workspaceRoot: string, change: () => PlanModeState | undefined): boolean {
   const path = planModePath(workspaceRoot)
   mkdirSync(join(canonicalPlanWorkspaceRoot(workspaceRoot), AGH_DIR), { recursive: true })
   const lock = `${path}.lock`
-  const fd = openSync(lock, 'wx', 0o600)
+  const fd = acquireLock(lock)
   const temp = `${path}.${randomUUID()}.tmp`
   try {
     const state = change()
@@ -76,11 +139,7 @@ function mutate(workspaceRoot: string, change: () => PlanModeState | undefined):
     try {
       rmSync(temp, { force: true })
     } finally {
-      try {
-        closeSync(fd)
-      } finally {
-        unlinkSync(lock)
-      }
+      releaseLock(lock, fd)
     }
   }
 }

@@ -1,18 +1,40 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ToolDef, ToolPolicyInput } from '@agnes/extension-api'
 import { defaultToolPolicy } from '@agnes/extension-api'
 import { AGH_DIR } from '@agnes/protocol'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import planMode from '../src/index.js'
 import { decidePlanMode } from '../src/policy.js'
-import { applyPlanCommand, clearPlanMode, readPlanMode } from '../src/state.js'
+import { applyPlanCommand, clearPlanMode, planModePath, readPlanMode } from '../src/state.js'
 
 const dirs: string[] = []
 afterEach(() => {
+  vi.restoreAllMocks()
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
+
+it.each(['live', 'unknown', 'malformed'] as const)(
+  'preserves the plan and refuses /plan off when lock owner liveness is %s',
+  (liveness) => {
+    const root = workspace()
+    applyPlanCommand(root, '/plan keep this plan')
+    const path = planModePath(root)
+    const plan = readFileSync(path, 'utf8')
+    const lock =
+      liveness === 'malformed' ? '{' : JSON.stringify({ pid: process.pid, startToken: `0-${randomUUID()}` })
+    writeFileSync(`${path}.lock`, lock)
+    if (liveness === 'unknown')
+      vi.spyOn(process, 'kill').mockImplementation(() => {
+        throw Object.assign(new Error('liveness unavailable'), { code: 'EPERM' })
+      })
+    expect(() => applyPlanCommand(root, '/plan off')).toThrow(expect.objectContaining({ code: 'EEXIST' }))
+    expect(readFileSync(path, 'utf8')).toBe(plan)
+    expect(readFileSync(`${path}.lock`, 'utf8')).toBe(lock)
+  },
+)
 
 function workspace(): string {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-plan-'))
