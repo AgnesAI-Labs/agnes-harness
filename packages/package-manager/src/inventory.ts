@@ -7,17 +7,17 @@ import {
   validatePluginMetadata,
 } from '@agnes/protocol'
 import { PackageError } from './errors.js'
-import { inspectStaged } from './inspect.js'
+import { inspectVerifiedTree } from './inspect.js'
 import { canonical, capabilityHash, freezeData, readStaticJson, snapshotHash } from './integrity.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
 import { readPackagePresentation } from './package-presentation.js'
 import { capabilityPolicyBlockers, readPluginCapabilityPolicy } from './plugin-capabilities.js'
 import type { AgnesPluginKind } from './plugin-manifest.js'
 import {
-  enforcePackageSourcePolicy,
+  enforceSourceConfiguration,
+  officialCatalogVerifier,
   readPackageSourceConfiguration,
   recordProvenance,
-  verifyOfficialCatalog,
 } from './provenance.js'
 import { hashDirectory, packageDir, parseSource } from './sources.js'
 import { previousPackageDir } from './store.js'
@@ -92,8 +92,13 @@ export function verifyPackageDirectory(
     entry.contributions === undefined ||
     entry.treeIntegrity === undefined ||
     !existsSync(directory) ||
-    hashDirectory(directory, { exclude: [] }) !== entry.treeIntegrity
+    !entry.treeIntegrity
   )
+    throw new PackageError('E_LOCK_MISMATCH', 'installed inventory tree differs from lock', {
+      detail: { id },
+    })
+  const treeIntegrity = hashDirectory(directory, { exclude: [] })
+  if (treeIntegrity !== entry.treeIntegrity)
     throw new PackageError('E_LOCK_MISMATCH', 'installed inventory tree differs from lock', {
       detail: { id },
     })
@@ -107,21 +112,24 @@ export function verifyPackageDirectory(
       code: 'E_PACKAGE_PROVENANCE',
     })
   const source = parseSource(entry.source.ref)
-  let checked: ReturnType<typeof inspectStaged>
+  let checked: ReturnType<typeof inspectVerifiedTree>
   try {
-    checked = inspectStaged({
-      dir: directory,
-      source,
-      fetched: {
+    checked = inspectVerifiedTree(
+      {
         dir: directory,
-        version: entry.version,
-        integrity: entry.integrity,
-        license: entry.license,
-        dependencies: entry.dependencies,
-        ...(entry.releasedAt ? { releasedAt: entry.releasedAt } : {}),
+        source,
+        fetched: {
+          dir: directory,
+          version: entry.version,
+          integrity: entry.integrity,
+          license: entry.license,
+          dependencies: entry.dependencies,
+          ...(entry.releasedAt ? { releasedAt: entry.releasedAt } : {}),
+        },
+        ceiling,
       },
-      ceiling,
-    })
+      treeIntegrity,
+    )
   } catch (error) {
     if (isReservedRowIdPackageError(error))
       return { capabilityHash: hash, blockers: [RESERVED_WEB_ROW_BLOCKER] }
@@ -213,6 +221,9 @@ export function readInventory(
 ): InstalledInventory {
   const packages: InstalledPackage[] = [],
     paths = new Set<string>()
+  const capabilityPolicy = readPluginCapabilityPolicy(options.profileDir)
+  const sourceConfig = readPackageSourceConfiguration(options.profileDir)
+  const verifyCatalog = officialCatalogVerifier(sourceConfig)
   for (const [id, entry] of Object.entries(lock.packages).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     let directory: string | null = packageDir(options.dataDir, lock.profile, id)
     if (paths.has(directory)) throw new PackageError('E_LOCK_MISMATCH', 'package store path collision')
@@ -224,10 +235,7 @@ export function readInventory(
       if (!workspace.ok) throw new PackageError('E_LOCK_MISMATCH', 'workspace inventory is not trusted')
       directory = resolve(workspace.deployDir, entry.source.ref.slice('workspace:'.length))
     }
-    const blockers: PackageBlocker[] = capabilityPolicyBlockers(
-      entry.declaredCapabilities,
-      readPluginCapabilityPolicy(options.profileDir),
-    )
+    const blockers: PackageBlocker[] = capabilityPolicyBlockers(entry.declaredCapabilities, capabilityPolicy)
     let provenance = entry.provenance
     let hash = capabilityHash(entry)
     let kinds: readonly AgnesPluginKind[] | undefined
@@ -244,8 +252,7 @@ export function readInventory(
         directory,
         options.ceiling ?? lock.policySnapshot.capabilityCeiling,
       )
-      provenance = verifyOfficialCatalog(
-        readPackageSourceConfiguration(options.profileDir),
+      provenance = verifyCatalog(
         id,
         recordProvenance(
           entry.source,
@@ -259,7 +266,7 @@ export function readInventory(
           entry.treeIntegrity,
         ),
       )
-      if (entry.trust !== 'builtin') enforcePackageSourcePolicy(options.profileDir, provenance)
+      if (entry.trust !== 'builtin') enforceSourceConfiguration(sourceConfig, provenance)
       hash = verified.capabilityHash
       kinds = verified.kinds
       blockers.push(

@@ -1100,7 +1100,7 @@ class Service implements PackageAdminService {
         if (!this.options.activation) return undefined
         return normalizeObservation(await this.options.activation.actual(params.profile, packageId))
       },
-      refreshInventory: () => this.options.manager.inventory(directory),
+      refreshInventory: () => this.options.manager.inventory(directory, { fresh: true }),
     })
     return projectClientModuleRows(result)
   }
@@ -1120,7 +1120,7 @@ class Service implements PackageAdminService {
         if (!this.options.activation) return undefined
         return normalizeObservation(await this.options.activation.actual(params.profile, packageId))
       },
-      refreshInventory: () => this.options.manager.inventory(directory),
+      refreshInventory: () => this.options.manager.inventory(directory, { fresh: true }),
     })
   }
 
@@ -1146,7 +1146,7 @@ class Service implements PackageAdminService {
       return result
     }
     const directory = await this.options.profileDirectory(params.profile)
-    const inventory = await this.options.manager.inventory(directory)
+    const inventory = await this.options.manager.inventory(directory, { fresh: true })
     const roster = await this.clientModules.list({
       sessionId: params.sessionId,
       profile: params.profile,
@@ -1156,7 +1156,7 @@ class Service implements PackageAdminService {
         if (!this.options.activation) return undefined
         return normalizeObservation(await this.options.activation.actual(params.profile, packageId))
       },
-      refreshInventory: () => this.options.manager.inventory(directory),
+      refreshInventory: () => this.options.manager.inventory(directory, { fresh: true }),
     })
     const row = roster.rows?.find(
       (candidate) =>
@@ -1194,7 +1194,7 @@ class Service implements PackageAdminService {
       return result
     }
     const directory = await this.options.profileDirectory(params.profile)
-    const inventory = await this.options.manager.inventory(directory)
+    const inventory = await this.options.manager.inventory(directory, { fresh: true })
     const roster = await this.clientModules.list({
       sessionId: params.sessionId,
       profile: params.profile,
@@ -1204,7 +1204,7 @@ class Service implements PackageAdminService {
         if (!this.options.activation) return undefined
         return normalizeObservation(await this.options.activation.actual(params.profile, packageId))
       },
-      refreshInventory: () => this.options.manager.inventory(directory),
+      refreshInventory: () => this.options.manager.inventory(directory, { fresh: true }),
     })
     const row = roster.rows?.find(
       (candidate) =>
@@ -1243,7 +1243,7 @@ class Service implements PackageAdminService {
             if (!this.options.activation) return undefined
             return normalizeObservation(await this.options.activation.actual(profile, id))
           },
-          refreshInventory: () => this.options.manager.inventory(directory),
+          refreshInventory: () => this.options.manager.inventory(directory, { fresh: true }),
         },
         reason,
         packageId,

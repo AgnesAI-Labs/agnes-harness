@@ -115,7 +115,7 @@ function diff(
 }
 
 /** Reads only data files from an already acquired staging tree. No module loader is involved. */
-export function inspectStaged(input: {
+type InspectionInput = {
   dir: string
   source: PackageSource
   fetched: FetchedSource
@@ -123,12 +123,24 @@ export function inspectStaged(input: {
   ceiling: readonly string[]
   capabilityPolicy?: PluginCapabilityPolicy
   signal?: AbortSignal
-}): { preview: PackagePreview; treeIntegrity: string } {
+}
+
+export function inspectStaged(input: InspectionInput): { preview: PackagePreview; treeIntegrity: string } {
   checkCancelled(input.signal)
   const treeIntegrity = hashDirectory(input.dir, {
     exclude: [],
     ...(input.signal ? { signal: input.signal } : {}),
   })
+  return inspectVerifiedTree(input, treeIntegrity)
+}
+
+/** Internal same-round reuse only: the caller must have just hashed this directory synchronously.
+ * Never carry this digest across an await, import, copy or publication boundary. */
+export function inspectVerifiedTree(
+  input: InspectionInput,
+  treeIntegrity: string,
+): { preview: PackagePreview; treeIntegrity: string } {
+  checkCancelled(input.signal)
   const pkg = readStaticJson(join(input.dir, 'package.json'))
   const fetched = input.fetched
   if (input.source.type === 'npm') {

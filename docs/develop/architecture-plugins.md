@@ -29,6 +29,8 @@ flowchart TD
   Runtime --> Sandbox
 ```
 
+Ordinary concurrent inventory reads for one profile share only a pending scan. Each scan reads capability and source policy once, verifies an official catalog signature against its immutable configuration, and verifies each installed and rollback tree. Package changes, fresh publication checks and service authorization start a new read boundary; completed inventories are never reused across rounds. Session generation and composition filtering remain separate from the installed inventory.
+
 ## One provider pattern
 
 Every kind describes validation, capabilities, semver identity and lifecycle scope with `defineProviderKind<T>()` from `@agnes/extension-api`. Host's `ProviderRegistry<T>` owns registration, duplicate refusal, selection, immutable catalogs and disposal. Registration may be owned by a plugin fiber; unregister returns an idempotent `Promise<void>`. Model, compaction, policy and tool-runtime owners stop admission, abort and drain creates/calls, dispose instances, then run registration cleanup. Cleanup failures are aggregated. Loop identity is `id@version`; the other current kinds refuse duplicate ids.

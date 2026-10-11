@@ -63,7 +63,7 @@
   "packages/cli/src/tui/package-controller": 1,
   "packages/extension-api/testkit": 730,
   "packages/daemon/src/supervisor/configuration": 45,
-  "packages/package-manager/src": 8472,
+  "packages/package-manager/src": 8559,
   "packages/package-manager/src/catalog": 219,
   "packages/cli/src/boot/backend": 550,
   "packages/cli/src/boot/default": 69,

@@ -12,11 +12,154 @@ import {
   readInventory,
   writeLock,
 } from '../src/index.js'
+import { inspectStaged } from '../src/inspect.js'
+import { capabilityHash } from '../src/integrity.js'
 import { isRuntimePackageEligible, isSnapshotPackageEligible } from '../src/inventory.js'
 import { previousPackageDir } from '../src/store.js'
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 const roots: string[] = []
+
+function currentFixture() {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-inventory-round-'))
+  roots.push(root)
+  const profileDir = join(root, 'profiles', 'local-dev')
+  mkdirSync(profileDir, { recursive: true })
+  const id = '@acme/round'
+  const directory = packageDir(root, 'local-dev', id)
+  mkdirSync(directory, { recursive: true })
+  writeFileSync(
+    join(directory, 'package.json'),
+    JSON.stringify({
+      name: id,
+      version: '1.0.0',
+      license: 'MIT',
+      exports: './index.mjs',
+      agnes: { capabilities: { ui: true }, plugins: [{ export: 'main', apiRange: '^1.4.0' }] },
+    }),
+  )
+  writeFileSync(join(directory, 'index.mjs'), 'export const main = () => {}\n')
+  const tree = hashDirectory(directory, { exclude: [] })
+  const source = { type: 'file' as const, ref: 'file:./round' }
+  const checked = inspectStaged({
+    dir: directory,
+    source,
+    ceiling: [],
+    fetched: {
+      dir: directory,
+      version: '1.0.0',
+      integrity: tree,
+      license: 'MIT',
+      dependencies: {},
+    },
+  })
+  const lock = emptyLock('local-dev', '0.1.0')
+  lock.resolvedProfileHash = `sha256-${'0'.repeat(64)}`
+  lock.seams = Object.fromEntries(
+    [
+      'approval',
+      'checkpoint',
+      'ledger',
+      'sandbox',
+      'verifier',
+      'repair',
+      'artifacts',
+      'principals',
+      'platform',
+      'harness',
+    ].map((name) => [name, '@agnes/base']),
+  )
+  const entry = {
+    version: '1.0.0',
+    source,
+    integrity: tree,
+    treeIntegrity: tree,
+    license: 'MIT',
+    trust: 'trusted' as const,
+    state: { installed: '2026-01-01T00:00:00Z', trusted: '2026-01-01T00:00:00Z', enabled: true },
+    dependencies: {},
+    previous: null,
+    contributions: checked.preview.contributions,
+    ...(checked.preview.declaredCapabilities
+      ? { declaredCapabilities: checked.preview.declaredCapabilities }
+      : {}),
+  }
+  lock.packages[id] = {
+    ...entry,
+    trustDecision: {
+      integrity: tree,
+      capabilityHash: capabilityHash(entry),
+      decidedAt: '2026-01-01T00:00:00Z',
+    },
+  }
+  writeLock(profileDir, lock)
+  return {
+    root,
+    profileDir,
+    id,
+    directory,
+    lock,
+    manager: createPackageManager({ dataDir: root, agnesVersion: '0.1.0', references: async () => [] }),
+  }
+}
+
+it('shares an ordinary in-flight read, then verifies bytes again even without a manager mutation', async () => {
+  const f = currentFixture()
+  const [first, second] = await Promise.all([
+    f.manager.inventory(f.profileDir),
+    f.manager.inventory(f.profileDir),
+  ])
+  expect(first).toBe(second)
+  expect(Object.isFrozen(first.packages)).toBe(true)
+  writeFileSync(join(f.directory, 'index.mjs'), 'changed bytes')
+  const failures = await Promise.allSettled([
+    f.manager.inventory(f.profileDir),
+    f.manager.inventory(f.profileDir),
+  ])
+  expect(failures.every((result) => result.status === 'rejected')).toBe(true)
+  writeFileSync(join(f.directory, 'index.mjs'), 'export const main = () => {}\n')
+  expect((await f.manager.inventory(f.profileDir)).packages[0]?.enabled).toBe(true)
+})
+
+it('cuts read boundaries on mutations, fresh verification and administrator policy changes', async () => {
+  const f = currentFixture()
+  const before = f.manager.inventory(f.profileDir)
+  const disable = f.manager.enable(f.profileDir, f.id, false)
+  const during = f.manager.inventory(f.profileDir)
+  await before
+  await disable
+  expect((await during).packages[0]?.enabled).toBe(false)
+  await f.manager.enable(f.profileDir, f.id, true)
+  const ordinary = f.manager.inventory(f.profileDir)
+  const fresh = f.manager.inventory(f.profileDir, { fresh: true })
+  expect(await ordinary).not.toBe(await fresh)
+  const oldPolicy = f.manager.inventory(f.profileDir)
+  writeFileSync(join(f.profileDir, 'plugin-capabilities.json'), JSON.stringify({ deny: ['ui'] }))
+  const denied = f.manager.inventory(f.profileDir)
+  expect(await oldPolicy).not.toBe(await denied)
+  expect((await denied).packages[0]?.blockers).toContainEqual({
+    code: 'policy',
+    references: ['capability-blocked', 'ui'],
+  })
+  writeFileSync(join(f.profileDir, 'plugin-capabilities.json'), '{}')
+  writeFileSync(
+    join(f.profileDir, 'package-sources.json'),
+    JSON.stringify({ allowedSources: 'official-only' }),
+  )
+  await expect(f.manager.inventory(f.profileDir)).rejects.toMatchObject({ code: 'E_PACKAGE_SOURCE_POLICY' })
+  writeFileSync(join(f.profileDir, 'package-sources.json'), '{}')
+  expect((await f.manager.inventory(f.profileDir)).packages[0]?.blockers).toEqual([])
+  const entry = f.lock.packages[f.id]
+  if (!entry) throw new Error('missing fixture entry')
+  await f.manager.untrust(f.profileDir, f.id, {
+    integrity: entry.integrity,
+    capabilityHash: capabilityHash(entry),
+  })
+  expect((await f.manager.inventory(f.profileDir)).packages[0]).toMatchObject({
+    trusted: false,
+    enabled: false,
+  })
+})
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })

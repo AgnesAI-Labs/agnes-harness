@@ -449,6 +449,24 @@ it('enforces administrator source policy and exact Ed25519 catalog tuples at ins
     publisher: 'Agnes test maintainer',
     signatureVerified: true,
   })
+  const { officialCatalogVerifier } = await import('../src/provenance.js')
+  const installedProvenance = await m.provenance(profile, id)
+  const round = officialCatalogVerifier(policy)
+  // The round must own its keys and signed statement rather than trusting a later mutation of
+  // the caller's configuration after the first successful signature check.
+  expect(round(id, installedProvenance).verification).toBe('official-ed25519')
+  const changedPolicy = structuredClone(policy)
+  const independentRound = officialCatalogVerifier(changedPolicy)
+  const changedTuple = changedPolicy.officialCatalog.statement.entries[0]
+  if (!changedTuple) throw new Error('missing official tuple')
+  changedTuple.treeIntegrity = `sha256-${'9'.repeat(64)}`
+  changedPolicy.officialKeys['development-test'] = 'invalid key'
+  expect(independentRound(id, installedProvenance).verification).toBe('official-ed25519')
+  expect(() => officialCatalogVerifier(changedPolicy)(id, installedProvenance)).toThrow('signature')
+  expect(round('acme/not-in-catalog', installedProvenance).verification).toBe('unverified')
+  expect(() => round(id, { ...installedProvenance, treeIntegrity: `sha256-${'9'.repeat(64)}` })).toThrow(
+    'integrity differs',
+  )
   writeFileSync(
     config,
     JSON.stringify({

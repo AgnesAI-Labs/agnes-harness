@@ -163,7 +163,12 @@ describe('client module immutable snapshots', () => {
         actual: async () => undefined,
         refreshInventory: async () => empty,
       }
-      const roster = await registry.list({ ...input, sessionId: 'old-session' })
+      const [roster, currentRoster, otherRoster] = await Promise.all([
+        registry.list({ ...input, sessionId: 'old-session' }),
+        registry.list(input),
+        registry.list({ ...input, sessionId: 'other-session' }),
+      ])
+      expect(currentRoster.modules).toEqual([])
       expect(roster.modules).toHaveLength(1)
       expect(roster.modules[0]?.intelligentComponents).toEqual(
         row.contributions[0] && 'client' in row.contributions[0]
@@ -174,7 +179,6 @@ describe('client module immutable snapshots', () => {
         roster.modules[0]?.intelligentComponents,
       )
       expect(roster.modules[0]?.entryUrl).toContain(`/plugins/generations/${snapshot.id}/`)
-      const otherRoster = await registry.list({ ...input, sessionId: 'other-session' })
       expect(otherRoster.revision).not.toBe(roster.revision)
       expect(otherRoster.modules[0]?.entryUrl).toContain(`/plugins/generations/${another.id}/`)
       const module = roster.modules[0]
@@ -1086,7 +1090,11 @@ describe('client module immutable snapshots', () => {
     }) => ({ output: { ...input, privateCredentialNeverExposed: true } })
     const effectDispatch = vi.fn(async (input: Record<string, unknown>) => ({ output: input }))
     const service = createPackageAdminService({
-      manager: { inventory: async () => currentInventory } as unknown as PackageManager,
+      // A simultaneously open asset read may still own an earlier ordinary snapshot.
+      manager: {
+        inventory: async (_directory: string, options?: { fresh?: boolean }) =>
+          options?.fresh ? currentInventory : inventory(row),
+      } as unknown as PackageManager,
       profileDirectory: async (profile) => {
         if (profile !== 'local-dev') throw new Error('profile mismatch')
         return files.root

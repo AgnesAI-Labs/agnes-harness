@@ -10,7 +10,7 @@ import {
 import { deploymentFetch } from '@agnes/system-node/deployment-network'
 import { verify } from 'sigstore'
 import { PackageError } from './errors.js'
-import { canonical, readStaticJson } from './integrity.js'
+import { canonical, freezeData, readStaticJson } from './integrity.js'
 import type { FetchedSource, PackageSource } from './sources.js'
 
 export type OfficialCatalogStatement = Readonly<{
@@ -130,6 +130,33 @@ export function verifyOfficialCatalog(
   id: string,
   provenance: PackageProvenance,
 ): PackageProvenance {
+  return verifyCatalogPackage(config, id, provenance, () => verifiedCatalogStatement(config))
+}
+
+/** One read round owns an immutable configuration, including its signing keys. Only the signature
+ * is reused; every package still matches its exact source/version/tree tuple. Not a cross-round cache. */
+export function officialCatalogVerifier(
+  config: PackageSourceConfiguration,
+): (id: string, provenance: PackageProvenance) => PackageProvenance {
+  const snapshot = freezeData(structuredClone(config))
+  let statement: OfficialCatalogStatement | undefined
+  let verified = false
+  return (id, provenance) =>
+    verifyCatalogPackage(snapshot, id, provenance, () => {
+      if (!verified) {
+        statement = verifiedCatalogStatement(snapshot)
+        verified = true
+      }
+      return statement
+    })
+}
+
+function verifyCatalogPackage(
+  config: PackageSourceConfiguration,
+  id: string,
+  provenance: PackageProvenance,
+  statementForRound: () => OfficialCatalogStatement | undefined,
+): PackageProvenance {
   if (provenance.verification === 'official-ed25519')
     provenance = {
       ...provenance,
@@ -146,7 +173,7 @@ export function verifyOfficialCatalog(
     }
   if (!config.officialCatalog) return provenance
   try {
-    const statement = verifiedCatalogStatement(config)
+    const statement = statementForRound()
     if (!statement) return provenance
     const row = statement.entries.find(
       (entry) =>
@@ -176,7 +203,15 @@ export function verifyOfficialCatalog(
 }
 
 export function enforcePackageSourcePolicy(profileDir: string, provenance: PackageProvenance): void {
-  const { allowedSources } = packageSourcePolicy(profileDir)
+  enforceSourceConfiguration(readPackageSourceConfiguration(profileDir), provenance)
+}
+
+/** Internal policy check against the configuration already read in this round. */
+export function enforceSourceConfiguration(
+  config: PackageSourceConfiguration,
+  provenance: PackageProvenance,
+): void {
+  const allowedSources = config.allowedSources ?? 'any-with-confirmation'
   if (
     allowedSources === 'any-with-confirmation' ||
     provenance.verification === 'official-ed25519' ||

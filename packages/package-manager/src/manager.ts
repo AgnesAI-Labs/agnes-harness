@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { setImmediate } from 'node:timers/promises'
 import { type ExtensionManifest, satisfiesApiRange } from '@agnes/extension-api'
 import {
   type PackagePreview,
@@ -110,7 +111,9 @@ export interface PackageManager {
   add(profileDir: string, spec: string, opts?: { trust?: 'verify' | 'skip' }): Promise<LockEntry>
   trust(profileDir: string, id: string, decision?: TrustDecision): Promise<LockEntry>
   untrust(profileDir: string, id: string, decision: TrustDecision): Promise<LockEntry>
-  inventory(profileDir: string): Promise<InstalledInventory>
+  /** Ordinary concurrent reads share only their in-flight scan. Publication/authorization reads
+   * use fresh to establish a new verification boundary. Nothing is cached after a scan. */
+  inventory(profileDir: string, opts?: Readonly<{ fresh?: boolean }>): Promise<InstalledInventory>
   /** Lock-free, validated snapshot read for a worker while daemon package effects hold the lock. */
   runtimePluginSnapshots(profileDir: string): Promise<readonly RuntimePluginSnapshot[]>
   recover(profileDir: string): Promise<void>
@@ -357,6 +360,23 @@ function workspacePath(profileDir: string, deployDir: string): { deployDir: stri
 }
 
 export function createPackageManager(options: ManagerOptions): PackageManager {
+  const inventoryReads = new Map<string, { boundary: string; promise: Promise<InstalledInventory> }>()
+  const profileKey = (directory: string): string =>
+    existsSync(directory) ? realpathSync(directory) : resolve(directory)
+  // Small policy/lock files are change sentinels ONLY for joining a pending scan, never authority
+  // for skipping byte verification. A scan itself always reads current policy and installed bytes.
+  const readBoundary = (directory: string): string =>
+    ['agnes-lock.json', 'plugin-capabilities.json', 'package-sources.json']
+      .map((file) => {
+        try {
+          const stat = statSync(join(directory, file), { bigint: true })
+          return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'absent'
+          throw error
+        }
+      })
+      .join('|')
   const adapters = new Map(options.sourceAdapters?.map((adapter) => [adapter.type, adapter]))
   if (adapters.size !== (options.sourceAdapters?.length ?? 0)) throw new TypeError('duplicate source adapter')
   const stamp = options.now ?? (() => new Date().toISOString())
@@ -457,8 +477,11 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     profileDir: string,
     fn: () => Promise<T>,
     op: { signal?: AbortSignal } = {},
-  ): Promise<T> =>
-    withLock(
+    ordinaryRead = false,
+  ): Promise<T> => {
+    const key = profileKey(profileDir)
+    if (!ordinaryRead) inventoryReads.delete(key)
+    return withLock(
       profileDir,
       async () => {
         recoverPackageStore(storeFor(profileDir))
@@ -467,7 +490,10 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         return fn()
       },
       op,
-    )
+    ).finally(() => {
+      if (!ordinaryRead) inventoryReads.delete(key)
+    })
+  }
   if (options.auditActor !== undefined && !/^[a-zA-Z0-9_.-]{1,128}$/.test(options.auditActor))
     throw new TypeError('invalid audit actor')
   const commitLegacyStage = async (
@@ -709,6 +735,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       localReload = reload
     },
     reportLocalPluginFailure(profileDir, id) {
+      inventoryReads.delete(profileKey(profileDir))
       const entry = load(profileDir).packages[id]
       if (entry?.source.type === 'local')
         localFailures.set(entry.source.ref, {
@@ -729,8 +756,10 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           async reloadPlugin(id) {
             const owner = reload ?? localReload
             if (!owner) return
+            inventoryReads.delete(profileKey(profileDir))
             await owner.reloadPlugin(id)
             localPending.delete(id)
+            inventoryReads.delete(profileKey(profileDir))
           },
         },
         onError(id) {
@@ -744,13 +773,33 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       if (!existsSync(profileDir)) return
       await locked(profileDir, async () => {})
     },
-    async inventory(profileDir) {
-      const read = () => {
-        const lock = load(profileDir)
-        return projectLocal(readInventory(lock, { ...storeFor(profileDir), ceiling: ceiling(lock) }))
+    async inventory(profileDir, opts = {}) {
+      const key = profileKey(profileDir)
+      const boundary = readBoundary(profileDir)
+      if (opts.fresh) inventoryReads.delete(key)
+      const existing = inventoryReads.get(key)
+      if (existing?.boundary === boundary) return existing.promise
+      let reading: Promise<InstalledInventory>
+      const clear = () => {
+        if (inventoryReads.get(key)?.promise === reading) inventoryReads.delete(key)
       }
-      if (!existsSync(profileDir)) return read()
-      return locked(profileDir, async () => read())
+      const read = () => {
+        try {
+          const lock = load(profileDir)
+          return projectLocal(readInventory(lock, { ...storeFor(profileDir), ceiling: ceiling(lock) }))
+        } finally {
+          // No reader may join a finished verification, even before Promise settlement is observed.
+          clear()
+        }
+      }
+      const scan = async () => {
+        // Let requests already arriving together join before the synchronous tree walk starts.
+        await setImmediate()
+        return read()
+      }
+      reading = (existsSync(profileDir) ? locked(profileDir, scan, {}, true) : scan()).finally(clear)
+      if (!opts.fresh) inventoryReads.set(key, { boundary, promise: reading })
+      return reading
     },
     async runtimePluginSnapshots(profileDir) {
       const store = storeFor(profileDir)

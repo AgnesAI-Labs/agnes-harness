@@ -553,7 +553,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 7200 -> 7217; exact cap, no exclusions or spare allocation.
   // uiData capability atoms. HEAD was 8464 against the previous 8424 ceiling; this change adds 1.
   // Sealed development snapshot fields. countLines 8465 -> 8472 (+7), exact, no spare.
-  'packages/package-manager/src': 8472,
+  'packages/package-manager/src': 8559,
   'packages/package-manager/src/catalog': 219,
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.

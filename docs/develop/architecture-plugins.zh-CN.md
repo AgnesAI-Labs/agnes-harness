@@ -29,6 +29,8 @@ flowchart TD
   Runtime --> Sandbox
 ```
 
+普通的同一 profile 并发 inventory 读取只共享尚在进行的扫描。每轮各读取一次能力策略和来源配置，在不可变配置副本内核验官方目录签名，并验证每个已安装及回滚目录。包变更、发布后的新验证与服务授权开启新的读取边界；已完成名册不跨轮复用。会话代际与组合过滤仍独立于已安装名册。
+
 ## 一套 provider 模式
 
 每种类型通过 `@agnes/extension-api` 的 `defineProviderKind<T>()` 描述校验、能力、身份与重启要求。Host 的 `ProviderRegistry<T>` 统一管理注册、重复拒绝、选择、只读目录和释放。注册项可归插件 fiber 所有；卸载时注销并执行原有资源清理。loop 按 `id@version` 注册，其他现有类型拒绝重复 id。
