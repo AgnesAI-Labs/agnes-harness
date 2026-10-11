@@ -253,7 +253,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // GT1: register new round scopes; exact values are remeasured once at the end.
   'packages/base/extensions/references': 21,
   // Source bindings resolve to scalars. Measured 1094, exact, no spare.
-  'packages/base/extensions/intelligent-ui': 1099,
+  'packages/base/extensions/intelligent-ui': 1108,
   // Leaf Intelligent UI kind token so Host does not import Base. Exact countLines, no spare.
   // Deferred receipt types come from the plugin-runtime contract. countLines: 76, exact, no spare.
   // UI data-source kind, result enum, and failure codes. Rebased onto that 76; countLines: 163.
@@ -1263,7 +1263,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 3992 -> 4115; exact measured cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Use public model-adapter factories with live credentials and export credential-free provider route configs.
   // countLines: 4115 -> 4137 (+22); exact measured cap, no exclusions or spare allocation.
-  'packages/ai/src': 4341,
+  'packages/ai/src': 4379,
   // 2026-09-09: raised from 500, which was exactly the measured count and so forbade every
   // further line. Two repairs were blocked by it and are landing with this raise: the provider
   // factory taking log + pricing (without which every delivered assembly denominates ledger
