@@ -670,25 +670,38 @@ describe('PiAdapter', () => {
     },
   )
 
-  it('retries before the first event but never after a delta', async () => {
-    const { impl, seen } = fakeStream([
-      [err('503 upstream')],
-      [{ type: 'done', reason: 'stop', message: assistant() }],
-    ])
-    const a = bound({ manualRoutes: [route], streamImpl: impl, maxRetries: 2, sleep: async () => {} })
-    const events = await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
-    expect(events.map((e) => e.type)).toEqual(['usage', 'done'])
-    expect(seen).toHaveLength(2)
+  it.each(['503 upstream', '429 Too Many Requests, retry-after: 0'])(
+    'commits retries before output for %s but never retries after a delta',
+    async (failure) => {
+      const { impl, seen } = fakeStream([
+        [err(failure)],
+        [{ type: 'done', reason: 'stop', message: assistant() }],
+      ])
+      const ledger = memoryRetryLedger()
+      const a = bound({
+        manualRoutes: [route],
+        streamImpl: impl,
+        maxRetries: 2,
+        ledger,
+        sleep: async (ms) => {
+          expect(ledger.read('k\0gw\0flash')?.count).toBe(1)
+          if (failure.startsWith('429')) expect(ms).toBe(0)
+        },
+      })
+      const events = await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
+      expect(events.map((e) => e.type)).toEqual(['usage', 'done'])
+      expect(seen).toHaveLength(2)
 
-    const late = fakeStream([
-      [{ type: 'text_delta', contentIndex: 0, delta: 'a', partial }, err('503 upstream')],
-      [{ type: 'done', reason: 'stop', message: assistant() }],
-    ])
-    const b = bound({ manualRoutes: [route], streamImpl: late.impl, maxRetries: 2, sleep: async () => {} })
-    const ev2 = await collect(b.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
-    expect(ev2.map((e) => e.type)).toEqual(['text_delta', 'error'])
-    expect(late.seen).toHaveLength(1)
-  })
+      const late = fakeStream([
+        [{ type: 'text_delta', contentIndex: 0, delta: 'a', partial }, err('503 upstream')],
+        [{ type: 'done', reason: 'stop', message: assistant() }],
+      ])
+      const b = bound({ manualRoutes: [route], streamImpl: late.impl, maxRetries: 2, sleep: async () => {} })
+      const ev2 = await collect(b.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
+      expect(ev2.map((e) => e.type)).toEqual(['text_delta', 'error'])
+      expect(late.seen).toHaveLength(1)
+    },
+  )
 
   it('gives up after the configured number of attempts and reports the failure', async () => {
     const waits: number[] = []
@@ -712,34 +725,37 @@ describe('PiAdapter', () => {
     expect(events[0]).toMatchObject({ type: 'error', code: 'TRANSPORT', retryable: true })
   })
 
-  it('stops when the attempt ledger cannot commit and keeps the model error', async () => {
-    const { impl, seen } = fakeStream([
-      [err('503 upstream')],
-      [{ type: 'done', reason: 'stop', message: assistant() }],
-    ])
-    const a = bound({
-      manualRoutes: [route],
-      streamImpl: impl,
-      maxRetries: 2,
-      sleep: async () => {},
-      ledger: {
-        read: () => undefined,
-        commit() {
-          throw new Error('disk full')
+  it.each(['503 upstream', '429 Too Many Requests, retry-after: 0'])(
+    'stops when the attempt ledger cannot commit for %s',
+    async (failure) => {
+      const { impl, seen } = fakeStream([
+        [err(failure)],
+        [{ type: 'done', reason: 'stop', message: assistant() }],
+      ])
+      const a = bound({
+        manualRoutes: [route],
+        streamImpl: impl,
+        maxRetries: 2,
+        sleep: async () => {},
+        ledger: {
+          read: () => undefined,
+          commit() {
+            throw new Error('disk full')
+          },
+          clear() {},
         },
-        clear() {},
-      },
-    })
-    const events = await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
-    expect(seen).toHaveLength(1)
-    expect(events).toMatchObject([
-      {
-        type: 'error',
-        code: 'TRANSPORT',
-        message: 'status=503 (retry ledger commit failed: disk full)',
-      },
-    ])
-  })
+      })
+      const events = await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
+      expect(seen).toHaveLength(1)
+      expect(events).toMatchObject([
+        {
+          type: 'error',
+          code: failure.startsWith('429') ? 'RATE_LIMIT' : 'TRANSPORT',
+          message: `status=${failure.slice(0, 3)} (retry ledger commit failed: disk full)`,
+        },
+      ])
+    },
+  )
 
   it('keeps a successful result when clearing the retry ledger fails', async () => {
     const { impl } = fakeStream([[{ type: 'done', reason: 'stop', message: assistant() }]])

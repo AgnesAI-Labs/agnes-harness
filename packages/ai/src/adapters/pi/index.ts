@@ -780,7 +780,6 @@ export class PiAdapter extends WireAdapter {
             }
           return
         }
-        const classifiedRetry = retryAfter > 0
         // A server wait that outlasts the total deadline would either sleep past the caller's
         // budget or, if capped, retry before the server allows it. Stop and keep the wait.
         if (retryError?.retryAfterMs !== undefined && retryAfter > deadline - Date.now()) {
@@ -788,7 +787,9 @@ export class PiAdapter extends WireAdapter {
           return
         }
         attempt++
-        if (classifiedRetry && retryError) {
+        // Server-classified failures must commit even when Retry-After is zero.
+        // Local authentication recovery has no retryError and does not consume this ledger.
+        if (retryError) {
           try {
             this.ledger.commit(ledgerKey, attempt, Date.now() + retryAfter)
           } catch (error) {
