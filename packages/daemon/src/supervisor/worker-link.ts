@@ -401,8 +401,7 @@ export class WorkerLink {
   }
 
   async closeSession(sessionKey: string, reason: string, options: WorkerCommandOptions = {}): Promise<void> {
-    this.sessionRequests.get(sessionKey)?.abort('stopped')
-    this.sessionRequests.delete(sessionKey)
+    this.revokeSessionRequests(sessionKey)
     try {
       await this.sendSessionLifecycle('session.close', sessionKey, { reason }, options)
     } finally {
