@@ -302,6 +302,10 @@ async function refusedRender(plugin, capabilities) {
   const report = value(await tools[1].execute({ bank: ledgers.bank, book: ledgers.book }, { signal }))
   const kit = await createAuthorTestkit({
     plugin,
+    clientModule: {
+      declaration: descriptor.client,
+      code: await readFile(new URL('../client/reconciliation-diff.mjs', import.meta.url), 'utf8'),
+    },
     version: '1.1.0',
     packageId: '@agnes-fde/finance-reconcile',
     packageDirs,
@@ -322,7 +326,18 @@ async function refusedRender(plugin, capabilities) {
 
 test('a session that does not register the ledger source refuses the review', async () => {
   assert.equal(
-    await refusedRender(defineAgnesPlugin({ inject: ['extension'], apply() {} })),
+    await refusedRender(
+      defineAgnesPlugin({
+        inject: ['extension'],
+        apply(ctx) {
+          // Keep the declared action valid; this fixture deliberately omits only the data source.
+          for (const definition of tools) {
+            const off = ctx.extension().registerTool(definition)
+            ctx.effect(() => off)
+          }
+        },
+      }),
+    ),
     'UI_SOURCE_UNKNOWN',
   )
 })
