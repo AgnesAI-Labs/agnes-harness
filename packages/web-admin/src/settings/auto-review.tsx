@@ -144,9 +144,9 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
       </Field>
       <p>
         {t('profileHelp')}{' '}
-        <a href="?settings=model#auxiliary-models" data-testid="auto-review-model-link">
+        <Button href="?settings=model#auxiliary-models" data-testid="auto-review-model-link">
           {t('modelLink')}
-        </a>
+        </Button>
       </p>
       <p className="model-slot-current" data-testid="auto-review-slot-status" role="status">
         <Badge tone={slotsFailed ? 'bad' : !slots ? 'unknown' : configured ? 'ok' : 'warn'}>
