@@ -15,6 +15,7 @@ import {
   type LocaleTranslator,
   McpDetailContent,
   materializeSettingsControls,
+  ResourceRoots,
   RESOURCE_DETAIL_LOCALE_NAMESPACE,
   RESOURCE_LIST_LOCALE_NAMESPACE,
   type ResourceDetailAction,
@@ -39,7 +40,8 @@ import { createMcpForm, McpFormValidationError } from './mcp-form.js'
 import { mountMcpPresets } from './mcp-presets.js'
 import { watchMcpPanel } from './mcp-refresh.js'
 import { mountMcpWizard } from './mcp-wizard.js'
-import { SKILL_LOCATION_HINTS } from './skill-copy.js'
+import { SkillsPage } from './skills-page.js'
+export { registerSkillPagePanels, type SkillPagePanels } from './skills-page.js'
 import type { ResourceAdminContext, ResourceAdminError } from './types.js'
 
 let list!: HTMLElement
@@ -108,6 +110,7 @@ class ResourceAdminPage {
   #context: ResourceAdminContext | undefined
   #tab: Tab = 'skills'
   #items: Item[] = []
+  #skillQuery = ''
   #skillRoots: SkillRootStatus[] = []
   #selected: string | undefined
   #detailTrigger: HTMLElement | undefined
@@ -331,7 +334,7 @@ class ResourceAdminPage {
     for (const row of list.querySelectorAll<HTMLElement>('.resource-row')) {
       if (row.dataset.resourceId !== targetId) continue
       row
-        .querySelector<HTMLButtonElement>('.plugin-details-button, .agh-list-row-title')
+        .querySelector<HTMLButtonElement>('.agh-list-row-title, .plugin-details-button')
         ?.focus({ preventScroll: true })
       return
     }
@@ -425,7 +428,7 @@ class ResourceAdminPage {
         control.tabIndex = 0
       }
     }
-    $('skill-refresh', 'button').hidden = this.#tab !== 'skills'
+    $('skill-refresh', 'button').hidden = true
     const busy = this.#reloadPromise !== undefined || this.#loadMorePromise !== undefined
     $('skill-refresh', 'button').disabled = !this.writable() || busy
     $('mcp-create', 'button').hidden = this.#tab !== 'mcp'
@@ -439,44 +442,23 @@ class ResourceAdminPage {
     renderRegion(
       list,
       <UiLocaleProvider source={this.#locale}>
-        <ResourceListContent
-          tab={this.#tab}
-          loadState={this.#loadState}
-          items={this.#items}
-          skillRoots={this.#skillRoots}
-          selectedId={this.#selected}
-          nextCursor={this.#nextCursor}
-          loadingMore={this.#loadMorePromise !== undefined}
-          emptyTitle={this.#t(this.#tab === 'skills' ? 'empty.skills.title' : 'empty.mcp.title')}
-          emptyDescription={
-            this.#tab === 'skills' ? this.#t('empty.skills.description') : this.#t('empty.mcp.description')
-          }
-          emptyHints={this.#tab === 'skills' ? SKILL_LOCATION_HINTS : undefined}
-          switchDisabled={!this.writable() || this.#activeOperation !== undefined}
-          itemNameOf={(item) => this.#itemName(item)}
-          onOpen={(item) => this.select(item.resourceId, this.#rowOf(item.resourceId))}
-          onToggleDesired={(item, next) => void this.toggleDesired(item, next)}
-          onLoadMore={() => void this.loadMore()}
-          onRetry={() => void this.reload()}
-          mcpActions={(item) => ({
-            edit: () => {
-              this.closeDetail()
-              openMcpDialog(item, this.#t)
-            },
-            test: () => {
-              const action = this.#detailActions(item).find(
-                (action) => action.label === this.#t('action.test-mcp'),
-              )
-              if (action) void this.#runAction(action)
-            },
-            remove: () => {
-              const action = this.#detailActions(item).find(
-                (action) => action.label === this.#t('action.remove-mcp'),
-              )
-              if (action) void this.#runAction(action)
-            },
-          })}
-        />
+        {this.#tab === 'skills' ? (
+          <SkillsPage
+            query={this.#skillQuery}
+            onQuery={(query) => {
+              this.#skillQuery = query
+              this.render()
+            }}
+            onRefresh={() => void this.reload()}
+            busy={busy}
+            writable={this.writable()}
+            locations={<ResourceRoots roots={this.#skillRoots} />}
+          >
+            {this.#resourceList()}
+          </SkillsPage>
+        ) : (
+          this.#resourceList()
+        )}
       </UiLocaleProvider>,
     )
     const selected = this.#items.find((item) => item.resourceId === this.#selected)
@@ -504,6 +486,7 @@ class ResourceAdminPage {
           })().catch((error) => this.showError(error)),
       }
     }
+    detail.classList.toggle('agh-drawer', selected.kind === 'skill')
     if (selected.kind === 'skill') {
       renderRegion(
         detail,
@@ -590,6 +573,66 @@ class ResourceAdminPage {
     )
   }
 
+  #resourceList() {
+    return (
+      <ResourceListContent
+        tab={this.#tab}
+        loadState={this.#loadState}
+        items={
+          this.#tab === 'skills' && this.#skillQuery
+            ? this.#items.filter((item) =>
+                `${this.#itemName(item)} ${item.kind === 'skill' ? (item.description ?? '') : ''}`
+                  .toLocaleLowerCase(this.locale())
+                  .includes(this.#skillQuery.toLocaleLowerCase(this.locale())),
+              )
+            : this.#items
+        }
+        skillRoots={this.#skillRoots}
+        selectedId={this.#selected}
+        nextCursor={this.#nextCursor}
+        loadingMore={this.#loadMorePromise !== undefined}
+        emptyTitle={this.#t(this.#tab === 'skills' ? 'empty.skills.title' : 'empty.mcp.title')}
+        emptyDescription={
+          this.#tab === 'skills' ? this.#t('empty.skills.description') : this.#t('empty.mcp.description')
+        }
+        switchDisabled={!this.writable() || this.#activeOperation !== undefined}
+        itemNameOf={(item) => this.#itemName(item)}
+        onOpen={(item) => this.select(item.resourceId, this.#rowOf(item.resourceId))}
+        onToggleDesired={(item, next) => void this.toggleDesired(item, next)}
+        onLoadMore={() => void this.loadMore()}
+        onRetry={() => void this.reload()}
+          mcpActions={(item) => ({
+            edit: () => {
+              this.closeDetail()
+              openMcpDialog(item, this.#t)
+            },
+            test: () => {
+              const action = this.#detailActions(item).find(
+                (action) => action.label === this.#t('action.test-mcp'),
+              )
+              if (action) void this.#runAction(action)
+            },
+            remove: () => {
+              const action = this.#detailActions(item).find(
+                (action) => action.label === this.#t('action.remove-mcp'),
+              )
+              if (action) void this.#runAction(action)
+            },
+          })}
+        onImport={() => document.querySelector<HTMLButtonElement>('[data-testid="skill-locations"]')?.click()}
+        filtered={!!this.#skillQuery}
+        menuOf={(item) =>
+          this.#detailActions(item).map((action, index) => ({
+            id: `resource-${index}`,
+            label: action.label,
+            disabled: action.disabled ?? false,
+            danger: action.className?.includes('danger') ?? false,
+            onSelect: () => void this.#runAction(action),
+          }))
+        }
+      />
+    )
+  }
   #itemName(item: Item): string {
     return item.kind === 'skill' ? item.name : item.displayName
   }
@@ -682,7 +725,7 @@ class ResourceAdminPage {
           this.#t('action.remove-skill.label'),
           this.#t('action.remove-skill.summary', { name: skill.name }),
           () => this.api().skillRemove(skill.resourceId, skill.revision),
-          { className: 'danger-button compact' },
+          { className: 'agh-btn--danger' },
         )
       }
       return specs
@@ -733,7 +776,7 @@ class ResourceAdminPage {
       this.#t('action.remove-mcp'),
       this.#t('action.remove-mcp-summary', { name: server.displayName, revision }),
       () => this.api().mcpRemove(server.serverId, server.revision),
-      { className: 'danger-button compact' },
+      { className: 'agh-btn--danger' },
     )
     return specs
   }

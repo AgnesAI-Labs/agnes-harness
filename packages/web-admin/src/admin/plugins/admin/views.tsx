@@ -1,6 +1,12 @@
 import { type PackageSource, resolvePluginMetadata } from '@agnes/protocol'
 import {
   Button,
+  Icon,
+  Menu,
+  Popover,
+  Count,
+  SettingsPageHeader,
+  Tabs,
   blockerText,
   ConfirmDialogContent,
   contributionText,
@@ -23,6 +29,7 @@ import {
 } from '@agnes/web-ui'
 import { SettingsHub } from '../../../settings/hub.js'
 import { sessionStartUrl } from '../../../settings/runtime-panels.js'
+import { ExamplesPanel } from '../../../settings/examples.js'
 import { CandidateInbox } from '../candidates.js'
 import { CapabilityReview, FailureHelp, ProvenanceReview } from '../capability-review.js'
 import { PluginConfigTab } from '../config-tab.js'
@@ -124,6 +131,7 @@ export function renderPluginView(this: PluginAdminViewContext): void {
         {...(this.schedules ? { schedules: this.schedules } : {})}
       >
         <CandidateInbox
+          scope="plugin"
           sessionTitle={this.candidateSessionTitle}
           sessionTurnTime={this.candidateSessionTurnTime}
           api={this.api}
@@ -137,76 +145,163 @@ export function renderPluginView(this: PluginAdminViewContext): void {
           confirm={(input) => this.configureConfirm(input)}
           onPublished={() => this.refresh()}
         />
-        <GenerationDrainSummary
-          nameOf={(id) =>
-            resolvePluginMetadata(
-              this.state.installed.find((row) => row.id === id)?.metadata,
-              this.locale.getSnapshot(),
-            )?.displayName ?? id
-          }
-          status={this.state.generations}
-          installed={this.state.installed}
-          t={this.t}
-        />
-        <SettingsToolbar data-testid="plugin-toolbar">
-          <Field label={this.t('shell.search.aria')} htmlFor="plugin-search">
-            <SettingsInput
-              id="plugin-search"
-              type="search"
-              value={this.queryRaw}
-              placeholder={this.purposeText('search')}
-              disabled={!context || !this.can('packages.read')}
-              onChange={(event) => {
-                this.queryRaw = event.target.value
-                this.query = event.target.value.trim()
-                if (this.tab === 'installed') this.render()
-                else void this.loadCatalog()
-              }}
+        <SettingsPageHeader
+          title={this.tab === 'installed' ? this.t('ux.plugins') : this.t('ux.discover')}
+          description={this.t('ux.description')}
+          actions={
+            <Menu
+              label={this.t('ux.add')}
+              trigger={
+                <Button id="install-source" appearance="primary" icon={<Icon name="plus" />}>
+                  {this.t('ux.add')}
+                </Button>
+              }
+              items={[
+                {
+                  id: 'discover',
+                  label: this.t('ux.browse'),
+                  onSelect: () =>
+                    document.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: 'discover' })),
+                },
+                {
+                  id: 'source',
+                  testId: 'plugin-install-source',
+                  label: this.t('shell.install'),
+                  disabled: !this.canEffect('packages.install'),
+                  disabledReason: this.t('connection.forbidden'),
+                  onSelect: () => this.openSourceDialog('install'),
+                },
+                {
+                  id: 'creator',
+                  testId: 'plugin-creator',
+                  label: this.settingsText('creator'),
+                  onSelect: () =>
+                    location.assign(sessionStartUrl(undefined, this.settingsText('creatorPrompt'))),
+                },
+              ]}
             />
-          </Field>
-          <Field label={this.purposeText('category')} htmlFor="plugin-category">
-            <SettingsSelect
-              id="plugin-category"
-              data-testid="plugin-category-filter"
-              value={this.category}
-              onChange={(event) => {
-                this.category = event.target.value
-                this.render()
-              }}
+          }
+        />
+        <Tabs
+          activeKey={this.tab}
+          onChange={(key) =>
+            document.dispatchEvent(
+              new CustomEvent('agnes:settings-page', {
+                detail: key === 'installed' ? 'plugins' : 'discover',
+              }),
+            )
+          }
+          items={[
+            { key: 'installed', label: this.t('ux.installed') },
+            { key: 'discover', label: this.t('ux.discover') },
+          ]}
+        />
+
+        <SettingsToolbar
+          data-testid="plugin-toolbar"
+          search={
+            <Field label={this.t('shell.search.aria')} htmlFor="plugin-search">
+              <SettingsInput
+                id="plugin-search"
+                type="search"
+                value={this.queryRaw}
+                placeholder={this.purposeText('search')}
+                disabled={!context || !this.can('packages.read')}
+                onChange={(event) => {
+                  this.queryRaw = event.target.value
+                  this.query = event.target.value.trim()
+                  if (this.tab === 'installed') this.render()
+                  else void this.loadCatalog()
+                }}
+              />
+            </Field>
+          }
+          filters={
+            <Popover
+              trigger="click"
+              content={
+                <>
+                  <Field label={this.purposeText('category')} htmlFor="plugin-category">
+                    <SettingsSelect
+                      id="plugin-category"
+                      data-testid="plugin-category-filter"
+                      value={this.category}
+                      onChange={(event) => {
+                        this.category = event.target.value
+                        this.render()
+                      }}
+                    >
+                      <option value="">{this.purposeText('all')}</option>
+                      {PLUGIN_CATEGORIES.map((category) => (
+                        <option key={category} value={category}>
+                          {this.purposeText(`category.${category}`)}
+                        </option>
+                      ))}
+                      <option value="unclassified">{this.purposeText('unclassified')}</option>
+                    </SettingsSelect>
+                  </Field>
+                  <SettingsDetails title={this.t('ux.moreFilters')}>
+                    <KindFilter
+                      value={this.kind}
+                      t={this.t}
+                      onChange={(value) => {
+                        this.kind = value
+                        this.render()
+                      }}
+                    />
+                  </SettingsDetails>
+                </>
+              }
             >
-              <option value="">{this.purposeText('all')}</option>
-              {PLUGIN_CATEGORIES.map((category) => (
-                <option key={category} value={category}>
-                  {this.purposeText(`category.${category}`)}
-                </option>
-              ))}
-              <option value="unclassified">{this.purposeText('unclassified')}</option>
-            </SettingsSelect>
-          </Field>
-          <KindFilter
-            value={this.kind}
-            t={this.t}
-            onChange={(value) => {
-              this.kind = value
-              this.render()
-            }}
+              <Button icon={<Icon name="filter" />}>
+                {this.t('ux.filter')}
+                <Count
+                  value={Number(!!this.category) + Number(!!this.kind)}
+                  label={this.t('ux.activeFilters')}
+                />
+              </Button>
+            </Popover>
+          }
+        />
+        {this.tab === 'discover' && !this.query && !this.category && !this.kind && (
+          <ExamplesPanel
+            api={this.api}
+            canInstall={this.canEffect('packages.install')}
+            installed={this.state.installed}
+            t={this.settingsText}
+            onReview={this.reviewExample}
+            onBundles={() =>
+              document.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: 'bundles' }))
+            }
           />
-          <Button
-            id="install-source"
-            type="primary"
-            disabled={!this.canEffect('packages.install')}
-            onClick={() => this.openSourceDialog('install')}
-          >
-            {this.t('shell.install')}
-          </Button>
-          <Button
-            data-testid="plugin-creator"
-            href={sessionStartUrl(undefined, this.settingsText('creatorPrompt'))}
-          >
-            {this.settingsText('creator')}
-          </Button>
-        </SettingsToolbar>
+        )}
         <PluginList
+          emptyActions={
+            this.tab === 'installed' ? (
+              <Button
+                onClick={() =>
+                  document.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: 'discover' }))
+                }
+              >
+                {this.t('ux.browse')}
+              </Button>
+            ) : undefined
+          }
+          menuOf={(item) => [
+            { id: 'details', label: this.t('ux.details'), onSelect: () => this.selectItem(item) },
+            ...('desired' in item
+              ? this.detailActions(item)
+                  .filter((action) => !action.href)
+                  .map((action, index) => ({
+                    id: `action-${index}`,
+                    label: action.label,
+                    disabled: action.disabled ?? false,
+                    ...(action.title ? { disabledReason: action.title } : {}),
+                    danger: action.className.includes('danger'),
+                    onSelect: action.onClick,
+                  }))
+              : []),
+          ]}
           providesOf={(item) => this.presentationOf(item)}
           formatFailure={(message, code) => pluginFailureMessage(message, this.t, code)}
           metadataOf={(item) => <PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.t} />}
@@ -329,90 +424,132 @@ export function renderDetailPluginView(this: PluginAdminViewContext): void {
   renderRegion(
     this.detail,
     <UiLocaleProvider source={this.locale}>
-      <PluginConfigTab
-        key={item.id}
-        context={this.state.context!}
-        id={item.id}
-        installed={this.tab === 'installed'}
-        onClose={() => this.closeDetail()}
-      >
-        <DetailContent
-          heading={resolvePluginMetadata(item.metadata, this.locale.getSnapshot())?.displayName ?? item.id}
-          content={
+      <DetailContent
+        heading={resolvePluginMetadata(item.metadata, this.locale.getSnapshot())?.displayName ?? item.id}
+        intro={resolvePluginMetadata(item.metadata, this.locale.getSnapshot())?.summary ?? ''}
+        version={undefined}
+        stateText={undefined}
+        facts={[]}
+        content={
+          <PluginConfigTab
+            key={item.id}
+            context={this.state.context!}
+            id={item.id}
+            installed={this.tab === 'installed'}
+            onClose={() => this.closeDetail()}
+            permissions={
+              <section data-testid="plugin-permissions-detail">
+                <PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.t} />
+                {'desired' in item && (
+                  <>
+                    <ProvenanceReview value={item.provenance} t={this.t} />
+                    <CapabilityReview value={item.declaredCapabilities} t={this.t} />
+                  </>
+                )}
+                {'desired' in item &&
+                (item.actual === 'failed' ||
+                  item.blockers.length ||
+                  this.runtimeState(item.id)?.phase === 'failed') ? (
+                  <FailureHelp
+                    reason={
+                      item.blockers.length
+                        ? 'capability blocked'
+                        : (this.runtimeState(item.id)?.error?.message ?? item.actualReason ?? '')
+                    }
+                    t={this.t}
+                  />
+                ) : undefined}
+              </section>
+            }
+            versions={
+              <PluginPurposeSections
+                item={item}
+                value={this.presentationOf(item)}
+                section="versions"
+                permissions={null}
+                versions={
+                  <>
+                    <p>{this.t('version', { version: item.version })}</p>
+                    <GenerationDrainSummary
+                      status={this.state.generations}
+                      installed={this.state.installed.filter((row) => row.id === item.id)}
+                      t={this.t}
+                      nameOf={() =>
+                        resolvePluginMetadata(item.metadata, this.locale.getSnapshot())?.displayName ??
+                        item.id
+                      }
+                    />
+                    <SettingsDetails title={this.purposeText('technical')}>
+                      <code>{item.id}</code>
+                      <Button
+                        size="small"
+                        onClick={() =>
+                          void navigator.clipboard.writeText(
+                            JSON.stringify(
+                              {
+                                id: item.id,
+                                version: item.version,
+                                source: item.source,
+                                integrity: item.integrity,
+                              },
+                              null,
+                              2,
+                            ),
+                          )
+                        }
+                      >
+                        {this.t('ux.copy')}
+                      </Button>
+                      <dl className="plugin-facts">
+                        {facts.map(([label, value]) => (
+                          <div key={label}>
+                            <dt>{label}</dt>
+                            <dd>{value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </SettingsDetails>
+                  </>
+                }
+              />
+            }
+            settingsSummary={
+              <PluginPurposeSections
+                item={item}
+                value={this.presentationOf(item)}
+                section="settings"
+                permissions={null}
+                versions={null}
+              />
+            }
+          >
             <PluginPurposeSections
               item={item}
               value={this.presentationOf(item)}
-              permissions={
-                <>
-                  <PluginBadges item={item} runtime={this.runtimeState(item.id)} t={this.t} />
-                  {'desired' in item && (
-                    <>
-                      <ProvenanceReview value={item.provenance} t={this.t} />
-                      <CapabilityReview value={item.declaredCapabilities} t={this.t} />
-                    </>
-                  )}
-                  {'desired' in item &&
-                  (item.actual === 'failed' ||
-                    item.blockers.length ||
-                    this.runtimeState(item.id)?.phase === 'failed') ? (
-                    <FailureHelp
-                      reason={
-                        item.blockers.length
-                          ? 'capability blocked'
-                          : (this.runtimeState(item.id)?.error?.message ?? item.actualReason ?? '')
-                      }
-                      t={this.t}
-                    />
-                  ) : undefined}
-                </>
-              }
-              versions={
-                <>
-                  <p>{this.t('version', { version: item.version })}</p>
-                  <SettingsDetails title={this.purposeText('technical')}>
-                    <dl className="plugin-facts">
-                      {facts.map(([label, value]) => (
-                        <div key={label}>
-                          <dt>{label}</dt>
-                          <dd>{value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </SettingsDetails>
-                </>
-              }
+              section="overview"
+              permissions={null}
+              versions={null}
             />
-          }
-          intro={
-            resolvePluginMetadata(item.metadata, this.locale.getSnapshot())?.summary ??
-            this.purposeText('noDescription')
-          }
-          version={this.t('version', { version: item.version })}
-          stateText={
-            'trusted' in item
-              ? undefined
-              : this.t('compatibility', { value: this.t(`compatibility.${item.compatibility}`) })
-          }
-          facts={[]}
-          blockerSections={[
-            {
-              title: this.t('blocker.current'),
-              items: ('blockers' in item ? item.blockers : []).map((blocker) =>
-                blockerText(blocker, this.adminT),
-              ),
-            },
-            {
-              title: this.t('blocker.operation'),
-              items: (this.state.error?.blockers ?? []).map((blocker) => blockerText(blocker, this.adminT)),
-            },
-          ]}
-          operations={this.detailOperations(item.id)}
-          lastOperationLabel={undefined}
-          actions={this.detailActions(item)}
-          onClose={() => this.closeDetail()}
-          onCancelOperation={(operationId, trigger) => void this.cancelOperation(operationId, trigger)}
-        />
-      </PluginConfigTab>
+          </PluginConfigTab>
+        }
+        blockerSections={[
+          {
+            title: this.t('blocker.current'),
+            items: ('blockers' in item ? item.blockers : []).map((blocker) =>
+              blockerText(blocker, this.adminT),
+            ),
+          },
+          {
+            title: this.t('blocker.operation'),
+            items: (this.state.error?.blockers ?? []).map((blocker) => blockerText(blocker, this.adminT)),
+          },
+        ]}
+        operations={this.detailOperations(item.id)}
+        lastOperationLabel={undefined}
+        actions={this.detailActions(item)}
+        onClose={() => this.closeDetail()}
+        onCancelOperation={(operationId, trigger) => void this.cancelOperation(operationId, trigger)}
+      />
     </UiLocaleProvider>,
   )
 }

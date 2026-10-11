@@ -3,6 +3,7 @@ import { Button } from './button.js'
 
 export type ListRowProps = Omit<HTMLAttributes<HTMLElement>, 'title'> & {
   title: ReactNode
+  titleClassName?: string
   icon?: ReactNode
   description?: ReactNode
   meta?: ReactNode
@@ -13,6 +14,7 @@ export type ListRowProps = Omit<HTMLAttributes<HTMLElement>, 'title'> & {
 /** The title is a real button. Row actions never trigger the detail action. */
 export function ListRow({
   title,
+  titleClassName,
   icon,
   description,
   meta,
@@ -49,7 +51,12 @@ export function ListRow({
         <div className="agh-list-row-heading">
           <h3>
             {onOpen ? (
-              <Button ref={trigger} appearance="ghost" className="agh-list-row-title" onClick={onOpen}>
+              <Button
+                ref={trigger}
+                appearance="ghost"
+                className={['agh-list-row-title', titleClassName].filter(Boolean).join(' ')}
+                onClick={onOpen}
+              >
                 {title}
               </Button>
             ) : (

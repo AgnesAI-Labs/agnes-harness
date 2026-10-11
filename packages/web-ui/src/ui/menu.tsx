@@ -19,6 +19,7 @@ export type MenuItem = {
   danger?: boolean
   disabled?: boolean
   disabledReason?: string
+  testId?: string
   onSelect(): void
 }
 export type MenuProps = {
@@ -120,6 +121,7 @@ export function Menu({ trigger, label, items }: MenuProps) {
                 key={item.id}
                 type="button"
                 role="menuitem"
+                data-testid={item.testId}
                 tabIndex={active === index ? 0 : -1}
                 className="agh-menu-item"
                 data-danger={item.danger || undefined}

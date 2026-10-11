@@ -453,11 +453,17 @@ it('uses the shared empty-state structure for Skill and MCP pages', async () => 
   await vi.waitFor(() => expect(byId('resource-list').querySelector('.admin-empty-state')).not.toBeNull())
 
   const skillsEmpty = byId('resource-list').querySelector<HTMLElement>('.admin-empty-state')
-  expect(skillsEmpty?.querySelector('h3')?.textContent).toBe('No Skills found')
-  expect(
-    [...(skillsEmpty?.querySelectorAll('.admin-empty-state-hints li') ?? [])].map((item) => item.textContent),
-  ).toEqual(['Agnes home: $AGH_HOME/skills'])
-  expect(skillsEmpty?.textContent).toContain('AGNES_SKILLS_IMPORT_USER=1')
+  expect(skillsEmpty?.querySelector('h3')?.textContent).toBe('No skills yet')
+  expect(skillsEmpty?.querySelector('.admin-empty-state-hints')).toBeNull()
+  expect(skillsEmpty?.textContent).not.toContain('AGNES_SKILLS_IMPORT_USER')
+  expect(skillsEmpty?.textContent).not.toContain('$AGH_HOME')
+  expect(skillsEmpty?.querySelector('a')?.getAttribute('href')).toContain('new=1')
+  const locations = byId('resource-list').querySelector<HTMLButtonElement>('[data-testid="skill-locations"]')!
+  locations.click()
+  await vi.waitFor(() =>
+    expect(document.querySelector('.agnes-ui-popover')?.textContent).toContain('Personal Agnes skills'),
+  )
+  document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
 
   emptyMcp = true
   byId('mcp-tab').click()

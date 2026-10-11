@@ -1,7 +1,9 @@
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
 import { resolvePluginMetadata } from '@agnes/protocol'
 import {
-  Badge,
+  MetaText,
+  IconButton,
+  SettingsDetails,
   Button,
   PLUGIN_PRESENTATION_NAMESPACE,
   pluginPresentationCatalog,
@@ -72,13 +74,19 @@ export function ExamplesPanel({
   }, [api, revision])
   return (
     <section aria-busy={busy}>
+      <h3>{t('examples')}</h3>
       <p>{t('examplesHelp')}</p>
       {busy && <SettingsState tone="loading">{t('loading')}</SettingsState>}
       {failed && <SettingsState tone="error">{t('unavailable')}</SettingsState>}
       {!busy && !failed && !rows.length && <p>{t('noExamples')}</p>}
-      <Button disabled={!api || busy} onClick={() => setRevision((value) => value + 1)}>
-        {t('retry')}
-      </Button>
+      {failed && (
+        <IconButton
+          name="refresh-cw"
+          label={t('retry')}
+          disabled={!api || busy}
+          onClick={() => setRevision((value) => value + 1)}
+        />
+      )}
       <div className="runtime-grid">
         {rows.map((row) => {
           const name = row.id.split('/').at(-1) ?? row.id
@@ -101,29 +109,26 @@ export function ExamplesPanel({
               data-testid={`example-${row.id}`}
             >
               <h3>{purpose?.displayName ?? row.id}</h3>
-              <small>
-                {row.id} · {row.version}
-              </small>
-              <p>{purpose?.summary ?? purposeText('noDescription')}</p>
-              <section className="agnes-settings-actions" aria-label={t('exampleSummary')}>
-                {row.kinds?.map((kind) => (
-                  <Badge key={kind}>{t(`kind.${kind}`)}</Badge>
-                ))}
-              </section>
-              <p>
-                {row.version} · {row.license}
-              </p>
-
-              {enabled && (
+              {purpose?.summary && <p>{purpose.summary}</p>}
+              <MetaText>
+                {purposeText('origin.example')}
+                {row.metadata ? ` · ${purposeText(`category.${row.metadata.category}`)}` : ''}
+              </MetaText>
+              <SettingsDetails title={purposeText('technical')}>
                 <p>
-                  <Badge tone={available ? 'ok' : 'warn'}>{t('exampleReady')}</Badge>{' '}
-                  {t(available ? 'exampleHint' : 'examplePending')}
+                  {row.id} · {row.version} · {row.license}
                 </p>
-              )}
+                <section className="agnes-settings-actions" aria-label={t('exampleSummary')}>
+                  {row.kinds?.map((kind) => (
+                    <MetaText key={kind}>{t(`kind.${kind}`)}</MetaText>
+                  ))}
+                </section>
+              </SettingsDetails>
+              {enabled && !available && <p>{t('examplePending')}</p>}
               <Button
                 data-testid={`example-install-${name}`}
                 disabled={!api || !canInstall || busy || enabled}
-                type={enabled ? 'default' : 'primary'}
+                disabledReason={enabled ? t('exampleReady') : t('unavailable')}
                 onClick={() => onReview(row)}
               >
                 {t(enabled ? 'exampleReady' : current ? 'exampleEnable' : 'exampleInstall')}

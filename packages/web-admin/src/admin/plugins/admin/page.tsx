@@ -306,6 +306,7 @@ export class PluginAdminPage {
   private readonly actualSlots: ((packageId: string) => readonly string[]) | undefined
 
   constructor(options: PluginAdminOptions = {}) {
+    this.#detail.classList.add('agh-drawer')
     // Keep the scrollable tab panel keyboard reachable during empty/loading states.
     this.#listHost.tabIndex = 0
     this.actualSlots = options.actualSlots
@@ -883,7 +884,7 @@ export class PluginAdminPage {
     setDialog(
       this.#confirmDialog,
       true,
-      this.#confirmDialog.querySelector('button.primary-button') ?? undefined,
+      this.#confirmDialog.querySelector('button.agh-btn--primary') ?? undefined,
     )
   }
 
@@ -1172,7 +1173,7 @@ export class PluginAdminPage {
             links.length === 1
               ? this.#t('surface.open', { mount: link.mount })
               : this.#t('surface.open-named', { surface: link.surfaceId, mount: link.mount }),
-          className: 'secondary-button compact plugin-surface-link',
+          className: 'agh-btn agh-btn--secondary agh-btn--sm plugin-surface-link',
           href: link.mount,
           ariaLabel: this.#t('surface.open-aria', {
             id: item.id,
@@ -1184,13 +1185,13 @@ export class PluginAdminPage {
       }
       specs.push({
         label: this.#t('action.update-catalog'),
-        className: 'secondary-button',
+        className: 'agh-btn agh-btn--secondary',
         disabled: !this.canEffect('packages.install') || busy,
         onClick: () => void this.chooseUpdateVersion(installed),
       })
       specs.push({
         label: this.#t('action.update-source'),
-        className: 'secondary-button',
+        className: 'agh-btn agh-btn--secondary',
         disabled: !this.canEffect('packages.install') || busy,
         onClick: () => this.openSourceDialog('update', installed),
       })
@@ -1208,14 +1209,14 @@ export class PluginAdminPage {
         label: target
           ? this.#t('action.rollback', { version: target.version })
           : this.#t('action.rollback-unknown'),
-        className: 'secondary-button',
+        className: 'agh-btn agh-btn--secondary',
         disabled: !rollbackReady,
         title: rollbackReady ? this.#t('action.rollback-ready') : this.#t('action.rollback-unavailable'),
         onClick: () => this.confirmRollback(installed),
       })
       specs.push({
         label: this.#t('action.remove'),
-        className: 'danger-button',
+        className: 'agh-btn agh-btn--danger',
         disabled: !this.canEffect('packages.remove') || installed.blockers.length > 0 || busy,
         onClick: () => this.confirmRemove(installed),
       })
@@ -1225,7 +1226,7 @@ export class PluginAdminPage {
     const installed = this.#state.installed.some((candidate) => candidate.id === catalog.id)
     specs.push({
       label: installed ? this.#t('action.check-update') : this.#t('action.check-install-content'),
-      className: 'primary-button',
+      className: 'agh-btn agh-btn--primary',
       disabled:
         catalog.compatibility === 'unsupported' ||
         !this.canEffect('packages.install') ||
@@ -1481,7 +1482,9 @@ export class PluginAdminPage {
     if (!targetId) return
     for (const row of this.#listHost.querySelectorAll<HTMLElement>('.plugin-row')) {
       if (row.dataset.pluginId === targetId) {
-        row.focus({ preventScroll: true })
+        row
+          .querySelector<HTMLButtonElement>('.agh-list-row-title, .plugin-details-button')
+          ?.focus({ preventScroll: true })
         return
       }
     }

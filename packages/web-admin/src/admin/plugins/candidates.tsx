@@ -1,5 +1,5 @@
 import type { AuthoringCandidate, AuthoringCandidateSummary } from '@agnes/protocol'
-import { Badge, Button, SettingsToolbar } from '@agnes/web-ui'
+import { Badge, Button, SettingsToolbar, EmptyState, Icon } from '@agnes/web-ui'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import type { PluginAdminApi } from './api.js'
 import { CandidateListFacts, candidateIdentity } from './candidate-list.js'
@@ -34,6 +34,8 @@ export function CandidateInbox({
   onPublished,
   sessionTitle,
   sessionTurnTime,
+  scope,
+  onPendingCount,
 }: {
   api: PluginAdminApi | undefined
   canReview: boolean
@@ -43,6 +45,8 @@ export function CandidateInbox({
   onPublished: () => Promise<void>
   sessionTitle?: ((key: string) => Promise<string | undefined>) | undefined
   sessionTurnTime?: ((key: string, turn: number) => Promise<string | undefined>) | undefined
+  scope?: 'skill' | 'plugin'
+  onPendingCount?(count: number): void
 }) {
   const [items, setItems] = useState<AuthoringCandidateSummary[]>([]),
     [selected, setSelected] = useState<AuthoringCandidate>(),
@@ -182,7 +186,14 @@ export function CandidateInbox({
       run: () => act(() => api.candidatesDecide(value.candidateId, value.candidateHash, reviewHash, approve)),
     })
   }
-  const ordered = [...items].sort(
+  const visibleItems = scope
+    ? items.filter((item) => facts[item.candidateId]?.identity.type === scope)
+    : items
+  const pendingCount = visibleItems.filter((item) => item.state === 'review').length
+  useEffect(() => {
+    onPendingCount?.(pendingCount)
+  }, [onPendingCount, pendingCount])
+  const ordered = [...visibleItems].sort(
     (a, b) =>
       Number(b.state === 'review') - Number(a.state === 'review') ||
       (Date.parse(facts[b.candidateId]?.startedAt ?? '') || 0) -
@@ -200,7 +211,7 @@ export function CandidateInbox({
         : ['failed', 'interrupted'].includes(state)
           ? ('bad' as const)
           : ('off' as const)
-  if (loaded && !items.length && !selected && !error) return null
+  if (loaded && !visibleItems.length && !selected && !error && scope !== 'skill') return null
   return (
     <section className="plugin-candidates" data-testid="plugin-candidates" aria-label={t('candidates.title')}>
       <SettingsToolbar>
@@ -232,8 +243,12 @@ export function CandidateInbox({
       {!selected ? (
         <>
           <p>{t('candidates.description')}</p>
-          {!items.length ? (
-            <p>{t('candidates.empty')}</p>
+          {!visibleItems.length ? (
+            <EmptyState
+              icon={<Icon name="book-open" size={48} />}
+              title={t('candidates.empty')}
+              description={t('candidates.description')}
+            />
           ) : (
             <ul className="candidate-list" data-testid="candidate-list">
               {ordered.map((value) => (
@@ -361,7 +376,7 @@ export function CandidateInbox({
               </Button>
             )}
             <Button
-              type="primary"
+              appearance="primary"
               data-testid="candidate-approve"
               disabled={!api || !canReview || busy || selected.state !== 'review'}
               onClick={() => decide(selected, true)}

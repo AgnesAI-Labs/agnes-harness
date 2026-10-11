@@ -4,6 +4,7 @@ export const ADMIN_LIST_LOCALE_NAMESPACE = '@agnes/web-ui/admin-list'
 
 export const adminListLocaleCatalog: LocaleCatalog = {
   en: {
+    'row.actions': 'Plugin actions',
     'row.technicalDetails': 'Technical details',
     'row.versions': 'Versions · {version}',
     'row.version': 'Version',
@@ -27,7 +28,7 @@ export const adminListLocaleCatalog: LocaleCatalog = {
     'empty.installed-unknown': 'Installed status is not yet confirmed',
     'empty.query': 'No plugins match',
     'empty.catalog': 'No plugins are available in the catalog right now',
-    'empty.installed-help': 'Browse the catalog or check a plugin from a known source.',
+    'empty.installed-help': 'Plugins give Agnes new capabilities. Start with an official example.',
     'empty.installed-recovery':
       'The host has not confirmed the installed state; it will refresh after recovery.',
     'empty.catalog-help': 'Adjust the search term or confirm the catalog connection and try again.',
@@ -36,6 +37,7 @@ export const adminListLocaleCatalog: LocaleCatalog = {
     'load-more': 'Load more catalog entries',
   },
   'zh-CN': {
+    'row.actions': '插件操作',
     'row.technicalDetails': '技术详情',
     'row.versions': '版本 · {version}',
     'row.version': '版本',
@@ -59,7 +61,7 @@ export const adminListLocaleCatalog: LocaleCatalog = {
     'empty.installed-unknown': '已安装状态暂不可确认',
     'empty.query': '没有匹配的插件',
     'empty.catalog': '目录暂时没有可显示的插件',
-    'empty.installed-help': '可以浏览目录，或从已知来源检查一个插件。',
+    'empty.installed-help': '插件让 Agnes 获得新能力，可以从官方示例开始。',
     'empty.installed-recovery': '后台尚未确认当前已安装状态；恢复后会自动刷新。',
     'empty.catalog-help': '请调整搜索词，或确认目录连接后重试。',
     'inventory.stale': '以下为上次读取的状态，当前后台尚未确认。',

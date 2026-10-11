@@ -1,4 +1,7 @@
 import type { PackageOperation } from '@agnes/protocol'
+import { Button } from './ui/button.js'
+import { IconButton } from './ui/icon-button.js'
+import { Menu } from './ui/menu.js'
 import type { JSX, ReactNode } from 'react'
 import { ADMIN_LOCALE_NAMESPACE, operationLabel } from './admin-text.js'
 import { adminLocaleCatalog } from './locales/admin.js'
@@ -81,14 +84,12 @@ export function DetailContent({
       <div className="admin-detail-head">
         <div className="plugin-detail-heading">
           <h2>{heading}</h2>
-          <button
-            type="button"
-            className="secondary-button compact plugin-detail-close"
+          <IconButton
+            name="x"
+            className="plugin-detail-close"
             onClick={onClose}
-            aria-label={t('close.aria', { heading })}
-          >
-            {t('close.label')}
-          </button>
+            label={t('close.aria', { heading })}
+          />
         </div>
         {version && <p className="plugin-detail-version">{version}</p>}
         {metadata}
@@ -124,13 +125,13 @@ export function DetailContent({
                   {operation.retryable ? ` · ${t('operations.retry')}` : ''}
                 </p>
                 {canCancel && (
-                  <button
-                    type="button"
-                    className="secondary-button compact"
+                  <Button
+                    htmlType="button"
+                    size="small"
                     onClick={(event) => onCancelOperation(operation.operationId, event.currentTarget)}
                   >
                     {t('operations.cancel')}
-                  </button>
+                  </Button>
                 )}
               </div>
             ))}
@@ -138,11 +139,23 @@ export function DetailContent({
         )}
       </div>
       <div className="admin-detail-actions">
-        {actions.map((action) =>
-          action.href ? (
-            <a
+        {actions
+          .filter((action) => !action.href && action.className.includes('--primary'))
+          .map((action) => (
+            <Button
               key={action.label}
-              className={action.className}
+              appearance="primary"
+              disabled={action.disabled ?? false}
+              onClick={action.onClick}
+            >
+              {action.label}
+            </Button>
+          ))}
+        {actions
+          .filter((action) => action.href)
+          .map((action) => (
+            <Button
+              key={action.label}
               href={action.href}
               target="_blank"
               rel="noopener"
@@ -150,20 +163,23 @@ export function DetailContent({
               onClick={action.onClick}
             >
               {action.label}
-            </a>
-          ) : (
-            <button
-              key={action.label}
-              type="button"
-              className={action.className}
-              disabled={action.disabled}
-              title={action.title}
-              aria-label={action.ariaLabel}
-              onClick={action.onClick}
-            >
-              {action.label}
-            </button>
-          ),
+            </Button>
+          ))}
+        {actions.filter((action) => !action.href && !action.className.includes('--primary')).length > 0 && (
+          <Menu
+            label={t('actions')}
+            trigger={<Button>{t('actions')}</Button>}
+            items={actions
+              .filter((action) => !action.href && !action.className.includes('--primary'))
+              .map((action, index) => ({
+                id: `detail-${index}`,
+                label: action.label,
+                disabled: action.disabled ?? false,
+                ...(action.title ? { disabledReason: action.title } : {}),
+                danger: action.className.includes('danger'),
+                onSelect: action.onClick,
+              }))}
+          />
         )}
       </div>
     </>

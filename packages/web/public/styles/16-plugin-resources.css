@@ -206,7 +206,7 @@
   font-size: var(--font-size-xs);
   line-height: 1.45;
 }
-.plugin-row {
+.plugin-row:not(.agh-list-row) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 2.375rem;
   align-items: center;
@@ -223,30 +223,30 @@
     background-color var(--transition-fast),
     box-shadow var(--transition-fast);
 }
-.plugin-row:last-of-type {
+.plugin-row:not(.agh-list-row):last-of-type {
   margin-bottom: 0;
 }
 /* 目录页第三列是动作按钮而不是 Switch，宽度随文案变，所以在基础轨上单独覆盖。 */
-.plugin-row[data-tab="discover"] {
+.plugin-row:not(.agh-list-row)[data-tab="discover"] {
   grid-template-columns: minmax(0, 1fr) auto auto;
 }
-.plugin-row[data-tab="installed"]:has(.plugin-row-retry) {
+.plugin-row:not(.agh-list-row)[data-tab="installed"]:has(.plugin-row-retry) {
   grid-template-columns: minmax(0, 1fr) auto;
 }
-.plugin-row:hover,
-.plugin-row:focus-visible {
+.plugin-row:not(.agh-list-row):hover,
+.plugin-row:not(.agh-list-row):focus-visible {
   border-color: var(--agnes-line-emphasis);
   background: var(--agnes-bg-hover);
   box-shadow: none;
 }
-.plugin-row:focus-visible {
+.plugin-row:not(.agh-list-row):focus-visible {
   outline: 2px solid var(--agnes-input-border-focus);
   outline-offset: -2px;
 }
 .plugin-row-content {
   min-width: 0;
 }
-.plugin-row h2 {
+.plugin-row:not(.agh-list-row) h2 {
   margin: 0;
   /* 行标题单行截断 + title 全文（见渲染代码）：长插件名/长 MCP 名不得撑破行。 */
   overflow: hidden;
@@ -507,7 +507,7 @@
   justify-content: center;
   margin: 0.75rem 1rem 1rem;
 }
-.plugin-detail[open] {
+.plugin-detail:not(.agh-drawer)[open] {
   /* 三段式容器：头部固定 / 中段滚动 / 动作固定。内部结构见 .admin-detail-scroll 与
      .admin-detail-actions；操作按钮因此永远不会被内容推出可视区。
      选择器限定 `[open]`：否则 `display: flex` 会覆盖浏览器对关闭态 dialog 的 `display: none`，
@@ -522,8 +522,8 @@
 /* 详情是模态框（不再是面板右侧的固定抽屉），宽度自己定，不再由 .plugin-layout 的列宽决定。
    三段式的三段里，头部与动作是 flex: 0 0 auto，只有中段 flex:1 + overflow-y:auto，
    因此"描述太长 → 底部按钮够不到"结构上不可能发生。 */
-#plugin-detail,
-#resource-detail {
+#plugin-detail:not(.agh-drawer),
+#resource-detail:not(.agh-drawer) {
   width: min(42rem, calc(100vw - 2rem));
 }
 .admin-detail-head {
@@ -813,16 +813,16 @@
   .plugin-search-field input {
     min-height: 2.75rem;
   }
-  .plugin-row {
+  .plugin-row:not(.agh-list-row) {
     grid-template-columns: minmax(0, 1fr) 2.375rem;
     gap: 0.5rem;
     padding: 0.75rem;
   }
-  .plugin-row[data-tab="discover"] {
+  .plugin-row:not(.agh-list-row)[data-tab="discover"] {
     grid-template-columns: minmax(0, 1fr) 6rem auto;
   }
-  .plugin-row > :last-child.secondary-button,
-  .plugin-row > :last-child .secondary-button,
+  .plugin-row:not(.agh-list-row) > :last-child.secondary-button,
+  .plugin-row:not(.agh-list-row) > :last-child .secondary-button,
   .plugin-detail-actions button,
   .danger-button {
     min-height: 2.75rem;
@@ -852,8 +852,8 @@
     padding-inline: 0.625rem;
     font-size: var(--font-size-xs);
   }
-  .plugin-row > :last-child.secondary-button,
-  .plugin-row > :last-child .secondary-button {
+  .plugin-row:not(.agh-list-row) > :last-child.secondary-button,
+  .plugin-row:not(.agh-list-row) > :last-child .secondary-button {
     min-width: 0;
     padding-inline: 0.5rem;
   }

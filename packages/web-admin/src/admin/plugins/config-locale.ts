@@ -3,8 +3,10 @@ export const PLUGIN_CONFIG_ADMIN_NAMESPACE = '@agnes/web/plugin-configuration'
 export const pluginConfigAdminCatalog: LocaleCatalog = {
   en: {
     fieldError: 'Invalid field ({code}).',
-    details: 'Details',
-    config: 'Configuration',
+    permissions: 'Permissions',
+    versions: 'Versions',
+    details: 'Overview',
+    config: 'Settings',
     loading: 'Loading configuration…',
     unavailable: 'Configuration is unavailable. Try reloading.',
     empty: 'This package has no configurable plugin entries.',
@@ -29,8 +31,10 @@ export const pluginConfigAdminCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     fieldError: '字段不合法（{code}）。',
-    details: '详情',
-    config: '配置',
+    permissions: '权限',
+    versions: '版本',
+    details: '概览',
+    config: '设置',
     loading: '正在读取配置…',
     unavailable: '配置暂时不可用，请重新读取。',
     empty: '此包没有可配置的插件条目。',

@@ -61,8 +61,10 @@ const sourceError = () => document.getElementById('source-error') as HTMLElement
 const inspectCalls = (fetcher: Fetcher) =>
   fetcher.mock.calls.filter(([url]) => String(url).endsWith('/api/inspect'))
 
-function openSourceDialog(): void {
+async function openSourceDialog(): Promise<void> {
   ;(document.getElementById('install-source') as HTMLButtonElement).click()
+  await vi.waitFor(() => expect(document.querySelector('[data-testid=plugin-install-source]')).not.toBeNull())
+  ;(document.querySelector('[data-testid=plugin-install-source]') as HTMLButtonElement).click()
 }
 
 /** React 的 value tracker 会忽略「直接赋值」的字段变更：必须用原型原生 setter 写值再派发事件。 */
@@ -92,7 +94,7 @@ afterEach(() => {
 it('keeps the dialog open and says what is wrong when a workspace source lacks its prefix', async () => {
   const fetcher = backend(() => Response.json({ operationId: 'never', profile: 'local-dev' }))
   await mount(fetcher)
-  openSourceDialog()
+  await openSourceDialog()
   expect(sourceDialog().open).toBe(true)
 
   submit('workspace', 'extensions/my-extension')
@@ -105,7 +107,7 @@ it('keeps the dialog open and says what is wrong when a workspace source lacks i
 
 it('shows an example for the selected source type instead of the npm one', async () => {
   await mount(backend(() => Response.json({})))
-  openSourceDialog()
+  await openSourceDialog()
   const placeholder = () => sourceRef().placeholder
 
   // 组件层用原生 select（旧 select-picker 的触发器/listbox DOM 已随迁移移除）。
@@ -123,7 +125,7 @@ it('shows an example for the selected source type instead of the npm one', async
 it('sends a well-formed source and closes the dialog once the check has been accepted', async () => {
   const fetcher = backend(() => Response.json({ operationId: 'inspect-1', profile: 'local-dev' }))
   await mount(fetcher)
-  openSourceDialog()
+  await openSourceDialog()
 
   submit('file', '/path/to/my-plugin.tgz')
 
@@ -138,7 +140,7 @@ it('keeps the dialog open and shows the backend refusal inside it', async () => 
     Response.json({ error: { code: 'E_PACKAGE_SOURCE', message: '来源被后台拒绝。' } }, { status: 400 }),
   )
   await mount(fetcher)
-  openSourceDialog()
+  await openSourceDialog()
 
   submit('file', 'file:./examples/packages/missing')
 
@@ -156,7 +158,7 @@ it('retranslates a source-check failure when the locale changes while the dialog
     ),
   )
   await mount(fetcher)
-  openSourceDialog()
+  await openSourceDialog()
 
   submit('file', 'file:./examples/packages/missing')
 
@@ -181,7 +183,7 @@ it('does not close the settings dialog it was opened from', async () => {
   settings.showModal()
   expect(settings.open).toBe(true)
 
-  openSourceDialog()
+  await openSourceDialog()
 
   expect(sourceDialog().open).toBe(true)
   expect(settings.open).toBe(true)

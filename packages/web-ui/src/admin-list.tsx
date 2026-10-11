@@ -1,14 +1,19 @@
-import type { PackageCatalogDescriptor, PackageInstalledDescriptor, PackageSource } from '@agnes/protocol'
+import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
 import { resolvePluginMetadata } from '@agnes/protocol'
 import { type JSX, type ReactNode, useState } from 'react'
-import { ADMIN_LOCALE_NAMESPACE, contributionText, type RuntimeStateView, sourceLabel } from './admin-text.js'
-import { adminLocaleCatalog } from './locales/admin.js'
+import { type RuntimeStateView } from './admin-text.js'
 import { ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog } from './locales/admin-list.js'
 import { PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog } from './locales/plugin-presentation.js'
 import type { PluginPresentation } from './plugin-presentation.js'
 import { PluginProvidesChips, PluginPurposeBadges } from './plugin-purpose.js'
 import { SettingsDetails } from './settings-layout.js'
-import { Badge } from './ui/badge.js'
+import { Tag } from './ui/tag.js'
+import { Button } from './ui/button.js'
+import { IconButton } from './ui/icon-button.js'
+import { Icon } from './ui/icon.js'
+import { EmptyState } from './ui/empty-state.js'
+import { ListRow } from './ui/list-row.js'
+import { Menu, type MenuItem } from './ui/menu.js'
 import { Select } from './ui/select.js'
 import { StateSwitch } from './ui/state-lights.js'
 import { useUiText } from './ui-locale.js'
@@ -27,41 +32,6 @@ export type RowAction = Readonly<{
   disabled: boolean
   run: () => Promise<void> | void
 }>
-
-function SurfaceLinks({
-  links,
-  packageId,
-  t,
-}: {
-  links: readonly SurfaceLinkItem[]
-  packageId: string
-  t: (key: string, vars?: Readonly<Record<string, string | number>>) => string
-}): JSX.Element | undefined {
-  if (!links.length) return undefined
-  return (
-    <div className="plugin-surface-links">
-      {links.map((surface) => (
-        <a
-          key={surface.surfaceId}
-          className="secondary-button compact plugin-surface-link"
-          href={surface.mount}
-          target="_blank"
-          rel="noopener"
-          onClick={(event) => event.stopPropagation()}
-          aria-label={t('surface.open-aria', {
-            packageId,
-            surfaceId: surface.surfaceId,
-            mount: surface.mount,
-          })}
-        >
-          {links.length === 1
-            ? t('surface.open-page', { mount: surface.mount })
-            : `${surface.surfaceId} · ${surface.mount}`}
-        </a>
-      ))}
-    </div>
-  )
-}
 
 export type OrphanPinItem = Readonly<{
   pinId: string
@@ -92,10 +62,10 @@ export function OrphanPins({
     <>
       <div className="orphan-pins-heading">
         <strong>{t('orphan.title')}</strong>
-        <button
-          type="button"
+        <Button
+          htmlType="button"
           id="orphan-pins-release-all"
-          className="secondary-button compact"
+          size="small"
           disabled={!canRelease || pins.length === 0}
           onClick={(event) =>
             onRelease(
@@ -105,7 +75,7 @@ export function OrphanPins({
           }
         >
           {t('orphan.release-all')}
-        </button>
+        </Button>
       </div>
       <p id="orphan-pins-status" className="orphan-pins-status" hidden={!fetchError && !notice}>
         {fetchError ?? notice ?? ''}
@@ -122,14 +92,14 @@ export function OrphanPins({
               </p>
               {errors.get(pin.pinId) && <p className="orphan-pin-error">{errors.get(pin.pinId)}</p>}
             </div>
-            <button
-              type="button"
-              className="secondary-button compact"
+            <Button
+              htmlType="button"
+              size="small"
               disabled={!canRelease}
               onClick={(event) => onRelease([pin.pinId], event.currentTarget)}
             >
               {t('orphan.release')}
-            </button>
+            </Button>
           </li>
         ))}
       </ul>
@@ -141,15 +111,11 @@ export function OrphanPins({
 function CatalogCompatibility({ item }: { item: PackageCatalogDescriptor }): JSX.Element {
   const { t } = useUiText(ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog)
   const unsupported = item.compatibility === 'unsupported'
+  if (!unsupported) return <span className="plugin-compatibility" />
   return (
-    <span
-      className="plugin-compatibility"
-      title={t(unsupported ? 'compatibility.unsupportedHelp' : 'compatibility.supportedHelp')}
-    >
-      <Badge tone={unsupported ? 'bad' : 'ok'}>
-        {t(unsupported ? 'compatibility.unsupported' : 'compatibility.supported')}
-      </Badge>
-    </span>
+    <Tag tone="bad" className="plugin-compatibility" title={t('compatibility.unsupportedHelp')}>
+      {t('compatibility.unsupported')}
+    </Tag>
   )
 }
 
@@ -171,9 +137,10 @@ function RowControl({
   onToggleDesired(item: PackageInstalledDescriptor, next: boolean): void
 }): JSX.Element {
   const actionButton = (extraClass?: string): JSX.Element => (
-    <button
-      type="button"
-      className={`secondary-button compact${extraClass ? ` ${extraClass}` : ''}`}
+    <Button
+      htmlType="button"
+      size="small"
+      className={extraClass}
       disabled={primaryAction.disabled}
       onClick={(event) => {
         event.stopPropagation()
@@ -181,7 +148,7 @@ function RowControl({
       }}
     >
       {primaryAction.label}
-    </button>
+    </Button>
   )
   if (tab === 'installed') {
     const installed = item as PackageInstalledDescriptor
@@ -219,7 +186,6 @@ export function PluginList({
   query,
   filtered = false,
   nextCursor,
-  surfaceLinksOf,
   runtimeOf,
   primaryActionOf,
   switchDisabledOf,
@@ -227,8 +193,9 @@ export function PluginList({
   onToggleDesired,
   onLoadMore,
   metadataOf,
-  formatFailure,
   providesOf,
+  menuOf,
+  emptyActions,
 }: {
   tab: AdminTab
   rows: readonly (PackageInstalledDescriptor | PackageCatalogDescriptor)[]
@@ -246,11 +213,12 @@ export function PluginList({
   onLoadMore(): void
   formatFailure?(message: string, code?: string): string
   providesOf?(item: PackageInstalledDescriptor | PackageCatalogDescriptor): PluginPresentation | undefined
+  menuOf?(item: PackageInstalledDescriptor | PackageCatalogDescriptor): readonly MenuItem[]
+  emptyActions?: ReactNode
   metadataOf?(item: PackageInstalledDescriptor | PackageCatalogDescriptor): ReactNode
 }): JSX.Element {
   const { t } = useUiText(ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog)
-  const { t: adminText } = useUiText(ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
-  const { t: purposeText, locale } = useUiText(PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
+  const { locale } = useUiText(PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
   const [versions, setVersions] = useState<Record<string, string>>({})
   const groups = new Map<string, (PackageInstalledDescriptor | PackageCatalogDescriptor)[]>()
   for (const row of rows) {
@@ -258,7 +226,11 @@ export function PluginList({
     groups.set(key, [...(groups.get(key) ?? []), row])
   }
   if (loading && !rows.length) {
-    return <p className="plugin-empty">{t('empty.loading')}</p>
+    return (
+      <div className="agnes-settings-state" data-tone="loading" role="status" aria-busy="true">
+        {t('empty.loading')}
+      </div>
+    )
   }
   if (!rows.length) {
     const title =
@@ -278,11 +250,13 @@ export function PluginList({
           : t('empty.installed-recovery')
         : t('empty.catalog-help')
     return (
-      <div className="plugin-empty admin-empty-state">
-        <span className="agnes-mark admin-empty-state-mark" aria-hidden="true" />
-        <h2>{title}</h2>
-        <p>{copy}</p>
-      </div>
+      <EmptyState
+        className="plugin-empty admin-empty-state"
+        icon={<Icon name="plug" size={48} />}
+        title={title}
+        description={copy}
+        actions={emptyActions}
+      />
     )
   }
   return (
@@ -298,114 +272,90 @@ export function PluginList({
         const runtime = runtimeOf(item.id)
         const purpose = resolvePluginMetadata(item.metadata, locale)
         const displayName = purpose?.displayName ?? item.id
-        const description = purpose?.summary ?? purposeText('noDescription')
-        const failureReason =
-          tab === 'installed'
-            ? (runtime?.error?.message ??
-              ((item as PackageInstalledDescriptor).actual === 'running'
-                ? undefined
-                : (item as PackageInstalledDescriptor).actualReason))
-            : undefined
+        const description = purpose?.summary
         return (
-          // biome-ignore lint/a11y/useKeyWithClickEvents: The heading button provides the same keyboard action; the row adds a pointer hit area without nesting interactive roles.
-          <article
+          <ListRow
             key={tab === 'discover' ? item.id : `${item.id}@${item.version}`}
             className="plugin-row"
             data-plugin-id={item.id}
             data-plugin-version={item.version}
             data-tab={tab}
-            onClick={(event) => {
-              // 行内 Switch / 动作按钮自己处理点击；置灰控件在部分浏览器里不发 click，
-              // 事件会落到行上，所以这里再挡一次，避免「拨开关顺带打开详情」。
-              if (
-                event.target instanceof Element &&
-                event.target.closest('.switch, button, a, details, select, label')
+            icon={<Icon name="plug" size={20} />}
+            titleClassName="plugin-details-button"
+            title={<span aria-label={t('row.details', { id: displayName })}>{displayName}</span>}
+            description={
+              description ? (
+                <span data-testid="plugin-summary">{description}</span>
+              ) : (
+                <PluginProvidesChips value={providesOf?.(item)} />
               )
-                return
-              onOpen(item)
-            }}
+            }
+            meta={<PluginPurposeBadges item={item} />}
+            status={
+              tab === 'discover' ? (
+                <CatalogCompatibility item={item as PackageCatalogDescriptor} />
+              ) : (
+                metadataOf?.(item)
+              )
+            }
+            onOpen={() => onOpen(item)}
+            actions={
+              <>
+                <RowControl
+                  tab={tab}
+                  item={item}
+                  runtime={runtime}
+                  primaryAction={primaryActionOf(item)}
+                  switchDisabled={
+                    tab === 'installed' ? switchDisabledOf(item as PackageInstalledDescriptor) : true
+                  }
+                  t={t}
+                  onToggleDesired={onToggleDesired}
+                />
+                <Menu
+                  label={t('row.actions')}
+                  trigger={<IconButton name="ellipsis" label={t('row.actions')} />}
+                  items={
+                    menuOf?.(item) ?? [
+                      {
+                        id: 'details',
+                        label: t('row.details', { id: displayName }),
+                        onSelect: () => onOpen(item),
+                      },
+                    ]
+                  }
+                />
+              </>
+            }
           >
-            <div className="plugin-row-content">
-              <h2>
-                <button
-                  type="button"
-                  className="plugin-details-button"
-                  aria-label={t('row.details', { id: displayName })}
-                  onClick={() => onOpen(item)}
-                >
-                  {displayName}
-                </button>
-              </h2>
-              <p data-testid="plugin-summary">{description}</p>
-              <PluginPurposeBadges item={item} />
-              {metadataOf?.(item)}
-              <PluginProvidesChips value={providesOf?.(item)} />
-              {alternatives.length > 1 ? (
-                <SettingsDetails
-                  title={t('row.versions', { version: item.version })}
-                  data-testid="plugin-other-versions"
-                >
-                  <label htmlFor={`plugin-version-${encodeURIComponent(item.id)}`}>
-                    {t('row.version')}
-                    <Select<string>
-                      id={`plugin-version-${encodeURIComponent(item.id)}`}
-                      data-testid="plugin-version-picker"
-                      className="plugin-version-picker"
-                      virtual={false}
-                      aria-label={t('row.version')}
-                      value={item.version}
-                      options={alternatives.map((entry) => ({ value: entry.version, label: entry.version }))}
-                      getPopupContainer={(trigger) => trigger.parentElement ?? trigger}
-                      onChange={(value) => setVersions((prior) => ({ ...prior, [item.id]: value }))}
-                    />
-                  </label>
-                </SettingsDetails>
-              ) : null}
-              {alternatives.length === 1 && <p className="plugin-source">{item.version}</p>}
-              <SettingsDetails title={t('row.technicalDetails')}>
-                <p>
-                  <code>{item.id}</code>
-                </p>
-                <p>{sourceLabel(item.source as PackageSource, adminText)}</p>
-                <p>{contributionText(item, adminText)}</p>
-                {tab === 'discover' && (
-                  <p>
-                    {t(
-                      (item as PackageCatalogDescriptor).compatibility === 'unsupported'
-                        ? 'compatibility.unsupportedHelp'
-                        : 'compatibility.supportedHelp',
-                    )}
-                  </p>
-                )}
+            {alternatives.length > 1 ? (
+              <SettingsDetails
+                title={t('row.versions', { version: item.version })}
+                data-testid="plugin-other-versions"
+              >
+                <label htmlFor={`plugin-version-${encodeURIComponent(item.id)}`}>
+                  {t('row.version')}
+                  <Select<string>
+                    id={`plugin-version-${encodeURIComponent(item.id)}`}
+                    data-testid="plugin-version-picker"
+                    className="plugin-version-picker"
+                    virtual={false}
+                    aria-label={t('row.version')}
+                    value={item.version}
+                    options={alternatives.map((entry) => ({ value: entry.version, label: entry.version }))}
+                    getPopupContainer={(trigger) => trigger.parentElement ?? trigger}
+                    onChange={(value) => setVersions((prior) => ({ ...prior, [item.id]: value }))}
+                  />
+                </label>
               </SettingsDetails>
-              {tab === 'installed' && (
-                <SurfaceLinks links={surfaceLinksOf(item.id)} packageId={item.id} t={t} />
-              )}
-              {failureReason && (
-                <p className="resource-safe-error">
-                  {formatFailure?.(failureReason, runtime?.error?.code) ?? t('list.failure')}
-                </p>
-              )}
-            </div>
-            {tab === 'discover' && <CatalogCompatibility item={item as PackageCatalogDescriptor} />}
-            <RowControl
-              tab={tab}
-              item={item}
-              runtime={runtime}
-              primaryAction={primaryActionOf(item)}
-              switchDisabled={
-                tab === 'installed' ? switchDisabledOf(item as PackageInstalledDescriptor) : true
-              }
-              t={t}
-              onToggleDesired={onToggleDesired}
-            />
-          </article>
+            ) : null}
+          </ListRow>
         )
       })}
       {tab === 'discover' && nextCursor && (
-        <button type="button" className="secondary-button plugin-more" onClick={onLoadMore}>
+        <Button htmlType="button" className="plugin-more" onClick={onLoadMore}>
           {t('load-more')}
-        </button>
+        </Button>
       )}
     </>
   )

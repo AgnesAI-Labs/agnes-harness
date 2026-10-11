@@ -1,4 +1,5 @@
 import type { ResourceAdminMount, ResourceAdminOptions } from '@agnes/resource-control-web/admin'
+import { mountSkillAuthoring } from '../plugins/skill-authoring.js'
 import { tr } from '@agnes/web-foundation/locale-bridge'
 
 export type { ResourceAdminMount, ResourceAdminOptions } from '@agnes/resource-control-web/admin'
@@ -14,9 +15,14 @@ export function adaptResourceAdmin(
     subtitle.dataset.i18n = key
     subtitle.textContent = tr(key)
   }
+  const disposeAuthoring = mountSkillAuthoring(() => mounted.reload())
   describe(options.tab)
   return {
     ...mounted,
+    dispose() {
+      disposeAuthoring()
+      mounted.dispose()
+    },
     setTab(tab) {
       mounted.setTab(tab)
       describe(tab)

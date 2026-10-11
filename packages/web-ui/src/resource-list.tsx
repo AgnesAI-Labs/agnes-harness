@@ -5,6 +5,12 @@ import { McpConnectionRow, type McpRowActions } from './mcp-connection-row.js'
 import { SettingsState, SettingsToolbar } from './settings-layout.js'
 import { Button } from './ui/button.js'
 import { StateSwitch } from './ui/state-lights.js'
+import { EmptyState } from './ui/empty-state.js'
+import { Icon } from './ui/icon.js'
+import { IconButton } from './ui/icon-button.js'
+import { ListRow } from './ui/list-row.js'
+import { Menu, type MenuItem } from './ui/menu.js'
+import { MetaText, Tag } from './ui/tag.js'
 import { useUiText } from './ui-locale.js'
 
 export type ResourceItem = SkillDescriptor | import('@agnes/protocol').McpServerDescriptor
@@ -31,6 +37,9 @@ export function ResourceListContent({
   onLoadMore,
   onRetry,
   mcpActions,
+  onImport,
+  filtered = false,
+  menuOf,
 }: {
   tab: ResourceTab
   loadState: ResourceLoadState
@@ -49,6 +58,9 @@ export function ResourceListContent({
   onLoadMore(): void
   onRetry(): void
   mcpActions?(item: import('@agnes/protocol').McpServerDescriptor): McpRowActions
+  onImport?(): void
+  filtered?: boolean
+  menuOf?(item: ResourceItem): readonly MenuItem[]
 }): JSX.Element {
   const { t } = useUiText(RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog)
   if (loadState === 'loading' && !items.length) {
@@ -58,17 +70,12 @@ export function ResourceListContent({
       </SettingsState>
     )
   }
-  if (loadState === 'error') {
+  if (loadState === 'error' && !items.length) {
     return (
       <SettingsState tone="error" className="plugin-empty">
         {t('error')}
         <SettingsToolbar>
-          <Button
-            htmlType="button"
-            className="secondary-button compact"
-            data-resource-retry
-            onClick={onRetry}
-          >
+          <Button htmlType="button" size="small" data-resource-retry onClick={onRetry}>
             {t('retry')}
           </Button>
         </SettingsToolbar>
@@ -77,23 +84,32 @@ export function ResourceListContent({
   }
   return (
     <>
-      {tab === 'skills' && skillRoots.length > 0 && <ResourceRoots roots={skillRoots} />}
+      {loadState === 'error' && (
+        <SettingsState tone="error">
+          {t('error')}
+          <Button onClick={onRetry}>{t('retry')}</Button>
+        </SettingsState>
+      )}
       {!items.length && (
         <ResourceEmpty
           tab={tab}
-          title={tab === 'skills' ? t('empty.skills.title') : emptyTitle}
-          description={tab === 'skills' ? t('empty.skills.description') : emptyDescription}
-          hints={tab === 'skills' ? skillRoots.map((root) => t(`root.location.${root.rootKey}`)) : undefined}
-          footer={
-            tab === 'skills'
-              ? t(
-                  skillRoots.some((root) =>
-                    ['user-agents', 'user-claude', 'user-codex'].includes(root.rootKey),
-                  )
-                    ? 'empty.skills.importEnabled'
-                    : 'empty.skills.import',
-                )
-              : undefined
+          title={filtered ? t('skills.noMatches') : tab === 'skills' ? t('empty.skills.title') : emptyTitle}
+          description={
+            filtered
+              ? t('skills.adjustSearch')
+              : tab === 'skills'
+                ? t('empty.skills.description')
+                : emptyDescription
+          }
+          actions={
+            tab === 'skills' && !filtered ? (
+              <>
+                <Button href={`/?${new URLSearchParams({ new: '1', prompt: t('skills.creatorPrompt') })}`}>
+                  {t('skills.create')}
+                </Button>
+                <Button onClick={onImport}>{t('skills.import')}</Button>
+              </>
+            ) : undefined
           }
         />
       )}
@@ -118,16 +134,12 @@ export function ResourceListContent({
             itemName={itemNameOf(item)}
             onOpen={onOpen}
             onToggleDesired={onToggleDesired}
+            menuItems={menuOf?.(item)}
           />
         ),
       )}
       {nextCursor && (
-        <Button
-          htmlType="button"
-          className="secondary-button compact"
-          aria-busy={loadingMore}
-          onClick={onLoadMore}
-        >
+        <Button htmlType="button" size="small" aria-busy={loadingMore} onClick={onLoadMore}>
           {t('load-more')}
         </Button>
       )}
@@ -215,27 +227,23 @@ export function ResourceEmpty({
   description,
   hints,
   footer,
+  actions,
 }: {
   tab: ResourceTab
   title: string
   description: string
   hints?: readonly string[] | undefined
   footer?: string | undefined
+  actions?: import('react').ReactNode
 }): JSX.Element {
   return (
-    <SettingsState className="admin-empty-state resource-empty">
-      <span className="agnes-mark admin-empty-state-mark" aria-hidden="true" />
-      <h3>{title}</h3>
-      <p>{description}</p>
-      {tab === 'skills' && hints?.length ? (
-        <ul className="admin-empty-state-hints">
-          {hints.map((hint) => (
-            <li key={hint}>{hint}</li>
-          ))}
-        </ul>
-      ) : null}
-      {footer && <p>{footer}</p>}
-    </SettingsState>
+    <EmptyState
+      className="admin-empty-state resource-empty"
+      icon={<Icon name={tab === 'skills' ? 'book-open' : 'plug'} size={48} />}
+      title={title}
+      description={description}
+      actions={actions}
+    />
   )
 }
 
@@ -246,6 +254,7 @@ export function ResourceRow({
   itemName,
   onOpen,
   onToggleDesired,
+  menuItems,
 }: {
   item: ResourceItem
   selected: boolean
@@ -253,9 +262,49 @@ export function ResourceRow({
   itemName: string
   onOpen(item: ResourceItem): void
   onToggleDesired(item: ResourceItem, next: boolean): void
+  menuItems?: readonly MenuItem[]
 }): JSX.Element {
   const { t } = useUiText(RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog)
   const enabled = resourceDesiredEnabled(item)
+  if (item.kind === 'skill')
+    return (
+      <ListRow
+        className="plugin-row resource-row"
+        data-resource-id={item.resourceId}
+        data-selected={String(selected)}
+        titleClassName="plugin-details-button"
+        title={<span>{itemName}</span>}
+        icon={<Icon name="book-open" size={20} />}
+        description={item.description}
+        meta={<MetaText>{t(`root.scope.${item.sourceIdentity.scope}`)}</MetaText>}
+        status={
+          item.lastSafeError ? (
+            <Tag tone="bad" title={resourceFailureLabel(item.lastSafeError.code, t)}>
+              {t('skills.readFailed')}
+            </Tag>
+          ) : undefined
+        }
+        onOpen={() => onOpen(item)}
+        actions={
+          <>
+            <StateSwitch
+              label={t(enabled ? 'row.disable' : 'row.enable', { name: itemName })}
+              checked={enabled}
+              disabled={switchDisabled}
+              onToggle={(next) => onToggleDesired(item, next)}
+            />
+            <Menu
+              label={t('skills.actions')}
+              trigger={<IconButton name="ellipsis" label={t('skills.actions')} />}
+              items={[
+                { id: 'details', label: t('skills.details'), onSelect: () => onOpen(item) },
+                ...(menuItems ?? []),
+              ]}
+            />
+          </>
+        }
+      />
+    )
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: The heading button owns the keyboard action; the row pointer hit area does not nest interactive roles.
     <article
@@ -273,7 +322,6 @@ export function ResourceRow({
         <h2 title={itemName}>
           <Button
             htmlType="button"
-            className="plugin-details-button"
             aria-pressed={selected}
             aria-label={t('row.open-aria', { name: itemName })}
             onClick={() => onOpen(item)}

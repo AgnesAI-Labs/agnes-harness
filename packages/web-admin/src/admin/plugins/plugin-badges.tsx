@@ -1,6 +1,6 @@
 import type { PackageInstalledDescriptor, PluginGenerationStatus } from '@agnes/protocol'
 import type { PluginRuntimeState } from '@agnes/web-foundation/client-modules/runtime-status'
-import { Badge, Field, Popover, Select, type StateTone } from '@agnes/web-ui'
+import { Field, Tooltip, Tag, Select, type TagTone } from '@agnes/web-ui'
 import type { Plugin, Text } from './control-panel-types.js'
 
 export const PLUGIN_KINDS = ['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui', 'bundle'] as const
@@ -10,15 +10,13 @@ export type PluginKind = (typeof PLUGIN_KINDS)[number]
 export function pluginStates(
   item: Plugin,
   runtime?: PluginRuntimeState,
-): readonly { key: string; tone: StateTone }[] {
-  if (!('desired' in item)) return []
-  const states: { key: string; tone: StateTone }[] = [{ key: 'installed', tone: 'off' }]
-  states.push(item.desired === 'enabled' ? { key: 'enabled', tone: 'ok' } : { key: 'disabled', tone: 'off' })
-  if (item.actual === 'running') states.push({ key: 'active', tone: 'ok' })
-  if (item.draining === true) states.push({ key: 'draining', tone: 'warn' })
-  if (item.actual === 'restart-required') states.push({ key: 'restart-required', tone: 'warn' })
-  if (item.actual === 'failed' || runtime?.phase === 'failed') states.push({ key: 'failed', tone: 'bad' })
-  return states
+): readonly { key: string; tone: TagTone }[] {
+  if (!('desired' in item))
+    return item.compatibility === 'unsupported' ? [{ key: 'unsupported', tone: 'bad' }] : []
+  if (item.actual === 'failed' || runtime?.phase === 'failed') return [{ key: 'failed', tone: 'bad' }]
+  if (item.actual === 'restart-required') return [{ key: 'restart-required', tone: 'warn' }]
+  if (item.draining === true) return [{ key: 'draining', tone: 'info' }]
+  return []
 }
 export function PluginBadges({
   item,
@@ -30,25 +28,27 @@ export function PluginBadges({
   t: Text
 }) {
   return (
-    <div className="agnes-settings-actions">
-      {(item.kinds ?? []).map((kind) => (
-        <Badge key={`kind:${kind}`}>{t(`kind.${kind}`)}</Badge>
-      ))}
+    <>
       {pluginStates(item, runtime).map(({ key, tone }) =>
         key === 'draining' ? (
-          <Popover key={key} content={t('drain.tooltip')} trigger={['hover', 'focus']}>
-            {/* biome-ignore lint/a11y/noNoninteractiveTabindex: focus exposes the old-version explanation to keyboard users. */}
-            <span role="note" tabIndex={0} aria-label={t('state.draining') + '. ' + t('drain.tooltip')}>
-              <Badge tone="off">{t('state.draining')}</Badge>
-            </span>
-          </Popover>
+          <Tooltip key={key} title={t('drain.tooltip')}>
+            {/* biome-ignore lint/a11y/noNoninteractiveTabindex: focus exposes the update explanation. */}
+            <Tag
+              tone={tone}
+              tabIndex={0}
+              role="note"
+              aria-label={t('state.draining') + '. ' + t('drain.tooltip')}
+            >
+              {t('state.draining')}
+            </Tag>
+          </Tooltip>
         ) : (
-          <Badge key={`state:${key}`} tone={tone}>
+          <Tag key={key} tone={tone}>
             {t(`state.${key}`)}
-          </Badge>
+          </Tag>
         ),
       )}
-    </div>
+    </>
   )
 }
 /** Runtime defaults/development packages have no inventory row; their pins belong in diagnostics. */

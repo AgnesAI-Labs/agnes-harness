@@ -4,6 +4,8 @@ export const RESOURCE_DETAIL_LOCALE_NAMESPACE = '@agnes/web-ui/resource-detail'
 
 export const resourceDetailLocaleCatalog: LocaleCatalog = {
   en: {
+    technical: 'Technical details',
+    'priority.options': 'Advanced options',
     ...resourceFailureCatalog.en,
     'close.aria': 'Close details for {title}',
     close: 'Close details',
@@ -35,6 +37,8 @@ export const resourceDetailLocaleCatalog: LocaleCatalog = {
     'mcp.edit': 'Edit',
   },
   'zh-CN': {
+    technical: '技术详情',
+    'priority.options': '高级选项',
     ...resourceFailureCatalog['zh-CN'],
     'close.aria': '关闭 {title} 的详情',
     close: '关闭详情',

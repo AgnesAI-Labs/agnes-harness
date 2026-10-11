@@ -150,13 +150,13 @@ it('shows actual session tool groups and their activation reasons in both langua
 
 it('shows declared kinds and observable states without guessing draining or restart requirements', async () => {
   const host = await mount(createElement(PluginBadges, { item, t }))
-  expect(host.textContent).toContain('Agent Loop')
-  expect(host.textContent).toContain('UI')
-  expect(pluginStates(item).map((state) => state.key)).toEqual(['installed', 'enabled', 'active'])
+  expect(host.textContent).not.toContain('Agent Loop')
+  expect(host.textContent).not.toContain('UI')
+  expect(pluginStates(item).map((state) => state.key)).toEqual([])
   expect(host.textContent).not.toContain('Draining')
   expect(
     pluginStates({ ...item, actual: 'restart-required', draining: true }).map((state) => state.key),
-  ).toEqual(['installed', 'enabled', 'draining', 'restart-required'])
+  ).toEqual(['restart-required'])
   expect(
     pluginStates(item, {
       packageId: item.id,
@@ -168,8 +168,9 @@ it('shows declared kinds and observable states without guessing draining or rest
   const draining = await mount(
     createElement(PluginBadges, { item: { ...item, draining: true, drainingSessions: 3 }, t }),
   )
-  expect(draining.textContent).toContain('Older version in use')
+  expect(draining.textContent).toContain('Updating')
   expect(draining.textContent).not.toContain('(3)')
+  expect(draining.querySelectorAll('.agh-tag')).toHaveLength(1)
   const removed = await mount(
     createElement(GenerationDrainSummary, {
       installed: [item, { ...item, id: '@acme/removed' }],
@@ -198,7 +199,7 @@ it('shows declared kinds and observable states without guessing draining or rest
     }),
   )
   expect(removed.querySelector('[data-testid=plugin-drain-summary]')?.textContent).toBe(
-    'Older versions of 2 plugins are still used by 3 sessions and will be released automatically when those sessions end.',
+    'Updated. 3 ongoing sessions are unaffected.',
   )
   expect(removed.querySelector('details')?.open).toBe(false)
   expect(removed.textContent).toContain('Friendly plugin')

@@ -355,7 +355,8 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
   await open(page, runtime)
   await settings(page)
   await section(page, 'plugins')
-  await page.getByRole('button', { name: 'Install from source', exact: true }).click()
+  await page.locator('#install-source').click()
+  await page.getByTestId('plugin-install-source').click()
   const source = page.getByRole('dialog', { name: 'Check a plugin source', exact: true })
   await info.attach('source-dialog.txt', { body: await source.ariaSnapshot(), contentType: 'text/plain' })
   await source.getByRole('combobox', { name: 'Source type', exact: true }).selectOption('file')
@@ -448,24 +449,11 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     await page
       .getByRole('searchbox', { name: locale === 'en' ? 'Search plugins' : '搜索插件', exact: true })
       .fill('hot-tool-plugin')
-    const summary = page.getByTestId('plugin-drain-summary')
-    await expect(summary).toHaveCount(1)
-    await expect(summary).toContainText(
-      locale === 'en'
-        ? /versions of \d+ plugins? are still used by 1 session/
-        : /有 \d+ 个插件的旧版本仍被 1 个会话使用/,
-    )
-    await expect(summary).not.toContainText('@agnes/')
-    const details = page.getByTestId('plugin-drain-details')
-    await expect(details).not.toHaveAttribute('open')
-    const chip = page.getByRole('note', {
-      name: new RegExp(locale === 'en' ? '^Older version in use' : '^旧版本使用中'),
-    })
+    await expect(page.getByTestId('plugin-drain-summary')).toHaveCount(0)
+    const chip = page.getByRole('note', { name: new RegExp(locale === 'en' ? '^Updating' : '^更新中') })
     await chip.focus()
     await expect(
-      page
-        .locator('.agnes-ui-popover')
-        .filter({ hasText: locale === 'en' ? 'Existing sessions still use' : '已有会话仍使用旧版本' }),
+      page.getByRole('tooltip').filter({ hasText: locale === 'en' ? 'The update is ready' : '新版本已就绪' }),
     ).toBeVisible()
     await page
       .getByRole('searchbox', { name: locale === 'en' ? 'Search plugins' : '搜索插件', exact: true })
@@ -473,15 +461,26 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     await page.mouse.move(0, 0)
     await quality(page, info, `plugin-old-version-${locale}-${theme}`)
     await screen(page, info, `plugin-old-version-${locale}-${theme}`)
+    await page
+      .locator('.plugin-row[data-plugin-id="@agnes-examples/hot-tool-plugin"] .plugin-details-button')
+      .click()
+    await page.getByTestId('plugin-versions-tab').click()
+    const summary = page.getByTestId('plugin-drain-summary')
+    await expect(summary).toHaveCount(1)
+    await expect(summary).toContainText(
+      locale === 'en' ? /Updated. 1 ongoing session/ : /已更新，1 个进行中的会话不受影响/,
+    )
+    await expect(summary).not.toContainText('@agnes/')
+    const details = page.getByTestId('plugin-drain-details')
+    await expect(details).not.toHaveAttribute('open')
     await details.locator('summary').click()
     await expect(details).toContainText('hot-tool-plugin')
-    await expect(details).toContainText(locale === 'en' ? 'Plugin helper' : '插件助手')
     expect(
       (await details.locator('code').allTextContents()).some((text) =>
         /^@agnes\/(ai|base|code) ·/.test(text),
       ),
     ).toBe(false)
-    await details.locator('summary').click()
+    await page.locator('#plugin-detail .plugin-detail-close').click()
     await closeSettings(page, locale)
   }
 })
@@ -926,7 +925,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     await expect(page.getByTestId('conversation-turn')).toHaveCount(11)
     if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page, locale)
     await section(page, 'plugins')
-    await expect(page.getByTestId('candidate-list').getByTestId('candidate-open')).toHaveCount(3)
+    await expect(page.getByTestId('candidate-list').getByTestId('candidate-open')).toHaveCount(2)
     const rows = page.getByTestId('candidate-list').getByTestId('candidate-open')
     await expect(
       rows
@@ -936,14 +935,20 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     await expect(
       rows.filter({ hasText: draft.packageId }).filter({ hasText: locale === 'en' ? 'Update' : '更新' }),
     ).toHaveCount(1)
-    await expect(rows.filter({ hasText: skill.packageId })).toContainText(
-      locale === 'en' ? 'Skill · New skill' : '技能 · 新技能',
-    )
-    await expect(rows.getByTestId('candidate-origin-time')).toHaveCount(3)
+    await expect(rows.filter({ hasText: skill.packageId })).toHaveCount(0)
+    await expect(rows.getByTestId('candidate-origin-time')).toHaveCount(2)
+    await section(page, 'skills')
+    await page
+      .locator('#resource-list')
+      .getByRole('tab', { name: locale === 'en' ? 'Pending review' : '待审阅', exact: true })
+      .click()
+    await expect(
+      page.locator('#resource-list').getByTestId('candidate-open').filter({ hasText: skill.packageId }),
+    ).toContainText(locale === 'en' ? 'Skill · New skill' : '技能 · 新技能')
+    await section(page, 'plugins')
     await expect(rows.first()).toContainText(locale === 'en' ? 'Plugin · Update' : '插件 · 更新')
     await expect(rows.getByTestId('candidate-list-facts').first()).toContainText('0.1.0')
-    await expect(page.getByTestId('plugin-drain-summary')).toHaveCount(1)
-    await expect(page.getByTestId('plugin-drain-summary')).not.toContainText('@agnes/')
+    await expect(page.getByTestId('plugin-drain-summary')).toHaveCount(0)
     // Assert real timestamps above; normalize only elapsed text for stable screenshots.
     const times = rows.getByTestId('candidate-origin-time')
     const originals = await times.allTextContents()

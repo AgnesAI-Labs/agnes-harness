@@ -9,6 +9,18 @@ export const PLUGIN_ADMIN_LOCALE_NAMESPACE = '@agnes/web/plugin-admin'
 
 export const pluginAdminLocaleCatalog: LocaleCatalog = {
   en: {
+    'ux.copy': 'Copy',
+    'ux.plugins': 'Plugins',
+    'ux.discover': 'Discover',
+    'ux.description': 'Give Agnes new tools, views and ways to work.',
+    'ux.add': 'Add plugin',
+    'ux.browse': 'Browse examples',
+    'ux.installed': 'Installed',
+    'ux.moreFilters': 'More filters',
+    'ux.filter': 'Filter',
+    'ux.activeFilters': 'Active filters',
+    'ux.details': 'Details',
+
     ...candidatesCatalog.en,
     ...runtimeCatalog.en,
     ...trustCatalog.en,
@@ -16,6 +28,18 @@ export const pluginAdminLocaleCatalog: LocaleCatalog = {
     ...pluginAdminShellLocaleCatalog.en,
   },
   'zh-CN': {
+    'ux.copy': '复制',
+    'ux.plugins': '插件',
+    'ux.discover': '发现',
+    'ux.description': '扩展 Agnes 的能力：工具、界面、安全规则。',
+    'ux.add': '添加插件',
+    'ux.browse': '浏览官方示例',
+    'ux.installed': '已安装',
+    'ux.moreFilters': '更多筛选',
+    'ux.filter': '筛选',
+    'ux.activeFilters': '已启用的筛选',
+    'ux.details': '详情',
+
     ...candidatesCatalog['zh-CN'],
     ...runtimeCatalog['zh-CN'],
     ...trustCatalog['zh-CN'],

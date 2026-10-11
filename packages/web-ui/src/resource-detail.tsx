@@ -2,7 +2,8 @@ import type { McpServerDescriptor, SkillDescriptor } from '@agnes/protocol'
 import type { JSX } from 'react'
 import { useState } from 'react'
 import { RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog } from './locales/resource-detail.js'
-import { SettingsInput, SettingsState } from './settings-layout.js'
+import { SettingsDetails, SettingsInput, SettingsState, SettingsSaveBar } from './settings-layout.js'
+import { IconButton } from './ui/icon-button.js'
 import { Button } from './ui/button.js'
 import { Field } from './ui/field.js'
 import { useUiText } from './ui-locale.js'
@@ -67,14 +68,12 @@ function DetailHead({
       <p className="eyebrow">{kindLabel}</p>
       <div className="plugin-detail-heading">
         <h2>{title}</h2>
-        <Button
-          htmlType="button"
-          className="secondary-button compact plugin-detail-close"
-          aria-label={t('close.aria', { title })}
+        <IconButton
+          name="x"
+          className="plugin-detail-close"
+          label={t('close.aria', { title })}
           onClick={onClose}
-        >
-          {t('close')}
-        </Button>
+        />
       </div>
       <p className="dialog-intro">{subtitle}</p>
     </div>
@@ -101,6 +100,7 @@ export function SkillDetailContent({
 }): JSX.Element {
   const { t } = useUiText(RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog)
   const [priority, setPriority] = useState(String(skill.priority))
+  const priorityChanged = priority !== String(skill.priority)
   const removing = skill.lastSafeError?.code === 'SKILL_REMOVAL_PENDING'
   return (
     <>
@@ -111,30 +111,32 @@ export function SkillDetailContent({
         onClose={onClose}
       />
       <div className="admin-detail-scroll">
-        <FactList
-          className="resource-facts"
-          items={[
-            [t('fact.source'), `${skill.sourceIdentity.scope} · ${skill.sourceIdentity.rootKey}`],
-            [t('fact.priority'), String(skill.priority)],
-            [t('fact.resolution'), t(skill.resolution.winner ? 'fact.current-winner' : 'fact.not-winner')],
-            [t('fact.version'), skill.revision],
-            [t('fact.catalog-state'), t(skill.stale ? 'fact.catalog-stale' : 'fact.catalog-current')],
-          ]}
-        />
-        {skill.resolution.shadowed.length > 0 && (
-          <details className="confirm-review-section">
-            <summary>{t('shadowed', { count: skill.resolution.shadowed.length })}</summary>
-            <ul>
-              {skill.resolution.shadowed.map((candidate) => (
-                <li
-                  key={`${candidate.sourceIdentity.scope}:${candidate.sourceIdentity.rootKey}:${candidate.reason}`}
-                >
-                  {`${candidate.sourceIdentity.scope} · ${candidate.sourceIdentity.rootKey} · ${candidate.reason}`}
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
+        <SettingsDetails title={t('technical')}>
+          <FactList
+            className="resource-facts"
+            items={[
+              [t('fact.source'), `${skill.sourceIdentity.scope} · ${skill.sourceIdentity.rootKey}`],
+              [t('fact.priority'), String(skill.priority)],
+              [t('fact.resolution'), t(skill.resolution.winner ? 'fact.current-winner' : 'fact.not-winner')],
+              [t('fact.version'), skill.revision],
+              [t('fact.catalog-state'), t(skill.stale ? 'fact.catalog-stale' : 'fact.catalog-current')],
+            ]}
+          />
+          {skill.resolution.shadowed.length > 0 && (
+            <details className="confirm-review-section">
+              <summary>{t('shadowed', { count: skill.resolution.shadowed.length })}</summary>
+              <ul>
+                {skill.resolution.shadowed.map((candidate) => (
+                  <li
+                    key={`${candidate.sourceIdentity.scope}:${candidate.sourceIdentity.rootKey}:${candidate.reason}`}
+                  >
+                    {`${candidate.sourceIdentity.scope} · ${candidate.sourceIdentity.rootKey} · ${candidate.reason}`}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </SettingsDetails>
         {skill.lastSafeError && (
           <SettingsState tone="error" className="resource-safe-error">
             {t('safe-error', {
@@ -144,30 +146,27 @@ export function SkillDetailContent({
           </SettingsState>
         )}
         {skill.sourceIdentity.scope !== 'runtime' && !removing && (
-          <Field label={t('priority.label')}>
-            <SettingsInput
-              type="number"
-              min={50}
-              max={500}
-              step={1}
-              required
-              value={priority}
-              disabled={disabled}
-              onChange={(event) => setPriority(event.currentTarget.value)}
-            />
-          </Field>
+          <SettingsDetails title={t('priority.options')}>
+            <Field label={t('priority.label')}>
+              <SettingsInput
+                type="number"
+                min={50}
+                max={500}
+                step={1}
+                required
+                value={priority}
+                disabled={disabled}
+                onChange={(event) => setPriority(event.currentTarget.value)}
+              />
+            </Field>
+          </SettingsDetails>
         )}
         {skill.sourceIdentity.scope === 'runtime' && <p>{t('skill.plugin-managed')}</p>}
         {progress && (
           <div className="resource-operation">
             <span>{progress.text}</span>
             {progress.canCancel && (
-              <Button
-                htmlType="button"
-                className="secondary-button compact"
-                title={progress.cancelTitle}
-                onClick={progress.onCancel}
-              >
+              <Button htmlType="button" size="small" title={progress.cancelTitle} onClick={progress.onCancel}>
                 {t('operation.cancel')}
               </Button>
             )}
@@ -179,8 +178,8 @@ export function SkillDetailContent({
           <Button
             key={action.label}
             htmlType="button"
-            className={action.className ?? 'secondary-button compact'}
-            danger={action.className?.includes('danger-button') ?? false}
+            className={action.className}
+            danger={action.className?.includes('danger') ?? false}
             disabled={action.disabled ?? false}
             {...(action.title === undefined ? {} : { title: action.title })}
             onClick={() => onAction(action)}
@@ -189,18 +188,17 @@ export function SkillDetailContent({
           </Button>
         ))}
         {skill.sourceIdentity.scope !== 'runtime' && !removing && (
-          <Button
-            htmlType="button"
-            className="secondary-button compact"
-            disabled={disabled}
-            onClick={() => {
-              const next = Number.parseInt(priority, 10)
+          <SettingsSaveBar
+            dirty={priorityChanged}
+            busy={disabled}
+            onDiscard={() => setPriority(String(skill.priority))}
+            onSave={() => {
+              const next = Number(priority)
               if (!Number.isInteger(next) || next < 50 || next > 500) return
               onPrioritySave(next)
             }}
-          >
-            {t('priority.save')}
-          </Button>
+            saveLabel={t('priority.save')}
+          />
         )}
       </div>
     </>
@@ -257,7 +255,7 @@ export function McpDetailContent({
         {!status && (
           <Button
             htmlType="button"
-            className="secondary-button compact"
+            size="small"
             disabled={disabled}
             onClick={() => void onStatus().then(setStatus)}
           >
@@ -268,7 +266,7 @@ export function McpDetailContent({
         {!catalog && (
           <Button
             htmlType="button"
-            className="secondary-button compact"
+            size="small"
             disabled={disabled}
             onClick={() => void onTools().then(setCatalog)}
           >
@@ -285,7 +283,7 @@ export function McpDetailContent({
               {catalog.nextCursor && (
                 <Button
                   htmlType="button"
-                  className="secondary-button compact"
+                  size="small"
                   disabled={disabled}
                   onClick={() =>
                     void onTools(catalog.nextCursor).then((next) =>
@@ -306,12 +304,7 @@ export function McpDetailContent({
           <div className="resource-operation">
             <span>{progress.text}</span>
             {progress.canCancel && (
-              <Button
-                htmlType="button"
-                className="secondary-button compact"
-                title={progress.cancelTitle}
-                onClick={progress.onCancel}
-              >
+              <Button htmlType="button" size="small" title={progress.cancelTitle} onClick={progress.onCancel}>
                 {t('operation.cancel')}
               </Button>
             )}
@@ -323,8 +316,8 @@ export function McpDetailContent({
           <Button
             key={action.label}
             htmlType="button"
-            className={action.className ?? 'secondary-button compact'}
-            danger={action.className?.includes('danger-button') ?? false}
+            className={action.className}
+            danger={action.className?.includes('danger') ?? false}
             disabled={action.disabled ?? false}
             {...(action.title === undefined ? {} : { title: action.title })}
             onClick={() => onAction(action)}

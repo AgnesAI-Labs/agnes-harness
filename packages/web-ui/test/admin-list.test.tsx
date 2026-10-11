@@ -40,7 +40,7 @@ function renderText(element: ReturnType<typeof createElement>): string {
 describe('plugin list localization', () => {
   it('uses English for the default empty state and keeps contribution IDs in details', () => {
     expect(renderText(createElement(PluginList, listProps))).toContain('No packages are installed')
-    checkContributionDetails('en', 'Compatible')
+    checkContributionDetails('en')
   })
 
   it('uses the selected locale for the empty state', () => {
@@ -54,11 +54,11 @@ describe('plugin list localization', () => {
     const text = renderText(createElement(UiLocaleProvider, { source }, createElement(PluginList, listProps)))
 
     expect(text).toContain('尚未安装插件')
-    checkContributionDetails('zh-CN', '兼容')
+    checkContributionDetails('zh-CN')
   })
 })
 
-function checkContributionDetails(locale: 'en' | 'zh-CN', summary: string) {
+function checkContributionDetails(locale: 'en' | 'zh-CN') {
   const row: PackageCatalogDescriptor = {
     id: '@third-party/unknown',
     version: '1.0.0',
@@ -95,15 +95,10 @@ function checkContributionDetails(locale: 'en' | 'zh-CN', summary: string) {
       createElement(PluginList, { ...listProps, tab: 'discover', rows: [row] }),
     ),
   )
-  const details = host.querySelector('details')!
-  expect(details.open).toBe(false)
-  expect(details.textContent).toContain('plugin/012345abcdef')
-  details.remove()
   expect(host.textContent).not.toContain('plugin/012345abcdef')
-  expect(host.querySelector('.plugin-compatibility')?.textContent).toBe(summary)
-  expect(host.querySelector('[data-testid=plugin-summary]')?.textContent).toBe(
-    locale === 'en' ? 'No description provided' : '\u4f5c\u8005\u672a\u63d0\u4f9b\u7528\u9014\u8bf4\u660e',
-  )
+  expect(host.textContent).not.toContain('1.0.0')
+  expect(host.querySelector('.plugin-compatibility')?.textContent).toBe('')
+  expect(host.querySelector('[data-testid=plugin-summary]')).toBeNull()
   dispose()
 }
 
@@ -154,7 +149,7 @@ it('groups catalog versions and reviews the selected version without opening the
   expect(host.querySelector('.plugin-source')).toBeNull()
   expect(host.querySelector('[data-testid="plugin-other-versions"] summary')?.textContent).toContain('2.0.0')
   expect(host.querySelector('.plugin-compatibility')?.textContent).toBe('Unsupported')
-  host.querySelector<HTMLButtonElement>('.plugin-row > button')?.click()
+  host.querySelector<HTMLButtonElement>('.agh-list-row-actions button')?.click()
   expect(chosen).toBe('2.0.0')
   dispose()
 })
@@ -217,9 +212,8 @@ it.each(['en', 'zh-CN'] as const)(
     expect(host.querySelector('[data-testid=plugin-purpose-badges]')?.textContent).toContain(
       locale === 'en' ? 'Third-party' : '第三方',
     )
-    expect(host.querySelector('[data-testid=plugin-provides]')?.textContent).toContain(
-      locale === 'en' ? 'Tools · 1' : '工具 · 1',
-    )
+    expect(host.querySelector('[data-testid=plugin-provides]')).toBeNull()
+    expect(host.querySelectorAll('.agh-tag')).toHaveLength(0)
     dispose()
   },
 )
@@ -233,8 +227,10 @@ it('renders metadata-free third-party packages cleanly without guessing official
     createElement(PluginList, { ...listProps, tab: 'discover', rows: [withoutPurpose] }),
   )
   expect(host.querySelector('.plugin-details-button')?.textContent).toBe('@agnes/unverified')
-  expect(host.querySelector('[data-testid=plugin-summary]')?.textContent).toBe('No description provided')
-  expect(host.querySelector('[data-testid=plugin-purpose-badges]')?.textContent).toContain('Uncategorized')
+  expect(host.querySelector('[data-testid=plugin-summary]')).toBeNull()
+  expect(host.querySelector('[data-testid=plugin-purpose-badges]')?.textContent).not.toContain(
+    'Uncategorized',
+  )
   expect(host.querySelector('[data-testid=plugin-purpose-badges]')?.textContent).toContain('Third-party')
   dispose()
   const escaped = mountRegion(

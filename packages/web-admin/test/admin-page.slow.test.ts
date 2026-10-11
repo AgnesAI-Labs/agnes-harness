@@ -382,14 +382,17 @@ it('groups real catalog releases and carries the selected version source through
   await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(1))
   const installedText = document.getElementById('plugin-list')?.textContent ?? ''
   expect(installedText).toContain('@agnes-examples/hot-tool')
-  expect(installedText).toContain('1.1.0')
+  expect(installedText).not.toContain('1.1.0')
+  document.querySelector<HTMLElement>('.plugin-row')?.click()
+  document.querySelector<HTMLElement>('[data-testid=plugin-versions-tab]')?.click()
+  expect(document.getElementById('plugin-detail')?.textContent).toContain('Version 1.1.0')
   expect(document.querySelector('#plugin-list .state-light')).toBeNull()
   expect(document.querySelector('#plugin-list button[role="switch"]')?.getAttribute('aria-checked')).toBe(
     'false',
   )
   expect(document.querySelector('.plugin-row-trust')).toBeNull()
   expect(fetcher.mock.calls.some(([url]) => String(url).endsWith('/install'))).toBe(true)
-  expect(document.querySelector('.plugin-detail-close')?.textContent).toBe('Close details')
+  expect(document.querySelector('.plugin-detail-close')?.getAttribute('aria-label')).toContain('Close')
   document.querySelector<HTMLButtonElement>('.plugin-detail-close')?.click()
   await vi.waitFor(() => expect(document.getElementById('plugin-detail')?.hasAttribute('open')).toBe(false))
 
@@ -412,7 +415,9 @@ it('groups real catalog releases and carries the selected version source through
   document.querySelector<HTMLElement>('.plugin-row')?.click()
   await vi.waitFor(() => expect(document.getElementById('plugin-detail')?.hasAttribute('open')).toBe(true))
   expect(document.getElementById('plugin-detail')?.textContent).not.toContain('Revoke trust')
-  const update = [...document.querySelectorAll<HTMLButtonElement>('#plugin-detail button')].find(
+  document.querySelector<HTMLButtonElement>('#plugin-detail [aria-haspopup="menu"]')?.click()
+  await vi.waitFor(() => expect(document.querySelector('[role="menu"]')).not.toBeNull())
+  const update = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
     (button) => button.textContent === 'Update from a new source',
   )
   expect(update).toBeDefined()
@@ -422,7 +427,9 @@ it('groups real catalog releases and carries the selected version source through
   expect((document.getElementById('plugin-detail') as HTMLDialogElement).open).toBe(false)
   document.getElementById('source-cancel')?.click()
   await mounted.reload()
-  const uninstall = [...document.querySelectorAll<HTMLButtonElement>('#plugin-detail button')].find(
+  document.querySelector<HTMLButtonElement>('#plugin-detail [aria-haspopup="menu"]')?.click()
+  await vi.waitFor(() => expect(document.querySelector('[role="menu"]')).not.toBeNull())
+  const uninstall = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
     (button) => button.textContent === 'Uninstall plugin',
   )
   expect(uninstall).toBeDefined()
@@ -1642,10 +1649,12 @@ it('closes an open detail dialog so disable and rollback confirms can show', asy
   await vi.waitFor(() => expect(document.querySelector('#plugin-list button[role="switch"]')).not.toBeNull())
   document.querySelector<HTMLElement>('.plugin-row')?.click()
   await vi.waitFor(() => expect(document.getElementById('plugin-detail')?.hasAttribute('open')).toBe(true))
-  const rollback = [...document.querySelectorAll<HTMLButtonElement>('#plugin-detail button')].find((button) =>
+  document.querySelector<HTMLButtonElement>('#plugin-detail [aria-haspopup="menu"]')?.click()
+  await vi.waitFor(() => expect(document.querySelector('[role="menu"]')).not.toBeNull())
+  const rollback = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) =>
     button.textContent?.startsWith('Roll back to'),
   )
-  expect(rollback?.disabled).toBe(false)
+  expect(rollback?.getAttribute('aria-disabled')).not.toBe('true')
   document.querySelector<HTMLButtonElement>('#plugin-list button[role="switch"]')?.click()
   await vi.waitFor(() => expect(document.getElementById('plugin-confirm')?.hasAttribute('open')).toBe(true))
   expect(document.getElementById('plugin-confirm-title')?.textContent).toContain('Request disable')
