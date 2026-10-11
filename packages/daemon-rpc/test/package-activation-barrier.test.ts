@@ -118,11 +118,12 @@ it('wires the real local prompt path to wait for an active turn and rejects new 
       endpoint.handle({
         jsonrpc: '2.0',
         id: 'steer-pinned',
-        method: '_agnes/v1/session.steer',
+        method: '_agnes/v1/submit',
         params: {
-          sessionId,
+          clientId: 'activation-test',
+          kind: 'steer',
           commandId: 'steer-during-switch',
-          content: [{ type: 'text', text: 'pinned instructions' }],
+          payload: { sessionId, content: [{ type: 'text', text: 'pinned instructions' }] },
         },
       }),
     ).resolves.toMatchObject({ result: { seq: expect.any(Number) } })

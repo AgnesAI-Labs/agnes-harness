@@ -1546,10 +1546,6 @@ export type _agnes_v1_session_controlParams = D66a0f362428a_SessionControlParams
 export type _agnes_v1_session_controlResult = D66a0f362428a_SessionSteerResult
 export type _agnes_v1_session_controlsParams = D66a0f362428a_SessionControlsParams
 export type _agnes_v1_session_controlsResult = D66a0f362428a_SessionControlStateResult
-export type _agnes_v1_session_editQueuedParams = D66a0f362428a_SessionEditQueuedParams
-export type _agnes_v1_session_editQueuedResult = D66a0f362428a_SessionSteerResult
-export type _agnes_v1_session_steerParams = D66a0f362428a_SessionSteerParams
-export type _agnes_v1_session_steerResult = D66a0f362428a_SessionSteerResult
 export type _agnes_v1_session_budgetParams = D66a0f362428a_SessionIdParams
 export type _agnes_v1_session_budgetResult = D66a0f362428a_SessionBudgetResult
 export type _agnes_v1_session_projectUIParams = D66a0f362428a_SessionProjectUIParams
@@ -1579,8 +1575,6 @@ export type _agnes_v1_session_workspace_changesParams = D66a0f362428a_SessionWor
 export type _agnes_v1_session_workspace_changesResult = D66a0f362428a_SessionWorkspaceChangesResult
 export type _agnes_v1_session_readToolDetailParams = D66a0f362428a_SessionReadToolDetailParams
 export type _agnes_v1_session_readToolDetailResult = D66a0f362428a_SessionReadToolDetailResult
-export type _agnes_v1_session_followUpParams = D66a0f362428a_SessionSteerParams
-export type _agnes_v1_session_followUpResult = D66a0f362428a_SessionSteerResult
 export type _agnes_v1_session_forkParams = D66a0f362428a_SessionForkParams
 export type _agnes_v1_session_forkResult = D66a0f362428a_SessionIdParams
 export type _agnes_v1_session_renameParams = D66a0f362428a_SessionRenameParams
@@ -1846,8 +1840,6 @@ export interface AppServerMethods {
   "_agnes/v1/session.attach": {params:_agnes_v1_session_attachParams; result:_agnes_v1_session_attachResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/session.control": {params:_agnes_v1_session_controlParams; result:_agnes_v1_session_controlResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/session.controls": {params:_agnes_v1_session_controlsParams; result:_agnes_v1_session_controlsResult; direction:"c2s"; kind:"request"}
-  "_agnes/v1/session.editQueued": {params:_agnes_v1_session_editQueuedParams; result:_agnes_v1_session_editQueuedResult; direction:"c2s"; kind:"request"}
-  "_agnes/v1/session.steer": {params:_agnes_v1_session_steerParams; result:_agnes_v1_session_steerResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/session.budget": {params:_agnes_v1_session_budgetParams; result:_agnes_v1_session_budgetResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/session.projectUI": {params:_agnes_v1_session_projectUIParams; result:_agnes_v1_session_projectUIResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/session.projectUIPatch": {params:_agnes_v1_session_projectUIPatchParams; result:_agnes_v1_session_projectUIPatchResult; direction:"c2s"; kind:"request"}
@@ -1862,7 +1854,6 @@ export interface AppServerMethods {
   "_agnes/v1/session.workspace.read": {params:_agnes_v1_session_workspace_readParams; result:_agnes_v1_session_workspace_readResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/session.workspace.changes": {params:_agnes_v1_session_workspace_changesParams; result:_agnes_v1_session_workspace_changesResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/session.readToolDetail": {params:_agnes_v1_session_readToolDetailParams; result:_agnes_v1_session_readToolDetailResult; direction:"c2s"; kind:"request"}
-  "_agnes/v1/session.followUp": {params:_agnes_v1_session_followUpParams; result:_agnes_v1_session_followUpResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/session.fork": {params:_agnes_v1_session_forkParams; result:_agnes_v1_session_forkResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/session.rename": {params:_agnes_v1_session_renameParams; result:_agnes_v1_session_renameResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/session.archive": {params:_agnes_v1_session_archiveParams; result:_agnes_v1_session_archiveResult; direction:"c2s"; kind:"request"}

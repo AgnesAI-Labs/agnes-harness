@@ -22,6 +22,18 @@
 | `sdk.optional-build-capabilities` | SDK 可选传输与认证构造 | wired | 入口未包含可选传输或认证实现时，`Unsupported` 是预期的类型化边界。 | 已完成；保留缺失能力时拒绝执行的行为 | `packages/sdk/src/errors.ts` |
 | `sandbox.bwrap-runtime-selection` | Bubblewrap 选择 | wired | 编译器叶子实现有意不作为默认 seam 直接使用，由运行时后端选择器探测并选择。 | 已完成；保留间接接入方式 | `packages/base/extensions/sandbox/src/backends/bwrap.ts` |
 
+## 会话命令传输
+
+协议共有 186 个方法。以下能力统一使用持久化 submit 路径；SDK 方法继续可用。
+
+| 能力 | SDK 方法 | Native 请求 |
+|---|---|---|
+| 指引 | `session.steer(content)` | `_agnes/v1/submit`，kind 为 `steer` |
+| Follow-up | `session.followUp(content)` | `_agnes/v1/submit`，kind 为 `followUp` |
+| 修改排队输入 | `session.editQueued(itemId, content)` | `_agnes/v1/submit`，kind 为 `editQueued` |
+
+重试保持 `clientId` 与 `commandId` 稳定；可选 `generation` 放在 submit envelope 上。保留的 native `_agnes/v1/session.control` 包装同样走 submit 接纳和 journal。共享命令 DTO 继续作为协议合同保留。
+
 ## 支持级别说明
 
 平台支持范围见[已知限制](limitations.zh-CN.md)。本地测试和 CI 覆盖本身不能证明安装包、签名、外部服务或实体设备支持。运行时隔离、权限与进程身份需要在各目标平台分别验证。

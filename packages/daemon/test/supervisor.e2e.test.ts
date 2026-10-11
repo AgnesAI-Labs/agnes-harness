@@ -646,21 +646,23 @@ describe('agnesd supervisor: real end-to-end', () => {
             expect((otherUi.result as { seq: number }).seq).not.toBe((firstUi.result as { seq: number }).seq)
 
             const [queuedA, queuedB] = await Promise.all([
-              c.call(50, '_agnes/v1/session.followUp', {
-                sessionId,
-                content: [{ type: 'text', text: 'from client one' }],
+              c.call(50, '_agnes/v1/submit', {
+                clientId: 'dual-client-one',
+                kind: 'followUp',
                 commandId: 'dual-client-a',
                 generation: 1,
+                payload: { sessionId, content: [{ type: 'text', text: 'from client one' }] },
               }),
-              c2.call(50, '_agnes/v1/session.followUp', {
-                sessionId,
-                content: [{ type: 'text', text: 'from client two' }],
+              c2.call(50, '_agnes/v1/submit', {
+                clientId: 'dual-client-two',
+                kind: 'followUp',
                 commandId: 'dual-client-b',
                 generation: 1,
+                payload: { sessionId, content: [{ type: 'text', text: 'from client two' }] },
               }),
             ])
-            expect(queuedA).toMatchObject({ result: { seq: expect.any(Number) } })
-            expect(queuedB).toMatchObject({ result: { seq: expect.any(Number) } })
+            expect(queuedA).toMatchObject({ result: { seq: expect.any(Number), replayed: false } })
+            expect(queuedB).toMatchObject({ result: { seq: expect.any(Number), replayed: false } })
             expect((queuedA.result as { seq: number }).seq).not.toBe((queuedB.result as { seq: number }).seq)
             // Accepted follow-ups now execute without a new prompt, including through a real worker.
             await vi.waitFor(

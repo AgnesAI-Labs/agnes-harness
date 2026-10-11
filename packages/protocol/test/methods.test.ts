@@ -39,7 +39,7 @@ function errorsOf(r: ReturnType<typeof validateMethod>): ValidationError[] {
 }
 
 describe('methods (I1 set)', () => {
-  it('carries file originals through standard ACP embedded resources and the native follow-up schema', () => {
+  it('carries file originals through standard ACP embedded resources and the submit envelope', () => {
     const blocks = [
       { type: 'file' as const, name: '资料 #%../video.mp4', mimeType: 'video/mp4', data: 'AAAAAA==' },
     ]
@@ -79,10 +79,11 @@ describe('methods (I1 set)', () => {
       expect(() => validateUserAttachments([block])).toThrow('invalid')
     expect(() => validateUserAttachments(Array.from({ length: 51 }, () => uploaded))).toThrow('50')
     expect(
-      validateMethod('_agnes/v1/session.followUp', 'params', {
-        sessionId: 's',
-        content: blocks,
+      validateMethod('_agnes/v1/submit', 'params', {
+        clientId: 'protocol-test',
+        kind: 'followUp',
         commandId: 'c',
+        payload: { sessionId: 's', content: blocks },
       }).ok,
     ).toBe(true)
     expect(() =>
@@ -101,7 +102,6 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/plugins.config.save',
         '_agnes/v1/session.control',
         '_agnes/v1/session.controls',
-        '_agnes/v1/session.editQueued',
         '_agnes/v1/ui.action',
         '_agnes/v1/ui.read',
         '_agnes/v1/ui.refresh',
@@ -235,7 +235,6 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/session.budget',
         '_agnes/v1/session.detach',
         '_agnes/v1/session.event',
-        '_agnes/v1/session.followUp',
         '_agnes/v1/session.fileUpload',
         '_agnes/v1/session.fork',
         '_agnes/v1/session.list',
@@ -249,7 +248,6 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/session.setModel',
         '_agnes/v1/session.setPreset',
         '_agnes/v1/session.setYolo',
-        '_agnes/v1/session.steer',
         '_agnes/v1/session.tools',
         '_agnes/v1/session.jobs.read',
         '_agnes/v1/session.jobs.control',
@@ -286,7 +284,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(189)
+    expect(Object.keys(METHODS)).toHaveLength(186)
     expect(METHODS['session/cancel']).toMatchObject({ kind: 'notification', direction: 'c2s' })
     expect(METHODS['session/request_permission']).toMatchObject({ kind: 'request', direction: 's2c' })
   })
@@ -634,16 +632,7 @@ describe('methods (I1 set)', () => {
     if (!r.ok) expect(r.errors[0]).toMatchObject({ code: 'UNKNOWN_KEY', key: 'seams' })
   })
 
-  it('validates steer result and Ack', () => {
-    expect(validateMethod('_agnes/v1/session.steer', 'result', { seq: 3 }).ok).toBe(true)
-    expect(
-      validateMethod('_agnes/v1/session.steer', 'params', {
-        sessionId: 'agnes:local:test',
-        content: [{ type: 'text', text: 'next' }],
-        commandId: 'command-1',
-        generation: 2,
-      }).ok,
-    ).toBe(true)
+  it('validates submit Ack', () => {
     expect(validateMethod('_agnes/v1/submit', 'result', { replayed: true, seq: 3 }).ok).toBe(true)
     expect(
       validateMethod('_agnes/v1/submit', 'result', {
@@ -855,16 +844,6 @@ describe('methods (I1 set)', () => {
     ).toBe(true)
     expect(
       validateMethod('_agnes/v1/submit', 'result', { replayed: false, seq: 1, result: { jobId: 'j-1' } }).ok,
-    ).toBe(true)
-  })
-
-  it('followUp shares the steer shape', () => {
-    expect(
-      validateMethod('_agnes/v1/session.followUp', 'params', {
-        sessionId: 's',
-        content: [{ type: 'text', text: 'x' }],
-        commandId: 'c',
-      }).ok,
     ).toBe(true)
   })
 

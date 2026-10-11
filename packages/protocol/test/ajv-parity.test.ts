@@ -1921,9 +1921,9 @@ const SESSION_SAMPLES: Record<string, Sample> = {
 const attachOk = byId(methodFixtures, 'attach-ok') as Json
 const attachSeams = byId(methodFixtures, 'attach-seams') as Json
 const attachResultOk = byId(methodFixtures, 'attach-result-ok') as Json
-const steerOk = byId(methodFixtures, 'steer-ok') as Json
-const steerActor = byId(methodFixtures, 'steer-actor') as Json
-const steerResultOk = byId(methodFixtures, 'steer-result-ok') as Json
+const steerOk: Json = { sessionId: 's', content: [{ type: 'text', text: 'x' }], commandId: 'c1' }
+const steerActor: Json = { ...steerOk, actor: { id: 'me' } }
+const steerResultOk: Json = { seq: 3 }
 const apisListParamsOk = byId(methodFixtures, 'apis-list-params-ok') as Json
 const apisListParamsExtra = byId(methodFixtures, 'apis-list-params-extra-key') as Json
 const apisListResultOk = byId(methodFixtures, 'apis-list-result') as Json
@@ -1931,7 +1931,6 @@ const submitParamsOk = byId(methodFixtures, 'submit-params-ok') as Json
 const submitParamsBadKind = byId(methodFixtures, 'submit-params-bad-kind') as Json
 const submitAckOk = byId(methodFixtures, 'submit-ack-uncertain') as Json
 const submitAckBad = byId(methodFixtures, 'submit-ack-bad-status') as Json
-const followupOk = byId(methodFixtures, 'followup-ok') as Json
 const detachParamsOk = byId(methodFixtures, 'session-detach-params-ok') as Json
 const detachParamsExtra = byId(methodFixtures, 'session-detach-params-extra-key') as Json
 const detachResultNotEmpty = byId(methodFixtures, 'session-detach-result-not-empty') as Json
@@ -3043,7 +3042,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { ...steerOk, content: [] }, // boundary: one below minItems:1
       { ...steerOk, generation: 0 }, // boundary: one below minimum:1
     ],
-    note: 'valid and the first invalid reuse fixtures/methods/i1.jsonl (steer-ok / steer-actor)',
+    note: 'Shared steer DTO remains closed; submit carries command metadata outside the payload',
   },
   SessionSendNowParams: {
     valid: { sessionId: 's', itemId: 'queued-1', commandId: 'send-now-1' },
@@ -3074,7 +3073,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   SessionSteerResult: {
     valid: steerResultOk,
     invalid: [{ seq: 0 }], // boundary: minimum:1
-    note: 'valid reuses the steer-result-ok fixture; invalid is hand-written (seq below minimum:1)',
+    note: 'Shared seq result DTO retains its integer boundary',
   },
   ApisListParams: {
     valid: apisListParamsOk,
@@ -7327,10 +7326,6 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 // ---------------------------------------------------------------------------
 // Every method in the METHODS table, exercised through the public validateMethod rather than by
 // reaching for the TSchema directly, with ajv's verdict confirmed to agree separately.
-// followUp and steer share one SessionSteerParams/Result schema, but each method name has its own
-// fixture rows (followup-ok / followup-missing-commandid / followup-result-ok) and does not reuse
-// steer's sample objects: feeding both method names to validateMethod separately means passing the
-// wrong method name cannot be masked by the fact that they share a schema.
 
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
@@ -7389,11 +7384,6 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
     params: 'SessionControlsParams',
     result: 'SessionControlStateResult',
-  },
-  '_agnes/v1/session.editQueued': {
-    fileId: 'https://agnes.ai/schema/agnes-v1.json',
-    params: 'SessionEditQueuedParams',
-    result: 'SessionSteerResult',
   },
   '_agnes/v1/admin.triggers': {
     fileId: 'https://agnes.ai/schema/app-server-v1',
@@ -8014,12 +8004,6 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SessionAttachParams',
     result: 'SessionAttachResult',
   },
-  '_agnes/v1/session.steer': { fileId: AGNES_ID, params: 'SessionSteerParams', result: 'SessionSteerResult' },
-  '_agnes/v1/session.followUp': {
-    fileId: AGNES_ID,
-    params: 'SessionSteerParams',
-    result: 'SessionSteerResult',
-  },
   '_agnes/v1/apis.list': { fileId: AGNES_ID, params: 'ApisListParams', result: 'ApisListResult' },
   '_agnes/v1/submit': { fileId: AGNES_ID, params: 'SubmitParams', result: 'Ack' },
   '_agnes/v1/submit.ack': { fileId: AGNES_ID, params: 'CommandAckParams', result: 'Empty' },
@@ -8242,11 +8226,6 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     valid: { sessionId: 'owned', afterSeq: 0 },
     invalid: [{ sessionId: 1 }, { sessionId: 'owned', afterSeq: -1 }],
     note: 'pinned session capability and pause state',
-  },
-  '_agnes/v1/session.editQueued': {
-    valid: { sessionId: 'owned', itemId: 'i', commandId: 'c', content: [{ type: 'text', text: 'edited' }] },
-    invalid: [{ sessionId: 'owned', itemId: 'i', commandId: 'c', content: [] }],
-    note: 'edit only undelivered queue input',
   },
   '_agnes/v1/admin.triggers': {
     note: 'Private webhook administration validates action and secret references.',
@@ -8761,15 +8740,6 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   'session/update': ACP_SAMPLES.SessionNotification as Sample,
   'session/request_permission': ACP_SAMPLES.RequestPermissionRequest as Sample,
   '_agnes/v1/session.attach': AGNES_SAMPLES.SessionAttachParams as Sample,
-  '_agnes/v1/session.steer': AGNES_SAMPLES.SessionSteerParams as Sample,
-  '_agnes/v1/session.followUp': {
-    valid: followupOk,
-    invalid: [
-      byId(methodFixtures, 'followup-missing-commandid'),
-      { ...followupOk, commandId: rep(129) }, // boundary: maxLength:128
-    ],
-    note: 'valid and the first invalid reuse fixtures/methods/i1.jsonl (followup-ok / followup-missing-commandid)',
-  },
   '_agnes/v1/apis.list': AGNES_SAMPLES.ApisListParams as Sample,
   '_agnes/v1/submit': AGNES_SAMPLES.SubmitParams as Sample,
   '_agnes/v1/submit.ack': AGNES_SAMPLES.CommandAckParams as Sample,
@@ -9061,7 +9031,6 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   },
   '_agnes/v1/session.control': AGNES_SAMPLES.SessionSteerResult as Sample,
   '_agnes/v1/session.controls': AGNES_SAMPLES.SessionControlStateResult as Sample,
-  '_agnes/v1/session.editQueued': AGNES_SAMPLES.SessionSteerResult as Sample,
   '_agnes/v1/session.fileUpload': AGNES_SAMPLES.FileUploadResultSchema as Sample,
   '_agnes/v1/session.factChain': AGNES_SAMPLES.FactChainResult!,
   '_agnes/v1/doctor.run': AppSamples.DoctorResult!,
@@ -9354,12 +9323,6 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   'session/prompt': ACP_SAMPLES.PromptResponse as Sample,
   'session/request_permission': ACP_SAMPLES.RequestPermissionResponse as Sample,
   '_agnes/v1/session.attach': AGNES_SAMPLES.SessionAttachResult as Sample,
-  '_agnes/v1/session.steer': AGNES_SAMPLES.SessionSteerResult as Sample,
-  '_agnes/v1/session.followUp': {
-    valid: byId(methodFixtures, 'followup-result-ok'),
-    invalid: [{ seq: 0 }], // boundary: minimum:1
-    note: 'valid reuses followup-result-ok from fixtures/methods/i1.jsonl; invalid is hand-written',
-  },
   '_agnes/v1/apis.list': AGNES_SAMPLES.ApisListResult as Sample,
   '_agnes/v1/submit': AGNES_SAMPLES.Ack as Sample,
   '_agnes/v1/submit.ack': AGNES_SAMPLES.Empty as Sample,

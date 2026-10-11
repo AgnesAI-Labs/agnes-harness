@@ -51,7 +51,8 @@ async function listSessions(options: CreateClientOptions) {
 | --- | --- |
 | `initialize`、`session/new`、`session/load`、`session/prompt`、`session/cancel` | 握手与基础会话 |
 | `session/update`、`session/request_permission` | 服务端通知与审批请求 |
-| `_agnes/v1/session.*` | 附加、列表、分叉、投影、模型/预设、follow-up 等扩展 |
+| `_agnes/v1/session.*` | 附加、列表、分叉、投影、模型/预设、控制等扩展 |
+| `_agnes/v1/submit`、`_agnes/v1/submit.ack` | 持久命令，包括指引、follow-up 和排队消息修改；重试复用 commandId |
 | `_agnes/v1/config.*` | 配置摘要、测试、保存、账号；敏感输入不可当普通日志 |
 | `_agnes/v1/packages.*` | 包检查、安装、治理、更新与操作查询 |
 | resource/skill/MCP 管理方法 | 独立控制面权限和 revision 检查，见资源 method table |

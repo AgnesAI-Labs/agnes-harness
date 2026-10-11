@@ -132,8 +132,6 @@ export interface AppServerMethods {
   "_agnes/v1/session.attach": { params: Static<typeof import("./agnes-v1.js").SessionAttachParams>; result: Static<typeof import("./agnes-v1.js").SessionAttachResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.control": { params: Static<typeof import("./agnes-v1.js").SessionControlParams>; result: Static<typeof import("./agnes-v1.js").SessionSteerResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.controls": { params: Static<typeof import("./agnes-v1.js").SessionControlsParams>; result: Static<typeof import("./agnes-v1.js").SessionControlStateResult>; direction: "c2s"; kind: "request" }
-  "_agnes/v1/session.editQueued": { params: Static<typeof import("./agnes-v1.js").SessionEditQueuedParams>; result: Static<typeof import("./agnes-v1.js").SessionSteerResult>; direction: "c2s"; kind: "request" }
-  "_agnes/v1/session.steer": { params: Static<typeof import("./agnes-v1.js").SessionSteerParams>; result: Static<typeof import("./agnes-v1.js").SessionSteerResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.budget": { params: Static<typeof import("./agnes-v1.js").SessionIdParams>; result: Static<typeof import("./agnes-v1.js").SessionBudgetResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.projectUI": { params: Static<typeof import("./agnes-v1.js").SessionProjectUIParams>; result: Static<typeof import("./agnes-v1.js").UITimeline>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.projectUIPatch": { params: Static<typeof import("./agnes-v1.js").SessionProjectUIPatchParams>; result: Static<typeof import("./agnes-v1.js").UIProjectionUpdate>; direction: "c2s"; kind: "request" }
@@ -148,7 +146,6 @@ export interface AppServerMethods {
   "_agnes/v1/session.workspace.read": { params: Static<typeof import("./agnes-v1.js").SessionWorkspaceReadParams>; result: Static<typeof import("./agnes-v1.js").SessionWorkspaceReadResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.workspace.changes": { params: Static<typeof import("./agnes-v1.js").SessionWorkspaceChangesParams>; result: Static<typeof import("./agnes-v1.js").SessionWorkspaceChangesResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.readToolDetail": { params: Static<typeof import("./agnes-v1.js").SessionReadToolDetailParams>; result: Static<typeof import("./agnes-v1.js").SessionReadToolDetailResult>; direction: "c2s"; kind: "request" }
-  "_agnes/v1/session.followUp": { params: Static<typeof import("./agnes-v1.js").SessionSteerParams>; result: Static<typeof import("./agnes-v1.js").SessionSteerResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.fork": { params: Static<typeof import("./agnes-v1.js").SessionForkParams>; result: Static<typeof import("./agnes-v1.js").SessionIdParams>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.rename": { params: Static<typeof import("./agnes-v1.js").SessionRenameParams>; result: Static<typeof import("./agnes-v1.js").SessionPreferences>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.archive": { params: Static<typeof import("./agnes-v1.js").SessionArchiveParams>; result: Static<typeof import("./agnes-v1.js").SessionPreferences>; direction: "c2s"; kind: "request" }

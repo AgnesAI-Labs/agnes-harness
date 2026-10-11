@@ -439,11 +439,8 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.attach',
       'session.detach',
       'session.event',
-      'session.steer',
       'session.control',
       'session.controls',
-      'session.editQueued',
-      'session.followUp',
       'session.budget',
       'session.projectUI',
       'session.projectUIPatch',
@@ -465,7 +462,7 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.setModel',
       'session.setYolo',
     ].map((m) => `_agnes/v1/${m}`),
-    guidance: 'attach before reading events; steer while a turn runs, followUp to queue',
+    guidance: 'attach before reading events; submit kind=steer while a turn runs, kind=followUp to queue',
   },
   {
     name: 'workspace',
@@ -1910,11 +1907,7 @@ export function registerAgnes(
     return { ...result, replayed: false } as Ack
   }
 
-  const sugar = async (
-    kind: 'steer' | 'followUp' | 'control' | 'editQueued',
-    params: unknown,
-    c: CallContext,
-  ): Promise<{ seq: number }> => {
+  const sugar = async (kind: 'control', params: unknown, c: CallContext): Promise<{ seq: number }> => {
     const p = params as {
       sessionId: string
       content: unknown[]
@@ -1961,9 +1954,6 @@ export function registerAgnes(
     return cx.registry.require(sessionId).session.controls.state((params as { afterSeq?: number }).afterSeq)
   })
   ep.register('_agnes/v1/session.control', (params, c) => sugar('control', params, c))
-  ep.register('_agnes/v1/session.editQueued', (params, c) => sugar('editQueued', params, c))
-  ep.register('_agnes/v1/session.steer', (params, c) => sugar('steer', params, c))
-  ep.register('_agnes/v1/session.followUp', (params, c) => sugar('followUp', params, c))
   ep.register('_agnes/v1/apis.list', async (_params, c) => {
     const pr = cx.host.profile
     // ResolvedProfile has no branding field. ApisListResult keeps `branding` optional, so it is simply

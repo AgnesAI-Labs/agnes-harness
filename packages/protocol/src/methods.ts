@@ -119,8 +119,6 @@ export type MethodName =
   | '_agnes/v1/session.attach'
   | '_agnes/v1/session.control'
   | '_agnes/v1/session.controls'
-  | '_agnes/v1/session.editQueued'
-  | '_agnes/v1/session.steer'
   | '_agnes/v1/session.budget'
   | '_agnes/v1/session.projectUI'
   | '_agnes/v1/session.projectUIPatch'
@@ -135,7 +133,6 @@ export type MethodName =
   | '_agnes/v1/session.workspace.read'
   | '_agnes/v1/session.workspace.changes'
   | '_agnes/v1/session.readToolDetail'
-  | '_agnes/v1/session.followUp'
   | '_agnes/v1/session.fork'
   | '_agnes/v1/session.rename'
   | '_agnes/v1/session.archive'
@@ -275,18 +272,6 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: A.SessionControlsParams,
     result: A.SessionControlStateResult,
   },
-  '_agnes/v1/session.editQueued': {
-    kind: 'request',
-    direction: 'c2s',
-    params: A.SessionEditQueuedParams,
-    result: A.SessionSteerResult,
-  },
-  '_agnes/v1/session.steer': {
-    kind: 'request',
-    direction: 'c2s',
-    params: A.SessionSteerParams,
-    result: A.SessionSteerResult,
-  },
   '_agnes/v1/session.budget': {
     kind: 'request',
     direction: 'c2s',
@@ -341,12 +326,6 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     A.SessionReadToolDetailParams,
     A.SessionReadToolDetailResult,
   ),
-  '_agnes/v1/session.followUp': {
-    kind: 'request',
-    direction: 'c2s',
-    params: A.SessionSteerParams,
-    result: A.SessionSteerResult,
-  },
   '_agnes/v1/session.fork': {
     kind: 'request',
     direction: 'c2s',

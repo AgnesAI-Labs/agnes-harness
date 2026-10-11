@@ -59,7 +59,8 @@ Node transports include unix, stdio, and ws. Deployment contracts determine auth
 | --- | --- |
 | `initialize`, `session/new`, `session/load`, `session/prompt`, `session/cancel` | Handshake and basic sessions |
 | `session/update`, `session/request_permission` | Server notifications and approval requests |
-| `_agnes/v1/session.*` | Attach, list, fork, projections, models/presets, follow-ups, and other extensions |
+| `_agnes/v1/session.*` | Attach, list, fork, projections, models/presets, controls, and other extensions |
+| `_agnes/v1/submit`, `_agnes/v1/submit.ack` | Durable commands, including steering, follow-ups and queued-message edits; reuse commandId for retries |
 | `_agnes/v1/config.*` | Configuration summary, testing, saving, and accounts; sensitive inputs must not become ordinary logs |
 | `_agnes/v1/packages.*` | Package inspection, installation, governance, updates, and operation queries |
 | Resource/Skill/MCP management methods | Separate control-plane permissions and revision checks; see the resource method table |

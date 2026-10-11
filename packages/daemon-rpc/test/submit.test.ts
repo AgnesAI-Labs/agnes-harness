@@ -183,7 +183,7 @@ describe('compact outcome association', () => {
   })
 })
 
-describe('steer / followUp / submit', () => {
+describe('submit admission and journal', () => {
   it('starts an admitted prompt without a separate receipt read and runs older input first', async () => {
     const h = await openTestHost()
     const created = vi.spyOn(h.host, 'createSession')
@@ -416,8 +416,13 @@ describe('steer / followUp / submit', () => {
               : ep.handle({
                   jsonrpc: '2.0',
                   id: 30,
-                  method: '_agnes/v1/session.followUp',
-                  params: { sessionId, commandId: 'A', content: [{ type: 'text', text: 'A' }] },
+                  method: '_agnes/v1/submit',
+                  params: {
+                    clientId: CLIENT,
+                    kind: 'followUp',
+                    commandId: 'A',
+                    payload: { sessionId, content: [{ type: 'text', text: 'A' }] },
+                  },
                 })
         await vi.waitFor(() => expect(inference).toBe(1))
         for (const text of ['B', 'C', 'D'])
@@ -425,8 +430,13 @@ describe('steer / followUp / submit', () => {
             await ep.handle({
               jsonrpc: '2.0',
               id: 31,
-              method: '_agnes/v1/session.followUp',
-              params: { sessionId, commandId: text, content: [{ type: 'text', text }] },
+              method: '_agnes/v1/submit',
+              params: {
+                clientId: CLIENT,
+                kind: 'followUp',
+                commandId: text,
+                payload: { sessionId, content: [{ type: 'text', text }] },
+              },
             }),
           ).toHaveProperty('result.seq')
         const queue = (await core.projectUI()).pendingInputs ?? []
@@ -685,8 +695,13 @@ describe('steer / followUp / submit', () => {
             await ep.handle({
               jsonrpc: '2.0',
               id: 31,
-              method: '_agnes/v1/session.followUp',
-              params: { sessionId, content: [{ type: 'text', text }], commandId: text },
+              method: '_agnes/v1/submit',
+              params: {
+                clientId: CLIENT,
+                kind: 'followUp',
+                commandId: text,
+                payload: { sessionId, content: [{ type: 'text', text }] },
+              },
             }),
           ).toMatchObject({ result: { seq: expect.any(Number) } })
         }
@@ -762,11 +777,12 @@ describe('steer / followUp / submit', () => {
     const followUp = ep.handle({
       jsonrpc: '2.0',
       id: 31,
-      method: '_agnes/v1/session.followUp',
+      method: '_agnes/v1/submit',
       params: {
-        sessionId,
-        content: [{ type: 'text', text: 'while running' }],
+        clientId: CLIENT,
+        kind: 'followUp',
         commandId: 'during-prompt',
+        payload: { sessionId, content: [{ type: 'text', text: 'while running' }] },
       },
     })
     expect(
@@ -790,16 +806,27 @@ describe('steer / followUp / submit', () => {
     const a = (await ep.handle({
       jsonrpc: '2.0',
       id: 3,
-      method: '_agnes/v1/session.followUp',
-      params: { sessionId, content: [{ type: 'text', text: 'later' }], commandId: 'c1' },
+      method: '_agnes/v1/submit',
+      params: {
+        clientId: CLIENT,
+        kind: 'followUp',
+        commandId: 'c1',
+        payload: { sessionId, content: [{ type: 'text', text: 'later' }] },
+      },
     })) as { result: { seq: number } }
     const b = (await ep.handle({
       jsonrpc: '2.0',
       id: 4,
-      method: '_agnes/v1/session.followUp',
-      params: { sessionId, content: [{ type: 'text', text: 'later' }], commandId: 'c1' },
+      method: '_agnes/v1/submit',
+      params: {
+        clientId: CLIENT,
+        kind: 'followUp',
+        commandId: 'c1',
+        payload: { sessionId, content: [{ type: 'text', text: 'later' }] },
+      },
     })) as { result: { seq: number } }
-    expect(b.result.seq).toBe(a.result.seq)
+    expect(a).toMatchObject({ result: { replayed: false } })
+    expect(b).toMatchObject({ result: { replayed: true, seq: a.result.seq } })
     const ack = await ep.handle({
       jsonrpc: '2.0',
       id: 5,
@@ -851,14 +878,24 @@ describe('steer / followUp / submit', () => {
     await ep.handle({
       jsonrpc: '2.0',
       id: 3,
-      method: '_agnes/v1/session.steer',
-      params: { sessionId, content: [{ type: 'text', text: 'now' }], commandId: 's1' },
+      method: '_agnes/v1/submit',
+      params: {
+        clientId: CLIENT,
+        kind: 'steer',
+        commandId: 's1',
+        payload: { sessionId, content: [{ type: 'text', text: 'now' }] },
+      },
     })
     await ep.handle({
       jsonrpc: '2.0',
       id: 4,
-      method: '_agnes/v1/session.followUp',
-      params: { sessionId, content: [{ type: 'text', text: 'later' }], commandId: 'f1' },
+      method: '_agnes/v1/submit',
+      params: {
+        clientId: CLIENT,
+        kind: 'followUp',
+        commandId: 'f1',
+        payload: { sessionId, content: [{ type: 'text', text: 'later' }] },
+      },
     })
     const session = h.host.kernel.get(sessionId)
     const inbox = session?.latest('inbox') as { items: Array<{ target: string; kind: string }> }
@@ -878,12 +915,13 @@ describe('steer / followUp / submit', () => {
       ep.handle({
         jsonrpc: '2.0',
         id,
-        method: '_agnes/v1/session.followUp',
+        method: '_agnes/v1/submit',
         params: {
-          sessionId,
-          content: [{ type: 'text', text: 'fenced' }],
+          clientId: CLIENT,
+          kind: 'followUp',
           commandId: 'generation-retry',
           generation,
+          payload: { sessionId, content: [{ type: 'text', text: 'fenced' }] },
         },
       })
     expect(await send(2, 20)).toMatchObject({
@@ -934,15 +972,16 @@ describe('steer / followUp / submit', () => {
     const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5, journal })
     const sessionId = await newSession(ep, h.dataDir)
     const request = {
-      sessionId,
-      content: [{ type: 'text' as const, text: 'survived' }],
+      clientId: CLIENT,
+      kind: 'followUp',
       commandId: 'crash-window',
+      payload: { sessionId, content: [{ type: 'text' as const, text: 'survived' }] },
     }
     expect(
       await ep.handle({
         jsonrpc: '2.0',
         id: 60,
-        method: '_agnes/v1/session.followUp',
+        method: '_agnes/v1/submit',
         params: request,
       }),
     ).toMatchObject({ error: { code: -32603 } })
@@ -950,7 +989,7 @@ describe('steer / followUp / submit', () => {
       await ep.handle({
         jsonrpc: '2.0',
         id: 61,
-        method: '_agnes/v1/session.followUp',
+        method: '_agnes/v1/submit',
         params: request,
       }),
     ).toMatchObject({ result: { seq: expect.any(Number) } })
@@ -974,15 +1013,16 @@ describe('steer / followUp / submit', () => {
     try {
       const sessionId = await newSession(ep, h.dataDir)
       const request = {
-        sessionId,
-        content: [{ type: 'text' as const, text: 'only-once' }],
+        clientId: CLIENT,
+        kind: 'followUp',
         commandId: 'ownership-lost-after-begin',
+        payload: { sessionId, content: [{ type: 'text' as const, text: 'only-once' }] },
       }
       await expect(
         ep.handle({
           jsonrpc: '2.0',
           id: 62,
-          method: '_agnes/v1/session.followUp',
+          method: '_agnes/v1/submit',
           params: request,
         }),
       ).resolves.toMatchObject({ error: { code: -32603 } })
@@ -990,7 +1030,7 @@ describe('steer / followUp / submit', () => {
         ep.handle({
           jsonrpc: '2.0',
           id: 63,
-          method: '_agnes/v1/session.followUp',
+          method: '_agnes/v1/submit',
           params: request,
         }),
       ).resolves.toMatchObject({
@@ -1060,7 +1100,7 @@ describe('steer / followUp / submit', () => {
     // clientId comes from initialize._meta and is written by the client. The Actor goes into an
     // append-only record, so taking the id from there would let a caller sign another identity's
     // name to it permanently. Both method families are checked, because both mint an Actor: the ACP
-    // prompt path and the _agnes/v1 steer / followUp / submit path.
+    // prompt path and the _agnes/v1/submit path.
     const h = await openTestHost()
     const ep = h.endpoint({
       clock: () => Date.now(),
@@ -1080,8 +1120,13 @@ describe('steer / followUp / submit', () => {
     await ep.handle({
       jsonrpc: '2.0',
       id: 4,
-      method: '_agnes/v1/session.followUp',
-      params: { sessionId, content: [{ type: 'text', text: 'from the agnes path' }], commandId: 'c1' },
+      method: '_agnes/v1/submit',
+      params: {
+        clientId: CLIENT,
+        kind: 'followUp',
+        commandId: 'c1',
+        payload: { sessionId, content: [{ type: 'text', text: 'from the agnes path' }] },
+      },
     })
     const log = h.host.kernel.get(sessionId)
     const rows = (await log?.scan({ fromSeq: 1, toSeq: log.lastSeq, type: 'inbox' })) ?? []
@@ -1228,8 +1273,13 @@ describe('steer / followUp / submit', () => {
     const first = (await alice.handle({
       jsonrpc: '2.0',
       id: 3,
-      method: '_agnes/v1/session.followUp',
-      params: { sessionId: aliceSession, content: [{ type: 'text', text: 'x' }], commandId: 'shared' },
+      method: '_agnes/v1/submit',
+      params: {
+        clientId: CLIENT,
+        kind: 'followUp',
+        commandId: 'shared',
+        payload: { sessionId: aliceSession, content: [{ type: 'text', text: 'x' }] },
+      },
     })) as { result: { seq: number; replayed?: boolean } }
     const second = (await bob.handle({
       jsonrpc: '2.0',

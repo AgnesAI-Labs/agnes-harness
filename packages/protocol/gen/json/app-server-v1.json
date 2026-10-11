@@ -1635,26 +1635,6 @@
         "$ref": "#/$defs/_agnes_v1_session_controlsResult"
       }
     },
-    "_agnes/v1/session.editQueued": {
-      "kind": "request",
-      "direction": "c2s",
-      "params": {
-        "$ref": "#/$defs/_agnes_v1_session_editQueuedParams"
-      },
-      "result": {
-        "$ref": "#/$defs/_agnes_v1_session_editQueuedResult"
-      }
-    },
-    "_agnes/v1/session.steer": {
-      "kind": "request",
-      "direction": "c2s",
-      "params": {
-        "$ref": "#/$defs/_agnes_v1_session_steerParams"
-      },
-      "result": {
-        "$ref": "#/$defs/_agnes_v1_session_steerResult"
-      }
-    },
     "_agnes/v1/session.budget": {
       "kind": "request",
       "direction": "c2s",
@@ -1793,16 +1773,6 @@
       },
       "result": {
         "$ref": "#/$defs/_agnes_v1_session_readToolDetailResult"
-      }
-    },
-    "_agnes/v1/session.followUp": {
-      "kind": "request",
-      "direction": "c2s",
-      "params": {
-        "$ref": "#/$defs/_agnes_v1_session_followUpParams"
-      },
-      "result": {
-        "$ref": "#/$defs/_agnes_v1_session_followUpResult"
       }
     },
     "_agnes/v1/session.fork": {
@@ -36271,18 +36241,6 @@
     "_agnes_v1_session_controlsResult": {
       "$ref": "#/$defs/D66a0f362428a_SessionControlStateResult"
     },
-    "_agnes_v1_session_editQueuedParams": {
-      "$ref": "#/$defs/D66a0f362428a_SessionEditQueuedParams"
-    },
-    "_agnes_v1_session_editQueuedResult": {
-      "$ref": "#/$defs/D66a0f362428a_SessionSteerResult"
-    },
-    "_agnes_v1_session_steerParams": {
-      "$ref": "#/$defs/D66a0f362428a_SessionSteerParams"
-    },
-    "_agnes_v1_session_steerResult": {
-      "$ref": "#/$defs/D66a0f362428a_SessionSteerResult"
-    },
     "_agnes_v1_session_budgetParams": {
       "$ref": "#/$defs/D66a0f362428a_SessionIdParams"
     },
@@ -37694,12 +37652,6 @@
     },
     "_agnes_v1_session_readToolDetailResult": {
       "$ref": "#/$defs/D66a0f362428a_SessionReadToolDetailResult"
-    },
-    "_agnes_v1_session_followUpParams": {
-      "$ref": "#/$defs/D66a0f362428a_SessionSteerParams"
-    },
-    "_agnes_v1_session_followUpResult": {
-      "$ref": "#/$defs/D66a0f362428a_SessionSteerResult"
     },
     "_agnes_v1_session_forkParams": {
       "$ref": "#/$defs/D66a0f362428a_SessionForkParams"

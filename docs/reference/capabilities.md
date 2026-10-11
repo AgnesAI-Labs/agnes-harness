@@ -28,6 +28,18 @@ capability ID; it also rejects stale source markers and drift between this table
 | `sdk.optional-build-capabilities` | Optional SDK transport/auth construction | wired | `Unsupported` is the intended typed boundary when an entry point omits an optional transport or auth implementation. | Complete; keep fail-closed | `packages/sdk/src/errors.ts` |
 | `sandbox.bwrap-runtime-selection` | Bubblewrap selection | wired | The compiler leaf is intentionally not a direct default seam; the runtime backend selector probes and selects it. | Complete; keep indirect wiring | `packages/base/extensions/sandbox/src/backends/bwrap.ts` |
 
+## Session command transport
+
+The protocol has 186 methods. These capabilities use the same durable submit path; SDK methods remain available.
+
+| Capability | SDK method | Native request |
+|---|---|---|
+| Steering | `session.steer(content)` | `_agnes/v1/submit`, kind `steer` |
+| Follow-up | `session.followUp(content)` | `_agnes/v1/submit`, kind `followUp` |
+| Edit queued input | `session.editQueued(itemId, content)` | `_agnes/v1/submit`, kind `editQueued` |
+
+Keep `clientId` and `commandId` stable across retries, with optional `generation` on the submit envelope. The remaining native `_agnes/v1/session.control` wrapper also uses submit admission and journaling. Shared command DTOs remain protocol contracts.
+
 ## Support-level note
 
 Platform support is described in [known limitations](limitations.md). Local tests and CI coverage do
