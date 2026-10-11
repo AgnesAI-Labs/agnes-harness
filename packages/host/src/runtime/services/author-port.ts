@@ -160,6 +160,7 @@ export function createExtensionServiceHost(input: {
         ),
       }),
       projections: identity.projections,
+      lastSeq: () => session.lastSeq,
       now: () => Date.now(),
     })
   }

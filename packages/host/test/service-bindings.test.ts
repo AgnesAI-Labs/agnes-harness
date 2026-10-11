@@ -907,10 +907,13 @@ describe('extension service host', () => {
     let operation: unknown = null
     let steer = false
     let closing = false
+    let lastSeq = 10
     const session: SessionLedgerSession & { key: string } = {
       key: 'sess',
       lane: 'main',
-      lastSeq: 10,
+      get lastSeq() {
+        return lastSeq
+      },
       get closingOrClosed() {
         return closing
       },
@@ -938,7 +941,7 @@ describe('extension service host', () => {
       },
       async appendExtensionEvent(type, data, meta, sourceSeq) {
         appended.push(sourceSeq === undefined ? { type, data, meta } : { type, data, meta, sourceSeq })
-        return 11
+        return ++lastSeq
       },
       async enqueue(target, message) {
         enqueued.push({
@@ -1032,7 +1035,12 @@ describe('extension service host', () => {
       const page = await captured?.ledger?.scanOwn({ names: ['note'], limit: 10 })
       expect(page?.events.map((event) => event.seq)).toEqual([3])
       expect(page?.events[0]?.data).toEqual({ owner: 'other/person' })
+      expect(captured?.lastSeq).toBe(10)
       expect(await captured?.ledger?.appendOwn('note', { ok: true }, 4)).toBe(11)
+      expect(captured?.lastSeq).toBe(11)
+      expect(
+        (await captured?.ledger?.scanOwn({ names: ['note'], limit: 10 }))?.events.map((event) => event.seq),
+      ).toEqual([3, 11])
       expect(fixture.appended[0]).toMatchObject({
         type: full,
         data: { ok: true },
