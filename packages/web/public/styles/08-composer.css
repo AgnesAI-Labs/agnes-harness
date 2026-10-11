@@ -4,6 +4,13 @@
 body:has(#empty-state:not([hidden])) #prompt {
   min-height: 3.25rem;
 }
+.empty-state-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s8);
+  margin-top: var(--s16);
+}
 /* 新会话（空态）：hero 与输入卡作为**一组**在剩余空间里垂直居中。两级绝对定位
    （.conversation-region-root 与 #empty-state）必须在空态下放开，hero 才撑得出真实
    高度；否则 shell 高度为 0，后面两份 auto 外边距无处可吃。顶栏在空态是绝对定位的

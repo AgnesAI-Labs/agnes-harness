@@ -71,6 +71,17 @@ for (const locale of ['en', 'zh-CN'])
       }
       await quality('first-run', true)
       await chooseWorkspace(page, runtime, locale)
+      const suggestions = page.getByTestId('task-suggestions').getByRole('button')
+      await expect(suggestions).toHaveCount(3)
+      await suggestions.first().click()
+      const draft = page.getByRole('textbox', {
+        name: locale === 'en' ? 'Task content' : '任务内容',
+        exact: true,
+      })
+      await expect(draft).toHaveValue(locale === 'en' ? 'Explain this project' : '介绍这个项目')
+      await expect(draft).toBeFocused()
+      await expect(page.locator('#empty-state')).toBeVisible()
+      await draft.fill('')
       await quality('new-session', true)
       await expect(page.getByTestId('composer-agent')).toBeHidden()
       await page.locator('#composer-permission').click()

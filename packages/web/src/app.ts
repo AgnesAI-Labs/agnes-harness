@@ -1278,6 +1278,12 @@ document.addEventListener('agnes:rename-current-session', (event) => {
   if (trigger instanceof HTMLElement)
     void sessionActions.act('rename', current.id, trigger.textContent ?? '', trigger)
 })
+document.addEventListener('agnes:compose-suggestion', (event) => {
+  if ((current && !draftingNew) || sessionPending || !(event instanceof CustomEvent)) return
+  if (typeof event.detail !== 'string') return
+  composerRuntime.setDraft(event.detail)
+  composerRuntime.focus()
+})
 let sessionRecovery: { id: string; message: string } | undefined
 function errorMessage(error: unknown): string {
   // Provider values are redacted by settings before leaving that controller.

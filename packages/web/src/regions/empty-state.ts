@@ -6,7 +6,7 @@ import {
   SlotsProvider,
 } from '@agnes/web-client'
 import type { AntdRoot } from '@agnes/web-ui'
-import { createAntdRoot } from '@agnes/web-ui'
+import { Button, createAntdRoot } from '@agnes/web-ui'
 import { createElement } from 'react'
 import { EMPTY_STATE_DSH_CHILDREN, EMPTY_STATE_SLOT, type EmptyStateRegionMount } from './contracts.js'
 
@@ -45,6 +45,27 @@ export function EmptyStateBuiltin({
     createElement('span', { className: 'agnes-mark empty-brand-mark', 'aria-hidden': 'true' }),
     createElement('h2', { id: 'empty-state-title', className: 'empty-state-heading' }, 'Agnes Harness'),
     createElement('p', { className: 'empty-state-copy' }, t('app.emptyState.tagline')),
+    createElement(
+      'div',
+      { className: 'empty-state-suggestions', 'data-testid': 'task-suggestions' },
+      ...['project', 'issue', 'test'].map((suggestion) => {
+        const text = t(`composer.suggestion.${suggestion}`)
+        return createElement(
+          Button,
+          {
+            key: suggestion,
+            appearance: 'ghost',
+            size: 'small',
+            htmlType: 'button',
+            onClick: (event) =>
+              event.currentTarget.dispatchEvent(
+                new CustomEvent('agnes:compose-suggestion', { bubbles: true, detail: text }),
+              ),
+          },
+          text,
+        )
+      }),
+    ),
   )
 }
 
