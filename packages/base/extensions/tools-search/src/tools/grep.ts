@@ -8,6 +8,7 @@ import {
   SEARCH_META,
   searchPathError,
   toolError,
+  unreadableReason,
   walk,
   walkNotes,
 } from './walk.js'
@@ -27,7 +28,7 @@ function clip(s: string): string {
 export const grepTool = defineTool({
   name: 'grep',
   description:
-    'Search file contents under a directory with a regular expression, or with a literal string when literal is true. Returns path:line:text, with context lines marked path-line-text. Build and dependency directories, binary files and paths policy denies are passed over, and the result says which. The path may also be an artifact:// path from a truncated output note, to search that output; the line numbers match what read shows.',
+    'Search one file, or the files under a directory, with a regular expression, or with a literal string when literal is true. Returns path:line:text, with context lines marked path-line-text. Build and dependency directories, binary files, paths policy denies and paths that cannot be read are passed over, and the result says which. The path may also be an artifact:// path from a truncated output note, to search that output; the line numbers match what read shows.',
   parameters: GrepParams,
   meta: SEARCH_META,
   async execute(args, ctx): Promise<ToolResult> {
@@ -82,9 +83,13 @@ export const grepTool = defineTool({
     }
     const denied = searchPathError(ctx, 'grep', root)
     if (denied) return denied
+    let searched = 0
     for await (const f of walk(ctx, root, report, { maxEntries: MAX_ENTRIES })) {
       if (atLimit) break
-      if (f.kind !== 'file' || (glob && !glob.test(f.rel))) continue
+      // The path itself, when it names a file: searched whatever glob says, as a stored output is,
+      // and reported under the path it was given if it cannot be read.
+      const named = f.abs === root
+      if (f.kind !== 'file' || (glob && !named && !glob.test(f.rel))) continue
       let bytes: Uint8Array
       try {
         // The size is asked about before the bytes are wanted, so one large file in the tree costs
@@ -96,17 +101,31 @@ export const grepTool = defineTool({
           continue
         }
         bytes = await ctx.fs.read(f.abs)
-      } catch {
+      } catch (e) {
         // One unreadable file must not end the turn: a permission error somewhere in a tree is
         // ordinary, and the search over the rest of it is still worth having.
-        report.unreadable++
+        report.unreadable.push({ path: named ? root : f.rel, reason: unreadableReason(e) })
         continue
       }
-      if (isBinary(bytes)) continue
+      if (isBinary(bytes)) {
+        report.binary++
+        continue
+      }
+      searched++
       searchLines(f.rel, dec.decode(bytes).split('\n'))
     }
     const notes = walkNotes(report, MAX_ENTRIES)
     if (atLimit) notes.push(`[limit ${limit} reached; there may be more matches]`)
-    return guardedResult(ctx, [out.length > 0 ? out.join('\n') : 'no matches', ...notes].join('\n'))
+    // Not one file searched, and some passed over: "no matches" would say they were looked at. An
+    // empty tree, or one whose files policy keeps out, is still an ordinary "no matches".
+    const failed =
+      searched === 0 && (report.unreadable.length > 0 || report.oversize > 0 || report.binary > 0)
+    const text = [
+      out.length > 0 ? out.join('\n') : failed ? 'nothing could be searched' : 'no matches',
+      ...notes,
+    ]
+    return failed
+      ? { ...(await guardedResult(ctx, text.join('\n'))), isError: true }
+      : guardedResult(ctx, text.join('\n'))
   },
 })

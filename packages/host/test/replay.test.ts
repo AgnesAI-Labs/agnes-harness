@@ -571,11 +571,11 @@ function replayMin(raw: string | undefined, fallback: number): number {
 // unbalanced-delimiter rewrite that is not a size shrink, two `edit` calls landing on the same file
 // across two turns, and `read`'s offset/limit paging past the end of the file; then to 36 for
 // ambiguous edit refusal, invalid-regex reporting, explicit grep/find result limits, and a missing
-// read. The floor is what
+// read; then to 37 with `grep` pointed at one file, and at one that is not there. The floor is what
 // stops a case being deleted rather than fixed, so it is worth nothing if it stays below the corpus
 // - and it is the total of every lane's cases, never one lane's count, which is how a merge that
 // dropped half the corpus would still have passed it.
-const REPLAY_FLOOR = 36
+const REPLAY_FLOOR = 37
 
 /**
  * What the test host's own `standard` recipe says, restated here because a case that overrides the

@@ -236,14 +236,118 @@ describe('grep', () => {
     expect(textOf(r)).toContain('1 file(s) skipped: larger than')
   })
 
-  it('skips a file it cannot read and counts it, instead of ending the turn', async () => {
+  it('skips a file it cannot read and names it with the reason, instead of ending the turn', async () => {
     const ctx = ctxOf({
-      files: { 'locked.ts': 'hit', 'open.ts': 'hit' },
+      files: { 'locked.ts': 'hit', 'open.ts': 'hit', 'sub/inner.ts': 'hit' },
       readErrors: { 'locked.ts': { code: 'EACCES', message: 'EACCES: permission denied' } },
+      listErrors: { sub: { code: 'EPERM', message: 'EPERM: operation not permitted' } },
     })
     const r = await grepTool.execute({ pattern: 'hit' }, ctx)
     expect(textOf(r)).toContain('open.ts:1:hit')
-    expect(textOf(r)).toContain('1 path(s) could not be read')
+    expect(textOf(r)).toContain(
+      '[2 path(s) could not be read: locked.ts (permission denied); sub (permission denied)]',
+    )
+    // Something was searched, so this is a result with a gap in it rather than a failed search.
+    expect(r.isError).toBeUndefined()
+  })
+
+  it('names at most ten unreadable paths and counts the rest', async () => {
+    const names = Array.from({ length: 12 }, (_, i) => `f${String(i).padStart(2, '0')}.ts`)
+    const ctx = ctxOf({
+      files: { ...Object.fromEntries(names.map((n) => [n, 'hit'])), 'ok.ts': 'hit' },
+      readErrors: Object.fromEntries(names.map((n) => [n, { code: 'EBUSY', message: 'EBUSY' }])),
+    })
+    const r = await grepTool.execute({ pattern: 'hit' }, ctx)
+    expect(textOf(r)).toContain('[12 path(s) could not be read: f00.ts (in use by another process); ')
+    expect(textOf(r)).toContain('f09.ts (in use by another process); and 2 more]')
+    expect(textOf(r)).not.toContain('f10.ts')
+  })
+
+  it('searches a file named as the path, the same file read opens', async () => {
+    // A search pointed at one file listed it as a directory, which a real filesystem refuses: the
+    // file was counted as unreadable and the answer was "no matches" about a file read could open.
+    const path = '星策天枢副本/constellation_database.py'
+    const ctx = ctxOf({
+      cwd: '/work/agnes harness',
+      files: {
+        [path]: '"""Persistent SQLite repository."""\nimport sqlite3\ndef record_plan(x):\n    pass\n',
+        '星策天枢副本/other.py': 'def record_plan(y):',
+      },
+    })
+    expect((await readTool.execute({ path }, ctx)).isError).toBeUndefined()
+    const r = await grepTool.execute({ path, pattern: 'def record_plan|CREATE TABLE', context: 1 }, ctx)
+    expect(r.isError).toBeUndefined()
+    expect(textOf(r)).toBe(
+      'constellation_database.py-2-import sqlite3\nconstellation_database.py:3:def record_plan(x):\nconstellation_database.py-4-    pass',
+    )
+    // One file is one file, whatever glob says, as a stored output is.
+    expect(textOf(await grepTool.execute({ path, pattern: 'sqlite3', glob: '*.ts' }, ctx))).toBe(
+      'constellation_database.py:2:import sqlite3',
+    )
+    const none = await grepTool.execute({ path, pattern: 'CREATE TABLE' }, ctx)
+    expect(textOf(none)).toBe('no matches')
+    expect(none.isError).toBeUndefined()
+  })
+
+  it('searches the file a link named as the path leads to', async () => {
+    // A link is listed through, as a directory it leads to always was; one that leads to a file is
+    // that file, as read would open it.
+    const base = ctxOf({ files: { 'target.py': 'def record_plan():' } })
+    const ctx: ToolContext = {
+      ...base,
+      fs: {
+        ...base.fs,
+        stat: async (p) => (p === 'link.py' ? { kind: 'symlink', size: 0, mtimeMs: 0 } : base.fs.stat(p)),
+        list: async (p) => {
+          if (p === 'link.py') throw Object.assign(new Error('ENOTDIR: not a directory'), { code: 'ENOTDIR' })
+          return base.fs.list(p)
+        },
+        read: async (p, o) => base.fs.read(p === 'link.py' ? 'target.py' : p, o),
+      },
+    }
+    const r = await grepTool.execute({ path: 'link.py', pattern: 'record_plan' }, ctx)
+    expect(textOf(r)).toBe('link.py:1:def record_plan():')
+    expect(r.isError).toBeUndefined()
+  })
+
+  it.each([
+    { what: 'missing', path: 'sub/missing.py', reason: 'not found' },
+    { what: 'unreadable', path: 'sub/locked.py', reason: 'permission denied' },
+  ])('is an error, naming the path, when the file it was pointed at is $what', async ({ path, reason }) => {
+    const ctx = ctxOf({
+      files: { 'sub/locked.py': 'hit' },
+      readErrors: { 'sub/locked.py': { code: 'EACCES', message: 'EACCES: permission denied' } },
+      // What a real listing says of a name that is not there; the memory one lists it as empty.
+      listErrors: { 'sub/missing.py': { code: 'ENOENT', message: 'ENOENT: no such file or directory' } },
+    })
+    const r = await grepTool.execute({ path, pattern: 'hit' }, ctx)
+    expect(r.isError).toBe(true)
+    expect(textOf(r)).toBe(`nothing could be searched\n[1 path(s) could not be read: ${path} (${reason})]`)
+  })
+
+  it('is an error when it could search none of the files under the path', async () => {
+    const ctx = ctxOf({
+      files: { 'src/a.ts': 'hit', 'src/b.ts': 'hit' },
+      readErrors: {
+        'src/a.ts': { code: 'EACCES', message: 'EACCES' },
+        'src/b.ts': { code: 'E_FS_DENIED', message: 'E_FS_DENIED: src/b.ts is denied by policy' },
+      },
+    })
+    const r = await grepTool.execute({ path: 'src', pattern: 'hit' }, ctx)
+    expect(r.isError).toBe(true)
+    expect(textOf(r)).toBe(
+      'nothing could be searched\n[2 path(s) could not be read: a.ts (permission denied); b.ts (outside the workspace or denied by policy)]',
+    )
+  })
+
+  it('says how many binary files it did not search, and is an error when that was all of them', async () => {
+    const ctx = ctxOf({ files: { 'bin.dat': 'a\u0000hit', 'text.ts': 'hit' } })
+    const r = await grepTool.execute({ pattern: 'hit' }, ctx)
+    expect(textOf(r)).toBe('text.ts:1:hit\n[1 binary file(s) not searched]')
+    expect(r.isError).toBeUndefined()
+    const named = await grepTool.execute({ path: 'bin.dat', pattern: 'hit' }, ctx)
+    expect(textOf(named)).toBe('nothing could be searched\n[1 binary file(s) not searched]')
+    expect(named.isError).toBe(true)
   })
 })
 
@@ -264,6 +368,17 @@ describe('find', () => {
     const ctx = ctxOf({ files })
     const r = await findTool.execute({ pattern: '**/*.ts' }, ctx)
     expect(textOf(r).split('\n')).toEqual(['src/a.ts', 'src/sub/b.ts', '[not searched: node_modules]'])
+  })
+
+  it('finds a file named as the path, and is an error when the path cannot be read', async () => {
+    const ctx = ctxOf({
+      files: { 'src/a.ts': '' },
+      listErrors: { gone: { code: 'ENOENT', message: 'ENOENT: no such file or directory' } },
+    })
+    expect(textOf(await findTool.execute({ pattern: '*.ts', path: 'src/a.ts' }, ctx))).toBe('a.ts')
+    const r = await findTool.execute({ pattern: '**', path: 'gone' }, ctx)
+    expect(r.isError).toBe(true)
+    expect(textOf(r)).toBe('nothing could be searched\n[1 path(s) could not be read: gone (not found)]')
   })
 
   it('says when it stopped at the result limit', async () => {
