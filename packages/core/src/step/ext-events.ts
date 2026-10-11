@@ -62,7 +62,12 @@ export async function appendExtensionEvent(
     }
     if (tally.count >= quota) invalid('extension event quota exceeded')
     ;[trigger] = await read({ fromSeq: from, toSeq: from, lane: session.lane, limit: 1 })
-    if (!trigger || (!options.loopTrigger && trigger.type !== 'user/message'))
+    const approvalResume =
+      trigger?.type === 'turn/start' &&
+      trigger.origin === 'system' &&
+      trigger.trust === 'trusted' &&
+      (trigger.data as { trigger?: string }).trigger === 'approval-resume'
+    if (!trigger || (!options.loopTrigger && trigger.type !== 'user/message' && !approvalResume))
       invalid('extension event trigger unavailable')
   }
   const actor = trigger?.actor ?? { id: 'system', org: 'local', role: 'system', deptPath: [], attrs: {} }

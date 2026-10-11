@@ -1,3 +1,7 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defaultLoopPlugin } from '@agnes/base'
 import { Context } from '@agnes/cordis'
 import { CoreError, MemoryStorage, SessionLogImpl } from '@agnes/core'
@@ -12,16 +16,20 @@ import {
   DeferredInvocationsService,
   ownerDeferredQueue,
 } from '@agnes/host-providers/assemble/deferred-invocations'
-import { drainDeferredToolInvocations } from '@agnes/plugin-runtime'
+import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
+import { defineAgnesPlugin, drainDeferredToolInvocations } from '@agnes/plugin-runtime'
 import {
   type DeferredActor,
   type DeferredInvocationReceipt,
   type DeferredToolInvocation,
   deferredQueueKind,
 } from '@agnes/plugin-runtime/deferred-contract'
-import type { Actor, DecisionSnapshot, EventEnvelope, JsonValue } from '@agnes/protocol'
+import type { Actor, DecisionSnapshot, EventEnvelope, JsonValue, UiSurface } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { assertMigrationSettled } from '../src/runtime/generation/migration-state.js'
+import { deferredQueueFor } from '../src/runtime/sessions/deferred-invocations.js'
+import { createTestHost } from '../testkit/index.js'
+import { fixtureTool } from './fixtures/tool.js'
 
 const actor: Actor = { id: 'human', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 const signal = new AbortController().signal
@@ -981,3 +989,210 @@ it('treats a sent tool cancel as an unknown external outcome', async () => {
     await stillUnknown.close()
   }
 })
+
+it.each(['allowed-once', 'rejected'] as const)(
+  'retains the Core decision ticket for a deferred tool across reopen: %s',
+  async (verdict) => {
+    const root = await mkdtemp(join(tmpdir(), 'agnes-deferred-decision-'))
+    const executions: string[] = []
+    const plugin = defineAgnesPlugin({
+      inject: ['extension'],
+      apply(ctx) {
+        ctx.extension().registerTool({
+          ...fixtureTool('review_commit'),
+          meta: { ...fixtureTool('review_commit').meta, requiresApproval: 'always' },
+          async execute() {
+            executions.push('committed')
+            return { content: [{ type: 'text', text: 'Synthetic change committed' }] }
+          },
+        })
+      },
+    })
+    const surface: UiSurface = {
+      id: 'review',
+      revision: 1,
+      title: 'Synthetic review',
+      placement: { inline: true, workbench: true },
+      data: {},
+      components: [{ id: 'buttons', kind: 'button-group', actionIds: ['commit'] }],
+      actions: [
+        {
+          id: 'commit',
+          label: 'Commit',
+          tool: 'review_commit',
+          argsTemplate: {},
+          paramsSchema: { type: 'object', additionalProperties: false, properties: {} },
+        },
+      ],
+    }
+    const packageId = 'fixture/deferred-review'
+    const directory = join(root, 'plugin')
+    await mkdir(directory)
+    await writeFile(join(directory, 'index.mjs'), 'synthetic deferred plugin')
+    await writeFile(
+      join(directory, 'package.json'),
+      JSON.stringify({
+        name: packageId,
+        version: '1.0.0',
+        type: 'module',
+        exports: './index.mjs',
+        agnes: { plugins: [{ export: 'main', apiRange: '^1.4.0', default: true, inject: ['extension'] }] },
+      }),
+    )
+    const source: RuntimePluginSnapshot = {
+      generation: 1,
+      trusted: true,
+      snapshot: {
+        packageId,
+        version: '1.0.0',
+        snapshotId: `sha256-${'1'.repeat(64)}`,
+        integrity: `sha256-${'2'.repeat(64)}`,
+        treeIntegrity: hashDirectory(directory, { exclude: [] }),
+        capabilityHash: 'fixture',
+        directory,
+        profile: 'local-dev',
+        contributions: [],
+      },
+    }
+    const { host } = await createTestHost({
+      dataDir: root,
+      disableSessionTitle: true,
+      packageDirs: {
+        '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)),
+        [packageId]: directory,
+      },
+      presets: {
+        standard: {
+          name: 'standard',
+          extends: 'base',
+          tools: { core: ['tool_describe', 'ui_render', 'review_commit'] },
+        },
+      },
+      lock: {
+        packages: Object.fromEntries(
+          ['@agnes/ai', '@agnes/base', '@agnes/code', packageId].map((id) => [
+            id,
+            {
+              version: '1.0.0',
+              integrity: source.snapshot.integrity,
+              trust: id === packageId ? 'trusted' : 'builtin',
+              enabled: true,
+            },
+          ]),
+        ),
+      },
+      profileInputs: {
+        user: { name: 'local-dev', packages: [{ id: packageId, source: `file:${directory}` }] },
+      },
+      runtimePluginSnapshots: [source],
+      runtimePluginCatalogue: [source],
+      runtimePluginSources: async () => [source],
+      extensionLoader: { import: async () => ({ main: plugin }) },
+      approval: async () => ({ verdict: 'unavailable', reason: 'no-handler' }),
+      script: [
+        [
+          {
+            type: 'toolcall_end',
+            via: 'native',
+            call: { toolUseId: '', name: 'tool_describe', args: { name: 'ui_render' }, ordinal: 0 },
+          },
+          { type: 'done', reason: 'toolUse' },
+        ],
+        [
+          {
+            type: 'toolcall_end',
+            via: 'native',
+            call: {
+              toolUseId: '',
+              name: 'ui_render',
+              args: { surface: surface as unknown as JsonValue },
+              ordinal: 0,
+            },
+          },
+          { type: 'done', reason: 'toolUse' },
+        ],
+        [{ type: 'done', reason: 'stop' }],
+        [{ type: 'done', reason: 'stop' }],
+      ],
+    })
+    try {
+      let session = await host.createSession({ key: 'deferred-review', cwd: root })
+      await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'Review' }] })
+      await session.run({ until: 'turn-end', signal })
+      const action = {
+        sessionId: session.key,
+        surfaceId: surface.id,
+        revision: 1,
+        actionId: 'commit',
+        commandId: 'commit-once',
+        input: {},
+        selection: {},
+        confirmed: true,
+      }
+      const admitted = await session.intelligentUi!.action(action, session.d.actor, signal)
+      expect(admitted, JSON.stringify(admitted)).toMatchObject({ status: 'received' })
+      const run = await session.run({ until: 'turn-end', signal })
+      expect(run, JSON.stringify(run)).toMatchObject({ reason: 'parked' })
+      const [decision] = await session.decisions.list()
+      expect(decision).toMatchObject({
+        request: {
+          owner: 'core/tool-permission',
+          sourcePackage: '@agnes/core',
+          spec: { purpose: 'tool.permission' },
+        },
+        result: null,
+      })
+      const readAction = async () =>
+        (await session.intelligentUi!.read({ sessionId: session.key }, signal)).actions[0]!
+      const pending = await readAction()
+      expect(pending).toMatchObject({ status: 'pending-approval', approvalId: decision!.handle.id })
+      expect(executions).toEqual([])
+      await session.close()
+      session = await host.createSession({ key: 'deferred-review', cwd: root })
+      const queue = deferredQueueFor(session)!.forSession(session.key, session.lane)!
+      expect(await queue.read(pending.invocationId!, signal)).toMatchObject({
+        state: 'pending-approval',
+        approvalId: decision!.handle.id,
+      })
+      await session.decisions.answer(
+        {
+          handle: decision!.handle,
+          revision: decision!.revision,
+          commandId: 'human-answer',
+          response: { option: verdict, value: null },
+        },
+        { actor, category: 'human', authorize() {} },
+      )
+      const resumed = await session.run({ until: 'turn-end', signal })
+      const completed = await readAction()
+      expect(resumed, JSON.stringify(resumed)).toMatchObject({ reason: 'completed' })
+      expect(completed).toMatchObject({ status: verdict === 'allowed-once' ? 'succeeded' : 'rejected' })
+      expect(await queue.read(pending.invocationId!, signal)).toMatchObject({
+        state: verdict === 'allowed-once' ? 'succeeded' : 'failed',
+        approvalId: decision!.handle.id,
+      })
+      await session.intelligentUi!.action(action, session.d.actor, signal)
+      await session.run({ until: 'turn-end', signal })
+      expect(executions).toEqual(verdict === 'allowed-once' ? ['committed'] : [])
+      const calls = await session.scan({ type: 'tool/call', toSeq: session.lastSeq })
+      expect(calls.filter((row) => (row.data as { name: string }).name === 'review_commit')).toHaveLength(1)
+      expect(await session.decisions.list()).toHaveLength(1)
+      const settled = await session.decisions.get(decision!.handle)
+      if (verdict === 'allowed-once') expect(settled.consumption).not.toBeNull()
+      else expect(settled.consumption).toBeNull()
+      if (verdict === 'rejected') {
+        const effects = await session.scan({ type: 'effect/intent', toSeq: session.lastSeq })
+        expect(
+          effects.some(
+            (row) =>
+              (row.data as { tool?: { toolUseId: string } }).tool?.toolUseId ===
+              decision!.request.operationId,
+          ),
+        ).toBe(false)
+      }
+    } finally {
+      await host.close()
+      await rm(root, { recursive: true, force: true })
+    }
+  },
+)

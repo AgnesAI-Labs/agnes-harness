@@ -40,7 +40,10 @@ for (const verdict of ['allowed-once', 'rejected'])
         requests.push(request)
         return events
       }),
-      approval: async () => verdict,
+      approval: async () => ({
+        verdict,
+        answeredBy: { id: 'reviewer', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+      }),
     })
     try {
       const session = await kit.openSession()
@@ -117,7 +120,7 @@ for (const verdict of ['allowed-once', 'rejected'])
         (event) => event.type === 'tool/call' && event.data.name === 'fde_finance_approve',
       )
       assert.equal(calls.length, 1)
-      assert.ok(events.some((event) => event.type === 'approval/asked'))
+      await session.assertApproval(verdict)
       assert.ok(events.some((event) => event.type === 'x/agnes/intelligent-ui/action.delivered'))
       if (verdict === 'allowed-once') {
         assert.equal(after.surfaces[0].surface.revision, 2)

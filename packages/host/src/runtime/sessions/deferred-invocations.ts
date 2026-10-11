@@ -112,7 +112,25 @@ export function bindDeferredInvocations(a: Assembled, session: HostSession): () 
       if (!toolUseId) return {}
       const matches = (row: { data: unknown }) => (row.data as { toolUseId?: string }).toolUseId === toolUseId
       const call = rows.find((row) => row.type === 'tool/call' && matches(row))
-      const approval = [...rows].reverse().find((row) => row.type === 'approval/asked' && matches(row))
+      // Tool permission uses Core's decision register; never infer a human ticket from delivery facts.
+      const decision = [...session.state.registers.decisionStates.values()].find(
+        ({ value }) =>
+          value.request.owner === 'core/tool-permission' &&
+          value.request.sourcePackage === '@agnes/core' &&
+          value.request.operationId === toolUseId &&
+          value.request.lane === session.lane,
+      )?.value
+      // Unknown-outcome reconciliation retains its separate domain approval receipt.
+      const approval = [...rows]
+        .reverse()
+        .find(
+          (row) =>
+            row.type === 'approval/asked' &&
+            matches(row) &&
+            (row.data as { kind?: string }).kind === 'unknown-outcome',
+        )
+      const approvalId =
+        (approval?.data as { requestId: string } | undefined)?.requestId ?? decision?.handle.id
       const result = [...rows].reverse().find((row) => row.type === 'tool/result' && matches(row))
       const response = [...rows]
         .reverse()
@@ -128,7 +146,7 @@ export function bindDeferredInvocations(a: Assembled, session: HostSession): () 
         | undefined
       return {
         ...(call ? { toolCallSeq: call.seq } : {}),
-        ...(approval ? { approvalId: String((approval.data as { requestId: string }).requestId) } : {}),
+        ...(approvalId ? { approvalId } : {}),
         ...(result && data?.code !== 'TOOL_OUTCOME_UNKNOWN'
           ? {
               resultSeq: result.seq,

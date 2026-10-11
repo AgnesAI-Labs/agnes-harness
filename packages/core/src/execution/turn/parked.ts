@@ -8,9 +8,9 @@ import {
   hasCompleteToolPolicyEnvelope,
   hasTrustedToolCallProvenance,
 } from '../../registry/tool-policy.js'
-import { TOOL_DECISION_OWNER } from './tool-decision.js'
 import type { SessionImpl } from '../../step/session.js'
 import { continueVerifier } from '../../step/verifier-continuation.js'
+import { TOOL_DECISION_OWNER } from './tool-decision.js'
 
 export async function approvalContinuation(
   s: SessionImpl,
@@ -152,7 +152,9 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
         limit: 1,
       })
     )[0]
-    if (!assistant) throw new CoreError('E_RELATION', 'parked assistant missing')
+    // Deferred and independent Loops may call tools before the first model reply.
+    // The original turn start bounds the batch scan when no model reply exists.
+    const assistantSeq = assistant?.seq ?? turnStart.seq
     const allowed =
       !snapshot.invalidation &&
       (!snapshot.result ||
@@ -229,11 +231,11 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
       return {
         ...op,
         step: 1,
-        latestAssistantSeq: assistant.seq,
+        latestAssistantSeq: assistant?.seq ?? null,
         phase: {
           kind: 'tools',
           batch: {
-            assistantSeq: assistant.seq,
+            assistantSeq,
             calls: [continuedCall],
           },
         },

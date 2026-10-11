@@ -320,7 +320,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Deferred producer binding on the shared service ports. countLines: 11970, exact, no spare.
   // UI data-source resolution. countLines: 11970 -> 12586 (+616).
   // Rebased tip includes the in-flight worktree migration. Measured 12791, exact, no spare.
-  'packages/host/src/runtime': 13026,
+  'packages/host/src/runtime': 13042,
   // UI data-source catalog wiring on that tree. countLines: 3517.
   'packages/host/src/runtime/assemble': 3648,
   'packages/host-providers/src/adapters': 477,
@@ -1244,7 +1244,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-08 freeze-close review: Await async loop construction, propagate session cancellation and drain initialization before storage closes.
   // countLines: 30048 -> 30103 (+55); exact measured cap, no exclusions or spare allocation.
   // Empty loop services reader. countLines: 22444, exact, no spare.
-  'packages/core/src': 23773,
+  'packages/core/src': 23778,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -2962,7 +2962,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Deferred queue facade and Intelligent UI producer binding. countLines: 12508, exact, no spare.
   // UI data-source resolution. countLines: 12508 -> 13124 (+616).
   // Rebased tip includes the in-flight worktree migration. Measured 13329, exact, no spare.
-  'packages/host/src': 13564,
+  'packages/host/src': 13580,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
