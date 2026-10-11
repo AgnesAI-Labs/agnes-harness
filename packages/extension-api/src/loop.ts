@@ -264,7 +264,9 @@ export interface LoopContext {
   readonly jobs: {
     /** The original tool invocation must own a durable deferred-job marker. */
     status(invocationId: string): Promise<LoopJobStatus>
-    /** Poll and atomically publish the original tool result; never run a scheduler edge. */
+    /** Poll and atomically publish the original tool result; never run a scheduler edge.
+     * E_JOB_POLL_TIMEOUT is recoverable: no result or effect settlement is published; retry join.
+     */
     join(invocationId: string, signal: AbortSignal): Promise<ToolResult>
   }
   readonly children?: LoopChildrenPort

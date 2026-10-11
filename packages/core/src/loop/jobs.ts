@@ -68,6 +68,10 @@ export function loopJobs(s: SessionImpl, invocations: LoopInvocations): LoopCont
             'loop job poll',
             signal,
             s.d.timers,
+            new CoreError('E_JOB_POLL_TIMEOUT', 'Job poll timed out; retry join', {
+              jobId: pending.jobId,
+              retryable: true,
+            }),
           )
           signal.throwIfAborted()
           if (job.status === 'queued' || job.status === 'running') {

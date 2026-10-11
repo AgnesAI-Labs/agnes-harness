@@ -44,8 +44,8 @@ const defaultTimers: Timers = {
 
 /**
  * Bounds a seam call in time and in the caller's abort. The rejection names what was being waited
- * on, because every caller of this function turns a rejection into a fail-closed default and the
- * message is the only place left that says which seam produced it.
+ * on. Callers may supply a typed timeout error when they expose recovery directly; seam callers
+ * otherwise translate the default rejection into their fail-closed or retry result.
  */
 export function withTimeout<T>(
   p: Promise<T>,
@@ -53,6 +53,7 @@ export function withTimeout<T>(
   label: string,
   signal?: AbortSignal,
   timers: Timers = defaultTimers,
+  timeoutError?: Error,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     let settled = false
@@ -76,7 +77,7 @@ export function withTimeout<T>(
       return
     }
     signal?.addEventListener('abort', onAbort, { once: true })
-    handle = timers.setTimeout(() => finish(() => reject(new Error(`timeout: ${label}`))), ms)
+    handle = timers.setTimeout(() => finish(() => reject(timeoutError ?? new Error(`timeout: ${label}`))), ms)
     armed = true
     // An injected timer may fire synchronously before returning its handle.
     if (settled) timers.clearTimeout(handle)

@@ -789,50 +789,88 @@ it.each(['failed', 'cancelled', 'missing-result'] as const)(
   },
 )
 
-it('cancels a job join without settling the job and can join it later', async () => {
-  let terminal = false
-  let polled = false
-  const seams = fakeSeams({
-    artifacts: {
-      poll: async (jobId) => {
-        polled = true
-        return terminal
-          ? { jobId, status: 'done', ref: { sha256: 'e'.repeat(64), size: 1, mime: 'text/plain' } }
-          : { jobId, status: 'running' }
+it.each(['cancel', 'timeout'] as const)(
+  'recovers a job join after %s without settling its effect',
+  async (mode) => {
+    let terminal = false
+    let polled = false
+    let blockPoll = false
+    let deadline: (() => void) | undefined
+    let finishPoll: (() => void) | undefined
+    const timers = {
+      ...noTimers,
+      setTimeout(fn: () => void, ms: number) {
+        if (ms === 5000) deadline = fn
+        return 0
       },
-    },
-  })
-  const f = setup([toolTurn('job', {}), textTurn('joined later')], {}, { seams })
-  f.k.tools.add(
-    {
-      ...(readTool() as ToolDef),
-      name: 'job',
-      execute: async (_args, ctx) => ({
-        content: [],
-        deferred: {
-          jobId: await ctx.artifacts.submitJob({
-            idempotencyKey: 'cancel-join',
-            payload: { prompt: 'fixture' },
-          }),
+    }
+    const seams = fakeSeams({
+      artifacts: {
+        poll: async (jobId) => {
+          polled = true
+          if (blockPoll && !terminal)
+            return new Promise<{ jobId: string; status: 'running' }>((resolve) => {
+              finishPoll = () => resolve({ jobId, status: 'running' })
+            })
+          return terminal
+            ? { jobId, status: 'done', ref: { sha256: 'e'.repeat(64), size: 1, mime: 'text/plain' } }
+            : { jobId, status: 'running' }
         },
-      }),
-    } satisfies ToolDef,
-    { source: 'test', trust: 'builtin' },
-  )
-  const session = await f.k.session('cancel-join', { ...options, loop: f.loop })
-  await enqueue(session)
-  for (let i = 0; i < 4; i++) await session.step()
-  const ctx = f.contexts[0]!
-  polled = false
-  const cancel = new AbortController()
-  const joined = ctx.jobs.join('react:1:tool:0:0', cancel.signal)
-  await expect.poll(() => polled).toBe(true)
-  cancel.abort()
-  await expect(joined).rejects.toThrow()
-  expect(await session.scan({ type: 'tool/result', limit: 10 })).toEqual([])
-  expect(session.pendingEffects()).toHaveLength(1)
-  terminal = true
-  expect(await run(session)).toMatchObject({ reason: 'completed' })
-  expect(await session.scan({ type: 'tool/result', limit: 10 })).toHaveLength(1)
-  expect(session.pendingEffects()).toEqual([])
-})
+      },
+    })
+    const f = setup(
+      [toolTurn('job', {}), textTurn('joined later')],
+      {},
+      { seams, timers: mode === 'timeout' ? timers : noTimers },
+    )
+    f.k.tools.add(
+      {
+        ...(readTool() as ToolDef),
+        name: 'job',
+        execute: async (_args, ctx) => ({
+          content: [],
+          deferred: {
+            jobId: await ctx.artifacts.submitJob({
+              idempotencyKey: 'cancel-join',
+              payload: { prompt: 'fixture' },
+            }),
+          },
+        }),
+      } satisfies ToolDef,
+      { source: 'test', trust: 'builtin' },
+    )
+    const session = await f.k.session('cancel-join', { ...options, loop: f.loop })
+    await enqueue(session)
+    for (let i = 0; i < 4; i++) await session.step()
+    const ctx = f.contexts[0]!
+    polled = false
+    blockPoll = mode === 'timeout'
+    const cancel = new AbortController()
+    const joined = ctx.jobs.join('react:1:tool:0:0', cancel.signal)
+    await expect.poll(() => polled).toBe(true)
+    if (mode === 'cancel') {
+      cancel.abort()
+      await expect(joined).rejects.toThrow()
+    } else {
+      try {
+        if (!deadline) throw new Error('missing poll deadline')
+        deadline()
+        await expect(joined).rejects.toMatchObject({
+          name: 'CoreError',
+          code: 'E_JOB_POLL_TIMEOUT',
+          detail: { retryable: true },
+        })
+      } finally {
+        finishPoll?.()
+        cancel.abort()
+      }
+    }
+    expect(await session.scan({ type: 'tool/result', limit: 10 })).toEqual([])
+    expect(await session.scan({ type: 'x/core/loop-job-result', limit: 10 })).toEqual([])
+    expect(session.pendingEffects()).toHaveLength(1)
+    terminal = true
+    expect(await run(session)).toMatchObject({ reason: 'completed' })
+    expect(await session.scan({ type: 'tool/result', limit: 10 })).toHaveLength(1)
+    expect(session.pendingEffects()).toEqual([])
+  },
+)
