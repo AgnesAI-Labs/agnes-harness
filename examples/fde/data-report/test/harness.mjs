@@ -190,7 +190,16 @@ export async function runWorkflow(
       install(root, origins) {
         registration.install(root, origins)
         root.provide('loops', registry(loops))
-        root.provide('toolPolicies', registry(policies))
+        root.provide('providers', {
+          register(kind, source, provider) {
+            assert.equal(kind, 'tool-policy')
+            return registry(policies).register(source, provider)
+          },
+          resolve(kind, id) {
+            assert.equal(kind, 'tool-policy')
+            return registry(policies).resolve(id)
+          },
+        })
         root.provide('skills', createSkillCordisService(skills))
       },
     },

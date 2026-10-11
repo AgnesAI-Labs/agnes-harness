@@ -112,7 +112,9 @@ it('combines named registries and retains their public catalog shapes and restar
     ]),
   )
   expect(root.loops.catalog()[0]).not.toHaveProperty('kind')
-  expect(root.toolRuntimes.catalog()[0]).not.toHaveProperty('active')
+  expect(root.providers.catalog().filter((entry) => entry.kind === 'tool-runtime')[0]).toHaveProperty(
+    'active',
+  )
   const origins = { lookup: () => ({ packageId: '@test/owner', trustTier: 'trusted' }) } as never
   const plugin = root.plugin((ctx) => {
     expect(() => providerSource(ctx, origins, '@test/wrong', true)).toThrow('does not match')

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { loopCheckpointCodec, registerLoopPlugin, registerToolPolicyPlugin } from '@agnes/extension-api'
+import { loopCheckpointCodec, registerLoopPlugin } from '@agnes/extension-api'
 import {
   defineAgnesPlugin,
   defineLoop,
@@ -464,18 +464,18 @@ export function makeBundle({ name, tools, stages, readOnly = false, validateSett
     })
   }
   const main = defineAgnesPlugin({
-    inject: ['extension', 'loops', 'toolPolicies', 'skills'],
+    inject: ['extension', 'loops', 'providers', 'skills'],
     apply(ctx, config = {}) {
       for (const definition of tools) {
         const off = ctx.extension().registerTool(definition)
         ctx.effect(() => off)
       }
       registerLoopPlugin(ctx, source, createFactory(config.workflow))
-      registerToolPolicyPlugin(ctx, source, {
+      ctx.providers.register('tool-policy', source, {
         ...policy,
         async decide(input, signal) {
           // Consume the shipped policy through its public registry, preserving /plan write/exec denial.
-          const base = await ctx.toolPolicies.resolve('default').decide(input, signal)
+          const base = await ctx.providers.resolve('tool-policy', 'default').decide(input, signal)
           return base.effect === 'deny' ? base : policy.decide(input, signal)
         },
       })

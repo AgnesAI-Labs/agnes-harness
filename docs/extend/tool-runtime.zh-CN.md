@@ -4,7 +4,7 @@
 
 `@agnes/extension-api` 提供两个合同：`ToolRuntimeProvider.create({ maxParallel })` 创建会话级运行时，支持单次执行、批量执行、取消和销毁；`ToolPolicy.decide(input, signal, ports?)` 返回带原因的 `allow`、`ask` 或 `deny`。
 
-普通 Cordis 插件注入 `toolRuntimes` 或 `toolPolicies`，通过 `register(sourcePackage, provider)` 注册；对应的公开注册辅助函数绑定插件生命周期。两个服务都提供只读目录，列出 id、版本和来源包。卸载选中的提供方会取消其生命周期，后续调用明确失败。
+普通 Cordis 插件注入 `providers`，通过 `providers.register('tool-runtime', sourcePackage, provider)` 或 `providers.register('tool-policy', sourcePackage, policy)` 注册，注册由调用插件的 fiber 所有。读取 `providers.catalog()` 并按 `kind` 筛选；目录包含 id、版本、来源包、能力和选型/生命周期元数据。卸载选中的提供方会取消其生命周期，后续调用明确失败。
 
 ```yaml
 tools:

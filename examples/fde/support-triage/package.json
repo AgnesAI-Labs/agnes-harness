@@ -57,7 +57,7 @@
         "inject": [
           "extension",
           "loops",
-          "toolPolicies",
+          "providers",
           "skills"
         ],
         "metadata": {

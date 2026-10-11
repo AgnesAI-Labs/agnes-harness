@@ -8,10 +8,8 @@ import type {
   LoopEventRegistryPort,
   LoopEventReturnMap,
   ToolPolicy,
-  ToolPolicyRegistryPort,
   ToolPolicySettingsContext,
   ToolRuntimeProvider,
-  ToolRuntimeRegistryPort,
 } from '@agnes/extension-api'
 import { defineProviderKind, ProviderError } from '@agnes/extension-api'
 import { ProviderLifetime } from '@agnes/host-common/assemble/provider-lifetime'
@@ -26,35 +24,14 @@ import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 
 declare module '@agnes/cordis' {
   interface Context {
-    toolRuntimes: ToolRuntimeRegistryPort
-    toolPolicies: ToolPolicyRegistryPort
     loopEvents: LoopEventRegistryPort
   }
 }
 
-export class ToolRuntimesService extends Service implements ToolRuntimeRegistryPort {
-  private readonly registry: ProviderRegistry<ToolRuntimeProvider>
-  constructor(
-    ctx: Context,
-    private readonly origins?: RowOriginLookup,
-  ) {
-    super(ctx, 'toolRuntimes')
-    this.registry = installProviderRegistry(
-      ctx,
-      defineProviderKind<ToolRuntimeProvider>({
-        kind: 'tool-runtime',
-        validate(provider) {
-          if (typeof provider.create !== 'function') throw new Error('Invalid tool runtime provider')
-        },
-        capabilities: () => ['single', 'batch', 'scheduling', 'cancel'],
-      }),
-      (owner, source, provider) => owner.toolRuntimes.register(source, provider),
-    )
-    this.register('@agnes/core', defaultToolRuntimeProvider)
-  }
-  register(sourcePackage: string, provider: ToolRuntimeProvider) {
-    const source = providerSource(this.ctx, this.origins, sourcePackage, true)
-    this.registry.validate(source, provider)
+function installToolRuntimes(ctx: Context, origins?: RowOriginLookup): void {
+  const register = (ownerContext: Context, sourcePackage: string, provider: ToolRuntimeProvider) => {
+    const source = providerSource(ownerContext, origins, sourcePackage, true)
+    registry.validate(source, provider)
     const owner = new ProviderLifetime('tool-runtime', provider.id)
     const wrapped: ToolRuntimeProvider = {
       ...provider,
@@ -104,46 +81,29 @@ export class ToolRuntimesService extends Service implements ToolRuntimeRegistryP
           }
         }, signal),
     }
-    return this.registry.register(source, wrapped, this.ctx, () => owner.close(() => provider.cleanup?.()))
+    return registry.register(source, wrapped, ownerContext, () => owner.close(() => provider.cleanup?.()))
   }
-
-  resolve(id: string) {
-    return this.registry.resolve(id)
-  }
-  catalog() {
-    return Object.freeze(
-      this.registry
-        .catalog()
-        .map(({ id, version, sourcePackage }) => Object.freeze({ id, version, sourcePackage })),
-    )
-  }
+  const registry: ProviderRegistry<ToolRuntimeProvider> = installProviderRegistry(
+    ctx,
+    defineProviderKind<ToolRuntimeProvider>({
+      kind: 'tool-runtime',
+      validate(provider) {
+        if (typeof provider.create !== 'function') throw new Error('Invalid tool runtime provider')
+      },
+      capabilities: () => ['single', 'batch', 'scheduling', 'cancel'],
+    }),
+    register,
+  )
+  ctx.providers.register('tool-runtime', '@agnes/core', defaultToolRuntimeProvider)
 }
 
-export class ToolPoliciesService extends Service implements ToolPolicyRegistryPort {
-  private readonly registry: ProviderRegistry<ToolPolicy>
-  constructor(
-    ctx: Context,
-    private readonly origins?: RowOriginLookup,
-  ) {
-    super(ctx, 'toolPolicies')
-    this.registry = installProviderRegistry(
-      ctx,
-      defineProviderKind<ToolPolicy>({
-        kind: 'tool-policy',
-        validate(policy) {
-          if (typeof policy.decide !== 'function') throw new Error('Invalid tool policy')
-        },
-        capabilities: () => ['allow', 'ask', 'deny'],
-      }),
-      (owner, source, provider) => owner.toolPolicies.register(source, provider),
-    )
-  }
-  register(sourcePackage: string, policy: ToolPolicy) {
-    const source = providerSource(this.ctx, this.origins, sourcePackage, true)
-    this.registry.validate(source, policy)
+function installToolPolicies(ctx: Context, origins?: RowOriginLookup): void {
+  const register = (ownerContext: Context, sourcePackage: string, policy: ToolPolicy) => {
+    const source = providerSource(ownerContext, origins, sourcePackage, true)
+    registry.validate(source, policy)
     const lifetime = new ProviderLifetime('tool-policy', policy.id)
     lifetime.own(() => policy.dispose?.())
-    return this.registry.register(
+    return registry.register(
       source,
       {
         ...policy,
@@ -157,21 +117,21 @@ export class ToolPoliciesService extends Service implements ToolPolicyRegistryPo
           lifetime.run((joined) => policy.decide(input, joined, ports), signal),
         dispose: () => lifetime.close(() => policy.cleanup?.()),
       },
-      this.ctx,
+      ownerContext,
       () => lifetime.close(() => policy.cleanup?.()),
     )
   }
-
-  resolve(id: string) {
-    return this.registry.resolve(id)
-  }
-  catalog() {
-    return Object.freeze(
-      this.registry
-        .catalog()
-        .map(({ id, version, sourcePackage }) => Object.freeze({ id, version, sourcePackage })),
-    )
-  }
+  const registry: ProviderRegistry<ToolPolicy> = installProviderRegistry(
+    ctx,
+    defineProviderKind<ToolPolicy>({
+      kind: 'tool-policy',
+      validate(policy) {
+        if (typeof policy.decide !== 'function') throw new Error('Invalid tool policy')
+      },
+      capabilities: () => ['allow', 'ask', 'deny'],
+    }),
+    register,
+  )
 }
 
 export class LoopEventsService extends Service implements LoopEventRegistryPort {
@@ -191,8 +151,8 @@ export class LoopEventsService extends Service implements LoopEventRegistryPort 
   }
 }
 export function installToolProviders(root: Context, origins?: RowOriginLookup): void {
-  new ToolRuntimesService(root, origins)
-  new ToolPoliciesService(root, origins)
+  installToolRuntimes(root, origins)
+  installToolPolicies(root, origins)
   new LoopEventsService(root)
 }
 
@@ -214,14 +174,14 @@ export function withBuiltinToolPolicies(
           export: 'toolPolicyPlugin',
           apiRange: '^1.4.0',
           default: true,
-          inject: ['toolPolicies'],
+          inject: ['providers'],
           provide: [],
           runtime: 'in-process',
         },
         entry: normalizePluginExport({
-          inject: ['toolPolicies'],
+          inject: ['providers'],
           apply(ctx: Context) {
-            ctx.toolPolicies.register('@agnes/base', defaultToolPolicy)
+            ctx.providers.register('tool-policy', '@agnes/base', defaultToolPolicy)
           },
         }),
       },

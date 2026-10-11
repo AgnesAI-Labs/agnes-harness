@@ -32,7 +32,7 @@ export const AGNES_BASE_PLUGIN_DECLARATIONS = Object.freeze(
         export: 'toolPolicyPlugin',
         apiRange: '^1.4.0',
         id: 'tool-policy:default',
-        inject: ['toolPolicies'],
+        inject: ['providers'],
         runtime: 'in-process',
         default: true,
       },

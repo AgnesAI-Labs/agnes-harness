@@ -1,9 +1,4 @@
-import {
-  defaultToolPolicy,
-  registerToolPolicyPlugin,
-  type ToolPolicy,
-  type ToolPolicyPluginContext,
-} from '@agnes/extension-api'
+import { defaultToolPolicy, type ToolPolicy, type ProviderPluginContext } from '@agnes/extension-api'
 import { decidePlanMode } from '../../plan-mode/src/policy.js'
 import { sandboxToolPolicies } from '../../sandbox/src/tool-policies.js'
 import { createAutoReviewPolicy } from './auto-review.js'
@@ -24,11 +19,11 @@ function withPlanMode(policy: ToolPolicy): ToolPolicy {
 
 export const toolPolicy = { ...withPlanMode(defaultToolPolicy), settings: selectAutoReviewSettings }
 export const toolPolicyPlugin = {
-  inject: ['toolPolicies'],
-  apply(ctx: ToolPolicyPluginContext) {
-    registerToolPolicyPlugin(ctx, '@agnes/base', toolPolicy)
-    registerToolPolicyPlugin(ctx, '@agnes/base', createAutoReviewPolicy(toolPolicy))
+  inject: ['providers'],
+  apply(ctx: ProviderPluginContext) {
+    ctx.providers.register('tool-policy', '@agnes/base', toolPolicy)
+    ctx.providers.register('tool-policy', '@agnes/base', createAutoReviewPolicy(toolPolicy))
     for (const policy of sandboxToolPolicies)
-      registerToolPolicyPlugin(ctx, '@agnes/base', withPlanMode(policy))
+      ctx.providers.register('tool-policy', '@agnes/base', withPlanMode(policy))
   },
 }

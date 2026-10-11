@@ -25,7 +25,7 @@
         "apiRange": "^1.4.0",
         "id": "tool-policy:default",
         "inject": [
-          "toolPolicies"
+          "providers"
         ],
         "runtime": "in-process",
         "metadata": {

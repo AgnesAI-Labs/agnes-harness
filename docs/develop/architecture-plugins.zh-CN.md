@@ -55,7 +55,7 @@ export const plugin = {
 }
 ```
 
-`loops`、`modelAdapters`、`compactionEngines`、`toolRuntimes`、`toolPolicies`、`sandboxProviders`、`childAgents` 保留原有类型化 API 和目录结构；统一入口委托这些服务执行，包括实例清理与来源包核对。贡献者添加类型时使用 `@agnes/host` 的 `installProviderRegistry(ctx, defineProviderKind({...}))`，再为操作提供类型化外观。persistence 保留进程级启动生命周期：包在打开存储前导出 `persistenceProvider`，同一注册表在 Cordis 启动后加入统一目录。
+tool-policy 与 tool-runtime 只通过 `providers` 注册和读取目录；类型化选型、执行与 cancel/dispose 包装仍留在原 owner。`loops`、`modelAdapters`、`compactionEngines`、`sandboxProviders`、`childAgents` 保留实例 API；统一入口委托各 owner 执行生命周期与来源包核对。贡献者添加类型时使用 `@agnes/host` 的 `installProviderRegistry(ctx, defineProviderKind({...}))`，再为操作提供类型化外观。persistence 保留进程级启动生命周期：包在打开存储前导出 `persistenceProvider`，同一注册表在 Cordis 启动后加入统一目录。
 
 ## 选择与兼容
 

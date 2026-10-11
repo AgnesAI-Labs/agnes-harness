@@ -109,7 +109,7 @@ export interface ProvidersCatalogPort {
   catalog(): readonly ProviderCatalogEntry[]
 }
 
-/** The same author entry point for every kind; named services remain compatibility facades. */
+/** Typed author registration shared by provider kinds; operation lifecycles stay with their owners. */
 export interface ProviderRegistrationPort extends ProvidersCatalogPort {
   register<K extends keyof KindMap>(
     kind: K,

@@ -378,7 +378,7 @@ describe('sandbox providers', () => {
                 export: 'toolPolicyPlugin',
                 apiRange: '^1.4.0',
                 default: true,
-                inject: ['toolPolicies'],
+                inject: ['providers'],
                 provide: [],
                 runtime: 'in-process',
               },

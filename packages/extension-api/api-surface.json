@@ -66,8 +66,6 @@
     "providerRestartRequired",
     "redactPluginConfig",
     "registerLoopPlugin",
-    "registerToolPolicyPlugin",
-    "registerToolRuntimePlugin",
     "resolveToolCallPolicy",
     "sandboxUnavailable",
     "satisfiesApiRange",

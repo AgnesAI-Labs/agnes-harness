@@ -90,22 +90,11 @@ export interface ToolPolicyCatalogEntry {
   sourcePackage: string
 }
 
+/** Backend selection contract; plugins register through providers. */
 export interface ToolPolicyRegistryPort {
   register(sourcePackage: string, policy: ToolPolicy): () => Promise<void>
   resolve(id: string): ToolPolicy
   catalog(): readonly ToolPolicyCatalogEntry[]
-}
-
-export interface ToolPolicyPluginContext {
-  toolPolicies: ToolPolicyRegistryPort
-  effect(callback: () => () => Promise<void>): unknown
-}
-export function registerToolPolicyPlugin(
-  ctx: ToolPolicyPluginContext,
-  sourcePackage: string,
-  policy: ToolPolicy,
-): void {
-  ctx.effect(() => ctx.toolPolicies.register(sourcePackage, policy))
 }
 
 /** Experimental default risk decision; authorization and durable approval stay in the host. */

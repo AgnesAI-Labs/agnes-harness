@@ -4,6 +4,11 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+Tool policy/runtime plugins now inject `providers` and register by kind through
+`providers.register`. The named author services, plugin contexts and registration helpers
+were removed. Read the combined `providers.catalog`; typed backend selection, execution
+and cancellation/disposal remain with their owners.
+
 `DecisionPort` adds session-owned request/get/wait to ToolContext, LoopContext and admitted
 ServicePorts. Its DTOs come from the protocol schema; `APPROVAL_DEFAULTS` holds the existing
 approval configuration defaults. A checkpoint association can consume decision references

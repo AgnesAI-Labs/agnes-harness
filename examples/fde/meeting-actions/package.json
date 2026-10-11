@@ -56,7 +56,7 @@
         "inject": [
           "extension",
           "loops",
-          "toolPolicies",
+          "providers",
           "skills"
         ],
         "apiRange": "^1.4.0",

@@ -55,7 +55,7 @@ export const plugin = {
 }
 ```
 
-Named services (`loops`, `modelAdapters`, `compactionEngines`, `toolRuntimes`, `toolPolicies`, `sandboxProviders`, `childAgents`) retain their existing typed APIs and catalog shapes. The common entry point delegates to those services, including their instance cleanup and source-package checks. Contributors adding a kind use `installProviderRegistry(ctx, defineProviderKind({...}))` from `@agnes/host`, then fit its operations behind a typed facade. The persistence registry remains process-owned: packages export `persistenceProvider` before the store opens, and that same registry joins the combined catalog after Cordis starts.
+Tool policies and runtimes register and appear in catalogs only through `providers`; their typed selection, execution and cancel/dispose wrappers stay with their owners. Named services (`loops`, `modelAdapters`, `compactionEngines`, `sandboxProviders`, `childAgents`) retain their instance APIs. The common entry point delegates to the owning lifecycle and source-package checks. Contributors adding a kind use `installProviderRegistry(ctx, defineProviderKind({...}))` from `@agnes/host`, then fit its operations behind a typed facade. The persistence registry remains process-owned: packages export `persistenceProvider` before the store opens, and that same registry joins the combined catalog after Cordis starts.
 
 ## Selection and compatibility
 

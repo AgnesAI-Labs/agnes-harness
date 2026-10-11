@@ -10,8 +10,8 @@ export const policy = {
   },
 }
 export const plugin = {
-  inject: ['toolPolicies'],
+  inject: ['providers'],
   apply(ctx) {
-    ctx.toolPolicies.register('@agnes-example/read-only-policy', policy)
+    ctx.providers.register('tool-policy', '@agnes-example/read-only-policy', policy)
   },
 }

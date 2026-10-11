@@ -2095,7 +2095,9 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
     pluginTree.root.providers.select('tool-runtime', view.tools.runtime ?? 'default', 'preset')
     if (
       view.approval.policy ||
-      pluginTree.root.toolPolicies.catalog().some((entry) => entry.id === 'default')
+      pluginTree.root.providers
+        .catalog()
+        .some((entry) => entry.kind === 'tool-policy' && entry.id === 'default')
     )
       pluginTree.root.providers.select('tool-policy', view.approval.policy ?? 'default', 'preset')
     const promptSelection = view.model.systemPrompt?.provider
@@ -2130,6 +2132,13 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         sessionKey,
       })
     }
+    const toolProviderCatalog = (kind: 'tool-runtime' | 'tool-policy') =>
+      Object.freeze(
+        pluginTree.root.providers
+          .catalog()
+          .filter((entry) => entry.kind === kind)
+          .map(({ id, version, sourcePackage }) => Object.freeze({ id, version, sourcePackage })),
+      )
     kernel = Kernel.create({
       ...(systemPromptProvider
         ? {
@@ -2157,14 +2166,14 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         catalog: () => pluginTree.root.loops.catalog(),
       },
       toolRuntimes: {
-        register: (source, provider) => pluginTree.root.toolRuntimes.register(source, provider),
-        resolve: (id) => pluginTree.root.toolRuntimes.resolve(id),
-        catalog: () => pluginTree.root.toolRuntimes.catalog(),
+        register: (source, provider) => pluginTree.root.providers.register('tool-runtime', source, provider),
+        resolve: (id) => pluginTree.root.providers.resolve('tool-runtime', id),
+        catalog: () => toolProviderCatalog('tool-runtime'),
       },
       toolPolicies: {
-        register: (source, policy) => pluginTree.root.toolPolicies.register(source, policy),
-        resolve: (id) => pluginTree.root.toolPolicies.resolve(id),
-        catalog: () => pluginTree.root.toolPolicies.catalog(),
+        register: (source, policy) => pluginTree.root.providers.register('tool-policy', source, policy),
+        resolve: (id) => pluginTree.root.providers.resolve('tool-policy', id),
+        catalog: () => toolProviderCatalog('tool-policy'),
       },
       loopEvents: {
         on: (event, handler) => pluginTree.root.loopEvents.on(event, handler),
@@ -2193,7 +2202,7 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
       publicFetch: deps.publicFetch ?? createPublicFetch(deps.env),
       approvalMode: profile.approvals.mode,
       toolPolicySettings: async (basePolicy, signal) =>
-        pluginTree.root.toolPolicies.resolve(basePolicy).settings?.(
+        pluginTree.root.providers.resolve('tool-policy', basePolicy).settings?.(
           {
             policy: basePolicy,
             dataDir: profile.dataDir,

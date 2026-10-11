@@ -74,7 +74,7 @@ export function attachTestSeamPlugins(module: PackageModule): PackageModule {
   if (module.id === '@agnes/base')
     for (const [id, exportName, service, plugin] of [
       ['loop:agnes.default', 'defaultLoopPlugin', 'loops', defaultLoopPlugin],
-      ['tool-policy:default', 'toolPolicyPlugin', 'toolPolicies', toolPolicyPlugin],
+      ['tool-policy:default', 'toolPolicyPlugin', 'providers', toolPolicyPlugin],
     ] as const) {
       if (ordinary.some((row) => row.declaration.id === id)) continue
       ordinary.push({

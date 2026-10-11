@@ -186,7 +186,16 @@ export async function runWorkflow(
     config,
     services: {
       loops: registry(loops),
-      toolPolicies: registry(policies),
+      providers: {
+        register(kind, source, provider) {
+          assert.equal(kind, 'tool-policy')
+          return registry(policies).register(source, provider)
+        },
+        resolve(kind, id) {
+          assert.equal(kind, 'tool-policy')
+          return registry(policies).resolve(id)
+        },
+      },
       skills: createSkillCordisService(skills),
     },
   })

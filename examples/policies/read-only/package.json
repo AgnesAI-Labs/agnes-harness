@@ -16,7 +16,7 @@
         "apiRange": "^1.4.0",
         "default": true,
         "inject": [
-          "toolPolicies"
+          "providers"
         ],
         "metadata": {
           "displayName": "Read-only policy",

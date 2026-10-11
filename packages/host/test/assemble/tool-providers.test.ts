@@ -96,18 +96,24 @@ it('registers the Base default and custom policies through plugin fibers and fai
       },
     })
   })
-  await expect.poll(() => root.toolPolicies.catalog().length).toBe(5)
-  expect(root.toolPolicies.catalog()).toContainEqual({
-    id: 'default',
-    version: '1.0.0',
-    sourcePackage: '@agnes/base',
-  })
-  expect(root.toolRuntimes.catalog()).toContainEqual({
-    id: 'default',
-    version: '1.0.0',
-    sourcePackage: '@agnes/core',
-  })
-  const selected = root.toolPolicies.resolve('custom-read-only')
+  await expect
+    .poll(() => root.providers.catalog().filter((entry) => entry.kind === 'tool-policy').length)
+    .toBe(5)
+  expect(root.providers.catalog().filter((entry) => entry.kind === 'tool-policy')).toContainEqual(
+    expect.objectContaining({
+      id: 'default',
+      version: '1.0.0',
+      sourcePackage: '@agnes/base',
+    }),
+  )
+  expect(root.providers.catalog().filter((entry) => entry.kind === 'tool-runtime')).toContainEqual(
+    expect.objectContaining({
+      id: 'default',
+      version: '1.0.0',
+      sourcePackage: '@agnes/core',
+    }),
+  )
+  const selected = root.providers.resolve('tool-policy', 'custom-read-only')
   expect(
     await selected.settings!(
       { policy: 'custom-read-only', profile: 'custom', dataDir: '/synthetic', approvalMode: 'manual' },
@@ -121,9 +127,11 @@ it('registers the Base default and custom policies through plugin fibers and fai
       reviewPorts,
     ),
   ).toMatchObject({ effect: 'allow' })
-  expect(Object.isFrozen(root.toolPolicies.catalog()[0])).toBe(true)
+  expect(Object.isFrozen(root.providers.catalog().filter((entry) => entry.kind === 'tool-policy')[0])).toBe(
+    true,
+  )
   await custom.dispose()
-  expect(() => root.toolPolicies.resolve('custom-read-only')).toThrow('not registered')
+  expect(() => root.providers.resolve('tool-policy', 'custom-read-only')).toThrow('not registered')
   await expect(selected.decide({} as never, new AbortController().signal)).rejects.toThrow()
   await expect(
     selected.settings!(
@@ -132,7 +140,7 @@ it('registers the Base default and custom policies through plugin fibers and fai
     ),
   ).rejects.toThrow()
   await builtin.dispose()
-  expect(() => root.toolPolicies.resolve('default')).toThrow('not registered')
+  expect(() => root.providers.resolve('tool-policy', 'default')).toThrow('not registered')
   await root.fiber.dispose()
 })
 

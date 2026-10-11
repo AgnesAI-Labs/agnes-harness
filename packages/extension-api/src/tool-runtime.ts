@@ -43,20 +43,9 @@ export interface ToolRuntimeCatalogEntry {
   sourcePackage: string
 }
 
+/** Backend selection contract; plugins register through providers. */
 export interface ToolRuntimeRegistryPort {
   register(sourcePackage: string, provider: ToolRuntimeProvider): () => Promise<void>
   resolve(id: string): ToolRuntimeProvider
   catalog(): readonly ToolRuntimeCatalogEntry[]
-}
-
-export interface ToolRuntimePluginContext {
-  toolRuntimes: ToolRuntimeRegistryPort
-  effect(callback: () => () => Promise<void>): unknown
-}
-export function registerToolRuntimePlugin(
-  ctx: ToolRuntimePluginContext,
-  sourcePackage: string,
-  provider: ToolRuntimeProvider,
-): void {
-  ctx.effect(() => ctx.toolRuntimes.register(sourcePackage, provider))
 }
