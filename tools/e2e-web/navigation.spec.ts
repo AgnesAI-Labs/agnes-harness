@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { section } from './ui.js'
 
 // Explicit Playwright tier. Run against an isolated demo home after all streams are integrated.
 for (const locale of ['en', 'zh-CN']) {
@@ -9,23 +10,18 @@ for (const locale of ['en', 'zh-CN']) {
     await page.goto('/admin/plugins')
     await expect(page.getByTestId('settings-navigation')).toBeVisible()
     for (const id of ['plugins', 'providers', 'search', 'models', 'bundles', 'security', 'examples']) {
-      const groups: Record<string, string> = {
-        plugins: 'plugins',
-        providers: 'plugins',
-        examples: 'plugins',
-        models: 'models',
-        bundles: 'models',
-        search: 'search',
-        security: 'security',
-      }
-      await page.getByTestId(`settings-nav-${groups[id]}`).click()
-      const tab = page.getByTestId(`settings-nav-${id}-tab`)
-      if (await tab.count()) await tab.click()
-      await expect(page.getByTestId(`settings-page-${id}`)).toBeVisible()
+      await section(page, id)
+      const canonical = ['models', 'bundles'].includes(id)
+        ? 'models'
+        : id === 'providers'
+          ? 'diagnostics'
+          : id === 'examples'
+            ? 'discover'
+            : id
+      await expect(page.getByTestId(`settings-page-${canonical}`)).toBeVisible()
       if (id === 'search') await expect(page.getByTestId('search-providers')).toBeVisible()
     }
-    await page.getByTestId('settings-nav-plugins').click()
-    await page.getByTestId('settings-nav-providers-tab').click()
+    await section(page, 'providers')
     await expect(page.getByTestId('providers-loop')).toBeVisible()
     for (const kind of [
       'model-adapter',
@@ -37,9 +33,9 @@ for (const locale of ['en', 'zh-CN']) {
       'child-agent',
     ])
       await expect(page.getByTestId(`providers-${kind}`)).toBeVisible()
-    await page.getByTestId('settings-nav-plugins').click()
-    await page.getByTestId('settings-nav-plugins-tab').click()
+    await section(page, 'plugins')
     await expect(page.getByTestId('plugin-creator')).toBeVisible()
+    await section(page, 'diagnostics')
     await page.getByTestId('plugin-diagnostics').locator('summary').first().click()
     await expect(page.getByTestId('composition-publication')).toBeVisible()
     await page.getByTestId('plugin-generations').locator('summary').click()
@@ -47,12 +43,15 @@ for (const locale of ['en', 'zh-CN']) {
     await expect(page.getByTestId('migrate-session')).toBeVisible()
     await page.getByTestId('local-plugins').locator('summary').click()
     await expect(page.getByTestId('reload-local-plugins')).toBeVisible()
-    await page.getByTestId('settings-nav-security').click()
+    await section(page, 'security')
     await expect(
       page.getByTestId('sandbox-security-status').or(page.getByTestId('sandbox-status-unavailable')),
     ).toBeVisible()
     await page.setViewportSize({ width: 375, height: 812 })
+    await expect(page.getByTestId('settings-navigation')).toBeHidden()
+    await page.getByTestId('settings-back').click()
     await expect(page.getByTestId('settings-nav-security')).toBeVisible()
+    await section(page, 'security')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(
       true,
     )
@@ -71,6 +70,7 @@ test('confirms migration of an isolated fixture session', async ({ page }) => {
   test.skip(!sessionId, 'Set AGH_MIGRATION_SESSION to a closed session in an isolated test home.')
   if (!sessionId) return
   await page.goto('/admin/plugins')
+  await section(page, 'diagnostics')
   await page.getByTestId('plugin-diagnostics').locator('summary').first().click()
   await page.getByTestId('plugin-generations').locator('summary').click()
   await page.getByTestId('migration-session-key').fill(sessionId)

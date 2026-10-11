@@ -5,8 +5,8 @@ import type {
   RuntimeAdminSnapshot,
 } from '@agnes/protocol'
 import { type SettingsSection, settingsSections, type UiExtensionContext } from '@agnes/web-client'
-import { SettingsCard, SettingsDetails } from '@agnes/web-ui'
-import type { ReactNode } from 'react'
+import { Banner, Button, SettingsCard, SettingsDetails, SettingsState } from '@agnes/web-ui'
+import { type ReactNode, useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
 import { AutoReviewPanel } from './auto-review.js'
@@ -45,15 +45,15 @@ export type RuntimeSettingsContext = {
   schedules?: SchedulesApi | undefined
   snapshot: RuntimeAdminSnapshot | undefined
 }
-// Native account/resource panes retain their public DOM and controller lifetime under this shell.
+// Native account/resource panes keep their stable IDs and controller lifetime.
 const NativePaneBridge = () => null
 for (const [id, group, pane, navigationId, key, order] of [
   ['model', 'accounts', 'model', 'model-settings', 'modelNav', 0],
-  ['skills', 'skills', 'resources', 'skills-tab', 'skillsNav', 30],
-  ['mcp', 'mcp', 'resources', 'mcp-tab', 'mcpNav', 40],
-  ['archived', 'history', 'archived', 'archived-settings', 'archivedNav', 81],
-  ['computer-use', 'computer-use', 'computer-use', 'computer-use-management', 'computerUseNav', 90],
-  ['general', 'general', 'appearance', 'appearance-settings', 'appearanceNav', 100],
+  ['skills', 'skills', 'resources', 'skills-tab', 'skillsNav', 20],
+  ['mcp', 'tools', 'resources', 'mcp-tab', 'toolsNav', 30],
+  ['computer-use', 'tools', 'computer-use', 'computer-use-management', 'toolsNav', 32],
+  ['archived', 'history', 'archived', 'archived-settings', 'historyNav', 61],
+  ['general', 'general', 'appearance', 'appearance-settings', 'appearanceNav', 70],
 ] as const) {
   if (!settingsSections.get(id))
     settingsSections.register({
@@ -61,55 +61,80 @@ for (const [id, group, pane, navigationId, key, order] of [
       group,
       nativePane: pane,
       navigationId,
-      titleKey: `settings-shell.${key}`,
+      titleKey:
+        id === 'mcp'
+          ? 'settings-shell.mcpNav'
+          : id === 'computer-use'
+            ? 'settings-shell.computerUseNav'
+            : id === 'archived'
+              ? 'settings-shell.archivedNav'
+              : `settings-shell.${key}`,
       groupTitleKey: `settings-shell.${key}`,
       icon: group,
       order,
       component: NativePaneBridge,
     })
 }
-const definitions: readonly [
-  string,
-  string,
-  number,
-  (context: RuntimeSettingsContext, t: UiExtensionContext['t']) => ReactNode,
-][] = [
-  [
-    'agent',
-    'models',
-    10,
-    (c, t) => (
-      <>
-        <SettingsCard>
-          <p>{t('modelsHelp')}</p>
-        </SettingsCard>
-        <SessionDefaultsPanel api={c.api} canSave={c.canSave} t={c.pluginText} />
-      </>
-    ),
-  ],
-  [
-    'agent',
-    'bundles',
-    11,
-    (c, t) => (
-      <>
-        <BundlesPanel api={c.api} canSave={c.canSave} t={c.pluginText} presets={c.snapshot?.presets ?? []} />
-        {c.snapshot && <PresetsPanel snapshot={c.snapshot} t={t} />}
-      </>
-    ),
-  ],
-  ['history', 'feedback', 82, () => <FeedbackAdminPanel />],
-  ['agent', 'memory', 14, (c) => <MemoryPanel canSave={c.canSave} />],
-  ['agent', 'system-prompt', 13, (c) => <SystemPromptPanel canSave={c.canSave} />],
-  ['agent', 'engines', 12, (c, t) => <ChildEnginesPanel api={c.api} canSave={c.canSave} t={t} />],
-  [
-    'plugins',
-    'plugins',
-    20,
-    (c, t) => (
-      <>
-        {c.children}
-        <SettingsDetails title={t('diagnostics')} data-testid="plugin-diagnostics">
+
+function Subsection({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+  return (
+    <SettingsDetails id={`settings-subsection-${id}`} title={title} data-testid={`settings-subsection-${id}`}>
+      {children}
+    </SettingsDetails>
+  )
+}
+
+/** Runtime developer data is loaded on demand; doctor checks stay independent of this catalog. */
+function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionContext['t'] }) {
+  const [open, setOpen] = useState(false)
+  const [snapshot, setSnapshot] = useState<RuntimeAdminSnapshot>()
+  const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const [revision, setRevision] = useState(0)
+  useEffect(() => {
+    let current = true
+    if (!open || !c.api) return
+    setBusy(true)
+    setFailed(false)
+    void c.api
+      .runtime()
+      .then((value) => {
+        if (current) setSnapshot(value)
+      })
+      .catch(() => {
+        if (current) setFailed(true)
+      })
+      .finally(() => {
+        if (current) setBusy(false)
+      })
+    return () => {
+      current = false
+    }
+  }, [open, c.api, revision])
+  return (
+    <SettingsDetails
+      id="settings-subsection-providers"
+      title={t('runtimeDetails')}
+      data-testid="plugin-diagnostics"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <Button
+        appearance="ghost"
+        data-testid="settings-refresh"
+        disabled={!c.api || busy}
+        aria-busy={busy}
+        disabledReason={!c.api ? t('unavailable') : undefined}
+        onClick={() => setRevision((value) => value + 1)}
+      >
+        {t('retry')}
+      </Button>
+      {busy && <SettingsState tone="loading">{t('loading')}</SettingsState>}
+      {failed && <Banner tone="error">{t('unavailable')}</Banner>}
+      {snapshot && (
+        <>
+          <Subsection id="provider-types" title={t('providerTypes')}>
+            <ProvidersPanel snapshot={snapshot} t={t} />
+          </Subsection>
           <GenerationsPanel
             status={c.generations}
             api={c.api}
@@ -117,47 +142,57 @@ const definitions: readonly [
             t={t}
             onRefresh={c.onRefresh}
           />
-          {c.snapshot && <PublicationPanel snapshot={c.snapshot} t={t} />}
-          {c.api && c.snapshot && (
+          <PublicationPanel snapshot={snapshot} t={t} />
+          {c.api && (
             <LocalPluginsPanel
               api={c.api}
-              snapshot={c.snapshot}
+              snapshot={snapshot}
               canSave={c.canSave}
               t={t}
               onRefresh={c.onRefresh}
             />
           )}
-        </SettingsDetails>
+        </>
+      )}
+    </SettingsDetails>
+  )
+}
+const definitions: readonly [
+  string,
+  string,
+  number,
+  (c: RuntimeSettingsContext, t: UiExtensionContext['t']) => ReactNode,
+][] = [
+  ['plugins', 'plugins', 10, (c) => c.children],
+  [
+    'plugins',
+    'discover',
+    11,
+    (c, t) => (
+      <>
+        <div id="settings-subsection-examples" tabIndex={-1}>
+          <ExamplesPanel
+            api={c.api}
+            canInstall={c.canInstall}
+            installed={c.installed}
+            t={t}
+            onReview={c.onReview}
+            onBundles={() => c.navigate('bundles')}
+          />
+        </div>
+        {c.children}
       </>
     ),
   ],
-  ['plugins', 'discover', 20.5, (c) => c.children],
-  ['plugins', 'providers', 21, (c, t) => c.snapshot && <ProvidersPanel snapshot={c.snapshot} t={t} />],
-  [
-    'plugins',
-    'examples',
-    22,
-    (c, t) => (
-      <ExamplesPanel
-        api={c.api}
-        canInstall={c.canInstall}
-        installed={c.installed}
-        t={t}
-        onReview={c.onReview}
-        onBundles={() => c.navigate('bundles')}
-      />
-    ),
-  ],
-  ['tools', 'search', 50, (c, t) => <SearchPanel canSave={c.canSave} t={t} />],
-  ['tools', 'context', 51, (c) => <ContextPanel canSave={c.canSave} />],
-  ['automation', 'jobs', 60, () => <JobsPanel />],
-  ['automation', 'schedules', 61, (c, t) => <SchedulesPage api={c.schedules} t={t} />],
-  ['automation', 'triggers', 61.5, (c) => <TriggersPanel canSave={c.canSave} />],
-  ['automation', 'terminal', 62, () => <JobsPanel terminal />],
+  ['skills', 'feedback', 21, () => <FeedbackAdminPanel />],
+  ['tools', 'search', 31, (c, t) => <SearchPanel canSave={c.canSave} t={t} />],
+  ['automation', 'schedules', 40, (c, t) => <SchedulesPage api={c.schedules} t={t} />],
+  ['automation', 'triggers', 41, (c) => <TriggersPanel canSave={c.canSave} />],
+  ['automation', 'jobs', 42, () => <JobsPanel />],
   [
     'security',
     'security',
-    70,
+    50,
     (c, t) =>
       c.snapshot && (
         <>
@@ -166,8 +201,54 @@ const definitions: readonly [
         </>
       ),
   ],
-  ['diagnostics', 'diagnostics', 75, () => <DiagnosticsPanel />],
-  ['history', 'history', 80, (_, t) => <HistorySearchPanel t={t} />],
+  ['history', 'history', 60, (_, t) => <HistorySearchPanel t={t} />],
+  [
+    'agent',
+    'models',
+    80,
+    (c, t) => (
+      <>
+        <Subsection id="models" title={t('agentExecution')}>
+          <SettingsCard>
+            <p>{t('modelsHelp')}</p>
+          </SettingsCard>
+          <SessionDefaultsPanel api={c.api} canSave={c.canSave} t={c.pluginText} />
+        </Subsection>
+        <Subsection id="system-prompt" title={t('system-prompt')}>
+          <SystemPromptPanel canSave={c.canSave} />
+        </Subsection>
+        <Subsection id="memory" title={t('agentMemory')}>
+          <MemoryPanel canSave={c.canSave} />
+        </Subsection>
+        <Subsection id="context" title={t('agentContext')}>
+          <ContextPanel canSave={c.canSave} />
+        </Subsection>
+        <Subsection id="engines" title={t('agentEngines')}>
+          <ChildEnginesPanel api={c.api} canSave={c.canSave} t={t} />
+        </Subsection>
+        <Subsection id="bundles" title={t('bundles')}>
+          <BundlesPanel
+            api={c.api}
+            canSave={c.canSave}
+            t={c.pluginText}
+            presets={c.snapshot?.presets ?? []}
+          />
+          {c.snapshot && <PresetsPanel snapshot={c.snapshot} t={t} />}
+        </Subsection>
+      </>
+    ),
+  ],
+  [
+    'diagnostics',
+    'diagnostics',
+    81,
+    (c, t) => (
+      <>
+        <DiagnosticsPanel />
+        <RuntimeDetails c={c} t={t} />
+      </>
+    ),
+  ],
 ]
 for (const [group, id, order, render] of definitions) {
   const entry: SettingsSection = {
@@ -175,21 +256,11 @@ for (const [group, id, order, render] of definitions) {
     id,
     order,
     icon: group,
-    titleKey:
-      id === 'plugins'
-        ? 'settings-shell.page.installed'
-        : id === 'providers'
-          ? 'settings.pluginKinds.title'
-          : `settings-shell.page.${id}`,
-    groupTitleKey:
-      group === 'general'
-        ? 'settings-shell.appearanceNav'
-        : group === 'diagnostics'
-          ? 'settings-shell.page.diagnostics'
-          : `settings-shell.group.${group}`,
+    titleKey: id === 'plugins' ? 'settings-shell.page.installed' : `settings-shell.page.${id}`,
+    groupTitleKey: `settings-shell.group.${group}`,
     navigationId: id === 'plugins' ? 'plugin-management' : `runtime-settings-${id}`,
     component: ({ context }) => render(context.data as RuntimeSettingsContext, context.t),
-    runtimeCatalog: ['bundles', 'plugins', 'providers', 'security'].includes(id),
+    runtimeCatalog: ['models', 'security'].includes(id),
   }
   if (!settingsSections.get(id)) settingsSections.register(entry)
 }

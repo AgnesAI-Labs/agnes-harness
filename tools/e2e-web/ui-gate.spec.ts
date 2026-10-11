@@ -23,7 +23,6 @@ const pages = [
   'context',
   'jobs',
   'schedules',
-  'terminal',
   'security',
   'history',
   'archived',
@@ -115,25 +114,29 @@ for (const locale of ['en', 'zh-CN'])
           await expect(
             page.getByRole('heading', { name: heading[locale === 'en' ? 0 : 1], exact: true }),
           ).toBeVisible()
-        else await expect(page.getByTestId(`settings-page-${id}`)).toBeVisible()
-        if (
-          [
-            'models',
-            'engines',
-            'discover',
-            'examples',
-            'search',
-            'memory',
-            'system-prompt',
-            'diagnostics',
-            'context',
-            'jobs',
-            'schedules',
-            'terminal',
-            'history',
-          ].includes(id)
-        )
-          await expect(page.getByTestId('settings-refresh')).toHaveCount(0)
+        else {
+          const canonical = ['models', 'bundles', 'engines', 'memory', 'system-prompt', 'context'].includes(
+            id,
+          )
+            ? 'models'
+            : id === 'providers'
+              ? 'diagnostics'
+              : id === 'examples'
+                ? 'discover'
+                : id
+          await expect(page.getByTestId(`settings-page-${canonical}`)).toBeVisible()
+        }
+        const catalogPage = [
+          'models',
+          'bundles',
+          'engines',
+          'memory',
+          'system-prompt',
+          'context',
+          'security',
+        ].includes(id)
+        if (catalogPage) await expect(page.getByTestId('settings-refresh')).toBeVisible()
+        else await expect(page.getByTestId('settings-refresh')).not.toBeVisible()
         if (id === 'plugins') {
           await expect(page.getByTestId('plugin-candidates')).toHaveCount(0)
           fieldSurface = await page

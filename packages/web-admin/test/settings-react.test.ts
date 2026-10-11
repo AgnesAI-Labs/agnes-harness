@@ -79,8 +79,24 @@ it('operates the React settings pane and account dialog without losing native fo
   expect(dialog.querySelectorAll('[data-testid="settings-navigation"]')).toHaveLength(1)
   expect(dialog.querySelectorAll('#skills-tab')).toHaveLength(1)
   expect(dialog.querySelectorAll('#mcp-tab')).toHaveLength(1)
+  const everyday = dialog.querySelectorAll('#settings-everyday button[data-settings-group]')
+  expect(everyday).toHaveLength(8)
+  expect(dialog.querySelector<HTMLDetailsElement>('#settings-advanced')?.open).toBe(false)
+  for (const id of ['mcp', 'search', 'mcp', 'skills', 'feedback', 'mcp']) {
+    flushSync(() =>
+      dialog
+        .querySelector('#config-form')
+        ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: id, bubbles: true })),
+    )
+    expect(dialog.querySelectorAll('#skills-tab')).toHaveLength(1)
+    expect(dialog.querySelectorAll('#mcp-tab')).toHaveLength(1)
+    expect(dialog.querySelectorAll('#computer-use-management')).toHaveLength(1)
+    expect(dialog.querySelectorAll('#archived-settings')).toHaveLength(1)
+    expect(dialog.querySelectorAll('#settings-section-tabs [aria-selected="true"]')).toHaveLength(1)
+  }
   const onPage = vi.fn()
   dialog.addEventListener('agnes:settings-page', onPage)
+  dialog.querySelector<HTMLDetailsElement>('#settings-advanced')!.open = true
   flushSync(() => dialog.querySelector<HTMLButtonElement>('[data-testid="settings-nav-models"]')?.click())
   expect(onPage.mock.calls[0]?.[0].detail).toBe('models')
   const paneSlot = dialog.querySelector<HTMLElement>('#settings-pane-slot-model')
@@ -198,7 +214,7 @@ for (const outcome of ['success', 'failure'] as const) {
     const host = document.createElement('div')
     document.body.append(host)
     host.id = 'config-form'
-    host.dataset.runtimePage = 'providers'
+    host.dataset.runtimePage = 'models'
     const root = createRoot(host)
     let resolveRuntime: (snapshot: RuntimeAdminSnapshot) => void = () => undefined
     let rejectRuntime: (error: Error) => void = () => undefined
@@ -250,7 +266,7 @@ it.each(['success', 'failure'] as const)(
   async (outcome) => {
     const host = document.createElement('div')
     host.id = 'config-form'
-    host.dataset.runtimePage = 'providers'
+    host.dataset.runtimePage = 'models'
     document.body.append(host)
     const root = createRoot(host)
     let finish!: (snapshot: RuntimeAdminSnapshot) => void
@@ -286,7 +302,7 @@ it.each(['success', 'failure'] as const)(
       flushSync(() => document.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: 'discover' })))
       expect(host.querySelector('[data-testid="settings-page-discover"]')).not.toBeNull()
       expect(host.querySelector('[data-testid="settings-refresh"]')).toBeNull()
-      expect(host.querySelector('.agnes-settings-state')).toBeNull()
+      expect(host.querySelector('[data-testid="settings-catalog-state"]')).toBeNull()
       await act(async () => {
         if (outcome === 'success')
           finish({
@@ -298,7 +314,7 @@ it.each(['success', 'failure'] as const)(
         await pending.catch(() => undefined)
       })
       expect(host.querySelector('[data-testid="independent-content"]')?.textContent).toBe('Plugin discovery')
-      expect(host.querySelector('.agnes-settings-state')).toBeNull()
+      expect(host.querySelector('[data-testid="settings-catalog-state"]')).toBeNull()
       expect(host.querySelector('[data-testid="settings-refresh"]')).toBeNull()
     } finally {
       flushSync(() => root.unmount())
@@ -362,7 +378,7 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
     )
     await vi.waitFor(() => expect(host.querySelector('[data-testid="doctor-checks"]')).not.toBeNull())
     expect(runtime).not.toHaveBeenCalled()
-    expect([...host.querySelectorAll('h2')].map((h) => h.textContent)).toEqual(['Diagnostics'])
+    expect([...host.querySelectorAll('h2')].map((h) => h.textContent)).toEqual(['Runtime & diagnostics'])
     expect(host.querySelector('[data-testid="settings-refresh"]')).toBeNull()
     expect(settingsSections.get('doctor')).toBeUndefined()
     expect(host.querySelector('.agnes-settings-card')?.getAttribute('data-testid')).toBe('diagnostics-doctor')

@@ -19,24 +19,44 @@ export async function settings(page: Page, locale = 'en') {
 }
 
 export async function section(page: Page, id: string) {
+  const back = page.getByTestId('settings-back')
+  if (await back.isVisible()) await back.click()
   const first: Record<string, string> = {
     bundles: 'models',
     engines: 'models',
     'system-prompt': 'models',
     memory: 'models',
+    context: 'models',
     discover: 'plugins',
-    providers: 'plugins',
     examples: 'plugins',
-    context: 'search',
-    terminal: 'jobs',
-    schedules: 'jobs',
-    triggers: 'jobs',
+    providers: 'diagnostics',
+    search: 'mcp',
+    'computer-use': 'mcp',
+    triggers: 'schedules',
+    jobs: 'schedules',
     archived: 'history',
-    feedback: 'history',
+    feedback: 'skills',
   }
-  await page.getByTestId(`settings-nav-${first[id] ?? id}`).click()
+  const entry = first[id] ?? id
+  if (['models', 'diagnostics'].includes(entry)) {
+    const advanced = page.getByTestId('settings-advanced')
+    if ((await advanced.getAttribute('open')) === null) await advanced.locator('summary').click()
+  }
+  await page.getByTestId(`settings-nav-${entry}`).click()
   const tab = page.getByTestId(`settings-nav-${id}-tab`)
   if (await tab.count()) await tab.click()
+  if (['models', 'bundles', 'engines', 'system-prompt', 'memory', 'context'].includes(id)) {
+    const subsection = page.getByTestId(`settings-subsection-${id}`)
+    if ((await subsection.getAttribute('open')) === null) await subsection.locator('summary').first().click()
+    await subsection.locator('summary').first().scrollIntoViewIfNeeded()
+  }
+  if (id === 'providers') {
+    const runtime = page.getByTestId('plugin-diagnostics')
+    if ((await runtime.getAttribute('open')) === null) await runtime.locator('summary').first().click()
+    const providers = page.getByTestId('settings-subsection-provider-types')
+    await expect(providers).toBeVisible()
+    if ((await providers.getAttribute('open')) === null) await providers.locator('summary').first().click()
+  }
 }
 
 export async function closeSettings(page: Page, locale = 'en') {

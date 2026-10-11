@@ -2,6 +2,12 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 
 export const shellCatalog: LocaleCatalog = {
   en: {
+    runtimeDetails: 'Plugin runtime details',
+    providerTypes: 'Plugin types',
+    agentExecution: 'How the agent works (Agent Loop)',
+    agentMemory: 'Memory',
+    agentContext: 'Context & compression',
+    agentEngines: 'Child agents',
     doctor: 'Runtime diagnostics',
     diagnostics: 'Diagnostics',
     'system-prompt': 'System prompt',
@@ -33,7 +39,7 @@ export const shellCatalog: LocaleCatalog = {
     jobs: 'Jobs',
     loading: 'Loading runtime catalog…',
     unavailable: 'Runtime catalog is unavailable. Retry after the daemon is ready.',
-    retry: 'Refresh catalog',
+    retry: 'Refresh',
     empty: 'No providers are registered for this kind.',
     source: 'Source',
     capabilities: 'Capabilities',
@@ -123,6 +129,12 @@ export const shellCatalog: LocaleCatalog = {
       'This view explains desired configuration. Live session bindings are listed separately; a saved bundle selection may still require a restart.',
   },
   'zh-CN': {
+    runtimeDetails: '插件运行详情',
+    providerTypes: '插件类型',
+    agentExecution: '执行方式（Agent Loop）',
+    agentMemory: '记忆',
+    agentContext: '上下文与压缩',
+    agentEngines: '子代理引擎',
     doctor: '运行诊断',
     diagnostics: '诊断',
     'system-prompt': '系统提示词',
@@ -154,7 +166,7 @@ export const shellCatalog: LocaleCatalog = {
     jobs: '作业',
     loading: '正在读取运行时目录…',
     unavailable: '运行时目录不可用。请在守护进程就绪后重试。',
-    retry: '刷新目录',
+    retry: '刷新',
     empty: '此类型尚未注册插件实现。',
     source: '来源',
     capabilities: '能力',

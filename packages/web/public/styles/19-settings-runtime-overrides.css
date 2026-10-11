@@ -47,3 +47,162 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+/* Settings IA: scoped after the legacy responsive cascade by an explicit shell class. */
+#config-form.settings-shell {
+  grid-template-columns: 240px minmax(0, 1fr);
+}
+.settings-shell .settings-rail,
+.runtime-settings > .settings-rail {
+  gap: var(--s16);
+  padding: var(--s24) var(--s16);
+  border-inline-end: 1px solid var(--agnes-line-primary);
+}
+.settings-shell .settings-nav-group,
+.settings-shell #settings-everyday,
+.settings-shell #settings-advanced {
+  display: grid;
+  gap: var(--s4);
+  overflow: visible;
+}
+.settings-shell .settings-nav-label {
+  display: block;
+  margin: var(--s8) 0;
+  color: var(--agnes-text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+.settings-shell .settings-nav-item,
+.runtime-settings > nav .settings-nav-item {
+  width: 100%;
+  min-height: var(--control-height-touch);
+  height: auto;
+  padding: var(--s8) var(--s12);
+  justify-content: flex-start;
+  white-space: normal;
+  border-radius: var(--radius-control);
+  font-weight: var(--font-weight-regular);
+  font-size: var(--font-size-body);
+}
+.settings-shell .settings-nav-item .icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.settings-shell .settings-nav-item[aria-current="page"] {
+  font-weight: var(--font-weight-semibold);
+}
+.settings-shell #settings-advanced > summary,
+.runtime-settings > nav details > summary {
+  min-height: var(--control-height-touch);
+  padding: var(--s12);
+  cursor: pointer;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+.settings-shell #settings-advanced > summary:focus-visible,
+.runtime-settings > nav details > summary:focus-visible {
+  outline: 2px solid var(--agnes-brand-focus-ring);
+  outline-offset: -2px;
+  border-radius: var(--radius-control);
+}
+.settings-shell .settings-nav-group [hidden],
+.settings-shell #settings-search-empty[hidden] {
+  display: none;
+}
+.settings-shell #settings-search {
+  min-width: 0;
+  width: 100%;
+  min-height: var(--control-height-touch);
+}
+.settings-shell #settings-back,
+.runtime-settings .settings-back {
+  display: none;
+}
+.settings-shell .settings-content,
+.runtime-settings > section {
+  min-width: 0;
+}
+.settings-shell .agnes-settings-page[data-layout="form"],
+.settings-shell .config-workspace,
+.runtime-settings .agnes-settings-page[data-layout="form"] {
+  width: 100%;
+  max-width: 720px;
+  margin-inline: auto;
+}
+.settings-shell .agnes-settings-page[data-layout="list"],
+.runtime-settings .agnes-settings-page[data-layout="list"] {
+  max-width: 960px;
+  margin-inline: auto;
+}
+.settings-shell .agnes-settings-section-tabs button,
+.runtime-settings .agnes-settings-section-tabs button {
+  min-height: var(--control-height-touch);
+  box-shadow: none;
+  font-size: var(--font-size-sm);
+}
+.settings-shell .agnes-settings-section-tabs button[aria-selected="true"],
+.runtime-settings .agnes-settings-section-tabs button[aria-selected="true"] {
+  font-weight: var(--font-weight-semibold);
+}
+.runtime-settings > nav {
+  width: 240px;
+}
+.settings-nav-item small {
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-xs);
+}
+@media (max-width: 767px) {
+  #config:has(.settings-shell) {
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+  }
+  #config-form.settings-shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+  #config-form.settings-shell .settings-rail {
+    grid-column: 1;
+    grid-row: 1;
+    display: flex;
+    overflow-y: auto;
+    border: 0;
+    padding: var(--s16);
+  }
+  .settings-shell .settings-nav-group {
+    display: grid;
+    overflow: visible;
+  }
+  .settings-shell #settings-content-slots {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .settings-shell[data-settings-view="list"] #settings-content-slots,
+  .settings-shell[data-settings-view="detail"] .settings-rail {
+    display: none;
+  }
+  .settings-shell #settings-back,
+  .runtime-settings .settings-back {
+    display: flex;
+    flex: 0 0 auto;
+    align-self: flex-start;
+    min-height: var(--control-height-touch);
+    margin: var(--s8) var(--s16);
+  }
+  .settings-shell .settings-rail-heading {
+    min-height: var(--control-height-touch);
+  }
+  .runtime-settings:has(> nav) {
+    flex-direction: column;
+  }
+  .runtime-settings > nav {
+    width: 100%;
+    display: flex;
+  }
+  .runtime-settings[data-settings-view="detail"] > nav,
+  .runtime-settings[data-settings-view="list"] > section {
+    display: none;
+  }
+}

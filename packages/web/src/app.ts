@@ -1,7 +1,8 @@
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import { adaptResourceAdmin } from '@agnes/web-admin/admin/resources/admin'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
-import { factChainLinks } from '@agnes/web-client'
+import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
+import { settingsRoute } from '@agnes/web-units'
 import {
   bindDialogSheets,
   bindDismissibleDialog,
@@ -18,6 +19,7 @@ import { mountIntelligentUi } from './intelligent-ui/mount.js'
 import '@agnes/web-admin/settings/registry'
 import type {
   ConfigSnapshot,
+  ComputerUseStatusResult,
   ContentBlock,
   ModelSettings,
   PageSessionMeta,
@@ -937,6 +939,10 @@ const clientModules = await startClientModules({
   settingsPaneContainer: document.getElementById('config') ?? undefined,
   settings: {
     sections: settingsSections,
+    computerUseSupported: async () => {
+      const report = await client.call<ComputerUseStatusResult>('_agnes/v1/computerUse.status', {})
+      return report.status !== 'blocked' || !report.blockers.includes('platform-unsupported')
+    },
     computerUse: computerUseStatus.render(),
     onChange: ({ pane, tab }) => {
       if (pane === 'model') void settings.open()
@@ -954,6 +960,9 @@ const clientModules = await startClientModules({
 })
 const tracePanel = clientModules.trace as NonNullable<typeof clientModules.trace>
 if (!tracePanel) throw new Error('missing trace region')
+document.addEventListener('agnes:settings-terminal', () => {
+  workbenchNavigation.open('terminal')
+})
 const settingsRegion = clientModules.settings as NonNullable<typeof clientModules.settings>
 if (!settingsRegion) throw new Error('missing settings region')
 const topbarRuntime = clientModules.topbar as NonNullable<typeof clientModules.topbar>
@@ -2412,7 +2421,8 @@ run(async () => {
     await firstRun.initialize(snapshot, true)
     return
   }
-  const startupSection = settingsSections.get(startupRequest.get('settings') ?? '')
+  const startupSettings = startupRequest.get('settings') ?? ''
+  const startupSection = settingsSections.get(settingsRoute(startupSettings).id)
   if (selected) {
     const candidates = page.items.some((item) => item.sessionId === selected)
       ? page
@@ -2444,12 +2454,12 @@ run(async () => {
   }
   const shown = await firstRun.initialize(snapshot, page.items.length > 0 || Boolean(startupSection))
   if (guided && !shown) await beginNewDraft(true)
-  if (startupSection && new URL(location.href).searchParams.get('settings') === startupSection.id) {
+  if (startupSection && new URL(location.href).searchParams.get('settings') === startupSettings) {
     settingsRegion.open('model')
     await settings.open()
-    if (new URL(location.href).searchParams.get('settings') !== startupSection.id) return
+    if (new URL(location.href).searchParams.get('settings') !== startupSettings) return
     document
       .getElementById('config-form')
-      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: startupSection.id, bubbles: true }))
+      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: startupSettings, bubbles: true }))
   }
 })

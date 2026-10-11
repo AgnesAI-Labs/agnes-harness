@@ -382,13 +382,21 @@ it('navigates runtime capabilities and never offers a disallowed security preset
   expect(host.querySelector('[data-testid="settings-nav-resources"]')).toBeNull()
   for (const page of SETTINGS_PAGES) {
     await act(async () =>
-      host.querySelector<HTMLButtonElement>(`[data-testid="settings-nav-${page}"]`)?.click(),
+      (
+        host.querySelector<HTMLButtonElement>(`[data-testid="settings-nav-${page}-tab"]`) ??
+        host.querySelector<HTMLButtonElement>(`[data-testid="settings-nav-${page}"]`)
+      )?.click(),
     )
     expect(host.querySelector(`[data-testid="settings-page-${page}"]`)).not.toBeNull()
-    expect(host.querySelector(`[data-testid="settings-nav-${page}"]`)?.getAttribute('aria-current')).toBe(
-      'page',
-    )
-    if (page === 'providers') {
+    expect(
+      host.querySelector(`[data-testid="settings-nav-${page}-tab"]`)?.getAttribute('aria-selected') ??
+        host.querySelector(`[data-testid="settings-nav-${page}"]`)?.getAttribute('aria-current'),
+    ).toBe(host.querySelector(`[data-testid="settings-nav-${page}-tab"]`) ? 'true' : 'page')
+    if (page === 'diagnostics') {
+      await act(async () => {
+        host.querySelector<HTMLDetailsElement>('[data-testid="plugin-diagnostics"]')!.open = true
+      })
+      await vi.waitFor(() => expect(host.querySelector('[data-testid="providers-loop"]')).not.toBeNull())
       expect(host.textContent).toContain('@acme/loop')
       expect(host.querySelectorAll('[data-testid^="providers-"]')).toHaveLength(9)
       expect(host.querySelector('[data-testid=providers-memory]')).not.toBeNull()

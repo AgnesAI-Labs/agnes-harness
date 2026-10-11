@@ -26,7 +26,6 @@ const sections = [
   'context',
   'jobs',
   'schedules',
-  'terminal',
   'security',
   'history',
   'archived',

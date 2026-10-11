@@ -110,8 +110,10 @@ describe('independent core web-unit implementations', () => {
       roots.push(paneRoot)
       flushSync(() => paneRoot.render(createElement(SettingsPaneBuiltin, { pane })))
     }
-    const nav = () => host.querySelectorAll('.settings-nav-group > [data-settings-section]')
+    const nav = () => host.querySelectorAll('.settings-nav-group button[data-settings-group]')
     expect(nav()).toHaveLength(2)
+    expect(host.querySelector<HTMLDetailsElement>('#settings-advanced')?.open).toBe(false)
+    host.querySelector<HTMLDetailsElement>('#settings-advanced')!.open = true
     host.querySelector<HTMLButtonElement>('[data-settings-section="first"]')?.click()
     host
       .querySelector<HTMLButtonElement>('[role="tab"][data-settings-section="first"]')
@@ -172,6 +174,100 @@ describe('independent core web-unit implementations', () => {
     for (const listener of changed) listener()
     expect(host.querySelector('[data-settings-section="second"]')).toBeNull()
     expect(host.querySelector('#config-form')?.getAttribute('data-settings-section')).toBe('model')
+  })
+
+  it('searches everyday and advanced settings, routes merged links and restores search focus', () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    roots.push(root)
+    let closed = 0
+    let terminal = 0
+    host.addEventListener('agnes:settings-terminal', () => terminal++)
+    const entries: SettingsNavigationEntry[] = [
+      {
+        id: 'model',
+        group: 'accounts',
+        titleKey: 'Models',
+        groupTitleKey: 'Accounts',
+        icon: 'accounts',
+        order: 0,
+        nativePane: 'model',
+        navigationId: 'model-settings',
+      },
+      {
+        id: 'models',
+        group: 'agent',
+        titleKey: 'Agent behavior',
+        groupTitleKey: 'Agent behavior',
+        icon: 'agent',
+        order: 80,
+      },
+      {
+        id: 'jobs',
+        group: 'automation',
+        titleKey: 'Background tasks',
+        groupTitleKey: 'Automation',
+        icon: 'automation',
+        order: 40,
+      },
+      {
+        id: 'custom',
+        group: 'vendor',
+        titleKey: 'Preferences',
+        groupTitleKey: 'Example plugin',
+        icon: 'plug',
+        order: 100,
+      },
+    ]
+    const options = {
+      sections: { entries: () => entries, subscribe: () => () => undefined },
+      translate: (key: string) => key,
+      onClose: () => closed++,
+    }
+    flushSync(() => root.render(createElement(SettingsBuiltin, { options })))
+    for (const pane of ['model', 'plugin'] as const) {
+      const slot = host.querySelector<HTMLElement>(`#settings-pane-slot-${pane}`)!
+      const paneRoot = createRoot(slot)
+      roots.push(paneRoot)
+      flushSync(() => paneRoot.render(createElement(SettingsPaneBuiltin, { pane })))
+    }
+    const advanced = host.querySelector<HTMLDetailsElement>('#settings-advanced')!
+    const search = host.querySelector<HTMLInputElement>('#settings-search')!
+    expect(advanced.open).toBe(false)
+    expect(host.querySelector('[data-testid="settings-nav-custom"]')?.textContent).toContain('Example plugin')
+    host
+      .querySelector('#config-form')
+      ?.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true }))
+    expect(document.activeElement).toBe(search)
+    search.value = 'agt bvr'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(advanced.open).toBe(true)
+    expect(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-model"]')?.hidden).toBe(true)
+    expect(host.querySelector<HTMLButtonElement>('[data-testid="settings-nav-models"]')?.hidden).toBe(false)
+    search.value = 'no-such-setting'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(host.querySelector<HTMLElement>('#settings-search-empty')?.hidden).toBe(false)
+    search.value = ''
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    expect(advanced.open).toBe(false)
+    expect(host.querySelector<HTMLElement>('#settings-search-empty')?.hidden).toBe(true)
+    const form = host.querySelector<HTMLFormElement>('#config-form')!
+    form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'memory', bubbles: true }))
+    expect(form.dataset.settingsSection).toBe('models')
+    expect(new URL(location.href).searchParams.get('settings')).toBe('models')
+    expect(new URL(location.href).hash).toBe('#settings-subsection-memory')
+    expect(advanced.open).toBe(true)
+    host.querySelector<HTMLButtonElement>('#settings-back')?.click()
+    expect(form.dataset.settingsView).toBe('list')
+    expect(document.activeElement?.getAttribute('data-settings-section')).toBe('models')
+    flushSync(() =>
+      form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'terminal', bubbles: true })),
+    )
+    expect(closed).toBe(1)
+    expect(terminal).toBe(1)
+    expect(new URL(location.href).searchParams.has('settings')).toBe(false)
+    expect(document.querySelector('.agh-toast')?.parentElement).toBe(document.body)
   })
 
   it('renders the appearance controls in English', () => {

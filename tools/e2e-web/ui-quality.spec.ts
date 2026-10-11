@@ -1,3 +1,4 @@
+import { section } from './ui.js'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import AxeBuilder from '@axe-core/playwright'
@@ -119,27 +120,21 @@ for (const locale of ['zh-CN', 'en'])
           ['computer-use-management', 'computer-use'],
           ['appearance-settings', 'general'],
         ]) {
-          await page.locator(`#${id}`).click()
+          await section(
+            page,
+            id === 'skills-tab'
+              ? 'skills'
+              : id === 'mcp-tab'
+                ? 'mcp'
+                : id === 'computer-use-management'
+                  ? 'computer-use'
+                  : 'general',
+          )
           if (id === 'skills-tab' || id === 'mcp-tab') {
-            await expect(page.locator(`#${id}`)).not.toHaveAttribute('role', 'tab')
+            await expect(page.locator(`#${id}`)).toHaveAttribute('role', 'tab')
             await expect(page.locator(`#${id}`)).toHaveAttribute('tabindex', '0')
           }
           await screen(`settings-${name}`)
-        }
-        const groups: Record<string, string> = {
-          plugins: 'plugins',
-          providers: 'plugins',
-          examples: 'plugins',
-          models: 'models',
-          bundles: 'models',
-          engines: 'models',
-          search: 'search',
-          context: 'search',
-          jobs: 'jobs',
-          terminal: 'jobs',
-          schedules: 'jobs',
-          security: 'security',
-          history: 'history',
         }
         for (const id of [
           'plugins',
@@ -152,14 +147,18 @@ for (const locale of ['zh-CN', 'en'])
           'context',
           'examples',
           'history',
-          'terminal',
           'jobs',
           'schedules',
         ]) {
-          await page.getByTestId(`settings-nav-${groups[id]}`).click()
-          const tab = page.getByTestId(`settings-nav-${id}-tab`)
-          if (await tab.count()) await tab.click()
-          await expect(page.getByTestId(`settings-page-${id}`)).toBeVisible()
+          await section(page, id)
+          const canonical = ['models', 'bundles', 'engines', 'context'].includes(id)
+            ? 'models'
+            : id === 'providers'
+              ? 'diagnostics'
+              : id === 'examples'
+                ? 'discover'
+                : id
+          await expect(page.getByTestId(`settings-page-${canonical}`)).toBeVisible()
           if (id === 'plugins') await expect(page.locator('#install-source')).toBeEnabled({ timeout: 30_000 })
           await screen(`runtime-${id}`)
           if (id === 'bundles' && (await page.getByTestId('session-tool-groups').count())) {
@@ -172,16 +171,14 @@ for (const locale of ['zh-CN', 'en'])
             await expect(page.locator('[data-testid^="example-install-"]')).toHaveCount(17)
           }
         }
-        await page.getByTestId('settings-nav-history').click()
-        await page.locator('#archived-settings').click()
+        await section(page, 'archived')
         await screen('settings-archives')
-        await page.getByTestId('settings-nav-models').click()
-        await page.getByTestId('settings-nav-models-tab').focus()
+        await section(page, 'schedules')
+        await page.getByTestId('settings-nav-schedules-tab').focus()
         await page.keyboard.press('ArrowRight')
-        await expect(page.getByTestId('settings-nav-bundles-tab')).toBeFocused()
-        await expect(page.getByTestId('settings-page-bundles')).toBeVisible()
-        await page.getByTestId('settings-nav-plugins').click()
-        await page.getByTestId('settings-nav-plugins-tab').click()
+        await expect(page.getByTestId('settings-nav-triggers-tab')).toBeFocused()
+        await expect(page.getByTestId('settings-page-triggers')).toBeVisible()
+        await section(page, 'plugins')
         await page.locator('#install-source').click()
         await screen('plugin-install')
         await page.locator('#source-cancel').click()
@@ -252,8 +249,7 @@ for (const locale of ['zh-CN', 'en'])
         await expect(page.getByTestId('settings-page-bundles')).toBeVisible()
         await expect(page.locator('#new-session')).toBeHidden()
         await screen('deep-link-bundles')
-        await page.getByTestId('settings-nav-jobs').click()
-        await page.getByTestId('settings-nav-schedules-tab').click()
+        await section(page, 'schedules')
         await page.getByTestId('schedules-title').fill('Synthetic reminder')
         await page.getByTestId('schedules-prompt').fill('Synthetic UI verification')
         await page.getByTestId('schedules-create').click()
