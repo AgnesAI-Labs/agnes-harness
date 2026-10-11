@@ -1050,10 +1050,6 @@ describe('web session selection', () => {
 
   it('keeps the model picker flat and applies the selected model settings', async () => {
     installPublicFixture()
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      callback(0)
-      return 1
-    })
     const old = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
     sdk.createClient.mockReturnValue({
       initialize: vi.fn(async () => undefined),
