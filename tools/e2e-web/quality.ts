@@ -105,6 +105,15 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     name.startsWith('workbench-') || name.startsWith('narrow-workbench-')
       ? page.locator('[data-testid="turn-metadata"], .workbench-file-preview > details > summary')
       : page.getByTestId('turn-metadata')
+  // Empty-process turns show the same elapsed time outside the process toggle.
+  // Normalize only its runtime numbers, preserving the localized status and duration units.
+  const durations = page.locator('.turn-status[data-agnes-dynamic="turn-process"]')
+  await durations.evaluateAll((rows) => {
+    for (const row of rows) {
+      row.setAttribute('data-e2e-duration-original', row.textContent ?? '')
+      row.textContent = (row.textContent ?? '').replace(/\d+(?:\.\d+)?/g, '0')
+    }
+  })
   const disk = page.getByTestId('doctor-space')
   // Runtime free space changes independently of UI. Preserve its localized sentence and geometry.
   await disk.evaluateAll((rows) => {
@@ -216,6 +225,12 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
       for (const summary of summaries) {
         summary.textContent = summary.getAttribute('data-e2e-clock-original')
         summary.removeAttribute('data-e2e-clock-original')
+      }
+    })
+    await durations.evaluateAll((rows) => {
+      for (const row of rows) {
+        row.textContent = row.getAttribute('data-e2e-duration-original')
+        row.removeAttribute('data-e2e-duration-original')
       }
     })
     await disk.evaluateAll((rows) => {
