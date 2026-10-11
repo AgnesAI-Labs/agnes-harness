@@ -29,8 +29,6 @@ export function JobsPanel({
   api = defaultApi,
   sessions = defaultSessions,
 }: {
-  // The registry removes the former terminal entry independently of this view.
-  terminal?: boolean
   api?: ReturnType<typeof sessionJobsApi>
   sessions?: JobsSessionSource
 }) {

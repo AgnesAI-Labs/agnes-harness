@@ -111,7 +111,10 @@ async function setup(accounts: ConfigAccount[] = [account('work'), account('pers
     }
     if (!node) throw new Error(`missing ${selector}`)
     ;(node as unknown as HTMLButtonElement).click()
-    if (selector === '#account-dialog-close' && !doc.getElementById('config-account-discard')?.hasAttribute('hidden'))
+    if (
+      selector === '#account-dialog-close' &&
+      !doc.getElementById('config-account-discard')?.hasAttribute('hidden')
+    )
       (doc.getElementById('config-account-discard-confirm') as unknown as HTMLButtonElement)?.click()
   }
   return { config, controller, input, click, doc, onSaved }

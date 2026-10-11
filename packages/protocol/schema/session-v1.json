@@ -2521,377 +2521,331 @@
         }
       }
     },
-  "DecisionSpec": {
-    "type": "object",
-    "additionalProperties": false,
-    "required": [
-      "key",
-      "purpose",
-      "subject",
-      "prompt",
-      "options"
-    ],
-    "properties": {
-      "key": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 256,
-        "pattern": "^[^\\u0000]+$"
-      },
-      "purpose": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 256,
-        "pattern": "^[^\\u0000]+$"
-      },
-      "subject": {
-        "$ref": "#/$defs/JsonValue"
-      },
-      "prompt": {
-        "type": "string",
-        "maxLength": 65536,
-        "minLength": 1
-      },
-      "options": {
-        "type": "array",
-        "items": {
+    "DecisionSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "purpose", "subject", "prompt", "options"],
+      "properties": {
+        "key": {
           "type": "string",
           "minLength": 1,
           "maxLength": 256,
           "pattern": "^[^\\u0000]+$"
         },
-        "minItems": 1,
-        "maxItems": 16,
-        "uniqueItems": true
-      },
-      "responseSchema": {
-        "type": "object",
-        "additionalProperties": {
+        "purpose": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "subject": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "prompt": {
+          "type": "string",
+          "maxLength": 65536,
+          "minLength": 1
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^[^\\u0000]+$"
+          },
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true
+        },
+        "responseSchema": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          }
+        }
+      }
+    },
+    "DecisionHandle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sessionId"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[^\\u0000]+$"
+        }
+      }
+    },
+    "DecisionResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["option", "value"],
+      "properties": {
+        "option": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "value": {
           "$ref": "#/$defs/JsonValue"
         }
       }
-    }
-  },
-  "DecisionHandle": {
-    "type": "object",
-    "additionalProperties": false,
-    "required": [
-      "id",
-      "sessionId"
-    ],
-    "properties": {
-      "id": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 256,
-        "pattern": "^[^\\u0000]+$"
-      },
-      "sessionId": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 512,
-        "pattern": "^[^\\u0000]+$"
-      }
-    }
-  },
-  "DecisionResponse": {
-    "type": "object",
-    "additionalProperties": false,
-    "required": [
-      "option",
-      "value"
-    ],
-    "properties": {
-      "option": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 256,
-        "pattern": "^[^\\u0000]+$"
-      },
-      "value": {
-        "$ref": "#/$defs/JsonValue"
-      }
-    }
-  },
-  "DecisionRequest": {
-    "type": "object",
-    "additionalProperties": false,
-    "required": [
-      "spec",
-      "subjectDigest",
-      "owner",
-      "operationId",
-      "sourcePackage",
-      "packageVersion",
-      "requestedBy",
-      "lane",
-      "createdAt",
-      "expiresAt"
-    ],
-    "properties": {
-      "spec": {
-        "$ref": "#/$defs/DecisionSpec"
-      },
-      "subjectDigest": {
-        "type": "string",
-        "pattern": "^[a-f0-9]{64}$"
-      },
-      "owner": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 256,
-        "pattern": "^[^\\u0000]+$"
-      },
-      "operationId": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 256,
-        "pattern": "^[^\\u0000]+$"
-      },
-      "sourcePackage": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 256,
-        "pattern": "^[^\\u0000]+$"
-      },
-      "packageVersion": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 256,
-        "pattern": "^[^\\u0000]+$"
-      },
-      "requestedBy": {
-        "$ref": "#/$defs/Actor"
-      },
-      "lane": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 256,
-        "pattern": "^[^\\u0000]+$"
-      },
-      "createdAt": {
-        "type": "string",
-        "format": "date-time"
-      },
-      "expiresAt": {
-        "anyOf": [
-          {
-            "type": "string",
-            "format": "date-time"
-          },
-          {
-            "type": "null"
-          }
-        ]
-      }
-    }
-  },
-  "DecisionResult": {
-    "anyOf": [
-      {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "reason",
-          "at",
-          "response",
-          "answeredBy"
-        ],
-        "properties": {
-          "reason": {
-            "const": "answered"
-          },
-          "at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "response": {
-            "$ref": "#/$defs/DecisionResponse"
-          },
-          "answeredBy": {
-            "$ref": "#/$defs/Actor"
-          }
-        }
-      },
-      {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "reason",
-          "at",
-          "code"
-        ],
-        "properties": {
-          "reason": {
-            "enum": [
-              "expired",
-              "unavailable",
-              "stopped",
-              "invalidated"
-            ]
-          },
-          "at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "code": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256,
-            "pattern": "^[^\\u0000]+$"
-          }
-        }
-      }
-    ]
-  },
-  "DecisionConsumption": {
-    "type": "object",
-    "additionalProperties": false,
-    "required": [
-      "at",
-      "operationId",
-      "effectId"
-    ],
-    "properties": {
-      "at": {
-        "type": "string",
-        "format": "date-time"
-      },
-      "operationId": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 256,
-        "pattern": "^[^\\u0000]+$"
-      },
-      "effectId": {
-        "anyOf": [
-          {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256,
-            "pattern": "^[^\\u0000]+$"
-          },
-          {
-            "type": "null"
-          }
-        ]
-      }
-    }
-  },
-  "DecisionCommandReceipt": {
-    "type": "object",
-    "additionalProperties": false,
-    "required": [
-      "commandId",
-      "digest",
-      "revision",
-      "seq"
-    ],
-    "properties": {
-      "commandId": {
-        "type": "string",
-        "minLength": 1,
-        "maxLength": 256,
-        "pattern": "^[^\\u0000]+$"
-      },
-      "digest": {
-        "type": "string",
-        "pattern": "^[a-f0-9]{64}$"
-      },
-      "revision": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 9007199254740991
-      },
-      "seq": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 9007199254740991
-      }
-    }
-  },
-  "DecisionSnapshot": {
-    "type": "object",
-    "additionalProperties": false,
-    "required": [
-      "handle",
-      "revision",
-      "request",
-      "result",
-      "answerCommand",
-      "consumption",
-      "invalidation"
-    ],
-    "properties": {
-      "handle": {
-        "$ref": "#/$defs/DecisionHandle"
-      },
-      "revision": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 9007199254740991
-      },
-      "request": {
-        "$ref": "#/$defs/DecisionRequest"
-      },
-      "result": {
-        "anyOf": [
-          {
-            "$ref": "#/$defs/DecisionResult"
-          },
-          {
-            "type": "null"
-          }
-        ]
-      },
-      "answerCommand": {
-        "anyOf": [
-          {
-            "$ref": "#/$defs/DecisionCommandReceipt"
-          },
-          {
-            "type": "null"
-          }
-        ]
-      },
-      "consumption": {
-        "anyOf": [
-          {
-            "$ref": "#/$defs/DecisionConsumption"
-          },
-          {
-            "type": "null"
-          }
-        ]
-      },
-      "invalidation": {
-        "anyOf": [
-          {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "at",
-              "code"
-            ],
-            "properties": {
-              "at": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "code": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 256,
-                "pattern": "^[^\\u0000]+$"
-              }
+    },
+    "DecisionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "spec",
+        "subjectDigest",
+        "owner",
+        "operationId",
+        "sourcePackage",
+        "packageVersion",
+        "requestedBy",
+        "lane",
+        "createdAt",
+        "expiresAt"
+      ],
+      "properties": {
+        "spec": {
+          "$ref": "#/$defs/DecisionSpec"
+        },
+        "subjectDigest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "sourcePackage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "packageVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "requestedBy": {
+          "$ref": "#/$defs/Actor"
+        },
+        "lane": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
             }
-          },
-          {
-            "type": "null"
+          ]
+        }
+      }
+    },
+    "DecisionResult": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reason", "at", "response", "answeredBy"],
+          "properties": {
+            "reason": {
+              "const": "answered"
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "response": {
+              "$ref": "#/$defs/DecisionResponse"
+            },
+            "answeredBy": {
+              "$ref": "#/$defs/Actor"
+            }
           }
-        ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reason", "at", "code"],
+          "properties": {
+            "reason": {
+              "enum": ["expired", "unavailable", "stopped", "invalidated"]
+            },
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "code": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\u0000]+$"
+            }
+          }
+        }
+      ]
+    },
+    "DecisionConsumption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "operationId", "effectId"],
+      "properties": {
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "operationId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "effectId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\u0000]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "DecisionCommandReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commandId", "digest", "revision", "seq"],
+      "properties": {
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "DecisionSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["handle", "revision", "request", "result", "answerCommand", "consumption", "invalidation"],
+      "properties": {
+        "handle": {
+          "$ref": "#/$defs/DecisionHandle"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "request": {
+          "$ref": "#/$defs/DecisionRequest"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DecisionResult"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "answerCommand": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DecisionCommandReceipt"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "consumption": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DecisionConsumption"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "invalidation": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["at", "code"],
+              "properties": {
+                "at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "code": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^[^\\u0000]+$"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
       }
     }
-  }
   }
 }
