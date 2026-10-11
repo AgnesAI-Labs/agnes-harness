@@ -15,6 +15,8 @@ const colors = [
 export function IntelligentChart({ component, data }: { component: Chart; data: JsonValue }) {
   const titleId = useId()
   const { t, locale } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
+  const formatValue = (value: JsonValue | undefined) =>
+    typeof value === 'number' ? new Intl.NumberFormat(locale).format(value) : String(value)
   const rows = Array.isArray(data) ? data.filter(uiObject) : []
   const values = rows.flatMap((row) => component.series.map((series) => Number(row[series.key])))
   const min = Math.min(0, ...values),
@@ -147,9 +149,7 @@ export function IntelligentChart({ component, data }: { component: Chart; data: 
                   <th scope="row">{String(row[component.categoryKey])}</th>
                   {component.series.map((series) => (
                     <td key={series.key} data-numeric>
-                      {typeof row[series.key] === 'number'
-                        ? new Intl.NumberFormat(locale).format(row[series.key])
-                        : String(row[series.key])}
+                      {formatValue(row[series.key])}
                     </td>
                   ))}
                 </tr>
