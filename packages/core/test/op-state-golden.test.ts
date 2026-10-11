@@ -40,7 +40,10 @@ describe('program-counter transitions match the recorded reference (MemoryStorag
       })
       const consume = recorded.find((commit) =>
         commit.events.some(
-          (row) => row.type === 'decision/state' && (row.data as DecisionSnapshot).consumption,
+          (item) => {
+            const row = item as { type: string; data: unknown }
+            return row.type === 'decision/state' && (row.data as DecisionSnapshot).consumption
+          },
         ),
       )
       expect(consume?.events).toEqual(
