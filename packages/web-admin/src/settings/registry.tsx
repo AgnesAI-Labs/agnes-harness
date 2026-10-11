@@ -6,7 +6,7 @@ import type {
 } from '@agnes/protocol'
 import { type SettingsSection, settingsSections, type UiExtensionContext } from '@agnes/web-client'
 import { Banner, Button, SettingsCard, SettingsDetails, SettingsState } from '@agnes/web-ui'
-import { type ReactNode, useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { BundlesPanel, SessionDefaultsPanel } from '../admin/plugins/control-panel.js'
 import { AutoReviewPanel } from './auto-review.js'
@@ -100,6 +100,22 @@ function Subsection({
       {visited && children}
     </SettingsDetails>
   )
+}
+
+/** The existing native pin controller keeps ownership of its host and all release actions. */
+function RuntimeOccupancy() {
+  const host = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const node = document.getElementById('orphan-pins')
+    const parent = node?.parentNode
+    if (!node || !parent || !host.current) return
+    const sibling = node.nextSibling
+    host.current.appendChild(node)
+    return () => {
+      parent.insertBefore(node, sibling?.parentNode === parent ? sibling : null)
+    }
+  }, [])
+  return <div ref={host} data-testid="runtime-occupancy" />
 }
 
 /** Runtime developer data is loaded on demand; doctor checks stay independent of this catalog. */
@@ -264,6 +280,7 @@ const definitions: readonly [
     (c, t) => (
       <>
         <DiagnosticsPanel />
+        <RuntimeOccupancy />
         <RuntimeDetails c={c} t={t} />
       </>
     ),

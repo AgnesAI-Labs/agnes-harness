@@ -1,5 +1,5 @@
 import type { LocaleCatalog } from '@agnes/web-ui'
-import { settingsShellLocaleCatalog } from '@agnes/web-units'
+import { settingsShellLocaleCatalog } from '@agnes/web-units/locales/settings-shell'
 import { knowledgeCatalog } from './locales/knowledge.js'
 import { operationsCatalog } from './locales/operations.js'
 import { providersCatalog } from './locales/providers.js'

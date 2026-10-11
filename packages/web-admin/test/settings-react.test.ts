@@ -74,7 +74,11 @@ it('operates the React settings pane and account dialog without losing native fo
   document.body.append(dialog)
   const shellRoot = createRoot(dialog)
   flushSync(() =>
-    shellRoot.render(createElement(SettingsBuiltin, { options: { sections: settingsSections } })),
+    shellRoot.render(
+      createElement(SettingsBuiltin, {
+        options: { sections: settingsSections, computerUseSupported: async () => false },
+      }),
+    ),
   )
   expect(dialog.querySelectorAll('[data-testid="settings-navigation"]')).toHaveLength(1)
   expect(dialog.querySelectorAll('#skills-tab')).toHaveLength(1)
@@ -94,6 +98,18 @@ it('operates the React settings pane and account dialog without losing native fo
     expect(dialog.querySelectorAll('#archived-settings')).toHaveLength(1)
     expect(dialog.querySelectorAll('#settings-section-tabs [aria-selected="true"]')).toHaveLength(1)
   }
+  await vi.waitFor(() =>
+    expect(dialog.querySelector('[data-testid="settings-nav-computer-use-tab"]')).toBeNull(),
+  )
+  flushSync(() =>
+    dialog
+      .querySelector('#config-form')
+      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'computer-use', bubbles: true })),
+  )
+  await vi.waitFor(() =>
+    expect(dialog.querySelector('#config-form')?.getAttribute('data-settings-section')).toBe('mcp'),
+  )
+  expect(dialog.querySelector('[data-testid="settings-nav-computer-use-tab"]')).toBeNull()
   const onPage = vi.fn()
   dialog.addEventListener('agnes:settings-page', onPage)
   dialog.querySelector<HTMLDetailsElement>('#settings-advanced')!.open = true
@@ -328,6 +344,10 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
   const form = document.createElement('div')
   form.id = 'config-form'
   form.dataset.runtimePage = 'diagnostics'
+  const occupancy = document.createElement('section')
+  occupancy.id = 'orphan-pins'
+  occupancy.textContent = 'Synthetic runtime occupancy'
+  form.append(occupancy)
   document.body.append(form, host)
   const root = createRoot(host)
   const runtime = vi.fn(async () => {
@@ -378,12 +398,14 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
     )
     await vi.waitFor(() => expect(host.querySelector('[data-testid="doctor-checks"]')).not.toBeNull())
     expect(runtime).not.toHaveBeenCalled()
+    expect(occupancy.closest('[data-testid="runtime-occupancy"]')).not.toBeNull()
     expect([...host.querySelectorAll('h2')].map((h) => h.textContent)).toEqual(['Runtime & diagnostics'])
     expect(host.querySelector('[data-testid="settings-refresh"]')?.closest('details')?.open).toBe(false)
     expect(settingsSections.get('doctor')).toBeUndefined()
     expect(host.querySelector('.agnes-settings-card')?.getAttribute('data-testid')).toBe('diagnostics-doctor')
   } finally {
     flushSync(() => root.unmount())
+    expect(occupancy.parentNode).toBe(form)
     vi.unstubAllGlobals()
   }
 })

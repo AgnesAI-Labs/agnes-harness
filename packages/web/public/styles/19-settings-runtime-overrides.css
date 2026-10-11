@@ -209,3 +209,9 @@
     display: none;
   }
 }
+
+/* Legacy controller hosts appear only in their owning advanced view. */
+.admin-main > #orphan-pins,
+.admin-pane-body > #orphan-pins {
+  display: none;
+}
