@@ -85,7 +85,7 @@ function SkillCandidatePanel({
                 }
               }}
               closable={!busy}
-              maskClosable={!busy}
+              mask={{ closable: !busy }}
             >
               {pending ? (
                 <>

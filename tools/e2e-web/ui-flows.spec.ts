@@ -465,7 +465,7 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
       .locator('.plugin-row[data-plugin-id="@agnes-examples/hot-tool-plugin"] .plugin-details-button')
       .click()
     await page.getByTestId('plugin-versions-tab').click()
-    const technical = page.getByTestId('plugin-versions-detail').locator('details').last()
+    const technical = page.getByTestId('plugin-drain-details')
     await expect(technical).not.toHaveAttribute('open')
     await expect(technical).toContainText('ext:agnes-examples/hot-tool-plugin')
     const summary = page.getByTestId('plugin-drain-summary')
@@ -613,6 +613,8 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   expectedBrowserErrors,
 }, info) => {
   test.setTimeout(300_000)
+  const pluginPage = page.getByTestId('settings-page-plugins')
+  const skillReview = page.getByRole('dialog', { name: 'Candidate review', exact: true })
   const client = await runtime.connect()
   const old = await client.session.new({
     sessionKey: crypto.randomUUID(),
@@ -663,19 +665,19 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   )
   if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
   await section(page, 'plugins')
-  await page.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
-  await expect(page.getByTestId('candidate-state')).toHaveText('Awaiting review')
-  await expect(page.getByTestId('candidate-tests')).toContainText('Tests passed 1/1')
-  await expect(page.getByTestId('candidate-provenance')).toContainText(
+  await pluginPage.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
+  await expect(pluginPage.getByTestId('candidate-state')).toHaveText('Awaiting review')
+  await expect(pluginPage.getByTestId('candidate-tests')).toContainText('Tests passed 1/1')
+  await expect(pluginPage.getByTestId('candidate-provenance')).toContainText(
     'Drafted by Agent · From “Text statistics workshop” (turn 2)',
   )
-  await expect(page.getByTestId('candidate-capability-delta')).toContainText('New permissions: none')
-  await expect(page.getByTestId('candidate-summary')).toContainText('No new permissions')
-  await expect(page.getByTestId('candidate-hash')).toBeHidden()
-  await expect(page.getByTestId('candidate-technical')).not.toHaveAttribute('open')
-  await expect(page.getByTestId('candidate-approve')).toBeInViewport({ ratio: 1 })
-  await expect(page.getByTestId('candidate-reject')).toBeInViewport({ ratio: 1 })
-  const diff = page
+  await expect(pluginPage.getByTestId('candidate-capability-delta')).toContainText('New permissions: none')
+  await expect(pluginPage.getByTestId('candidate-summary')).toContainText('No new permissions')
+  await expect(pluginPage.getByTestId('candidate-hash')).toBeHidden()
+  await expect(pluginPage.getByTestId('candidate-technical')).not.toHaveAttribute('open')
+  await expect(pluginPage.getByTestId('candidate-approve')).toBeInViewport({ ratio: 1 })
+  await expect(pluginPage.getByTestId('candidate-reject')).toBeInViewport({ ratio: 1 })
+  const diff = pluginPage
     .getByTestId('candidate-file-diff')
     .filter({ has: page.getByText('index.mjs', { exact: true }) })
   await diff.locator('summary').click()
@@ -705,14 +707,14 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     ).toBeVisible()
     if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page, locale)
     await section(page, 'plugins')
-    await page.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
-    await expect(page.getByTestId('candidate-approve')).toBeInViewport({ ratio: 1 })
-    await expect(page.getByTestId('candidate-reject')).toBeInViewport({ ratio: 1 })
-    await expect(page.getByTestId('candidate-hash')).toBeHidden()
+    await pluginPage.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
+    await expect(pluginPage.getByTestId('candidate-approve')).toBeInViewport({ ratio: 1 })
+    await expect(pluginPage.getByTestId('candidate-reject')).toBeInViewport({ ratio: 1 })
+    await expect(pluginPage.getByTestId('candidate-hash')).toBeHidden()
     await translated(page)
     await accessible(page, info, `candidate-review-${locale}-${theme}`)
     await screen(page, info, `candidate-review-${locale}-${theme}`)
-    await page.getByTestId('candidate-fact-chain').click()
+    await pluginPage.getByTestId('candidate-fact-chain').click()
     const facts = page.getByTestId('fact-chain')
     await expect(facts.locator('[data-fact-kind="authoring"]')).toContainText(draft.packageId)
     await expect(facts.locator('[data-fact-kind="authoring"]')).toContainText(
@@ -738,13 +740,13 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()
   if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
   await section(page, 'plugins')
-  await page.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
+  await pluginPage.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
   await client.session.rename(old.id, 'A very long workshop title '.repeat(3).slice(0, 80))
   await page.goto(runtime.url)
   await expect(page.getByTestId('conversation-turn')).toHaveCount(4)
   if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
   await section(page, 'plugins')
-  await page.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
+  await pluginPage.getByTestId('candidate-open').filter({ hasText: draft.packageId }).click()
   await page.emulateMedia({ reducedMotion: 'reduce' })
   for (const [width, height] of [
     [1440, 900],
@@ -756,16 +758,18 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     [540, 600],
   ]) {
     await page.setViewportSize({ width: width!, height: height! })
-    await expect(page.getByTestId('candidate-approve')).toBeInViewport({ ratio: 1 })
-    await expect(page.getByTestId('candidate-reject')).toBeInViewport({ ratio: 1 })
+    await expect(pluginPage.getByTestId('candidate-approve')).toBeInViewport({ ratio: 1 })
+    await expect(pluginPage.getByTestId('candidate-reject')).toBeInViewport({ ratio: 1 })
     expect(
-      await page.getByTestId('candidate-review').evaluate((panel) => panel.scrollWidth <= panel.clientWidth),
+      await pluginPage
+        .getByTestId('candidate-review')
+        .evaluate((panel) => panel.scrollWidth <= panel.clientWidth),
     ).toBe(true)
   }
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await client.session.rename(old.id, 'Text statistics workshop')
-  await page.getByTestId('candidate-approve').click()
+  await pluginPage.getByTestId('candidate-approve').click()
   const dialog = page.getByRole('dialog', { name: 'Approve and publish', exact: true })
   await expect(dialog.getByTestId('candidate-hash')).toBeHidden()
   await dialog.getByTestId('candidate-technical').locator('summary').focus()
@@ -790,28 +794,28 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   const staleResponse = page.waitForResponse((response) => response.url().endsWith('/candidates/approve'))
   await dialog.getByRole('button', { name: 'Approve and publish', exact: true }).click()
   expect((await staleResponse).status()).toBe(409)
-  await expect(page.getByTestId('candidate-error')).toBeVisible()
+  await expect(pluginPage.getByTestId('candidate-error')).toBeVisible()
   expect(
     (await client.packages.list({ profile: 'local-dev' })).packages.some((p) => p.id === draft.packageId),
   ).toBe(false)
-  await page.getByTestId('candidate-back').click()
-  await page.getByTestId('candidate-open').filter({ hasText: draft.packageId }).first().click()
-  await expect(page.getByTestId('candidate-state')).toHaveText('Draft; review invalidated after edits')
-  await expect(page.getByTestId('candidate-approve')).toBeDisabled()
-  await page.getByTestId('candidate-test').click()
+  await pluginPage.getByTestId('candidate-back').click()
+  await pluginPage.getByTestId('candidate-open').filter({ hasText: draft.packageId }).first().click()
+  await expect(pluginPage.getByTestId('candidate-state')).toHaveText('Draft; review invalidated after edits')
+  await expect(pluginPage.getByTestId('candidate-approve')).toBeDisabled()
+  await pluginPage.getByTestId('candidate-test').click()
   await page
     .getByRole('dialog', { name: 'Run tests', exact: true })
     .getByRole('button', { name: 'Run tests', exact: true })
     .click()
-  await expect(page.getByTestId('candidate-state')).toHaveText('Tests passed; awaiting submission')
-  await page.getByTestId('candidate-submit').click()
-  await expect(page.getByTestId('candidate-state')).toHaveText('Awaiting review')
-  await page.getByTestId('candidate-approve').click()
+  await expect(pluginPage.getByTestId('candidate-state')).toHaveText('Tests passed; awaiting submission')
+  await pluginPage.getByTestId('candidate-submit').click()
+  await expect(pluginPage.getByTestId('candidate-state')).toHaveText('Awaiting review')
+  await pluginPage.getByTestId('candidate-approve').click()
   await page
     .getByRole('dialog', { name: 'Approve and publish', exact: true })
     .getByRole('button', { name: 'Approve and publish', exact: true })
     .click()
-  await expect(page.getByTestId('candidate-state')).toHaveText('Published', {
+  await expect(pluginPage.getByTestId('candidate-state')).toHaveText('Published', {
     timeout: 25_000,
   })
   const provenance = await client.request('_agnes/v1/packages.provenance', {
@@ -877,31 +881,31 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     .locator(`li[data-candidate-id="${skill.candidateId}"]`)
   await expect(skillRow.getByTestId('candidate-origin-time')).toHaveCount(1)
   await skillRow.getByTestId('candidate-open').click()
-  await expect(page.getByTestId('candidate-tests')).toContainText('Tests passed 1/1')
-  await page
+  await expect(skillReview.getByTestId('candidate-tests')).toContainText('Tests passed 1/1')
+  await skillReview
     .getByTestId('candidate-file-diff')
     .filter({ has: page.getByText('skills/reviewed-method/SKILL.md', { exact: true }) })
     .locator('summary')
     .click()
-  const skillDiff = page
+  const skillDiff = skillReview
     .getByTestId('candidate-file-diff')
     .filter({ has: page.getByText('skills/reviewed-method/SKILL.md', { exact: true }) })
     .locator('.candidate-diff-added')
   await expect
     .poll(async () => (await skillDiff.allTextContents()).map((line) => line.slice(2, -1)).join('\n'))
     .toBe(skillBody)
-  await page.getByTestId('candidate-reject').click()
+  await skillReview.getByTestId('candidate-reject').click()
   await page
     .getByRole('dialog', { name: 'Reject candidate', exact: true })
     .getByRole('button', { name: 'Reject candidate', exact: true })
     .click()
-  await expect(page.getByTestId('candidate-state')).toHaveText('Rejected')
-  await page.getByTestId('candidate-back').click()
+  await expect(skillReview.getByTestId('candidate-state')).toHaveText('Rejected')
+  await skillReview.getByTestId('candidate-back').click()
   await expect(page.locator('#resource-list').getByTestId('candidate-list').locator('li')).toHaveCount(1)
   await expect(skillRow).toContainText('Rejected')
   await section(page, 'plugins')
-  await expect(page.getByTestId('candidate-list').getByTestId('candidate-open')).toHaveCount(1)
-  await expect(page.getByTestId('candidate-open').filter({ hasText: draft.packageId })).toContainText(
+  await expect(pluginPage.getByTestId('candidate-list').getByTestId('candidate-open')).toHaveCount(1)
+  await expect(pluginPage.getByTestId('candidate-open').filter({ hasText: draft.packageId })).toContainText(
     'Published',
   )
   expect(
@@ -950,8 +954,8 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     await expect(page.getByTestId('conversation-turn')).toHaveCount(11)
     if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page, locale)
     await section(page, 'plugins')
-    await expect(page.getByTestId('candidate-list').getByTestId('candidate-open')).toHaveCount(2)
-    const rows = page.getByTestId('candidate-list').getByTestId('candidate-open')
+    await expect(pluginPage.getByTestId('candidate-list').getByTestId('candidate-open')).toHaveCount(2)
+    const rows = pluginPage.getByTestId('candidate-list').getByTestId('candidate-open')
     await expect(
       rows
         .filter({ hasText: draft.packageId })
@@ -1007,12 +1011,12 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
         }),
       originals,
     )
-    await page
+    await pluginPage
       .getByTestId('candidate-open')
       .filter({ hasText: update.packageId })
       .filter({ hasText: locale === 'en' ? 'Awaiting review' : '待审阅' })
       .click()
-    const file = page
+    const file = pluginPage
       .getByTestId('candidate-file-diff')
       .filter({ has: page.getByText('index.mjs', { exact: true }) })
     await file.locator('summary').click()
@@ -1031,7 +1035,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     await expect(added).toContainText('+ // Reviewed update')
     await expect(added).toBeInViewport({ ratio: 1 })
     await expect(file.locator('summary')).toBeInViewport({ ratio: 1 })
-    await expect(page.getByTestId('candidate-approve')).toBeInViewport({ ratio: 1 })
+    await expect(pluginPage.getByTestId('candidate-approve')).toBeInViewport({ ratio: 1 })
     await translated(page)
     await accessible(page, info, `candidate-diff-${locale}-${theme}`)
     await screen(page, info, `candidate-diff-${locale}-${theme}`)
@@ -1075,12 +1079,12 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     .locator(`li[data-candidate-id="${publishSkill.candidateId}"]`)
   await expect(publishSkillRow.getByTestId('candidate-origin-time')).toHaveCount(1)
   await publishSkillRow.getByTestId('candidate-open').click()
-  await page.getByTestId('candidate-approve').click()
+  await skillReview.getByTestId('candidate-approve').click()
   await page
     .getByRole('dialog', { name: 'Approve and publish', exact: true })
     .getByRole('button', { name: 'Approve and publish', exact: true })
     .click()
-  await expect(page.getByTestId('candidate-state')).toHaveText('Published', {
+  await expect(skillReview.getByTestId('candidate-state')).toHaveText('Published', {
     timeout: 25_000,
   })
   const skillSession = await client.session.new({
@@ -1104,7 +1108,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     body: JSON.stringify({ reviewed, provenance }),
     contentType: 'application/json',
   })
-  await page.getByTestId('candidate-back').click()
+  await skillReview.getByTestId('candidate-back').click()
   await section(page, 'plugins')
   // Installed provenance opens the retained published candidate, not the pending replacement.
   await page.getByRole('button', { name: `View details for ${draft.packageId}`, exact: true }).click()

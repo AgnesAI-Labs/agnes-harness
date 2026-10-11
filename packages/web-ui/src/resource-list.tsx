@@ -294,6 +294,7 @@ export function ResourceRow({
         data-resource-id={item.resourceId}
         data-selected={String(selected)}
         titleClassName="plugin-details-button"
+        titleLabel={t('row.open-aria', { name: itemName })}
         title={<span>{itemName}</span>}
         icon={<Icon name="file-text" size={20} />}
         description={item.description}

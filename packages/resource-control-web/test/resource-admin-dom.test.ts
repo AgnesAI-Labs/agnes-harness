@@ -796,6 +796,9 @@ it('offers permanent skill deletion and validates priority without submitting in
     },
   ]
   await resourceMount.sync({ tab: 'skills' }, { refresh: true })
+  expect(byId('resource-list').querySelector('.plugin-details-button')?.getAttribute('aria-label')).toBe(
+    'View details for Example skill',
+  )
   byId('resource-list').querySelector<HTMLElement>('.resource-row')?.click()
   await vi.waitFor(() => expect(byId('resource-detail').textContent).toContain('Example skill'))
   const input = byId('resource-detail').querySelector<HTMLInputElement>('input[type="number"]')
