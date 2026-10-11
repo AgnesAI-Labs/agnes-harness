@@ -130,6 +130,12 @@ for (const locale of ['en', 'zh-CN'])
           await conversation.evaluate((viewport) => viewport.scrollTo({ top: 0, behavior: 'instant' }))
           await expect.poll(() => conversation.evaluate((viewport) => viewport.scrollTop)).toBe(0)
         }
+        if (surface === 'facts') {
+          // Frame the rail independently of the earlier inspection of its last tab.
+          await page.getByTestId('workbench-tab-facts').evaluate((button) => {
+            if (button.parentElement) button.parentElement.scrollLeft = 0
+          })
+        }
         // Frame the review itself, independent of the preceding plugin pane's scroll anchor.
         if (surface === 'settings' && width === 375) {
           await page.getByTestId('candidate-review').evaluate((review) => {
