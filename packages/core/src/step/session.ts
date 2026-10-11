@@ -1330,7 +1330,7 @@ export class SessionImpl {
         )
       : await this.d.runtime.approvalAsk(request, signal)
     // A replacement that answers outside the set is refused like a seam that does.
-    return normalizeApproval(raw) ?? { verdict: 'rejected' }
+    return normalizeApproval(raw) ?? { verdict: 'rejected', reason: 'approver_failed' }
   }
 
   executeTool(

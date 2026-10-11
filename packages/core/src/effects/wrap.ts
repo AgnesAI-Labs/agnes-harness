@@ -194,12 +194,14 @@ export class SeamRuntime {
         return { verdict: 'cancelled', reason: 'stopped' }
       if (err instanceof Error && err.message.startsWith('timeout:'))
         return { verdict: 'rejected', reason: 'timeout' }
-      return 'rejected'
+      // Nobody answered, so nobody decided: the refusal is the approver failing, and the model is
+      // told so rather than reading a bare rejection as the user's choice.
+      return { verdict: 'rejected', reason: 'approver_failed' }
     }
     const answer = normalizeApproval(v)
     if (!answer) {
       this.fail('approval', 'ask', `verdict out of set: ${String(v)}`)
-      return 'rejected'
+      return { verdict: 'rejected', reason: 'approver_failed' }
     }
     if (isPending(answer)) return answer
     // 'unavailable' is a real answer, not a failure, and it stays one: nobody was asked, so the

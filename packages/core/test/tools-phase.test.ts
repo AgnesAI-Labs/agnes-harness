@@ -396,6 +396,20 @@ describe('tools phase', () => {
       code: 'APPROVAL_REJECTED',
       text: /^blocked by the command policy$/,
     },
+    // The refusal a reconnecting client used to produce: nobody saw the question, so the model must
+    // not read it as the user's answer and retry the same call over and over.
+    {
+      answer: { verdict: 'rejected', reason: 'approver_failed' },
+      decided: { verdict: 'rejected', reason: 'approver_failed' },
+      code: 'APPROVAL_REJECTED',
+      text: /^the approval request failed before anyone answered it .*the user did not reject it/,
+    },
+    {
+      answer: { verdict: 'cancelled', reason: 'client_cancelled' },
+      decided: { verdict: 'cancelled', reason: 'client_cancelled' },
+      code: 'CANCELLED',
+      text: /^the user's client withdrew the approval request before it was answered/,
+    },
     {
       answer: 'rejected',
       decided: { verdict: 'rejected' },
@@ -1108,6 +1122,72 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
     expect((await s.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data).toMatchObject({
       isError: false,
     })
+  })
+
+  /**
+   * The todo tool writes the session's own plan and declares requiresApproval:'never'. A tainted turn
+   * used to ask about it anyway - with risk 'destructive', because every band but 'always' was
+   * written as that - and the call was refused. A declared 'never' is the author's word that no call
+   * of the tool needs a person; taint escalates only a tool that left the band to the kernel.
+   */
+  it('a tainted turn never routes a tool that declares requiresApproval never to approval', async () => {
+    const planTool = {
+      name: 'plan_note',
+      description: 'plan',
+      parameters: Type.Object({}),
+      meta: {
+        isReadOnly: false,
+        isDestructive: false,
+        isConcurrencySafe: false,
+        isOpenWorld: false,
+        replay: 'idempotent' as const,
+        costHint: undefined,
+        deferLoading: undefined,
+        requiresApproval: 'never' as const,
+      },
+      execute: async () => ({ content: [{ type: 'text' as const, text: 'planned' }] }),
+    } as never
+    const registry = new ToolRegistry()
+    registry.add(openWorldTool(), { source: 's', trust: 'builtin' })
+    registry.add(planTool, { source: 's', trust: 'builtin' })
+    registry.add(writeTool(), { source: 's', trust: 'builtin' })
+    const asks: string[] = []
+    const seams = fakeSeams({
+      approval: {
+        ask: async (req) => {
+          asks.push(req.tool?.name ?? req.kind)
+          return 'allowed-once'
+        },
+        resume: async () => null,
+      },
+    })
+    const s = await atTools(
+      [toolTurn('fetch_page', {}), toolTurn('plan_note', {}), toolTurn('write_note', { text: 'a' })],
+      registry,
+      seams,
+    )
+    await s.session.runToolsPhase()
+    expect(s.tracker.state.taint.get('main')).toBe(true)
+    await s.session.step() // checkpoint -> inference
+    await s.session.step() // the second inference, which plans plan_note
+    expect(await s.session.runToolsPhase()).toEqual({ phase: 'checkpoint' })
+    expect(asks).toEqual([])
+    expect((await s.log.scan({ type: 'tool/result', limit: 10 })).at(-1)?.data).toMatchObject({
+      isError: false,
+    })
+    // A tool that declared nothing still asks once the turn is tainted: its band is the kernel's.
+    await s.session.step()
+    await s.session.step()
+    expect(await s.session.runToolsPhase()).toEqual({ phase: 'checkpoint' })
+    expect(asks).toEqual(['write_note'])
+    const calls = await s.log.scan({ type: 'tool/call', limit: 10 })
+    const band = (name: string) =>
+      (
+        calls.find((e) => (e.data as { name: string }).name === name)?.data as
+          | { resolvedPolicy: { requiresApproval: string } }
+          | undefined
+      )?.resolvedPolicy.requiresApproval
+    expect([band('plan_note'), band('write_note')]).toEqual(['never', 'destructive'])
   })
 
   /** Yolo overrides an ordinary destructive ask too, not just the subagent/taint exemptions above. */

@@ -59,7 +59,7 @@
         },
         "requiresApproval": {
           "oneOf": [{ "enum": ["never", "destructive", "always"] }, { "type": "null" }],
-          "description": "The approval band; null lets isDestructive and the command policy table decide. Consumed by the approval stage."
+          "description": "The approval band. always asks about every call; destructive asks when the call is destructive or the turn is tainted; never asks about no call, a tainted turn included. null resolves to destructive for a tool that may write and to never for a read-only one, and the command policy table may still decide. Consumed by the approval stage."
         },
         "returnsImages": {
           "type": "boolean",

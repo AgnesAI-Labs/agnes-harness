@@ -415,6 +415,12 @@ function isDeclaredAsyncFunction(value: (...args: never[]) => unknown): boolean 
  * Resolve one already-schema-validated call. Static tools retain their exact historical safety
  * meaning and receive no additional approval scopes. Invalid or asynchronous classifier output is
  * rejected instead of falling back to permissive metadata.
+ *
+ * A tool that declares no band leaves it to the kernel. One that may write resolves to
+ * 'destructive' - asked when the call is destructive or the turn is tainted, which is what it was
+ * always asked under - and only a read-only one to 'never'. 'never' is kept for the author's own
+ * statement that no call needs a person, which a tainted turn does not override, so a writer that
+ * said nothing cannot share it.
  */
 export function resolveToolCallPolicy<P extends TSchema>(
   def: ToolDef<P>,
@@ -425,7 +431,9 @@ export function resolveToolCallPolicy<P extends TSchema>(
       isReadOnly: def.meta.isReadOnly,
       isDestructive: def.meta.isDestructive,
       replay: def.meta.replay,
-      requiresApproval: def.meta.requiresApproval ?? (def.meta.isDestructive ? 'destructive' : 'never'),
+      requiresApproval:
+        def.meta.requiresApproval ??
+        (def.meta.isDestructive || !def.meta.isReadOnly ? 'destructive' : 'never'),
       approvalScopes: Object.freeze([]),
     })
   const value: unknown = def.classify(args)
