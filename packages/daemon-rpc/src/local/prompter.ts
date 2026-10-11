@@ -144,6 +144,8 @@ export class PrompterRouter implements Prompter {
       )
         return this.done(req.requestId, 'malformed', { verdict: 'unavailable', reason: 'invalid-answer' })
       const answeredBy = await this.o.localActor(req.sessionKey)
+      if (opts.signal.aborted)
+        return this.done(req.requestId, 'aborted', { verdict: 'cancelled', reason: 'stopped' })
       if (!validateAgainst(ActorSchema, answeredBy).ok)
         return this.done(req.requestId, 'malformed', { verdict: 'unavailable', reason: 'invalid-answer' })
       if (deadline <= this.o.clock())

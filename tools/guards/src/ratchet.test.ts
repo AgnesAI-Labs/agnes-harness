@@ -295,7 +295,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon-rpc/src/local/methods/extensions': 199,
   'packages/daemon-rpc/src/local/auth': 341,
   // UI refresh forwarding. HEAD was 8143 against the previous 8057 ceiling; this change adds 11.
-  'packages/daemon-rpc/src': 8335,
+  'packages/daemon-rpc/src': 8337,
   'packages/daemon/src/supervisor/startup': 18,
   'packages/daemon/src/supervisor/discovery': 446,
   'packages/daemon/src/supervisor/scope': 254,

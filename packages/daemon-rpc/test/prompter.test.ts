@@ -63,6 +63,30 @@ describe('PrompterRouter', () => {
     expect(log).toEqual([{ requestId: 'r1', via: 'local', verdict: 'allowed-once', answeredBy: actor }])
   })
 
+  it('refuses a local answer when stop arrives during credential resolution', async () => {
+    const controller = new AbortController()
+    let resolve!: (value: typeof actor) => void
+    let enter!: () => void
+    const entered = new Promise<void>((ready) => {
+      enter = ready
+    })
+    const { r, log } = mk({
+      local: { ask: async () => 'allowed-once' },
+      localActor: () => {
+        enter()
+        return new Promise((ready) => {
+          resolve = ready
+        })
+      },
+    })
+    const pending = r.ask(req as never, { signal: controller.signal })
+    await entered
+    controller.abort('stopped')
+    resolve(actor)
+    await expect(pending).resolves.toEqual({ verdict: 'cancelled', reason: 'stopped' })
+    expect(log).toEqual([{ requestId: 'r1', via: 'aborted', verdict: 'cancelled', reason: 'stopped' }])
+  })
+
   it('only routes to a connection that declared the permission capability, and maps the answer', async () => {
     const { ep, r, log } = mk()
     // Without the capability the router must not send anything at all.
