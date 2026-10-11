@@ -22,7 +22,7 @@ Core 继续负责主体授权、审批决策请求、沙箱、效果记录和恢
 
 参见[只读策略示例](../../examples/policies/read-only/)和[循环事件](loop-events.zh-CN.md)。
 
-设置 `meta.deferLoading: true` 可从初始模型请求中省略工具 schema。官方 `tool_search` 同时搜索当前可用的延迟插件工具与 MCP 索引；`tool_describe` 调用可选端口 `ToolContext.tools.disclose(name): Promise<void>`，使可用 schema 出现在后续请求中。Core 持久化这项选择，并拒绝冻结的 turn 目录之外或当前模型能力不支持的名称。披露与授权独立：调用仍经过原有参数校验、策略、审批与取消通道。已知工作流所需工具的自定义 Loop，可以通过 `prepareRequest({ tools: [...] })` 显式选择确切名称。
+设置 `meta.deferLoading: true` 可从初始模型请求中省略工具 schema。官方 `tool_search` 同时搜索当前可用的延迟插件工具与 MCP 索引。查询按词计分，含确切工具名的词优先（例如 `ui_render render detail card UI`）；结果上限与显式 Skill 发现槽位仍生效；`tool_describe` 调用可选端口 `ToolContext.tools.disclose(name): Promise<void>`，使可用 schema 出现在后续请求中。Core 持久化这项选择，并拒绝冻结的 turn 目录之外或当前模型能力不支持的名称。披露与授权独立：调用仍经过原有参数校验、策略、审批与取消通道。已知工作流所需工具的自定义 Loop，可以通过 `prepareRequest({ tools: [...] })` 显式选择确切名称。
 
 可选的 `meta.isPresentational: true` 表示效果只向用户公布展示状态，没有外部副作用。它不能与 `isDestructive` 或 `isOpenWorld` 同时为真。默认工具策略不会仅因 turn 被污染而升级一个非只读的 presentational 工具。`requiresApproval: always` 和破坏性审批档仍然询问。省略该标志时，工具仍受污染写入的审批约束。[工具元数据参考](../../packages/extension-api/docs/tools-meta.md) 与其他元数据键一起列出该标志。
 

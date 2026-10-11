@@ -19,15 +19,34 @@ export interface ToolIndex {
  * which lets `agnes/mcp-search` depend on the hub alone instead of also reaching for the raw index. */
 export type ToolIndexReader = Pick<ToolIndex, 'search' | 'get'>
 
+const queryTerms = (query: string): string[] => [
+  ...new Set(
+    query
+      .toLocaleLowerCase()
+      .split(/[^\p{L}\p{N}_-]+/u)
+      .filter(Boolean),
+  ),
+]
+
 const scoreRows = (rows: ToolIndexRow[], query: string, limit: number): ToolIndexHit[] => {
-  const q = query.trim().toLocaleLowerCase()
-  if (!q || limit <= 0) return []
-  const hit = (value: string): boolean => value.toLocaleLowerCase().includes(q)
+  const terms = queryTerms(query)
+  if (!terms.length || limit <= 0) return []
   return rows
-    .map((row) => ({
-      name: row.name,
-      score: (hit(row.name) ? 3 : 0) + (hit(row.description) ? 1 : 0) + (hit(row.schema) ? 0.5 : 0),
-    }))
+    .map((row) => {
+      const name = row.name.toLocaleLowerCase()
+      const description = row.description.toLocaleLowerCase()
+      const schema = row.schema.toLocaleLowerCase()
+      const score = terms.reduce(
+        (sum, term) =>
+          sum +
+          (name.includes(term) ? 3 : 0) +
+          (description.includes(term) ? 1 : 0) +
+          (schema.includes(term) ? 0.5 : 0),
+        0,
+      )
+      // More than the maximum score of any row without an exact tool-name term.
+      return { name: row.name, score: score + (terms.includes(name) ? terms.length * 4.5 + 1 : 0) }
+    })
     .filter(({ score }) => score > 0)
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
     .slice(0, limit)
@@ -78,21 +97,25 @@ export class SqliteToolIndex implements ToolIndex {
   }
 
   search(query: string, limit: number): ToolIndexHit[] {
-    const term = query.trim()
-    if (!term || limit <= 0) return []
+    const terms = queryTerms(query)
+    if (!terms.length || limit <= 0) return []
     // FTS5's trigram tokenizer cannot match terms shorter than three Unicode characters. Two
     // characters are a normal Chinese search, so keep the same observable substring semantics by
     // scanning the small catalog for those queries instead of returning a false empty result.
-    if (this.mode === 'portable' || Array.from(term).length < 3)
+    if (this.mode === 'portable' || terms.some((term) => Array.from(term).length < 3))
       return scoreRows(
         this.table.all<ToolIndexRow>('SELECT name, description, schema FROM tool_index'),
-        term,
+        query,
         limit,
       )
-    const match = `"${term.replace(/"/g, '""')}"`
-    return this.table.all<ToolIndexHit>(
-      'SELECT name, bm25(tool_index, 3.0, 1.0, 0.5) AS score FROM tool_index WHERE tool_index MATCH ? ORDER BY score LIMIT ?',
-      [match, limit],
+    const match = terms.map((term) => `"${term.replace(/"/g, '""')}"`).join(' OR ')
+    return scoreRows(
+      this.table.all<ToolIndexRow>(
+        'SELECT name, description, schema FROM tool_index WHERE tool_index MATCH ?',
+        [match],
+      ),
+      query,
+      limit,
     )
   }
 

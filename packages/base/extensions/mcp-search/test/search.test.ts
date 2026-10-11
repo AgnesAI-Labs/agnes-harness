@@ -31,6 +31,13 @@ describe('MemFts', () => {
       { name: 'a_tool', description: 'same', schema: '{}' },
     ])
     expect(index.search('same', 2).map((hit) => hit.name)).toEqual(['a_tool', 'z_tool'])
+    index.upsert([
+      { name: 'ui_render', description: 'Render a bounded surface', schema: '{}' },
+      { name: 'render_card', description: 'ui_render render detail card UI', schema: '{}' },
+    ])
+    expect(index.search('UI_RENDER render detail card UI', 1).map((hit) => hit.name)).toEqual(['ui_render'])
+    expect(index.search('render detail card', 2).map((hit) => hit.name)).toEqual(['render_card', 'ui_render'])
+    expect(index.search('ui_render extra terms', 0)).toEqual([])
   })
 
   it('replaces rows by exact name and does not match an empty query', () => {
@@ -43,33 +50,6 @@ describe('MemFts', () => {
 })
 
 describe('SqliteToolIndex', () => {
-  it('uses FTS5 trigram and the planned bm25 weights when the table adapter permits it', () => {
-    const calls: Array<{ kind: string; sql: string; params?: readonly unknown[] }> = []
-    const table = {
-      name: 'tool_index',
-      exec: (sql: string) => calls.push({ kind: 'exec', sql }),
-      run: (sql: string, params?: readonly unknown[]) => {
-        calls.push({ kind: 'run', sql, ...(params ? { params } : {}) })
-        return { changes: 1 }
-      },
-      all: <T>(sql: string, params?: readonly unknown[]) => {
-        calls.push({ kind: 'all', sql, ...(params ? { params } : {}) })
-        return [{ name: 'mcp_gh_list_prs', score: -1 }] as T[]
-      },
-      get: <T>() => undefined as T | undefined,
-      transaction: <T>(fn: () => T) => fn(),
-    }
-    const index = new SqliteToolIndex(table)
-    expect(index.mode).toBe('fts5')
-    expect(calls[0]?.sql).toContain("USING fts5(name, description, schema, tokenize='trigram')")
-    expect(index.search('pull "open"', 4)).toEqual([{ name: 'mcp_gh_list_prs', score: -1 }])
-    expect(calls.at(-1)).toMatchObject({
-      kind: 'all',
-      sql: expect.stringContaining('bm25(tool_index, 3.0, 1.0, 0.5)'),
-      params: ['"pull ""open"""', 4],
-    })
-  })
-
   it('falls back to a persistent ordinary table when virtual tables are denied', () => {
     const table = new MemTable('tool_index')
     const one = new SqliteToolIndex(table)
@@ -97,7 +77,7 @@ describe('SqliteToolIndex', () => {
     expect(index.get('mcp_gh_merge')).toEqual(rows[1])
   })
 
-  it('executes real FTS5 trigram/BM25 queries and preserves two-character Chinese search', () => {
+  it('executes real FTS5 term queries with canonical ranking and preserves two-character Chinese search', () => {
     const db = new DatabaseSync(':memory:')
     const table = {
       name: 'tool_index',
@@ -127,10 +107,16 @@ describe('SqliteToolIndex', () => {
       index.upsert([...rows, { name: 'mcp_pull_exact', description: 'miscellaneous action', schema: '{}' }])
       expect(index.search('pull', 5).map((hit) => hit.name)).toEqual([
         'mcp_pull_exact',
-        'mcp_gh_merge',
         'mcp_gh_list_prs',
+        'mcp_gh_merge',
       ])
       expect(index.search('销售', 5)).toEqual([{ name: 'mcp_db_query', score: 1 }])
+      index.upsert([
+        { name: 'ui_render', description: 'Render a surface', schema: '{}' },
+        { name: 'render_card', description: 'ui_render render detail card UI', schema: '{}' },
+      ])
+      for (const query of ['ui_render render detail card UI', 'ui_render render detail card'])
+        expect(index.search(query, 1).map((hit) => hit.name)).toEqual(['ui_render'])
     } finally {
       db.close()
     }
@@ -435,6 +421,27 @@ describe('tool_search / tool_describe', () => {
     const index = new MemFts()
     expect(await toolSearchTool(index).execute({ query: 'review' }, ctx)).toMatchObject({
       content: [{ text: expect.stringContaining('ui_render — Render a review surface') }],
+    })
+    ctx.tools.list = () => [tool, { ...tool, name: 'render_card', description: 'render detail card UI' }]
+    const search = toolSearchTool(index, {
+      runInWorkspace,
+      list: () => [
+        {
+          resourceId: 'skill/user/ui-review',
+          name: 'ui-review',
+          description: 'ui_render render detail card UI',
+          revision: 'a'.repeat(64),
+          sourceIdentity: { scope: 'user', rootKey: 'user-agnes', sourceId: 'ui-review' },
+          actual: 'ready',
+        },
+      ],
+    })
+    const query = 'ui_render render detail card UI'
+    expect(await search.execute({ query, limit: 1 }, ctx)).toMatchObject({
+      content: [{ text: expect.stringMatching(/^ui_render —/) }],
+    })
+    expect(await search.execute({ query: query + ' Skill', limit: 2 }, ctx)).toMatchObject({
+      content: [{ text: expect.stringMatching(/^ui_render —[\s\S]*Skill ui-review/) }],
     })
     expect(disclosed).toEqual([])
     expect(await toolDescribeTool(index).execute({ name: 'ui_render' }, ctx)).toMatchObject({
