@@ -56,6 +56,8 @@ const pause = (ms: number, signal: AbortSignal): Promise<void> =>
   })
 
 export type PrompterRouterOptions = {
+  /** Lifetime of an owning embedded endpoint; shared daemon routers omit it. */
+  signal?: AbortSignal
   local?: Prompter
   endpointFor: (conn: ConnectionState) => LocalEndpoint
   connections: () => ConnectionState[]
@@ -78,6 +80,7 @@ export class PrompterRouter implements Prompter {
   }
 
   async ask(req: ApprovalRequest, opts: { signal: AbortSignal }): Promise<PrompterAnswer> {
+    if (this.o.signal) opts = { signal: AbortSignal.any([opts.signal, this.o.signal]) }
     if (this.o.local) return this.done(req.requestId, 'local', await this.o.local.ask(req, opts))
     const params = {
       sessionId: req.sessionKey,

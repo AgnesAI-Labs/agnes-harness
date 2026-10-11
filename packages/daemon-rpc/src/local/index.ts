@@ -364,7 +364,9 @@ export function createLocalEndpoint(
     ...(opts.pollMs !== undefined ? { pollMs: opts.pollMs } : {}),
     observe: (sessionKey, event, cwd) => indexApprovalTicket(tickets, sessionKey, event, cwd),
   })
+  const prompterLifetime = new AbortController()
   const prompter = new PrompterRouter({
+    signal: prompterLifetime.signal,
     ...(opts.prompter ? { local: opts.prompter } : {}),
     endpointFor: () => ep,
     connections: () => [ep.conn],
@@ -580,6 +582,8 @@ export function createLocalEndpoint(
       // client otherwise leaves its approval request parked while registry.closeAll() waits for the
       // same session invocation to drain.
       ep.stopIntake()
+      // The embedded endpoint owns these callbacks; drain them before retiring session seams.
+      prompterLifetime.abort()
       await close()
       disposeFeeds(feeds)
       if (ownsCommandQueue) await commandQueue.close()
