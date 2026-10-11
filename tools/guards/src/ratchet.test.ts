@@ -417,7 +417,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // PLUGIN-HELPER: measured 5763 -> 5770; approved feature scope, no spare allocation.
   // Windows stale-lock reclamation added 17 counted lines; exact baseline total, no spare.
   // Windows Unicode package copying replaces three crashing cpSync paths; exact measured total.
-  'packages/package-manager/src': 5803,
+  // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 5941, exact.
+  'packages/package-manager/src': 5941,
   'packages/package-manager/src/catalog': 211,
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
@@ -659,7 +660,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // so the packaged worker resolves its home the same way the daemon does. Re-measured on the tree
   // rebased onto 9a3d70ed (which itself reached 936): 937, exact cap.
   // 2026-09-22 Web Plugins parity: package asset and service BFF launcher integration. Exact.
-  'packages/cli/launch': 1178, // SKILL-INSTALL-CORE: preserve request-only port in packaged Host options.
+  // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 1196, exact.
+  'packages/cli/launch': 1196, // SKILL-INSTALL-CORE: preserve request-only port in packaged Host options.
   // 2026-09-14: whole-branch review fix wave (Finding 1), same as above. Measured 90, exact --
   // unaffected by the workspace-picker change (different file, same aggregate prefix).
   // 2026-09-14: Task 4 profile-command-plan wires packages.trustWorkspace into invoke()'s switch --
@@ -1301,7 +1303,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // The Kernel receives the spawned-child turn admission. Measured 4193, exact, no spare (+1).
   // A returning package must not be served a cached generation bound to revoked leases (+7), and the
   // full-access read-only roots reach the fence from the assembly (+7). Measured 4207, exact.
-  'packages/host/src/assemble': 4207,
+  // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 4211, exact.
+  'packages/host/src/assemble': 4211,
   // P1: generated-schema validators and duplicate projection-name refusal; measured exact cap.
   // F1 adds Surface JSON/identity validation and lock snapshot validation.
   // PM4 adds strict management DTO validation and method permission/identity contracts; exact total.
@@ -1934,7 +1937,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-06: bound image transport byte totals and split oversized worker scan ranges; 26818, exact.
   // Preset refusal causes and doctor provider/profile checks merged with main; measured 26898, exact.
   // Combined diagnostics fixes (credential store detail, preset refusal, startup reason, secrets) on main; measured 26917, exact.
-  'packages/daemon/src': 26917,
+  // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 26919, exact.
+  'packages/daemon/src': 26919,
   'packages/daemon/src/packages/admin-session': 46,
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left
@@ -2674,7 +2678,8 @@ const INITIAL_CEILING: Record<string, number> = {
   // Measured 38359, exact.
   // Approval reasons: the Prompter type may answer with a reason (+2). Measured 38398 (combined tree), exact cap.
   // Combined diagnostics fixes (credential store detail, preset refusal, startup reason, secrets) on main; measured 38668, exact.
-  'packages/host/src': 38668,
+  // Package reads reuse verification, plugin loading hashes asynchronously, no Surface table polling; measured 38672, exact.
+  'packages/host/src': 38672,
   'packages/host/src/ext-host/service-invocation': 247,
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
   // hide in the package-wide increment. Measured source: 86 lines.

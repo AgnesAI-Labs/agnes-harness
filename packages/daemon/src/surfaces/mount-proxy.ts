@@ -59,6 +59,8 @@ function normalizeUpstreamHeaders(headers: IncomingHttpHeaders): Record<string, 
  */
 export function createMountProxy(deps: {
   lookup(pathname: string): MountProxyMatch | undefined
+  /** Called when the Surface a mount points at cannot be reached, so the caller can re-read its table. */
+  onUnreachable?(match: MountProxyMatch): void
 }): (req: IncomingMessage, res: ServerResponse) => boolean {
   return (req, res) => {
     const rawUrl = req.url ?? '/'
@@ -115,6 +117,7 @@ export function createMountProxy(deps: {
       },
     )
     upstream.on('error', () => {
+      deps.onUnreachable?.(match)
       if (!res.headersSent) res.writeHead(502, { 'content-type': 'text/plain' })
       res.end('surface unavailable')
     })

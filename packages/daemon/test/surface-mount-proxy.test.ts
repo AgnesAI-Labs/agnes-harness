@@ -172,3 +172,25 @@ it('M2: falls back to a safe 502 instead of throwing when writeHead rejects a he
   expect(res.writeHead).toHaveBeenLastCalledWith(502, { 'content-type': 'text/plain' })
   expect(res.end).toHaveBeenCalledWith('surface unavailable')
 })
+
+it('reports a mount whose Surface cannot be reached, and answers 502', async () => {
+  // A port that was listening and is now closed stands in for a Surface the daemon replaced.
+  const gone = createServer()
+  const gonePort = await listen(gone)
+  await new Promise<void>((resolve) => gone.close(() => resolve()))
+  const onUnreachable = vi.fn()
+  const proxy = createMountProxy({
+    lookup: (pathname) =>
+      pathname.startsWith('/demo') ? { host: '127.0.0.1', port: gonePort, mount: '/demo' } : undefined,
+    onUnreachable,
+  })
+  front = createServer((req, res) => {
+    if (proxy(req, res)) return
+    res.writeHead(404)
+    res.end('static fallback')
+  })
+  const response = await get(await listen(front), '/demo/version')
+  expect(response.status).toBe(502)
+  expect(response.body).toBe('surface unavailable')
+  expect(onUnreachable).toHaveBeenCalledWith({ host: '127.0.0.1', port: gonePort, mount: '/demo' })
+})

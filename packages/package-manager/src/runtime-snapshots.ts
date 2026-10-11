@@ -14,8 +14,10 @@ import {
   capabilityHash,
   freezeData,
   readStaticJson,
+  rememberVerified,
   snapshotHash,
   syncDirectory,
+  type VerificationCache,
 } from './integrity.js'
 import { type InstalledPackage, isSnapshotPackageEligible, verifyPackageDirectory } from './inventory.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
@@ -325,6 +327,14 @@ function trusted(entry: LockEntry, record: SnapshotRecord): boolean {
       entry.trustDecision.capabilityHash === record.capabilityHash)
   )
 }
+/** Whether a snapshot directory matches its recorded digest, reusing an earlier match from `cache`. */
+function snapshotTreeMatches(directory: string, treeIntegrity: string, cache?: VerificationCache): boolean {
+  if (cache?.trees.get(directory) === treeIntegrity) return true
+  if (hashDirectory(directory, { exclude: [] }) !== treeIntegrity) return false
+  if (cache) rememberVerified(cache.trees, directory, treeIntegrity)
+  return true
+}
+
 function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory: string): RuntimeSnapshot {
   const checkedRecord = validateRecord(record)
   let root: string, actual: string
@@ -339,7 +349,7 @@ function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory
   }
   if (!contained(root, actual) || actual === root || basename(actual) !== checkedRecord.snapshotId)
     integrityFailure('runtime-path-escape')
-  if (hashDirectory(actual, { exclude: [] }) !== checkedRecord.treeIntegrity)
+  if (!snapshotTreeMatches(actual, checkedRecord.treeIntegrity, s.verified))
     integrityFailure('runtime-tree-mismatch')
   const source = parseSource(checkedRecord.source.ref)
   if (canonical(source) !== canonical(checkedRecord.source)) integrityFailure('runtime-source-mismatch')
@@ -348,6 +358,7 @@ function verifyRecord(s: RuntimeSnapshotStore, record: SnapshotRecord, directory
     recordEntry(checkedRecord),
     actual,
     contributionCeiling(checkedRecord),
+    s.verified,
   )
   return freezeData({
     snapshotId: checkedRecord.snapshotId,
@@ -566,13 +577,19 @@ function clearJournal(s: RuntimeSnapshotStore): void {
 
 /** Caller holds the PackageManager Profile lock. Runtime state never decides the active revision. */
 export function recoverRuntimeSnapshotStore(s: RuntimeSnapshotStore): void {
-  const root = runtimeRoot(s)
   rmSync(`${statePath(s)}.tmp`, { force: true })
   if (!present(journalPath(s))) {
     rmSync(`${journalPath(s)}.tmp`, { force: true })
     assertKnownRuntimeDirectories(s, readState(s))
     return
   }
+  // An interrupted transaction is always checked against the disk, never against earlier results.
+  const { verified: _earlier, ...strict } = s
+  recoverRuntimeJournal(strict)
+}
+
+function recoverRuntimeJournal(s: RuntimeSnapshotStore): void {
+  const root = runtimeRoot(s)
   const state = readState(s),
     journal = readJournal(s)
   mkdirSync(root, { recursive: true })

@@ -12,7 +12,7 @@ import { canonical, freezeData, readStaticJson } from './integrity.js'
 import type { InstalledInventory, InstalledPackage } from './inventory.js'
 import { type AgnesPluginManifestEntry, parseAgnesPluginEntries } from './plugin-manifest.js'
 import type { RuntimePin, RuntimeSnapshot } from './runtime-snapshots.js'
-import { hashDirectory } from './sources.js'
+import { hashDirectoryAsync } from './sources.js'
 
 export interface PackagePluginModuleLoader {
   importModule(snapshot: RuntimeSnapshot): Promise<Readonly<Record<string, unknown>>>
@@ -146,10 +146,10 @@ function integrityFailure(reason: string): never {
   })
 }
 
-function assertSnapshotTree(snapshot: RuntimeSnapshot, reason: string): void {
+async function assertSnapshotTree(snapshot: RuntimeSnapshot, reason: string): Promise<void> {
   let digest: string
   try {
-    digest = hashDirectory(snapshot.directory, { exclude: [] })
+    digest = await hashDirectoryAsync(snapshot.directory, { exclude: [] })
   } catch {
     integrityFailure(reason)
   }
@@ -195,7 +195,7 @@ export async function loadPackagePlugins(
   input: LoadPackagePluginsInput,
 ): Promise<readonly LoadedPackagePlugin[]> {
   if (!Number.isSafeInteger(input.generation) || input.generation < 1) stateFailure('generation')
-  assertSnapshotTree(input.snapshot, 'snapshot-stale')
+  await assertSnapshotTree(input.snapshot, 'snapshot-stale')
   const declarations = readDeclarations(input.snapshot)
   if (!declarations.length) return Object.freeze([])
   if (declarations.some((declaration) => declaration.runtime === 'isolated'))
@@ -210,7 +210,7 @@ export async function loadPackagePlugins(
     importFailed = true
   }
 
-  assertSnapshotTree(input.snapshot, 'snapshot-changed')
+  await assertSnapshotTree(input.snapshot, 'snapshot-changed')
   if (canonical(readDeclarations(input.snapshot)) !== declarationSnapshot)
     integrityFailure('snapshot-manifest-changed')
   if (importFailed) stateFailure('module-import')
@@ -228,7 +228,6 @@ export async function loadPackagePlugins(
       entry: normalizeExport(imported as Readonly<Record<string, unknown>>, declaration),
     }),
   )
-  assertSnapshotTree(input.snapshot, 'snapshot-changed')
   return Object.freeze(loaded)
 }
 
@@ -267,7 +266,7 @@ export function createLivePackageSnapshotVerifier(
   })
 }
 
-function verifySource(
+async function verifySource(
   source: Readonly<RuntimePluginSnapshot> | undefined,
   candidate: Readonly<PackageSnapshotCandidateRef>,
 ) {
@@ -277,7 +276,7 @@ function verifySource(
       `no installed snapshot authority for ${candidate.packageId}`,
     )
   }
-  assertSnapshotTree(source.snapshot, 'snapshot-changed')
+  await assertSnapshotTree(source.snapshot, 'snapshot-changed')
   const exports = readDeclarations(source.snapshot).map(({ export: exportName }) => exportName)
   return freezeData({
     packageId: source.snapshot.packageId,

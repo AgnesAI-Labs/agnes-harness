@@ -10,6 +10,7 @@ import {
   rmSync,
   statSync,
 } from 'node:fs'
+import { lstat, readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { runIsolatedCommand } from '@agnes/package-isolation'
 import { bundledPluginSourceRoot } from './bundled-plugin-source.js'
@@ -184,6 +185,84 @@ export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: 
     const inner = createHash('sha256').update(rel).update('\0').update(readFileSync(file)).digest()
     outer.update(inner)
   }
+  return `sha256-${outer.digest('hex')}`
+}
+
+/** Files read at once by `hashDirectoryAsync`. */
+const HASH_READ_CONCURRENCY = 16
+
+/**
+ * The same digest as `hashDirectory`, with the same checks and errors, but on asynchronous file
+ * system calls so the event loop keeps serving while a large tree is read. Files are read several at
+ * a time and folded into the result in the same sorted order.
+ */
+export async function hashDirectoryAsync(
+  dir: string,
+  opts: { exclude?: string[]; signal?: AbortSignal } = {},
+): Promise<string> {
+  checkCancelled(opts.signal)
+  let root: string
+  try {
+    if ((await lstat(dir)).isSymbolicLink())
+      throw sourceError('package directory is a symbolic link', 'symlink')
+    root = await realpath(dir)
+  } catch (error) {
+    if (error instanceof PackageError) throw error
+    throw sourceError('package directory is unavailable', 'directory-unavailable')
+  }
+  try {
+    if (!(await stat(root)).isDirectory())
+      throw sourceError('package source is not a directory', 'not-directory')
+  } catch (error) {
+    if (error instanceof PackageError) throw error
+    throw sourceError('package directory changed while hashing', 'tree-changed')
+  }
+  const rules = normalizedExcludes(opts.exclude ?? [...DEFAULT_EXCLUDES])
+  const files: Array<{ rel: string; file: string }> = []
+  const walk = async (current: string): Promise<void> => {
+    // Entries of one directory are checked in parallel; the first failure in directory order wins,
+    // as it does in the synchronous walk.
+    const checked = await Promise.allSettled(
+      (await readdir(current, { withFileTypes: true })).map(async (entry) => {
+        checkCancelled(opts.signal)
+        const file = join(current, entry.name)
+        const rel = relative(root, file).split(sep).join('/')
+        if (excluded(rel, rules)) return
+        const entryStat = await lstat(file)
+        if (entryStat.isSymbolicLink()) throw sourceError('package tree contains a symbolic link', 'symlink')
+        if (entryStat.isDirectory()) return walk(file)
+        if (!entryStat.isFile()) throw sourceError('package tree contains a special entry', 'special-entry')
+        let actual: string
+        try {
+          actual = await realpath(file)
+        } catch {
+          throw sourceError('package file changed while hashing', 'tree-changed')
+        }
+        if (!contained(root, actual)) throw sourceError('package file escapes its source tree', 'path-escape')
+        files.push({ rel, file })
+      }),
+    )
+    for (const result of checked) if (result.status === 'rejected') throw result.reason
+  }
+  await walk(root)
+  files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
+  const inner: Buffer[] = new Array(files.length)
+  let next = 0
+  const reader = async (): Promise<void> => {
+    while (next < files.length) {
+      const index = next++
+      checkCancelled(opts.signal)
+      const { rel, file } = files[index] as { rel: string; file: string }
+      inner[index] = createHash('sha256')
+        .update(rel)
+        .update('\0')
+        .update(await readFile(file))
+        .digest()
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(HASH_READ_CONCURRENCY, files.length) }, reader))
+  const outer = createHash('sha256')
+  for (const digest of inner) outer.update(digest)
   return `sha256-${outer.digest('hex')}`
 }
 
