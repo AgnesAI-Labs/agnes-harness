@@ -46,6 +46,7 @@ Taking AI into a real deployment is rarely about the model alone. It is about th
 - [What AGH is, and what it is not](#what-agh-is-and-what-it-is-not)
 - [Architecture: brain, cerebellum, memory and body](#architecture)
 - [What AGH does for a deployment team](#what-agh-does-for-a-deployment-team)
+- [Demo videos and reproduction](#demo-videos-and-reproduction)
 - [Public benchmark](#public-benchmark)
 - [Who it is for](#who-it-is-for)
 - [Start from an example](#start-from-an-example)
@@ -140,6 +141,20 @@ Capture task methods in [Skills](docs/guide/skills.md) and package reusable busi
 ### 6. The site also has devices
 
 From inspection to instrument coordination, field work connects device state, human judgment, and business workflows. Agnes MHS (Model Hardware Standard) is AGH's own open device protocol, independent of MCP and of vendor-specific SDKs: a device connects to AgnesHub over WebSocket, registers its state, tools, and data sources, and takes calls. Its companion MOS (Model Observation Standard) streams what the device observes, such as camera images, maps, and places. State reads, action requests, and results join the same task flow. [Try devices without hardware →](docs/guide/mhs.md)
+
+## Demo videos and reproduction
+
+### MHS Mars rescue: coordinating devices
+
+<p align="center">
+  <a href="https://youtu.be/absoBkphEHE">
+    <img src="docs/assets/readme/mars-rescue.svg" alt="Mars rescue video preview: the simulated base, device observations, and task execution records. Click the play button or cover to watch the English demo on YouTube." width="100%" />
+  </a>
+</p>
+
+Have the agent send the hopper to find an astronaut, then coordinate the robot and airlock to bring them back. AGH runs the task, AgnesHub calls devices through MHS, and MOS returns camera images, poses, and other observations.
+
+**What you need:** AGH, a model that supports images and tool calls, the `@agnes/mhs` plugin, and Mars World in a browser. The repository provides eleven virtual devices; no physical hardware is required. Follow the [Mars base guide](docs/guide/mars-world.md) to start them and give the agent a task.
 
 ## Public benchmark
 
