@@ -148,6 +148,7 @@ export function SettingsHub({
     }
     const route = settingsRoute(id)
     if (!settingsSections.get(route.id)) return
+    const tabFocused = document.activeElement?.getAttribute('role') === 'tab'
     setPage(route.id)
     setDetail(true)
     const url = new URL(location.href)
@@ -155,6 +156,8 @@ export function SettingsHub({
     url.hash = route.anchor ?? ''
     history.replaceState(history.state, '', url)
     if (route.anchor) requestAnimationFrame(() => revealSettingsAnchor(route.anchor ?? ''))
+    if (!tabFocused && window.matchMedia('(max-width: 767px)').matches)
+      requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.settings-back')?.focus())
   }
   const groups = settingsNavigationGroups(settingsSections.entries().filter((entry) => !entry.nativePane))
   const groupEntries = settingsSections
@@ -278,7 +281,12 @@ export function SettingsHub({
               appearance="ghost"
               className="settings-back"
               data-testid="settings-back"
-              onClick={() => setDetail(false)}
+              onClick={() => {
+                setDetail(false)
+                requestAnimationFrame(() =>
+                  document.querySelector<HTMLButtonElement>('.settings-rail [aria-current="page"]')?.focus(),
+                )
+              }}
             >
               {shellText('settings-shell.back')}
             </Button>
@@ -331,8 +339,9 @@ export function SettingsHub({
         )}
         <div
           id={`settings-hub-panel-${page}`}
-          role={!embedded && groupEntries.length > 1 ? 'tabpanel' : undefined}
-          aria-labelledby={!embedded && groupEntries.length > 1 ? `settings-section-tab-${page}` : undefined}
+          {...(!embedded && groupEntries.length > 1
+            ? { role: 'tabpanel', 'aria-labelledby': `settings-section-tab-${page}` }
+            : {})}
         >
           <SettingsPageLayout
             title={sectionTitle(page)}

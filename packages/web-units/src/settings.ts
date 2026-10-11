@@ -754,10 +754,26 @@ function SettingsBuiltinImpl(
         const query = search?.value ?? ''
         const wasAdvanced = advanced?.open ?? false
         // Reconcile registry contributions without replacing the stable search input or tabs.
-        tabs?.replaceChildren()
         const temp = document.createElement('aside')
         buildNavigation(temp, entries)
-        rail.querySelector('.settings-nav-group')?.replaceWith(temp.querySelector('.settings-nav-group')!)
+        const nextNav = temp.querySelector('.settings-nav-group')
+        const oldNav = rail.querySelector('.settings-nav-group')
+        // Controllers and DSH outlets bind to these nodes, so registry refreshes retain them.
+        for (const entry of options.sections?.entries() ?? []) {
+          if (!entry.nativePane || !entry.navigationId) continue
+          const native = root.querySelector<HTMLButtonElement>(`#${entry.navigationId}`)
+          const replacement = nextNav?.querySelector<HTMLButtonElement>(`#${entry.navigationId}`)
+          if (!native || !replacement) continue
+          for (const attribute of [...native.attributes]) native.removeAttribute(attribute.name)
+          for (const attribute of [...replacement.attributes])
+            native.setAttribute(attribute.name, attribute.value)
+          native.replaceChildren(...replacement.childNodes)
+          replacement.replaceWith(native)
+        }
+        const outlets = [...(oldNav?.querySelectorAll<HTMLElement>('[data-agnes-dsh-slot]') ?? [])]
+        nextNav?.querySelector('.settings-nav-label')?.after(...outlets)
+        tabs?.replaceChildren()
+        if (nextNav) oldNav?.replaceWith(nextNav)
         const nextAdvanced = rail.querySelector<HTMLDetailsElement>('#settings-advanced')
         if (nextAdvanced) nextAdvanced.open = wasAdvanced
         advanced = nextAdvanced

@@ -51,7 +51,9 @@ for (const locale of ['en', 'zh-CN']) {
     await expect(page.getByTestId('settings-navigation')).toBeHidden()
     await page.getByTestId('settings-back').click()
     await expect(page.getByTestId('settings-nav-security')).toBeVisible()
+    await expect(page.getByTestId('settings-nav-security')).toBeFocused()
     await section(page, 'security')
+    await expect(page.getByTestId('settings-back')).toBeFocused()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(
       true,
     )

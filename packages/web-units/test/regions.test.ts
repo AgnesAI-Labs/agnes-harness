@@ -121,7 +121,11 @@ describe('independent core web-unit implementations', () => {
     expect(document.activeElement?.getAttribute('data-settings-section')).toBe('second')
     expect(host.querySelector('#config-form')?.getAttribute('data-settings-section')).toBe('second')
     expect(new URL(location.href).searchParams.get('settings')).toBe('second')
+    const nativeControl = host.querySelector('#model-settings')
+    const outlets = [...host.querySelectorAll('[data-agnes-dsh-slot]')]
     for (const listener of changed) listener()
+    expect(host.querySelector('#model-settings')).toBe(nativeControl)
+    for (const outlet of outlets) expect(host.contains(outlet)).toBe(true)
     expect(document.activeElement?.getAttribute('data-settings-section')).toBe('second')
     expect(document.activeElement?.getAttribute('role')).toBe('tab')
     host

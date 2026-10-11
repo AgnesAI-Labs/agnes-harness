@@ -125,6 +125,7 @@ function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionCon
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const [revision, setRevision] = useState(0)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: revision is an explicit refresh.
   useEffect(() => {
     let current = true
     if (!open || !c.api) return
@@ -152,6 +153,7 @@ function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionCon
       data-testid="plugin-diagnostics"
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
+      <RuntimeOccupancy />
       <Button
         appearance="ghost"
         data-testid="settings-refresh"
@@ -280,7 +282,6 @@ const definitions: readonly [
     (c, t) => (
       <>
         <DiagnosticsPanel />
-        <RuntimeOccupancy />
         <RuntimeDetails c={c} t={t} />
       </>
     ),

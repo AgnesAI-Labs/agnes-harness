@@ -399,6 +399,7 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
     await vi.waitFor(() => expect(host.querySelector('[data-testid="doctor-checks"]')).not.toBeNull())
     expect(runtime).not.toHaveBeenCalled()
     expect(occupancy.closest('[data-testid="runtime-occupancy"]')).not.toBeNull()
+    expect(occupancy.closest('details')?.open).toBe(false)
     expect([...host.querySelectorAll('h2')].map((h) => h.textContent)).toEqual(['Runtime & diagnostics'])
     expect(host.querySelector('[data-testid="settings-refresh"]')?.closest('details')?.open).toBe(false)
     expect(settingsSections.get('doctor')).toBeUndefined()

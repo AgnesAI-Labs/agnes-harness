@@ -2,7 +2,6 @@ import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import { adaptResourceAdmin } from '@agnes/web-admin/admin/resources/admin'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
 import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
-import { settingsRoute } from '@agnes/web-units'
 import {
   bindDialogSheets,
   bindDismissibleDialog,
@@ -10,6 +9,7 @@ import {
   createSettingsButton,
   materializeSettingsControls,
 } from '@agnes/web-ui'
+import { settingsRoute } from '@agnes/web-units'
 import { createCommandController } from './app/command-controller.js'
 import { createComposerController } from './app/composer-controller.js'
 import { createSessionController } from './app/session-controller.js'
@@ -18,8 +18,8 @@ import { createTurnController } from './app/turn-controller.js'
 import { mountIntelligentUi } from './intelligent-ui/mount.js'
 import '@agnes/web-admin/settings/registry'
 import type {
-  ConfigSnapshot,
   ComputerUseStatusResult,
+  ConfigSnapshot,
   ContentBlock,
   ModelSettings,
   PageSessionMeta,
