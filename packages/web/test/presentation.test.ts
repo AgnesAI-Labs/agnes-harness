@@ -233,6 +233,14 @@ describe('web presentation controls', () => {
     expect(errorNotice('INTERNAL_ERROR (-32603)', undefined, undefined, 'RATE_LIMIT', undefined, zhT)).toBe(
       '模型服务返回限流错误（HTTP 429）。请稍后重试；若持续出现，请检查该账号的服务额度或联系模型服务方。',
     )
+    // A failure between this machine and the model service is not the backend failing: the notice
+    // points at the network and at the failed turn, which names where it broke or which timer fired.
+    expect(errorNotice('INTERNAL_ERROR (-32603)', undefined, undefined, 'TRANSPORT', undefined, zhT)).toBe(
+      '模型服务请求失败（网络或服务端错误）。请检查网络或代理后重试；失败的回合会显示出错的环节。',
+    )
+    expect(errorNotice('INTERNAL_ERROR (-32603)', undefined, undefined, 'TIMEOUT', undefined, zhT)).toBe(
+      '模型服务未能在时限内响应。请检查网络或代理，或稍后重试；失败的回合会显示触发的是哪种超时。',
+    )
     expect(
       errorNotice(
         '配置已被其他客户端修改，请重新打开设置后再试。',

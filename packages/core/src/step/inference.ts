@@ -1267,6 +1267,16 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
             gen: { status: 'retry_wait', attempt: attempt + 1, notBefore, code: error.code },
           }),
         )
+        // A retried failure ends no turn, so no turn error ever names it. This row is its only
+        // record: without it a two-minute first-token wait that was then retried is a gap in the
+        // ledger that nothing explains. It carries what the turn error would have carried.
+        await s.diag('inference-retry', {
+          effectId: effect.effectId,
+          attempt: attempt + 1,
+          code: error.code,
+          message: error.message,
+          notBefore,
+        })
         return { phase: 'inference' }
       }
       await s.transition(

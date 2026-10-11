@@ -238,8 +238,9 @@ describe('Kernel (I1 assembly)', () => {
 
   it('the diagnostic name set is closed and holds the names written outside the kernel', () => {
     expect(new Set(CORE_DIAG_NAMES).size).toBe(CORE_DIAG_NAMES.length)
-    expect(CORE_DIAG_NAMES).toHaveLength(22)
+    expect(CORE_DIAG_NAMES).toHaveLength(23)
     expect(CORE_DIAG_NAMES).toContain('request-media-window')
+    expect(CORE_DIAG_NAMES).toContain('inference-retry')
     expect(CORE_DIAG_NAMES).toContain('registers-rebuilt')
     expect(CORE_DIAG_NAMES).toContain('contribute-conflict')
     expect(CORE_DIAG_NAMES).toContain('manual-compaction')

@@ -12,6 +12,7 @@ import { type AdapterStreamOptions, WireAdapter, type WireEvent } from '../../ad
 import { AiSetupError } from '../../errors.js'
 import { sha256Hex } from '../../hash.js'
 import { providerPayloadImageError } from './input-limits.js'
+import { type NetFailure, networkFailure, watchBody } from './network.js'
 import { probeInference } from './probe.js'
 import { probeModelsEndpoint } from './probe-models.js'
 import { AGNES_AI_BASE_URL } from './providers/agnes-ai.js'
@@ -201,7 +202,8 @@ export function toPiModel(
  *
  * Retrying stops at the first event. Once a delta has been forwarded the caller has seen part of an
  * answer, and a second attempt would append a second answer to it — so a failure after that point
- * is reported, not retried.
+ * is reported, not retried. A failure that was retried says so: the one error that leaves names how
+ * many requests it took.
  */
 export class PiAdapter extends WireAdapter {
   readonly id: string
@@ -429,18 +431,28 @@ export class PiAdapter extends WireAdapter {
       'mistral-conversations',
       'pi-messages',
     ])
-    // `wire` belongs to one attempt: an abandoned attempt's late response must not overwrite the
-    // metadata of the attempt that replaced it.
+    // `wire` and `net` belong to one attempt: an abandoned attempt's late response must not overwrite
+    // what was learned about the attempt that replaced it.
     const fetchBody =
-      (wire: ResponseMeta): typeof globalThis.fetch =>
+      (wire: ResponseMeta, net: { failure?: NetFailure | undefined }): typeof globalThis.fetch =>
       async (input, init) => {
         const request = new Request(input, init)
         const bytes = new Uint8Array(await request.clone().arrayBuffer())
         checkPayloadBytes(bytes.byteLength)
         opts.reportSent?.({ sentHash: sha256Hex(bytes), transforms })
-        const response = await globalThis.fetch(request)
+        // The client library reports either failure below as "Connection error." or "terminated" and
+        // keeps no code, so this is the last place that holds the error saying what happened.
+        let response: Response
+        try {
+          response = await globalThis.fetch(request)
+        } catch (error) {
+          net.failure = networkFailure(error, 'first-byte')
+          throw error
+        }
         Object.assign(wire, responseMeta(response))
-        return response
+        return watchBody(response, (error) => {
+          net.failure = networkFailure(error, 'stream')
+        })
       }
     // Two deadlines, both enforced here rather than by the wire library, and both merged with the
     // caller's own signal into one controller so the request below sees a single cancellation.
@@ -453,9 +465,16 @@ export class PiAdapter extends WireAdapter {
     const onAbort = () => inner.abort()
     if (opts.signal.aborted) inner.abort()
     else opts.signal.addEventListener('abort', onAbort, { once: true })
-    const total = setTimeout(() => inner.abort(), opts.timeoutMs.total)
+    // Which deadline fired is recorded rather than inferred from whether anything arrived: a total
+    // deadline can also run out before the first token, after retries have spent it.
+    let fired: 'first-token' | 'total' | undefined
+    const deadline = (which: 'first-token' | 'total') => () => {
+      fired ??= which
+      inner.abort()
+    }
+    const total = setTimeout(deadline('total'), opts.timeoutMs.total)
     let first: ReturnType<typeof setTimeout> | undefined = setTimeout(
-      () => inner.abort(),
+      deadline('first-token'),
       opts.timeoutMs.firstToken,
     )
     let firstSeen = false
@@ -465,6 +484,7 @@ export class PiAdapter extends WireAdapter {
     try {
       let attempt = 0
       let authRecoveryAttempted = false
+      const tried = (message: string) => (attempt > 0 ? `${message}, after ${attempt + 1} attempts` : message)
       for (;;) {
         // Per attempt, not shared: two streams in flight in one process must not draw tool-call
         // ordinals from one counter.
@@ -472,6 +492,7 @@ export class PiAdapter extends WireAdapter {
         const nextOrdinal = () => ordinal++
         let emitted = false
         const wire: ResponseMeta = {}
+        const net: { failure?: NetFailure | undefined } = {}
         let retryAfter: number | undefined
         let requestAuth: ModelAuth | undefined
         if (this.resolveCredential) {
@@ -541,7 +562,7 @@ export class PiAdapter extends WireAdapter {
           ...(decl.api === 'openai-codex-responses' && this.resolveCredential
             ? { transport: 'sse' as const }
             : {}),
-          ...(observable.has(decl.api) ? { fetch: fetchBody(wire) } : {}),
+          ...(observable.has(decl.api) ? { fetch: fetchBody(wire, net) } : {}),
         })[Symbol.asyncIterator]()
         try {
           for (;;) {
@@ -559,7 +580,7 @@ export class PiAdapter extends WireAdapter {
               return
             }
             if (next === ABORTED || next.done) break
-            for (const w of translateEvent(next.value, requestModel, nextOrdinal, wire)) {
+            for (const w of translateEvent(next.value, requestModel, nextOrdinal, wire, net.failure)) {
               // HTTP headers and pi's start markers contain no model output.
               if (!firstSeen && w.type !== 'error' && (!('delta' in w) || w.delta.length > 0)) {
                 firstSeen = true
@@ -604,7 +625,7 @@ export class PiAdapter extends WireAdapter {
                 break
               }
               emitted = true
-              yield w
+              yield w.type === 'error' ? { ...w, message: tried(w.message) } : w
               if (w.type === 'done' || w.type === 'error') return
             }
             if (retryAfter !== undefined) break
@@ -624,11 +645,12 @@ export class PiAdapter extends WireAdapter {
           // outcome: an abort is the caller's own decision and is never retried, a deadline is the
           // route's failure and may be.
           const aborted = opts.signal.aborted
+          const status = observable.has(decl.api) ? wire.status : null
           yield {
             type: 'error',
             reason: aborted ? 'aborted' : 'error',
             code: aborted ? 'ABORTED' : 'TIMEOUT',
-            message: aborted ? 'aborted' : firstSeen ? 'total timeout' : 'first token timeout',
+            message: aborted ? 'aborted' : tried(deadlineMessage(fired, opts.timeoutMs, firstSeen, status)),
             retryable: !aborted,
             ...withResponse(wire),
           }
@@ -642,7 +664,7 @@ export class PiAdapter extends WireAdapter {
               type: 'error',
               reason: 'error',
               code: 'TRANSPORT',
-              message: 'empty stream',
+              message: tried('empty stream'),
               retryable: true,
               ...withResponse(wire),
             }
@@ -656,7 +678,7 @@ export class PiAdapter extends WireAdapter {
           // the original total deadline continues to bound the complete operation.
           firstSeen = false
           if (first) clearTimeout(first)
-          first = setTimeout(() => inner.abort(), opts.timeoutMs.firstToken)
+          first = setTimeout(deadline('first-token'), opts.timeoutMs.firstToken)
         }
       }
     } finally {
@@ -668,6 +690,29 @@ export class PiAdapter extends WireAdapter {
 }
 
 const ABORTED = Symbol('aborted')
+
+/**
+ * What one of this adapter's own deadlines says: which timer fired and how long it was, and how far
+ * the answer had got - nothing yet, response headers and no output, or output that stopped. `status`
+ * is `null` on an api whose HTTP response this adapter cannot see, where the middle case cannot be
+ * told from the first.
+ */
+function deadlineMessage(
+  fired: 'first-token' | 'total' | undefined,
+  timeoutMs: AdapterStreamOptions['timeoutMs'],
+  firstSeen: boolean,
+  status: number | undefined | null,
+): string {
+  const ms = fired === 'total' ? timeoutMs.total : timeoutMs.firstToken
+  const what = firstSeen
+    ? 'the model provider did not finish its answer mid-stream'
+    : status === null
+      ? 'no output from the model provider'
+      : status === undefined
+        ? 'no answer from the model provider while waiting for the first byte'
+        : `the model provider answered status=${status} but sent no output`
+  return `${what} (${fired ?? 'first-token'} timeout, ${ms % 1000 === 0 ? `${ms / 1000}s` : `${ms}ms`})`
+}
 
 /** Resolves when the run is cancelled, whoever cancelled it, and never rejects. */
 function abortPromise(signal: AbortSignal): Promise<typeof ABORTED> {

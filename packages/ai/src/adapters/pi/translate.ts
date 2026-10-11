@@ -2,6 +2,7 @@ import type { ResponseMeta, ToolCall } from '@agnes/protocol'
 import type { Api, AssistantMessageEvent, Model } from '@earendil-works/pi-ai'
 import type { WireEvent } from '../../adapter.js'
 import { classifyPiError } from './errors.js'
+import type { NetFailure } from './network.js'
 
 /**
  * One pi event, as zero or more outward events. Twelve kinds arrive and six leave: the bracketing
@@ -11,12 +12,16 @@ import { classifyPiError } from './errors.js'
  * `nextOrdinal` numbers the tool calls of one stream. It is passed in rather than kept here because
  * two streams can be in flight in one process, and a counter shared between them would hand the
  * same call two different numbers depending on interleaving.
+ *
+ * `net` is the network failure the fetch under this attempt saw, if any; an error is classified by it
+ * rather than by the client library's summary of it.
  */
 export function translateEvent(
   ev: AssistantMessageEvent,
   model: Model<Api>,
   nextOrdinal: () => number,
   wire: ResponseMeta = {},
+  net?: NetFailure,
 ): WireEvent[] {
   switch (ev.type) {
     case 'start':
@@ -71,7 +76,7 @@ export function translateEvent(
       // The window comes from the model this request actually went to. Passing nothing here left one
       // arm of the classification with a single supplier - a test - and unreachable for a user: an
       // overflow the provider did not spell out is only visible against the declared window.
-      const c = classifyPiError(ev.error, model.contextWindow)
+      const c = classifyPiError(ev.error, model.contextWindow, net)
       return [
         {
           type: 'error',
