@@ -2,7 +2,6 @@ import type { ApprovalAnswer, ApprovalRequest, ApprovalSeam, Pending, Verdict } 
 import type { SeamFactory } from '../../../src/seam-init.js'
 import { matchPolicy, normalizeArgv } from './normalize.js'
 import { readApprovalConfig } from './policy.js'
-import { createTicketStore } from './tickets.js'
 
 /**
  * The synchronous half of the approval seam: a command table first, a human second.
@@ -14,7 +13,6 @@ import { createTicketStore } from './tickets.js'
  */
 export const approvalPolicy: SeamFactory<ApprovalSeam> = async (ctx) => {
   const cfg = readApprovalConfig(ctx.profile.preset)
-  const tickets = createTicketStore(ctx, cfg.pendingTtlMs)
   const policy = async (req: ApprovalRequest, workspaceRoot: string): Promise<'allow' | 'ask' | 'deny'> => {
     const tool = req.tool
     // A budget quote or an unknown-outcome question carries no tool, so the command table has
@@ -76,10 +74,13 @@ export const approvalPolicy: SeamFactory<ApprovalSeam> = async (ctx) => {
           return { verdict: 'unavailable', reason: 'transport' }
         }
       }
-      if (cfg.onUnavailable === 'park') return tickets.mint(req)
-      return 'unavailable'
+      // Core's canonical decisions persist/re-offer tool gates. Unmigrated domains
+      // have no parked continuation here; absence of a human is never an answer.
+      return { verdict: 'unavailable', reason: 'no-approver' }
     },
-    resume: (ticket, verdict) => tickets.resume(ticket, verdict),
+    async resume() {
+      throw new Error('DECISION_CONTINUATION_BLOCKED: this seam has no legacy approval continuation')
+    },
   })
   return Object.assign(bind(ctx.profile.workspaceRoot), {
     forWorkspace: (workspace: Readonly<{ root: string }>) => bind(workspace.root),

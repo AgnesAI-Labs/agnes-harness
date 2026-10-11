@@ -59,7 +59,7 @@ describe('approval-policy sync path', () => {
       },
     })
     const seam = await approvalPolicy(init)
-    expect(await seam.ask(req())).toBe('unavailable')
+    expect(await seam.ask(req())).toEqual({ verdict: 'unavailable', reason: 'no-approver' })
     const workspace = await seam.forWorkspace?.({ root: '/work/other' })
     expect(workspace).toBeDefined()
     expect(await workspace?.ask(req())).toBe('allowed-once')
@@ -163,7 +163,7 @@ describe('approval-policy sync path', () => {
     const verdict = await (await approvalPolicy(init)).ask(
       req({ tool: { name: 'edit', args: {}, meta: { ...meta, requiresApproval: 'always' } } }),
     )
-    expect(verdict).toBe('unavailable')
+    expect(verdict).toEqual({ verdict: 'unavailable', reason: 'no-approver' })
   })
 
   // require_approval is a match that does not end the question: it reaches the prompter like a miss.
@@ -184,7 +184,10 @@ describe('approval-policy sync path', () => {
 
   // The default with nothing configured: no rules, no prompter, so the answer is a refusal.
   it('is unavailable without a prompter, and when the prompter throws', async () => {
-    expect(await (await approvalPolicy(fakeSeamInit())).ask(req())).toBe('unavailable')
+    expect(await (await approvalPolicy(fakeSeamInit())).ask(req())).toEqual({
+      verdict: 'unavailable',
+      reason: 'no-approver',
+    })
     const broken = fakeSeamInit({
       prompter: async () => {
         throw new Error('ui gone')
@@ -238,7 +241,7 @@ describe('approval-policy sync path', () => {
     const verdict = await (await approvalPolicy(init)).ask(
       req({ tool: { name: 'read', args: { path: '../../etc/passwd' }, meta } }),
     )
-    expect(verdict).toBe('unavailable')
+    expect(verdict).toEqual({ verdict: 'unavailable', reason: 'no-approver' })
   })
 
   // A whitespace-only shell command normalizes to the empty string, which is a value and not a
@@ -263,12 +266,10 @@ describe('approval-policy sync path', () => {
     ).rejects.toThrow(/anchor/)
   })
 
-  // The parked half is not built. It rejects loudly rather than answering something allow-shaped:
-  // a deployment configured to park and quietly told "fine" would run with nobody asked.
-  it('fails loudly when configured to park, which is not implemented yet', async () => {
+  it('refuses unsupported domain parking without inventing an answer', async () => {
     const init = fakeSeamInit({ preset: { approval: { on_unavailable: 'park' } } })
     const seam = await approvalPolicy(init)
-    await expect(seam.ask(req())).rejects.toThrow(/parking is not implemented/)
-    await expect(seam.resume('t', 'allowed-once')).rejects.toThrow(/parking is not implemented/)
+    await expect(seam.ask(req())).resolves.toEqual({ verdict: 'unavailable', reason: 'no-approver' })
+    await expect(seam.resume('t', 'allowed-once')).rejects.toThrow(/DECISION_CONTINUATION_BLOCKED/)
   })
 })
