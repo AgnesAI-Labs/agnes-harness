@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { PARSER_VERSION } from '@agnes/ai'
 import { fakeModel, stampFor } from '@agnes/ai/testkit'
 import { createTestHost } from '@agnes/host/testkit'
+import type { Context } from '@agnes/plugin-runtime'
+import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { InferenceEvent } from '@agnes/protocol'
 import { ConfigEmptyParams } from '@agnes/protocol/gen/agnes-v1'
 import { say } from '../../daemon-rpc/test/host.js'
@@ -59,6 +61,53 @@ void runWorker(
         writeFileSync(join(profile.dataDir, 'fixture-worker-pid'), String(process.pid))
       const { host } = await createTestHost({
         dataDir: profile.dataDir,
+        ...(env.AGNES_FAKE_WORKER_PERMISSION === '1'
+          ? {
+              packages: {
+                '@agnes/code': {
+                  plugins: [
+                    {
+                      declaration: {
+                        export: 'permissionPlugin',
+                        id: 'fixture.permission',
+                        apiRange: '^1.4.0',
+                        default: true,
+                        inject: ['extension'],
+                        provide: [],
+                        runtime: 'in-process',
+                      },
+                      entry: normalizePluginExport({
+                        inject: ['extension'],
+                        apply(ctx: Context) {
+                          ctx.extension().registerTool({
+                            name: 'permission_probe',
+                            description: 'Plain permission test tool',
+                            parameters: ConfigEmptyParams,
+                            meta: {
+                              isReadOnly: false,
+                              isDestructive: true,
+                              isConcurrencySafe: false,
+                              isOpenWorld: false,
+                              replay: 'never',
+                              costHint: {},
+                              deferLoading: false,
+                              requiresApproval: 'always',
+                            },
+                            execute: async () => {
+                              if (env.AGNES_FAKE_WORKER_RECOVERY === '1')
+                                appendFileSync(join(profile.dataDir, 'permission-dispatched'), 'yes\n')
+                              else writeFileSync(join(profile.dataDir, 'permission-dispatched'), 'yes')
+                              return { content: [{ type: 'text', text: 'ran' }] }
+                            },
+                          })
+                        },
+                      }),
+                    },
+                  ],
+                },
+              },
+            }
+          : {}),
         ...(env.AGNES_FAKE_WORKER_QUEUE === '1'
           ? {
               provider: {
@@ -150,31 +199,6 @@ void runWorker(
           },
         },
       })
-      if (env.AGNES_FAKE_WORKER_PERMISSION === '1')
-        host.kernel.tools.add(
-          {
-            name: 'permission_probe',
-            description: 'Plain permission test tool',
-            parameters: ConfigEmptyParams,
-            meta: {
-              isReadOnly: false,
-              isDestructive: true,
-              isConcurrencySafe: false,
-              isOpenWorld: false,
-              replay: 'never',
-              costHint: {},
-              deferLoading: false,
-              requiresApproval: 'always',
-            },
-            execute: async () => {
-              if (env.AGNES_FAKE_WORKER_RECOVERY === '1')
-                appendFileSync(join(profile.dataDir, 'permission-dispatched'), 'yes\n')
-              else writeFileSync(join(profile.dataDir, 'permission-dispatched'), 'yes')
-              return { content: [{ type: 'text', text: 'ran' }] }
-            },
-          },
-          { source: 'test', trust: 'builtin' },
-        )
       return host
     },
   },
