@@ -111,6 +111,21 @@ it.each([false, true])(
       )
       expect(JSON.parse(String(fetcher.mock.calls.at(-1)?.[1]?.body))).toEqual({ probeAccounts: true })
       fetcher.mockResolvedValueOnce(
+        Response.json({
+          checks: [{ id: 'node', status: 'warn', fixHintKey: 'doctor.fix.node' }],
+          status: 'warn',
+        }),
+      )
+      await act(async () =>
+        selfCheck.querySelector<HTMLButtonElement>('[data-testid="diagnostics-doctor-run"]')?.click(),
+      )
+      await act(async () =>
+        host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-summary-copy"]')?.click(),
+      )
+      expect(write.mock.calls.at(-1)?.[0]).toContain('Node.js runtime: Needs attention')
+      expect(write.mock.calls.at(-1)?.[0]).not.toContain(diagnosticId)
+
+      fetcher.mockResolvedValueOnce(
         Response.json(
           { error: { data: { messageKey: 'appServer.errors.forbidden' }, message: 'private error' } },
           { status: 403 },

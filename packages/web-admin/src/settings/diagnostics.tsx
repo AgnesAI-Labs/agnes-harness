@@ -1,8 +1,11 @@
 import { type DiagnosticRecord, type DiagnosticsExportResult, errorMessageKey } from '@agnes/protocol'
+import type { DoctorResult } from '@agnes/protocol/gen/app-server'
 import {
   appServerErrorMessage,
   Button,
+  FIRST_RUN_NAMESPACE,
   Field,
+  firstRunCatalog,
   MetaText,
   SettingsCard,
   SettingsDetails,
@@ -34,13 +37,15 @@ export function DiagnosticsPanel({
   download?: (bundle: DiagnosticsExportResult) => void
 }) {
   const { t } = useUiText(DIAGNOSTICS_NAMESPACE, diagnosticsCatalog)
+  const { t: doctorText } = useUiText(FIRST_RUN_NAMESPACE, firstRunCatalog)
+  const [doctorChecks, setDoctorChecks] = useState<DoctorResult['checks']>()
   const [showAll, setShowAll] = useState(false)
   const [bundle, setBundle] = useState<DiagnosticsExportResult>()
   const [doctorAvailable, setDoctorAvailable] = useState(false)
   const loadChecks = useCallback(
     async (probe: boolean, signal: AbortSignal) => {
       const result = await api.doctor(signal, probe)
-      if (!signal.aborted) setBundle((value) => value && { ...value, doctor: result.checks })
+      if (!signal.aborted) setDoctorChecks(result.checks)
       return result
     },
     [api],
@@ -133,10 +138,15 @@ export function DiagnosticsPanel({
                 const summary = [
                   t('title'),
                   `${t('recent')}: ${bundle.errors.length}`,
-                  ...bundle.doctor.map(
-                    (check) =>
-                      `${t(`check.${check.name}`) === `check.${check.name}` ? t('otherCheck') : t(`check.${check.name}`)}: ${t(`state.${check.status}`)}`,
-                  ),
+                  ...(doctorChecks
+                    ? doctorChecks.map(
+                        (check) =>
+                          `${doctorText(`doctor.check.${check.id}`)}: ${doctorText(`doctor.status.${check.status}`)}`,
+                      )
+                    : bundle.doctor.map(
+                        (check) =>
+                          `${t(`check.${check.name}`) === `check.${check.name}` ? t('otherCheck') : t(`check.${check.name}`)}: ${t(`state.${check.status}`)}`,
+                      )),
                 ].join('\n')
                 void navigator.clipboard.writeText(summary).then(
                   () => {
