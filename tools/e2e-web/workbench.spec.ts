@@ -192,12 +192,12 @@ test('session terminal survives UI detachment, follows agent output and honors p
   const human = (await session.jobsRead()).jobs.find((job) => job.owner === 'human')
   if (!human) throw new Error('human terminal required')
   await expect(output).toBeEnabled()
-  await output.pressSequentially(
-    "PS1='wb1$ '; printf '\\033[2J\\033[H'; printf 'WB1_TERMINAL_OK\\n'; printf 'E2E_TERMINAL_OK\\n'",
-  )
+  await output.pressSequentially("printf 'E2E_TERMINAL_OK\\n'")
+  await output.press('Enter')
+  await expect(output).toHaveValue(/\nE2E_TERMINAL_OK\r?\n/)
+  await output.pressSequentially("PS1='wb1$ '; printf '\\033[2J\\033[H'; printf 'WB1_TERMINAL_OK\\n'")
   await output.press('Enter')
   await expect(output).toHaveValue(/WB1_TERMINAL_OK\r?\n/)
-  await expect(output).toHaveValue(/\nE2E_TERMINAL_OK\r?\n/)
   await panel.getByTestId('terminal-new').click()
   await expect(panel.getByRole('tab')).toHaveCount(2)
   await panel.getByRole('tab').last().press('ArrowLeft')
