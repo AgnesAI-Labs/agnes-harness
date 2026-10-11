@@ -189,6 +189,7 @@ for (const locale of ['en', 'zh-CN'])
           await page.locator('#mcp-secret-kind-listbox-1').click()
           await expect(page.locator('#mcp-secret-kind')).toHaveValue('stdio-env')
           await expect(page.locator('#mcp-secret')).toBeVisible()
+          await expect(page.locator('#mcp-secret')).toHaveAttribute('placeholder', /secret:\/\//)
           await page.mouse.move(0, 0)
           for (const control of ['mcp-name', 'mcp-executable', 'mcp-args', 'mcp-secret', 'mcp-tools']) {
             await expect(page.locator(`#${control}`)).toHaveCSS('background-color', fieldSurface)
@@ -202,6 +203,19 @@ for (const locale of ['en', 'zh-CN'])
           await quality('mcp-form', true)
           await page.locator('#mcp-cancel').click()
           await page.keyboard.press('Escape')
+          await page.locator('#mcp-create').click()
+          await expect(page.locator('#mcp-methods')).toBeVisible()
+          await quality('mcp-choose-method')
+          await info.attach('mcp-choose-method.png', {
+            body: await page.locator('#mcp-dialog').screenshot(),
+            contentType: 'image/png',
+          })
+          await page.locator('#mcp-method-local').click()
+          await expect(page.locator('#mcp-command')).toBeVisible()
+          await expect(page.locator('#mcp-name')).toBeFocused()
+          await quality('mcp-local-connection')
+          await page.locator('#mcp-cancel').click()
+          await expect(page.locator('#mcp-create')).toBeFocused()
           await expect(page.locator('#resource-detail')).toBeHidden()
         }
         if (id === 'providers') {
