@@ -56,6 +56,13 @@ export type AssembleDeps = HostPaths &
     pluginSnapshots?: PackageSnapshotVerifier
     /** PackageManager-owned immutable snapshots selected for this Host generation. */
     runtimePluginSnapshots?: readonly Readonly<RuntimePluginSnapshot>[]
+    /** Maximum simultaneous independent prepares, from 1 to 4. Does not parallelize activation. */
+    runtimePrepareConcurrency?: number
+    /**
+     * Host-reviewed immutable snapshots whose module evaluation has no shared side effects.
+     * Package manifests cannot grant this eligibility. Unknown or interconnected sources stay serial.
+     */
+    runtimePrepareIndependent?: readonly Readonly<{ packageId: string; snapshotId: string }>[]
     /** Complete immutable snapshot catalogue available to later RuntimeTarget candidates. */
     runtimePluginCatalogue?: readonly Readonly<RuntimePluginSnapshot>[]
     /** Installed snapshots re-read before each target is applied, so a package trusted after boot can load. */

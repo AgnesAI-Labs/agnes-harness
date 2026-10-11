@@ -166,6 +166,374 @@ describe('assemble', () => {
     }
   }
 
+  const gate = () => {
+    let resolve = () => {}
+    let reject: (error: Error) => void = () => {}
+    const promise = new Promise<void>((yes, no) => {
+      resolve = yes
+      reject = no
+    })
+    return { promise, resolve, reject }
+  }
+  const prepareSource = (id: string, manifest: Record<string, unknown> = {}): RuntimePluginSnapshot => {
+    const directory = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-prepare-')))
+    dirs.push(directory)
+    writeFileSync(
+      join(directory, 'package.json'),
+      JSON.stringify({
+        name: id,
+        version: '1.0.0',
+        exports: './index.js',
+        agnes: { plugins: [{ export: 'main', apiRange: '^1.4.0' }] },
+        ...manifest,
+      }),
+    )
+    writeFileSync(join(directory, 'index.js'), 'export const main = () => {}\n')
+    const integrity = hashDirectory(directory, { exclude: [] })
+    return {
+      trusted: true,
+      generation: 1,
+      snapshot: {
+        packageId: id,
+        profile: 'local-dev',
+        version: '1.0.0',
+        snapshotId: integrity,
+        integrity,
+        treeIntegrity: integrity,
+        capabilityHash: 'capability',
+        directory,
+        contributions: [],
+      },
+    }
+  }
+
+  it.each([1, 2, 4])('bounds independent prepare at %i and preserves registration order', async (limit) => {
+    const sources = Array.from({ length: 6 }, (_, i) => prepareSource(`@acme/prepare-${i}`))
+    const originalProfile = await profileFor()
+    const profile = {
+      ...originalProfile,
+      packages: [
+        ...originalProfile.packages,
+        ...sources.map(({ snapshot }) => ({
+          id: snapshot.packageId,
+          source: 'test',
+          version: snapshot.version,
+          integrity: snapshot.integrity,
+          trust: 'trusted' as const,
+          enabled: true,
+        })),
+      ],
+    }
+    const held = Array.from({ length: limit }, gate)
+    const reached = gate()
+    const started: string[] = []
+    const mounted: string[] = []
+    let active = 0
+    let peak = 0
+    const assembly = assemble(
+      profile,
+      deps(allModules(), {
+        runtimePluginSnapshots: sources,
+        ...(limit === 4 ? {} : { runtimePrepareConcurrency: limit }),
+        runtimePrepareIndependent: sources.map(({ snapshot }) => snapshot),
+        extensionLoader: {
+          import: async (file) => {
+            const source = sources.find(({ snapshot }) => file.startsWith(snapshot.directory))
+            if (!source) throw new Error('unexpected prepare source')
+            const index = started.length
+            started.push(source.snapshot.packageId)
+            peak = Math.max(peak, ++active)
+            if (started.length === limit) reached.resolve()
+            await held[index]?.promise
+            active--
+            return {
+              main: () => {
+                mounted.push(source.snapshot.packageId)
+              },
+            }
+          },
+        },
+      }),
+    )
+    void assembly.catch((error) => reached.reject(error))
+    await reached.promise
+    expect(started).toEqual(sources.slice(0, limit).map(({ snapshot }) => snapshot.packageId))
+    expect(mounted).toEqual([])
+    for (const heldImport of [...held].reverse()) heldImport.resolve()
+    const a = await assembly
+    try {
+      expect(peak).toBe(limit)
+      expect(active).toBe(0)
+      expect(mounted).toEqual(sources.map(({ snapshot }) => snapshot.packageId))
+    } finally {
+      await closeHost(a, new Set(), { timeoutMs: 1000, audit: createMemoryAudit() })
+    }
+  })
+
+  it.each(['rejected', 'changed'])(
+    'drains %s in-flight prepares, collects errors and allows a fresh retry',
+    async (kind) => {
+      const sources = Array.from({ length: 4 }, (_, i) => prepareSource(`@acme/fail-${i}`))
+      const held = [gate(), gate()]
+      const reached = gate()
+      const started: string[] = []
+      let settled = false
+      const options = deps(allModules(), {
+        crashAt: 'packages',
+        runtimePluginSnapshots: sources,
+        runtimePrepareConcurrency: 2,
+        runtimePrepareIndependent: sources.map(({ snapshot }) => snapshot),
+        extensionLoader: {
+          import: async (file) => {
+            started.push(file)
+            if (started.length === 2) reached.resolve()
+            await held[started.length - 1]?.promise
+            return { main: () => {} }
+          },
+        },
+      })
+      const profile = await profileFor()
+      const outcome = assemble(profile, options)
+        .catch((error: unknown) => error)
+        .finally(() => {
+          settled = true
+        })
+      void outcome.then((error) => {
+        if (error instanceof Error) reached.reject(error)
+      })
+      await reached.promise
+      const changedFile = join(sources[0]?.snapshot.directory ?? '', 'changed.txt')
+      if (kind === 'changed') {
+        writeFileSync(changedFile, 'changed during import')
+        held[0]?.resolve()
+      } else held[0]?.reject(new Error('first module failed'))
+      await Promise.resolve()
+      expect(settled).toBe(false)
+      held[1]?.reject(new Error('second module failed'))
+      const error = await outcome
+      expect(error).toMatchObject({
+        code: 'E_EXT_LOAD',
+        detail: {
+          reason: 'runtime-prepare-failed',
+          packages: sources.slice(0, 2).map(({ snapshot }) => snapshot.packageId),
+        },
+        cause: {
+          errors: [
+            expect.objectContaining({
+              detail: { reason: kind === 'changed' ? 'snapshot-changed' : 'module-import' },
+            }),
+            expect.objectContaining({ detail: { reason: 'module-import' } }),
+          ],
+        },
+      })
+      expect(started).toHaveLength(2)
+      if (kind === 'changed') rmSync(changedFile)
+      options.extensionLoader = { import: async () => ({ main: () => {} }) }
+      await expect(assemble(profile, options)).rejects.toThrow('crash:packages')
+    },
+  )
+
+  it.each(['unknown', 'updated', 'package-dependency', 'service-dependency'])(
+    'keeps %s sources serial even at concurrency 4',
+    async (kind) => {
+      const first = prepareSource(
+        '@acme/serial-a',
+        kind === 'package-dependency'
+          ? {
+              dependencies: { '@acme/serial-b': '^1.0.0' },
+            }
+          : kind === 'service-dependency'
+            ? {
+                agnes: { plugins: [{ export: 'main', apiRange: '^1.4.0', inject: ['serial-service'] }] },
+              }
+            : {},
+      )
+      const second = prepareSource(
+        '@acme/serial-b',
+        kind === 'service-dependency'
+          ? {
+              agnes: { plugins: [{ export: 'main', apiRange: '^1.4.0', provide: ['serial-service'] }] },
+            }
+          : {},
+      )
+      const sources = [first, second]
+      const reached = gate()
+      const held = gate()
+      const started: string[] = []
+      const outcome = assemble(
+        await profileFor(),
+        deps(allModules(), {
+          crashAt: 'packages',
+          runtimePluginSnapshots: sources,
+          runtimePrepareConcurrency: 4,
+          runtimePrepareIndependent:
+            kind === 'unknown'
+              ? []
+              : sources.map(({ snapshot }) => ({
+                  packageId: snapshot.packageId,
+                  snapshotId: kind === 'updated' ? 'old-snapshot' : snapshot.snapshotId,
+                })),
+          extensionLoader: {
+            import: async (file) => {
+              started.push(file)
+              if (file.startsWith(first.snapshot.directory)) {
+                reached.resolve()
+                await held.promise
+              }
+              return { main: () => {} }
+            },
+          },
+        }),
+      ).catch((error: unknown) => error)
+      void outcome.then((error) => {
+        if (error instanceof Error) reached.reject(error)
+      })
+      await reached.promise
+      expect(started).toEqual([join(first.snapshot.directory, 'index.js')])
+      held.resolve()
+      expect(await outcome).toMatchObject({ message: expect.stringContaining('crash:packages') })
+      expect(started).toEqual(sources.map(({ snapshot }) => join(snapshot.directory, 'index.js')))
+    },
+  )
+
+  it.each([
+    'duplicate-source',
+    'duplicate-row',
+    'untrusted',
+    'profile',
+    'generation',
+    'stale',
+    'dependency-manifest',
+    'identity',
+    'isolated',
+    'externals',
+    'entry',
+    'concurrency',
+  ])('rejects %s across the full selection before any import', async (kind) => {
+    const first = prepareSource('@acme/preflight-a')
+    let second = prepareSource(
+      '@acme/preflight-b',
+      kind === 'dependency-manifest'
+        ? { dependencies: { '@acme/example': 42 } }
+        : kind === 'identity'
+          ? { name: '@acme/wrong' }
+          : kind === 'isolated'
+            ? { agnes: { plugins: [{ export: 'main', apiRange: '^1.4.0', runtime: 'isolated' }] } }
+            : kind === 'externals'
+              ? {
+                  agnes: {
+                    hostProvidedExternals: { 'private-host-module': '*' },
+                    plugins: [{ export: 'main', apiRange: '^1.4.0' }],
+                  },
+                }
+              : kind === 'entry'
+                ? { exports: '../outside.js' }
+                : kind === 'duplicate-row'
+                  ? {
+                      agnes: {
+                        plugins: [
+                          { export: 'main', apiRange: '^1.4.0', id: `ext:${first.snapshot.packageId}/main` },
+                        ],
+                      },
+                    }
+                  : {},
+    )
+    if (kind === 'duplicate-source') second = first
+    if (kind === 'untrusted') second = { ...second, trusted: false }
+    if (kind === 'profile') second = { ...second, snapshot: { ...second.snapshot, profile: 'other-profile' } }
+    if (kind === 'generation') second = { ...second, generation: 0 }
+    if (kind === 'stale')
+      writeFileSync(join(second.snapshot.directory, 'changed.txt'), 'changed before prepare')
+    const imported: string[] = []
+    const d = deps(allModules(), {
+      runtimePluginSnapshots: [first, second],
+      runtimePrepareConcurrency: kind === 'concurrency' ? 5 : 4,
+      extensionLoader: {
+        import: async (file) => {
+          imported.push(file)
+          return { main: () => {} }
+        },
+      },
+    })
+    const builtin = vi.spyOn(d.loader, 'importPackage')
+    const outcome = assemble(await profileFor(), d)
+    if (kind === 'externals')
+      await expect(outcome).rejects.toMatchObject({
+        code: 'E_EXT_LOAD',
+        detail: { reason: 'external-unavailable', module: 'private-host-module' },
+      })
+    else await expect(outcome).rejects.toThrow()
+    expect(imported).toEqual([])
+    expect(builtin).not.toHaveBeenCalled()
+  })
+
+  it('drains active prepares on cancellation without starting the remaining sources', async () => {
+    const sources = Array.from({ length: 4 }, (_, i) => prepareSource(`@acme/cancel-${i}`))
+    const held = gate(),
+      reached = gate()
+    const abort = new AbortController()
+    let active = 0,
+      started = 0,
+      settled = false
+    const outcome = assemble(
+      await profileFor(),
+      deps(allModules(), {
+        signal: abort.signal,
+        runtimePluginSnapshots: sources,
+        runtimePrepareConcurrency: 2,
+        runtimePrepareIndependent: sources.map(({ snapshot }) => snapshot),
+        extensionLoader: {
+          import: async () => {
+            active++
+            started++
+            if (started === 2) reached.resolve()
+            await held.promise
+            active--
+            return { main: () => {} }
+          },
+        },
+      }),
+    )
+      .catch((error: unknown) => error)
+      .finally(() => {
+        settled = true
+      })
+    void outcome.then((error) => {
+      if (error instanceof Error) reached.reject(error)
+    })
+    await reached.promise
+    abort.abort()
+    expect(settled).toBe(false)
+    held.resolve()
+    expect(await outcome).toMatchObject({ message: expect.stringContaining('aborted') })
+    expect(active).toBe(0)
+    expect(started).toBe(2)
+  })
+
+  it('honors cancellation during full-selection preflight before any import', async () => {
+    const sources = Array.from({ length: 4 }, (_, i) => prepareSource(`@acme/preflight-cancel-${i}`))
+    const abort = new AbortController()
+    const imports: string[] = []
+    const d = deps(allModules(), {
+      signal: abort.signal,
+      runtimePluginSnapshots: sources,
+      runtimePrepareIndependent: sources.map(({ snapshot }) => snapshot),
+      extensionLoader: {
+        import: async (file) => {
+          imports.push(file)
+          return { main: () => {} }
+        },
+      },
+    })
+    const profile = await profileFor()
+    const builtin = vi.spyOn(d.loader, 'importPackage')
+    const outcome = assemble(profile, d)
+    queueMicrotask(() => abort.abort())
+    await expect(outcome).rejects.toThrow('aborted')
+    expect(imports).toEqual([])
+    expect(builtin).not.toHaveBeenCalled()
+  })
+
   it('mounts a package trusted after boot from the installed snapshots read at apply time', async () => {
     const vendor = '@acme/late-trust'
     const snapshotDir = mkdtempSync(join(tmpdir(), 'agnes-runtime-late-trust-'))

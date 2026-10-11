@@ -157,8 +157,10 @@ function assertSnapshotTree(snapshot: RuntimeSnapshot, reason: string): void {
   if (digest !== snapshot.treeIntegrity) integrityFailure(reason)
 }
 
-function readDeclarations(snapshot: RuntimeSnapshot): readonly Readonly<AgnesPluginManifestEntry>[] {
-  const pkg = readStaticJson(join(snapshot.directory, 'package.json'))
+function readDeclarations(
+  snapshot: RuntimeSnapshot,
+  pkg = readStaticJson(join(snapshot.directory, 'package.json')),
+): readonly Readonly<AgnesPluginManifestEntry>[] {
   if (pkg.name !== snapshot.packageId || pkg.version !== snapshot.version)
     integrityFailure('snapshot-package-identity')
   const agnes = pkg.agnes
@@ -172,6 +174,30 @@ function readDeclarations(snapshot: RuntimeSnapshot): readonly Readonly<AgnesPlu
     if (error instanceof ProviderError) throw error
     stateFailure('plugin-manifest')
   }
+}
+
+/** Static admission only. Loading still verifies again immediately before and after import. */
+export function preflightPackagePlugins(input: Pick<LoadPackagePluginsInput, 'snapshot' | 'generation'>) {
+  if (!Number.isSafeInteger(input.generation) || input.generation < 1) stateFailure('generation')
+  assertSnapshotTree(input.snapshot, 'snapshot-stale')
+  const pkg = readStaticJson(join(input.snapshot.directory, 'package.json'))
+  const declarations = readDeclarations(input.snapshot, pkg)
+  if (declarations.some((declaration) => declaration.runtime === 'isolated'))
+    stateFailure('isolated-runtime-unavailable')
+  const dependencyIds = new Set<string>()
+  if (declarations.length) {
+    for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
+      const dependencies = pkg[field]
+      if (dependencies === undefined) continue
+      if (!dependencies || typeof dependencies !== 'object' || Array.isArray(dependencies))
+        stateFailure('plugin-dependencies')
+      for (const [id, range] of Object.entries(dependencies)) {
+        if (typeof range !== 'string' || !range.trim()) stateFailure('plugin-dependencies')
+        dependencyIds.add(id)
+      }
+    }
+  }
+  return Object.freeze({ declarations, dependencyIds: Object.freeze([...dependencyIds]) })
 }
 
 function normalizeExport(
@@ -196,12 +222,8 @@ function normalizeExport(
 export async function loadPackagePlugins(
   input: LoadPackagePluginsInput,
 ): Promise<readonly LoadedPackagePlugin[]> {
-  if (!Number.isSafeInteger(input.generation) || input.generation < 1) stateFailure('generation')
-  assertSnapshotTree(input.snapshot, 'snapshot-stale')
-  const declarations = readDeclarations(input.snapshot)
+  const { declarations } = preflightPackagePlugins(input)
   if (!declarations.length) return Object.freeze([])
-  if (declarations.some((declaration) => declaration.runtime === 'isolated'))
-    stateFailure('isolated-runtime-unavailable')
   const declarationSnapshot = canonical(declarations)
 
   let imported: Readonly<Record<string, unknown>> | undefined

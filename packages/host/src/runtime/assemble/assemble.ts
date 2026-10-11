@@ -306,6 +306,7 @@ import {
 } from '../sessions/session-hooks.js'
 import type { AssembleDeps } from './assembly-deps.js'
 import { childAgentCatalog, installChildAgents, withBuiltinChildAgents } from './child-agents.js'
+import { prepareRuntimeSelection } from './runtime-prepare.js'
 import { initStaticSeams } from './seams.js'
 import { authorizeServiceProcess } from './service-process-policy.js'
 import { trustedHookCommands } from './trusted-hooks.js'
@@ -557,27 +558,17 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           detail: { reason: 'runtime-plugin-loader' },
         })
       }
-      const packageIds = new Set<string>()
-      for (const source of sources) {
-        if (packageIds.has(source.snapshot.packageId)) {
-          throw new HostError('E_EXT_LOAD', 'multiple runtime snapshots selected for one package', {
-            detail: { package: source.snapshot.packageId, reason: 'duplicate-runtime-snapshot' },
-          })
-        }
-        packageIds.add(source.snapshot.packageId)
-        const loaded = await loadRuntimeModule(source)
-        if (loaded) selected.set(source.snapshot.packageId, loaded)
-      }
-      return selected
+      return prepareRuntimeSelection(sources, deps, profile.name, loadRuntimeModule)
     }
     const activeRuntimeSources = Object.freeze([...(deps.runtimePluginSnapshots ?? [])])
-    const runtimePackages = await loadRuntimeSelection(activeRuntimeSources)
     const runtimePackageIds = new Set(activeRuntimeSources.map(({ snapshot }) => snapshot.packageId))
     const managedExtensionPackages = new Set(deps.managedExtensionPackageIds ?? [])
     // Resolve every authorized location before importing any module. The supplied map can include
     // cached or disabled packages; neither their exports nor their bundled extensions may run.
     const dirs = new Map<string, string>()
     for (const { id, trust } of enabled) {
+      if (dirs.has(id))
+        refuse('E_PACKAGE_DUPLICATE', 'multiple enabled entries for one package', { package: id })
       if (trust !== 'builtin' && !runtimePackageIds.has(id))
         throw new HostError('E_EXT_LOAD', 'trusted package has no immutable runtime snapshot', {
           detail: { package: id, reason: 'snapshot-unavailable' },
@@ -589,7 +580,11 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
         })
       dirs.set(id, dir)
     }
+    for (const [name, pkg] of Object.entries(profile.seams))
+      if (name !== 'platform' && !dirs.has(pkg))
+        refuse('E_DEP_MISSING', `seam ${name} names ${pkg}, not enabled`, { seam: name, package: pkg })
     const inventory = isolationInventory(profile, deps, dirs)
+    const runtimePackages = await loadRuntimeSelection(activeRuntimeSources)
     const modules = new Map<string, PackageModule>()
     for (const [id, dir] of dirs)
       modules.set(
@@ -599,9 +594,6 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
             ? { id, extensionEntry: dir }
             : await deps.loader.importPackage(id, dir)),
       )
-    for (const [name, pkg] of Object.entries(profile.seams))
-      if (name !== 'platform' && !modules.has(pkg))
-        refuse('E_DEP_MISSING', `seam ${name} names ${pkg}, not enabled`, { seam: name, package: pkg })
     deps.onGenerationBasePackages?.(
       [...modules]
         .filter(

@@ -320,9 +320,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Deferred producer binding on the shared service ports. countLines: 11970, exact, no spare.
   // UI data-source resolution. countLines: 11970 -> 12586 (+616).
   // Rebased tip includes the in-flight worktree migration. Measured 12791, exact, no spare.
-  'packages/host/src/runtime': 12860,
+  'packages/host/src/runtime': 12977,
   // UI data-source catalog wiring on that tree. countLines: 3517.
-  'packages/host/src/runtime/assemble': 3522,
+  'packages/host/src/runtime/assemble': 3639,
   'packages/host-providers/src/adapters': 477,
   'packages/host-providers/src/profile': 165,
   // Owner-scoped deferred queue facade. countLines: 5162 and assemble 2402, exact, no spare.
@@ -337,8 +337,8 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-extensions/src/ext-host/hooks-isolation-client': 232,
   'packages/host-extensions/src/ext-host/tool-context-capabilities': 131,
   'packages/host-extensions/src/ext-host/service-invocation': 267,
-  'packages/host-extensions/src': 8116,
-  'packages/host-extensions/src/assemble': 1268,
+  'packages/host-extensions/src': 8133,
+  'packages/host-extensions/src/assemble': 1285,
   'packages/host-artifacts/src': 2243,
   'packages/host-computer-use/src': 10586,
   'packages/host-infrastructure/src/adapters/public-fetch': 380,
@@ -553,7 +553,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 7200 -> 7217; exact cap, no exclusions or spare allocation.
   // uiData capability atoms. HEAD was 8464 against the previous 8424 ceiling; this change adds 1.
   // Sealed development snapshot fields. countLines 8465 -> 8472 (+7), exact, no spare.
-  'packages/package-manager/src': 8559,
+  'packages/package-manager/src': 8579,
   'packages/package-manager/src/catalog': 219,
   // Web open-source UI: safe Markdown DOM, compact presentation helpers, task-first creation,
   // and explicit controls. v2 adds accessible compact composer state; exact measured allocation; evidence is tracked with the UI execution.
@@ -2962,7 +2962,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Deferred queue facade and Intelligent UI producer binding. countLines: 12508, exact, no spare.
   // UI data-source resolution. countLines: 12508 -> 13124 (+616).
   // Rebased tip includes the in-flight worktree migration. Measured 13329, exact, no spare.
-  'packages/host/src': 13398,
+  'packages/host/src': 13515,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot

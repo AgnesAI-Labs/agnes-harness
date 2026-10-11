@@ -31,6 +31,8 @@ flowchart TD
 
 普通的同一 profile 并发 inventory 读取只共享尚在进行的扫描。每轮各读取一次能力策略和来源配置，在不可变配置副本内核验官方目录签名，并验证每个已安装及回滚目录。包变更、发布后的新验证与服务授权开启新的读取边界；已完成名册不跨轮复用。会话代际与组合过滤仍独立于已安装名册。
 
+Host 启动时，选中的不可变快照集合先完成身份、信任/profile、generation、API/runtime、入口、重复 row 与静态依赖检查，再导入其中任何模块。`runtimePrepareConcurrency` 将准备并发限制在 1–4（已复核独立来源默认 4）；`runtimePrepareIndependent` 由 Host 对精确的 `{ packageId, snapshotId }` 指定已复核的独立性，包括导入器可重入性和模块副作用。仅凭空依赖列表不能认定独立。未确认的快照、存在包依赖或声明的服务依赖的来源仍形成串行屏障。原有模块 Promise 缓存及紧邻导入前后的目录核验继续生效。失败或取消的批次等待所有已启动准备结束并收集错误，然后返回；注册和 Cordis 依赖激活保持原顺序。这些选项不改变插件清单准入或权限。
+
 ## 一套 provider 模式
 
 每种类型通过 `@agnes/extension-api` 的 `defineProviderKind<T>()` 描述校验、能力、身份与重启要求。Host 的 `ProviderRegistry<T>` 统一管理注册、重复拒绝、选择、只读目录和释放。注册项可归插件 fiber 所有；卸载时注销并执行原有资源清理。loop 按 `id@version` 注册，其他现有类型拒绝重复 id。

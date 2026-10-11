@@ -36,10 +36,12 @@ import {
   type AgnesPluginManifestEntry,
   loadPackagePlugins,
   parseAgnesPluginEntries,
+  preflightPackagePlugins,
   type RuntimePluginSnapshot,
 } from '@agnes/package-manager'
 import type { PackageSnapshotCandidateRef } from '@agnes/plugin-runtime/host'
 import { normalizePluginExport, type VerifiedRowEntry } from '@agnes/plugin-runtime/host'
+import { checkProvidedExternals, PluginModuleError } from '@agnes/plugin-runtime/provided-externals'
 import type { JsonValue } from '@agnes/protocol'
 import type { SandboxHostServices, SeamAdapters } from '../contracts/adapters.js'
 import type {
@@ -60,6 +62,7 @@ import type {
   SkillRuntimeDiscovery,
 } from '../contracts/package.js'
 import { RUNTIME_LANGUAGES } from '../contracts/package.js'
+import { PluginImportError } from '../ext-host/loader.js'
 import { resolveEntry } from '../ext-host/manifest.js'
 import type { SkillRuntimeInput } from '../resources/skills.js'
 
@@ -81,6 +84,21 @@ export type {
   SkillRuntimeDiscovery,
 } from '../contracts/package.js'
 export { RUNTIME_LANGUAGES } from '../contracts/package.js'
+/** Resolve the executable entry and static admission before any selected source is imported. */
+export function preflightRuntimePackage(source: Readonly<RuntimePluginSnapshot>) {
+  const metadata = preflightPackagePlugins(source)
+  if (metadata.declarations.length) {
+    packageEntry(source.snapshot.packageId, source.snapshot.directory)
+    const pkg = JSON.parse(readFileSync(join(source.snapshot.directory, 'package.json'), 'utf8'))
+    try {
+      checkProvidedExternals(pkg.agnes?.hostProvidedExternals)
+    } catch (error) {
+      if (error instanceof PluginModuleError) throw new PluginImportError(error)
+      throw error
+    }
+  }
+  return metadata
+}
 /** Load executable plugin exports only from a PackageManager-owned immutable snapshot directory. */
 export async function loadRuntimePackage(
   source: Readonly<RuntimePluginSnapshot>,
