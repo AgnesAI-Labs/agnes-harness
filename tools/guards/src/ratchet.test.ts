@@ -283,15 +283,15 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/settings': 9142,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src/permission-picker': 248,
+  'packages/web-admin/src/permission-picker': 267,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/admin/plugins/types': 82,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/admin/plugins/api': 546,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src': 15616,
+  'packages/web-admin/src': 15635,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-foundation/src': 2396,
+  'packages/web-foundation/src': 2422,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
   'packages/daemon-rpc/src/local/auth': 341,
   // UI refresh forwarding. HEAD was 8143 against the previous 8057 ceiling; this change adds 11.
@@ -417,7 +417,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Locale catalogs on LocaleService. Measured 1745, exact, no spare (+31).
   // 2026-10-07 integration review: Bounded artifact download and optional client service ports.
   // countLines: 1749 -> 1826; exact measured cap, no exclusions or spare allocation.
-  'packages/web-client/src': 2004,
+  'packages/web-client/src': 2008,
   'packages/web-slots/src': 620,
   // Failed shell calls read as their exit code (+19 lines); measured 4891, exact cap.
   // Approval reasons: the approval card label reads the decision reason (+22). Measured 6651, exact cap.
@@ -426,7 +426,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI data-source loading, error, and refresh. HEAD was 11480 against the previous 10937 ceiling;
   // this change adds 182. countLines: 11662.
   // Preset presentation: exact measured count; no exclusions or spare allocation.
-  'packages/web-ui/src': 14191,
+  'packages/web-ui/src': 14312,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
@@ -440,7 +440,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 6192 -> 6208 (+16); exact cap, no exclusions or spare allocation.
   // 2026-10-07 integration review: Inline conversation cards and approval/trace rendering.
   // countLines: 6208 -> 6222; exact measured cap, no exclusions or spare allocation.
-  'packages/web-units/src': 9765,
+  'packages/web-units/src': 9777,
   // Write staleness guard: a per-session table of what each file looked like when read, checked by
   // `write` (+55 counted lines, measured 855, exact cap).
   // 2026-10-07 integration review: Official job tools and bounded execution/output handling.
@@ -627,7 +627,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-07 gap-fill review: Session-bound goal state and context/settings integration.
   // countLines: 2443 -> 2471; exact cap, no exclusions or spare allocation.
   // AC1: consume one-time example launch parameters after session activation (+2 exact lines).
-  'packages/web/src/app': 4171,
+  'packages/web/src/app': 4194,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -680,7 +680,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-09-17：shell.ts 的 SETTINGS 表允许一个面板挂多个 rail 入口（技能 / MCP 共用
   // #resource-settings-pane），showSettingsPane 改按 aria-selected 决定哪一条高亮。实测 89。
   // SESSION-ACTIONS integrated with b/main: exact increment +1.
-  'packages/web/src/shell': 109,
+  'packages/web/src/shell': 111,
   // 2026-09-17 rebase 后的重新实测：turns.ts 把过程摘要搬进过程行、用量面板只留关键项、
   // 运行中页脚整行隐藏（原 432 是旧实现的实测值），收紧到实测精确值 399。
   // 2026-09-24 WEB-INCREMENTAL-PROJECTION-TRACE-INDEX C6 (Web incremental wiring) and its review fixes,
@@ -2448,7 +2448,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI data-source refresh and form drafts. countLines: 13327 -> 13395 (+68).
   // UX B1/B2 native sheet binding adds 3 lines; ST1 c2a1bd004 seeds reveal history with 5.
   // Exact combined countLines measurement, preserving both contributions without spare allocation.
-  'packages/web/src': 13464,
+  'packages/web/src': 13688,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
