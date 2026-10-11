@@ -214,7 +214,7 @@ for (const outcome of ['success', 'failure'] as const) {
     const host = document.createElement('div')
     document.body.append(host)
     host.id = 'config-form'
-    host.dataset.runtimePage = 'models'
+    host.dataset.runtimePage = 'security'
     const root = createRoot(host)
     let resolveRuntime: (snapshot: RuntimeAdminSnapshot) => void = () => undefined
     let rejectRuntime: (error: Error) => void = () => undefined
@@ -252,7 +252,7 @@ for (const outcome of ['success', 'failure'] as const) {
       }
       await vi.waitFor(() => {
         expect(refresh?.disabled).toBe(false)
-        expect(refresh?.getAttribute('aria-busy')).toBe('false')
+        expect(refresh?.getAttribute('aria-busy')).toBeNull()
       })
     } finally {
       root.unmount()
@@ -266,7 +266,7 @@ it.each(['success', 'failure'] as const)(
   async (outcome) => {
     const host = document.createElement('div')
     host.id = 'config-form'
-    host.dataset.runtimePage = 'models'
+    host.dataset.runtimePage = 'security'
     document.body.append(host)
     const root = createRoot(host)
     let finish!: (snapshot: RuntimeAdminSnapshot) => void
@@ -379,7 +379,7 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
     await vi.waitFor(() => expect(host.querySelector('[data-testid="doctor-checks"]')).not.toBeNull())
     expect(runtime).not.toHaveBeenCalled()
     expect([...host.querySelectorAll('h2')].map((h) => h.textContent)).toEqual(['Runtime & diagnostics'])
-    expect(host.querySelector('[data-testid="settings-refresh"]')).toBeNull()
+    expect(host.querySelector('[data-testid="settings-refresh"]')?.closest('details')?.open).toBe(false)
     expect(settingsSections.get('doctor')).toBeUndefined()
     expect(host.querySelector('.agnes-settings-card')?.getAttribute('data-testid')).toBe('diagnostics-doctor')
   } finally {

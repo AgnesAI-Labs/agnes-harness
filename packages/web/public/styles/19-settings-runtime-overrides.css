@@ -175,6 +175,9 @@
     display: grid;
     overflow: visible;
   }
+  #config-form.settings-shell[data-settings-view="list"] .settings-rail {
+    max-height: none;
+  }
   .settings-shell #settings-content-slots {
     grid-column: 1;
     grid-row: 1;

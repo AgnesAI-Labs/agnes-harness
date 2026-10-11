@@ -76,10 +76,28 @@ for (const [id, group, pane, navigationId, key, order] of [
     })
 }
 
-function Subsection({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+function Subsection({
+  id,
+  title,
+  children,
+  defer = false,
+}: {
+  id: string
+  title: string
+  children: ReactNode
+  defer?: boolean
+}) {
+  const [visited, setVisited] = useState(!defer)
   return (
-    <SettingsDetails id={`settings-subsection-${id}`} title={title} data-testid={`settings-subsection-${id}`}>
-      {children}
+    <SettingsDetails
+      id={`settings-subsection-${id}`}
+      title={title}
+      data-testid={`settings-subsection-${id}`}
+      onToggle={(event) => {
+        if (event.currentTarget.open) setVisited(true)
+      }}
+    >
+      {visited && children}
     </SettingsDetails>
   )
 }
@@ -123,7 +141,8 @@ function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionCon
         data-testid="settings-refresh"
         disabled={!c.api || busy}
         aria-busy={busy}
-        disabledReason={!c.api ? t('unavailable') : undefined}
+        loading={busy}
+        {...(!c.api ? { disabledReason: t('unavailable') } : {})}
         onClick={() => setRevision((value) => value + 1)}
       >
         {t('retry')}
@@ -208,25 +227,25 @@ const definitions: readonly [
     80,
     (c, t) => (
       <>
-        <Subsection id="models" title={t('agentExecution')}>
+        <Subsection defer id="models" title={t('agentExecution')}>
           <SettingsCard>
             <p>{t('modelsHelp')}</p>
           </SettingsCard>
           <SessionDefaultsPanel api={c.api} canSave={c.canSave} t={c.pluginText} />
         </Subsection>
-        <Subsection id="system-prompt" title={t('system-prompt')}>
+        <Subsection defer id="system-prompt" title={t('system-prompt')}>
           <SystemPromptPanel canSave={c.canSave} />
         </Subsection>
-        <Subsection id="memory" title={t('agentMemory')}>
+        <Subsection defer id="memory" title={t('agentMemory')}>
           <MemoryPanel canSave={c.canSave} />
         </Subsection>
-        <Subsection id="context" title={t('agentContext')}>
+        <Subsection defer id="context" title={t('agentContext')}>
           <ContextPanel canSave={c.canSave} />
         </Subsection>
-        <Subsection id="engines" title={t('agentEngines')}>
+        <Subsection defer id="engines" title={t('agentEngines')}>
           <ChildEnginesPanel api={c.api} canSave={c.canSave} t={t} />
         </Subsection>
-        <Subsection id="bundles" title={t('bundles')}>
+        <Subsection defer id="bundles" title={t('bundles')}>
           <BundlesPanel
             api={c.api}
             canSave={c.canSave}

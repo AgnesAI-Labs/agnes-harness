@@ -63,6 +63,7 @@ export {
   WEB_UNITS_LOCALE_NAMESPACE,
   webUnitsLocaleCatalog,
 } from './locales/index.js'
+export { settingsShellLocaleCatalog } from './locales/settings-shell.js'
 export type {
   SettingsDshSlotName,
   SettingsPane,

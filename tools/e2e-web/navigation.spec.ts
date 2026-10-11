@@ -83,3 +83,52 @@ test('confirms migration of an isolated fixture session', async ({ page }) => {
 // End-of-round acceptance extends this with trusted fixture install/update/rollback, defaults,
 // bundle/preset creation, real workspace sandbox probes, MCP/Skills mutations and session turns.
 // Conversation questions, plans, deliverables, jobs and children are supplied by their owning streams.
+
+test('settings search, narrow master-detail and old links keep their destinations', async ({ page }) => {
+  test.setTimeout(150_000)
+  await page.goto('/?settings=model')
+  await expect(page.locator('#config')).toBeVisible()
+  const everyday = page.locator('#settings-everyday button[data-settings-group]')
+  await expect(everyday).toHaveCount(8)
+  await expect(page.getByTestId('settings-advanced')).not.toHaveAttribute('open')
+  await page.locator('#config-title').click()
+  await page.keyboard.press('/')
+  await expect(page.getByTestId('settings-search')).toBeFocused()
+  await page.getByTestId('settings-search').fill('memory')
+  await expect(page.getByTestId('settings-nav-models')).toBeVisible()
+  await expect(page.getByTestId('settings-nav-model')).toBeHidden()
+  await page.getByTestId('settings-search').fill('nothing-matches-this-query')
+  await expect(page.locator('#settings-search-empty')).toBeVisible()
+  await page.getByTestId('settings-search').fill('')
+  await expect(page.getByTestId('settings-advanced')).not.toHaveAttribute('open')
+  await page.setViewportSize({ width: 375, height: 812 })
+  await expect(page.getByTestId('settings-navigation')).toBeHidden()
+  await page.getByTestId('settings-back').click()
+  await expect(page.getByTestId('settings-navigation')).toBeVisible()
+  await expect(page.locator('#settings-content-slots')).toBeHidden()
+  await page.getByTestId('settings-nav-mcp').click()
+  await expect(page.getByTestId('settings-back')).toBeFocused()
+  await page.getByTestId('settings-nav-mcp-tab').press('ArrowRight')
+  await expect(page.getByTestId('settings-nav-search-tab')).toBeFocused()
+  await expect(page.getByTestId('settings-page-search')).toBeVisible()
+  await page.getByTestId('settings-back').click()
+  await expect(page.getByTestId('settings-nav-mcp')).toBeFocused()
+  for (const [old, target] of [
+    ['memory', 'models'],
+    ['context', 'models'],
+    ['providers', 'diagnostics'],
+    ['examples', 'discover'],
+  ]) {
+    await page.goto(`/?settings=${old}`)
+    await expect(page.getByTestId(`settings-page-${target}`)).toBeVisible()
+    await expect(page).toHaveURL(new RegExp(`[?&]settings=${target}#settings-subsection-${old}$`))
+    await expect(page.locator(`#settings-subsection-${old}`)).toBeVisible()
+    if (old === 'memory' || old === 'context')
+      await expect(page.locator(`#settings-subsection-${old}`)).toHaveAttribute('open')
+  }
+  await page.goto('/?settings=terminal')
+  await expect(page.locator('#config')).toBeHidden()
+  await expect(page.getByTestId('workbench-tab-terminal')).toHaveAttribute('aria-selected', 'true')
+  await expect(page.locator('.agh-toast')).toContainText('terminal')
+  await expect(page).not.toHaveURL(/settings=terminal/)
+})

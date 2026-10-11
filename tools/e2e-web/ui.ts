@@ -37,7 +37,11 @@ export async function section(page: Page, id: string) {
     archived: 'history',
     feedback: 'skills',
   }
-  const entry = first[id] ?? id
+  let entry = first[id] ?? id
+  if (!(await page.getByTestId(`settings-nav-${entry}`).count())) {
+    if (entry === 'mcp') entry = 'search'
+    if (entry === 'skills') entry = 'feedback'
+  }
   if (['models', 'diagnostics'].includes(entry)) {
     const advanced = page.getByTestId('settings-advanced')
     if ((await advanced.getAttribute('open')) === null) await advanced.locator('summary').click()

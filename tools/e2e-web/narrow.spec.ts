@@ -119,7 +119,7 @@ for (const locale of ['en', 'zh-CN'])
           await settled(page)
           // Focusing a rail item can retain a horizontal scroll offset from earlier sections.
           // Frame navigation from its first item at both widths.
-          await page.getByTestId('settings-nav-model').evaluate((button) => {
+          await page.locator('#settings-everyday').evaluate((button) => {
             if (button.parentElement) button.parentElement.scrollLeft = 0
           })
         }

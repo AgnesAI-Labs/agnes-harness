@@ -130,9 +130,13 @@ export function SettingsHub({
     document.addEventListener('keydown', listener)
     return () => document.removeEventListener('keydown', listener)
   }, [embedded])
+  const shellText = (key: string) => {
+    const value = hostT(key)
+    return value === key ? t(key) : value
+  }
   const sectionTitle = (id: string) => {
     const key = settingsSections.get(id)?.titleKey ?? id
-    const value = hostT(key)
+    const value = shellText(key)
     return value === key ? t(id) : value
   }
   const navigate = (id: string) => {
@@ -168,12 +172,29 @@ export function SettingsHub({
         query,
         [
           sectionTitle(entry.id),
-          hostT(entry.groupTitleKey),
-          hostT(`settings-shell.keywords.${settingsGroup(entry.group)}`),
+          shellText(entry.groupTitleKey),
+          shellText(`settings-shell.keywords.${settingsGroup(entry.group)}`),
         ].join(' '),
       ),
     )
     if (!match) return null
+    if (settingsGroup(first.group) === 'extensions')
+      return group
+        .filter((entry) => matchesSettings(query, sectionTitle(entry.id) + shellText(entry.groupTitleKey)))
+        .map((entry) => (
+          <Button
+            key={entry.id}
+            appearance="ghost"
+            className="settings-nav-item"
+            data-testid={`settings-nav-${entry.id}`}
+            aria-current={entry.id === page ? 'page' : undefined}
+            onClick={() => navigate(entry.id)}
+          >
+            <Icon name="plug" size={20} />
+            {sectionTitle(entry.id)}
+            <small>{shellText(entry.groupTitleKey)}</small>
+          </Button>
+        ))
     return (
       <Button
         key={first.id}
@@ -184,7 +205,7 @@ export function SettingsHub({
         onClick={() => navigate(query ? match.id : first.id)}
       >
         <Icon name={groupIcons[first.group] ?? 'settings'} size={20} />
-        {hostT(first.groupTitleKey)}
+        {shellText(first.groupTitleKey)}
       </Button>
     )
   }
@@ -215,39 +236,39 @@ export function SettingsHub({
     <div className="runtime-settings" data-settings-view={detail ? 'detail' : 'list'}>
       {!embedded && (
         <nav
-          aria-label={hostT('settings-shell.railAria')}
+          aria-label={shellText('settings-shell.railAria')}
           data-testid="settings-navigation"
           className="settings-rail"
         >
-          <h2>{hostT('settings-shell.railTitle')}</h2>
+          <h2>{shellText('settings-shell.railTitle')}</h2>
           <label className="agnes-ui-field" htmlFor="settings-search">
-            <span className="visually-hidden">{hostT('settings-shell.findSettings')}</span>
+            <span className="visually-hidden">{shellText('settings-shell.findSettings')}</span>
             <SettingsInput
               id="settings-search"
               data-testid="settings-search"
               type="search"
               value={query}
-              placeholder={hostT('settings-shell.findSettings')}
+              placeholder={shellText('settings-shell.findSettings')}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === 'Escape') setQuery('')
               }}
             />
           </label>
-          <p className="settings-nav-label">{hostT('settings-shell.basicLabel')}</p>
+          <p className="settings-nav-label">{shellText('settings-shell.basicLabel')}</p>
           {groups.filter((group) => !advancedSettings(group[0]?.group ?? '')).map(renderGroup)}
           <details data-testid="settings-advanced" open={query ? true : undefined}>
-            <summary>{hostT('settings-shell.advanced')}</summary>
+            <summary>{shellText('settings-shell.advanced')}</summary>
             {groups.filter((group) => advancedSettings(group[0]?.group ?? '')).map(renderGroup)}
           </details>
           {!groups.some((group) =>
             group.some((entry) =>
               matchesSettings(
                 query,
-                sectionTitle(entry.id) + hostT(`settings-shell.keywords.${settingsGroup(entry.group)}`),
+                sectionTitle(entry.id) + shellText(`settings-shell.keywords.${settingsGroup(entry.group)}`),
               ),
             ),
-          ) && <SettingsState>{hostT('settings-shell.noSettings')}</SettingsState>}
+          ) && <SettingsState>{shellText('settings-shell.noSettings')}</SettingsState>}
         </nav>
       )}
       <section data-testid={`settings-page-${page}`} aria-label={sectionTitle(page)}>
@@ -259,13 +280,13 @@ export function SettingsHub({
               data-testid="settings-back"
               onClick={() => setDetail(false)}
             >
-              {hostT('settings-shell.back')}
+              {shellText('settings-shell.back')}
             </Button>
             {groupEntries.length > 1 && (
               <div
                 className="agnes-settings-section-tabs"
                 role="tablist"
-                aria-label={hostT(settingsSections.get(page)?.groupTitleKey ?? '')}
+                aria-label={shellText(settingsSections.get(page)?.groupTitleKey ?? '')}
               >
                 {groupEntries.map((entry) => (
                   <Button
@@ -321,9 +342,10 @@ export function SettingsHub({
                 <Button
                   appearance="ghost"
                   data-testid="settings-refresh"
-                  disabledReason={!api ? t('unavailable') : undefined}
+                  {...(!api ? { disabledReason: t('unavailable') } : {})}
                   disabled={!api || busy}
                   aria-busy={busy}
+                  loading={busy}
                   onClick={() => setRevision((value) => value + 1)}
                 >
                   {t('retry')}

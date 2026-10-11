@@ -182,6 +182,7 @@ function buildNavigation(rail: HTMLElement, entries: readonly SettingsNavigation
     button.dataset.settingsGroup = key
     const title = document.createElement('span')
     title.dataset.i18n = key === 'extensions' ? first.titleKey : first.groupTitleKey
+    title.textContent = title.dataset.i18n
     button.append(createSettingsIcon(document, first.icon), title)
     if (key === 'extensions') {
       const caption = document.createElement('p')
@@ -199,15 +200,18 @@ function buildNavigation(rail: HTMLElement, entries: readonly SettingsNavigation
           item.id = entry.navigationId ?? `runtime-settings-${entry.id}`
           const text = document.createElement('span')
           text.dataset.i18n = entry.titleKey
+          text.textContent = entry.titleKey
           item.append(createSettingsIcon(document, entry.icon), text)
         }
         const owner = document.createElement('small')
         owner.dataset.i18n = entry.groupTitleKey
+        owner.textContent = entry.groupTitleKey
         item.append(owner)
         parent.append(item)
       }
     } else parent.append(button)
     for (const entry of group) {
+      if (key === 'extensions') continue
       if (entry === first && (group.length === 1 || !entry.nativePane)) continue
       const item = createSettingsButton(document, 'ghost')
       item.id = entry.navigationId ?? `runtime-settings-${entry.id}`
@@ -697,6 +701,9 @@ function SettingsBuiltinImpl(
       }
       const onKeys = (event: KeyboardEvent) => {
         const target = event.target as HTMLElement
+        const modal = root.closest<HTMLDialogElement>('dialog')
+        if (!root.contains(target) && !modal?.open) return
+        if (target.closest?.('dialog') && target.closest('dialog') !== modal) return
         if (
           event.key === '/' &&
           !event.metaKey &&
@@ -732,11 +739,11 @@ function SettingsBuiltinImpl(
       }
       root.addEventListener('click', onClick)
       root.addEventListener('agnes:settings-route', onRoute)
-      root.addEventListener('keydown', onKeys)
+      document.addEventListener('keydown', onKeys)
       listeners.push(() => {
         root.removeEventListener('click', onClick)
         root.removeEventListener('agnes:settings-route', onRoute)
-        root.removeEventListener('keydown', onKeys)
+        document.removeEventListener('keydown', onKeys)
       })
       const syncEntries = () => {
         const rail = root.querySelector<HTMLElement>('.settings-rail')

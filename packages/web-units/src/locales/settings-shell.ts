@@ -39,7 +39,7 @@ export const settingsShellLocaleCatalog: LocaleCatalog = {
       'First use prepares the driver automatically; existing installations are checked and reused.',
     'settings-shell.workbenchBrand': 'Agnes Workbench',
     'settings-shell.mcpNav': 'MCP',
-    'settings-shell.computerUseNav': 'Computer use',
+    'settings-shell.computerUseNav': 'Computer Use',
 
     'settings-shell.group.agent': 'Agent behavior',
     'settings-shell.group.plugins': 'Plugins',

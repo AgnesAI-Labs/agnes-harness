@@ -31,6 +31,7 @@ import {
 export interface SettingsRegionOptions {
   sections?: import('@agnes/web-client').UiExtensionRegistry<import('@agnes/web-client').SettingsSection>
 
+  computerUseSupported?: () => Promise<boolean>
   computerUse?: ReactNode
   onChange?: (change: SettingsPaneChange) => void
   onClose?: () => void
