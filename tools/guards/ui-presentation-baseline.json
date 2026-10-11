@@ -1,0 +1,80 @@
+{
+  "scope": "Legacy business presentation baseline. Counts are ceilings by file, rule and literal; only remove allowances as pages migrate. Shared web-ui controls and the authoritative token palette own presentation.",
+  "count": 91,
+  "files": {
+    "packages/web-admin/src/admin/plugins/admin/page.tsx": {
+      "internal-button-class:primary-button": 2,
+      "internal-button-class:secondary-button": 4
+    },
+    "packages/web-admin/src/oauth-controls.ts": {
+      "internal-button-class:secondary-button": 1
+    },
+    "packages/web-units/src/composer.ts": {
+      "internal-button-class:secondary-button": 2,
+      "internal-button-class:primary-button": 1
+    },
+    "packages/web-units/src/diagnostics-viewer.ts": {
+      "hex-color:#fff": 2,
+      "hex-color:#1a1a1a": 1,
+      "hex-color:#666": 1,
+      "hex-color:#ddd": 1,
+      "hex-color:#2563eb": 1,
+      "hex-color:#111318": 1,
+      "hex-color:#e6e6e6": 1,
+      "hex-color:#9aa0a6": 1,
+      "hex-color:#333": 1,
+      "hex-color:#7aa2f7": 1
+    },
+    "packages/web-units/src/settings.ts": {
+      "internal-button-class:icon-button": 2,
+      "internal-button-class:secondary-button": 13,
+      "internal-button-class:primary-button": 4
+    },
+    "packages/web-units/src/sidebar.ts": {
+      "internal-button-class:icon-button": 2,
+      "internal-button-class:primary-button": 1,
+      "internal-button-class:secondary-button": 1
+    },
+    "packages/web-units/src/topbar.ts": {
+      "internal-button-class:icon-button": 1
+    },
+    "packages/web/public/admin.html": {
+      "internal-button-class:secondary-button": 5,
+      "internal-button-class:primary-button": 4
+    },
+    "packages/web/public/index.html": {
+      "internal-button-class:icon-button": 1,
+      "internal-button-class:primary-button": 6,
+      "internal-button-class:secondary-button": 5
+    },
+    "packages/web/public/resources.html": {
+      "internal-button-class:secondary-button": 4,
+      "internal-button-class:primary-button": 3
+    },
+    "packages/web/public/styles/03-sidebar.css": {
+      "internal-button-class:primary-button": 1
+    },
+    "packages/web/public/styles/11-responsive-shell.css": {
+      "internal-button-class:primary-button": 3,
+      "internal-button-class:icon-button": 1,
+      "internal-button-class:secondary-button": 1
+    },
+    "packages/web/public/styles/12-sidebar-overrides.css": {
+      "internal-button-class:primary-button": 1,
+      "internal-button-class:icon-button": 1
+    },
+    "packages/web/public/styles/13-turn-process.css": {
+      "hex-color:#000": 2
+    },
+    "packages/web/public/styles/16-plugin-resources.css": {
+      "internal-button-class:secondary-button": 5
+    },
+    "packages/web/src/navigation.ts": {
+      "internal-button-class:icon-button": 1
+    },
+    "packages/web/src/session-actions.ts": {
+      "internal-button-class:secondary-button": 1,
+      "internal-button-class:primary-button": 1
+    }
+  }
+}
