@@ -17,7 +17,7 @@ import {
 } from '@agnes/web-ui'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 import type { PluginAdminApi } from './api.js'
-import { CandidateListFacts, candidateIdentity } from './candidate-list.js'
+import { CandidateListFacts, candidateIdentity, candidateSkillText } from './candidate-list.js'
 import {
   addedPermissions,
   CandidateDelta,
@@ -33,6 +33,7 @@ type ListFacts = {
   startedAt?: string | undefined
   metadata?: NonNullable<AuthoringCandidate['preview']>['metadata'] | undefined
   sourceTitle?: string | undefined
+  skillText?: ReturnType<typeof candidateSkillText> | undefined
 }
 
 type Confirmation = {
@@ -77,6 +78,7 @@ export function CandidateInbox({
     [originTitle, setOriginTitle] = useState<string>()
   const [facts, setFacts] = useState<Record<string, ListFacts>>({})
   const review = useRef<HTMLElement>(null)
+  const refreshFacts = useRef<(() => Promise<boolean>) | undefined>(undefined)
   const originKey = selected?.origin.sessionKey
   useEffect(() => {
     let alive = true
@@ -137,6 +139,10 @@ export function CandidateInbox({
                       candidateHash: candidate.candidateHash,
                       identity: candidateIdentity(candidate),
                       metadata: candidate.preview?.metadata,
+                      skillText:
+                        candidateIdentity(candidate).type === 'skill'
+                          ? candidateSkillText(candidate)
+                          : undefined,
                       sourceTitle: await sessionTitle?.(candidate.origin.sessionKey).catch(() => undefined),
                       startedAt,
                     }
@@ -157,24 +163,33 @@ export function CandidateInbox({
         if (alive) {
           setItems(value.candidates)
           setFacts(Object.fromEntries(entries.flatMap(([id, detail]) => (detail ? [[id, detail]] : []))))
-          if (scope && entries.some(([, detail]) => !detail)) setError(t('candidates.metadataUnavailable'))
+          if (scope) {
+            if (entries.some(([, detail]) => !detail)) {
+              setError(t('candidates.metadataUnavailable'))
+              return false
+            } else setError((current) => (current === t('candidates.metadataUnavailable') ? '' : current))
+          }
         }
+        return true
       } catch {
         if (alive) setError(t('candidates.unavailable'))
+        return false
       }
     }
+    refreshFacts.current = refresh
     void refresh()
     const timer = setInterval(() => void refresh(), 3000)
     return () => {
       alive = false
       clearInterval(timer)
+      if (refreshFacts.current === refresh) refreshFacts.current = undefined
     }
   }, [api, t, sessionTurnTime, sessionTitle, scope])
   const refresh = async () => {
     if (api) setItems((await api.candidatesList()).candidates)
   }
   // Finish navigation reads before allowing another action to replace the selected review.
-  const navigate = async (read: () => Promise<void>) => {
+  const navigate = async (read: () => Promise<void | boolean>) => {
     setBusy(true)
     try {
       await read()
@@ -256,8 +271,9 @@ export function CandidateInbox({
           disabled={!api || busy}
           onClick={() =>
             void navigate(async () => {
-              await refresh()
-              setSelected(undefined)
+              const ok = refreshFacts.current ? await refreshFacts.current() : (await refresh(), true)
+              if (ok) setSelected(undefined)
+              return ok
             })
           }
         >
@@ -291,9 +307,13 @@ export function CandidateInbox({
                       icon={<Icon name="file-text" size={20} />}
                       title={
                         resolvePluginMetadata(facts[value.candidateId]?.metadata, locale)?.displayName ??
+                        facts[value.candidateId]?.skillText?.name ??
                         value.packageId
                       }
-                      description={resolvePluginMetadata(facts[value.candidateId]?.metadata, locale)?.summary}
+                      description={
+                        resolvePluginMetadata(facts[value.candidateId]?.metadata, locale)?.summary ??
+                        facts[value.candidateId]?.skillText?.summary
+                      }
                       meta={
                         <>
                           <span>

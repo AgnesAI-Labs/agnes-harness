@@ -7,7 +7,11 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
 import type { PluginAdminApi } from '../src/admin/plugins/api.js'
 import { candidateDiff } from '../src/admin/plugins/candidate-diff.js'
-import { CandidateListFacts, candidateIdentity } from '../src/admin/plugins/candidate-list.js'
+import {
+  CandidateListFacts,
+  candidateIdentity,
+  candidateSkillText,
+} from '../src/admin/plugins/candidate-list.js'
 import {
   addedPermissions,
   CandidateDelta,
@@ -228,52 +232,95 @@ it.each([false, true])(
   },
 )
 
-it('shows only inspected skill candidates and counts reviews without enabling a forbidden decision', async () => {
-  const skill = {
-    ...candidate,
-    candidateId: 'skill-review',
-    packageId: '@example/weekly-report',
-    state: 'review' as const,
-    preview: { ...preview, kinds: ['skills'] as ['skills'] },
-  }
-  const plugin = {
-    ...candidate,
-    candidateId: 'plugin-review',
-    state: 'review' as const,
-    preview: { ...preview, kinds: ['tool'] as ['tool'] },
-  }
-  const api = {
-    candidatesList: async () => ({ candidates: [skill, plugin] }),
-    candidatesShow: async (id: string) => (id === skill.candidateId ? skill : plugin),
-  } as unknown as PluginAdminApi
-  const count = vi.fn()
-  const host = document.createElement('div')
-  document.body.append(host)
-  const root = createRoot(host)
-  try {
-    await act(async () =>
-      root.render(
-        <CandidateInbox
-          api={api}
-          canReview={false}
-          canTest={false}
-          t={t}
-          confirm={() => undefined}
-          onPublished={async () => undefined}
-          scope="skill"
-          onPendingCount={count}
-        />,
-      ),
-    )
-    const rows = host.querySelectorAll('[data-testid="candidate-open"]')
-    expect(rows).toHaveLength(1)
-    expect(rows[0]?.closest('li')?.textContent).toContain(skill.packageId)
-    expect(count).toHaveBeenLastCalledWith(1)
-    await act(async () => (rows[0] as HTMLButtonElement).click())
-    expect(host.querySelector<HTMLButtonElement>('[data-testid="candidate-approve"]')?.disabled).toBe(true)
-    expect(host.querySelector<HTMLButtonElement>('[data-testid="candidate-reject"]')?.disabled).toBe(true)
-  } finally {
-    await act(async () => root.unmount())
-    host.remove()
-  }
-})
+it.each([
+  [
+    'name: "Weekly report"\ndescription: "Use when reporting observed evidence."',
+    'Weekly report',
+    'Use when reporting observed evidence.',
+  ],
+  [
+    "name: '<img src=x onerror=alert(1)>'\ndescription: '&literal description'",
+    '<img src=x onerror=alert(1)>',
+    '&literal description',
+  ],
+  ['name: *alias\ndescription: |', '@example/weekly-report', undefined],
+  ['name:\ndescription: "Only description"', '@example/weekly-report', 'Only description'],
+])(
+  'shows inspected Skill text and recovers reads without enabling a forbidden decision (%s)',
+  async (header, name, summary) => {
+    const { metadata: _metadata, ...plainPreview } = preview
+    const skill = {
+      ...candidate,
+      candidateId: 'skill-review',
+      packageId: '@example/weekly-report',
+      state: 'review' as const,
+      preview: { ...plainPreview, kinds: ['skills'] as ['skills'] },
+      sourceFiles: [
+        ...candidate.sourceFiles,
+        { path: 'SKILL.md', content: `---\n${header}\n---\nInert body.\n` },
+      ],
+    }
+    const plugin = {
+      ...candidate,
+      candidateId: 'plugin-review',
+      state: 'review' as const,
+      preview: { ...preview, kinds: ['tool'] as ['tool'] },
+    }
+    let listedSkill: AuthoringCandidate = skill
+    let unavailable = false
+    const api = {
+      candidatesList: async () => ({ candidates: [listedSkill, plugin] }),
+      candidatesShow: async (id: string) => {
+        if (unavailable) throw new Error('temporary read failure')
+        return id === skill.candidateId ? listedSkill : plugin
+      },
+    } as unknown as PluginAdminApi
+    const count = vi.fn()
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    try {
+      await act(async () =>
+        root.render(
+          <CandidateInbox
+            api={api}
+            canReview={false}
+            canTest={false}
+            t={t}
+            confirm={() => undefined}
+            onPublished={async () => undefined}
+            scope="skill"
+            onPendingCount={count}
+          />,
+        ),
+      )
+      const rows = host.querySelectorAll('[data-testid="candidate-open"]')
+      expect(rows).toHaveLength(1)
+      expect(rows[0]?.closest('li')?.textContent).toContain(name)
+      if (summary) expect(rows[0]?.closest('li')?.textContent).toContain(summary)
+      expect(host.querySelector('img')).toBeNull()
+      expect(count).toHaveBeenLastCalledWith(1)
+      await act(async () => (rows[0] as HTMLButtonElement).click())
+      expect(host.querySelector<HTMLButtonElement>('[data-testid="candidate-approve"]')?.disabled).toBe(true)
+      expect(host.querySelector<HTMLButtonElement>('[data-testid="candidate-reject"]')?.disabled).toBe(true)
+      await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="candidate-back"]')?.click())
+      listedSkill = { ...skill, state: 'draft' }
+      unavailable = true
+      await act(async () =>
+        host.querySelector<HTMLButtonElement>('[data-testid="candidate-refresh"]')?.click(),
+      )
+      expect(host.querySelector('[data-testid="candidate-error"]')?.textContent).toBe(
+        t('candidates.metadataUnavailable'),
+      )
+      unavailable = false
+      await act(async () =>
+        host.querySelector<HTMLButtonElement>('[data-testid="candidate-refresh"]')?.click(),
+      )
+      expect(host.querySelector('[data-testid="candidate-error"]')).toBeNull()
+      expect(host.querySelectorAll('[data-testid="candidate-open"]')).toHaveLength(1)
+    } finally {
+      await act(async () => root.unmount())
+      host.remove()
+    }
+  },
+)

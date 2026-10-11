@@ -15,6 +15,35 @@ export function candidateIdentity(value: AuthoringCandidate) {
     value.preview?.version ?? (typeof manifest?.version === 'string' ? manifest.version : undefined)
   return { type, version, change: value.baseHash === null ? `candidates.new.${type}` : 'candidates.update' }
 }
+/** Display-only fallback for authored Skills without package metadata. Never validates a candidate. */
+export function candidateSkillText(value: AuthoringCandidate): { name?: string; summary?: string } {
+  const file = value.sourceFiles.find((entry) => /(^|\/)SKILL\.md$/.test(entry.path))
+  const header = file?.content.slice(0, 16 * 1024).match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1]
+  if (!header) return {}
+  const scalar = (key: string, limit: number) => {
+    const raw = header.match(new RegExp(`^${key}:[\\t ]*(.+)$`, 'm'))?.[1]?.trim()
+    if (!raw || /^(?:[>|&*!{]|\[)/.test(raw)) return undefined
+    let text = raw
+    if (raw.startsWith('"')) {
+      try {
+        const decoded: unknown = JSON.parse(raw)
+        if (typeof decoded !== 'string') return undefined
+        text = decoded
+      } catch {
+        return undefined
+      }
+    } else if (raw.startsWith("'")) {
+      if (!raw.endsWith("'")) return undefined
+      text = raw.slice(1, -1).replace(/''/g, "'")
+    } else text = raw.replace(/\s+#.*$/, '')
+    text = text.trim()
+    return text && text.length <= limit && !/[\u0000-\u001f\u007f]/.test(text) ? text : undefined
+  }
+  const name = scalar('name', 128),
+    summary = scalar('description', 1024)
+  return { ...(name ? { name } : {}), ...(summary ? { summary } : {}) }
+}
+
 export function CandidateListFacts({
   identity,
   startedAt,
