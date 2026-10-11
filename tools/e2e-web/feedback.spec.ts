@@ -67,8 +67,17 @@ test('message feedback drafts a Skill with a scripted local model and publishes 
       ),
     ).toBe(false)
     await settings(page)
-    await section(page, 'plugins')
-    await page.getByTestId('candidate-open').filter({ hasText: candidate.packageId }).click()
+    await section(page, 'skills')
+    await page
+      .locator('#resource-list')
+      .getByRole('tab', { name: /^Pending review/ })
+      .click()
+    await page
+      .locator('#resource-list')
+      .getByTestId('candidate-list')
+      .locator(`li[data-candidate-id="${candidate.candidateId}"]`)
+      .getByTestId('candidate-open')
+      .click()
     await page.getByTestId('candidate-test').click()
     await page
       .getByRole('dialog', { name: 'Run tests', exact: true })

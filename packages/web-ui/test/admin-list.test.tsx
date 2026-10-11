@@ -38,7 +38,7 @@ function renderText(element: ReturnType<typeof createElement>): string {
 }
 
 describe('plugin list localization', () => {
-  it('uses English for the default empty state and keeps contribution IDs in details', () => {
+  it('uses English for the default empty state and hides technical IDs from the list', () => {
     expect(renderText(createElement(PluginList, listProps))).toContain('No packages are installed')
     checkContributionDetails('en')
   })
@@ -257,7 +257,7 @@ it('renders six purpose sections with localized fallback and an explicit safe do
       { source: purposeSource('zh-CN') },
       createElement(PluginPurposeSections, {
         item: purposeRow,
-        value: { provides: [], appearsIn: [], available: false },
+        value: { provides: [{ kind: 'tool', id: 'read_report' }], appearsIn: [], available: true },
         permissions: 'Permission review',
         versions: 'Pinned versions',
       }),
@@ -270,6 +270,8 @@ it('renders six purpose sections with localized fallback and an explicit safe do
   expect(host.querySelector('[data-testid=plugin-overview]')?.textContent).toContain(
     'Read and search local reports.',
   )
+  expect(host.querySelector('[data-testid=plugin-provides-detail]')?.textContent).toContain('read_report')
+  expect(host.querySelector('[data-testid=plugin-provides]')?.textContent).toContain('1')
   expect(host.querySelector('a')?.getAttribute('rel')).toBe('noopener noreferrer')
   dispose()
 })

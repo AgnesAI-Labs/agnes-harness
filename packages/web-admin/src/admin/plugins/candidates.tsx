@@ -9,6 +9,7 @@ import {
   EmptyState,
   Icon,
   ListRow,
+  MetaText,
   SettingsState,
   SettingsToolbar,
   Tag,
@@ -243,7 +244,7 @@ export function CandidateInbox({
   return (
     <section className="plugin-candidates" data-testid="plugin-candidates" aria-label={t('candidates.title')}>
       <SettingsToolbar>
-        {selected ? (
+        {selected && !reviewSurface ? (
           <Button data-testid="candidate-back" disabled={busy} onClick={() => setSelected(undefined)}>
             {t('candidates.back')}
           </Button>
@@ -284,7 +285,7 @@ export function CandidateInbox({
           ) : (
             <ul className="candidate-list" data-testid="candidate-list">
               {ordered.map((value) => (
-                <li key={value.candidateId}>
+                <li key={value.candidateId} data-candidate-id={value.candidateId}>
                   {scope === 'skill' ? (
                     <ListRow
                       icon={<Icon name="file-text" size={20} />}
@@ -298,6 +299,9 @@ export function CandidateInbox({
                           <span>
                             {facts[value.candidateId]?.sourceTitle ?? t('candidates.untitledSession')}
                           </span>
+                          {!['review', 'failed', 'interrupted'].includes(value.state) && (
+                            <MetaText>{t('candidates.state.' + value.state)}</MetaText>
+                          )}
                           {facts[value.candidateId] && (
                             <CandidateListFacts
                               identity={facts[value.candidateId]!.identity}
@@ -367,6 +371,11 @@ export function CandidateInbox({
             data-testid="candidate-review"
             aria-label={t('candidates.review')}
           >
+            {reviewSurface && (
+              <Button data-testid="candidate-back" disabled={busy} onClick={() => setSelected(undefined)}>
+                {t('candidates.back')}
+              </Button>
+            )}
             <header className="candidate-summary" data-testid="candidate-summary">
               <div className="candidate-summary-heading">
                 <h4>{selected.packageId}</h4>
