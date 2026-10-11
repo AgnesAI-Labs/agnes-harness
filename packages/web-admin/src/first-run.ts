@@ -39,7 +39,9 @@ export function createFirstRunController(options: {
   banner: HTMLElement
   client: Client
   storage?: Pick<Storage, 'getItem' | 'setItem'> | undefined
-  openAccount(): Promise<void>
+  attachAccount(host: HTMLElement): () => void
+  connectAccount(): Promise<boolean>
+  chooseWorkspace(path?: string): Promise<string | undefined>
   examples(): Promise<void>
   closeSettings(): void
   details(): Promise<void>
@@ -47,9 +49,11 @@ export function createFirstRunController(options: {
   saved(snapshot: ConfigSnapshot): Promise<void>
 }) {
   let snapshot: ConfigSnapshot | undefined
-  let step = 0,
-    accountId = '',
-    model = ''
+  let accountReady = false
+  let step = 0
+  let connecting = false,
+    demo = false,
+    workspace = ''
   let error: unknown
   let visible = false,
     paused = false,
@@ -86,9 +90,11 @@ export function createFirstRunController(options: {
       createElement(FirstRunGuide, {
         open: visible && !paused,
         step,
-        snapshot,
-        accountId,
-        model,
+        connecting,
+        accountReady,
+        demo,
+        workspace,
+        attachAccount: options.attachAccount,
         busy,
         error:
           error === undefined
@@ -100,24 +106,39 @@ export function createFirstRunController(options: {
           error = undefined
           render()
         },
-        onAccount(id: string) {
-          accountId = id
-          model = snapshot?.accounts?.find((a) => a.accountId === id)?.model ?? ''
-          render()
-        },
-        onModel(id: string) {
-          model = id
-          render()
-        },
         onAdd() {
-          paused = true
+          connecting = true
+          demo = false
+          error = undefined
           render()
-          void options.openAccount().catch(showError)
+        },
+        onDemo() {
+          connecting = false
+          demo = true
+          error = undefined
+          render()
+        },
+        onWorkspace(path?: string) {
+          if (busy) return
+          busy = true
+          error = undefined
+          render()
+          void options
+            .chooseWorkspace(path)
+            .then((name) => {
+              if (disposed) return
+              if (name) workspace = name
+              busy = false
+              render()
+            })
+            .catch(showError)
         },
         onExamples() {
           paused = true
           render()
-          void options.examples().catch(showError)
+          queueMicrotask(() => {
+            void options.examples().catch(showError)
+          })
         },
         onContinue() {
           void next()
@@ -136,13 +157,22 @@ export function createFirstRunController(options: {
       report?.status === 'fail' && !bannerDismissed
         ? createElement(DoctorNotice, {
             t,
+            count: report.checks.filter((check) => check.status === 'fail').length,
             onDetails() {
               paused = visible
               render()
-              void options.details().catch(showError)
+              queueMicrotask(() => {
+                void options.details().catch(showError)
+              })
             },
             onDismiss() {
               bannerDismissed = true
+              try {
+                if (report?.homeId)
+                  options.storage?.setItem(`agh-doctor-dismissed:${report.homeId}`, String(Date.now()))
+              } catch {
+                /* Storage is optional. */
+              }
               render()
             },
           })
@@ -156,53 +186,39 @@ export function createFirstRunController(options: {
     error = value
     render()
   }
-  const select = () => {
-    const account =
-      snapshot?.accounts?.find((a) => a.accountId === snapshot?.defaultAccountId) ??
-      snapshot?.accounts?.find((a) => a.enabled && a.credentialConfigured)
-    accountId = account?.accountId ?? ''
-    model = account?.model ?? ''
-  }
   const next = async () => {
     if (busy) return
-    if (step === 4) {
+    if (step === 2) {
       visible = false
       remember()
       render()
       await options.start().catch(showError)
       return
     }
-    if (step !== 2) {
-      step++
+    if (step === 1) {
+      if (!workspace) return
+      step = 2
       render()
       return
     }
-    const account = snapshot?.accounts?.find((a) => a.accountId === accountId)
-    if (!account || !model || !snapshot) return
+    if (demo || (accountReady && !connecting)) {
+      step = 1
+      render()
+      return
+    }
+    if (!connecting) return
+    const epoch = ++generation
     busy = true
     error = undefined
-    const epoch = ++generation
     render()
     try {
-      let saved =
-        account.model === model
-          ? snapshot
-          : await options.client.config.save({
-              providerId: account.providerId,
-              accountId: account.accountId,
-              model,
-              expectedRevision: snapshot.revision,
-            })
-      if (saved.defaultAccountId !== accountId)
-        saved = await options.client.config.account({
-          accountId,
-          action: 'default',
-          expectedRevision: saved.revision,
-        })
-      await options.saved(saved)
+      const saved = await options.connectAccount()
       if (epoch !== generation || disposed) return
-      snapshot = saved
-      step = 3
+      if (saved) {
+        accountReady = true
+        step = 1
+        connecting = false
+      }
       busy = false
       render()
     } catch (value) {
@@ -219,25 +235,26 @@ export function createFirstRunController(options: {
   return {
     async initialize(value: ConfigSnapshot, hasSession: boolean) {
       snapshot = value
-      select()
       try {
         report = await loadDoctor(false, pending.signal)
       } catch {
         /* Startup is never blocked by diagnostics. */
       }
       if (disposed) return
+      try {
+        const dismissed = report?.homeId
+          ? Number(options.storage?.getItem(`agh-doctor-dismissed:${report.homeId}`))
+          : 0
+        bannerDismissed = dismissed > 0 && Date.now() - dismissed < 7 * 24 * 60 * 60 * 1000
+      } catch {
+        /* Diagnostics never block startup. */
+      }
       visible = !hasSession && needsFirstRun(value) && !skipped()
       render()
       return visible
     },
     updated(value: ConfigSnapshot) {
       snapshot = value
-      select()
-      if (visible && step === 1 && value.accounts?.some((a) => a.enabled && a.credentialConfigured)) {
-        step = 2
-        paused = false
-        options.closeSettings()
-      }
       render()
     },
     refreshLocale: render,

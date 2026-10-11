@@ -16,7 +16,9 @@ node agnes.mjs serve
 
 For an installed distribution use `agh serve`. Keep the complete distribution and matching native helpers. The terminal prints the loopback URL, selected home, profile and diagnostic summary. Open that URL. Use the same environment in other terminals; a second `mktemp` selects a different instance. Set `AGNES_LOCALE=zh-CN` for Chinese CLI messages. Web has its own language preference.
 
-With no saved model accounts or previous sessions, Web offers five steps: welcome, add and test an account, choose a default model, optionally browse official examples, and start a session. Account setup reuses Settings and saves credentials privately. Tests contact the selected provider and may incur charges. Examples retain capability review, trust and enablement; opening the catalog grants no permissions. Defaults apply to new sessions. You can skip every step, use the local demo, and configure later in Settings. The skip preference is scoped to this home/profile in this browser.
+With no saved model accounts or previous sessions, Web offers three steps: connect a model, choose a work folder, and start a conversation. Enter your API key in the guide and choose **Verify & continue**, or try the local Demo without a key. Account setup reuses the Settings credential and OAuth flows; the default model is selected after verification. Advanced connection and model options are folded away. Tests contact the selected provider and may incur charges. The final step links to business-agent examples in **Plugins → Discover**; opening the catalog grants no permissions. Defaults apply to new sessions. You can skip at any time and configure later in Settings. The skip preference is scoped to this home/profile in this browser.
+
+To add another account, open **Settings → Model accounts → Add account**. Choose a provider, enter the key and choose **Verify & save**. The account name and endpoint are filled in for you; expand **Advanced options** to change them. A failed operation keeps the draft. Account row menus contain default selection, enablement and removal; removal requires a second confirmation.
 
 ## One versioned home
 
@@ -50,6 +52,6 @@ The default command checks Node, native helpers, layout, permissions, credential
 
 Model services are never contacted by the default check. `--probe` explicitly tests enabled accounts, with a shared 45-second bound and cancellation; it may incur charges. The pre-existing `doctor provider --probe` minimal inference and named diagnostics remain available. `doctor platform` gives the detailed Linux bubblewrap/Landlock probe; binary presence alone does not establish isolation. MCP readiness does not certify a particular server's trust, profile or connectivity.
 
-Web displays failed checks as a dismissible notice and offers **Settings → Diagnostics → Self-check**. **Check again** reads local state; **Test model accounts** explicitly contacts providers. Diagnostic failures do not prevent skipping setup. For socket, port, home or credential failures, follow [troubleshooting](troubleshooting.md).
+Web displays failed checks with the number of problems and offers **Settings → Advanced → Runtime diagnostics → Self-check**. Dismissing the notice hides it for seven days in this browser for the current home. **Check again** reads local state; **Test model accounts** explicitly contacts providers. Diagnostic failures do not prevent skipping setup. For socket, port, home or credential failures, follow [troubleshooting](troubleshooting.md).
 
 Contract: [App Server](../reference/app-server.md); implementation: [home layout](../../packages/host-common/src/home-layout.ts), [doctor](../../packages/host-infrastructure/src/doctor.ts).

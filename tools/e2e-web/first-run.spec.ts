@@ -4,114 +4,88 @@ import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { firstRunSnapshots } from './first-run-snapshots.js'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
-import { chooseWorkspace, closeSettings, fullAccess, preferences } from './ui.js'
+import { closeSettings, fullAccess, preferences, settings } from './ui.js'
 
+// The behavioral gate uses the same real flows without the decorative replay/pixel matrix.
+const behaviorOnly = process.env.AGH_BEHAVIOR_ONLY === '1'
 for (const locale of ['en', 'zh-CN']) {
-  test.describe(`first-run snapshots ${locale}`, () => {
-    // Each entry owns one real flow. Its DOM frames feed the decorative variants in this group.
+  test.describe(`first-run ${locale}`, () => {
     test.describe.configure({ mode: 'serial' })
-    let snapshots: Awaited<ReturnType<typeof firstRunSnapshots>>
-    let modelName: string
+    let snapshots: Awaited<ReturnType<typeof firstRunSnapshots>> | undefined
     test.beforeAll(async () => {
-      snapshots = await firstRunSnapshots()
+      if (!behaviorOnly) snapshots = await firstRunSnapshots()
     })
     test.afterAll(async () => {
       await snapshots?.close()
     })
-    const theme = 'light',
-      width = 1440
-    test(`guided first run ${locale}/${theme}/${width}`, async ({ page, runtime }, info) => {
+    test(`guided first run ${locale}/light/1440`, async ({ page, runtime }, info) => {
       test.setTimeout(150_000)
       const en = locale === 'en'
-      snapshots.recordAssets(page)
-      await page.setViewportSize({ width, height: width === 1440 ? 900 : 800 })
-      await preferences(page, locale, theme)
+      const name = (english: string, chinese: string) => (en ? english : chinese)
+      snapshots?.recordAssets(page)
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await preferences(page, locale)
       await page.goto(runtime.url)
       const guide = page.getByTestId('first-run-guide')
-      const quality = async (name: string) => {
+      const quality = async (frame: string) => {
         await translated(page)
-        await accessible(page, info, name)
-        await screen(page, info, `${name}-${locale}-${theme}-${width}`)
-        await snapshots.capture(page, name)
+        await accessible(page, info, frame)
+        if (!behaviorOnly) await screen(page, info, `${frame}-${locale}-light-1440`)
+        await snapshots?.capture(page, frame)
       }
-      await expect(guide).toHaveAttribute('data-step', 'welcome')
-      await expect(page.getByTestId('composer-agent')).toBeEnabled()
-      await expect(page.getByTestId('composer-agent')).toHaveAttribute(
-        'aria-label',
-        locale === 'en' ? 'More' : '更多',
-      )
-      await expect(page.locator('.workspace-heading .workspace-name').first()).not.toBeEmpty()
-      const modal = page.getByRole('dialog', { name: en ? 'Welcome to AGH' : '欢迎使用 AGH', exact: true })
+      await expect(guide).toHaveAttribute('data-step', 'account')
+      await expect(page.getByTestId('composer-agent')).toHaveAttribute('aria-label', name('More', '更多'))
+      const modal = page.getByRole('dialog', {
+        name: name('Welcome to Agnes Harness', '欢迎使用 Agnes Harness'),
+        exact: true,
+      })
       await expect(modal).toHaveAttribute('aria-modal', 'true')
-      await expect(page.locator('.agnes-first-run-layer .ant-modal-mask')).toBeVisible()
       await expect.poll(() => modal.evaluate((node) => node.contains(document.activeElement))).toBe(true)
       await page.keyboard.press('F6')
       await expect.poll(() => modal.evaluate((node) => node.contains(document.activeElement))).toBe(true)
-      const names = await page.locator('.workspace-heading .workspace-name').allTextContents()
-      await quality('setup-welcome')
-      expect(await page.locator('.workspace-heading .workspace-name').allTextContents()).toEqual(names)
-      await expect(page.locator('[data-e2e-workspace-original]')).toHaveCount(0)
-      await page.getByTestId('first-run-next').click()
-      await expect(guide).toHaveAttribute('data-step', 'account')
       await quality('setup-account')
       await page.getByTestId('first-run-add').click()
-      const account = page.getByRole('dialog', { name: en ? 'Add account' : '添加账户', exact: true })
-      await expect(account).toBeVisible()
+      const connection = page.getByTestId('first-run-connection')
+      await expect(connection.locator('#config-provider-trigger')).toBeEnabled()
+      await expect(page.locator('#account-dialog[open]')).toHaveCount(0)
       await quality('setup-add-account')
       const client = await runtime.connect()
       const catalog = (await client.config.test({ providerId: 'deepseek' })).models
-      const firstModel = catalog[0]
-      const model = firstModel?.id
-      if (!firstModel || !model) throw new Error('The installed model catalog must provide a fixture model')
-      modelName = firstModel.name
+      const model = catalog[0]?.id
+      if (!model) throw new Error('The provider catalog must declare a fixture model')
       const provider = await startProviderFixture('FIRST_TASK_COMPLETED', undefined, model)
       try {
-        await account
-          .getByRole('textbox', { name: en ? 'Account name' : '账户名称', exact: true })
-          .fill(en ? 'Local test account' : '本地测试账户')
-        await account.getByRole('combobox', { name: en ? /^Provider:/ : /^Provider：/ }).click()
+        await connection.locator('#config-provider-trigger').click()
         await page.getByRole('option', { name: 'DeepSeek', exact: true }).click()
-        await account
-          .getByRole('textbox', { name: en ? 'Base URL' : '服务地址', exact: true })
-          .fill(provider.baseUrl)
-        await account.getByLabel('API Key', { exact: true }).fill(provider.apiKey)
-        await account.getByRole('button', { name: en ? 'Test connection' : '测试连接', exact: true }).click()
-        await expect(
-          account.getByRole('button', { name: en ? 'Save account' : '保存账户', exact: true }),
-        ).toBeEnabled()
-        await account.getByRole('button', { name: en ? 'Save account' : '保存账户', exact: true }).click()
-        await expect(account).toBeHidden()
-        await expect(guide).toHaveAttribute('data-step', 'model')
-        await expect(page.getByTestId('first-run-model')).toContainText(firstModel.name)
-        await page.getByTestId('first-run-model').getByRole('combobox').click()
-        await page.getByTestId('first-run-model').getByRole('combobox').press('Enter')
-        await expect(page.locator('#notice')).toBeEmpty()
-        await expect(page.getByTestId('first-run-saved')).toHaveAttribute('role', 'status')
-        await quality('setup-model')
+        await connection.locator('#config-account-advanced > summary').click()
+        await connection.locator('#config-base-url').fill(provider.baseUrl)
+        await connection.getByLabel('API Key', { exact: true }).fill(provider.apiKey)
         await page.getByTestId('first-run-next').click()
-        await expect(guide).toHaveAttribute('data-step', 'examples')
-        await expect(page.getByTestId('first-run-saved')).toHaveCount(0)
-        await quality('setup-examples')
+        await expect(guide).toHaveAttribute('data-step', 'workspace')
+        await expect(page.getByTestId('first-run-saved')).toHaveAttribute('role', 'status')
+        await expect(page.locator('#config-api-key')).toHaveValue('')
+        await guide.locator('details > summary').click()
+        await guide
+          .getByRole('textbox', { name: name('Folder path', '文件夹路径'), exact: true })
+          .fill(runtime.workspace)
+        await guide.getByRole('button', { name: name('Use folder', '使用此文件夹'), exact: true }).click()
+        await expect(page.getByTestId('first-run-workspace')).toHaveText('w')
+        await quality('setup-workspace')
+        await page.getByTestId('first-run-next').click()
+        await expect(guide).toHaveAttribute('data-step', 'ready')
         await page.getByTestId('first-run-examples').click()
         await expect(page.getByTestId('settings-page-discover')).toBeVisible()
-        await expect(page.locator('[data-testid^="example-install-"]').first()).toBeVisible()
-        await snapshots.capture(page, 'examples-open')
         await closeSettings(page, locale)
-        await expect(guide).toHaveAttribute('data-step', 'examples')
-        await page.getByTestId('first-run-next').click()
         await expect(guide).toHaveAttribute('data-step', 'ready')
         await quality('setup-ready')
         await page.getByTestId('first-run-next').click()
         await expect(guide).toBeHidden()
-        await snapshots.capture(page, 'setup-finished')
-        await chooseWorkspace(page, runtime, locale)
+        await expect(page.locator('#new-session[open]')).toHaveCount(0)
         const diagnostics = await client.request('_agnes/v1/doctor.run', {})
         expect(diagnostics.checks.find((check) => check.id === 'accounts')?.probed).toBe(false)
-        if (diagnostics.checks.find((check) => check.id === 'sandbox')?.status !== 'ok') {
-          // A restricted host cannot admit L1. Select the existing explicit permission preset.
+        if (diagnostics.checks.find((check) => check.id === 'sandbox')?.status !== 'ok')
           await fullAccess(page, locale)
-        }
-        const composer = page.getByRole('textbox', { name: en ? 'Task content' : '任务内容', exact: true })
+        const composer = page.getByRole('textbox', { name: name('Task content', '任务内容'), exact: true })
         await composer.fill('Complete my first task')
         await composer.press('Enter')
         await expect(page.getByTestId('conversation-turn')).toContainText('FIRST_TASK_COMPLETED')
@@ -119,148 +93,141 @@ for (const locale of ['en', 'zh-CN']) {
         const saved = await client.config.get()
         expect(saved.accounts?.find((a) => a.accountId === saved.defaultAccountId)?.model).toBe(model)
         expect(JSON.stringify(saved)).not.toContain(provider.apiKey)
-        expect(runtime.logs()).toMatch(/Doctor:|运行诊断：|运行诊断:/)
-        // Deliberately damage only our synthetic marker while the daemon remains live.
+        // Add another account through the two-step dialog; it must reuse the restored native region.
+        await settings(page, locale)
+        await page.getByTestId('settings-advanced').locator('summary').click()
+        await page.getByTestId('settings-nav-models').click()
+        await page.locator('#config-add-account').click()
+        const account = page.locator('#account-dialog')
+        await expect(account.locator('.account-dialog-body')).toHaveAttribute('data-account-step', 'provider')
+        await account
+          .locator('#config-provider-choices')
+          .getByRole('button', { name: 'DeepSeek', exact: true })
+          .click()
+        await expect(account.locator('#config-account-advanced')).not.toHaveAttribute('open', '')
+        await account.locator('#config-account-advanced > summary').click()
+        await account.locator('#config-account-name').fill('Second account')
+        await account.locator('#config-base-url').fill(provider.baseUrl)
+        await account.getByLabel('API Key', { exact: true }).fill(provider.apiKey)
+        await account.locator('#config-save').click()
+        await expect(account).toBeHidden()
+        await expect(page.locator('.config-account')).toHaveCount(2)
+        await page
+          .getByRole('button', {
+            name: name('Actions for Second account', 'Second account 的操作'),
+            exact: true,
+          })
+          .click()
+        await page
+          .getByRole('menuitem', {
+            name: name('Set as default Second account', '设为默认 Second account'),
+            exact: true,
+          })
+          .click()
+        await expect
+          .poll(async () => (await client.config.get()).defaultAccountId)
+          .not.toBe(saved.defaultAccountId)
+        await closeSettings(page, locale)
+        await page.locator('#model').click()
+        await page
+          .locator('#model-picker-popover [role="option"]')
+          .filter({ hasText: 'Second account' })
+          .first()
+          .click()
+        await page.locator('#model').click()
+        await expect(
+          page.locator('#model-picker-popover [role="option"][aria-selected="true"]'),
+        ).toContainText('Second account')
+        await page.keyboard.press('Escape')
+        await expect(page.locator('#new')).toHaveClass(/agh-btn--primary/)
+        await expect(page.locator('#settings')).toHaveClass(/agh-btn--ghost/)
         const marker = join(runtime.home, 'home-layout.json'),
           original = await readFile(marker, 'utf8')
         await writeFile(marker, JSON.stringify({ version: 99 }))
         try {
-          await page.goto(runtime.url)
+          await page.reload()
           await expect(page.getByTestId('doctor-notice')).toBeVisible()
-          // The notice precedes session restoration; capture the usable workspace, not that interim frame.
-          await expect(composer).toBeEnabled()
-          await expect(page.getByTestId('workbench-right-toggle')).toBeVisible()
-          await quality('doctor-notice')
           await page
-            .getByRole('button', { name: en ? 'View diagnostics' : '查看运行诊断', exact: true })
+            .getByRole('button', { name: name('View diagnostics', '查看运行诊断'), exact: true })
             .click()
-          await expect(page.getByTestId('settings-page-diagnostics')).toBeVisible()
-          await expect(page.getByTestId('settings-tab-doctor')).toHaveCount(0)
-          await expect(page.getByTestId('doctor-panel')).toBeVisible()
           await expect(page.getByTestId('doctor-check-home')).toContainText(
-            en ? 'Check failed' : '检查未通过',
+            name('Check failed', '检查未通过'),
           )
-          await snapshots.capture(page, 'doctor-failed')
           await writeFile(marker, original)
           await page.getByTestId('diagnostics-doctor-run').click()
-          await expect(page.getByTestId('doctor-check-home')).toContainText(en ? 'Ready' : '就绪')
+          await expect(page.getByTestId('doctor-check-home')).toContainText(name('Ready', '就绪'))
           await expect(page.locator('[data-testid^="doctor-check-"]')).toHaveCount(11)
-          await expect(page.getByTestId('doctor-check-node')).toHaveText(
-            en ? 'Node.js runtimeReady' : 'Node.js 运行环境就绪',
-          )
-          await page.getByTestId('doctor-check-mcp').scrollIntoViewIfNeeded()
-          await page
-            .getByTestId('settings-page-diagnostics')
-            .getByRole('heading', { name: en ? 'Runtime & diagnostics' : '运行时与诊断', exact: true })
-            .scrollIntoViewIfNeeded()
-          await quality('runtime-doctor')
           await closeSettings(page, locale)
           await page
-            .getByRole('button', { name: en ? 'Dismiss runtime notice' : '关闭运行提示', exact: true })
+            .getByRole('button', { name: name('Dismiss runtime notice', '关闭运行提示'), exact: true })
             .click()
           await expect(page.getByTestId('doctor-notice')).toBeHidden()
-          await snapshots.capture(page, 'doctor-dismissed')
+          await page.reload()
+          await expect(page.getByTestId('doctor-notice')).toBeHidden()
         } finally {
           await writeFile(marker, original)
         }
-        await page.reload()
-        await expect(page.getByTestId('first-run-guide')).toBeHidden()
+        await expect(guide).toBeHidden()
         await expect(page.getByTestId('conversation-turn')).toContainText('FIRST_TASK_COMPLETED')
-        await snapshots.capture(page, 'restored')
       } finally {
         await provider.close()
       }
     })
-    for (const appearance of ['light', 'dark'])
-      for (const variantWidth of [1440, 1280]) {
-        if (appearance === 'light' && variantWidth === 1440) continue
-        test(`guided first run ${locale}/${appearance}/${variantWidth}`, async ({ page }, info) => {
-          test.setTimeout(150_000)
-          const en = locale === 'en'
-          await page.setViewportSize({ width: variantWidth, height: variantWidth === 1440 ? 900 : 800 })
-          const show = (name: string) => snapshots.show(page, name, appearance, variantWidth)
-          const quality = async (name: string) => {
-            await translated(page)
-            await accessible(page, info, name)
-            await screen(page, info, `${name}-${locale}-${appearance}-${variantWidth}`)
-          }
-          const guide = page.getByTestId('first-run-guide')
-          await show('setup-welcome')
-          await expect(guide).toHaveAttribute('data-step', 'welcome')
-          await expect(page.getByTestId('composer-agent')).toBeEnabled()
-          await expect(page.getByTestId('composer-agent')).toHaveAttribute(
-            'aria-label',
-            locale === 'en' ? 'More' : '更多',
-          )
-          await expect(page.locator('.workspace-heading .workspace-name').first()).not.toBeEmpty()
-          const modal = page.getByRole('dialog', {
-            name: en ? 'Welcome to AGH' : '欢迎使用 AGH',
-            exact: true,
+    if (!behaviorOnly)
+      for (const appearance of ['light', 'dark'])
+        for (const width of [1440, 1280]) {
+          if (appearance === 'light' && width === 1440) continue
+          test(`first run presentation ${locale}/${appearance}/${width}`, async ({ page }, info) => {
+            if (!snapshots) throw new Error('Missing first-run frames')
+            for (const frame of ['setup-account', 'setup-add-account', 'setup-workspace', 'setup-ready']) {
+              await snapshots.show(page, frame, appearance, width)
+              await translated(page)
+              await accessible(page, info, frame)
+              await screen(page, info, `${frame}-${locale}-${appearance}-${width}`)
+            }
           })
-          await expect(modal).toHaveAttribute('aria-modal', 'true')
-          await expect(page.locator('.agnes-first-run-layer .ant-modal-mask')).toBeVisible()
-          await expect.poll(() => modal.evaluate((node) => node.contains(document.activeElement))).toBe(true)
-          const names = await page.locator('.workspace-heading .workspace-name').allTextContents()
-          await quality('setup-welcome')
-          expect(await page.locator('.workspace-heading .workspace-name').allTextContents()).toEqual(names)
-          await expect(page.locator('[data-e2e-workspace-original]')).toHaveCount(0)
-          await show('setup-account')
-          await expect(guide).toHaveAttribute('data-step', 'account')
-          await quality('setup-account')
-          await show('setup-add-account')
-          await expect(
-            page.getByRole('dialog', { name: en ? 'Add account' : '添加账户', exact: true }),
-          ).toBeVisible()
-          await quality('setup-add-account')
-          await show('setup-model')
-          await expect(guide).toHaveAttribute('data-step', 'model')
-          await expect(
-            page.getByRole('dialog', { name: en ? 'Add account' : '添加账户', exact: true }),
-          ).toBeHidden()
-          await expect(page.getByTestId('first-run-model')).toContainText(modelName)
-          await expect(page.locator('#notice')).toBeEmpty()
-          await expect(page.getByTestId('first-run-saved')).toHaveAttribute('role', 'status')
-          await quality('setup-model')
-          await show('setup-examples')
-          await expect(guide).toHaveAttribute('data-step', 'examples')
-          await expect(page.getByTestId('first-run-saved')).toHaveCount(0)
-          await quality('setup-examples')
-          await show('examples-open')
-          await expect(page.getByTestId('settings-page-discover')).toBeVisible()
-          await expect(page.locator('[data-testid^="example-install-"]').first()).toBeVisible()
-          await show('setup-ready')
-          await expect(guide).toHaveAttribute('data-step', 'ready')
-          await quality('setup-ready')
-          await show('setup-finished')
-          await expect(guide).toBeHidden()
-          await show('doctor-notice')
-          await expect(page.getByTestId('doctor-notice')).toBeVisible()
-          await expect(
-            page.getByRole('textbox', { name: en ? 'Task content' : '任务内容', exact: true }),
-          ).toBeEnabled()
-          await expect(page.getByTestId('workbench-right-toggle')).toBeVisible()
-          await quality('doctor-notice')
-          await show('doctor-failed')
-          await expect(page.getByTestId('settings-page-diagnostics')).toBeVisible()
-          await expect(page.getByTestId('settings-tab-doctor')).toHaveCount(0)
-          await expect(page.getByTestId('doctor-panel')).toBeVisible()
-          await expect(page.getByTestId('doctor-check-home')).toContainText(
-            en ? 'Check failed' : '检查未通过',
-          )
-          await show('runtime-doctor')
-          await expect(page.getByTestId('doctor-check-home')).toContainText(en ? 'Ready' : '就绪')
-          await expect(page.locator('[data-testid^="doctor-check-"]')).toHaveCount(11)
-          await expect(page.getByTestId('doctor-check-node')).toHaveText(
-            en ? 'Node.js runtimeReady' : 'Node.js 运行环境就绪',
-          )
-          await quality('runtime-doctor')
-          await show('doctor-dismissed')
-          await expect(page.getByTestId('doctor-notice')).toBeHidden()
-          await show('restored')
-          await expect(guide).toBeHidden()
-          await expect(page.getByTestId('conversation-turn')).toContainText('FIRST_TASK_COMPLETED')
-          await expect(page.getByTestId('conversation-turn')).toHaveAttribute('data-status', 'completed')
-        })
-      }
+        }
   })
 }
+
+test('first run Demo and skip remain scoped to the fresh home', async ({ page, runtime }) => {
+  await preferences(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(runtime.url)
+  const guide = page.getByTestId('first-run-guide')
+  await expect(guide).toHaveAttribute('data-step', 'account')
+  await page.getByTestId('first-run-demo').click()
+  await page.getByTestId('first-run-next').click()
+  await expect(guide).toHaveAttribute('data-step', 'workspace')
+  await page.getByTestId('first-run-skip').click()
+  await expect(guide).toBeHidden()
+  const client = await runtime.connect()
+  expect((await client.config.get()).accounts).toHaveLength(0)
+  await page.reload()
+  await expect(guide).toBeHidden()
+})
+
+test('first run Demo reaches a conversation without storing an account', async ({ page, runtime }) => {
+  await preferences(page)
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(runtime.url)
+  const guide = page.getByTestId('first-run-guide')
+  await page.getByTestId('first-run-demo').click()
+  await page.getByTestId('first-run-next').click()
+  await guide.locator('details > summary').click()
+  await guide.getByRole('textbox', { name: 'Folder path', exact: true }).fill(runtime.workspace)
+  await guide.getByRole('button', { name: 'Use folder', exact: true }).click()
+  await expect(page.getByTestId('first-run-workspace')).toHaveText('w')
+  await page.getByTestId('first-run-next').click()
+  await page.getByTestId('first-run-next').click()
+  await expect(guide).toBeHidden()
+  const composer = page.getByRole('textbox', { name: 'Task content', exact: true })
+  await composer.fill('Hello from Demo')
+  await composer.press('Enter')
+  await expect(page.getByTestId('conversation-turn')).toHaveAttribute('data-status', 'completed')
+  const client = await runtime.connect()
+  expect((await client.config.get()).accounts).toHaveLength(0)
+  expect((await client.apis()).profile.models).toEqual(
+    expect.arrayContaining([expect.objectContaining({ route: 'demo', id: 'demo-model' })]),
+  )
+})

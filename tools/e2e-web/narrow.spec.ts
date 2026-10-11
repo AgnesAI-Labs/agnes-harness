@@ -4,7 +4,7 @@ import type { Page, TestInfo } from '@playwright/test'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, settled, translated } from './quality.js'
 import { prompt, toolResult } from './sdk.js'
-import { chooseWorkspace, preferences, section, settings } from './ui.js'
+import { preferences, section, settings } from './ui.js'
 
 const phone = { width: 375, height: 812 }
 const tablet = { width: 768, height: 1024 }
@@ -168,7 +168,7 @@ for (const locale of ['en', 'zh-CN'])
       await page.setViewportSize(phone)
       await page.goto(runtime.url)
       const guide = page.getByTestId('first-run-guide')
-      await expect(guide).toHaveAttribute('data-step', 'welcome')
+      await expect(guide).toHaveAttribute('data-step', 'account')
       await inspect('wizard-welcome')
       await page.setViewportSize(phone)
       await capture('wizard', 375)
@@ -208,11 +208,11 @@ for (const locale of ['en', 'zh-CN'])
       expect((await client.apis()).profile.models).toEqual(
         expect.arrayContaining([expect.objectContaining({ route: 'demo', id: 'demo-model' })]),
       )
-      await page.getByTestId('first-run-next').click()
       await inspect('wizard-account')
       await page.getByTestId('first-run-add').click()
-      const account = page.getByRole('dialog', { name: name('Add account', '添加账户'), exact: true })
-      await expect(account).toBeVisible()
+      const account = page.getByTestId('first-run-connection')
+      await expect(account.locator('#config-provider-trigger')).toBeEnabled()
+      await account.locator('#config-account-advanced > summary').click()
       await inspect('wizard-account-form')
       // Traverse every wizard step with a real loopback account.
       const catalog = (await client.config.test({ providerId: 'deepseek' })).models
@@ -230,24 +230,22 @@ for (const locale of ['en', 'zh-CN'])
           .getByRole('textbox', { name: name('Base URL', '服务地址'), exact: true })
           .fill(provider.baseUrl)
         await account.getByLabel('API Key', { exact: true }).fill(provider.apiKey)
-        await account.getByRole('button', { name: name('Test connection', '测试连接'), exact: true }).click()
-        await expect(
-          account.getByRole('button', { name: name('Save account', '保存账户'), exact: true }),
-        ).toBeEnabled()
-        await account.getByRole('button', { name: name('Save account', '保存账户'), exact: true }).click()
-        await expect(guide).toHaveAttribute('data-step', 'model')
-        await inspect('wizard-model')
         await page.getByTestId('first-run-next').click()
-        await expect(guide).toHaveAttribute('data-step', 'examples')
-        await inspect('wizard-examples')
+        await expect(guide).toHaveAttribute('data-step', 'workspace')
+        await guide.locator('details > summary').click()
+        await guide
+          .getByRole('textbox', { name: name('Folder path', '文件夹路径'), exact: true })
+          .fill(runtime.workspace)
+        await guide.getByRole('button', { name: name('Use folder', '使用此文件夹'), exact: true }).click()
+        await expect(page.getByTestId('first-run-workspace')).toHaveText('w')
+        await inspect('wizard-workspace')
         await page.getByTestId('first-run-next').click()
         await expect(guide).toHaveAttribute('data-step', 'ready')
         await inspect('wizard-ready')
         await page.getByTestId('first-run-next').click()
         await expect(guide).toBeHidden()
-        await expect(page.locator('#new-session[open]')).toBeVisible()
-        await inspect('new-session-workspace')
-        await chooseWorkspace(page, runtime, locale)
+        await expect(page.locator('#new-session[open]')).toHaveCount(0)
+        await inspect('selected-workspace')
         for (const viewport of viewports) {
           await page.setViewportSize(viewport)
           await usable(page, info, `home-${viewport.width}`)

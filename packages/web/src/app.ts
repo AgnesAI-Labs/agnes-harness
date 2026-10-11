@@ -1235,10 +1235,17 @@ const firstRun = createFirstRunController({
   banner: element('doctor-notice-root', 'div'),
   client,
   storage: safeThemeStorage(),
-  openAccount: async () => {
-    settingsRegion.open('model')
-    await settings.open()
-    document.getElementById('config-add-account')?.click()
+  attachAccount: (host) => settings.attachInline(host),
+  connectAccount: () => settings.submitInline(),
+  chooseWorkspace: async (path) => {
+    if (!path) {
+      const result = await requestWorkspacePicker()
+      if (result.status === 'cancelled') return undefined
+      if (result.status === 'unavailable') throw new Error(t('app.newSession.pickerFailed'))
+      path = result.path
+    }
+    await registerWorkspace(path.trim())
+    return selectedWorkspace?.name
   },
   closeSettings: () => settings.close(),
   examples: async () => {

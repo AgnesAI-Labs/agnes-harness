@@ -1,57 +1,75 @@
-import type { ConfigSnapshot } from '@agnes/protocol'
 import type { DoctorResult } from '@agnes/protocol/gen/app-server'
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { Translate } from './locales/index.js'
-import { SettingsList, SettingsRow, SettingsState } from './settings-layout.js'
+import { SettingsInput, SettingsList, SettingsRow, SettingsState } from './settings-layout.js'
 import { Badge } from './ui/badge.js'
 import { Button } from './ui/button.js'
 import { Dialog } from './ui/dialog.js'
 import { Field } from './ui/field.js'
-import { Select } from './ui/select.js'
+import { Icon } from './ui/icon.js'
 
-const steps = ['welcome', 'account', 'model', 'examples', 'ready'] as const
+const steps = ['account', 'workspace', 'ready'] as const
+/** The stable account region remains owned by its native controller, including OAuth cleanup. */
+function InlineAccount({ attach }: { attach(host: HTMLElement): () => void }) {
+  const host = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    let cancelled = false
+    let detach: (() => void) | undefined
+    queueMicrotask(() => {
+      if (!cancelled && host.current) detach = attach(host.current)
+    })
+    return () => {
+      cancelled = true
+      queueMicrotask(() => detach?.())
+    }
+  }, [attach])
+  return <div ref={host} data-testid="first-run-connection" />
+}
 export function FirstRunGuide({
   open,
   step,
-  snapshot,
-  accountId,
-  model,
+  connecting,
+  accountReady,
+  demo,
+  workspace,
   busy,
   error,
   t,
-  onStep,
-  onAccount,
-  onModel,
+  attachAccount,
   onAdd,
+  onDemo,
+  onWorkspace,
   onExamples,
+  onStep,
   onContinue,
   onSkip,
 }: {
   open: boolean
   step: number
-  snapshot?: ConfigSnapshot | undefined
-  accountId: string
-  model: string
+  connecting: boolean
+  accountReady: boolean
+  demo: boolean
+  workspace: string
   busy: boolean
   error: string
   t: Translate
-  onStep(step: number): void
-  onAccount(id: string): void
-  onModel(id: string): void
+  attachAccount(host: HTMLElement): () => void
   onAdd(): void
+  onDemo(): void
+  onWorkspace(path?: string): void
   onExamples(): void
+  onStep(step: number): void
   onContinue(): void
   onSkip(): void
 }) {
-  const key = steps[step] ?? 'welcome'
-  const accounts =
-    snapshot?.accounts?.filter((account) => account.enabled && account.credentialConfigured) ?? []
-  const account = accounts.find((account) => account.accountId === accountId)
+  const key = steps[step] ?? 'account'
+  const [path, setPath] = useState('')
   return (
     <Dialog
       open={open}
-      title={t(`firstRun.${key}`)}
+      title={t('firstRun.welcome')}
       footer={null}
-      width={640}
+      width={560}
       centered
       onCancel={onSkip}
       closable={false}
@@ -74,50 +92,68 @@ export function FirstRunGuide({
             </li>
           ))}
         </ol>
+        <h3>{t(`firstRun.${key}`)}</h3>
         <p>{t(`firstRun.${key}Help`)}</p>
+        {step === 0 && (
+          <>
+            <div className="agnes-settings-actions">
+              <Button data-testid="first-run-add" aria-pressed={connecting} onClick={onAdd} disabled={busy}>
+                {t('firstRun.add')}
+              </Button>
+              <Button
+                hidden={accountReady}
+                data-testid="first-run-demo"
+                aria-pressed={demo}
+                onClick={onDemo}
+                disabled={busy}
+              >
+                {t('firstRun.demo')}
+              </Button>
+            </div>
+            {accountReady && !connecting && <p role="status">{t('firstRun.saved')}</p>}
+            {connecting && <InlineAccount attach={attachAccount} />}
+            {demo && <p className="field-hint">{t('firstRun.demoHelp')}</p>}
+          </>
+        )}
         {step === 1 && (
-          <Button data-testid="first-run-add" onClick={onAdd} disabled={busy}>
-            {t('firstRun.add')}
-          </Button>
+          <>
+            {!demo && (
+              <SettingsState tone="success" data-testid="first-run-saved">
+                {t('firstRun.saved')}
+              </SettingsState>
+            )}
+            {workspace && <p data-testid="first-run-workspace">{workspace}</p>}
+            <Button data-testid="first-run-workspace-pick" onClick={() => onWorkspace()} disabled={busy}>
+              <Icon name="folder" />
+              {t('firstRun.chooseWorkspace')}
+            </Button>
+            <details>
+              <summary>{t('firstRun.manualWorkspace')}</summary>
+              <Field label={t('firstRun.workspacePath')}>
+                <SettingsInput
+                  value={path}
+                  onChange={(event) => setPath(event.target.value)}
+                  disabled={busy}
+                />
+              </Field>
+              <Button onClick={() => onWorkspace(path)} disabled={busy || !path.trim()}>
+                {t('firstRun.useWorkspace')}
+              </Button>
+            </details>
+          </>
         )}
         {step === 2 && (
-          <SettingsState tone="success" data-testid="first-run-saved">
-            {t('firstRun.saved')}
-          </SettingsState>
-        )}
-        {step === 2 && (
-          <div className="agnes-first-run-fields">
-            <Field label={t('firstRun.accountLabel')}>
-              <Select
-                data-testid="first-run-account"
-                aria-label={t('firstRun.accountLabel')}
-                value={accountId}
-                options={accounts.map((account) => ({ value: account.accountId, label: account.label }))}
-                onChange={onAccount}
-                disabled={busy}
-              />
-            </Field>
-            <Field label={t('firstRun.modelLabel')}>
-              <Select
-                data-testid="first-run-model"
-                aria-label={t('firstRun.modelLabel')}
-                value={model}
-                options={account?.models.map((model) => ({ value: model.id, label: model.name })) ?? []}
-                onChange={onModel}
-                disabled={busy}
-              />
-            </Field>
-          </div>
-        )}
-        {step === 3 && (
-          <Button data-testid="first-run-examples" onClick={onExamples} disabled={busy}>
-            {t('firstRun.review')}
-          </Button>
+          <>
+            <p>{t('firstRun.prompt')}</p>
+            <Button appearance="link" data-testid="first-run-examples" onClick={onExamples} disabled={busy}>
+              {t('firstRun.review')}
+            </Button>
+          </>
         )}
         {busy && <SettingsState tone="loading">{t('firstRun.loading')}</SettingsState>}
         {error && <SettingsState tone="error">{error}</SettingsState>}
         <div className="agnes-first-run-actions">
-          <Button type="text" data-testid="first-run-skip" onClick={onSkip}>
+          <Button appearance="ghost" data-testid="first-run-skip" onClick={onSkip}>
             {t('firstRun.skip')}
           </Button>
           <div>
@@ -127,13 +163,20 @@ export function FirstRunGuide({
               </Button>
             )}
             <Button
-              type="primary"
+              appearance="primary"
               data-testid="first-run-next"
               loading={busy}
-              disabled={(step === 1 && !accounts.length) || (step === 2 && (!account || !model))}
+              disabled={(step === 0 && !connecting && !demo && !accountReady) || (step === 1 && !workspace)}
+              disabledReason={t(step === 1 ? 'firstRun.workspaceHelp' : 'firstRun.accountHelp')}
               onClick={onContinue}
             >
-              {t(step === 0 ? 'firstRun.begin' : step === 4 ? 'firstRun.start' : 'firstRun.next')}
+              {t(
+                step === 2
+                  ? 'firstRun.start'
+                  : step === 0 && connecting
+                    ? 'firstRun.verify'
+                    : 'firstRun.next',
+              )}
             </Button>
           </div>
         </div>
@@ -145,14 +188,16 @@ export function DoctorNotice({
   t,
   onDetails,
   onDismiss,
+  count,
 }: {
   t: Translate
   onDetails(): void
   onDismiss(): void
+  count: number
 }) {
   return (
     <aside className="agnes-doctor-notice" data-testid="doctor-notice" role="status">
-      <p>{t('doctor.banner')}</p>
+      <p>{t('doctor.banner', { count })}</p>
       <Button onClick={onDetails}>{t('doctor.details')}</Button>
       <Button type="text" onClick={onDismiss} aria-label={t('doctor.dismiss')}>
         ×
