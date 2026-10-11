@@ -18,13 +18,10 @@ for (const locale of ['en', 'zh-CN'])
       await settings(page, locale)
       await section(page, 'memory')
       await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
-      await expect(
-        page.getByTestId('settings-page-memory').getByRole('heading', {
-          name: locale === 'en' ? 'Memory' : '记忆',
-          exact: true,
-        }),
-      ).toBeVisible()
-      await expect(page.getByTestId('settings-page-memory').getByTestId('settings-refresh')).toHaveCount(0)
+      const memorySection = page.getByTestId('settings-subsection-memory')
+      await expect(memorySection).toHaveAttribute('open')
+      await expect(memorySection.locator('summary').first()).toHaveText(locale === 'en' ? 'Memory' : '记忆')
+      await expect(memorySection.getByTestId('settings-refresh')).toHaveCount(0)
       await page.getByTestId('memory-workspace').selectOption(cwd)
       await expect(page.getByTestId('memory-mode')).toHaveValue('off')
       await page.getByTestId('memory-mode').selectOption('auto')
