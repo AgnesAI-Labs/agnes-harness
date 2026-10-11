@@ -4,6 +4,13 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## Unreleased
 
+`DecisionPort` adds session-owned request/get/wait to ToolContext, LoopContext and admitted
+ServicePorts. Its DTOs come from the protocol schema; `APPROVAL_DEFAULTS` holds the existing
+approval configuration defaults. A checkpoint association can consume decision references
+with the next phase. Community `PluginExtensionAPI.providers` now shares the official
+owner-scoped service facade. Registration has no admitted session and refuses decision access.
+These are unpublished preview changes; release versioning remains pending.
+
 `ToolPolicyInput.workspaceRoot` is now required and Host-injected. `LoopContext.session`
 adds the existing `SessionRef` identity. Tools and session-bound services reuse
 `session.workspaceRoot`; non-session services must refuse operations that need an absent

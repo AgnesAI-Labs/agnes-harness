@@ -320,7 +320,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Deferred producer binding on the shared service ports. countLines: 11970, exact, no spare.
   // UI data-source resolution. countLines: 11970 -> 12586 (+616).
   // Rebased tip includes the in-flight worktree migration. Measured 12791, exact, no spare.
-  'packages/host/src/runtime': 12831,
+  'packages/host/src/runtime': 12857,
   // UI data-source catalog wiring on that tree. countLines: 3517.
   'packages/host/src/runtime/assemble': 3522,
   'packages/host-providers/src/adapters': 477,
@@ -337,7 +337,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-extensions/src/ext-host/hooks-isolation-client': 232,
   'packages/host-extensions/src/ext-host/tool-context-capabilities': 131,
   'packages/host-extensions/src/ext-host/service-invocation': 267,
-  'packages/host-extensions/src': 8055,
+  'packages/host-extensions/src': 8116,
   'packages/host-extensions/src/assemble': 1268,
   'packages/host-artifacts/src': 2243,
   'packages/host-computer-use/src': 10586,
@@ -358,14 +358,14 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/host-common/src/profile': 1847,
   // UI data-source bind-by-id.
   // countLines on this tree: 4555 (HEAD was 4545 against the previous 3774 ceiling; this change adds 10).
-  'packages/host-common/src': 4595,
+  'packages/host-common/src': 4619,
   // countLines on this tree: 1219 (HEAD was 1209 against the previous 439 ceiling; this change adds 10).
-  'packages/host-common/src/assemble': 1259,
+  'packages/host-common/src/assemble': 1283,
   'packages/core/src/artifacts': 744,
-  'packages/core-effects/src': 2673,
-  'packages/core-ledger/src': 6497,
+  'packages/core-effects/src': 2675,
+  'packages/core-ledger/src': 6631,
   'packages/core-child-control/src': 397,
-  'packages/core-common/src': 529,
+  'packages/core-common/src': 530,
   // 2026-09-22 M11 browser effect-command closure: exact measured deltas for the explicit
   // authorization facade, private BFF/RPC, durable journal reuse, and cross-platform test repair.
   // No source exclusions or spare budget were added.
@@ -407,7 +407,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // admission diagnostics.
   // countLines: 2171 -> 2306; exact measured cap, no exclusions or spare allocation.
   // Deferred invocation contract beside the drain. countLines: 2577, exact, no spare.
-  'packages/plugin-runtime/src': 2630,
+  'packages/plugin-runtime/src': 2638,
   'packages/cosmokit/src': 356,
   // 2026-09-17 (web-client-modules P2 / WC6): author-facing browser API package. Measured 480;
   // exact cap, no spare — new mount points add one table row + host container by contract.
@@ -1244,7 +1244,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-08 freeze-close review: Await async loop construction, propagate session cancellation and drain initialization before storage closes.
   // countLines: 30048 -> 30103 (+55); exact measured cap, no exclusions or spare allocation.
   // Empty loop services reader. countLines: 22444, exact, no spare.
-  'packages/core/src': 22586,
+  'packages/core/src': 23001,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1579,7 +1579,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2726 -> 2981; exact cap, no exclusions or spare allocation.
   // UI data-source bindings, refresh method, and uiData capability field.
   // countLines on this tree: 4633 (HEAD was 4486 against the previous 4207 ceiling; this change adds 147).
-  'packages/protocol/src': 4663,
+  'packages/protocol/src': 4674,
   'packages/cli/src/tui': 38,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,
@@ -1713,7 +1713,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2327 -> 2438; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Expose cooperative construction signals, adapter credential ports and shared default compaction/policy helpers.
   // countLines: 2438 -> 2505 (+67); exact measured cap, no exclusions or spare allocation.
-  'packages/extension-api/src': 3140, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  'packages/extension-api/src': 3186, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -2962,7 +2962,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Deferred queue facade and Intelligent UI producer binding. countLines: 12508, exact, no spare.
   // UI data-source resolution. countLines: 12508 -> 13124 (+616).
   // Rebased tip includes the in-flight worktree migration. Measured 13329, exact, no spare.
-  'packages/host/src': 13369,
+  'packages/host/src': 13395,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot

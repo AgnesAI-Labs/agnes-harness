@@ -298,6 +298,7 @@ export class DecisionCommands {
     source: DecisionSource,
     effectId: string | null,
   ): EventInput[] {
+    if (handles.length === 0) return []
     this.live(source)
     if (this.s.op()?.control.status === 'cancel_requested') fail('STOPPED')
     if (new Set(handles.map((h) => h.id)).size !== handles.length) fail('DUPLICATE_REF')

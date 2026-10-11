@@ -181,7 +181,7 @@
       "estimateRequest(request: LoopRequest)",
       "status(invocationId: string)",
       "wake(): Promise<void>",
-      "association?: { invocationIds: readonly string[] }"
+      "association?: { invocationIds?: readonly string[]; decisionRefs?: readonly DecisionHandle[] }"
     ]
   },
   {

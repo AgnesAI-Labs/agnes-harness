@@ -18,13 +18,14 @@ import type {
   PlanItems,
 } from '@agnes/core-ledger/reduce/shapes'
 import type { EffectNode, RegisterCell } from '@agnes/core-ledger/reduce/state'
-import { isEventType, normalize, type SessionStart } from '@agnes/protocol'
+import { type DecisionSnapshot, isEventType, normalize, type SessionStart } from '@agnes/protocol'
 
 /** The ledger state as the reference folds it: every table a plain, writable Map or Set. */
 export type LedgerState = {
   lastSeq: Seq
   session: SessionStart | null
   registers: {
+    decisionStates: Map<string, RegisterCell<DecisionSnapshot>>
     planItems: Map<string, RegisterCell<PlanItems>>
     budgetState: Map<string, RegisterCell<BudgetState>>
     artifactJobs: Map<string, RegisterCell<ArtifactJob>>
@@ -63,6 +64,7 @@ function cloneMaps(s: LedgerState): LedgerState {
   return {
     ...s,
     registers: {
+      decisionStates: new Map(s.registers.decisionStates),
       planItems: new Map(s.registers.planItems),
       budgetState: new Map(s.registers.budgetState),
       artifactJobs: new Map(s.registers.artifactJobs),
@@ -146,6 +148,9 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
     const key = registerKey(e)
     const reg = e.register
     switch (reg) {
+      case 'decision/state':
+        setRegister<DecisionSnapshot>(s.registers.decisionStates, reg, key, e.seq, d)
+        break
       case 'plan.items':
         setRegister<PlanItems>(s.registers.planItems, reg, key, e.seq, d)
         break
@@ -168,6 +173,7 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       const start = d as unknown as SessionStart
       if (start.parent) {
         s.registers.budgetState.clear()
+        s.registers.decisionStates.clear()
         s.registers.inbox.clear()
         s.openTurn.clear()
         s.openStep.clear()
@@ -369,6 +375,7 @@ export function initialState(): LedgerState {
     lastSeq: 0,
     session: null,
     registers: {
+      decisionStates: new Map(),
       planItems: new Map(),
       budgetState: new Map(),
       artifactJobs: new Map(),

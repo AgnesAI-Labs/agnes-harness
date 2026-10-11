@@ -32,6 +32,8 @@ const EXT_VALUE_ALLOWED = new Set([
   'ProviderError', // shared provider admission failures; Core session opening keeps its compatibility alias
   'createCompactionThreshold', // authority-free default threshold shared with Base
   'defaultToolPolicy', // authority-free default risk decision shared with Base
+  'APPROVAL_DEFAULTS', // single public configuration defaults, shared with Core
+  'unavailableDecisions', // registration and unconfigured test scopes refuse session access
   'unavailableProjections', // authority-free default; Host supplies the scoped invocation reader
 ])
 

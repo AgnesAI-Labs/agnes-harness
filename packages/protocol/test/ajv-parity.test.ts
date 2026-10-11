@@ -298,6 +298,15 @@ function ajvDef(fileId: string, name: string): (x: unknown) => boolean {
 // to a schema without registering it here (or the reverse) goes red.
 
 const SESSION_DEFS: Record<string, TSchema> = {
+  DecisionSpec: SessionGen.DecisionSpec,
+  DecisionHandle: SessionGen.DecisionHandle,
+  DecisionResponse: SessionGen.DecisionResponse,
+  DecisionRequest: SessionGen.DecisionRequest,
+  DecisionResult: SessionGen.DecisionResult,
+  DecisionConsumption: SessionGen.DecisionConsumption,
+  DecisionCommandReceipt: SessionGen.DecisionCommandReceipt,
+  DecisionSnapshot: SessionGen.DecisionSnapshot,
+
   JsonValue: SessionGen.JsonValue,
   Actor: SessionGen.Actor,
   ContentBlock: SessionGen.ContentBlock,
@@ -997,7 +1006,121 @@ const harnessRefineOk: Json = {
   baseline: [{ key: 'skill/x', version: 2 }],
   outcome: 'applied',
 }
+const decisionSpec = {
+  key: 'review',
+  purpose: 'business.confirm',
+  subject: { text: 'Complete review' },
+  prompt: 'Continue?',
+  options: ['yes', 'no'],
+}
+const decisionHandle = { id: 'decision-1', sessionId: 'session' }
+const decisionRequest = {
+  spec: decisionSpec,
+  subjectDigest: 'a'.repeat(64),
+  owner: 'sample/reviewer',
+  operationId: 'call-1',
+  sourcePackage: '@sample/reviewer',
+  packageVersion: '1.0.0',
+  requestedBy: actorOk,
+  lane: 'main',
+  createdAt: '2026-10-11T00:00:00Z',
+  expiresAt: '2026-10-12T00:00:00Z',
+}
+const decisionResponse = { option: 'yes', value: null }
+const decisionResult = {
+  reason: 'answered',
+  at: '2026-10-11T00:01:00Z',
+  response: decisionResponse,
+  answeredBy: actorOk,
+}
+const decisionConsumption = { at: '2026-10-11T00:02:00Z', operationId: 'call-1', effectId: null }
+const decisionReceipt = { commandId: 'answer-1', digest: 'b'.repeat(64), revision: 2, seq: 4 }
+const decisionSnapshot = {
+  handle: decisionHandle,
+  revision: 1,
+  request: decisionRequest,
+  result: null,
+  answerCommand: null,
+  consumption: null,
+  invalidation: null,
+}
+
 const SESSION_SAMPLES: Record<string, Sample> = {
+  DecisionSpec: {
+    valid: decisionSpec,
+    invalid: [
+      { ...decisionSpec, owner: 'spoofed' },
+      { ...decisionSpec, key: '' },
+      { ...decisionSpec, key: 'nul\0key' },
+      { ...decisionSpec, options: ['yes', 'yes'] },
+      { ...decisionSpec, options: [] },
+      { ...decisionSpec, prompt: 'x'.repeat(65537) },
+    ],
+    note: 'bounded closed author content, without authority fields',
+  },
+  DecisionHandle: {
+    valid: decisionHandle,
+    invalid: [
+      { id: 'decision-1' },
+      { ...decisionHandle, sessionId: '' },
+      { ...decisionHandle, owner: 'spoofed' },
+    ],
+    note: 'stable session-bound identity',
+  },
+  DecisionResponse: {
+    valid: decisionResponse,
+    invalid: [
+      { option: 'yes' },
+      { ...decisionResponse, actor: actorOk },
+      { ...decisionResponse, option: '' },
+    ],
+    note: 'typed response without self-reported provenance',
+  },
+  DecisionRequest: {
+    valid: decisionRequest,
+    invalid: [
+      { ...decisionRequest, subjectDigest: 'invalid' },
+      { ...decisionRequest, createdAt: 'not-a-date' },
+      { ...decisionRequest, owner: '' },
+    ],
+    note: 'backend-stamped immutable request and original deadline',
+  },
+  DecisionResult: {
+    valid: decisionResult,
+    invalid: [
+      { ...decisionResult, answeredBy: undefined },
+      { reason: 'detached', at: decisionResult.at, code: 'transport' },
+      { reason: 'expired', at: decisionResult.at },
+    ],
+    note: 'delivery failure is not a terminal human answer',
+  },
+  DecisionConsumption: {
+    valid: decisionConsumption,
+    invalid: [
+      { ...decisionConsumption, effectId: false },
+      { ...decisionConsumption, operationId: '' },
+      { ...decisionConsumption, at: 'not-a-date' },
+    ],
+    note: 'existing effect identity or pure checkpoint consumption',
+  },
+  DecisionCommandReceipt: {
+    valid: decisionReceipt,
+    invalid: [
+      { ...decisionReceipt, revision: 0 },
+      { ...decisionReceipt, seq: 0 },
+      { ...decisionReceipt, digest: 'not-a-hash' },
+    ],
+    note: 'exact command receipt rather than a spent ticket',
+  },
+  DecisionSnapshot: {
+    valid: decisionSnapshot,
+    invalid: [
+      { ...decisionSnapshot, revision: 0 },
+      { ...decisionSnapshot, result: false },
+      { ...decisionSnapshot, actor: actorOk },
+    ],
+    note: 'one complete register snapshot',
+  },
   EventEnvelope: {
     valid: envOk,
     invalid: [
