@@ -31,7 +31,8 @@ export const reasonLabelKeys: Record<string, string> = {
 }
 
 export const approvalStatus = (node: ApprovalNode, t: Translate) =>
-  node.state === 'decided' && node.decision
+  (node.state === 'decided' || (node.state === 'expired' && node.decision?.reason === 'stopped')) &&
+  node.decision
     ? (() => {
         const key =
           (node.decision.reason ? reasonLabelKeys[node.decision.reason] : undefined) ??

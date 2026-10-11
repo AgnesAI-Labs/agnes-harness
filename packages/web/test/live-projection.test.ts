@@ -367,10 +367,20 @@ describe('a pending approval before the loaded window', () => {
         turn: 1,
         step: 1,
         phase: 'tools',
-        parked: { ticket: 't', expiresAt: '2026-09-25T00:00:00Z' },
+        parked: { decisionRef: { sessionId: 's', id: 't', revision: 1 }, expiresAt: '2026-09-25T00:00:00Z' },
       },
       nodes: withNode
-        ? [{ kind: 'approval', id: 'ap', seq: 3, state: 'pending', ticket: 't', summary: 's', options: [] }]
+        ? [
+            {
+              kind: 'approval',
+              id: 'ap',
+              seq: 3,
+              state: 'pending',
+              decisionRef: { sessionId: 's', id: 't', revision: 1 },
+              summary: 's',
+              options: [],
+            },
+          ]
         : [],
       turns: [],
     }) as unknown as UITimeline

@@ -109,6 +109,44 @@ it('publishes recovered surfaces through the existing outbound dedupe without cr
 })
 
 describe('Outbound', () => {
+  it('publishes the complete durable plan before its approval card, including markup and the tail', async () => {
+    const { adapter, client, session, outbound } = await setup({ textChars: 256 })
+    const plan = 'review正文\n'.repeat(1000) + '<script>EXACT-TAIL</script>'
+    client.setTimeline(
+      session.id,
+      timeline([
+        {
+          kind: 'approval',
+          id: 'review',
+          seq: 1,
+          state: 'pending',
+          summary: 'Review exact plan',
+          risk: 'always',
+          options: ['allow_once', 'reject_once'],
+          decisionRef: { sessionId: session.id, id: 'decision', revision: 1 },
+          subjectText: plan,
+        },
+      ]),
+    )
+    try {
+      await outbound.flush('k')
+      const delivered = adapter.sent.flatMap((row) => row.msg.blocks)
+      const card = delivered.findIndex((block) => block.kind === 'approval')
+      expect(card).toBeGreaterThan(0)
+      const full = delivered
+        .slice(0, card)
+        .flatMap((block) => (block.kind === 'text' ? [block.markdown] : []))
+        .join('')
+      expect(full).toContain('EXACT-TAIL')
+      expect(full).toContain('script')
+      expect(full.match(/review正文/g)).toHaveLength(1000)
+      expect(delivered.slice(card + 1)).toEqual([])
+      expect(adapter.sent.at(-1)?.msg.blocks).toHaveLength(1)
+    } finally {
+      await outbound.stop()
+    }
+  })
+
   it('retries a failed notice in its lane with one stable delivery identity', async () => {
     const { adapter, outbound } = await setup({
       noticeRetry: { attempts: 3, baseMs: 1, maxMs: 1, jitter: () => 0.5 },

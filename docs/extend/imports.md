@@ -83,3 +83,10 @@ TypeBox is the declared `@sinclair/typebox` dependency; its own package exports 
 The ledger persists the request before returning its handle. Repeating an owner's key with the same spec returns the original ID and deadline; changing the spec conflicts. `wait` returns a resolved snapshot or a pending handle when detached. Disconnect and aborting a waiter leave the durable request pending. Answers are accepted only through the authenticated backend.
 
 A Loop stores the handle in its existing checkpoint and uses `get` on recovery. To advance a pure phase after a human answer, pass `{ decisionRefs: [handle] }` to `checkpoints.write`: consumption and the next checkpoint commit together. The port cannot resume arbitrary tool JavaScript after a restart. Service kinds must declare `decisions` among their maximum ports and the Host descriptor must grant it; calls without a live session admission fail closed.
+
+Tool permission and plan review persist before display. Native clients answer with
+`client.approval.decide({ sessionId, id, revision, commandId, response: { option, value } })`
+and query open requests with `client.approval.list(sessionId)`. Identity comes from the authenticated
+connection; the answer body contains no actor or credential. A missing handler, disconnect or local
+wait timeout leaves the same request pending. Plan review offers human, once-only answers and exposes
+the complete immutable plan. Ordinary tools retain once, session and synchronously persisted permanent grants.

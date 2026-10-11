@@ -69,9 +69,11 @@ describe('web projection adapter', () => {
       summary: 'shell?',
       risk: 'destructive',
       options: ['allow_once'],
-      ticket: 'opaque-ticket',
+      decisionRef: { sessionId: 's', id: 'opaque-ticket', revision: 1 },
     }
-    expect(webView(timeline([pending], 'parked'), undefined, zhT).approval?.ticket).toBe('opaque-ticket')
+    expect(webView(timeline([pending], 'parked'), undefined, zhT).approval?.decisionRef?.id).toBe(
+      'opaque-ticket',
+    )
   })
 
   it('offers permanent approval only when the projected event explicitly includes it', () => {
@@ -83,7 +85,7 @@ describe('web projection adapter', () => {
       summary: 'computer use?',
       risk: 'always',
       options: ['allow_once', 'reject_once'],
-      ticket: 'opaque-ticket',
+      decisionRef: { sessionId: 's', id: 'opaque-ticket', revision: 1 },
     }
     expect(durableApprovalActions(pending, zhT)).toEqual([
       { option: 'allow_once', label: '仅允许这次', verdict: 'allowed-once' },
@@ -107,7 +109,7 @@ describe('web projection adapter', () => {
       summary: 'shell?',
       risk: 'destructive',
       options: ['allow_once'],
-      ticket: 'opaque-ticket',
+      decisionRef: { sessionId: 's', id: 'opaque-ticket', revision: 1 },
     }
     const view = webView(timeline([expired]), { startSeq: 1, endSeq: 5, reason: 'parked' }, zhT)
     expect(view.approval).toBeUndefined()

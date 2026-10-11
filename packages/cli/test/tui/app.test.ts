@@ -1409,12 +1409,12 @@ it('a terminal close stops a parked approval card from deciding its ticket on th
         summary: 'shell rm -rf tmp',
         risk: 'destructive',
         options: ['allow_once', 'allow_always', 'reject_once'],
-        ticket: 'tk-parked',
+        decisionRef: { sessionId: 's', id: 'tk-parked', revision: 1 },
       },
     ],
   })
   try {
-    await vi.waitFor(async () => expect(await h.screen()).toContain('ticket tk-parke'))
+    await vi.waitFor(async () => expect(await h.screen()).toContain('decision tk-parke'))
     await h.stopDaemon()
     h.term.feed('1')
     await new Promise((resolve) => setTimeout(resolve, 300))

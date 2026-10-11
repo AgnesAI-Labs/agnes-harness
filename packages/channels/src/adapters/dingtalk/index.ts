@@ -276,7 +276,7 @@ export class DingtalkAdapter implements ChannelAdapter {
     await this.gateway.updateCard(_reference.cardBizId, cardData)
   }
 
-  renderApproval(request: ApprovalView, ticket?: string): ChannelMessage {
+  renderApproval(request: ApprovalView, decisionKey?: string): ChannelMessage {
     return {
       blocks: [
         {
@@ -285,7 +285,9 @@ export class DingtalkAdapter implements ChannelAdapter {
           summary: request.summary,
           risk: request.risk,
           options: request.options,
-          ...((ticket ?? request.ticket) === undefined ? {} : { ticket: ticket ?? request.ticket }),
+          ...((decisionKey ?? request.decisionKey) === undefined
+            ? {}
+            : { decisionKey: decisionKey ?? request.decisionKey }),
           ...(request.requestSeq === undefined ? {} : { requestSeq: request.requestSeq }),
           ...(request.expiresAt === undefined ? {} : { expiresAt: request.expiresAt }),
         },
@@ -360,7 +362,7 @@ export class DingtalkAdapter implements ChannelAdapter {
       if (!Number.isSafeInteger(requestSeq) || requestSeq < 1) return null
       return { requestSeq, verdict, approverCredential: this.credentialOf(event) }
     }
-    return { ticket: key, verdict, approverCredential: this.credentialOf(event) }
+    return { decisionKey: key, verdict, approverCredential: this.credentialOf(event) }
   }
 
   onSlotAction(event: ChannelEvent): SlotActionIntent | null {

@@ -54,7 +54,7 @@ describe('timeline reader semantics', () => {
       summary: 'run a command',
       risk: 'destructive',
       options: ['allow_once'],
-      ticket: 'ticket-1',
+      decisionRef: { sessionId: 's', id: 'ticket-1', revision: 1 },
     }
 
     timeline.render([approval])
@@ -760,7 +760,7 @@ describe('timeline reader semantics', () => {
         summary: '将在工作目录执行命令',
         risk: 'destructive',
         options: ['allow_once', 'reject_once'],
-        ticket: 'ticket-1',
+        decisionRef: { sessionId: 's', id: 'ticket-1', revision: 1 },
       },
       { kind: 'compaction', id: 'history-1', seq: 2, range: [1, 6] },
     ])
@@ -795,6 +795,20 @@ describe('timeline reader semantics', () => {
       expect(approval?.textContent).toContain(expected)
       expect(approval?.getAttribute('aria-label')).toBe(`审批：${expected}`)
     }
+
+    timeline.render([
+      {
+        kind: 'approval',
+        id: 'approval-1',
+        seq: 1,
+        state: 'expired',
+        summary: 'stopped original call',
+        risk: 'destructive',
+        options: ['allow_once'],
+        decision: { verdict: 'allowed-once', via: 'human', reason: 'stopped' },
+      },
+    ])
+    expect(approval?.getAttribute('aria-label')).toBe('审批：已停止')
 
     // The reason, when the ledger has one, says more than the verdict does.
     for (const [verdict, reason, expected] of [

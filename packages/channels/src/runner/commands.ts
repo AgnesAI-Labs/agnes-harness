@@ -57,7 +57,9 @@ export async function runCommand(
       ])
       const credits = budget.ledger.reduce((total, row) => total + (row.credits ?? 0), 0)
       if (timeline.opState === null) return `空闲；累计 credits ${credits}`
-      const parked = timeline.opState.parked ? `，等待审批 ${timeline.opState.parked.ticket.slice(0, 6)}` : ''
+      const parked = timeline.opState.parked
+        ? `，等待审批 ${timeline.opState.parked.decisionRef.id.slice(0, 6)}`
+        : ''
       return `第 ${timeline.opState.turn} 轮第 ${timeline.opState.step} 步（${timeline.opState.phase}）${parked}；累计 credits ${credits}`
     }
   }

@@ -2699,7 +2699,10 @@ describe('incremental opening', () => {
         turn: 1,
         step: 1,
         phase: 'tools',
-        parked: { ticket: 't-1', expiresAt: '2026-09-25T00:00:00Z' },
+        parked: {
+          decisionRef: { sessionId: 's', id: 't-1', revision: 1 },
+          expiresAt: '2026-09-25T00:00:00Z',
+        },
       },
     }))
     const approval = document.getElementById('approval') as HTMLElement
@@ -2715,7 +2718,7 @@ describe('incremental opening', () => {
       turn: 1,
       step: 1,
       phase: 'tools',
-      parked: { ticket: 't-1', expiresAt: '2026-09-25T00:00:00Z' },
+      parked: { decisionRef: { sessionId: 's', id: 't-1', revision: 1 }, expiresAt: '2026-09-25T00:00:00Z' },
     },
   })
 

@@ -11,7 +11,7 @@ describe('DingTalk card rendering', () => {
   it('builds stable bounded identifiers and callback values', () => {
     expect(cardBizIdFor('agnes:t:a:dingtalk:group:c', 'n1')).toMatch(/^[0-9a-f]{32}$/)
     expect(cardBizIdFor('k', 'n')).toBe(cardBizIdFor('k', 'n'))
-    expect(approvalValue({ ticket: 'abc' }, 'allow_once')).toBe('appr:abc:allow_once')
+    expect(approvalValue({ decisionKey: 's/abc/1' }, 'allow_once')).toBe('appr:s/abc/1:allow_once')
     expect(approvalValue({ requestSeq: 7 }, 'reject_once')).toBe('appr:#7:reject_once')
     expect(slotValue(3, 'export')).toBe('slot:3:export')
   })
@@ -39,7 +39,7 @@ describe('DingTalk card rendering', () => {
           summary: '删除临时文件',
           risk: 'destructive',
           options: ['allow_once', 'reject_once'],
-          ticket: 'tk1',
+          decisionKey: 's/tk1/1',
         },
       ],
       { cardBizId: 'track' },
@@ -51,8 +51,8 @@ describe('DingTalk card rendering', () => {
     expect(params.markdown).toContain('- 单位: 万元')
     expect(JSON.parse(params.buttons ?? '[]')).toEqual([
       { text: '导出', value: 'slot:3:export', color: 'blue' },
-      { text: '同意', value: 'appr:tk1:allow_once', color: 'blue' },
-      { text: '拒绝', value: 'appr:tk1:reject_once', color: 'red' },
+      { text: '同意', value: 'appr:s/tk1/1:allow_once', color: 'blue' },
+      { text: '拒绝', value: 'appr:s/tk1/1:reject_once', color: 'red' },
     ])
     expect(bytes).toBeLessThan(65_536)
   })
@@ -176,7 +176,7 @@ describe('DingtalkAdapter outbound', () => {
             summary: '发布',
             risk: 'always',
             options: ['allow_once', 'reject_once'],
-            ticket: 'ticket-1',
+            decisionKey: 's/decisionKey-1/1',
           },
         ],
         ephemeral: true,
@@ -185,7 +185,7 @@ describe('DingtalkAdapter outbound', () => {
     expect(reference).not.toHaveProperty('cardBizId')
     expect(gateway.sent[0]).toMatchObject({ kind: 'markdown' })
     expect((gateway.sent[0] as { payload: { markdown: string } }).payload.markdown).toContain(
-      '回复「同意 ticket」',
+      '回复「同意 decisi」',
     )
     await expect(
       adapter.update(reference, { blocks: [{ kind: 'text', markdown: '不可更新' }] }),
@@ -218,28 +218,28 @@ describe('DingtalkAdapter outbound', () => {
     })
   })
 
-  it('renders an approval with the explicit ticket taking precedence', async () => {
+  it('renders an approval with the explicit decisionKey taking precedence', async () => {
     const adapter = await createDingtalkAdapter(manifestPath, {
       gateway: new FakeDingtalkGateway(),
     })
     expect(
       adapter.renderApproval(
         {
-          ticket: 'old',
+          decisionKey: 's/old/1',
           requestSeq: 8,
           summary: '发布',
           risk: 'always',
           options: ['allow_once', 'reject_once'],
           expiresAt: '2026-09-12T10:00:00Z',
         },
-        'new',
+        's/new/1',
       ),
     ).toEqual({
       blocks: [
         {
           kind: 'approval',
           title: '需要审批',
-          ticket: 'new',
+          decisionKey: 's/new/1',
           requestSeq: 8,
           summary: '发布',
           risk: 'always',

@@ -1,3 +1,5 @@
+import { escapeReviewText } from '../degrade.js'
+import { decisionKey } from '../decision.js'
 import { createHash } from 'node:crypto'
 import type { AcpPermissionKind, ChannelCapabilities, UINode, UiSurfaceRecord } from '@agnes/protocol'
 import { surfaceText } from '@agnes/protocol/intelligent-ui'
@@ -100,17 +102,27 @@ export function whatToDraw(
         return { blocks: [{ kind: 'text', markdown: `已${verdict}${by}` }] }
       }
       if (node.state === 'expired') {
-        return { blocks: [{ kind: 'text', markdown: '审批已超时' }] }
+        return {
+          blocks: [
+            {
+              kind: 'text',
+              markdown: node.decision?.reason === 'stopped' ? '任务已停止，审批已撤销' : '审批已超时',
+            },
+          ],
+        }
       }
       return {
         blocks: [
+          ...(node.subjectText
+            ? [{ kind: 'text' as const, markdown: escapeReviewText(node.subjectText) }]
+            : []),
           {
             kind: 'approval',
             title: '需要审批',
             summary: node.summary,
             risk: node.risk,
             options: toAcpOptions(node.options),
-            ...(node.ticket === undefined ? {} : { ticket: node.ticket }),
+            ...(node.decisionRef ? { decisionKey: decisionKey(node.decisionRef) } : {}),
             ...(node.requestSeq === undefined ? {} : { requestSeq: node.requestSeq }),
             ...(node.expiresAt === undefined ? {} : { expiresAt: node.expiresAt }),
           },

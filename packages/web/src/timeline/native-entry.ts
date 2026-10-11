@@ -58,7 +58,8 @@ export function article(node: UINode): HTMLElement {
 }
 
 export const approvalStatus = (node: ApprovalNode, t: Translate): string =>
-  (node.state === 'decided' && node.decision
+  ((node.state === 'decided' || (node.state === 'expired' && node.decision?.reason === 'stopped')) &&
+  node.decision
     ? (() => {
         const key =
           APPROVAL_REASON_KEYS.get(node.decision.reason ?? '') ??

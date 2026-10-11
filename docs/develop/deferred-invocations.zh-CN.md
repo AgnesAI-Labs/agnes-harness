@@ -16,7 +16,7 @@ Host 用 `withDeferredToolInvocations(factory, resolve)` 把队列接到通用 `
 | --- | --- |
 | `queued` | `x/agnes/deferred-invocations/state` 在唤醒前记录完整不可变 invocation。相同 id 与规范化绑定再次入队时返回首次回执，不再复查源事件；新的或不同的绑定必须引用可接受的源事件，改变绑定则拒绝。 |
 | `executing` | 状态事实先于 `ctx.tools.execute({invocationId: id, name: tool, args})`。既有 tool policy、approval、auto review、deny-list、sandbox 仍是权威。 |
-| `pending-approval` | `PARKED` 保存该状态；原 turn 打开后，`ctx.tools.resume(id)` 只恢复原票据。`E_LANE_BUSY` 继续停驻。 |
+| `pending-approval` | `PARKED` 保存该状态；原 turn 打开后，`ctx.tools.resume(id)` 只恢复原决策请求。`E_LANE_BUSY` 继续停驻。 |
 | `succeeded` | 必须引用原始持久 tool-result 序号；队列事实只保存引用，不复制完整输出。 |
 | `failed` | 保留安全错误与重试资格。`effects.status: may-have-sent` 不重放效果，转为未知/不可重试。已知工具响应可无派发恢复。 |
 | 通知 | 生产方 `changed` 收到持久状态/回执关联。`x/agnes/deferred-invocations/notified` 确认通知。确认前崩溃会重复回调，因此回调必须幂等。失败回调不能重跑终态工具。 |
@@ -27,6 +27,6 @@ Host 用 `withDeferredToolInvocations(factory, resolve)` 把队列接到通用 `
 
 Host 适配器使用现有会话 lease 和公开 scan/append/enqueue 接口。关闭会话释放其队列绑定。锁定会话保留生产方 generation。不新增 worker 定时器、数据库或 Core 程序计数器变更。生产方必须能根据自身持久接纳事实修复 enqueue，并通过既有 queued-input 路径投递结果；不能把入队成功当成业务执行成功。
 
-通用 drain 在没有活动 turn 且该 invocation 有原审批 ticket 时，通过公开 `input.resumeParked` 恢复该 ticket。拒绝审批可能只补记 tool/result 而不打开 turn；drain 仍会读取原工具回执、写 failed 并通知生产方。普通输入和非队列审批仍由 Loop 自己处理，queue 不领取它们。
+通用 drain 在没有活动 turn 且该 invocation 有原审批 decision request 时，通过公开 `input.resumeParked` 恢复该 decision request。拒绝审批可能只补记 tool/result 而不打开 turn；drain 仍会读取原工具回执、写 failed 并通知生产方。普通输入和非队列审批仍由 Loop 自己处理，queue 不领取它们。
 
 可执行的 drain 与 factory 装饰器由 `@agnes/plugin-runtime` 导出。队列和回执类型位于 `@agnes/plugin-runtime/deferred-contract`。账本端口仍是 Host 适配器。Loop 插件从公开作者运行库命名空间导入 helper，并用 `deferredQueueKind` 读取队列。

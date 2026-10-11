@@ -103,9 +103,8 @@ describe('synchronous channel approval', () => {
     state.dispose()
   })
 
-  it('rejects self approval, unauthorized approvers, unoffered verdicts, and copied actions', async () => {
+  it('rejects unauthorized approvers, unoffered verdicts, and copied actions', async () => {
     const cases = [
-      { allowFrom: [] as string[], event: approvalAction('appr:#1:allow_once', 'requester') },
       { allowFrom: ['reviewer'], event: approvalAction('appr:#1:allow_once', 'outsider') },
       { allowFrom: [] as string[], event: approvalAction('appr:#1:allow_always') },
       { allowFrom: [] as string[], event: approvalAction('appr:#1:allow_once', 'approver', 'other') },
@@ -122,6 +121,63 @@ describe('synchronous channel approval', () => {
       expect(state.adapter.sent.at(-1)?.msg.ephemeral).toBe(true)
       state.dispose()
       await expect(state.outcome).resolves.toEqual({ unanswered: 'detached' })
+    }
+  })
+
+  it('allows an authenticated owner to review their own agent', async () => {
+    const state = await pendingApproval()
+    try {
+      await state.approval.handleAction(approvalAction('appr:#1:allow_once', 'requester'))
+      await expect(state.outcome).resolves.toMatchObject({
+        verdict: 'allowed-once',
+        sourceCredential: { kind: 'channel', userId: 'requester' },
+      })
+    } finally {
+      state.dispose()
+    }
+  })
+
+  it('delivers the full plan before offering buttons and detaches if a tail chunk fails', async () => {
+    for (const failTail of [false, true]) {
+      const client = createFakeClient()
+      const adapter = new FakeChannel()
+      const session = await client.session.attach('session')
+      const approval = new Approval({ adapter, client, cfg: { allowFrom: [] }, log })
+      const dispose = approval.watch('session', session, { chatId: 'chat' }, () => 'requester')
+      const plan = 'review line\n'.repeat(2000) + '<script>EXACT-TAIL</script>'
+      const realSend = adapter.send.bind(adapter)
+      adapter.send = async (chat, msg) => {
+        if (
+          failTail &&
+          msg.blocks.some((block) => block.kind === 'text' && block.markdown.includes('EXACT-TAIL'))
+        )
+          throw new Error('tail unavailable')
+        return realSend(chat, msg)
+      }
+      try {
+        const result = session.permissionHandler!(
+          { ...request(), toolCall: { name: 'exit_plan_mode', rawInput: { plan } } },
+          { signal: new AbortController().signal },
+        )
+        if (failTail) {
+          await expect(result).resolves.toEqual({ unanswered: 'transport' })
+          expect(adapter.sent.some((row) => row.msg.blocks.some((block) => block.kind === 'approval'))).toBe(
+            false,
+          )
+        } else {
+          await vi.waitFor(() => expect(adapter.sent.at(-1)?.msg.blocks[0]?.kind).toBe('approval'))
+          expect(
+            adapter.sent
+              .flatMap((row) => row.msg.blocks)
+              .flatMap((block) => (block.kind === 'text' ? [block.markdown] : []))
+              .join(''),
+          ).toBe(plan.replace(/</g, '&lt;').replace(/>/g, '&gt;'))
+          dispose()
+          await expect(result).resolves.toEqual({ unanswered: 'detached' })
+        }
+      } finally {
+        dispose()
+      }
     }
   })
 

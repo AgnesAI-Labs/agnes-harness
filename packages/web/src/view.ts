@@ -91,7 +91,7 @@ export function webView(
 ): WebView {
   const approval = timeline.nodes.find(
     (node): node is ApprovalNode =>
-      node.kind === 'approval' && node.state === 'pending' && typeof node.ticket === 'string',
+      node.kind === 'approval' && node.state === 'pending' && node.decisionRef !== undefined,
   )
   const phase = timeline.opState?.phase
   const phaseKey = phase === undefined ? undefined : PHASE_KEYS[phase]

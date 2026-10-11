@@ -28,13 +28,19 @@ const node = (over: Partial<ApprovalNode> = {}): ApprovalNode => ({
 
 describe('ApprovalCard: the persisted approval projection (distinct from the live PermissionModal)', () => {
   it('parked path (a real ticket): shows ticket/expiry and decides on keypress', async () => {
-    const decided: Array<[string, string]> = []
-    const card = new ApprovalCard(node({ ticket: 'tk-abcdef123456', expiresAt: '2026-09-08T00:00:00Z' }), {
-      ansi: A,
-      onDecide: async (t, v) => {
-        decided.push([t, v])
+    const decided: Array<[NonNullable<ApprovalNode['decisionRef']>, string]> = []
+    const card = new ApprovalCard(
+      node({
+        decisionRef: { sessionId: 's', id: 'tk-abcdef123456', revision: 1 },
+        expiresAt: '2026-09-08T00:00:00Z',
+      }),
+      {
+        ansi: A,
+        onDecide: async (t, v) => {
+          decided.push([t, v])
+        },
       },
-    })
+    )
     const lines = card.render(60).join('\n')
     expect(lines).toContain('tk-abcde')
     expect(lines).toContain('2026-09-08T00:00:00Z')
@@ -42,30 +48,36 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
     expect(lines).toContain('[3]')
     card.handleInput('1')
     await new Promise((r) => setTimeout(r, 0))
-    expect(decided).toEqual([['tk-abcdef123456', 'allowed-once']])
+    expect(decided).toEqual([[{ sessionId: 's', id: 'tk-abcdef123456', revision: 1 }, 'allowed-once']])
     expect(card.render(60).join('\n')).toContain('allowed-once')
   })
 
   it('surfaces the real server rejection reason on decide failure, and shows no error on success', async () => {
     // Shape a rejected `_agnes/v1/approval.decide` call actually throws: sdk's JsonRpcError has
     // `.data.reason` (protocol's `rpcError('APPROVAL_REJECTED', { reason })` puts it there).
-    const failing = new ApprovalCard(node({ ticket: 'tk-1', expiresAt: 'x' }), {
-      ansi: A,
-      onDecide: async () => {
-        throw Object.assign(new Error('APPROVAL_REJECTED (-32009)'), {
-          code: -32009,
-          data: { code: 'APPROVAL_REJECTED', reason: 'self-approval' },
-        })
+    const failing = new ApprovalCard(
+      node({ decisionRef: { sessionId: 's', id: 'tk-1', revision: 1 }, expiresAt: 'x' }),
+      {
+        ansi: A,
+        onDecide: async () => {
+          throw Object.assign(new Error('APPROVAL_REJECTED (-32009)'), {
+            code: -32009,
+            data: { code: 'APPROVAL_REJECTED', reason: 'self-approval' },
+          })
+        },
       },
-    })
+    )
     failing.handleInput('2')
     await new Promise((r) => setTimeout(r, 0))
     expect(failing.render(60).join('\n')).toContain('self-approval')
 
-    const succeeding = new ApprovalCard(node({ ticket: 'tk-2', expiresAt: 'x' }), {
-      ansi: A,
-      onDecide: async () => {},
-    })
+    const succeeding = new ApprovalCard(
+      node({ decisionRef: { sessionId: 's', id: 'tk-2', revision: 1 }, expiresAt: 'x' }),
+      {
+        ansi: A,
+        onDecide: async () => {},
+      },
+    )
     succeeding.handleInput('3')
     await new Promise((r) => setTimeout(r, 0))
     const out = succeeding.render(60).join('\n')
@@ -90,10 +102,13 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
   })
 
   it('a genuinely pending+parked node renders through the pending branch -- never the decided one', () => {
-    const card = new ApprovalCard(node({ ticket: 'tk-3', expiresAt: 'x' }), {
-      ansi: A,
-      onDecide: async () => {},
-    })
+    const card = new ApprovalCard(
+      node({ decisionRef: { sessionId: 's', id: 'tk-3', revision: 1 }, expiresAt: 'x' }),
+      {
+        ansi: A,
+        onDecide: async () => {},
+      },
+    )
     const out = card.render(60).join('\n')
     expect(out).toContain('[1]')
     expect(out).toContain('[2]')
@@ -103,11 +118,14 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
   })
 
   it('localizes the fixed parked-approval copy while preserving the projected summary', () => {
-    const card = new ApprovalCard(node({ ticket: 'tk-3', expiresAt: 'x' }), {
-      ansi: A,
-      locale: 'zh-CN',
-      onDecide: async () => {},
-    })
+    const card = new ApprovalCard(
+      node({ decisionRef: { sessionId: 's', id: 'tk-3', revision: 1 }, expiresAt: 'x' }),
+      {
+        ansi: A,
+        locale: 'zh-CN',
+        onDecide: async () => {},
+      },
+    )
     const out = card.render(80).join('\n')
     expect(out).toContain('等待审批: shell rm -rf tmp')
     expect(out).toContain('[1] 允许一次')
@@ -122,15 +140,21 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
       { ansi, onDecide: async () => {} },
     )
     expect(decided.render(60)[0]).toContain('\x1b[38;5;78m✓\x1b[39m')
-    const expired = new ApprovalCard(node({ state: 'expired', ticket: 'tk-9', expiresAt: 'x' }), {
-      ansi,
-      onDecide: async () => {},
-    })
+    const expired = new ApprovalCard(
+      node({ state: 'expired', decisionRef: { sessionId: 's', id: 'tk-9', revision: 1 }, expiresAt: 'x' }),
+      {
+        ansi,
+        onDecide: async () => {},
+      },
+    )
     expect(expired.render(60)[0]).toContain('\x1b[38;5;203m✗\x1b[39m')
-    const pending = new ApprovalCard(node({ ticket: 'tk-8', expiresAt: 'x' }), {
-      ansi,
-      onDecide: async () => {},
-    })
+    const pending = new ApprovalCard(
+      node({ decisionRef: { sessionId: 's', id: 'tk-8', revision: 1 }, expiresAt: 'x' }),
+      {
+        ansi,
+        onDecide: async () => {},
+      },
+    )
     expect(pending.render(60)[0]).toContain('\x1b[38;5;178m⚠\x1b[39m')
     // none tier: the very same cards emit zero escape sequences.
     const plain = new ApprovalCard(
@@ -153,10 +177,13 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
   })
 
   it('an expired node renders a single terminal line and takes no input', () => {
-    const card = new ApprovalCard(node({ state: 'expired', ticket: 'tk-4', expiresAt: 'x' }), {
-      ansi: A,
-      onDecide: async () => {},
-    })
+    const card = new ApprovalCard(
+      node({ state: 'expired', decisionRef: { sessionId: 's', id: 'tk-4', revision: 1 }, expiresAt: 'x' }),
+      {
+        ansi: A,
+        onDecide: async () => {},
+      },
+    )
     const out = card.render(60)
     expect(out).toHaveLength(1)
     expect(out[0]).toContain('expired')
@@ -164,20 +191,27 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
   })
 
   it('only offered options get a key: an option missing from n.options is never actionable', async () => {
-    const decided: Array<[string, string]> = []
-    const card = new ApprovalCard(node({ ticket: 'tk-5', expiresAt: 'x', options: ['allow_once'] }), {
-      ansi: A,
-      onDecide: async (t, v) => {
-        decided.push([t, v])
+    const decided: Array<[NonNullable<ApprovalNode['decisionRef']>, string]> = []
+    const card = new ApprovalCard(
+      node({
+        decisionRef: { sessionId: 's', id: 'tk-5', revision: 1 },
+        expiresAt: 'x',
+        options: ['allow_once'],
+      }),
+      {
+        ansi: A,
+        onDecide: async (t, v) => {
+          decided.push([t, v])
+        },
       },
-    })
+    )
     const out = card.render(60).join('\n')
     expect(out).toContain('[1]')
     expect(out).not.toContain('[2]')
     expect(card.handleInput('2')).toBe(false)
     card.handleInput('1')
     await new Promise((r) => setTimeout(r, 0))
-    expect(decided).toEqual([['tk-5', 'allowed-once']])
+    expect(decided).toEqual([[{ sessionId: 's', id: 'tk-5', revision: 1 }, 'allowed-once']])
   })
 })
 
@@ -222,10 +256,13 @@ async function appOnApprovalNode(
 }
 
 describe('ApprovalCard wired into the real TuiApp (app.ts nodeView / handleInput)', () => {
-  it('a real keypress calls the real wire method with { ticket, verdict } bound to the connection', async () => {
+  it('a real keypress calls the real wire method with a revision-bound decision command bound to the connection', async () => {
     const { app, term, ep, client } = await appOnApprovalNode(
-      node({ ticket: 'tk-wire-1', expiresAt: '2026-09-10T00:00:00Z' }),
-      () => ({ seq: 1 }),
+      node({
+        decisionRef: { sessionId: 's', id: 'tk-wire-1', revision: 1 },
+        expiresAt: '2026-09-10T00:00:00Z',
+      }),
+      () => ({ seq: 1, revision: 2, commandId: 'tk-wire-1:1:allowed-once', digest: '0'.repeat(64) }),
     )
     try {
       await vi.waitFor(async () =>
@@ -237,8 +274,11 @@ describe('ApprovalCard wired into the real TuiApp (app.ts nodeView / handleInput
       )
       const call = ep.calls.find((c) => c.method === '_agnes/v1/approval.decide')
       expect(call?.params).toEqual({
-        ticket: 'tk-wire-1',
-        verdict: 'allowed-once',
+        sessionId: 's',
+        id: 'tk-wire-1',
+        revision: 1,
+        commandId: 'tk-wire-1:1:allowed-once',
+        response: { option: 'allowed-once', value: null },
       })
       await vi.waitFor(async () =>
         expect((await screenOf(term, 60, 12)).join('\n')).toContain('allowed-once'),
@@ -254,7 +294,7 @@ describe('ApprovalCard wired into the real TuiApp (app.ts nodeView / handleInput
 
   it('a real rejection from the wire surfaces its reason on screen through the real render loop', async () => {
     const { app, term, client, ep } = await appOnApprovalNode(
-      node({ ticket: 'tk-wire-2', expiresAt: 'x' }),
+      node({ decisionRef: { sessionId: 's', id: 'tk-wire-2', revision: 1 }, expiresAt: 'x' }),
       () => {
         throw Object.assign(new Error('APPROVAL_REJECTED (-32009)'), {
           code: -32009,

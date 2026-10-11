@@ -329,10 +329,23 @@ export class Outbound {
       messages.push({ ...message, blocks })
       blocks = []
     }
-    const limit = this.dependencies.limits.textChars
+    const review = message.blocks.some((block) => block.kind === 'approval')
+    const limit = review
+      ? Math.max(
+          1,
+          Math.min(
+            this.dependencies.limits.textChars,
+            Math.floor((this.dependencies.limits.cardBytes - 1024) / 12),
+          ),
+        )
+      : this.dependencies.limits.textChars
     let textChars = 0
     for (const block of message.blocks) {
       if (block.kind !== 'text') {
+        if (review && block.kind === 'approval') {
+          flush()
+          textChars = 0
+        }
         blocks.push(block)
         continue
       }

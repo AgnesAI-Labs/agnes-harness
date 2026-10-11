@@ -13,7 +13,7 @@ const node = (options: ApprovalNode['options']): ApprovalNode => ({
   summary: 'control the desktop',
   risk: 'always',
   options,
-  ticket: 'ticket-1',
+  decisionRef: { sessionId: 's', id: 'ticket-1', revision: 1 },
   expiresAt: '2026-09-17T23:59:00Z',
 })
 
@@ -33,6 +33,43 @@ describe('ApprovalCard permanent grants', () => {
     })
     expect(offered.render(100).join('\n')).toContain('[2] Always allow for this profile')
     expect(offered.handleInput('2')).toBe(true)
-    await vi.waitFor(() => expect(decide).toHaveBeenCalledWith('ticket-1', 'allowed-permanent'))
+    await vi.waitFor(() =>
+      expect(decide).toHaveBeenCalledWith(
+        { sessionId: 's', id: 'ticket-1', revision: 1 },
+        'allowed-permanent',
+      ),
+    )
   })
+})
+
+it('keeps the full single-line review subject readable before the choices', () => {
+  const subjectText = 'x'.repeat(100000) + '<EXACT-TAIL>'
+  const card = new ApprovalCard(
+    { ...node(['allow_once', 'reject_once']), subjectText },
+    {
+      ansi: createAnsi('none'),
+      onDecide: async () => undefined,
+    },
+  )
+  const lines = card.render(80)
+  expect(
+    lines
+      .slice(2, -1)
+      .map((line) => line.trimEnd())
+      .join(''),
+  ).toBe(subjectText)
+  expect(lines.at(-1)).toContain('[1]')
+})
+
+it('renders stopped authority distinctly from deadline expiry and offers no answer', () => {
+  const card = new ApprovalCard(
+    {
+      ...node(['allow_once']),
+      state: 'expired',
+      decision: { verdict: 'allowed-once', via: 'human', reason: 'stopped' },
+    },
+    { ansi: createAnsi('none'), onDecide: async () => undefined },
+  )
+  expect(card.render(80).join('')).toContain('stopped')
+  expect(card.handleInput('1')).toBe(false)
 })

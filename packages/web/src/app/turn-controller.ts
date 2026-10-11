@@ -143,7 +143,7 @@ export function createTurnController(
     context.renderer.render(view.nodes, context.projection.turns, meta)
     renderTrace(view, context.projection.turns, meta)
     if (approvalOutsideWindow(context.projection)) {
-      const ticket = context.projection.opState?.parked?.ticket
+      const ticket = context.projection.opState?.parked?.decisionRef.id
       // A different parked approval is looked for afresh.
       if (ticket !== context.approvalSearchTicket && context.approvalSearch !== 'searching')
         context.approvalSearch = 'idle'
@@ -166,7 +166,7 @@ export function createTurnController(
       // The approval's own node, with the options it really offers, is before the loaded window; a
       // verdict can only be given there, so this card only leads to it.
       context.approvalRuntime.render({
-        key: `parked:${parked.ticket}`,
+        key: `parked:${parked.decisionRef.id}`,
         title: searching ? context.t('app.approval.searching') : context.t('app.approval.parkedTitle'),
         summary: context.t('app.approval.parkedSummary', { expiresAt: parked.expiresAt }),
         impact: searching
@@ -182,7 +182,7 @@ export function createTurnController(
     }
     const key = context.liveApproval
       ? `live:${context.liveApproval.request.toolCall.toolCallId}`
-      : (durable?.ticket ?? '')
+      : (durable?.decisionRef?.id ?? '')
     // 审批卡是会话区外的流内兄弟：显示/收回都会改变 #transcript 的视口高度。
     // 原本贴底的会话要保持贴底，否则最新过程被压出可视区、贴底跟随也会被破坏。
     const stick = context.conversationRuntime.isTranscriptNearBottom()
@@ -242,13 +242,18 @@ export function createTurnController(
           request.finish({ optionId: option.optionId }),
         )
       }
-    } else if (durable?.ticket) {
-      const ticket = durable.ticket
+    } else if (durable?.decisionRef) {
+      const ref = durable.decisionRef
       for (const { label, verdict } of durableApprovalActions(durable, context.t))
         decide(
           `durable:${verdict}`,
           label,
-          async () => void (await context.client.approval.decide(ticket, verdict)),
+          async () =>
+            void (await context.client.approval.decide({
+              ...ref,
+              commandId: `${ref.id}:${ref.revision}:${verdict}`,
+              response: { option: verdict, value: null },
+            })),
         )
     }
     const planApproval = context.liveApproval
@@ -264,7 +269,9 @@ export function createTurnController(
       summary,
       impact,
       ...(card?.warning === undefined ? {} : { warning: card.warning }),
-      ...(card?.preview === undefined ? {} : { preview: card.preview }),
+      ...((card?.preview ?? durable?.subjectText) === undefined
+        ? {}
+        : { preview: (card?.preview ?? durable?.subjectText)! }),
       actions,
       disabled: context.approvalBusy || context.stopping || !context.connected,
     })

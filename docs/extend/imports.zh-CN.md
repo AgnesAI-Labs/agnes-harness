@@ -83,3 +83,9 @@ TypeBox 来自声明的 `@sinclair/typebox` 依赖；它自己的包导出提供
 请求先落 ledger 再返回 handle。同 owner/key 的相同 spec 返回原 ID 和期限，内容变化则冲突。`wait` 返回 resolved snapshot 或断开后的 pending handle；断线和取消本地 waiter 都保留持久 pending。答复只能经认证的后台入口接收。
 
 Loop 将 handle 放入既有 checkpoint，恢复时调用 `get`。真人答复后推进纯阶段时，向 `checkpoints.write` 传入 `{ decisionRefs: [handle] }`，消费标记与下一 checkpoint 同批提交。该端口不能在重启后恢复任意工具 JavaScript。ServiceKind 的最大 ports 和 Host descriptor 都须授予 `decisions`；缺少当前会话准入时 fail-closed。
+
+工具权限与计划审核先持久化再展示。原生客户端使用
+`client.approval.decide({ sessionId, id, revision, commandId, response: { option, value } })`
+答复，以 `client.approval.list(sessionId)` 查询未消费请求。身份来自已认证连接，答复 body
+不包含 actor 或 credential。无 handler、断线或本地等待超时让原请求继续 pending。
+计划仅提供真人、单次答复，并展示完整不可变内容。普通工具保留 once、session 及同步持久化的 permanent 授权。

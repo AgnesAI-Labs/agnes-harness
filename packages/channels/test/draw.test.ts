@@ -87,12 +87,12 @@ describe('whatToDraw', () => {
       summary: 'delete report',
       risk: 'destructive',
       options: ['allow_once', 'reject_once'],
-      ticket: 'abcdef123',
+      decisionRef: { sessionId: 's', id: 'abcdef123', revision: 1 },
       expiresAt: 'T',
     }
     expect(whatToDraw(pending, context)?.blocks[0]).toMatchObject({
       kind: 'approval',
-      ticket: 'abcdef123',
+      decisionKey: 's/abcdef123/1',
     })
     expect(
       whatToDraw(
@@ -108,6 +108,17 @@ describe('whatToDraw', () => {
       kind: 'text',
       markdown: '审批已超时',
     })
+
+    expect(
+      whatToDraw(
+        {
+          ...pending,
+          state: 'expired',
+          decision: { verdict: 'allowed-once', via: 'human', reason: 'stopped' },
+        },
+        context,
+      )?.blocks[0],
+    ).toEqual({ kind: 'text', markdown: '任务已停止，审批已撤销' })
 
     const cost: UINode = { kind: 'cost', id: 'cost', seq: 5, credits: 12.5, source: 'gateway' }
     expect(whatToDraw(cost, context)?.blocks[0]).toEqual({
@@ -171,7 +182,7 @@ describe('whatToDraw', () => {
       summary: 'grant tool access',
       risk: 'destructive',
       options: ['allow_once', 'allow_always', 'allow_permanent'],
-      ticket: 'abcdef123',
+      decisionRef: { sessionId: 's', id: 'abcdef123', revision: 1 },
     }
     expect(whatToDraw(pending, context)?.blocks[0]).toMatchObject({
       kind: 'approval',

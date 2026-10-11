@@ -75,7 +75,10 @@ describe('runTui model selection', () => {
           turn: 1,
           step: 2,
           phase: 'parked',
-          parked: { ticket: 'tk-abcdefgh', expiresAt: '2026-09-12T00:00:00.000Z' },
+          parked: {
+            decisionRef: { sessionId: FAKE_SESSION_ID, id: 'tk-abcdefgh', revision: 1 },
+            expiresAt: '2026-09-12T00:00:00.000Z',
+          },
         },
         turns: [],
         nodes: [],

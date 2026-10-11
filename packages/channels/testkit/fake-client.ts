@@ -65,9 +65,8 @@ export type FakeClient = Pick<Client, 'initialize' | 'apis' | 'on' | 'close'> & 
     new: (options: SessionNewOptions) => Promise<FakeSession>
     attach(id: string, options?: SessionAttachOptions): Promise<FakeSession>
   }
-  approval: {
-    decide(ticket: string, verdict: ApprovalVerdict, credential?: Credential): Promise<{ seq: number }>
-  }
+  approval: Pick<Client['approval'], 'decide'>
+
   claim: {
     once(kind: string, value: string): Promise<boolean>
     withinRateLimit(kind: string, value: string, limit: number, windowMs: number): Promise<boolean>
@@ -223,8 +222,8 @@ export function createFakeClient(script: FakeScript = {}): FakeClient {
       },
     },
     approval: {
-      async decide(ticket, verdict, credential) {
-        record('approval.decide', ticket, verdict, credential)
+      async decide(command, bridge) {
+        record('approval.decide', command, bridge)
         if (script.decideError !== undefined) {
           throw new JsonRpcError({
             code: script.decideError,
@@ -232,7 +231,12 @@ export function createFakeClient(script: FakeScript = {}): FakeClient {
             data: { code: 'APPROVAL_REJECTED', reason: 'self' },
           })
         }
-        return { seq: ++sequence }
+        return {
+          seq: ++sequence,
+          revision: command.revision + 1,
+          commandId: command.commandId,
+          digest: '0'.repeat(64),
+        }
       },
     },
     claim: {

@@ -101,7 +101,7 @@ export type ApprovalBlock = {
   summary: string
   risk: 'destructive' | 'always' | 'budget' | 'unknown'
   options: AcpPermissionKind[]
-  ticket?: string
+  decisionKey?: string
   requestSeq?: number
   expiresAt?: string
 }
@@ -145,7 +145,7 @@ export type RenderContext = {
 
 export type ApprovalView = {
   requestSeq?: number
-  ticket?: string
+  decisionKey?: string
   summary: string
   risk: 'destructive' | 'always' | 'budget' | 'unknown'
   options: AcpPermissionKind[]
@@ -183,7 +183,7 @@ export interface ChannelAdapter {
   send(target: ChatTarget, message: ChannelMessage): Promise<MessageRef>
   update(reference: MessageRef, message: ChannelMessage): Promise<void>
   react?(reference: MessageRef, emoji: string): Promise<void>
-  renderApproval(request: ApprovalView, ticket?: string): ChannelMessage
+  renderApproval(request: ApprovalView, decisionKey?: string): ChannelMessage
   onApprovalAction(payload: ChannelEvent): ApprovalAction | null
   onSlotAction?(payload: ChannelEvent): SlotActionIntent | null
   credentialOf(event: ChannelEvent): ChannelCredential

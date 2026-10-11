@@ -63,7 +63,8 @@ export function liveApprovalCard(toolCall: Record<string, unknown>, t: Translate
   const sessionLabel = tool ? t('app.approval.session.all', { tool }) : t('app.approval.session.tool')
   if (input === undefined) return { impact, sessionLabel }
   const text = JSON.stringify(leadingFirst(input), null, 2) ?? String(input)
-  if (text.length <= PREVIEW_LIMIT) return { impact, preview: text, sessionLabel }
+  if (tool === 'exit_plan_mode' || text.length <= PREVIEW_LIMIT)
+    return { impact, preview: text, sessionLabel }
   let shown = PREVIEW_LIMIT
   const last = text.charCodeAt(shown - 1)
   if (last >= 0xd800 && last <= 0xdbff) shown -= 1

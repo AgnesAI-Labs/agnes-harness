@@ -281,9 +281,13 @@ export class TuiApp {
           const card = new ApprovalCard(node, {
             ansi,
             locale,
-            onDecide: async (ticket, verdict) => {
+            onDecide: async (ref, verdict) => {
               if (this.refuseClosed()) return
-              await this.o.session.client.approval.decide(ticket, verdict)
+              await this.o.session.client.approval.decide({
+                ...ref,
+                commandId: `${ref.id}:${ref.revision}:${verdict}`,
+                response: { option: verdict, value: null },
+              })
             },
             // The decide call's settlement (in particular a rejection, which produces no new
             // ledger event for TuiProjection to pick up) has to ask for its own repaint: nothing
@@ -771,7 +775,7 @@ export class TuiApp {
     this.hints.set(this.hintActions)
     this.statusBar.setSlots(slots.status)
     this.applyOpState(value.opState)
-    this.statusBar.setParked(value.opState?.parked?.ticket)
+    this.statusBar.setParked(value.opState?.parked?.decisionRef.id)
     this.statusBar.setUsage(value.usage)
     if (value.usage) {
       this.welcomeBanner.setModel(value.usage.model.id)

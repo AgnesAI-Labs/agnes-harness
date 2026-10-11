@@ -146,9 +146,9 @@ Service 不提供任意工具调度入口。公开[延后工具调用合同](def
 
 UI 动作身份从已认证连接的 credential 解析，worker 内也重新绑定；调用方提供 actor 会被拒绝。接纳及重复命令恢复比较完整 actor（`id`、`org`、`role`、`deptPath`、`attrs`），仅 id 与 org 相同不满足绑定。
 
-不可变的已接纳命令绑定 surface revision、归属 generation、任务/通道、已认证 actor、动作、完整校验的参数以及稳定 invocation id。命令事实构成工作队列，从 ledger 重建；不增加数据库或 Agent 输入通道。执行时 helper 再检查绑定任务、surface 与工具目录，再沿普通 tool policy、approval、auto review、sandbox、deny-list 控制执行原工具。业务 `confirmed: true` 仅满足 `action.confirm`，不授予工具权限。存在 `received`、`pending-approval`、`executing` 动作时，update/close 返回 `UI_BUSY`，避免审批票据下的审阅数据改变。未解决的 `outcomeUnknown` 失败也保持该 surface 锁定，直到既有效果对账解决它。相同 surface 以不同 command id 并发提交也返回瞬时 `OVERLOADED`，不创建第二个 invocation。
+不可变的已接纳命令绑定 surface revision、归属 generation、任务/通道、已认证 actor、动作、完整校验的参数以及稳定 invocation id。命令事实构成工作队列，从 ledger 重建；不增加数据库或 Agent 输入通道。执行时 helper 再检查绑定任务、surface 与工具目录，再沿普通 tool policy、approval、auto review、sandbox、deny-list 控制执行原工具。业务 `confirmed: true` 仅满足 `action.confirm`，不授予工具权限。存在 `received`、`pending-approval`、`executing` 动作时，update/close 返回 `UI_BUSY`，避免审批决策请求下的审阅数据改变。未解决的 `outcomeUnknown` 失败也保持该 surface 锁定，直到既有效果对账解决它。相同 surface 以不同 command id 并发提交也返回瞬时 `OVERLOADED`，不创建第二个 invocation。
 
-回执字段依状态约束：`rejected` 必须有 `refusal`，`failed` 必须有 `failure`，`pending-approval` 必须关联 invocation/票据，`succeeded` 必须关联持久工具结果。不适用的 failure/refusal 字段缺省。后台在结构 Schema 之外验证这些关系。`outcomeUnknown: true` 始终意味着 `retryable: false`。
+回执字段依状态约束：`rejected` 必须有 `refusal`，`failed` 必须有 `failure`，`pending-approval` 必须关联 invocation/决策请求，`succeeded` 必须关联持久工具结果。不适用的 failure/refusal 字段缺省。后台在结构 Schema 之外验证这些关系。`outcomeUnknown: true` 始终意味着 `retryable: false`。
 
 终态结果/拒绝只通过现有 SC1 queued-input 到达 Agent：活跃 turn 支持 steering 时使用 `next-step`，否则使用 `next-turn` 与既有空闲唤醒。结果持久化恰逢 turn 结束时仍须留在队列，供下一轮领取。队列内容包括 surface id/revision、action/command id、状态、安全摘要和 ledger/tool-result 引用。工具输出仍是不可信证据。Agent 随后可调用 `ui_update` 或 `ui_close`；执行成功本身不生成业务数据，也不增加 surface revision。这段队列输入会污染后续 turn。工具可以用可选的 `isPresentational` 声明：效果只向用户公布展示状态，没有外部副作用。默认工具策略不会仅因该污染而升级这一声明。`requiresApproval: always`、破坏性声明，以及产出该结果的业务工具，仍然要询问。官方 `ui_render`、`ui_update`、`ui_close` 声明该标志；`ui_submit` 不声明。
 
@@ -246,8 +246,8 @@ Host 会话桥解析数据源。官方插件调用该函数并追加审计事实
 | 重复传输提交 → 首个命令状态 | 相同请求不新增执行/事实；返回原命令最新持久回执，`duplicate: true` | 重新关联首个结果，包括待处理状态 | 不新增 queued input。这是重复提交处置，不是新业务动作被拒绝。 |
 | 相同 commandId、请求改变 → rejected: duplicate | 首个回执保持不变；既有命令 journal 记录冲突，不新增动作链 | `UI_COMMAND_CONFLICT`；不覆盖首个结果 | 无执行/输入；调用方应读取首个命令。 |
 | Received → rejected: unauthorized | `ui/action.rejected`（`UI_UNAUTHORIZED`）；适用时含既有 policy 拒绝 | 解释工具不可用/动作被拒 | 拒绝入队一次；无业务效果。 |
-| Received → pending-approval | 既有 `tool/call`、`approval/asked`；`ui/action.pending-approval` 关联 invocation 与票据 | 既有审批 UI，加两处等待状态 | 无成功输入；业务确认与权限分离。 |
-| Pending-approval → rejected: unauthorized | 既有 `approval/decided` 与工具拒绝；`ui/action.rejected` | 审批拒绝/取消 | 拒绝入队一次；恢复原 invocation 返回原拒绝。 |
+| Received → pending-approval | 既有 `tool/call`、`decision/state`；`ui/action.pending-approval` 关联 invocation 与决策请求 | 既有审批 UI，加两处等待状态 | 无成功输入；业务确认与权限分离。 |
+| Pending-approval → rejected: unauthorized | 既有 `decision/state` 与工具拒绝；`ui/action.rejected` | 审批拒绝/取消 | 拒绝入队一次；恢复原 invocation 返回原拒绝。 |
 | Received 或 pending-approval → executing | `ui/action.executing`；既有获授权工具/效果 intent | 处理中，锁定动作 | 尚无终态输入；插件事实本身不证明授权或派发。 |
 | Executing → succeeded | 既有 `tool/result`、`effect/settled`；`ui/action.succeeded` 关联持久回执 | 成功与安全摘要；解锁 surface | 结果入队一次，Agent 继续并更新 surface。 |
 | Executing → failed | 既有工具/效果错误或恢复证据；`ui/action.failed` 含 `retryable`、`outcomeUnknown` | 错误；只允许符合条件的重试；未知结果须对账 | 失败入队一次；不乐观修改业务数据。 |
@@ -260,7 +260,7 @@ Host 会话桥解析数据源。官方插件调用该函数并追加审计事实
 
 持久键为 `(sessionId, commandId)`，包括拒绝的提交；认证后、stale/closed 校验、限流与工具派发前查询。比较规范化的完整请求（不含传输 request id）；相同请求始终返回首次尝试当前回执，即使 surface 后来变化或关闭。同键不同请求属于重复冲突，不能改变首个结果。`UI_COMMAND_CONFLICT` 是类型化 `SEMANTIC_REJECTED` RPC 拒绝，不是改写首个动作回执。`UiActionReceipt.seq` 指向最新动作事实；`duplicate` 是响应元数据，不是持久业务状态。客户端重连保留 command id，仅在新的用户决定或显式安全重试时生成新 id。
 
-Render/update/close、提交接纳和执行状态转换沿会话 ledger 既有单写者顺序串行化。Received 命令在完整验证与普通工具授权通过前不具有权限。回执与调度之间失败可从 `action.received` 恢复。稳定 invocation 身份绑定接纳参数；审批恢复同一个 invocation。不能新建工具调用来消费已有票据。不承诺外部效果恰好一次；未知回执遵循既有效果恢复规则，在对账完成前不可重试。
+Render/update/close、提交接纳和执行状态转换沿会话 ledger 既有单写者顺序串行化。Received 命令在完整验证与普通工具授权通过前不具有权限。回执与调度之间失败可从 `action.received` 恢复。稳定 invocation 身份绑定接纳参数；审批恢复同一个 invocation。不能新建工具调用来消费已有决策请求。不承诺外部效果恰好一次；未知回执遵循既有效果恢复规则，在对账完成前不可重试。
 
 不同 command id 仍可能重复同一业务意图。同一 surface 仅有一个处理中动作；成功终态后 Agent 必须 update/close 以反映已处理行，业务工具必须拒绝已处理交易。传输幂等不能替代业务验证。
 
@@ -270,7 +270,7 @@ Render/update/close、提交接纳和执行状态转换沿会话 ledger 既有�
 | --- | --- |
 | 浏览器刷新/重连 | 在一致 ledger 水位读取 surface/回执分页，然后接续该序号之后的既有会话事件；发现缺口则重新读取。两处使用同一投影。挂载卡片不能触发执行。 |
 | 未保存草稿 | 可选的会话级浏览器本地草稿，按 surface/component/revision 关联，卡片与面板共享。它不是后台处理状态。Revision 变化时丢弃或显式重新基于新数据编辑，不静默提交旧草稿。即使草稿未保存，刷新仍恢复后台已提交数据。 |
-| 待审批时刷新 | 从既有审批记录恢复原 invocation/票据，不能只读 UI 状态；展示既有审批控件。不自动批准、不新建票据。 |
+| 待审批时刷新 | 从既有审批记录恢复原 invocation/决策请求，不能只读 UI 状态；展示既有审批控件。不自动批准、不新建决策请求。 |
 | 派发前 daemon 重启 | 重放 surface/action 事实，重建待处理工作；验证不可变绑定，通过普通 Loop helper 执行一次。 |
 | 执行中重启 | 查询既有 invocation/effect 状态。已知成功/失败补齐缺失终态 UI 事实，不重跑工具。待审批恢复原调用。缺失/不确定效果回执成为 `failed`，含 `outcomeUnknown: true`、`retryable: false` 与证据链接；既有对账机制解决后才能开始新尝试。 |
 | 结果写入与 Agent 入队之间崩溃 | 扫描尚未投递的终态事实，使用同一 SC1 去重键入队。若入队先于投递标记成功，恢复已有队列项并补标记，不产生第二次结果输入。 |
