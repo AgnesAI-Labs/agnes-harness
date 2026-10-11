@@ -15,22 +15,26 @@ import { useEffect, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { sessionStartUrl } from './runtime-panels.js'
 
-/** Use the daemon's discoverable example inventory, not browser filesystem paths. */
-export function ExamplesPanel({
-  api,
-  canInstall = false,
-  installed,
-  t,
-  onReview,
-  onBundles,
-}: {
+type ExampleCardsProps = {
   api: PluginAdminApi | undefined
   canInstall?: boolean
   installed: readonly PackageInstalledDescriptor[]
   t(key: string): string
   onReview(item: PackageCatalogDescriptor): void
-  onBundles(): void
-}) {
+}
+/** The registry still owns the full settings page; Discover reuses only its example cards. */
+export function ExamplesPanel(props: ExampleCardsProps & { onBundles(): void }) {
+  return (
+    <section>
+      <h3>{props.t('examples')}</h3>
+      <p>{props.t('examplesHelp')}</p>
+      <OfficialExampleCards {...props} />
+      <Button onClick={props.onBundles}>{props.t('chooseBundle')}</Button>
+    </section>
+  )
+}
+/** Reusable discover content consumes the daemon catalog, never browser filesystem paths. */
+export function OfficialExampleCards({ api, canInstall = false, installed, t, onReview }: ExampleCardsProps) {
   const { locale, t: purposeText } = useUiText(PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
   const [rows, setRows] = useState<PackageCatalogDescriptor[]>([])
   const [busy, setBusy] = useState(false)
@@ -131,8 +135,6 @@ export function ExamplesPanel({
   })
   return (
     <section aria-busy={busy}>
-      <h3>{t('examples')}</h3>
-      <p>{t('examplesHelp')}</p>
       {busy && <SettingsState tone="loading">{t('loading')}</SettingsState>}
       {failed && <SettingsState tone="error">{t('unavailable')}</SettingsState>}
       {!busy && !failed && !rows.length && <p>{t('noExamples')}</p>}
@@ -150,7 +152,6 @@ export function ExamplesPanel({
           <div className="runtime-grid">{exampleCards.slice(3)}</div>
         </SettingsDetails>
       )}
-      <Button onClick={onBundles}>{t('chooseBundle')}</Button>
     </section>
   )
 }

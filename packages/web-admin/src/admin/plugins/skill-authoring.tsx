@@ -55,67 +55,70 @@ function SkillCandidatePanel({
           <Button onClick={() => setRevision((value) => value + 1)}>{t('candidates.refresh')}</Button>
         </SettingsState>
       )}
-      <CandidateInbox
-        api={api}
-        canReview={
-          !!writable &&
-          ['packages.trust', 'packages.install', 'packages.activate'].every((permission) =>
-            hasPermission(context.permissions, permission),
-          )
-        }
-        canTest={!!writable && hasPermission(context.permissions, 'extensions.execute')}
-        t={t}
-        confirm={setPending}
-        onPublished={onPublished}
-        scope="skill"
-        sessionTitle={sources.sessionTitle}
-        sessionTurnTime={sources.sessionTurnTime}
-        onPendingCount={onPendingCount}
-        reviewSurface={(content, onClose) => (
-          <Dialog
-            open
-            title={pending?.title ?? t('candidates.review')}
-            footer={null}
-            onCancel={() => {
-              if (!busy) {
-                if (pending) setPending(undefined)
-                else onClose()
-              }
-            }}
-            closable={!busy}
-            maskClosable={!busy}
-          >
-            {pending ? (
-              <>
-                <p>{pending.description}</p>
-                {pending.facts}
-                <div className="agh-dialog-footer">
-                  <Button disabled={busy} onClick={() => setPending(undefined)}>
-                    {t('shell.cancel')}
-                  </Button>
-                  <Button
-                    appearance="primary"
-                    loading={busy}
-                    onClick={() => {
-                      if (!pending || busy) return
-                      setBusy(true)
-                      void pending
-                        .run()
-                        .then(() => setPending(undefined))
-                        .catch(() => setFailed(true))
-                        .finally(() => setBusy(false))
-                    }}
-                  >
-                    {pending?.label}
-                  </Button>
-                </div>
-              </>
-            ) : (
-              content
-            )}
-          </Dialog>
-        )}
-      />
+      {!failed && !api && <SettingsState tone="loading">{t('candidates.loading')}</SettingsState>}
+      {api && (
+        <CandidateInbox
+          api={api}
+          canReview={
+            !!writable &&
+            ['packages.trust', 'packages.install', 'packages.activate'].every((permission) =>
+              hasPermission(context.permissions, permission),
+            )
+          }
+          canTest={!!writable && hasPermission(context.permissions, 'extensions.execute')}
+          t={t}
+          confirm={setPending}
+          onPublished={onPublished}
+          scope="skill"
+          sessionTitle={sources.sessionTitle}
+          sessionTurnTime={sources.sessionTurnTime}
+          onPendingCount={onPendingCount}
+          reviewSurface={(content, onClose) => (
+            <Dialog
+              open
+              title={pending?.title ?? t('candidates.review')}
+              footer={null}
+              onCancel={() => {
+                if (!busy) {
+                  if (pending) setPending(undefined)
+                  else onClose()
+                }
+              }}
+              closable={!busy}
+              maskClosable={!busy}
+            >
+              {pending ? (
+                <>
+                  <p>{pending.description}</p>
+                  {pending.facts}
+                  <div className="agh-dialog-footer">
+                    <Button disabled={busy} onClick={() => setPending(undefined)}>
+                      {t('shell.cancel')}
+                    </Button>
+                    <Button
+                      appearance="primary"
+                      loading={busy}
+                      onClick={() => {
+                        if (!pending || busy) return
+                        setBusy(true)
+                        void pending
+                          .run()
+                          .then(() => setPending(undefined))
+                          .catch(() => setFailed(true))
+                          .finally(() => setBusy(false))
+                      }}
+                    >
+                      {pending?.label}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                content
+              )}
+            </Dialog>
+          )}
+        />
+      )}
     </>
   )
 }

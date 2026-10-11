@@ -272,7 +272,9 @@ export function CandidateInbox({
         <>
           <p>{t('candidates.description')}</p>
           {!loaded ? (
-            <SettingsState tone="loading">{t('candidates.loading')}</SettingsState>
+            error ? null : (
+              <SettingsState tone="loading">{t('candidates.loading')}</SettingsState>
+            )
           ) : !visibleItems.length ? (
             <EmptyState
               icon={<Icon name="file-text" size={48} />}

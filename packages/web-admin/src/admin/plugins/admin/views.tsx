@@ -28,7 +28,7 @@ import {
   Tabs,
   UiLocaleProvider,
 } from '@agnes/web-ui'
-import { ExamplesPanel } from '../../../settings/examples.js'
+import { OfficialExampleCards } from '../../../settings/examples.js'
 import { SettingsHub } from '../../../settings/hub.js'
 import { sessionStartUrl } from '../../../settings/runtime-panels.js'
 import { CandidateInbox } from '../candidates.js'
@@ -254,16 +254,16 @@ export function renderPluginView(this: PluginAdminViewContext): void {
             }
           />
           {this.tab === 'discover' && !this.query && !this.category && !this.kind && (
-            <ExamplesPanel
-              api={this.api}
-              canInstall={this.canEffect('packages.install')}
-              installed={this.state.installed}
-              t={this.settingsText}
-              onReview={this.reviewExample}
-              onBundles={() =>
-                document.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: 'bundles' }))
-              }
-            />
+            <section aria-label={this.t('ux.examples')}>
+              <h3>{this.t('ux.examples')}</h3>
+              <OfficialExampleCards
+                api={this.api}
+                canInstall={this.canEffect('packages.install')}
+                installed={this.state.installed}
+                t={this.settingsText}
+                onReview={this.reviewExample}
+              />
+            </section>
           )}
           <PluginList
             emptyActions={

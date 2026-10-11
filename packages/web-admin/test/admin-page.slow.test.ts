@@ -363,7 +363,7 @@ it('groups real catalog releases and carries the selected version source through
   v2?.click()
   document.querySelector<HTMLElement>('[data-testid=plugin-versions-tab]')?.click()
   await vi.waitFor(() =>
-    await vi.waitFor(() => expect(document.getElementById('plugin-detail')?.textContent).toContain('Version 1.1.0')),
+    expect(document.getElementById('plugin-detail')?.textContent).toContain('Version 1.1.0'),
   )
   const check = [...document.querySelectorAll<HTMLButtonElement>('#plugin-detail button')].find(
     (candidate) => candidate.textContent === 'Inspect installation',
@@ -392,7 +392,9 @@ it('groups real catalog releases and carries the selected version source through
   expect(installedText).not.toContain('1.1.0')
   document.querySelector<HTMLElement>('.plugin-row')?.click()
   document.querySelector<HTMLElement>('[data-testid=plugin-versions-tab]')?.click()
-  await vi.waitFor(() => expect(document.getElementById('plugin-detail')?.textContent).toContain('Version 1.1.0'))
+  await vi.waitFor(() =>
+    expect(document.getElementById('plugin-detail')?.textContent).toContain('Version 1.1.0'),
+  )
   expect(document.querySelector('#plugin-list .state-light')).toBeNull()
   expect(document.querySelector('#plugin-list button[role="switch"]')?.getAttribute('aria-checked')).toBe(
     'false',

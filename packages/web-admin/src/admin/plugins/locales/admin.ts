@@ -9,6 +9,7 @@ export const PLUGIN_ADMIN_LOCALE_NAMESPACE = '@agnes/web/plugin-admin'
 
 export const pluginAdminLocaleCatalog: LocaleCatalog = {
   en: {
+    'ux.examples': 'Official examples',
     'ux.settings': 'Settings',
     'ux.success.enable': 'Enabled {name}',
     'ux.success.disable': 'Disabled {name}',
@@ -37,6 +38,7 @@ export const pluginAdminLocaleCatalog: LocaleCatalog = {
     ...pluginAdminShellLocaleCatalog.en,
   },
   'zh-CN': {
+    'ux.examples': '官方示例',
     'ux.settings': '设置',
     'ux.success.enable': '已启用 {name}',
     'ux.success.disable': '已停用 {name}',
