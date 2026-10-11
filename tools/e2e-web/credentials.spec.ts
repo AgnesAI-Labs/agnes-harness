@@ -6,6 +6,7 @@ test.use({ trace: 'off', screenshot: 'off' })
 test('credentials create inline, select in MCP, rename, refused delete and delete after unreferencing', async ({
   page,
   runtime,
+  expectedBrowserErrors,
 }) => {
   test.setTimeout(120_000)
   const canary = `synthetic-canary-${crypto.randomUUID()}`
@@ -79,7 +80,14 @@ test('credentials create inline, select in MCP, rename, refused delete and delet
   await expect(renamed).toBeVisible()
   await renamed.getByRole('button', { name: 'Actions for Renamed integration key' }).click()
   await page.getByTestId('credential-delete').click()
+  const referencedDelete = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/admin/api/credentials/delete',
+  )
   await page.getByTestId('credential-delete-confirm').click()
+  expect((await referencedDelete).status()).toBe(409)
+  expectedBrowserErrors.push(
+    'console: Failed to load resource: the server responded with a status of 409 (Conflict)',
+  )
   await expect(page.getByTestId('credential-delete-error')).toContainText('not deleted')
   await expect(page.getByTestId('credential-force-confirm')).not.toBeChecked()
   await page.getByTestId('credential-delete-cancel').click()
@@ -92,8 +100,9 @@ test('credentials create inline, select in MCP, rename, refused delete and delet
   await page.locator('#mcp-form button[type=submit]').click()
   await page.locator('#admin-confirm-action').click()
   await expect(page.locator('#mcp-dialog')).not.toBeVisible()
-  const closeDetail = page.getByRole('button', { name: 'Close details', exact: true })
-  if (await closeDetail.isVisible()) await closeDetail.click()
+  await expect(page.locator('#resource-detail')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('#resource-detail')).not.toBeVisible()
   await expect
     .poll(
       async () =>
