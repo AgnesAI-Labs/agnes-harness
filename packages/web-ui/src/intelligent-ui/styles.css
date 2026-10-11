@@ -24,6 +24,10 @@
 }
 .agnes-intelligent-table-scroll {
   overflow-x: auto;
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-md);
 }
 .agnes-intelligent-catalog table {
   border-collapse: collapse;
@@ -31,9 +35,46 @@
 }
 .agnes-intelligent-catalog th,
 .agnes-intelligent-catalog td {
-  padding: var(--s8);
+  padding: var(--s10) var(--s12);
   text-align: start;
   border-bottom: 1px solid var(--agnes-line-primary);
+}
+.agnes-intelligent-catalog thead {
+  background: var(--agnes-bg-card);
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+}
+.agnes-intelligent-catalog tbody tr:nth-child(even) {
+  background: var(--agnes-bg-card);
+}
+.agnes-intelligent-catalog tbody tr:hover,
+.agnes-intelligent-catalog tbody tr:focus-within {
+  background: var(--agnes-bg-hover);
+}
+.agnes-intelligent-catalog tbody tr:has(input:checked) {
+  background: var(--agnes-bg-selected);
+}
+.agnes-intelligent-catalog tbody th {
+  font-weight: 500;
+}
+.agnes-intelligent-catalog :is(th, td)[data-numeric] {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+.agnes-intelligent-cell {
+  display: block;
+  max-width: 20rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.agnes-intelligent-catalog td.agnes-intelligent-table-empty {
+  text-align: center;
+  padding: var(--s24);
+  color: var(--agnes-text-secondary);
+}
+.agnes-intelligent-table-empty p {
+  margin: 0;
 }
 .agnes-intelligent-catalog figure {
   margin: 0;

@@ -89,6 +89,12 @@ describe('preset Intelligent UI catalog', () => {
         expect(host.querySelector('script')).toBeNull()
         expect(host.textContent).toContain('<script>inert</script>')
         expect(host.textContent).toContain('250')
+        expect(host.querySelector('[data-testid="ui-table-rows"] tbody td[data-numeric]')?.textContent).toBe(
+          '250',
+        )
+        expect(host.querySelector('[data-testid="ui-table-rows"] tbody th span')?.getAttribute('title')).toBe(
+          'txn-1',
+        )
         expect(host.querySelector('svg')?.getAttribute('role')).toBe('img')
         await act(async () =>
           host.querySelector<HTMLInputElement>('[data-testid="ui-select-rows-txn-1"]')!.click(),
@@ -116,6 +122,27 @@ describe('preset Intelligent UI catalog', () => {
           host.querySelector<HTMLInputElement>(`input[type="${mode === 'single' ? 'radio' : 'checkbox'}"]`)!
             .disabled,
         ).toBe(true)
+        rendered.data.rows = []
+        await act(async () =>
+          root.render(
+            createElement(IntelligentCatalog, {
+              surface: rendered,
+              input: {},
+              selection: {},
+              disabled: false,
+              onInput: vi.fn(),
+              onSelection: selection,
+              onInvalid: vi.fn(),
+              onAction: action,
+            }),
+          ),
+        )
+        expect(host.querySelector('[data-testid="ui-table-rows"] [role="status"]')?.textContent).toBe(
+          'No records to display.',
+        )
+        expect(host.querySelector('[data-testid="ui-table-rows"] tbody td')?.getAttribute('colspan')).toBe(
+          '4',
+        )
       } finally {
         await act(async () => root.unmount())
       }

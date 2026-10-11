@@ -200,6 +200,16 @@ function CatalogComponent(
     const data = surface.data[component.dataKey]
     const rows = Array.isArray(data) ? data.filter(uiObject) : []
     const selection = props.selection[component.id] ?? []
+    const numericKeys = new Set(
+      component.columns
+        .filter(
+          (column) =>
+            column.format === 'number' ||
+            column.format === 'currency' ||
+            (rows.length > 0 && rows.every((row) => typeof row[column.key] === 'number')),
+        )
+        .map((column) => column.key),
+    )
     const format = (value: JsonValue | undefined, kind?: string): string =>
       formatFieldValue(value, kind, locale)
     content = (
@@ -216,7 +226,7 @@ function CatalogComponent(
             <tr>
               {component.selection !== 'none' && <th scope="col">{t('ui.select', { row: '' })}</th>}
               {component.columns.map((column) => (
-                <th key={column.key} scope="col">
+                <th key={column.key} scope="col" data-numeric={numericKeys.has(column.key) || undefined}>
                   {column.label}
                 </th>
               ))}
@@ -224,6 +234,20 @@ function CatalogComponent(
             </tr>
           </thead>
           <tbody>
+            {rows.length === 0 && (
+              <tr>
+                <td
+                  className="agnes-intelligent-table-empty"
+                  colSpan={
+                    component.columns.length +
+                    (component.selection !== 'none' ? 1 : 0) +
+                    (component.rowActionIds?.length ? 1 : 0)
+                  }
+                >
+                  <p role="status">{t('ui.tableEmpty')}</p>
+                </td>
+              </tr>
+            )}
             {rows.map((row) => {
               const rowId = String(row[component.rowKey])
               return (
@@ -250,15 +274,21 @@ function CatalogComponent(
                       />
                     </td>
                   )}
-                  {component.columns.map((column, i) =>
-                    i === 0 ? (
-                      <th key={column.key} scope="row">
-                        {format(row[column.key], column.format)}
-                      </th>
-                    ) : (
-                      <td key={column.key}>{format(row[column.key], column.format)}</td>
-                    ),
-                  )}
+                  {component.columns.map((column, i) => {
+                    const Cell = i === 0 ? 'th' : 'td'
+                    const text = format(row[column.key], column.format)
+                    return (
+                      <Cell
+                        key={column.key}
+                        scope={i === 0 ? 'row' : undefined}
+                        data-numeric={numericKeys.has(column.key) || undefined}
+                      >
+                        <span className="agnes-intelligent-cell" title={text}>
+                          {text}
+                        </span>
+                      </Cell>
+                    )
+                  })}
                   {component.rowActionIds?.length ? (
                     <td>{actionButtons(component.rowActionIds, { tableId: component.id, rowId })}</td>
                   ) : null}
