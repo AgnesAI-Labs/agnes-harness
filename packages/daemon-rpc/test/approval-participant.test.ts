@@ -171,7 +171,7 @@ describe('participant RPC', () => {
       })) as { result: { sessionId: string } }
       const session = opened.host.kernel.get(created.result.sessionId)!
       const decide = vi
-        .spyOn(session.decisions, 'answer')
+        .spyOn(session, 'decideApproval')
         .mockRejectedValue(Object.assign(new Error('approval already resolved'), { code: 'E_RELATION' }))
       try {
         await expect(

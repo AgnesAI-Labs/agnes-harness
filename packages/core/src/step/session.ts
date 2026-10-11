@@ -145,7 +145,13 @@ import type {
   RuntimePromptPreload,
   RuntimePromptPreloader,
 } from '../runtime/current.js'
-import { expireApprovals, resumeApproval } from './approval-callback.js'
+import {
+  answerDomainRequest,
+  expireApprovals,
+  type HumanAnswerCommand,
+  type HumanAnswerContext,
+  resumeApproval,
+} from './approval-callback.js'
 import { restoreSessionGrants } from './approval-grants.js'
 import { runCompaction } from './compaction.js'
 import { type AbortResult, abortSession, closeTurn, finishAborted } from './control.js'
@@ -2140,6 +2146,12 @@ export class SessionImpl {
         res()
       }, ms)
     })
+  }
+
+  decideApproval(input: { command: HumanAnswerCommand; context: HumanAnswerContext }) {
+    return this.state.registers.decisionStates.has(input.command.handle.id)
+      ? this.decisions.answer(input.command, input.context)
+      : answerDomainRequest(this, input.command, input.context)
   }
 
   resumeApproval(ticket: string, verdict: Verdict, decidedBy: Actor): Promise<{ seq: Seq }> {

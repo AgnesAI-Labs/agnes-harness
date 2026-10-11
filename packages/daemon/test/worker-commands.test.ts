@@ -415,17 +415,18 @@ describe('handleCommand dispatch against the real Host/HostSession shapes', () =
     }
     const authorize = vi.fn(async () => actor)
     const session = {
-      decisions: {
-        answer: async (
-          got: unknown,
-          context: { actor: Actor; category: string; authorize(): Promise<void> },
-        ) => {
-          expect(got).toEqual(command)
-          expect(context.actor).toEqual(actor)
-          expect(context.category).toBe('human')
-          await context.authorize()
-          return { commandId: 'answer', digest: '0'.repeat(64), revision: 2, seq: 9 }
-        },
+      decideApproval: async ({
+        command: got,
+        context,
+      }: {
+        command: unknown
+        context: { actor: Actor; category: string; authorize(): Promise<void> }
+      }) => {
+        expect(got).toEqual(command)
+        expect(context.actor).toEqual(actor)
+        expect(context.category).toBe('human')
+        await context.authorize()
+        return { commandId: 'answer', digest: '0'.repeat(64), revision: 2, seq: 9 }
       },
     } as unknown as HostSession
     const cmd: CommandFrame = {

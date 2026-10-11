@@ -57,14 +57,86 @@ describe('verifier pause continuation', () => {
   it('continues a needs_revision verifier decision through the same approval path', async () => {
     const h = await setup('needs_revision')
     try {
-      await h.session.resumeApproval('review', 'allowed-once', approver)
+      const asked = [...h.session.state.pendingApprovals.values()][0]!
+      const command = {
+        handle: { id: asked.requestId, sessionId: h.session.key },
+        revision: asked.seq,
+        commandId: 'domain-review',
+        response: { option: 'allowed-once', value: null },
+      }
+      const context = { actor, category: 'human' as const, authorize() {} }
+      expect((await h.session.projectUI()).nodes).toContainEqual(
+        expect.objectContaining({
+          kind: 'approval',
+          decisionRef: { ...command.handle, revision: asked.seq },
+        }),
+      )
+      const receipt = await h.session.decideApproval({ command, context })
+      expect(await h.session.decideApproval({ command, context })).toEqual(receipt)
+      await expect(
+        h.session.decideApproval({ command: { ...command, commandId: 'another' }, context }),
+      ).rejects.toThrow('NOT_PENDING')
       expect((await run(h)).reason).toBe('completed')
       expect(h.provider.calls).toBe(2)
       expect(h.session.state.resumedRequests.size).toBe(1)
+      expect(await h.session.decideApproval({ command, context })).toEqual(receipt)
+      expect(h.session.state.registers.decisionStates.size).toBe(0)
     } finally {
       await h.session.close()
     }
   })
+  it.each(['stop', 'deadline'] as const)(
+    'rechecks a domain answer after async authorization at %s',
+    async (edge) => {
+      const h = await setup()
+      let proofReturned = false
+      let entered!: () => void
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const started = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      const original = h.seams.approval.resume
+      h.seams.approval.resume = async (...args) => {
+        const result = await original(...args)
+        proofReturned = true
+        return result
+      }
+      try {
+        const asked = [...h.session.state.pendingApprovals.values()][0]!
+        const answer = h.session.decideApproval({
+          command: {
+            handle: { id: asked.requestId, sessionId: h.session.key },
+            revision: asked.seq,
+            commandId: 'racing-answer',
+            response: { option: 'allowed-once', value: null },
+          },
+          context: {
+            actor,
+            category: 'human',
+            async authorize() {
+              if (proofReturned) {
+                entered()
+                await gate
+              }
+            },
+          },
+        })
+        await started
+        const stopped = edge === 'stop' ? h.session.abort(actor) : undefined
+        if (edge === 'deadline') h.expire()
+        release()
+        await expect(answer).rejects.toThrow(edge === 'stop' ? 'STOPPED' : 'expired')
+        await stopped
+        expect(h.session.state.decisions.get(asked.requestId)?.answerCommand).toBeUndefined()
+        expect(h.provider.calls).toBe(1)
+      } finally {
+        await h.session.close()
+      }
+    },
+  )
   it.each(['allowed-once', 'allowed-session'] as const)(
     'continues %s to the real provider',
     async (verdict) => {

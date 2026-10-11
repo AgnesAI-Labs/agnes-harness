@@ -510,15 +510,18 @@ export async function handleCommand(
         command: Parameters<typeof session.decisions.answer>[0]
         context: { actor: Actor; category: 'human'; credential: unknown; sourceVerified: boolean }
       }
-      return session.decisions.answer(args.command, {
-        actor: args.context.actor,
-        category: args.context.category,
-        async authorize() {
-          const current = await o.host.resolveActor(args.context.credential, 'approval')
-          if (!args.context.sourceVerified && !isDeepStrictEqual(current, args.context.actor))
-            throw Object.assign(new Error('DECISION_AUTHORITY_CHANGED'), { code: 'E_RELATION' })
-          if (session.closingOrClosed)
-            throw Object.assign(new Error('DECISION_SESSION_CLOSED'), { code: 'E_RELATION' })
+      return session.decideApproval({
+        command: args.command,
+        context: {
+          actor: args.context.actor,
+          category: args.context.category,
+          async authorize() {
+            const current = await o.host.resolveActor(args.context.credential, 'approval')
+            if (!args.context.sourceVerified && !isDeepStrictEqual(current, args.context.actor))
+              throw Object.assign(new Error('DECISION_AUTHORITY_CHANGED'), { code: 'E_RELATION' })
+            if (session.closingOrClosed)
+              throw Object.assign(new Error('DECISION_SESSION_CLOSED'), { code: 'E_RELATION' })
+          },
         },
       })
     }

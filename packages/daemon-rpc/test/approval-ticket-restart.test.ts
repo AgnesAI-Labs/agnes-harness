@@ -173,3 +173,73 @@ it('re-offers a real Host tool approval after its client disconnects without rec
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+it('answers a real verifier pending through the same native command without changing its domain storage', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-domain-review-'))
+  let checks = 0
+  let binding: { requestId: string; bindingHash: string; expiresAt: string } | null = null
+  const { host } = await createTestHost({
+    dataDir: root,
+    seams: {
+      verifier: {
+        verify: async () =>
+          ++checks === 1
+            ? { verdict: 'needs_revision', reasons: ['review draft'] }
+            : { verdict: 'pass', reasons: [] },
+      },
+      repair: { decide: async () => 'park' },
+      approval: {
+        ask: async (request) => {
+          binding = {
+            requestId: request.requestId,
+            bindingHash: request.bindingHash,
+            expiresAt: request.deadline,
+          }
+          return { ticket: 'domain-review', expiresAt: request.deadline }
+        },
+        resume: async () => binding,
+      },
+      principals: { resolve: async () => REQUESTER },
+    },
+    script: [
+      [
+        { type: 'text_delta', delta: 'draft' },
+        { type: 'done', reason: 'stop' },
+      ],
+      [
+        { type: 'text_delta', delta: 'reviewed' },
+        { type: 'done', reason: 'stop' },
+      ],
+    ],
+  })
+  const workspaces = await testWorkspaceCatalog(root)
+  const client = createClient({
+    transport: { kind: 'inproc', endpoint: createLocalEndpoint(host, { workspaces }) },
+    journal: memoryJournal(),
+  })
+  try {
+    await client.initialize()
+    const session = await client.session.new({ cwd: root })
+    expect(await session.prompt('review')).toMatchObject({ reason: 'parked' })
+    const node = (await session.projectUI()).nodes.find((node) => node.kind === 'approval')
+    if (node?.kind !== 'approval' || !node.decisionRef) throw new Error('Missing domain review')
+    const command = {
+      ...node.decisionRef,
+      commandId: 'native-domain-review',
+      response: { option: 'allowed-once', value: null },
+    }
+    const receipt = await client.approval.decide(command)
+    expect(await client.approval.decide(command)).toEqual(receipt)
+    await expect(client.approval.decide({ ...command, commandId: 'other' })).rejects.toMatchObject({
+      data: { code: 'APPROVAL_REJECTED' },
+    })
+    const backend = host.kernel.get(session.id)!
+    expect(backend.state.registers.decisionStates.size).toBe(0)
+    expect(backend.state.decisions.get(node.decisionRef.id)?.answeredBy).toEqual(REQUESTER)
+    expect(backend.state.decisions.get(node.decisionRef.id)?.answerCommand).toEqual(receipt)
+  } finally {
+    await client.close()
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})

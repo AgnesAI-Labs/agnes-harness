@@ -2255,6 +2255,7 @@
       "additionalProperties": false,
       "required": ["requestId", "verdict", "via"],
       "properties": {
+        "answerCommand": { "$ref": "#/$defs/DecisionCommandReceipt" },
         "requestId": {
           "type": "string",
           "maxLength": 128

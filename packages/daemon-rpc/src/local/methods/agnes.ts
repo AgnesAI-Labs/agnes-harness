@@ -817,15 +817,18 @@ export function registerAgnes(
     }
     try {
       const receipt = session.decisions
-        ? await session.decisions.answer(command, {
-            actor,
-            category: 'human',
-            async authorize() {
-              c.signal.throwIfAborted()
-              requireDecisionOwner(p.sessionId, c)
-              if (!isDeepStrictEqual(actor, await actorFor()))
-                throw rpcError('CAPABILITY_DENIED', { code: 'APPROVAL_AUTHORITY_CHANGED' })
-              c.signal.throwIfAborted()
+        ? await session.decideApproval?.({
+            command,
+            context: {
+              actor,
+              category: 'human',
+              async authorize() {
+                c.signal.throwIfAborted()
+                requireDecisionOwner(p.sessionId, c)
+                if (!isDeepStrictEqual(actor, await actorFor()))
+                  throw rpcError('CAPABILITY_DENIED', { code: 'APPROVAL_AUTHORITY_CHANGED' })
+                c.signal.throwIfAborted()
+              },
             },
           })
         : await session.decideApproval?.({
@@ -841,7 +844,7 @@ export function registerAgnes(
       const entry = cx.registry.require(p.sessionId)
       const values = session.decisions ? await session.decisions.list() : await session.listDecisions?.()
       const target = values?.find((value) => value.handle.id === p.id)
-      if (!entry.inflight && target && !target.consumption && !target.invalidation)
+      if (!entry.inflight && (!target || (!target.consumption && !target.invalidation)))
         cx.continueFollowUps?.(entry, undefined, true)
       return receipt
     } catch (error) {

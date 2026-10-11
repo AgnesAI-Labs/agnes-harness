@@ -105,6 +105,7 @@ export type ApprovalAsked = {
   pending?: { ticket: string; expiresAt: string }
 }
 export type ApprovalDecided = {
+  answerCommand?: import('@agnes/protocol').DecisionCommandReceipt
   requestId: string
   verdict: ApprovalVerdict
   via: 'sync' | 'callback' | 'timeout' | 'guardian'

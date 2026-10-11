@@ -920,7 +920,15 @@ export class UIProjectionCell {
           risk: asked.risk,
           options,
           requestSeq: seq,
-          ...(asked.pending ? { ticket: asked.pending.ticket, expiresAt: asked.pending.expiresAt } : {}),
+          ...(asked.pending
+            ? {
+                ticket: asked.pending.ticket,
+                expiresAt: asked.pending.expiresAt,
+                ...(asked.kind !== 'tool'
+                  ? { decisionRef: { id: asked.requestId, sessionId: this.sessionKey, revision: seq } }
+                  : {}),
+              }
+            : {}),
         }
         this.approvals.set(asked.requestId, node)
         this.pushNode(node)
