@@ -67,7 +67,7 @@ node /path/to/agnes-harness/agnes.mjs skills list
 ## 调整同名候选优先级
 
 1. 在 Web 设置 → Skills，选对应工作区并打开 Skill 详情，展开“技术详情”查看来源、当前 winner、被覆盖候选和有效优先级。
-2. 展开“高级选项”，在“同名覆盖优先级”输入 **50–500 的整数**，通过保存栏保存并确认。它只改变该 resourceId 在当前 profile 中的持久覆盖，不改文件内容，也不会启用 Skill。
+2. 展开“高级选项”，在“同名覆盖优先级”输入 **50–500 的整数**，点击**保存优先级**并确认。它只改变该 resourceId 在当前 profile 中的持久覆盖，不改文件内容，也不会启用 Skill。
 3. 等待操作完成，重新查看 winner 与 actual。若新 winner 尚未启用，审核后再启用；不要只看优先级保存成功。
 4. 当前 Web 页面不提供“恢复默认优先级”。需要执行这一管理操作时，通过 Node 客户端传入 `priority: null`。已有内容 revision 相同也可能有并行优先级修改，因此保存还校验 `expectedPriority`；冲突时刷新，不盲重试。
 

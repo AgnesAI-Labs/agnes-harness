@@ -75,7 +75,7 @@ Search My skills by name or description. The row switch and menu keep the existi
 ## Change same-name candidate priority
 
 1. Open Settings → Skills, choose the workspace, and open the Skill's details and expand Technical details to inspect its source, current winner, shadowed candidates, and effective priority.
-2. Expand Advanced options, enter an **integer from 50 to 500** in the priority field, then use the save bar and confirm. This only changes the persistent override for that resourceId in the current profile. It does not edit files or enable the Skill.
+2. Expand Advanced options, enter an **integer from 50 to 500** in the priority field, then choose **Save priority** and confirm. This only changes the persistent override for that resourceId in the current profile. It does not edit files or enable the Skill.
 3. Wait for completion and check the winner and actual state again. Review and enable a new winner if necessary; saving a priority is not enough.
 4. The current Web page does not expose reset-to-default. Use the Node client with `priority: null` when that administrative action is required. Concurrent priority edits can happen without a content revision change, so saving also checks `expectedPriority`. Refresh on conflict rather than retrying blindly.
 
