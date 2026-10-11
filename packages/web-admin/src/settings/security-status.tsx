@@ -1,6 +1,7 @@
 import type { RuntimeSecurityStatus } from '@agnes/protocol'
 import {
   Banner,
+  Button,
   Icon,
   SettingsDetails,
   SettingsList,
@@ -46,9 +47,13 @@ export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStat
         <Banner
           tone="warning"
           action={
-            <a href="https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/docs/guide/sandbox-providers.md">
+            <Button
+              appearance="ghost"
+              size="small"
+              href="https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/docs/guide/sandbox-providers.md"
+            >
               {ux('protectionHelp')}
-            </a>
+            </Button>
           }
         >
           {ux('partial')} {t(`enforcement.${status.platform.l1.level}`)}
