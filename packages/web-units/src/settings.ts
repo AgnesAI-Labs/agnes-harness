@@ -341,6 +341,7 @@ function SettingsBuiltinImpl(
       const content = root.querySelector<HTMLElement>('#settings-content-slots')
       if (tabs && content) content.prepend(tabs)
       const navigate = (id: string, notify = true) => {
+        const tabFocused = tabs?.contains(document.activeElement)
         const entries = options.sections?.entries() ?? []
         const selected = entries.find((entry) => entry.id === id)
         if (!selected) return
@@ -427,6 +428,11 @@ function SettingsBuiltinImpl(
           url.searchParams.set('settings', id)
           history.replaceState(history.state, '', url)
         }
+        if (tabFocused)
+          (
+            tabs?.querySelector<HTMLButtonElement>('[aria-selected="true"]') ??
+            root.querySelector<HTMLButtonElement>('.settings-nav-group > [aria-current="page"]')
+          )?.focus({ preventScroll: true })
       }
       const onClick = (event: Event) => {
         const target = (event.target as Element | null)?.closest<HTMLElement>(
@@ -503,6 +509,9 @@ function SettingsBuiltinImpl(
         const rail = root.querySelector('.settings-nav-group')
         const reserve = root.querySelector('#settings-navigation-reserve')
         if (!rail || !reserve) return
+        const focused = root.querySelector<HTMLButtonElement>('button[data-settings-section]:focus')
+        const focusedSection = focused?.dataset.settingsSection
+        const tabFocused = focused && tabs?.contains(focused)
         const entries = options.sections?.entries() ?? []
         const groups = new Set<string>()
         for (const entry of entries) {
@@ -531,6 +540,15 @@ function SettingsBuiltinImpl(
         const selected = root.dataset.settingsSection ?? 'model'
         const present = entries.some((entry) => entry.id === selected)
         navigate(present ? selected : (entries[0]?.id ?? 'model'), !present)
+        if (focused) {
+          const target =
+            (tabFocused
+              ? tabs?.querySelector<HTMLButtonElement>('[aria-selected="true"]')
+              : [...rail.querySelectorAll<HTMLButtonElement>(':scope > [data-settings-section]')].find(
+                  (button) => button.dataset.settingsSection === focusedSection,
+                )) ?? rail.querySelector<HTMLButtonElement>('[aria-current="page"]')
+          target?.focus({ preventScroll: true })
+        }
       }
       listeners.push(options.sections.subscribe(syncEntries))
       navigate('model', false)
