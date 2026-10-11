@@ -3387,7 +3387,12 @@
     "DiagnosticsCollectParams": {
       "type": "object",
       "additionalProperties": false,
-      "properties": {}
+      "properties": {
+        "runtimeLog": {
+          "type": "boolean",
+          "description": "Also return the daemon runtime log, runtime.jsonl. Older daemons refuse the field; a caller that omits it gets only the two audit logs, as before."
+        }
+      }
     },
     "DiagnosticsCollectResult": {
       "type": "object",
@@ -3418,13 +3423,16 @@
         },
         "logs": {
           "type": "array",
-          "maxItems": 2,
+          "maxItems": 3,
           "items": {
             "type": "object",
             "additionalProperties": false,
             "required": ["name", "size", "text", "truncated", "missing"],
             "properties": {
-              "name": { "enum": ["daemon.jsonl", "host.jsonl"] },
+              "name": {
+                "enum": ["daemon.jsonl", "host.jsonl", "runtime.jsonl"],
+                "description": "daemon.jsonl is the request audit and holds failed requests only; host.jsonl is the Host audit; runtime.jsonl is the daemon runtime log, returned only when runtimeLog was asked for."
+              },
               "size": { "type": "integer", "minimum": 0 },
               "text": { "type": "string" },
               "truncated": { "type": "boolean" },

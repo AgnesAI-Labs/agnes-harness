@@ -42,6 +42,14 @@ const CURRENT_KINDS = [
   'session.close_failed',
   'session.recovered',
   'preset.deprecated',
+  'daemon.started',
+  'daemon.stopped',
+  'daemon.crashed',
+  'daemon.error',
+  'worker.exited',
+  'worker.start_failed',
+  'worker.log',
+  'session.interrupted',
 ] as const
 
 describe('audit kind closure', () => {
@@ -129,6 +137,43 @@ describe('file audit', () => {
       redact: (event) => ({ ...event, kind: 'changed-by-redactor' }),
     })
     expect(() => changed.write({ kind: 'host.ready' })).toThrow(/unknown audit kind/)
+  })
+
+  it('keeps a bounded file by rotating once to <file>.1 before a write would pass maxBytes', async () => {
+    const file = join(dir, 'audit', 'runtime.jsonl')
+    const audit = createFileAudit(file, { maxBytes: 400 })
+    for (let n = 0; n < 12; n++) audit.write({ kind: 'worker.log', detail: { n, message: 'x'.repeat(40) } })
+    await audit.close?.()
+    const rows = (path: string) =>
+      readFileSync(path, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => (JSON.parse(line) as { detail: { n: number } }).detail.n)
+    expect(statSync(file).size).toBeLessThanOrEqual(400)
+    expect(statSync(`${file}.1`).size).toBeLessThanOrEqual(400)
+    const current = rows(file)
+    const previous = rows(`${file}.1`)
+    // The newest record is in the live file, the generation before it directly precedes it, and the
+    // oldest records are gone: two generations, never more.
+    expect(current.at(-1)).toBe(11)
+    expect(previous.at(-1)).toBe((current[0] ?? 0) - 1)
+    expect(previous[0]).toBeGreaterThan(0)
+    if (!windows) {
+      expect(statSync(file).mode & 0o077).toBe(0)
+      expect(statSync(`${file}.1`).mode & 0o077).toBe(0)
+    }
+  })
+
+  it('counts what an existing file already holds against maxBytes', async () => {
+    const file = join(dir, 'audit', 'runtime.jsonl')
+    const first = createFileAudit(file, { maxBytes: 300 })
+    for (let n = 0; n < 2; n++) first.write({ kind: 'worker.log', detail: { n, message: 'y'.repeat(60) } })
+    await first.close?.()
+    const second = createFileAudit(file, { maxBytes: 300 })
+    second.write({ kind: 'worker.log', detail: { n: 2, message: 'y'.repeat(60) } })
+    await second.close?.()
+    expect(statSync(file).size).toBeLessThanOrEqual(300)
+    expect(readFileSync(`${file}.1`, 'utf8')).toContain('"n":0')
   })
 
   it.runIf(!windows)('keeps the audit directory private and repairs an existing file mode', async () => {

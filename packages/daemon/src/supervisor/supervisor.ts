@@ -138,6 +138,7 @@ import {
   type ResourceControlService,
   registerResourceControl,
 } from '../resources/index.js'
+import { errorText, openRuntimeLog } from '../runtime-log.js'
 import { createRuntimePinCoordinator } from '../runtime-pin-coordinator.js'
 import { publishProbedRuntimeTarget } from '../runtime-target-publisher.js'
 import { NonceTable, startClaimsGc, TableClaims } from '../storage/claims-table.js'
@@ -1125,7 +1126,12 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       onPreview: (sessionKey, p) => registry.deliverPreview(sessionKey, p),
       onResourceStatus: (input) => observeResourceMcpStatus?.(input),
       onLog: (input) => o.audit?.({ kind: 'worker.log', ...input }),
-      onSessionFailure: (sessionKey, error) => registry.interrupt(sessionKey, error),
+      onLifecycle: (record) => o.audit?.(record),
+      onSessionFailure: (sessionKey, error) => {
+        // The reopened session reads this as a process that died; the reason only survives here.
+        o.audit?.({ kind: 'session.interrupted', detail: { session: sessionKey, reason: errorText(error) } })
+        registry.interrupt(sessionKey, error)
+      },
       ...(runtimeDelivery ? { runtimeDelivery } : {}),
       onRequest: async (sessionKey, f) => {
         if (f.method === 'plugin-manage' || f.method === 'plugin-manage-abort')
@@ -2023,7 +2029,10 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           await pool.waitForExitRecovery()
           await lock.release()
         },
-        log: (message) => console.error(message),
+        log: (message) => {
+          console.error(message)
+          o.audit?.({ kind: 'daemon.error', detail: { during: 'shutdown', message } })
+        },
       }))
     return {
       ...health,
@@ -2374,9 +2383,15 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
     }),
   }
 
+  // Failed requests only; process lifecycle and daemon errors go to the runtime log beside it.
   const requestAudit = createFileAudit(join(scope.dataDir, 'audit', 'daemon.jsonl'))
+  const runtimeLog = openRuntimeLog(scope.dataDir)
   const flushAudit = async () => {
-    await requestAudit.close?.()
+    try {
+      await requestAudit.close?.()
+    } finally {
+      await runtimeLog.close()
+    }
   }
   const sup = await (deps.startProduction ?? startProductionSupervisor)({
     audit: (record) => {
@@ -2386,6 +2401,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
           kind: record.kind,
           ...('detail' in record ? { detail: record.detail as Record<string, unknown> } : {}),
         })
+      else runtimeLog.record(record)
     },
     config,
     profile,
@@ -2433,6 +2449,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
         }
       : {}),
   }).catch(async (error) => {
+    runtimeLog.error('startup', error)
     await closeWithAudit(async () => {
       throw error
     }, flushAudit)
@@ -2451,6 +2468,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
     })
     if (socketFailure) throw socketFailure
   } catch (error) {
+    runtimeLog.error('discovery', error)
     await (deps.removeDiscovery ?? removeDaemonDiscovery)(scope, sup.owner.generation).catch(() => undefined)
     await closeWithAudit(async () => {
       try {
@@ -2475,7 +2493,8 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
       await closeWithAudit(() => sup.close(), flushAudit)
     })())
   installSignals(close)
-  void sup.failed?.then(() => {
+  void sup.failed?.then((error) => {
+    runtimeLog.error('listener', error)
     console.error('agnesd local listener failed; shutting down')
     void close().then(
       () => process.exit(1),

@@ -38,6 +38,52 @@ export type NoticeEmitter = {
   emit(kind: DaemonNotice['kind'], info?: { sessionId?: string; detail?: unknown }): void
 }
 
+/** What the daemon runtime log keeps about a worker process that failed to start or went away. */
+export type WorkerLifecycleRecord =
+  | {
+      kind: 'worker.exited'
+      detail: {
+        worker: string
+        generation: number
+        pid: number | null
+        code: number | null
+        signal: string | null
+        /** `startup`: it never became a live worker. */
+        phase: 'startup' | 'running'
+        /** Retired on purpose (idle, shutdown, reload), so not counted as a crash. */
+        expected: boolean
+        /** Why the daemon closed the link first, if it did. */
+        link: string
+        sessions: string[]
+        uptimeMs: number
+        /** The last lines it wrote to stderr, which nothing else keeps. */
+        stderr: string[]
+      }
+    }
+  | { kind: 'worker.start_failed'; detail: { worker: string; generation: number; reason: string } }
+
+const STDERR_TAIL_BYTES = 16 * 1024
+
+/** The newest bytes a worker wrote to stderr, cut back to whole lines when asked. */
+class StderrTail {
+  private buffer = Buffer.alloc(0)
+  private cut = false
+
+  push(chunk: Buffer): void {
+    this.buffer = Buffer.concat([this.buffer, chunk])
+    if (this.buffer.byteLength <= STDERR_TAIL_BYTES) return
+    this.buffer = this.buffer.subarray(this.buffer.byteLength - STDERR_TAIL_BYTES)
+    this.cut = true
+  }
+
+  lines(): string[] {
+    const lines = this.buffer.toString('utf8').split(/\r?\n/)
+    // A tail that was cut starts mid-line.
+    if (this.cut) lines.shift()
+    return lines.filter((line) => line.trim().length > 0).slice(-40)
+  }
+}
+
 /** Immutable worker inputs selected when a session is first acquired. */
 export type WorkerProfile = Readonly<{ profile: ResolvedProfile; profileFile: string }>
 type SessionWorkerAcquireOptions = Readonly<{
@@ -133,6 +179,7 @@ export class WorkerPool {
         message: string
       }) => void
       onSessionFailure?: (sessionKey: string, error: unknown) => void
+      onLifecycle?: (record: WorkerLifecycleRecord) => void
       runtimeDelivery?: CompositeRuntimeDelivery
       notices: NoticeEmitter
       /** Called synchronously before a worker is accepted. A rejected observer rejects the candidate. */
@@ -311,11 +358,19 @@ export class WorkerPool {
     slot.starting = new Promise<WorkerLink>((resolve, reject) => {
       let child: ChildProcess | undefined
       let startupFinished = false
+      let ready = false
+      let adopted: WorkerLink | undefined
+      const stderr = new StderrTail()
+      const spawnedAt = this.o.clock()
       // Set from the moment a runtime target is offered until the worker proves it can run it.
       let bootOffer: RuntimeBootDelivery | undefined
       const failStarting = (error: Error): void => {
         if (startupFinished) return
         startupFinished = true
+        this.lifecycle({
+          kind: 'worker.start_failed',
+          detail: { worker: workerKey, generation, reason: error.message },
+        })
         // A start that dies on the very target it was given says something about that target, not
         // about the worker; only then is the exit expected rather than a crash to count.
         if (bootOffer && this.o.runtimeDelivery?.recordBootFailure(slot.generation, bootOffer, error))
@@ -344,6 +399,7 @@ export class WorkerPool {
         clearTimeout(timer)
         slot.startupTimer = undefined
         slot.initializingLink = link
+        adopted = link
         void link.hello.then(async (h) => {
           if (startupFinished) {
             link.close('startup already failed')
@@ -430,6 +486,7 @@ export class WorkerPool {
           if (!link.alive) return
           slot.initializingLink = undefined
           startupFinished = true
+          ready = true
           resolve(link)
         })
       })
@@ -469,7 +526,8 @@ export class WorkerPool {
               AGNES_WORKER_ROOT: opts.kind === 'service' && opts.cwd ? opts.cwd : undefined,
             },
             windowsHide: true,
-            stdio: ['ignore', 'inherit', 'inherit', 'pipe'],
+            // stderr is piped, not inherited: a detached daemon has none, so it would be lost.
+            stdio: ['ignore', 'inherit', 'pipe', 'pipe'],
           },
         )
       } catch (error) {
@@ -486,6 +544,12 @@ export class WorkerPool {
       }
       const spawnedChild = child
       slot.child = spawnedChild
+      spawnedChild.stderr?.on('error', () => undefined)
+      spawnedChild.stderr?.on('data', (chunk: Buffer) => {
+        stderr.push(chunk)
+        // Still passed through, for a daemon run in the foreground.
+        process.stderr.write(chunk)
+      })
       spawnedChild.once('error', (error) => {
         if (!slot.link)
           failStarting(
@@ -498,6 +562,31 @@ export class WorkerPool {
       // Reject immediately so callers do not wait for the full startup deadline and remove the
       // token before a late socket connection can claim a failed generation.
       spawnedChild.once('exit', (code, signal) => {
+        const exited = {
+          worker: workerKey,
+          generation,
+          pid: spawnedChild.pid ?? null,
+          code,
+          signal,
+          phase: ready ? ('running' as const) : ('startup' as const),
+          expected: slot.intentionalExit === true,
+          link: adopted ? (adopted.closeReason ?? 'closed by the worker side') : 'never connected',
+          sessions: [...slot.sessions],
+          uptimeMs: this.o.clock() - spawnedAt,
+        }
+        // The last chunk can still be in the pipe at exit; wait briefly for it, never for long.
+        let recorded = false
+        const record = (): void => {
+          if (recorded) return
+          recorded = true
+          this.lifecycle({ kind: 'worker.exited', detail: { ...exited, stderr: stderr.lines() } })
+        }
+        const pipe = spawnedChild.stderr
+        if (!pipe || pipe.destroyed || pipe.readableEnded) record()
+        else {
+          pipe.once('close', record)
+          setTimeout(record, 250).unref()
+        }
         if (startupFinished) {
           slot.link = undefined
           if (!slot.intentionalExit) this.crashed(workerKey)
@@ -527,6 +616,15 @@ export class WorkerPool {
     })
     this.slots.set(workerKey, slot)
     return slot.starting
+  }
+
+  /** Diagnostics must not change the outcome of what they describe. */
+  private lifecycle(record: WorkerLifecycleRecord): void {
+    try {
+      this.o.onLifecycle?.(record)
+    } catch {
+      // The runtime log is best effort.
+    }
   }
 
   acquireSharedWorker(): Promise<WorkerLink> {

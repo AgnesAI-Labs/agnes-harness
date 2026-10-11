@@ -56,6 +56,15 @@ const en = {
   'diagnostics.viewer.error': 'Error: {message}',
   'diagnostics.viewer.turn': 'Turn {turn}',
   'diagnostics.viewer.truncated': '…(truncated)',
+  'diagnostics.viewer.log.runtime': 'Daemon runtime log',
+  'diagnostics.viewer.log.runtime.hint':
+    'Worker exits with their code or signal, sessions and last stderr lines; session interruptions; worker log lines; daemon starts, stops, crashes and errors.',
+  'diagnostics.viewer.log.requestAudit': 'Daemon request audit',
+  'diagnostics.viewer.log.requestAudit.hint':
+    'Failed requests only. An empty audit means no request failed, not that the daemon logged nothing.',
+  'diagnostics.viewer.log.host': 'Host audit',
+  'diagnostics.viewer.log.host.hint': 'Profile resolution, extension loading and session recovery.',
+  'diagnostics.viewer.log.browser': 'Browser console',
   'diagnostics.viewer.warning': '{source}: {reason}',
   'diagnostics.viewer.warningDetail': '{source}: {reason} ({detail})',
   'diagnostics.viewer.toolSummary': '{name}: {summary}',
@@ -117,6 +126,15 @@ const zh: Record<keyof typeof en, string> = {
   'diagnostics.viewer.error': '错误：{message}',
   'diagnostics.viewer.turn': '第 {turn} 轮',
   'diagnostics.viewer.truncated': '…（已截断）',
+  'diagnostics.viewer.log.runtime': '后台运行日志',
+  'diagnostics.viewer.log.runtime.hint':
+    '工作进程退出（退出码或信号、所承载的会话、最后的 stderr 行）、会话中断、工作进程日志，以及后台的启动、停止、崩溃和错误。',
+  'diagnostics.viewer.log.requestAudit': '后台请求审计',
+  'diagnostics.viewer.log.requestAudit.hint':
+    '只记录失败的请求。审计为空表示没有请求失败，不表示后台没有日志。',
+  'diagnostics.viewer.log.host': 'Host 审计',
+  'diagnostics.viewer.log.host.hint': '配置解析、扩展加载和会话恢复。',
+  'diagnostics.viewer.log.browser': '浏览器控制台',
   'diagnostics.viewer.warning': '{source}：{reason}',
   'diagnostics.viewer.warningDetail': '{source}：{reason}（{detail}）',
   'diagnostics.viewer.toolSummary': '{name}：{summary}',
@@ -177,6 +195,18 @@ export function diagnosticsViewerLabels(locale: DiagnosticsLocale = diagnosticsL
     turn: text('diagnostics.viewer.turn'),
     events: text('diagnostics.viewer.events'),
     truncated: text('diagnostics.viewer.truncated'),
+    logs: {
+      runtime: {
+        title: text('diagnostics.viewer.log.runtime'),
+        hint: text('diagnostics.viewer.log.runtime.hint'),
+      },
+      requestAudit: {
+        title: text('diagnostics.viewer.log.requestAudit'),
+        hint: text('diagnostics.viewer.log.requestAudit.hint'),
+      },
+      host: { title: text('diagnostics.viewer.log.host'), hint: text('diagnostics.viewer.log.host.hint') },
+      browser: { title: text('diagnostics.viewer.log.browser'), hint: '' },
+    },
     warning: text('diagnostics.viewer.warning'),
     warningDetail: text('diagnostics.viewer.warningDetail'),
     toolSummary: text('diagnostics.viewer.toolSummary'),
