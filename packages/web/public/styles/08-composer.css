@@ -11,6 +11,10 @@ body:has(#empty-state:not([hidden])) #prompt {
   gap: var(--s8);
   margin-top: var(--s16);
 }
+.permission-picker .permission-picker-label,
+.permission-picker .permission-picker-check {
+  color: var(--agnes-input-content-strong);
+}
 @media (max-width: 900px) {
   .empty-state-suggestions button {
     min-width: var(--s32);

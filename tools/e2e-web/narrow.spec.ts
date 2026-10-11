@@ -355,6 +355,7 @@ for (const locale of ['en', 'zh-CN'])
           await page.keyboard.press('Escape')
           await expect(evidence).toBeFocused()
           await evidence.click()
+          await expect(page.getByTestId('workbench-tab-facts')).toBeFocused()
           await page.keyboard.press('F6')
           await expect(page.locator('#workbench-right')).toBeHidden()
           expect(
