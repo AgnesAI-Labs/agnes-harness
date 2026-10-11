@@ -42,7 +42,7 @@ export function createAutoReviewPolicy(base: ToolPolicy): ToolPolicy {
         signal,
         ports,
       )
-      if (baseline.effect !== 'ask') return baseline
+      if (baseline.effect !== 'ask' || baseline.approval !== undefined) return baseline
       const config = validateAgainst<AutoReviewConfig>(
         AutoReviewConfig,
         input.config === undefined ? {} : input.config,

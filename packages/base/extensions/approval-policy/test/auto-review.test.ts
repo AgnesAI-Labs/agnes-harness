@@ -89,6 +89,27 @@ describe('official auto-review policy', () => {
       ).reason,
     ).toContain('eligibility')
   })
+  it('preserves human-only once review even under off, full-access and auto-review', async () => {
+    const approval = {
+      reviewerRequirement: 'human' as const,
+      grantConstraints: 'once' as const,
+      subjectRevision: 'a'.repeat(64),
+    }
+    const guarded = createAutoReviewPolicy({
+      id: 'plan',
+      version: '1',
+      decide: () => ({ effect: 'ask', reason: 'review plan', approval }),
+    })
+    for (const changed of [{ fullAccess: true }, { approvalMode: 'off' as const }, {}])
+      expect(
+        await guarded.decide(
+          { ...input, ...changed },
+          new AbortController().signal,
+          ports('{"decision":"allow","risk":"low"}'),
+        ),
+      ).toEqual({ effect: 'ask', reason: 'review plan', approval })
+  })
+
   it('preserves hard deny and does not review base allowances', async () => {
     for (const effect of ['deny', 'allow'] as const) {
       const guarded = createAutoReviewPolicy({

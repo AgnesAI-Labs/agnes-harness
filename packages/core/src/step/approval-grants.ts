@@ -43,6 +43,7 @@ export function approvalBindingHash(input: {
   args: unknown
   policyHash: string
   scope: string
+  subjectRevision?: string
 }): string {
   return sha256Hex(
     canonicalJson({
@@ -51,6 +52,7 @@ export function approvalBindingHash(input: {
       toolUseId: input.toolUseId,
       argvHash: argvHash(input.args),
       policyHash: input.policyHash,
+      ...(input.subjectRevision ? { subjectRevision: input.subjectRevision } : {}),
       scope: input.scope,
     }),
   )
@@ -66,6 +68,8 @@ export type PersistedToolApproval = {
   grantId?: string
   via: 'sync' | 'callback' | 'timeout' | 'guardian'
   decidedAt: string
+  answeredBy?: Actor
+  subjectRevision?: string
 }
 
 /**
@@ -81,6 +85,7 @@ export async function persistedToolApproval(
     scope: string
     policyHash: string
     policyVersion: string
+    approval?: import('@agnes/extension-api').ApprovalConstraints
   },
 ): Promise<PersistedToolApproval | undefined> {
   const call = s.state.toolCalls.get(input.toolUseId)
@@ -92,6 +97,7 @@ export async function persistedToolApproval(
     args: input.args,
     policyHash: input.policyHash,
     scope: input.scope,
+    ...(input.approval ? { subjectRevision: input.approval.subjectRevision } : {}),
   })
   for (const [requestId, decision] of [...s.state.decisions].reverse()) {
     if (decision.lane !== s.lane || !decision.askedSeq) continue
@@ -117,6 +123,7 @@ export async function persistedToolApproval(
       asked.bindingHash !== expected
     )
       continue
+    if (input.approval && asked.approval?.subjectRevision !== input.approval.subjectRevision) continue
     const decidedRow = (await s.d.log.scan({ fromSeq: decision.seq, toSeq: decision.seq, lane: s.lane }))[0]
     if (decidedRow?.type !== 'approval/decided') continue
     if (
@@ -132,6 +139,10 @@ export async function persistedToolApproval(
       verdict: decision.verdict,
       via: decision.via,
       decidedAt: decidedRow.ts,
+      ...((decidedRow.data as { answeredBy?: Actor }).answeredBy
+        ? { answeredBy: (decidedRow.data as { answeredBy: Actor }).answeredBy }
+        : {}),
+      ...(asked.approval ? { subjectRevision: asked.approval.subjectRevision } : {}),
       ...(decision.grantId ? { grantId: decision.grantId } : {}),
     }
   }

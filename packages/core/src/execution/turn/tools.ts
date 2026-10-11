@@ -365,6 +365,7 @@ export async function approveAndExecute(
   )
     throw new CoreError('E_RELATION', 'recovered dispatch does not match its pending effect')
   let decisionId = 'n/a'
+  let approvalProof: import('@agnes/extension-api').ToolContext['approval']
   if (!o.resumeDispatch) {
     // Read from the fold, not from the counter: the counter's copy is a transaction behind the row
     // that taints, so the first call after an untrusted result would be judged against a clean turn.
@@ -508,6 +509,15 @@ export async function approveAndExecute(
       throw new CoreError('E_ENVELOPE', 'invalid ToolPolicy decision')
     if (permission.effect === 'deny')
       return { result: await refuse(s, call.toolUseId, 'POLICY_DENIED', permission.reason, decisionId) }
+    const humanOnly = permission.approval !== undefined
+    if (
+      humanOnly &&
+      (permission.effect !== 'ask' ||
+        permission.approval?.reviewerRequirement !== 'human' ||
+        permission.approval?.grantConstraints !== 'once' ||
+        !/^[a-f0-9]{64}$/.test(permission.approval.subjectRevision))
+    )
+      throw new CoreError('E_ENVELOPE', 'invalid human approval constraints')
     const needsAsk =
       permission.effect === 'ask' ||
       (decision.effect === 'require_approval' && !s.yolo && approvalMode !== 'off')
@@ -531,6 +541,7 @@ export async function approveAndExecute(
         args: call.args,
         policyHash: call.policyHash,
         scope,
+        ...(permission.approval ? { subjectRevision: permission.approval.subjectRevision } : {}),
       })
       const grantKey = sessionGrantKey({ actor: s.d.actor, sessionKey: s.key, toolId: call.name, scope })
       const profileHash = s.d.resolvedProfileHash
@@ -544,28 +555,46 @@ export async function approveAndExecute(
               policyVersion: policy.policyVersion,
             }
           : undefined
-      const durableGrants = durableBinding
-        ? (
-            await s.d.runtime.approvalGrants(
-              {
-                profileHash: durableBinding.profileHash,
-                actorId: durableBinding.actor.id,
-                actorOrg: durableBinding.actor.org,
-                toolId: durableBinding.toolId,
-                scope: durableBinding.scope,
-                policyVersion: durableBinding.policyVersion,
-              },
-              o.signal ?? s.ac.signal,
-            )
-          ).filter((grant) => permanentGrantMatches(grant, durableBinding))
-        : []
+      const durableGrants =
+        !humanOnly && durableBinding
+          ? (
+              await s.d.runtime.approvalGrants(
+                {
+                  profileHash: durableBinding.profileHash,
+                  actorId: durableBinding.actor.id,
+                  actorOrg: durableBinding.actor.org,
+                  toolId: durableBinding.toolId,
+                  scope: durableBinding.scope,
+                  policyVersion: durableBinding.policyVersion,
+                },
+                o.signal ?? s.ac.signal,
+              )
+            ).filter((grant) => permanentGrantMatches(grant, durableBinding))
+          : []
       const recorded = await persistedToolApproval(s, {
         toolUseId: call.toolUseId,
         args: call.args,
         scope,
         policyHash: call.policyHash,
         policyVersion: policy.policyVersion,
+        ...(permission.approval ? { approval: permission.approval } : {}),
       })
+      if (
+        humanOnly &&
+        recorded &&
+        (recorded.via === 'guardian' ||
+          recorded.verdict === 'allowed-session' ||
+          recorded.verdict === 'allowed-permanent')
+      )
+        return {
+          result: await refuse(
+            s,
+            call.toolUseId,
+            'APPROVAL_STATE_INVALID',
+            'human review requires a once-only decision',
+            decisionId,
+          ),
+        }
       if (recorded?.verdict === 'allowed-session') s.sessionAllows.add(grantKey)
       if (recorded?.verdict === 'allowed-permanent') {
         if (!durableBinding || !recorded.grantId)
@@ -646,7 +675,26 @@ export async function approveAndExecute(
           )
         continue
       }
-      if (recorded?.verdict === 'allowed-once' || recorded?.verdict === 'allowed-session') continue
+      if (recorded?.verdict === 'allowed-once' || recorded?.verdict === 'allowed-session') {
+        if (humanOnly) {
+          if (!recorded.answeredBy || !recorded.subjectRevision)
+            return {
+              result: await refuse(
+                s,
+                call.toolUseId,
+                'APPROVAL_STATE_INVALID',
+                'human approval proof missing',
+                decisionId,
+              ),
+            }
+          approvalProof = {
+            requestId: recorded.requestId,
+            subjectRevision: recorded.subjectRevision,
+            answeredBy: recorded.answeredBy,
+          }
+        }
+        continue
+      }
       if (recorded) {
         return {
           result: await refuse(
@@ -658,7 +706,7 @@ export async function approveAndExecute(
           ),
         }
       }
-      if (s.sessionAllows.has(grantKey) || durableGrants.length > 0) continue
+      if (!humanOnly && (s.sessionAllows.has(grantKey) || durableGrants.length > 0)) continue
       const priorGuardian = (
         await scanAll((q) => s.d.log.scan(q), {
           fromSeq: call.argsSeq,
@@ -708,8 +756,8 @@ export async function approveAndExecute(
       const requestId = priorGuardianData?.requestId ?? s.d.ids.requestId()
       const options = [
         'allowed-once' as const,
-        'allowed-session' as const,
-        ...(durableBinding ? (['allowed-permanent'] as const) : []),
+        ...(!humanOnly ? (['allowed-session'] as const) : []),
+        ...(!humanOnly && durableBinding ? (['allowed-permanent'] as const) : []),
         'rejected' as const,
       ]
       const asked = {
@@ -725,6 +773,7 @@ export async function approveAndExecute(
         policyVersion: policy.policyVersion,
         ...(durableBinding ? { profileHash: durableBinding.profileHash } : {}),
         options,
+        ...(permission.approval ? { approval: permission.approval } : {}),
         deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
       }
       // A transform hook: an extension may adjust risk/context/summary before the question reaches a
@@ -764,7 +813,13 @@ export async function approveAndExecute(
         options: [...options],
         ...(overridden?.context !== undefined ? { context: overridden.context } : {}),
       }
-      if (approvalMode === 'smart' && !permission.review && !guardianFailed && !priorGuardianData) {
+      if (
+        !humanOnly &&
+        approvalMode === 'smart' &&
+        !permission.review &&
+        !guardianFailed &&
+        !priorGuardianData
+      ) {
         const guardianModel = resolveModel(s, 'primary').model
         const projected = await s.d.runtime.ledgerProjected({
           tokensEstimate: GUARDIAN_RESERVATION_TOKENS,
@@ -921,6 +976,7 @@ export async function approveAndExecute(
             via: 'sync',
             scope,
             ...(reason ? { reason } : {}),
+            ...(answer.answeredBy ? { answeredBy: answer.answeredBy } : {}),
             ...(grantId ? { grantId } : {}),
           }),
         ],
@@ -991,6 +1047,12 @@ export async function approveAndExecute(
         )
         continue
       }
+      if (humanOnly && verdict === 'allowed-once' && answer.answeredBy && permission.approval)
+        approvalProof = {
+          requestId,
+          subjectRevision: permission.approval.subjectRevision,
+          answeredBy: answer.answeredBy,
+        }
       if (verdict === 'allowed-session') s.sessionAllows.add(grantKey)
       if (!verdict.startsWith('allowed')) {
         const refusal = approvalRefusal(verdict, reason, s.preset.approval.timeoutMs)
@@ -1147,6 +1209,7 @@ export async function approveAndExecute(
           depth: o.depth,
           generationDepth: s.generationDepth,
           actor: s.d.actor,
+          ...(approvalProof ? { approval: approvalProof } : {}),
           cwd: s.d.cwd,
           workspaceRoot: s.workspaceRoot,
           fullAccess: s.yolo,

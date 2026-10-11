@@ -7,7 +7,7 @@ import { AGH_DIR } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
 import planMode from '../src/index.js'
 import { decidePlanMode } from '../src/policy.js'
-import { applyPlanCommand, readPlanMode } from '../src/state.js'
+import { applyPlanCommand, clearPlanMode, readPlanMode } from '../src/state.js'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -65,6 +65,11 @@ describe('plan mode policy', () => {
     expect(decidePlanMode(input(root, 'exit_plan_mode', false, cwd), signal, defaultToolPolicy)).toEqual({
       effect: 'ask',
       reason: 'Approve the plan to leave plan mode',
+      approval: {
+        reviewerRequirement: 'human',
+        grantConstraints: 'once',
+        subjectRevision: readPlanMode(root).revision,
+      },
     })
     applyPlanCommand(root, '/plan off')
     if (different) applyPlanCommand(cwd, '/plan')
@@ -74,12 +79,30 @@ describe('plan mode policy', () => {
     })
   })
 
-  it('fail-closes a corrupt plan file to inactive', () => {
+  it('keeps a corrupt plan file blocked', () => {
     const cwd = workspace()
     applyPlanCommand(cwd, '/plan')
     writeFileSync(join(cwd, AGH_DIR, 'plan-mode.json'), '{')
-    expect(readPlanMode(cwd).active).toBe(false)
+    expect(readPlanMode(cwd)).toMatchObject({ active: true, blocked: true })
+    for (const name of ['shell', 'read', 'exit_plan_mode'])
+      expect(
+        decidePlanMode(input(cwd, name, name === 'read'), new AbortController().signal, defaultToolPolicy),
+      ).toMatchObject({ effect: 'deny' })
   })
+})
+
+it('clears only the reviewed revision once, including same-content rewrites', () => {
+  const root = workspace()
+  applyPlanCommand(root, '/plan original')
+  const first = readPlanMode(root).revision!
+  applyPlanCommand(root, '/plan original')
+  const second = readPlanMode(root).revision!
+  expect(second).not.toBe(first)
+  expect(clearPlanMode(root, first, 'stale')).toBe(false)
+  expect(readPlanMode(root)).toMatchObject({ active: true, revision: second })
+  expect(clearPlanMode(root, second, 'reviewed')).toBe(true)
+  expect(clearPlanMode(root, second, 'duplicate')).toBe(false)
+  expect(readPlanMode(root)).toMatchObject({ active: false, pendingPlan: 'reviewed' })
 })
 
 describe('plan mode extension', () => {
@@ -117,9 +140,21 @@ describe('plan mode extension', () => {
     expect(readPlanMode(cwd).active).toBe(true)
     const executionDirectory = workspace()
     applyPlanCommand(executionDirectory, '/plan off')
+    const missing = await tool?.execute({ plan: 'unreviewed' }, {
+      ...ctx,
+      signal: new AbortController().signal,
+    } as never)
+    expect(missing).toMatchObject({ isError: true })
+    expect(readPlanMode(cwd).active).toBe(true)
     const result = await tool?.execute({ plan: 'do the small thing' }, {
       ...ctx,
       cwd: executionDirectory,
+      signal: new AbortController().signal,
+      approval: {
+        subjectRevision: readPlanMode(cwd).revision,
+        answeredBy: input(cwd, '', false).actor,
+        requestId: 'review',
+      },
     } as never)
     expect(readPlanMode(executionDirectory)).toMatchObject({ active: false })
     expect(readPlanMode(executionDirectory).pendingPlan).toBeUndefined()

@@ -72,8 +72,10 @@ export async function continuationAllows(
     args,
     policyHash,
     scope,
+    ...(asked.approval ? { subjectRevision: asked.approval.subjectRevision } : {}),
   })
   if (!s.state.resumedRequests.has(requestId) || asked.bindingHash !== binding) return false
+  if (asked.approval && decision.verdict !== 'allowed-once') return false
   if (decision.verdict === 'allowed-session' || decision.verdict === 'allowed-permanent')
     return decision.verdict
   return 'allowed-once'

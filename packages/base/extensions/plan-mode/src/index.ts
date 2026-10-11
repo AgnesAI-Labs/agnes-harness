@@ -1,6 +1,6 @@
 import { defineExtension, defineTool } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
-import { readPlanMode, writePlanMode } from './state.js'
+import { clearPlanMode, readPlanMode } from './state.js'
 
 const SUMMARY_LIMIT = 4096
 
@@ -28,11 +28,20 @@ export default defineExtension((agnes) => {
         async execute(args, ctx) {
           const state = readPlanMode(ctx.session.workspaceRoot)
           if (!state.active) return { content: [{ type: 'text', text: 'Plan mode is not active' }] }
-          writePlanMode(ctx.session.workspaceRoot, {
-            active: false,
-            pendingPlan: args.plan,
-            updatedAt: new Date().toISOString(),
-          })
+          ctx.signal.throwIfAborted()
+          if (
+            !ctx.approval ||
+            !clearPlanMode(ctx.session.workspaceRoot, ctx.approval.subjectRevision, args.plan)
+          )
+            return {
+              isError: true,
+              content: [
+                {
+                  type: 'text',
+                  text: 'Plan changed or human approval is missing. Plan mode remains blocked.',
+                },
+              ],
+            }
           return {
             content: [
               {
@@ -79,4 +88,4 @@ export default defineExtension((agnes) => {
 
 export { decidePlanMode } from './policy.js'
 export type { PlanModeState } from './state.js'
-export { applyPlanCommand, planModePath, readPlanMode, writePlanMode } from './state.js'
+export { applyPlanCommand, clearPlanMode, planModePath, readPlanMode, writePlanMode } from './state.js'

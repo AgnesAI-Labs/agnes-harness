@@ -12,9 +12,16 @@ export function decidePlanMode(
   fallback: ToolPolicy,
   ports?: ToolPolicyPorts,
 ): ToolPolicyDecision | Promise<ToolPolicyDecision> {
-  if (!readPlanMode(input.workspaceRoot).active) return fallback.decide(input, signal, ports)
+  const state = readPlanMode(input.workspaceRoot)
+  if (state.blocked)
+    return { effect: 'deny', reason: 'Plan mode state is corrupt or unreadable; human repair is required' }
+  if (!state.active) return fallback.decide(input, signal, ports)
   if (input.call.name === 'exit_plan_mode')
-    return { effect: 'ask', reason: 'Approve the plan to leave plan mode' }
+    return {
+      effect: 'ask',
+      reason: 'Approve the plan to leave plan mode',
+      approval: { reviewerRequirement: 'human', grantConstraints: 'once', subjectRevision: state.revision! },
+    }
   if (input.policy.isReadOnly) return fallback.decide(input, signal, ports)
   return { effect: 'deny', reason: 'Plan mode blocks write and exec tools until the plan is approved' }
 }

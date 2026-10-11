@@ -2,7 +2,7 @@ import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { ToolPolicyRegistry } from '@agnes/core-effects/effects/tool-providers'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
-import type { ToolDef, ToolMeta, ToolPolicyRegistryPort } from '@agnes/extension-api'
+import type { ToolContext, ToolDef, ToolMeta, ToolPolicyRegistryPort } from '@agnes/extension-api'
 import type { ApprovalGrant, Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
@@ -15,7 +15,7 @@ const profileHash = `sha256-${'a'.repeat(64)}`
 
 function scopedTool(
   scopes: string[],
-  execute: () => Promise<{ content: Array<{ type: 'text'; text: string }> }>,
+  execute: (args: unknown, ctx: ToolContext) => Promise<{ content: Array<{ type: 'text'; text: string }> }>,
 ): ToolDef {
   return {
     name: 'scoped_write',
@@ -70,7 +70,7 @@ async function atTools(o: {
   preset?: import('@agnes/core-common/step/preset').PresetView
   toolPolicySettings?: import('../src/step/session.js').SessionDeps['toolPolicySettings']
   profile?: string | null
-  execute?: () => Promise<{ content: Array<{ type: 'text'; text: string }> }>
+  execute?: (args: unknown, ctx: ToolContext) => Promise<{ content: Array<{ type: 'text'; text: string }> }>
 }) {
   const calls = o.calls ?? 1
   const provider =
@@ -103,6 +103,156 @@ async function atTools(o: {
 }
 
 describe('v3 approval modes and grants', () => {
+  it.each(['manual', 'smart', 'off', 'auto-review'] as const)(
+    'requires verified once answers for human-only revision review in %s mode',
+    async (approvalMode) => {
+      const policies = new ToolPolicyRegistry()
+      const revision = 'a'.repeat(64)
+      policies.register('test', {
+        id: 'human-review',
+        version: '1',
+        decide: () => ({
+          effect: 'ask',
+          reason: 'Review exact revision',
+          approval: { reviewerRequirement: 'human', grantConstraints: 'once', subjectRevision: revision },
+        }),
+      })
+      for (const answer of ['allowed-session', 'allowed-permanent', 'allowed-once', 'verified'] as const) {
+        let executions = 0
+        const offered: unknown[] = []
+        const proofs: Array<ToolContext['approval']> = []
+        const opened = await atTools({
+          scopes: ['tool:write'],
+          calls: 2,
+          approvalMode,
+          toolPolicies: policies,
+          toolPolicySettings: async () => ({ policy: 'human-review' }),
+          execute: async (_args, ctx) => {
+            proofs.push(ctx.approval)
+            executions++
+            return { content: [{ type: 'text', text: 'reviewed' }] }
+          },
+          seams: fakeSeams({
+            approval: {
+              guard: async () => {
+                throw new Error('human review cannot use guardian')
+              },
+              listGrants: async () => {
+                throw new Error('human review cannot use durable grants')
+              },
+              ask: async (req) => {
+                offered.push(req.options)
+                expect(req.approval).toEqual({
+                  reviewerRequirement: 'human',
+                  grantConstraints: 'once',
+                  subjectRevision: revision,
+                })
+                return answer === 'verified'
+                  ? { verdict: 'allowed-once', answeredBy: { ...actor, id: 'reviewer' } }
+                  : answer
+              },
+            },
+          }),
+        })
+        await opened.session.runToolsPhase()
+        await opened.session.runInference()
+        await opened.session.runToolsPhase()
+        expect(offered).toEqual([
+          ['allowed-once', 'rejected'],
+          ['allowed-once', 'rejected'],
+        ])
+        expect(executions).toBe(answer === 'verified' ? 2 : 0)
+        expect(proofs).toEqual(
+          answer === 'verified'
+            ? Array.from({ length: 2 }, () => ({
+                requestId: expect.any(String),
+                subjectRevision: revision,
+                answeredBy: { ...actor, id: 'reviewer' },
+              }))
+            : [],
+        )
+        const decisions = await opened.log.scan({ type: 'approval/decided', limit: 10 })
+        expect(decisions.map((row) => row.data)).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining(
+              answer === 'verified'
+                ? { verdict: 'allowed-once', answeredBy: { ...actor, id: 'reviewer' } }
+                : { verdict: 'unavailable', reason: 'invalid-answer' },
+            ),
+          ]),
+        )
+        await opened.log.close()
+      }
+    },
+  )
+
+  it.each(['allowed-session', 'allowed-permanent'] as const)(
+    'requires human review despite an existing %s grant',
+    async (grantVerdict) => {
+      let humanOnly = false
+      let executions = 0
+      const offers: unknown[] = []
+      const grants: ApprovalGrant[] = []
+      const policies = new ToolPolicyRegistry()
+      policies.register('test', {
+        id: 'revision-review',
+        version: '1',
+        decide: () => ({
+          effect: 'ask',
+          reason: 'review',
+          ...(humanOnly
+            ? {
+                approval: {
+                  reviewerRequirement: 'human' as const,
+                  grantConstraints: 'once' as const,
+                  subjectRevision: 'a'.repeat(64),
+                },
+              }
+            : {}),
+        }),
+      })
+      const opened = await atTools({
+        scopes: ['tool:write'],
+        calls: 2,
+        toolPolicies: policies,
+        toolPolicySettings: async () => ({ policy: 'revision-review' }),
+        execute: async () => {
+          executions++
+          return { content: [{ type: 'text', text: 'done' }] }
+        },
+        seams: fakeSeams({
+          approval: {
+            ask: async (request) => {
+              offers.push(request.options)
+              return humanOnly
+                ? { verdict: 'rejected' as const, answeredBy: { ...actor, id: 'reviewer' } }
+                : grantVerdict
+            },
+            listGrants: async () => grants,
+            putGrant: async (grant) => {
+              grants.push(grant)
+            },
+          },
+        }),
+      })
+      try {
+        await opened.session.runToolsPhase()
+        humanOnly = true
+        await opened.session.runInference()
+        await opened.session.runToolsPhase()
+        expect(offers).toHaveLength(2)
+        expect(offers[1]).toEqual(['allowed-once', 'rejected'])
+        expect(executions).toBe(1)
+        expect((await opened.log.scan({ type: 'approval/decided', limit: 10 })).at(-1)?.data).toMatchObject({
+          verdict: 'rejected',
+          answeredBy: { ...actor, id: 'reviewer' },
+        })
+      } finally {
+        await opened.session.close()
+      }
+    },
+  )
+
   it('requires a separate allowed-once decision for every scope', async () => {
     const seen: string[] = []
     const opened = await atTools({
