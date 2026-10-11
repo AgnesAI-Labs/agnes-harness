@@ -2,7 +2,9 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { presets as basePresets, seams as baseSeams } from '@agnes/base'
 import { operations } from '@agnes/code'
+import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { TicketIndex } from '@agnes/daemon-foundation/storage/lister'
 import { createTestHost } from '@agnes/host/testkit'
 import type { Actor, InferenceEvent } from '@agnes/protocol'
@@ -10,6 +12,7 @@ import { createClient, memoryJournal } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { createLocalEndpoint } from '../src/local/index.js'
+import { PrompterRouter } from '../src/local/prompter.js'
 import { testWorkspaceCatalog } from './host.js'
 
 const REQUESTER: Actor = { id: 'requester', org: 'local', role: 'owner', deptPath: [], attrs: {} }
@@ -120,4 +123,74 @@ describe('approval ticket restart lookup', () => {
       rmSync(root, { recursive: true, force: true })
     }
   })
+})
+
+// Production uses a shared router and keeps the Host session alive across socket closures.
+// Embedded endpoints have a different lifetime and deliberately abort their own sessions.
+it('re-offers a real Host tool approval after its client disconnects without recording a refusal', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-approval-reconnect-'))
+  const first = new LocalEndpoint({ clock: Date.now, principalId: 'local' })
+  const second = new LocalEndpoint({ clock: Date.now, principalId: 'local' })
+  first.conn.capabilities.permission = true
+  let live = [first]
+  const router = new PrompterRouter({
+    clock: Date.now,
+    connections: () => live.map((endpoint) => endpoint.conn),
+    originOf: () => first.conn,
+    endpointFor: (connection) => {
+      const endpoint = live.find((candidate) => candidate.conn === connection)
+      if (!endpoint) throw new Error('connection is gone')
+      return endpoint
+    },
+  })
+  const { host } = await createTestHost({
+    dataDir: root,
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+    packages: {
+      '@agnes/base': { seams: { approval: baseSeams.approval }, presets: basePresets },
+      '@agnes/code': { operations },
+    },
+    prompter: (request, options) => router.ask(request, options),
+    script: [toolCall(), [{ type: 'done', reason: 'stop' }]],
+  })
+  try {
+    const session = await host.createSession({ cwd: root })
+    await session.enqueue('next-turn', { actor: session.d.actor, content: [{ type: 'text', text: 'run' }] })
+    const running = session.run({ until: 'turn-end', signal: new AbortController().signal })
+    const original = (await first.notifications[Symbol.asyncIterator]().next()).value as {
+      params: { _meta: { 'ai.agnes.harness': { requestId: string } } }
+    }
+    await first.close()
+    live = [second]
+    second.conn.capabilities.permission = true
+    second.conn.attached.set(session.key, {
+      cursor: { fromSeq: 0, generation: 1 },
+      filter: { preview: false, acpUpdates: true },
+    })
+    const offered = (await second.notifications[Symbol.asyncIterator]().next()).value as {
+      id: string
+      params: typeof original.params
+    }
+    expect(offered.params._meta['ai.agnes.harness'].requestId).toBe(
+      original.params._meta['ai.agnes.harness'].requestId,
+    )
+    expect(await session.scan({ type: 'approval/decided', toSeq: session.lastSeq })).toEqual([])
+    await second.handle({
+      jsonrpc: '2.0',
+      id: offered.id,
+      result: { outcome: { outcome: 'selected', optionId: 'allow_once' } },
+    })
+    await expect(running).resolves.toMatchObject({ reason: 'completed' })
+    const decisions = await session.scan({ type: 'approval/decided', toSeq: session.lastSeq })
+    expect(decisions).toHaveLength(1)
+    expect(decisions[0]?.data).toMatchObject({ verdict: 'allowed-once' })
+    const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
+    expect(results).toHaveLength(1)
+    expect(results[0]?.data).not.toMatchObject({ isError: true })
+  } finally {
+    await first.close()
+    await second.close()
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
 })
