@@ -46,6 +46,8 @@ it.each([
   'missing-human',
   'agent',
   'no-handler',
+  'policy_denied',
+  'subagent_scope',
 ] as const)(
   'uses normal read/write/edit and refuses an initial %s answer, injects the next revision, and closes access when off',
   async (initialAnswer) => {
@@ -99,6 +101,8 @@ it.each([
             }
           if (initialAnswer === 'missing-human') return 'allowed-once'
           if (initialAnswer === 'no-handler') return { verdict: 'unavailable', reason: 'no-handler' }
+          if (initialAnswer === 'policy_denied' || initialAnswer === 'subagent_scope')
+            return { verdict: 'rejected', reason: initialAnswer }
           return {
             verdict: initialAnswer === 'agent' ? 'allowed-once' : initialAnswer,
             answeredBy: {
@@ -165,7 +169,9 @@ it.each([
           ? { verdict: 'rejected' }
           : {
               verdict: 'unavailable',
-              reason: initialAnswer === 'no-handler' ? 'no-handler' : 'invalid-answer',
+              reason: ['no-handler', 'policy_denied', 'subagent_scope'].includes(initialAnswer)
+                ? initialAnswer
+                : 'invalid-answer',
             },
       )
       expect((await memory.readFile('MEMORY.md')).content).toBe('')
