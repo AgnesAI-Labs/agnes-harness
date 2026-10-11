@@ -316,11 +316,11 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon-foundation/src': 4364,
   'packages/host/src/runtime/approval/expiry': 105,
   'packages/host/src/runtime/adapters': 465,
-  'packages/host/src/runtime/profile': 1687,
+  'packages/host/src/runtime/profile': 1684,
   // Deferred producer binding on the shared service ports. countLines: 11970, exact, no spare.
   // UI data-source resolution. countLines: 11970 -> 12586 (+616).
   // Rebased tip includes the in-flight worktree migration. Measured 12791, exact, no spare.
-  'packages/host/src/runtime': 12977,
+  'packages/host/src/runtime': 12974,
   // UI data-source catalog wiring on that tree. countLines: 3517.
   'packages/host/src/runtime/assemble': 3639,
   'packages/host-providers/src/adapters': 477,
@@ -1713,7 +1713,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2327 -> 2438; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Expose cooperative construction signals, adapter credential ports and shared default compaction/policy helpers.
   // countLines: 2438 -> 2505 (+67); exact measured cap, no exclusions or spare allocation.
-  'packages/extension-api/src': 3186, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  'packages/extension-api/src': 3168, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -2593,7 +2593,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 1401 -> 1571; exact measured cap, no exclusions or spare allocation.
   // 2026-10-07 gap-fill review: Portable metadata-backed MCP tool indexing for non-SQL persistence.
   // countLines: 1571 -> 1601; exact cap, no exclusions or spare allocation.
-  'packages/base/src/mcp': 1635,
+  'packages/base/src/mcp': 1610,
   // 2026-09-12: I7 Base Tasks 34/35 introduce the privacy extension. Its first slice measures 214
   // counted lines; the universal fixed extension ceiling remains 800 rather than growing Base.
   'packages/base/extensions/privacy': 369,
@@ -2962,7 +2962,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Deferred queue facade and Intelligent UI producer binding. countLines: 12508, exact, no spare.
   // UI data-source resolution. countLines: 12508 -> 13124 (+616).
   // Rebased tip includes the in-flight worktree migration. Measured 13329, exact, no spare.
-  'packages/host/src': 13515,
+  'packages/host/src': 13512,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot

@@ -16,6 +16,8 @@ The Web connection editor supports local stdio, HTTP and legacy SSE transports. 
 
 <a id="在会话中接入"></a>
 
+Each remote tool has one local name, `mcp__<server>__<tool>`. Names changed by sanitization, length limits or collisions carry a hash and stay within 64 characters. Each server receives only its own prefix grant; execution still sends the original remote tool name. Per-server resource bridge tools use the same naming rule.
+
 ## Add a service in a session
 
 In a local AGH session, ask to connect an MCP service and provide its project URL or connection details. The helper targets the current AGH instance by default. After confirming the configuration, inspect registration and connection state under **Settings → MCP**. Connections and tool lists update at turn boundaries; you can use the service in the next turn of the same session.

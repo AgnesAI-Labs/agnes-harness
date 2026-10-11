@@ -1,4 +1,4 @@
-import { MCP_COMPAT_PREFIX, mcpLegacyToolName, mcpPublicToolName } from '@agnes/base'
+import { mcpPublicToolName, mcpStablePrefix } from '@agnes/base'
 import { MemTable } from '@agnes/base/testkit'
 import type { McpServerDefinitionInput } from '@agnes/protocol'
 import * as workerResources from '@agnes/resource-control-worker'
@@ -60,12 +60,17 @@ describe('mcpServerRowsFromDefinitions', () => {
 
   it('declares exactly what its one server uses: its own tool prefix, the mcp resource kind, and the artifact store for spilled output', () => {
     const { rows } = mcpServerRowsFromDefinitions([stdioEntry('gh'), stdioEntry('my.server-2')], fakeOpener)
-    // The row grant is the compatibility prefix. Stable names and legacy aliases both start with
-    // it. The registrar still emits only this server's own names.
+    // Distinct server prefixes prevent one row from registering another server's tools.
     expect(rows.map((row) => row.manifest.capabilities)).toEqual([
-      { tools: { prefix: MCP_COMPAT_PREFIX }, resources: ['mcp'], artifacts: true },
-      { tools: { prefix: MCP_COMPAT_PREFIX }, resources: ['mcp'], artifacts: true },
+      { tools: { prefix: mcpStablePrefix('gh') }, resources: ['mcp'], artifacts: true },
+      { tools: { prefix: mcpStablePrefix('my.server-2') }, resources: ['mcp'], artifacts: true },
     ])
+    for (const [index, id] of ['gh', 'my.server-2'].entries()) {
+      const prefix = rows[index]!.manifest.capabilities.tools!.prefix
+      expect(mcpPublicToolName(id, 'ping').startsWith(prefix)).toBe(true)
+      const other = index === 0 ? 'my.server-2' : 'gh'
+      expect(mcpPublicToolName(other, 'ping').startsWith(prefix)).toBe(false)
+    }
   })
 
   it('is idempotent: the same snapshot (by value) always derives the same ids and specs', () => {
@@ -236,7 +241,7 @@ it('reconstructs a cold generation MCP factory from SecretRefs and refuses unkno
     expect(activated).toBe(false)
     release()
     const dispose = await activation
-    expect([...tools]).toEqual([mcpPublicToolName('pinned', 'ping'), mcpLegacyToolName('pinned', 'ping')])
+    expect([...tools]).toEqual([mcpPublicToolName('pinned', 'ping')])
     await dispose?.()
     expect(tools.size).toBe(0)
     expect(closed).toBe(true)

@@ -1,39 +1,7 @@
 import { sha256Hex } from '@agnes/protocol'
 
-const SLUG_MAX = 40
 const NAME_MAX = 64
 const TOOL_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
-
-/**
- * Compatibility grant for the alias period. Stable names (`mcp__server__tool`) and the previous
- * hashed names (`mcp_<slug>_<hash8>_tool`) both start with this prefix, so one row can admit both.
- * It is wider than a single server's hashed prefix: the registrar still emits only that server's
- * stable name and its own legacy alias.
- */
-export const MCP_COMPAT_PREFIX = 'mcp_'
-
-/**
- * The local tool-name prefix for one MCP server: `mcp_<slug>_<hash8>_`. `slug` is cosmetic (a human
- * can recognize which server a tool came from); `hash8` is what actually disambiguates -- two server
- * ids that collide only after slugging (e.g. "a.b" and "a_b" both slug to "a_b") still get distinct
- * prefixes, because slugging alone is lossy (case, most punctuation, and -- unlike this function --
- * had no length cap of its own before this fix).
- *
- * This mirrors `mcp-server-rows.ts`'s `slugOf`/`hash8` pair (used there for the Host-owned `ext:`
- * row's extension id, `agnes/mcp-<slug>-<hash8>`), which already solved the identical collision for
- * row ids -- see that file's own doc comment. Kept byte-for-byte as the compatibility alias. New
- * model-facing names come from `mcpPublicToolName`.
- */
-export function mcpLocalToolPrefix(serverId: string): string {
-  const slug =
-    serverId
-      .toLocaleLowerCase()
-      .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '')
-      .slice(0, SLUG_MAX) || 'server'
-  const hash = sha256Hex(serverId).slice(0, 8)
-  return `mcp_${slug}_${hash}_`
-}
 
 function hash8(material: string): string {
   return sha256Hex(material).slice(0, 8)
@@ -76,12 +44,4 @@ export function mcpPublicToolName(serverId: string, remoteName: string, taken?: 
     if (TOOL_NAME.test(alt) && !taken.has(alt)) return alt
   }
   return name
-}
-
-/** Previous model-facing name, kept registered during the compatibility period. */
-export function mcpLegacyToolName(serverId: string, remoteName: string): string {
-  const remote = remoteName.replace(/[^A-Za-z0-9_]/g, '_')
-  const prefix = mcpLocalToolPrefix(serverId)
-  if (!remote || prefix.length >= NAME_MAX) throw new Error(`invalid remote tool name: ${remoteName}`)
-  return `${prefix}${remote.slice(0, NAME_MAX - prefix.length)}`
 }

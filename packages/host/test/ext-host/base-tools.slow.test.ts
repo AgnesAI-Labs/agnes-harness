@@ -8,7 +8,7 @@ import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import {
   ecosystem as baseEcosystem,
   mcpCatalogHubFor,
-  mcpLocalToolPrefix,
+  mcpStablePrefix,
   mcpServerExtension,
 } from '@agnes/base'
 import { testFsPolicy } from '@agnes/core/testkit'
@@ -701,11 +701,9 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       models: [fakeModel({ route: 'gw', id: 'm1' })],
       scripts: [
         (request) => {
-          expect(request.tools.find((tool) => tool.name === `${mcpLocalToolPrefix('gh')}echo`)).toMatchObject(
-            {
-              description: 'Echo text.',
-            },
-          )
+          expect(request.tools.find((tool) => tool.name === `${mcpStablePrefix('gh')}echo`)).toMatchObject({
+            description: 'Echo text.',
+          })
           return say('The eager MCP tool is directly available.')
         },
       ],
@@ -773,7 +771,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     ])
     expect(host.extensions().find((entry) => entry.id === extensionId)).toMatchObject({ loaded: true })
     expect(await ready).toEqual({})
-    expect(host.kernel.tools.resolve(`${mcpLocalToolPrefix('gh')}echo`)).toBeDefined()
+    expect(host.kernel.tools.resolve(`${mcpStablePrefix('gh')}echo`)).toBeDefined()
     try {
       const session = await host.createSession({ cwd: dataDir })
       await session.enqueue('next-turn', {
@@ -796,8 +794,8 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     // genuinely *call* both through the real tool-dispatch machinery, not a bare
     // RegisteredTool.execute() (refused with E_EVENT_NAMESPACE outside a session).
     const dataDir = scratch()
-    const dotName = `${mcpLocalToolPrefix('a.b')}read`
-    const underscoreName = `${mcpLocalToolPrefix('a_b')}read`
+    const dotName = `${mcpStablePrefix('a.b')}read`
+    const underscoreName = `${mcpStablePrefix('a_b')}read`
     expect(dotName).not.toBe(underscoreName)
     const provider = new ScriptedProvider({
       models: [fakeModel({ route: 'gw', id: 'm1' })],

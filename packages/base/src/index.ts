@@ -195,9 +195,6 @@ export {
   type ToolIndexRow,
 } from './mcp/index-table.js'
 export {
-  MCP_COMPAT_PREFIX,
-  mcpLegacyToolName,
-  mcpLocalToolPrefix,
   mcpPublicToolName,
   mcpStablePrefix,
 } from './mcp/naming.js'

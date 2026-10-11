@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import {
   type ConnectionStatusEvent,
-  MCP_COMPAT_PREFIX,
+  mcpStablePrefix,
   type McpServerConfig,
   type McpServerOpener,
   mcpCatalogHubFor,
@@ -135,12 +135,10 @@ export function mcpServerRowsFromDefinitions(
           version: '0.1.0',
           apiRange: '^1.0',
           entry: './index.mjs',
-          // During the compatibility period the grant is `mcp_`, which admits both the stable
-          // `mcp__<server>__<tool>` name and the legacy `mcp_<slug>_<hash>_` alias. It is wider
-          // than one server's hashed prefix; the registrar still emits only this server's names.
-          // Stable resource tools live on `agnes/mcp-resources` because they do not start with `mcp_`.
+          // Each server can register only its own stable tool names. Shared resource tools
+          // live on `agnes/mcp-resources`, which owns their separate grant.
           capabilities: Object.freeze({
-            tools: Object.freeze({ prefix: MCP_COMPAT_PREFIX }),
+            tools: Object.freeze({ prefix: mcpStablePrefix(serverId) }),
             resources: ['mcp' as const],
             artifacts: true as const,
           }),

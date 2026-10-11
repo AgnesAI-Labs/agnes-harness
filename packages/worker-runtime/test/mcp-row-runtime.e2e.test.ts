@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
-import { connectMcp, type McpConnection, type McpServerOpener, mcpLocalToolPrefix } from '@agnes/base'
+import { connectMcp, type McpConnection, type McpServerOpener, mcpStablePrefix } from '@agnes/base'
 import type { Host, HostSession, ResolvedProfile } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import { buildRuntimeTarget } from '@agnes/plugin-runtime/host'
@@ -23,8 +23,8 @@ import { generationExtensionRestorer } from '../src/runtime-generation-restore.j
 const baseDir = fileURLToPath(new URL('../../base', import.meta.url))
 // The prefix is register.ts's tool naming for that server id, computed via the shared function
 // rather than hardcoded (design 2026-09-23-mcp-tool-name-collision-design.md §0.4).
-const ALPHA_PREFIX = mcpLocalToolPrefix('alpha')
-const BETA_PREFIX = mcpLocalToolPrefix('beta')
+const ALPHA_PREFIX = mcpStablePrefix('alpha')
+const BETA_PREFIX = mcpStablePrefix('beta')
 const cleanup: Array<() => Promise<unknown>> = []
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close()
@@ -339,7 +339,7 @@ describe('createMcpRowRuntime against a real Host', () => {
     expect(await nextTurn(old)).toContain('current body')
     expect(old.pluginGenerationId).toBe(pin)
     expect(old.currentTools().resolve(`${ALPHA_PREFIX}ping`)).toBeUndefined()
-    expect(old.currentTools().resolve(`${mcpLocalToolPrefix('gamma')}ping`)).toBeDefined()
+    expect(old.currentTools().resolve(`${mcpStablePrefix('gamma')}ping`)).toBeDefined()
     await host.close()
     host = (await createTestHost({ ...options, skillResources: await skills('cold current body') })).host
     runtime = createMcpRowRuntime({ host, opener })
@@ -350,7 +350,7 @@ describe('createMcpRowRuntime against a real Host', () => {
     expect(cold).toContain('cold current body')
     expect(cold).not.toContain('archived body')
     expect(resumed.currentTools().resolve(`${ALPHA_PREFIX}ping`)).toBeUndefined()
-    expect(resumed.currentTools().resolve(`${mcpLocalToolPrefix('gamma')}ping`)).toBeDefined()
+    expect(resumed.currentTools().resolve(`${mcpStablePrefix('gamma')}ping`)).toBeDefined()
   })
 
   it('reconnect() forces a server to remount on the next apply() even at the same revision, and only that one', async () => {
@@ -930,7 +930,7 @@ describe('createMcpRowRuntime against real MCP servers (real-machine collision v
       const first = await runtime.apply([enabled])
       expect(first.statuses.get('managed')?.connectionState).toBe('ready')
       expect(env.AGNES_MCP_STDIO_ALLOWLIST).toBe(process.execPath)
-      const name = `${mcpLocalToolPrefix('managed')}read`
+      const name = `${mcpStablePrefix('managed')}read`
       expect(tool(host, name)).toBeDefined()
       await runtime.apply([{ ...enabled, desired: 'disabled' }])
       expect(managed).toEqual([])
@@ -964,8 +964,8 @@ describe('createMcpRowRuntime against real MCP servers (real-machine collision v
 
     expect(result.skipped).toEqual([])
     expect(result.rowIds).toHaveLength(2)
-    const dotName = `${mcpLocalToolPrefix('a.b')}read`
-    const underscoreName = `${mcpLocalToolPrefix('a_b')}read`
+    const dotName = `${mcpStablePrefix('a.b')}read`
+    const underscoreName = `${mcpStablePrefix('a_b')}read`
     expect(dotName).not.toBe(underscoreName)
     // Confirms neither row was silently rolled back by E_REGISTRY_DUPLICATE (the failure mode this
     // fix eliminates, design §0.2) -- both real servers' tools are live in the same Host's shared

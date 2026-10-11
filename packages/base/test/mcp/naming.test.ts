@@ -1,54 +1,8 @@
 import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import {
-  mcpLegacyToolName,
-  mcpLocalToolPrefix,
-  mcpPublicToolName,
-  mcpStablePrefix,
-} from '../../src/mcp/naming.js'
+import { mcpPublicToolName, mcpStablePrefix } from '../../src/mcp/naming.js'
 
 const TOOL_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
-
-describe('mcpLocalToolPrefix', () => {
-  it('gives two server ids that sanitize to the same string distinct prefixes', () => {
-    // The reported bug: "a.b" and "a_b" both collapse to "a_b" under a plain
-    // /[^A-Za-z0-9_]/g -> '_' sanitizer, so `mcp_a_b_read` collided for both servers.
-    expect(mcpLocalToolPrefix('a.b')).not.toBe(mcpLocalToolPrefix('a_b'))
-  })
-
-  it.each(['gh', 'café — 中文', '😀', '\ud800', '\udc00', 'x'.repeat(55), 'x'.repeat(56), 'x'.repeat(64)])(
-    'keeps existing SHA-256 legacy identities for %j',
-    (id) => {
-      const digest = createHash('sha256').update(id, 'utf8').digest('hex').slice(0, 8)
-      expect(mcpLocalToolPrefix(id).endsWith(`_${digest}_`)).toBe(true)
-      expect(mcpLegacyToolName(id, 'read')).toBe(`${mcpLocalToolPrefix(id)}read`)
-      const rewritten = mcpPublicToolName('gh', `${id}-tool`)
-      const toolDigest = createHash('sha256').update(`gh\0${id}-tool`, 'utf8').digest('hex').slice(0, 8)
-      expect(rewritten.endsWith(`_${toolDigest}`)).toBe(true)
-    },
-  )
-
-  it('is a pure function of the server id: same id always yields the same prefix', () => {
-    expect(mcpLocalToolPrefix('gh')).toBe(mcpLocalToolPrefix('gh'))
-  })
-
-  it('caps the slug at 40 characters regardless of server id length', () => {
-    const longId = `server-${'x'.repeat(80)}`
-    const prefix = mcpLocalToolPrefix(longId)
-    // mcp_ (4) + slug (<=40) + _ (1) + hash8 (8) + _ (1) = <=54.
-    expect(prefix.length).toBeLessThanOrEqual(54)
-    expect(prefix.startsWith('mcp_')).toBe(true)
-    expect(prefix.endsWith('_')).toBe(true)
-  })
-
-  it('falls back to "server" when the id has no slug-eligible characters', () => {
-    expect(mcpLocalToolPrefix('...')).toMatch(/^mcp_server_[0-9a-f]{8}_$/)
-  })
-
-  it('lowercases and collapses runs of non-alphanumeric characters in the slug', () => {
-    expect(mcpLocalToolPrefix('My.Server--2')).toMatch(/^mcp_my_server_2_[0-9a-f]{8}_$/)
-  })
-})
 
 describe('mcpPublicToolName', () => {
   it('uses mcp__server__tool when neither ident is rewritten and the name fits', () => {
@@ -79,10 +33,17 @@ describe('mcpPublicToolName', () => {
     expect(mcpPublicToolName('gh', 'list_prs', new Set([stable, hashed, alt]))).toBe(hashed)
   })
 
-  it('keeps the legacy alias on the old hashed prefix', () => {
-    expect(mcpLegacyToolName('gh', 'list_prs')).toBe(`${mcpLocalToolPrefix('gh')}list_prs`)
-    expect(mcpLegacyToolName('gh', 'list_prs')).not.toBe(mcpPublicToolName('gh', 'list_prs'))
-  })
+  it.each(['gh', 'café — 中文', '😀', '\ud800', '\udc00', 'x'.repeat(55), 'x'.repeat(64)])(
+    'preserves SHA-256 collision identities for %j',
+    (id) => {
+      const rewritten = mcpPublicToolName('gh', `${id}-tool`)
+      const digest = createHash('sha256').update(`gh\0${id}-tool`, 'utf8').digest('hex').slice(0, 8)
+      expect(rewritten.endsWith(`_${digest}`)).toBe(true)
+      expect(rewritten).toMatch(TOOL_NAME)
+      expect(mcpStablePrefix(id)).toBe(mcpStablePrefix(id))
+      expect(mcpStablePrefix(id).length).toBeLessThanOrEqual(48)
+    },
+  )
 
   it('stays inside the 64-character tool name contract for a long server id', () => {
     const name = mcpPublicToolName(`server-${'x'.repeat(80)}`, 'list_prs')

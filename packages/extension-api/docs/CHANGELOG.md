@@ -53,7 +53,7 @@ facts while omitting memory-derived payloads. Existing hosts without a provider 
 ordinary file behavior; the official file provider defaults to off. These are unpublished
 preview additions; release versioning follows the policy below.
 
-The Node-only `@agnes/extension-api/mcp-naming` subpath shares stable and legacy MCP naming
+The Node-only `@agnes/extension-api/mcp-naming` subpath shares stable MCP naming
 helpers with Base and Host. Root runtime exports remain unchanged.
 
 Loop factories now accept an optional construction signal and return a driver or Promise; callers

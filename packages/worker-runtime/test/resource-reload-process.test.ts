@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { Duplex } from 'node:stream'
 import { fileURLToPath } from 'node:url'
-import { mcpLocalToolPrefix } from '@agnes/base'
+import { mcpStablePrefix } from '@agnes/base'
 import type { Host } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -59,8 +59,8 @@ const { ListToolsRequestSchema } = baseRequire('@modelcontextprotocol/sdk/types.
 const baseDir = fileURLToPath(new URL('../../base', import.meta.url))
 // The prefix is register.ts's tool naming for that server id, computed via the shared function
 // rather than hardcoded (design 2026-09-23-mcp-tool-name-collision-design.md §0.4).
-const A_PREFIX = mcpLocalToolPrefix('a')
-const B_PREFIX = mcpLocalToolPrefix('b')
+const A_PREFIX = mcpStablePrefix('a')
+const B_PREFIX = mcpStablePrefix('b')
 
 // A real spy wrapping the real implementation (not a replacement), same technique and same purpose as
 // resource-reload-dispatch.test.ts: counting bootstrapWorkerResources() calls is a second, independent

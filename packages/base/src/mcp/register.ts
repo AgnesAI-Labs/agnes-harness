@@ -21,7 +21,7 @@ import {
 import { MAX_READ_BYTES } from '../../extensions/tools-core/src/tools/read.js'
 import { normalizeRemoteInputSchema, remoteInputSchema } from '../mcp-json-schema.js'
 import { type McpServerConfig, mcpErrorText, redactMcpSecrets } from './config.js'
-import { mcpLegacyToolName, mcpPublicToolName } from './naming.js'
+import { mcpPublicToolName, mcpStablePrefix } from './naming.js'
 import { admitMcpResourceTools, bindMcpResourceServer } from './resources.js'
 
 export type McpRemoteTool = {
@@ -433,11 +433,6 @@ function mcpToolProblem(
 ): McpSkippedTool['code'] | undefined {
   if (typeof tool?.name !== 'string' || !tool.name || typeof tool.description !== 'string') return 'malformed'
   if (tool.name.length > 128) return 'invalid-name'
-  try {
-    mcpLegacyToolName(cfg.id, tool.name)
-  } catch {
-    return 'invalid-name'
-  }
   const inspected = inspectJsonData(tool.inputSchema, TOOL_PARAMETERS_MAX_BYTES)
   if (!inspected.ok) return inspected.reason.startsWith('size ') ? 'schema-too-large' : 'invalid-schema'
   let definition: ToolDef
@@ -446,7 +441,7 @@ function mcpToolProblem(
   } catch {
     return 'invalid-schema'
   }
-  const checked = checkToolDef(definition, { prefix: 'mcp_' })
+  const checked = checkToolDef(definition, { prefix: mcpStablePrefix(cfg.id) })
   const problems = checked.ok ? [] : checked.problems
   if (problems.some((p) => p.startsWith('parameters: serialized size'))) return 'schema-too-large'
   if (problems.some((p) => p.startsWith('parameters:'))) return 'invalid-schema'
@@ -554,7 +549,7 @@ export async function registerRemoteToolsStrict(
     const mediaLimits = resolveMediaLimits(opts.mediaLimits)
     const external = opts.claimedNames ?? new Set<string>()
     const reserved = new Set<string>(external)
-    const allocated: { tool: McpRemoteTool; name: string; legacy?: string }[] = []
+    const allocated: { tool: McpRemoteTool; name: string }[] = []
     for (const tool of remote) {
       const stable = mcpPublicToolName(cfg.id, tool.name)
       const name = mcpPublicToolName(cfg.id, tool.name, reserved)
@@ -566,29 +561,13 @@ export async function registerRemoteToolsStrict(
         )
       }
       reserved.add(name)
-      let legacy: string | undefined
-      try {
-        const candidate = mcpLegacyToolName(cfg.id, tool.name)
-        if (candidate !== name && !reserved.has(candidate)) {
-          legacy = candidate
-          reserved.add(candidate)
-        }
-      } catch {
-        legacy = undefined
-      }
-      allocated.push(legacy === undefined ? { tool, name } : { tool, name, legacy })
+      allocated.push({ tool, name })
     }
     const definitions = allocated.map((row) => remoteDefinition(conn, cfg, row.tool, mediaLimits, row.name))
     const admitted = admitMcpResourceTools(conn, cfg, reserved, (name) =>
       agnes.ctx.log.warn('MCP resource tool name conflicts with a registered tool', { id: cfg.id, name }),
     )
     const resourceTools = admitted.tools
-    const aliases: ToolDef[] = []
-    for (const [index, row] of allocated.entries()) {
-      const source = definitions[index]
-      if (!row.legacy || !source) continue
-      aliases.push({ ...source, name: row.legacy })
-    }
     const catalog = [...definitions, ...resourceTools].map((definition) => ({
       name: definition.name,
       description: definition.description,
@@ -609,14 +588,12 @@ export async function registerRemoteToolsStrict(
       }),
     )
     disposers.push(bindMcpResourceServer(cfg.id, conn, cfg))
-    for (const definition of [...definitions, ...resourceTools, ...aliases])
+    for (const definition of [...definitions, ...resourceTools])
       disposers.push(agnes.registerTool(definition))
     // `tool_search` discovers only tools omitted from the default disclosure. Eager MCP tools
     // are already offered directly in every request and must not be duplicated in that index.
-    // Compatibility aliases share execute with the stable name and stay out of this index.
     if (cfg.defer) opts.onCatalog?.(catalog)
-    for (const definition of [...definitions, ...resourceTools, ...aliases])
-      opts.claimedNames?.add(definition.name)
+    for (const definition of [...definitions, ...resourceTools]) opts.claimedNames?.add(definition.name)
   } catch (error) {
     for (const dispose of disposers.reverse()) dispose()
     if (opts.ownsConnection !== false) await conn.close().catch(() => undefined)

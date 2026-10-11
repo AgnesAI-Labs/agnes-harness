@@ -1,11 +1,11 @@
 import { createServer } from 'node:http'
-import { mcpLocalToolPrefix } from '@agnes/base'
+import { mcpStablePrefix } from '@agnes/base'
 
 type ProviderMessage = { role: string; content?: unknown }
 
 // The prefix is register.ts's tool naming for the 'pager' fixture server, computed via the shared
 // function rather than hardcoded (design 2026-09-23-mcp-tool-name-collision-design.md §0.4).
-const PAGER_TOOL120 = `${mcpLocalToolPrefix('pager')}tool120`
+const PAGER_TOOL120 = `${mcpStablePrefix('pager')}tool120`
 
 export function latestMcpCase(messages: ProviderMessage[]) {
   let lastUserIndex = -1

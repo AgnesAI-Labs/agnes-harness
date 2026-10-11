@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MAX_READ_BYTES, readTool } from '../../extensions/tools-core/src/tools/read.js'
 import { grepTool } from '../../extensions/tools-search/src/tools/grep.js'
 import { connectMcp, MAX_MCP_REDIRECTS, type McpSdkDeps } from '../../src/mcp/connect.js'
-import { mcpLegacyToolName, mcpPublicToolName } from '../../src/mcp/naming.js'
+import { mcpPublicToolName } from '../../src/mcp/naming.js'
 import {
   inspectRemoteCatalog,
   MAX_MCP_REMOTE_CONTENT_BLOCKS,
@@ -138,26 +138,14 @@ function hostileMessageError() {
 
 const stdio = { id: 'gh', transport: 'stdio' as const, cmd: ['gh-mcp'], defer: true }
 
-/** Public names in catalog order, then legacy aliases that differ. Mirrors the registrar. */
+/** The one registered name per remote tool, in catalog order. */
 function admittedNames(serverId: string, remoteNames: readonly string[]): string[] {
   const reserved = new Set<string>()
-  const names: string[] = []
-  const aliases: string[] = []
-  for (const remote of remoteNames) {
+  return remoteNames.map((remote) => {
     const name = mcpPublicToolName(serverId, remote, reserved)
     reserved.add(name)
-    names.push(name)
-    try {
-      const legacy = mcpLegacyToolName(serverId, remote)
-      if (legacy !== name && !reserved.has(legacy)) {
-        reserved.add(legacy)
-        aliases.push(legacy)
-      }
-    } catch {
-      // A legacy name that cannot be formed is omitted, matching registration.
-    }
-  }
-  return [...names, ...aliases]
+    return name
+  })
 }
 
 describe('registerRemoteToolsStrict', () => {
@@ -328,7 +316,7 @@ describe('registerRemoteToolsStrict', () => {
 
   it('does not reject a long server id that used to leave no room for any remote tool name', async () => {
     // The old sanitizer had no length cap of its own (unlike slugOf's 40-character cap, reused here
-    // via mcpLocalToolPrefix): a long enough serverId made `prefix.length >= 64` true for every one of
+    // via mcpStablePrefix): a long enough serverId made `prefix.length >= 64` true for every one of
     // that server's tools, so the whole server would fail to register no matter what its remote tools
     // were named.
     const longId = `server-${'x'.repeat(80)}`

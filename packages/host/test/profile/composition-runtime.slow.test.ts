@@ -3,13 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
-import {
-  bindMcpResourceServer,
-  type McpConnection,
-  mcpLocalToolPrefix,
-  mcpPublicToolName,
-  skillResourceIdAt,
-} from '@agnes/base'
+import { bindMcpResourceServer, type McpConnection, mcpPublicToolName, skillResourceIdAt } from '@agnes/base'
 import { ToolRegistry } from '@agnes/core'
 import { defineTool } from '@agnes/extension-api'
 import { parsePackageBundles } from '@agnes/host-common/profile/composition'
@@ -589,7 +583,7 @@ it('filters registered MCP identities without confusing slug collisions or long 
   const registry = new ToolRegistry()
   const ids = ['a.b', 'a_b', 'My.Server--2', '...', 'long-'.repeat(30)]
   for (const id of ids)
-    for (const name of [mcpLocalToolPrefix(id) + 'read', mcpPublicToolName(id, 'read')])
+    for (const name of [mcpPublicToolName(id, 'read')])
       registry.add(
         defineTool({
           name,
@@ -611,14 +605,13 @@ it('filters registered MCP identities without confusing slug collisions or long 
       )
   for (const id of ids) {
     const tools = compositionTools(registry, { mcp: ['mcp/' + id] })
-    const name = mcpLocalToolPrefix(id) + 'read'
-    const names = [name, mcpPublicToolName(id, 'read')]
+    const name = mcpPublicToolName(id, 'read')
+    const names = [name]
     expect(tools.list().map((tool) => tool.name)).toEqual(names)
-    expect(tools.size).toBe(2)
-    expect(tools.resolve(names[1]!)).toBeDefined()
+    expect(tools.size).toBe(1)
     expect(tools.resolve(name)).toBeDefined()
     expect(tools.snapshot(0).defs.map((tool) => tool.name)).toEqual([...names].sort())
-    expect(tools.resolve(mcpLocalToolPrefix(ids.find((other) => other !== id)!) + 'read')).toBeUndefined()
+    expect(tools.resolve(mcpPublicToolName(ids.find((other) => other !== id)!, 'read'))).toBeUndefined()
   }
   const tree = {
     profile: 'local-dev',
@@ -645,10 +638,10 @@ it('filters registered MCP identities without confusing slug collisions or long 
         packageId: 'fixture',
         reason: 'official-default',
         bundles: [],
-        tools: [mcpLocalToolPrefix(id) + 'read', mcpPublicToolName(id, 'read')].sort(),
+        tools: [mcpPublicToolName(id, 'read')],
       },
     ])
-  expect(registry.size).toBe(ids.length * 2)
+  expect(registry.size).toBe(ids.length)
 })
 
 it('retains a legacy session deployment when bundles are configured after its first boot', async () => {

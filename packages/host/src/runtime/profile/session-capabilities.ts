@@ -6,7 +6,7 @@ import {
   type ToolRegistry,
 } from '@agnes/core'
 import type { ChildAgentAllowlist } from '@agnes/extension-api'
-import { mcpLocalToolPrefix, mcpStablePrefix } from '@agnes/extension-api/mcp-naming'
+import { mcpStablePrefix } from '@agnes/extension-api/mcp-naming'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { toPresetView } from '@agnes/host-common/presets/view'
 import {
@@ -146,10 +146,7 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
       }
     return actual
   }
-  const mcpPrefixes = (selection.mcp ?? []).flatMap((id) => {
-    const server = id.replace(/^mcp\//, '')
-    return [mcpLocalToolPrefix(server), mcpStablePrefix(server)]
-  })
+  const mcpPrefixes = (selection.mcp ?? []).map((id) => mcpStablePrefix(id.replace(/^mcp\//, '')))
   const tools = (input.installed?.tools ?? []).map((tool) =>
     decision(tool.name, [
       [packageEnabled(tool.packageId), 'package-enabled', source('packages')],

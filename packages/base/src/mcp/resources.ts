@@ -2,7 +2,7 @@ import { defineTool, type ToolDef, type ToolResult } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
 import { guardOutput, refBlock } from '../../extensions/tools-core/src/guards/output.js'
 import { type McpServerConfig, mcpErrorText, redactMcpSecrets } from './config.js'
-import { mcpLocalToolPrefix } from './naming.js'
+import { mcpPublicToolName } from './naming.js'
 import type {
   McpConnection,
   McpRemoteResource,
@@ -11,8 +11,7 @@ import type {
 } from './register.js'
 
 /**
- * Suffixes after `mcpLocalToolPrefix`. They stay inside the 64-character tool-name contract even
- * when the server id slugs to the 40-character maximum (prefix length 54).
+ * Resource bridge suffixes use the same stable naming and 64-character limit as remote tools.
  */
 export const MCP_RESOURCE_LIST_SUFFIX = 'res_list'
 export const MCP_RESOURCE_TEMPLATES_SUFFIX = 'res_tpls'
@@ -43,7 +42,7 @@ const readOnlyMeta = (defer: boolean) =>
   })
 
 export function mcpResourceToolName(serverId: string, suffix: McpResourceToolSuffix): string {
-  const name = `${mcpLocalToolPrefix(serverId)}${suffix}`
+  const name = mcpPublicToolName(serverId, suffix)
   if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name))
     throw new Error(`MCP resource tool name exceeds the tool name contract: ${name}`)
   return name

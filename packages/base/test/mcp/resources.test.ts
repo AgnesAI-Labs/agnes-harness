@@ -98,10 +98,7 @@ describe('MCP resource tools', () => {
   it('adds no resource tools unless the server advertises resources', async () => {
     const { api, tools } = apiOf()
     await registerRemoteToolsStrict(api, connection({ supportsResources: false }), cfg)
-    expect(tools.map((tool) => tool.name)).toEqual([
-      mcpPublicToolName('docs', 'echo'),
-      expect.stringMatching(/_echo$/),
-    ])
+    expect(tools.map((tool) => tool.name)).toEqual([mcpPublicToolName('docs', 'echo')])
   })
 
   it('registers list, template, and read tools and omits only a conflicting name', async () => {
@@ -124,7 +121,6 @@ describe('MCP resource tools', () => {
       mcpPublicToolName('docs', 'res_list'),
       names.templates,
       names.read,
-      names.list,
     ])
     expect(tools.find((tool) => tool.name === names.list)?.description).toBe('remote owns this name')
     expect(warn.calls).toEqual(['MCP resource tool name conflicts with a registered tool'])
