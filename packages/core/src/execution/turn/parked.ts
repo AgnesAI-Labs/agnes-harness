@@ -65,9 +65,14 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
     const call = s.state.toolCalls.get(toolUseId)
     if (!call || call.lane !== s.lane) throw new CoreError('E_RELATION', 'DECISION_CALL_MISSING')
     if (
-      (await s.d.log.scan({ type: 'tool/result', lane: s.lane, fromSeq: call.seq, toSeq: s.lastSeq })).some(
-        (row) => (row.data as { toolUseId?: string }).toolUseId === toolUseId,
-      )
+      (
+        await scanAll((query) => s.d.log.scan(query), {
+          type: 'tool/result',
+          lane: s.lane,
+          fromSeq: call.seq,
+          toSeq: s.lastSeq,
+        })
+      ).some((row) => (row.data as { toolUseId?: string }).toolUseId === toolUseId)
     )
       continue
     if (value.request.requestedBy.id !== s.d.actor.id || value.request.requestedBy.org !== s.d.actor.org)
