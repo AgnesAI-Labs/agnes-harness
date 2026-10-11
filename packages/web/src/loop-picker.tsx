@@ -286,14 +286,14 @@ export function LoopPicker() {
         hidden={!advancedAvailable}
         disabled={state.disabled}
         aria-expanded={open}
-        aria-label={tr('composer.agent.title')}
+        aria-label={tr(state.loops.length >= 2 ? 'composer.agent.title' : 'composer.agent.more')}
         aria-describedby={stale || state.error ? 'new-session-loop-error' : undefined}
       >
-        <span>{tr(state.loops.length >= 2 ? 'composer.agent.chip' : 'composer.agent.more')}</span>
+        <span hidden={state.loops.length < 2}>{tr('composer.agent.chip')}</span>
         <span className="agent-chip-value" hidden={state.loops.length < 2}>
           {active ? choiceName(active, tr) : tr('composer.agent.unresolved')}
         </span>
-        <Icon name="chevron-down" className="model-chevron" />
+        <Icon name={state.loops.length >= 2 ? 'chevron-down' : 'ellipsis'} className="model-chevron" />
       </Button>
     </Popover>
   )

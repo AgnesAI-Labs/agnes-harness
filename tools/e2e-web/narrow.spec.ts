@@ -246,7 +246,11 @@ for (const locale of ['en', 'zh-CN'])
           await page.setViewportSize(viewport)
           await usable(page, info, `home-${viewport.width}`)
           await capture('home', viewport.width)
-          await expect(page.getByTestId('composer-agent')).toBeHidden()
+          await expect(page.getByTestId('composer-agent')).toBeEnabled()
+          await expect(page.getByTestId('composer-agent')).toHaveAttribute(
+            'aria-label',
+            locale === 'en' ? 'More' : '更多',
+          )
           await page.locator('#composer-permission').click()
           await expect(page.locator('#permission-picker-popover')).toBeVisible()
           await usable(page, info, `composer-chips-${viewport.width}`)

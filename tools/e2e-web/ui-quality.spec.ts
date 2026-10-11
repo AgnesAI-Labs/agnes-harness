@@ -99,7 +99,11 @@ for (const locale of ['zh-CN', 'en'])
         }
         await screen('home-empty')
         await expect(page.getByTestId('goal-bar')).toBeHidden()
-        await expect(page.getByTestId('composer-agent')).toBeHidden()
+        await expect(page.getByTestId('composer-agent')).toBeEnabled()
+        await expect(page.getByTestId('composer-agent')).toHaveAttribute(
+          'aria-label',
+          locale === 'en' ? 'More' : '更多',
+        )
         await page.locator('#composer-permission').click()
         await screen('agent-options')
         await page.keyboard.press('Escape')

@@ -83,7 +83,11 @@ for (const locale of ['en', 'zh-CN'])
       await expect(page.locator('#empty-state')).toBeVisible()
       await draft.fill('')
       await quality('new-session', true)
-      await expect(page.getByTestId('composer-agent')).toBeHidden()
+      await expect(page.getByTestId('composer-agent')).toBeEnabled()
+      await expect(page.getByTestId('composer-agent')).toHaveAttribute(
+        'aria-label',
+        locale === 'en' ? 'More' : '更多',
+      )
       await page.locator('#composer-permission').click()
       await expect(page.locator('#permission-picker-popover')).toBeVisible()
       await quality('agent-options', true)
