@@ -13,7 +13,7 @@ import {
 } from '@agnes/package-manager'
 import { defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { createPluginRow } from '@agnes/plugin-runtime/host'
-import type { InferenceEvent, UiSurface } from '@agnes/protocol'
+import type { InferenceEvent, JsonValue, UiSurface } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { expect, it } from 'vitest'
 import { createTestHost } from '../testkit/index.js'
@@ -27,7 +27,7 @@ const surface = (revision: number): UiSurface => ({
   components: [{ id: 'status', kind: 'status', dataKey: 'status' }],
   actions: [],
 })
-const call = (name: string, args: Record<string, unknown>): InferenceEvent[] => [
+const call = (name: string, args: Record<string, JsonValue>): InferenceEvent[] => [
   { type: 'toolcall_end', via: 'native', call: { toolUseId: '', name, args, ordinal: 0 } },
   { type: 'done', reason: 'toolUse' },
 ]
@@ -245,7 +245,7 @@ it('updates revision 2 through custom Loop tool ports after approval in one turn
     approve = resolve
   })
   const codec = loopCheckpointCodec(1, (value) => value)
-  const loop = defineLoop({
+  const loop: import('@agnes/extension-api').LoopFactory = defineLoop({
     id: 'fixture.review',
     version: '1.0.0',
     capabilities: ['tools'],

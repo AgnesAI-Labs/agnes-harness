@@ -10,7 +10,7 @@ const controls = vi.hoisted(() => ({
 vi.mock('../../src/intelligent-ui/client.js', () => ({
   IntelligentUiClient: class {
     snapshot = { ready: false, surfaces: [] as UiSurfaceRecord[] }
-    listener?: () => void
+    listener: (() => void) | undefined
     constructor(readonly sessionId: string) {
       controls.clients.push(this)
     }
