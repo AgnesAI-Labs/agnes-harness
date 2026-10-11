@@ -123,6 +123,7 @@ headers 准备需要网络和包含 npm 的 Node 安装。升级 Node 后应重�
 
 ```sh
 export AGH_HOME="$(mktemp -d /tmp/agh-docs.XXXXXX)"
+export AGH_HOME="$(cd "$AGH_HOME" && pwd -P)"
 export AGNES_PROFILE=local-dev
 node agnes.mjs daemon status
 node agnes.mjs serve

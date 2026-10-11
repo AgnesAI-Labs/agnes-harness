@@ -8,11 +8,17 @@ Use Node.js 24.10 or later and an AGH source installation following [installatio
 
 ## 1. Create directly in the plugins folder
 
-Run these commands from the workspace where you will start the daemon. For the source preview, run the scaffolder from the AGH checkout:
+Use the absolute path of your built source checkout. Run the commands below in a separate workspace and keep the same `AGH_SOURCE`, `AGH_HOME`, `AGNES_PROFILE` and workspace in subsequent terminals; you can also use an existing workspace. `pwd -P` avoids home safety checks rejecting parent-directory symlinks such as macOS `/tmp`.
 
 ```sh
+export AGH_SOURCE="/absolute/path/to/agnes-harness"
+export AGH_HOME="$(mktemp -d /tmp/agh-author.XXXXXX)"
+export AGH_HOME="$(cd "$AGH_HOME" && pwd -P)"
+export AGNES_PROFILE=local-dev
+AGH_WORKSPACE="$(mktemp -d /tmp/agh-workspace.XXXXXX)"
+cd "$AGH_WORKSPACE"
 mkdir -p .agh/plugins
-node templates/create-agh-plugin.mjs tool hello-tool .agh/plugins/hello-tool --local
+node "$AGH_SOURCE/templates/create-agh-plugin.mjs" tool hello-tool .agh/plugins/hello-tool --local
 ```
 
 The package exports `./src/index.ts`. AGH transpiles it with jiti and provides the public author SDK imports, including TypeBox. You can also place it in `$AGH_HOME/plugins/hello-tool`; use the same configured home in every terminal. Local folders opt into trusted execution, so put only code you intend to run there.
@@ -22,16 +28,16 @@ The tool starter declares `agnes.kinds: ["tool"]` and `agnes.capabilities: {}` s
 ## 2. Start AGH and open a new session
 
 ```sh
-AGNES_PROFILE=local-dev agh web
+node "$AGH_SOURCE/agnes.mjs" web
 ```
 
-For a source checkout without an `agh` command, use `node agnes.mjs` in its place, after the installation guide's one-time runtime build.
+This guide uses the source entry. An installed `agh` command can replace `node "$AGH_SOURCE/agnes.mjs"`. If the Web port is busy, choose a free one with `--port 4198`.
 
 Leave the daemon running. In another terminal with the same workspace, profile and home:
 
 ```sh
-AGNES_PROFILE=local-dev agh tools
-AGNES_PROFILE=local-dev agh --new -p 'call plugin_hello_tool'
+node "$AGH_SOURCE/agnes.mjs" tools
+node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool'
 ```
 
 CLI and daemon boot select a teaching fallback only for a fresh local-dev installation without a saved profile or explicit provider configuration: route `demo`, model `demo-model`. The labeled, deterministic adapter calls a named available tool with schema-derived example arguments, then reports its real result. You can provide explicit arguments, for example `call plugin_hello_tool {"message":"hello"}`. Unsupported schemas produce a helpful refusal. Check `/admin/plugins` or `agh package status` for hello-tool activation. Configure a real model for reasoning.
@@ -47,8 +53,8 @@ Edit `src/index.ts`. Keep `ctx.signal.throwIfAborted()` and pass its signal into
 The running daemon discovers new local folders and watches edits. Ordinary plugin changes activate a new generation without restart. Check `/admin/plugins` for activation errors, or request an immediate reload:
 
 ```sh
-agh dev .agh/plugins/hello-tool --profile local-dev
-agh plugins reload hello-tool --profile local-dev
+node "$AGH_SOURCE/agnes.mjs" dev .agh/plugins/hello-tool --profile local-dev
+node "$AGH_SOURCE/agnes.mjs" plugins reload hello-tool --profile local-dev
 ```
 
 After activation, create a new session in Web or use `agh --new -p` to use it. Client panels publish updated assets with that generation. Existing sessions, including the CLI session reused in the same workspace, keep their pinned generation. Storage, sandbox and other process backends still require restart. See [hot reload](hot-reload.md) and [local plugins](local-plugins.md).
@@ -58,10 +64,12 @@ After activation, create a new session in Web or use `agh --new -p` to use it. C
 To compile a starter or run its author tests, build the preview SDK declarations once from the checkout, then link them locally. The preview Agnes SDK packages are not on npm; no registry install is needed:
 
 ```sh
+AGH_PLUGIN="$PWD/.agh/plugins/hello-tool"
+cd "$AGH_SOURCE"
 nice -n 10 pnpm exec tsc -b packages/plugin-runtime packages/protocol packages/resource-control-runtime
-node templates/link-local.mjs .agh/plugins/hello-tool
-npm --prefix .agh/plugins/hello-tool run build
-npm --prefix .agh/plugins/hello-tool test
+node templates/link-local.mjs "$AGH_PLUGIN"
+npm --prefix "$AGH_PLUGIN" run build
+npm --prefix "$AGH_PLUGIN" test
 ```
 
 The linker is safe to repeat. The model-adapter starter uses public contract fixtures and does not require an `@agnes/ai` build. For a compiled installable package, scaffold without `--local`, build it, then follow [plugin management](../guide/packages.md). For a sidebar use `tool-with-panel`; for an independent agent loop use `loop`.
@@ -87,3 +95,13 @@ This optional field maps exact public module specifiers to compatible versions. 
 The supplied modules are `@agnes/plugin-runtime` (author exports), `@agnes/extension-api`, `@agnes/protocol`, `@agnes/observability/contract`, `@agnes/intelligent-ui-contract`, `@agnes/git-worktree-contract`, `@agnes/plugin-runtime/deferred-contract`, `@agnes/cordis`, `@sinclair/typebox`, `@sinclair/typebox/value` and `@sinclair/typebox/compiler`. Host internals and testkit subpaths are not supplied. Installed snapshots and local plugins share these namespaces. Import kind tokens from these contract paths so loader reloads retain their identity.
 
 Bundle other dependencies for distribution, or supply them in the package's own declared dependency tree. Local discovery does not install dependencies, and source snapshots omit `node_modules`; merely running npm install before copying a plugin is insufficient. Missing-module errors name the dependency and suggest bundling/installing it; version errors suggest a compatible SDK range or AGH upgrade.
+
+## Clean up the trial
+
+When finished, stop the daemon and the terminal running `web`, then remove only the temporary directories you created.
+
+```sh
+node "$AGH_SOURCE/agnes.mjs" daemon stop
+# Press Ctrl-C in the web terminal.
+rm -rf "$AGH_HOME" "$AGH_WORKSPACE"
+```

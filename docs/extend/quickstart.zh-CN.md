@@ -8,11 +8,17 @@
 
 ## 1. 直接创建到插件目录
 
-在将要启动 daemon 的工作区执行。源码预览的脚手架命令从 AGH 仓库运行：
+使用已构建的源码 checkout 的绝对路径。下面命令在独立工作区执行，后续终端沿用相同的 `AGH_SOURCE`、`AGH_HOME`、`AGNES_PROFILE` 和工作区；长期使用也可换成已有工作区。`pwd -P` 避免 macOS `/tmp` 等父目录符号链接被 home 安全检查拒绝。
 
 ```sh
+export AGH_SOURCE="/absolute/path/to/agnes-harness"
+export AGH_HOME="$(mktemp -d /tmp/agh-author.XXXXXX)"
+export AGH_HOME="$(cd "$AGH_HOME" && pwd -P)"
+export AGNES_PROFILE=local-dev
+AGH_WORKSPACE="$(mktemp -d /tmp/agh-workspace.XXXXXX)"
+cd "$AGH_WORKSPACE"
 mkdir -p .agh/plugins
-node templates/create-agh-plugin.mjs tool hello-tool .agh/plugins/hello-tool --local
+node "$AGH_SOURCE/templates/create-agh-plugin.mjs" tool hello-tool .agh/plugins/hello-tool --local
 ```
 
 包入口是 `./src/index.ts`。AGH 用 jiti 按需转译，并提供公共作者 SDK 和 TypeBox。也可以放到 `$AGH_HOME/plugins/hello-tool`，每个终端使用同一个配置 home。本地目录意味着选择信任并执行其中代码，只放你愿意运行的插件。
@@ -22,16 +28,16 @@ node templates/create-agh-plugin.mjs tool hello-tool .agh/plugins/hello-tool --l
 ## 2. 启动并打开新会话
 
 ```sh
-AGNES_PROFILE=local-dev agh web
+node "$AGH_SOURCE/agnes.mjs" web
 ```
 
-源码环境尚无 `agh` 命令时，按安装指南完成一次运行时构建，用 `node agnes.mjs` 替代它。
+本文使用源码入口；有已安装的 `agh` 命令时可以替代 `node "$AGH_SOURCE/agnes.mjs"`。端口占用时加 `--port 4198` 选择空闲端口。
 
 保持 daemon 运行，在另一个使用相同工作区、profile 和 home 的终端执行：
 
 ```sh
-AGNES_PROFILE=local-dev agh tools
-AGNES_PROFILE=local-dev agh --new -p 'call plugin_hello_tool'
+node "$AGH_SOURCE/agnes.mjs" tools
+node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool'
 ```
 
 CLI 和 daemon 仅在没有已保存 profile 或显式 provider 配置的全新 local-dev 安装中选择教学回退 route `demo`、model `demo-model`。它是确定性的免联网教学模型：点名可用工具后，按 schema 生成示例参数并调用，再展示真实结果。也可直接提交 `call plugin_hello_tool {"message":"hello"}`。无法构造合法参数时会提示修正；在 `/admin/plugins` 或 `agh package status` 检查 hello-tool 的启用状态；推理任务请配置真实模型。
@@ -47,8 +53,8 @@ Web 中新建会话，选择 **Demo (local tool-aware, no API key)**，提交 `c
 运行中的 daemon 会发现新本地目录并监听修改；普通插件改动无需重启，会激活新代际。在 `/admin/plugins` 检查启用错误，也可立即请求重载：
 
 ```sh
-agh dev .agh/plugins/hello-tool --profile local-dev
-agh plugins reload hello-tool --profile local-dev
+node "$AGH_SOURCE/agnes.mjs" dev .agh/plugins/hello-tool --profile local-dev
+node "$AGH_SOURCE/agnes.mjs" plugins reload hello-tool --profile local-dev
 ```
 
 激活后在 Web 创建新会话或使用 `agh --new -p`，客户端面板资源随新代际更新。已有会话（包括同一工作区中复用的 CLI 会话）仍保持原代际。存储、沙箱等进程后端仍需重启。详见[热重载](hot-reload.zh-CN.md)与[本地插件](local-plugins.zh-CN.md)。
@@ -58,10 +64,12 @@ agh plugins reload hello-tool --profile local-dev
 需要编译或运行作者测试时，在仓库内构建一次预览 SDK 声明，再本地链接。预览 Agnes SDK 尚未发布到 npm，无需从注册表安装：
 
 ```sh
+AGH_PLUGIN="$PWD/.agh/plugins/hello-tool"
+cd "$AGH_SOURCE"
 nice -n 10 pnpm exec tsc -b packages/plugin-runtime packages/protocol packages/resource-control-runtime
-node templates/link-local.mjs .agh/plugins/hello-tool
-npm --prefix .agh/plugins/hello-tool run build
-npm --prefix .agh/plugins/hello-tool test
+node templates/link-local.mjs "$AGH_PLUGIN"
+npm --prefix "$AGH_PLUGIN" run build
+npm --prefix "$AGH_PLUGIN" test
 ```
 
 linker 可重复执行。model-adapter 模板使用公共合同测试数据，不再要求构建 `@agnes/ai`。需要安装编译包时，不带 `--local` 创建、构建后按[插件管理](../guide/packages.zh-CN.md)安装。侧栏选 `tool-with-panel`，独立循环选 `loop`。
@@ -87,3 +95,13 @@ linker 可重复执行。model-adapter 模板使用公共合同测试数据，�
 Host 提供 `@agnes/plugin-runtime` 作者导出、`@agnes/extension-api`、`@agnes/protocol`、`@agnes/observability/contract`、`@agnes/intelligent-ui-contract`、`@agnes/git-worktree-contract`、`@agnes/plugin-runtime/deferred-contract`、`@agnes/cordis`、`@sinclair/typebox` 及其 `/value`、`/compiler` 子路径，不提供 Host 内部或 testkit。安装快照和本地插件共用这些公共命名空间。请从这些合同路径导入 kind token，保持 loader 重载前后的身份一致。
 
 其他依赖由作者打包，或放入包自身声明的依赖树。本地发现不安装依赖，源码快照省略 `node_modules`，所以复制插件前执行 npm install 不足以分发它。缺模块错误指出依赖并建议打包／安装；版本错误提示调整 SDK 范围或升级 AGH。
+
+## 清理试用环境
+
+结束后停止 daemon 和运行 `web` 的终端，再删除自己创建的临时目录。
+
+```sh
+node "$AGH_SOURCE/agnes.mjs" daemon stop
+# 在 web 终端按 Ctrl-C。
+rm -rf "$AGH_HOME" "$AGH_WORKSPACE"
+```

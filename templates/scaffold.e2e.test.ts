@@ -68,12 +68,17 @@ describe('plugin scaffolder', () => {
     }
   })
 
-  it.each(['tool', 'loop', 'model-adapter'])(
-    'builds and runs a %s template outside the workspace through package exports',
-    async (kind) => {
+  it.each(
+    ['tool', 'loop', 'model-adapter'].flatMap((kind) => [
+      { kind, local: false },
+      { kind, local: true },
+    ]),
+  )(
+    'runs a $kind template outside the workspace (local=$local)',
+    async ({ kind, local }) => {
       const temp = await mkdtemp(join(tmpdir(), 'agh-template-build-'))
       try {
-        const target = await scaffold(kind, '@acme/hello', join(temp, 'plugin'))
+        const target = await scaffold(kind, '@acme/hello', join(temp, 'plugin'), { local })
         await linkLocal(target)
         await linkLocal(target) // repeating a partial/completed link is supported
         const run = (script: string) => {
@@ -95,7 +100,7 @@ describe('plugin scaffolder', () => {
             throw new Error(`${output.stdout ?? ''}\n${output.stderr ?? ''}`, { cause: error })
           }
         }
-        expect(run('build')).toContain('tsc')
+        if (!local) expect(run('build')).toContain('tsc')
         expect(run('test')).toContain('pass 1')
       } finally {
         await rm(temp, { recursive: true, force: true })

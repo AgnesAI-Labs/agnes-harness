@@ -133,6 +133,7 @@ Use a separate absolute path for documentation experiments so you do not connect
 
 ```sh
 export AGH_HOME="$(mktemp -d /tmp/agh-docs.XXXXXX)"
+export AGH_HOME="$(cd "$AGH_HOME" && pwd -P)"
 export AGNES_PROFILE=local-dev
 node agnes.mjs daemon status
 node agnes.mjs serve

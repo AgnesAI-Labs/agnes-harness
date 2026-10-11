@@ -81,6 +81,15 @@ The linker is safe to repeat and uses the checkout's dependencies and built decl
       metadata.exports = './src/index.ts'
       metadata.files = ['src', ...metadata.files.filter((name) => name !== 'dist')]
       await writeFile(file, JSON.stringify(metadata, null, 2) + '\n')
+      // Source starters must also test the source entry before a dist build exists.
+      for (const entry of await readdir(join(target, 'test'))) {
+        if (!entry.endsWith('.test.mjs')) continue
+        const test = join(target, 'test', entry)
+        await writeFile(
+          test,
+          (await readFile(test, 'utf8')).replaceAll('../dist/index.js', '../src/index.ts'),
+        )
+      }
     }
   } catch (error) {
     await rm(target, { recursive: true, force: true })
