@@ -115,9 +115,7 @@ describe('skin region hooks', () => {
     // The guide's table is the contract a skin author reads; it must list exactly the regions this
     // file pins. Several workbench regions are component-rendered, so the table is compared against
     // the EXPECTED contract rather than the static markup.
-    const packageRoot = process.cwd().endsWith('/packages/web')
-      ? process.cwd()
-      : resolve(process.cwd(), 'packages/web')
+    const packageRoot = resolve(import.meta.dirname, '..')
     const doc = readFileSync(resolve(packageRoot, '../../docs/develop', docName), 'utf8')
     const listed = new Set([...doc.matchAll(/^\| `([a-z-]+)` \|/gm)].map((match) => match[1] as string))
     const contracted = new Set<string>()
@@ -238,7 +236,9 @@ function assertNoIdSurfaceProperties(css: string, samples: readonly PageRoot[]):
 }
 
 describe('skin region surface invariant (R1)', () => {
-  const css = readWebStyleSource(resolve(process.cwd(), 'packages/web/public/style.css'))
+  const css = readWebStyleSource(
+    resolve(resolve(import.meta.dirname, '../../..'), 'packages/web/public/style.css'),
+  )
   let runtime: Awaited<ReturnType<typeof mountRenderedIndex>> | undefined
   let samples: PageRoot[]
 

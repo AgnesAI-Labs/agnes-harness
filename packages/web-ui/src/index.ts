@@ -84,8 +84,8 @@ export {
   SettingsList,
   SettingsPage,
   SettingsPageHeader,
-  SettingsSaveBar,
   SettingsRow,
+  SettingsSaveBar,
   SettingsSelect,
   SettingsState,
   SettingsTextArea,
@@ -101,9 +101,17 @@ export {
 } from './settings-option-select.js'
 export { terminalKey, terminalScreen } from './terminal-screen.js'
 export { Badge } from './ui/badge.js'
+export { Banner, type BannerProps } from './ui/banner.js'
 export { Button, type ButtonProps } from './ui/button.js'
 export { Dialog, type DialogProps } from './ui/dialog.js'
+export { Drawer, type DrawerProps } from './ui/drawer.js'
+export { EmptyState, type EmptyStateProps } from './ui/empty-state.js'
 export { Field, type FieldProps } from './ui/field.js'
+export { Icon, type IconProps } from './ui/icon.js'
+export { IconButton, type IconButtonProps } from './ui/icon-button.js'
+export { type IconName, icons } from './ui/icons.js'
+export { ListRow, type ListRowProps } from './ui/list-row.js'
+export { Menu, type MenuItem, type MenuProps } from './ui/menu.js'
 export { Popover } from './ui/popover.js'
 export { Select, type SelectProps } from './ui/select.js'
 export {
@@ -115,17 +123,7 @@ export {
 } from './ui/state-lights.js'
 export { Switch, type SwitchProps } from './ui/switch.js'
 export { Tabs, type TabsProps } from './ui/tabs.js'
-export * from './ui-locale.js'
-
-export { Tag, MetaText, Count, type TagProps, type TagTone } from './ui/tag.js'
-export { Menu, type MenuItem, type MenuProps } from './ui/menu.js'
-export { Tooltip, type TooltipProps } from './ui/tooltip.js'
+export { Count, MetaText, Tag, type TagProps, type TagTone } from './ui/tag.js'
 export { Toast, type ToastProps } from './ui/toast.js'
-export { Icon, type IconProps } from './ui/icon.js'
-export { IconButton, type IconButtonProps } from './ui/icon-button.js'
-export { icons, type IconName } from './ui/icons.js'
-
-export { EmptyState, type EmptyStateProps } from './ui/empty-state.js'
-export { Banner, type BannerProps } from './ui/banner.js'
-export { ListRow, type ListRowProps } from './ui/list-row.js'
-export { Drawer, type DrawerProps } from './ui/drawer.js'
+export { Tooltip, type TooltipProps } from './ui/tooltip.js'
+export * from './ui-locale.js'

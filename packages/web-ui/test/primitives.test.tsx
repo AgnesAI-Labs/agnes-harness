@@ -83,7 +83,7 @@ it('moves through enabled menu actions, typeahead and danger-last grouping; rest
     'Copy',
     'Delete',
   ])
-  expect(menu.querySelectorAll('[role="separator"]')).toHaveLength(1)
+  expect(menu.querySelectorAll('hr')).toHaveLength(1)
   key(document.activeElement!, 'ArrowDown')
   expect(document.activeElement?.textContent).toBe('Copy')
   key(document.activeElement!, 'd')
@@ -104,7 +104,7 @@ it('explains a disabled action immediately on keyboard focus', async () => {
     createElement(
       Tooltip,
       { title: 'Finish the review first', disabled: true },
-      createElement('button', { disabled: true }, 'Install'),
+      createElement('button', { type: 'button', disabled: true }, 'Install'),
     ),
   )
   host.querySelector<HTMLElement>('[tabindex="0"]')!.focus()

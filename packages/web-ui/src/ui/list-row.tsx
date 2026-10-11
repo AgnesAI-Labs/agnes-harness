@@ -24,6 +24,7 @@ export function ListRow({
   ...props
 }: ListRowProps) {
   return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the real title button owns keyboard activation; row key handlers would also activate trailing actions.
     <article
       {...props}
       className={['agh-list-row', className].filter(Boolean).join(' ')}

@@ -12,13 +12,13 @@ export function Toast({ open, onDismiss, duration = 3000, children, className, .
   useEffect(() => {
     if (!open) return
     const timer = setTimeout(() => dismiss.current(), duration)
-    const escape = (event: KeyboardEvent) => {
+    const onEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') dismiss.current()
     }
-    document.addEventListener('keydown', escape)
+    document.addEventListener('keydown', onEscape)
     return () => {
       clearTimeout(timer)
-      document.removeEventListener('keydown', escape)
+      document.removeEventListener('keydown', onEscape)
     }
   }, [open, duration])
   if (!open) return null

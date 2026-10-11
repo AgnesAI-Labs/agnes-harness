@@ -1,4 +1,4 @@
-import { useRef, type MouseEvent, type PointerEvent } from 'react'
+import { type MouseEvent, type PointerEvent, useRef } from 'react'
 import { fallbackT } from '../locales/index.js'
 
 /** Drag begins on the handle, leaving content scrolling and field gestures untouched. */

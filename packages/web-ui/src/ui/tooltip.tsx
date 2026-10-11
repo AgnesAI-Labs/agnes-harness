@@ -1,16 +1,17 @@
 import { Tooltip as AntTooltip, type TooltipProps as AntTooltipProps } from 'antd'
 import { cloneElement, type ReactElement, useId, useState } from 'react'
 
-export type TooltipProps = Omit<AntTooltipProps, 'children' | 'title' | 'open' | 'trigger'> & {
+export type TooltipProps = Omit<AntTooltipProps, 'children' | 'title' | 'open' | 'trigger' | 'disabled'> & {
   title: string
-  children: ReactElement<{ 'aria-describedby'?: string }>
+  children?: ReactElement<{ 'aria-describedby'?: string | undefined }>
   /** Disabled native controls need a keyboard-accessible explanation. */
-  disabled?: boolean
+  disabled?: boolean | undefined
 }
 /** Hover waits 500ms; focus reveals the explanation immediately. */
 export function Tooltip({ title, children, disabled = false, ...props }: TooltipProps) {
   const [open, setOpen] = useState(false)
   const id = useId()
+  if (!children) return null
   return (
     <AntTooltip
       {...props}
@@ -24,14 +25,14 @@ export function Tooltip({ title, children, disabled = false, ...props }: Tooltip
     >
       <span
         className="agh-tooltip-anchor"
+        role="group"
         tabIndex={disabled ? 0 : undefined}
         aria-label={disabled ? title : undefined}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        onKeyDown={(event) => {
+        onFocusCapture={() => setOpen(true)}
+        onBlurCapture={() => setOpen(false)}
+        onKeyDownCapture={(event) => {
           if (event.key === 'Escape' && open) {
-            event.preventDefault()
-            event.stopPropagation()
+            // Dismiss the hint without cancelling the surrounding modal's Escape behavior.
             setOpen(false)
           }
         }}

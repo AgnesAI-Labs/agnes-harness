@@ -1,9 +1,9 @@
-import { type HTMLAttributes, type ReactNode, useEffect, useId, useRef } from 'react'
+import { type DialogHTMLAttributes, type ReactNode, useEffect, useId, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { fallbackT } from '../locales/index.js'
 import { IconButton } from './icon-button.js'
 
-export type DrawerProps = Omit<HTMLAttributes<HTMLDialogElement>, 'title' | 'onClose'> & {
+export type DrawerProps = Omit<DialogHTMLAttributes<HTMLDialogElement>, 'title' | 'onClose'> & {
   open: boolean
   title: ReactNode
   description?: ReactNode
@@ -38,6 +38,7 @@ export function Drawer({
   }, [open])
   if (!open) return null
   return createPortal(
+    // biome-ignore lint/a11y/useKeyWithClickEvents: native dialog cancellation is the keyboard equivalent of backdrop dismissal.
     <dialog
       {...props}
       ref={dialog}

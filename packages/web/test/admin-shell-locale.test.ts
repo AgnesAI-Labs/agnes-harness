@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { resourceAdminShellLocaleCatalog } from '@agnes/resource-control-web/locale-shell'
 import {
   PLUGIN_ADMIN_LOCALE_NAMESPACE,
@@ -22,7 +22,10 @@ afterEach(() => {
 })
 
 it('translates the standalone admin shell during the blocking boot script', async () => {
-  const html = readFileSync(join(process.cwd(), 'packages/web/public/admin.html'), 'utf8')
+  const html = readFileSync(
+    join(resolve(import.meta.dirname, '../../..'), 'packages/web/public/admin.html'),
+    'utf8',
+  )
     .replace(/<link rel="stylesheet" href="\/(?:style|antd|tokens)\.css" \/>/g, '')
     .replace('<script type="module" src="/admin-standalone.js"></script>', '')
   document.body.remove()
@@ -41,7 +44,7 @@ it.each(['resources.html', 'index.html'])(
   'translates the MCP transports and confirmation in %s on the blocking boot path',
   async (page) => {
     document.documentElement.innerHTML = readFileSync(
-      join(process.cwd(), 'packages/web/public', page),
+      join(resolve(import.meta.dirname, '../../..'), 'packages/web/public', page),
       'utf8',
     )
       .replace(/<link rel="stylesheet" href="\/(?:style|antd|tokens)\.css" \/>/g, '')
@@ -63,7 +66,7 @@ it.each(['resources.html', 'index.html'])(
 
 it('updates the plugin admin static shell when the document locale changes', () => {
   document.documentElement.innerHTML = readFileSync(
-    join(process.cwd(), 'packages/web/public/admin.html'),
+    join(resolve(import.meta.dirname, '../../..'), 'packages/web/public/admin.html'),
     'utf8',
   )
     .replace(/<link rel="stylesheet" href="\/(?:style|antd|tokens)\.css" \/>/g, '')

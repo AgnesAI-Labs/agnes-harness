@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { expect, it } from 'vitest'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
@@ -9,7 +9,7 @@ import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
  * settings panes inside `index.html`. Both are static markup, so nothing but this test prevents the
  * two copies from drifting apart — and a drifted id means a silent `missing element` crash at mount.
  */
-const publicDir = join(process.cwd(), 'packages', 'web', 'public')
+const publicDir = join(resolve(import.meta.dirname, '../../..'), 'packages', 'web', 'public')
 const read = (name: string): string => readFileSync(join(publicDir, name), 'utf8')
 
 /** Ids the full page carries around the surface (shell and <body>), not part of the surface itself. */
@@ -102,7 +102,7 @@ it('the shared confirmation dialog exists in every host', () => {
 
 it('the Skill / MCP pane confirms through the shared dialog, not window.confirm', async () => {
   const source = readFileSync(
-    join(process.cwd(), 'packages', 'resource-control-web', 'src', 'admin.tsx'),
+    join(resolve(import.meta.dirname, '../../..'), 'packages', 'resource-control-web', 'src', 'admin.tsx'),
     'utf8',
   )
   expect(source).not.toContain('window.confirm')
@@ -111,7 +111,7 @@ it('the Skill / MCP pane confirms through the shared dialog, not window.confirm'
 
 it('keeps embedded resource Tab ownership in the workbench host', () => {
   const source = readFileSync(
-    join(process.cwd(), 'packages', 'resource-control-web', 'src', 'admin.tsx'),
+    join(resolve(import.meta.dirname, '../../..'), 'packages', 'resource-control-web', 'src', 'admin.tsx'),
     'utf8',
   )
   expect(source).toContain('embedded?: boolean')

@@ -12,7 +12,13 @@ export function Badge({
   className?: string
 }) {
   return (
-    <span className={['agnes-ui-badge', 'agh-tag', className].filter(Boolean).join(' ')} data-tone={tone}>
+    <span
+      className={['agnes-ui-badge', 'agh-tag', className].filter(Boolean).join(' ')}
+      data-tone={tone}
+      style={{
+        color: `var(${tone === 'ok' ? '--agnes-status-success-text' : tone === 'warn' ? '--agnes-status-warning-text' : tone === 'bad' ? '--agnes-status-danger-text' : '--agnes-text-secondary'})`,
+      }}
+    >
       {children}
     </span>
   )

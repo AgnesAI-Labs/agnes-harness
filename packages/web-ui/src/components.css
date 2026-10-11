@@ -214,11 +214,19 @@
 .agh-menu-item[data-danger] {
   color: var(--agnes-status-danger-text);
 }
+.agh-menu-item:hover:not([aria-disabled="true"]) {
+  background: var(--agnes-bg-hover);
+}
+.agh-menu-item:focus-visible {
+  outline: 2px solid var(--agnes-input-border-focus);
+  outline-offset: -2px;
+}
 .agh-menu-item[aria-disabled="true"] {
   color: var(--agnes-text-tertiary);
   cursor: not-allowed;
 }
 .agh-menu-separator {
+  border: 0;
   height: 1px;
   margin-block: var(--s4);
   background: var(--agnes-line-primary);
@@ -600,13 +608,13 @@
   }
 }
 
-:where(dialog)[data-size="sm"] {
+dialog[data-size="sm"] {
   width: min(420px, calc(100vw - var(--s32)));
 }
-:where(dialog)[data-size="md"] {
+dialog[data-size="md"] {
   width: min(560px, calc(100vw - var(--s32)));
 }
-:where(dialog)[data-size="lg"] {
+dialog[data-size="lg"] {
   width: min(720px, calc(100vw - var(--s32)));
 }
 @media (max-width: 767px) {
@@ -619,4 +627,27 @@
     margin: 0;
     border-radius: var(--radius-surface) var(--radius-surface) 0 0;
   }
+}
+
+.agnes-settings-toolbar .agh-btn--sm,
+.agnes-settings-actions .agh-btn--sm {
+  height: var(--control-height-sm);
+  min-height: var(--control-height-sm);
+}
+@media (prefers-reduced-motion: reduce) {
+  .skip-link:not(:focus) {
+    visibility: hidden;
+  }
+}
+
+.agh-btn .ant-btn-icon {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.agh-btn--loading-no-icon > .ant-btn-icon {
+  width: auto;
+  height: auto;
 }

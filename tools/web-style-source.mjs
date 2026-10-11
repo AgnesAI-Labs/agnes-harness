@@ -21,11 +21,12 @@ export function readWebStyleSource(manifest) {
     .join('')
 }
 
-/** Emit one theme-bridge asset, with public component CSS before its existing overrides. */
+/** Emit one theme-bridge asset, with public component CSS after the theme bridge. */
 export function readWebUiStyleSource(file) {
   const source = readFileSync(file, 'utf8')
-  return source.replace(
-    '@import "./components.css";',
-    readFileSync(join(dirname(file), 'components.css'), 'utf8'),
+  return (
+    source.replace('@import "./components.css";', '') +
+    '\n' +
+    readFileSync(join(dirname(file), 'components.css'), 'utf8')
   )
 }

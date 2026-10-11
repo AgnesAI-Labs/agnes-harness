@@ -2,8 +2,10 @@ import {
   cloneElement,
   type HTMLAttributes,
   type ReactElement,
+  useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
 } from 'react'
@@ -20,13 +22,7 @@ export type MenuItem = {
   onSelect(): void
 }
 export type MenuProps = {
-  trigger: ReactElement<
-    HTMLAttributes<HTMLElement> & {
-      'aria-expanded'?: boolean
-      'aria-controls'?: string
-      'aria-haspopup'?: 'menu'
-    }
-  >
+  trigger: ReactElement<HTMLAttributes<HTMLElement>>
   label: string
   items: readonly MenuItem[]
 }
@@ -35,11 +31,15 @@ export function Menu({ trigger, label, items }: MenuProps) {
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(0)
   const endOnOpen = useRef(false)
+  const pendingFocus = useRef(true)
   const anchor = useRef<HTMLSpanElement>(null)
-  const menu = useRef<HTMLDivElement>(null)
+  const menu = useRef<HTMLDivElement | null>(null)
   const id = useId()
-  const ordered = [...items.filter((item) => !item.danger), ...items.filter((item) => item.danger)]
-  const enabled = ordered.flatMap((item, i) => (item.disabled ? [] : [i]))
+  const ordered = useMemo(
+    () => [...items.filter((item) => !item.danger), ...items.filter((item) => item.danger)],
+    [items],
+  )
+  const enabled = useMemo(() => ordered.flatMap((item, i) => (item.disabled ? [] : [i])), [ordered])
   const close = () => {
     setOpen(false)
     anchor.current?.querySelector<HTMLElement>('button, a, [tabindex]')?.focus()
@@ -48,23 +48,38 @@ export function Menu({ trigger, label, items }: MenuProps) {
     setActive(index)
     menu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]')[index]?.focus()
   }
+  const initialFocus = useCallback(
+    (node: HTMLDivElement | null) => {
+      if (!node || !pendingFocus.current) return
+      pendingFocus.current = false
+      const index = endOnOpen.current ? enabled.at(-1) : enabled[0]
+      endOnOpen.current = false
+      if (index !== undefined) {
+        setActive(index)
+        node.querySelectorAll<HTMLElement>('[role="menuitem"]')[index]?.focus()
+      } else node.focus()
+    },
+    [enabled],
+  )
   useEffect(() => {
-    if (!open) return
-    const index = endOnOpen.current ? enabled.at(-1) : enabled[0]
-    endOnOpen.current = false
-    if (index !== undefined) focus(index)
-    else menu.current?.focus()
-  }, [open])
+    if (open) initialFocus(menu.current)
+  }, [open, initialFocus])
   return (
     <Popover
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={(next) => {
+        pendingFocus.current = next
+        setOpen(next)
+      }}
       trigger="click"
       placement="bottomRight"
       content={
         <div
           id={id}
-          ref={menu}
+          ref={(node) => {
+            menu.current = node
+            if (open) initialFocus(node)
+          }}
           role="menu"
           aria-label={label}
           tabIndex={-1}
@@ -77,7 +92,8 @@ export function Menu({ trigger, label, items }: MenuProps) {
               return
             }
             if (event.key === 'Tab') {
-              setOpen(false)
+              // Natural Tab navigation continues from the trigger, not the detached portal.
+              close()
               return
             }
             let next: number | undefined
@@ -123,7 +139,7 @@ export function Menu({ trigger, label, items }: MenuProps) {
             return (
               <div key={item.id}>
                 {item.danger && !ordered[index - 1]?.danger && index > 0 && (
-                  <div role="separator" className="agh-menu-separator" />
+                  <hr className="agh-menu-separator" />
                 )}
                 {item.disabled && item.disabledReason ? (
                   <Tooltip title={item.disabledReason}>{button}</Tooltip>
@@ -146,6 +162,7 @@ export function Menu({ trigger, label, items }: MenuProps) {
             if (!event.defaultPrevented && ['ArrowDown', 'ArrowUp'].includes(event.key)) {
               event.preventDefault()
               endOnOpen.current = event.key === 'ArrowUp'
+              pendingFocus.current = true
               setOpen(true)
             }
           },

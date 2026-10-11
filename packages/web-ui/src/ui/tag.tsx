@@ -29,7 +29,12 @@ export function Count({
 }) {
   if (value <= 0) return null
   return (
-    <span {...props} className={['agh-count', className].filter(Boolean).join(' ')} aria-label={label}>
+    <span
+      {...props}
+      role="status"
+      className={['agh-count', className].filter(Boolean).join(' ')}
+      aria-label={label}
+    >
       {value}
     </span>
   )

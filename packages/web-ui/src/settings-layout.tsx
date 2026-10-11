@@ -26,17 +26,18 @@ export function SettingsPage({
   variant = 'form',
   children,
   ...props
-}: Omit<HTMLAttributes<HTMLElement>, 'title'> & {
-  title: ReactNode
-  description?: ReactNode
-  actions?: ReactNode
-  headingId?: string
-  bodyClassName?: string
-  banner?: ReactNode
-  toolbar?: ReactNode
-  saveBar?: ReactNode
-  variant?: 'form' | 'list'
-}) {
+}: Omit<HTMLAttributes<HTMLElement>, 'title'> &
+  DataAttributes & {
+    title: ReactNode
+    description?: ReactNode
+    actions?: ReactNode
+    headingId?: string
+    bodyClassName?: string
+    banner?: ReactNode
+    toolbar?: ReactNode
+    saveBar?: ReactNode
+    variant?: 'form' | 'list'
+  }) {
   return (
     <section
       {...props}
@@ -57,11 +58,12 @@ export function SettingsCard({
   actions,
   children,
   ...props
-}: Omit<HTMLAttributes<HTMLElement>, 'title'> & {
-  title?: ReactNode
-  description?: ReactNode
-  actions?: ReactNode
-}) {
+}: Omit<HTMLAttributes<HTMLElement>, 'title'> &
+  DataAttributes & {
+    title?: ReactNode
+    description?: ReactNode
+    actions?: ReactNode
+  }) {
   return (
     <section
       {...props}
@@ -153,11 +155,12 @@ export function SettingsRow({
   actions,
   children,
   ...props
-}: Omit<HTMLAttributes<HTMLElement>, 'title'> & {
-  title: ReactNode
-  description?: ReactNode
-  actions?: ReactNode
-}) {
+}: Omit<HTMLAttributes<HTMLElement>, 'title'> &
+  DataAttributes & {
+    title: ReactNode
+    description?: ReactNode
+    actions?: ReactNode
+  }) {
   return (
     <article {...props} className={['agnes-settings-row', props.className].filter(Boolean).join(' ')}>
       <div className="agnes-settings-row-heading">
@@ -266,12 +269,13 @@ export function SettingsPageHeader({
   actions,
   headingId,
   ...props
-}: Omit<HTMLAttributes<HTMLElement>, 'title'> & {
-  title: ReactNode
-  description?: ReactNode
-  actions?: ReactNode
-  headingId?: string | undefined
-}) {
+}: Omit<HTMLAttributes<HTMLElement>, 'title'> &
+  DataAttributes & {
+    title: ReactNode
+    description?: ReactNode
+    actions?: ReactNode
+    headingId?: string | undefined
+  }) {
   return (
     <header
       {...props}

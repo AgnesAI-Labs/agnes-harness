@@ -408,6 +408,9 @@
     animation-iteration-count: 1 !important;
     transition-property: opacity !important;
     transform: none !important;
+    translate: none !important;
+    scale: none !important;
+    rotate: none !important;
     scroll-behavior: auto !important;
   }
 }

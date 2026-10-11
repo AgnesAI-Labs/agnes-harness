@@ -3,7 +3,7 @@ import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   testDir: '../../packages/web-ui/test',
-  testMatch: 'button-contrast.spec.ts',
+  testMatch: ['button-contrast.spec.ts', 'primitives.spec.ts'],
   forbidOnly: true,
   retries: 0,
   failOnFlakyTests: true,

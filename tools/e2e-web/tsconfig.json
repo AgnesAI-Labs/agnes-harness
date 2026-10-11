@@ -42,7 +42,8 @@
     "fact-chain.spec.ts",
     "plugin-config.spec.ts",
     "plugin-purpose.spec.ts",
-    "../../packages/web-ui/test/button-contrast.spec.ts"
+    "../../packages/web-ui/test/button-contrast.spec.ts",
+    "../../packages/web-ui/test/primitives.spec.ts"
   ],
   "exclude": ["fixtures/**"],
   "references": [
