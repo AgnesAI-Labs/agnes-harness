@@ -2440,13 +2440,12 @@ run(async () => {
   }
   const shown = await firstRun.initialize(snapshot, page.items.length > 0 || Boolean(startupSection))
   if (guided && !shown) await beginNewDraft(true)
-  if (settingsSections.get(startupRequest.get('settings') ?? '')) {
+  if (startupSection && new URL(location.href).searchParams.get('settings') === startupSection.id) {
     settingsRegion.open('model')
     await settings.open()
+    if (new URL(location.href).searchParams.get('settings') !== startupSection.id) return
     document
       .getElementById('config-form')
-      ?.dispatchEvent(
-        new CustomEvent('agnes:settings-route', { detail: startupRequest.get('settings'), bubbles: true }),
-      )
+      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: startupSection.id, bubbles: true }))
   }
 })

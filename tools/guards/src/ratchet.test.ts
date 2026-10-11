@@ -624,7 +624,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-07 gap-fill review: Session-bound goal state and context/settings integration.
   // countLines: 2443 -> 2471; exact cap, no exclusions or spare allocation.
   // AC1: consume one-time example launch parameters after session activation (+2 exact lines).
-  'packages/web/src/app': 4127,
+  'packages/web/src/app': 4126,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -2443,7 +2443,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 22109 -> 22110; exact cap, no exclusions or spare allocation.
   // UI refresh forwarding. HEAD was 13323 against the previous 13225 ceiling; this change adds 4.
   // UI data-source refresh and form drafts. countLines: 13327 -> 13395 (+68).
-  'packages/web/src': 13405,
+  'packages/web/src': 13404,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
