@@ -13,7 +13,8 @@ export function toolDecisionSource(s: SessionImpl, call: PlannedCall): DecisionS
   const def = s.currentTools().resolve(call.name)
   if (!def || def.definitionFingerprint !== call.definitionFingerprint)
     throw new CoreError('E_RELATION', 'DECISION_SOURCE_CHANGED')
-  return {
+  const signal = s.ac.signal
+  return s.decisions.bindSource({
     owner: TOOL_DECISION_OWNER,
     operationId: call.toolUseId,
     sourcePackage: '@agnes/core',
@@ -21,9 +22,9 @@ export function toolDecisionSource(s: SessionImpl, call: PlannedCall): DecisionS
     alive() {
       if (s.currentTools().resolve(call.name)?.definitionFingerprint !== call.definitionFingerprint)
         throw new CoreError('E_RELATION', 'DECISION_SOURCE_CHANGED')
-      s.ac.signal.throwIfAborted()
+      signal.throwIfAborted()
     },
-  }
+  })
 }
 
 /** Original call rows are immutable controlled content references, including oversized plans. */

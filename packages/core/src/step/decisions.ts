@@ -1,6 +1,8 @@
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
+import type { Seq } from '@agnes/core-common/types'
 import { CoreError, type EventInput } from '@agnes/core-common/types'
 import { decisionSubjectDigest } from '@agnes/core-ledger'
+import type { SessionLogImpl } from '@agnes/core-ledger/log/session-log'
 import type {
   DecisionHandle,
   DecisionPort,
@@ -22,7 +24,24 @@ import {
   DecisionResponse as ResponseSchema,
   DecisionSpec as SpecSchema,
 } from '@agnes/protocol/gen/session-v1'
-import type { SessionImpl } from './session.js'
+
+/** Minimal authority needed by the decision commands; the session supplies the writer gate. */
+export interface DecisionAuthority {
+  readonly key: string
+  readonly lane: string
+  readonly lastSeq: Seq
+  readonly closed: boolean
+  readonly cancelled: boolean
+  readonly actor: Actor
+  readonly ttlMs: number
+  readonly timers?: { setTimeout(fn: () => void, ms: number): unknown; clearTimeout(handle: unknown): void }
+  readonly log: Pick<SessionLogImpl, 'append' | 'observeCommitted'>
+  readDecisions(): ReadonlyMap<string, { value: DecisionSnapshot; seq: Seq }>
+  clock(): number
+  id(): string
+  transact<T>(work: () => Promise<T>): Promise<T>
+  event(value: DecisionSnapshot): EventInput
+}
 
 export interface DecisionSource {
   readonly owner: string
@@ -46,26 +65,50 @@ const detached = <T>(value: T): T => structuredClone(value)
 export class DecisionCommands {
   private get timers() {
     return (
-      this.s.d.timers ?? {
+      this.s.timers ?? {
         setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
         clearTimeout: (handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>),
       }
     )
   }
   private readonly waiters = new Set<() => void>()
-  constructor(private readonly s: SessionImpl) {}
+  private epoch = { alive: true }
+  private readonly requestEpochs = new Map<string, { alive: boolean }>()
+  constructor(private readonly s: DecisionAuthority) {}
+  get scopeRevoked(): boolean {
+    return !this.epoch.alive
+  }
+  revokeScope(): void {
+    this.epoch.alive = false
+  }
+  renewScope(): void {
+    this.epoch = { alive: true }
+  }
+  bindSource(source: DecisionSource): DecisionSource {
+    const epoch = this.epoch
+    return {
+      ...source,
+      alive() {
+        if (!epoch.alive) fail('STOPPED')
+        source.alive()
+      },
+    }
+  }
+  private execution(id?: string): void {
+    if (!this.epoch.alive || (id && this.requestEpochs.get(id)?.alive === false)) fail('STOPPED')
+  }
   detach(): void {
     for (const end of this.waiters) end()
   }
   private live(source?: DecisionSource): void {
-    if (this.s.closingOrClosed || this.s.d.log.isClosed) throw new CoreError('E_CLOSED', 'Session closed')
+    if (this.s.closed) throw new CoreError('E_CLOSED', 'Session closed')
     source?.alive()
   }
   private read(handle: DecisionHandle, source?: DecisionSource): DecisionSnapshot {
     const checked = inspectJsonData(handle, 4096)
     if (!checked.ok || !validateAgainst(HandleSchema, checked.value).ok) fail('HANDLE')
     if (handle.sessionId !== this.s.key) fail('SCOPE')
-    const value = this.s.state.registers.decisionStates.get(handle.id)?.value
+    const value = this.s.readDecisions().get(handle.id)?.value
     if (!value || value.handle.sessionId !== this.s.key || value.request.lane !== this.s.lane)
       fail('NOT_FOUND')
     if (
@@ -78,34 +121,31 @@ export class DecisionCommands {
     return value
   }
   private event(value: DecisionSnapshot): EventInput {
-    return this.s.ev('decision/state', value, { register: 'decision/state' })
+    return this.s.event(value)
   }
   private async write(
     value: DecisionSnapshot,
     recheck: () => void | Promise<void> = () => undefined,
+    executionCheck: () => void = () => undefined,
   ): Promise<void> {
-    const cell = this.s.state.registers.decisionStates.get(value.handle.id)
-    await this.s.d.log.append([this.event(value)], {
+    const cell = this.s.readDecisions().get(value.handle.id)
+    await this.s.log.append([this.event(value)], {
       expectedRegisterSeq: { register: 'decision/state', key: value.handle.id, seq: cell?.seq ?? null },
-      beforeCommit: async () => {
-        await recheck()
+      beforeCommit: recheck,
+      commitCheck: () => {
+        executionCheck()
         if (
           !value.invalidation &&
           (value.result?.reason === 'answered' || value.consumption) &&
           this.due(value)
         )
           fail('DEADLINE')
-        if (
-          value.result?.reason === 'answered' &&
-          !value.invalidation &&
-          this.s.op()?.control.status === 'cancel_requested'
-        )
-          fail('STOPPED')
+        if (value.result?.reason === 'answered' && !value.invalidation && this.s.cancelled) fail('STOPPED')
       },
     })
   }
   private due(value: DecisionSnapshot): boolean {
-    return value.request.expiresAt !== null && this.s.d.clock() >= Date.parse(value.request.expiresAt)
+    return value.request.expiresAt !== null && this.s.clock() >= Date.parse(value.request.expiresAt)
   }
   private async expire(value: DecisionSnapshot): Promise<DecisionSnapshot> {
     if (
@@ -115,7 +155,7 @@ export class DecisionCommands {
       (value.result && value.result.reason !== 'answered')
     )
       return value
-    const at = new Date(this.s.d.clock()).toISOString()
+    const at = new Date(this.s.clock()).toISOString()
     const next: DecisionSnapshot = {
       ...value,
       revision: value.revision + 1,
@@ -126,7 +166,8 @@ export class DecisionCommands {
     await this.write(next)
     return next
   }
-  port(source: DecisionSource): DecisionPort {
+  port(input: DecisionSource): DecisionPort {
+    const source = this.bindSource(input)
     return Object.freeze({
       request: (spec: DecisionSpec) => this.request(spec, source),
       get: (handle: DecisionHandle) => this.get(handle, source),
@@ -144,10 +185,11 @@ export class DecisionCommands {
       if (!inspectJsonData(spec.responseSchema, 32768).ok) fail('SCHEMA_SIZE')
       compilePluginConfig(spec.responseSchema)
     }
-    return this.s.locked(async () => {
+    return this.s.transact(async () => {
       this.live(source)
-      if (this.s.op()?.control.status === 'cancel_requested') fail('STOPPED')
-      const existing = [...this.s.state.registers.decisionStates.values()].find(
+      this.execution()
+      if (this.s.cancelled) fail('STOPPED')
+      const existing = [...this.s.readDecisions().values()].find(
         ({ value }) =>
           value.handle.sessionId === this.s.key &&
           value.request.owner === source.owner &&
@@ -159,8 +201,8 @@ export class DecisionCommands {
         await this.expire(existing.value)
         return detached(existing.value.handle)
       }
-      const now = this.s.d.clock()
-      const handle = { id: this.s.d.ids.ulid(), sessionId: this.s.key }
+      const now = this.s.clock()
+      const handle = { id: this.s.id(), sessionId: this.s.key }
       const value: DecisionSnapshot = {
         handle,
         revision: 1,
@@ -171,31 +213,39 @@ export class DecisionCommands {
           operationId: source.operationId,
           sourcePackage: source.sourcePackage,
           packageVersion: source.packageVersion,
-          requestedBy: detached(this.s.d.actor),
+          requestedBy: detached(this.s.actor),
           lane: this.s.lane,
           createdAt: new Date(now).toISOString(),
-          expiresAt: new Date(now + this.s.preset.approval.pendingTtlMs).toISOString(),
+          expiresAt: new Date(now + this.s.ttlMs).toISOString(),
         },
         result: null,
         answerCommand: null,
         consumption: null,
         invalidation: null,
       }
-      await this.write(value, () => this.live(source))
+      await this.write(
+        value,
+        () => this.live(source),
+        () => {
+          this.live(source)
+          this.execution()
+        },
+      )
+      this.requestEpochs.set(handle.id, this.epoch)
       return detached(handle)
     })
   }
   get(handle: DecisionHandle, source?: DecisionSource): Promise<DecisionSnapshot> {
-    return this.s.locked(async () => {
-      this.live(source)
+    return this.s.transact(async () => {
+      this.live()
       return detached(await this.expire(this.read(handle, source)))
     })
   }
   async list(): Promise<DecisionSnapshot[]> {
-    return this.s.locked(async () => {
+    return this.s.transact(async () => {
       this.live()
       const values: DecisionSnapshot[] = []
-      for (const { value } of this.s.state.registers.decisionStates.values()) {
+      for (const { value } of this.s.readDecisions().values()) {
         if (value.handle.sessionId === this.s.key && value.request.lane === this.s.lane)
           values.push(detached(await this.expire(value)))
       }
@@ -218,7 +268,7 @@ export class DecisionCommands {
     )
       fail('INVALID_ANSWER')
     const digest = sha256Hex(canonicalJson(command))
-    return this.s.locked(async () => {
+    return this.s.transact(async () => {
       this.live()
       const original = this.read(command.handle)
       await context.authorize(detached(original))
@@ -229,13 +279,8 @@ export class DecisionCommands {
         return detached(original.answerCommand)
       }
       const value = await this.expire(original)
-      if (
-        this.s.op()?.control.status === 'cancel_requested' ||
-        value.result ||
-        value.invalidation ||
-        value.consumption
-      )
-        fail('NOT_PENDING')
+      if (!value.result && !value.invalidation) this.execution(value.handle.id)
+      if (this.s.cancelled || value.result || value.invalidation || value.consumption) fail('NOT_PENDING')
       if (value.revision !== command.revision) throw new CoreError('E_CAS', 'Decision revision changed')
       if (!value.request.spec.options.includes(command.response.option)) fail('UNOFFERED_ANSWER')
       if (
@@ -256,7 +301,7 @@ export class DecisionCommands {
           answerCommand: receipt,
           result: {
             reason: 'answered',
-            at: new Date(this.s.d.clock()).toISOString(),
+            at: new Date(this.s.clock()).toISOString(),
             response: command.response,
             answeredBy: detached(context.actor),
           },
@@ -265,21 +310,27 @@ export class DecisionCommands {
           this.live()
           await context.authorize(detached(this.read(command.handle)))
           this.live()
+          this.execution(command.handle.id)
+        },
+        () => {
+          this.live()
+          this.execution(command.handle.id)
         },
       )
       return detached(receipt)
     })
   }
   stop(): Promise<void> {
-    return this.s.locked(async () => {
+    this.revokeScope()
+    return this.s.transact(async () => {
       const events = this.stoppedEvents()
-      if (events.length) await this.s.d.log.append(events)
+      if (events.length) await this.s.log.append(events)
     })
   }
   /** Called inside the same writer lock as the operation's cancellation transition. */
   stoppedEvents(): EventInput[] {
-    const at = new Date(this.s.d.clock()).toISOString()
-    return [...this.s.state.registers.decisionStates.values()].flatMap(({ value }) => {
+    const at = new Date(this.s.clock()).toISOString()
+    return [...this.s.readDecisions().values()].flatMap(({ value }) => {
       if (
         value.handle.sessionId !== this.s.key ||
         value.request.lane !== this.s.lane ||
@@ -307,7 +358,8 @@ export class DecisionCommands {
   ): EventInput[] {
     if (handles.length === 0) return []
     this.live(source)
-    if (this.s.op()?.control.status === 'cancel_requested') fail('STOPPED')
+    this.execution()
+    if (this.s.cancelled) fail('STOPPED')
     if (new Set(handles.map((h) => h.id)).size !== handles.length) fail('DUPLICATE_REF')
     return handles.map((handle) => {
       const value = this.read(handle, source)
@@ -318,7 +370,7 @@ export class DecisionCommands {
         ...value,
         revision: value.revision + 1,
         consumption: {
-          at: new Date(this.s.d.clock()).toISOString(),
+          at: new Date(this.s.clock()).toISOString(),
           operationId: source.operationId,
           effectId,
         },
@@ -338,7 +390,7 @@ export class DecisionCommands {
       ended = true
       wake()
     }
-    const off = this.s.d.log.observeCommitted(['decision/state'], () => wake())
+    const off = this.s.log.observeCommitted(['decision/state'], () => wake())
     this.waiters.add(end)
     signal?.addEventListener('abort', end, { once: true })
     try {
@@ -355,7 +407,7 @@ export class DecisionCommands {
         if (value.request.expiresAt !== null)
           timer = this.timers.setTimeout(
             notify,
-            Math.min(2147483647, Math.max(0, Date.parse(value.request.expiresAt) - this.s.d.clock())),
+            Math.min(2147483647, Math.max(0, Date.parse(value.request.expiresAt) - this.s.clock())),
           )
         await changed
         if (timer !== undefined) {

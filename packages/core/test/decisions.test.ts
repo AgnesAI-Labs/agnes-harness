@@ -263,6 +263,90 @@ describe('session decision authority', () => {
       await f.session.close()
     }
   })
+  it('revokes a no-op-state execution scope, including queued and late callbacks', async () => {
+    const contexts: LoopContext[] = []
+    const f = await fixture({ loopFactory: loop((ctx) => contexts.push(ctx)) })
+    const old = contexts[0]!
+    try {
+      const pending = await old.decisions.request(spec)
+      expect(f.session.op()).toBeNull()
+      let release!: () => void
+      let entered!: () => void
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const started = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      const answer = f.session.decisions.answer(
+        { handle: pending, revision: 1, commandId: 'late', response: { option: 'continue', value: null } },
+        {
+          ...context,
+          async authorize() {
+            entered()
+            await gate
+          },
+        },
+      )
+      await started
+      const queued = old.decisions.request({ ...spec, key: 'racing-stop' })
+      const stop = f.session.abort(actor)
+      release()
+      await expect(answer).rejects.toThrow('STOPPED')
+      await expect(queued).rejects.toThrow('STOPPED')
+      await stop
+      expect((await old.decisions.get(pending)).result?.reason).toBe('stopped')
+      await expect(old.decisions.request({ ...spec, key: 'after-stop' })).rejects.toThrow('STOPPED')
+      await expect(old.checkpoints.write(codec.encode('done'), { decisionRefs: [pending] })).rejects.toThrow(
+        'STOPPED',
+      )
+      await f.session.run({ until: 'idle', signal: new AbortController().signal })
+      const fresh = contexts.at(-1)!
+      expect(fresh).not.toBe(old)
+      const handle = await fresh.decisions.request({ ...spec, key: 'new-run' })
+      await f.session.decisions.answer(
+        { handle, revision: 1, commandId: 'fresh', response: { option: 'continue', value: null } },
+        context,
+      )
+      await fresh.checkpoints.write(codec.encode('done'), { decisionRefs: [handle] })
+      expect((await fresh.decisions.get(handle)).consumption?.effectId).toBeNull()
+      await expect(old.decisions.request({ ...spec, key: 'still-old' })).rejects.toThrow('STOPPED')
+      await expect(old.checkpoints.write(codec.encode('done'), { decisionRefs: [handle] })).rejects.toThrow(
+        'STOPPED',
+      )
+    } finally {
+      await f.session.close()
+    }
+  })
+  it('refuses a no-op-state stop in the final authorization microtask gap', async () => {
+    const f = await fixture()
+    let stop: Promise<unknown> | undefined
+    try {
+      const handle = await f.ctx.decisions.request(spec)
+      let checks = 0
+      await expect(
+        f.session.decisions.answer(
+          { handle, revision: 1, commandId: 'commit-race', response: { option: 'continue', value: null } },
+          {
+            ...context,
+            async authorize() {
+              if (++checks === 2)
+                queueMicrotask(() =>
+                  queueMicrotask(() => {
+                    stop = f.session.abort(actor)
+                  }),
+                )
+            },
+          },
+        ),
+      ).rejects.toThrow('STOPPED')
+      await stop
+      expect((await f.ctx.decisions.get(handle)).answerCommand).toBeNull()
+    } finally {
+      await stop
+      await f.session.close()
+    }
+  })
   it('consumes all required references or none and refuses authority bypass writes', async () => {
     const f = await fixture()
     try {

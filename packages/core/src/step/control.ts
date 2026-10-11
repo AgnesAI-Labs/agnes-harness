@@ -15,6 +15,7 @@ export type AbortResult = { seq: Seq | null; alreadyTerminal: boolean }
  * on the ledger says anyone asked it to.
  */
 export async function abortSession(s: SessionImpl, by: Actor): Promise<AbortResult> {
+  s.decisions.revokeScope()
   const op = s.op()
   // No open turn leaves nothing to mark, but the caller still asked for whatever is running to
   // stop, and a `run({ until: 'idle' })` sitting between two turns is running.

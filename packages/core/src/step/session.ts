@@ -147,7 +147,6 @@ import type {
 } from '../runtime/current.js'
 import { expireApprovals, resumeApproval } from './approval-callback.js'
 import { restoreSessionGrants } from './approval-grants.js'
-import { continueParked } from './parked.js'
 import { runCompaction } from './compaction.js'
 import { type AbortResult, abortSession, closeTurn, finishAborted } from './control.js'
 import { DecisionCommands, type DecisionSource } from './decisions.js'
@@ -169,6 +168,7 @@ import {
 } from './inbox.js'
 import { discloseTools, resolveModel, runInference } from './inference.js'
 import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
+import { continueParked } from './parked.js'
 import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.js'
 import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } from './reentry.js'
 import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
@@ -656,7 +656,37 @@ export class SessionImpl {
 
   constructor(deps: SessionDeps) {
     this.d = deps
-    this.decisions = new DecisionCommands(this)
+    const session = this
+    this.decisions = new DecisionCommands({
+      get key() {
+        return session.key
+      },
+      get lane() {
+        return session.lane
+      },
+      get lastSeq() {
+        return session.lastSeq
+      },
+      get closed() {
+        return session.closingOrClosed || deps.log.isClosed
+      },
+      get cancelled() {
+        return session.op()?.control.status === 'cancel_requested'
+      },
+      get actor() {
+        return deps.actor
+      },
+      get ttlMs() {
+        return session.preset.approval.pendingTtlMs
+      },
+      ...(deps.timers ? { timers: deps.timers } : {}),
+      log: deps.log,
+      readDecisions: () => session.state.registers.decisionStates,
+      clock: () => deps.clock(),
+      id: () => deps.ids.ulid(),
+      transact: (work) => session.locked(work),
+      event: (value) => session.ev('decision/state', value, { register: 'decision/state' }),
+    })
     this.workspaceRoot = deps.workspaceIdentity?.canonicalRoot ?? deps.cwd
     this.loopEvents = deps.loopEvents ?? new LoopEventRegistry()
     this.toolRuntimes = deps.toolRuntimes ?? new ToolRuntimeRegistry()
@@ -677,7 +707,7 @@ export class SessionImpl {
   }
 
   loopDecisionSource(): DecisionSource {
-    return {
+    return this.decisions.bindSource({
       owner: this.loop.id,
       sourcePackage: this.d.loopSourcePackage ?? this.loop.id,
       packageVersion: this.loop.version,
@@ -685,7 +715,7 @@ export class SessionImpl {
       alive: () => {
         if (this.closingOrClosed) throw new CoreError('E_CLOSED', 'Session closed')
       },
-    }
+    })
   }
 
   /** Resolve the published hook port at the call boundary; assignment only updates legacy fallback. */
@@ -1127,7 +1157,11 @@ export class SessionImpl {
    */
   transitionChain(
     steps: ChainStep[],
-    opts: { refineCaller?: boolean; beforeCommit?: () => void | Promise<void> } = {},
+    opts: {
+      refineCaller?: boolean
+      beforeCommit?: () => void | Promise<void>
+      commitCheck?: () => void
+    } = {},
   ): Promise<Seq[][]> {
     return this.commitChain(steps, undefined, opts, (seqs) => {
       let at = 0
@@ -1143,7 +1177,7 @@ export class SessionImpl {
   private commitChain<T>(
     steps: ChainStep[],
     expected: Seq | null | undefined,
-    opts: { refineCaller?: boolean; beforeCommit?: () => void | Promise<void> },
+    opts: { refineCaller?: boolean; beforeCommit?: () => void | Promise<void>; commitCheck?: () => void },
     receipt: (seqs: Seq[]) => T,
   ): Promise<T> {
     if (steps.length === 0) throw new CoreError('E_RELATION', 'a transition chain needs at least one step')
@@ -1874,7 +1908,11 @@ export class SessionImpl {
     const checkpoint = ctx.checkpoints.read() ?? this.loopDriver.checkpoint()
     await this.loopDriver.dispose()
     this.ac = new AbortController()
-    this.loopDriver = await this.d.loopFactory.resume(ctx, checkpoint, this.ac.signal)
+    disposeLoopContext(ctx)
+    this.decisions.renewScope()
+    const fresh = await createLoopContext(this, true)
+    this.loopContext = fresh
+    this.loopDriver = await this.d.loopFactory.resume(fresh, checkpoint, this.ac.signal)
   }
 
   /** Runs the configured compaction mechanism or records an unavailable-runner failure. */
@@ -1931,7 +1969,10 @@ export class SessionImpl {
 
   private async runTurns(opts: { until: 'turn-end' | 'idle'; signal: AbortSignal }): Promise<TurnOutcome> {
     // Fresh work gets a fresh scope, unless the session is closed, in which case there is no work.
-    if (!this.closing) this.ac = new AbortController()
+    if (!this.closing) {
+      if (this.decisions.scopeRevoked) await this.restartLoopDriver()
+      this.ac = new AbortController()
+    }
     this.turnEndError = undefined
     const onAbort = () => void this.abort().catch(() => undefined)
     opts.signal.addEventListener('abort', onAbort, { once: true })

@@ -34,6 +34,8 @@ import { prepareEvents } from './validate.js'
 export type AppendOptions = {
   /** Backend command authority recheck after queued writes, immediately before storage commit. */
   beforeCommit?: () => void | Promise<void>
+  /** Synchronous authority fence after async rechecks, with no await before commit admission. */
+  commitCheck?: () => void
 
   expectedRegisterSeq?: { register: string; key: string; seq: Seq | null }
   refineCaller?: boolean
@@ -396,6 +398,7 @@ export class SessionLogImpl {
       if (opts.beforeCommit) await opts.beforeCommit()
       this.o.relationCheck?.(events, this, op)
       this.sealCheck()
+      opts.commitCheck?.()
       let committed: CommitReceipt
       const stamped = events.map((e, i) => ({ ...e, seq: this.lastSeqValue + i + 1 }))
       const nextIntegrity = prepareIntegrity(this.o.key, stamped, this.integrityState)

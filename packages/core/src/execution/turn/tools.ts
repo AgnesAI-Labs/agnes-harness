@@ -1296,6 +1296,8 @@ export async function approveAndExecute(
     const [, startedSeqs] = await s.transitionChain(chain, {
       beforeCommit: async () => {
         await recheckPermission?.()
+      },
+      commitCheck: () => {
         s.decisions.consumptionEvents(approvalRefs, toolDecisionSource(s, call), started.effectId)
       },
     })

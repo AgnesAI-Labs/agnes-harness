@@ -43,6 +43,7 @@ const CHECKPOINT_EVENT = 'x/core/loop-checkpoint'
 
 /** Fit public operations without handing an independent driver the default scheduler. */
 export async function createLoopContext(s: SessionImpl, restoreCheckpoint = false): Promise<LoopContext> {
+  const decisionSource = s.loopDecisionSource()
   let checkpoint: LoopCheckpoint | null = null
   // Fresh children and the default loop use the op register, never the parent ledger.
   // Independent drivers restore only the latest checkpoint of the current session.
@@ -374,7 +375,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
   }
   const children = s.loopChildrenPort()
   const ctx: LoopContext = {
-    decisions: s.decisions.port(s.loopDecisionSource()),
+    decisions: s.decisions.port(decisionSource),
     session: Object.freeze({ key: s.key, lane: s.lane, workspaceRoot: s.workspaceRoot }),
     sessionKey: s.key,
     lane: s.lane,
@@ -622,7 +623,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         await s.locked(() =>
           s.d.log.append(
             [
-              ...s.decisions.consumptionEvents(association?.decisionRefs ?? [], s.loopDecisionSource(), null),
+              ...s.decisions.consumptionEvents(association?.decisionRefs ?? [], decisionSource, null),
               s.ev(
                 CHECKPOINT_EVENT,
                 {
@@ -635,8 +636,8 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
               ),
             ],
             {
-              beforeCommit: () => {
-                s.decisions.consumptionEvents(association?.decisionRefs ?? [], s.loopDecisionSource(), null)
+              commitCheck: () => {
+                s.decisions.consumptionEvents(association?.decisionRefs ?? [], decisionSource, null)
               },
             },
           ),
