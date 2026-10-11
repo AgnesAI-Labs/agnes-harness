@@ -20,6 +20,9 @@ export type MenuItem = {
   disabled?: boolean
   disabledReason?: string
   testId?: string
+  className?: string
+  ariaLabel?: string
+  title?: string
   onSelect(): void
 }
 export type MenuProps = {
@@ -123,7 +126,9 @@ export function Menu({ trigger, label, items }: MenuProps) {
                 role="menuitem"
                 data-testid={item.testId}
                 tabIndex={active === index ? 0 : -1}
-                className="agh-menu-item"
+                className={['agh-menu-item', item.className].filter(Boolean).join(' ')}
+                aria-label={item.ariaLabel}
+                title={item.title}
                 data-danger={item.danger || undefined}
                 aria-disabled={item.disabled || undefined}
                 onFocus={() => setActive(index)}

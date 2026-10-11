@@ -152,6 +152,9 @@ export function DetailContent({
             <Button
               key={action.label}
               appearance="primary"
+              className={actionClasses(action.className)}
+              title={action.title}
+              aria-label={action.ariaLabel}
               disabled={action.disabled ?? false}
               onClick={action.onClick}
             >
@@ -163,7 +166,7 @@ export function DetailContent({
           .map((action) => (
             <Button
               key={action.label}
-              className="plugin-surface-link"
+              className={['plugin-surface-link', actionClasses(action.className)].filter(Boolean).join(' ')}
               {...(action.href ? { href: action.href } : {})}
               target="_blank"
               rel="noopener"
@@ -190,6 +193,9 @@ export function DetailContent({
               .map((action, index) => ({
                 id: `detail-${index}`,
                 label: action.label,
+                className: actionClasses(action.className),
+                ...(action.ariaLabel ? { ariaLabel: action.ariaLabel } : {}),
+                ...(action.title ? { title: action.title } : {}),
                 disabled: action.disabled ?? false,
                 ...(action.title ? { disabledReason: action.title } : {}),
                 danger: action.className.includes('danger'),
@@ -200,6 +206,15 @@ export function DetailContent({
       </div>
     </>
   )
+}
+
+/** Retain caller skin hooks while replacing legacy control classes with primitives. */
+function actionClasses(value: string): string {
+  const legacy = new Set(['primary-button', 'secondary-button', 'danger-button', 'compact'])
+  return value
+    .split(/\s+/)
+    .filter((name) => !legacy.has(name) && !name.startsWith('agh-btn'))
+    .join(' ')
 }
 
 function FragmentedFact({ label, value }: { label: string; value: string }): JSX.Element {
