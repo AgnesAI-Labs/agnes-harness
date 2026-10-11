@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import AxeBuilder from '@axe-core/playwright'
 import { test as base, expect } from '@playwright/test'
 import { localeKeys, unresolvedLabels } from './i18n.js'
+import { settled } from './quality.js'
 import { isolatedRuntime, type Runtime } from './runtime.js'
 import { section } from './ui.js'
 
@@ -52,15 +53,7 @@ for (const locale of ['zh-CN', 'en'])
         const folder = root && join(root, `${locale}-${theme}-${width}x${height}`)
         if (folder) await mkdir(folder, { recursive: true })
         async function screen(name: string) {
-          await page.waitForTimeout(250)
-          await page.evaluate(() =>
-            Promise.all(
-              document
-                .getAnimations()
-                .filter((animation) => animation instanceof CSSTransition)
-                .map((animation) => animation.finished.catch(() => undefined)),
-            ),
-          )
+          await settled(page)
           const unresolved = await page.evaluate(unresolvedLabels, knownKeys)
           expect(unresolved, `${name}: unresolved locale keys`).toEqual([])
           expect(
