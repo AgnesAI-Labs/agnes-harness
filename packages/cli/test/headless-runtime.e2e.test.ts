@@ -119,7 +119,11 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
       loop: { id: 'student-loop', version: '0.1.0' },
     })
     expect(host.kernel.get(loopSession.id)?.loop).toEqual({ id: 'student-loop', version: '0.1.0' })
-    const manager = createPackageManager({ dataDir: join(home, 'data'), agnesVersion: '0.0.0' })
+    const manager = createPackageManager({
+      dataDir: join(home, 'data'),
+      agnesVersion: '0.0.0',
+      localPlugins: localPluginRoots(home, root),
+    })
     const inventory = await manager.inventory(join(home, 'profiles/local-dev'))
     registry = createClientModuleRegistry({
       snapshotDirectory: () => join(root, 'browser'),
@@ -149,6 +153,8 @@ it('loads zero-build loops and panels into isolated headless sessions and publis
       expect.objectContaining({ packageId: 'student-panel', phase: 'ready' }),
     )
     await writeFile(join(panel, 'client/index.js'), 'export const panelVersion = "reloaded"')
+    await expect(host.reloadPlugin('student-panel', panel)).rejects.toThrow('E_GENERATION_UNTRUSTED')
+    await manager.refreshLocalPlugins(join(home, 'profiles/local-dev'))
     await host.reloadPlugin('student-panel', panel)
     const second = await boot.client.session.new({ cwd: root, sessionKey: 'panel-second' })
     const next = await registry.list({ ...input, sessionId: second.id })
