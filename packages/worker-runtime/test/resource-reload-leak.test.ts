@@ -285,12 +285,7 @@ describe('a reload that fails after its new generation is already bootstrapped',
     const urlB = await mcpFixture('toolB')
     await writeFile(
       snapshotPath,
-      JSON.stringify(
-        snapshotDoc([
-          { serverId: 'a', url: urlA, toolName: 'toolA' },
-          { serverId: 'b', url: urlB, toolName: 'toolB' },
-        ]),
-      ),
+      JSON.stringify(snapshotDoc([{ serverId: 'b', url: urlB, toolName: 'toolB' }])),
     )
     link.push(
       encodeFrame({ kind: 'command', requestId: 's1', method: 'resource.stale', params: {} } as CommandFrame),
@@ -307,7 +302,12 @@ describe('a reload that fails after its new generation is already bootstrapped',
           params: { runId: `run-${turn}`, until: 'turn-end' },
         } as CommandFrame),
       )
-      await waitForReply(fromWorker, `r${turn}`)
+      const reply = await waitForReply(fromWorker, `r${turn}`)
+      expect(reply.error).toBeUndefined()
+      expect(reply.result).toMatchObject({ reason: 'completed' })
+      expect(liveRows.filter((row) => row.id.startsWith('ext:agnes/mcp-')).map((row) => row.id)).toEqual([
+        expect.stringMatching(/^ext:agnes\/mcp-b-/),
+      ])
     }
 
     // One idle attempt and three retried reloads are abandoned and must all be closed.
@@ -319,19 +319,22 @@ describe('a reload that fails after its new generation is already bootstrapped',
     // would break the very turn the failed reload was supposed to leave untouched.
     expect(live?.closed).toBe(0)
 
-    // Each failed attempt restores the old MCP rows before the next turn retries.
+    // Skills failure keeps the successfully applied MCP revocation through every retry.
     expect(reloadCalls.map((call) => call.id)).toEqual([
       'agnes/skills',
       'agnes/skills',
       'agnes/skills',
       'agnes/skills',
     ])
-    expect(rowApplies).toHaveLength(9) // boot, then target and compensation per retried turn
     const [boot, ...retries] = rowApplies
-    expect(boot?.filter((id) => id.startsWith('ext:agnes/mcp-'))).toHaveLength(1)
-    for (let i = 0; i < retries.length; i += 2) {
-      expect(retries[i]?.filter((id) => id.startsWith('ext:agnes/mcp-'))).toHaveLength(2)
-      expect(retries[i + 1]).toEqual(boot)
+    expect(boot?.filter((id) => id.startsWith('ext:agnes/mcp-'))).toEqual([
+      expect.stringMatching(/^ext:agnes\/mcp-a-/),
+    ])
+    expect(retries.length).toBeGreaterThan(0)
+    for (const applied of retries) {
+      expect(applied.filter((id) => id.startsWith('ext:agnes/mcp-'))).toEqual([
+        expect.stringMatching(/^ext:agnes\/mcp-b-/),
+      ])
     }
   })
 })
