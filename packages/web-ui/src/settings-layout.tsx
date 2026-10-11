@@ -5,7 +5,11 @@ import type {
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from 'react'
-import { forwardRef, useId } from 'react'
+import { forwardRef, useEffect, useId, useState } from 'react'
+
+import { fallbackT } from './locales/index.js'
+import { Button } from './ui/button.js'
+import { Icon } from './ui/icon.js'
 
 type DataAttributes = { [name: `data-${string}`]: string | number | boolean | undefined }
 
@@ -16,6 +20,10 @@ export function SettingsPage({
   actions,
   headingId,
   bodyClassName,
+  banner,
+  toolbar,
+  saveBar,
+  variant = 'form',
   children,
   ...props
 }: Omit<HTMLAttributes<HTMLElement>, 'title'> & {
@@ -24,17 +32,22 @@ export function SettingsPage({
   actions?: ReactNode
   headingId?: string
   bodyClassName?: string
+  banner?: ReactNode
+  toolbar?: ReactNode
+  saveBar?: ReactNode
+  variant?: 'form' | 'list'
 }) {
   return (
-    <section {...props} className={['agnes-settings-page', props.className].filter(Boolean).join(' ')}>
-      <header className="config-heading agnes-settings-page-heading">
-        <div>
-          <h2 id={headingId}>{title}</h2>
-          {description && <p>{description}</p>}
-        </div>
-        {actions && <div className="agnes-settings-actions">{actions}</div>}
-      </header>
+    <section
+      {...props}
+      data-layout={variant}
+      className={['agnes-settings-page', props.className].filter(Boolean).join(' ')}
+    >
+      <SettingsPageHeader title={title} description={description} actions={actions} headingId={headingId} />
+      {banner}
+      {toolbar}
       <div className={['agnes-settings-stack', bodyClassName].filter(Boolean).join(' ')}>{children}</div>
+      {saveBar}
     </section>
   )
 }
@@ -181,8 +194,25 @@ export function SettingsDetails({
     </details>
   )
 }
-export function SettingsToolbar(props: HTMLAttributes<HTMLDivElement>) {
-  return <div {...props} className={['agnes-settings-toolbar', props.className].filter(Boolean).join(' ')} />
+export function SettingsToolbar({
+  search,
+  filters,
+  controls,
+  children,
+  ...props
+}: HTMLAttributes<HTMLDivElement> & {
+  search?: ReactNode
+  filters?: ReactNode
+  controls?: ReactNode
+}) {
+  return (
+    <div {...props} className={['agnes-settings-toolbar', props.className].filter(Boolean).join(' ')}>
+      {search && <div className="agh-settings-toolbar-search">{search}</div>}
+      {filters && <div className="agh-settings-toolbar-filters">{filters}</div>}
+      {controls && <div className="agh-settings-toolbar-controls">{controls}</div>}
+      {children}
+    </div>
+  )
 }
 
 /** Native checkbox with a shared compact label and field sizing. */
@@ -227,5 +257,86 @@ export function SettingsCode({ label, ...props }: HTMLAttributes<HTMLPreElement>
       {/* biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users need to scroll long prompt and JSON blocks. */}
       <pre {...props} tabIndex={0} />
     </section>
+  )
+}
+
+export function SettingsPageHeader({
+  title,
+  description,
+  actions,
+  headingId,
+  ...props
+}: Omit<HTMLAttributes<HTMLElement>, 'title'> & {
+  title: ReactNode
+  description?: ReactNode
+  actions?: ReactNode
+  headingId?: string | undefined
+}) {
+  return (
+    <header
+      {...props}
+      className={['config-heading', 'agnes-settings-page-heading', props.className].filter(Boolean).join(' ')}
+    >
+      <div>
+        <h2 id={headingId}>{title}</h2>
+        {description && <p>{description}</p>}
+      </div>
+      {actions && <div className="agnes-settings-actions">{actions}</div>}
+    </header>
+  )
+}
+export function SettingsSaveBar({
+  dirty,
+  busy = false,
+  saved = false,
+  onDiscard,
+  onSave,
+  message,
+  discardLabel,
+  saveLabel,
+}: {
+  dirty: boolean
+  busy?: boolean
+  saved?: boolean
+  onDiscard(): void
+  onSave(): void
+  message?: string
+  discardLabel?: string
+  saveLabel?: string
+}) {
+  const [showSaved, setShowSaved] = useState(false)
+  useEffect(() => {
+    if (!saved) {
+      setShowSaved(false)
+      return
+    }
+    setShowSaved(true)
+    const timer = setTimeout(() => setShowSaved(false), 2000)
+    return () => clearTimeout(timer)
+  }, [saved])
+  if (!dirty)
+    return showSaved ? (
+      <div className="agh-settings-saved" role="status">
+        <Icon name="check" />
+        {fallbackT('ui.saved')}
+      </div>
+    ) : null
+  return (
+    <div
+      className="agh-settings-save-bar"
+      role="region"
+      aria-label={fallbackT('ui.unsaved')}
+      aria-busy={busy || undefined}
+    >
+      <span>{message ?? fallbackT('ui.unsaved')}</span>
+      <div className="agnes-settings-actions">
+        <Button onClick={onDiscard} disabled={busy} disabledReason={fallbackT('ui.saving')}>
+          {discardLabel ?? fallbackT('ui.discard')}
+        </Button>
+        <Button appearance="primary" onClick={onSave} loading={busy}>
+          {saveLabel ?? fallbackT('ui.save')}
+        </Button>
+      </div>
+    </div>
   )
 }

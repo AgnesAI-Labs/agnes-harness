@@ -275,3 +275,348 @@
   align-items: center;
   justify-content: center;
 }
+/* Shared settings page order: heading, banner, toolbar, content, dirty save bar. */
+.agnes-settings-page[data-layout] {
+  width: 100%;
+  max-width: 720px;
+  min-width: 0;
+  margin-inline: auto;
+}
+.agnes-settings-page[data-layout="list"] {
+  max-width: 960px;
+}
+.agnes-settings-page > .agnes-settings-page-heading {
+  margin-bottom: var(--s24);
+}
+.agnes-settings-page > .agnes-settings-page-heading h2 {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-lg);
+}
+.agnes-settings-page > .agnes-settings-toolbar,
+.agnes-settings-page > .agh-banner {
+  margin-bottom: var(--s16);
+}
+.agh-settings-toolbar-search {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.agh-settings-toolbar-filters,
+.agh-settings-toolbar-controls {
+  display: flex;
+  gap: var(--s12);
+  align-items: flex-end;
+}
+.agh-settings-save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s16);
+  margin-top: var(--s24);
+  padding: var(--s16);
+  border-top: 1px solid var(--agnes-line-primary);
+  background: var(--agnes-bg-popover);
+  color: var(--agnes-text-primary);
+}
+.agh-settings-saved {
+  display: flex;
+  align-items: center;
+  gap: var(--s8);
+  color: var(--agnes-status-success-text);
+}
+.agh-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: var(--s16);
+  width: 100%;
+  max-width: 420px;
+  margin-inline: auto;
+  padding-block: var(--s32);
+  color: var(--agnes-text-primary);
+  text-align: center;
+}
+.agh-empty-state-icon {
+  width: var(--s48);
+  height: var(--s48);
+  color: var(--agnes-text-secondary);
+}
+.agh-empty-state h3 {
+  margin: 0;
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+}
+.agh-empty-state p {
+  margin: 0;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-body);
+  line-height: var(--line-md);
+}
+.agh-empty-state-actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--s12);
+  flex-wrap: wrap;
+}
+.agh-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s12);
+  padding: var(--s12) var(--s16);
+  border: 1px solid var(--agnes-status-info-border);
+  border-radius: var(--radius-control);
+  color: var(--agnes-status-info-text);
+  background: var(--agnes-status-info-bg);
+  font-size: var(--font-size-body);
+  line-height: var(--line-md);
+}
+.agh-banner[data-tone="warning"] {
+  color: var(--agnes-status-warning-text);
+  background: var(--agnes-status-warning-bg);
+  border-color: var(--agnes-status-warning-border);
+}
+.agh-banner[data-tone="error"] {
+  color: var(--agnes-status-danger-text);
+  background: var(--agnes-status-danger-bg);
+  border-color: var(--agnes-status-danger-border);
+}
+.agh-banner-copy {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.agh-banner-copy p {
+  margin: 0;
+  color: inherit;
+}
+.agh-banner-action {
+  flex: 0 0 auto;
+}
+.agh-list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s16);
+  min-height: 56px;
+  padding-block: var(--s12);
+  border-bottom: 1px solid var(--agnes-line-primary);
+  color: var(--agnes-text-primary);
+}
+.agh-list-row-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height);
+  height: var(--control-height);
+  flex: 0 0 auto;
+  color: var(--agnes-text-secondary);
+}
+.agh-list-row-copy {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.agh-list-row-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--s8);
+  flex-wrap: wrap;
+}
+.agh-list-row h3 {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-semibold);
+}
+.agh-list-row .agh-list-row-title {
+  justify-content: flex-start;
+  height: auto;
+  min-height: var(--control-height-sm);
+  padding: 0;
+  white-space: normal;
+  text-align: start;
+  color: inherit;
+  font-weight: var(--font-weight-semibold);
+}
+.agh-list-row p {
+  margin: var(--s4) 0;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-body);
+}
+.agh-list-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s12);
+  flex: 0 0 auto;
+}
+.agh-field-optional {
+  color: var(--agnes-text-secondary);
+  font-weight: var(--font-weight-regular);
+}
+.agh-field .agnes-ui-field-hint {
+  color: var(--agnes-text-secondary);
+}
+.agh-field .agnes-ui-field-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s4);
+  line-height: var(--line-sm);
+}
+/* Same three sizes for native modal shells and React confirmations. */
+:where(dialog:not(.agh-drawer)) {
+  width: min(560px, calc(100vw - var(--s32)));
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-2);
+}
+.agh-dialog .ant-modal-container,
+.agh-dialog .ant-modal-content {
+  border-radius: var(--radius-surface);
+  box-shadow: var(--elevation-2);
+  max-height: var(--dialog-max-height);
+  display: flex;
+  flex-direction: column;
+}
+.agh-dialog .ant-modal-body {
+  overflow: auto;
+  min-height: 0;
+}
+.agh-dialog .ant-modal-footer,
+.agh-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--s8);
+}
+.agh-dialog-footer {
+  padding: var(--s16) var(--s24);
+  border-top: 1px solid var(--agnes-line-primary);
+}
+:where(dialog) :is(.dialog-kicker, .eyebrow),
+.agh-dialog :is(.dialog-kicker, .eyebrow) {
+  display: none;
+}
+.agh-sheet-handle {
+  display: none;
+}
+.agh-drawer[open] {
+  position: fixed;
+  inset: 0 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  width: min(480px, 100vw);
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
+  padding: 0;
+  border-radius: var(--radius-surface) 0 0 var(--radius-surface);
+  background: var(--agnes-bg-popover);
+  color: var(--agnes-text-primary);
+  box-shadow: var(--elevation-2);
+}
+.agh-drawer-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s16);
+  padding: var(--s24);
+}
+.agh-drawer-heading h2 {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-semibold);
+}
+.agh-drawer-heading p {
+  margin: var(--s8) 0 0;
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-body);
+}
+.agh-drawer-content {
+  flex: 1;
+  min-height: 0;
+  padding: 0 var(--s24) var(--s24);
+  overflow: auto;
+}
+@media (max-width: 767px) {
+  .agh-settings-toolbar-search {
+    flex-basis: 100%;
+  }
+  .agh-settings-toolbar-filters {
+    flex-wrap: wrap;
+  }
+  .agh-list-row {
+    gap: var(--s12);
+  }
+  .agh-list-row-icon {
+    display: none;
+  }
+  .agh-list-row-actions {
+    gap: var(--s8);
+  }
+  .agh-banner {
+    flex-wrap: wrap;
+  }
+  .agh-drawer[open] {
+    width: 100vw;
+    border-radius: 0;
+  }
+  .agh-drawer-heading,
+  .agh-drawer-content {
+    padding-inline: var(--s16);
+  }
+  .agh-dialog {
+    top: auto;
+    bottom: 0;
+    margin: 0;
+    padding-bottom: 0;
+    max-width: 100vw;
+  }
+  .ant-modal-wrap:has(.agh-dialog) {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .agh-dialog .ant-modal-container,
+  .agh-dialog .ant-modal-content {
+    border-radius: var(--radius-surface) var(--radius-surface) 0 0;
+    max-height: calc(100dvh - var(--s16));
+  }
+  .agh-sheet-handle {
+    display: flex;
+    width: 100%;
+    height: var(--control-height-sm);
+    min-height: var(--control-height-sm);
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-surface) var(--radius-surface) 0 0;
+    background: var(--agnes-bg-popover);
+    touch-action: none;
+  }
+  .agh-sheet-handle span {
+    width: var(--s32);
+    height: var(--s4);
+    border-radius: var(--radius-pill);
+    background: var(--agnes-text-secondary);
+  }
+}
+
+:where(dialog)[data-size="sm"] {
+  width: min(420px, calc(100vw - var(--s32)));
+}
+:where(dialog)[data-size="md"] {
+  width: min(560px, calc(100vw - var(--s32)));
+}
+:where(dialog)[data-size="lg"] {
+  width: min(720px, calc(100vw - var(--s32)));
+}
+@media (max-width: 767px) {
+  /* Native hosts retain their IDs and controllers; dimensions supersede desktop ID widths. */
+  dialog:not(.agh-drawer):not(.lightbox)[open] {
+    inset: auto 0 0;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    max-height: calc(100dvh - var(--s16));
+    margin: 0;
+    border-radius: var(--radius-surface) var(--radius-surface) 0 0;
+  }
+}

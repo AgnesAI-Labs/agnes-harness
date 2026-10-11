@@ -49,3 +49,19 @@ StateSwitch also renders Boolean schema/settings fields; optional id/testId and 
 `createSettingsButton` / `createSettingsControl` / `materializeSettingsControls` provide token-styled native equivalents for fixed static shells. Materialization happens before controller binding, retaining form semantics and host-owned node lifetimes. / 固定静态壳在控制器绑定前生成与 SettingsInput/Select/TextArea 相同的 token 控件；宿主继续拥有节点、值和事件，不新增 React root。
 
 SettingsPage accepts `headingId` and `bodyClassName` for existing native pane IDs and scroll bodies. / SettingsPage 可保留原生设置面板的标题 ID 与正文滚动类。
+
+| `Tag` / `MetaText` / `Count` | Shared | Contract CSS | Actionable warn/bad/info tags; descriptive metadata stays text; zero counts are omitted. |
+| `Menu` | Shared | Popover | Action menu with arrows, Home/End, typeahead, Escape/focus return and danger-last grouping. Value selection uses a listbox instead. |
+| `Tooltip` / `IconButton` | Shared | Tooltip / Button | 500ms hover, immediate focus, mandatory icon-action label, keyboard-accessible disabled explanation. |
+| `Icon` / `createSettingsIcon` | Shared | Vendored Lucide | One geometry table, 24px view box, 1.75 stroke, currentColor; sizes 16/18/20/48. |
+| `Toast` | Shared | Nonmodal status | Three-second success feedback, Escape dismissal and lifecycle cleanup. |
+| `SettingsPageHeader` / `SettingsSaveBar` | Shared | SettingsPage / Button | Page actions in heading; caller-owned dirty state; discard/save order; busy guard; two-second saved feedback. |
+| `EmptyState` / `Banner` / `ListRow` | Shared | Contract CSS | Teaching empty state; one inline notice/action; flat detail rows with independent trailing actions. |
+| `Drawer` | Shared | Native dialog | 480px right detail surface, narrow full screen, Escape and focus return. Close other modal hosts before opening. |
+
+`Dialog` adds `size="sm|md|lg"` (420/560/720px) while retaining all existing Modal props,
+including explicit width. Narrow confirmations use a bottom sheet with a draggable close handle.
+`Field` replaces help with errors, connects descriptions/invalid state and supports optional labels.
+The public `.agh-btn*`, `.agh-tag`, `.agh-banner` and other `.agh-*` classes live in
+`components.css`; legacy `.primary-button` / `.secondary-button` / `.icon-button` are internal aliases.
+Both Web build paths compose the component rules into the existing theme bridge asset.

@@ -75,3 +75,27 @@ web-ui 之外只保留 `packages/web-units/src/composer.ts` 中用于浏览器�
 按清单逐项检查 en/zh-CN、浅/深色、桌面/390 px，包含溢出、键盘焦点及相关状态。通过仓库现有截图 harness 采集对应前后证据，一次只开一个浏览器页面。截图是呈现证据，不能代替行为测试通过结论。
 
 SettingsPage 的 `headingId` / `bodyClassName` 保留原有标题 ID 与正文滚动类。React 动作用 Button；命令式控制器使用 `createSettingsButton`，继续拥有节点、事件、焦点与清理，不引入第二份状态。静态控件工厂与 React 控件消费相同 token。截图证据须记录源码 revision、语言、主题、宽度及缺失的基线，不能把未执行的行为测试写成通过。
+
+## 共享呈现原语
+
+`@agnes/web-ui` 提供 `Button`、`IconButton`、`Icon`、`Tag`、`MetaText`、`Count`、
+`Menu`、`Tooltip`、`Toast`、`EmptyState`、`Banner`、`ListRow`、`Drawer`、`Field`、
+`SettingsPageHeader`、`SettingsSaveBar`，保留既有 props 和钩子。
+`Button` 新增 `appearance="primary|secondary|ghost|danger|link"`；
+`dangerFilled` 只用于破坏性确认。用 `disabledReason` 解释不可用动作。
+纯图标动作必带 label 和共享 tooltip。动作菜单用 `role="menu"`，值选择器用 `role="listbox"`。
+
+设置页顺序为页头 → 提示 → 工具栏 → 内容 → 有改动才出现的保存条。
+`SettingsPage variant="form|list"` 最大宽度为 720/960px；工具栏支持 `search`、
+`filters`、`controls` 槽。调用方持有 dirty/busy 状态与持久化操作。
+Field 自动关联说明/错误，错误取代说明。Drawer 桌面宽 480px、≤767px 全屏；
+打开前关闭其它 modal。`Dialog size="sm|md|lg"` 为 420/560/720px，窄屏为底部抽屉。
+
+稳定公共 CSS API 位于 `@agnes/web-ui/components.css`：`.agh-btn` 及
+`--primary|secondary|ghost|danger|link`、`--sm|md`、`--icon`、`--danger-filled`，
+以及 `.agh-tag`（`data-tone="warn|bad|info"`）、`.agh-meta`、`.agh-count`、
+`.agh-banner`、`.agh-empty-state`、`.agh-list-row`、`.agh-field`。
+Web 主题桥已包含规则，静态按钮可使用相同契约类。
+`.primary-button`、`.secondary-button`、`.icon-button` 是内部别名；新增业务代码
+使用公共组件/契约类和语义颜色。呈现守卫只允许已登记的旧页面基线，迁移时删除对应项，
+不得为新增页面样式增加豁免。

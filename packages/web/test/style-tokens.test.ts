@@ -15,6 +15,7 @@
  * 且下面是显式断言而不是静默跳过——解析退化（规则数异常）本身就会红。
  */
 import { resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 
@@ -232,7 +233,12 @@ const DYNAMIC_CUSTOM_PROPERTIES = new Set([
 ])
 
 beforeAll(async () => {
-  rules = parseRules(stripComments(readWebStyleSource(stylePath)))
+  rules = parseRules(
+    stripComments(
+      readWebStyleSource(stylePath) +
+        readFileSync(resolve(packageDirectory, '../web-ui/src/components.css'), 'utf8'),
+    ),
+  )
   collectTokens()
 })
 

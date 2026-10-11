@@ -22,12 +22,28 @@ import { modelSettingsLocaleCatalog } from './model-settings.js'
 
 const primitiveCatalog: LocaleCatalog = {
   en: {
+    'ui.close': 'Close',
+    'ui.dismiss': 'Dismiss',
+    'ui.optional': '(optional)',
+    'ui.unsaved': 'You have unsaved changes',
+    'ui.discard': 'Discard',
+    'ui.save': 'Save',
+    'ui.saved': 'Saved',
+    'ui.saving': 'Saving changes…',
     'accounts.empty': 'No saved model accounts yet.',
     'accounts.loading': 'Loading configuration…',
     'settings.selectPicker.fallback': 'Choose {label}',
     'settings.selectPicker.ariaJoin': '{label}: {value}',
   },
   'zh-CN': {
+    'ui.close': '关闭',
+    'ui.dismiss': '关闭提示',
+    'ui.optional': '（可选）',
+    'ui.unsaved': '有未保存的更改',
+    'ui.discard': '放弃',
+    'ui.save': '保存',
+    'ui.saved': '已保存',
+    'ui.saving': '正在保存更改…',
     'accounts.empty': '还没有已保存的模型账户。',
     'accounts.loading': '正在读取配置…',
     'settings.selectPicker.fallback': '选择{label}',

@@ -15,15 +15,15 @@
 dialog {
   inset: 0;
   margin: auto;
-  width: min(23.75rem, calc(100vw - 3rem));
+  width: min(560px, calc(100vw - var(--s32)));
   max-height: var(--dialog-max-height);
   padding: 0;
   overflow: hidden;
   border: 0;
-  border-radius: var(--radius-2xl);
+  border-radius: var(--radius-surface);
   color: var(--agnes-text-secondary);
   background: var(--agnes-bg-page);
-  box-shadow: var(--shadow-elevation-prominent);
+  box-shadow: var(--elevation-2);
   /* showModal 打开时从下方 8px 淡入；遮罩同步淡入。关闭仍瞬时。 */
   transition:
     opacity var(--transition),

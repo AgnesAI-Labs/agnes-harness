@@ -73,3 +73,30 @@ Outside web-ui, retain only the hidden file input in `packages/web-units/src/com
 Static HTML/template shells must not retain duplicate editable controls after migration. Fixed forms declare `template[data-agnes-control]`; web-ui's `materializeSettingsControls` creates shared token-styled native equivalents before controller binding, preserving IDs, options, validation and host node ownership. Remove obsolete fallback form markup or move it into shared React content, preserving DOM IDs, selectors, public hooks and controller lifetimes. Hidden duplicates are not accepted exceptions.
 
 Review each inventory surface in en and zh-CN, light and dark, at desktop and 390 px, including overflow, keyboard focus and each relevant state. Capture evidence using the repository's existing screenshot harness with one browser page at a time. Record the source revision, theme, locale, viewport and any missing baseline explicitly. Screenshot capture is evidence, not a claim that behavior tests passed.
+
+## Shared presentation primitives
+
+`@agnes/web-ui` owns `Button`, `IconButton`, `Icon`, `Tag`, `MetaText`, `Count`,
+`Menu`, `Tooltip`, `Toast`, `EmptyState`, `Banner`, `ListRow`, `Drawer`, `Field`,
+`SettingsPageHeader` and `SettingsSaveBar`. Existing props and hooks remain supported.
+`Button` additionally accepts `appearance="primary|secondary|ghost|danger|link"`;
+`dangerFilled` is reserved for destructive confirmations. Use `disabledReason` to
+explain unavailable actions. Icon actions require a label and shared tooltip.
+Menus contain actions (`role="menu"`); value pickers use `role="listbox"`.
+
+Settings pages compose heading → notice → toolbar → content → dirty save bar.
+Use `SettingsPage variant="form|list"` (720/960px maximum), and toolbar `search`,
+`filters`, `controls` slots. The caller owns dirty/busy state and all persistence.
+Fields connect their help/error to controls; an error replaces help. `Drawer` is
+480px on desktop and full screen at ≤767px; close other modals before opening.
+`Dialog size="sm|md|lg"` uses 420/560/720px and a narrow bottom sheet.
+
+The stable public CSS API is `@agnes/web-ui/components.css`: `.agh-btn` with
+`--primary|secondary|ghost|danger|link`, `--sm|md`, `--icon`, `--danger-filled`,
+plus `.agh-tag` (`data-tone="warn|bad|info"`), `.agh-meta`, `.agh-count`,
+`.agh-banner`, `.agh-empty-state`, `.agh-list-row` and `.agh-field`.
+The Web theme bridge includes these rules. Static buttons can use the same classes.
+`.primary-button`, `.secondary-button` and `.icon-button` are internal aliases;
+new business code must use the public components/contracts and semantic colors.
+The presentation guard permits only the recorded legacy baseline until those pages
+migrate. Do not add new allowances for page styling.
