@@ -180,6 +180,14 @@ const TARGETS: Array<{
       {
         from: 'schema/session-v1.json',
         defs: [
+          'DecisionHandle',
+          'DecisionSpec',
+          'DecisionRequest',
+          'DecisionResponse',
+          'DecisionResult',
+          'DecisionCommandReceipt',
+          'DecisionConsumption',
+          'DecisionSnapshot',
           'JsonValue',
           'ContentBlock',
           'Actor',

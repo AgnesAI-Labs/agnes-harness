@@ -745,94 +745,108 @@ export function registerAgnes(
       const current = cx.registry.require(sessionId).generation
       if (generation !== current) throw rpcError('GENERATION_STALE', { generation: current })
     }
-  ep.register('_agnes/v1/approval.decide', async (params, c) => {
-    if (!cx.resolveActor) throw rpcError('CAPABILITY_DENIED', { method: 'approval.decide' })
-    const p = params as {
-      ticket: string
-      verdict: 'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected'
-      sourceCredential?: unknown
+  const requireDecisionOwner = (sessionId: string, c: CallContext) => {
+    try {
+      requireOwner('approval.decide', sessionId, c)
+    } catch {
+      throw rpcError('APPROVAL_REJECTED', { reason: 'DECISION_NOT_FOUND' })
     }
-    type ApprovalSession = {
-      resumeApproval?: (
-        ticket: string,
-        verdict: 'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected',
-        actor: Actor,
-      ) => Promise<{ seq: number }>
-      decideApproval?: (input: {
-        ticket: string
-        verdict: 'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected'
-        decidedBy: Actor
-      }) => Promise<{ seq: number }>
-    }
-    const matches: Array<{ sessionId: string; session: ApprovalSession }> = []
-    // A ticket deliberately carries no session id. Prefer the event-built index; unlike an open
-    // registry scan it survives daemon restart. Ticket cwd is history only: reopening must restore
-    // the daemon-issued authority binding for the indexed session.
-    const indexed = cx.tickets?.get(p.ticket)
-    if (indexed)
+  }
+  const decisionSession = async (sessionId: string, c: CallContext) => {
+    requireDecisionOwner(sessionId, c)
+    if (!cx.registry.get(sessionId)) {
+      const binding = await cx.workspaces.restoreBinding(sessionId)
       try {
-        requireOwner('approval.decide', indexed, c)
-      } catch {
-        throw rpcError('APPROVAL_REJECTED', { reason: 'unknown ticket' })
-      }
-    if (indexed && !cx.registry.get(indexed)) {
-      let binding: WorkspaceBindingEnvelope
-      try {
-        binding = await cx.workspaces.restoreBinding(indexed)
-      } catch {
-        throw rpcError('APPROVAL_REJECTED', {
-          reason: 'ticket workspace unavailable',
-        })
-      }
-      try {
-        await cx.registry.open({ key: indexed, cwd: binding.canonicalRoot, binding })
+        await cx.registry.open({ key: sessionId, cwd: binding.canonicalRoot, binding })
       } catch (error) {
-        if ((error as { code?: unknown } | null)?.code === 'E_UNKNOWN_EVENT') throw legacyLedgerRpcError()
+        if ((error as { code?: unknown }).code === 'E_UNKNOWN_EVENT') throw legacyLedgerRpcError()
         throw error
       }
     }
-    const candidates = indexed ? [indexed] : cx.registry.keys()
-    // An index miss retains the compatibility fallback over open sessions. Refuse ambiguity
-    // rather than choosing whichever registry key happens to enumerate first.
-    for (const sessionId of candidates) {
-      try {
-        requireOwner('approval.decide', sessionId, c)
-      } catch {
-        continue
+    return cx.registry.require(sessionId).session as unknown as {
+      decisions?: {
+        answer(
+          input: {
+            handle: { id: string; sessionId: string }
+            revision: number
+            commandId: string
+            response: import('@agnes/protocol').DecisionResponse
+          },
+          context: { actor: Actor; category: 'human'; authorize(): Promise<void> },
+        ): Promise<import('@agnes/protocol').DecisionCommandReceipt>
+        list(): Promise<import('@agnes/protocol').DecisionSnapshot[]>
       }
-      const session = cx.registry.get(sessionId)?.session
-      if (!session) continue
-      const asked = await scanNewest(
-        session as unknown as ScannableSession,
-        'approval/asked',
-        (event) => (event.data as { pending?: { ticket?: unknown } } | null)?.pending?.ticket === p.ticket,
-      )
-      if (asked) matches.push({ sessionId, session: session as ApprovalSession })
-      if (matches.length > 1) break
+      decideApproval?(input: unknown): Promise<import('@agnes/protocol').DecisionCommandReceipt>
+      listDecisions?(): Promise<import('@agnes/protocol').DecisionSnapshot[]>
     }
-    if (matches.length !== 1)
-      throw rpcError('APPROVAL_REJECTED', {
-        reason: matches.length === 0 ? 'unknown ticket' : 'ambiguous ticket',
+  }
+  ep.register('_agnes/v1/decision.list', async (params, c) => {
+    const { sessionId } = params as { sessionId: string }
+    const session = await decisionSession(sessionId, c)
+    const values = session.decisions ? await session.decisions.list() : await session.listDecisions?.()
+    if (!values) throw rpcError('CAPABILITY_DENIED', { method: 'decision.list' })
+    return {
+      decisions: values.filter(
+        (value) =>
+          !value.consumption && !value.invalidation && (!value.result || value.result.reason === 'answered'),
+      ),
+    }
+  })
+  ep.register('_agnes/v1/approval.decide', async (params, c) => {
+    if (!cx.resolveActor) throw rpcError('CAPABILITY_DENIED', { method: 'approval.decide' })
+    const p = params as import('@agnes/protocol').ApprovalDecideParams
+    const session = await decisionSession(p.sessionId, c)
+    const sourceCredential = (c.metadata?.['ai.agnes.harness'] as { sourceCredential?: unknown } | undefined)
+      ?.sourceCredential
+    const actorFor = () =>
+      approvalActor(
+        c.conn,
+        p.sessionId,
+        (conn, sessionId) => cx.resolveActor!(conn.credential, 'approval', sessionId),
+        cx.verifyApprovalSource,
+        sourceCredential,
+      ).catch(() => {
+        throw rpcError('CAPABILITY_DENIED', { code: 'APPROVAL_SOURCE_UNVERIFIED' })
       })
-    const match = matches[0] as (typeof matches)[number]
-    const approver = await approvalActor(
-      c.conn,
-      match.sessionId,
-      (conn, sessionId) => cx.resolveActor!(conn.credential, 'approval', sessionId),
-      cx.verifyApprovalSource,
-      p.sourceCredential,
-    ).catch(() => {
-      throw rpcError('CAPABILITY_DENIED', { code: 'APPROVAL_SOURCE_UNVERIFIED' })
-    })
-    const session = match.session
+    const actor = await actorFor()
+    const command = {
+      handle: { id: p.id, sessionId: p.sessionId },
+      revision: p.revision,
+      commandId: p.commandId,
+      response: p.response,
+    }
     try {
-      if (session.resumeApproval) return await session.resumeApproval(p.ticket, p.verdict, approver)
-      if (session.decideApproval)
-        return await session.decideApproval({ ticket: p.ticket, verdict: p.verdict, decidedBy: approver })
-      throw new Error('session has no approval callback')
+      const receipt = session.decisions
+        ? await session.decisions.answer(command, {
+            actor,
+            category: 'human',
+            async authorize() {
+              c.signal.throwIfAborted()
+              requireDecisionOwner(p.sessionId, c)
+              if (!isDeepStrictEqual(actor, await actorFor()))
+                throw rpcError('CAPABILITY_DENIED', { code: 'APPROVAL_AUTHORITY_CHANGED' })
+              c.signal.throwIfAborted()
+            },
+          })
+        : await session.decideApproval?.({
+            command,
+            context: {
+              actor,
+              category: 'human',
+              credential: sourceCredential ?? c.conn.credential ?? { kind: 'local' },
+              sourceVerified: sourceCredential !== undefined,
+            },
+          })
+      if (!receipt) throw rpcError('CAPABILITY_DENIED', { method: 'approval.decide' })
+      const entry = cx.registry.require(p.sessionId)
+      const values = session.decisions ? await session.decisions.list() : await session.listDecisions?.()
+      const target = values?.find((value) => value.handle.id === p.id)
+      if (!entry.inflight && target && !target.consumption && !target.invalidation)
+        cx.continueFollowUps?.(entry, undefined, true)
+      return receipt
     } catch (error) {
       const e = error as { code?: unknown; message?: unknown }
-      if (e.code === 'E_RELATION')
+      if (e.code === 'E_RELATION' || e.code === 'E_CAS')
         throw rpcError('APPROVAL_REJECTED', {
           reason: typeof e.message === 'string' ? e.message : 'approval rejected',
         })

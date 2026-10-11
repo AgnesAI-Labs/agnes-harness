@@ -106,7 +106,12 @@ describe('UI projection leaf contract', () => {
         sessionId: 's',
         upto: 7,
         generation: 1,
-        opState: { turn: 1, step: 2, phase: 'parked', parked: { ticket: 't', expiresAt: 'date' } },
+        opState: {
+          turn: 1,
+          step: 2,
+          phase: 'parked',
+          parked: { decisionRef: { sessionId: 's', id: 't', revision: 1 }, expiresAt: 'date' },
+        },
         nodes,
         turns: [],
         budget: { slot: 'primary', escalate: false, creditsUsed: 2, creditsCap: null },

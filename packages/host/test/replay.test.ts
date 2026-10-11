@@ -874,7 +874,14 @@ describe('L1 replay corpus', () => {
                   },
             }
           : {}),
-        ...(f.prompterSays ? { prompter: async () => f.prompterSays as Verdict } : {}),
+        ...(f.prompterSays
+          ? {
+              prompter: async () => ({
+                verdict: f.prompterSays as Verdict,
+                answeredBy: { id: 'reviewer', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+              }),
+            }
+          : {}),
         // A wire case's rate reaches the model layer through the profile, which is the path a
         // deployment's takes. Without it the runner would state the rate itself and no case could
         // tell a rate host read from one this file wrote.

@@ -40,6 +40,7 @@ export type SessionMethod =
   | 'setYolo'
   | 'manualCompact'
   | 'decideApproval'
+  | 'listDecisions'
   | 'resolveActor'
   | 'fork'
   | 'resume'

@@ -127,6 +127,8 @@ export type CreateClientOptions = {
 export type InitializeInfo = { agnesVersion: string; capabilities: Record<string, unknown> }
 
 export type CallOptions = {
+  /** Existing bridge proof envelope; method parameters remain credential-free. */
+  metadata?: Record<string, unknown>
   // null means no deadline at all; a turn is bounded by liveness, not by a stopwatch.
   timeoutMs?: number | null
   // Set only by the handshake itself, which would otherwise wait on its own result.
@@ -527,18 +529,23 @@ export class Client {
     },
   }
 
-  /** A parked approval uses the authenticated connection. Source credentials require a configured server verifier. */
+  /** Answers one durable request. Human identity is derived from the authenticated connection. */
   readonly approval = {
     decide: (
-      ticket: string,
-      verdict: 'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected',
-      sourceCredential?: Credential,
-    ): Promise<{ seq: number }> =>
-      this.call<{ seq: number }>('_agnes/v1/approval.decide', {
-        ticket,
-        verdict,
-        ...(sourceCredential ? { sourceCredential } : {}),
-      }),
+      command: import('@agnes/protocol').ApprovalDecideParams,
+      bridge?: { sourceCredential: Credential },
+    ): Promise<import('@agnes/protocol').DecisionCommandReceipt> =>
+      this.call(
+        '_agnes/v1/approval.decide',
+        command,
+        bridge
+          ? {
+              metadata: { [META_KEY]: { sourceCredential: bridge.sourceCredential } },
+            }
+          : {},
+      ),
+    list: (sessionId: string): Promise<import('@agnes/protocol').DecisionListResult> =>
+      this.call('_agnes/v1/decision.list', { sessionId }),
     listGrants: (
       sessionId: string,
       binding: { toolId: string; scope: string; policyVersion: string },
@@ -691,6 +698,7 @@ export class Client {
       // Omitted, not undefined: leaving the key off is what lets the connection apply
       // its own default deadline, while an explicit null means "no deadline".
       ...(o.timeoutMs !== undefined ? { timeoutMs: o.timeoutMs } : {}),
+      ...(o.metadata === undefined ? {} : { metadata: o.metadata }),
     })
     this.checkResult(method, result)
     return result

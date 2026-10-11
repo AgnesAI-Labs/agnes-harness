@@ -3,7 +3,7 @@ import type { HostSession } from '../lifecycle/host.js'
 
 /**
  * The host owns the wake-up, while core owns the fact that gets written. Nothing is scheduled while
- * no approval is pending; a new one is noticed as its `approval/asked` row commits. The wake-up is
+ * no approval is pending; a new one is noticed as its ledger state commits. The wake-up is
  * pinned to the earliest deadline, but never more than MAX_WAKE_MS away: the deadline is wall-clock
  * time and the timer is not, so a sleeping machine or a clock change is caught up within that bound.
  */
@@ -37,6 +37,19 @@ function nextWakeMs(session: ExpirableSession): number | undefined {
     if (typeof expiresAt !== 'string') continue
     // Read exactly as core reads it: a deadline core cannot parse is one it already treats as due.
     const at = approvalDeadlineMs(expiresAt)
+    if (Number.isNaN(at)) return MIN_WAKE_MS
+    if (earliest === undefined || at < earliest) earliest = at
+  }
+  for (const { value } of session.state.registers.decisionStates.values()) {
+    if (
+      value.request.lane !== session.lane ||
+      value.consumption ||
+      value.invalidation ||
+      (value.result && value.result.reason !== 'answered') ||
+      !value.request.expiresAt
+    )
+      continue
+    const at = approvalDeadlineMs(value.request.expiresAt)
     if (Number.isNaN(at)) return MIN_WAKE_MS
     if (earliest === undefined || at < earliest) earliest = at
   }
@@ -115,7 +128,9 @@ export async function startApprovalExpiry(
   // This first call is awaited by Host.createSession. A reopened session therefore settles
   // already-expired persisted approvals before its handle is handed to a caller. A storage failure
   // is propagated for startup cleanup; later failures are reported and retried by the timer.
-  const unobserve = session.d.log.observeCommitted(['approval/asked'], () => schedule(false))
+  const unobserve = session.d.log.observeCommitted(['approval/asked', 'decision/state'], () =>
+    schedule(false),
+  )
   try {
     await run()
   } catch (error) {

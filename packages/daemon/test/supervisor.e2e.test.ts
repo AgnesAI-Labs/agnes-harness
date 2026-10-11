@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -6,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { fakeModel } from '@agnes/ai/testkit'
 import { canonicalJson, DEFAULT_COMPUTER_USE, hashInput, type ResolvedProfile, sha256hex } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
-import { createClient, memoryJournal, wsTransport } from '@agnes/sdk'
+import { createClient, memoryJournal, wsTransport, type LedgerEvent } from '@agnes/sdk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WebSocket } from 'ws'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
@@ -1186,8 +1187,8 @@ it.each(['session', 'worker'])(
         const timeline = await session.projectUI()
         expect(timeline.nodes.filter((node) => node.kind === 'approval')).toEqual([
           expect.objectContaining({
-            state: 'decided',
-            decision: expect.objectContaining({ verdict: 'cancelled', reason: 'stopped' }),
+            state: 'expired',
+            decision: expect.objectContaining({ verdict: 'stopped' }),
           }),
         ])
       }
@@ -1200,3 +1201,136 @@ it.each(['session', 'worker'])(
   },
   30_000,
 )
+
+it('retains the original request across worker and daemon crashes, then consumes once', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agh-decision-cold-'))
+  writeFileSync(join(dir, 'profile.json'), JSON.stringify(buildProfile(dir)))
+  writeFileSync(join(dir, 'daemon-config.json'), JSON.stringify(buildConfigFor(dir)))
+  const open = async () => {
+    const child = spawn(
+      process.execPath,
+      ['--import', 'tsx', fileURLToPath(new URL('./fake-supervisor-entry.ts', import.meta.url)), dir],
+      {
+        env: {
+          PATH: process.env.PATH,
+          TMPDIR: tmpdir(),
+          AGNES_FAKE_WORKER_PERMISSION: '1',
+          AGNES_FAKE_WORKER_RECOVERY: '1',
+          AGNES_FAKE_WORKER_TURNS: '4',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    )
+    const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()))
+    let stdout = '',
+      stderr = ''
+    child.stdout.on('data', (data) => {
+      stdout += String(data)
+    })
+    child.stderr.on('data', (data) => {
+      stderr += String(data)
+    })
+    try {
+      await vi.waitFor(
+        () => {
+          if (child.exitCode !== null || child.signalCode !== null) throw new Error(stderr)
+          expect(stdout).toContain('READY_SOCKET ')
+        },
+        { timeout: 20000, interval: 100 },
+      )
+    } catch (error) {
+      child.kill('SIGKILL')
+      await exited
+      throw error
+    }
+    return {
+      socketPath: stdout.split('READY_SOCKET ')[1]!.split('\n')[0]!,
+      diagnostics: () => stderr,
+      async crash() {
+        child.kill('SIGKILL')
+        await exited
+      },
+      async close() {
+        if (child.exitCode !== null || child.signalCode !== null) return
+        child.kill('SIGTERM')
+        try {
+          await vi.waitFor(() => expect(child.exitCode).toBe(0), { timeout: 20000, interval: 100 })
+        } finally {
+          if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+          await exited
+        }
+      },
+    }
+  }
+  let sup = await open()
+  let sdk = createClient({ journal: memoryJournal(), transport: localSdkTransport(sup.socketPath) })
+  try {
+    const session = await sdk.session.new({ cwd: dir })
+    expect(await session.prompt('review exact call')).toMatchObject({ reason: 'parked' })
+    const [original] = (await sdk.approval.list(session.id)).decisions
+    expect(original).toMatchObject({
+      revision: 1,
+      result: null,
+      consumption: null,
+      request: { spec: { subject: { call: { name: 'permission_probe' } } } },
+    })
+    expect(existsSync(join(dir, 'permission-dispatched'))).toBe(false)
+    const pid = Number(readFileSync(join(dir, 'fixture-worker-pid'), 'utf8'))
+    expect(Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid).toBe(true)
+    process.kill(pid, 'SIGKILL')
+    // The existing writer lease must lapse; a killed process cannot voluntarily release it.
+    await vi.waitFor(
+      async () => {
+        expect((await sdk.approval.list(session.id)).decisions).toEqual([original])
+        expect(Number(readFileSync(join(dir, 'fixture-worker-pid'), 'utf8'))).not.toBe(pid)
+      },
+      { timeout: 50_000, interval: 500 },
+    )
+    await sdk.close()
+    const remainingWorker = Number(readFileSync(join(dir, 'fixture-worker-pid'), 'utf8'))
+    await sup.crash()
+    process.kill(remainingWorker, 'SIGKILL')
+    sup = await open()
+    sdk = createClient({ journal: memoryJournal(), transport: localSdkTransport(sup.socketPath) })
+    await vi.waitFor(
+      async () => expect((await sdk.approval.list(session.id)).decisions).toEqual([original]),
+      { timeout: 50000, interval: 500 },
+    )
+    const command = {
+      ...original!.handle,
+      revision: original!.revision,
+      commandId: 'cold-human-answer',
+      response: { option: 'allowed-once', value: null },
+    }
+    const receipt = await sdk.approval.decide(command)
+    try {
+      await vi.waitFor(() => expect(readFileSync(join(dir, 'permission-dispatched'), 'utf8')).toBe('yes\n'), {
+        timeout: 15_000,
+      })
+    } catch (error) {
+      const projection = await sdk.call('_agnes/v1/session.projectUI', { sessionId: session.id })
+      throw new Error(`cold execution: ${JSON.stringify(projection)} ${sup.diagnostics()}`, { cause: error })
+    }
+    await expect(sdk.approval.decide(command)).resolves.toEqual(receipt)
+    await expect(sdk.approval.decide({ ...command, commandId: 'second-answer' })).rejects.toMatchObject({
+      data: { code: 'APPROVAL_REJECTED' },
+    })
+    const resumed = await sdk.session.load(session.id, { cwd: dir })
+    const timeline = await resumed.projectUI()
+    const rows: LedgerEvent[] = []
+    for await (const row of resumed.events({ cursor: { fromSeq: 0, generation: timeline.generation } })) {
+      rows.push(row)
+      if (row.seq >= timeline.upto) break
+    }
+    expect(rows.filter((row) => row.type === 'tool/call')).toHaveLength(1)
+    const consumed = rows.find(
+      (row) => row.type === 'decision/state' && (row.data as { consumption?: unknown }).consumption,
+    )
+    expect(consumed).toBeDefined()
+    expect(readFileSync(join(dir, 'permission-dispatched'), 'utf8')).toBe('yes\n')
+  } finally {
+    await sdk.close()
+    await sup.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+}, 160_000)

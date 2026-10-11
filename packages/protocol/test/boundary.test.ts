@@ -295,6 +295,9 @@ describe('protocol src boundary', () => {
   // checks that each really is a $ref rather than a second independent definition.
   const ALIASES_OF_SESSION: Record<string, string[]> = {
     'agnes-v1': [
+      'DecisionResponse',
+      'DecisionCommandReceipt',
+      'DecisionSnapshot',
       'JsonValue',
       'ContentBlock',
       'Actor',

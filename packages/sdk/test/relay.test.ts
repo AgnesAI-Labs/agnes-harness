@@ -98,7 +98,12 @@ describe('createRelay', () => {
       initialize: fakeEndpoint({}).initialize,
       '_agnes/v1/session.list': () => ({ items: [] }),
       '_agnes/v1/participant.join': () => ({ seq: 1 }),
-      '_agnes/v1/approval.decide': () => ({ seq: 2 }),
+      '_agnes/v1/approval.decide': (p) => ({
+        digest: '0'.repeat(64),
+        commandId: (p as { commandId: string }).commandId,
+        revision: 2,
+        seq: 2,
+      }),
     })
     const real = createClient({
       transport: { kind: 'inproc', endpoint: endpoint.endpoint },
@@ -134,8 +139,11 @@ describe('createRelay', () => {
           await fetch(`${base}/api/approval`, {
             method: 'POST',
             body: JSON.stringify({
-              ticket: 't',
-              verdict: 'allowed-once',
+              sessionId: 's',
+              id: 'd',
+              revision: 1,
+              commandId: 'c',
+              response: { option: 'allowed-once', value: null },
               sourceCredential: { kind: 'local' },
             }),
           })
@@ -146,7 +154,13 @@ describe('createRelay', () => {
         { method: '_agnes/v1/participant.join', params: { sessionId: 's', credential } },
         {
           method: '_agnes/v1/approval.decide',
-          params: { ticket: 't', verdict: 'allowed-once' },
+          params: {
+            sessionId: 's',
+            id: 'd',
+            revision: 1,
+            commandId: 'c',
+            response: { option: 'allowed-once', value: null },
+          },
         },
       ])
     } finally {

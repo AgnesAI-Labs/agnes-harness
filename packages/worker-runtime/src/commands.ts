@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util'
 import {
   assertHostPublication,
   draftFeedbackSkill,
@@ -12,7 +13,6 @@ import { exporterHealth } from '@agnes/observability'
 import type { LocalGate } from '@agnes/plugin-runtime/host'
 import {
   type Actor,
-  type ApprovalVerdict,
   type ExtensionCallParams,
   MAX_FRAME_BYTES,
   type McpStatus,
@@ -246,8 +246,7 @@ export async function prepareIdleResources(
  * switch against the actual assembly (`packages/host/src/runtime/lifecycle/host.ts`), and `HostSession` has no method
  * that does this check on its own.
  *
- * `decideApproval` resolves a pending ticket through `HostSession.resumeApproval` — core's session
- * has no method literally named `decideApproval`; that name is this command's, not core's.
+ * `decideApproval` forwards an authenticated connection context to Core's session writer command.
  *
  * `resource.stale`/`run`'s reload check implement next-turn reload: a `resource.stale` notification from the daemon only bumps
  * `o.resources.staleMarks` and returns immediately — it does no reload work of its own, on purpose, so
@@ -504,9 +503,24 @@ export async function handleCommand(
         throw new AggregateError(failures, 'Computer Use session YOLO mode switch failed')
       }
     }
+    case 'listDecisions':
+      return session.decisions.list()
     case 'decideApproval': {
-      const args = p as { ticket: string; verdict: ApprovalVerdict; decidedBy: Actor }
-      return session.resumeApproval(args.ticket, args.verdict, args.decidedBy)
+      const args = p as {
+        command: Parameters<typeof session.decisions.answer>[0]
+        context: { actor: Actor; category: 'human'; credential: unknown; sourceVerified: boolean }
+      }
+      return session.decisions.answer(args.command, {
+        actor: args.context.actor,
+        category: args.context.category,
+        async authorize() {
+          const current = await o.host.resolveActor(args.context.credential, 'approval')
+          if (!args.context.sourceVerified && !isDeepStrictEqual(current, args.context.actor))
+            throw Object.assign(new Error('DECISION_AUTHORITY_CHANGED'), { code: 'E_RELATION' })
+          if (session.closingOrClosed)
+            throw Object.assign(new Error('DECISION_SESSION_CLOSED'), { code: 'E_RELATION' })
+        },
+      })
     }
     case 'resolveActor': {
       const args = p as { credential: unknown; surface: 'session' | 'approval' }

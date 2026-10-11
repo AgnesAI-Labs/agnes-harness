@@ -310,7 +310,7 @@ describe('authenticated session ownership RPC guard', () => {
     }
   })
 
-  it('maps a foreign indexed approval ticket to the same unknown-ticket rejection', async () => {
+  it('refuses a foreign approval without exposing session identity', async () => {
     const h = await openTestHost()
     const tickets = new MemoryTickets()
     const owner = h.endpoint({ tickets })
@@ -332,10 +332,16 @@ describe('authenticated session ownership RPC guard', () => {
         jsonrpc: '2.0',
         id: 3,
         method: '_agnes/v1/approval.decide',
-        params: { ticket: 'foreign-ticket', verdict: 'rejected' },
+        params: {
+          sessionId: created.result.sessionId,
+          id: 'foreign-decision',
+          revision: 1,
+          commandId: 'c',
+          response: { option: 'rejected', value: null },
+        },
       })
       expect(response).toMatchObject({
-        error: { data: { code: 'APPROVAL_REJECTED', reason: 'unknown ticket' } },
+        error: { data: { code: 'APPROVAL_REJECTED', reason: 'DECISION_NOT_FOUND' } },
       })
       expect(JSON.stringify(response)).not.toContain(created.result.sessionId)
     } finally {

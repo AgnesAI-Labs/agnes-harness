@@ -79,6 +79,7 @@ export type {
   Cursor,
   DaemonNotice,
   DiagnosticRecord,
+  DecisionListResult,
   DiagnosticsCollectParams,
   DiagnosticsCollectResult,
   DiagnosticsEventsParams,

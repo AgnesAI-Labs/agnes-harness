@@ -267,53 +267,50 @@ describe('worker command dispatch against a real host+session', () => {
     await t.close()
   })
 
-  it('expires a durable ticket before worker decideApproval can consume it', async () => {
+  it('expires the original decision before worker answer can commit', async () => {
     const t = await openTestHost()
-    const session = await t.host.createSession({ cwd: t.dataDir })
-    const ticket = 'daemon-expiry-ticket'
-    const expiresAt = new Date(Date.now() + 30).toISOString()
     try {
-      // This is a real Host session used by the daemon worker command path. The asked row is
-      // durable and deliberately outlives no in-memory endpoint, so the Host scheduler must be the
-      // component that settles it before the command arrives.
-      await session.append([
-        session.ev('approval/asked', {
-          requestId: 'daemon-expiry-request',
-          kind: 'tool',
-          summary: 'shell touch marker',
-          risk: 'destructive',
-          bindingHash: '0'.repeat(64),
-          pending: { ticket, expiresAt },
-        }),
-      ])
-      await vi.waitFor(
-        async () => {
-          const rows = await session.scan({ type: 'approval/decided', toSeq: session.lastSeq })
-          expect(rows).toHaveLength(1)
-          expect(rows[0]?.data).toMatchObject({
-            ticket,
-            via: 'timeout',
-            verdict: 'unavailable',
-            reason: 'deadline',
-          })
-          expect(session.state.pendingApprovals.size).toBe(0)
-        },
-        { timeout: 2_000, interval: 20 },
-      )
-      const aborts = new Map<string, AbortController>()
+      const session = await t.host.createSession({ cwd: t.dataDir })
+      let now = Date.now()
+      session.d.clock = () => now
+      const handle = await session.decisions
+        .port({
+          owner: 'fixture',
+          sourcePackage: '@fixture/plugin',
+          packageVersion: '1.0.0',
+          operationId: 'phase',
+          alive() {},
+        })
+        .request({
+          key: 'review',
+          purpose: 'business.confirm',
+          subject: 'original',
+          prompt: 'Continue?',
+          options: ['allow'],
+        })
+      now += session.preset.approval.pendingTtlMs
       await expect(
         handleCommand(
           session,
           {
             kind: 'command',
-            requestId: 'daemon-expiry-decide',
+            requestId: 'answer',
             method: 'decideApproval',
-            params: { ticket, verdict: 'allowed-once', decidedBy: { ...actor, id: 'approver' } },
+            params: {
+              command: {
+                handle,
+                revision: 1,
+                commandId: 'answer',
+                response: { option: 'allow', value: null },
+              },
+              context: { actor, category: 'human', credential: { kind: 'local' }, sourceVerified: false },
+            },
           },
-          { host: t.host, aborts },
+          { host: t.host, aborts: new Map() },
         ),
-      ).rejects.toThrow(/ticket unavailable|ticket expired/)
-      expect(await session.scan({ type: 'approval/decided', toSeq: session.lastSeq })).toHaveLength(1)
+      ).rejects.toThrow('DECISION_NOT_PENDING')
+      expect((await session.decisions.get(handle)).result?.reason).toBe('expired')
+      expect(await session.scan({ type: 'decision/state', toSeq: session.lastSeq })).toHaveLength(2)
     } finally {
       await t.close()
     }
@@ -409,23 +406,51 @@ describe('handleCommand dispatch against the real Host/HostSession shapes', () =
     expect(setYolo).not.toHaveBeenCalled()
   })
 
-  it('decideApproval resolves through session.resumeApproval(ticket, verdict, decidedBy)', async () => {
-    let seen: unknown
+  it('decideApproval uses the session writer and rechecks current worker authority', async () => {
+    const command = {
+      handle: { sessionId: 's', id: 'd' },
+      revision: 1,
+      commandId: 'answer',
+      response: { option: 'allow', value: null },
+    }
+    const authorize = vi.fn(async () => actor)
     const session = {
-      resumeApproval: async (ticket: string, verdict: string, decidedBy: Actor) => {
-        seen = { ticket, verdict, decidedBy }
-        return { seq: 9 }
+      decisions: {
+        answer: async (
+          got: unknown,
+          context: { actor: Actor; category: string; authorize(): Promise<void> },
+        ) => {
+          expect(got).toEqual(command)
+          expect(context.actor).toEqual(actor)
+          expect(context.category).toBe('human')
+          await context.authorize()
+          return { commandId: 'answer', digest: '0'.repeat(64), revision: 2, seq: 9 }
+        },
       },
     } as unknown as HostSession
     const cmd: CommandFrame = {
       kind: 'command',
       requestId: '1',
       method: 'decideApproval',
-      params: { ticket: 't1', verdict: 'allowed-once', decidedBy: actor },
+      params: {
+        command,
+        context: { actor, category: 'human', credential: { kind: 'local' }, sourceVerified: false },
+      },
     }
-    const out = await handleCommand(session, cmd, { host: {} as Host, aborts: new Map() })
-    expect(out).toEqual({ seq: 9 })
-    expect(seen).toEqual({ ticket: 't1', verdict: 'allowed-once', decidedBy: actor })
+    await expect(
+      handleCommand(session, cmd, {
+        host: { resolveActor: authorize } as unknown as Host,
+        aborts: new Map(),
+      }),
+    ).resolves.toMatchObject({ seq: 9, revision: 2 })
+    expect(authorize).toHaveBeenCalledWith({ kind: 'local' }, 'approval')
+    authorize.mockResolvedValue({ ...actor, id: 'changed' })
+    await expect(
+      handleCommand(session, cmd, {
+        host: { resolveActor: authorize } as unknown as Host,
+        aborts: new Map(),
+      }),
+    ).rejects.toThrow('AUTHORITY_CHANGED')
   })
 
   it('resolveActor delegates to the worker Host principals seam', async () => {

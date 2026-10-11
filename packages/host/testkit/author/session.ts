@@ -464,14 +464,22 @@ export async function createAuthorTestkit(options: AuthorTestOptions): Promise<A
           async assertApproval(verdict) {
             const events = await facts()
             assert.ok(
-              events.some((event) => event.type === 'approval/asked'),
+              events.some(
+                (event) =>
+                  event.type === 'decision/state' && (event.data as { revision: number }).revision === 1,
+              ),
               'No durable approval request',
             )
             assert.ok(
               events.some(
                 (event) =>
-                  event.type === 'approval/decided' &&
-                  (event.data as { verdict: string }).verdict === verdict,
+                  event.type === 'decision/state' &&
+                  (event.data as import('@agnes/protocol').DecisionSnapshot).result?.reason === 'answered' &&
+                  (
+                    (event.data as import('@agnes/protocol').DecisionSnapshot).result as {
+                      response: { option: string }
+                    }
+                  ).response.option === verdict,
               ),
               `No ${verdict} approval`,
             )

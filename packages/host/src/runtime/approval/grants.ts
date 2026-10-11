@@ -530,7 +530,11 @@ export function createApprovalGrantControlPlane(
             },
           }
         : {}),
-      ask: (request) => seam.ask(request),
+      ask: (request, options) => seam.ask(request, options),
+      ...(seam.checkTool ? { checkTool: (name: string, args: unknown) => seam.checkTool!(name, args) } : {}),
+      ...(seam.policy
+        ? { policy: (request: Parameters<ApprovalSeam['ask']>[0]) => seam.policy!(request) }
+        : {}),
       resume: (ticket, verdict) => seam.resume(ticket, verdict),
       guard: (request) =>
         seam.guard

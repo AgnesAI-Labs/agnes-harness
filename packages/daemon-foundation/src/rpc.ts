@@ -1,7 +1,13 @@
 import { normalizeRpcError, type RpcError } from '@agnes/protocol'
 
 export type JsonRpcId = string | number
-export type JsonRpcRequest = { jsonrpc: '2.0'; id: JsonRpcId; method: string; params?: unknown }
+export type JsonRpcRequest = {
+  jsonrpc: '2.0'
+  id: JsonRpcId
+  method: string
+  params?: unknown
+  _meta?: Record<string, unknown>
+}
 export type JsonRpcNotification = { jsonrpc: '2.0'; method: string; params?: unknown }
 export type JsonRpcResponse = { jsonrpc: '2.0'; id: JsonRpcId; result?: unknown; error?: RpcError }
 export type JsonRpcMessage = JsonRpcRequest | JsonRpcNotification | JsonRpcResponse

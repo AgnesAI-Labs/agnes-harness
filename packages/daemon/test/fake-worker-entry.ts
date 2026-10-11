@@ -1,4 +1,4 @@
-import { createReadStream, writeFileSync } from 'node:fs'
+import { appendFileSync, createReadStream, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { join } from 'node:path'
 import { PARSER_VERSION } from '@agnes/ai'
@@ -55,6 +55,8 @@ void runWorker(
   },
   {
     buildHost: async (profile, workerPrompter) => {
+      if (env.AGNES_FAKE_WORKER_RECOVERY === '1')
+        writeFileSync(join(profile.dataDir, 'fixture-worker-pid'), String(process.pid))
       const { host } = await createTestHost({
         dataDir: profile.dataDir,
         ...(env.AGNES_FAKE_WORKER_QUEUE === '1'
@@ -96,7 +98,8 @@ void runWorker(
               type: 'sent' as const,
               stamp: { ...stampFor(request), parser_version: PARSER_VERSION },
             },
-            ...(env.AGNES_FAKE_WORKER_PERMISSION === '1'
+            ...(env.AGNES_FAKE_WORKER_PERMISSION === '1' &&
+            !request.messages.some((message) => message.role === 'tool_result')
               ? [
                   {
                     type: 'toolcall_end' as const,
@@ -164,7 +167,9 @@ void runWorker(
               requiresApproval: 'always',
             },
             execute: async () => {
-              writeFileSync(join(profile.dataDir, 'permission-dispatched'), 'yes')
+              if (env.AGNES_FAKE_WORKER_RECOVERY === '1')
+                appendFileSync(join(profile.dataDir, 'permission-dispatched'), 'yes\n')
+              else writeFileSync(join(profile.dataDir, 'permission-dispatched'), 'yes')
               return { content: [{ type: 'text', text: 'ran' }] }
             },
           },

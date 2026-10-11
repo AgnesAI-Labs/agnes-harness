@@ -1,3 +1,4 @@
+import type { DecisionSnapshot } from '@agnes/protocol'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -32,6 +33,33 @@ describe('program-counter transitions match the recorded reference (SQLite)', ()
     const storage = createSqliteStorage({ file: join(dir, 'sessions.db'), tablesDir: join(dir, 'tables') })
     try {
       const recorded = await recordTransitions(name, storage)
+      if (name === 'approval-sync' || name === 'approval-parked') {
+        const rows = recorded.flatMap((commit) => commit.events as Array<{ type: string; data: unknown }>)
+        const states = rows
+          .filter((row) => row.type === 'decision/state')
+          .map((row) => row.data as DecisionSnapshot)
+        expect(states.map((row) => row.revision)).toEqual([1, 2, 3])
+        expect(states[0]?.result).toBeNull()
+        expect(states[1]?.result).toMatchObject({
+          reason: 'answered',
+          response: { option: 'allowed-once' },
+        })
+        const consume = recorded.find((commit) =>
+          commit.events.some(
+            (row) => row.type === 'decision/state' && (row.data as DecisionSnapshot).consumption,
+          ),
+        )
+        expect(consume?.events).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              type: 'effect/intent',
+              data: expect.objectContaining({ kind: 'tool' }),
+            }),
+          ]),
+        )
+        expect(opMarkProblems(recorded)).toEqual([])
+        return
+      }
       const reference = expectedFromGolden(readGolden(name))
       if (CONCURRENT_SCENARIOS.has(name)) {
         expect(statusProjectionProblems(recorded, reference, MERGED_STATUSES)).toEqual([])

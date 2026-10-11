@@ -155,7 +155,10 @@ it('updates a surface to revision 2 in the same turn after an approved plugin to
     },
     approval: async () => {
       approvalAsked()
-      return approval
+      return {
+        verdict: await approval,
+        answeredBy: { id: 'reviewer', org: 'local', role: 'user' as const, deptPath: [], attrs: {} },
+      }
     },
     script: [
       call('tool_describe', { name: 'ui_render' }),
@@ -284,7 +287,10 @@ it('updates revision 2 through custom Loop tool ports after approval in one turn
     packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
     approval: async () => {
       asked()
-      return decision
+      return {
+        verdict: await decision,
+        answeredBy: { id: 'reviewer', org: 'local', role: 'user' as const, deptPath: [], attrs: {} },
+      }
     },
     plugin: defineAgnesPlugin({
       inject: ['extension', 'loops'],

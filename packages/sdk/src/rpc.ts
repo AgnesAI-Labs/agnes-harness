@@ -31,6 +31,7 @@ export type RpcConnectionOptions = {
 }
 
 export type RequestOptions = {
+  metadata?: Record<string, unknown>
   // null means no deadline at all. prompt travels this way: a turn is ended by the
   // transport noticing it is dead, not by a stopwatch on the request.
   timeoutMs?: number | null
@@ -133,7 +134,13 @@ export class RpcConnection {
     const signal = opts.signal
     if (signal?.aborted) throw signal.reason
     const id = this.nextId++
-    const msg: JsonRpcRequest = { jsonrpc: '2.0', id, method, params }
+    const msg: JsonRpcRequest = {
+      jsonrpc: '2.0',
+      id,
+      method,
+      params,
+      ...(opts.metadata ? { _meta: opts.metadata } : {}),
+    }
     return new Promise<T>((resolve, reject) => {
       let timer: ReturnType<typeof setTimeout> | undefined
       const onAbort = () => this.takePending(id)?.reject(signal?.reason as Error)

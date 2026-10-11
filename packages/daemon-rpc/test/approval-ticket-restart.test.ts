@@ -1,16 +1,14 @@
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { presets as basePresets, seams as baseSeams } from '@agnes/base'
 import { operations } from '@agnes/code'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import { TicketIndex } from '@agnes/daemon-foundation/storage/lister'
 import { createTestHost } from '@agnes/host/testkit'
 import type { Actor, InferenceEvent } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
-import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { createLocalEndpoint } from '../src/local/index.js'
 import { PrompterRouter } from '../src/local/prompter.js'
 import { testWorkspaceCatalog } from './host.js'
@@ -27,98 +25,73 @@ const toolCall = (): InferenceEvent[] => [
   { type: 'done', reason: 'toolUse' },
 ]
 
-function parkedApproval(ticket: string) {
-  let receipt: { requestId: string; bindingHash: string; expiresAt: string } | null = null
-  return {
-    async ask(request: { requestId: string; bindingHash: string }) {
-      const expiresAt = new Date(Date.now() + 60_000).toISOString()
-      receipt = { requestId: request.requestId, bindingHash: request.bindingHash, expiresAt }
-      return { ticket, expiresAt }
-    },
-    async resume(got: string) {
-      if (got !== ticket || !receipt) return null
-      const found = receipt
-      receipt = null
-      return found
-    },
-  }
-}
-
-describe('approval ticket restart lookup', () => {
-  it('indexes a real parked event and lets SDK decide it after the daemon endpoint restarts', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'agnes-ticket-restart-'))
-    const canonicalRoot = realpathSync.native(root)
-    const indexFile = join(root, 'approval-index.sqlite')
-    const ticket = '0123456789abcdef0123456789abcdef'
-    const approval = parkedApproval(ticket)
+describe('durable approval restart', () => {
+  it('reopens the original decision through SDK after the endpoint closes, without a ticket index', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agnes-decision-restart-'))
     const { host } = await createTestHost({
       dataDir: root,
       packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
       packages: { '@agnes/code': { operations } },
       seams: {
-        approval,
+        approval: { ask: async () => ({ verdict: 'unavailable', reason: 'no-handler' }) },
         principals: {
           resolve: async (_credential, surface) => (surface === 'approval' ? APPROVER : REQUESTER),
         },
       },
-      script: [toolCall()],
+      script: [toolCall(), [{ type: 'done', reason: 'stop' }]],
     })
     const workspaces = await testWorkspaceCatalog(root)
-
-    let firstClient: ReturnType<typeof createClient> | undefined
-    let secondClient: ReturnType<typeof createClient> | undefined
-    let firstTables: ReturnType<typeof sqliteTables> | undefined
-    let secondTables: ReturnType<typeof sqliteTables> | undefined
+    let client = createClient({
+      transport: { kind: 'inproc', endpoint: createLocalEndpoint(host, { workspaces }) },
+      journal: memoryJournal(),
+    })
     try {
-      firstTables = sqliteTables(indexFile)
-      const firstIndex = new TicketIndex(firstTables.table('approval_tickets'))
-      const firstEndpoint = createLocalEndpoint(host, { pollMs: 5, tickets: firstIndex, workspaces })
-      firstClient = createClient({
-        transport: { kind: 'inproc', endpoint: firstEndpoint },
+      await client.initialize()
+      const session = await client.session.new({ cwd: root })
+      expect(await session.prompt('run')).toMatchObject({ reason: 'parked' })
+      const [original] = (await client.approval.list(session.id)).decisions
+      expect(original?.result).toBeNull()
+      expect(original?.request.spec.subject).toMatchObject({
+        call: { name: 'shell', args: { command: 'echo restart-safe' } },
+      })
+      await client.close()
+      client = createClient({
+        transport: { kind: 'inproc', endpoint: createLocalEndpoint(host, { workspaces }) },
         journal: memoryJournal(),
       })
-      await firstClient.initialize()
-      const session = await firstClient.session.new({ cwd: root })
-      await expect(session.prompt('run')).resolves.toMatchObject({ reason: 'parked' })
-      await vi.waitFor(() => {
-        expect(firstIndex.get(ticket)).toBe(session.id)
-        expect(firstIndex.cwd(ticket)).toBe(canonicalRoot)
-      })
-      await firstClient.close()
-      firstClient = undefined
-      await firstTables.close()
-      firstTables = undefined
-
-      // New endpoint and new SQLite connection: neither the daemon registry nor the in-memory
-      // client survived. The persisted index must locate and reopen the correct workspace itself.
-      secondTables = sqliteTables(indexFile)
-      const secondIndex = new TicketIndex(secondTables.table('approval_tickets'))
-      const secondEndpoint = createLocalEndpoint(host, { pollMs: 5, tickets: secondIndex, workspaces })
-      secondClient = createClient({
-        transport: { kind: 'inproc', endpoint: secondEndpoint },
-        journal: memoryJournal(),
-      })
-      await secondClient.initialize()
-      await expect(secondClient.approval.decide(ticket, 'allowed-once')).resolves.toEqual({
-        seq: expect.any(Number),
-      })
-
-      const reopened = await secondClient.session.load(session.id, { cwd: root })
-      const timeline = await reopened.projectUI(undefined, { surface: 'tui' })
-      expect(timeline.nodes).toEqual(
+      await client.initialize()
+      expect((await client.approval.list(session.id)).decisions).toEqual([original])
+      const command = {
+        ...original!.handle,
+        revision: original!.revision,
+        commandId: 'review',
+        response: { option: 'allowed-once', value: null },
+      }
+      const receipt = await client.approval.decide(command)
+      await expect(client.approval.decide(command)).resolves.toEqual(receipt)
+      await expect(
+        client.approval.decide({ ...command, response: { option: 'rejected', value: null } }),
+      ).rejects.toMatchObject({ data: { code: 'APPROVAL_REJECTED' } })
+      const reopened = await client.session.load(session.id, { cwd: root })
+      expect((await reopened.projectUI(undefined, { surface: 'tui' })).nodes).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             kind: 'approval',
             state: 'decided',
+            decisionRef: { ...original!.handle, revision: expect.any(Number) },
             decision: expect.objectContaining({ verdict: 'allowed-once', byLabel: APPROVER.id }),
           }),
         ]),
       )
+      const backend = host.kernel.get(session.id)!
+      await vi.waitFor(async () =>
+        expect((await backend.decisions.get(original!.handle)).consumption?.effectId).toEqual(
+          expect.any(String),
+        ),
+      )
+      expect(await backend.scan({ type: 'tool/call', toSeq: backend.lastSeq })).toHaveLength(1)
     } finally {
-      await secondClient?.close()
-      await firstClient?.close()
-      await secondTables?.close()
-      await firstTables?.close()
+      await client.close()
       await host.close()
       rmSync(root, { recursive: true, force: true })
     }
@@ -160,6 +133,9 @@ it('re-offers a real Host tool approval after its client disconnects without rec
     const original = (await first.notifications[Symbol.asyncIterator]().next()).value as {
       params: { _meta: { 'ai.agnes.harness': { requestId: string } } }
     }
+    const [pending] = await session.decisions.list()
+    expect(pending?.handle.id).toBe(original.params._meta['ai.agnes.harness'].requestId)
+    expect(pending?.result).toBeNull()
     await first.close()
     live = [second]
     second.conn.capabilities.permission = true
@@ -181,9 +157,12 @@ it('re-offers a real Host tool approval after its client disconnects without rec
       result: { outcome: { outcome: 'selected', optionId: 'allow_once' } },
     })
     await expect(running).resolves.toMatchObject({ reason: 'completed' })
-    const decisions = await session.scan({ type: 'approval/decided', toSeq: session.lastSeq })
+    const decisions = await session.decisions.list()
     expect(decisions).toHaveLength(1)
-    expect(decisions[0]?.data).toMatchObject({ verdict: 'allowed-once' })
+    expect(decisions[0]).toMatchObject({
+      result: { reason: 'answered', response: { option: 'allowed-once' } },
+      consumption: { effectId: expect.any(String) },
+    })
     const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
     expect(results).toHaveLength(1)
     expect(results[0]?.data).not.toMatchObject({ isError: true })

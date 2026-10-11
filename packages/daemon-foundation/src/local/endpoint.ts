@@ -84,7 +84,12 @@ export function connActor(conn: ConnectionState): LedgerActor {
   return { id: conn.principalId, org: 'local', role: 'owner', deptPath: [], attrs: {} }
 }
 
-export type CallContext = { conn: ConnectionState; clock: () => number; signal: AbortSignal }
+export type CallContext = {
+  conn: ConnectionState
+  clock: () => number
+  signal: AbortSignal
+  metadata?: Record<string, unknown>
+}
 export type Handler = (params: unknown, cx: CallContext) => Promise<unknown>
 
 /**
@@ -411,6 +416,7 @@ export class LocalEndpoint implements RpcEndpoint {
         conn: this.conn,
         clock: this.o.clock,
         signal: this.lifecycle.signal,
+        ...(isRequest(call) && call._meta ? { metadata: call._meta } : {}),
       })
       if (id === undefined) return undefined
       // Results are checked against the same table the params were. Without this the one side of the

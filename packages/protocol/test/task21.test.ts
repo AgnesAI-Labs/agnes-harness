@@ -15,9 +15,9 @@ describe('Task21 public contracts and existing consumer', () => {
   it('requires a real approval correlation identifier and accepts both forms together', () => {
     const action = { verdict: 'allowed-once', approverCredential: { kind: 'local' } }
     expect(validateApprovalAction(action).ok).toBe(false)
-    expect(validateApprovalAction({ ...action, ticket: 'fixture' }).ok).toBe(true)
+    expect(validateApprovalAction({ ...action, decisionKey: 's/fixture/1' }).ok).toBe(true)
     expect(validateApprovalAction({ ...action, requestSeq: 1 }).ok).toBe(true)
-    expect(validateApprovalAction({ ...action, ticket: 'fixture', requestSeq: 1 }).ok).toBe(true)
+    expect(validateApprovalAction({ ...action, decisionKey: 's/fixture/1', requestSeq: 1 }).ok).toBe(true)
     expect(validateApprovalAction({ ...action, requestSeq: 0 }).ok).toBe(false)
   })
   it('rejects SQL and empty named-region lists through Decision itself', () => {

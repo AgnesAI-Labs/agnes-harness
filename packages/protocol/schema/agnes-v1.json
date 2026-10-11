@@ -3,6 +3,30 @@
   "$id": "https://agnes.ai/schema/agnes-v1.json",
   "title": "_agnes/v1",
   "$defs": {
+    "DecisionListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decisions"
+      ],
+      "properties": {
+        "decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DecisionSnapshot"
+          }
+        }
+      }
+    },
+    "DecisionSnapshot": {
+      "$ref": "session-v1.json#/$defs/DecisionSnapshot"
+    },
+    "DecisionCommandReceipt": {
+      "$ref": "session-v1.json#/$defs/DecisionCommandReceipt"
+    },
+    "DecisionResponse": {
+      "$ref": "session-v1.json#/$defs/DecisionResponse"
+    },
     "FileUploadParams": {
       "anyOf": [
         {
@@ -3016,7 +3040,13 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "id", "seq", "diagnosticId", "validThroughSeq"],
+          "required": [
+            "kind",
+            "id",
+            "seq",
+            "diagnosticId",
+            "validThroughSeq"
+          ],
           "properties": {
             "kind": {
               "const": "ledger-recovery"
@@ -3040,7 +3070,12 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "id", "seq", "content"],
+          "required": [
+            "kind",
+            "id",
+            "seq",
+            "content"
+          ],
           "properties": {
             "kind": {
               "const": "user"
@@ -3066,7 +3101,12 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "id", "seq", "text"],
+          "required": [
+            "kind",
+            "id",
+            "seq",
+            "text"
+          ],
           "properties": {
             "kind": {
               "const": "assistant"
@@ -3099,9 +3139,19 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "id", "seq", "toolUseId", "name", "status", "summary"],
+          "required": [
+            "kind",
+            "id",
+            "seq",
+            "toolUseId",
+            "name",
+            "status",
+            "summary"
+          ],
           "properties": {
-            "review": { "$ref": "#/$defs/ToolReviewFact" },
+            "review": {
+              "$ref": "#/$defs/ToolReviewFact"
+            },
             "kind": {
               "const": "tool"
             },
@@ -3118,7 +3168,14 @@
               "type": "string"
             },
             "status": {
-              "enum": ["planned", "awaiting_approval", "running", "completed", "failed", "cancelled"]
+              "enum": [
+                "planned",
+                "awaiting_approval",
+                "running",
+                "completed",
+                "failed",
+                "cancelled"
+              ]
             },
             "summary": {
               "type": "string",
@@ -3139,15 +3196,26 @@
             "enforcement": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["level", "scope"],
+              "required": [
+                "level",
+                "scope"
+              ],
               "properties": {
                 "level": {
-                  "enum": ["full", "partial", "none"]
+                  "enum": [
+                    "full",
+                    "partial",
+                    "none"
+                  ]
                 },
                 "scope": {
                   "type": "array",
                   "items": {
-                    "enum": ["file", "network", "process"]
+                    "enum": [
+                      "file",
+                      "network",
+                      "process"
+                    ]
                   }
                 }
               }
@@ -3173,7 +3241,15 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "id", "seq", "state", "summary", "risk", "options"],
+          "required": [
+            "kind",
+            "id",
+            "seq",
+            "state",
+            "summary",
+            "risk",
+            "options"
+          ],
           "properties": {
             "kind": {
               "const": "approval"
@@ -3185,19 +3261,33 @@
               "type": "integer"
             },
             "state": {
-              "enum": ["pending", "decided", "expired"]
+              "enum": [
+                "pending",
+                "decided",
+                "expired"
+              ]
             },
             "summary": {
               "type": "string",
               "maxLength": 4096
             },
             "risk": {
-              "enum": ["destructive", "always", "budget", "unknown"]
+              "enum": [
+                "destructive",
+                "always",
+                "budget",
+                "unknown"
+              ]
             },
             "options": {
               "type": "array",
               "items": {
-                "enum": ["allow_once", "allow_always", "allow_permanent", "reject_once"]
+                "enum": [
+                  "allow_once",
+                  "allow_always",
+                  "allow_permanent",
+                  "reject_once"
+                ]
               }
             },
             "ticket": {
@@ -3212,7 +3302,10 @@
             "decision": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["verdict", "via"],
+              "required": [
+                "verdict",
+                "via"
+              ],
               "properties": {
                 "verdict": {
                   "type": "string"
@@ -3227,13 +3320,45 @@
                   "type": "string"
                 }
               }
+            },
+            "decisionRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "sessionId",
+                "id",
+                "revision"
+              ],
+              "properties": {
+                "sessionId": {
+                  "type": "string",
+                  "maxLength": 512
+                },
+                "id": {
+                  "type": "string",
+                  "maxLength": 256
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "subjectText": {
+              "type": "string",
+              "maxLength": 400000
             }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "id", "seq", "source"],
+          "required": [
+            "kind",
+            "id",
+            "seq",
+            "source"
+          ],
           "properties": {
             "kind": {
               "const": "cost"
@@ -3248,7 +3373,10 @@
               "type": "number"
             },
             "source": {
-              "enum": ["gateway", "estimated"]
+              "enum": [
+                "gateway",
+                "estimated"
+              ]
             },
             "purpose": {
               "type": "string"
@@ -3285,7 +3413,13 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "id", "seq", "name", "ref"],
+          "required": [
+            "kind",
+            "id",
+            "seq",
+            "name",
+            "ref"
+          ],
           "properties": {
             "kind": {
               "const": "artifact"
@@ -3308,7 +3442,12 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "id", "seq", "range"],
+          "required": [
+            "kind",
+            "id",
+            "seq",
+            "range"
+          ],
           "properties": {
             "kind": {
               "const": "compaction"
@@ -3344,7 +3483,11 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "id", "fill"],
+          "required": [
+            "kind",
+            "id",
+            "fill"
+          ],
           "properties": {
             "kind": {
               "const": "slot"
@@ -3363,7 +3506,12 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "id", "seq", "sections"],
+          "required": [
+            "kind",
+            "id",
+            "seq",
+            "sections"
+          ],
           "properties": {
             "kind": {
               "const": "context-sections"
@@ -3379,7 +3527,12 @@
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["id", "order", "source", "tokens"],
+                "required": [
+                  "id",
+                  "order",
+                  "source",
+                  "tokens"
+                ],
                 "properties": {
                   "id": {
                     "type": "string",
@@ -3404,7 +3557,13 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "id", "seq", "key", "ops"],
+          "required": [
+            "kind",
+            "id",
+            "seq",
+            "key",
+            "ops"
+          ],
           "properties": {
             "kind": {
               "const": "contribute-conflict"
@@ -3431,7 +3590,12 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "id", "seq", "text"],
+          "required": [
+            "kind",
+            "id",
+            "seq",
+            "text"
+          ],
           "properties": {
             "kind": {
               "const": "context"
@@ -3968,7 +4132,11 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["turn", "step", "phase"],
+          "required": [
+            "turn",
+            "step",
+            "phase"
+          ],
           "properties": {
             "turn": {
               "type": "integer"
@@ -3983,10 +4151,33 @@
             "parked": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["ticket", "expiresAt"],
+              "required": [
+                "decisionRef",
+                "expiresAt"
+              ],
               "properties": {
-                "ticket": {
-                  "type": "string"
+                "decisionRef": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sessionId",
+                    "id",
+                    "revision"
+                  ],
+                  "properties": {
+                    "sessionId": {
+                      "type": "string",
+                      "maxLength": 512
+                    },
+                    "id": {
+                      "type": "string",
+                      "maxLength": 256
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  }
                 },
                 "expiresAt": {
                   "type": "string"
@@ -4876,17 +5067,36 @@
     "ApprovalDecideParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ticket", "verdict"],
+      "required": [
+        "sessionId",
+        "id",
+        "revision",
+        "commandId",
+        "response"
+      ],
       "properties": {
-        "ticket": {
+        "sessionId": {
           "type": "string",
-          "maxLength": 128
+          "minLength": 1,
+          "maxLength": 512
         },
-        "verdict": {
-          "enum": ["allowed-once", "allowed-session", "allowed-permanent", "rejected"]
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
         },
-        "sourceCredential": {
-          "$ref": "#/$defs/Credential"
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "response": {
+          "$ref": "#/$defs/DecisionResponse"
         }
       }
     },

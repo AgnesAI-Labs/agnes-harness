@@ -2,7 +2,6 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { ApprovalRequest, Pending, Verdict } from '@agnes/core'
 import { approvalDeadlineMs, initialState, type LedgerState } from '@agnes/core'
 import type { InferenceEvent } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -30,19 +29,14 @@ describe('Host approval expiry lifecycle', () => {
     const root = mkdtempSync(join(tmpdir(), 'agnes-host-expiry-'))
     roots.push(root)
     const marker = join(root, 'must-not-run')
-    const ticket = 'host-expiry-ticket'
     const { host } = await createTestHost({
       dataDir: root,
       packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
       script: [toolCall(`touch ${marker}`)],
+      presets: { standard: { name: 'standard', extends: 'base', approval: { pending_ttl_ms: 1000 } } },
       seams: {
         approval: {
-          ask: async (_request: ApprovalRequest): Promise<Verdict | Pending> => ({
-            ticket,
-            // Compute this after assembly so the parked state is observable before the scheduler's
-            // bounded idle wake-up settles it.
-            expiresAt: new Date(Date.now() + 150).toISOString(),
-          }),
+          ask: async () => ({ verdict: 'unavailable' as const, reason: 'no-handler' as const }),
           resume: async () => null,
         },
       },
@@ -57,17 +51,14 @@ describe('Host approval expiry lifecycle', () => {
       await expect(
         session.run({ until: 'turn-end', signal: new AbortController().signal }),
       ).resolves.toMatchObject({ reason: 'parked' })
-      expect(session.state.pendingApprovals.size).toBe(1)
+      const [original] = await session.decisions.list()
+      expect(original).toBeDefined()
 
       await vi.waitFor(
         async () => {
-          const rows = await session.scan({ type: 'approval/decided', toSeq: session.lastSeq })
-          expect(rows).toHaveLength(1)
-          expect(rows[0]?.data).toMatchObject({
-            verdict: 'unavailable',
-            reason: 'deadline',
-            via: 'timeout',
-            ticket,
+          expect(await session.decisions.get(original!.handle)).toMatchObject({
+            result: { reason: 'expired', code: 'deadline' },
+            consumption: null,
           })
         },
         { timeout: 2_000, interval: 20 },
@@ -77,9 +68,17 @@ describe('Host approval expiry lifecycle', () => {
         expect.arrayContaining([expect.objectContaining({ kind: 'approval', state: 'expired' })]),
       )
       expect(timeline.opState).toBeNull()
-      await expect(session.resumeApproval(ticket, 'allowed-once', session.d.actor)).rejects.toThrow(
-        /ticket unavailable|ticket expired/,
-      )
+      await expect(
+        session.decisions.answer(
+          {
+            handle: original!.handle,
+            revision: 1,
+            commandId: 'late',
+            response: { option: 'allowed-once', value: null },
+          },
+          { actor: session.d.actor, category: 'human', authorize() {} },
+        ),
+      ).rejects.toThrow('DECISION_NOT_PENDING')
       expect(existsSync(marker)).toBe(false)
 
       const lastSeq = session.lastSeq
@@ -262,43 +261,50 @@ describe('Host approval expiry lifecycle', () => {
     }
   })
 
-  it('settles an already-expired persisted ticket before a reopened Host session is returned', async () => {
+  it('settles an already-expired persisted request before a reopened Host session is returned', async () => {
     const root = mkdtempSync(join(tmpdir(), 'agnes-host-expiry-reopen-'))
     roots.push(root)
-    const ticket = 'reopen-expiry-ticket'
-    const first = await createTestHost({ dataDir: root })
-    await first.host.createSession({ cwd: root }).then(async (session) => {
-      await session.append([
-        session.ev('approval/asked', {
-          requestId: 'reopen-expiry-request',
-          kind: 'tool',
-          summary: 'expired persisted request',
-          risk: 'destructive',
-          bindingHash: '0'.repeat(64),
-          pending: { ticket, expiresAt: new Date(Date.now() - 1).toISOString() },
-        }),
-      ])
-      expect(await session.scan({ type: 'approval/decided', toSeq: session.lastSeq })).toHaveLength(0)
-      await session.close()
+    const first = await createTestHost({
+      dataDir: root,
+      presets: { standard: { name: 'standard', extends: 'base', approval: { pending_ttl_ms: 1000 } } },
     })
+    const originalSession = await first.host.createSession({ cwd: root })
+    const source = {
+      owner: 'fixture/review',
+      sourcePackage: 'fixture/review',
+      packageVersion: '1.0.0',
+      operationId: 'review',
+      alive() {},
+    }
+    const handle = await originalSession.decisions.port(source).request({
+      key: 'exact',
+      purpose: 'review',
+      subject: { text: 'exact content' },
+      prompt: 'Review',
+      options: ['approve', 'reject'],
+    })
+    const pending = await originalSession.decisions.get(handle)
     await first.host.close()
-
-    const second = await createTestHost({ dataDir: root })
+    // No live session can run an expiry timer during this cold interval.
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.max(0, Date.parse(pending.request.expiresAt!) - Date.now() + 20)),
+    )
+    const second = await createTestHost({
+      dataDir: root,
+      presets: { standard: { name: 'standard', extends: 'base', approval: { pending_ttl_ms: 1000 } } },
+    })
     try {
       const session = await second.host.createSession({ cwd: root })
-      expect(session.state.pendingApprovals.size).toBe(0)
-      const rows = await session.scan({ type: 'approval/decided', toSeq: session.lastSeq })
-      expect(rows).toHaveLength(1)
-      expect(rows[0]?.data).toMatchObject({
-        ticket,
-        via: 'timeout',
-        verdict: 'unavailable',
-        reason: 'deadline',
-      })
+      expect(session.key).toBe(handle.sessionId)
+      expect(session.d.clock()).toBeGreaterThan(Date.parse(pending.request.expiresAt!))
+      const value = session.state.registers.decisionStates.get(handle.id)?.value
+      expect(value).toMatchObject({ result: { reason: 'expired', code: 'deadline' }, consumption: null })
       await expect(
-        session.resumeApproval(ticket, 'allowed-once', { ...session.d.actor, id: 'approver' }),
-      ).rejects.toThrow(/ticket unavailable|ticket expired/)
-      await session.close()
+        session.decisions.answer(
+          { handle, revision: 1, commandId: 'late', response: { option: 'approve', value: null } },
+          { actor: session.d.actor, category: 'human', authorize() {} },
+        ),
+      ).rejects.toThrow('DECISION_NOT_PENDING')
     } finally {
       await second.host.close()
     }

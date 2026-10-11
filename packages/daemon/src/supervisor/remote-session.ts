@@ -403,11 +403,14 @@ export class RemoteSession {
     }
   }
 
-  /** Named to match core `HostSession.resumeApproval`'s job, not its name: the worker-side command
-   *  handler (worker/commands.ts) is the piece that actually calls `resumeApproval` - this method is
-   *  the daemon-internal `RemoteSession`'s own name for reaching it over the wire. */
-  decideApproval(p: unknown): Promise<{ seq: number }> {
-    return this.link.command('decideApproval', p as Record<string, unknown>) as Promise<{ seq: number }>
+  decideApproval(p: unknown): Promise<import('@agnes/protocol').DecisionCommandReceipt> {
+    return this.link.command('decideApproval', p as Record<string, unknown>) as Promise<
+      import('@agnes/protocol').DecisionCommandReceipt
+    >
+  }
+
+  listDecisions(): Promise<import('@agnes/protocol').DecisionSnapshot[]> {
+    return this.link.command('listDecisions', {}) as Promise<import('@agnes/protocol').DecisionSnapshot[]>
   }
 
   /** Identity resolution belongs to the worker's assembled Host, not the kernel-less supervisor. */

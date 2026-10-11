@@ -60,7 +60,10 @@ describe('public author testkit', () => {
       const kit = await createAuthorTestkit({
         plugin: plugin('1', true),
         version: '1.0.0',
-        approval: async () => verdict,
+        approval: async () => ({
+          verdict,
+          answeredBy: { id: 'reviewer', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+        }),
       })
       try {
         const session = await kit.openSession()

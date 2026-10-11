@@ -462,14 +462,16 @@ it('refreshes the client-module roster after every successful package lifecycle 
     id: row.id,
   })
 
-  expect(events.map(({ reason, packageId }) => ({ reason, packageId }))).toEqual([
-    { reason: 'inventory', packageId: 'acme/pkg-a' },
-    { reason: 'trust', packageId: 'acme/pkg-a' },
-    { reason: 'activation', packageId: 'acme/pkg-a' },
-    { reason: 'inventory', packageId: 'acme/pkg-a' },
-    { reason: 'activation', packageId: 'acme/pkg-a' },
-    { reason: 'inventory', packageId: 'acme/pkg-a' },
-  ])
+  await vi.waitFor(() =>
+    expect(events.map(({ reason, packageId }) => ({ reason, packageId }))).toEqual([
+      { reason: 'inventory', packageId: 'acme/pkg-a' },
+      { reason: 'trust', packageId: 'acme/pkg-a' },
+      { reason: 'activation', packageId: 'acme/pkg-a' },
+      { reason: 'inventory', packageId: 'acme/pkg-a' },
+      { reason: 'activation', packageId: 'acme/pkg-a' },
+      { reason: 'inventory', packageId: 'acme/pkg-a' },
+    ]),
+  )
 })
 
 it('untrusts a package through the admin plane and refreshes its roster authority', async () => {

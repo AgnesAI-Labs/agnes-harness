@@ -170,13 +170,8 @@ describe('participant RPC', () => {
         params: { cwd: opened.dataDir, mcpServers: [] },
       })) as { result: { sessionId: string } }
       const session = opened.host.kernel.get(created.result.sessionId)!
-      const scan = vi
-        .spyOn(session, 'scan')
-        .mockResolvedValue([
-          { seq: 1, type: 'approval/asked', data: { pending: { ticket: 'stale-owned' } } },
-        ] as never)
       const decide = vi
-        .spyOn(session, 'resumeApproval')
+        .spyOn(session.decisions, 'answer')
         .mockRejectedValue(Object.assign(new Error('approval already resolved'), { code: 'E_RELATION' }))
       try {
         await expect(
@@ -184,7 +179,14 @@ describe('participant RPC', () => {
             jsonrpc: '2.0',
             id: 30,
             method: '_agnes/v1/approval.decide',
-            params: { ticket: 'stale-owned', verdict: 'allowed-once', sourceCredential: credential },
+            params: {
+              sessionId: session.key,
+              id: 'stale-owned',
+              revision: 1,
+              commandId: 'c',
+              response: { option: 'allowed-once', value: null },
+            },
+            _meta: { 'ai.agnes.harness': { sourceCredential: credential } },
           }),
         ).resolves.toMatchObject({ error: { data: { code: 'APPROVAL_SOURCE_UNVERIFIED' } } })
         expect(decide).not.toHaveBeenCalled()
@@ -193,7 +195,14 @@ describe('participant RPC', () => {
             jsonrpc: '2.0',
             id: 31,
             method: '_agnes/v1/approval.decide',
-            params: { ticket: 'stale-owned', verdict: 'allowed-once', approverCredential: credential },
+            params: {
+              sessionId: session.key,
+              id: 'stale-owned',
+              revision: 1,
+              commandId: 'c',
+              response: { option: 'allowed-once', value: null },
+              sourceCredential: credential,
+            },
           }),
         ).resolves.toMatchObject({ error: { code: -32602 } })
         expect(decide).not.toHaveBeenCalled()
@@ -202,7 +211,13 @@ describe('participant RPC', () => {
             jsonrpc: '2.0',
             id: 3,
             method: '_agnes/v1/approval.decide',
-            params: { ticket: 'stale-owned', verdict: 'allowed-once' },
+            params: {
+              sessionId: session.key,
+              id: 'stale-owned',
+              revision: 1,
+              commandId: 'c',
+              response: { option: 'allowed-once', value: null },
+            },
           }),
         ).resolves.toMatchObject({
           error: { code: -32009, data: { code: 'APPROVAL_REJECTED', reason: 'approval already resolved' } },
@@ -210,7 +225,6 @@ describe('participant RPC', () => {
         expect(resolver).toHaveBeenCalledWith(endpoint.conn.credential, 'approval', created.result.sessionId)
       } finally {
         resolver.mockReset()
-        scan.mockRestore()
         decide.mockRestore()
       }
     } finally {
@@ -219,29 +233,35 @@ describe('participant RPC', () => {
     }
   })
 
-  it('maps a ticket absent from every open session to APPROVAL_REJECTED', async () => {
+  it('maps an unknown decision in its owned session to APPROVAL_REJECTED', async () => {
     const opened = await openTestHost()
     const endpoint = opened.endpoint()
     try {
       await endpoint.handle(initialize)
-      await endpoint.handle({
+      const created = (await endpoint.handle({
         jsonrpc: '2.0',
         id: 2,
         method: 'session/new',
         params: { cwd: opened.dataDir, mcpServers: [] },
-      })
+      })) as { result: { sessionId: string } }
       await expect(
         endpoint.handle({
           jsonrpc: '2.0',
           id: 3,
           method: '_agnes/v1/approval.decide',
           params: {
-            ticket: 'not-a-real-ticket',
-            verdict: 'allowed-once',
+            sessionId: created.result.sessionId,
+            id: 'missing',
+            revision: 1,
+            commandId: 'c',
+            response: { option: 'allowed-once', value: null },
           },
         }),
       ).resolves.toMatchObject({
-        error: { code: -32009, data: { code: 'APPROVAL_REJECTED', reason: 'unknown ticket' } },
+        error: {
+          code: -32009,
+          data: { code: 'APPROVAL_REJECTED', reason: expect.stringContaining('DECISION_NOT_FOUND') },
+        },
       })
       await expect(
         endpoint.handle({
@@ -249,12 +269,18 @@ describe('participant RPC', () => {
           id: 4,
           method: '_agnes/v1/approval.decide',
           params: {
-            ticket: 'not-a-real-ticket',
-            verdict: 'allowed-permanent',
+            sessionId: created.result.sessionId,
+            id: 'missing',
+            revision: 1,
+            commandId: 'c',
+            response: { option: 'allowed-permanent', value: null },
           },
         }),
       ).resolves.toMatchObject({
-        error: { code: -32009, data: { code: 'APPROVAL_REJECTED', reason: 'unknown ticket' } },
+        error: {
+          code: -32009,
+          data: { code: 'APPROVAL_REJECTED', reason: expect.stringContaining('DECISION_NOT_FOUND') },
+        },
       })
     } finally {
       await endpoint.close()
