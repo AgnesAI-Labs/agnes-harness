@@ -182,7 +182,9 @@ export function createSessionController(
       // Launch parameters describe a draft; replaying them would replace this session on refresh.
       for (const key of ['new', 'bundle', 'preset', 'loop', 'prompt']) url.searchParams.delete(key)
       url.searchParams.set('session', id)
-      history.replaceState(null, '', `${url.pathname}${url.search}`)
+      const settingsHash =
+        url.searchParams.has('settings') && url.hash.startsWith('#settings-subsection-') ? url.hash : ''
+      history.replaceState(null, '', `${url.pathname}${url.search}${settingsHash}`)
       context.offPermission = binding.offPermission
       let opened = false
       const selected = () => context.current === loaded && epoch === context.selection

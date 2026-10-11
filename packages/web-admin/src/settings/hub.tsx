@@ -47,7 +47,7 @@ function initialPage(): SettingsPage {
   const value = new URLSearchParams(location.search).get('settings')
   const embedded = document.querySelector<HTMLElement>('#config-form')?.dataset.runtimePage
   const route = settingsRoute(embedded ?? value ?? '')
-  if (!embedded && value && settingsSections.get(route.id)) {
+  if (!document.getElementById('config-form') && value && settingsSections.get(route.id)) {
     if (route.terminal) location.assign('/?settings=terminal')
     else {
       const url = new URL(location.href)

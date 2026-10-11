@@ -1430,9 +1430,10 @@ describe('web session selection', () => {
     history.replaceState(
       null,
       '',
-      '/?new=1&bundle=acme%23report&preset=workspace-write&loop=acme%401&prompt=launch&settings=examples',
+      '/?new=1&bundle=acme%23report&preset=workspace-write&loop=acme%401&prompt=launch&settings=examples#settings-subsection-examples',
     )
     newButton.click()
+    expect(location.hash).toBe('#settings-subsection-examples')
     newSessionCwd.value = ' /workspace/agnes '
     await vi.waitFor(() => expect(newSessionCreate.disabled).toBe(false))
     newSessionForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
@@ -1459,6 +1460,7 @@ describe('web session selection', () => {
     for (const key of ['new', 'bundle', 'preset', 'loop', 'prompt'])
       expect(new URL(location.href).searchParams.has(key)).toBe(false)
     expect(new URL(location.href).searchParams.get('settings')).toBe('examples')
+    expect(location.hash).toBe('#settings-subsection-examples')
   })
 
   it('opens directory confirmation before creation and explains an unavailable path', async () => {

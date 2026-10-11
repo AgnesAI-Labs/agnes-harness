@@ -1095,6 +1095,7 @@ let draftPreset: string | undefined
 let draftBundles: string[] = []
 let runtimeCatalog: import('@agnes/protocol').RuntimeAdminSnapshot | undefined
 const startupRequest = new URLSearchParams(location.search)
+const startupSettingsAnchor = location.hash.slice(1)
 const requestedLoop = startupRequest.get('loop') ?? undefined
 const requestedPreset = startupRequest.get('preset') ?? undefined
 const requestedBundles = startupRequest.getAll('bundle')
@@ -1633,7 +1634,9 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   renderer.reset()
   const url = new URL(location.href)
   url.searchParams.delete('session')
-  history.replaceState(null, '', `${url.pathname}${url.search}`)
+  const settingsHash =
+    url.searchParams.has('settings') && url.hash.startsWith('#settings-subsection-') ? url.hash : ''
+  history.replaceState(null, '', `${url.pathname}${url.search}${settingsHash}`)
   topbarRuntime.setTaskTitle(t('app.newSession.defaultTitle'))
   render()
   if (!selectedWorkspace?.available && showWorkspacePicker) openNewSessionDialog(true)
@@ -2459,8 +2462,14 @@ run(async () => {
     settingsRegion.open('model')
     await settings.open()
     if (new URL(location.href).searchParams.get('settings') !== startupSettings) return
+    const anchoredSettings = startupSettingsAnchor.replace(/^settings-subsection-/, '')
+    const anchoredRoute = settingsRoute(anchoredSettings)
+    const target =
+      anchoredRoute.id === startupSettings && anchoredRoute.anchor === startupSettingsAnchor
+        ? anchoredSettings
+        : startupSettings
     document
       .getElementById('config-form')
-      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: startupSettings, bubbles: true }))
+      ?.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: target, bubbles: true }))
   }
 })

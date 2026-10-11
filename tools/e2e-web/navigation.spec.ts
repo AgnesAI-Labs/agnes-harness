@@ -123,10 +123,14 @@ test('settings search, narrow master-detail and old links keep their destination
   ]) {
     await page.goto(`/?settings=${old}`)
     await expect(page.getByTestId(`settings-page-${target}`)).toBeVisible()
-    await expect(page).toHaveURL(new RegExp(`[?&]settings=${target}#settings-subsection-${old}$`))
+    await expect.poll(() => new URL(page.url()).searchParams.get('settings')).toBe(target)
+    await expect.poll(() => new URL(page.url()).hash).toBe(`#settings-subsection-${old}`)
     await expect(page.locator(`#settings-subsection-${old}`)).toBeVisible()
     if (old === 'memory' || old === 'context')
       await expect(page.locator(`#settings-subsection-${old}`)).toHaveAttribute('open')
+    await page.reload()
+    await expect(page.locator(`#settings-subsection-${old}`)).toBeVisible()
+    await expect.poll(() => new URL(page.url()).hash).toBe(`#settings-subsection-${old}`)
   }
   await page.goto('/?settings=terminal')
   await expect(page.locator('#config')).toBeHidden()
