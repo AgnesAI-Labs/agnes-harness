@@ -156,6 +156,10 @@ export interface AppServerMethods {
   "_agnes/v1/session.setPreset": { params: Static<typeof import("./agnes-v1.js").SessionSetPresetParams>; result: Static<typeof import("./agnes-v1.js").EffectiveFromResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.setModel": { params: Static<typeof import("./agnes-v1.js").SessionSetModelParams>; result: Static<typeof import("./agnes-v1.js").EffectiveFromResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.setYolo": { params: Static<typeof import("./agnes-v1.js").SessionSetYoloParams>; result: Static<typeof import("./agnes-v1.js").EffectiveFromResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/decision.list": { params: Static<typeof import("./agnes-v1.js").DecisionListParams>; result: Static<typeof import("./agnes-v1.js").DecisionViewPage>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/decision.get": { params: Static<typeof import("./agnes-v1.js").DecisionGetParams>; result: Static<typeof import("./agnes-v1.js").DecisionView>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/decision.answer": { params: Static<typeof import("./agnes-v1.js").DecisionAnswerParams>; result: Static<typeof import("./agnes-v1.js").DecisionCommandReceipt>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/decision.cancel": { params: Static<typeof import("./agnes-v1.js").DecisionCancelParams>; result: Static<typeof import("./agnes-v1.js").DecisionCommandReceipt>; direction: "c2s"; kind: "request" }
   "_agnes/v1/approval.decide": { params: Static<typeof import("./agnes-v1.js").ApprovalDecideParams>; result: Static<typeof import("./agnes-v1.js").SeqResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/participant.join": { params: Static<typeof import("./agnes-v1.js").ParticipantParams>; result: Static<typeof import("./agnes-v1.js").SeqResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/participant.leave": { params: Static<typeof import("./agnes-v1.js").ParticipantParams>; result: Static<typeof import("./agnes-v1.js").SeqResult>; direction: "c2s"; kind: "request" }

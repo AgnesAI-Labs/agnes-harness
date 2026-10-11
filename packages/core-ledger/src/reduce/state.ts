@@ -1,3 +1,4 @@
+import type { DecisionState } from './decision.js'
 import type { Seq } from '@agnes/core-common/types'
 import type { SessionStart } from '@agnes/protocol'
 import { ChunkedMap } from './chunked-map.js'
@@ -44,6 +45,7 @@ export type LedgerState = {
   lastSeq: Seq
   session: SessionStart | null
   registers: {
+    decisionStates: ReadonlyMap<string, RegisterCell<DecisionState>>
     planItems: ReadonlyMap<string, RegisterCell<PlanItems>>
     budgetState: ReadonlyMap<string, RegisterCell<BudgetState>>
     artifactJobs: ReadonlyMap<string, RegisterCell<ArtifactJob>>
@@ -78,6 +80,7 @@ export function initialState(): LedgerState {
     lastSeq: 0,
     session: null,
     registers: {
+      decisionStates: new Map(),
       planItems: new Map(),
       budgetState: new Map(),
       artifactJobs: new Map(),

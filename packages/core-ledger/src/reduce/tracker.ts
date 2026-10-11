@@ -41,6 +41,7 @@ export class StateTracker {
  * list, stays green while quietly leaving the new register out of both halves of the resume path.
  */
 export const REGISTER_NAMES: Record<keyof LedgerState['registers'], string> = {
+  decisionStates: 'decision/state',
   planItems: 'plan.items',
   budgetState: 'budget.state',
   artifactJobs: 'artifact/job',

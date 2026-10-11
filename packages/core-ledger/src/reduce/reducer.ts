@@ -1,3 +1,4 @@
+import { reduceDecision } from './decision.js'
 import { CoreError, type Event, type Seq } from '@agnes/core-common/types'
 import { isEventType, normalize, type SessionStart } from '@agnes/protocol'
 import { isRegisterTombstone, registerKey } from '../log/storage.js'
@@ -168,11 +169,21 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
     }
   }
   switch (e.type) {
+    case 'decision/requested':
+    case 'decision/resolved':
+    case 'decision/invalidated':
+    case 'decision/consumed': {
+      const id = String(d?.decisionId)
+      const value = reduceDecision(s.registers.decisionStates.get(id)?.value, e)
+      register('decisionStates').set(id, {seq:e.seq,value})
+      break
+    }
     case 'session/start': {
       const start = d as unknown as SessionStart
       if (start.parent) {
         // A fork starts these over; lastTurn, planItems, artifactJobs, harnessEntries and the last
         // ledger tokens carry across from the parent, except for a fresh spawned conversation.
+        reset('registers.decisionStates')
         reset('registers.budgetState')
         reset('registers.inbox')
         reset('openTurn')

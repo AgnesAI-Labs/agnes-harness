@@ -38,6 +38,7 @@ export interface HostPersistence extends StorageAdapter, ChildControlStore {
 /** Full Host requirements; SQL is an independent, optional extension capability. */
 export const HOST_PERSISTENCE_REQUIREMENTS: readonly PersistenceCapability[] = [
   'ledger',
+  'atomic-registers',
   'metadata',
   'child-control',
   'reclaim',
@@ -86,6 +87,8 @@ function requireCapabilities(
 } {
   const missing = HOST_PERSISTENCE_REQUIREMENTS.filter((capability) => {
     switch (capability) {
+      case 'atomic-registers':
+        return provider.capabilities.atomicRegisters !== true
       case 'ledger':
         return (
           !provider.capabilities.ledger ||

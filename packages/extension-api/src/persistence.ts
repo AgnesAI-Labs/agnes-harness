@@ -60,7 +60,16 @@ export interface PersistenceLeaseClaim {
   expectedLastSeq: number
 }
 
-export interface PersistenceCommit {
+export interface PersistenceDerivedRegisterWrite {
+  readonly register: 'decision/state' | 'decision/outbox' | 'decision/grant'
+  readonly key: string
+  readonly data: JsonValue
+}
+export interface DecisionPersistenceCommitAddition {
+  readonly derivedRegisters?: readonly PersistenceDerivedRegisterWrite[]
+  readonly expectedRegisters?: readonly { readonly register: string; readonly key: string; readonly seq: number | null }[]
+}
+export interface PersistenceCommit extends DecisionPersistenceCommitAddition {
   events: readonly PersistenceEventRecord[]
   expectedWriterRunId: string
   integrity?: readonly PersistenceIntegrityCommit[]
@@ -161,6 +170,7 @@ export interface PersistenceReclaimPort {
 
 export type PersistenceChildControlPort = ChildControlStore
 export type PersistenceCapability =
+  | 'atomic-registers'
   | 'ledger'
   | 'metadata'
   | 'child-control'
@@ -168,6 +178,7 @@ export type PersistenceCapability =
   | 'integrity'
   | 'sqlite'
 export interface PersistenceCapabilities {
+  readonly atomicRegisters?: boolean
   readonly ledger: true
   readonly metadata?: boolean
   readonly childControl?: boolean
@@ -237,6 +248,10 @@ export interface PersistenceCatalogEntry {
 export function persistenceRegisterKey(event: { register?: string; lane?: string; data: unknown }): string {
   const data = event.data as Record<string, unknown> | null
   switch (event.register) {
+    case 'decision/state':
+      return String(data?.decisionId ?? '')
+    case 'decision/outbox':
+      return String(data?.outboxId ?? '')
     case 'artifact/job':
       return String(data?.jobId ?? '')
     case 'harness/entry':

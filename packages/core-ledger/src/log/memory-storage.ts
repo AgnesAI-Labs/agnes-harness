@@ -1,3 +1,4 @@
+import { decisionRegisterWrites, expectedRegisterChecks } from './decision-registers.js'
 import { admitFanOut, inheritAncestorScopeIds } from '@agnes/core-child-control/child/admission'
 import { addMicro, fitsCap } from '@agnes/core-child-control/child/credits'
 import type { ChildControlStore } from '@agnes/core-child-control/child/store'
@@ -118,9 +119,10 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     const b = storage.book(key)
     b.opened = true
     b.events = [...events]
-    for (const e of events)
-      if (e.register)
-        b.registers.apply({ register: e.register, key: registerKey(e), seq: e.seq, data: e.data })
+    for (const e of events) {
+      for (const row of decisionRegisterWrites([e], b.registers.values())) b.registers.apply(row)
+      if (e.register) b.registers.apply({ register: e.register, key: registerKey(e), seq: e.seq, data: e.data })
+    }
     for (const row of opts.opCells ?? []) {
       if (row.register !== 'op.state')
         throw new CoreError('E_ENVELOPE', `fixture op cell names register ${row.register}, not op.state`)
@@ -222,7 +224,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     b.opened = true
     return {
       lastSeq: this.lastSeq(b),
-      formatVersion: 1,
+      formatVersion: 2,
       ...(created ? { created: true } : {}),
       ...(b.parent ? { parent: b.parent } : {}),
     }
@@ -234,8 +236,7 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
     const b = this.book(key)
     const lease = b.lease
     this.holdLease(b, tx.expectedWriterRunId, tx.claim)
-    if (tx.expectedRegisterSeq) {
-      const { register, key: rk, seq } = tx.expectedRegisterSeq
+    for (const { register, key: rk, seq } of expectedRegisterChecks(tx)) {
       const cur = this.registerView(b).get(register, rk)?.seq ?? null
       if (cur !== seq) {
         // A refused write leaves the lease as it was, as the durable adapter's rollback does.
@@ -257,11 +258,13 @@ export class MemoryStorage implements StorageAdapter, ChildControlStore {
         tx.integrity.some((entry, index) => entry.seq !== stamped[index]?.seq))
     )
       throw new CoreError('E_STORAGE_FAULT', 'integrity metadata does not match assigned sequences')
+    const derived = decisionRegisterWrites(stamped, this.registerView(b).values(), tx.derivedRegisters)
     for (const e of stamped) {
       if (e.register)
         b.registers.apply({ register: e.register, key: registerKey(e), seq: e.seq, data: e.data })
       seqs.push(e.seq)
     }
+    for (const row of derived) b.registers.apply(row)
     b.events.push(...stamped)
     for (const entry of tx.integrity ?? []) {
       const { seq: entrySeq, ...metadata } = entry

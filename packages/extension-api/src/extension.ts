@@ -1,3 +1,4 @@
+import type { DecisionPort } from './decisions.js'
 import type { JsonValue } from '@agnes/protocol'
 import type { Disposer, LeaseView, Logger, PlatformFacts, Seq } from './common.js'
 import type { HookEvent, HookHandler } from './hooks.js'
@@ -11,6 +12,7 @@ import type { ToolDef } from './tool.js'
 export type TrustTier = 'builtin' | 'trusted'
 
 export interface ExtensionContext {
+  readonly decisions: DecisionPort
   readonly extId: string
   readonly version: string
   readonly trust: TrustTier

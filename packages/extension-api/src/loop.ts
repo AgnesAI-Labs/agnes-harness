@@ -1,3 +1,4 @@
+import type { DecisionHandle, DecisionPort } from './decisions.js'
 import type {
   Actor,
   ContentBlock,
@@ -29,6 +30,7 @@ export interface LoopSelection {
 export interface LoopCheckpoint {
   codecVersion: number
   state: JsonValue
+  readonly decisions?: readonly LoopDecisionRef[]
 }
 
 /** A factory must reject unsupported versions before executing resumed work. */
@@ -167,13 +169,14 @@ export type LoopEffectStatus =
  * Controlled ledger operations shared by all drivers. Core binds approvals, media and recovery;
  * these do not expose or accept its private program counter. The driver selects the next edge.
  */
-export type LoopContinuation = 'checkpoint' | 'model' | 'tools' | 'compaction' | 'deferred' | 'failure'
+export type LoopContinuation = 'decision' | 'checkpoint' | 'model' | 'tools' | 'compaction' | 'deferred' | 'failure'
 
 export interface LoopToolCall {
   /** Stable across retries/reopen, unique within this session and lane. */
   invocationId?: string
   name: string
   args: JsonValue
+  readonly decisionRefs?: readonly LoopDecisionRef[]
 }
 
 /** Generic service reader. Host installs the deferred queue under its kind token. */
@@ -193,16 +196,8 @@ export interface LoopContext {
   prepareRequest(options?: LoopRequestOptions): Promise<LoopRequest>
   /** Uses this turn's prepared request without dispatch, admission or budget reservation. */
   estimateRequest(request: LoopRequest): Promise<LoopRequestEstimate>
-  readonly turn: {
-    view(): Promise<LoopTurnView | null>
-    /** Close the current execution step before compaction. Does not run a scheduler edge. */
-    endStep(): Promise<void>
-    continuation(): LoopContinuation | null
-    cancelled(): boolean
-    checkpoint(signal: AbortSignal): Promise<LoopStepOutcome>
-    finishCancelled(): Promise<LoopStepOutcome>
-    finishFailure(): Promise<LoopStepOutcome>
-  }
+  readonly decisions: DecisionPort
+  readonly turn: LoopTurnPort
   readonly effects: { status(invocationId: string): Promise<LoopEffectStatus> }
   readonly model: {
     /** Assemble, infer and persist the assistant/tools edge with Core-owned stamps. */
@@ -320,4 +315,32 @@ export function loopShouldStop(result: LoopStepOutcome, until: 'turn-end' | 'idl
     default:
       throw new Error('Invalid loop step outcome')
   }
+}
+
+export interface LoopDecisionRef {
+  readonly id: string
+  readonly requestedSeq: number
+  readonly subjectDigest: string
+  readonly codecId: string
+  readonly codecVersion: number
+}
+export interface LoopDecisionSuspend {
+  readonly decision: DecisionHandle
+  readonly checkpoint: LoopCheckpoint
+}
+export interface LoopDecisionConsumption {
+  readonly decision: DecisionHandle
+  readonly checkpoint: LoopCheckpoint
+}
+export interface LoopTurnPort {
+    view(): Promise<LoopTurnView | null>
+    /** Close the current execution step before compaction. Does not run a scheduler edge. */
+    endStep(): Promise<void>
+    continuation(): LoopContinuation | null
+    cancelled(): boolean
+    checkpoint(signal: AbortSignal): Promise<LoopStepOutcome>
+    finishCancelled(): Promise<LoopStepOutcome>
+    finishFailure(): Promise<LoopStepOutcome>
+    suspend(input: LoopDecisionSuspend): Promise<LoopStepOutcome>
+  consumeDecision(input: LoopDecisionConsumption): Promise<LoopStepOutcome>
 }

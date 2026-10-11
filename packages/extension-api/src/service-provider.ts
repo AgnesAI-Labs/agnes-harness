@@ -1,3 +1,4 @@
+import type { DecisionPort } from './decisions.js'
 import type { EventEnvelope, JsonValue } from '@agnes/protocol'
 import type { Seq, SessionRef } from './common.js'
 import type { ProjectionReader } from './projections.js'
@@ -42,9 +43,10 @@ export interface AgentInputPort {
   deliver(key: string, text: string, signal: AbortSignal): Promise<Seq>
 }
 
-export type ServicePortName = 'ledger' | 'input' | 'projections'
+export type ServicePortName = 'ledger' | 'input' | 'projections' | 'decisions'
 
 export interface ServicePorts {
+  readonly decisions?: DecisionPort
   readonly binding: ServiceBinding
   readonly ledger?: OwnerLedgerPort
   readonly input?: AgentInputPort

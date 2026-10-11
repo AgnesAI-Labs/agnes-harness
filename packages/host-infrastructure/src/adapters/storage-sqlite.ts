@@ -1,3 +1,4 @@
+import { decisionRegisterWrites, expectedRegisterChecks } from '@agnes/core-ledger'
 import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -330,10 +331,10 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
       'SELECT format_version, parent_key, boundary_seq FROM sessions WHERE session_key = ?',
     ),
     insertSession: db.prepare(
-      'INSERT OR IGNORE INTO sessions (session_key, format_version, parent_key, boundary_seq, created_at) VALUES (?, 1, ?, ?, ?)',
+      'INSERT OR IGNORE INTO sessions (session_key, format_version, parent_key, boundary_seq, created_at) VALUES (?, 2, ?, ?, ?)',
     ),
     insertChildSession: db.prepare(
-      'INSERT INTO sessions (session_key, format_version, parent_key, boundary_seq, created_at) VALUES (?, 1, ?, ?, ?)',
+      'INSERT INTO sessions (session_key, format_version, parent_key, boundary_seq, created_at) VALUES (?, 2, ?, ?, ?)',
     ),
     lastSeq: db.prepare('SELECT COALESCE(MAX(seq), 0) AS s FROM events WHERE session_key = ?'),
     insertEvent: db.prepare(
@@ -471,7 +472,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
         const created =
           Number(q.insertSession.run(key, null, null, new Date(clock()).toISOString()).changes) === 1
         const version = (q.session.get(key) as { format_version: number }).format_version
-        if (version !== 1)
+        if (version !== 2)
           throw new CoreError(
             'E_FORMAT',
             `Unsupported ledger format version ${version}; this runtime supports version 1`,
@@ -488,7 +489,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
         const parent = parentOf(key)
         return {
           lastSeq: lastSeq(key),
-          formatVersion: 1,
+          formatVersion: 2,
           ...(recovery ? { recovery } : {}),
           ...(created ? { created: true } : {}),
           ...(parent ? { parent } : {}),
@@ -500,20 +501,9 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
         throw new CoreError('E_STORAGE_FAULT', 'an op write needs at least one row in its batch')
       return tx(() => {
         holdLease(key, c.expectedWriterRunId, c.claim)
-        if (c.expectedRegisterSeq) {
-          const cur =
-            (
-              q.registerSeq.get(key, c.expectedRegisterSeq.register, keyBytes(c.expectedRegisterSeq.key)) as
-                | { seq: number }
-                | undefined
-            )?.seq ?? null
-          if (cur !== c.expectedRegisterSeq.seq)
-            throw new CoreError('E_CAS', 'register seq mismatch', {
-              register: c.expectedRegisterSeq.register,
-              key: c.expectedRegisterSeq.key,
-              expected: c.expectedRegisterSeq.seq,
-              actual: cur,
-            })
+        for (const check of expectedRegisterChecks(c)) {
+          const cur = (q.registerSeq.get(key, check.register, keyBytes(check.key)) as {seq:number}|undefined)?.seq ?? null
+          if (cur !== check.seq) throw new CoreError('E_CAS','register seq mismatch',{...check,actual:cur})
         }
         let seq = lastSeq(key)
         const seqs: number[] = []
@@ -524,6 +514,8 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
             c.integrity.some((entry, index) => entry.seq !== expectedSeqs[index]))
         )
           throw new CoreError('E_STORAGE_FAULT', 'integrity metadata does not match assigned sequences')
+        const rows = (q.registers.all(key) as Array<{register:string;key:Uint8Array;seq:number;data:string}>).map(r=>({register:r.register,key:keyText(r.key),seq:r.seq,data:JSON.parse(r.data)}))
+        const derived = decisionRegisterWrites(c.events.map((e,i)=>({...e,seq:seq+i+1})),rows,c.derivedRegisters)
         for (const [index, e] of c.events.entries()) {
           seq++
           const integrity = c.integrity?.[index]
@@ -554,6 +546,7 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
           }
           seqs.push(seq)
         }
+        for (const row of derived) q.upsertRegister.run(key,row.register,keyBytes(row.key),row.seq,JSON.stringify(row.data))
         if (c.opState) {
           const lane = keyBytes(c.opState.lane)
           if (c.opState.data === null) q.deleteRegister.run(key, 'op.state', lane)

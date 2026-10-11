@@ -651,8 +651,8 @@ function emit(s: Json, ctx: EmitCtx): string {
         // Plain dictionary Record<string, T>: consumes only type + additionalProperties. This
         // branch likewise does not implement `minProperties` and friends; they fall through to
         // checkNoLeftoverKeys and throw.
-        checkNoLeftoverKeys(s, ctx, 'object (dict)', ['type', 'additionalProperties'])
-        return `Type.Record(Type.String(), ${valueSrc})`
+        checkNoLeftoverKeys(s, ctx, 'object (dict)', ['type', 'additionalProperties', 'minProperties', 'maxProperties'])
+        return `Type.Record(Type.String(), ${valueSrc}${opts(s, ['minProperties', 'maxProperties'])})`
       }
       // The important one, and the worst case the leftover-key check was added for:
       // `patternProperties` is not in the consumed list, so

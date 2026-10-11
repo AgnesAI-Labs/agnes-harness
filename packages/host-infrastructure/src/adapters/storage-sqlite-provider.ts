@@ -19,6 +19,7 @@ export const sqlitePersistenceProvider: PersistenceProvider = definePersistenceP
   state: { effect: PERSISTENCE_EFFECT },
   capabilities: {
     ledger: true,
+    atomicRegisters: true,
     metadata: true,
     childControl: true,
     reclaim: true,

@@ -1,3 +1,5 @@
+import type { DecisionPersistenceCommitAddition } from '@agnes/extension-api'
+import { decisionRegisterWrites } from './decision-registers.js'
 import {
   type Clock,
   CoreError,
@@ -31,7 +33,7 @@ import {
 } from './storage.js'
 import { prepareEvents } from './validate.js'
 
-export type AppendOptions = {
+export type AppendOptions = DecisionPersistenceCommitAddition & {
   expectedRegisterSeq?: { register: string; key: string; seq: Seq | null }
   refineCaller?: boolean
   /** The program counter of one lane, committed as a register cell at the seq of the batch's last row. */
@@ -163,10 +165,10 @@ export class SessionLogImpl {
   static async open(o: OpenLogOptions): Promise<SessionLogImpl> {
     const opened = await o.storage.open(o.key, { writerRunId: o.writerRunId, ttlMs: o.ttlMs })
     try {
-      if (opened.formatVersion !== 1)
+      if (opened.formatVersion !== 2)
         throw new CoreError(
           'E_FORMAT',
-          `Unsupported ledger format version ${opened.formatVersion}; this runtime supports version 1`,
+          `Unsupported ledger format version ${opened.formatVersion}; reset-required; this runtime supports version 2`,
         )
       // The complete integrity chain is verified before any replayed state is exposed; a replay
       // consumer only ever sees rows that have already passed.
@@ -208,10 +210,10 @@ export class SessionLogImpl {
   ): Promise<SessionLogImpl> {
     const opened = await o.storage.open(o.key, { writerRunId: o.writerRunId, ttlMs: o.ttlMs })
     try {
-      if (opened.formatVersion !== 1)
+      if (opened.formatVersion !== 2)
         throw new CoreError(
           'E_FORMAT',
-          `Unsupported ledger format version ${opened.formatVersion}; this runtime supports version 1`,
+          `Unsupported ledger format version ${opened.formatVersion}; reset-required; this runtime supports version 2`,
         )
       if (
         opened.parent?.key !== parent.key ||
@@ -391,6 +393,8 @@ export class SessionLogImpl {
       this.sealCheck()
       let committed: CommitReceipt
       const stamped = events.map((e, i) => ({ ...e, seq: this.lastSeqValue + i + 1 }))
+      this.o.relationCheck?.(events, this, op)
+      const derived = decisionRegisterWrites(stamped, this.registersCache.values(), opts.derivedRegisters)
       const nextIntegrity = prepareIntegrity(this.o.key, stamped, this.integrityState)
       const claim = { ttlMs: this.o.ttlMs, expectedLastSeq: this.lastSeqValue }
       const writtenAt = this.o.clock()
@@ -400,6 +404,8 @@ export class SessionLogImpl {
           integrity: nextIntegrity.entries,
           expectedWriterRunId: this.o.writerRunId,
           ...(opts.expectedRegisterSeq ? { expectedRegisterSeq: opts.expectedRegisterSeq } : {}),
+          derivedRegisters: derived.map(({register,key,data}) => ({register: register as 'decision/state',key,data: data as import('@agnes/protocol').JsonValue})),
+          ...(opts.expectedRegisters ? { expectedRegisters: opts.expectedRegisters } : {}),
           ...(op ? { opState: op } : {}),
           claim,
         })
@@ -430,6 +436,7 @@ export class SessionLogImpl {
             data: e.data,
           })
       }
+      for (const row of derived) this.registersCache.apply(row)
       this.lastSeqValue = committed.seqs[committed.seqs.length - 1] as Seq
       if (op) {
         this.registersCache.apply({

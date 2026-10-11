@@ -32,7 +32,8 @@
     "./reduce/tracker": "./src/reduce/tracker.ts",
     "./registry/owner-batch": "./src/registry/owner-batch.ts",
     "./project/fact-chain": "./src/project/fact-chain.ts",
-    "./testkit/encode-ledger-state": "./testkit/encode-ledger-state.ts"
+    "./testkit/encode-ledger-state": "./testkit/encode-ledger-state.ts",
+    "./reduce/decision": "./src/reduce/decision.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

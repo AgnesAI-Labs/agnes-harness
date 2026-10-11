@@ -1,3 +1,4 @@
+import type { DecisionPersistenceCommitAddition } from '@agnes/extension-api'
 import {
   CoreError,
   type Event,
@@ -68,7 +69,7 @@ export type IntegrityScanQuery = { fromSeq: Seq; toSeq: Seq; limit: number }
  * One atomic append. `ts` and `id` are already minted by core; storage only assigns `seq`,
  * inside the same transaction that writes the register rows.
  */
-export type CommitTx = {
+export type CommitTx = DecisionPersistenceCommitAddition & {
   events: PreparedEvent[]
   /** Omitted only by legacy/rollback writers. New core appends always provide one entry per event. */
   integrity?: IntegrityCommit[]
@@ -195,6 +196,10 @@ export class RegisterMap {
 export function registerKey(e: Event): string {
   const d = e.data as Record<string, unknown> | null
   switch (e.register) {
+    case 'decision/state':
+      return String(d?.decisionId ?? '')
+    case 'decision/outbox':
+      return String(d?.outboxId ?? '')
     case 'artifact/job':
       return String(d?.jobId ?? '')
     case 'harness/entry':

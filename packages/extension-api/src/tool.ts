@@ -1,3 +1,4 @@
+import type { DecisionPort } from './decisions.js'
 import type { Action, Actor, Decision, JobSpec, JobStatus, JsonValue, Target } from '@agnes/protocol'
 import type { Static, TSchema } from '@sinclair/typebox'
 import type { ChildAgentListing, ChildAgentModel, ChildAgentToolFilter } from './child-agent.js'
@@ -215,6 +216,7 @@ export interface CodeRuntime {
 }
 
 export interface ToolContext {
+  readonly decisions: DecisionPort
   /** Active main-conversation request only; Host owns validation and native approval. */
   readonly mcpManage?: Readonly<{ request(input: unknown): Promise<unknown> }>
   readonly pluginManage?: Readonly<{ request(input: unknown): Promise<unknown> }>
