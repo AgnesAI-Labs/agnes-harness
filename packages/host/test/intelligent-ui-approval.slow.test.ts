@@ -1,0 +1,337 @@
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { defineTool, type PluginExtensionAPI } from '@agnes/extension-api'
+import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
+import { createPluginRow } from '@agnes/plugin-runtime/host'
+import { defineAgnesPlugin } from '@agnes/plugin-runtime'
+import {
+  capabilityHash,
+  emptyLock,
+  hashDirectory,
+  type RuntimePluginSnapshot,
+  writeLock,
+} from '@agnes/package-manager'
+import type { InferenceEvent, UiSurface } from '@agnes/protocol'
+import { Type } from '@sinclair/typebox'
+import { expect, it } from 'vitest'
+import { createTestHost } from '../testkit/index.js'
+
+const surface = (revision: number): UiSurface => ({
+  id: 'generic-review',
+  revision,
+  title: 'Review',
+  placement: { inline: true, workbench: true },
+  data: { status: revision === 1 ? 'Pending' : 'Approved' },
+  components: [{ id: 'status', kind: 'status', dataKey: 'status' }],
+  actions: [],
+})
+const call = (name: string, args: Record<string, unknown>): InferenceEvent[] => [
+  { type: 'toolcall_end', via: 'native', call: { toolUseId: '', name, args, ordinal: 0 } },
+  { type: 'done', reason: 'toolUse' },
+]
+
+it('updates a surface to revision 2 in the same turn after an approved plugin tool', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-ui-approval-'))
+  let approvalAsked!: () => void
+  const asked = new Promise<void>((resolve) => {
+    approvalAsked = resolve
+  })
+  let approve!: (answer: 'allowed-once') => void
+  const approval = new Promise<'allowed-once'>((resolve) => {
+    approve = resolve
+  })
+  const plugin = defineAgnesPlugin({
+    inject: ['extension'],
+    apply(ctx) {
+      const api = (ctx as unknown as { extension(): PluginExtensionAPI }).extension()
+      api.registerTool(
+        defineTool({
+          name: 'review_commit',
+          description: 'Record a synthetic reviewed change',
+          parameters: Type.Object({}),
+          meta: {
+            isReadOnly: false,
+            isDestructive: false,
+            isConcurrencySafe: false,
+            isOpenWorld: false,
+            replay: 'idempotent',
+            requiresApproval: 'always',
+            deferLoading: false,
+            costHint: {},
+          },
+          execute: async () => ({ content: [{ type: 'text', text: 'Approved change recorded' }] }),
+        }),
+      )
+    },
+  })
+  const directory = join(root, 'plugin')
+  mkdirSync(directory)
+  writeFileSync(join(directory, 'index.js'), 'synthetic-review-plugin')
+  writeFileSync(
+    join(directory, 'package.json'),
+    JSON.stringify({
+      name: 'fixture/review',
+      version: '1.0.0',
+      main: './index.js',
+      agnes: { plugins: [{ export: 'main', apiRange: '^1.4.0', default: true, inject: ['extension'] }] },
+    }),
+  )
+  const integrity = `sha256-${'a'.repeat(64)}`
+  const source: RuntimePluginSnapshot = {
+    generation: 1,
+    trusted: true,
+    snapshot: {
+      snapshotId: integrity,
+      integrity,
+      profile: 'local-dev',
+      packageId: 'fixture/review',
+      version: '1.0.0',
+      treeIntegrity: hashDirectory(directory, { exclude: [] }),
+      capabilityHash: capabilityHash({ dependencies: {} }),
+      directory,
+      contributions: [],
+    },
+  }
+  const profileDir = join(root, 'profiles/local-dev')
+  mkdirSync(profileDir, { recursive: true })
+  writeLock(profileDir, {
+    ...emptyLock('local-dev', '0.1.0'),
+    resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
+    seams: Object.fromEntries(
+      [
+        'approval',
+        'checkpoint',
+        'ledger',
+        'sandbox',
+        'verifier',
+        'repair',
+        'artifacts',
+        'principals',
+        'platform',
+        'harness',
+      ].map((name) => [name, '@agnes/base']),
+    ),
+    packages: {
+      'fixture/review': {
+        version: '1.0.0',
+        source: { type: 'file', ref: 'file:fixture' },
+        integrity,
+        trust: 'trusted',
+        license: 'MIT',
+        apiRange: '^1.4.0',
+        dependencies: {},
+        previous: null,
+        state: { installed: new Date(0).toISOString(), trusted: new Date(0).toISOString(), enabled: true },
+        trustDecision: {
+          integrity,
+          capabilityHash: source.snapshot.capabilityHash,
+          decidedAt: new Date(0).toISOString(),
+        },
+      },
+    },
+  })
+  const { host } = await createTestHost({
+    dataDir: root,
+    disableSessionTitle: true,
+    presets: {
+      standard: {
+        name: 'standard',
+        extends: 'base',
+        tools: { core: ['tool_describe', 'ui_render', 'ui_update', 'review_commit'] },
+      },
+    },
+    packageDirs: {
+      '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)),
+      'fixture/review': directory,
+    },
+    runtimePluginSources: async () => [source],
+    extensionLoader: {
+      async import(file: string) {
+        if (readFileSync(file, 'utf8') === 'synthetic-review-plugin') return { main: plugin }
+        return (await import(pathToFileURL(file).href)) as Record<string, unknown>
+      },
+    },
+    approval: async () => {
+      approvalAsked()
+      return approval
+    },
+    script: [
+      call('tool_describe', { name: 'ui_render' }),
+      call('tool_describe', { name: 'ui_update' }),
+      call('ui_render', { surface: surface(1) }),
+      call('review_commit', {}),
+      call('ui_update', { surfaceId: 'generic-review', expectedRevision: 1, surface: surface(2) }),
+      [{ type: 'done', reason: 'stop' }],
+    ],
+  })
+  const base = host.runtimeTargetSnapshot!()
+  await host.applyRuntimeTarget(
+    buildCompleteRuntimeTarget({
+      rows: [
+        ...base.tree.rows,
+        createPluginRow({
+          id: 'ext:fixture/review/main',
+          plugin: `fixture/review@${integrity}/main`,
+          snapshotDigest: integrity,
+          exportName: 'main',
+          entryRevision: integrity,
+          extrasRevision: 'none',
+          mountRevision: 'v1',
+          inject: ['extension'],
+        }),
+      ],
+      resources: base.resource.resources,
+    }).target,
+  )
+  const ac = new AbortController()
+  try {
+    const session = await host.createSession({ cwd: root })
+    await session.enqueue('next-turn', {
+      actor: session.d.actor,
+      content: [{ type: 'text', text: 'review and update' }],
+    })
+    const running = session.run({ until: 'turn-end', signal: ac.signal })
+    await Promise.race([
+      asked,
+      running.then(async (out) => {
+        throw new Error(
+          `ended before approval: ${JSON.stringify(out)} ${JSON.stringify(await session.scan({ type: 'tool/result', toSeq: session.lastSeq }))}`,
+        )
+      }),
+    ])
+    expect(
+      (await session.intelligentUi!.read({ sessionId: session.key }, ac.signal)).surfaces[0]?.surface
+        .revision,
+      JSON.stringify(await session.scan({ type: 'tool/result', toSeq: session.lastSeq })),
+    ).toBe(1)
+    approve('allowed-once')
+    await expect(running).resolves.toMatchObject({ reason: 'completed' })
+    expect(
+      (await session.intelligentUi!.read({ sessionId: session.key }, ac.signal)).surfaces[0]?.surface
+        .revision,
+    ).toBe(2)
+    const calls = await session.scan({ type: 'tool/call', toSeq: session.lastSeq })
+    expect(calls.map((row) => (row.data as { name: string }).name)).toEqual([
+      'tool_describe',
+      'tool_describe',
+      'ui_render',
+      'review_commit',
+      'ui_update',
+    ])
+    const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
+    expect(results).toHaveLength(5)
+    expect(results.every((row) => !(row.data as { isError?: boolean }).isError)).toBe(true)
+    expect(await session.scan({ type: 'turn/start', toSeq: session.lastSeq })).toHaveLength(1)
+  } finally {
+    ac.abort()
+    approve('allowed-once')
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('updates revision 2 through custom Loop tool ports after approval in one turn', async () => {
+  const { createAuthorTestkit } = await import('@agnes/host/author-testkit')
+  const { loopCheckpointCodec, registerLoopPlugin } = await import('@agnes/extension-api')
+  const { defineLoop } = await import('@agnes/plugin-runtime')
+  let asked!: () => void
+  const pending = new Promise<void>((resolve) => {
+    asked = resolve
+  })
+  let approve!: (answer: 'allowed-once') => void
+  const decision = new Promise<'allowed-once'>((resolve) => {
+    approve = resolve
+  })
+  const codec = loopCheckpointCodec(1, (value) => value)
+  const loop = defineLoop({
+    id: 'fixture.review',
+    version: '1.0.0',
+    capabilities: ['tools'],
+    codec,
+    create(ctx) {
+      return {
+        async step(signal) {
+          if (!(await ctx.input.accept())) return { outcome: 'idle' }
+          for (const call of [
+            { name: 'ui_render', args: { surface: surface(1) } },
+            { name: 'review_commit', args: {} },
+            {
+              name: 'ui_update',
+              args: { surfaceId: 'generic-review', expectedRevision: 1, surface: surface(2) },
+            },
+          ]) {
+            const result = await ctx.tools.execute(call, signal)
+            expect(result.isError, JSON.stringify(result)).not.toBe(true)
+            if (call.name === 'ui_render') expect(result.details).toMatchObject({ surface: { revision: 1 } })
+          }
+          await ctx.events.finish('completed')
+          return { outcome: 'turn-ended', reason: 'completed' }
+        },
+        checkpoint: () => codec.encode(null),
+        cancel() {},
+        dispose() {},
+      }
+    },
+    resume(ctx, _checkpoint, signal) {
+      return loop.create(ctx, signal)
+    },
+  })
+  const kit = await createAuthorTestkit({
+    version: '1.0.0',
+    loop,
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+    approval: async () => {
+      asked()
+      return decision
+    },
+    plugin: defineAgnesPlugin({
+      inject: ['extension', 'loops'],
+      apply(ctx) {
+        ctx.extension().registerTool(
+          defineTool({
+            name: 'review_commit',
+            description: 'Record a synthetic reviewed change',
+            parameters: Type.Object({}),
+            meta: {
+              isReadOnly: false,
+              isDestructive: false,
+              isConcurrencySafe: false,
+              isOpenWorld: false,
+              replay: 'idempotent',
+              requiresApproval: 'always',
+              deferLoading: false,
+              costHint: {},
+            },
+            execute: async () => ({ content: [{ type: 'text', text: 'Approved change recorded' }] }),
+          }),
+        )
+        registerLoopPlugin(ctx, '@author/plugin', loop)
+      },
+    }),
+  })
+  const ac = new AbortController()
+  try {
+    const session = await kit.openSession()
+    await session.enqueue('Review and update')
+    const running = session.drive(1, ac.signal)
+    await Promise.race([
+      pending,
+      running.then(() => {
+        throw new Error('ended before approval')
+      }),
+    ])
+    approve('allowed-once')
+    await expect(running).resolves.toMatchObject([{ outcome: 'turn-ended', reason: 'completed' }])
+    expect((await session.uiRead()).surfaces[0]?.surface.revision).toBe(2)
+    const facts = await session.facts()
+    expect(facts.filter((row) => row.type === 'tool/result')).toHaveLength(3)
+    expect(facts.filter((row) => row.type === 'turn/start')).toHaveLength(1)
+    await session.assertApproval('allowed-once')
+  } finally {
+    ac.abort()
+    approve('allowed-once')
+    await kit.dispose()
+  }
+})
