@@ -91,6 +91,8 @@ local-dev 默认允许 PATH 上的 stdio `node`、`npx`、`python`、`python3`�
 
 ## 配置并验证
 
+AGH 会把空输入 schema，以及缺少 `type` 但含对象约束的 schema，规范为 `type: "object"`。真正的非对象或非法根只跳过该工具，并在目录中显示 `invalid-schema` 原因；同一服务器的其他工具仍可使用。
+
 Web 设置的 MCP 页面可查看服务、连接与工具目录。需要手动配置 stdio、HTTP 或 SSE 服务时，可使用命令行；`MCP_URL` 应是你已审核并可访问的 MCP endpoint，不是普通网页或模型 Base URL：
 
 ```sh

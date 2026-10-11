@@ -161,6 +161,46 @@ function admittedNames(serverId: string, remoteNames: readonly string[]): string
 }
 
 describe('registerRemoteToolsStrict', () => {
+  it('reports one non-object tool refusal while the rest of its server remains callable', async () => {
+    const f = fakeApi()
+    const reported = vi.fn()
+    const conn: McpConnection = {
+      id: 'mixed',
+      listTools: async () => [
+        { name: 'bad', description: 'invalid root', inputSchema: { type: 'string' } },
+        { name: 'empty', description: 'empty arguments', inputSchema: {} },
+        { name: 'valid', description: 'valid arguments', inputSchema: { type: 'object' } },
+      ],
+      callTool: async (name) => ({ content: [{ type: 'text', text: `ok ${name}` }] }),
+      close: vi.fn(async () => {}),
+    }
+    const dispose = await registerRemoteToolsStrict(
+      f.api,
+      conn,
+      { ...stdio, id: 'mixed' },
+      {
+        onRemoteCatalog: reported,
+      },
+    )
+    try {
+      expect(reported.mock.calls[0]?.[1]).toEqual([{ code: 'invalid-schema', name: 'bad' }])
+      expect(reported.mock.calls[0]?.[0].map((tool: { inputSchema: unknown }) => tool.inputSchema)).toEqual([
+        { type: 'object' },
+        { type: 'object' },
+      ])
+      expect(f.tools.map((tool) => tool.name)).toEqual(admittedNames('mixed', ['empty', 'valid']))
+      for (const name of ['empty', 'valid']) {
+        const tool = f.tools.find((tool) => tool.name === mcpPublicToolName('mixed', name))!
+        expect(await tool.execute({}, ctxOf())).toMatchObject({
+          content: [{ type: 'text', text: `ok ${name}` }],
+        })
+      }
+      expect(conn.close).not.toHaveBeenCalled()
+    } finally {
+      dispose()
+    }
+  })
+
   const connection = (): McpConnection => ({
     id: 'gh',
     async listTools() {

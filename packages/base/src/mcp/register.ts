@@ -19,7 +19,7 @@ import {
   spillLocator,
 } from '../../extensions/tools-core/src/guards/output.js'
 import { MAX_READ_BYTES } from '../../extensions/tools-core/src/tools/read.js'
-import { remoteInputSchema } from '../mcp-json-schema.js'
+import { normalizeRemoteInputSchema, remoteInputSchema } from '../mcp-json-schema.js'
 import { type McpServerConfig, mcpErrorText, redactMcpSecrets } from './config.js'
 import { mcpLegacyToolName, mcpPublicToolName } from './naming.js'
 import { admitMcpResourceTools, bindMcpResourceServer } from './resources.js'
@@ -482,7 +482,13 @@ export function validateRemoteCatalog(
   const taken = new Set<string>()
   const tools: McpRemoteTool[] = []
   const skipped: McpSkippedTool[] = []
-  for (const tool of accepted) {
+  for (const remote of accepted) {
+    let tool = remote
+    try {
+      tool = { ...remote, inputSchema: normalizeRemoteInputSchema(remote.inputSchema) }
+    } catch {
+      // Keep the original for the bounded per-tool refusal classification below.
+    }
     const code = mcpToolProblem(conn, cfg, tool)
     if (code) {
       const name: unknown = tool?.name

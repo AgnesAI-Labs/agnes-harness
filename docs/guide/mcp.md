@@ -97,6 +97,8 @@ Local-dev permits stdio `node`, `npx`, `python`, and `python3` on PATH, plus HTT
 
 ## Configure and verify
 
+AGH normalizes empty input schemas and object-like schemas without `type` to `type: "object"`. A genuinely non-object or invalid root is skipped with an `invalid-schema` reason in the catalog; other tools from that server remain available.
+
 The MCP settings page shows services, connection state, and tool catalogs. Use the CLI to configure stdio, HTTP, or SSE manually. `MCP_URL` must be a reviewed, reachable MCP endpoint, rather than a normal webpage or model Base URL:
 
 ```sh

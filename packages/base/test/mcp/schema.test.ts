@@ -48,6 +48,22 @@ async function attempted(
 }
 
 describe('MCP remote schema in the core argument validator', () => {
+  it.each([{}, { properties: { text: { type: 'string' } }, additionalProperties: false }])(
+    'normalizes an object-like root without type: %j',
+    async (schema) => {
+      const before = structuredClone(schema)
+      const tool = await registered(schema)
+      expect(JSON.parse(JSON.stringify(tool.parameters))).toEqual({ ...schema, type: 'object' })
+      expect(validateAgainst(tool.parameters, {}).ok).toBe(true)
+      expect(validateAgainst(tool.parameters, []).ok).toBe(false)
+      expect(validateAgainst(tool.parameters, 'forged').ok).toBe(false)
+      expect(schema).toEqual(before)
+      const registry = new ToolRegistry()
+      registry.add(tool, { source: 'schema-test', trust: 'builtin' })
+      expect(registry.snapshot(0).byName.has(tool.name)).toBe(true)
+    },
+  )
+
   it('accepts empty object arguments and preserves the provider JSON schema', async () => {
     const schema = { type: 'object', properties: {}, additionalProperties: false }
     const tool = await registered(schema)
@@ -108,6 +124,9 @@ describe('MCP remote schema in the core argument validator', () => {
 
   it.each([
     { type: 'bogus' },
+    { type: 'string' },
+    { type: 'array', items: { type: 'string' } },
+    { items: { type: 'string' } },
     { type: 'object', properties: { x: { type: 'string', minLength: -1 } } },
     { type: 'object', properties: { x: { type: 'string', pattern: '[' } } },
     { type: 'object', properties: { x: { type: 'string', unknownConstraint: true } } },
