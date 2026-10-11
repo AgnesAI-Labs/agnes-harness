@@ -12,6 +12,7 @@ import { minimumContextBudget } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import { tr } from '@agnes/web-foundation/locale-bridge'
 import {
+  Button,
   modelThinkingOptions,
   parseContextBudget,
   renderRegion,
@@ -44,6 +45,8 @@ export type SettingsController = {
   open(): Promise<void>
   close(): void
   refreshLocale(): void
+  attachInline(host: HTMLElement): () => void
+  submitInline(): Promise<boolean>
   setConnected(connected: boolean): void
 }
 
@@ -78,7 +81,25 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   const accountDialogTitle = optionalElement('config-detail-title', 'h3')
   const accountDialogContext = optionalElement('config-account-context', 'p')
   const accountName = optionalElement('config-account-name', 'input')
+  const accountBody = accountDialog?.querySelector<HTMLElement>('.account-dialog-body')
+  const advanced = optionalElement('config-account-advanced', 'details')
+  let inlineHost: HTMLElement | undefined
+  let accountStep: 'provider' | 'connection' = 'connection'
+  let draftBaseline = ''
+  let accountFocusReturn: HTMLElement | null = null
+  const draftSignature = () =>
+    JSON.stringify([
+      ui.provider.value,
+      ui.authMethod.value,
+      accountName?.value,
+      ui.baseUrl.value,
+      ui.apiKey.value,
+      ui.models.value,
+      ui.thinking?.value,
+      ui.contextWindow?.value,
+    ])
   let editingId: string | undefined
+  let savedNotice = false
   let removingId: string | undefined
   const selectedAccount = (): ConfigAccount | undefined =>
     configuration?.accounts?.find((row) => row.accountId === editingId)
@@ -175,13 +196,20 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     (isOAuth() && oauth.operation() !== undefined && ui.models.value !== '') ||
     hasUnverifiedSavedChanges()
   const current = (token: number, inputRevision?: number): boolean =>
-    token === lifecycle && ui.dialog.open && (inputRevision === undefined || inputRevision === revision)
+    token === lifecycle &&
+    (ui.dialog.open || !!inlineHost?.isConnected) &&
+    (inputRevision === undefined || inputRevision === revision)
 
   const setError = (error: unknown): void => {
     const secret = ui.apiKey.value
     const translated = configurationReason(error, tr)
     const message = translated ?? errorText(error, secret, tr)
     ui.error.textContent = message
+    const invalid = accountBody?.querySelector<HTMLElement>('[aria-invalid="true"]')
+    if (invalid) {
+      if (advanced) advanced.open = true
+      invalid.focus()
+    }
     ui.state.textContent = ''
     try {
       // Provider failures can echo request details. Do not pass a raw credential to the app-level
@@ -227,7 +255,21 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     if (ui.thinking) ui.thinking.disabled = ui.models.disabled
     if (ui.contextWindow) ui.contextWindow.disabled = ui.models.disabled
     ui.save.disabled =
-      !connected || busy || !modelReadyForSave() || !tested?.models.length || ui.models.value === ''
+      !connected ||
+      busy ||
+      !providerId() ||
+      loadPhase === 'error' ||
+      (accountStep === 'connection' && oauthSelected && (!modelReadyForSave() || !ui.models.value))
+    ui.save.textContent = tr(accountStep === 'provider' ? 'accounts.continue' : 'accounts.verifySave')
+    ui.save.setAttribute('aria-busy', String(busy))
+    if (accountBody) accountBody.dataset.accountStep = accountStep
+    const back = optionalElement('config-account-back', 'button')
+    if (back) {
+      back.hidden = accountStep !== 'connection' || !!selectedAccount()
+      back.disabled = busy
+    }
+    if (advanced) advanced.hidden = accountStep !== 'connection'
+
     providerPicker.sync()
   }
 
@@ -239,7 +281,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     ])
     const savedModel = models.some((model) => model.id === previousModel)
       ? previousModel
-      : (savedProvider()?.model ?? (models.length === 1 ? models[0]?.id : undefined))
+      : (savedProvider()?.model ?? models[0]?.id)
     ui.models.value = savedModel && models.some((model) => model.id === savedModel) ? savedModel : ''
     renderModelSettings()
     updateButtons()
@@ -416,6 +458,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   }
 
   const close = (): void => {
+    savedNotice = false
     oauth.clear()
     testPending = false
     closeAccountDialog()
@@ -612,17 +655,69 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       }
       if (current(token)) {
         // 保存成功后只收起账户弹窗、留在设置里并刷新列表（该账户保持选中）。
+        savedNotice = !inlineHost
         closeAccountDialog()
         renderAccounts()
       }
     } catch (error) {
       if (current(token, inputRevision)) setError(error)
     } finally {
-      // The field is cleared after every save attempt, including a conflict or transport failure.
-      ui.apiKey.value = ''
+      // Keep the private draft on failure so users can retry; clear after success or a stale result.
+      if (!current(token, inputRevision) || !ui.error.textContent) ui.apiKey.value = ''
       savePending = false
       if (current(token)) updateButtons()
     }
+  }
+
+  const verifyAndSave = async (): Promise<boolean> => {
+    if (!connected || testPending || savePending || loadPhase === 'loading' || loadPhase === 'error')
+      return false
+    const token = lifecycle
+    const inputRevision = revision
+    if (!modelReadyForSave() || !tested?.models.length || !ui.models.value) await test()
+    if (!current(token, inputRevision) || !modelReadyForSave() || !ui.models.value) return false
+    const previous = configuration?.revision
+    await save()
+    return configuration?.revision !== previous && !ui.error.textContent
+  }
+  const renderProviderChoices = () => {
+    const host = optionalElement('config-provider-choices', 'div')
+    if (!host) return
+    const select = (id: string, custom = false) => {
+      ui.provider.value = id
+      ui.provider.dispatchEvent(new Event('change', { bubbles: true }))
+      accountStep = 'connection'
+      updateButtons()
+      if (custom && advanced) {
+        advanced.open = true
+        ui.baseUrl.focus()
+      } else if (!isOAuth()) ui.apiKey.focus()
+    }
+    renderRegion(
+      host,
+      createElement(
+        'div',
+        { className: 'account-provider-choices' },
+        ...providers
+          .filter((provider) => ['agnes-ai', 'deepseek', 'openai', 'anthropic'].includes(provider.id))
+          .map((provider) =>
+            createElement(
+              Button,
+              { key: provider.id, htmlType: 'button', onClick: () => select(provider.id) },
+              provider.label,
+            ),
+          ),
+        ...(providers.some((provider) => provider.id === 'openai')
+          ? [
+              createElement(
+                Button,
+                { key: 'custom', htmlType: 'button', onClick: () => select('openai', true) },
+                tr('accounts.custom'),
+              ),
+            ]
+          : []),
+      ),
+    )
   }
 
   const editAccount = (id?: string): void => {
@@ -633,6 +728,13 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     removingId = undefined
     if (accountName) accountName.value = selectedAccount()?.label ?? ''
     renderProviders()
+    if (accountName && !id) {
+      accountName.value = providers.find((p) => p.id === providerId())?.label ?? ''
+      suggestedAccountLabel = accountName.value
+    }
+    accountStep = id || inlineHost ? 'connection' : 'provider'
+    if (advanced) advanced.open = false
+    renderProviderChoices()
     resetTest()
     renderAccounts()
     ui.state.textContent = id ? tr('settings.account.editingHint') : tr('settings.account.addingHint')
@@ -644,7 +746,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       accountDialogContext.textContent = id
         ? tr('settings.account.editContext')
         : tr('settings.account.addContext')
-    openAccountDialog()
+    showDiscard(false)
+    draftBaseline = draftSignature()
+    if (!inlineHost) openAccountDialog()
   }
 
   /** 打开账户弹窗；showModal 不可用时退回 open 属性（与设置弹窗同一套兜底）。 */
@@ -655,7 +759,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     } catch {
       accountDialog.setAttribute('open', '')
     }
-    accountName?.focus()
+    accountFocusReturn = focusable(document.activeElement) ? document.activeElement : null
+    ui.provider.focus()
   }
 
   const closeAccountDialog = (): void => {
@@ -734,6 +839,13 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       currentAccountList,
       createElement(SettingsAccounts, {
         accounts: configuration?.accounts ?? [],
+        phase: loadPhase,
+        saved: savedNotice,
+        onDismissSaved: () => {
+          savedNotice = false
+          renderAccounts()
+        },
+        onRetry: () => ui.retry?.click(),
         defaultAccountId: configuration?.defaultAccountId,
         disabled: !connected || loadPhase === 'loading' || testPending || savePending,
         editingId,
@@ -748,21 +860,45 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       }),
     )
   }
-  optionalElement('account-dialog-close', 'button')?.addEventListener('click', () => {
+  const showDiscard = (show: boolean) => {
+    const prompt = optionalElement('config-account-discard', 'div')
+    const actions = optionalElement('config-account-footer-actions', 'div')
+    if (prompt) prompt.hidden = !show
+    if (actions) actions.hidden = show
+    if (show) optionalElement('config-account-keep', 'button')?.focus()
+  }
+  const discardAccount = () => {
+    showDiscard(false)
     closeAccountDialog()
+    ui.apiKey.value = ''
     renderAccounts()
-  })
-  accountDialog?.addEventListener('click', (event) => {
-    if (event.target === accountDialog) {
-      closeAccountDialog()
-      renderAccounts()
+    if (accountFocusReturn?.isConnected) accountFocusReturn.focus()
+  }
+  const requestCloseAccount = () => {
+    if (draftSignature() !== draftBaseline) {
+      showDiscard(true)
+      return
     }
+    discardAccount()
+  }
+  optionalElement('config-account-keep', 'button')?.addEventListener('click', () => {
+    showDiscard(false)
+    ui.apiKey.focus()
   })
-  accountDialog?.addEventListener('cancel', () => {
-    oauth.clear()
-    testPending = false
-    resetTest()
+  optionalElement('config-account-discard-confirm', 'button')?.addEventListener('click', discardAccount)
+  optionalElement('config-account-cancel', 'button')?.addEventListener('click', requestCloseAccount)
+  optionalElement('config-account-back', 'button')?.addEventListener('click', () => {
+    if (testPending || savePending) return
+    accountStep = 'provider'
     updateButtons()
+  })
+  optionalElement('account-dialog-close', 'button')?.addEventListener('click', requestCloseAccount)
+  accountDialog?.addEventListener('click', (event) => {
+    if (event.target === accountDialog) requestCloseAccount()
+  })
+  accountDialog?.addEventListener('cancel', (event) => {
+    event.preventDefault()
+    requestCloseAccount()
   })
   ui.provider.addEventListener('change', () => {
     oauth.clear()
@@ -813,10 +949,21 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     if (isOAuth() && !oauth.operation() && tested) tested = { ...tested, verified: false }
     updateButtons()
   })
+  ui.apiKey.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      if (inlineHost) document.querySelector<HTMLButtonElement>('[data-testid="first-run-next"]')?.click()
+      else void verifyAndSave()
+    }
+  })
   ui.test.addEventListener('click', () => void test())
   ui.form.addEventListener('submit', (event) => {
     event.preventDefault()
-    void save()
+    if (accountStep === 'provider') {
+      accountStep = 'connection'
+      updateButtons()
+      ui.apiKey.focus()
+    } else void verifyAndSave()
   })
   ui.close.addEventListener('click', () => close())
   ui.dialog.addEventListener('cancel', (event) => {
@@ -836,11 +983,15 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     if (event.target === ui.dialog) close()
   })
   ui.retry?.addEventListener('click', () => {
-    if (!ui.dialog.open || opening || !connected) return
+    if ((!ui.dialog.open && !inlineHost) || opening || !connected) return
     const token = ++lifecycle
-    const pending = load(token).finally(() => {
-      if (opening === pending) opening = undefined
-    })
+    const pending = load(token)
+      .then(() => {
+        if (inlineHost && current(token) && loadPhase !== 'error') editAccount()
+      })
+      .finally(() => {
+        if (opening === pending) opening = undefined
+      })
     opening = pending
   })
   updateButtons()
@@ -892,10 +1043,37 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     }
     renderKeyHint()
     updateButtons()
-    if (connected && ui.dialog.open && !opening) void open()
+    if (connected && !opening) {
+      if (inlineHost) {
+        const token = ++lifecycle
+        void load(token).then(() => {
+          if (current(token) && loadPhase !== 'error') editAccount()
+        })
+      } else if (ui.dialog.open) void open()
+    }
   }
 
   return {
+    attachInline(host) {
+      if (!accountBody || !accountDialog) return () => {}
+      close()
+      inlineHost = host
+      host.append(accountBody)
+      accountBody.dataset.inline = 'true'
+      accountStep = 'connection'
+      const token = ++lifecycle
+      void load(token).then(() => {
+        if (current(token) && loadPhase !== 'error') editAccount()
+      })
+      return () => {
+        if (inlineHost !== host) return
+        accountDialog.append(accountBody)
+        delete accountBody.dataset.inline
+        inlineHost = undefined
+        close()
+      }
+    },
+    submitInline: verifyAndSave,
     open,
     async openAccount(route?: string) {
       await open()

@@ -11,6 +11,7 @@ import { CONFIG_FORM_NAMESPACE, configFormCatalog } from './locales/config-form.
 import type { Translate } from './locales/index.js'
 import {
   SettingsInput,
+  SettingsSaveBar,
   SettingsSelect,
   SettingsState,
   SettingsTextArea,
@@ -269,6 +270,7 @@ export function SchemaConfigForm({
   t,
   readOnly = false,
   testId = 'schema-config-form',
+  stickySave = false,
 }: {
   schema: ConfigSchema
   value: Readonly<Record<string, unknown>>
@@ -278,7 +280,9 @@ export function SchemaConfigForm({
   t: Translate
   readOnly?: boolean
   testId?: string | undefined
+  stickySave?: boolean
 }) {
+  const baseline = useRef(structuredClone(value))
   const { t: text, locale } = useUiText(CONFIG_FORM_NAMESPACE, configFormCatalog)
   const [issues, setIssues] = useState<readonly ConfigIssue[]>([])
   const [status, setStatus] = useState<'saved' | 'tested' | 'error.action'>()
@@ -311,7 +315,10 @@ export function SchemaConfigForm({
     setBusy(true)
     try {
       await action(structuredClone(value), { signal: abort.signal })
-      if (!abort.signal.aborted) setStatus(success)
+      if (!abort.signal.aborted) {
+        if (success === 'saved') baseline.current = structuredClone(value)
+        setStatus(success)
+      }
     } catch (error) {
       if (!abort.signal.aborted) {
         setFailure(error)
@@ -352,7 +359,7 @@ export function SchemaConfigForm({
       )}
       {(onSave || onTest) && (
         <SettingsToolbar>
-          {onSave && (
+          {onSave && !stickySave && (
             <Button htmlType="submit" loading={busy} disabled={readOnly || busy || !supported}>
               {text('save')}
             </Button>
@@ -367,6 +374,19 @@ export function SchemaConfigForm({
             </Button>
           )}
         </SettingsToolbar>
+      )}
+      {stickySave && onSave && !readOnly && supported && (
+        <SettingsSaveBar
+          dirty={JSON.stringify(value) !== JSON.stringify(baseline.current)}
+          busy={busy}
+          saved={status === 'saved'}
+          onSave={() => void run(onSave, 'saved')}
+          onDiscard={() => {
+            onChange(structuredClone(baseline.current))
+            setIssues([])
+            setStatus(undefined)
+          }}
+        />
       )}
       {status && (
         <SettingsState tone={status === 'error.action' ? 'error' : 'success'}>

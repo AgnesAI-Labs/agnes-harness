@@ -28,6 +28,19 @@ it('uses the injected catalog for provider, base URL and API key field labels', 
         }),
       ),
     )
+    const advanced = host.querySelector<HTMLDetailsElement>('#config-account-advanced')!
+    expect(advanced.open).toBe(false)
+    for (const id of [
+      'config-account-name',
+      'config-base-url',
+      'config-auth-method',
+      'config-model',
+      'config-thinking',
+      'config-context-window',
+    ])
+      expect(advanced.querySelector(`#${id}`)).not.toBeNull()
+    expect(advanced.querySelector('#config-api-key')).toBeNull()
+    expect(host.querySelectorAll('.agh-btn--primary')).toHaveLength(1)
     expect(host.querySelector('#config-provider')?.closest('label')?.textContent).toContain(
       'Provider · translated',
     )

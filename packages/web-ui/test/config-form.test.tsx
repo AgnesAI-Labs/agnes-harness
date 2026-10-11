@@ -314,3 +314,43 @@ it.each(['sandbox', 'compaction', 'persistence'] as const)(
     await act(async () => root.unmount())
   },
 )
+
+it('shows provider saving only for changed values and keeps the draft when saving fails', async () => {
+  const { ProviderConfigForm } = await import('../src/index.js')
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  const save = vi.fn().mockRejectedValueOnce(new Error('private failure')).mockResolvedValue(undefined)
+  function Harness() {
+    const [value, onChange] = useState<Record<string, unknown>>({ provider: 'disk' })
+    return createElement(ProviderConfigForm, { kind: 'persistence', value, onChange, onSave: save })
+  }
+  await act(async () => root.render(createElement(Harness)))
+  expect(host.querySelector('.agh-settings-save-bar')).toBeNull()
+  const input = host.querySelector<HTMLInputElement>('input')!
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+  await act(async () => {
+    setter.call(input, 'memory')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  expect(host.querySelector('.agh-settings-save-bar')).not.toBeNull()
+  await act(async () => host.querySelector<HTMLButtonElement>('.agh-btn--primary')?.click())
+  expect(input.value).toBe('memory')
+  expect(host.textContent).not.toContain('private failure')
+  await act(async () => host.querySelector<HTMLButtonElement>('.agh-btn--primary')?.click())
+  expect(save).toHaveBeenCalledWith(
+    { provider: 'memory' },
+    expect.objectContaining({ signal: expect.any(AbortSignal) }),
+  )
+  expect(host.querySelector('.agh-settings-save-bar')).toBeNull()
+  await act(async () => {
+    setter.call(input, 'disk')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('.agh-settings-save-bar .agh-btn--secondary')?.click(),
+  )
+  expect(input.value).toBe('memory')
+  await act(async () => root.unmount())
+  host.remove()
+})

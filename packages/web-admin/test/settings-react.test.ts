@@ -172,8 +172,8 @@ it('operates the React settings pane and account dialog without losing native fo
   try {
     await controller.open()
     expect(dialog.querySelectorAll('.config-account')).toHaveLength(1)
-    expect(dialog.querySelector('#config-accounts button[aria-label="编辑 Work"]')).toBeTruthy()
-    dialog.querySelector<HTMLButtonElement>('#config-accounts button[aria-label="编辑 Work"]')?.click()
+    expect(dialog.querySelector('#config-accounts .config-account-select')).toBeTruthy()
+    dialog.querySelector<HTMLButtonElement>('#config-accounts .config-account-select')?.click()
     dialog.querySelector<HTMLElement>('[data-testid="account-network-details"] summary')?.click()
     const field = dialog.querySelector<HTMLInputElement>('[data-testid="account-network-connectMs"]')
     expect(field?.value).toBe('4000')

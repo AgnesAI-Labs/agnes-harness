@@ -55,15 +55,18 @@ export function ProviderConfigForm({
 }) {
   const { t } = useUiText(CONFIG_FORM_NAMESPACE, configFormCatalog)
   return (
-    <SchemaConfigForm
-      schema={providerConfigSchemas[kind]}
-      value={value}
-      onChange={onChange}
-      t={t}
-      {...(onSave ? { onSave } : {})}
-      {...(onTest ? { onTest } : {})}
-      readOnly={readOnly || (!onSave && !onTest)}
-      testId={testId ?? `provider-${kind}-config`}
-    />
+    <div className="account-provider-form">
+      <SchemaConfigForm
+        stickySave
+        schema={providerConfigSchemas[kind]}
+        value={value}
+        onChange={onChange}
+        t={t}
+        {...(onSave ? { onSave } : {})}
+        {...(onTest ? { onTest } : {})}
+        readOnly={readOnly || (!onSave && !onTest)}
+        testId={testId ?? `provider-${kind}-config`}
+      />
+    </div>
   )
 }

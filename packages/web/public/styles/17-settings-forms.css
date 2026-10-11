@@ -178,12 +178,6 @@
   font-size: var(--font-size-xs);
   line-height: 1.45;
 }
-#config-add-account {
-  flex: 0 0 auto;
-  border-color: var(--agnes-line-emphasis);
-  color: var(--agnes-text-emphasis);
-  background: var(--agnes-bg-surface);
-}
 #config-accounts {
   min-height: 0;
   display: grid;
@@ -191,24 +185,6 @@
   gap: 0.5rem;
   padding: 0.5rem 0 0;
   overflow: visible;
-}
-#config-accounts[data-state="empty"]::before {
-  padding: 1.5rem 0.75rem;
-  border: 1px dashed var(--agnes-line-emphasis);
-  border-radius: var(--radius-lg);
-  color: var(--agnes-text-tertiary);
-  content: attr(data-empty-text);
-  font-size: var(--font-size-xs);
-  text-align: center;
-}
-#config-accounts[data-state="loading"]::before {
-  padding: 1.5rem 0.75rem;
-  border: 1px dashed var(--agnes-line-emphasis);
-  border-radius: var(--radius-lg);
-  color: var(--agnes-text-tertiary);
-  content: attr(data-loading-text);
-  font-size: var(--font-size-xs);
-  text-align: center;
 }
 .config-account {
   position: relative;
@@ -262,20 +238,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.config-account-select::before {
-  flex: 0 0 auto;
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: var(--radius-full);
-  background: var(--agnes-text-tertiary);
-  content: "";
-}
-.config-account[data-status="ready"] .config-account-select::before {
-  background: var(--agnes-status-success-text);
-}
-.config-account[data-status="missing"] .config-account-select::before {
-  background: var(--agnes-status-danger-text);
-}
 .config-account-select:hover:not(:disabled) {
   border-color: transparent;
   color: var(--agnes-text-primary);
@@ -309,20 +271,6 @@
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.25rem;
-}
-.config-account-actions button {
-  min-height: 1.75rem;
-  padding: 0.25rem 0.5rem;
-  border-color: var(--agnes-line-emphasis);
-  border-radius: var(--radius-md);
-  color: var(--agnes-text-tertiary);
-  background: var(--agnes-surface-glass-soft);
-  font-size: var(--font-size-xs);
-  font-weight: 600;
-}
-.config-account-actions button:hover:not(:disabled) {
-  color: var(--agnes-text-emphasis);
-  background: var(--agnes-surface-glass-hover);
 }
 .config-account button:focus-visible {
   outline: 2px solid var(--agnes-input-border-focus);
@@ -936,4 +884,106 @@
 #appearance-settings-pane .config-workspace {
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
+}
+
+/* Account setup shares one stable native region in settings and the first-run guide. */
+#account-dialog {
+  width: min(560px, calc(100vw - var(--s32)));
+}
+#account-dialog .account-dialog-body .config-section,
+.account-dialog-body[data-inline="true"] .config-section {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s12);
+}
+.account-dialog-body .config-detail-grid {
+  display: grid;
+  gap: var(--s16);
+}
+.account-dialog-body[data-account-step="provider"] .account-connection-step,
+.account-dialog-body[data-account-step="connection"] #config-provider-choices,
+.account-dialog-body[data-inline="true"] #config-provider-choices,
+.account-dialog-body[data-inline="true"] .config-detail-heading,
+.account-dialog-body[data-inline="true"] .config-detail-footer {
+  display: none;
+}
+.account-dialog-body[data-inline="true"] .config-detail-grid {
+  padding: var(--s16) 0;
+  overflow: visible;
+}
+.account-provider-choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s12);
+}
+.account-provider-choices > button {
+  white-space: normal;
+  height: auto;
+  min-height: var(--control-height-touch);
+}
+#config-account-advanced,
+.account-key-help {
+  margin-block: var(--s16);
+}
+#config-account-advanced > summary,
+.account-key-help > summary,
+.agnes-first-run summary {
+  cursor: pointer;
+  color: var(--agnes-text-secondary);
+  min-height: var(--control-height);
+}
+#config-account-advanced > summary:focus-visible,
+.account-key-help > summary:focus-visible,
+.agnes-first-run summary:focus-visible {
+  outline: 2px solid var(--agnes-brand-primary);
+  outline-offset: 2px;
+}
+.agnes-first-run .agnes-settings-actions {
+  flex-wrap: wrap;
+}
+.account-provider-form {
+  max-width: 560px;
+}
+@media (max-width: 767px) {
+  #account-dialog {
+    width: 100%;
+    max-width: none;
+    margin: auto 0 0;
+  }
+  #account-dialog .config-detail-footer {
+    flex-direction: column;
+  }
+  #account-dialog .config-detail-footer .agnes-settings-actions {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+  #account-dialog #config-save {
+    width: auto;
+  }
+  #config-account-advanced > summary,
+  .account-key-help > summary,
+  .agnes-first-run summary {
+    min-height: var(--control-height-touch);
+  }
+  #config-add-account {
+    width: auto;
+    padding-inline: var(--s16);
+  }
+  #config-add-account span {
+    display: inline;
+  }
+}
+
+@media (max-width: 767px) {
+  dialog[data-agnes-region="dialog"]:has(.account-dialog-body) {
+    border-radius: var(--radius-surface) var(--radius-surface) 0 0;
+  }
+}
+
+.account-key-help > summary {
+  padding: var(--s8);
+  border-radius: var(--radius-sm);
+  background: var(--agnes-surface-glass-soft);
+}
+.account-key-help > summary:hover {
+  background: var(--agnes-surface-glass-hover);
 }

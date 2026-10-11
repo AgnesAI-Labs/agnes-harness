@@ -114,9 +114,11 @@ async function setup(
   activeController = controller
   await controller.open()
   const doc = window.document
-  if (options.snapshot)
-    must([...doc.querySelectorAll('button')].find((b) => b.textContent === '编辑')).click()
-  else must(doc.querySelector<HappyButton>('#config-add-account')).click()
+  if (options.snapshot) must(doc.querySelector<HappyButton>('.config-account-select')).click()
+  else {
+    must(doc.querySelector<HappyButton>('#config-add-account')).click()
+    must(doc.querySelector<HappyButton>('#config-save')).click()
+  }
   expect((doc.getElementById('config-provider') as unknown as HTMLSelectElement).value).not.toBe('')
   ;(doc.getElementById('config-account-name') as unknown as HTMLInputElement).value = 'Work account'
   const panel = must(doc.querySelector('section[aria-label="订阅登录"]'))
@@ -301,6 +303,8 @@ it('closing the account dialog cancels login and stale replies cannot enable sav
   h.button('设备码登录').click()
   await vi.waitFor(() => expect(h.oauth).toHaveBeenCalled())
   must(h.doc.querySelector<HappyButton>('#account-dialog-close')).click()
+  expect(h.doc.getElementById('config-account-discard')?.hasAttribute('hidden')).toBe(false)
+  must(h.doc.querySelector<HappyButton>('#config-account-discard-confirm')).click()
   await vi.waitFor(() => expect(h.oauth).toHaveBeenCalledWith({ action: 'cancel', operationId: 'op' }))
   h.ready()
   await new Promise((resolve) => setTimeout(resolve, 300))

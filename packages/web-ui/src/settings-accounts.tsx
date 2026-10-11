@@ -1,12 +1,22 @@
 import type { ConfigAccount, ConfigAccountInput } from '@agnes/protocol'
 import { fallbackT, type Translate } from './locales/index.js'
+import { SettingsState } from './settings-layout.js'
 import { Badge } from './ui/badge.js'
 import { Button } from './ui/button.js'
+import { EmptyState } from './ui/empty-state.js'
+import { Icon } from './ui/icon.js'
+import { Menu } from './ui/menu.js'
+import { Tag } from './ui/tag.js'
+import { Toast } from './ui/toast.js'
 
 export type SettingsAccountsProps = {
   accounts: readonly ConfigAccount[]
   defaultAccountId?: string | null | undefined
   disabled: boolean
+  phase?: 'idle' | 'loading' | 'ready' | 'empty' | 'error'
+  onRetry?(): void
+  saved?: boolean
+  onDismissSaved?(): void
   editingId?: string | undefined
   removingId?: string | undefined
   onEdit(id: string): void
@@ -25,6 +35,10 @@ export function SettingsAccounts({
   accounts,
   defaultAccountId,
   disabled,
+  phase,
+  onRetry,
+  saved = false,
+  onDismissSaved,
   editingId,
   removingId,
   onEdit,
@@ -32,7 +46,7 @@ export function SettingsAccounts({
   onCancelRemove,
   t = fallbackT,
 }: SettingsAccountsProps) {
-  return accounts.map((account) => {
+  const rows = accounts.map((account) => {
     const isDefault = defaultAccountId === account.accountId
     const canTransferDefault = accounts.some(
       (other) => other.enabled && other.accountId !== account.accountId,
@@ -43,7 +57,7 @@ export function SettingsAccounts({
         account.enabled ? t('accounts.disable') : t('accounts.enable'),
       ],
       ['default', t('accounts.makeDefault')],
-      ['remove', removingId === account.accountId ? t('accounts.confirmRemove') : t('accounts.remove')],
+      ['remove', t('accounts.remove')],
     ]
     return (
       <div
@@ -55,6 +69,7 @@ export function SettingsAccounts({
         <Button
           htmlType="button"
           className="config-account-select"
+          appearance="ghost"
           aria-pressed={account.accountId === editingId}
           disabled={disabled}
           onClick={() => onEdit(account.accountId)}
@@ -63,44 +78,94 @@ export function SettingsAccounts({
         </Button>
         <span className="config-account-meta">
           <span>
-            {account.providerId} · {account.model}
+            {account.providerId} ·{' '}
+            {account.models.find((model) => model.id === account.model)?.name ?? account.model}
           </span>
-          <Badge className="config-account-status" tone={account.enabled ? 'ok' : 'off'}>
-            {account.enabled ? t('accounts.enabled') : t('accounts.disabled')}
-          </Badge>
-          {isDefault && <Badge className="config-account-status">{t('accounts.defaultBadge')}</Badge>}
+          {accountStatus(account) === 'missing' ? (
+            <Tag tone="warn">{t('accounts.missing')}</Tag>
+          ) : isDefault ? (
+            <Badge className="config-account-status">{t('accounts.defaultBadge')}</Badge>
+          ) : !account.enabled ? (
+            <span>{t('accounts.disabled')}</span>
+          ) : null}
         </span>
         <div className="config-account-actions">
-          <Button
-            htmlType="button"
-            aria-label={t('accounts.editAria', { label: account.label })}
-            disabled={disabled}
-            onClick={() => onEdit(account.accountId)}
-          >
-            {t('accounts.edit')}
-          </Button>
-          {actions.map(([action, label]) => {
-            if (action === 'default' && (!account.enabled || isDefault)) return null
-            if ((action === 'disable' || action === 'remove') && isDefault && canTransferDefault) return null
-            return (
-              <Button
-                key={action}
-                htmlType="button"
-                aria-label={`${label} ${account.label}`}
-                disabled={disabled}
-                onClick={() => onAction(account, action)}
-              >
-                {label}
-              </Button>
-            )
-          })}
-          {removingId === account.accountId && (
-            <Button htmlType="button" disabled={disabled} onClick={onCancelRemove}>
-              {t('accounts.cancelRemove')}
+          {accountStatus(account) === 'missing' && (
+            <Button onClick={() => onEdit(account.accountId)} disabled={disabled}>
+              {t('accounts.repair')}
             </Button>
+          )}
+          <Menu
+            label={t('accounts.actions', { label: account.label })}
+            trigger={
+              <Button
+                appearance="ghost"
+                disabled={disabled}
+                aria-label={t('accounts.actions', { label: account.label })}
+                title={t('accounts.actions', { label: account.label })}
+              >
+                <Icon name="ellipsis" />
+              </Button>
+            }
+            items={[
+              {
+                id: 'edit',
+                label: t('accounts.editAria', { label: account.label }),
+                onSelect: () => onEdit(account.accountId),
+              },
+              ...actions
+                .filter(([action]) => {
+                  if (action === 'default') return account.enabled && !isDefault
+                  return !((action === 'disable' || action === 'remove') && isDefault && canTransferDefault)
+                })
+                .map(([action, label]) => ({
+                  id: action,
+                  label: `${label} ${account.label}`,
+                  danger: action === 'remove',
+                  onSelect: () => onAction(account, action),
+                })),
+            ]}
+          />
+          {removingId === account.accountId && (
+            <>
+              <Button
+                appearance="danger"
+                htmlType="button"
+                disabled={disabled}
+                aria-label={`${t('accounts.confirmRemove')} ${account.label}`}
+                onClick={() => onAction(account, 'remove')}
+              >
+                {t('accounts.confirmRemove')}
+              </Button>
+              <Button htmlType="button" disabled={disabled} onClick={onCancelRemove}>
+                {t('accounts.cancelRemove')}
+              </Button>
+            </>
           )}
         </div>
       </div>
     )
   })
+  return (
+    <>
+      <Toast open={saved} onDismiss={() => onDismissSaved?.()}>
+        {t('accounts.saved')}
+      </Toast>
+      {phase === 'loading' && <SettingsState tone="loading">{t('accounts.loading')}</SettingsState>}
+      {phase === 'empty' && (
+        <EmptyState
+          icon={<Icon name="key-round" size={48} />}
+          title={t('accounts.empty')}
+          description={t('accounts.emptyHelp')}
+        />
+      )}
+      {phase === 'error' && (
+        <SettingsState tone="error">
+          {t('accounts.readFailed')}
+          <Button onClick={onRetry}>{t('accounts.retryRead')}</Button>
+        </SettingsState>
+      )}
+      {rows}
+    </>
+  )
 }

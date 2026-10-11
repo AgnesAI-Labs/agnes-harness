@@ -341,7 +341,7 @@ describe('settings controller', () => {
     expect(Array.from(node('config-model').children, (entry) => (entry as HTMLOptionElement).value)).toEqual([
       '',
     ])
-    expect(node('config-save').disabled).toBe(true)
+    expect(node('config-save').disabled).toBe(false)
   })
 
   it('redacts an entered key before reporting provider errors to the app', async () => {

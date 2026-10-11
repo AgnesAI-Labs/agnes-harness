@@ -98,10 +98,21 @@ async function setup(accounts: ConfigAccount[] = [account('work'), account('pers
   await controller.open()
   const doc = window.document
   const input = (id: string) => doc.getElementById(id) as unknown as HTMLInputElement
-  const click = (selector: string) => {
-    const node = doc.querySelector(selector)
+  const click = async (selector: string) => {
+    let node = doc.querySelector(selector)
+    const action = /^button\[aria-label="(.+)"\]$/.exec(selector)?.[1]
+    if (!node && action) {
+      const label = action.split(' ').at(-1)
+      const trigger = doc.querySelector(`button[aria-label="${label} 的操作"]`)
+      ;(trigger as unknown as HTMLButtonElement | null)?.click()
+      await vi.waitFor(() => expect(doc.querySelector('[role="menuitem"]')).not.toBeNull())
+      node =
+        [...doc.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent === action) ?? null
+    }
     if (!node) throw new Error(`missing ${selector}`)
     ;(node as unknown as HTMLButtonElement).click()
+    if (selector === '#account-dialog-close' && !doc.getElementById('config-account-discard')?.hasAttribute('hidden'))
+      (doc.getElementById('config-account-discard-confirm') as unknown as HTMLButtonElement)?.click()
   }
   return { config, controller, input, click, doc, onSaved }
 }
@@ -119,15 +130,15 @@ it('puts Agnes AI first in the Provider picker for a new account', async () => {
     ],
   })
   await h.controller.open()
-  h.click('#config-add-account')
+  await h.click('#config-add-account')
   expect(h.input('config-provider').value).toBe('agnes-ai')
   expect(h.input('config-base-url').value).toBe('https://api.agnes-ai.cn/v1')
-  h.click('#config-provider-trigger')
+  await h.click('#config-provider-trigger')
   expect(
     [...h.doc.querySelectorAll('[role="option"]')].map((option) => option.textContent?.replace('✓', '')),
   ).toEqual(['Agnes AI', 'DeepSeek', 'OpenAI'])
-  h.click('#account-dialog-close')
-  h.click('button[aria-label="编辑 personal"]')
+  await h.click('#account-dialog-close')
+  await h.click('button[aria-label="编辑 personal"]')
   expect(h.input('config-provider').value).toBe('openai')
 })
 
@@ -141,17 +152,17 @@ it('uses the visible Provider picker to update connection fields and locks exist
     ],
   })
   await h.controller.open()
-  h.click('#config-add-account')
+  await h.click('#config-add-account')
   h.input('config-api-key').value = 'transient-key'
-  h.click('#config-provider-trigger')
-  h.click('#config-provider-listbox-1')
+  await h.click('#config-provider-trigger')
+  await h.click('#config-provider-listbox-1')
   expect(h.input('config-provider').value).toBe('deepseek')
   expect(h.input('config-base-url').value).toBe('https://api.deepseek.com')
   expect(h.input('config-api-key').value).toBe('')
   expect(h.doc.querySelector('#config-provider-trigger')?.textContent).toBe('DeepSeek')
   expect(h.doc.querySelector('[role="listbox"]')).toBeNull()
-  h.click('#account-dialog-close')
-  h.click('button[aria-label="编辑 personal"]')
+  await h.click('#account-dialog-close')
+  await h.click('button[aria-label="编辑 personal"]')
   expect(h.input('config-provider-trigger').disabled).toBe(true)
   expect(h.doc.querySelector('#config-provider-trigger')?.textContent).toBe('OpenAI')
   expect(h.config.save).not.toHaveBeenCalled()
@@ -174,10 +185,10 @@ it('colours the account indicator by enablement first, then credential health', 
 it('selects an exact account, clears transient keys and sends account-scoped test/save', async () => {
   const h = await setup()
   expect(h.doc.querySelectorAll('.config-account')).toHaveLength(2)
-  expect(h.doc.querySelectorAll('.config-account-status')).toHaveLength(3)
-  expect(h.doc.querySelector('button[aria-label="编辑 personal"]')).not.toBeNull()
+  expect(h.doc.querySelectorAll('.config-account-status')).toHaveLength(1)
+  expect(h.doc.querySelector('button[aria-label="personal 的操作"]')).not.toBeNull()
   h.input('config-api-key').value = 'unsaved-secret'
-  h.click('.config-account:nth-child(2) .config-account-select')
+  await h.click('.config-account:nth-child(2) .config-account-select')
   expect((h.doc.getElementById('account-dialog') as unknown as HTMLDialogElement).open).toBe(true)
   expect(h.doc.getElementById('config-detail-title')?.textContent).toBe('账户详情')
   expect(h.doc.getElementById('config-account-context')?.textContent).toBe('编辑连接与默认模型')
@@ -192,7 +203,7 @@ it('selects an exact account, clears transient keys and sends account-scoped tes
   h.doc
     .getElementById('config-account-name')
     ?.dispatchEvent(new (window as Window).Event('input', { bubbles: true }))
-  h.click('#config-test')
+  await h.click('#config-test')
   await settle()
   expect(h.config.test).toHaveBeenCalledWith({
     providerId: 'openai',
@@ -223,19 +234,21 @@ it('selects an exact account, clears transient keys and sends account-scoped tes
 })
 it('creates a distinct same-provider account and manages defaults with revision checks', async () => {
   const h = await setup()
-  h.click('button[aria-label="设为默认 personal"]')
+  await h.click('button[aria-label="设为默认 personal"]')
   await settle()
   expect(h.config.account).toHaveBeenCalledWith({
     accountId: 'personal',
     action: 'default',
     expectedRevision: 4,
   })
-  h.click('#config-add-account')
-  expect(h.input('config-account-name').value).toBe('')
+  await h.click('#config-add-account')
+  expect(h.input('config-account-name').value).toBe('OpenAI')
   expect(h.input('config-api-key').value).toBe('')
+  await h.click('#config-save')
+  expect(h.doc.querySelector('.account-dialog-body')?.getAttribute('data-account-step')).toBe('connection')
   h.input('config-account-name').value = 'New account'
   h.input('config-api-key').value = 'new-secret'
-  h.click('#config-test')
+  await h.click('#config-test')
   await settle()
   expect(h.config.test).toHaveBeenLastCalledWith(
     expect.objectContaining({ accountId: expect.stringMatching(/^acct-/), apiKey: 'new-secret' }),
@@ -243,12 +256,12 @@ it('creates a distinct same-provider account and manages defaults with revision 
   expect(h.input('config-model').value).toBe('m')
   expect(h.input('config-save').disabled).toBe(false)
   expect(h.input('config-model-trigger').disabled).toBe(false)
-  h.click('#config-model-trigger')
-  h.click('#config-model-listbox-0')
+  await h.click('#config-model-trigger')
+  await h.click('#config-model-listbox-0')
   expect(h.input('config-model').value).toBe('')
-  expect(h.input('config-save').disabled).toBe(true)
-  h.click('#config-model-trigger')
-  h.click('#config-model-listbox-1')
+  expect(h.input('config-save').disabled).toBe(false)
+  await h.click('#config-model-trigger')
+  await h.click('#config-model-listbox-1')
   expect(h.input('config-model').value).toBe('m')
   expect(h.input('config-save').disabled).toBe(false)
   h.controller.setConnected(false)
@@ -258,9 +271,9 @@ it('creates a distinct same-provider account and manages defaults with revision 
 })
 it('requires an explicit second confirmation before removing an account', async () => {
   const h = await setup()
-  h.click('button[aria-label="删除 personal"]')
+  await h.click('button[aria-label="删除 personal"]')
   expect(h.config.account).not.toHaveBeenCalled()
-  h.click('button[aria-label="确认删除 personal"]')
+  await h.click('button[aria-label="确认删除 personal"]')
   await settle()
   expect(h.config.account).toHaveBeenCalledWith({
     accountId: 'personal',
@@ -273,22 +286,50 @@ it('updates the empty state after saving the first account and removing the last
   const h = await setup([])
   expect(h.doc.getElementById('config-accounts')?.getAttribute('data-state')).toBe('empty')
   h.config.save.mockResolvedValue({ ...(await h.config.get()), revision: 5, accounts: [account('work')] })
-  h.click('#config-add-account')
+  await h.click('#config-add-account')
+  await h.click('#config-save')
   h.input('config-account-name').value = 'work'
   h.input('config-api-key').value = 'synthetic-key'
-  h.click('#config-test')
-  await vi.waitFor(() => expect(h.input('config-save').disabled).toBe(false))
-  h.click('#config-save')
+  await h.click('#config-save')
   await vi.waitFor(() => expect(h.doc.querySelectorAll('.config-account')).toHaveLength(1))
   expect(h.doc.getElementById('config-accounts')?.getAttribute('data-state')).toBe('ready')
+  expect(h.config.test).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'synthetic-key' }))
+  expect(h.config.save).toHaveBeenCalledWith(expect.objectContaining({ model: 'm', expectedRevision: 4 }))
+  expect(h.input('config-api-key').value).toBe('')
   h.config.account.mockResolvedValue({
     ...(await h.config.get()),
     revision: 6,
     accounts: [],
     defaultAccountId: null,
   })
-  h.click('button[aria-label="删除 work"]')
-  h.click('button[aria-label="确认删除 work"]')
+  await h.click('button[aria-label="删除 work"]')
+  await h.click('button[aria-label="确认删除 work"]')
   await vi.waitFor(() => expect(h.doc.querySelectorAll('.config-account')).toHaveLength(0))
   expect(h.doc.getElementById('config-accounts')?.getAttribute('data-state')).toBe('empty')
+})
+
+it('reuses the credential flow inline, preserves failed drafts and restores the account dialog on exit', async () => {
+  const h = await setup([])
+  const host = h.doc.createElement('div')
+  h.doc.body.append(host)
+  const detach = h.controller.attachInline(host as unknown as HTMLElement)
+  await vi.waitFor(() => expect(h.input('config-account-name').value).toBe('OpenAI'))
+  expect((h.doc.getElementById('config') as unknown as HTMLDialogElement).open).toBe(false)
+  expect(host.querySelector('#config-api-key')).not.toBeNull()
+  h.input('config-api-key').value = 'synthetic-private-key'
+  h.config.test.mockRejectedValueOnce(new Error('Rejected synthetic-private-key'))
+  expect(await h.controller.submitInline()).toBe(false)
+  expect(h.config.save).not.toHaveBeenCalled()
+  expect(h.input('config-api-key').value).toBe('synthetic-private-key')
+  expect(h.doc.getElementById('config-error')?.textContent).not.toContain('synthetic-private-key')
+  h.config.save.mockResolvedValue({ ...(await h.config.get()), revision: 5, accounts: [account('work')] })
+  expect(await h.controller.submitInline()).toBe(true)
+  expect(h.config.save).toHaveBeenCalledWith(
+    expect.objectContaining({ label: 'OpenAI', model: 'm', expectedRevision: 4 }),
+  )
+  expect(h.input('config-api-key').value).toBe('')
+  detach()
+  expect(host.querySelector('#config-api-key')).toBeNull()
+  expect(h.doc.querySelector('#account-dialog #config-api-key')).not.toBeNull()
+  host.remove()
 })
