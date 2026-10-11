@@ -44,6 +44,8 @@ const pairs: [string, string, number][] = [
   ]),
   ['--agnes-button-primary-content', '--agnes-button-primary-bg', 4.5],
   ['--agnes-button-primary-content', '--agnes-button-primary-bg-hover', 4.5],
+  ['--agnes-input-content-strong', '--agnes-input-surface', 4.5],
+  ['--agnes-input-placeholder', '--agnes-input-surface', 4.5],
   ...['border', 'border-emphasis', 'border-focus'].map((role): [string, string, number] => [
     `--agnes-input-${role}`,
     '--agnes-input-surface',

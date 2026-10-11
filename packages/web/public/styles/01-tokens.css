@@ -144,7 +144,7 @@
   /* Input */
   --agnes-input-surface: var(--agnes-bg-surface);
   --agnes-input-content-strong: var(--agnes-color-neutral-900);
-  --agnes-input-placeholder: var(--agnes-color-neutral-725-a60);
+  --agnes-input-placeholder: var(--agnes-text-tertiary);
   --agnes-input-border: var(--agnes-color-neutral-600);
   --agnes-input-border-emphasis: var(--agnes-color-neutral-700);
   --agnes-input-border-focus: var(--agnes-color-brand-indigo-500);
@@ -262,7 +262,7 @@
   /* Input */
   --agnes-input-surface: var(--agnes-bg-surface);
   --agnes-input-content-strong: var(--agnes-color-neutral-050);
-  --agnes-input-placeholder: var(--agnes-color-neutral-300-a60);
+  --agnes-input-placeholder: var(--agnes-text-tertiary);
   --agnes-input-border: var(--agnes-color-neutral-500);
   --agnes-input-border-emphasis: var(--agnes-color-neutral-500);
   --agnes-input-border-focus: var(--agnes-color-brand-indigo-400);
