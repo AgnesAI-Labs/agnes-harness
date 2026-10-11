@@ -98,6 +98,37 @@ describe.skipIf(process.platform !== 'win32')('Host Windows Job execution', () =
     expect(result).toMatchObject({ stdout: '🌱🌱', stderr: 'xxxxxxxx', truncated: true, code: 0 })
   })
 
+  it('decodes output that is not UTF-8 in the console code page, foreground and background', async () => {
+    const { cwd } = setup()
+    const exec = createExec({
+      windowsNodeExecutable: process.execPath,
+      windowsPowerShell: {
+        path: 'C:\\unused\\powershell.exe',
+        version: '5.1.1',
+        edition: 'Desktop',
+        nativeArguments: 'Legacy',
+        codePage: 936,
+      },
+    })
+    adapters.push(exec)
+    // A program writing in a Chinese-locale console's code page, and one writing UTF-8.
+    const argv = [
+      process.execPath,
+      '-e',
+      'process.stdout.write(Buffer.from([0xd6,0xd0,0xce,0xc4,0x0a]));process.stderr.write("错误\\n")',
+    ]
+    expect(await exec.run(argv, { cwd })).toMatchObject({ code: 0, stdout: '中文\n', stderr: '错误\n' })
+    const job = await (exec.start as NonNullable<ExecAdapter['start']>)(argv, { cwd })
+    let out = ''
+    job.onOutput((chunk) => {
+      out += chunk
+    })
+    await job.done
+    for (let n = 0; n < 100 && out.length < 6; n++) await new Promise((wait) => setTimeout(wait, 50))
+    expect(out).toContain('中文\n')
+    expect(out).toContain('错误\n')
+  })
+
   it.each(['abort', 'killAll'])('waits for the entire tree to exit on %s', async (method) => {
     const { cwd, exec } = setup()
     const marker = join(cwd, 'pid')

@@ -27,6 +27,7 @@ export async function doctorPlatform(
           `PowerShell ${shell.version} (${shell.edition})`,
           `shell path ${shell.path}`,
           `native arguments ${shell.nativeArguments}`,
+          ...(shell.codePage === undefined ? [] : [`console code page ${shell.codePage}`]),
         )
       } catch {
         return {

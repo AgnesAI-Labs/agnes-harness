@@ -15,6 +15,8 @@ export function createWindowsExec(options: {
 }): ExecAdapter {
   const live = new Set<{ cancel(): void; done: Promise<ExecResult> }>()
   const started = new Set<SandboxProcess>()
+  // Every command gets a new console, which starts in the code page the probe found.
+  const codePage = options.powerShell?.codePage
   return {
     run(argv, opts) {
       if (!argv[0]) return Promise.reject(new Error('exec: empty argv'))
@@ -25,7 +27,7 @@ export function createWindowsExec(options: {
       const controller = new AbortController()
       let timedOut = false
       let cancelledFirst = false
-      const output = createExecOutput(opts.maxOutputBytes ?? 1024 * 1024)
+      const output = createExecOutput(opts.maxOutputBytes ?? 1024 * 1024, codePage)
       const cancel = () => controller.abort()
       const timer = setTimeout(() => {
         // First cause wins: a cancel that came first is not reported as a timeout.
@@ -106,6 +108,7 @@ export function createWindowsExec(options: {
         pid: child.pid,
         stdout: child.stdout,
         stderr: child.stderr,
+        ...(codePage === undefined ? {} : { codePage }),
         done,
         stop: async () => {
           child.terminate()
