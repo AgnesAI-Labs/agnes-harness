@@ -37,7 +37,10 @@ export function candidateSkillText(value: AuthoringCandidate): { name?: string; 
       text = raw.slice(1, -1).replace(/''/g, "'")
     } else text = raw.replace(/\s+#.*$/, '')
     text = text.trim()
-    return text && text.length <= limit && !/[\u0000-\u001f\u007f]/.test(text) ? text : undefined
+    const hasControl = Array.from(text).some(
+      (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+    )
+    return text && text.length <= limit && !hasControl ? text : undefined
   }
   const name = scalar('name', 128),
     summary = scalar('description', 1024)
