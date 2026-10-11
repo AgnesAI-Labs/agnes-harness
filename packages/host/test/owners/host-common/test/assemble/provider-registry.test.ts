@@ -137,11 +137,15 @@ it('treats a root-fiber call shadow as host-owned and still refuses an unverifie
   expect(providerSource(shadow, origins, '@agnes/base', true)).toBe('@agnes/base')
 
   let sawRootFiberShadow = false
-  const registry = installProviderRegistry(root, kind, (owner, source, provider) => {
-    sawRootFiberShadow = owner !== root && owner.fiber === root.fiber
-    const verified = providerSource(owner, origins, source, true)
-    return registry.register(verified, provider, owner)
-  })
+  const registry: ProviderRegistry<{ id: string; version: string; ready: boolean }> = installProviderRegistry(
+    root,
+    kind,
+    (owner, source, provider) => {
+      sawRootFiberShadow = owner !== root && owner.fiber === root.fiber
+      const verified = providerSource(owner, origins, source, true)
+      return registry.register(verified, provider, owner)
+    },
+  )
   root.providers.register(kind, '@agnes/base', { id: 'host', version: '1.0.0', ready: true })
   expect(sawRootFiberShadow).toBe(true)
   expect(registry.catalog()[0]).toMatchObject({ id: 'host', sourcePackage: '@agnes/base' })
