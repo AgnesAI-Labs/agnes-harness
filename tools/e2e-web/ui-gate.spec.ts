@@ -134,6 +134,7 @@ for (const locale of ['en', 'zh-CN'])
           'system-prompt',
           'context',
           'security',
+          'providers',
         ].includes(id)
         if (catalogPage) await expect(page.getByTestId('settings-refresh')).toBeVisible()
         else await expect(page.getByTestId('settings-refresh')).not.toBeVisible()
