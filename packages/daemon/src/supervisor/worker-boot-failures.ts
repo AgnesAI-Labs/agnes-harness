@@ -1,4 +1,4 @@
-import { rpcError, type RpcError } from '@agnes/protocol'
+import { type RpcError, rpcError } from '@agnes/protocol'
 
 export function isWorkerBootBlocked(error: unknown): boolean {
   return (

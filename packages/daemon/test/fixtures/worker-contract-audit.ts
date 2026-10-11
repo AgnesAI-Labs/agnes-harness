@@ -6,12 +6,12 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createLoader } from '@agnes/host'
 import { observabilityKind } from '@agnes/observability/contract'
+import { deferredProducerKind, deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
 import {
+  checkProvidedExternals,
   providedExternalModules,
   providedExternalVersions,
-  checkProvidedExternals,
 } from '@agnes/plugin-runtime/provided-externals'
-import { deferredProducerKind, deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
 
 const hostRequire = createRequire(createRequire(import.meta.url).resolve('@agnes/host'))
 const { gitWorktreeKind } = await import(hostRequire.resolve('@agnes/git-worktree-contract'))
