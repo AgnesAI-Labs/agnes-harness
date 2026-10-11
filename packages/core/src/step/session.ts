@@ -1904,9 +1904,6 @@ export class SessionImpl {
     this.turnEndError = undefined
     const onAbort = () => void this.abort().catch(() => undefined)
     opts.signal.addEventListener('abort', onAbort, { once: true })
-    // A caller whose signal was already aborted gets no event, and would otherwise have handed in a
-    // cancelled run that runs.
-    if (opts.signal.aborted) onAbort()
     // A phase edge that reports where it went without writing where it went leaves step() reading
     // the same phase forever. Bound consecutive edges without a committed program-counter change,
     // independently of the optional step budget. Real tool dispatch and model steps advance the
@@ -1916,6 +1913,20 @@ export class SessionImpl {
     const progress = () => this.lastSeq
     let cursor = progress()
     try {
+      // A caller whose signal was already aborted never fires the listener. Claim a queued prompt
+      // before the first step: a fitted deferred queue throws on that signal before it can claim,
+      // and the turn would otherwise come back aborted with the prompt still queued.
+      if (opts.signal.aborted && !this.op() && (await this.acceptInput())) {
+        await this.abort()
+        const stopped = await finishAborted(this)
+        return {
+          reason: stopped.reason ?? 'aborted',
+          lastSeq: this.lastSeq,
+          ...(this.turnEndError ? { error: this.turnEndError } : {}),
+        }
+      }
+      // Nothing was queued. Pull the signal so the cancelled run does not start work.
+      if (opts.signal.aborted) onAbort()
       for (;;) {
         const nextCursor = progress()
         if (nextCursor !== cursor) edges = 0

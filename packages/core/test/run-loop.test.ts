@@ -1,5 +1,6 @@
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import { defaultLoopFactory } from '@agnes/loop-default'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
@@ -58,6 +59,46 @@ describe('run loop', () => {
     expect(out).toMatchObject({ reason: 'completed', lastSeq: 1 })
     expect(await log.scan({ fromSeq: 1, limit: 10 })).toHaveLength(1)
   })
+
+  it.each([false, true])(
+    'settles only the first queued prompt on a pre-aborted run (signal-first loop: %s)',
+    async (signalFirst) => {
+      const factory = {
+        ...defaultLoopFactory,
+        create: async (ctx: Parameters<typeof defaultLoopFactory.create>[0]) => {
+          const driver = await defaultLoopFactory.create(ctx)
+          return {
+            ...driver,
+            step: (signal: AbortSignal) => {
+              if (signalFirst) signal.throwIfAborted()
+              return driver.step(signal)
+            },
+          }
+        },
+      }
+      const { session, log } = await openSession({
+        provider: fakeProvider([textTurn('answer B')]),
+        loopFactory: factory,
+      })
+      try {
+        await session.enqueue('next-turn', { content: [{ type: 'text', text: 'A' }], actor })
+        await session.enqueue('next-turn', { content: [{ type: 'text', text: 'B' }], actor })
+        const abort = new AbortController()
+        abort.abort()
+        expect((await session.run({ until: 'turn-end', signal: abort.signal })).reason).toBe('aborted')
+        expect((await log.scan({ type: 'turn/end', limit: 5 })).map((row) => row.data)).toEqual([
+          expect.objectContaining({ reason: 'aborted' }),
+        ])
+        expect(await log.scan({ type: 'request/sent', limit: 5 })).toEqual([])
+        expect(session.latest('inbox')).toMatchObject({ items: [{ content: [{ text: 'B' }] }] })
+        expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+        expect(session.latest('inbox')).toMatchObject({ items: [] })
+        expect(session.surface().map((node) => node.kind)).toEqual(['user', 'user', 'assistant'])
+      } finally {
+        await session.close()
+      }
+    },
+  )
 
   it.each(['complete', 'cancel', 'fail', 'stop-active'] as const)(
     'serializes concurrent turns and preserves queued input on %s',
