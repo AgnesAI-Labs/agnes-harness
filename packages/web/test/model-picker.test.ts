@@ -193,8 +193,10 @@ describe('model picker', () => {
     document.body.append(owner)
     const root = createRoot(owner)
     let ready = false
+    const errors = vi.spyOn(console, 'error')
     function Owner() {
       useLayoutEffect(() => {
+        picker.render(state({ label: 'local-model', selected: models[1] ?? currentModel }))
         ready = true
         return () => picker.destroy()
       }, [])
@@ -202,8 +204,9 @@ describe('model picker', () => {
     }
     root.render(createElement(Owner))
     await vi.waitFor(() => expect(ready).toBe(true))
-    const errors = vi.spyOn(console, 'error')
     try {
+      await vi.waitFor(() => expect(modelRow(1).getAttribute('aria-selected')).toBe('true'))
+      expect(errors.mock.calls.flat().join(' ')).not.toContain('flushSync was called')
       root.unmount()
       await vi.waitFor(() =>
         expect(document.querySelector('[data-testid="session-auxiliary-models"]')).toBeNull(),

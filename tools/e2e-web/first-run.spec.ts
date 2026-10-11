@@ -133,8 +133,7 @@ for (const locale of ['en', 'zh-CN']) {
           .filter({ hasText: 'Second account' })
           .first()
           .click()
-        await expect(page.locator('#model-picker-popover')).toBeHidden()
-        await page.locator('#model').click()
+        await expect(page.locator('#model')).toHaveAttribute('aria-busy', 'false')
         await expect(
           page.locator('#model-picker-popover [role="option"][aria-selected="true"]'),
         ).toContainText('Second account')

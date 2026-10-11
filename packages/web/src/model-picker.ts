@@ -937,12 +937,16 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
       else if (popover) {
         setTrigger()
         if (settingsChanged) resetBudgetDraft()
-        // 详情依赖会话设置，模型换了或设置没了就收起下一级。
-        if (openedIndex !== undefined && !settingsAvailable()) closeDetail()
-        if ((changed || settingsChanged) && popover) {
-          renderPanels()
-          position()
-        }
+        // Composer forwards state during a React commit. Reconcile the independent roots afterward.
+        queueMicrotask(() => {
+          if (state !== normalized || !popover) return
+          // 详情依赖会话设置，模型换了或设置没了就收起下一级。
+          if (openedIndex !== undefined && !settingsAvailable()) closeDetail()
+          if (changed || settingsChanged) {
+            renderPanels()
+            position()
+          }
+        })
       } else setTrigger()
     },
   }
