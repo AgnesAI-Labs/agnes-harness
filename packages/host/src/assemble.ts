@@ -433,8 +433,14 @@ export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Pr
           })
         }
         packageIds.add(source.snapshot.packageId)
-        const loaded = await loadRuntimeModule(source)
-        if (loaded) selected.set(source.snapshot.packageId, loaded)
+      }
+      // Every package is verified and imported at once; its rows still mount later, in order. The
+      // first failure in selection order is the one reported, as when they loaded one by one.
+      const settled = await Promise.allSettled(sources.map((source) => loadRuntimeModule(source)))
+      for (const [index, result] of settled.entries()) {
+        if (result.status === 'rejected') throw result.reason
+        const source = sources[index]
+        if (source && result.value) selected.set(source.snapshot.packageId, result.value)
       }
       return selected
     }
