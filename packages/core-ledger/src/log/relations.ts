@@ -67,6 +67,25 @@ export function checkRelations(
       if (Number(d?.step) !== expected)
         throw new CoreError('E_RELATION', `step ${String(d?.step)} ≠ expected ${expected}`, { lane, seq })
     }
+    if (e.type === 'decision/state') {
+      const consumption = d?.consumption as { effectId: string | null } | null
+      const previous = s.registers.decisionStates.get(String((d?.handle as { id?: string })?.id))?.value
+      if (consumption && !previous?.consumption) {
+        const associated = batch.some(
+          (row) =>
+            row.lane === e.lane &&
+            (consumption.effectId === null
+              ? row.type === 'x/core/loop-checkpoint'
+              : row.type === 'effect/intent' &&
+                (row.data as { effectId?: string })?.effectId === consumption.effectId),
+        )
+        if (!associated)
+          throw new CoreError(
+            'E_RELATION',
+            'Decision consumption requires the original intent or next checkpoint in the same batch',
+          )
+      }
+    }
     if (e.type === 'tool/result') {
       const id = String(d?.toolUseId)
       const call = s.toolCalls.get(id)

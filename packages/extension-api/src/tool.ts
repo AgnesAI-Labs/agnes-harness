@@ -11,6 +11,7 @@ import type {
   Seq,
   SessionRef,
 } from './common.js'
+import type { DecisionPort } from './decisions.js'
 import type { ProjectionReader } from './projections.js'
 
 export type ReplayPolicy = 'safe' | 'never' | 'idempotent'
@@ -215,6 +216,7 @@ export interface CodeRuntime {
 }
 
 export interface ToolContext {
+  readonly decisions: DecisionPort
   /** Active main-conversation request only; Host owns validation and native approval. */
   readonly mcpManage?: Readonly<{ request(input: unknown): Promise<unknown> }>
   readonly pluginManage?: Readonly<{ request(input: unknown): Promise<unknown> }>

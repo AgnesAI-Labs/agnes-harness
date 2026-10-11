@@ -20,11 +20,13 @@ export async function abortSession(s: SessionImpl, by: Actor): Promise<AbortResu
   // stop, and a `run({ until: 'idle' })` sitting between two turns is running.
   if (!op) {
     s.ac.abort()
+    await s.decisions.stop()
     await stopPendingApprovals(s)
     return { seq: null, alreadyTerminal: true }
   }
   if (op.control.status === 'cancel_requested') {
     s.ac.abort()
+    await s.decisions.stop()
     await stopPendingApprovals(s)
     return { seq: s.opSeq(), alreadyTerminal: false }
   }

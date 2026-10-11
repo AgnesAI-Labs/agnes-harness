@@ -9,7 +9,7 @@ import type {
   LoopStepOutcome,
   LoopTurnView,
 } from '@agnes/extension-api'
-import { loopShouldStop } from '@agnes/extension-api'
+import { loopShouldStop, unavailableDecisions } from '@agnes/extension-api'
 import { type ModelReply, scriptedModel } from './model.js'
 
 export interface LoopTestOptions {
@@ -59,6 +59,7 @@ export async function driveLoop(factory: LoopFactory, options: LoopTestOptions =
     return input
   }
   const ctx: LoopContext = options.context ?? {
+    decisions: unavailableDecisions,
     session: { key: 'author-loop-test', lane: 'main', workspaceRoot: '/fixture' },
     sessionKey: 'author-loop-test',
     lane: 'main',

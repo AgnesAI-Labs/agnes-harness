@@ -41,6 +41,7 @@ export function encodeLedgerState(state: LedgerState): EncodedLedgerState {
   return {
     ...state,
     registers: {
+      decisionStates: [...state.registers.decisionStates],
       planItems: [...state.registers.planItems],
       budgetState: [...state.registers.budgetState],
       artifactJobs: [...state.registers.artifactJobs],

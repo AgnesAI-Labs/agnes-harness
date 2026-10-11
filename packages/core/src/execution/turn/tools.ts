@@ -1209,6 +1209,13 @@ export async function approveAndExecute(
           depth: o.depth,
           generationDepth: s.generationDepth,
           actor: s.d.actor,
+          decisions: s.decisions.port({
+            owner: def.source.source,
+            sourcePackage: def.packageIdentity ?? def.source.packageIdentity ?? def.source.source,
+            packageVersion: def.packageVersion ?? def.source.packageVersion ?? 'unversioned',
+            operationId: call.toolUseId,
+            alive: () => ac.signal.throwIfAborted(),
+          }),
           ...(approvalProof ? { approval: approvalProof } : {}),
           cwd: s.d.cwd,
           workspaceRoot: s.workspaceRoot,

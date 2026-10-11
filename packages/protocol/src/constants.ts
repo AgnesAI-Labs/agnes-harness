@@ -27,6 +27,7 @@ export const EVENT_TYPES = [
   'repair/decision',
   'format/deviation',
   'cost/ledger',
+  'decision/state',
   'approval/asked',
   'approval/decided',
   'approval/guardian-decided',

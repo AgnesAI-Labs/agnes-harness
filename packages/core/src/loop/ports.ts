@@ -374,6 +374,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
   }
   const children = s.loopChildrenPort()
   const ctx: LoopContext = {
+    decisions: s.decisions.port(s.loopDecisionSource()),
     session: Object.freeze({ key: s.key, lane: s.lane, workspaceRoot: s.workspaceRoot }),
     sessionKey: s.key,
     lane: s.lane,
@@ -615,19 +616,31 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
       read: () => checkpoint && structuredClone(checkpoint),
       async write(value, association) {
         s.d.loopFactory?.codec?.decode(value)
-        if (association) for (const id of association.invocationIds) await invocations.status(id)
+        if (association?.invocationIds)
+          for (const id of association.invocationIds) await invocations.status(id)
         const next = structuredClone(value)
-        await s.d.log.append([
-          s.ev(
-            CHECKPOINT_EVENT,
+        await s.locked(() =>
+          s.d.log.append(
+            [
+              ...s.decisions.consumptionEvents(association?.decisionRefs ?? [], s.loopDecisionSource(), null),
+              s.ev(
+                CHECKPOINT_EVENT,
+                {
+                  loop: s.loop,
+                  checkpoint: next,
+                  ...(association?.invocationIds ? { invocationIds: [...association.invocationIds] } : {}),
+                  ...(association?.decisionRefs ? { decisionRefs: [...association.decisionRefs] } : {}),
+                },
+                { ignorable: true },
+              ),
+            ],
             {
-              loop: s.loop,
-              checkpoint: next,
-              ...(association ? { invocationIds: [...association.invocationIds] } : {}),
+              beforeCommit: () => {
+                s.decisions.consumptionEvents(association?.decisionRefs ?? [], s.loopDecisionSource(), null)
+              },
             },
-            { ignorable: true },
           ),
-        ])
+        )
         checkpoint = next
       },
     },

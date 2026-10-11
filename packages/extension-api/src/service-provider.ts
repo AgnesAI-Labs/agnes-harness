@@ -1,5 +1,6 @@
 import type { EventEnvelope, JsonValue } from '@agnes/protocol'
 import type { Seq, SessionRef } from './common.js'
+import type { DecisionPort } from './decisions.js'
 import type { ProjectionReader } from './projections.js'
 import {
   defineProviderKind,
@@ -42,9 +43,10 @@ export interface AgentInputPort {
   deliver(key: string, text: string, signal: AbortSignal): Promise<Seq>
 }
 
-export type ServicePortName = 'ledger' | 'input' | 'projections'
+export type ServicePortName = 'ledger' | 'input' | 'projections' | 'decisions'
 
 export interface ServicePorts {
+  readonly decisions?: DecisionPort
   readonly binding: ServiceBinding
   readonly ledger?: OwnerLedgerPort
   readonly input?: AgentInputPort
@@ -109,7 +111,7 @@ export interface ServiceKindOptions<S extends ServiceInstance, P extends Service
   readonly capabilities?: (provider: ServiceProvider<S, P>) => readonly string[]
 }
 
-const PORTS: readonly ServicePortName[] = ['ledger', 'input', 'projections']
+const PORTS: readonly ServicePortName[] = ['ledger', 'input', 'projections', 'decisions']
 const INSTANCE_SCOPES: readonly ServiceInstanceScope[] = ['request', 'session', 'workspace', 'process']
 
 export function defineServiceKind<S extends ServiceInstance, P extends ServicePorts>(

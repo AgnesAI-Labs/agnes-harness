@@ -436,6 +436,14 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
       else if (!registered) recoveryRefusal = 'tool-definition-missing'
       else if (persisted.definitionFingerprint !== registered.definitionFingerprint)
         recoveryRefusal = 'tool-definition-drift'
+      if (
+        [...s.state.registers.decisionStates.values()].some(
+          ({ value }) =>
+            value.request.operationId === root.tool?.toolUseId &&
+            value.request.owner === registered?.source.source,
+        )
+      )
+        recoveryRefusal = 'decision-continuation-blocked'
       if (recoveryRefusal)
         await s.diag('tool-policy-refused-on-resume', {
           effectId: root.effectId,
@@ -516,7 +524,10 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
                 },
               ],
               isError: true,
-              code: 'TOOL_OUTCOME_UNKNOWN',
+              code:
+                recoveryRefusal === 'decision-continuation-blocked'
+                  ? 'DECISION_CONTINUATION_BLOCKED'
+                  : 'TOOL_OUTCOME_UNKNOWN',
               enforcement: s.d.runtime.enforcement(),
               authz: { decisionId: 'n/a' },
             },
@@ -527,7 +538,8 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
         setCallsCompleted(setCallCompleted(cur, root.tool.toolUseId), nestedCallIds),
       )
       actions.push({ effectId: root.effectId, action: 'unknown' })
-      await askUnknownOutcome(s, root.tool.toolUseId, root.tool.name)
+      if (recoveryRefusal !== 'decision-continuation-blocked')
+        await askUnknownOutcome(s, root.tool.toolUseId, root.tool.name)
       continue
     }
     if (root.kind === 'compaction') {

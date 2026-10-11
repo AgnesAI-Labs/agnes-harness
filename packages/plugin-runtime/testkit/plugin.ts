@@ -1,5 +1,5 @@
 import type { Plugin } from '@agnes/cordis'
-import type { ToolContext, ToolResult } from '@agnes/extension-api'
+import { type ToolContext, type ToolResult, unavailableDecisions } from '@agnes/extension-api'
 import { Value } from '@sinclair/typebox/value'
 import { createPluginRow, normalizePluginExport } from '../src/host/index.js'
 import { createVerifiedTestRoot } from './index.js'
@@ -64,6 +64,7 @@ export async function createPluginTestHost(plugin: Plugin, options: PluginTestOp
   }
   const blocked = new Proxy({}, { get: () => unavailable })
   const context: ToolContext = {
+    decisions: unavailableDecisions,
     cwd: '/test',
     session: {
       key: 'author-test',

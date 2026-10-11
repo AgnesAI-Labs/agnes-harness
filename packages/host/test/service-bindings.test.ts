@@ -1,5 +1,6 @@
 import { Context } from '@agnes/cordis'
 import {
+  type DecisionPort,
   defineServiceKind,
   ProviderError,
   type ServiceInstance,
@@ -1019,6 +1020,7 @@ describe('extension service host', () => {
     const identity = {
       owner,
       packageId,
+      packageVersion: '1.0.0',
       trust: 'trusted' as const,
       projections: unavailableProjections,
       recheck() {},
@@ -1096,6 +1098,92 @@ describe('extension service host', () => {
     }
   })
 
+  it('grants the same session DecisionPort with loader identity and current callback admission', async () => {
+    const fixture = sessionFixture()
+    const root = new Context()
+    const state = { token: {} as object, active: true }
+    let source: Parameters<NonNullable<ServiceAdmission['session']['decisions']>['port']>[0] | undefined
+    const handle = { id: 'decision', sessionId: 'sess' }
+    const port: DecisionPort = {
+      request: async () => {
+        source!.alive()
+        return handle
+      },
+      get: async () => {
+        throw new Error('unused')
+      },
+      wait: async (_handle, options) => ({ status: 'pending', handle, waitEndedBy: 'detached' }),
+    }
+    fixture.session.decisions = {
+      port(value) {
+        source = value
+        return port
+      },
+    }
+    const controller = new AbortController()
+    const host = createExtensionServiceHost({
+      providers: () => root.providers,
+      sessionGeneration: () => 'g1',
+      readAdmission: () => ({
+        token: state.token,
+        owner,
+        active: state.active,
+        signal: controller.signal,
+        session: fixture.session,
+      }),
+    })
+    const kind = defineKind({ instanceScope: 'session', ports: ['decisions'] })
+    host.install(root, kind, { ports: ['decisions'], audience: 'callback' })
+    let captured!: ServicePorts
+    host.ports.register(
+      kind,
+      provider('one', (ports) => {
+        captured = ports
+        return { mark: () => 'ok' }
+      }),
+      { owner, packageId },
+    )
+    try {
+      await host.ports.bindOwn(kind, {
+        owner,
+        packageId,
+        packageVersion: '2.1.0',
+        trust: 'trusted',
+        projections: unavailableProjections,
+        recheck() {},
+      })
+      await expect(
+        captured.decisions!.request({
+          key: 'k',
+          purpose: 'confirm',
+          subject: 'full review',
+          prompt: 'Continue?',
+          options: ['yes', 'no'],
+        }),
+      ).resolves.toEqual(handle)
+      expect(source).toMatchObject({
+        owner,
+        sourcePackage: packageId,
+        packageVersion: '2.1.0',
+        operationId: `service:${owner}`,
+      })
+      state.token = {}
+      expect(() =>
+        captured.decisions!.request({
+          key: 'k',
+          purpose: 'confirm',
+          subject: null,
+          prompt: 'Continue?',
+          options: ['yes'],
+        }),
+      ).toThrow(/closed/)
+      expect(() => source!.alive()).toThrow(/closed/)
+    } finally {
+      controller.abort()
+      await finish(root)
+    }
+  })
+
   it('prefixes namespaced keys and refuses ctx.providers.bindOwn when owner packages disagree', async () => {
     const fixture = sessionFixture()
     const root = new Context()
@@ -1126,6 +1214,7 @@ describe('extension service host', () => {
       await host.ports.bindOwn(kind, {
         owner,
         packageId,
+        packageVersion: '1.0.0',
         trust: 'builtin',
         projections: unavailableProjections,
         recheck() {},
@@ -1191,6 +1280,7 @@ describe('extension service host', () => {
     const identity = {
       owner: GIT_WORKTREE_OWNER,
       packageId: GIT_WORKTREE_PACKAGE,
+      packageVersion: '1.0.0',
       trust: 'builtin' as const,
       projections: unavailableProjections,
       recheck() {},

@@ -18,7 +18,7 @@ import type {
   ToolDef,
   ToolResult,
 } from '@agnes/extension-api'
-import { unavailableProjections } from '@agnes/extension-api'
+import { unavailableDecisions, unavailableProjections } from '@agnes/extension-api'
 import type { Actor } from '@agnes/protocol'
 import type { CheckpointWorkspaceContext, WorkspaceHookSandbox } from '../workspace/runtime.js'
 import { assertNotDenied } from './fs-guard.js'
@@ -89,6 +89,7 @@ export type FsOps = {
 }
 
 export type ToolContextDeps = {
+  decisions?: import('@agnes/extension-api').DecisionPort
   sessionKey: string
   lane: string
   turn: number
@@ -186,6 +187,7 @@ export function buildToolContext(
       )
     : workspaceFiles
   return {
+    decisions: d.decisions ?? unavailableDecisions,
     ...(d.approval ? { approval: structuredClone(d.approval) } : {}),
     session: {
       key: d.sessionKey,

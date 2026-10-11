@@ -149,6 +149,7 @@ import { expireApprovals, resumeApproval } from './approval-callback.js'
 import { restoreSessionGrants } from './approval-grants.js'
 import { runCompaction } from './compaction.js'
 import { type AbortResult, abortSession, closeTurn, finishAborted } from './control.js'
+import { DecisionCommands, type DecisionSource } from './decisions.js'
 import { sysEvent } from './events.js'
 import { appendExtensionEvent, prepareExtensionEvent } from './ext-events.js'
 import { contextWindowFor } from './gate.js'
@@ -406,6 +407,7 @@ export type SessionDeps = {
   runtime: SeamRuntime
   provider: Provider
   loopFactory: LoopFactory
+  loopSourcePackage?: string | undefined
   loopResume?: boolean
   withModelSnapshot?: <T>(operation: () => Promise<T>) => Promise<T>
   /**
@@ -559,6 +561,7 @@ export class SessionImpl {
   /** Identity comes from the Host binding; standalone Core uses its fixed session root. */
   readonly workspaceRoot: string
 
+  readonly decisions: DecisionCommands
   readonly d: SessionDeps
   readonly loop: LoopSelection
   loopEdge = 0
@@ -652,6 +655,7 @@ export class SessionImpl {
 
   constructor(deps: SessionDeps) {
     this.d = deps
+    this.decisions = new DecisionCommands(this)
     this.workspaceRoot = deps.workspaceIdentity?.canonicalRoot ?? deps.cwd
     this.loopEvents = deps.loopEvents ?? new LoopEventRegistry()
     this.toolRuntimes = deps.toolRuntimes ?? new ToolRuntimeRegistry()
@@ -669,6 +673,18 @@ export class SessionImpl {
       clock: deps.clock,
       effectId: () => deps.ids.effectId(),
     })
+  }
+
+  loopDecisionSource(): DecisionSource {
+    return {
+      owner: this.loop.id,
+      sourcePackage: this.d.loopSourcePackage ?? this.loop.id,
+      packageVersion: this.loop.version,
+      operationId: `loop:${this.loop.id}`,
+      alive: () => {
+        if (this.closingOrClosed) throw new CoreError('E_CLOSED', 'Session closed')
+      },
+    }
   }
 
   /** Resolve the published hook port at the call boundary; assignment only updates legacy fallback. */
@@ -1145,6 +1161,8 @@ export class SessionImpl {
       // The counter is a register cell committed with the batch. A commit with no row of its own
       // still writes one, so the head, the cell's seq and the CAS all move on together.
       if (rows.length === 0) rows.push(opMark(first, state, this.lane, this.d.actor))
+      if (state?.control.status === 'cancel_requested' && first?.control.status !== 'cancel_requested')
+        rows.push(...this.decisions.stoppedEvents())
       const r = await this.d.log.append(rows, {
         expectedRegisterSeq: { register: 'op.state', key: this.lane, seq },
         opState: { lane: this.lane, data: state },
@@ -2559,6 +2577,7 @@ export class SessionImpl {
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise
     this.closing = true
+    this.decisions.detach()
     const draining = this.activeWork.size > 0
     unbindChildFactory(this.key)
     this.executePermits.close()

@@ -47,6 +47,7 @@ export interface KernelPorts {
       identity: {
         readonly owner: string
         readonly packageId: string
+        readonly packageVersion: string
         readonly trust: 'builtin' | 'trusted'
         readonly recheck: () => void
         readonly projections: ProjectionReader

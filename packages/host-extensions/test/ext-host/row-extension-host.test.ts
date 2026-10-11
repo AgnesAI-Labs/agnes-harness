@@ -1,7 +1,10 @@
 import { Context, type Fiber } from '@agnes/cordis'
 import {
+  defineServiceKind,
   EXTENSION_ID_PATTERN,
   type PluginExtensionAPI,
+  type ServiceInstance,
+  type ServicePorts,
   type SkillInstallPort,
   type ToolDef,
 } from '@agnes/extension-api'
@@ -142,6 +145,51 @@ function setup(
 }
 
 const tool = (name: string) => fixtureTool(name)
+
+describe('community service author facade', () => {
+  it('uses loader ownership, defers registration and revokes escaped providers with the row', async () => {
+    const t = setup()
+    const kind = defineServiceKind<ServiceInstance, ServicePorts>({
+      kind: 'sample-review',
+      cardinality: 'single',
+      instanceScope: 'session',
+      ports: ['decisions'],
+    })
+    const dispose = vi.fn(async () => undefined)
+    const register = vi.fn((..._args: unknown[]) => dispose)
+    const bindOwn = vi.fn(async (..._args: unknown[]) => ({}) as never)
+    t.kernel.ports.serviceProviders = {
+      register: (kind, provider, identity) => register(kind, provider, identity),
+      bindOwn: (kind, identity) => bindOwn(kind, identity),
+      grants: () => ({ events: false, projections: [] }),
+    }
+    let api!: PluginExtensionAPI
+    const mounted = await t.mount('reviewer', 'ext:acme/reviewer', (_ctx, agnes) => {
+      api = agnes
+      agnes.providers.register(kind, { id: 'review', version: '1.0.0', open: () => ({}) })
+    })
+    expect(register).not.toHaveBeenCalled()
+    t.host.activate(t.activation)
+    expect(register.mock.calls[0]).toEqual([
+      kind,
+      expect.objectContaining({ id: 'review' }),
+      { owner: pluginRowSource('ext:acme/reviewer'), packageId: '@acme/tools' },
+    ])
+    await api.providers.bindOwn(kind)
+    expect(bindOwn.mock.calls[0]).toEqual([
+      kind,
+      expect.objectContaining({
+        owner: pluginRowSource('ext:acme/reviewer'),
+        packageId: '@acme/tools',
+        packageVersion: '1.2.3',
+        recheck: expect.any(Function),
+      }),
+    ])
+    await mounted.dispose()
+    expect(dispose).toHaveBeenCalledTimes(1)
+    expect(() => api.providers.bindOwn(kind)).toThrow(/lease|closed/)
+  })
+})
 
 describe('plugin Skill install request port', () => {
   it('stamps row identity and expires an escaped callback after tool completion', async () => {

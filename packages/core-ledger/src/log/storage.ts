@@ -195,6 +195,8 @@ export class RegisterMap {
 export function registerKey(e: Event): string {
   const d = e.data as Record<string, unknown> | null
   switch (e.register) {
+    case 'decision/state':
+      return String((d?.handle as { id?: unknown } | undefined)?.id ?? '')
     case 'artifact/job':
       return String(d?.jobId ?? '')
     case 'harness/entry':

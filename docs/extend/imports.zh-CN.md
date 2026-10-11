@@ -45,7 +45,7 @@ Host 提供的公开作者命名空间共有以下六个 service kind token。�
 | 延迟工具队列 | `@agnes/plugin-runtime/deferred-contract` | `deferredQueueKind` | [contract](../../packages/plugin-runtime/src/deferred-contract.ts) |
 | 延迟调用 producer | `@agnes/plugin-runtime/deferred-contract` | `deferredProducerKind` | [contract](../../packages/plugin-runtime/src/deferred-contract.ts) |
 
-当提供了该端口时，`ServiceAuthorPort.bindOwn(kind)` 绑定已准入 owner 的实例。Loop 使用可选的 `LoopContext.services.get(kind)` reader，并必须处理服务缺失。普通 `ctx.extension()` 返回 `PluginExtensionAPI`，不包含完整扩展的服务 facade；不要强转为 `ExtensionAPI` 获取额外权限。部分 token 属于 Host 自有服务；出现在公共命名空间不代表任意插件均可调用其所有实例。
+当提供了该端口时，`ServiceAuthorPort.bindOwn(kind)` 绑定已准入 owner 的实例。Loop 使用可选的 `LoopContext.services.get(kind)` reader，并必须处理服务缺失。普通 `ctx.extension()` 返回的 `PluginExtensionAPI` 与官方扩展共用受控的 `providers.register` / `providers.bindOwn` 门面；两者都受 Host 准入、owner 和来源包校验约束。部分 token 属于 Host 自有服务；出现在公共命名空间不代表任意插件均可调用其所有实例。
 
 `@agnes/extension-api` 还导出 `memoryKind`、`systemPromptKind`、`webhookTriggerKind`。它们是 **provider 注册 token**，不是用于 `bindOwn` 或 Loop service reader 的 `ServiceKind` token。应使用对应 provider 合同与注册路径。
 
@@ -74,3 +74,12 @@ Bounded helper 仍只接受其自包含的 tool/Skill/skin 格式。它的 manif
 - [observability 包](../../packages/observability/package.json)、[智能 UI 合同包](../../packages/intelligent-ui-contract/package.json)、[Git worktree 合同包](../../packages/git-worktree-contract/package.json)。
 
 TypeBox 来自声明的 `@sinclair/typebox` 依赖；它自己的包导出提供根入口、`/value` 和 `/compiler`。[运行时模块表](../../packages/plugin-runtime/src/provided-externals.ts)提供相同命名空间。
+
+
+## 会话决策
+
+`ToolContext.decisions`、`LoopContext.decisions` 和获准的 `ServicePorts.decisions` 共用 `DecisionPort`（`request`、`get`、`wait`）。其类型及 `APPROVAL_DEFAULTS` 从 `@agnes/extension-api` 导入。spec 声明 owner 命名空间中的 key、purpose、完整不可变 JSON subject、prompt、实际提供的 options 及可选的有界 JSON response schema；Host 派生会话、作者和原操作，purpose 不授予权限。
+
+请求先落 ledger 再返回 handle。同 owner/key 的相同 spec 返回原 ID 和期限，内容变化则冲突。`wait` 返回 resolved snapshot 或断开后的 pending handle；断线和取消本地 waiter 都保留持久 pending。答复只能经认证的后台入口接收。
+
+Loop 将 handle 放入既有 checkpoint，恢复时调用 `get`。真人答复后推进纯阶段时，向 `checkpoints.write` 传入 `{ decisionRefs: [handle] }`，消费标记与下一 checkpoint 同批提交。该端口不能在重启后恢复任意工具 JavaScript。ServiceKind 的最大 ports 和 Host descriptor 都须授予 `decisions`；缺少当前会话准入时 fail-closed。

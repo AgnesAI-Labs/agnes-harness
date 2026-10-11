@@ -7,7 +7,7 @@ import type {
   ToolContext,
   ToolResult,
 } from '@agnes/extension-api'
-import { DEFAULT_OUTPUT_MAX_BYTES, unavailableProjections } from '@agnes/extension-api'
+import { DEFAULT_OUTPUT_MAX_BYTES, unavailableDecisions, unavailableProjections } from '@agnes/extension-api'
 import type { JsonValue } from '@agnes/protocol'
 
 // An in-memory stand-in for the context the kernel hands a tool. Everything a tool is allowed to
@@ -119,6 +119,7 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
   const extraEntries = new Map(Object.entries(opts.entries ?? {}).map(([k, v]) => [abs(k), v]))
 
   const ctx: ToolContext = {
+    decisions: unavailableDecisions,
     projections: unavailableProjections,
     session: {
       key: opts.sessionKey ?? 'agnes:t:a:cli:dm:x',

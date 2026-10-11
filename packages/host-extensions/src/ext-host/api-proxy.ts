@@ -6,10 +6,6 @@ import {
   ExtensionError,
   type ExtensionManifest,
   extEventType,
-  type ServiceInstance,
-  type ServiceKind,
-  type ServicePorts,
-  type ServiceProvider,
   type SlotPayloadMap,
   type ToolDef,
 } from '@agnes/extension-api'
@@ -22,6 +18,7 @@ import { mapResult } from './map-result.js'
 import type { KernelPorts, RegMeta } from './ports.js'
 import { projectionReader } from './projection-reader.js'
 import { adaptProjection } from './projections.js'
+import { serviceAuthor } from './service-author.js'
 import { capabilityToolContext } from './tool-context-capabilities.js'
 import { invalidToolMessage } from './tool-def-message.js'
 
@@ -216,37 +213,26 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
         return ports.extEvents.append(type, data.value, meta)
       },
     }),
-    providers: Object.freeze({
-      register<S extends ServiceInstance, P extends ServicePorts>(
-        kind: ServiceKind<S, P>,
-        provider: NoInfer<ServiceProvider<S, P>>,
-      ) {
-        registering()
-        if (!ports.serviceProviders) refuse('providers not granted')
-        const required = ports.serviceProviders.grants?.(kind)
+    providers: serviceAuthor({
+      owner: m.id,
+      packageId: input.packageIdentity,
+      packageVersion: input.packageVersion,
+      trust: input.trust,
+      projections,
+      alive,
+      registering,
+      ports: () => ports,
+      checkGrants(required) {
         if (required?.events && (!caps.events || !lease.allows('event', '')))
           refuse('service requires events grant')
-        for (const name of required?.projections ?? []) {
+        for (const name of required?.projections ?? [])
           if (!caps.projections?.some((item) => item.name === name) || !lease.allows('projection', name))
             refuse('service projection not declared')
-        }
-        const dispose = ports.serviceProviders.register(kind, provider, {
-          owner: m.id,
-          packageId: input.packageIdentity,
-        })
+      },
+      install(_name, create) {
+        const dispose = create(ports)
         bag.add(() => dispose())
         return dispose
-      },
-      bindOwn<S extends ServiceInstance, P extends ServicePorts>(kind: ServiceKind<S, P>): Promise<S> {
-        alive()
-        if (!ports.serviceProviders) refuse('providers not granted')
-        return ports.serviceProviders.bindOwn(kind, {
-          owner: m.id,
-          packageId: input.packageIdentity,
-          trust: input.trust,
-          projections,
-          recheck: () => alive(),
-        })
       },
     }),
   } satisfies ExtensionAPI)

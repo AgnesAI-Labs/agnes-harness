@@ -1,6 +1,7 @@
 import type { Context } from '@agnes/cordis'
 import {
   type AgentInputPort,
+  type DecisionPort,
   EVENT_NAME_PATTERN,
   EXTENSION_ID_PATTERN,
   type OwnerLedgerPort,
@@ -68,6 +69,7 @@ export interface ServiceCall {
 }
 
 export interface ServicePortFactories {
+  decisions?: (call: ServiceCall, binding: ServiceBinding, descriptor: ServiceDescriptor) => DecisionPort
   ledger?: (call: ServiceCall, binding: ServiceBinding, descriptor: ServiceDescriptor) => OwnerLedgerPort
   input?: (call: ServiceCall, binding: ServiceBinding, descriptor: ServiceDescriptor) => AgentInputPort
   projections?: ProjectionReader
@@ -455,10 +457,31 @@ function buildPorts(
       }),
     )
   }
+  let decisions: DecisionPort | undefined
   let ledger: OwnerLedgerPort | undefined
   let input: AgentInputPort | undefined
   let projections: ProjectionReader | undefined
   let capabilities: object | undefined
+  if (grants.has('decisions')) {
+    if (!factories.decisions) throw closed(kind.kind, 'bind')
+    const raw = factories.decisions(call, binding, descriptor)
+    decisions = Object.freeze({
+      request: (spec: Parameters<DecisionPort['request']>[0]) =>
+        guard('decision.request', () => raw.request(spec)) as ReturnType<DecisionPort['request']>,
+      get: (handle: Parameters<DecisionPort['get']>[0]) =>
+        guard('decision.get', () => raw.get(handle)) as ReturnType<DecisionPort['get']>,
+      wait: (handle: Parameters<DecisionPort['wait']>[0], options?: Parameters<DecisionPort['wait']>[1]) =>
+        guard('decision.wait', () =>
+          raw.wait(handle, {
+            signal: AbortSignal.any([
+              call.signal,
+              lifetime.signal,
+              ...(options?.signal ? [options.signal] : []),
+            ]),
+          }),
+        ) as ReturnType<DecisionPort['wait']>,
+    })
+  }
   if (grants.has('ledger')) {
     if (!factories.ledger) throw closed(kind.kind, 'bind')
     const raw = factories.ledger(call, binding, descriptor)
@@ -509,6 +532,7 @@ function buildPorts(
   }
   const ports: ServicePorts & { capabilities?: object } = {
     binding,
+    ...(decisions === undefined ? {} : { decisions }),
     ...(ledger === undefined ? {} : { ledger }),
     ...(input === undefined ? {} : { input }),
     ...(projections === undefined ? {} : { projections }),

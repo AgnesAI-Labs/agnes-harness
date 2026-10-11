@@ -1,3 +1,4 @@
+import { APPROVAL_DEFAULTS } from '@agnes/extension-api'
 import type { ThinkingLevel } from '@agnes/protocol'
 
 /**
@@ -81,7 +82,7 @@ export function presetDefaults(): PresetView {
     budget: { preflight: 'estimate', perRequestCap: null, onExceed: 'quote', maxSteps: null },
     // A timed-out approval reads as a rejection and nothing else: an unanswered prompt must never
     // be the path by which a destructive call proceeds.
-    approval: { onTimeout: 'rejected', timeoutMs: 60000, onUnavailable: 'deny', pendingTtlMs: 86400000 },
+    approval: { ...APPROVAL_DEFAULTS },
     sandbox: { onUnavailable: 'deny' },
     tools: { timeoutMs: 120000, timeouts: {}, outputMaxBytes: 32768 },
     verifier: { timeoutMs: 30000, defaultTier: 0 },

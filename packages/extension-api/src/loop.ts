@@ -13,6 +13,7 @@ import type {
   ChildAgentSessionStartOptions,
 } from './child-agent.js'
 import type { SessionRef } from './common.js'
+import type { DecisionHandle, DecisionPort } from './decisions.js'
 import type { LoopEventPort } from './loop-events.js'
 import type { ServiceInstance, ServiceKind, ServicePorts } from './service-provider.js'
 import type { ToolResult } from './tool.js'
@@ -184,6 +185,7 @@ export interface LoopServiceReader {
 }
 
 export interface LoopContext {
+  readonly decisions: DecisionPort
   /** Host/Core-bound session identity. Use session.workspaceRoot for workspace-owned state, policy and config. */
   readonly session: SessionRef
   /** Host-bound services for this session. Absent means the caller has no service reader. */
@@ -242,7 +244,10 @@ export interface LoopContext {
   }
   readonly checkpoints: {
     read(): LoopCheckpoint | null
-    write(checkpoint: LoopCheckpoint, association?: { invocationIds: readonly string[] }): Promise<void>
+    write(
+      checkpoint: LoopCheckpoint,
+      association?: { invocationIds?: readonly string[]; decisionRefs?: readonly DecisionHandle[] },
+    ): Promise<void>
   }
   readonly wait: {
     /** Wait for input, wake or cancellation without busy polling. */

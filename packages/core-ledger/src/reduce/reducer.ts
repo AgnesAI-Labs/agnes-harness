@@ -3,6 +3,7 @@ import { isEventType, normalize, type SessionStart } from '@agnes/protocol'
 import { isRegisterTombstone, registerKey } from '../log/storage.js'
 import { contextAnchorOf } from './anchor.js'
 import { ChunkedMap } from './chunked-map.js'
+import { reduceDecision } from './decision.js'
 import type {
   ApprovalAsked,
   ApprovalDecided,
@@ -143,6 +144,11 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
     const key = registerKey(e)
     const reg = e.register
     switch (reg) {
+      case 'decision/state': {
+        const value = reduceDecision(s.registers.decisionStates.get(key)?.value, e)
+        register('decisionStates').set(key, { seq: e.seq, value })
+        break
+      }
       case 'plan.items':
         setRegister<PlanItems>(s.registers.planItems, () => register('planItems'), reg, key, e.seq, d)
         break
@@ -173,6 +179,7 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       if (start.parent) {
         // A fork starts these over; lastTurn, planItems, artifactJobs, harnessEntries and the last
         // ledger tokens carry across from the parent, except for a fresh spawned conversation.
+        reset('registers.decisionStates')
         reset('registers.budgetState')
         reset('registers.inbox')
         reset('openTurn')

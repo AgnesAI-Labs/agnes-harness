@@ -45,7 +45,7 @@ These are the six service-kind tokens in the Host-provided public author namespa
 | Deferred tool queue | `@agnes/plugin-runtime/deferred-contract` | `deferredQueueKind` | [contract](../../packages/plugin-runtime/src/deferred-contract.ts) |
 | Deferred invocation producer | `@agnes/plugin-runtime/deferred-contract` | `deferredProducerKind` | [contract](../../packages/plugin-runtime/src/deferred-contract.ts) |
 
-`ServiceAuthorPort.bindOwn(kind)` binds the admitted owner's instance when that port is available. A Loop uses its optional `LoopContext.services.get(kind)` reader and must handle an absent service. Ordinary `ctx.extension()` exposes `PluginExtensionAPI`, which does not include the full extension service facade. Do not cast it to `ExtensionAPI` to obtain more authority. Some tokens are for Host-owned services; their presence in a public namespace does not make every instance callable by every plugin.
+`ServiceAuthorPort.bindOwn(kind)` binds the admitted owner's instance when that port is available. A Loop uses its optional `LoopContext.services.get(kind)` reader and must handle an absent service. Ordinary `ctx.extension()` exposes `PluginExtensionAPI` with the same controlled `providers.register` and `providers.bindOwn` facade as official extensions. Host admission, owner and source-package checks apply to both. Some tokens are for Host-owned services; their presence in a public namespace does not make every instance callable by every plugin.
 
 `memoryKind`, `systemPromptKind` and `webhookTriggerKind` are also exported from `@agnes/extension-api`. They are **provider registration tokens**, not `ServiceKind` tokens for `bindOwn` or the Loop service reader. Use their corresponding provider contracts and registration paths.
 
@@ -74,3 +74,12 @@ The package `exports` maps select the entry; the entry's exports select the symb
 - [observability package](../../packages/observability/package.json), [Intelligent UI contract package](../../packages/intelligent-ui-contract/package.json), and [Git worktree contract package](../../packages/git-worktree-contract/package.json).
 
 TypeBox is the declared `@sinclair/typebox` dependency; its own package exports provide the root, `/value` and `/compiler` entries. The [runtime module list](../../packages/plugin-runtime/src/provided-externals.ts) supplies those same namespaces.
+
+
+## Session decisions
+
+`ToolContext.decisions`, `LoopContext.decisions` and granted `ServicePorts.decisions` expose the same `DecisionPort` (`request`, `get`, `wait`). Import its types and `APPROVAL_DEFAULTS` from `@agnes/extension-api`. A spec declares a namespaced key, purpose, complete immutable JSON subject, prompt, offered options and an optional bounded JSON response schema. Host stamps the session, author and original operation; purpose grants no authority.
+
+The ledger persists the request before returning its handle. Repeating an owner's key with the same spec returns the original ID and deadline; changing the spec conflicts. `wait` returns a resolved snapshot or a pending handle when detached. Disconnect and aborting a waiter leave the durable request pending. Answers are accepted only through the authenticated backend.
+
+A Loop stores the handle in its existing checkpoint and uses `get` on recovery. To advance a pure phase after a human answer, pass `{ decisionRefs: [handle] }` to `checkpoints.write`: consumption and the next checkpoint commit together. The port cannot resume arbitrary tool JavaScript after a restart. Service kinds must declare `decisions` among their maximum ports and the Host descriptor must grant it; calls without a live session admission fail closed.

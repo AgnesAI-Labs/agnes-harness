@@ -1,5 +1,6 @@
 import type { Context } from '@agnes/cordis'
 import {
+  type DecisionPort,
   EXTENSION_ID_PATTERN,
   type ProjectionReader,
   ProviderError,
@@ -30,7 +31,18 @@ export interface ServiceAdmission {
   readonly owner?: string
   readonly active: boolean
   readonly signal: AbortSignal
-  readonly session: SessionLedgerSession & Pick<SessionRef, 'key' | 'workspaceRoot'>
+  readonly session: SessionLedgerSession &
+    Pick<SessionRef, 'key' | 'workspaceRoot'> & {
+      decisions?: {
+        port(source: {
+          owner: string
+          sourcePackage: string
+          packageVersion: string
+          operationId: string
+          alive(): void
+        }): DecisionPort
+      }
+    }
 }
 
 export interface ExtensionServiceHost {
@@ -103,6 +115,7 @@ export function createExtensionServiceHost(input: {
     identity: {
       readonly owner: string
       readonly packageId: string
+      readonly packageVersion?: string
       readonly trust: 'builtin' | 'trusted'
       readonly recheck: () => void
       readonly projections: ProjectionReader
@@ -141,6 +154,19 @@ export function createExtensionServiceHost(input: {
       },
     }
     return bindings.bind(kind, call, {
+      decisions: () => {
+        if (!session.decisions || !identity.packageVersion) throw closed(kind.kind, 'decision.bind')
+        return session.decisions.port({
+          owner: identity.owner,
+          sourcePackage: identity.packageId,
+          packageVersion: identity.packageVersion,
+          operationId: `service:${identity.owner}`,
+          alive() {
+            identity.recheck()
+            if (!call.live()?.active) throw closed(kind.kind, 'decision.call')
+          },
+        })
+      },
       ledger: (call, _binding, descriptor) =>
         createSessionLedger(session, {
           kind: kind.kind,

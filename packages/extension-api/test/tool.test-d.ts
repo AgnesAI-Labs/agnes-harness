@@ -186,6 +186,7 @@ describe('tool types', () => {
       | 'projections'
       | 'session'
       | 'actor'
+      | 'decisions'
       | 'approval'
       | 'cwd'
       | 'exec'

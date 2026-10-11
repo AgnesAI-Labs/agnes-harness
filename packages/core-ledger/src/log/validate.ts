@@ -43,6 +43,14 @@ export function prepareEvents(
     // wrong is still a rejection, so the pass is narrowed to batches where `/type` is the sole error.
     if (!r.ok && !(e.ignorable === true && r.errors.every((x) => x.path === '/type')))
       throw new CoreError('E_ENVELOPE', r.errors[0]?.message ?? 'invalid', { errors: r.errors })
+    if (
+      (e.type === 'decision/state' || e.register === 'decision/state') &&
+      (e.type !== 'decision/state' ||
+        e.register !== 'decision/state' ||
+        e.origin !== 'system' ||
+        e.trust !== 'trusted')
+    )
+      throw new CoreError('E_ENVELOPE', 'decision/state is a Core-owned register')
     const d = e.data as Record<string, unknown> | null
     if (e.type === 'approval/decided' && !DECIDED_VIA.has(String(d?.via)))
       throw new CoreError('E_ENVELOPE', 'approval/decided.via out of set')

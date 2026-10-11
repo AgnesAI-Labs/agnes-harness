@@ -1,0 +1,54 @@
+import {
+  ExtensionError,
+  type ProjectionReader,
+  type ServiceAuthorPort,
+  type ServiceInstance,
+  type ServiceKind,
+  type ServicePorts,
+  type ServiceProvider,
+} from '@agnes/extension-api'
+import type { KernelPorts } from './ports.js'
+
+/** Both loader paths stamp the same owner/package and use Host's current admission factory. */
+export function serviceAuthor(input: {
+  owner: string
+  packageId: string
+  packageVersion: string
+  trust: 'builtin' | 'trusted'
+  projections: ProjectionReader
+  alive(): void
+  registering(): void
+  ports(): KernelPorts | undefined
+  checkGrants(grants: { events: boolean; projections: readonly string[] } | undefined): void
+  install(name: string, create: (ports: KernelPorts) => () => Promise<void>): () => Promise<void>
+}): ServiceAuthorPort {
+  const granted = (ports: KernelPorts | undefined) => {
+    if (!ports?.serviceProviders)
+      throw new ExtensionError('E_CAPABILITY_UNDECLARED', 'providers not granted', { extId: input.owner })
+    return ports.serviceProviders
+  }
+  return Object.freeze({
+    register<S extends ServiceInstance, P extends ServicePorts>(
+      kind: ServiceKind<S, P>,
+      provider: NoInfer<ServiceProvider<S, P>>,
+    ) {
+      input.registering()
+      return input.install(kind.kind, (ports) => {
+        const services = granted(ports)
+        input.checkGrants(services.grants?.(kind))
+        return services.register(kind, provider, { owner: input.owner, packageId: input.packageId })
+      })
+    },
+    bindOwn<S extends ServiceInstance, P extends ServicePorts>(kind: ServiceKind<S, P>): Promise<S> {
+      input.alive()
+      return granted(input.ports()).bindOwn(kind, {
+        owner: input.owner,
+        packageId: input.packageId,
+        packageVersion: input.packageVersion,
+        trust: input.trust,
+        projections: input.projections,
+        recheck: input.alive,
+      })
+    },
+  })
+}

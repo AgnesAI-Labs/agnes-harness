@@ -585,6 +585,9 @@ export class Kernel {
         runtime,
         provider: this.o.provider,
         loopFactory,
+        loopSourcePackage: this.loops
+          .catalog()
+          .find((item) => item.id === loopFactory.id && item.version === loopFactory.version)?.sourcePackage,
         ...(this.o.loopChildren ? { bindLoopChildren: this.o.loopChildren } : {}),
         ...(so.toolFilter ? { loopChildToolFilter: so.toolFilter } : {}),
         toolRuntimes: this.toolRuntimes,

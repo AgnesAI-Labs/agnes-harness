@@ -32,6 +32,9 @@ import {
 import { prepareEvents } from './validate.js'
 
 export type AppendOptions = {
+  /** Backend command authority recheck after queued writes, immediately before storage commit. */
+  beforeCommit?: () => void
+
   expectedRegisterSeq?: { register: string; key: string; seq: Seq | null }
   refineCaller?: boolean
   /** The program counter of one lane, committed as a register cell at the seq of the batch's last row. */
@@ -389,6 +392,8 @@ export class SessionLogImpl {
       // one must not reach storage if that earlier batch sealed the session while this one waited.
       // `closed` is deliberately not re-checked, because close() promises to drain what it admitted.
       this.sealCheck()
+      this.o.relationCheck?.(events, this, op)
+      opts.beforeCommit?.()
       let committed: CommitReceipt
       const stamped = events.map((e, i) => ({ ...e, seq: this.lastSeqValue + i + 1 }))
       const nextIntegrity = prepareIntegrity(this.o.key, stamped, this.integrityState)

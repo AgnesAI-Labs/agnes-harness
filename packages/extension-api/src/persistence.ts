@@ -237,6 +237,8 @@ export interface PersistenceCatalogEntry {
 export function persistenceRegisterKey(event: { register?: string; lane?: string; data: unknown }): string {
   const data = event.data as Record<string, unknown> | null
   switch (event.register) {
+    case 'decision/state':
+      return String((data?.handle as { id?: unknown } | undefined)?.id ?? '')
     case 'artifact/job':
       return String(data?.jobId ?? '')
     case 'harness/entry':

@@ -64,7 +64,7 @@ export type RowExtensionActivation = Readonly<{
 }>
 
 type Pending = {
-  kind: 'tool' | 'hook'
+  kind: 'tool' | 'hook' | 'provider'
   name: string
   create: (ports: KernelPorts) => () => void | Promise<void>
   cancelled: boolean

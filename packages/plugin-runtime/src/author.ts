@@ -9,6 +9,14 @@ export function defineAgnesPlugin<P extends Plugin>(plugin: P): P {
   return plugin
 }
 
+export {
+  type DecisionHandle,
+  type DecisionPort,
+  type DecisionSpec,
+  defineServiceKind,
+  type ServiceInstance,
+  type ServicePorts,
+} from '@agnes/extension-api'
 export type { LoopPluginContext, ModelAdapterPluginContext } from './author/context.js'
 export { defineLoop } from './author/loop.js'
 export { defineModelAdapter } from './author/model-adapter.js'
