@@ -41,15 +41,6 @@
       ]
     },
     {
-      "id": "approval.ticket-store",
-      "evidence": [
-        {
-          "path": "packages/base/extensions/approval-policy/src/tickets.ts",
-          "marker": "approval parking is not implemented"
-        }
-      ]
-    },
-    {
       "id": "artifacts.background-jobs",
       "evidence": [
         {
