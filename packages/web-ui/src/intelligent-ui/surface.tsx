@@ -57,8 +57,9 @@ export function IntelligentSurface(props: IntelligentSurfaceProps) {
       aria-labelledby={titleId}
     >
       <header>
-        <h3 id={titleId}>{surface.title}</h3>
-        <span>{t('ui.revision', { revision: surface.revision })}</span>
+        <h3 id={titleId} title={t('ui.revision', { revision: surface.revision })}>
+          {surface.title}
+        </h3>
         <Badge>{t(`ui.${record.status}`)}</Badge>
         {props.placement === 'inline' && (
           <Button htmlType="button" data-testid="ui-expand" onClick={props.onExpand}>

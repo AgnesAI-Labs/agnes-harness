@@ -1,13 +1,41 @@
-.agnes-intelligent-catalog,
 .agnes-intelligent-surface {
   color: var(--agnes-text-primary);
   background: var(--agnes-bg-surface);
   display: grid;
-  gap: var(--s12);
-  padding: var(--s12);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s16);
+  padding: var(--s20);
   border: 1px solid var(--agnes-line-primary);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-elevation);
   min-width: 0;
+  font-size: var(--font-size-body);
+  line-height: var(--line-md);
+}
+.agnes-intelligent-catalog {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s24);
+  min-width: 0;
+  color: var(--agnes-text-primary);
+}
+.agnes-intelligent-component {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s12);
+}
+.agnes-intelligent-component > h4,
+.agnes-intelligent-catalog caption {
+  margin: 0;
+  text-align: start;
+  color: var(--agnes-text-primary);
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  line-height: var(--line-md);
+  overflow-wrap: anywhere;
+}
+.agnes-intelligent-catalog caption {
+  padding: var(--s12);
 }
 .agnes-intelligent-catalog section {
   min-width: 0;
@@ -17,7 +45,7 @@
   padding: 0;
   min-width: 0;
 }
-.agnes-intelligent-catalog [role="group"] {
+.agnes-intelligent-actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s8);
@@ -83,21 +111,38 @@
   outline: 2px solid var(--agnes-brand-primary);
   outline-offset: 2px;
 }
+.agnes-intelligent-surface[data-placement="inline"] {
+  padding: var(--s12);
+  gap: var(--s12);
+}
 .agnes-intelligent-surface[data-placement="inline"] .agnes-intelligent-catalog {
   max-height: 360px;
-  overflow: auto;
+  overflow-y: auto;
+  gap: var(--s16);
+  padding: var(--s4);
 }
-.agnes-intelligent-surface header {
+.agnes-intelligent-surface > header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--s8);
+  padding-block-end: var(--s12);
+  border-bottom: 1px solid var(--agnes-line-primary);
 }
 .agnes-intelligent-surface h3 {
   margin: 0;
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-size: var(--font-size-lg);
+  line-height: var(--line-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 .agnes-intelligent-surface [data-testid="ui-receipts"] {
   padding-inline-start: var(--s20);
+  margin: 0;
+  display: grid;
+  gap: var(--s12);
 }
 
 .agnes-intelligent-surface p {
@@ -261,4 +306,20 @@
 }
 .agnes-intelligent-catalog .agnes-ui-tabs [role="tab"][aria-selected="true"] {
   color: var(--agnes-brand-primary);
+}
+
+.agnes-intelligent-surface [data-testid="ui-confirmation"] {
+  padding: var(--s16);
+  border: 1px solid var(--agnes-line-primary);
+  border-radius: var(--radius-md);
+  background: var(--agnes-bg-card);
+}
+.agnes-intelligent-surface > :focus-visible {
+  outline: 2px solid var(--agnes-brand-primary);
+  outline-offset: 2px;
+}
+@media (max-width: 480px) {
+  .agnes-intelligent-surface {
+    padding: var(--s12);
+  }
 }

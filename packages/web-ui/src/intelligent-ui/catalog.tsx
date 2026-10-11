@@ -87,7 +87,7 @@ function CatalogComponent(
     [props.onInvalid, component.id],
   )
   const actionButtons = (ids: string[], row?: UiRowContext): ReactNode => (
-    <div role="group" aria-label={t('ui.actions')}>
+    <div className="agnes-intelligent-actions" role="group" aria-label={t('ui.actions')}>
       {ids.map((id) => {
         const action = surface.actions.find((item) => item.id === id)!
         return (
@@ -301,7 +301,12 @@ function CatalogComponent(
     )
   }
   return (
-    <section data-testid={`ui-component-${component.id}`} aria-label={component.title ?? component.id}>
+    <section
+      className="agnes-intelligent-component"
+      data-kind={component.kind}
+      data-testid={`ui-component-${component.id}`}
+      aria-label={component.title ?? component.id}
+    >
       {component.title && (sourceState !== 'ready' || component.kind !== 'table') && (
         <h4>{component.title}</h4>
       )}
