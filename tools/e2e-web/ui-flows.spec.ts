@@ -467,7 +467,13 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
     await page.getByTestId('plugin-versions-tab').click()
     const technical = page.getByTestId('plugin-drain-details')
     await expect(technical).not.toHaveAttribute('open')
-    await expect(technical).toContainText('ext:agnes-examples/hot-tool-plugin')
+    const pinned = (await client.packages.generations({ profile: 'local-dev' })).generations.find(
+      (generation) =>
+        generation.state === 'draining' &&
+        generation.packages.some((item) => item.id === '@agnes-examples/hot-tool-plugin'),
+    )
+    expect(pinned).toBeDefined()
+    await expect(technical.locator('code')).toHaveText(`@agnes-examples/hot-tool-plugin · ${pinned!.id}`)
     const summary = page.getByTestId('plugin-drain-summary')
     await expect(summary).toHaveCount(1)
     await expect(summary).toContainText(
@@ -506,7 +512,7 @@ test('UI local rescan preserves old/new code through a daemon restart', async ({
   const rescan = async (version: number) => {
     await runtime.localTool(version)
     await settings(page)
-    await section(page, 'plugins')
+    await section(page, 'diagnostics')
     if (!(await page.getByTestId('local-plugins-toggle').isVisible()))
       await page.getByTestId('plugin-diagnostics-toggle').click()
     if (!(await page.getByTestId('reload-local-plugins').isVisible()))
@@ -904,6 +910,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   await expect(page.locator('#resource-list').getByTestId('candidate-list').locator('li')).toHaveCount(1)
   await expect(skillRow).toContainText('Rejected')
   await section(page, 'plugins')
+  await pluginPage.getByTestId('candidate-back').click()
   await expect(pluginPage.getByTestId('candidate-list').getByTestId('candidate-open')).toHaveCount(1)
   await expect(pluginPage.getByTestId('candidate-open').filter({ hasText: draft.packageId })).toContainText(
     'Published',

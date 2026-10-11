@@ -28,7 +28,6 @@ import {
   Tabs,
   UiLocaleProvider,
 } from '@agnes/web-ui'
-import { OfficialExampleCards } from '../../../settings/examples.js'
 import { SettingsHub } from '../../../settings/hub.js'
 import { sessionStartUrl } from '../../../settings/runtime-panels.js'
 import { CandidateInbox } from '../candidates.js'
@@ -253,18 +252,6 @@ export function renderPluginView(this: PluginAdminViewContext): void {
               </Popover>
             }
           />
-          {this.tab === 'discover' && !this.query && !this.category && !this.kind && (
-            <section aria-label={this.t('ux.examples')}>
-              <h3>{this.t('ux.examples')}</h3>
-              <OfficialExampleCards
-                api={this.api}
-                canInstall={this.canEffect('packages.install')}
-                installed={this.state.installed}
-                t={this.settingsText}
-                onReview={this.reviewExample}
-              />
-            </section>
-          )}
           <PluginList
             emptyActions={
               this.tab === 'installed' ? (

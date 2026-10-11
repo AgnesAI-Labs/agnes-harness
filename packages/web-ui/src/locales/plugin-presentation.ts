@@ -2,6 +2,7 @@ import type { LocaleCatalog } from '../ui-locale.js'
 export const PLUGIN_PRESENTATION_NAMESPACE = '@agnes/web-ui/plugin-presentation'
 export const pluginPresentationCatalog: LocaleCatalog = {
   en: {
+    'examples.title': 'Official examples',
     'examples.more': 'More official examples',
     includes: 'Includes: {items}',
     category: 'Category',
@@ -75,6 +76,7 @@ export const pluginPresentationCatalog: LocaleCatalog = {
     search: 'Search name, purpose or contributions',
   },
   'zh-CN': {
+    'examples.title': '官方示例',
     'examples.more': '更多官方示例',
     includes: '包含：{items}',
     category: '分类',

@@ -22,10 +22,12 @@ type ExampleCardsProps = {
   t(key: string): string
   onReview(item: PackageCatalogDescriptor): void
 }
-/** The registry still owns the full settings page; Discover reuses only its example cards. */
+/** The registry mounts this introduction once above the discover catalog. */
 export function ExamplesPanel(props: ExampleCardsProps & { onBundles(): void }) {
+  const { t } = useUiText(PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
   return (
     <section>
+      <h3>{t('examples.title')}</h3>
       <p>{props.t('examplesHelp')}</p>
       <OfficialExampleCards {...props} />
       <Button onClick={props.onBundles}>{props.t('chooseBundle')}</Button>
