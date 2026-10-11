@@ -146,7 +146,7 @@ for (const locale of ['en', 'zh-CN'])
         }
         if (id === 'search') {
           await quality('settings-search', true)
-          await page.getByTestId('search-settings-brave').click()
+          await page.getByTestId('search-add').click()
           await page.getByTestId('search-advanced').locator('summary').click()
           await expect(page.getByTestId('search-api-key')).toBeEnabled()
           for (const control of [

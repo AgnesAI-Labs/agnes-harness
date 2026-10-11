@@ -71,15 +71,14 @@ it('shows the unconfigured state and saves a key without rendering it again', as
   await act(async () => {
     root.render(createElement(SearchPanel, { t, canSave: true, fetcher }))
   })
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('[data-testid="search-settings-brave"]')?.click(),
-  )
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="search-add"]')?.click())
   const panel = document.body
   expect(panel.querySelector<HTMLInputElement>('[data-testid="search-endpoint"]')?.value).toBe(
     'https://api.search.brave.com',
   )
-  expect(panel.querySelector('[data-testid="search-empty"]')?.textContent).toContain('No search provider')
+  expect(panel.querySelector('[data-testid="search-empty"]')?.textContent).toContain('No search service')
   expect(panel.querySelector('[data-testid="search-provider-brave"]')).not.toBeNull()
+  expect(panel.querySelector<HTMLDetailsElement>('[data-testid="search-other-services"]')?.open).toBe(false)
   expect(panel.querySelector<HTMLDetailsElement>('[data-testid="search-technical-exa"]')?.open).toBe(false)
   expect(panel.querySelector('[data-testid="search-technical-exa"]')?.hasAttribute('data-compact')).toBe(true)
   expect(settingsCatalog.en.searchApiKeyHint).not.toContain('secret://')

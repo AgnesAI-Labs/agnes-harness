@@ -3,8 +3,13 @@ export const SEARCH_NAMESPACE = '@agnes/web/search-settings'
 export const searchCatalog: LocaleCatalog = {
   en: {
     add: 'Add search service',
+    help: 'Let the agent search the web using a service you choose.',
+    empty: 'No search service yet',
+    otherServices: 'Other available services',
     current: 'Currently using',
     default: 'Default service',
+    connected: 'Ready to search',
+    keySaved: 'Access key saved',
     settings: 'Settings',
     actions: 'Actions',
     advanced: 'Advanced options',
@@ -16,8 +21,13 @@ export const searchCatalog: LocaleCatalog = {
   },
   'zh-CN': {
     add: '添加搜索服务',
+    help: '选择网页搜索服务，让 Agent 能够查找网上的信息。',
+    empty: '尚未添加搜索服务',
+    otherServices: '其他可用服务',
     current: '当前使用',
     default: '默认服务',
+    connected: '可以搜索',
+    keySaved: '已保存访问密钥',
     settings: '设置',
     actions: '操作',
     advanced: '高级选项',

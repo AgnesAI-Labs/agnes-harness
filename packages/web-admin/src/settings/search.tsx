@@ -358,6 +358,60 @@ export function SearchPanel({
       : status?.invalid
         ? t('searchInvalid')
         : ''
+  const configured = (row: SearchRow) =>
+    row.enabled || row.secretConfigured || row.isDefault || (!row.needsKey && !!row.endpoint)
+  const serviceRow = (row: SearchRow) => (
+    <ListRow
+      key={row.id}
+      data-testid={`search-provider-${row.id}`}
+      title={row.label}
+      meta={[
+        row.isDefault ? ux('default') : '',
+        row.ready ? ux('connected') : row.secretConfigured ? ux('keySaved') : '',
+      ]
+        .filter(Boolean)
+        .join(' · ')}
+      status={row.enabled && !row.ready ? <Tag tone="warn">{t('searchNotReady')}</Tag> : undefined}
+      actions={
+        <>
+          <StateSwitch
+            id={`search-enabled-${row.id}`}
+            testId={`search-enabled-${row.id}`}
+            label={`${t('searchEnabled')}: ${row.label}`}
+            checked={row.enabled}
+            disabled={!canSave || busy}
+            onToggle={(enabled) => void changeRow(row, { enabled })}
+          />
+          <Button data-testid={`search-settings-${row.id}`} onClick={() => edit(row.id)}>
+            {ux('settings')}
+          </Button>
+          <Menu
+            label={ux('actions')}
+            trigger={<IconButton name="ellipsis" label={`${ux('actions')}: ${row.label}`} />}
+            items={[
+              {
+                id: 'default',
+                label: t('searchMakeDefault'),
+                disabled: !canSave || busy || row.isDefault,
+                onSelect: () => void changeRow(row, { makeDefault: true }),
+              },
+              {
+                id: 'clear',
+                label: t('searchClearKey'),
+                danger: true,
+                disabled: !canSave || busy || !row.secretConfigured,
+                onSelect: () => setConfirmClear(row),
+              },
+            ]}
+          />
+        </>
+      }
+    >
+      <SettingsDetails compact title={t('searchTechnicalDetails')} data-testid={`search-technical-${row.id}`}>
+        <span data-testid={`search-secret-${row.id}`}>{row.secretRef}</span>
+      </SettingsDetails>
+    </ListRow>
+  )
   return (
     <section data-testid="search-providers" aria-busy={busy}>
       <SettingsToolbar
@@ -376,7 +430,7 @@ export function SearchPanel({
         <p>
           {status?.defaultProvider
             ? `${ux('current')}: ${status.providers.find((row) => row.id === status.defaultProvider)?.label ?? ''}`
-            : t('searchHelp')}
+            : ux('help')}
         </p>
       </SettingsToolbar>
       {busy && !status && (
@@ -402,61 +456,16 @@ export function SearchPanel({
         <EmptyState
           data-testid="search-empty"
           icon={<Icon name="search" size={48} />}
-          title={t('searchEmpty')}
+          title={ux('empty')}
           description={ux('emptyHelp')}
         />
       )}
-      {status?.providers.map((row) => (
-        <ListRow
-          key={row.id}
-          data-testid={`search-provider-${row.id}`}
-          title={row.label}
-          meta={row.isDefault ? ux('default') : undefined}
-          status={row.enabled && !row.ready ? <Tag tone="warn">{t('searchNotReady')}</Tag> : undefined}
-          actions={
-            <>
-              <StateSwitch
-                id={`search-enabled-${row.id}`}
-                testId={`search-enabled-${row.id}`}
-                label={`${t('searchEnabled')}: ${row.label}`}
-                checked={row.enabled}
-                disabled={!canSave || busy}
-                onToggle={(enabled) => void changeRow(row, { enabled })}
-              />
-              <Button data-testid={`search-settings-${row.id}`} onClick={() => edit(row.id)}>
-                {ux('settings')}
-              </Button>
-              <Menu
-                label={ux('actions')}
-                trigger={<IconButton name="ellipsis" label={`${ux('actions')}: ${row.label}`} />}
-                items={[
-                  {
-                    id: 'default',
-                    label: t('searchMakeDefault'),
-                    disabled: !canSave || busy || row.isDefault,
-                    onSelect: () => void changeRow(row, { makeDefault: true }),
-                  },
-                  {
-                    id: 'clear',
-                    label: t('searchClearKey'),
-                    danger: true,
-                    disabled: !canSave || busy || !row.secretConfigured,
-                    onSelect: () => setConfirmClear(row),
-                  },
-                ]}
-              />
-            </>
-          }
-        >
-          <SettingsDetails
-            compact
-            title={t('searchTechnicalDetails')}
-            data-testid={`search-technical-${row.id}`}
-          >
-            <span data-testid={`search-secret-${row.id}`}>{row.secretRef}</span>
-          </SettingsDetails>
-        </ListRow>
-      ))}
+      {status?.providers.filter(configured).map(serviceRow)}
+      {status?.providers.some((row) => !configured(row)) && (
+        <SettingsDetails title={ux('otherServices')} data-testid="search-other-services">
+          {status.providers.filter((row) => !configured(row)).map(serviceRow)}
+        </SettingsDetails>
+      )}
       <SettingsToolbar
         search={
           <Field label={t('searchTestQuery')} htmlFor="search-test-query">
@@ -471,7 +480,7 @@ export function SearchPanel({
         controls={
           <Button
             data-testid="search-test"
-            disabled={!canSave || busy || !status}
+            disabled={!canSave || busy || !status?.configured}
             onClick={() => void testProvider()}
           >
             {t('searchTest')}
