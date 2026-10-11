@@ -529,13 +529,13 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     if (reposition) position()
   }
 
-  function closeDetail(): void {
+  function closeDetail(render = true): void {
     closeLeaf(false)
     if (!detailPanel) return
     detailPanel.remove()
     detailPanel = undefined
     openedIndex = undefined
-    renderList()
+    if (render) renderList()
   }
 
   function backToDetail(): void {
@@ -548,18 +548,24 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
     listbox?.focus({ preventScroll: true })
   }
 
-  function close(closeOptions: { returnFocus?: boolean } = {}): void {
+  function close(closeOptions: { returnFocus?: boolean; deferUnmount?: boolean } = {}): void {
     interaction += 1
     selecting = false
     cancelDetailClose()
     const wasOpen = popover !== undefined
     closeLeaf(false)
-    closeDetail()
-    if (help) webUi.unmountRegion(help)
-    if (listbox) webUi.unmountRegion(listbox)
-    if (auxiliary) webUi.unmountRegion(auxiliary)
+    closeDetail(false)
+    const hosts = [help, listbox, auxiliary]
+    const closingPopover = popover
+    if (closingPopover) closingPopover.hidden = true
+    const unmount = () => {
+      for (const host of hosts) if (host) webUi.unmountRegion(host)
+      closingPopover?.remove()
+    }
+    // Composer may dispose this picker during another React root's commit.
+    if (closeOptions.deferUnmount) queueMicrotask(unmount)
+    else unmount()
     auxiliary = undefined
-    popover?.remove()
     popover = undefined
     help = undefined
     listbox = undefined
@@ -915,7 +921,7 @@ export function createModelPicker(options: ModelPickerOptions): ModelPicker {
   return {
     close,
     destroy: () => {
-      close()
+      close({ deferUnmount: true })
       trigger.removeEventListener('click', toggle)
       trigger.removeEventListener('keydown', triggerKeydown)
       document.removeEventListener('click', closeOutside)

@@ -1,6 +1,8 @@
 /** @vitest-environment happy-dom */
 import type { ModelSettings } from '@agnes/protocol'
 import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
+import { createElement, useLayoutEffect } from 'react'
+import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createModelPicker,
@@ -187,8 +189,30 @@ describe('model picker', () => {
       expect(onAuxiliarySelect).toHaveBeenCalledWith('fast', { route: 'local', id: 'local-model' }),
     )
     expect(onSelect).not.toHaveBeenCalled()
-    picker.destroy()
-    expect(document.querySelector('[data-testid="session-auxiliary-models"]')).toBeNull()
+    const owner = document.createElement('div')
+    document.body.append(owner)
+    const root = createRoot(owner)
+    let ready = false
+    function Owner() {
+      useLayoutEffect(() => {
+        ready = true
+        return () => picker.destroy()
+      }, [])
+      return null
+    }
+    root.render(createElement(Owner))
+    await vi.waitFor(() => expect(ready).toBe(true))
+    const errors = vi.spyOn(console, 'error')
+    try {
+      root.unmount()
+      await vi.waitFor(() =>
+        expect(document.querySelector('[data-testid="session-auxiliary-models"]')).toBeNull(),
+      )
+      expect(errors.mock.calls.flat().join(' ')).not.toContain('synchronously unmount a root')
+    } finally {
+      errors.mockRestore()
+      owner.remove()
+    }
   })
 
   it('opens one flat model list whose rows do not carry an entry menu', () => {

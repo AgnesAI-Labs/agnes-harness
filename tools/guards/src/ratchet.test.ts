@@ -639,7 +639,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-04 preview-path fixes: the leaf keyboard boundary follows the previewed model, the
   // duplicate-submit short circuit applies only to the current model, the blur guard covers the
   // detail panel, and hover matches the keyboard path (+6 counted lines). Measured: 975, exact.
-  'packages/web/src/model-picker': 1025,
+  'packages/web/src/model-picker': 1030,
   // 2026-09-25 UI refactor: settings-owned element construction uses the shared UI host boundary.
   // Re-measured with countLines(): 754, exact, no spare.
   // 2026-10-07 integration review: Provider, generation, publication, bundle and security settings
@@ -2443,7 +2443,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 22109 -> 22110; exact cap, no exclusions or spare allocation.
   // UI refresh forwarding. HEAD was 13323 against the previous 13225 ceiling; this change adds 4.
   // UI data-source refresh and form drafts. countLines: 13327 -> 13395 (+68).
-  'packages/web/src': 13400,
+  'packages/web/src': 13405,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
