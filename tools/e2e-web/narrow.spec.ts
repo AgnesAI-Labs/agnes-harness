@@ -275,8 +275,13 @@ for (const locale of ['en', 'zh-CN'])
         })
         await page.goto(`${runtime.url}/?session=${session.id}`)
         await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed')
-        // The recorded deliverable opens its reviewed workbench placement on attachment.
-        // Return through the dock's real close control before inspecting the conversation.
+        // Inspect the recorded deliverable through both placements, then return to the conversation.
+        const delivery = page
+          .getByTestId('intelligent-ui-inline')
+          .filter({ hasText: 'Deliverables / 交付物' })
+        await expect(delivery).toContainText('Delivery report.md')
+        const rightToggle = page.getByTestId('workbench-right-toggle')
+        if ((await rightToggle.getAttribute('aria-expanded')) !== 'true') await rightToggle.click()
         await expect(page.getByTestId('intelligent-ui-panel')).toContainText('Delivery report.md')
         await page
           .locator('#workbench-right')
@@ -308,9 +313,6 @@ for (const locale of ['en', 'zh-CN'])
           await page.keyboard.press('Escape')
           await expect(diagnostics).toBeHidden()
           await expect(page.locator('#report-problem')).toBeFocused()
-          const delivery = page
-            .getByTestId('intelligent-ui-inline')
-            .filter({ hasText: 'Deliverables / 交付物' })
           await expect(delivery).toContainText('Delivery report.md')
           await delivery.scrollIntoViewIfNeeded()
           await usable(page, info, `delivery-${viewport.width}`)
