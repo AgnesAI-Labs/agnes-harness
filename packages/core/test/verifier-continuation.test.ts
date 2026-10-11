@@ -137,6 +137,61 @@ describe('verifier pause continuation', () => {
       }
     },
   )
+  it.each(['missing', 'request', 'binding', 'extended', 'expired', 'accessor'] as const)(
+    'keeps the existing domain backend %s receipt refusal',
+    async (edge) => {
+      const h = await setup()
+      const original = h.seams.approval.resume
+      let reads = 0
+      try {
+        h.seams.approval.resume = async (...args) => {
+          const proof = (await original(...args))!
+          if (edge === 'missing') return null
+          if (edge === 'request') return { ...proof, requestId: 'another-request' }
+          if (edge === 'binding') return { ...proof, bindingHash: '0'.repeat(64) }
+          if (edge === 'extended') return { ...proof, expiresAt: new Date(h.clock() + 2000).toISOString() }
+          if (edge === 'expired') return { ...proof, expiresAt: new Date(h.clock()).toISOString() }
+          return Object.defineProperty({ ...proof }, 'bindingHash', {
+            get() {
+              reads++
+              throw new Error('private-receipt')
+            },
+          })
+        }
+        await expect(h.session.resumeApproval('review', 'allowed-once', approver)).rejects.toThrow(
+          edge === 'extended' || edge === 'expired' ? 'ticket expired' : 'approval binding mismatch',
+        )
+        expect(reads).toBe(0)
+        expect(await h.log.scan({ type: 'approval/decided', limit: 10 })).toEqual([])
+        expect(h.provider.calls).toBe(1)
+        h.seams.approval.resume = original
+        await h.session.resumeApproval('review', 'rejected', approver)
+        expect(await h.log.scan({ type: 'approval/decided', limit: 10 })).toHaveLength(1)
+      } finally {
+        await h.session.close()
+      }
+    },
+  )
+  it('contains domain backend failures and permits retry without exposing private proof', async () => {
+    const h = await setup()
+    const original = h.seams.approval.resume
+    try {
+      h.seams.approval.resume = async () => {
+        throw new Error('private-backend-token')
+      }
+      await expect(h.session.resumeApproval('review', 'allowed-once', approver)).rejects.toThrow(
+        'approval backend unavailable',
+      )
+      const diagnostics = await h.log.scan({ type: 'x/core/approval-callback-rejected', limit: 10 })
+      expect(JSON.stringify(diagnostics)).not.toContain('private-backend-token')
+      expect(await h.log.scan({ type: 'approval/decided', limit: 10 })).toEqual([])
+      h.seams.approval.resume = original
+      await h.session.resumeApproval('review', 'rejected', approver)
+      expect(await h.log.scan({ type: 'approval/decided', limit: 10 })).toHaveLength(1)
+    } finally {
+      await h.session.close()
+    }
+  })
   it.each(['allowed-once', 'allowed-session'] as const)(
     'continues %s to the real provider',
     async (verdict) => {
