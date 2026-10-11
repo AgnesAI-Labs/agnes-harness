@@ -4,8 +4,6 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { defineTool, type PluginExtensionAPI } from '@agnes/extension-api'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
-import { createPluginRow } from '@agnes/plugin-runtime/host'
-import { defineAgnesPlugin } from '@agnes/plugin-runtime'
 import {
   capabilityHash,
   emptyLock,
@@ -13,6 +11,8 @@ import {
   type RuntimePluginSnapshot,
   writeLock,
 } from '@agnes/package-manager'
+import { defineAgnesPlugin } from '@agnes/plugin-runtime'
+import { createPluginRow } from '@agnes/plugin-runtime/host'
 import type { InferenceEvent, UiSurface } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { expect, it } from 'vitest'

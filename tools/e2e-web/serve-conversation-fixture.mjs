@@ -1,9 +1,9 @@
-import { readWebUiStyleSource } from '../web-style-source.mjs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { readWebUiStyleSource } from '../web-style-source.mjs'
 
 // Explicit browser-only acceptance fixture. Dependencies and styles come from the current Web package.
 const require = createRequire(resolve('packages/web/package.json'))
