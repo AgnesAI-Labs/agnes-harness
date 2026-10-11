@@ -38,17 +38,17 @@ describe('constants', () => {
     expect(isEventType('x/core/invariant')).toBe(true)
     expect(isEventType('x/agnes/subagent/worktree-skipped')).toBe(true)
     expect(isEventType('x/xinwei/sales-analysis/foo')).toBe(true)
-    expect(isEventType('x/xinwei/foo')).toBe(false) // the three-segment form is reserved for core / agnes
-    expect(isEventType('x/Core/bad')).toBe(false)
+    expect(isEventType('x/xinwei/foo')).toBe(true)
+    expect(isEventType('x/Vendor_1/report.ready')).toBe(true)
     expect(isEventType('user/message')).toBe(true)
     expect(isEventType('user/msg')).toBe(false)
     expect(EXT_EVENT_PATTERN.test('x/core/invariant')).toBe(true)
     expect(EXT_EVENT_PATTERN.test('x/feedback/item')).toBe(true)
     expect(EXT_EVENT_PATTERN.test('x/feedback/growth')).toBe(true)
-    expect(EXT_EVENT_PATTERN.test('x/feedback/forged')).toBe(false)
+    expect(EXT_EVENT_PATTERN.test('x/feedback/other')).toBe(true)
     expect(EXT_EVENT_PATTERN.test('x/approval/review')).toBe(true)
     expect(EXT_EVENT_PATTERN.test('x/approval/reservation')).toBe(true)
-    expect(EXT_EVENT_PATTERN.test('x/approval/forged')).toBe(false)
+    expect(EXT_EVENT_PATTERN.test('x/approval/other')).toBe(true)
     expect(EXT_EVENT_PATTERN.test('x/agnes/intelligent-ui/surface.opened')).toBe(true)
     expect(EXT_EVENT_PATTERN.test('x/agnes/intelligent-ui/action.pending-approval')).toBe(true)
     expect(EXT_EVENT_PATTERN.test('x/agnes/intelligent-ui/source.resolved')).toBe(true)
@@ -60,6 +60,8 @@ describe('constants', () => {
       'x/vendor/tool/surface.opened',
       'x/agnes/intelligent-ui/surface.opened/extra',
     ])
+      expect(EXT_EVENT_PATTERN.test(type)).toBe(true)
+    for (const type of ['x/acme', 'x/acme/', 'x/invalid plugin/report', 'x/acme/report ready', 'tool/result'])
       expect(EXT_EVENT_PATTERN.test(type)).toBe(false)
   })
   it('exposes namespace constants', () => {

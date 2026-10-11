@@ -1244,7 +1244,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-08 freeze-close review: Await async loop construction, propagate session cancellation and drain initialization before storage closes.
   // countLines: 30048 -> 30103 (+55); exact measured cap, no exclusions or spare allocation.
   // Empty loop services reader. countLines: 22444, exact, no spare.
-  'packages/core/src': 23637,
+  'packages/core/src': 23639,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1579,7 +1579,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2726 -> 2981; exact cap, no exclusions or spare allocation.
   // UI data-source bindings, refresh method, and uiData capability field.
   // countLines on this tree: 4633 (HEAD was 4486 against the previous 4207 ceiling; this change adds 147).
-  'packages/protocol/src': 4677,
+  'packages/protocol/src': 4678,
   'packages/cli/src/tui': 38,
   // 2026-09-16: first registration of packages/cli-tui — it matched none of the (then) 113 ratchet
   // keys, so the cli-progress-surface plan's Tasks 1-4 (Loader hide/restart/stop, formatTurnSummary,

@@ -12,7 +12,13 @@ import type {
   ServiceKind,
   ServicePorts,
 } from '@agnes/extension-api'
-import { type ContentBlock, type InferenceEvent, inspectJsonData, type RequestBody } from '@agnes/protocol'
+import {
+  type ContentBlock,
+  EXT_EVENT_PATTERN,
+  type InferenceEvent,
+  inspectJsonData,
+  type RequestBody,
+} from '@agnes/protocol'
 import { releaseTreeReservation, settleTreeSpend } from '../child/runtime-budget.js'
 import { approvalContinuation, continueParked } from '../execution/turn/parked.js'
 import { approveAndExecute } from '../execution/turn/tools.js'
@@ -593,11 +599,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         }
       },
       async emit(type, data) {
-        if (
-          typeof type !== 'string' ||
-          !/^x\/[a-zA-Z0-9._-]+\/[^\s]+$/.test(type) ||
-          type.startsWith('x/core/')
-        )
+        if (typeof type !== 'string' || !EXT_EVENT_PATTERN.test(type) || type.startsWith('x/core/'))
           throw new CoreError('E_ENVELOPE', 'Loop emit accepts only non-reserved extension event types')
         const checked = inspectJsonData(data)
         if (!checked.ok) throw new CoreError('E_ENVELOPE', 'Invalid Loop event data')

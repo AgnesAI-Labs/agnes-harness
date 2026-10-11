@@ -343,7 +343,7 @@ Backend result inbox items carry `origin: system` and `trust: untrusted`, indepe
 
 Text clients recover surfaces through `ui.read`. The TUI shows numbered choices and submits form drafts through `ui.action`, retaining the displayed revision and command identity on transport retry. Complex forms/actions use the authenticated Web link. Channels show the same surface data and numbered choices; their existing callback protocol cannot authenticate a surface action, so submission uses the Web link. Configure the channel runner's `outbound.webUrl` with the reachable HTTP(S) Web base URL (no credentials/query/fragment). The link contains only session/surface identifiers and still requires normal Web authentication and ownership. It carries no token or permission grant.
 
-The session envelope reserves the eleven documented `surface.*` and `action.*` events under `x/agnes/intelligent-ui/`. Other dotted extension event names remain refused. Official surface-producing tools declare `tools.invoke` and call `ui_render` through the ordinary authorization path.
+The session envelope accepts extension names with the same generated rule used by Loop event admission: `x/<plugin>/<name>`, including dotted names and additional path segments. The Intelligent UI projection interprets only its documented facts under `x/agnes/intelligent-ui/`; each fact still requires its own content and ownership checks. Official surface-producing tools declare `tools.invoke` and call `ui_render` through the ordinary authorization path.
 
 ### Conversation summary and complete view
 

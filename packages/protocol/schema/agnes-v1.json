@@ -258,6 +258,9 @@
     "SurfaceOp": {
       "$ref": "session-v1.json#/$defs/SurfaceOp"
     },
+    "ExtensionEventType": {
+      "$ref": "session-v1.json#/$defs/ExtensionEventType"
+    },
     "EventEnvelope": {
       "$ref": "session-v1.json#/$defs/EventEnvelope"
     },

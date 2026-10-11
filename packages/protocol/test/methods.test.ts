@@ -880,6 +880,16 @@ describe('methods (I1 set)', () => {
         _meta: { 'ai.agnes.harness': harnessMeta },
       }).ok,
     ).toBe(true)
+    for (const type of ['x/acme/budget', 'x/acme/planner', 'x/acme/report.ready']) {
+      expect(
+        validateMethod('_agnes/v1/session.event', 'params', {
+          sessionId: 's',
+          event: { ...ledgerRow, type, data: { value: 1 }, ignorable: true },
+          _meta: { 'ai.agnes.harness': harnessMeta },
+        }).ok,
+        type,
+      ).toBe(true)
+    }
     // A row cut down to its seq: the envelope's other seven required fields are what should be
     // reported, starting with `ts`.
     expect(

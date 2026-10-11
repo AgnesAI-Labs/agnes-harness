@@ -83,7 +83,8 @@ describe('validateEvent', () => {
   it('accepts extension events and rejects unknown types', () => {
     for (const type of ['x/approval/review', 'x/approval/reservation'])
       expect(validateEvent({ ...base, type, data: {}, ignorable: true }).ok).toBe(true)
-    expect(validateEvent({ ...base, type: 'x/approval/forged', data: {}, ignorable: true }).ok).toBe(false)
+    expect(validateEvent({ ...base, type: 'x/acme/report.ready', data: {}, ignorable: true }).ok).toBe(true)
+    expect(validateEvent({ ...base, type: 'x/acme/', data: {}, ignorable: true }).ok).toBe(false)
     expect(validateEvent({ ...base, type: 'x/agnes/subagent/worktree-skipped', data: {} }).ok).toBe(true)
     const r = validateEvent({ ...base, type: 'bogus/type', data: {} })
     expect(r.ok).toBe(false)

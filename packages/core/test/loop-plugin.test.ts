@@ -13,6 +13,7 @@ import {
   type ToolDef,
   type ToolRuntime,
 } from '@agnes/extension-api'
+import { validateMethod } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { createDagLoop } from '../../../examples/loops/dag-loop/index.mjs'
 import { Kernel } from '../src/kernel.js'
@@ -856,12 +857,21 @@ it('keeps custom Loop events untrusted and refuses reserved event types', async 
       'approval/decided',
       'assistant/message',
       'turn/end',
+      'x/example/',
+      'x/invalid plugin/progress',
+      'x/example/progress ready',
     ])
       await expect(ctx.events.emit(type, {})).rejects.toMatchObject({ code: 'E_ENVELOPE' })
-    await ctx.events.emit('x/example/progress', { progress: 1 })
-    expect(await f.log.scan({ type: 'x/example/progress', limit: 10 })).toEqual([
-      expect.objectContaining({ origin: `ext:${f.session.loop.id}`, trust: 'untrusted', ignorable: true }),
-    ])
+    for (const type of ['x/example/progress', 'x/example/planner', 'x/Vendor_1/report.ready']) {
+      await ctx.events.emit(type, { progress: 1 })
+      const rows = await f.log.scan({ type, limit: 10 })
+      expect(rows).toEqual([
+        expect.objectContaining({ origin: `ext:${f.session.loop.id}`, trust: 'untrusted', ignorable: true }),
+      ])
+      expect(
+        validateMethod('_agnes/v1/session.event', 'params', { sessionId: f.session.key, event: rows[0] }).ok,
+      ).toBe(true)
+    }
   } finally {
     disposeLoopContext(ctx)
     await f.session.close()

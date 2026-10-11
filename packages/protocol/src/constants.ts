@@ -1,3 +1,5 @@
+import { ExtensionEventType } from '../gen/ts/session-v1.js'
+
 export const EVENT_TYPES = [
   // Lifecycle
   'session/start',
@@ -39,9 +41,8 @@ export const EVENT_TYPES = [
 ] as const
 export type EventType = (typeof EVENT_TYPES)[number]
 
-export const EXT_EVENT_PATTERN =
-  /^x\/(?:(?:core|agnes)\/[a-z0-9-]+|host\/session-title|feedback\/(?:item|growth)|approval\/(?:review|reservation)|agnes\/intelligent-ui\/(?:surface\.(?:opened|updated|closed)|action\.(?:received|rejected|pending-approval|executing|succeeded|failed|retried|delivered)|source\.(?:resolved|refused|refreshed))|[a-z0-9-]+\/[a-z0-9-]+\/[a-z0-9-]+)$/
-export const EXT_EVENT_PATTERN_SOURCE = EXT_EVENT_PATTERN.source // the same string written into the schema
+export const EXT_EVENT_PATTERN_SOURCE = ExtensionEventType.$defs.ExtensionEventType.pattern!
+export const EXT_EVENT_PATTERN = new RegExp(EXT_EVENT_PATTERN_SOURCE)
 
 export function isEventType(s: string): boolean {
   return (EVENT_TYPES as readonly string[]).includes(s) || EXT_EVENT_PATTERN.test(s)

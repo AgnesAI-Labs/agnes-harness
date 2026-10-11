@@ -193,6 +193,7 @@ const TARGETS: Array<{
           'Actor',
           'SurfaceOp',
           'EventEnvelope',
+          'ExtensionEventType',
           'BudgetState',
           'ArtifactRef',
           'ArtifactJob',

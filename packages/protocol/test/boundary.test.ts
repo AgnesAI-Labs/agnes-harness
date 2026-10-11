@@ -303,6 +303,7 @@ describe('protocol src boundary', () => {
       'Actor',
       'SurfaceOp',
       'EventEnvelope',
+      'ExtensionEventType',
       'BudgetState',
       'ArtifactRef',
       'ArtifactJob',

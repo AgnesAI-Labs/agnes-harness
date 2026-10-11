@@ -48,7 +48,8 @@ it('allows persisted title events through both envelope and live notification va
       },
     }),
   ).toMatchObject({ ok: true })
-  expect(validateEvent({ ...event, type: 'x/host/other' })).toMatchObject({ ok: false })
+  expect(validateEvent({ ...event, type: 'x/host/other' })).toMatchObject({ ok: true })
+  expect(readSessionTitle({ ...event, type: 'x/host/other' })).toBeUndefined()
 })
 
 it('accepts only closed Host-owned title metadata', () => {

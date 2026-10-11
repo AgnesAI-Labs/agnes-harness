@@ -344,7 +344,7 @@ Intelligent UI 是 `@agnes/intelligent-ui-contract` 的 `intelligentUiKind`：�
 
 文本客户端通过 `ui.read` 恢复 surface。TUI 展示编号选项，以 `ui.action` 提交表单草稿；保留展示版本，传输重试复用同一 command。复杂表单／动作使用认证 Web 链接。渠道展示相同 surface 数据与编号选项；现有回调协议不能认证 surface action，因此通过 Web 链接提交。渠道 runner 的 `outbound.webUrl` 配置为可达的 HTTP(S) Web 基础地址，不含凭据、查询或片段。链接仅含 session/surface 标识，仍需正常 Web 认证与归属校验，不携带 token 或权限授予。
 
-会话 envelope 仅为 `x/agnes/intelligent-ui/` 保留契约中的 11 个 `surface.*`、`action.*` 事件；其他带点扩展事件仍拒绝。生成表面的官方工具声明 `tools.invoke`，通过普通授权路径调用 `ui_render`。
+会话 envelope 与 Loop 事件接纳使用同一条生成规则，接受 `x/<plugin>/<name>`，包括带点名称及更多路径段。Intelligent UI projection 只解释 `x/agnes/intelligent-ui/` 下契约中的事实；每个事实仍须通过自己的内容与归属校验。生成表面的官方工具声明 `tools.invoke`，通过普通授权路径调用 `ui_render`。
 
 ### 对话摘要与完整界面
 

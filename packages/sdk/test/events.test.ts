@@ -1,5 +1,5 @@
 import type { Cursor } from '@agnes/protocol'
-import { META_KEY } from '@agnes/protocol'
+import { META_KEY, validateMethod } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { localAuth } from '../src/auth.js'
 import { createClient } from '../src/client.js'
@@ -11,7 +11,7 @@ const providers = { local: () => localAuth() }
 const init: Handler = fakeEndpoint({}).initialize
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 
-const ev = (seq: number) =>
+const ev = (seq: number, type = 'assistant/message') =>
   ({
     jsonrpc: '2.0' as const,
     method: '_agnes/v1/session.event',
@@ -21,11 +21,12 @@ const ev = (seq: number) =>
         seq,
         ts: '2026-09-08T00:00:00.000Z',
         id: '01J6ZM2Q3R4S5T6V7W8X9Y0ZAB',
-        type: 'assistant/message',
-        data: { content: [], stopReason: 'end_turn' },
+        type,
+        data: type.startsWith('x/') ? { value: seq } : { content: [], stopReason: 'end_turn' },
+        ...(type.startsWith('x/') ? { ignorable: true as const } : {}),
         actor,
-        origin: 'model',
-        trust: 'trusted',
+        origin: type.startsWith('x/') ? 'ext:acme' : 'model',
+        trust: type.startsWith('x/') ? 'untrusted' : 'trusted',
       },
       _meta: {
         [META_KEY]: {
@@ -39,7 +40,12 @@ const ev = (seq: number) =>
     },
   }) as const
 
-type Setup = { replayOnAttach?: boolean; failAttachOn?: number; journal?: JournalStore }
+type Setup = {
+  replayOnAttach?: boolean
+  failAttachOn?: number
+  journal?: JournalStore
+  eventTypes?: Record<number, string>
+}
 
 function setup(bufferLimit = 1000, o: Setup = {}) {
   let highest = 0
@@ -53,7 +59,15 @@ function setup(bufferLimit = 1000, o: Setup = {}) {
       // A real daemon answers a cursored attach by replaying the rows after the position
       // the client reports: `fromSeq` is the last row applied, not the first one wanted.
       // The client still has to recognise an overlap rather than hand it over twice.
-      if (o.replayOnAttach && cursor) for (let i = cursor.fromSeq + 1; i <= highest; i++) ctx.push(ev(i))
+      if (o.replayOnAttach && cursor)
+        for (let i = cursor.fromSeq + 1; i <= highest; i++) {
+          const notification = ev(i, o.eventTypes?.[i])
+          // The production daemon refuses replay notifications that fail this outbound schema.
+          expect(validateMethod(notification.method, 'params', notification.params)).toMatchObject({
+            ok: true,
+          })
+          ctx.push(notification)
+        }
       return { generation: 1, lastSeq: highest, resolvedProfileHash: null }
     },
     '_agnes/v1/session.detach': () => ({}),
@@ -76,11 +90,14 @@ function setup(bufferLimit = 1000, o: Setup = {}) {
       bufferLimit,
     })
   const f = open()
-  const push = (seq: number) => {
+  const persist = (seq: number) => {
     if (seq > highest) highest = seq
-    live[live.length - 1]?.push(ev(seq))
   }
-  return { f, j, c: connect(f), push, reopen: () => connect(open()) }
+  const push = (seq: number) => {
+    persist(seq)
+    live[live.length - 1]?.push(ev(seq, o.eventTypes?.[seq]))
+  }
+  return { f, j, c: connect(f), push, persist, reopen: () => connect(open()) }
 }
 
 const attachCalls = (f: ReturnType<typeof fakeEndpoint>) =>
@@ -94,12 +111,17 @@ describe('Session.events()', () => {
   it('uses an explicit opening cursor instead of replaying the older journal position', async () => {
     const journal = memoryJournal('cid')
     await journal.setCursor('s', { fromSeq: 2, generation: 1 })
-    const { f, c, push } = setup(1000, { journal, replayOnAttach: true })
+    const { f, c, persist } = setup(1000, {
+      journal,
+      replayOnAttach: true,
+      eventTypes: { 8: 'x/acme/budget', 9: 'x/acme/planner' },
+    })
     const s = await c.session.new({ cwd: '/w' })
-    push(8)
+    persist(9)
 
     const it = s.events({ cursor: { fromSeq: 7, generation: 1 } })[Symbol.asyncIterator]()
-    expect((await it.next()).value?.seq).toBe(8)
+    expect((await it.next()).value).toMatchObject({ seq: 8, type: 'x/acme/budget', data: { value: 8 } })
+    expect((await it.next()).value).toMatchObject({ seq: 9, type: 'x/acme/planner', data: { value: 9 } })
     expect(attachCalls(f)).toHaveLength(1)
     expect(attachCalls(f)[0]?.params).toMatchObject({ cursor: { fromSeq: 7, generation: 1 } })
     await it.return?.()

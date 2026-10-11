@@ -312,6 +312,7 @@ const SESSION_DEFS: Record<string, TSchema> = {
   ContentBlock: SessionGen.ContentBlock,
   SurfaceOp: SessionGen.SurfaceOp,
   EventEnvelope: SessionGen.EventEnvelope,
+  ExtensionEventType: SessionGen.ExtensionEventType,
   SessionStart: SessionGen.SessionStart,
   SessionModelSelection: SessionGen.SessionModelSelection,
   SubagentCost: SessionGen.SubagentCost,
@@ -536,6 +537,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
   Actor: AgnesGen.Actor,
   SurfaceOp: AgnesGen.SurfaceOp,
   EventEnvelope: AgnesGen.EventEnvelope,
+  ExtensionEventType: AgnesGen.ExtensionEventType,
   HarnessMeta: AgnesGen.HarnessMeta,
   Auth: AgnesGen.Auth,
   InitializeMeta: AgnesGen.InitializeMeta,
@@ -1124,6 +1126,11 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       { ...decisionSnapshot, actor: actorOk },
     ],
     note: 'one complete register snapshot',
+  },
+  ExtensionEventType: {
+    valid: 'x/acme/budget',
+    invalid: [1, '', 'x/acme', 'x/acme/', 'x/invalid plugin/budget', 'x/acme/budget state', EXT_TYPE_129],
+    note: 'canonical Loop extension names and the bounded replay contract',
   },
   EventEnvelope: {
     valid: envOk,
@@ -2951,6 +2958,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   Actor: SESSION_SAMPLES.Actor as Sample,
   SurfaceOp: SESSION_SAMPLES.SurfaceOp as Sample,
   EventEnvelope: SESSION_SAMPLES.EventEnvelope as Sample,
+  ExtensionEventType: SESSION_SAMPLES.ExtensionEventType as Sample,
   Cursor: {
     valid: attachOk.cursor,
     invalid: [
