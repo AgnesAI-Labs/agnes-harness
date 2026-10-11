@@ -124,7 +124,7 @@ export function SettingsHub({
       )
         return
       event.preventDefault()
-      setDetail(false)
+      if (window.matchMedia('(max-width: 767px)').matches) setDetail(false)
       requestAnimationFrame(() => document.getElementById('settings-search')?.focus())
     }
     document.addEventListener('keydown', listener)

@@ -47,7 +47,7 @@ export async function section(page: Page, id: string) {
     if ((await advanced.getAttribute('open')) === null) await advanced.locator('summary').click()
   }
   await page.getByTestId(`settings-nav-${entry}`).click()
-  const tab = page.getByTestId(`settings-nav-${id}-tab`)
+  const tab = page.getByTestId(`settings-nav-${id === 'examples' ? 'discover' : id}-tab`)
   if (await tab.count()) await tab.click()
   if (['models', 'bundles', 'engines', 'system-prompt', 'memory', 'context'].includes(id)) {
     const subsection = page.getByTestId(`settings-subsection-${id}`)

@@ -711,7 +711,7 @@ function SettingsBuiltinImpl(
           !target.closest('input, textarea, select, [contenteditable=true]')
         ) {
           event.preventDefault()
-          if (form()) form()!.dataset.settingsView = 'list'
+          if (form() && window.matchMedia('(max-width: 767px)').matches) form()!.dataset.settingsView = 'list'
           search?.focus()
           return
         }

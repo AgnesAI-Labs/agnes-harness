@@ -243,12 +243,15 @@ describe('independent core web-unit implementations', () => {
     }
     const advanced = host.querySelector<HTMLDetailsElement>('#settings-advanced')!
     const search = host.querySelector<HTMLInputElement>('#settings-search')!
+    const form = host.querySelector<HTMLFormElement>('#config-form')!
+    form.dataset.settingsView = 'detail'
     expect(advanced.open).toBe(false)
     expect(host.querySelector('[data-testid="settings-nav-custom"]')?.textContent).toContain('Example plugin')
     host
       .querySelector('#config-form')
       ?.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true }))
     expect(document.activeElement).toBe(search)
+    expect(form.dataset.settingsView).toBe('detail')
     search.value = 'agt bvr'
     search.dispatchEvent(new Event('input', { bubbles: true }))
     expect(advanced.open).toBe(true)
@@ -265,7 +268,6 @@ describe('independent core web-unit implementations', () => {
     search.dispatchEvent(new Event('input', { bubbles: true }))
     expect(advanced.open).toBe(false)
     expect(host.querySelector<HTMLElement>('#settings-search-empty')?.hidden).toBe(true)
-    const form = host.querySelector<HTMLFormElement>('#config-form')!
     form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'memory', bubbles: true }))
     expect(form.dataset.settingsSection).toBe('models')
     expect(new URL(location.href).searchParams.get('settings')).toBe('models')
