@@ -211,15 +211,17 @@ describe('method surface: setPreset / setModel / session.list / session.fork', (
         response: { option: 'rejected', value: null },
       }),
     ).resolves.toEqual({ digest: '0'.repeat(64), commandId: 'c2', revision: 2, seq: 3 })
-    void c.approval.decide({
-      sessionId: 's',
-      id: 'd2',
-      revision: 1,
-      commandId: 'c2',
-      response: { option: 'rejected', value: null },
-      // @ts-expect-error canonical answer bodies cannot inject an Actor
-      actor: 'somebody-else',
-    })
+    await expect(
+      c.approval.decide({
+        sessionId: 's',
+        id: 'd2',
+        revision: 1,
+        commandId: 'c2',
+        response: { option: 'rejected', value: null },
+        // @ts-expect-error canonical answer bodies cannot inject an Actor
+        actor: 'somebody-else',
+      }),
+    ).rejects.toMatchObject({ kind: 'protocol-violation' })
   })
 
   it('exposes the current Surface mount table', async () => {

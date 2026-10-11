@@ -124,7 +124,7 @@ const deferredTool = () =>
   }) as never
 
 /** A tool that stays in flight until released, so a stop request lands while it runs. */
-function heldRead() {
+function heldRead(expected: number) {
   let release!: () => void
   const held = new Promise<void>((resolve) => {
     release = resolve
@@ -133,8 +133,9 @@ function heldRead() {
   const running = new Promise<void>((resolve) => {
     started = resolve
   })
+  let entered = 0
   const tool = readTool(async () => {
-    started()
+    if (++entered === expected) started()
     await held
     return { content: [{ type: 'text' as const, text: 'late' }] }
   })
@@ -265,7 +266,7 @@ const SCENARIOS: Record<string, (open: Open, record: Record_) => Promise<void>> 
     await h.session.run(turnEnd())
   },
   async 'abort-with-pending'(open) {
-    const held = heldRead()
+    const held = heldRead(2)
     const h = await open({
       provider: fakeProvider([batchTurn(2), textTurn('never')]),
       registry: registryOf(held.tool),

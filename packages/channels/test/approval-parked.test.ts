@@ -231,7 +231,7 @@ describe('parked approval, text protocol, and slot actions', () => {
     })
   })
 
-  it('requires a full decisionKey when a six-character prefix is ambiguous', async () => {
+  it('requires a full request ID when a six-character prefix is ambiguous', async () => {
     const client = createFakeClient()
     const adapter = new FakeChannel()
     const session = await client.session.attach('session')
@@ -256,7 +256,7 @@ describe('parked approval, text protocol, and slot actions', () => {
 
     await expect(approval.handleText('session', session, text('同意 abcdef'))).resolves.toBe(true)
     expect(adapter.sent.at(-1)?.msg.blocks).toEqual([
-      { kind: 'text', markdown: '匹配到多条审批，请提供完整 decisionKey' },
+      { kind: 'text', markdown: '匹配到多条审批，请提供完整请求 ID' },
     ])
     expect(client.calls.filter((entry) => entry.method === 'approval.decide')).toHaveLength(0)
 
