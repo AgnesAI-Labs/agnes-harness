@@ -20,6 +20,7 @@ export type State = {
 }
 export class WebhookStore {
   private healthy = true
+  private lastSavedAt = Date.now()
   readonly state: State
   constructor(private readonly path: string) {
     this.state = existsSync(path)
@@ -77,12 +78,27 @@ export class WebhookStore {
       writeFileSync(temp, JSON.stringify(this.state), { mode: 0o600, flag: 'wx', flush: true })
       renameSync(temp, this.path)
       syncDirectorySync(dirname(this.path))
+      this.lastSavedAt = Date.now()
     } catch (error) {
       this.healthy = false
       throw error
     }
   }
-  log(status: WebhookDelivery['status'], ruleId?: string, sessionId?: string): WebhookDelivery {
+  /** Unverified traffic may update diagnostics, but can drive at most one flush per five seconds.
+   * The next durable administration or verified-delivery write also includes these bounded rows.
+   * There is no background timer: a quiet tail may remain only in memory until that next write.
+   */
+  logUnverified(status: WebhookDelivery['status'], ruleId?: string): WebhookDelivery {
+    const row = this.log(status, ruleId, undefined, false)
+    if (Date.now() - this.lastSavedAt >= 5000) this.save()
+    return row
+  }
+  log(
+    status: WebhookDelivery['status'],
+    ruleId?: string,
+    sessionId?: string,
+    durable = true,
+  ): WebhookDelivery {
     const row: WebhookDelivery = {
       id: randomUUID(),
       at: Date.now(),
@@ -92,7 +108,7 @@ export class WebhookStore {
     }
     this.state.deliveries.unshift(row)
     this.state.deliveries.length = Math.min(200, this.state.deliveries.length)
-    this.save()
+    if (durable) this.save()
     return row
   }
 }

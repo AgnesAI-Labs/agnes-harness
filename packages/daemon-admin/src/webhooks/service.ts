@@ -47,15 +47,16 @@ export function createWebhookService(options: {
     tooLarge = false,
   ): Promise<WebhookResult> {
     const state = store.state
-    if (!state.config.enabled) return { delivery: store.log('disabled') }
-    if (tooLarge || body.length > state.config.maxPayloadBytes) return { delivery: store.log('too-large') }
+    if (!state.config.enabled) return { delivery: store.logUnverified('disabled') }
+    if (tooLarge || body.length > state.config.maxPayloadBytes)
+      return { delivery: store.logUnverified('too-large') }
     if (
       (headers['content-type'] !== undefined &&
         !/^application\/json(?:\s*;\s*charset=(?:utf-8|"utf-8"))?$/i.test(headers['content-type'])) ||
       headers['content-encoding'] !== undefined
     )
-      return { delivery: store.log('invalid-payload') }
-    if (!state.rules.some((rule) => rule.enabled)) return { delivery: store.log('no-rule') }
+      return { delivery: store.logUnverified('invalid-payload') }
+    if (!state.rules.some((rule) => rule.enabled)) return { delivery: store.logUnverified('no-rule') }
     let verified = false
     let invalid = false
     let replay = false
@@ -136,7 +137,7 @@ export function createWebhookService(options: {
       return { delivery: row }
     }
     return {
-      delivery: store.log(
+      delivery: store.logUnverified(
         replay ? 'replay' : invalid ? 'invalid-payload' : verified ? 'no-rule' : 'bad-signature',
       ),
     }
@@ -169,13 +170,13 @@ export function createWebhookService(options: {
       return deliver(Buffer.from(input.body ?? '', 'base64'), input.headers ?? {}, undefined, input.tooLarge)
     } else if (input.action === 'test') {
       const rule = state.rules.find((rule) => rule.id === input.ruleId)
-      if (!rule) return { delivery: store.log('no-rule') }
+      if (!rule) return { delivery: store.logUnverified('no-rule') }
       const body = Buffer.from(JSON.stringify(input.payload ?? null))
       try {
         const secret = await options.resolveSecret(rule.secretRef)
         return deliver(body, sampleHeaders(rule, body, secret, now(), randomUUID()), rule.id)
       } catch {
-        return { delivery: store.log('bad-signature', rule.id) }
+        return { delivery: store.logUnverified('bad-signature', rule.id) }
       }
     } else throw rpcError('INVALID_PARAMS')
     store.save()
@@ -187,7 +188,7 @@ export function createWebhookService(options: {
       // Bound retained raw deliveries while a normal session admission waits for its worker.
       if (pending >= 64) {
         if (input.action === 'deliver' || input.action === 'test')
-          return Promise.resolve({ delivery: store.log('capacity') })
+          return Promise.resolve({ delivery: store.logUnverified('capacity') })
         return Promise.reject(rpcError('SEMANTIC_REJECTED'))
       }
       pending++

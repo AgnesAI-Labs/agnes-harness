@@ -32,6 +32,8 @@ GitHub's event header is also outside the signature. Match signed payload fields
 
 Admission reservations are persisted before session creation. A crash can leave an `unknown` outcome; failed or unknown admissions are not automatically retried. Inspect the linked session before manually submitting a new event. This does not promise exactly-once external business effects.
 
+Unverified failure rows appear immediately in the latest 200 receipts in memory. Their persistence is coalesced to at most one write per five seconds of incoming traffic, or included in the next configuration or verified-delivery write. A quiet tail can be lost on restart. Verified admission reservations and accepted/failed outcomes are still persisted before returning.
+
 ## Tunnel or reverse proxy
 
 Keep the existing loopback Web listener. Publish **only the exact opted-in webhook path**, never `/`, `/api/*`, `/admin/*` or the daemon WebSocket. Terminate TLS and impose a matching request-size limit and connection timeout at the ingress. Preserve the raw request body and security headers. Set the upstream Host to `127.0.0.1:4177` (or the configured local Web port).

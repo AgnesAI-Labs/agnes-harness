@@ -2,13 +2,16 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { WebhookRule } from '@agnes/protocol/gen/app-server'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { field, matches, render } from '../src/webhooks/payload.js'
+import { WebhookStore } from '../src/webhooks/store.js'
 import { sampleHeaders, signature } from '../src/webhooks/providers.js'
 import { createWebhookService, type TriggerSessionInput } from '../src/webhooks/service.js'
 
 const homes: string[] = []
 afterEach(async () => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
   await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true })))
 })
 const time = Date.parse('2026-10-09T08:00:00Z')
@@ -41,6 +44,8 @@ async function setup(selected = rule()) {
     secretRefs: async () => [selected.secretRef],
     workspaces: async () => ({ items: [{ path: '/synthetic', available: true }] }),
     createSession: async (input: TriggerSessionInput) => {
+      const persisted = JSON.parse(await readFile(join(home, 'webhook-triggers.json'), 'utf8'))
+      expect(persisted.deliveries[0]).toMatchObject({ status: 'pending', sessionId: input.sessionKey })
       sessions.push(input)
     },
     now: () => time,
@@ -91,6 +96,27 @@ describe('webhook admission', () => {
     expect(stored).not.toContain(secret)
     expect(stored).not.toContain('ignore rules')
     expect(stored).not.toContain('sha256=')
+  })
+  it('caps bad-signature logs and coalesces their durable writes', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(time)
+    const f = await setup()
+    await f.enable()
+    const saves = vi.spyOn(WebhookStore.prototype, 'save')
+    for (let i = 0; i < 205; i++)
+      expect((await f.send(undefined, `bad-${i}`, true)).delivery?.status).toBe('bad-signature')
+    expect(saves).not.toHaveBeenCalled()
+    expect((await f.service.handle({ action: 'list' })).snapshot?.deliveries).toHaveLength(200)
+    const path = join(f.home, 'webhook-triggers.json')
+    expect(JSON.parse(await readFile(path, 'utf8')).deliveries).toHaveLength(0)
+    vi.setSystemTime(time + 5000)
+    await f.send(undefined, 'flush', true)
+    expect(saves).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(await readFile(path, 'utf8')).deliveries).toHaveLength(200)
+    await f.send(undefined, 'bad-again', true)
+    expect(saves).toHaveBeenCalledTimes(1)
+    expect((await f.send()).delivery?.status).toBe('accepted')
+    expect(JSON.parse(await readFile(path, 'utf8')).deliveries[0].status).toBe('accepted')
   })
   it('defaults off, filters, refuses stale signed timestamps and oversized payloads', async () => {
     const f = await setup()
@@ -160,6 +186,8 @@ describe('webhook admission', () => {
     const failing = createWebhookService({
       ...f.options,
       createSession: async () => {
+        const persisted = JSON.parse(await readFile(join(f.home, 'webhook-triggers.json'), 'utf8'))
+        expect(persisted.deliveries[0].status).toBe('pending')
         throw new Error('synthetic failure')
       },
     })
@@ -170,6 +198,8 @@ describe('webhook admission', () => {
       headers: sampleHeaders(rule(), body, secret, time, 'failure'),
     }
     expect((await failing.handle(request)).delivery?.status).toBe('failed')
+    const persisted = JSON.parse(await readFile(join(f.home, 'webhook-triggers.json'), 'utf8'))
+    expect(persisted.deliveries[0].status).toBe('failed')
     expect((await failing.handle(request)).delivery?.status).toBe('duplicate')
     await expect(
       f.service.handle({ action: 'upsert', rule: { ...rule(), workspace: '/not-registered' } }),
