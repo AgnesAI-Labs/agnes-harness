@@ -33,7 +33,7 @@ const require = createRequire(import.meta.url)
 const { Server: McpServer } = require('@modelcontextprotocol/sdk/server/index.js')
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js')
 const { SSEServerTransport } = require('@modelcontextprotocol/sdk/server/sse.js')
-const { ListToolsRequestSchema } = require('@modelcontextprotocol/sdk/types.js')
+const { ListToolsRequestSchema, CallToolRequestSchema } = require('@modelcontextprotocol/sdk/types.js')
 const modelVisibleTextBytes = (content: readonly { type: string; text?: string }[]) =>
   content.reduce(
     (total, block) => total + (block.type === 'text' ? Buffer.byteLength(block.text ?? '', 'utf8') : 0),
@@ -161,6 +161,80 @@ function admittedNames(serverId: string, remoteNames: readonly string[]): string
 }
 
 describe('registerRemoteToolsStrict', () => {
+  it('isolates non-object roots through the real HTTP SDK while retaining other server tools', async () => {
+    const mcp = new McpServer({ name: 'mixed-roots', version: '1' }, { capabilities: { tools: {} } })
+    mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
+      tools: [
+        { name: 'bad', description: 'invalid root', inputSchema: { type: 'string' } },
+        { name: 'empty', description: 'empty root', inputSchema: {} },
+        {
+          name: 'properties',
+          description: 'object-like root',
+          inputSchema: { properties: { text: { type: 'string' } } },
+        },
+        { name: 'valid', description: 'object root', inputSchema: { type: 'object' } },
+        {
+          name: 'bad_output',
+          description: 'checked output',
+          inputSchema: { type: 'object' },
+          outputSchema: { type: 'object', properties: { value: { type: 'integer' } }, required: ['value'] },
+        },
+      ],
+    }))
+    mcp.setRequestHandler(CallToolRequestSchema, async ({ params }: { params: { name: string } }) => ({
+      content: [{ type: 'text', text: `ok ${params.name}` }],
+      ...(params.name === 'bad_output' ? { structuredContent: { value: 'invalid' } } : {}),
+    }))
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    })
+    await mcp.connect(transport)
+    const http = createServer((req, res) => {
+      void transport.handleRequest(req, res)
+    })
+    await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve))
+    const address = http.address()
+    if (!address || typeof address === 'string') throw new Error('missing fixture listener')
+    let connection: McpConnection | undefined
+    let dispose: (() => void) | undefined
+    try {
+      const cfg = {
+        id: 'real-roots',
+        transport: 'http' as const,
+        url: `http://127.0.0.1:${address.port}/mcp`,
+        defer: false,
+      }
+      connection = await connectMcp(cfg)
+      const f = fakeApi()
+      const reported = vi.fn()
+      dispose = await registerRemoteToolsStrict(f.api, connection, cfg, { onRemoteCatalog: reported })
+      expect(reported.mock.calls[0]?.[1]).toEqual([{ code: 'invalid-schema', name: 'bad' }])
+      expect(f.tools.map((tool) => tool.name)).toEqual(
+        admittedNames(cfg.id, ['empty', 'properties', 'valid', 'bad_output']),
+      )
+      for (const name of ['empty', 'properties', 'valid']) {
+        const tool = f.tools.find((tool) => tool.name === mcpPublicToolName(cfg.id, name))
+        if (!tool) throw new Error(`missing admitted tool ${name}`)
+        expect(await tool.execute({}, ctxOf())).toMatchObject({
+          content: [{ type: 'text', text: `ok ${name}` }],
+        })
+      }
+      const checkedOutput = f.tools.find((tool) => tool.name === mcpPublicToolName(cfg.id, 'bad_output'))
+      if (!checkedOutput) throw new Error('missing output-validated tool')
+      expect(await checkedOutput.execute({}, ctxOf())).toMatchObject({
+        isError: true,
+        content: [{ type: 'text', text: expect.stringContaining("does not match the tool's output schema") }],
+      })
+    } finally {
+      dispose?.()
+      await connection?.close()
+      await mcp.close()
+      http.closeAllConnections()
+      await new Promise<void>((resolve, reject) => http.close((error) => (error ? reject(error) : resolve())))
+    }
+  })
+
   it('reports one non-object tool refusal while the rest of its server remains callable', async () => {
     const f = fakeApi()
     const reported = vi.fn()

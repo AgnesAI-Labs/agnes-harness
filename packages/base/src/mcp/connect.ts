@@ -13,9 +13,12 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
 import {
   ElicitRequestSchema,
+  ListToolsResultSchema,
+  PaginatedResultSchema,
   ResourceListChangedNotificationSchema,
   ToolListChangedNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js'
+import { normalizeRemoteInputSchema } from '../mcp-json-schema.js'
 import type { McpServerConfig } from './config.js'
 import type { McpConnection, McpResourceCallOptions } from './register.js'
 import {
@@ -245,6 +248,35 @@ async function bounded<T>(
 const realSdk: McpSdkDeps = {
   createClient: () => {
     const client = new Client({ name: 'agnes', version: '0.0.0' }, { capabilities: { elicitation: {} } })
+    const refusedRoots = new WeakMap<object, SdkTool[]>()
+    const request = client.request.bind(client)
+    client.request = ((...args: Parameters<Client['request']>) => {
+      const [input, schema, options] = args
+      if (schema !== ListToolsResultSchema) return request(input, schema, options)
+      const refused: SdkTool[] = []
+      // Normalize or refuse each root before the unchanged SDK page validator runs.
+      // Refused roots return to the Host's catalog admission for visible skip reasons.
+      const admitted = PaginatedResultSchema.transform((page) => {
+        if (!Array.isArray(page.tools)) return page
+        return {
+          ...page,
+          tools: page.tools.flatMap((tool: SdkTool) => {
+            if (!tool || typeof tool !== 'object') return [tool]
+            try {
+              return [{ ...tool, inputSchema: normalizeRemoteInputSchema(tool.inputSchema) }]
+            } catch {
+              refused.push(tool)
+              return []
+            }
+          }),
+        }
+      }).pipe(ListToolsResultSchema)
+      return request(input, admitted, options).then((page) => {
+        refusedRoots.set(page, refused)
+        return page
+      })
+    }) as Client['request']
+    // Keep listTools itself: the SDK still caches output validators and task metadata.
     return {
       setElicitationHandler: (handler) => client.setRequestHandler(ElicitRequestSchema, handler),
       setToolListChangedHandler: (handler) =>
@@ -260,7 +292,7 @@ const realSdk: McpSdkDeps = {
       async listTools(params) {
         const page = await client.listTools(params)
         return {
-          tools: page.tools.map((tool) => ({
+          tools: [...page.tools, ...(refusedRoots.get(page) ?? [])].map((tool) => ({
             name: tool.name,
             ...(tool.description === undefined ? {} : { description: tool.description }),
             inputSchema: tool.inputSchema,
