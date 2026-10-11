@@ -1,9 +1,37 @@
 import { createHash } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { PackageContributionSummary } from '@agnes/protocol'
+import type { PackageBlocker, PackageContributionSummary } from '@agnes/protocol'
 import { syncDirectorySync } from '@agnes/system-node'
 import { PackageError } from './errors.js'
+
+/**
+ * What one PackageManager has already verified in this process: package directories checked against
+ * their lock entry (`verifyPackageDirectory`) and runtime snapshot trees matched to their recorded
+ * digest. The trees it covers are written once and never changed in place, so the manager's
+ * read-only views (its inventory and runtime snapshot list) check each one once instead of on every
+ * read. Operations that change state or select a snapshot verify afresh, and loading a snapshot
+ * hashes it before and after import regardless.
+ */
+export type VerificationCache = Readonly<{
+  packages: Map<string, Readonly<{ capabilityHash: string; blockers: readonly PackageBlocker[] }>>
+  trees: Map<string, string>
+}>
+
+const VERIFICATION_CACHE_MAX = 2048
+
+export function createVerificationCache(): VerificationCache {
+  return Object.freeze({ packages: new Map(), trees: new Map() })
+}
+
+/** Adds an entry, dropping the oldest once the map holds `VERIFICATION_CACHE_MAX`. */
+export function rememberVerified<V>(map: Map<string, V>, key: string, value: V): void {
+  if (map.size >= VERIFICATION_CACHE_MAX && !map.has(key)) {
+    const oldest = map.keys().next().value
+    if (oldest !== undefined) map.delete(oldest)
+  }
+  map.set(key, value)
+}
 
 export function readStaticJson(file: string): Record<string, unknown> {
   try {

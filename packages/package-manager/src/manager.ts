@@ -7,7 +7,7 @@ import type { PackageAuditSink } from './audit.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
 import { inspectStaged } from './inspect.js'
-import { canonical } from './integrity.js'
+import { canonical, createVerificationCache } from './integrity.js'
 import { type InstalledInventory, readInventory } from './inventory.js'
 import {
   assertNoReferences,
@@ -377,7 +377,9 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       throw error
     }
   }
-  const storeFor = (profileDir: string): RuntimeSnapshotStore => ({
+  // Shared by this manager's read-only views only; everything that changes state verifies afresh.
+  const verification = createVerificationCache()
+  const storeFor = (profileDir: string, cached = false): RuntimeSnapshotStore => ({
     dataDir: options.dataDir,
     profileDir,
     profile: profileName(profileDir),
@@ -387,17 +389,19 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     ...(options.auditActor ? { actor: options.auditActor } : {}),
     ...(options.checkpoint ? { checkpoint: options.checkpoint } : {}),
     ...(options.runtimeCheckpoint ? { runtimeCheckpoint: options.runtimeCheckpoint } : {}),
+    ...(cached ? { verified: verification } : {}),
   })
   const locked = <T>(
     profileDir: string,
     fn: () => Promise<T>,
-    op: { signal?: AbortSignal } = {},
+    op: { signal?: AbortSignal; readOnly?: boolean } = {},
   ): Promise<T> =>
     withLock(
       profileDir,
       async () => {
         recoverPackageStore(storeFor(profileDir))
-        recoverRuntimeSnapshotStore(storeFor(profileDir))
+        // A read that finds nothing to recover reuses this manager's earlier snapshot checks.
+        recoverRuntimeSnapshotStore(storeFor(profileDir, op.readOnly === true))
         recoverStaging(dirname(packageDir(options.dataDir, profileName(profileDir), 'stage')))
         return fn()
       },
@@ -439,13 +443,13 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     async inventory(profileDir) {
       const read = () => {
         const lock = load(profileDir)
-        return readInventory(lock, { ...storeFor(profileDir), ceiling: ceiling(lock) })
+        return readInventory(lock, { ...storeFor(profileDir, true), ceiling: ceiling(lock) })
       }
       if (!existsSync(profileDir)) return read()
-      return locked(profileDir, async () => read())
+      return locked(profileDir, async () => read(), { readOnly: true })
     },
     async runtimePluginSnapshots(profileDir) {
-      const store = storeFor(profileDir)
+      const store = storeFor(profileDir, true)
       for (let attempt = 0; attempt < 3; attempt++) {
         const beforeLock = load(profileDir)
         const before = readInventory(beforeLock, { ...store, ceiling: ceiling(beforeLock) })
@@ -492,7 +496,9 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       return locked(profileDir, async () => collectRuntimeSnapshotsStore(storeFor(profileDir)))
     },
     async listRuntimePins(profileDir) {
-      return locked(profileDir, async () => listRuntimePinsStore(storeFor(profileDir)))
+      return locked(profileDir, async () => listRuntimePinsStore(storeFor(profileDir, true)), {
+        readOnly: true,
+      })
     },
     async setEnabled(profileDir, id, enabled, opts) {
       return manager.enable(profileDir, id, enabled, opts)

@@ -3,7 +3,14 @@ import { resolve } from 'node:path'
 import type { PackageBlocker, PackageContributionSummary } from '@agnes/protocol'
 import { PackageError } from './errors.js'
 import { inspectStaged } from './inspect.js'
-import { canonical, capabilityHash, freezeData, snapshotHash } from './integrity.js'
+import {
+  canonical,
+  capabilityHash,
+  freezeData,
+  rememberVerified,
+  snapshotHash,
+  type VerificationCache,
+} from './integrity.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
 import { hashDirectory, packageDir, parseSource } from './sources.js'
 import { previousPackageDir } from './store.js'
@@ -62,20 +69,42 @@ export function isRuntimePackageEligible(
 export function isSnapshotPackageEligible(row: Pick<InstalledPackage, 'trusted' | 'blockers'>): boolean {
   return row.trusted && row.blockers.length === 0
 }
-/** Shared immutable-tree verification for installed inventory and runtime snapshots. */
+type VerifiedPackage = { capabilityHash: string; blockers: readonly PackageBlocker[] }
+
+/**
+ * Shared immutable-tree verification for installed inventory and runtime snapshots. With a `cache`,
+ * a result already established for the same lock entry, directory and ceiling is reused; see
+ * `VerificationCache`. Whether the directory exists is checked every time.
+ */
 export function verifyPackageDirectory(
   id: string,
   entry: LockEntry,
   directory: string,
   ceiling: readonly string[],
-): { capabilityHash: string; blockers: readonly PackageBlocker[] } {
+  cache?: VerificationCache,
+): VerifiedPackage {
+  if (entry.contributions === undefined || entry.treeIntegrity === undefined || !existsSync(directory))
+    throw new PackageError('E_LOCK_MISMATCH', 'installed inventory tree differs from lock', {
+      detail: { id },
+    })
+  // A workspace package lives in a directory its author edits, so it is checked on every read.
+  const key =
+    cache && entry.source.type !== 'workspace' ? canonical([id, directory, entry, ceiling]) : undefined
+  const known = key === undefined ? undefined : cache?.packages.get(key)
+  if (known) return known
+  const verified = freezeData(checkPackageDirectory(id, entry, directory, ceiling))
+  if (cache && key !== undefined) rememberVerified(cache.packages, key, verified)
+  return verified
+}
+
+function checkPackageDirectory(
+  id: string,
+  entry: LockEntry,
+  directory: string,
+  ceiling: readonly string[],
+): VerifiedPackage {
   const hash = capabilityHash(entry)
-  if (
-    entry.contributions === undefined ||
-    entry.treeIntegrity === undefined ||
-    !existsSync(directory) ||
-    hashDirectory(directory, { exclude: [] }) !== entry.treeIntegrity
-  )
+  if (hashDirectory(directory, { exclude: [] }) !== entry.treeIntegrity)
     throw new PackageError('E_LOCK_MISMATCH', 'installed inventory tree differs from lock', {
       detail: { id },
     })
@@ -115,7 +144,7 @@ export function verifyPackageDirectory(
 function verifiedRollbackTarget(
   id: string,
   entry: LockEntry,
-  options: { dataDir: string; profile: string; ceiling: readonly string[] },
+  options: { dataDir: string; profile: string; ceiling: readonly string[]; verified?: VerificationCache },
 ): InstalledPackage['verifiedRollbackTarget'] {
   if (entry.previous === null) return null
   const previous = entry.previous
@@ -134,7 +163,13 @@ function verifiedRollbackTarget(
   const snapshot = { ...structuredClone(previous), previous: null } as LockEntry
   let verified: ReturnType<typeof verifyPackageDirectory>
   try {
-    verified = verifyPackageDirectory(id, snapshot, previousPackageDir(options, id), options.ceiling)
+    verified = verifyPackageDirectory(
+      id,
+      snapshot,
+      previousPackageDir(options, id),
+      options.ceiling,
+      options.verified,
+    )
   } catch (error) {
     if (isReservedRowIdPackageError(error)) return null
     throw error
@@ -164,6 +199,8 @@ export function readInventory(
     profileDir: string
     ceiling?: readonly string[]
     builtinDirectory?: (id: string) => string | undefined
+    /** Reuse verification results; only the PackageManager's read-only views pass one. */
+    verified?: VerificationCache
   },
 ): InstalledInventory {
   const packages: InstalledPackage[] = [],
@@ -193,6 +230,7 @@ export function readInventory(
         entry,
         directory,
         options.ceiling ?? lock.policySnapshot.capabilityCeiling,
+        options.verified,
       )
       hash = verified.capabilityHash
       blockers.push(
@@ -223,6 +261,7 @@ export function readInventory(
         dataDir: options.dataDir,
         profile: lock.profile,
         ceiling: options.ceiling ?? lock.policySnapshot.capabilityCeiling,
+        ...(options.verified ? { verified: options.verified } : {}),
       }),
     })
   }

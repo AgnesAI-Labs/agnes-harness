@@ -373,7 +373,7 @@ it('fails closed and preserves unknown or damaged runtime directories', async ()
   expect(existsSync(pin.snapshot.directory)).toBe(true)
 })
 
-it('only exposes a rollback target after verifying the retained previous tree', async () => {
+it('verifies the retained previous tree before exposing or using it as a rollback target', async () => {
   const m = await installTrusted()
   writeVersion('2.0.0', 'v2')
   const update = await m.inspect(profile, source)
@@ -384,7 +384,12 @@ it('only exposes a rollback target after verifying the retained previous tree', 
   if (!previous) throw new Error('missing previous package directory')
   const tampered = join(packages, previous, 'tampered')
   writeFileSync(tampered, 'preserve')
-  await expect(m.inventory(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+  // This manager's listing already verified the retained tree and does not hash it again on every
+  // read. Rolling back acts on the tree, so it verifies afresh; so does a manager that has not
+  // verified it yet, as in another process.
+  expect((await m.inventory(profile)).packages[0]?.verifiedRollbackTarget?.version).toBe('1.0.0')
+  await expect(m.rollback(profile, id)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+  await expect(manager().inventory(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
   expect(readFileSync(tampered, 'utf8')).toBe('preserve')
 })
 
@@ -481,4 +486,75 @@ it('listRuntimePins enumerates every pin regardless of purpose', async () => {
     expectedSnapshotId: turn.snapshot.snapshotId,
   })
   expect((await m.listRuntimePins(profile)).map((pin) => pin.pinId)).toEqual(['active-v1'])
+})
+
+it('checks an installed tree once for its read-only views, and afresh for anything that acts on it', async () => {
+  const m = await installTrusted()
+  const expected = await identity()
+  expect((await m.inventory(profile)).packages[0]?.id).toBe(id)
+  writeFileSync(join(packageDir(root, 'local-dev', id), 'tampered'), 'preserve')
+  // Listing again, as Web pages and asset reads do, does not hash every tree again.
+  expect((await m.inventory(profile)).packages[0]?.id).toBe(id)
+  // Pinning a snapshot acts on the tree, so it verifies it (the snapshot store reports a package
+  // whose installed tree fails that check as not found); so does a manager that has not checked it
+  // yet, as in another process.
+  await m
+    .pinRuntimeSnapshot(profile, {
+      pinId: activeRuntimePinId({ packageId: id, integrity: expected.integrity }),
+      operationId: 'dbg',
+      packageId: id,
+      purpose: 'active',
+      selector: {
+        kind: 'installed',
+        expectedIntegrity: expected.integrity,
+        expectedTreeIntegrity: expected.treeIntegrity,
+      },
+    })
+    .catch((e) => console.log('DBG', e.message, JSON.stringify(e.detail), e.legacyCode))
+  await expect(
+    m.pinRuntimeSnapshot(profile, {
+      pinId: activeRuntimePinId({ packageId: id, integrity: expected.integrity }),
+      operationId: 'enable-tampered',
+      packageId: id,
+      purpose: 'active',
+      selector: {
+        kind: 'installed',
+        expectedIntegrity: expected.integrity,
+        expectedTreeIntegrity: expected.treeIntegrity,
+      },
+    }),
+  ).rejects.toMatchObject({ code: 'E_PACKAGE_STATE', detail: { reason: 'package-not-found' } })
+  await expect(manager().inventory(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+  // A changed lock row is a different entry and is checked again.
+  const lock = readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' })
+  const entry = lock.packages[id]
+  if (!entry) throw new Error('missing package lock')
+  entry.state.enabled = !entry.state.enabled
+  writeLock(profile, lock)
+  await expect(m.inventory(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+})
+
+it('lists pinned snapshots without hashing them again, and refuses a changed one when resolving it', async () => {
+  const m = await installTrusted()
+  const expected = await identity()
+  const pin = await m.pinRuntimeSnapshot(profile, {
+    pinId: activeRuntimePinId({ packageId: id, integrity: expected.integrity }),
+    operationId: 'enable-listed',
+    packageId: id,
+    purpose: 'active',
+    selector: {
+      kind: 'installed',
+      expectedIntegrity: expected.integrity,
+      expectedTreeIntegrity: expected.treeIntegrity,
+    },
+  })
+  expect(await m.runtimePluginSnapshots(profile)).toHaveLength(1)
+  writeFileSync(join(pin.snapshot.directory, 'tampered'), 'preserve')
+  expect(await m.runtimePluginSnapshots(profile)).toHaveLength(1)
+  await expect(m.resolveRuntimePin(profile, { pinId: pin.pinId })).rejects.toMatchObject({
+    code: 'E_PACKAGE_INTEGRITY',
+  })
+  await expect(manager().runtimePluginSnapshots(profile)).rejects.toMatchObject({
+    code: 'E_PACKAGE_INTEGRITY',
+  })
 })

@@ -17,7 +17,14 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { type ExecFn, fetchSource, hashDirectory, packageDir, parseSource } from '../src/sources.js'
+import {
+  type ExecFn,
+  fetchSource,
+  hashDirectory,
+  hashDirectoryAsync,
+  packageDir,
+  parseSource,
+} from '../src/sources.js'
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 
@@ -140,6 +147,49 @@ describe('hashDirectory', () => {
       expect(() => hashDirectory(rootAlias)).toThrow(/symbolic link/)
       symlinkSync(outside, join(root, 'escape'))
       expect(() => hashDirectory(root)).toThrow(/symbolic link/)
+    } finally {
+      rmSync(outside, { force: true })
+      unlinkSync(rootAlias)
+    }
+  })
+})
+
+describe('hashDirectoryAsync', () => {
+  let root: string
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'agnes-hash-async-'))
+  })
+  afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  it('gives the synchronous digest for the same tree and exclusions', async () => {
+    // Enough files to need several read rounds, nested directories, and names whose sort order
+    // differs from creation order.
+    for (let n = 0; n < 40; n++) {
+      const dir = join(root, `d${n % 4}`, n % 2 ? 'inner' : '')
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, `f${39 - n}.txt`), `content ${n}`)
+    }
+    mkdirSync(join(root, 'node_modules', 'dep'), { recursive: true })
+    writeFileSync(join(root, 'node_modules', 'dep', 'index.js'), 'dependency')
+    writeFileSync(join(root, 'empty'), '')
+    expect(await hashDirectoryAsync(root)).toBe(hashDirectory(root))
+    expect(await hashDirectoryAsync(root, { exclude: [] })).toBe(hashDirectory(root, { exclude: [] }))
+    expect(await hashDirectoryAsync(root, { exclude: ['d1'] })).toBe(hashDirectory(root, { exclude: ['d1'] }))
+    writeFileSync(join(root, 'd1', 'inner', 'f38.txt'), 'changed')
+    expect(await hashDirectoryAsync(root, { exclude: [] })).toBe(hashDirectory(root, { exclude: [] }))
+  })
+
+  it('refuses what the synchronous walk refuses, with the same errors', async () => {
+    const outside = join(dirname(root), `${Date.now()}-outside-async`)
+    const rootAlias = `${root}-alias`
+    writeFileSync(outside, 'secret')
+    try {
+      await expect(hashDirectoryAsync(join(root, 'missing'))).rejects.toThrow(/unavailable/)
+      symlinkSync(root, rootAlias, process.platform === 'win32' ? 'junction' : 'dir')
+      await expect(hashDirectoryAsync(rootAlias)).rejects.toThrow(/symbolic link/)
+      mkdirSync(join(root, 'nested'))
+      symlinkSync(outside, join(root, 'nested', 'escape'))
+      await expect(hashDirectoryAsync(root)).rejects.toThrow(/symbolic link/)
     } finally {
       rmSync(outside, { force: true })
       unlinkSync(rootAlias)
