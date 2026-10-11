@@ -141,28 +141,39 @@ it('lists only reported skill roots and explains optional user-agent imports', a
   dispose()
 })
 
-it('maps public and native button entries to the same variants and reports busy state', async () => {
-  const ui = await import('../src/index.js')
-  const host = document.createElement('div')
-  const native = ui.createSettingsButton(document, 'primary')
-  expect(native.classList.contains('agh-btn--primary')).toBe(true)
-  let clicks = 0
-  const dispose = ui.mountRegion(
-    host,
-    createElement(
-      ui.Button,
-      {
-        type: 'primary',
-        loading: true,
-        onClick: () => clicks++,
-      },
-      'Save',
-    ),
-  )
-  const button = host.querySelector('button')!
-  expect(button.classList.contains('agh-btn--primary')).toBe(true)
-  expect(button.getAttribute('aria-busy')).toBe('true')
-  button.click()
-  expect(clicks).toBe(0)
-  dispose()
-})
+it.each([
+  [true, undefined, 'true'],
+  [true, false, 'true'],
+  [false, true, 'true'],
+  [false, false, 'false'],
+  [false, 'true', 'true'],
+  [false, undefined, null],
+] as const)(
+  'maps button variants and reports busy state (loading=%s, aria-busy=%s)',
+  async (loading, ariaBusy, expectedBusy) => {
+    const ui = await import('../src/index.js')
+    const host = document.createElement('div')
+    const native = ui.createSettingsButton(document, 'primary')
+    expect(native.classList.contains('agh-btn--primary')).toBe(true)
+    let clicks = 0
+    const dispose = ui.mountRegion(
+      host,
+      createElement(
+        ui.Button,
+        {
+          type: 'primary',
+          loading,
+          'aria-busy': ariaBusy,
+          onClick: () => clicks++,
+        },
+        'Save',
+      ),
+    )
+    const button = host.querySelector('button')!
+    expect(button.classList.contains('agh-btn--primary')).toBe(true)
+    expect(button.getAttribute('aria-busy')).toBe(expectedBusy)
+    button.click()
+    expect(clicks).toBe(loading ? 0 : 1)
+    dispose()
+  },
+)

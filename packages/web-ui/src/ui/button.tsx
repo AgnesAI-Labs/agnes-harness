@@ -44,7 +44,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       autoInsertSpace={false}
       {...props}
-      aria-busy={busy || undefined}
+      aria-busy={busy || props['aria-busy']}
       title={props.disabled ? (disabledReason ?? props.title) : props.title}
       className={classes}
     >
