@@ -1865,17 +1865,24 @@ it('refuses an out-of-scope profile instead of reading another scope', async () 
   ).rejects.toMatchObject({ data: { code: 'SEMANTIC_REJECTED' } })
 })
 
-it('fails the whole read closed when an installed file was swapped after install', async () => {
+it('refuses a served skin file that grew past its cap after install', async () => {
   const admin = await installedSkinPresets()
-  // The read channel's own size cap is defence in depth; the primary control turned out to be
-  // stronger and is what this pins: `inventory()` re-verifies the installed tree against the lock, so
-  // a file grown (or replaced) on disk refuses the read outright instead of streaming past the cap.
-  writeFileSync(join(skinAssetsDir(), 'aurora.png'), Buffer.alloc(SKIN_MAX_ASSET_BYTES + 1))
+  // An active row's skin is served from the package's runtime snapshot. This daemon verified that
+  // tree when it first listed it and does not hash every package again on each read; the skin
+  // roster's own per-asset size check is what refuses a file grown on disk.
+  const pin = (await manager.listRuntimePins(profileDirectory(secondProfile))).find(
+    (candidate) => candidate.snapshot.packageId === '@agnes-examples/skins-builtin',
+  )
+  if (!pin) throw new Error('the enabled package has no runtime snapshot')
+  writeFileSync(
+    join(pin.snapshot.directory, 'extensions/main/skins/aurora/assets/aurora.png'),
+    Buffer.alloc(SKIN_MAX_ASSET_BYTES + 1),
+  )
   await expect(
     admin.call(
       '_agnes/v1/skins.read',
       { profile: secondProfile, path: '/skins/aurora/assets/aurora.png' },
       authority,
     ),
-  ).rejects.toMatchObject({ data: { reason: 'E_PACKAGE_INTEGRITY' } })
+  ).rejects.toMatchObject({ data: { reason: 'E_PACKAGE_STATE' } })
 })

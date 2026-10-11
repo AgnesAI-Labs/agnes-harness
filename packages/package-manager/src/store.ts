@@ -5,7 +5,13 @@ import { validateLockfile } from '@agnes/protocol'
 import { renameWriteThroughSync } from '@agnes/system-node'
 import { appendPackageAudit, type PackageAuditSink } from './audit.js'
 import { PackageError } from './errors.js'
-import { canonical, readStaticJson, snapshotHash, syncDirectory } from './integrity.js'
+import {
+  canonical,
+  readStaticJson,
+  snapshotHash,
+  syncDirectory,
+  type VerificationCache,
+} from './integrity.js'
 import { type LockEntry, type Lockfile, readLock, writeLock } from './lockfile.js'
 import { hashDirectory, packageDir } from './sources.js'
 
@@ -35,6 +41,8 @@ export type PackageStore = {
   actor?: string
   checkpoint?: (point: PackageCommitPoint) => void
   runtimeCheckpoint?: (point: RuntimeSnapshotCommitPoint) => void
+  /** Present only on the manager's read-only views; see `VerificationCache`. */
+  verified?: VerificationCache
 }
 type Journal = {
   version: 1
