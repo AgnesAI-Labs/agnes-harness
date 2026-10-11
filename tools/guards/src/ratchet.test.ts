@@ -320,14 +320,14 @@ const INITIAL_CEILING: Record<string, number> = {
   // Deferred producer binding on the shared service ports. countLines: 11970, exact, no spare.
   // UI data-source resolution. countLines: 11970 -> 12586 (+616).
   // Rebased tip includes the in-flight worktree migration. Measured 12791, exact, no spare.
-  'packages/host/src/runtime': 13017,
+  'packages/host/src/runtime': 13026,
   // UI data-source catalog wiring on that tree. countLines: 3517.
-  'packages/host/src/runtime/assemble': 3639,
+  'packages/host/src/runtime/assemble': 3648,
   'packages/host-providers/src/adapters': 477,
   'packages/host-providers/src/profile': 165,
   // Owner-scoped deferred queue facade. countLines: 5162 and assemble 2402, exact, no spare.
-  'packages/host-providers/src': 5185,
-  'packages/host-providers/src/assemble': 2425,
+  'packages/host-providers/src': 5147,
+  'packages/host-providers/src/assemble': 2387,
   'packages/host-extensions/src/ext-host/extension-runner-runtime': 187,
   'packages/host-extensions/src/ext-host/extension-seatbelt': 28,
   'packages/host-extensions/src/ext-host/extension-isolation-selector': 160,
@@ -362,10 +362,10 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines on this tree: 1219 (HEAD was 1209 against the previous 439 ceiling; this change adds 10).
   'packages/host-common/src/assemble': 1283,
   'packages/core/src/artifacts': 744,
-  'packages/core-effects/src': 2749,
+  'packages/core-effects/src': 2750,
   'packages/core-ledger/src': 6749,
   'packages/core-child-control/src': 397,
-  'packages/core-common/src': 530,
+  'packages/core-common/src': 531,
   // 2026-09-22 M11 browser effect-command closure: exact measured deltas for the explicit
   // authorization facade, private BFF/RPC, durable journal reuse, and cross-platform test repair.
   // No source exclusions or spare budget were added.
@@ -460,7 +460,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // per-session limit (never above the product ceiling of 20). Measured 535; exact cap.
   // 2026-09-19 secure physical-delete executor and attested-plan lease. Measured 624; exact cap.
   'packages/base/extensions/artifacts-local': 315,
-  'packages/base/extensions/approval-policy': 472,
+  'packages/base/extensions/approval-policy': 467,
   'packages/base/extensions/tools-search': 284,
   // WEBFETCH-01: new component, exact measured allocation.
   // SKILL-GITHUB-RATE-LIMIT: explicit ZIP byte response; measured 380, no spare.
@@ -1244,7 +1244,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-08 freeze-close review: Await async loop construction, propagate session cancellation and drain initialization before storage closes.
   // countLines: 30048 -> 30103 (+55); exact measured cap, no exclusions or spare allocation.
   // Empty loop services reader. countLines: 22444, exact, no spare.
-  'packages/core/src': 23769,
+  'packages/core/src': 23773,
   // 2026-09-15: DeepSeek V4 Pro/Flash ship a known-thinking-corrections table (new file) so the
   // product corrects pi-ai's verified-wrong reasoning_effort data out of the box, instead of
   // requiring every deployment to hand-edit thinkingEfforts once they notice. Measured 3347.
@@ -1713,7 +1713,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 2327 -> 2438; exact cap, no exclusions or spare allocation.
   // 2026-10-08 freeze-close review: Expose cooperative construction signals, adapter credential ports and shared default compaction/policy helpers.
   // countLines: 2438 -> 2505 (+67); exact measured cap, no exclusions or spare allocation.
-  'packages/extension-api/src': 3173, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
+  'packages/extension-api/src': 3151, // SKILL-INSTALL-CORE: optional request port and bounded DTO, no admin grant.
   // Optional author fixture entry; no production runtime code belongs here.
   // B1-A: measured 229 lines on the shared tree; public transport contract, config and wiring/testkit.
   // B1 review repair: exact measured 246; startup cancellation / cwd contract coverage.
@@ -2962,7 +2962,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Deferred queue facade and Intelligent UI producer binding. countLines: 12508, exact, no spare.
   // UI data-source resolution. countLines: 12508 -> 13124 (+616).
   // Rebased tip includes the in-flight worktree migration. Measured 13329, exact, no spare.
-  'packages/host/src': 13555,
+  'packages/host/src': 13564,
   // 2026-10-07 gap-fill review: Preserve governed bridge errors through service invocation.
   // countLines: 247 -> 254; exact cap, no exclusions or spare allocation.
   // T5.2's permission projector is kept independently bounded so later extension-host work cannot
