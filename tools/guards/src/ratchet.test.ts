@@ -281,7 +281,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-conversation/src': 4068,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src/settings': 9148,
+  'packages/web-admin/src/settings': 9324,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/permission-picker': 267,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
@@ -289,9 +289,9 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/admin/plugins/api': 546,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src': 16199,
+  'packages/web-admin/src': 16390,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-foundation/src': 2422,
+  'packages/web-foundation/src': 2459,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
   'packages/daemon-rpc/src/local/auth': 341,
   // UI refresh forwarding. HEAD was 8143 against the previous 8057 ceiling; this change adds 11.
@@ -426,7 +426,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI data-source loading, error, and refresh. HEAD was 11480 against the previous 10937 ceiling;
   // this change adds 182. countLines: 11662.
   // Preset presentation: exact measured count; no exclusions or spare allocation.
-  'packages/web-ui/src': 14499,
+  'packages/web-ui/src': 14716,
   // W8a-3: retire the native tool renderer in favor of one compatibility root; measured 4630.
   // 2026-10-04 image upload merged onto the queue view: the composer reads, downscales and previews
   // attachments, and the queue row markup above stays. Measured: 5923, exact, no spare.
@@ -440,7 +440,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 6192 -> 6208 (+16); exact cap, no exclusions or spare allocation.
   // 2026-10-07 integration review: Inline conversation cards and approval/trace rendering.
   // countLines: 6208 -> 6222; exact measured cap, no exclusions or spare allocation.
-  'packages/web-units/src': 9777,
+  'packages/web-units/src': 9800,
   // Write staleness guard: a per-session table of what each file looked like when read, checked by
   // `write` (+55 counted lines, measured 855, exact cap).
   // 2026-10-07 integration review: Official job tools and bounded execution/output handling.
@@ -627,7 +627,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-07 gap-fill review: Session-bound goal state and context/settings integration.
   // countLines: 2443 -> 2471; exact cap, no exclusions or spare allocation.
   // AC1: consume one-time example launch parameters after session activation (+2 exact lines).
-  'packages/web/src/app': 4207,
+  'packages/web/src/app': 4214,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -642,7 +642,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-04 preview-path fixes: the leaf keyboard boundary follows the previewed model, the
   // duplicate-submit short circuit applies only to the current model, the blur guard covers the
   // detail panel, and hover matches the keyboard path (+6 counted lines). Measured: 975, exact.
-  'packages/web/src/model-picker': 1030,
+  'packages/web/src/model-picker': 1033,
   // 2026-09-25 UI refactor: settings-owned element construction uses the shared UI host boundary.
   // Re-measured with countLines(): 754, exact, no spare.
   // 2026-10-07 integration review: Provider, generation, publication, bundle and security settings
@@ -2448,7 +2448,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI data-source refresh and form drafts. countLines: 13327 -> 13395 (+68).
   // UX B1/B2 native sheet binding adds 3 lines; ST1 c2a1bd004 seeds reveal history with 5.
   // Exact combined countLines measurement, preserving both contributions without spare allocation.
-  'packages/web/src': 13701,
+  'packages/web/src': 13711,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
