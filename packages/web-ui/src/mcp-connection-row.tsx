@@ -1,6 +1,6 @@
 import type { McpServerDescriptor } from '@agnes/protocol'
-import { resourceFailureLabel } from './resource-failure.js'
 import { mcpConnectionCatalog } from './locales/mcp-connection.js'
+import { resourceFailureLabel } from './resource-failure.js'
 import { Button } from './ui/button.js'
 import { IconButton } from './ui/icon-button.js'
 import { ListRow } from './ui/list-row.js'
@@ -43,22 +43,11 @@ export function McpConnectionRow({
       className="resource-row"
       data-resource-id={item.resourceId}
       data-selected={String(selected)}
-      title={
-        <Button
-          appearance="ghost"
-          aria-pressed={selected}
-          aria-label={t('open', { name: itemName })}
-          onClick={onOpen}
-        >
-          {itemName}
-        </Button>
-      }
+      title={itemName}
+      onOpen={onOpen}
       meta={`${t(connection.kind === 'stdio' ? 'local' : 'remote')} · ${address}`}
-      status={
-        item.lastSafeError ? (
-          <Tag tone="bad">{resourceFailureLabel(item.lastSafeError.code, t)}</Tag>
-        ) : undefined
-      }
+      description={item.lastSafeError ? resourceFailureLabel(item.lastSafeError.code, t) : undefined}
+      status={item.lastSafeError ? <Tag tone="bad">{t('connectionFailed')}</Tag> : undefined}
       actions={
         <>
           {item.lastSafeError && actions && (

@@ -1,8 +1,7 @@
 import { createMcpPreset } from '@agnes/resource-control-contracts/mcp-presets'
 import { describe, expect, it } from 'vitest'
-import { MCP_FORM_LIMITS, type McpFormFieldSnapshot, mcpFormIssues } from '../src/mcp-form-validation.js'
-
 import { formatMcpCommand, parseMcpCommand } from '../src/mcp-command.js'
+import { MCP_FORM_LIMITS, type McpFormFieldSnapshot, mcpFormIssues } from '../src/mcp-form-validation.js'
 
 const base: McpFormFieldSnapshot = {
   transport: 'stdio',

@@ -20,8 +20,8 @@ import {
   type ResourceDetailAction,
   ResourceListContent,
   type ResourceProgress,
-  renderRegion,
   releaseDialogModal,
+  renderRegion,
   resourceDesiredEnabled,
   resourceDetailLocaleCatalog,
   resourceFailureKey,
@@ -38,8 +38,8 @@ import { ResourceAdminApi, ResourceAdminApiError } from './api.js'
 import { RESOURCE_ADMIN_LOCALE_NAMESPACE, resourceAdminLocaleCatalog } from './locales/admin.js'
 import { createMcpForm, McpFormValidationError } from './mcp-form.js'
 import { mountMcpPresets } from './mcp-presets.js'
-import { mountMcpWizard } from './mcp-wizard.js'
 import { watchMcpPanel } from './mcp-refresh.js'
+import { mountMcpWizard } from './mcp-wizard.js'
 import { SKILL_LOCATION_HINTS } from './skill-copy.js'
 import type { ResourceAdminContext, ResourceAdminError } from './types.js'
 
@@ -331,7 +331,9 @@ class ResourceAdminPage {
     if (!targetId) return
     for (const row of list.querySelectorAll<HTMLElement>('.resource-row')) {
       if (row.dataset.resourceId !== targetId) continue
-      row.querySelector<HTMLButtonElement>('.plugin-details-button')?.focus({ preventScroll: true })
+      row
+        .querySelector<HTMLButtonElement>('.plugin-details-button, .agh-list-row-title')
+        ?.focus({ preventScroll: true })
       return
     }
   }
@@ -404,7 +406,7 @@ class ResourceAdminPage {
     const addHint = document.querySelector<HTMLElement>(
       '#resource-settings-pane [data-i18n="shell.embedded.add-description"]',
     )
-    if (addHint) addHint.hidden = this.#tab !== 'mcp'
+    if (addHint) addHint.hidden = true
     notice.textContent = this.#notice.key
       ? this.#t(this.#notice.key, this.#notice.vars)
       : (this.#notice.raw ?? '')
@@ -427,8 +429,8 @@ class ResourceAdminPage {
     $('skill-refresh', 'button').hidden = this.#tab !== 'skills'
     const busy = this.#reloadPromise !== undefined || this.#loadMorePromise !== undefined
     $('skill-refresh', 'button').disabled = !this.writable() || busy
-    $('mcp-create', 'button').hidden = true
-    $('mcp-create', 'button').disabled = !this.writable() || busy
+    $('mcp-create', 'button').hidden = this.#tab !== 'mcp'
+    $('mcp-create', 'button').disabled = !this.writable() || busy || this.#activeOperation !== undefined
     if (mcpPresets) {
       mcpPresets.button.hidden = this.#tab !== 'mcp'
       mcpPresets.button.disabled = !this.writable() || busy || this.#activeOperation !== undefined
@@ -782,6 +784,7 @@ class ResourceAdminPage {
 }
 
 let mcpConfirming = false
+let mcpSubmitting = false
 let restoreMcpHost: (() => void) | undefined
 let editing: McpServerDescriptor | undefined
 function writeDefinition(definition: McpServerDefinitionInput): void {
@@ -975,6 +978,8 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
   form.addEventListener('change', () => syncMcpFieldFeedback())
   form.addEventListener('submit', (event) => {
     event.preventDefault()
+    if (mcpSubmitting) return
+    mcpSubmitting = true
     const error = $('mcp-error', 'p')
     error.textContent = ''
     void (async () => {
@@ -1018,17 +1023,21 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
       // track() already reported success generically; a new server still needs an explicit enable.
       if (creating && notice.dataset.kind === 'success')
         page.setNotice('notice.created', 'success', { name: definition.displayName })
-    })().catch((cause) => {
-      if (dialog.open)
-        error.textContent =
-          cause instanceof McpFormValidationError
-            ? cause.message
-            : cause instanceof ResourceAdminApiError &&
-                ['ADMIN_UNAVAILABLE', 'RESOURCE_ADMIN_UNAVAILABLE'].includes(cause.details.code)
-              ? activeResourceText('error.unavailable')
-              : resourceFailureLabel(errorOf(cause).code, activeResourceText)
-      else page.showError(cause)
-    })
+    })()
+      .catch((cause) => {
+        if (dialog.open)
+          error.textContent =
+            cause instanceof McpFormValidationError
+              ? cause.message
+              : cause instanceof ResourceAdminApiError &&
+                  ['ADMIN_UNAVAILABLE', 'RESOURCE_ADMIN_UNAVAILABLE'].includes(cause.details.code)
+                ? activeResourceText('error.unavailable')
+                : resourceFailureLabel(errorOf(cause).code, activeResourceText)
+        else page.showError(cause)
+      })
+      .finally(() => {
+        mcpSubmitting = false
+      })
   })
   syncTransport(activeResourceText)
   stopMcpRefresh?.()

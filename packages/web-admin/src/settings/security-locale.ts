@@ -9,8 +9,7 @@ export const securityUxCatalog: LocaleCatalog = {
     'workspace-write': 'Edit workspace',
     'workspace-writeHelp': 'Modify workspace files. Other actions require approval.',
     'full-access': 'Full access',
-    'full-accessHelp':
-      'Access the whole computer without asking for approval. Hard backend limits still apply.',
+    'full-accessHelp': 'Access the whole computer without asking for approval.',
     fullConfirm: 'Allow full access for new sessions?',
     cancel: 'Cancel',
     notAllowed: 'Unavailable in this profile',
@@ -32,7 +31,7 @@ export const securityUxCatalog: LocaleCatalog = {
     'workspace-write': '可修改工作区',
     'workspace-writeHelp': '可以修改工作区里的文件，其他操作先问你。',
     'full-access': '完全访问',
-    'full-accessHelp': '不再询问，可访问整台电脑；后台硬限制仍然有效。',
+    'full-accessHelp': '不再询问，可访问整台电脑。',
     fullConfirm: '允许新会话完全访问？',
     cancel: '取消',
     notAllowed: '当前配置不可用',

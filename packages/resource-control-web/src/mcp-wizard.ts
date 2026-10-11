@@ -16,6 +16,8 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
   const credential = $('mcp-credential', 'select')
   let picker = createSelectPicker(credential, { label: text()('wizard.credential'), includeEmpty: true })
   let manualId = false
+  let editingMode = false
+  let fallbackId = `mcp-service-${crypto.randomUUID().slice(0, 8)}`
   let known: string[] = []
   const transport = $('mcp-transport', 'select')
   const submit = $('mcp-form', 'form').querySelector<HTMLButtonElement>('[type="submit"]')!
@@ -45,7 +47,8 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
     }
   }
   function filled() {
-    stage(identity.disabled, true)
+    identity.disabled = editingMode
+    stage(editingMode, true)
     command.value = formatMcpCommand([
       $('mcp-executable', 'input').value,
       ...$('mcp-args', 'textarea').value.split('\n').filter(Boolean),
@@ -64,9 +67,15 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
   }
   function choices(selected?: string) {
     const refs = [...new Set([...known, ...(selected ? [selected] : [])])]
+    const option = (label: string, value: string) => {
+      const node = credential.ownerDocument.createElement('option')
+      node.textContent = label
+      node.value = value
+      return node
+    }
     credential.replaceChildren(
-      new Option(text()('shell.form.secret-none'), ''),
-      ...refs.map((ref) => new Option(ref.replace(/^secret:\/\//, '').replace(/\//g, ' · '), ref)),
+      option(text()('shell.form.secret-none'), ''),
+      ...refs.map((ref) => option(ref.replace(/^secret:\/\//, '').replace(/\//g, ' · '), ref)),
     )
     credential.value = selected ?? ''
     picker.sync()
@@ -106,7 +115,7 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '')
-      identity.value = /^[a-z]/.test(generated) ? generated.slice(0, 128) : 'mcp-service'
+      identity.value = /^[a-z]/.test(generated) ? generated.slice(0, 128) : fallbackId
     }
   })
   on(command, 'input', () => {
@@ -162,6 +171,8 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
   return {
     reset(editing = false) {
       manualId = editing
+      editingMode = editing
+      fallbackId = `mcp-service-${crypto.randomUUID().slice(0, 8)}`
       command.value = ''
       command.setCustomValidity('')
       choices()

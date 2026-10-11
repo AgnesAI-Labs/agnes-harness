@@ -25,13 +25,14 @@ it('selects a valid session by title, reads output and confirms only human-owned
     truncated: false,
     stdout: 'ready\n',
   }
+  let refuseStop = true
   const api = {
     read: vi.fn(async (_scope: string, id?: string) => ({
       jobs: [job, { ...job, id: 'agent-job', owner: 'agent' as const }],
       completions: [],
       ...(id ? { job } : {}),
     })),
-    control: vi.fn(async () => ({ ok: true })),
+    control: vi.fn(async () => ({ ok: !refuseStop })),
   }
   const sessions = {
     current: () => 'session-a',
@@ -49,6 +50,7 @@ it('selects a valid session by title, reads output and confirms only human-owned
     expect(localStorage.getItem('agnes.jobs.session')).toBeNull()
     expect(host.querySelector('[data-testid="jobs-session"]')?.textContent).toContain('Release review')
     expect(host.textContent).not.toContain('session-a')
+    expect(host.querySelector<HTMLDetailsElement>('[data-testid="jobs-session-context"]')?.open).toBe(false)
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="session-job-human-job"] button')?.click(),
     )
@@ -80,6 +82,13 @@ it('selects a valid session by title, reads output and confirms only human-owned
       document.querySelector<HTMLButtonElement>('[data-testid="jobs-stop-confirm"]')?.click(),
     )
     expect(api.control).toHaveBeenCalledWith('session-a', { operation: 'kill', jobId: 'human-job' })
+    expect(document.querySelector('[data-testid="jobs-stop-confirm"]')).not.toBeNull()
+    expect(host.querySelector('[data-testid="jobs-error"]')).not.toBeNull()
+    refuseStop = false
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[data-testid="jobs-stop-confirm"]')?.click(),
+    )
+    expect(host.querySelector('[data-testid="jobs-error"]')).toBeNull()
   } finally {
     await act(async () => root.unmount())
   }

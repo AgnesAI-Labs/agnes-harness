@@ -21,16 +21,12 @@ export const jobsCatalog: LocaleCatalog = {
     'jobKind.pty': 'Interactive terminal',
     'jobKind.child-agent': 'Child agent',
 
-    terminalHelp:
-      'Open an interactive terminal under this session’s sandbox preset. Refresh reconnects; Close kills the terminal and its processes.',
     jobsHelp:
       'Long-running tasks started in a session, such as builds, servers and scripts. Ask the agent to stop tasks it manages.',
     session: 'Session',
     unavailable:
       'Background tasks are unavailable. Check the session and its enabled tools; this view retries automatically.',
     output: 'View output',
-    keyboard:
-      'Focus the terminal to type, paste or use arrow keys. Ctrl+C interrupts; Tab is sent to the terminal; Shift+Tab moves focus out.',
     jobs: 'Session jobs',
     actions: 'Actions',
     kill: 'Stop',

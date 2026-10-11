@@ -1,16 +1,16 @@
 import { type DiagnosticRecord, type DiagnosticsExportResult, errorMessageKey } from '@agnes/protocol'
 import {
   appServerErrorMessage,
-  SettingsToolbar,
-  MetaText,
   Button,
   Field,
+  MetaText,
   SettingsCard,
   SettingsDetails,
   SettingsInput,
   SettingsList,
   SettingsRow,
   SettingsState,
+  SettingsToolbar,
   useUiText,
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -37,7 +37,14 @@ export function DiagnosticsPanel({
   const [showAll, setShowAll] = useState(false)
   const [bundle, setBundle] = useState<DiagnosticsExportResult>()
   const [doctorAvailable, setDoctorAvailable] = useState(false)
-  const loadChecks = useCallback((probe: boolean, signal: AbortSignal) => api.doctor(signal, probe), [api])
+  const loadChecks = useCallback(
+    async (probe: boolean, signal: AbortSignal) => {
+      const result = await api.doctor(signal, probe)
+      if (!signal.aborted) setBundle((value) => value && { ...value, doctor: result.checks })
+      return result
+    },
+    [api],
+  )
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState('')
   const [busy, setBusy] = useState(true)

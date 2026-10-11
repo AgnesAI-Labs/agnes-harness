@@ -1,7 +1,7 @@
 import { computerUseUiCatalog } from './locales/computer-use.js'
-import { SettingsCard, SettingsPage, SettingsToolbar, SettingsDetails } from './settings-layout.js'
-import { IconButton } from './ui/icon-button.js'
+import { SettingsCard, SettingsDetails, SettingsPage, SettingsToolbar } from './settings-layout.js'
 import { Button } from './ui/button.js'
+import { IconButton } from './ui/icon-button.js'
 import { useUiText } from './ui-locale.js'
 
 export type SettingsComputerUseView = Readonly<{

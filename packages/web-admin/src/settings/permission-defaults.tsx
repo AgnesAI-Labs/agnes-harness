@@ -1,8 +1,8 @@
-import { useSettingsOverlay } from './overlay.js'
-import { SessionDefaultsSnapshot, validateAgainst } from '@agnes/protocol'
+import { isSessionDefaultsSnapshot } from '@agnes/protocol'
 import { Banner, Button, Dialog, SettingsChoice, SettingsState, Toast, useUiText } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { PluginAdminApi } from '../admin/plugins/api.js'
+import { useSettingsOverlay } from './overlay.js'
 import { SECURITY_NAMESPACE, securityUxCatalog } from './security-locale.js'
 
 type Snapshot = import('@agnes/protocol').SessionDefaultsSnapshot
@@ -25,6 +25,7 @@ export function PermissionDefaults({
   const [revision, setRevision] = useState(0)
   const lifetime = useRef<AbortController>()
   useSettingsOverlay(confirm)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the retry counter explicitly starts a fresh read.
   useEffect(() => {
     const abort = new AbortController()
     lifetime.current = abort
@@ -44,7 +45,7 @@ export function PermissionDefaults({
         const value = await defaults.json()
         const resolved = await composition.json()
         const picked: unknown = { revision: value.revision, defaults: value.defaults }
-        if (!validateAgainst(SessionDefaultsSnapshot, picked).ok) throw new Error('invalid defaults')
+        if (!isSessionDefaultsSnapshot(picked)) throw new Error('invalid defaults')
         if (!abort.signal.aborted) {
           setCanSave(!context.readOnly && context.permissions.includes('packages.activate'))
           setSnapshot(picked as Snapshot)
@@ -67,17 +68,16 @@ export function PermissionDefaults({
       const response = await fetcher('/admin/api/defaults', {
         method: 'PUT',
         credentials: 'same-origin',
-        signal: lifetime.current?.signal,
+        signal: lifetime.current?.signal ?? null,
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ revision: snapshot.revision, defaults: { ...snapshot.defaults, preset } }),
       })
       const value: unknown = await response.json()
-      if (!response.ok || !validateAgainst(SessionDefaultsSnapshot, value).ok) throw new Error('save failed')
+      if (!response.ok || !isSessionDefaultsSnapshot(value)) throw new Error('save failed')
       if (lifetime.current?.signal.aborted) return
       setSnapshot(value as Snapshot)
       setConfirm(false)
       setSaved(true)
-      window.dispatchEvent(new Event('agnes:session-defaults-changed'))
     } catch {
       if (!lifetime.current?.signal.aborted) setError(true)
     } finally {

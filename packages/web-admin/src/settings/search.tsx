@@ -1,30 +1,30 @@
-import { useSettingsOverlay } from './overlay.js'
 import {
   appServerErrorMessage,
   Banner,
+  Button,
+  type ConfigIssue,
+  configIssues,
   Dialog,
   Drawer,
   EmptyState,
+  Field,
   Icon,
   IconButton,
   ListRow,
   Menu,
-  Tag,
-  SettingsToolbar,
-  useUiText,
-  Button,
-  type ConfigIssue,
-  configIssues,
-  Field,
   SchemaControl,
   SettingsDetails,
   SettingsInput,
   SettingsState,
+  SettingsToolbar,
   StateSwitch,
+  Tag,
+  useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
-import { SEARCH_NAMESPACE, searchCatalog } from './search-locale.js'
 import { searchConfigSchema } from './config-schemas.js'
+import { useSettingsOverlay } from './overlay.js'
+import { SEARCH_NAMESPACE, searchCatalog } from './search-locale.js'
 
 const PROVIDER_IDS = ['brave', 'tavily', 'exa', 'perplexity', 'searxng'] as const
 type ProviderId = (typeof PROVIDER_IDS)[number]
@@ -134,6 +134,7 @@ export function SearchPanel({
   useSettingsOverlay(editor || !!confirmClear)
   const selected = status?.providers.find((row) => row.id === providerId)
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the retry counter explicitly starts a fresh read.
   useEffect(() => {
     const controller = new AbortController()
     lifetime.current = controller
@@ -216,7 +217,7 @@ export function SearchPanel({
         await fetcher('/admin/api/search', {
           method: 'PUT',
           credentials: 'same-origin',
-          signal: lifetime.current?.signal,
+          signal: lifetime.current?.signal ?? null,
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             defaultProvider,
@@ -264,7 +265,7 @@ export function SearchPanel({
       const response = await fetcher('/admin/api/search/test', {
         method: 'POST',
         credentials: 'same-origin',
-        signal: lifetime.current?.signal,
+        signal: lifetime.current?.signal ?? null,
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ provider: status?.defaultProvider ?? providerId, query: probe }),
       })
@@ -305,7 +306,7 @@ export function SearchPanel({
         await fetcher('/admin/api/search', {
           method: 'PUT',
           credentials: 'same-origin',
-          signal: lifetime.current?.signal,
+          signal: lifetime.current?.signal ?? null,
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
             defaultProvider: patch.makeDefault ? row.id : status.defaultProvider,

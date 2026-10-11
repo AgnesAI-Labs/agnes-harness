@@ -402,15 +402,17 @@ it('navigates runtime capabilities and never offers a disallowed security preset
       expect(host.querySelector('[data-testid=providers-memory]')).not.toBeNull()
       const adapters = host.querySelector('[data-testid=providers-model-adapter]')
       expect(
-        [...(adapters?.querySelectorAll('.agnes-settings-actions .agnes-ui-badge') ?? [])].map(
-          (badge) => badge.textContent,
-        ),
+        [...(adapters?.querySelectorAll('.agh-meta') ?? [])].map((meta) => meta.textContent?.split(' · ')[0]),
       ).toEqual(['Available', 'Available'])
     }
     if (page === 'security') {
-      expect(host.querySelectorAll('[data-testid^="security-"]')).toHaveLength(3)
+      const choices = host.querySelectorAll(
+        '[data-testid="security-default-permissions"] input[type="radio"]',
+      )
+      expect(choices).toHaveLength(3)
+      expect([...choices].every((choice) => (choice as HTMLInputElement).disabled)).toBe(true)
       expect(host.querySelector('a[href*="preset=read-only"]')).toBeNull()
-      expect(host.textContent).toContain('Not allowed by this profile')
+      expect(host.textContent).toContain('Unavailable in this profile')
     }
   }
 })

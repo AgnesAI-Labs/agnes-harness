@@ -2,11 +2,11 @@ import type { RuntimeSecurityStatus } from '@agnes/protocol'
 import {
   Banner,
   Icon,
-  useUiText,
   SettingsDetails,
   SettingsList,
   SettingsRow,
   SettingsState,
+  useUiText,
 } from '@agnes/web-ui'
 
 import { SECURITY_NAMESPACE, securityUxCatalog } from './security-locale.js'
@@ -57,6 +57,11 @@ export function SecurityStatusPanel({ status, t }: { status: RuntimeSecurityStat
       )}
       <SettingsDetails title={ux('details')} data-testid="security-details">
         <p>{t('probeHelp')}</p>
+        <h3>{t('platformProbe')}</h3>
+        <p>
+          {t(`enforcement.${status.platform.l1.level}`)} · {scopes(status.platform.l1.scope) || '—'}
+        </p>
+        {status.platform.l1.reason && <p>{status.platform.l1.reason}</p>}
         <h3>{t('permissionRequirements')}</h3>
         <section
           className="runtime-table-scroll"

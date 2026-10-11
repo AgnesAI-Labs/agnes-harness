@@ -1,4 +1,3 @@
-import { useSettingsOverlay } from './overlay.js'
 import type {
   WebhookRequest,
   WebhookResult,
@@ -7,25 +6,26 @@ import type {
 } from '@agnes/protocol/gen/app-server'
 import {
   Button,
-  Field,
   Dialog,
-  SettingsDetails,
-  ListRow,
-  Tag,
-  Menu,
-  IconButton,
   EmptyState,
+  Field,
   Icon,
+  IconButton,
+  ListRow,
+  Menu,
+  SettingsDetails,
   SettingsInput,
   SettingsSelect,
   SettingsState,
   SettingsTextArea,
   SettingsToolbar,
   StateSwitch,
+  Tag,
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { contextRequest } from './context.js'
+import { useSettingsOverlay } from './overlay.js'
 import { triggersCatalog } from './triggers-locale.js'
 
 const blank = (workspace: string): WebhookRule => ({
@@ -237,7 +237,7 @@ export function TriggersPanel({ canSave }: { canSave: boolean }) {
         </SettingsDetails>
       )}
       {!busy && snapshot?.rules.length === 0 && (
-        <EmptyState icon={<Icon name="zap" size={48} />} title={t('noRules')} description={t('help')} />
+        <EmptyState icon={<Icon name="activity" size={48} />} title={t('noRules')} description={t('help')} />
       )}
       <div className="agnes-settings-list">
         {snapshot?.rules.map((item) => (

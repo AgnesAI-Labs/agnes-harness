@@ -3,14 +3,14 @@ import {
   Badge,
   Button,
   Field,
+  MetaText,
   SettingsCard,
   SettingsDetails,
   SettingsInput,
-  MetaText,
-  Tag,
   SettingsList,
   SettingsRow,
   SettingsState,
+  Tag,
 } from '@agnes/web-ui'
 import { useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
@@ -68,6 +68,7 @@ export function ProvidersPanel({
                 >
                   <MetaText>
                     {[
+                      t(kind === 'model-adapter' ? 'available' : entry.active ? 'active' : 'inactive'),
                       entry.version,
                       ...entry.capabilities.flatMap(
                         (capability) => label('providerCapability', capability) ?? [],

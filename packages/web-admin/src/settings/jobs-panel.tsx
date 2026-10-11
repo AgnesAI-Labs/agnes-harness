@@ -1,4 +1,3 @@
-import { useSettingsOverlay } from './overlay.js'
 import {
   Banner,
   Button,
@@ -9,8 +8,8 @@ import {
   IconButton,
   ListRow,
   Menu,
-  SessionPicker,
   type SessionOption,
+  SessionPicker,
   SettingsCode,
   SettingsDetails,
   SettingsState,
@@ -19,8 +18,9 @@ import {
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
-import { type JobsSnapshot, type JobsSessionSource, jobsSessions, sessionJobsApi } from './jobs-api.js'
+import { type JobsSessionSource, type JobsSnapshot, jobsSessions, sessionJobsApi } from './jobs-api.js'
 import { JOBS_NAMESPACE, jobsCatalog } from './jobs-locales.js'
+import { useSettingsOverlay } from './overlay.js'
 
 const defaultApi = sessionJobsApi()
 const defaultSessions = jobsSessions()
@@ -48,6 +48,7 @@ export function JobsPanel({
   useSettingsOverlay(!!pending)
   const owner = useRef(sessionId)
   owner.current = sessionId
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the retry counter explicitly starts a fresh read.
   useEffect(() => {
     let active = true
     void sessions
@@ -132,6 +133,27 @@ export function JobsPanel({
       if (owner.current === scope) setBusy(false)
     }
   }
+  const sessionChoice = (
+    <Field label={t('session')} htmlFor="jobs-session">
+      <SessionPicker
+        id="jobs-session"
+        testId="jobs-session"
+        sessions={choices ?? []}
+        value={sessionId}
+        onChange={(id) => {
+          setSessionId(id)
+          setSnapshot(undefined)
+          setJobId(undefined)
+          setPending(undefined)
+          setError(false)
+          localStorage.setItem(SESSION_STORAGE_KEY, id)
+        }}
+        label={t('session')}
+        locale={locale}
+        disabled={busy}
+      />
+    </Field>
+  )
   return (
     <section data-testid="jobs-panel">
       <p>{t('jobsHelp')}</p>
@@ -159,25 +181,16 @@ export function JobsPanel({
       ) : (
         <SettingsToolbar
           filters={
-            <Field label={t('session')} htmlFor="jobs-session">
-              <SessionPicker
-                id="jobs-session"
-                testId="jobs-session"
-                sessions={choices}
-                value={sessionId}
-                onChange={(id) => {
-                  setSessionId(id)
-                  setSnapshot(undefined)
-                  setJobId(undefined)
-                  setPending(undefined)
-                  setError(false)
-                  localStorage.setItem(SESSION_STORAGE_KEY, id)
-                }}
-                label={t('session')}
-                locale={locale}
-                disabled={busy}
-              />
-            </Field>
+            sessions.current() === sessionId ? (
+              <SettingsDetails
+                title={`${t('session')}: ${choices.find((row) => row.id === sessionId)?.title ?? ''}`}
+                data-testid="jobs-session-context"
+              >
+                {sessionChoice}
+              </SettingsDetails>
+            ) : (
+              sessionChoice
+            )
           }
           controls={
             updatedAt && (
@@ -197,14 +210,14 @@ export function JobsPanel({
       {snapshot && !snapshot.jobs.length && (
         <EmptyState icon={<Icon name="clock" size={48} />} title={t('empty')} description={t('emptyHelp')} />
       )}
-      <div data-testid="session-jobs-table" aria-label={t('jobs')}>
+      <section data-testid="session-jobs-table" aria-label={t('jobs')}>
         {snapshot?.jobs.map((job) => (
           <ListRow
             key={job.id}
             data-testid={'session-job-' + job.id}
             title={<code>{job.command}</code>}
             meta={[
-              t(job.status),
+              job.status === 'failed' ? '' : t(job.status),
               t(`jobKind.${job.kind}`),
               job.code === null ? '' : `${t('exitCode')} ${job.code}`,
             ]
@@ -236,7 +249,7 @@ export function JobsPanel({
             }
           />
         ))}
-      </div>
+      </section>
       {snapshot?.job && (
         <SettingsDetails open title={t('output')}>
           <SettingsCode label={t('output')} data-testid="job-output">

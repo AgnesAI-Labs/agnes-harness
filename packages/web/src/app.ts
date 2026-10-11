@@ -40,8 +40,8 @@ import {
 import { type PermissionMode, permissionLabel, yoloEnabled } from '@agnes/web-admin/permission-picker'
 import { createSettingsController } from '@agnes/web-admin/settings'
 import { loadRuntimeCatalog } from '@agnes/web-admin/settings/api'
-import { settingsCatalog } from '@agnes/web-admin/settings/locales'
 import { bindJobsSessions } from '@agnes/web-admin/settings/jobs-api'
+import { settingsCatalog } from '@agnes/web-admin/settings/locales'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import { settingsSections } from '@agnes/web-client'
 

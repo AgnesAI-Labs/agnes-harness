@@ -77,6 +77,7 @@ it('shows an empty list and a failed list', async () => {
 
 it('creates a reminder and archives it after confirmation', async () => {
   let rows = [] as unknown[]
+  let refuseArchive = true
   const api: SchedulesApi = {
     sessionKey: () => 's1',
     list: vi.fn(async () => ({ schedules: rows })),
@@ -85,6 +86,7 @@ it('creates a reminder and archives it after confirmation', async () => {
       return reminder
     }),
     archive: vi.fn(async () => {
+      if (refuseArchive) return { deleted: false }
       rows = []
       return { deleted: true }
     }),
@@ -142,5 +144,14 @@ it('creates a reminder and archives it after confirmation', async () => {
     ).click(),
   )
   expect(api.archive).toHaveBeenCalledWith({ id: reminder.id })
+  expect(host.querySelector('[data-testid="schedules-row"]')).not.toBeNull()
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(t('schedulesError'))
+  refuseArchive = false
+  await act(async () =>
+    must(
+      document.querySelector<HTMLButtonElement>('[data-testid="schedules-archive-confirm"]'),
+      'retry archive',
+    ).click(),
+  )
   await vi.waitFor(() => expect(host.querySelector('[data-testid="schedules-empty"]')).not.toBeNull())
 })

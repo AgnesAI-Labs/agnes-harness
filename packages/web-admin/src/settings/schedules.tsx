@@ -1,25 +1,25 @@
-import { useSettingsOverlay } from './overlay.js'
 import {
   Button,
   Dialog,
+  EmptyState,
   Field,
   Icon,
-  EmptyState,
-  SettingsToolbar,
-  ListRow,
-  Tag,
-  Menu,
   IconButton,
+  ListRow,
+  Menu,
   SettingsDetails,
-  useUiText,
   SettingsInput,
   SettingsSelect,
   SettingsState,
   SettingsTextArea,
+  SettingsToolbar,
   StateSwitch,
+  Tag,
+  useUiText,
 } from '@agnes/web-ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AUTOMATION_NAMESPACE, automationCatalog } from './automation-locale.js'
+import { useSettingsOverlay } from './overlay.js'
 
 export type SchedulesApi = {
   list(params: { scope: 'session' | 'all'; sessionKey?: string; includeArchived?: boolean }): Promise<unknown>

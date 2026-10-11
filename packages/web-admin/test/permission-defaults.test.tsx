@@ -12,7 +12,11 @@ it.each([false, true])(
   async (readOnly) => {
     let snapshot = {
       revision: 4,
-      defaults: { preset: 'workspace-write', loop: 'default-loop', modelAdapter: 'default-model' },
+      defaults: {
+        preset: 'workspace-write',
+        loop: { id: 'default-loop', version: '1.0.0' },
+        modelAdapter: { id: 'default-model', version: '1.0.0', model: 'test' },
+      },
     }
     const writes: unknown[] = []
     const fetcher = vi.fn<typeof fetch>(async (url, init) => {
@@ -64,7 +68,11 @@ it.each([false, true])(
       )
       expect(writes[1]).toEqual({
         revision: 5,
-        defaults: { preset: 'full-access', loop: 'default-loop', modelAdapter: 'default-model' },
+        defaults: {
+          preset: 'full-access',
+          loop: { id: 'default-loop', version: '1.0.0' },
+          modelAdapter: { id: 'default-model', version: '1.0.0', model: 'test' },
+        },
       })
       expect(pick('full-access').checked).toBe(true)
     } finally {

@@ -35,7 +35,7 @@ export function SessionPicker({
   }
   return (
     <Select<string>
-      id={id}
+      {...(id ? { id } : {})}
       data-testid={testId}
       aria-label={label}
       value={value || null}

@@ -68,6 +68,7 @@ const submitMcpForm = async () => {
 const change = (id: string, value: string) => {
   const control = byId<HTMLInputElement>(id)
   control.value = value
+  control.dispatchEvent(new Event('input', { bubbles: true }))
   control.dispatchEvent(new Event('change', { bubbles: true }))
 }
 const submitted = (path: string) => requests.filter((request) => request.path === path)
@@ -108,6 +109,15 @@ beforeEach(async () => {
       const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {}
       requests.push({ path, body })
       if (offline) throw new Error('private network detail')
+      if (path === '/api/triggers')
+        return Response.json({
+          snapshot: {
+            config: { enabled: false, path: '/hooks/events', maxPayloadBytes: 65536 },
+            rules: [],
+            deliveries: [],
+            secretRefs: ['secret://dom/token'],
+          },
+        })
       if (path === 'context')
         return Response.json({ profile: 'default', clientId: 'dom', permissions: [], readOnly: false })
       if (path === 'skills/list')
@@ -197,8 +207,8 @@ beforeEach(async () => {
   await vi.waitFor(() => expect(byId('resource-detail').textContent).toContain('Fixture MCP'))
 })
 
-it('keeps manual MCP creation hidden when the MCP tab is selected', () => {
-  expect(byId<HTMLButtonElement>('mcp-create').hidden).toBe(true)
+it('offers the primary manual MCP creation action when the MCP tab is selected', () => {
+  expect(byId<HTMLButtonElement>('mcp-create').hidden).toBe(false)
   expect(byId<HTMLButtonElement>('mcp-add-preset').hidden).toBe(false)
 })
 
@@ -219,6 +229,7 @@ it('keeps the duplicate MCP environment-variable validation message in Chinese',
   document.documentElement.lang = 'zh-CN'
   window.dispatchEvent(new Event('agnes:locale-changed'))
   byId<HTMLButtonElement>('mcp-create').click()
+  byId('mcp-method-local').click()
   change('mcp-id', 'duplicate-env')
   change('mcp-name', 'Duplicate env')
   change('mcp-transport', 'stdio')
@@ -288,6 +299,7 @@ it.each(['stdio-env', 'http-bearer', 'http-header'])(
   'submits the selected transport and %s SecretRef from the real form',
   async (kind) => {
     byId('mcp-create').click()
+    byId('mcp-method-local').click()
     change('mcp-id', 'created')
     change('mcp-name', 'Created MCP')
     const stdio = kind === 'stdio-env'
@@ -330,6 +342,7 @@ it.each(['stdio-env', 'http-bearer', 'http-header'])(
 
 it('flags an illegal tool name inline while typing and clears it once fixed', () => {
   byId('mcp-create').click()
+  byId('mcp-method-local').click()
   change('mcp-id', 'demo')
   change('mcp-name', 'Demo')
   change('mcp-transport', 'http')
@@ -344,6 +357,7 @@ it('flags an illegal tool name inline while typing and clears it once fixed', ()
 
 it('flags credential material in the URL before submit', () => {
   byId('mcp-create').click()
+  byId('mcp-method-local').click()
   change('mcp-id', 'demo')
   change('mcp-name', 'Demo')
   change('mcp-transport', 'http')
@@ -354,6 +368,7 @@ it('flags credential material in the URL before submit', () => {
 
 it('blocks submit with a field message instead of posting an invalid definition', async () => {
   byId('mcp-create').click()
+  byId('mcp-method-local').click()
   change('mcp-id', 'demo')
   change('mcp-name', 'Demo')
   change('mcp-transport', 'stdio')
@@ -369,6 +384,11 @@ it('blocks submit with a field message instead of posting an invalid definition'
 
 it('uses shared pickers for transport, permitted credentials and headers, then resets on reopen', async () => {
   byId('mcp-create').click()
+  byId('mcp-method-local').click()
+  await vi.waitFor(() => expect(byId<HTMLSelectElement>('mcp-credential').options).toHaveLength(2))
+  change('mcp-credential', 'secret://dom/token')
+  expect(byId<HTMLTextAreaElement>('mcp-secret').value).toBe('TOKEN=secret://dom/token')
+  change('mcp-credential', '')
   byId('mcp-secret-kind-trigger').click()
   expect(document.querySelectorAll('#mcp-secret-kind-listbox [role="option"]')).toHaveLength(2)
   byId('mcp-secret-kind-listbox-1').click()
@@ -387,19 +407,28 @@ it('uses shared pickers for transport, permitted credentials and headers, then r
   expect(byId<HTMLSelectElement>('mcp-header-name').value).toBe('x-api-token')
   byId('mcp-cancel').click()
   byId('mcp-create').click()
+  byId('mcp-method-local').click()
   await settle()
-  expect(byId('mcp-transport-trigger').textContent).toBe('Local stdio')
+  expect(byId('mcp-transport-trigger').textContent).toBe('Local command')
   expect(byId('mcp-secret-kind-trigger').textContent).toBe('No credentials')
   expect(submitted('mcp/create')).toHaveLength(0)
 })
 
 it('tells the user a newly created MCP server can be enabled directly', async () => {
   byId('mcp-create').click()
-  change('mcp-id', 'created')
+  expect(byId('mcp-methods').hidden).toBe(false)
+  expect(byId('mcp-connection-fields').hidden).toBe(true)
+  byId('mcp-method-local').click()
+  expect(byId('mcp-connection-fields').hidden).toBe(false)
   change('mcp-name', 'Created MCP')
-  change('mcp-executable', 'fixture')
+  expect(byId<HTMLInputElement>('mcp-id').value).toBe('created-mcp')
+  change('mcp-command', 'fixture --mode "test suite"')
   await submitMcpForm()
   await vi.waitFor(() => expect(submitted('mcp/create')).toHaveLength(1))
+  expect(submitted('mcp/create')[0]?.body.definition).toMatchObject({
+    serverId: 'created-mcp',
+    transport: { kind: 'stdio', executable: 'fixture', args: ['--mode', 'test suite'] },
+  })
   await vi.waitFor(() =>
     expect(byId('resource-notice').textContent).toContain('was created but is not available yet'),
   )
@@ -455,6 +484,7 @@ it('updates static shell and React labels when the document locale changes', () 
 
 it('resets incompatible SecretRef selection on transport change and cancellation does not submit', () => {
   byId('mcp-create').click()
+  byId('mcp-method-local').click()
   change('mcp-secret-kind', 'stdio-env')
   change('mcp-transport', 'http')
   expect(byId<HTMLSelectElement>('mcp-secret-kind').value).toBe('none')
@@ -518,10 +548,11 @@ it('keeps the row Switch on the requested state so a failed MCP can still be sto
   // 不能靠把开关拨回关闭来表达——后端只按 desired 判定能否移除，拨回关闭会让资源再也停不掉。
   expect(toggle?.getAttribute('aria-checked')).toBe('true')
   expect(row?.querySelector('.state-light')).toBeNull()
-  expect(row?.textContent).toContain('MCP_CONNECT_FAILED')
+  expect(row?.querySelectorAll('.agh-tag')).toHaveLength(1)
   expect(row?.textContent).toContain('The connection failed. Check its configuration and try again.')
   row?.click()
   expect(byId<HTMLDialogElement>('resource-detail').open).toBe(true)
+  expect(byId('resource-detail').textContent).toContain('MCP_CONNECT_FAILED')
   expect(byId('resource-detail').textContent).not.toContain('Desired state')
   expect(byId('resource-detail').textContent).not.toContain('Actual state')
 
@@ -555,7 +586,7 @@ it('returns focus to the row it was opened from when the detail modal closes', a
   const restored = byId('resource-list').querySelector<HTMLElement>('.resource-row')
   expect(restored).not.toBeNull()
   // Restore the current row’s keyboard action after a keyed re-render.
-  expect(document.activeElement).toBe(restored?.querySelector('.plugin-details-button'))
+  expect(document.activeElement).toBe(restored?.querySelector('.agh-list-row-title'))
 })
 
 it('hides trust controls and binds enable and disable to the displayed revision', async () => {
@@ -648,6 +679,7 @@ it('surfaces catalog reload failure instead of retaining a success notice', asyn
 it('keeps rejected creation visible in the open dialog', async () => {
   refused = true
   byId('mcp-create').click()
+  byId('mcp-method-local').click()
   change('mcp-id', 'created')
   change('mcp-name', 'Created MCP')
   change('mcp-executable', 'fixture')
@@ -662,6 +694,7 @@ it('keeps rejected creation visible in the open dialog', async () => {
 it('shows polling failure after successful creation in the visible page notice', async () => {
   failPolling = true
   byId('mcp-create').click()
+  byId('mcp-method-local').click()
   change('mcp-id', 'created')
   change('mcp-name', 'Created MCP')
   change('mcp-executable', 'fixture')
@@ -679,6 +712,7 @@ it('shows polling failure after successful creation in the visible page notice',
 
 it('submits SSE transport with bearer token SecretRef from the form', async () => {
   byId('mcp-create').click()
+  byId('mcp-method-local').click()
   change('mcp-id', 'created-sse')
   change('mcp-name', 'Created SSE MCP')
   byId('mcp-transport-trigger').click()
@@ -715,6 +749,7 @@ it('rejects an unrecognized mcp-transport value instead of silently submitting a
   // guaranteeing they stay in sync. Simulate that drift with an option value neither package offers
   // today, and confirm the form fails loudly instead of silently producing an SSE definition.
   byId('mcp-create').click()
+  byId('mcp-method-local').click()
   change('mcp-id', 'created-corrupt')
   change('mcp-name', 'Created Corrupt MCP')
   const transportSelect = byId<HTMLSelectElement>('mcp-transport')

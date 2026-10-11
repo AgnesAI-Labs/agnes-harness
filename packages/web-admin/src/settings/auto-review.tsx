@@ -1,16 +1,16 @@
 import { AutoReviewConfig, validateAgainst } from '@agnes/protocol'
 import {
-  MetaText,
-  StateSwitch,
-  SettingsDetails,
-  SettingsSaveBar,
   Button,
   Field,
+  MetaText,
   SettingsCard,
+  SettingsDetails,
   SettingsInput,
+  SettingsSaveBar,
   SettingsSelect,
   SettingsState,
   SettingsToolbar,
+  StateSwitch,
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
@@ -146,7 +146,7 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
             .then((value) => {
               if (lifetime.current?.signal.aborted) return
               stored.current = value
-              setConfig((draft) => ({ ...draft, enabled: value.enabled }))
+              setConfig((draft) => ({ ...draft, enabled: value.enabled ?? false }))
               setMessage('saved')
             })
             .catch(() => {

@@ -311,6 +311,7 @@ test('UI background jobs and schedule cards persist observable results', async (
   await quality(page, info, 'schedule-card')
   await settings(page)
   await section(page, 'jobs')
+  await page.getByTestId('jobs-session-context').locator('summary').click()
   await expect(page.getByTestId('jobs-session').getByRole('combobox')).toBeVisible()
   await expect(page.getByTestId('jobs-panel')).not.toContainText(session.id)
   await expect(page.getByTestId('session-jobs-table')).toContainText('Completed')

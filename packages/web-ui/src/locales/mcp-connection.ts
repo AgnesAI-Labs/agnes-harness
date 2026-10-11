@@ -2,6 +2,7 @@ import { resourceFailureCatalog } from '../resource-failure.js'
 export const mcpConnectionCatalog = {
   en: {
     ...resourceFailureCatalog.en,
+    connectionFailed: 'Connection failed',
     local: 'Local command',
     remote: 'Remote service',
     actions: 'Actions',
@@ -15,6 +16,7 @@ export const mcpConnectionCatalog = {
   },
   'zh-CN': {
     ...resourceFailureCatalog['zh-CN'],
+    connectionFailed: '连接失败',
     local: '本地命令',
     remote: '远程服务',
     actions: '操作',

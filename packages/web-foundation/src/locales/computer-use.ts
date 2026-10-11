@@ -3,6 +3,7 @@ import type { LocaleCatalog, LocaleVars, UiLocale } from '@agnes/web-client'
 export const COMPUTER_USE_LOCALE_NAMESPACE = '@agnes/web-computer-use'
 
 const en = {
+  'computerUse.more': 'Details and maintenance',
   'computerUse.intro': 'Let Agnes see the screen and operate apps. This needs a model that accepts images.',
   'computerUse.action.refresh': 'Refresh status',
   'computerUse.status.eyebrow': 'Status',
@@ -155,6 +156,7 @@ const en = {
 } as const
 
 const zh = {
+  'computerUse.more': '详情与维护',
   'computerUse.intro': '让 Agnes 查看屏幕并操作应用。需要使用支持图片的模型。',
   'computerUse.action.refresh': '刷新状态',
   'computerUse.status.eyebrow': '使用状态',

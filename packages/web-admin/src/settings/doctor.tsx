@@ -5,14 +5,14 @@ import {
   DoctorChecks,
   FIRST_RUN_NAMESPACE,
   firstRunCatalog,
-  SettingsState,
   SettingsDetails,
+  SettingsState,
   SettingsToolbar,
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
-import { DIAGNOSTICS_NAMESPACE, diagnosticsCatalog } from './diagnostics-locale.js'
 import { DiagnosticsRequestError } from './diagnostics-api.js'
+import { DIAGNOSTICS_NAMESPACE, diagnosticsCatalog } from './diagnostics-locale.js'
 
 export function DoctorPanel({ load }: { load(probe: boolean, signal: AbortSignal): Promise<DoctorResult> }) {
   const { t: ux } = useUiText(DIAGNOSTICS_NAMESPACE, diagnosticsCatalog)
