@@ -26,7 +26,6 @@ type ExampleCardsProps = {
 export function ExamplesPanel(props: ExampleCardsProps & { onBundles(): void }) {
   return (
     <section>
-      <h3>{props.t('examples')}</h3>
       <p>{props.t('examplesHelp')}</p>
       <OfficialExampleCards {...props} />
       <Button onClick={props.onBundles}>{props.t('chooseBundle')}</Button>
@@ -134,7 +133,7 @@ export function OfficialExampleCards({ api, canInstall = false, installed, t, on
     )
   })
   return (
-    <section aria-busy={busy}>
+    <section className="plugin-examples" aria-busy={busy}>
       {busy && <SettingsState tone="loading">{t('loading')}</SettingsState>}
       {failed && <SettingsState tone="error">{t('unavailable')}</SettingsState>}
       {!busy && !failed && !rows.length && <p>{t('noExamples')}</p>}

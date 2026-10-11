@@ -916,3 +916,8 @@
 #plugin-list:has([data-testid="candidate-review"]) [data-testid="plugin-browser"] {
   display: none;
 }
+
+/* Three introductory example cards fit the settings pane; narrow panes wrap naturally. */
+.plugin-examples .runtime-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+}

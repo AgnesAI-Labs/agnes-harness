@@ -14,7 +14,7 @@ for (const [locale, example, loop] of [
     await page.addInitScript((locale: string) => localStorage.setItem('agnes-locale', locale), locale)
     await page.goto('/?settings=examples')
     const more = page.getByTestId('example-more')
-    if (await more.count()) await more.locator('summary').click()
+    if (await more.count()) await page.getByTestId('example-more-toggle').click()
     const button = page.getByTestId(`example-install-${example}`)
     await expect(button).toBeVisible()
     const folder = process.env.AGH_UI_REPORT && join(process.env.AGH_UI_REPORT, 'flow', locale)
