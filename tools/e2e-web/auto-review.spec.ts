@@ -87,7 +87,15 @@ test('reviewer defaults and session overrides are configurable from Web in both 
   await page.locator('#model').click()
   await page.getByTestId('session-auxiliary-models').locator('summary').click()
   await expect(page.getByTestId('session-model-slot-fast')).toHaveValue(selected!)
-  await page.getByTestId('session-model-slot-verifier').selectOption(selected!)
+  const verifier = page.getByTestId('session-model-slot-verifier')
+  const sessionModel = await verifier.locator('option').evaluateAll((options) => {
+    const model = options.find(
+      (option) => (option as HTMLOptionElement).value && !(option as HTMLOptionElement).disabled,
+    )
+    return (model as HTMLOptionElement | undefined)?.value
+  })
+  expect(sessionModel).toBeTruthy()
+  await verifier.selectOption(sessionModel!)
   await page.getByTestId('session-model-slot-verifier-save').click()
   await expect(page.getByTestId('session-model-slot-status')).toContainText('saved')
   await expect(page.locator('#model')).toHaveText(primaryLabel!)
@@ -96,6 +104,7 @@ test('reviewer defaults and session overrides are configurable from Web in both 
   await page.reload()
   await settings(page, 'zh-CN')
   await section(page, 'model')
+  await expect(page.getByTestId('auxiliary-models')).toBeVisible()
   await expect(page.getByTestId('auxiliary-models')).toContainText('辅助模型')
   await expect(page.getByTestId('model-slot-fast')).toHaveValue(selected!)
   await page.getByTestId('model-slot-fast').selectOption('')
