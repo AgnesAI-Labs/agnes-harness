@@ -57,7 +57,7 @@ describe('standard-windows through the real approval seam', () => {
         expect(await seam.ask(request(path))).toBe('allowed-once')
       }
       for (const path of ['../outside', 'D:/other/file', 'NUL', 'file:stream', '\\\\other\\share\\file']) {
-        expect(await seam.ask(request(path))).toBe('unavailable')
+        expect(await seam.ask(request(path))).toEqual({ verdict: 'unavailable', reason: 'no-approver' })
       }
     },
   )

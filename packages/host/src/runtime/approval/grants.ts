@@ -1,5 +1,4 @@
-import { canonicalJson } from '@agnes/core-common/request/hash'
-import type { ApprovalGrantQuery, ApprovalSeam } from '@agnes/core'
+import { type ApprovalGrantQuery, type ApprovalSeam, canonicalJson } from '@agnes/core'
 import type {
   PersistenceMetadataNamespace,
   PersistenceSqliteTableHandle as TableHandle,
