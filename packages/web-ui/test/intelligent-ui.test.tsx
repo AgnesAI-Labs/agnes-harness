@@ -676,11 +676,9 @@ describe('preset render isolation', () => {
         createElement(
           'div',
           null,
-          createElement(
-            ComponentBoundary,
-            { fallback: createElement('p', { id: 'fallback' }, 'fallback') },
-            createElement(Throws),
-          ),
+          <ComponentBoundary fallback={<p id="fallback">fallback</p>}>
+            <Throws />
+          </ComponentBoundary>,
           createElement('p', { id: 'sibling' }, 'still here'),
         ),
       ),
