@@ -88,7 +88,7 @@ describe('Intelligent UI session projection and commands', () => {
         revision: 1,
         actionId: 'confirm',
         commandId: 'command-1',
-        input: { adjustment: { reason: 'Reviewed' } },
+        input: { adjustment: { reason: 'Reviewed' }, when: { day: '2026-10-10' } },
         selection: { differences: ['txn-1'] },
         confirmed: true,
       },
