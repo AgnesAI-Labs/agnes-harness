@@ -109,12 +109,10 @@ Tool results use constrained previews and detail views. They cannot render arbit
 
 Implementation: [Web entry](../../packages/web/src/serve-entry.ts), [application](../../packages/web/src/app.ts), [server and origin checks](../../packages/web-server/src/server.ts), [session actions](../../packages/web/src/session-actions.ts).
 
-## Terminal and jobs
+## Terminal and background jobs
 
-Open Runtime settings → Terminal or Jobs and enter the session key. Choose Bash, Zsh or PowerShell, then Open terminal. Focus its output to type, paste, use arrow keys or Ctrl+C. Refresh reconnects to the same live PTY; Close kills the terminal and its processes. Shell selection applies when opening a new terminal. The text terminal supports cursor movement and line clearing; it does not emulate graphical terminal extensions.
+Open a session, then use the terminal tab in the workbench’s bottom panel to create a terminal. No session ID is required. Focus the output to type, paste, use arrow keys or Ctrl+C. Refresh reconnects to the same PTY. Closing a tab detaches its UI; the explicit kill action ends the human-owned terminal and its process. Shell selection affects new terminals only. The text terminal supports cursor movement and line clearing, but does not emulate graphical terminal extensions.
 
-Jobs shows shell commands, persistent interpreters, PTYs and child agents. Select Output to read retained output or Kill to stop a running job. Completion notices appear below the list. All operations use that session's preset and ownership. Native PTY currently supports macOS/Linux; unavailable shells/providers report an error.
+The background jobs settings page selects sessions by title, workspace and relative date, defaults to the current session and updates automatically. It shows shell commands, persistent interpreters, PTYs and subagent status and output. A running human-owned job can be stopped from its row menu after confirmation. Agent-owned jobs are read only here; ask the agent to stop them in their session. Every operation remains constrained by that session’s sandbox preset.
 
-The `agnes/jobs-web` extension requires `services` in the profile capability ceiling. New templates include it. Existing profiles can add it explicitly; omitting it keeps the shell/job tools available while Web controls remain unavailable. Live jobs survive page refresh and turn completion, but not a Host restart.
-
-The jobs settings panel can stop human-owned terminals. Agent-owned jobs remain read-only there; ask the agent to use `job_kill` in the owning session. The backend owner check also refuses direct UI control of agent-owned processes.
+The `agnes/jobs-web` extension needs `services` in its capability ceiling. New templates include it; older configurations can add it explicitly. Without that grant, shell/job tools still work but Web control is unavailable. Jobs survive page refreshes and turns, but are not recovered after a Host restart. Local PTYs support macOS/Linux; missing shells or providers without interactive execution report an error.

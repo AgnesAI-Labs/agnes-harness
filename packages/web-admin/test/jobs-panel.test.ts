@@ -12,78 +12,74 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-it('reconnects a user PTY after refresh; typing and explicit close control that owned job', async () => {
-  localStorage.setItem('agnes.jobs.session', 'session-a')
-  localStorage.setItem('agnes.terminal.session-a', 'pty-a')
+it('selects a valid session by title, reads output and confirms only human-owned stops', async () => {
+  localStorage.setItem('agnes.jobs.session', 'deleted-session')
   const job: SessionJob = {
-    id: 'pty-a',
+    id: 'human-job',
     owner: 'human',
-    kind: 'pty',
-    command: 'bash',
+    kind: 'shell',
+    command: 'sleep 10',
     cwd: '/w',
     status: 'running',
     code: null,
     truncated: false,
-    stdout: 'ready\r\n',
+    stdout: 'ready\n',
   }
-  let acknowledge: (() => void) | undefined
   const api = {
     read: vi.fn(async (_scope: string, id?: string) => ({
-      jobs: [job, { ...job, id: 'agent-a', owner: 'agent' as const, kind: 'shell' as const }],
+      jobs: [job, { ...job, id: 'agent-job', owner: 'agent' as const }],
       completions: [],
       ...(id ? { job } : {}),
     })),
-    control: vi.fn(async (_scope: string, input: Record<string, unknown>) => {
-      if (input.operation === 'send' && input.text === 'x')
-        await new Promise<void>((resolve) => {
-          acknowledge = resolve
-        })
-      return { ok: true }
-    }),
+    control: vi.fn(async () => ({ ok: true })),
   }
-  const container = document.createElement('div')
-  document.body.append(container)
-  const root = createRoot(container)
+  const sessions = {
+    current: () => 'session-a',
+    list: async () => [
+      { id: 'session-a', title: 'Release review', workspace: 'demo', createdAt: new Date().toISOString() },
+    ],
+  }
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
   try {
-    await act(async () => root.render(createElement(JobsPanel, { terminal: true, api })))
+    await act(async () => root.render(createElement(JobsPanel, { api, sessions })))
     await act(async () => {})
-    expect(api.read).toHaveBeenCalledWith('session-a', 'pty-a')
-    const stopFor = (id: string) =>
-      container.querySelector('[data-testid="session-job-' + id + '"]')?.querySelectorAll('button')[1]
-    expect(stopFor('agent-a')?.disabled).toBe(true)
-    expect(stopFor('agent-a')?.title).toContain('Ask the agent')
-    expect(stopFor('pty-a')?.disabled).toBe(false)
-    expect(container.querySelector<HTMLTextAreaElement>('[data-testid="terminal-output"]')?.value).toContain(
-      'ready',
-    )
-    await act(async () => {
-      container
-        .querySelector('[data-testid="terminal-output"]')
-        ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true }))
-    })
-    expect(api.control).toHaveBeenCalledWith('session-a', { operation: 'send', jobId: 'pty-a', text: 'x' })
-    await act(async () => {
-      for (const key of ['y', 'z', 'Enter'])
-        container
-          .querySelector('[data-testid="terminal-output"]')
-          ?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
-    })
-    await act(async () => acknowledge?.())
-    // PTY writes preserve every byte, but queued typing is sent together after a slow acknowledgement.
-    expect(api.control).toHaveBeenCalledWith('session-a', { operation: 'send', jobId: 'pty-a', text: 'yz\r' })
-    expect(
-      api.control.mock.calls
-        .filter(([, input]) => input.operation === 'send')
-        .map(([, input]) => input.text)
-        .join(''),
-    ).toBe('xyz\r')
+    expect(api.read).toHaveBeenCalledWith('session-a', undefined)
+    expect(localStorage.getItem('agnes.jobs.session')).toBeNull()
+    expect(host.querySelector('[data-testid="jobs-session"]')?.textContent).toContain('Release review')
+    expect(host.textContent).not.toContain('session-a')
     await act(async () =>
-      container.querySelector<HTMLButtonElement>('[data-testid="terminal-close"]')?.click(),
+      host.querySelector<HTMLButtonElement>('[data-testid="session-job-human-job"] button')?.click(),
     )
-    expect(api.control).toHaveBeenCalledWith('session-a', { operation: 'kill', jobId: 'pty-a' })
-    expect(localStorage.getItem('agnes.terminal.session-a')).toBeNull()
-    await act(async () => root.unmount())
-    expect(api.control.mock.calls.filter(([, input]) => input.operation === 'kill')).toHaveLength(1)
+    expect(host.querySelector('[data-testid="job-output"]')?.textContent).toContain('ready')
+    const menuFor = (id: string) =>
+      host.querySelector<HTMLButtonElement>(
+        '[data-testid="session-job-' + id + '"] button[aria-haspopup="menu"]',
+      )!
+    await act(async () => menuFor('agent-job').click())
+    const agentStop = document.querySelector<HTMLButtonElement>('[role="menuitem"]')!
+    expect(agentStop.getAttribute('aria-disabled')).toBe('true')
+    await act(async () => agentStop.click())
+    expect(api.control).not.toHaveBeenCalled()
+    await act(async () => menuFor('agent-job').click())
+    await act(async () => menuFor('human-job').click())
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[role="menuitem"]:not([aria-disabled="true"])')?.click(),
+    )
+    expect(api.control).not.toHaveBeenCalled()
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[data-testid="jobs-stop-cancel"]')?.click(),
+    )
+    expect(api.control).not.toHaveBeenCalled()
+    await act(async () => menuFor('human-job').click())
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[role="menuitem"]:not([aria-disabled="true"])')?.click(),
+    )
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[data-testid="jobs-stop-confirm"]')?.click(),
+    )
+    expect(api.control).toHaveBeenCalledWith('session-a', { operation: 'kill', jobId: 'human-job' })
   } finally {
     await act(async () => root.unmount())
   }

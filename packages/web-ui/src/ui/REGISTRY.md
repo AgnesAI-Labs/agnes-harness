@@ -70,3 +70,7 @@ Both Web build paths compose the component rules into the existing theme bridge 
 routes dragging through the native cancel contract (including busy vetoes), updates its close label
 on locale changes, and returns a disposer. Hosts release it on pagehide; closed/removed dialogs
 release their own listeners. Existing IDs and controllers remain authoritative.
+
+| `SessionPicker` | Shared | Select | Caller-owned session titles, workspace names and relative dates; identities only in values; searchable above seven choices. |
+
+`releaseDialogModal(host)` temporarily keeps a native settings host visible without modal focus, then restores it after an owned detail surface closes.

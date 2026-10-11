@@ -41,6 +41,7 @@ import { type PermissionMode, permissionLabel, yoloEnabled } from '@agnes/web-ad
 import { createSettingsController } from '@agnes/web-admin/settings'
 import { loadRuntimeCatalog } from '@agnes/web-admin/settings/api'
 import { settingsCatalog } from '@agnes/web-admin/settings/locales'
+import { bindJobsSessions } from '@agnes/web-admin/settings/jobs-api'
 import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 import { settingsSections } from '@agnes/web-client'
 
@@ -711,6 +712,25 @@ const client = createClient({
   auth: { kind: 'local' },
   journal: memoryJournal(),
 })
+const stopJobsSessions = bindJobsSessions({
+  current: () => current?.id,
+  async list() {
+    const rows: PageSessionMeta['items'] = []
+    let cursor: string | undefined
+    do {
+      const page = await client.session.list({ limit: 500, ...(cursor ? { cursor } : {}) })
+      rows.push(...page.items)
+      cursor = page.next
+    } while (cursor)
+    return rows.map((row) => ({
+      id: row.sessionId,
+      title: row.title || t('app.status.newTask'),
+      workspace: row.cwd?.split(/[\\/]/).filter(Boolean).at(-1) ?? '',
+      createdAt: row.createdAt,
+    }))
+  },
+})
+window.addEventListener('pagehide', stopJobsSessions, { once: true })
 let intentionalClose = false
 // Recovery state lives beside the notice, not in it: later errors rewrite the notice, and the
 // retry control must survive them.

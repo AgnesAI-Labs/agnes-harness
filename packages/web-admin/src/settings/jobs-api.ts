@@ -55,3 +55,22 @@ export function sessionJobsApi(fetcher: typeof fetch = fetch) {
     },
   }
 }
+
+export type JobsSessionSource = {
+  list(): Promise<import('@agnes/web-ui').SessionOption[]>
+  current(): string | undefined
+}
+let sessions: JobsSessionSource | undefined
+/** Host injects its existing authorized session client, rather than opening a second connection. */
+export function bindJobsSessions(source: JobsSessionSource): () => void {
+  sessions = source
+  return () => {
+    if (sessions === source) sessions = undefined
+  }
+}
+export function jobsSessions(): JobsSessionSource {
+  return {
+    list: () => (sessions ? sessions.list() : Promise.reject(new Error('Sessions unavailable'))),
+    current: () => sessions?.current(),
+  }
+}
