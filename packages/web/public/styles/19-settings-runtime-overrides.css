@@ -50,6 +50,20 @@
 /* Settings IA: scoped after the legacy responsive cascade by an explicit shell class. */
 #config-form.settings-shell {
   grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+#config-form.settings-shell[data-settings-view] .settings-rail {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  flex-direction: column;
+  max-height: none;
+  overflow-y: auto;
+  padding: var(--s24) var(--s16);
+}
+#config-form.settings-shell #settings-content-slots {
+  grid-column: 2;
+  grid-row: 1;
 }
 .settings-shell .settings-rail,
 .runtime-settings > .settings-rail {
@@ -61,6 +75,7 @@
 .settings-shell #settings-everyday,
 .settings-shell #settings-advanced {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s4);
   overflow: visible;
 }
@@ -163,7 +178,7 @@
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr);
   }
-  #config-form.settings-shell .settings-rail {
+  #config-form.settings-shell[data-settings-view] .settings-rail {
     grid-column: 1;
     grid-row: 1;
     display: flex;
@@ -178,7 +193,7 @@
   #config-form.settings-shell[data-settings-view="list"] .settings-rail {
     max-height: none;
   }
-  .settings-shell #settings-content-slots {
+  #config-form.settings-shell #settings-content-slots {
     grid-column: 1;
     grid-row: 1;
   }

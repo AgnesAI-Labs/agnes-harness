@@ -145,7 +145,7 @@ for (const locale of ['en', 'zh-CN']) {
           await page.getByTestId('doctor-check-mcp').scrollIntoViewIfNeeded()
           await page
             .getByTestId('settings-page-diagnostics')
-            .getByRole('heading', { name: en ? 'Diagnostics' : '诊断', exact: true })
+            .getByRole('heading', { name: en ? 'Runtime & diagnostics' : '运行时与诊断', exact: true })
             .scrollIntoViewIfNeeded()
           await quality('runtime-doctor')
           await closeSettings(page, locale)

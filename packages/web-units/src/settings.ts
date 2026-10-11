@@ -696,7 +696,21 @@ function SettingsBuiltinImpl(
       }
       const onRoute = (event: Event) => {
         const id = String((event as CustomEvent).detail)
-        navigate(id)
+        // The embedded hub echoes its canonical page after mounting. Keep the
+        // requested subsection through that echo, including before startup routing.
+        const url = new URL(location.href)
+        const requested = url.searchParams.get('settings') ?? ''
+        const linked = settingsRoute(requested)
+        const fragment = url.hash.slice(1)
+        const anchoredId = fragment.replace(/^settings-subsection-/, '')
+        const anchored = settingsRoute(anchoredId)
+        navigate(
+          linked.id === id && linked.anchor
+            ? requested
+            : requested === id && anchored.id === id && anchored.anchor === fragment
+              ? anchoredId
+              : id,
+        )
       }
       const onKeys = (event: KeyboardEvent) => {
         const target = event.target as HTMLElement
