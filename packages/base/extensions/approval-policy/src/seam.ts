@@ -40,13 +40,15 @@ export const approvalPolicy: SeamFactory<ApprovalSeam> = async (ctx) => {
           const action = matchPolicy(cfg.rules, tool.name, argv)
           if (action === 'deny') return { verdict: 'rejected', reason: 'policy_denied' }
           // Tainted context and an `always` tool both keep the human in the loop whatever the table
-          // says: a rule cannot pre-approve a call the model may have been talked into.
+          // says: a rule cannot pre-approve a call the model may have been talked into. An allow names
+          // the table as what decided, so a row written without waiting for anyone does not read as a
+          // person's choice.
           if (
             action === 'allow' &&
             tool.meta.requiresApproval !== 'always' &&
             (!req.taint || req.scope.includes('/'))
           )
-            return 'allowed-once'
+            return { verdict: 'allowed-once', reason: 'policy_allowed' }
         }
       }
       const prompter = ctx.adapters.prompter

@@ -275,7 +275,10 @@ function fingerprintToolDefinition(def: ToolDef, meta: ToolSource): string {
         isOpenWorld: def.meta.isOpenWorld,
         ...(def.meta.returnsImages === true ? { returnsImages: true } : {}),
         replay: def.meta.replay,
-        requiresApproval: def.meta.requiresApproval ?? (def.meta.isDestructive ? 'destructive' : 'never'),
+        // The same band resolveToolCallPolicy gives a tool that declared none.
+        requiresApproval:
+          def.meta.requiresApproval ??
+          (def.meta.isDestructive || !def.meta.isReadOnly ? 'destructive' : 'never'),
         approvalScopes: [],
       },
     }),

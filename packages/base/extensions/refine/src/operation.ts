@@ -87,7 +87,6 @@ async function askForGlobal(ctx: OpContext, proposal: RefineProposal): Promise<b
     summary: proposal.rationale,
     risk: 'always' as const,
     bindingHash: '',
-    deadline: new Date(ctx.session.d.clock() + ctx.preset.approval.timeoutMs).toISOString(),
   }
   const overridden = ctx.session.hooks.approvalRequest
     ? (
@@ -102,11 +101,13 @@ async function askForGlobal(ctx: OpContext, proposal: RefineProposal): Promise<b
         })
       ).request
     : undefined
+  // Stamped as the question goes out, after the hook: the window is the person's.
   const finalAsked = {
     ...asked,
     ...(overridden?.summary === undefined ? {} : { summary: overridden.summary }),
+    deadline: new Date(ctx.session.d.clock() + ctx.preset.approval.timeoutMs).toISOString(),
   }
-  const verdict = await ctx.session.askApproval(
+  const answer = await ctx.session.askApprovalAnswer(
     {
       ...finalAsked,
       sessionKey: ctx.session.key,
@@ -118,19 +119,21 @@ async function askForGlobal(ctx: OpContext, proposal: RefineProposal): Promise<b
     },
     ctx.signal,
   )
+  // The decided row carries who or what answered, as every other approval row does.
   await ctx.session.append(
-    typeof verdict === 'object'
-      ? [ctx.session.ev('approval/asked', { ...finalAsked, pending: verdict })]
+    'ticket' in answer
+      ? [ctx.session.ev('approval/asked', { ...finalAsked, pending: answer })]
       : [
           ctx.session.ev('approval/asked', finalAsked),
           ctx.session.ev('approval/decided', {
             requestId: finalAsked.requestId,
-            verdict,
+            verdict: answer.verdict,
+            ...(answer.reason === undefined ? {} : { reason: answer.reason }),
             via: 'sync',
           }),
         ],
   )
-  return verdict === 'allowed-once' || verdict === 'allowed-session'
+  return !('ticket' in answer) && (answer.verdict === 'allowed-once' || answer.verdict === 'allowed-session')
 }
 
 /** Durable queue drain that runs only after the turn's verifier result is known. */

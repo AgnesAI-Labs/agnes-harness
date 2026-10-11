@@ -40,9 +40,13 @@ const withoutTool = (over: Partial<ApprovalRequest>): ApprovalRequest => {
 const EDIT_ALLOW = { tool: 'edit|write', argv: '/work/proj/(?:[^/]+/)*[^/]+', action: 'allow' }
 
 describe('approval-policy sync path', () => {
-  it('allows by policy without asking anyone', async () => {
+  // The answer says the table decided: a row written at once must not read like a person's choice.
+  it('allows by policy without asking anyone, and says the policy decided', async () => {
     const init = fakeSeamInit({ preset: { approval: { command_policy: [EDIT_ALLOW] } } })
-    expect(await (await approvalPolicy(init)).ask(req())).toBe('allowed-once')
+    expect(await (await approvalPolicy(init)).ask(req())).toEqual({
+      verdict: 'allowed-once',
+      reason: 'policy_allowed',
+    })
   })
 
   it('binds path normalization to the invocation workspace instead of the startup root', async () => {
@@ -57,7 +61,7 @@ describe('approval-policy sync path', () => {
     expect(await seam.ask(req())).toBe('unavailable')
     const workspace = await seam.forWorkspace?.({ root: '/work/other' })
     expect(workspace).toBeDefined()
-    expect(await workspace?.ask(req())).toBe('allowed-once')
+    expect(await workspace?.ask(req())).toEqual({ verdict: 'allowed-once', reason: 'policy_allowed' })
   })
 
   it('rejects by policy deny', async () => {
@@ -133,9 +137,10 @@ describe('approval-policy sync path', () => {
       preset: { approval: { command_policy: [EDIT_ALLOW] } },
       prompter: async () => 'rejected',
     })
-    expect(await (await approvalPolicy(init)).ask(req({ taint: true, scope: 'parent/childUlid' }))).toBe(
-      'allowed-once',
-    )
+    expect(await (await approvalPolicy(init)).ask(req({ taint: true, scope: 'parent/childUlid' }))).toEqual({
+      verdict: 'allowed-once',
+      reason: 'policy_allowed',
+    })
   })
 
   it('still asks a tainted, table-unmatched call for a delegated child', async () => {
@@ -239,7 +244,7 @@ describe('approval-policy sync path', () => {
     const verdict = await (await approvalPolicy(init)).ask(
       req({ tool: { name: 'shell', args: { command: '   ' }, meta } }),
     )
-    expect(verdict).toBe('allowed-once')
+    expect(verdict).toEqual({ verdict: 'allowed-once', reason: 'policy_allowed' })
   })
 
   it('refuses to assemble against a table it cannot read', async () => {

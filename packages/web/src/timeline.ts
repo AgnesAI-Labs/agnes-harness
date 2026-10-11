@@ -82,9 +82,16 @@ const APPROVAL_DECISION_KEYS = new Map<string, string>([
   ['cancelled', 'timeline.decision.cancelled'],
 ])
 
-/** Why the decision ended as it did. A ledger from before reasons existed has none and falls back to the verdict. */
+/**
+ * Why the decision ended as it did. A ledger from before reasons existed has none and falls back to
+ * the verdict, and so does `user_allowed`: the verdict already says what the user allowed and for how
+ * long, which a label naming only who decided would hide.
+ */
 const APPROVAL_REASON_KEYS = new Map<string, string>([
   ['user_rejected', 'timeline.reason.userRejected'],
+  ['policy_allowed', 'timeline.reason.policyAllowed'],
+  ['approver_failed', 'timeline.reason.approverFailed'],
+  ['client_cancelled', 'timeline.reason.clientCancelled'],
   ['timeout', 'timeline.reason.timeout'],
   ['no_approver', 'timeline.reason.noApprover'],
   ['stopped', 'timeline.reason.stopped'],

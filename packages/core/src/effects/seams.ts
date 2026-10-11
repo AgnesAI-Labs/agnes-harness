@@ -13,14 +13,23 @@ import type { FsPolicy } from './fs-guard.js'
 
 export type Verdict = ApprovalVerdict
 export type Pending = { ticket: string; expiresAt: string }
-/** Why an approval ended the way it did. `approval/decided.reason` carries one of these. */
+/**
+ * Who or what ended an approval, and why. `approval/decided.reason` carries one of these, so a row
+ * written without waiting for anyone still says whether a rule, the user or a failure decided it.
+ */
 export type ApprovalReason =
+  | 'user_allowed'
   | 'user_rejected'
+  | 'policy_allowed'
   | 'timeout'
   | 'no_approver'
   | 'stopped'
   | 'policy_denied'
   | 'subagent_scope'
+  /** The question never reached anyone who could answer it, or the answer could not be read. */
+  | 'approver_failed'
+  /** The client withdrew the question unanswered: it was closed, switched away or ran out of time. */
+  | 'client_cancelled'
 /**
  * A verdict with the reason behind it. Seams and prompters may return it in place of a bare
  * `Verdict`; the bare string stays valid and means "no reason given".
