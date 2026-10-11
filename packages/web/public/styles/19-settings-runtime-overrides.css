@@ -162,6 +162,10 @@
 .runtime-settings > nav {
   width: 240px;
 }
+.settings-shell .system-prompt-section,
+.runtime-settings .system-prompt-section {
+  min-height: var(--control-height-touch);
+}
 .settings-nav-item small {
   color: var(--agnes-text-secondary);
   font-size: var(--font-size-xs);
