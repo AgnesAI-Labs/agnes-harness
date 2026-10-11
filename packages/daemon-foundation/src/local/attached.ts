@@ -1,4 +1,4 @@
-import type { HostSession } from '@agnes/host'
+import type { PersistenceScanQuery } from '@agnes/extension-api'
 import { type DaemonNotice, type EventEnvelope, MAX_FRAME_BYTES, META_KEY } from '@agnes/protocol'
 import type { PreviewSnapshotEntry, PreviewUpdate } from '../registry.js'
 import { notify } from '../rpc.js'
@@ -126,17 +126,25 @@ export class AttachedFeed {
   }
 
   /** Replays (fromSeq, lastSeq] - fromSeq is the last row the client already applied, exclusive. */
-  async replay(session: HostSession, fromSeq: number, lastSeq: number): Promise<void> {
+  async replay(
+    session: {
+      scan(
+        query: Pick<PersistenceScanQuery, 'fromSeq' | 'toSeq' | 'limit'>,
+      ): Promise<readonly EventEnvelope[]>
+    },
+    fromSeq: number,
+    lastSeq: number,
+  ): Promise<void> {
     // Direct package callers retain the old one-call form; production calls beginReplay() before
     // publishing the feed so the capture/register window is covered too.
     if (this.held === null) this.beginReplay()
     try {
       for (let from = fromSeq + 1; from <= lastSeq; from += 500) {
-        const page = (await session.scan({
+        const page = await session.scan({
           fromSeq: from,
           toSeq: Math.min(lastSeq, from + 499),
           limit: 500,
-        })) as EventEnvelope[]
+        })
         for (const e of page) {
           if (e.seq <= this.coveredSeq) continue
           this.coveredSeq = e.seq

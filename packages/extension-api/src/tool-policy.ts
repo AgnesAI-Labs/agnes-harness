@@ -42,9 +42,14 @@ export type ToolPolicyDecision = {
   approval?: ApprovalConstraints
 }
 
-/** A tool-free model operation and session-wide reservation, both owned by the runtime. */
+/**
+ * Runtime-owned ports for advisory tool review. They provide no tool execution or authorization;
+ * the runtime still enforces the returned policy decision and any required human approval.
+ */
 export interface ToolPolicyPorts {
+  /** Reserve one review against the session-wide limit before calling model; false means exhausted. */
   reserve(limit: number): boolean | Promise<boolean>
+  /** Run a tool-free request on the selected slot, respecting cancellation and reporting available usage. */
   model(
     request: { slot: 'fast' | 'verifier'; prompt: string },
     signal: AbortSignal,

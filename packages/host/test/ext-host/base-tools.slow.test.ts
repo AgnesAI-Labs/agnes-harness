@@ -8,8 +8,8 @@ import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import {
   ecosystem as baseEcosystem,
   mcpCatalogHubFor,
-  mcpStablePrefix,
   mcpServerExtension,
+  mcpStablePrefix,
 } from '@agnes/base'
 import { testFsPolicy } from '@agnes/core/testkit'
 import { createPosixPlatform, createWin32Platform } from '@agnes/host-infrastructure/adapters/platform'

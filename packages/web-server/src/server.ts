@@ -6,7 +6,7 @@ import { FILE_UPLOAD_PATH, httpRpcError, normalizeRpcError, type RpcError } from
 import { HISTORY_SEARCH_PATH, handleHistorySearch } from './history-route.js'
 import type { PluginRebuiltEvent, WebServer, WebServerOptions } from './server-types.js'
 import { UI_COMPONENT_MODULE_BYTES, uiComponentFrame } from './ui-component-frame.js'
-import { handleFileUpload } from './upload-route.js'
+import { fileUploadRoute } from './upload-route.js'
 import { webhookRoute } from './webhook-route.js'
 
 export { DEFAULT_WEB_PORT, PLAN_MODE_PATH, WORKSPACE_PICKER_PATH } from './server-assets.js'
@@ -158,6 +158,7 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
       // prevent the ordinary page (and its normal roster invalidation channel) from starting.
     }
   }
+  const handleFileUpload = fileUploadRoute(expectedOrigin.origin, options.fileUpload)
   const handleWebhook = options.triggers ? webhookRoute(expectedOrigin.origin, options.triggers) : undefined
   const server = createServer(async (request, response) => {
     try {
@@ -171,7 +172,7 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
       if (await handleWebhook?.(request, response)) return
       const requestUrl = new URL(request.url ?? '/', expectedOrigin)
       if (requestUrl.pathname === FILE_UPLOAD_PATH) {
-        await handleFileUpload(request, response, expectedOrigin.origin, options.fileUpload)
+        await handleFileUpload(request, response)
         return
       }
       if (requestUrl.pathname === HISTORY_SEARCH_PATH) {

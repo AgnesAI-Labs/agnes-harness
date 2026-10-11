@@ -76,6 +76,8 @@ export function normalizeRpcError(error: RpcError): AppServerError {
     code: error.code,
     message: name,
     data: {
+      // Method boundaries allowlist and redact public details before creating RpcError data.
+      // Preserve those fields (ids, revisions, retry hints); this normalizer owns only the envelope.
       ...data,
       code: error.data.code,
       messageKey: (() => {

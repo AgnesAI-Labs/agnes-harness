@@ -8,9 +8,6 @@
   "references": [
     {
       "path": "."
-    },
-    {
-      "path": "../host/tsconfig.testkit.json"
     }
   ]
 }

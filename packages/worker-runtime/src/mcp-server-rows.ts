@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto'
 import {
   type ConnectionStatusEvent,
-  mcpStablePrefix,
   type McpServerConfig,
   type McpServerOpener,
   mcpCatalogHubFor,
   mcpServerConfigFromDefinition,
   mcpServerExtension,
+  mcpStablePrefix,
 } from '@agnes/base'
 import type { DynamicExtension } from '@agnes/host'
 import {
@@ -133,7 +133,7 @@ export function mcpServerRowsFromDefinitions(
         manifest: Object.freeze({
           id: extensionId,
           version: '0.1.0',
-          apiRange: '^1.0',
+          apiRange: '^1.4.0',
           entry: './index.mjs',
           // Each server can register only its own stable tool names. Shared resource tools
           // live on `agnes/mcp-resources`, which owns their separate grant.

@@ -313,7 +313,7 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon-surfaces/src/surfaces': 1961,
   'packages/daemon-surfaces/src': 1962,
   'packages/daemon-foundation/src/jobs': 653,
-  'packages/daemon-foundation/src': 4364,
+  'packages/daemon-foundation/src': 4372,
   'packages/host/src/runtime/approval/expiry': 105,
   'packages/host/src/runtime/adapters': 465,
   'packages/host/src/runtime/profile': 1684,

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { WorkspaceDirectory } from '@agnes/host'
+import type { WorkspaceDirectory } from '@agnes/host-infrastructure/workspace'
 import { rpcError, type WorkspaceEntry } from '@agnes/protocol'
 import type { WorkspaceBindingEnvelope, WorkspaceBindingRecord } from '../workspace-binding.js'
 import type { SessionWorkspacePort } from './lister.js'

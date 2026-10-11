@@ -66,4 +66,4 @@
 
 ## 版本
 
-1.1.0 起。要用 `platform` / `sandbox.enforcement` 的扩展在 manifest `apiRange` 里声明 `>=1.1.0`。
+`platform` / `sandbox.enforcement` 自 1.1.0 起提供。当前扩展 manifest 的 `apiRange` 统一声明 `^1.4.0`，包含这些能力。

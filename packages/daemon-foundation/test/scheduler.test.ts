@@ -1,4 +1,4 @@
-import { createExtensionActivationBarrier } from '@agnes/host'
+import { createExtensionActivationBarrier } from '@agnes/host-extensions/ext-host/activation-barrier'
 import type { Actor, ContentBlock } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { type JobRow, JobsRepo } from '../src/jobs/repo.js'

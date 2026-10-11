@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { localPackageAdminAuthority } from '@agnes/daemon-admin/packages/index'
+import { localPackageAdminAuthority, localWebSkinReadAuthority } from '@agnes/daemon-admin/packages/index'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { createCredentialStore, createPlatform, resolveProfile } from '@agnes/host'
 import { expect, it } from 'vitest'
@@ -26,7 +26,8 @@ it('owns settings and plan writes behind local admin and registered-workspace au
   })
   const endpoint = new LocalEndpoint({ clock: Date.now, principalId: 'local' })
   endpoint.conn.initialized = true
-  registerAppServerAdmin(endpoint, service, localPackageAdminAuthority())
+  let authority = localPackageAdminAuthority()
+  registerAppServerAdmin(endpoint, service, (context) => authority(context))
   let id = 0
   const call = (method: string, params: unknown) =>
     endpoint.handle({ jsonrpc: '2.0', id: ++id, method, params })
@@ -88,6 +89,18 @@ it('owns settings and plan writes behind local admin and registered-workspace au
     expect(
       await call('_agnes/v1/admin.history.search', { query: '', title: '', workspace: '' }),
     ).toMatchObject({ result: { items: [], truncated: false } })
+    for (const permissions of [['packages.read'], ['packages.activate'], []] as const) {
+      authority = localPackageAdminAuthority(permissions)
+      const history = await call('_agnes/v1/admin.history.search', { query: '', title: '', workspace: '' })
+      if (permissions.some((permission) => permission === 'packages.read'))
+        expect(history).toMatchObject({ result: { items: [], truncated: false } })
+      else expect(history).toHaveProperty('error.data.code', 'CAPABILITY_DENIED')
+    }
+    authority = localWebSkinReadAuthority
+    expect(
+      await call('_agnes/v1/admin.history.search', { query: '', title: '', workspace: '' }),
+    ).toHaveProperty('error.data.code', 'CAPABILITY_DENIED')
+    authority = localPackageAdminAuthority()
     endpoint.conn.authKind = 'jwt'
     expect(await call('_agnes/v1/admin.mcp.oauth.save', { serverId: 'srv-1', credential })).toHaveProperty(
       'error.data.code',

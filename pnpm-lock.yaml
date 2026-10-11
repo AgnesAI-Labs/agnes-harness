@@ -589,9 +589,15 @@ importers:
       '@agnes/base':
         specifier: workspace:*
         version: link:../base
-      '@agnes/host':
+      '@agnes/extension-api':
         specifier: workspace:*
-        version: link:../host
+        version: link:../extension-api
+      '@agnes/host-extensions':
+        specifier: workspace:*
+        version: link:../host-extensions
+      '@agnes/host-infrastructure':
+        specifier: workspace:*
+        version: link:../host-infrastructure
       '@agnes/package-manager':
         specifier: workspace:*
         version: link:../package-manager

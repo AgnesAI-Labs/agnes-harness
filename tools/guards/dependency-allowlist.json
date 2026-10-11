@@ -255,7 +255,9 @@
   ],
   "@agnes/daemon-foundation": [
     "@agnes/base",
-    "@agnes/host",
+    "@agnes/extension-api",
+    "@agnes/host-extensions",
+    "@agnes/host-infrastructure",
     "@agnes/package-manager",
     "@agnes/plugin-runtime",
     "@agnes/protocol",

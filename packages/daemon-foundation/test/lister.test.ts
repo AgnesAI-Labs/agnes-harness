@@ -1,7 +1,10 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createSqliteStorage, type TableHandle as HostTableHandle } from '@agnes/host'
+import {
+  createSqliteStorage,
+  type TableHandle as HostTableHandle,
+} from '@agnes/host-infrastructure/adapters/storage-sqlite'
 import { describe, expect, it } from 'vitest'
 import {
   MemorySessionWorkspaces,

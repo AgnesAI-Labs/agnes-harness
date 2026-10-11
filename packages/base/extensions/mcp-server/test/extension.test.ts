@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ResourceEntry, ToolDef } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
 import type { McpServerConfig } from '../../../src/mcp/config.js'
-import { mcpStablePrefix, mcpPublicToolName } from '../../../src/mcp/naming.js'
+import { mcpPublicToolName, mcpStablePrefix } from '../../../src/mcp/naming.js'
 import type { McpConnection, RemoteToolIndexRow } from '../../../src/mcp/register.js'
 import type { McpCatalogHub } from '../src/catalog-hub.js'
 import { mcpServerExtension } from '../src/extension.js'

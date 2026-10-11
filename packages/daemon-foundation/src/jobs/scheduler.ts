@@ -1,4 +1,4 @@
-import type { ExtensionActivationBarrier } from '@agnes/host'
+import type { ExtensionActivationBarrier } from '@agnes/host-extensions/ext-host/activation-barrier'
 import type { Actor, ContentBlock } from '@agnes/protocol'
 import type { NoticeSink } from '../local/notice.js'
 import type { SessionPrincipalOwnership } from '../storage/session-ownership.js'

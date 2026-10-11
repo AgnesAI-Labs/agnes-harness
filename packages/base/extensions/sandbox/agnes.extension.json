@@ -1,7 +1,7 @@
 {
   "id": "agnes/sandbox",
   "version": "0.1.0",
-  "apiRange": "^1.0",
+  "apiRange": "^1.4.0",
   "entry": "./src/index.ts",
   "capabilities": {
     "hooks": [],

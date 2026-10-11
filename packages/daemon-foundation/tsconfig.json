@@ -13,7 +13,13 @@
       "path": "../base"
     },
     {
-      "path": "../host"
+      "path": "../extension-api"
+    },
+    {
+      "path": "../host-extensions"
+    },
+    {
+      "path": "../host-infrastructure"
     },
     {
       "path": "../package-manager"
