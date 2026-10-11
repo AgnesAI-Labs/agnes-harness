@@ -115,6 +115,7 @@ export type MethodName =
   | 'session/cancel'
   | 'session/update'
   | 'session/request_permission'
+  | '_agnes/v1/approval.withdraw'
   | '_agnes/v1/session.attach'
   | '_agnes/v1/session.control'
   | '_agnes/v1/session.controls'
@@ -244,6 +245,11 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   },
   'session/cancel': { kind: 'notification', direction: 'c2s', params: Acp.CancelNotification },
   'session/update': { kind: 'notification', direction: 's2c', params: Acp.SessionNotification },
+  '_agnes/v1/approval.withdraw': {
+    kind: 'notification',
+    direction: 's2c',
+    params: A.PermissionWithdrawParams,
+  },
   'session/request_permission': {
     kind: 'request',
     direction: 's2c',

@@ -387,22 +387,22 @@ describe('tools phase', () => {
   // for the model. A bare verdict from a seam that gives no reason keeps the line it always had.
   it.each([
     {
-      answer: { verdict: 'rejected', reason: 'user_rejected' },
-      decided: { verdict: 'rejected', reason: 'user_rejected' },
+      answer: { verdict: 'rejected', reason: 'user-rejected' },
+      decided: { verdict: 'rejected', reason: 'user-rejected' },
       code: 'APPROVAL_REJECTED',
       text: /^the user rejected this action; do not retry the same call without asking$/,
     },
     {
-      answer: { verdict: 'rejected', reason: 'timeout' },
-      decided: { verdict: 'rejected', reason: 'timeout' },
-      code: 'APPROVAL_REJECTED',
-      text: /^no one answered the approval within 60s, so the action was not run; ask the user before trying again$/,
+      answer: { verdict: 'unavailable', reason: 'deadline' },
+      decided: { verdict: 'unavailable', reason: 'deadline' },
+      code: 'APPROVAL_UNAVAILABLE',
+      text: /^no one answered within 60s, so the action was not run; ask the user before trying again$/,
     },
     {
       answer: 'unavailable',
-      decided: { verdict: 'unavailable', reason: 'no_approver' },
+      decided: { verdict: 'unavailable', reason: 'no-approver' },
       code: 'APPROVAL_UNAVAILABLE',
-      text: /^no client was connected to approve this action, so it was not run; tell the user it needs their approval$/,
+      text: /^no eligible approver was connected, so the action was not run; ask the user before trying again$/,
     },
     {
       answer: { verdict: 'cancelled', reason: 'stopped' },

@@ -148,6 +148,7 @@ describe('refine after-core operation', () => {
     await operation.run(context(session, 4))
     expect(ask).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'refine', summary: 'measured improvement' }),
+      { signal: expect.any(AbortSignal) },
     )
     expect(queue.next()).toBeUndefined()
     expect([...session.state.registers.harnessEntries.values()]).toEqual([])

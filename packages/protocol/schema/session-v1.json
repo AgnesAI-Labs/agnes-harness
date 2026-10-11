@@ -2165,6 +2165,16 @@
       "additionalProperties": false,
       "required": ["requestId", "kind", "risk", "summary", "bindingHash"],
       "properties": {
+        "approval": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reviewerRequirement", "grantConstraints", "subjectRevision"],
+          "properties": {
+            "reviewerRequirement": { "const": "human" },
+            "grantConstraints": { "const": "once" },
+            "subjectRevision": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+          }
+        },
         "requestId": {
           "type": "string",
           "maxLength": 128
@@ -2260,7 +2270,7 @@
         "via": {
           "enum": ["sync", "callback", "timeout", "guardian"]
         },
-        "decidedBy": {
+        "answeredBy": {
           "$ref": "#/$defs/Actor"
         },
         "ticket": {

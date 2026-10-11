@@ -96,6 +96,7 @@ export type ToolContextDeps = {
   depth: number
   generationDepth: number
   actor: Actor
+  approval?: ToolContext['approval']
   cwd: string
   workspaceRoot: string
   fullAccess?: boolean
@@ -185,6 +186,7 @@ export function buildToolContext(
       )
     : workspaceFiles
   return {
+    ...(d.approval ? { approval: structuredClone(d.approval) } : {}),
     session: {
       key: d.sessionKey,
       lane: d.lane,

@@ -43,12 +43,20 @@ export function resumeApproval(
   decidedBy: Actor,
 ): Promise<{ seq: Seq }> {
   // Detach before entering the queue; callers cannot change the approving identity while waiting.
-  const data = inspectJsonData({ requestId: 'callback', verdict, via: 'callback', decidedBy, ticket })
+  const data = inspectJsonData({
+    requestId: 'callback',
+    verdict,
+    via: 'callback',
+    answeredBy: decidedBy,
+    ticket,
+  })
   const checked = data.ok ? validateAgainst<ApprovalDecided>(ApprovalDecided, data.value) : undefined
-  if (!checked?.ok || !checked.value.decidedBy || !ticket.length) return reject(s, 'invalid callback')
+  if (!checked?.ok || !checked.value.answeredBy || !ticket.length) return reject(s, 'invalid callback')
   const input = checked.value
-  const approver = checked.value.decidedBy
+  const approver = checked.value.answeredBy
   return serial(s, async () => {
+    if (s.ac.signal.aborted || s.op()?.control.status === 'cancel_requested')
+      return reject(s, 'session stopped')
     const matches = [...s.state.pendingApprovals.values()].filter((a) => a.pending?.ticket === ticket)
     const asked = matches.length === 1 ? matches[0] : undefined
     if (!asked?.pending || asked.lane !== s.lane) return reject(s, 'ticket unavailable')
@@ -66,9 +74,9 @@ export function resumeApproval(
     await s.d.log.claimLease()
     let found: Awaited<ReturnType<typeof s.d.runtime.approvalResume>>
     try {
-      found = await s.d.runtime.approvalResume(ticket, input.verdict)
+      found = await s.d.runtime.approvalResume(ticket, input.verdict, s.ac.signal)
     } catch {
-      return reject(s, 'approval backend unavailable')
+      return reject(s, s.ac.signal.aborted ? 'session stopped' : 'approval backend unavailable')
     }
     const receiptData = inspectJsonData(found)
     const receipt = receiptData.ok
@@ -76,6 +84,8 @@ export function resumeApproval(
       : undefined
     if (!receipt?.ok) return reject(s, 'approval binding mismatch')
     found = receipt.value
+    if (s.ac.signal.aborted || s.op()?.control.status === 'cancel_requested')
+      return reject(s, 'session stopped')
     const current = s.state.pendingApprovals.get(asked.requestId)
     if (!current || current.seq !== asked.seq) return reject(s, 'approval already decided')
     if (!found || found.requestId !== asked.requestId || found.bindingHash !== asked.bindingHash)
@@ -94,7 +104,8 @@ export function resumeApproval(
           requestId: asked.requestId,
           verdict: input.verdict,
           via: 'callback',
-          decidedBy: approver,
+          answeredBy: approver,
+          ...(input.verdict === 'rejected' ? { reason: 'user-rejected' as const } : {}),
           ticket,
           ...(asked.scope ? { scope: asked.scope } : {}),
           ...(input.verdict === 'allowed-permanent' && asked.toolUseId && asked.scope
@@ -114,6 +125,24 @@ export function resumeApproval(
   })
 }
 
+/** Withdraw parked tickets on stop, on the same queue as human callbacks. */
+export function stopPendingApprovals(s: SessionImpl): Promise<void> {
+  return serial(s, async () => {
+    const rows = [...s.state.pendingApprovals.values()]
+      .filter((asked) => asked.lane === s.lane && asked.pending)
+      .map((asked) =>
+        s.ev('approval/decided', {
+          requestId: asked.requestId,
+          verdict: 'cancelled',
+          reason: 'stopped',
+          via: 'sync',
+          ticket: asked.pending!.ticket,
+        }),
+      )
+    if (rows.length) await s.d.log.append(rows)
+  })
+}
+
 export function expireApprovals(s: SessionImpl): Promise<number> {
   return serial(s, async () => {
     let count = 0
@@ -125,7 +154,8 @@ export function expireApprovals(s: SessionImpl): Promise<number> {
       await s.d.log.append([
         s.ev('approval/decided', {
           requestId: asked.requestId,
-          verdict: s.preset.approval.onTimeout,
+          verdict: 'unavailable',
+          reason: 'deadline',
           via: 'timeout',
           ticket: asked.pending.ticket,
         }),

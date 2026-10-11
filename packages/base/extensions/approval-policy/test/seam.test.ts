@@ -117,10 +117,10 @@ describe('approval-policy sync path', () => {
   })
 
   it("hands the prompter's reason on untouched", async () => {
-    const init = fakeSeamInit({ prompter: async () => ({ verdict: 'rejected', reason: 'user_rejected' }) })
+    const init = fakeSeamInit({ prompter: async () => ({ verdict: 'rejected', reason: 'user-rejected' }) })
     expect(await (await approvalPolicy(init)).ask(req())).toEqual({
       verdict: 'rejected',
-      reason: 'user_rejected',
+      reason: 'user-rejected',
     })
   })
 
@@ -190,7 +190,10 @@ describe('approval-policy sync path', () => {
         throw new Error('ui gone')
       },
     })
-    expect(await (await approvalPolicy(broken)).ask(req())).toBe('unavailable')
+    expect(await (await approvalPolicy(broken)).ask(req())).toEqual({
+      verdict: 'unavailable',
+      reason: 'transport',
+    })
   })
 
   // A request with no tool - a budget quote, an unknown outcome - skips the command table entirely.

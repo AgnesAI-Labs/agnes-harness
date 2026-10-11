@@ -74,7 +74,7 @@ describe('UI projection leaf contract', () => {
     const decided = {
       ...nodes[3],
       state: 'decided',
-      decision: { verdict: 'unavailable', via: 'sync', reason: 'no_approver' },
+      decision: { verdict: 'unavailable', via: 'sync', reason: 'no-approver' },
     }
     expect(Value.Check(UINode, decided)).toBe(true)
     expect(Value.Check(UINode, { ...decided, decision: { verdict: 'rejected', via: 'sync' } })).toBe(true)

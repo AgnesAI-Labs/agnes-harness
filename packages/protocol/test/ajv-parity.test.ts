@@ -605,6 +605,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionSetYoloParams: AgnesGen.SessionSetYoloParams,
   EffectiveFromResult: AgnesGen.EffectiveFromResult,
   SeqResult: AgnesGen.SeqResult,
+  PermissionWithdrawParams: AgnesGen.PermissionWithdrawParams,
   ApprovalDecideParams: AgnesGen.ApprovalDecideParams,
   ParticipantParams: AgnesGen.ParticipantParams,
   ParticipantListResult: AgnesGen.ParticipantListResult,
@@ -3823,14 +3824,22 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     invalid: [{}, { seq: 0 }],
     note: 'common append result; seq is required and starts at one',
   },
+  PermissionWithdrawParams: {
+    valid: { sessionId: 's', requestId: 'r', reason: 'stopped' },
+    invalid: [
+      { sessionId: 's', reason: 'stopped' },
+      { sessionId: 's', requestId: 'r', reason: 'user-rejected' },
+    ],
+    note: 'backend withdraws an offer without fabricating a human answer',
+  },
   ApprovalDecideParams: {
-    valid: { ticket: 'ticket-1', verdict: 'allowed-once', approverCredential: { kind: 'local' } },
+    valid: { ticket: 'ticket-1', verdict: 'allowed-once' },
     invalid: [
       { ticket: 'ticket-1', verdict: 'cancelled', approverCredential: { kind: 'local' } },
       {
         ticket: 'ticket-1',
         verdict: 'allowed-once',
-        approverCredential: { kind: 'local' },
+        sourceCredential: { kind: 'local' },
         actor: parityActor,
       },
     ],
@@ -7761,6 +7770,7 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SessionSetYoloParams',
     result: 'EffectiveFromResult',
   },
+  '_agnes/v1/approval.withdraw': { fileId: AGNES_ID, params: 'PermissionWithdrawParams' },
   '_agnes/v1/approval.decide': { fileId: AGNES_ID, params: 'ApprovalDecideParams', result: 'SeqResult' },
   '_agnes/v1/participant.join': { fileId: AGNES_ID, params: 'ParticipantParams', result: 'SeqResult' },
   '_agnes/v1/participant.leave': { fileId: AGNES_ID, params: 'ParticipantParams', result: 'SeqResult' },
@@ -8451,6 +8461,14 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/session.setPreset': AGNES_SAMPLES.SessionSetPresetParams as Sample,
   '_agnes/v1/session.setModel': AGNES_SAMPLES.SessionSetModelParams as Sample,
   '_agnes/v1/session.setYolo': AGNES_SAMPLES.SessionSetYoloParams as Sample,
+  '_agnes/v1/approval.withdraw': {
+    valid: { sessionId: 's', requestId: 'r', reason: 'stopped' },
+    invalid: [
+      { sessionId: 's', requestId: 'r', reason: 'user-rejected' },
+      { sessionId: 's', reason: 'stopped' },
+    ],
+    note: 'withdraws an offer without fabricating an answer',
+  },
   '_agnes/v1/approval.decide': AGNES_SAMPLES.ApprovalDecideParams as Sample,
   '_agnes/v1/participant.join': AGNES_SAMPLES.ParticipantParams as Sample,
   '_agnes/v1/participant.leave': AGNES_SAMPLES.ParticipantParams as Sample,

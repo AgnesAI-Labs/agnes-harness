@@ -803,7 +803,7 @@ describe('approval cards', () => {
   it.each([
     ['allowed-once', undefined],
     ['rejected', undefined],
-    ['unavailable', 'no_approver'],
+    ['unavailable', 'no-approver'],
   ] as [ApprovalVerdict, string | undefined][])(
     'shows real %s decision and result, with its reason when it has one',
     async (verdict, reason) => {

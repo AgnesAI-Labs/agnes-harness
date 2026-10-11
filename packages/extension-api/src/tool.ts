@@ -251,6 +251,8 @@ export interface ToolContext {
       | undefined
     >
   }
+  /** Backend-injected proof of the exact human approval consumed for this invocation. */
+  readonly approval?: Readonly<{ requestId: string; subjectRevision: string; answeredBy: Actor }>
   readonly actor: Actor // recorded on the call; never the basis for an authorization decision
   /** Execution directory snapshot at the start of this call (or the explicitly requested operation).
    * May differ from workspaceRoot in a future version; use workspaceRoot for workspace-owned state, policy and config.

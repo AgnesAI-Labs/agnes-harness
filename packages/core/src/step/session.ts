@@ -1651,13 +1651,16 @@ export class SessionImpl {
   }
 
   async askApprovalAnswer(request: ApprovalRequest, signal: AbortSignal): Promise<ApprovalAnswer | Pending> {
+    signal = AbortSignal.any([signal, this.ac.signal])
+    const offered = structuredClone(request)
     const raw = this.d.segments?.Approval
       ? await runCoreReplacement(this, 'Approval', this.operationContext(), { request, signal }, () =>
           this.d.runtime.approvalAsk(request, signal),
         )
       : await this.d.runtime.approvalAsk(request, signal)
     // A replacement that answers outside the set is refused like a seam that does.
-    return normalizeApproval(raw) ?? { verdict: 'rejected' }
+    if (signal.aborted) return { verdict: 'cancelled', reason: 'stopped' }
+    return normalizeApproval(raw, offered) ?? { verdict: 'unavailable', reason: 'invalid-answer' }
   }
 
   async executeTool(

@@ -268,8 +268,8 @@ function invocationView(source: WorkspaceInvocationSource, scope: InvocationScop
             scope.track(() => source.approval.checkTool!(name, args), { cancelOnAbort: true }),
         }
       : {}),
-    ask: (request: ApprovalRequest) =>
-      scope.track(() => source.approval.ask(request), { cancelOnAbort: true }),
+    ask: (request: ApprovalRequest, opts?: { signal: AbortSignal }) =>
+      scope.track(() => source.approval.ask(request, opts), { cancelOnAbort: true }),
     resume: (ticket: string, verdict: Verdict) =>
       scope.track(() => source.approval.resume(ticket, verdict), { cancelOnAbort: true }),
     ...(guard

@@ -567,7 +567,7 @@ describe('resume', () => {
     expect((await log.scan({ type: 'approval/decided', limit: 10 })).at(-1)?.data).toMatchObject({
       verdict: 'unavailable',
       via: 'sync',
-      reason: 'no_approver',
+      reason: 'no-approver',
     })
     expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'parked' })
   })

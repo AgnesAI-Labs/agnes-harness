@@ -614,7 +614,7 @@ it.each([
       preset.budget = { ...preset.budget, maxSteps, perRequestCap: cap, onExceed: disposition }
       const seams = fakeSeams({
         ledger: { projected: async () => ({ credits: 1, creditSource: 'estimated' }) },
-        approval: { ask: async () => ({ verdict: 'rejected', reason: 'user_rejected' }) },
+        approval: { ask: async () => ({ verdict: 'rejected', reason: 'user-rejected' }) },
       })
       const k = kernel(new MemoryStorage(), loops, { preset, seams })
       k.tools.add(readTool(), { source: 'test', trust: 'builtin' })

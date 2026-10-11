@@ -105,13 +105,17 @@ describe('single-tool parked continuation', () => {
       expect(h.log.lastSeq).toBe(seq)
     },
   )
-  it('continues the default expired rejection without executing the tool', async () => {
+  it('continues an expired unanswered request without executing the tool', async () => {
     const h = await setup()
     h.advance()
     expect(await h.session.expireApprovals()).toBe(1)
     expect((await run(h)).reason).toBe('completed')
     expect(h.executions()).toBe(0)
-    expect(JSON.stringify(h.provider.requests[1]?.messages)).toContain('approval rejected')
+    expect(JSON.stringify(h.provider.requests[1]?.messages)).toContain('approval unavailable')
+    expect((await h.log.scan({ type: 'approval/decided', limit: 10 }))[0]?.data).toMatchObject({
+      verdict: 'unavailable',
+      reason: 'deadline',
+    })
   })
   it('blocks a continuation whose persisted tool policy hash no longer matches its policy', async () => {
     const h = await setup()

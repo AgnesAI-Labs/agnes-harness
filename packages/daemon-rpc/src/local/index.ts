@@ -275,6 +275,7 @@ export type LocalEndpointOptions = {
   auth?: LocalContext['auth']
   /** Required by participant/approval credential flows until Host exposes its principals seam. */
   resolveActor?: AgnesContext['resolveActor']
+  verifyApprovalSource?: AgnesContext['verifyApprovalSource']
   /** Enterprise directory sink. Presence alone is insufficient: handlers also require a
    * server-authenticated SSO or channel credential on this connection. */
   directory?: DirectoryPort
@@ -367,7 +368,12 @@ export function createLocalEndpoint(
   const prompterLifetime = new AbortController()
   const prompter = new PrompterRouter({
     signal: prompterLifetime.signal,
-    ...(opts.prompter ? { local: opts.prompter } : {}),
+    resolveActor: (conn, key) =>
+      (opts.resolveActor ?? host.resolveActor.bind(host))(conn.credential, 'approval', key),
+    ...(opts.verifyApprovalSource ? { verifySource: opts.verifyApprovalSource } : {}),
+    ...(opts.prompter
+      ? { local: opts.prompter, localActor: () => host.resolveActor(ep.conn.credential, 'approval') }
+      : {}),
     endpointFor: () => ep,
     connections: () => [ep.conn],
     originOf: (key) => (registry.get(key)?.inflight ? ep.conn : undefined),
@@ -435,6 +441,7 @@ export function createLocalEndpoint(
       // tests and enterprise adapters, but the ordinary local CLI must not lose approval support
       // merely because it did not duplicate Host's identity wiring in its boot layer.
       resolveActor: opts.resolveActor ?? host.resolveActor.bind(host),
+      ...(opts.verifyApprovalSource ? { verifyApprovalSource: opts.verifyApprovalSource } : {}),
       tickets,
       lister,
       // From the same value that named the principal, so the gates that read the authentication and

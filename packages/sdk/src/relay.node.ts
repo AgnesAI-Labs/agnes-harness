@@ -18,7 +18,7 @@ export type RelayRoute =
       path: string
       rpc: string
       /** Inject the server-derived principal only under a parameter the target RPC schema declares. */
-      principalParam?: 'credential' | 'approverCredential'
+      principalParam?: 'credential'
       map?: (body: Record<string, unknown>, url: URL) => Record<string, unknown>
     }
   | {
@@ -45,6 +45,7 @@ const STRIPPED_KEYS = new Set([
   'actor',
   'credential',
   'approverCredential',
+  'sourceCredential',
   '_meta',
   '__proto__',
   'constructor',
@@ -173,12 +174,7 @@ function validateRoutes(routes: RelayRoute[]): void {
       throw new TypeError(`relay rpc must be an _agnes/v1 method: ${route.rpc}`)
     }
     if ('rpc' in route) {
-      const expected =
-        route.rpc === '_agnes/v1/participant.join'
-          ? 'credential'
-          : route.rpc === '_agnes/v1/approval.decide'
-            ? 'approverCredential'
-            : undefined
+      const expected = route.rpc === '_agnes/v1/participant.join' ? 'credential' : undefined
       if (route.principalParam !== expected) {
         const requirement = expected ? `requires ${expected}` : 'does not accept a principal parameter'
         throw new TypeError(`relay rpc ${route.rpc} ${requirement}`)

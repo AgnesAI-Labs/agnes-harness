@@ -46,12 +46,12 @@ describe('I6 method contracts', () => {
       expect(METHODS[method]).toMatchObject({ kind: 'request', direction: 'c2s' })
   })
 
-  it('approval.decide uses a credential and rejects forged actor fields or verdicts', () => {
+  it('approval.decide uses connection identity or a source credential and rejects forged actor fields or verdicts', () => {
     expect(
       validateMethod('_agnes/v1/approval.decide', 'params', {
         ticket: 'ticket-1',
         verdict: 'allowed-once',
-        approverCredential: channelCredential,
+        sourceCredential: channelCredential,
       }).ok,
     ).toBe(true)
     expect(
@@ -59,7 +59,7 @@ describe('I6 method contracts', () => {
         validateMethod('_agnes/v1/approval.decide', 'params', {
           ticket: 'ticket-1',
           verdict: 'allowed-once',
-          approverCredential: { kind: 'local' },
+          sourceCredential: { kind: 'local' },
           actor,
         }),
       ),
@@ -69,10 +69,23 @@ describe('I6 method contracts', () => {
         validateMethod('_agnes/v1/approval.decide', 'params', {
           ticket: 'ticket-1',
           verdict: 'cancelled',
-          approverCredential: { kind: 'local' },
+          sourceCredential: { kind: 'local' },
         }),
       ),
     ).toContainEqual(expect.objectContaining({ code: 'ENUM', key: 'verdict' }))
+    expect(
+      validateMethod('_agnes/v1/approval.decide', 'params', { ticket: 'ticket-1', verdict: 'allowed-once' })
+        .ok,
+    ).toBe(true)
+    expect(
+      errorsOf(
+        validateMethod('_agnes/v1/approval.decide', 'params', {
+          ticket: 'ticket-1',
+          verdict: 'allowed-once',
+          approverCredential: { kind: 'local' },
+        }),
+      ),
+    ).toContainEqual(expect.objectContaining({ code: 'UNKNOWN_KEY', key: 'approverCredential' }))
     expect(validateMethod('_agnes/v1/approval.decide', 'result', { seq: 1 }).ok).toBe(true)
   })
 

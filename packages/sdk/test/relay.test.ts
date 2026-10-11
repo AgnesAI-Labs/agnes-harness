@@ -82,7 +82,7 @@ describe('createRelay', () => {
         sessionId: 's',
         actor: { id: 'evil' },
         credential: { kind: 'local' },
-        nested: { keep: true, _meta: { auth: 'evil' }, approverCredential: { kind: 'local' } },
+        nested: { keep: true, _meta: { auth: 'evil' }, sourceCredential: { kind: 'local' } },
       }),
     })
     expect(response.status).toBe(200)
@@ -118,7 +118,6 @@ describe('createRelay', () => {
           method: 'POST',
           path: '/api/approval',
           rpc: '_agnes/v1/approval.decide',
-          principalParam: 'approverCredential',
         },
       ])
       expect((await fetch(`${base}/api/sessions`)).status).toBe(200)
@@ -137,7 +136,7 @@ describe('createRelay', () => {
             body: JSON.stringify({
               ticket: 't',
               verdict: 'allowed-once',
-              approverCredential: { kind: 'local' },
+              sourceCredential: { kind: 'local' },
             }),
           })
         ).status,
@@ -147,7 +146,7 @@ describe('createRelay', () => {
         { method: '_agnes/v1/participant.join', params: { sessionId: 's', credential } },
         {
           method: '_agnes/v1/approval.decide',
-          params: { ticket: 't', verdict: 'allowed-once', approverCredential: credential },
+          params: { ticket: 't', verdict: 'allowed-once' },
         },
       ])
     } finally {
@@ -939,7 +938,7 @@ describe('createRelay', () => {
         ],
         { principal: async () => credential },
       ),
-    ).toThrow(/requires approverCredential/)
+    ).toThrow(/does not accept/)
   })
 })
 

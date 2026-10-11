@@ -410,7 +410,7 @@ describe('run loop', () => {
     expect((await p.log.scan({ type: 'approval/decided', limit: 5 }))[0]?.data).toMatchObject({
       verdict: 'unavailable',
       via: 'sync',
-      reason: 'no_approver',
+      reason: 'no-approver',
     })
   })
 

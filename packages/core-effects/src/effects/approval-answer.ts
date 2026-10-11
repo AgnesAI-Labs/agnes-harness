@@ -1,4 +1,6 @@
-import type { ApprovalAnswer, ApprovalReason, Pending, Verdict } from './seams.js'
+import { APPROVAL_REASONS, validateAgainst } from '@agnes/protocol'
+import { Actor } from '@agnes/protocol/gen/session-v1'
+import type { ApprovalAnswer, ApprovalReason, ApprovalRequest, Pending, Verdict } from './seams.js'
 
 const VERDICTS: ReadonlySet<string> = new Set([
   'allowed-once',
@@ -8,14 +10,7 @@ const VERDICTS: ReadonlySet<string> = new Set([
   'cancelled',
   'unavailable',
 ])
-const REASONS: ReadonlySet<string> = new Set<ApprovalReason>([
-  'user_rejected',
-  'timeout',
-  'no_approver',
-  'stopped',
-  'policy_denied',
-  'subagent_scope',
-])
+const REASONS: ReadonlySet<string> = new Set(APPROVAL_REASONS)
 
 export const isApprovalReason = (value: unknown): value is ApprovalReason =>
   typeof value === 'string' && REASONS.has(value)
@@ -30,12 +25,37 @@ export const isPending = (value: unknown): value is Pending =>
  * One shape for what the kernel acts on. A bare verdict carries no reason; a reason outside the
  * known set is dropped rather than written, because the ledger records the facts the kernel knows.
  */
-export function normalizeApproval(value: RawApproval): ApprovalAnswer | Pending | null {
+export function normalizeApproval(
+  value: RawApproval,
+  request?: ApprovalRequest,
+): ApprovalAnswer | Pending | null {
   if (isPending(value)) return value
   const answer = typeof value === 'string' ? { verdict: value } : value
   if (!answer || typeof answer !== 'object' || !VERDICTS.has(answer.verdict as string)) return null
+  // Cancellation/unavailability are not choices. Every actual choice must be offered.
+  if (
+    request &&
+    answer.verdict !== 'cancelled' &&
+    answer.verdict !== 'unavailable' &&
+    !(request.options ?? ['allowed-once', 'allowed-session', 'rejected']).includes(answer.verdict)
+  )
+    return { verdict: 'unavailable', reason: 'invalid-answer' }
+  if (
+    request?.approval?.reviewerRequirement === 'human' &&
+    answer.verdict.startsWith('allowed') &&
+    (!(answer as ApprovalAnswer).answeredBy || answer.verdict !== 'allowed-once')
+  )
+    return { verdict: 'unavailable', reason: 'invalid-answer' }
   const reason = (answer as { reason?: unknown }).reason
-  return isApprovalReason(reason) ? { verdict: answer.verdict, reason } : { verdict: answer.verdict }
+  const answeredBy = (answer as ApprovalAnswer).answeredBy
+  if (answeredBy !== undefined && !validateAgainst(Actor, answeredBy).ok) return null
+  return {
+    verdict: answer.verdict,
+    ...(isApprovalReason(reason) ? { reason } : {}),
+    ...(answeredBy && answer.verdict !== 'unavailable' && answer.verdict !== 'cancelled'
+      ? { answeredBy: structuredClone(answeredBy) }
+      : {}),
+  }
 }
 
 /** The result code and the words the model reads when a call is refused at the approval step. */
@@ -45,15 +65,28 @@ export function approvalRefusal(
   timeoutMs: number,
 ): { code: string; text: string } {
   if (verdict === 'cancelled') return { code: 'CANCELLED', text: 'cancelled while waiting for approval' }
-  if (verdict === 'unavailable')
+  if (verdict === 'unavailable') {
+    const detail =
+      reason === 'deadline'
+        ? `no one answered within ${Math.round(timeoutMs / 1000)}s`
+        : reason === 'transport'
+          ? 'the approval could not be delivered'
+          : reason === 'detached'
+            ? 'the approval surface detached'
+            : reason === 'no-handler'
+              ? 'the client has no approval handler'
+              : reason === 'invalid-answer'
+                ? 'the answer was invalid or was not offered'
+                : 'no eligible approver was connected'
     return {
       code: 'APPROVAL_UNAVAILABLE',
-      text: 'no client was connected to approve this action, so it was not run; tell the user it needs their approval',
+      text: `${detail}, so the action was not run; ask the user before trying again`,
     }
+  }
   const text =
-    reason === 'user_rejected'
+    reason === 'user-rejected'
       ? 'the user rejected this action; do not retry the same call without asking'
-      : reason === 'timeout'
+      : reason === 'deadline'
         ? `no one answered the approval within ${Math.round(timeoutMs / 1000)}s, so the action was not run; ask the user before trying again`
         : reason === 'policy_denied'
           ? 'blocked by the command policy'
@@ -63,6 +96,5 @@ export function approvalRefusal(
   return { code: 'APPROVAL_REJECTED', text }
 }
 
-/** The verdict and, when there is one, its reason, in the order the ledger row carries them. */
-export const decidedFields = (a: ApprovalAnswer): { verdict: Verdict; reason?: ApprovalReason } =>
-  a.reason === undefined ? { verdict: a.verdict } : { verdict: a.verdict, reason: a.reason }
+/** Persist the responder only when a verified answer actually exists. */
+export const decidedFields = (a: ApprovalAnswer): ApprovalAnswer => ({ ...a })

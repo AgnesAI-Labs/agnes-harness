@@ -33,9 +33,9 @@ export async function approveMemoryFile(
     },
     signal,
   )
-  // Pending is a refusal here, not a parked mutation: the candidate was not committed and a later
+  // Pending leaves the request unanswered here rather than parking a mutation: the candidate was not committed and a later
   // tool invocation must review a fresh base. Do not resurrect a lost approval after restart.
-  const verdict = isPending(answer) ? 'rejected' : answer.verdict
+  const verdict = isPending(answer) ? 'unavailable' : answer.verdict
   await session.d.log.append([
     session.ev('approval/asked', asked),
     session.ev('approval/decided', {
@@ -43,8 +43,9 @@ export async function approveMemoryFile(
       verdict,
       via: 'sync',
       scope: asked.scope,
+      ...(!isPending(answer) && answer.answeredBy ? { answeredBy: answer.answeredBy } : {}),
       ...(isPending(answer)
-        ? { reason: 'policy_denied' as const }
+        ? { reason: 'invalid-answer' as const }
         : answer.reason
           ? { reason: answer.reason }
           : {}),

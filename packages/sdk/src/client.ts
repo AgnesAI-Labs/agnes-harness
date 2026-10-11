@@ -58,7 +58,7 @@ import { JsonRpcError, ProtocolViolation, RequestTimeout, TransportClosed, Unsup
 import { type Disposer, Emitter } from './events.js'
 import { untilAborted } from './initialize-wait.js'
 import { type JournalStore, memoryJournal } from './journal.js'
-import { type PermissionHandler, type PermissionRequest, rejectPermission } from './permission.js'
+import { type PermissionHandler, type PermissionRequest, unansweredPermission } from './permission.js'
 import { type ReconnectOptions, Reconnector } from './reattach.js'
 import { RpcConnection } from './rpc.js'
 import { Session } from './session.js'
@@ -225,16 +225,23 @@ export class Client {
       if (method !== 'session/request_permission') throw new JsonRpcError(rpcError('METHOD_NOT_FOUND'))
       if (!validateMethod('session/request_permission', 'params', params).ok)
         throw new JsonRpcError(rpcError('INVALID_PARAMS'))
-      const request = params as PermissionRequest & { _meta?: Record<string, { deadline?: string }> }
+      const request = params as PermissionRequest & {
+        _meta?: Record<string, { deadline?: string; requestId?: string }>
+      }
       const deadline = request._meta?.[META_KEY]?.deadline
+      const requestId = request._meta?.[META_KEY]?.requestId
       const clean: PermissionRequest = {
         sessionId: request.sessionId,
+        ...(requestId ? { requestId } : {}),
         toolCall: request.toolCall,
         options: request.options,
         ...(deadline !== undefined ? { deadlineMs: Date.parse(deadline) } : {}),
       }
-      if (clean.deadlineMs !== undefined && !Number.isFinite(clean.deadlineMs)) return rejectPermission(clean)
-      return this.sessionTable.get(clean.sessionId)?.answerPermission(clean) ?? rejectPermission(clean)
+      if (clean.deadlineMs !== undefined && !Number.isFinite(clean.deadlineMs))
+        return unansweredPermission('invalid-answer')
+      return (
+        this.sessionTable.get(clean.sessionId)?.answerPermission(clean) ?? unansweredPermission('no-handler')
+      )
     })
     this.claim = makeClaim(this, opts.claimStrict ?? false)
   }
@@ -507,18 +514,17 @@ export class Client {
     },
   }
 
-  /** A parked approval is resumed by an opaque ticket and an approver credential. The server,
-   *  never this client, resolves that credential to the Actor written to the ledger. */
+  /** A parked approval uses the authenticated connection. Source credentials require a configured server verifier. */
   readonly approval = {
     decide: (
       ticket: string,
       verdict: 'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected',
-      approverCredential: Credential,
+      sourceCredential?: Credential,
     ): Promise<{ seq: number }> =>
       this.call<{ seq: number }>('_agnes/v1/approval.decide', {
         ticket,
         verdict,
-        approverCredential,
+        ...(sourceCredential ? { sourceCredential } : {}),
       }),
     listGrants: (
       sessionId: string,
@@ -555,6 +561,13 @@ export class Client {
   // addressed to nobody in particular is a client-level event.
   private dispatchNotification(method: string, params: unknown): void {
     const p = (params ?? {}) as Record<string, unknown>
+    if (method === '_agnes/v1/approval.withdraw') {
+      if (validateMethod('_agnes/v1/approval.withdraw', 'params', params).ok)
+        this.sessionTable
+          .get(p.sessionId as string)
+          ?.withdrawPermission(p.requestId as string, p.reason as 'stopped' | 'deadline' | 'detached')
+      return
+    }
     if (method === '_agnes/v1/daemon.notice') {
       // Latched, never cleared: once the daemon says it is going away, the next drop is
       // that shutdown arriving, not a fault to reconnect through. A loop already running

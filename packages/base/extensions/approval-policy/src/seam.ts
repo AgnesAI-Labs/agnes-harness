@@ -24,7 +24,7 @@ export const approvalPolicy: SeamFactory<ApprovalSeam> = async (ctx) => {
         return false
       }
     },
-    async ask(req): Promise<Verdict | ApprovalAnswer | Pending> {
+    async ask(req, opts): Promise<Verdict | ApprovalAnswer | Pending> {
       const tool = req.tool
       // A budget quote or an unknown-outcome question carries no tool, so the command table has
       // nothing to say about it and it goes straight to the prompter. Deliberate: an allow list
@@ -50,6 +50,7 @@ export const approvalPolicy: SeamFactory<ApprovalSeam> = async (ctx) => {
           // Tainted context and an `always` tool both keep the human in the loop whatever the table
           // says: a rule cannot pre-approve a call the model may have been talked into.
           if (
+            req.approval?.reviewerRequirement !== 'human' &&
             action === 'allow' &&
             tool.meta.requiresApproval !== 'always' &&
             (!req.taint || req.scope.includes('/'))
@@ -60,10 +61,12 @@ export const approvalPolicy: SeamFactory<ApprovalSeam> = async (ctx) => {
       const prompter = ctx.adapters.prompter
       if (prompter) {
         try {
-          return await prompter.ask(req, { signal: ctx.signal })
+          return await prompter.ask(req, {
+            signal: opts ? AbortSignal.any([ctx.signal, opts.signal]) : ctx.signal,
+          })
         } catch (e) {
           ctx.log.warn('prompter failed', { message: (e as Error).message })
-          return 'unavailable'
+          return { verdict: 'unavailable', reason: 'transport' }
         }
       }
       if (cfg.onUnavailable === 'park') return tickets.mint(req)

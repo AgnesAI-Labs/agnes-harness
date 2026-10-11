@@ -332,7 +332,7 @@ describe('authenticated session ownership RPC guard', () => {
         jsonrpc: '2.0',
         id: 3,
         method: '_agnes/v1/approval.decide',
-        params: { ticket: 'foreign-ticket', verdict: 'rejected', approverCredential: { kind: 'local' } },
+        params: { ticket: 'foreign-ticket', verdict: 'rejected' },
       })
       expect(response).toMatchObject({
         error: { data: { code: 'APPROVAL_REJECTED', reason: 'unknown ticket' } },

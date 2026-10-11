@@ -159,7 +159,8 @@ describe('participant RPC', () => {
 
   it('maps an asynchronously stale owned approval to APPROVAL_REJECTED', async () => {
     const opened = await openTestHost()
-    const endpoint = opened.endpoint()
+    const resolver = vi.fn(opened.host.resolveActor.bind(opened.host))
+    const endpoint = opened.endpoint({ resolveActor: resolver })
     try {
       await endpoint.handle(initialize)
       const created = (await endpoint.handle({
@@ -181,14 +182,34 @@ describe('participant RPC', () => {
         await expect(
           endpoint.handle({
             jsonrpc: '2.0',
+            id: 30,
+            method: '_agnes/v1/approval.decide',
+            params: { ticket: 'stale-owned', verdict: 'allowed-once', sourceCredential: credential },
+          }),
+        ).resolves.toMatchObject({ error: { data: { code: 'APPROVAL_SOURCE_UNVERIFIED' } } })
+        expect(decide).not.toHaveBeenCalled()
+        await expect(
+          endpoint.handle({
+            jsonrpc: '2.0',
+            id: 31,
+            method: '_agnes/v1/approval.decide',
+            params: { ticket: 'stale-owned', verdict: 'allowed-once', approverCredential: credential },
+          }),
+        ).resolves.toMatchObject({ error: { code: -32602 } })
+        expect(decide).not.toHaveBeenCalled()
+        await expect(
+          endpoint.handle({
+            jsonrpc: '2.0',
             id: 3,
             method: '_agnes/v1/approval.decide',
-            params: { ticket: 'stale-owned', verdict: 'allowed-once', approverCredential: { kind: 'local' } },
+            params: { ticket: 'stale-owned', verdict: 'allowed-once' },
           }),
         ).resolves.toMatchObject({
           error: { code: -32009, data: { code: 'APPROVAL_REJECTED', reason: 'approval already resolved' } },
         })
+        expect(resolver).toHaveBeenCalledWith(endpoint.conn.credential, 'approval', created.result.sessionId)
       } finally {
+        resolver.mockReset()
         scan.mockRestore()
         decide.mockRestore()
       }
@@ -217,7 +238,6 @@ describe('participant RPC', () => {
           params: {
             ticket: 'not-a-real-ticket',
             verdict: 'allowed-once',
-            approverCredential: { kind: 'local' },
           },
         }),
       ).resolves.toMatchObject({
@@ -231,7 +251,6 @@ describe('participant RPC', () => {
           params: {
             ticket: 'not-a-real-ticket',
             verdict: 'allowed-permanent',
-            approverCredential: { kind: 'local' },
           },
         }),
       ).resolves.toMatchObject({

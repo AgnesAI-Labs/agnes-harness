@@ -1,6 +1,6 @@
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { describe, expect, it } from 'vitest'
-import { type AskOutcome, PrompterRouter } from '../src/local/prompter.js'
+import { type AskOutcome, approvalActor, PrompterRouter } from '../src/local/prompter.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 const req = {
@@ -34,16 +34,42 @@ const mk = (o: Partial<ConstructorParameters<typeof PrompterRouter>[0]> = {}) =>
 }
 
 describe('PrompterRouter', () => {
+  it('accepts source answers only through the configured bridge verifier', async () => {
+    const { ep } = mk()
+    ep.conn.authKind = 'local'
+    const source = { kind: 'channel', accountId: 'trusted', userId: 'reviewer' }
+    await expect(approvalActor(ep.conn, 'k', async () => actor, undefined, source)).rejects.toThrow(
+      'unverified',
+    )
+    const verify = async (_conn: typeof ep.conn, credential: unknown) => {
+      if (JSON.stringify(credential) !== JSON.stringify(source)) throw new Error('invalid source')
+      return { ...actor, id: 'source-reviewer' }
+    }
+    await expect(approvalActor(ep.conn, 'k', async () => actor, verify, source)).resolves.toEqual({
+      ...actor,
+      id: 'source-reviewer',
+    })
+    await expect(
+      approvalActor(ep.conn, 'k', async () => actor, verify, { ...source, userId: 'forged' }),
+    ).rejects.toThrow('invalid source')
+  })
+
   it('prefers the local prompter', async () => {
-    const { r, log } = mk({ local: { ask: async () => 'allowed-once' } })
-    await expect(r.ask(req as never, { signal: never })).resolves.toBe('allowed-once')
-    expect(log).toEqual([{ requestId: 'r1', via: 'local', verdict: 'allowed-once' }])
+    const { r, log } = mk({ local: { ask: async () => 'allowed-once' }, localActor: async () => actor })
+    await expect(r.ask(req as never, { signal: never })).resolves.toEqual({
+      verdict: 'allowed-once',
+      answeredBy: actor,
+    })
+    expect(log).toEqual([{ requestId: 'r1', via: 'local', verdict: 'allowed-once', answeredBy: actor }])
   })
 
   it('only routes to a connection that declared the permission capability, and maps the answer', async () => {
     const { ep, r, log } = mk()
     // Without the capability the router must not send anything at all.
-    await expect(r.ask(req as never, { signal: never })).resolves.toBe('unavailable')
+    await expect(r.ask(req as never, { signal: never })).resolves.toEqual({
+      verdict: 'unavailable',
+      reason: 'no-approver',
+    })
     expect(ep.pending().events).toBe(0)
     ep.conn.capabilities.permission = true
     const it = ep.notifications[Symbol.asyncIterator]()
@@ -61,7 +87,7 @@ describe('PrompterRouter', () => {
       id: m.id,
       result: { outcome: { outcome: 'selected', optionId: 'allow_always' } },
     })
-    await expect(p).resolves.toBe('allowed-session')
+    await expect(p).resolves.toEqual({ verdict: 'allowed-session', answeredBy: { ...actor, id: 'local' } })
     expect(log.map((x) => x.via)).toEqual(['absent', 'answered'])
   })
 
@@ -96,7 +122,7 @@ describe('PrompterRouter', () => {
       id: m.id,
       result: { outcome: { outcome: 'selected', optionId: 'allow_once' } },
     })
-    await expect(p).resolves.toBe('allowed-once')
+    await expect(p).resolves.toEqual({ verdict: 'allowed-once', answeredBy: { ...actor, id: 'local' } })
   })
 
   it('a request that is not about a tool is kind other and names no tool', async () => {
@@ -108,8 +134,12 @@ describe('PrompterRouter', () => {
     const m = (await it.next()).value as { id: string; params: { toolCall: Record<string, unknown> } }
     expect(m.params.toolCall.kind).toBe('other')
     expect(m.params.toolCall._meta).toBeUndefined()
-    await ep.handle({ jsonrpc: '2.0', id: m.id, result: { outcome: { outcome: 'cancelled' } } })
-    await expect(p).resolves.toBe('cancelled')
+    await ep.handle({
+      jsonrpc: '2.0',
+      id: m.id,
+      result: { outcome: { outcome: 'cancelled' }, _meta: { 'ai.agnes.harness': { reason: 'no-handler' } } },
+    })
+    await expect(p).resolves.toEqual({ verdict: 'unavailable', reason: 'no-handler' })
   })
 
   it('routes to an attached connection when the originator cannot answer', async () => {
@@ -139,7 +169,7 @@ describe('PrompterRouter', () => {
       id: m.id,
       result: { outcome: { outcome: 'selected', optionId: 'allow_once' } },
     })
-    await expect(p).resolves.toBe('allowed-once')
+    await expect(p).resolves.toEqual({ verdict: 'allowed-once', answeredBy: { ...actor, id: 'local' } })
   })
 
   it('an explicit rejection is the user rejecting, and never the policy fallback', async () => {
@@ -153,7 +183,11 @@ describe('PrompterRouter', () => {
       id: m.id,
       result: { outcome: { outcome: 'selected', optionId: 'reject_once' } },
     })
-    await expect(p).resolves.toEqual({ verdict: 'rejected', reason: 'user_rejected' })
+    await expect(p).resolves.toEqual({
+      verdict: 'rejected',
+      reason: 'user-rejected',
+      answeredBy: { ...actor, id: 'local' },
+    })
   })
 
   it('askVerdict gives the bare verdict to callers that only need a yes or a no', async () => {
@@ -170,50 +204,60 @@ describe('PrompterRouter', () => {
     await expect(p).resolves.toBe('rejected')
   })
 
-  it.each(['allow_permanent', 'reject_always'])(
+  it.each(['allow_always', 'allow_permanent', 'reject_always'])(
     'never accepts unoffered option %s from the three-choice ACP bridge',
     async (optionId) => {
       const { ep, r, log } = mk()
       ep.conn.capabilities.permission = true
       const it = ep.notifications[Symbol.asyncIterator]()
-      const p = r.ask({ ...req, options: ['allowed-permanent'] } as never, { signal: never })
+      const p = r.ask({ ...req, options: ['allowed-once', 'rejected'] } as never, { signal: never })
       const m = (await it.next()).value as { id: string; params: { options: Array<{ kind: string }> } }
-      expect(m.params.options.map((option) => option.kind)).toEqual([
-        'allow_once',
-        'allow_always',
-        'reject_once',
-      ])
+      expect(m.params.options.map((option) => option.kind)).toEqual(['allow_once', 'reject_once'])
       await ep.handle({
         jsonrpc: '2.0',
         id: m.id,
         result: { outcome: { outcome: 'selected', optionId } },
       })
-      await expect(p).resolves.toBe('rejected')
+      await expect(p).resolves.toEqual({ verdict: 'unavailable', reason: 'invalid-answer' })
       expect(log.at(-1)?.via).toBe('malformed')
     },
   )
 
-  it('a cancelled outcome is a cancellation the client chose', async () => {
+  it('an ACP cancelled response with no-handler is unanswered', async () => {
     const { ep, r, log } = mk()
     ep.conn.capabilities.permission = true
     const it = ep.notifications[Symbol.asyncIterator]()
     const p = r.ask(req as never, { signal: never })
     const m = (await it.next()).value as { id: string }
-    await ep.handle({ jsonrpc: '2.0', id: m.id, result: { outcome: { outcome: 'cancelled' } } })
-    await expect(p).resolves.toBe('cancelled')
-    expect(log.at(-1)).toEqual({ requestId: 'r1', via: 'answered', verdict: 'cancelled' })
+    await ep.handle({
+      jsonrpc: '2.0',
+      id: m.id,
+      result: { outcome: { outcome: 'cancelled' }, _meta: { 'ai.agnes.harness': { reason: 'no-handler' } } },
+    })
+    await expect(p).resolves.toEqual({ verdict: 'unavailable', reason: 'no-handler' })
+    expect(log.at(-1)).toEqual({
+      requestId: 'r1',
+      via: 'malformed',
+      verdict: 'unavailable',
+      reason: 'no-handler',
+    })
   })
 
   it.each([
-    ['timeout', undefined, 'timeout', { verdict: 'rejected', reason: 'timeout' }],
+    ['timeout', undefined, 'timeout', { verdict: 'unavailable', reason: 'deadline' }],
     [
       'a JSON-RPC error from the client',
       { code: -32603, message: 'boom', data: { code: 'INTERNAL' } },
       'transport',
-      'rejected',
+      { verdict: 'unavailable', reason: 'transport' },
     ],
-    ['an outcome shape nobody defined', { outcome: { outcome: 'shrug' } }, 'malformed', 'rejected'],
-  ] as const)('%s fails closed to rejected, recorded as its own cause', async (_n, answer, via, expected) => {
+    [
+      'an outcome shape nobody defined',
+      { outcome: { outcome: 'shrug' } },
+      'malformed',
+      { verdict: 'unavailable', reason: 'invalid-answer' },
+    ],
+  ] as const)('%s stays unanswered, recorded as its own cause', async (_n, answer, via, expected) => {
     const { ep, r, log } = mk({ clock: () => 59_990 }) // deadline is 60_000 ⇒ 10 ms to answer
     ep.conn.capabilities.permission = true
     const it = ep.notifications[Symbol.asyncIterator]()
@@ -222,7 +266,7 @@ describe('PrompterRouter', () => {
     if (answer && 'code' in answer) await ep.handle({ jsonrpc: '2.0', id: m.id, error: answer })
     else if (answer) await ep.handle({ jsonrpc: '2.0', id: m.id, result: answer })
     await expect(p).resolves.toEqual(expected)
-    expect(log.at(-1)).toEqual({ requestId: 'r1', via, verdict: 'rejected' })
+    expect(log.at(-1)).toEqual({ requestId: 'r1', via, ...expected })
   })
 
   it("the caller's own abort is a cancellation, not an outage", async () => {
@@ -232,7 +276,7 @@ describe('PrompterRouter', () => {
     const p = r.ask(req as never, { signal: ac.signal })
     ac.abort()
     await expect(p).resolves.toEqual({ verdict: 'cancelled', reason: 'stopped' })
-    expect(log.at(-1)).toMatchObject({ via: 'aborted', verdict: 'cancelled' })
+    expect(log.at(-1)).toMatchObject({ via: 'aborted', verdict: 'cancelled', reason: 'stopped' })
   })
 
   const attach = (ep: LocalEndpoint) => {
@@ -278,8 +322,10 @@ describe('PrompterRouter', () => {
       id: m.id,
       result: { outcome: { outcome: 'selected', optionId: 'allow_once' } },
     })
-    await expect(p).resolves.toBe('allowed-once')
-    expect(log).toEqual([{ requestId: 'r1', via: 'answered', verdict: 'allowed-once' }])
+    await expect(p).resolves.toEqual({ verdict: 'allowed-once', answeredBy: { ...actor, id: 'local' } })
+    expect(log).toEqual([
+      { requestId: 'r1', via: 'answered', verdict: 'allowed-once', answeredBy: { ...actor, id: 'local' } },
+    ])
   })
 
   it('asks the next attached client when the origin endpoint is already gone', async () => {
@@ -311,8 +357,10 @@ describe('PrompterRouter', () => {
       id: m.id,
       result: { outcome: { outcome: 'selected', optionId: 'allow_once' } },
     })
-    await expect(p).resolves.toBe('allowed-once')
-    expect(log).toEqual([{ requestId: 'r1', via: 'answered', verdict: 'allowed-once' }])
+    await expect(p).resolves.toEqual({ verdict: 'allowed-once', answeredBy: { ...actor, id: 'local' } })
+    expect(log).toEqual([
+      { requestId: 'r1', via: 'answered', verdict: 'allowed-once', answeredBy: { ...actor, id: 'local' } },
+    ])
   })
 
   it('waits out the deadline when a refresh leaves nobody to ask', async () => {
@@ -344,9 +392,9 @@ describe('PrompterRouter', () => {
     )
     await new Promise((resolve) => setTimeout(resolve, 25))
     expect(settled).toBe(false)
-    await expect(done).resolves.toEqual({ verdict: 'rejected', reason: 'timeout' })
+    await expect(done).resolves.toEqual({ verdict: 'unavailable', reason: 'deadline' })
     expect(Date.now() - started).toBeGreaterThanOrEqual(50)
-    expect(log).toEqual([{ requestId: 'r1', via: 'timeout', verdict: 'rejected' }])
+    expect(log).toEqual([{ requestId: 'r1', via: 'timeout', verdict: 'unavailable', reason: 'deadline' }])
   })
 
   it('cancels a dropped approval when the caller aborts before anyone else answers', async () => {
@@ -359,6 +407,6 @@ describe('PrompterRouter', () => {
     await ep.close()
     ac.abort()
     await expect(p).resolves.toEqual({ verdict: 'cancelled', reason: 'stopped' })
-    expect(log).toEqual([{ requestId: 'r1', via: 'aborted', verdict: 'cancelled' }])
+    expect(log).toEqual([{ requestId: 'r1', via: 'aborted', verdict: 'cancelled', reason: 'stopped' }])
   })
 })

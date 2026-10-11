@@ -122,6 +122,7 @@ export interface AppServerMethods {
   "session/prompt": { params: Static<typeof import("./acp.js").PromptRequest>; result: Static<typeof import("./acp.js").PromptResponse>; direction: "c2s"; kind: "request" }
   "session/cancel": { params: Static<typeof import("./acp.js").CancelNotification>; result: void; direction: "c2s"; kind: "notification" }
   "session/update": { params: Static<typeof import("./acp.js").SessionNotification>; result: void; direction: "s2c"; kind: "notification" }
+  "_agnes/v1/approval.withdraw": { params: Static<typeof import("./agnes-v1.js").PermissionWithdrawParams>; result: void; direction: "s2c"; kind: "notification" }
   "session/request_permission": { params: Static<typeof import("./acp.js").RequestPermissionRequest>; result: Static<typeof import("./acp.js").RequestPermissionResponse>; direction: "s2c"; kind: "request" }
   "_agnes/v1/session.attach": { params: Static<typeof import("./agnes-v1.js").SessionAttachParams>; result: Static<typeof import("./agnes-v1.js").SessionAttachResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.control": { params: Static<typeof import("./agnes-v1.js").SessionControlParams>; result: Static<typeof import("./agnes-v1.js").SessionSteerResult>; direction: "c2s"; kind: "request" }

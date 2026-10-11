@@ -90,6 +90,7 @@ export type EffectSettled = {
 }
 
 export type ApprovalAsked = {
+  approval?: import('@agnes/extension-api').ApprovalConstraints
   requestId: string
   kind: 'tool' | 'budget' | 'unknown-outcome' | 'refine'
   toolUseId?: string
@@ -109,7 +110,7 @@ export type ApprovalDecided = {
   via: 'sync' | 'callback' | 'timeout' | 'guardian'
   scope?: string
   grantId?: string
-  decidedBy?: Actor
+  answeredBy?: Actor
   ticket?: string
   reason?: string
 }

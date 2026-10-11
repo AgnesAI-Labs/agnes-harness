@@ -149,7 +149,8 @@ export const AgnesV1 = Type.Module({
   "SessionSetYoloParams": Type.Object({ "sessionId": Type.String(), "enabled": Type.Boolean() }, { additionalProperties: false }),
   "EffectiveFromResult": Type.Object({ "effectiveFromSeq": Type.Integer({ minimum: 1 }) }, { additionalProperties: false }),
   "SeqResult": Type.Object({ "seq": Type.Integer({ minimum: 1 }) }, { additionalProperties: false }),
-  "ApprovalDecideParams": Type.Object({ "ticket": Type.String({ maxLength: 128 }), "verdict": Type.Union([Type.Literal('allowed-once'), Type.Literal('allowed-session'), Type.Literal('allowed-permanent'), Type.Literal('rejected')]), "approverCredential": Type.Ref('Credential') }, { additionalProperties: false }),
+  "PermissionWithdrawParams": Type.Object({ "sessionId": Type.String({ minLength: 1, maxLength: 128 }), "requestId": Type.String({ minLength: 1, maxLength: 128 }), "reason": Type.Union([Type.Literal('stopped'), Type.Literal('deadline'), Type.Literal('detached')]) }, { additionalProperties: false }),
+  "ApprovalDecideParams": Type.Object({ "ticket": Type.String({ maxLength: 128 }), "verdict": Type.Union([Type.Literal('allowed-once'), Type.Literal('allowed-session'), Type.Literal('allowed-permanent'), Type.Literal('rejected')]), "sourceCredential": Type.Optional(Type.Ref('Credential')) }, { additionalProperties: false }),
   "ParticipantParams": Type.Object({ "sessionId": Type.String({ maxLength: 512 }), "credential": Type.Ref('Credential') }, { additionalProperties: false }),
   "ParticipantListResult": Type.Object({ "participants": Type.Array(Type.Object({ "actor": Type.Ref('Actor'), "joinedAt": Type.String({ format: "date-time" }), "surface": Type.Optional(Type.String({ maxLength: 64 })) }, { additionalProperties: false })) }, { additionalProperties: false }),
   "DirectoryUpsertParams": Type.Object({ "entries": Type.Array(Type.Ref('DirectoryEntry'), { maxItems: 5000 }) }, { additionalProperties: false }),
@@ -565,6 +566,8 @@ export const EffectiveFromResult = AgnesV1.Import('EffectiveFromResult')
 export type EffectiveFromResult = Static<typeof EffectiveFromResult>
 export const SeqResult = AgnesV1.Import('SeqResult')
 export type SeqResult = Static<typeof SeqResult>
+export const PermissionWithdrawParams = AgnesV1.Import('PermissionWithdrawParams')
+export type PermissionWithdrawParams = Static<typeof PermissionWithdrawParams>
 export const ApprovalDecideParams = AgnesV1.Import('ApprovalDecideParams')
 export type ApprovalDecideParams = Static<typeof ApprovalDecideParams>
 export const ParticipantParams = AgnesV1.Import('ParticipantParams')

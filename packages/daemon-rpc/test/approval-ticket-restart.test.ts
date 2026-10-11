@@ -99,7 +99,7 @@ describe('approval ticket restart lookup', () => {
         journal: memoryJournal(),
       })
       await secondClient.initialize()
-      await expect(secondClient.approval.decide(ticket, 'allowed-once', { kind: 'local' })).resolves.toEqual({
+      await expect(secondClient.approval.decide(ticket, 'allowed-once')).resolves.toEqual({
         seq: expect.any(Number),
       })
 

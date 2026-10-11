@@ -86,10 +86,14 @@ describe('session.load permission registration', () => {
       })
       await flush()
 
-      // The fallback chooses the offered reject option once the failed load has disposed
-      // the caller's handler. If the handler leaked, this would select `allow` instead.
+      // Disposing a failed load leaves no handler and no human answer. A leaked handler would allow.
       expect(f.calls.find((call) => call.method === '<response:after-failed-load>')).toMatchObject({
-        params: { result: { outcome: { outcome: 'selected', optionId: 'reject' } } },
+        params: {
+          result: {
+            outcome: { outcome: 'cancelled' },
+            _meta: { 'ai.agnes.harness': { reason: 'no-handler' } },
+          },
+        },
       })
     } finally {
       await c.close()

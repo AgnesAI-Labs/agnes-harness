@@ -95,15 +95,15 @@ describe('method surface: setPreset / setModel / session.list / session.fork', (
     ['session.list', () => c.session.list({ limit: 5 }), '_agnes/v1/session.list', { limit: 5 }],
     [
       'approval.decide',
-      () => c.approval.decide('ticket-1', 'allowed-once', { kind: 'local' }),
+      () => c.approval.decide('ticket-1', 'allowed-once'),
       '_agnes/v1/approval.decide',
-      { ticket: 'ticket-1', verdict: 'allowed-once', approverCredential: { kind: 'local' } },
+      { ticket: 'ticket-1', verdict: 'allowed-once' },
     ],
     [
       'approval.decide permanent',
-      () => c.approval.decide('ticket-2', 'allowed-permanent', { kind: 'local' }),
+      () => c.approval.decide('ticket-2', 'allowed-permanent'),
       '_agnes/v1/approval.decide',
-      { ticket: 'ticket-2', verdict: 'allowed-permanent', approverCredential: { kind: 'local' } },
+      { ticket: 'ticket-2', verdict: 'allowed-permanent' },
     ],
     [
       'approval.listGrants',
@@ -171,9 +171,9 @@ describe('method surface: setPreset / setModel / session.list / session.fork', (
   })
 
   it('approval.decide returns the server sequence without accepting a caller-supplied Actor', async () => {
-    await expect(c.approval.decide('ticket-2', 'rejected', { kind: 'local' })).resolves.toEqual({ seq: 3 })
+    await expect(c.approval.decide('ticket-2', 'rejected')).resolves.toEqual({ seq: 3 })
     // @ts-expect-error the fourth argument must never become an Actor injection path
-    void c.approval.decide('ticket-2', 'rejected', { kind: 'local' }, { actor: 'somebody-else' })
+    void c.approval.decide('ticket-2', 'rejected', undefined, { actor: 'somebody-else' })
   })
 
   it('exposes the current Surface mount table', async () => {

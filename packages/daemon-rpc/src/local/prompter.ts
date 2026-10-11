@@ -1,11 +1,15 @@
-import type { ConnectionState, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
+import { type ConnectionState, connActor, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { Prompter } from '@agnes/host'
 import {
   type AcpPermissionKind,
+  type Actor,
+  type ApprovalReason,
   type ApprovalVerdict,
   fromAcpOptionKind,
-  OFFERED_OPTION_KINDS,
+  toAcpOptionKind,
+  validateAgainst,
 } from '@agnes/protocol'
+import { Actor as ActorSchema } from '@agnes/protocol/gen/session-v1'
 import { toolKind } from './project.js'
 
 // The request shape is core's, reached through the signature host publishes: one source, so the two
@@ -21,9 +25,36 @@ export type AskOutcome = {
   requestId: string
   via: 'local' | 'absent' | 'answered' | 'aborted' | 'timeout' | 'transport' | 'malformed'
   verdict: ApprovalVerdict
+  reason?: ApprovalReason
+  answeredBy?: Actor
 }
 
-const OPTION_IDS = new Set<string>(OFFERED_OPTION_KINDS)
+/** A configured bridge verifier must validate provider/user/event binding before returning an actor. */
+export type SourceApprovalVerifier = (
+  conn: ConnectionState,
+  sourceCredential: unknown,
+  sessionKey: string,
+) => Promise<Actor>
+export async function approvalActor(
+  conn: ConnectionState,
+  sessionKey: string,
+  resolve?: (conn: ConnectionState, sessionKey: string) => Promise<Actor>,
+  verifySource?: SourceApprovalVerifier,
+  sourceCredential?: unknown,
+): Promise<Actor> {
+  if (sourceCredential !== undefined) {
+    if (!verifySource || !['local', 'source-auth'].includes(conn.authKind ?? ''))
+      throw new Error('unverified approval source')
+    const actor = await verifySource(conn, sourceCredential, sessionKey)
+    if (!validateAgainst(ActorSchema, actor).ok) throw new Error('invalid approval actor')
+    return structuredClone(actor)
+  }
+  if (conn.credentialKind === 'channel' && conn.authKind !== 'source-auth')
+    throw new Error('approval source proof required')
+  const actor = resolve ? await resolve(conn, sessionKey) : connActor(conn)
+  if (!validateAgainst(ActorSchema, actor).ok) throw new Error('invalid approval actor')
+  return structuredClone(actor)
+}
 
 const RETRY_WAIT_MS = 20
 
@@ -59,10 +90,13 @@ export type PrompterRouterOptions = {
   /** Lifetime of an owning embedded endpoint; shared daemon routers omit it. */
   signal?: AbortSignal
   local?: Prompter
+  localActor?: (sessionKey: string) => Promise<Actor>
   endpointFor: (conn: ConnectionState) => LocalEndpoint
   connections: () => ConnectionState[]
   originOf: (sessionKey: string) => ConnectionState | undefined
   clock: () => number
+  resolveActor?: (conn: ConnectionState, sessionKey: string) => Promise<Actor>
+  verifySource?: SourceApprovalVerifier
   record?: (r: AskOutcome) => void
 }
 
@@ -70,7 +104,12 @@ export class PrompterRouter implements Prompter {
   constructor(private readonly o: PrompterRouterOptions) {}
 
   private done(requestId: string, via: AskOutcome['via'], answer: PrompterAnswer): PrompterAnswer {
-    this.o.record?.({ requestId, via, verdict: verdictOf(answer) })
+    this.o.record?.({
+      requestId,
+      via,
+      verdict: verdictOf(answer),
+      ...(typeof answer === 'object' ? answer : {}),
+    })
     return answer
   }
 
@@ -80,8 +119,50 @@ export class PrompterRouter implements Prompter {
   }
 
   async ask(req: ApprovalRequest, opts: { signal: AbortSignal }): Promise<PrompterAnswer> {
+    req = structuredClone(req)
+    if (opts.signal.aborted)
+      return this.done(req.requestId, 'aborted', { verdict: 'cancelled', reason: 'stopped' })
+    const deadline = Date.parse(req.deadline)
+    if (!Number.isFinite(deadline))
+      return this.done(req.requestId, 'malformed', { verdict: 'unavailable', reason: 'invalid-answer' })
+    if (deadline <= this.o.clock())
+      return this.done(req.requestId, 'timeout', { verdict: 'unavailable', reason: 'deadline' })
     if (this.o.signal) opts = { signal: AbortSignal.any([opts.signal, this.o.signal]) }
-    if (this.o.local) return this.done(req.requestId, 'local', await this.o.local.ask(req, opts))
+    if (this.o.local) {
+      const snapshot = structuredClone(req)
+      const raw = await this.o.local.ask(structuredClone(req), opts)
+      if (opts.signal.aborted)
+        return this.done(req.requestId, 'aborted', { verdict: 'cancelled', reason: 'stopped' })
+      if (typeof raw === 'object' && 'ticket' in raw) return raw
+      const answer = typeof raw === 'string' ? { verdict: raw } : raw
+      if (answer.verdict === 'unavailable' || answer.verdict === 'cancelled')
+        return this.done(req.requestId, 'local', answer)
+      if (
+        !(snapshot.options ?? ['allowed-once', 'allowed-session', 'rejected']).includes(answer.verdict) ||
+        (snapshot.approval && answer.verdict !== 'allowed-once' && answer.verdict !== 'rejected') ||
+        !this.o.localActor
+      )
+        return this.done(req.requestId, 'malformed', { verdict: 'unavailable', reason: 'invalid-answer' })
+      const answeredBy = await this.o.localActor(req.sessionKey)
+      if (!validateAgainst(ActorSchema, answeredBy).ok)
+        return this.done(req.requestId, 'malformed', { verdict: 'unavailable', reason: 'invalid-answer' })
+      if (deadline <= this.o.clock())
+        return this.done(req.requestId, 'timeout', { verdict: 'unavailable', reason: 'deadline' })
+      if (opts.signal.aborted)
+        return this.done(req.requestId, 'aborted', { verdict: 'cancelled', reason: 'stopped' })
+      return this.done(req.requestId, 'local', {
+        verdict: answer.verdict,
+        answeredBy,
+        ...(answer.verdict === 'rejected' ? { reason: 'user-rejected' as const } : {}),
+      })
+    }
+    const offered = (req.options ?? ['allowed-once', 'allowed-session', 'rejected']).filter(
+      (v): v is 'allowed-once' | 'allowed-session' | 'rejected' => v !== 'allowed-permanent',
+    )
+    const optionKinds = offered.map(toAcpOptionKind)
+    const optionIds = new Set<string>(optionKinds)
+    if (!optionIds.size)
+      return this.done(req.requestId, 'malformed', { verdict: 'unavailable', reason: 'invalid-answer' })
     const params = {
       sessionId: req.sessionKey,
       toolCall: {
@@ -95,7 +176,7 @@ export class PrompterRouter implements Prompter {
       },
       // This request is ACP. Its allow_always is session-scoped and must never be upgraded into
       // Agnes' distinct profile-scoped permanent verdict.
-      options: OFFERED_OPTION_KINDS.map((k) => ({ optionId: k, name: k, kind: k })),
+      options: optionKinds.map((k) => ({ optionId: k, name: k, kind: k })),
       _meta: { 'ai.agnes.harness': { deadline: req.deadline, requestId: req.requestId } },
     }
     const deadlineAt = Date.parse(req.deadline)
@@ -103,76 +184,150 @@ export class PrompterRouter implements Prompter {
     // same approval is asked again, and is never recorded as a rejection of its own.
     const skipped = new Set<ConnectionState>()
     let asked = false
-    while (true) {
-      if (opts.signal.aborted)
-        return this.done(req.requestId, 'aborted', { verdict: 'cancelled', reason: 'stopped' })
-      const remaining = deadlineAt - this.o.clock()
-      const expired = Number.isFinite(deadlineAt) && remaining <= 0
-      if (expired && (asked || skipped.size > 0))
-        return this.done(req.requestId, 'timeout', { verdict: 'rejected', reason: 'timeout' })
-      const origin = this.o.originOf(req.sessionKey)
-      const target = [
-        origin,
-        ...this.o.connections().filter((c) => c !== origin && c.attached.has(req.sessionKey)),
-      ].filter((c): c is ConnectionState => !!c && c.capabilities.permission && !skipped.has(c))[0]
-      // 'unavailable' hands control to the preset's on_unavailable, so it is reserved for the one case
-      // where nothing was asked. A dropped connection is not that case: nobody has answered yet.
-      if (!target) {
-        if (!asked && skipped.size === 0) return this.done(req.requestId, 'absent', 'unavailable')
-        await pause(
-          Math.min(RETRY_WAIT_MS, Number.isFinite(remaining) ? Math.max(remaining, 1) : RETRY_WAIT_MS),
-          opts.signal,
-        )
-        continue
-      }
-      let endpoint: LocalEndpoint
-      try {
-        // The endpoint comes from the connection that was chosen, not from a fixed one: otherwise the
-        // capability filter decides nothing and the question goes to whoever the caller wired in.
-        endpoint = this.o.endpointFor(target)
-      } catch {
-        skipped.add(target)
-        continue
-      }
-      let res: unknown
-      try {
-        asked = true
-        res = await endpoint.request('session/request_permission', params, {
-          signal: opts.signal,
-          ...(Number.isFinite(remaining) && remaining > 0 ? { timeoutMs: remaining } : {}),
-        })
-      } catch (e) {
+    const offers = new Set<LocalEndpoint>()
+    try {
+      while (true) {
         if (opts.signal.aborted)
           return this.done(req.requestId, 'aborted', { verdict: 'cancelled', reason: 'stopped' })
-        // The browser refreshed. Keep the original question open for the next attached client until
-        // the deadline. A timeout, any other transport fault, and a client JSON-RPC error still fail
-        // closed: 'unavailable' would let an outage pick up whatever on_unavailable allows.
-        if (disconnected(e)) {
+        const remaining = deadlineAt - this.o.clock()
+        const expired = Number.isFinite(deadlineAt) && remaining <= 0
+        if (expired)
+          return this.done(req.requestId, 'timeout', { verdict: 'unavailable', reason: 'deadline' })
+        const origin = this.o.originOf(req.sessionKey)
+        const target = [
+          origin,
+          ...this.o.connections().filter((c) => c !== origin && c.attached.has(req.sessionKey)),
+        ].filter((c): c is ConnectionState => !!c && c.capabilities.permission && !skipped.has(c))[0]
+        // 'unavailable' hands control to the preset's on_unavailable, so it is reserved for the one case
+        // where nothing was asked. A dropped connection is not that case: nobody has answered yet.
+        if (!target) {
+          if (!asked && skipped.size === 0)
+            return this.done(req.requestId, 'absent', { verdict: 'unavailable', reason: 'no-approver' })
+          await pause(
+            Math.min(RETRY_WAIT_MS, Number.isFinite(remaining) ? Math.max(remaining, 1) : RETRY_WAIT_MS),
+            opts.signal,
+          )
+          continue
+        }
+        let endpoint: LocalEndpoint
+        try {
+          // The endpoint comes from the connection that was chosen, not from a fixed one: otherwise the
+          // capability filter decides nothing and the question goes to whoever the caller wired in.
+          endpoint = this.o.endpointFor(target)
+        } catch {
           skipped.add(target)
           continue
         }
-        const cause = causeOf(e)
-        return this.done(
-          req.requestId,
-          cause,
-          cause === 'timeout' ? { verdict: 'rejected', reason: 'timeout' } : 'rejected',
-        )
+        let res: unknown
+        try {
+          asked = true
+          offers.add(endpoint)
+          res = await endpoint.request('session/request_permission', params, {
+            signal: opts.signal,
+            ...(Number.isFinite(remaining) && remaining > 0 ? { timeoutMs: remaining } : {}),
+          })
+        } catch (e) {
+          if (opts.signal.aborted)
+            return this.done(req.requestId, 'aborted', { verdict: 'cancelled', reason: 'stopped' })
+          // The browser refreshed. Keep the original question open for the next attached client until
+          // the deadline. A timeout, any other transport fault, and a client JSON-RPC error still fail
+          // closed: 'unavailable' would let an outage pick up whatever on_unavailable allows.
+          if (disconnected(e)) {
+            skipped.add(target)
+            continue
+          }
+          const cause = causeOf(e)
+          return this.done(req.requestId, cause, {
+            verdict: 'unavailable',
+            reason: cause === 'timeout' ? 'deadline' : 'transport',
+          })
+        }
+        const outcome = (res as { outcome?: { outcome?: unknown; optionId?: unknown } } | undefined)?.outcome
+        // Transport detach is an offer loss; another connection can still answer the same request.
+        if (opts.signal.aborted)
+          return this.done(req.requestId, 'aborted', { verdict: 'cancelled', reason: 'stopped' })
+        if (Number.isFinite(deadlineAt) && this.o.clock() >= deadlineAt)
+          return this.done(req.requestId, 'timeout', { verdict: 'unavailable', reason: 'deadline' })
+        const metadata = (
+          res as { _meta?: { 'ai.agnes.harness'?: { reason?: unknown; sourceCredential?: unknown } } }
+        )?._meta?.['ai.agnes.harness']
+        if (outcome?.outcome === 'cancelled') {
+          const reason = metadata?.reason
+          if (reason === undefined || reason === 'detached') {
+            skipped.add(target)
+            continue
+          }
+          const unanswered: ApprovalReason = [
+            'deadline',
+            'no-handler',
+            'transport',
+            'invalid-answer',
+          ].includes(String(reason))
+            ? (reason as ApprovalReason)
+            : 'invalid-answer'
+          return this.done(req.requestId, unanswered === 'deadline' ? 'timeout' : 'malformed', {
+            verdict: 'unavailable',
+            reason: unanswered,
+          })
+        }
+        if (
+          outcome?.outcome === 'selected' &&
+          typeof outcome.optionId === 'string' &&
+          optionIds.has(outcome.optionId)
+        ) {
+          const verdict = fromAcpOptionKind(outcome.optionId as AcpPermissionKind)
+          let answeredBy: Actor
+          try {
+            answeredBy = await approvalActor(
+              target,
+              req.sessionKey,
+              this.o.resolveActor,
+              this.o.verifySource,
+              metadata?.sourceCredential,
+            )
+          } catch {
+            return this.done(req.requestId, 'malformed', { verdict: 'unavailable', reason: 'invalid-answer' })
+          }
+          if (opts.signal.aborted)
+            return this.done(req.requestId, 'aborted', { verdict: 'cancelled', reason: 'stopped' })
+          if (Number.isFinite(deadlineAt) && this.o.clock() >= deadlineAt)
+            return this.done(req.requestId, 'timeout', { verdict: 'unavailable', reason: 'deadline' })
+          if (
+            !this.o.connections().includes(target) ||
+            !target.capabilities.permission ||
+            (this.o.originOf(req.sessionKey) !== target && !target.attached.has(req.sessionKey))
+          ) {
+            skipped.add(target)
+            continue
+          }
+          return this.done(req.requestId, 'answered', {
+            verdict,
+            answeredBy,
+            ...(verdict === 'rejected' ? { reason: 'user-rejected' as const } : {}),
+          })
+        }
+        return this.done(req.requestId, 'malformed', { verdict: 'unavailable', reason: 'invalid-answer' })
       }
-      const outcome = (res as { outcome?: { outcome?: unknown; optionId?: unknown } } | undefined)?.outcome
-      if (outcome?.outcome === 'cancelled') return this.done(req.requestId, 'answered', 'cancelled')
-      if (
-        outcome?.outcome === 'selected' &&
-        typeof outcome.optionId === 'string' &&
-        OPTION_IDS.has(outcome.optionId)
-      ) {
-        const verdict = fromAcpOptionKind(outcome.optionId as AcpPermissionKind)
-        return this.done(
-          req.requestId,
-          'answered',
-          verdict === 'rejected' ? { verdict, reason: 'user_rejected' } : verdict,
-        )
+    } finally {
+      for (const endpoint of offers) {
+        try {
+          endpoint.push({
+            jsonrpc: '2.0',
+            method: '_agnes/v1/approval.withdraw',
+            params: {
+              sessionId: req.sessionKey,
+              requestId: req.requestId,
+              reason: opts.signal.aborted
+                ? opts.signal.reason === 'deadline'
+                  ? 'deadline'
+                  : 'stopped'
+                : 'detached',
+            },
+          })
+        } catch {
+          /* A closed transport already withdrew its offer. */
+        }
       }
-      return this.done(req.requestId, 'malformed', 'rejected')
     }
   }
 }

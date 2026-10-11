@@ -63,7 +63,12 @@ describe('Host approval expiry lifecycle', () => {
         async () => {
           const rows = await session.scan({ type: 'approval/decided', toSeq: session.lastSeq })
           expect(rows).toHaveLength(1)
-          expect(rows[0]?.data).toMatchObject({ verdict: 'rejected', via: 'timeout', ticket })
+          expect(rows[0]?.data).toMatchObject({
+            verdict: 'unavailable',
+            reason: 'deadline',
+            via: 'timeout',
+            ticket,
+          })
         },
         { timeout: 2_000, interval: 20 },
       )
@@ -284,7 +289,12 @@ describe('Host approval expiry lifecycle', () => {
       expect(session.state.pendingApprovals.size).toBe(0)
       const rows = await session.scan({ type: 'approval/decided', toSeq: session.lastSeq })
       expect(rows).toHaveLength(1)
-      expect(rows[0]?.data).toMatchObject({ ticket, via: 'timeout', verdict: 'rejected' })
+      expect(rows[0]?.data).toMatchObject({
+        ticket,
+        via: 'timeout',
+        verdict: 'unavailable',
+        reason: 'deadline',
+      })
       await expect(
         session.resumeApproval(ticket, 'allowed-once', { ...session.d.actor, id: 'approver' }),
       ).rejects.toThrow(/ticket unavailable|ticket expired/)

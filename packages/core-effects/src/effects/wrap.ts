@@ -178,10 +178,13 @@ export class SeamRuntime {
    * reasons sees what it always saw. Everything this method decides itself carries one.
    */
   async approvalAsk(req: ApprovalRequest, signal: AbortSignal): Promise<Verdict | ApprovalAnswer | Pending> {
+    const offered = structuredClone(req)
+    const controller = new AbortController()
+    const requestSignal = AbortSignal.any([signal, controller.signal])
     let v: RawApproval
     try {
       v = await withTimeout(
-        this.withApproval((approval) => approval.ask(req)),
+        this.withApproval((approval) => approval.ask(structuredClone(req), { signal: requestSignal })),
         this.preset.approval.timeoutMs,
         'approval.ask',
         signal,
@@ -193,21 +196,24 @@ export class SeamRuntime {
       if (signal.aborted || (err instanceof Error && err.message.startsWith('aborted:')))
         return { verdict: 'cancelled', reason: 'stopped' }
       if (err instanceof Error && err.message.startsWith('timeout:'))
-        return { verdict: 'rejected', reason: 'timeout' }
-      return 'rejected'
+        return { verdict: 'unavailable', reason: 'deadline' }
+      return { verdict: 'unavailable', reason: 'transport' }
+    } finally {
+      controller.abort('deadline')
     }
-    const answer = normalizeApproval(v)
+    if (signal.aborted) return { verdict: 'cancelled', reason: 'stopped' }
+    const answer = normalizeApproval(v, offered)
     if (!answer) {
       this.fail('approval', 'ask', `verdict out of set: ${String(v)}`)
-      return 'rejected'
+      return { verdict: 'unavailable', reason: 'invalid-answer' }
     }
     if (isPending(answer)) return answer
     // 'unavailable' is a real answer, not a failure, and it stays one: nobody was asked, so the
     // ledger must not read it as a refusal. The preset's on_unavailable decides what the turn does
     // next; until a call can park on it, the call is refused as unanswered.
     if (answer.verdict === 'unavailable')
-      return { verdict: 'unavailable', reason: answer.reason ?? 'no_approver' }
-    return answer.reason === undefined ? answer.verdict : answer
+      return { verdict: 'unavailable', reason: answer.reason ?? 'no-approver' }
+    return answer.reason === undefined && answer.answeredBy === undefined ? answer.verdict : answer
   }
 
   async approvalToolAllowed(name: string, args: unknown): Promise<boolean> {

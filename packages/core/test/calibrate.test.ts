@@ -263,7 +263,7 @@ describe('count calibration', () => {
       ledger: {
         projected: async ({ tokensEstimate }) => ({ credits: tokensEstimate, creditSource: 'estimated' }),
       },
-      approval: { ask: async () => ({ verdict: 'rejected', reason: 'user_rejected' }) },
+      approval: { ask: async () => ({ verdict: 'rejected', reason: 'user-rejected' }) },
     })
     const { session, log } = await openSession({
       provider: withCount(9000),
@@ -277,7 +277,7 @@ describe('count calibration', () => {
     expect((await log.scan({ type: 'approval/decided', limit: 5 })).at(-1)?.data).toMatchObject({
       verdict: 'rejected',
       via: 'sync',
-      reason: 'user_rejected',
+      reason: 'user-rejected',
     })
   })
 

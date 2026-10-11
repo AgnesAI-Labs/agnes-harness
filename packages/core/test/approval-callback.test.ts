@@ -221,7 +221,7 @@ describe('parked approval callbacks', () => {
     expect((await rows(h))[0]).toMatchObject({
       seq: out.seq,
       actor: approver,
-      data: { verdict: 'allowed-once', via: 'callback', decidedBy: approver },
+      data: { verdict: 'allowed-once', via: 'callback', answeredBy: approver },
     })
     expect(h.session.state.pendingApprovals.size).toBe(0)
     expect(h.session.op()).toBeNull()
@@ -269,6 +269,53 @@ describe('parked approval callbacks', () => {
     }
   })
 
+  it.each(['before', 'during'] as const)(
+    'withdraws a parked ticket when stop arrives %s callback consumption',
+    async (timing) => {
+      const h = await parked()
+      let release!: () => void
+      let callback: Promise<unknown> | undefined
+      if (timing === 'during') {
+        let started!: () => void
+        const entering = new Promise<void>((resolve) => {
+          started = resolve
+        })
+        const held = new Promise<void>((resolve) => {
+          release = resolve
+        })
+        h.backend(async (receipt) => {
+          started()
+          await held
+          return receipt
+        })
+        callback = h.session.resumeApproval(h.ticket, 'allowed-once', approver).catch((error) => error)
+        await entering
+      }
+      await h.session.abort()
+      if (callback) {
+        const error = await callback
+        release()
+        expect(error).toMatchObject({
+          code: 'E_RELATION',
+          message: expect.stringContaining('session stopped'),
+        })
+      }
+      await expect(h.session.resumeApproval(h.ticket, 'allowed-once', approver)).rejects.toThrow(
+        'session stopped',
+      )
+      expect(h.calls()).toBe(timing === 'during' ? 1 : 0)
+      expect((await rows(h)).map((row) => row.data)).toEqual([
+        expect.objectContaining({ verdict: 'cancelled', reason: 'stopped' }),
+      ])
+      const timeline = await h.session.projectUI()
+      expect(timeline.nodes.filter((node) => node.kind === 'approval')).toEqual([
+        expect.objectContaining({
+          state: 'decided',
+          decision: expect.objectContaining({ verdict: 'cancelled', reason: 'stopped' }),
+        }),
+      ])
+    },
+  )
   it('rejects self approval before consuming a backend ticket', async () => {
     const h = await parked()
     await expect(h.session.resumeApproval(h.ticket, 'allowed-once', actor)).rejects.toThrow('self-approval')
@@ -282,7 +329,7 @@ describe('parked approval callbacks', () => {
     )
     expect(h.calls()).toBe(0)
   })
-  it('expires at the stored deadline, with the default rejection and no duplicate expiry', async () => {
+  it('expires at the stored deadline, as unanswered and no duplicate expiry', async () => {
     const h = await parked()
     expect(await h.session.expireApprovals()).toBe(0)
     h.advance(1000)
@@ -292,7 +339,11 @@ describe('parked approval callbacks', () => {
     expect(h.calls()).toBe(0)
     expect(await h.session.expireApprovals()).toBe(1)
     expect(await h.session.expireApprovals()).toBe(0)
-    expect((await rows(h))[0]?.data).toMatchObject({ verdict: 'rejected', via: 'timeout' })
+    expect((await rows(h))[0]?.data).toMatchObject({
+      verdict: 'unavailable',
+      reason: 'deadline',
+      via: 'timeout',
+    })
   })
   it.each(['request', 'binding', 'expiry', 'invalid-date', 'missing'] as const)(
     'rejects backend %s mismatch',

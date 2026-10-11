@@ -232,6 +232,9 @@ export class Session {
   private workspace: string | null
   private restoring: Promise<void> | null = null
   private readonly permission = new PermissionGate()
+  withdrawPermission(requestId: string, reason: 'stopped' | 'deadline' | 'detached'): void {
+    this.permission.withdraw(requestId, reason)
+  }
   onPermissionRequest(handler: PermissionHandler): () => void {
     return this.permission.register(handler)
   }

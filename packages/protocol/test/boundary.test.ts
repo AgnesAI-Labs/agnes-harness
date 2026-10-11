@@ -59,6 +59,7 @@ describe('protocol src boundary', () => {
     expect(Object.keys(mod).sort()).toEqual(
       [
         'AGNES_ERRORS',
+        'APPROVAL_REASONS',
         'AutoReviewConfig',
         'ToolReviewFact',
         'compilePluginConfig',

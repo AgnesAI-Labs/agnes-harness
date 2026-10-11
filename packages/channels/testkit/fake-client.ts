@@ -66,7 +66,7 @@ export type FakeClient = Pick<Client, 'initialize' | 'apis' | 'on' | 'close'> & 
     attach(id: string, options?: SessionAttachOptions): Promise<FakeSession>
   }
   approval: {
-    decide(ticket: string, verdict: ApprovalVerdict, credential: Credential): Promise<{ seq: number }>
+    decide(ticket: string, verdict: ApprovalVerdict, credential?: Credential): Promise<{ seq: number }>
   }
   claim: {
     once(kind: string, value: string): Promise<boolean>

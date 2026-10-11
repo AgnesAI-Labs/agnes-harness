@@ -74,6 +74,7 @@ import { commandAdmissionId, commandBinding } from '../command-binding.js'
 import { runQueued } from '../command-queue.js'
 import { createBlockedComputerUseControlPlane } from '../computer-use-control.js'
 import { registerFileUpload } from '../file-upload.js'
+import { approvalActor, type SourceApprovalVerifier } from '../prompter.js'
 import { resolvePromptReferences } from '../references.js'
 import { registerSessionJobs, type SessionJobServices } from '../session-jobs.js'
 import { registerWorkspaceFiles } from '../workspace-files.js'
@@ -117,6 +118,7 @@ export type AgnesContext = LocalContext & {
   ) => Promise<JournalResult>
   /** Host's principals seam resolver. Optional for supervisor/transport adapters that do not fit
    * participant or approval identity support. */
+  verifyApprovalSource?: SourceApprovalVerifier
   resolveActor?: (credential: unknown, surface: 'session' | 'approval', sessionId?: string) => Promise<Actor>
   /** Persistent in production, memory-backed in the embedded endpoint. A supervisor that has not
    * fitted the port keeps the bounded open-registry fallback below. */
@@ -748,7 +750,7 @@ export function registerAgnes(
     const p = params as {
       ticket: string
       verdict: 'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected'
-      approverCredential: unknown
+      sourceCredential?: unknown
     }
     type ApprovalSession = {
       resumeApproval?: (
@@ -813,7 +815,15 @@ export function registerAgnes(
         reason: matches.length === 0 ? 'unknown ticket' : 'ambiguous ticket',
       })
     const match = matches[0] as (typeof matches)[number]
-    const approver = await cx.resolveActor(p.approverCredential, 'approval', match.sessionId)
+    const approver = await approvalActor(
+      c.conn,
+      match.sessionId,
+      (conn, sessionId) => cx.resolveActor!(conn.credential, 'approval', sessionId),
+      cx.verifyApprovalSource,
+      p.sourceCredential,
+    ).catch(() => {
+      throw rpcError('CAPABILITY_DENIED', { code: 'APPROVAL_SOURCE_UNVERIFIED' })
+    })
     const session = match.session
     try {
       if (session.resumeApproval) return await session.resumeApproval(p.ticket, p.verdict, approver)

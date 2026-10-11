@@ -1,6 +1,7 @@
 import { withPhase } from '@agnes/core-common/step/op-state'
 import type { EventInput, Seq } from '@agnes/core-common/types'
 import type { Actor } from '@agnes/protocol'
+import { stopPendingApprovals } from './approval-callback.js'
 import { deferredEffectId } from './deferred.js'
 import type { SessionImpl, StepOutcome, TurnEndReason } from './session.js'
 
@@ -19,10 +20,12 @@ export async function abortSession(s: SessionImpl, by: Actor): Promise<AbortResu
   // stop, and a `run({ until: 'idle' })` sitting between two turns is running.
   if (!op) {
     s.ac.abort()
+    await stopPendingApprovals(s)
     return { seq: null, alreadyTerminal: true }
   }
   if (op.control.status === 'cancel_requested') {
     s.ac.abort()
+    await stopPendingApprovals(s)
     return { seq: s.opSeq(), alreadyTerminal: false }
   }
   const requestedAt = new Date(s.d.clock()).toISOString()
@@ -31,6 +34,8 @@ export async function abortSession(s: SessionImpl, by: Actor): Promise<AbortResu
       [],
       withPhase(op, op.phase, { control: { status: 'cancel_requested', requestedAt, by } }),
     )
+    s.ac.abort('stopped')
+    await stopPendingApprovals(s)
     return { seq: seqs[seqs.length - 1] as Seq, alreadyTerminal: false }
   } finally {
     // A refused write must not leave the request undelivered. The phases end a cancelled turn off
@@ -130,6 +135,7 @@ export function closeTurn(
  * ledger what stopped it.
  */
 export async function finishAborted(s: SessionImpl): Promise<StepOutcome> {
+  await stopPendingApprovals(s)
   await drainAborted(s)
   const op = s.op()
   if (!op) return { phase: 'terminal', reason: 'aborted' }

@@ -4863,10 +4863,20 @@
         }
       }
     },
+    "PermissionWithdrawParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "requestId", "reason"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "reason": { "enum": ["stopped", "deadline", "detached"] }
+      }
+    },
     "ApprovalDecideParams": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["ticket", "verdict", "approverCredential"],
+      "required": ["ticket", "verdict"],
       "properties": {
         "ticket": {
           "type": "string",
@@ -4875,7 +4885,7 @@
         "verdict": {
           "enum": ["allowed-once", "allowed-session", "allowed-permanent", "rejected"]
         },
-        "approverCredential": {
+        "sourceCredential": {
           "$ref": "#/$defs/Credential"
         }
       }

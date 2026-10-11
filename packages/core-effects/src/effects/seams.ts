@@ -9,7 +9,7 @@ import type {
   RepairDecision,
 } from '@agnes/core-ledger/reduce/shapes'
 import type { FsEntry, FsStat, ToolMeta } from '@agnes/extension-api'
-import type { Actor, ApprovalGrant, ApprovalMode, ApprovalVerdict } from '@agnes/protocol'
+import type { Actor, ApprovalGrant, ApprovalMode, ApprovalReason, ApprovalVerdict } from '@agnes/protocol'
 import type { WorkspaceInvocationPort } from '../workspace/runtime.js'
 import type { FsPolicy } from './fs-guard.js'
 
@@ -19,19 +19,9 @@ import type { FsPolicy } from './fs-guard.js'
 
 export type Verdict = ApprovalVerdict
 export type Pending = { ticket: string; expiresAt: string }
-/** Why an approval ended the way it did. `approval/decided.reason` carries one of these. */
-export type ApprovalReason =
-  | 'user_rejected'
-  | 'timeout'
-  | 'no_approver'
-  | 'stopped'
-  | 'policy_denied'
-  | 'subagent_scope'
-/**
- * A verdict with the reason behind it. Seams and prompters may return it in place of a bare
- * `Verdict`; the bare string stays valid and means "no reason given".
- */
-export type ApprovalAnswer = { verdict: Verdict; reason?: ApprovalReason }
+export type { ApprovalReason } from '@agnes/protocol'
+/** answeredBy is supplied by the trusted connection/source adapter, separately from the requester. */
+export type ApprovalAnswer = { verdict: Verdict; reason?: ApprovalReason; answeredBy?: Actor }
 export type ApprovalRequest = {
   requestId: string
   kind: 'tool' | 'budget' | 'unknown-outcome' | 'refine'
@@ -50,6 +40,7 @@ export type ApprovalRequest = {
   policyVersion?: string
   options?: Array<'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected'>
   context?: string
+  approval?: import('@agnes/extension-api').ApprovalConstraints
 }
 export type ApprovalGuardianDecision = {
   decision: 'allow-once' | 'allow-session' | 'escalate' | 'reject'
@@ -71,7 +62,7 @@ export interface ApprovalSeam {
   /** Dynamic seams fit the shared implementation to the session before it enters an invocation. */
   forWorkspace?(workspace: ApprovalWorkspaceBinding): ApprovalSeam | Promise<ApprovalSeam>
   checkTool?(name: string, args: unknown): Promise<boolean>
-  ask(req: ApprovalRequest): Promise<Verdict | ApprovalAnswer | Pending>
+  ask(req: ApprovalRequest, opts?: { signal: AbortSignal }): Promise<Verdict | ApprovalAnswer | Pending>
   resume(
     ticket: string,
     verdict: Verdict,

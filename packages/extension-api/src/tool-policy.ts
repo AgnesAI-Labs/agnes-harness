@@ -29,7 +29,18 @@ export interface ToolPolicyInput {
   instructions?: readonly string[]
 }
 
-export type ToolPolicyDecision = { effect: 'allow' | 'ask' | 'deny'; reason: string; review?: ToolReviewFact }
+/** Backend constraints; advisory reviewers and grants cannot relax them. */
+export type ApprovalConstraints = Readonly<{
+  reviewerRequirement: 'human'
+  grantConstraints: 'once'
+  subjectRevision: string
+}>
+export type ToolPolicyDecision = {
+  effect: 'allow' | 'ask' | 'deny'
+  reason: string
+  review?: ToolReviewFact
+  approval?: ApprovalConstraints
+}
 
 /** A tool-free model operation and session-wide reservation, both owned by the runtime. */
 export interface ToolPolicyPorts {

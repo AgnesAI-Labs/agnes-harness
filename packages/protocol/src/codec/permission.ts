@@ -31,3 +31,29 @@ export function fromAcpOptionKind(k: AcpPermissionKind): ApprovalVerdict {
       return 'rejected'
   }
 }
+
+/** Human choices and machine delivery/lifecycle outcomes must remain distinguishable. */
+export type ApprovalReason =
+  | 'user-rejected'
+  | 'deadline'
+  | 'transport'
+  | 'detached'
+  | 'no-handler'
+  | 'no-approver'
+  | 'stopped'
+  | 'invalid-answer'
+  | 'policy_denied'
+  | 'subagent_scope'
+
+export const APPROVAL_REASONS: readonly ApprovalReason[] = Object.freeze([
+  'user-rejected',
+  'deadline',
+  'transport',
+  'detached',
+  'no-handler',
+  'no-approver',
+  'stopped',
+  'invalid-answer',
+  'policy_denied',
+  'subagent_scope',
+])
