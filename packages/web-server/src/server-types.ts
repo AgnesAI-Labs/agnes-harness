@@ -81,6 +81,9 @@ export type WebServerOptions = {
    * before this option existed.
    */
   mountProxy?: (request: IncomingMessage, response: ServerResponse) => boolean
+  /** Launcher-owned first-success state. Unknown Surface paths return a retryable 503 while
+   * false; built-in Web assets still serve normally. Omission preserves ordinary static routing. */
+  surfaceMountsReady?: (pathname: string) => boolean
   /**
    * Ledger directory for same-origin history search. When omitted, the route uses the standard
    * home data directory. A profile with a custom dataDir must pass this; the route does not guess.

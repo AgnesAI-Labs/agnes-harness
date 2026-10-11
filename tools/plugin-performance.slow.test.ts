@@ -182,8 +182,12 @@ it.skipIf(!process.env.AGH_PERFORMANCE_OUTPUT)(
           }
           prepare[String(concurrency)] = median(times)
         }
-        const webMs: number[] = []
-        writeFileSync(join(dataDir, 'index.html'), '<html>synthetic</html>')
+        const webMs: number[] = [],
+          surfaceMs: number[] = []
+        writeFileSync(
+          join(dataDir, 'index.html'),
+          '<html><meta content="__AGNES_CSP_NONCE__"><script>"__AGNES_WS_URL__"</script></html>',
+        )
         for (let repeat = 0; repeat < 5; repeat++) {
           const reservation = createServer()
           await new Promise<void>((resolve) => reservation.listen(0, '127.0.0.1', resolve))
@@ -201,8 +205,11 @@ it.skipIf(!process.env.AGH_PERFORMANCE_OUTPUT)(
             wsUrl: 'ws://127.0.0.1:1',
             port,
             mountProxy: feed.proxy,
+            surfaceMountsReady: feed.ready,
           })
           webMs.push(performance.now() - start)
+          while (feed.ready?.('/synthetic') === false) await delay(1)
+          surfaceMs.push(performance.now() - start)
           await server.close()
           await feed.close()
         }
@@ -215,6 +222,7 @@ it.skipIf(!process.env.AGH_PERFORMANCE_OUTPUT)(
           pageMs: median(pageMs),
           prepareMs: prepare,
           webMs: median(webMs),
+          surfaceMs: median(surfaceMs),
         })
       }
       const output = process.env.AGH_PERFORMANCE_OUTPUT

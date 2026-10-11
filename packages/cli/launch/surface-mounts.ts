@@ -5,10 +5,8 @@ import type { LocalBackend } from './backend.js'
 
 type MountProxyLookup = Parameters<typeof createMountProxy>[0]['lookup']
 
-/** Lightweight-demo cadence, not a high-frequency channel: one short-lived loopback RPC per tick.
- *  8s keeps worst-case browser-visible lag at ~10s (this interval plus the demo page's own 2s
- *  /version poll) while staying far under the controller's 30s startup deadline, so "not refreshed
- *  yet" can never be mistaken for "the new instance failed to start". See spec RC1. */
+/** Fallback cadence: a slow query keeps one connection lifecycle in flight instead of starting
+ * another connection on each tick. A successful refresh still uses the shared mount predicate. */
 export const SURFACE_MOUNT_REFRESH_MS = 8_000
 
 /** Reserved URL prefixes the Web server answers with its own fixed branches (design WC3): the admin
@@ -25,6 +23,8 @@ export function isReservedMount(mount: string): boolean {
 
 export type SurfaceMountFeed = Readonly<{
   lookup: MountProxyLookup
+  /** False until a query has succeeded, including after an initial failure. */
+  ready(): boolean
   /** Stops the refresh ticker. Idempotent; safe to call before the first fetch resolved. */
   close(): Promise<void>
 }>
@@ -42,9 +42,8 @@ export type SurfaceMountFeed = Readonly<{
  * a Surface instance `agnesd` hot-updates after this process started, so the mount table is refreshed
  * in the background instead of fetched once and frozen.
  *
- * Fails soft in both directions: an unreachable daemon or a query error on the very first fetch leaves
- * the lookup answering "no mount" for every path, the same degraded-but-serving behavior
- * `boot-coordination.ts`'s `coordinateSurfacesOnBoot` has when no deploy directory was ever trusted.
+ * Returns before the first query completes. Until one query succeeds, ready() is false so Web can
+ * distinguish a temporarily unavailable mount table from a successfully fetched empty table.
  * A LATER poll failing (after at least one success) keeps serving the last known-good table rather
  * than blanking out a page the user is currently viewing -- a transient daemon hiccup must not look
  * like every Surface vanished. Web itself remains reachable either way.
@@ -58,9 +57,11 @@ export async function fetchSurfaceMountLookup(
   // last-known-good table in place rather than blanking out a page the user is currently viewing.
   let mounts: readonly MountProxyMatch[] | undefined
   let inflight: Promise<void> | undefined
+  let closing: Promise<void> | undefined
   let stopped = false
+  let generation = 0
 
-  const refresh = async (): Promise<void> => {
+  const refresh = async (requestGeneration: number): Promise<void> => {
     // Identical connection shape on EVERY tick -- including `transportFactories` (the Windows
     // named-pipe seam) and a fresh `memoryJournal` per attempt. `memoryJournal` is a pure in-memory
     // closure with no shared registry (packages/sdk/src/journal.ts), so calling it repeatedly with the
@@ -75,35 +76,46 @@ export async function fetchSurfaceMountLookup(
       await client.initialize()
       const next = await client.surfaces.mounts()
       // The mount RPC returns {mount, host, port}, matching the proxy's narrow MountProxyMatch.
-      if (!stopped) mounts = next.mounts.filter((row) => !isReservedMount(row.mount))
+      if (!stopped && requestGeneration === generation)
+        mounts = next.mounts.filter((row) => !isReservedMount(row.mount))
     } finally {
       await client.close().catch(() => undefined)
     }
   }
   const tick = (): Promise<void> => {
-    inflight = refresh().catch((error: unknown) => {
-      console.error(
-        mounts === undefined
-          ? 'agh serve: could not read the Surface mount table; Surfaces will not be reachable'
-          : 'agh serve: Surface mount table refresh failed; serving the last known table',
-        error,
-      )
-    })
-    return inflight
+    if (stopped) return Promise.resolve()
+    if (inflight) return inflight
+    const pending = refresh(++generation)
+      .catch((error: unknown) => {
+        console.error(
+          mounts === undefined
+            ? 'agh serve: could not read the Surface mount table; retrying in the background'
+            : 'agh serve: Surface mount table refresh failed; serving the last known table',
+          error,
+        )
+      })
+      .finally(() => {
+        if (inflight === pending) inflight = undefined
+      })
+    inflight = pending
+    return pending
   }
 
-  await tick()
+  void tick()
   const timer = setInterval(() => void tick(), options.intervalMs ?? SURFACE_MOUNT_REFRESH_MS)
   timer.unref()
   return Object.freeze({
     // I3 (final review, Important): the match predicate itself comes from the shared `matchMount`
     // instead of being re-derived here.
     lookup: (pathname: string) => (mounts === undefined ? undefined : matchMount(mounts, pathname)),
-    async close() {
-      if (stopped) return
+    ready: () => mounts !== undefined,
+    close() {
+      if (closing) return closing
       stopped = true
+      generation++
       clearInterval(timer)
-      await inflight?.catch(() => undefined)
+      closing = inflight ?? Promise.resolve()
+      return closing
     },
   })
 }
@@ -112,7 +124,17 @@ export async function fetchSurfaceMountLookup(
 export async function fetchSurfaceMountProxy(
   backend: LocalBackend,
   options: Readonly<{ intervalMs?: number }> = {},
-): Promise<Readonly<{ proxy: ReturnType<typeof createMountProxy>; close(): Promise<void> }>> {
+): Promise<
+  Readonly<{
+    proxy: ReturnType<typeof createMountProxy>
+    ready(pathname: string): boolean
+    close(): Promise<void>
+  }>
+> {
   const feed = await fetchSurfaceMountLookup(backend, options)
-  return Object.freeze({ proxy: createMountProxy({ lookup: feed.lookup }), close: feed.close })
+  return Object.freeze({
+    proxy: createMountProxy({ lookup: feed.lookup }),
+    ready: (pathname: string) => isReservedMount(pathname) || feed.ready(),
+    close: feed.close,
+  })
 }

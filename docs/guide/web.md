@@ -10,6 +10,8 @@ The Web workbench brings tasks, history, and administration into one local inter
 
 <a id="启动与连接"></a>
 
+The main Web listener starts while its first Surface mount-table query runs in the background. Until that query succeeds, unknown Surface paths return HTTP 503 with a retry hint. A successful empty table means no mount; later query failures retain the last successful table. Refreshes do not overlap, and shutdown waits for the active query and its connection cleanup.
+
 ## Start and connect
 
 ```sh

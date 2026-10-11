@@ -18,6 +18,7 @@ vi.mock('./surface-mounts.js', async (importActual) => {
     ...actual,
     fetchSurfaceMountProxy: vi.fn(async () => ({
       proxy: () => false,
+      ready: () => true,
       close: async () => {
         mountCloseCalls++
       },
@@ -155,6 +156,7 @@ describe('Web command launch contract', () => {
       // mount proxy built from the daemon's own `_agnes/v1/surfaces.mounts` answer, not omit the
       // option and silently fall back to "no Surface is ever reachable".
       expect(options.mountProxy).toBeTypeOf('function')
+      expect(options.surfaceMountsReady).toBeTypeOf('function')
       setTimeout(() => signals.emit('SIGTERM'), 0)
       return {
         url: 'http://127.0.0.1:4181',

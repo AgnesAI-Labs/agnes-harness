@@ -229,6 +229,7 @@ export async function runWebCommand(
     // `SURFACE_MOUNT_REFRESH_MS` (spec RC1) so a Surface instance `agnesd` hot-updates after this
     // process's boot is picked up within a bounded window instead of never -- see
     // packages/cli/launch/surface-mounts.ts.
+    // This creates the feed immediately; the first mount RPC runs in the background.
     mounts = await fetchSurfaceMountProxy(backend)
     web = await makeServer({
       root: resources.webRoot,
@@ -265,6 +266,7 @@ export async function runWebCommand(
         (await resourceAdminHandler.handle(request, response)) ||
         oauthAdminHandler.handle(request, response),
       mountProxy: mounts.proxy,
+      surfaceMountsReady: mounts.ready,
     })
     io.onWebServerReady?.(web)
     const report = io.ensureBackend ? { status: 'ok' as const } : await adminHandler.doctor()

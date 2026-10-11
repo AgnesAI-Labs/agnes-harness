@@ -46,6 +46,18 @@ type WatchedPluginBuild = {
 export async function createWebServer(options: WebServerOptions): Promise<WebServer> {
   if (!isAbsolute(options.root)) throw new Error('Web asset root must be absolute')
   const wsUrl = loopbackWs(options.wsUrl)
+  const surfaceNotReady = (requestUrl: string, response: ServerResponse): boolean => {
+    const pathname = new URL(requestUrl, 'http://127.0.0.1').pathname
+    if (options.surfaceMountsReady?.(pathname) !== false) return false
+    response
+      .writeHead(503, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'Retry-After': '1',
+      })
+      .end('Surface mount table is not ready yet; retry shortly.')
+    return true
+  }
   // WC5：对 index.html 内联 import map 的脚本体计算 SHA-256，追加进 CSP script-src（严格哈希，
   // 不放宽策略）。哈希输入是 <script type="importmap"> 与 </script> 之间的精确字节（浏览器语义）。
   // 缺失或解析失败时不追加哈希：内联 import map 会被浏览器拒绝，页面退回无插件模块的现状（fail-closed）。
@@ -415,10 +427,16 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         const site = request.headers['sec-fetch-site']
         if (
           request.headers.origin === expectedOrigin.origin &&
-          (site === undefined || site === 'same-origin') &&
-          options.mountProxy?.(request, response)
-        )
-          return
+          (site === undefined || site === 'same-origin')
+        ) {
+          if (options.mountProxy?.(request, response)) return
+          // A built-in asset keeps its method refusal even while the mount query is pending.
+          try {
+            fileName(request.url ?? '/')
+          } catch {
+            if (surfaceNotReady(request.url ?? '/', response)) return
+          }
+        }
         response.writeHead(405, { Allow: 'GET, HEAD' }).end()
         return
       }
@@ -551,6 +569,7 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
       else response.end(body)
     } catch (error) {
       const missing = error instanceof Error && error.message === 'Web asset not found'
+      if (missing && surfaceNotReady(request.url ?? '/', response)) return
       response.writeHead(missing ? 404 : 500).end(missing ? '' : 'web assets unavailable')
     }
   })
