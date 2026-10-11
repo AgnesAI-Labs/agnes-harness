@@ -21,6 +21,50 @@ const COMMAND_ENV: Readonly<Record<string, string>> = Object.freeze({ PYTHONUNBU
 // or a missing module to show, short enough that starting a server is not a wait.
 const FIRST_LOOK_MS = 1000
 
+// Under PowerShell, models wrapped command after command in `powershell -Command "..."`, and the
+// outer shell expanded every `$` in that string before the inner one parsed it. The wrapper is
+// recognised where it always was, at the start of the line: the program, its switches (a value
+// after a switch allowed), then -Command or an abbreviation of it down to -c. -File hands the rest to
+// a script, and a bare word is a script or a command, so either ends the search without a match.
+const POWERSHELL = /^(?:powershell|pwsh)(?:\.exe)?$/i
+const COMMAND_SWITCH = /^-c(?:om(?:m(?:a(?:nd?)?)?)?)?$/i
+const FILE_SWITCH = /^-f(?:i(?:le?)?)?$/i
+const NESTED_POWERSHELL_NOTE =
+  '[this command already runs in PowerShell: a powershell or pwsh -Command wrapper makes the outer shell expand $ variables and quotes in its string before the inner one runs. Write the command directly.]'
+
+function wrapsPowerShell(command: string): boolean {
+  const head = /^\s*(?:&\s*)?(?:"([^"]*)"|'([^']*)'|([^\s"']+))([\s\S]*)$/.exec(command)
+  const path = head?.[1] ?? head?.[2] ?? head?.[3] ?? ''
+  if (!POWERSHELL.test(path.split(/[\\/]/).pop() ?? '')) return false
+  let afterSwitch = false
+  for (const word of (head?.[4] ?? '').trim().split(/\s+/)) {
+    if (COMMAND_SWITCH.test(word)) return true
+    if (FILE_SWITCH.test(word)) return false
+    if (/^-\w+$/.test(word)) afterSwitch = true
+    else if (afterSwitch && /^\w/.test(word)) afterSwitch = false
+    else return false
+  }
+  return false
+}
+
+// How many times each command has run out of time, per session, so the second timeout says it is
+// the second: a model re-ran a silent five-minute command unchanged twice after being told to split
+// it. Same lifetime and bound as the file versions `write` checks: process memory, the oldest entry
+// dropped first. After a restart the count starts again, which says less but never anything false.
+export const MAX_TIMED_OUT_ENTRIES = 256
+const timeouts = new Map<string, number>()
+
+function countTimeout(key: string): number {
+  const n = (timeouts.get(key) ?? 0) + 1
+  timeouts.delete(key)
+  timeouts.set(key, n)
+  if (timeouts.size > MAX_TIMED_OUT_ENTRIES) {
+    const oldest = timeouts.keys().next()
+    if (!oldest.done) timeouts.delete(oldest.value)
+  }
+  return n
+}
+
 export const shellTool = defineTool({
   name: 'shell',
   description:
@@ -38,6 +82,7 @@ export const shellTool = defineTool({
   },
   async execute(args, ctx): Promise<ToolResult> {
     const cwd = args.cwd ?? ctx.cwd
+    const nested = ctx.platform.shell === 'powershell' && wrapsPowerShell(args.command)
     if (args.background) {
       const jobs = ctx.jobs
       const unavailable = (why: string): ToolResult => ({
@@ -74,6 +119,7 @@ export const shellTool = defineTool({
       }
       const parts = [`background job ${started.id} started: ${args.command}`]
       parts.push(text ? text.replace(/\n$/, '') : '[no output yet]')
+      if (nested) parts.push(NESTED_POWERSHELL_NOTE)
       parts.push(jobState(state ?? started))
       parts.push(
         `Read its output with the job tool (action output, id ${started.id}; waitMs waits for more) and stop it with action stop. It ends when the session closes.`,
@@ -112,21 +158,38 @@ export const shellTool = defineTool({
     // An executor that reports nothing (a third-party seam) still has the kernel's cut-off behind it,
     // so only then is a killed-looking result that took the whole limit read as the timeout it was.
     const timedOut = r.timedOut ?? (r.code < 0 && Date.now() - startedAt >= timeoutMs)
+    const run = `${ctx.session.key}\0${cwd}\0${args.command}`
     if (timedOut) {
       // Last line on purpose, and no exit line: the code of a killed command says nothing, and the UI
       // reads an `[exit N]` line only when it ends the text.
       if (r.truncated) parts.push('[output truncated by sandbox]')
+      if (nested) parts.push(NESTED_POWERSHELL_NOTE)
+      const times = countTimeout(run)
+      if (times > 1) parts.push(`[this exact command has now timed out ${times} times in this session.]`)
+      // A silent timeout is said to be silent: a model read "the output above" as a measurement and
+      // reported where the time went from a command that had printed nothing.
+      const captured =
+        r.stdout || r.stderr
+          ? 'the output above is what was captured'
+          : 'it printed nothing, so this result does not show where it was or why it was slow'
+      // A background job is offered only where the session keeps them.
+      const background = ctx.jobs
+        ? ', run it with background: true and read its output with the job tool'
+        : ''
       parts.push(
-        `[timed out after ${timeoutMs}ms${requested !== undefined && requested > timeoutMs ? ` (requested ${requested}ms, capped)` : ''}: the command and the processes in its process group were killed; the output above is what was captured, and the command may have taken partial effect. Check the current state before retrying, and split the work into shorter steps or ask for a longer timeoutMs (capped by the deployment).]`,
+        `[timed out after ${timeoutMs}ms${requested !== undefined && requested > timeoutMs ? ` (requested ${requested}ms, capped)` : ''}: the command and the processes in its process group were killed; ${captured}, and the command may have taken partial effect. Check the current state before retrying. Do not rerun it unchanged: make it print its progress, split it into shorter steps${background}, or ask for a longer timeoutMs (capped by the deployment).]`,
       )
       return { ...(await guardedResult(ctx, parts.join('\n'))), isError: true }
     }
+    // A run that finished is a fresh start: a later timeout of the same command is a first again.
+    timeouts.delete(run)
     // Said before the exit line, which the UI reads only when it ends the text. Without it the model
     // finds the port closed a call later and goes looking for a cause in the command it ran.
     if (r.stoppedProcesses)
       parts.push(
         `[${r.stoppedProcesses} process${r.stoppedProcesses === 1 ? '' : 'es'} this command started ${r.stoppedProcesses === 1 ? 'was' : 'were'} still running when it returned and ${r.stoppedProcesses === 1 ? 'was' : 'were'} stopped with it: nothing a foreground command starts outlives the call. Run a process that has to keep going (a server, a watcher) with background: true.]`,
       )
+    if (nested) parts.push(NESTED_POWERSHELL_NOTE)
     parts.push(`[exit ${r.code}]${r.truncated ? ' [output truncated by sandbox]' : ''}`)
     const out = await guardedResult(ctx, parts.join('\n'))
     // Strictly zero, not "not positive": a process killed by a signal is reported with a negative
