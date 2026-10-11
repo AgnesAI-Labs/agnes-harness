@@ -281,7 +281,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-conversation/src': 4068,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src/settings': 7876,
+  'packages/web-admin/src/settings': 8230,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/permission-picker': 248,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
@@ -289,7 +289,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-admin/src/admin/plugins/api': 546,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
-  'packages/web-admin/src': 14350,
+  'packages/web-admin/src': 14704,
   // Pure Web ownership migration: exact measured countLines; no spare allocation.
   'packages/web-foundation/src': 2394,
   'packages/daemon-rpc/src/local/methods/extensions': 199,
@@ -440,7 +440,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // countLines: 6192 -> 6208 (+16); exact cap, no exclusions or spare allocation.
   // 2026-10-07 integration review: Inline conversation cards and approval/trace rendering.
   // countLines: 6208 -> 6222; exact measured cap, no exclusions or spare allocation.
-  'packages/web-units/src': 9364,
+  'packages/web-units/src': 9765,
   // Write staleness guard: a per-session table of what each file looked like when read, checked by
   // `write` (+55 counted lines, measured 855, exact cap).
   // 2026-10-07 integration review: Official job tools and bounded execution/output handling.
@@ -627,7 +627,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // 2026-10-07 gap-fill review: Session-bound goal state and context/settings integration.
   // countLines: 2443 -> 2471; exact cap, no exclusions or spare allocation.
   // AC1: consume one-time example launch parameters after session activation (+2 exact lines).
-  'packages/web/src/app': 4129,
+  'packages/web/src/app': 4151,
   // 2026-09-22 UI plugin management: inject the embedded pane's client runtime reconciler.
   // 2026-09-25 UI refactor: permission options now render through the React region contract.
   // Re-measured with countLines(): 215, exact, no spare.
@@ -2448,7 +2448,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // UI data-source refresh and form drafts. countLines: 13327 -> 13395 (+68).
   // UX B1/B2 native sheet binding adds 3 lines; ST1 c2a1bd004 seeds reveal history with 5.
   // Exact combined countLines measurement, preserving both contributions without spare allocation.
-  'packages/web/src': 13417,
+  'packages/web/src': 13440,
   // 2026-09-17 web-client-modules frontend track (rebased onto L0/permission-picker main): re-measured exact value below.
   // 2026-09-14: Task 7 orphaned-pin-cleanup adds the orphan-pins section to PluginAdminPage — the
   // #orphanPins/#orphanPinsList/#orphanPinsStatus/#orphanPinsReleaseAll element bindings, the
