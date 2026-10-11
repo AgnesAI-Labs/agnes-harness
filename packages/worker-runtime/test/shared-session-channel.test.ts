@@ -41,7 +41,7 @@ describe('SharedSessionChannel', () => {
       channel.settle({ kind: 'reply', sessionKey: 'owner', requestId: sent[0].requestId, result: {} }),
     ).toBe(false)
   })
-  it.each(['abort', 'close', 'closeAll'])(
+  it.each(['abort', 'deadline', 'close', 'closeAll'])(
     'withdraws a permission offer on %s and ignores late allow',
     async (way) => {
       const sent: any[] = []
@@ -51,15 +51,18 @@ describe('SharedSessionChannel', () => {
       const result =
         way === 'abort'
           ? expect(pending).resolves.toEqual({ verdict: 'cancelled', reason: 'stopped' })
-          : expect(pending).rejects.toBeDefined()
+          : way === 'deadline'
+            ? expect(pending).resolves.toEqual({ verdict: 'unavailable', reason: 'deadline' })
+            : expect(pending).rejects.toBeDefined()
       if (way === 'abort') controller.abort()
+      else if (way === 'deadline') controller.abort('deadline')
       else if (way === 'close') channel.closeSession('owner')
       else channel.closeAll()
       await result
       expect(sent[1]).toMatchObject({
         sessionKey: 'owner',
         method: 'permission-abort',
-        params: { requestId: sent[0].requestId },
+        params: { requestId: sent[0].requestId, reason: way === 'deadline' ? 'deadline' : 'stopped' },
       })
       expect(
         channel.settle({

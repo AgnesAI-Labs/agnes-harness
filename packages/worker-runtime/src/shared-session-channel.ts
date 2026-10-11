@@ -62,7 +62,12 @@ export class SharedSessionChannel {
               sessionKey,
               requestId: `${requestId}-abort`,
               method: `${method}-abort`,
-              params: { requestId },
+              params: {
+                requestId,
+                ...(method === 'permission'
+                  ? { reason: signal.reason === 'deadline' ? 'deadline' : 'stopped' }
+                  : {}),
+              },
             } satisfies RequestFrame)
           } catch {
             /* A closed channel cannot authorize further work. */
@@ -72,7 +77,12 @@ export class SharedSessionChannel {
       const onAbort = (): void => {
         this.pending.delete(requestId)
         cancel()
-        if (method === 'permission') resolve({ verdict: 'cancelled', reason: 'stopped' })
+        if (method === 'permission')
+          resolve(
+            signal.reason === 'deadline'
+              ? { verdict: 'unavailable', reason: 'deadline' }
+              : { verdict: 'cancelled', reason: 'stopped' },
+          )
         else reject(signal.reason ?? new Error('session request cancelled'))
       }
       this.pending.set(requestId, {

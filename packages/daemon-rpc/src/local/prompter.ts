@@ -120,8 +120,15 @@ export class PrompterRouter implements Prompter {
 
   async ask(req: ApprovalRequest, opts: { signal: AbortSignal }): Promise<PrompterAnswer> {
     req = structuredClone(req)
-    if (opts.signal.aborted)
-      return this.done(req.requestId, 'aborted', { verdict: 'cancelled', reason: 'stopped' })
+    const interrupted = () =>
+      this.done(
+        req.requestId,
+        opts.signal.reason === 'deadline' ? 'timeout' : 'aborted',
+        opts.signal.reason === 'deadline'
+          ? { verdict: 'unavailable', reason: 'deadline' }
+          : { verdict: 'cancelled', reason: 'stopped' },
+      )
+    if (opts.signal.aborted) return interrupted()
     const deadline = Date.parse(req.deadline)
     if (!Number.isFinite(deadline))
       return this.done(req.requestId, 'malformed', { verdict: 'unavailable', reason: 'invalid-answer' })
@@ -131,8 +138,7 @@ export class PrompterRouter implements Prompter {
     if (this.o.local) {
       const snapshot = structuredClone(req)
       const raw = await this.o.local.ask(structuredClone(req), opts)
-      if (opts.signal.aborted)
-        return this.done(req.requestId, 'aborted', { verdict: 'cancelled', reason: 'stopped' })
+      if (opts.signal.aborted) return interrupted()
       if (typeof raw === 'object' && 'ticket' in raw) return raw
       const answer = typeof raw === 'string' ? { verdict: raw } : raw
       if (answer.verdict === 'unavailable' || answer.verdict === 'cancelled')
@@ -144,14 +150,11 @@ export class PrompterRouter implements Prompter {
       )
         return this.done(req.requestId, 'malformed', { verdict: 'unavailable', reason: 'invalid-answer' })
       const answeredBy = await this.o.localActor(req.sessionKey)
-      if (opts.signal.aborted)
-        return this.done(req.requestId, 'aborted', { verdict: 'cancelled', reason: 'stopped' })
+      if (opts.signal.aborted) return interrupted()
       if (!validateAgainst(ActorSchema, answeredBy).ok)
         return this.done(req.requestId, 'malformed', { verdict: 'unavailable', reason: 'invalid-answer' })
       if (deadline <= this.o.clock())
         return this.done(req.requestId, 'timeout', { verdict: 'unavailable', reason: 'deadline' })
-      if (opts.signal.aborted)
-        return this.done(req.requestId, 'aborted', { verdict: 'cancelled', reason: 'stopped' })
       return this.done(req.requestId, 'local', {
         verdict: answer.verdict,
         answeredBy,
@@ -189,8 +192,7 @@ export class PrompterRouter implements Prompter {
     const offers = new Set<LocalEndpoint>()
     try {
       while (true) {
-        if (opts.signal.aborted)
-          return this.done(req.requestId, 'aborted', { verdict: 'cancelled', reason: 'stopped' })
+        if (opts.signal.aborted) return interrupted()
         const remaining = deadlineAt - this.o.clock()
         const expired = Number.isFinite(deadlineAt) && remaining <= 0
         if (expired)
@@ -229,8 +231,7 @@ export class PrompterRouter implements Prompter {
             ...(Number.isFinite(remaining) && remaining > 0 ? { timeoutMs: remaining } : {}),
           })
         } catch (e) {
-          if (opts.signal.aborted)
-            return this.done(req.requestId, 'aborted', { verdict: 'cancelled', reason: 'stopped' })
+          if (opts.signal.aborted) return interrupted()
           // The browser refreshed. Keep the original question open for the next attached client until
           // the deadline. A timeout, any other transport fault, and a client JSON-RPC error still fail
           // closed: 'unavailable' would let an outage pick up whatever on_unavailable allows.
@@ -246,8 +247,7 @@ export class PrompterRouter implements Prompter {
         }
         const outcome = (res as { outcome?: { outcome?: unknown; optionId?: unknown } } | undefined)?.outcome
         // Transport detach is an offer loss; another connection can still answer the same request.
-        if (opts.signal.aborted)
-          return this.done(req.requestId, 'aborted', { verdict: 'cancelled', reason: 'stopped' })
+        if (opts.signal.aborted) return interrupted()
         if (Number.isFinite(deadlineAt) && this.o.clock() >= deadlineAt)
           return this.done(req.requestId, 'timeout', { verdict: 'unavailable', reason: 'deadline' })
         const metadata = (
@@ -290,8 +290,7 @@ export class PrompterRouter implements Prompter {
           } catch {
             return this.done(req.requestId, 'malformed', { verdict: 'unavailable', reason: 'invalid-answer' })
           }
-          if (opts.signal.aborted)
-            return this.done(req.requestId, 'aborted', { verdict: 'cancelled', reason: 'stopped' })
+          if (opts.signal.aborted) return interrupted()
           if (Number.isFinite(deadlineAt) && this.o.clock() >= deadlineAt)
             return this.done(req.requestId, 'timeout', { verdict: 'unavailable', reason: 'deadline' })
           if (

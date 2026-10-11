@@ -295,14 +295,14 @@ const INITIAL_CEILING: Record<string, number> = {
   'packages/daemon-rpc/src/local/methods/extensions': 199,
   'packages/daemon-rpc/src/local/auth': 341,
   // UI refresh forwarding. HEAD was 8143 against the previous 8057 ceiling; this change adds 11.
-  'packages/daemon-rpc/src': 8337,
+  'packages/daemon-rpc/src': 8336,
   'packages/daemon/src/supervisor/startup': 18,
   'packages/daemon/src/supervisor/discovery': 446,
   'packages/daemon/src/supervisor/scope': 254,
   'packages/daemon/src/supervisor/configuration': 45,
   'packages/daemon/src/supervisor/service-worker': 103,
   // UI refresh forwarding. HEAD was 11013 against the previous 10918 ceiling; this change adds 6.
-  'packages/daemon/src/supervisor': 11314,
+  'packages/daemon/src/supervisor': 11317,
   'packages/daemon-admin/src/packages/project': 43,
   'packages/daemon-admin/src/packages/permissions': 97,
   'packages/daemon-admin/src/packages/operations': 416,
@@ -2175,7 +2175,7 @@ const INITIAL_CEILING: Record<string, number> = {
   // Acceptance review: Persist child-engine settings through publication and recover legacy default loop pins when listing sessions.
   // countLines: 28105 -> 28157; exact cap, no exclusions or spare allocation.
   // UI refresh forwarding. HEAD was 11224 against the previous 11129 ceiling; this change adds 6.
-  'packages/daemon/src': 11530,
+  'packages/daemon/src': 11533,
 
   // 2026-09-14: whole-branch review fix wave (Finding 1) adds the two missing
   // 'pins/inspect'/'pins/release' entries to the ACTIONS BFF route allowlist, which had been left

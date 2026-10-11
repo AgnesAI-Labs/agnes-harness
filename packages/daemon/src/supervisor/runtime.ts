@@ -1274,8 +1274,11 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
           return skillInstallRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
         const permissionKey = `${sessionKey}\0${f.requestId}`
         if (f.method === 'permission-abort') {
-          const id = (f.params as { requestId?: unknown })?.requestId
-          if (typeof id === 'string') permissionRequests.get(`${sessionKey}\0${id}`)?.abort('stopped')
+          const abort = f.params as { requestId?: unknown; reason?: unknown }
+          if (typeof abort?.requestId === 'string')
+            permissionRequests
+              .get(`${sessionKey}\0${abort.requestId}`)
+              ?.abort(abort.reason === 'deadline' ? 'deadline' : 'stopped')
           return undefined
         }
         if (f.method === 'permission') {

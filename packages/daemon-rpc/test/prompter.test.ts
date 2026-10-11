@@ -421,16 +421,25 @@ describe('PrompterRouter', () => {
     expect(log).toEqual([{ requestId: 'r1', via: 'timeout', verdict: 'unavailable', reason: 'deadline' }])
   })
 
-  it('cancels a dropped approval when the caller aborts before anyone else answers', async () => {
-    const { ep, r, log } = mk()
-    ep.conn.capabilities.permission = true
-    const ac = new AbortController()
-    const it = ep.notifications[Symbol.asyncIterator]()
-    const p = r.ask(req as never, { signal: ac.signal })
-    await it.next()
-    await ep.close()
-    ac.abort()
-    await expect(p).resolves.toEqual({ verdict: 'cancelled', reason: 'stopped' })
-    expect(log).toEqual([{ requestId: 'r1', via: 'aborted', verdict: 'cancelled', reason: 'stopped' }])
-  })
+  it.each(['stopped', 'deadline'] as const)(
+    'keeps %s when the caller withdraws a dropped approval',
+    async (reason) => {
+      const { ep, r, log } = mk()
+      ep.conn.capabilities.permission = true
+      const ac = new AbortController()
+      const it = ep.notifications[Symbol.asyncIterator]()
+      const p = r.ask(req as never, { signal: ac.signal })
+      await it.next()
+      await ep.close()
+      ac.abort(reason)
+      const answer =
+        reason === 'deadline'
+          ? { verdict: 'unavailable', reason: 'deadline' }
+          : { verdict: 'cancelled', reason: 'stopped' }
+      await expect(p).resolves.toEqual(answer)
+      expect(log).toEqual([
+        { requestId: 'r1', via: reason === 'deadline' ? 'timeout' : 'aborted', ...answer },
+      ])
+    },
+  )
 })
