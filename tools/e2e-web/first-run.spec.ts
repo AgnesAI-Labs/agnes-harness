@@ -140,6 +140,11 @@ for (const locale of ['en', 'zh-CN']) {
         await page.keyboard.press('Escape')
         await expect(page.locator('#new')).toHaveClass(/agh-btn--primary/)
         await expect(page.locator('#settings')).toHaveClass(/agh-btn--ghost/)
+        // Closing Settings retains its deep link. Restore the conversation URL before testing startup.
+        const conversationUrl = new URL(page.url())
+        conversationUrl.searchParams.delete('settings')
+        conversationUrl.hash = ''
+        await page.goto(conversationUrl.href)
         const marker = join(runtime.home, 'home-layout.json'),
           original = await readFile(marker, 'utf8')
         await writeFile(marker, JSON.stringify({ version: 99 }))
