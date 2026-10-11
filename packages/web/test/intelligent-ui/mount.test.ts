@@ -47,7 +47,7 @@ vi.mock('@agnes/web-ui', () => ({
   intelligentUiCatalog: {},
 }))
 
-it('seeds loaded revisions on every session and reveals only live new revisions', () => {
+it('seeds loaded surfaces on every session and reveals only first appearances', () => {
   let switched!: () => void
   const session = {
     sessionId: 'first',
@@ -77,20 +77,26 @@ it('seeds loaded revisions on every session and reveals only live new revisions'
     expect(reveal).not.toHaveBeenCalled()
     expect(controls.open).not.toHaveBeenCalled()
     first.publish(true, [live])
-    expect(reveal).toHaveBeenCalledTimes(1)
-    expect(controls.open).toHaveBeenCalledTimes(1)
+    expect(reveal).not.toHaveBeenCalled()
+    expect(controls.open).not.toHaveBeenCalled()
     first.publish(true, [live])
-    expect(reveal).toHaveBeenCalledTimes(1)
+    expect(reveal).not.toHaveBeenCalled()
     session.sessionId = 'second'
     switched()
     controls.clients.at(-1)!.publish(true, [live])
-    expect(reveal).toHaveBeenCalledTimes(1)
-    expect(controls.open).toHaveBeenCalledTimes(1)
+    expect(reveal).not.toHaveBeenCalled()
+    expect(controls.open).not.toHaveBeenCalled()
     const newSurface = structuredClone(live)
     newSurface.surface.id = 'live-review'
     controls.clients.at(-1)!.publish(true, [live, newSurface])
+    expect(reveal).toHaveBeenCalledTimes(1)
+    expect(controls.open).not.toHaveBeenCalled()
+    const workbenchOnly = structuredClone(newSurface)
+    workbenchOnly.surface.id = 'workbench-only'
+    workbenchOnly.surface.placement.inline = false
+    controls.clients.at(-1)!.publish(true, [live, newSurface, workbenchOnly])
     expect(reveal).toHaveBeenCalledTimes(2)
-    expect(controls.open).toHaveBeenCalledTimes(2)
+    expect(controls.open).toHaveBeenCalledTimes(1)
   } finally {
     dispose()
   }

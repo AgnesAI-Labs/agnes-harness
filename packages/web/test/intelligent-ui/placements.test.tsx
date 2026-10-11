@@ -23,6 +23,7 @@ const deliverablesRecord = () => {
     placement: { inline: true, workbench: true, preferred: 'inline' },
     components: [{ id: 'file-0', kind: 'text', dataKey: 'file-0' }],
     data: { 'file-0': 'report.md — contract-review: final (457 bytes; artifact abc)' },
+    summary: 'report.md — contract-review: final',
     actions: [],
   }
   return record
@@ -87,11 +88,19 @@ describe('shared Intelligent UI placements', () => {
         expect(article.textContent).toContain('Deliverables / 交付物')
         expect(article.textContent).toContain('report.md — contract-review: final')
       }
+      expect(articles[0]?.querySelector('[data-agnes-intelligent-ui="catalog"]')).toBeNull()
+      expect(articles[1]?.querySelector('[data-agnes-intelligent-ui="catalog"]')).toBeTruthy()
       const seen = new Set<string>()
       const hiddenConversation = newSurfacePlacements(seen, [deliverablesRecord()])
-      expect(hiddenConversation).toMatchObject({ showConversation: true, showWorkbench: true })
+      expect(hiddenConversation).toMatchObject({ showConversation: true, showWorkbench: false })
       for (const key of hiddenConversation.keys) seen.add(key)
       expect(newSurfacePlacements(seen, [deliverablesRecord()]).keys).toEqual([])
+      const update = deliverablesRecord()
+      update.surface.revision++
+      expect(newSurfacePlacements(seen, [update]).keys).toEqual([])
+      update.surface.id = 'workbench-only'
+      update.surface.placement.inline = false
+      expect(newSurfacePlacements(seen, [update]).showWorkbench).toBe(true)
     } finally {
       await cleanup()
     }
@@ -103,7 +112,7 @@ describe('shared Intelligent UI placements', () => {
       const surfaces = host.querySelectorAll('[data-testid="ui-surface-finance-review"]')
       expect(surfaces).toHaveLength(2)
       expect([...surfaces].map((node) => node.getAttribute('data-revision'))).toEqual(['1', '1'])
-      expect(host.querySelectorAll('[data-status="pending-approval"]')).toHaveLength(2)
+      expect(host.querySelectorAll('[data-status="pending-approval"]')).toHaveLength(1)
       await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="ui-expand"]')!.click())
       expect(binding.expand).toHaveBeenCalledWith('finance-review', 1)
       await act(async () =>
@@ -130,7 +139,7 @@ describe('shared Intelligent UI placements', () => {
         ),
       ).toBe(true)
       const reasons = [...host.querySelectorAll<HTMLInputElement>('[data-testid="ui-form-adjustment"] input')]
-      expect(reasons.map((input) => input.value)).toEqual(['Human review', 'Human review'])
+      expect(reasons.map((input) => input.value)).toEqual(['Human review'])
     } finally {
       await cleanup()
     }

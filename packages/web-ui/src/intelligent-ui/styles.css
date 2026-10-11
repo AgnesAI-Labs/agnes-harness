@@ -7,7 +7,7 @@
   padding: var(--s20);
   border: 1px solid var(--agnes-line-primary);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-elevation);
+  box-shadow: none;
   min-width: 0;
   font-size: var(--font-size-body);
   line-height: var(--line-md);
@@ -116,8 +116,8 @@
   gap: var(--s12);
 }
 .agnes-intelligent-surface[data-placement="inline"] .agnes-intelligent-catalog {
-  max-height: 360px;
-  overflow-y: auto;
+  max-height: none;
+  overflow-y: visible;
   gap: var(--s16);
   padding: var(--s4);
 }
@@ -469,4 +469,21 @@
 .agnes-intelligent-image figcaption {
   color: var(--agnes-text-secondary);
   font-size: var(--font-size-sm);
+}
+
+.agnes-intelligent-attribution {
+  color: var(--agnes-text-secondary);
+  font-size: var(--font-size-sm);
+  margin: var(--s8) 0;
+}
+.agnes-intelligent-surface[data-placement="inline"] .agnes-intelligent-body {
+  max-height: 320px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.agnes-intelligent-surface > header {
+  gap: var(--s8);
+}
+.agnes-intelligent-surface > header h3 {
+  flex: 1;
 }

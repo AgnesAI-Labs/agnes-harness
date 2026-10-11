@@ -546,6 +546,11 @@
           "minLength": 1,
           "maxLength": 256
         },
+        "summary": {
+          "type": "string",
+          "maxLength": 1024,
+          "description": "Optional human-readable summary shown in the conversation when the complete surface lives in the workbench."
+        },
         "placement": {
           "$ref": "#/$defs/UiPlacement"
         },

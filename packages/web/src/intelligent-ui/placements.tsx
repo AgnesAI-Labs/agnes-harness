@@ -10,7 +10,7 @@ import {
   type UiLocaleSource,
   useUiText,
 } from '@agnes/web-ui'
-import { useCallback, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { IntelligentUiClient } from './client.js'
 import { CustomUiHost, type CustomUiModuleSource } from './custom-host.js'
 
@@ -72,19 +72,40 @@ function SurfaceList({
 }) {
   useSyncExternalStore(client.subscribe, client.getVersion)
   const { t } = useUiText(INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog)
+  const [workbenchOpen, setWorkbenchOpen] = useState(false)
+  useEffect(() => {
+    if (placement !== 'inline') return
+    const host = document.getElementById('workbench-right')
+    if (!host) return
+    const read = () =>
+      setWorkbenchOpen(
+        !host.hidden && !!host.querySelector('#workbench-tab-intelligent-ui[aria-selected="true"]'),
+      )
+    read()
+    const observer = new MutationObserver(read)
+    observer.observe(host, {
+      attributes: true,
+      childList: true,
+      subtree: true,
+      attributeFilter: ['hidden', 'aria-selected'],
+    })
+    return () => observer.disconnect()
+  }, [placement])
   const snapshot = client.getSnapshot(),
     target = binding.target()
-  const sorted = [...snapshot.surfaces].sort((a, b) => {
-    if (target?.sessionId === client.sessionId && placement === 'workbench') {
-      if (a.surface.id === target.surfaceId) return -1
-      if (b.surface.id === target.surfaceId) return 1
-    }
-    return Number(b.status === 'open') - Number(a.status === 'open') || b.updatedSeq - a.updatedSeq
-  })
+  const sorted = snapshot.surfaces
+    .filter((record) => placement === 'inline' || record.surface.placement.workbench)
+    .sort((a, b) => {
+      if (target?.sessionId === client.sessionId && placement === 'workbench') {
+        if (a.surface.id === target.surfaceId) return -1
+        if (b.surface.id === target.surfaceId) return 1
+      }
+      return Number(b.status === 'open') - Number(a.status === 'open') || b.updatedSeq - a.updatedSeq
+    })
   return (
     <section data-testid={`intelligent-ui-${placement}`} aria-label={t('ui.title')}>
       {snapshot.error && <SettingsState tone="error">{t(snapshot.error)}</SettingsState>}
-      {placement === 'workbench' && (
+      {placement === 'workbench' && snapshot.error && (
         <Button htmlType="button" data-testid="ui-refresh" onClick={() => void client.refresh()}>
           {t('ui.refresh')}
         </Button>
@@ -97,6 +118,7 @@ function SurfaceList({
           client={client}
           id={record.surface.id}
           placement={placement}
+          workbenchOpen={workbenchOpen}
         />
       ))}
     </section>
@@ -107,11 +129,13 @@ export function BoundSurface({
   client,
   id,
   placement,
+  workbenchOpen,
 }: {
   binding: UiPlacementBinding
   client: IntelligentUiClient
   id: string
   placement: 'inline' | 'workbench'
+  workbenchOpen?: boolean
 }) {
   const record = client.record(id)!
   const draft = client.draft(id),
@@ -141,6 +165,7 @@ export function BoundSurface({
       {...(binding.customModules ? { renderCustom } : {})}
       record={record}
       placement={placement}
+      workbenchOpen={workbenchOpen}
       input={draft.input}
       selection={draft.selection}
       receipts={receipts}
@@ -171,8 +196,8 @@ export function BoundSurface({
 export const openIntelligentPanel = () => workbenchNavigation.open('intelligent-ui')
 
 /**
- * A newly opened revision must show up in both placements. `preferred` only chooses which one
- * is brought forward; it cannot leave the conversation card inside a hidden trace pane.
+ * Only the first appearance may bring a surface forward. Revision updates never steal focus.
+ * Dual placements leave the complete view in the workbench and a summary in the conversation.
  */
 export function newSurfacePlacements(
   seen: ReadonlySet<string>,
@@ -182,12 +207,12 @@ export function newSurfacePlacements(
   let showConversation = false
   let showWorkbench = false
   for (const record of surfaces) {
-    if (record.status !== 'open') continue
-    const key = `${record.surface.id}:${record.surface.revision}`
+    const key = record.surface.id
     if (seen.has(key)) continue
     keys.push(key)
-    if (record.surface.placement.inline) showConversation = true
-    if (record.surface.placement.workbench) showWorkbench = true
+    if (record.status !== 'open') continue
+    showConversation = true
+    if (record.surface.placement.workbench && !record.surface.placement.inline) showWorkbench = true
   }
   return { keys, showConversation, showWorkbench }
 }

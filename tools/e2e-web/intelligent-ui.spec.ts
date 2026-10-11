@@ -38,8 +38,12 @@ for (const locale of ['en', 'zh-CN'])
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
     await page.goto(`${url}/?locale=${locale}&theme=dark`)
-    const card = page.getByTestId('intelligent-ui-inline'),
-      panel = page.getByTestId('intelligent-ui-panel')
+    const inline = page.getByTestId('intelligent-ui-inline'),
+      card = page.getByTestId('intelligent-ui-panel'),
+      panel = card
+    await expect(inline.getByTestId('ui-summary')).toBeVisible()
+    await expect(inline.getByTestId('ui-form-adjustment')).toHaveCount(0)
+    await inline.getByTestId('ui-expand').click()
     await expect(card.getByTestId('ui-surface-finance-review')).toHaveAttribute('data-revision', '1')
     await expect(card.getByTestId('ui-detail-summary')).toBeVisible()
     await expect(card.getByTestId('ui-detail-status-summary')).toContainText('needs-review')
@@ -59,7 +63,7 @@ for (const locale of ['en', 'zh-CN'])
     ).toHaveCount(0)
     await card.getByTestId('ui-select-differences-txn-1').check()
     await card.getByTestId('ui-form-adjustment').getByRole('textbox').fill('Human reviewed mismatch')
-    await card.getByTestId('ui-expand').click()
+    await inline.getByTestId('ui-expand').click()
     await expect(panel.getByTestId('ui-select-differences-txn-1')).toBeChecked()
     await expect(panel.getByTestId('ui-form-adjustment').getByRole('textbox')).toHaveValue(
       'Human reviewed mismatch',
@@ -74,7 +78,6 @@ for (const locale of ['en', 'zh-CN'])
     await page.reload()
     await expect(card.locator('[data-status="pending-approval"]')).toBeVisible()
     await expect(page.getByTestId('workbench-right-toggle')).toHaveAttribute('aria-expanded', 'true')
-    await page.getByTestId('workbench-right-toggle').click()
     await expect(card.getByTestId('ui-action-confirm').first()).toBeDisabled()
     await card.getByTestId('ui-open-approval').click()
     await expect(page.getByTestId('approval-card')).toContainText('Human reviewed mismatch')
@@ -110,7 +113,8 @@ for (const locale of ['en', 'zh-CN'])
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
     await page.goto(`${url}/?source=1&locale=${locale}`)
-    const card = page.getByTestId('intelligent-ui-inline')
+    await page.getByTestId('intelligent-ui-inline').getByTestId('ui-expand').click()
+    const card = page.getByTestId('intelligent-ui-panel')
     const actions = card.getByTestId('ui-action-confirm')
     await expect(actions).toHaveCount(2)
     await expect(card.getByTestId('ui-source-loading').first()).toHaveAttribute('aria-busy', 'true')
@@ -146,7 +150,8 @@ for (const mode of ['ready', 'blocked', 'error'])
     page,
   }) => {
     await page.goto(`${url}/?custom=${mode}&locale=en`)
-    const card = page.getByTestId('intelligent-ui-inline')
+    await page.getByTestId('intelligent-ui-inline').getByTestId('ui-expand').click()
+    const card = page.getByTestId('intelligent-ui-panel')
     await expect(card.getByTestId('ui-table-differences')).toBeVisible()
     if (mode !== 'ready') {
       await expect(card.getByTestId('ui-custom-fallback-custom')).toContainText(

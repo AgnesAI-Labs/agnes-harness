@@ -5,6 +5,7 @@ import type { UiSourceStatus, UiSurface } from '@agnes/protocol/gen/intelligent-
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
+import { SurfaceRenderBoundary } from '../src/intelligent-ui/render-boundary.js'
 import { IntelligentCatalog, validIntelligentSurface } from '../src/intelligent-ui/index.js'
 import { type UiLocale, UiLocaleProvider, type UiLocaleSource } from '../src/ui-locale.js'
 
@@ -711,4 +712,38 @@ describe('preset render isolation', () => {
     expect(host.querySelector('svg')).not.toBeNull()
     act(() => root.unmount())
   })
+})
+
+// Renderer failure is new container behavior; existing catalog cases cover data refusals separately.
+it('contains renderer failures and retries without losing sibling conversation content', async () => {
+  const host = document.createElement('div'),
+    root = createRoot(host)
+  let failing = true
+  const failureLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+  function BusinessView() {
+    if (failing) throw new Error('Synthetic renderer failure')
+    return <p>Recovered view</p>
+  }
+  try {
+    await act(async () =>
+      root.render(
+        <>
+          <p>Conversation stays</p>
+          <SurfaceRenderBoundary message="View unavailable" retry="Retry">
+            <BusinessView />
+          </SurfaceRenderBoundary>
+        </>,
+      ),
+    )
+    expect(host.textContent).toContain('Conversation stays')
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('View unavailable')
+    failing = false
+    await act(async () => host.querySelector<HTMLButtonElement>('button')!.click())
+    expect(host.textContent).toContain('Recovered view')
+    expect(host.textContent).toContain('Conversation stays')
+    expect(host.querySelector('[role="alert"]')).toBeNull()
+  } finally {
+    await act(async () => root.unmount())
+    failureLog.mockRestore()
+  }
 })

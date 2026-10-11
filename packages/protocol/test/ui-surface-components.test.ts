@@ -19,6 +19,10 @@ const accept = (value: unknown) => validIntelligentSurface(value)
 
 describe('reviewed preset components', () => {
   it('keeps the phase-1 surface valid', () => {
+    const basic = surface([{ id: 'text', kind: 'text', dataKey: 'text' }], { text: 'Ready' })
+    expect(accept({ ...basic, summary: '3 orders need review' })).toBe(true)
+    expect(accept({ ...basic, summary: 'x'.repeat(1025) })).toBe(false)
+    expect(accept({ ...basic, summary: 3 })).toBe(false)
     expect(
       accept(
         surface(
