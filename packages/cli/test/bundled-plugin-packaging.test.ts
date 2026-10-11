@@ -22,11 +22,18 @@ it.each([
   const output = join(root, 'runtime')
   await copyBundledPlugins(output)
   expect((await readdir(join(output, 'bundled-plugins', helper.name))).sort()).toEqual(
-    ['LICENSE', 'README.md', 'index.mjs', 'package.json', 'src'].sort(),
+    [
+      'LICENSE',
+      'README.md',
+      ...(helper.name === 'document-reader' ? ['dist'] : []),
+      'index.mjs',
+      'package.json',
+      'src',
+    ].sort(),
   )
   if (helper.name === 'document-reader') {
     const notices = await readdir(
-      join(output, 'bundled-plugins', helper.name, 'src/runtime/THIRD-PARTY-NOTICES'),
+      join(output, 'bundled-plugins', helper.name, 'dist/runtime/THIRD-PARTY-NOTICES'),
     )
     expect(notices).toEqual(
       expect.arrayContaining([
