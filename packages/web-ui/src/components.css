@@ -677,6 +677,24 @@ dialog[data-size="lg"] {
     min-height: var(--s32);
     min-width: var(--s32);
   }
+  /* Rows and toolbars keep the same narrow-screen target floor as native controls. */
+  .agh-list-row .agh-list-row-title,
+  .agh-list-row-actions .agh-btn.agh-btn--icon,
+  .agnes-settings-toolbar .agh-btn.agh-btn--icon,
+  .agh-tag[tabindex="0"] {
+    min-height: var(--s32);
+    min-width: var(--s32);
+  }
+}
+@media (max-width: 767px) {
+  .agh-tag[tabindex="0"] {
+    position: relative;
+  }
+  .agh-tag[tabindex="0"]::after {
+    content: "";
+    position: absolute;
+    inset: min(0px, calc((100% - var(--control-height-touch)) / 2));
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .skip-link:not(:focus) {
