@@ -77,6 +77,27 @@ const mounted = async (receipt = uiReceipt('pending-approval'), record = finance
 }
 
 describe('shared Intelligent UI placements', () => {
+  it.each([
+    { inline: true, workbench: false },
+    { inline: false, workbench: true },
+  ] as const)('renders the complete view only in the enabled placement: %j', async (placement) => {
+    const record = deliverablesRecord()
+    record.surface.placement = placement
+    const { host, cleanup } = await mounted(uiReceipt('succeeded'), record)
+    try {
+      const inline = host.querySelector('[data-testid="intelligent-ui-inline"]')!
+      const workbench = host.querySelector('[data-testid="intelligent-ui-workbench"]')!
+      expect(inline.querySelector('[data-agnes-intelligent-ui="catalog"]') !== null).toBe(placement.inline)
+      expect(workbench.querySelector('[data-agnes-intelligent-ui="catalog"]') !== null).toBe(
+        placement.workbench,
+      )
+      expect(inline.querySelector('[data-testid="ui-expand"]') !== null).toBe(placement.workbench)
+      expect(newSurfacePlacements(new Set(), [record]).showWorkbench).toBe(!placement.inline)
+    } finally {
+      await cleanup()
+    }
+  })
+
   it('shows a deliverables text surface in the conversation and the workbench', async () => {
     const { host, cleanup } = await mounted(uiReceipt('succeeded'), deliverablesRecord())
     try {
