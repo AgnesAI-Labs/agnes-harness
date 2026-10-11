@@ -105,7 +105,7 @@ export function createSessionController(
     context.renderControls()
     context.offPermission?.()
     context.offPermission = undefined
-    context.liveApproval?.finish({ verdict: 'rejected' })
+    context.liveApproval?.finish({ unanswered: 'detached' })
     context.liveApproval = undefined
     try {
       const stopped = await stopWithTimeout(context.stopEvents)
@@ -126,16 +126,16 @@ export function createSessionController(
               permissionContext.signal.removeEventListener('abort', reject)
               if (context.liveApproval === pending) context.liveApproval = undefined
               context.render()
-              resolve(permissionContext.signal.aborted ? { verdict: 'rejected' } : answer)
+              resolve(permissionContext.signal.aborted ? { unanswered: 'detached' } : answer)
             },
           }
-          const reject = () => pending.finish({ verdict: 'rejected' })
+          const reject = () => pending.finish({ unanswered: 'detached' })
           if (
             permissionContext.signal.aborted ||
             epoch !== context.selection ||
             context.permissionMode === 'view'
           ) {
-            resolve({ verdict: 'rejected' })
+            resolve({ unanswered: 'detached' })
             return
           }
           context.liveApproval = pending

@@ -395,7 +395,7 @@ describe('W3b projected message DOM', () => {
       store,
       settled.map((node) =>
         node.kind === 'approval'
-          ? { ...node, decision: { verdict: 'unavailable', via: 'sync', reason: 'no_approver' } }
+          ? { ...node, decision: { verdict: 'unavailable', via: 'sync', reason: 'no-approver' } }
           : node,
       ),
     )

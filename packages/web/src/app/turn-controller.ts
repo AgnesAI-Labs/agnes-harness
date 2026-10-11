@@ -110,7 +110,7 @@ export function createTurnController(
       receipt.endSeq > context.liveApproval.afterSeq
     ) {
       // A real later terminal invalidates this live request; no cancelled task keeps an approval card.
-      context.liveApproval.finish({ verdict: 'rejected' })
+      context.liveApproval.finish({ unanswered: 'detached' })
       return
     }
     const firstInput = context.windowAtStart ? view.nodes.find((node) => node.kind === 'user') : undefined
@@ -248,7 +248,7 @@ export function createTurnController(
         decide(
           `durable:${verdict}`,
           label,
-          async () => void (await context.client.approval.decide(ticket, verdict, { kind: 'local' })),
+          async () => void (await context.client.approval.decide(ticket, verdict)),
         )
     }
     const planApproval = context.liveApproval

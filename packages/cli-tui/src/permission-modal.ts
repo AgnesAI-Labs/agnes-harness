@@ -28,11 +28,11 @@ export class PermissionModal implements Component {
   }
 
   ask(request: PermissionRequest, context: { signal: AbortSignal }): Promise<PermissionOutcome> {
-    if (this.closed || context.signal.aborted) return Promise.resolve({ verdict: 'rejected' })
+    if (this.closed || context.signal.aborted) return Promise.resolve({ unanswered: 'detached' })
     const snapshot = structuredClone(request)
     return new Promise((resolve) => {
       let done = false
-      const abort = () => question.finish({ verdict: 'rejected' })
+      const abort = () => question.finish({ unanswered: 'detached' })
       const question: Question = {
         request: snapshot,
         selected: snapshot.options.findIndex((option) => option.kind === 'reject_once'),
@@ -46,7 +46,7 @@ export class PermissionModal implements Component {
           context.signal.removeEventListener('abort', abort)
           const index = this.questions.indexOf(question)
           if (index >= 0) this.questions.splice(index, 1)
-          resolve(context.signal.aborted ? { verdict: 'rejected' } : answer)
+          resolve(context.signal.aborted ? { unanswered: 'detached' } : answer)
           this.changed()
         },
       }
@@ -59,7 +59,7 @@ export class PermissionModal implements Component {
 
   close(): void {
     this.closed = true
-    for (const question of [...this.questions]) question.finish({ verdict: 'rejected' })
+    for (const question of [...this.questions]) question.finish({ unanswered: 'detached' })
   }
 
   handleInput(data: string): boolean {
@@ -67,11 +67,11 @@ export class PermissionModal implements Component {
     if (!question) return false
     const key = parseKey(data, false)
     const options = question.request.options
-    if (key.name === 'esc' || key.name === 'ctrl-c') question.finish({ verdict: 'rejected' })
+    if (key.name === 'esc' || key.name === 'ctrl-c') question.finish({ unanswered: 'detached' })
     else if (key.name === 'enter') {
       const option = options[question.selected]
       if (!option || option.kind === 'reject_once' || option.kind === 'reject_always')
-        question.finish(option ? { optionId: option.optionId } : { verdict: 'rejected' })
+        question.finish(option ? { optionId: option.optionId } : { unanswered: 'detached' })
       else if (question.canSelect && question.visible.has(question.selected))
         question.finish({ optionId: option.optionId })
     } else if (key.name === 'char' && /^[1-9]$/.test(key.ch ?? '')) {

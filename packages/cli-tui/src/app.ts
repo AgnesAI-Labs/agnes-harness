@@ -283,7 +283,7 @@ export class TuiApp {
             locale,
             onDecide: async (ticket, verdict) => {
               if (this.refuseClosed()) return
-              await this.o.session.client.approval.decide(ticket, verdict, { kind: 'local' })
+              await this.o.session.client.approval.decide(ticket, verdict)
             },
             // The decide call's settlement (in particular a rejection, which produces no new
             // ledger event for TuiProjection to pick up) has to ask for its own repaint: nothing

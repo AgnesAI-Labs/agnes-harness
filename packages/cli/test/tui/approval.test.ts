@@ -185,8 +185,8 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
 // isolated `ApprovalCard` class. Drives real keystrokes through a real `TuiApp` over a real
 // `@agnes/sdk` `Client`/`Session`, against a `FakeEndpoint` that serves a fixed `_agnes/v1/
 // session.projectUI` result (a real daemon's core-side projection reducer is out of scope for cli;
-// what this proves is that app.ts really calls `_agnes/v1/approval.decide` with `{ ticket, verdict,
-// approverCredential }` and that a rejection really reaches the screen through the real render loop
+// what this proves is that app.ts really calls `_agnes/v1/approval.decide` with `{ ticket, verdict }`
+// bound to the connection, and that a rejection reaches the real render loop
 // -- not a hand-wired assertion against the component alone).
 const FAKE_SID = 'agnes:local:default:cli:dm:main'
 
@@ -222,7 +222,7 @@ async function appOnApprovalNode(
 }
 
 describe('ApprovalCard wired into the real TuiApp (app.ts nodeView / handleInput)', () => {
-  it('a real keypress calls the real wire method with { ticket, verdict, approverCredential }', async () => {
+  it('a real keypress calls the real wire method with { ticket, verdict } bound to the connection', async () => {
     const { app, term, ep, client } = await appOnApprovalNode(
       node({ ticket: 'tk-wire-1', expiresAt: '2026-09-10T00:00:00Z' }),
       () => ({ seq: 1 }),
@@ -239,7 +239,6 @@ describe('ApprovalCard wired into the real TuiApp (app.ts nodeView / handleInput
       expect(call?.params).toEqual({
         ticket: 'tk-wire-1',
         verdict: 'allowed-once',
-        approverCredential: { kind: 'local' },
       })
       await vi.waitFor(async () =>
         expect((await screenOf(term, 60, 12)).join('\n')).toContain('allowed-once'),

@@ -103,8 +103,16 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
         )
       }
       if (mode === 'disconnect') await client.close()
-      else if (mode === 'stop') await app.stop()
-      else term.feed(mode === 'allow' ? '1' : '\r')
+      else if (mode === 'stop') {
+        await app.stop()
+        // Closing the UI detaches its offer; only explicit session cancellation stops the turn.
+        expect(
+          (await session.projectUI()).nodes.some(
+            (node) => node.kind === 'approval' && node.decision?.verdict === 'rejected',
+          ),
+        ).toBe(false)
+        await session.cancel()
+      } else term.feed(mode === 'allow' ? '1' : '\r')
       const outcome = await result
       if (mode === 'disconnect') expect(outcome).toBeInstanceOf(TransportClosed)
       else expect(outcome).toBeUndefined()

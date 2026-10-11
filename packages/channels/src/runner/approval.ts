@@ -67,7 +67,10 @@ type Dependencies = {
   ) => Promise<string | false>
 }
 
-const REJECTED: PermissionOutcome = { verdict: 'rejected' }
+const detached: PermissionOutcome = { unanswered: 'detached' }
+const aborted = (signal: AbortSignal): PermissionOutcome => ({
+  unanswered: signal.reason === 'stopped' || signal.reason === 'deadline' ? signal.reason : 'detached',
+})
 const APPROVAL_TEXT = /^(同意|拒绝)\s+(\S{6,128})$/
 const MAX_CALLBACK_CHARS = 512
 const MAX_ACTION_CHARS = 128
@@ -115,7 +118,7 @@ export class Approval {
     return () => {
       unsubscribe()
       for (const [requestSeq, pending] of this.pending) {
-        if (pending.sessionKey === sessionKey) this.finish(requestSeq, pending, REJECTED)
+        if (pending.sessionKey === sessionKey) this.finish(requestSeq, pending, detached)
       }
     }
   }
@@ -174,9 +177,9 @@ export class Approval {
       return true
     }
 
-    this.finish(requestSeq, pending, { verdict: action.verdict })
+    this.finish(requestSeq, pending, { verdict: action.verdict, sourceCredential: credential })
     const label = escapeText((credential.displayName ?? approver).slice(0, 128))
-    const status = action.verdict === 'rejected' ? '已拒绝' : '已批准'
+    const status = action.verdict === 'rejected' ? '已提交拒绝' : '已提交批准'
     await pending.ref
       .then((ref) =>
         this.dependencies.adapter.update(ref, {
@@ -368,7 +371,7 @@ export class Approval {
     requesterUserId: string | undefined,
     signal: AbortSignal,
   ): Promise<PermissionOutcome> {
-    if (signal.aborted) return Promise.resolve(REJECTED)
+    if (signal.aborted) return Promise.resolve(aborted(signal))
     const requestSeq = this.nextSequence()
     const deadline = request.deadlineMs
     const expiresAt =
@@ -391,7 +394,7 @@ export class Approval {
       )
       const abort = () => {
         const pending = this.pending.get(requestSeq)
-        if (pending) this.finish(requestSeq, pending, REJECTED)
+        if (pending) this.finish(requestSeq, pending, aborted(signal))
       }
       const pending: Pending = {
         sessionKey,
@@ -410,7 +413,8 @@ export class Approval {
         })
         .catch(() => undefined)
       void ref.catch(() => {
-        if (this.pending.get(requestSeq) === pending) this.finish(requestSeq, pending, REJECTED)
+        if (this.pending.get(requestSeq) === pending)
+          this.finish(requestSeq, pending, { unanswered: 'transport' })
         this.safeWarn('channel approval card send failed', { requestSeq })
       })
       signal.addEventListener('abort', abort, { once: true })
@@ -425,14 +429,7 @@ export class Approval {
 
   private expire(requestSeq: number, pending: Pending): void {
     if (this.pending.get(requestSeq) !== pending) return
-    this.finish(requestSeq, pending, REJECTED)
-    void pending.ref
-      .then((ref) =>
-        this.dependencies.adapter.update(ref, {
-          blocks: [{ kind: 'text', markdown: '审批已超时' }],
-        }),
-      )
-      .catch(() => this.safeWarn('channel approval timeout update failed', { requestSeq }))
+    this.finish(requestSeq, pending, { unanswered: 'deadline' })
   }
 
   private finish(requestSeq: number, pending: Pending, outcome: PermissionOutcome): void {
@@ -440,6 +437,17 @@ export class Approval {
     this.pending.delete(requestSeq)
     if (pending.timer) clearTimeout(pending.timer)
     pending.signal.removeEventListener('abort', pending.abort)
+    if ('unanswered' in outcome) {
+      const text =
+        outcome.unanswered === 'deadline'
+          ? '审批已超时'
+          : outcome.unanswered === 'stopped'
+            ? '任务已停止，审批已撤销'
+            : '审批提示已撤销，尚未回答'
+      void pending.ref
+        .then((ref) => this.dependencies.adapter.update(ref, { blocks: [{ kind: 'text', markdown: text }] }))
+        .catch(() => this.safeWarn('channel approval withdrawal update failed', { requestSeq }))
+    }
     pending.resolve(outcome)
   }
 

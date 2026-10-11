@@ -29,11 +29,13 @@ it('cancels a queued question without dismissing the active question, and reject
   const ac = new AbortController()
   const second = modal.ask({ ...request, toolCall: { title: 'other' } }, { signal: ac.signal })
   ac.abort()
-  expect(await second).toEqual({ verdict: 'rejected' })
+  expect(await second).toEqual({ unanswered: 'detached' })
   expect(modal.render(80).join('\n')).toContain('Approval: write')
   modal.close()
-  expect(await first).toEqual({ verdict: 'rejected' })
-  expect(await modal.ask(request, { signal: new AbortController().signal })).toEqual({ verdict: 'rejected' })
+  expect(await first).toEqual({ unanswered: 'detached' })
+  expect(await modal.ask(request, { signal: new AbortController().signal })).toEqual({
+    unanswered: 'detached',
+  })
   expect(modal.render(80)).toEqual([])
 })
 it('closes the active question on cancellation and consumes unrelated input', async () => {
@@ -42,7 +44,7 @@ it('closes the active question on cancellation and consumes unrelated input', as
   const pending = modal.ask(request, { signal: ac.signal })
   expect(modal.handleInput('unrelated draft text')).toBe(true)
   ac.abort()
-  expect(await pending).toEqual({ verdict: 'rejected' })
+  expect(await pending).toEqual({ unanswered: 'detached' })
   expect(modal.render(80)).toEqual([])
   expect(modal.handleInput('1')).toBe(false)
 })
@@ -93,7 +95,7 @@ it('localizes Chinese approval chrome and bounds the rejection-only row at extre
 
   const normal = modal.render(40).join('\n')
   expect(normal).toContain('审批: 工具请求')
-  expect(normal).toContain('Esc：拒绝 · PgUp/PgDn 查看详情')
+  expect(normal).toContain('Esc：关闭 · PgUp/PgDn 查看详情')
 
   rows = 3
   for (const width of [1, 2, 10, 20, 40]) {
@@ -104,5 +106,5 @@ it('localizes Chinese approval chrome and bounds the rejection-only row at extre
   expect(modal.render(40).join('\n')).toContain('审批：请调整窗口大小')
 
   modal.handleInput('\x1b')
-  expect(await pending).toEqual({ verdict: 'rejected' })
+  expect(await pending).toEqual({ unanswered: 'detached' })
 })

@@ -276,7 +276,10 @@ describe('dingtalk card callbacks', () => {
           cardPrivateData: { actionIds: ['appr:#1:allow_once'], params: {} },
         }),
       )
-      await expect(outcome).resolves.toEqual({ verdict: 'allowed-once' })
+      await expect(outcome).resolves.toMatchObject({
+        verdict: 'allowed-once',
+        sourceCredential: { kind: 'channel', accountId: 'robot-9', userId: 'reviewer', chatId: 'chat-1' },
+      })
 
       const parkedRef = await adapter.send(
         { chatId: 'chat-1' },

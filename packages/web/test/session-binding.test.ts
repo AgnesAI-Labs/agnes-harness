@@ -219,7 +219,12 @@ describe('Web session permission binding', () => {
       })
       for (let i = 0; i < 20; i++) await Promise.resolve()
       const sent = f.calls.find((message) => !('method' in message) && message.id === 'after-dispose')
-      expect(sent).toMatchObject({ result: { outcome: { outcome: 'selected', optionId: 'reject' } } })
+      expect(sent).toMatchObject({
+        result: {
+          outcome: { outcome: 'cancelled' },
+          _meta: { 'ai.agnes.harness': { reason: 'no-handler' } },
+        },
+      })
     } finally {
       await client.close()
     }
@@ -251,7 +256,12 @@ describe('Web session permission binding', () => {
       })
       for (let i = 0; i < 20; i++) await Promise.resolve()
       const sent = f.calls.find((message) => !('method' in message) && message.id === 'after-failed-load')
-      expect(sent).toMatchObject({ result: { outcome: { outcome: 'selected', optionId: 'reject' } } })
+      expect(sent).toMatchObject({
+        result: {
+          outcome: { outcome: 'cancelled' },
+          _meta: { 'ai.agnes.harness': { reason: 'no-handler' } },
+        },
+      })
     } finally {
       await client.close()
     }

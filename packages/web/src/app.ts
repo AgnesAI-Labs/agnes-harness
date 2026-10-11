@@ -1616,7 +1616,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   submissionGeneration++
   offPermission?.()
   offPermission = undefined
-  liveApproval?.finish({ verdict: 'rejected' })
+  liveApproval?.finish({ unanswered: 'detached' })
   liveApproval = undefined
   stopEvents = undefined
   live = undefined

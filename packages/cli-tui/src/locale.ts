@@ -37,7 +37,7 @@ const DICT: Record<Locale, Record<LocaleKey, string>> = {
     'permission.heading': 'Approval',
     'permission.toolRequest': 'tool request',
     'permission.resize': 'Approval: resize or Esc reject',
-    'permission.footer': 'Esc: reject · PgUp/PgDn details {start}-{end}/{total}',
+    'permission.footer': 'Esc: dismiss · PgUp/PgDn details {start}-{end}/{total}',
   },
   'zh-CN': {
     'approval.allowOnce': '允许一次',
@@ -54,7 +54,7 @@ const DICT: Record<Locale, Record<LocaleKey, string>> = {
     'permission.heading': '审批',
     'permission.toolRequest': '工具请求',
     'permission.resize': '审批：请调整窗口大小，或按 Esc 拒绝',
-    'permission.footer': 'Esc：拒绝 · PgUp/PgDn 查看详情 {start}-{end}/{total}',
+    'permission.footer': 'Esc：关闭 · PgUp/PgDn 查看详情 {start}-{end}/{total}',
   },
 }
 
