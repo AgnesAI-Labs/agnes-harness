@@ -268,7 +268,7 @@ for (const outcome of ['success', 'failure'] as const) {
       }
       await vi.waitFor(() => {
         expect(refresh?.disabled).toBe(false)
-        expect(refresh?.getAttribute('aria-busy')).toBeNull()
+        expect(refresh?.getAttribute('aria-busy')).toBe('false')
       })
     } finally {
       root.unmount()

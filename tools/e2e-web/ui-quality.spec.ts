@@ -1,10 +1,10 @@
-import { section } from './ui.js'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import AxeBuilder from '@axe-core/playwright'
 import { test as base, expect } from '@playwright/test'
 import { localeKeys, unresolvedLabels } from './i18n.js'
 import { isolatedRuntime, type Runtime } from './runtime.js'
+import { section } from './ui.js'
 
 const root = process.env.AGH_UI_REPORT
 const test = base.extend<{ uiServer: Runtime | undefined }>({

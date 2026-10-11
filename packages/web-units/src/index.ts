@@ -72,14 +72,6 @@ export type {
   SettingsResourceTab,
 } from './settings.js'
 export {
-  advancedSettings,
-  matchesSettings,
-  revealSettingsAnchor,
-  settingsGroup,
-  settingsNavigationGroups,
-  settingsRoute,
-} from './settings-navigation.js'
-export {
   PANE_IDS,
   renderSettingsMarkup,
   SETTINGS_DSH_SLOT_NAMES,
@@ -88,6 +80,14 @@ export {
   settingsDshSlotHostId,
   settingsPaneSlotHostId,
 } from './settings.js'
+export {
+  advancedSettings,
+  matchesSettings,
+  revealSettingsAnchor,
+  settingsGroup,
+  settingsNavigationGroups,
+  settingsRoute,
+} from './settings-navigation.js'
 export {
   EMPTY_SIDEBAR_STATE,
   type SessionAction,
