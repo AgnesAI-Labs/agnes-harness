@@ -1,11 +1,11 @@
-import { appendFileSync, createReadStream, writeFileSync } from 'node:fs'
+import { appendFileSync, createReadStream, mkdirSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { join } from 'node:path'
 import { PARSER_VERSION } from '@agnes/ai'
 import { fakeModel, stampFor } from '@agnes/ai/testkit'
-import { createTestHost } from '@agnes/host/testkit'
+import { createTestHost, type TestHostOptions } from '@agnes/host/testkit'
+import { readDevelopmentPlugin } from '@agnes/package-manager'
 import type { Context } from '@agnes/plugin-runtime'
-import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { InferenceEvent } from '@agnes/protocol'
 import { ConfigEmptyParams } from '@agnes/protocol/gen/agnes-v1'
 import { say } from '../../daemon-rpc/test/host.js'
@@ -44,6 +44,90 @@ const { runWorker } = await import('../src/worker/main.js')
 const gateFd = Number(env.AGNES_GATE_FD ?? 3)
 const gate = Number.isInteger(gateFd) && gateFd >= 0 ? createReadStream('', { fd: gateFd }) : null
 
+function permissionFixture(dataDir: string): Partial<TestHostOptions> {
+  if (env.AGNES_FAKE_WORKER_PERMISSION !== '1') return {}
+  const packageId = '@fixture/permission'
+  const directory = join(dataDir, 'permission-plugin')
+  mkdirSync(directory, { recursive: true })
+  writeFileSync(join(directory, 'index.mjs'), 'export const version = "1.0.0"\n')
+  writeFileSync(
+    join(directory, 'package.json'),
+    JSON.stringify({
+      name: packageId,
+      version: '1.0.0',
+      type: 'module',
+      exports: './index.mjs',
+      agnes: {
+        plugins: [
+          {
+            export: 'main',
+            id: 'ext:@fixture/permission/main',
+            apiRange: '^1.4.0',
+            default: true,
+            inject: ['extension'],
+            provide: [],
+            runtime: 'in-process',
+          },
+        ],
+      },
+    }),
+  )
+  const source = { ...readDevelopmentPlugin(directory, 'local-dev'), trusted: true }
+  const plugin = {
+    inject: ['extension'],
+    apply(ctx: Context) {
+      ctx.extension().registerTool({
+        name: 'permission_probe',
+        description: 'Plain permission test tool',
+        parameters: ConfigEmptyParams,
+        meta: {
+          isReadOnly: false,
+          isDestructive: true,
+          isConcurrencySafe: false,
+          isOpenWorld: false,
+          replay: 'never',
+          costHint: {},
+          deferLoading: false,
+          requiresApproval: 'always',
+        },
+        execute: async () => {
+          if (env.AGNES_FAKE_WORKER_RECOVERY === '1')
+            appendFileSync(join(dataDir, 'permission-dispatched'), 'yes\n')
+          else writeFileSync(join(dataDir, 'permission-dispatched'), 'yes')
+          return { content: [{ type: 'text', text: 'ran' }] }
+        },
+      })
+    },
+  }
+  return {
+    lock: {
+      packages: Object.fromEntries([
+        ...['@agnes/ai', '@agnes/base', '@agnes/code'].map((id) => [
+          id,
+          { version: '0.1.0', integrity: 'sha512-fixture', trust: 'builtin', enabled: true },
+        ]),
+        [
+          packageId,
+          {
+            version: source.snapshot.version,
+            integrity: source.snapshot.integrity,
+            trust: 'trusted',
+            enabled: true,
+          },
+        ],
+      ]),
+    },
+    packageDirs: { [packageId]: directory },
+    runtimePluginSnapshots: [source],
+    runtimePluginCatalogue: [source],
+    extensionLoader: {
+      async import() {
+        return { main: plugin }
+      },
+    },
+  }
+}
+
 void runWorker(
   env,
   {
@@ -61,53 +145,7 @@ void runWorker(
         writeFileSync(join(profile.dataDir, 'fixture-worker-pid'), String(process.pid))
       const { host } = await createTestHost({
         dataDir: profile.dataDir,
-        ...(env.AGNES_FAKE_WORKER_PERMISSION === '1'
-          ? {
-              packages: {
-                '@agnes/code': {
-                  plugins: [
-                    {
-                      declaration: {
-                        export: 'permissionPlugin',
-                        id: 'fixture.permission',
-                        apiRange: '^1.4.0',
-                        default: true,
-                        inject: ['extension'],
-                        provide: [],
-                        runtime: 'in-process',
-                      },
-                      entry: normalizePluginExport({
-                        inject: ['extension'],
-                        apply(ctx: Context) {
-                          ctx.extension().registerTool({
-                            name: 'permission_probe',
-                            description: 'Plain permission test tool',
-                            parameters: ConfigEmptyParams,
-                            meta: {
-                              isReadOnly: false,
-                              isDestructive: true,
-                              isConcurrencySafe: false,
-                              isOpenWorld: false,
-                              replay: 'never',
-                              costHint: {},
-                              deferLoading: false,
-                              requiresApproval: 'always',
-                            },
-                            execute: async () => {
-                              if (env.AGNES_FAKE_WORKER_RECOVERY === '1')
-                                appendFileSync(join(profile.dataDir, 'permission-dispatched'), 'yes\n')
-                              else writeFileSync(join(profile.dataDir, 'permission-dispatched'), 'yes')
-                              return { content: [{ type: 'text', text: 'ran' }] }
-                            },
-                          })
-                        },
-                      }),
-                    },
-                  ],
-                },
-              },
-            }
-          : {}),
+        ...permissionFixture(profile.dataDir),
         ...(env.AGNES_FAKE_WORKER_QUEUE === '1'
           ? {
               provider: {
