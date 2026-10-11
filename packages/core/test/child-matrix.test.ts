@@ -8,6 +8,7 @@ import type { ModelRecord } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { Kernel } from '../src/kernel.js'
+import { KernelChildren } from '../src/child/factory.js'
 import { mintFrom } from '../src/request/mint.js'
 import { toProviderRequest } from '../src/request/to-provider.js'
 import { defaultLoops } from '../testkit/loops.js'
@@ -371,37 +372,61 @@ describe('recovery descriptor and close reasons', () => {
     await k.close()
   })
 
-  it('returns the same child for a repeated creationId and does not start a second run', async () => {
-    const storage = new MemoryStorage()
-    await storage.ensureRootScope('root', 10_000_000n)
-    const input = {
-      childKey: 'parent/c1',
-      parentKey: 'parent',
-      boundarySeq: 1 as const,
-      creationId: 'parent:main:direct:1',
-      kind: 'spawn' as const,
-      rootTaskId: 'root',
-      runtimeOwnerSessionKey: 'parent',
-      generationDepth: 1,
-      generationLimit: 2,
-      maxFanOut: 4,
-      inputHash: 'abc',
-      inputText: 'async',
-      cwd: '/w',
-      actorId: 'u',
-      isolation: 'shared' as const,
-      workspaceId: 'ws1',
-      treeCapMicro: 10_000_000n,
-      childCapMicro: null,
-      writerRunId: 'w',
-    }
-    await storage.open('parent', { writerRunId: 'r1', ttlMs: 1000 })
-    const first = await storage.createDelegatedChild(input)
-    const second = await storage.createDelegatedChild({ ...input, childKey: 'parent/c2', workspaceId: 'ws2' })
-    expect(first.status).toBe('created')
-    expect(second.status).toBe('existing')
-    if (second.status === 'existing') expect(second.record.childKey).toBe('parent/c1')
-  })
+  it.each([false, true])(
+    'keeps repeated creationId and runtime-owned child controls (grandchild=%s)',
+    async (grandchild) => {
+      const storage = new MemoryStorage()
+      const k = kernel({ storage })
+      const parent = await k.session('parent', sessionOpts)
+      await storage.ensureRootScope('root', 10_000_000n)
+      const input = {
+        childKey: 'parent/c1',
+        parentKey: grandchild ? 'parent/middle' : 'parent',
+        boundarySeq: 1 as const,
+        creationId: 'parent:main:direct:1',
+        kind: 'spawn' as const,
+        rootTaskId: 'root',
+        runtimeOwnerSessionKey: 'parent',
+        generationDepth: grandchild ? 2 : 1,
+        generationLimit: 2,
+        maxFanOut: 4,
+        inputHash: 'abc',
+        inputText: 'async',
+        cwd: '/w',
+        actorId: 'u',
+        isolation: 'shared' as const,
+        workspaceId: 'ws1',
+        treeCapMicro: 10_000_000n,
+        childCapMicro: null,
+        writerRunId: 'w',
+      }
+      if (grandchild) await storage.open('parent/middle', { writerRunId: 'r1', ttlMs: 1000 })
+      const first = await storage.createDelegatedChild(input)
+      const second = await storage.createDelegatedChild({
+        ...input,
+        childKey: 'parent/c2',
+        workspaceId: 'ws2',
+      })
+      expect(first.status).toBe('created')
+      expect(second.status).toBe('existing')
+      if (second.status === 'existing') expect(second.record.childKey).toBe('parent/c1')
+      try {
+        const children = new KernelChildren(k, () => parent)
+        expect((await children.list()).map((row) => row.id)).toEqual(grandchild ? [] : ['parent/c1'])
+        await expect(children.humanControlState('parent/c1')).resolves.toMatchObject({
+          id: 'parent/c1',
+          providerId: 'in-process',
+          status: 'starting',
+          controls: { stop: false, continue: false },
+        })
+        await expect(children.humanControlState('foreign')).rejects.toMatchObject({
+          code: 'E_CHILD_NOT_FOUND',
+        })
+      } finally {
+        await k.close()
+      }
+    },
+  )
 
   it('does not re-run a replay:never tool after abort', async () => {
     let runs = 0

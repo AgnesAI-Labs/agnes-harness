@@ -943,6 +943,24 @@ export class KernelChildren implements ChildrenFactory {
     }
   }
 
+  private childStatus(record: ChildTaskRecord): ChildAgentStatus {
+    if (this.humanStopped.has(record.childKey)) return 'interrupted'
+    if (this.residents.get(record.childKey)?.idle()) return 'idle'
+    switch (record.state) {
+      case 'completed':
+        return 'completed'
+      case 'failed':
+        return 'failed'
+      case 'cancelled':
+        return 'cancelled'
+      case 'ready':
+      case 'creating':
+        return 'starting'
+      default:
+        return 'running'
+    }
+  }
+
   async list(): Promise<readonly ChildAgentListing[]> {
     const parent = this.parent()
     this.bindSession(parent.key)
@@ -951,22 +969,11 @@ export class KernelChildren implements ChildrenFactory {
     return Promise.all(
       rows.map(async (row) => {
         const resident = this.residents.get(row.childKey)
-        const status: ChildAgentStatus = resident?.idle()
-          ? 'idle'
-          : row.state === 'completed'
-            ? 'completed'
-            : row.state === 'failed'
-              ? 'failed'
-              : row.state === 'cancelled'
-                ? 'cancelled'
-                : row.state === 'ready' || row.state === 'creating'
-                  ? 'starting'
-                  : 'running'
         const text = (await this.inspect(row.childKey))?.text
         return {
           id: row.childKey,
           providerId: 'in-process',
-          status,
+          status: this.childStatus(row),
           continuable: resident !== undefined,
           ...(text ? { text } : {}),
         }
@@ -1038,7 +1045,6 @@ export class KernelChildren implements ChildrenFactory {
     if (!record || !this.owns(record, parent.key))
       throw new CoreError('E_CHILD_NOT_FOUND', 'Child is not owned by this parent')
     const child = this.kernel.get(childKey)
-    const state = (await this.list()).find((entry) => entry.id === childKey)!
     let totalTokens: number | null = null
     {
       const costs = await parent.d.log.storage.scan(childKey, {
@@ -1071,8 +1077,8 @@ export class KernelChildren implements ChildrenFactory {
     return {
       id: childKey,
       parentId: parent.key,
-      providerId: state.providerId,
-      status: this.humanStopped.has(childKey) ? 'interrupted' : state.status,
+      providerId: 'in-process',
+      status: this.childStatus(record),
       controls: {
         stop: child?.d.loopFactory.controls?.interrupt === true && child.op() !== null,
         continue:
