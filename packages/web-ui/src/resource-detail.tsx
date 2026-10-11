@@ -2,10 +2,10 @@ import type { McpServerDescriptor, SkillDescriptor } from '@agnes/protocol'
 import type { JSX } from 'react'
 import { useState } from 'react'
 import { RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog } from './locales/resource-detail.js'
-import { SettingsDetails, SettingsInput, SettingsState, SettingsSaveBar } from './settings-layout.js'
-import { IconButton } from './ui/icon-button.js'
+import { SettingsDetails, SettingsInput, SettingsSaveBar, SettingsState } from './settings-layout.js'
 import { Button } from './ui/button.js'
 import { Field } from './ui/field.js'
+import { IconButton } from './ui/icon-button.js'
 import { useUiText } from './ui-locale.js'
 
 export type ResourceDetailAction = Readonly<{
@@ -178,7 +178,7 @@ export function SkillDetailContent({
           <Button
             key={action.label}
             htmlType="button"
-            className={action.className}
+            {...(action.className ? { className: action.className } : {})}
             danger={action.className?.includes('danger') ?? false}
             disabled={action.disabled ?? false}
             {...(action.title === undefined ? {} : { title: action.title })}
@@ -316,7 +316,7 @@ export function McpDetailContent({
           <Button
             key={action.label}
             htmlType="button"
-            className={action.className}
+            {...(action.className ? { className: action.className } : {})}
             danger={action.className?.includes('danger') ?? false}
             disabled={action.disabled ?? false}
             {...(action.title === undefined ? {} : { title: action.title })}

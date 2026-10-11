@@ -1,11 +1,11 @@
 import type { PackageOperation } from '@agnes/protocol'
-import { Button } from './ui/button.js'
-import { IconButton } from './ui/icon-button.js'
-import { Menu } from './ui/menu.js'
 import type { JSX, ReactNode } from 'react'
 import { ADMIN_LOCALE_NAMESPACE, operationLabel } from './admin-text.js'
 import { adminLocaleCatalog } from './locales/admin.js'
 import { ADMIN_DETAIL_LOCALE_NAMESPACE, adminDetailLocaleCatalog } from './locales/admin-detail.js'
+import { Button } from './ui/button.js'
+import { IconButton } from './ui/icon-button.js'
+import { Menu } from './ui/menu.js'
 import { useUiText } from './ui-locale.js'
 
 export type DetailActionSpec = Readonly<{
@@ -128,7 +128,10 @@ export function DetailContent({
                   <Button
                     htmlType="button"
                     size="small"
-                    onClick={(event) => onCancelOperation(operation.operationId, event.currentTarget)}
+                    onClick={(event) =>
+                      event.currentTarget instanceof HTMLButtonElement &&
+                      onCancelOperation(operation.operationId, event.currentTarget)
+                    }
                   >
                     {t('operations.cancel')}
                   </Button>
@@ -140,7 +143,11 @@ export function DetailContent({
       </div>
       <div className="admin-detail-actions">
         {actions
-          .filter((action) => !action.href && action.className.includes('--primary'))
+          .filter(
+            (action) =>
+              !action.href &&
+              (action.className.includes('--primary') || action.className.includes('primary-button')),
+          )
           .map((action) => (
             <Button
               key={action.label}
@@ -156,7 +163,8 @@ export function DetailContent({
           .map((action) => (
             <Button
               key={action.label}
-              href={action.href}
+              className="plugin-surface-link"
+              {...(action.href ? { href: action.href } : {})}
               target="_blank"
               rel="noopener"
               aria-label={action.ariaLabel}
@@ -165,12 +173,20 @@ export function DetailContent({
               {action.label}
             </Button>
           ))}
-        {actions.filter((action) => !action.href && !action.className.includes('--primary')).length > 0 && (
+        {actions.filter(
+          (action) =>
+            !action.href &&
+            !(action.className.includes('--primary') || action.className.includes('primary-button')),
+        ).length > 0 && (
           <Menu
             label={t('actions')}
             trigger={<Button>{t('actions')}</Button>}
             items={actions
-              .filter((action) => !action.href && !action.className.includes('--primary'))
+              .filter(
+                (action) =>
+                  !action.href &&
+                  !(action.className.includes('--primary') || action.className.includes('primary-button')),
+              )
               .map((action, index) => ({
                 id: `detail-${index}`,
                 label: action.label,

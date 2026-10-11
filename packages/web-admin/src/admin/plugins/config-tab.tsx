@@ -31,6 +31,7 @@ export function PluginConfigTab({
   const api = useMemo(() => new PluginConfigApi({ profile, clientId }), [profile, clientId])
   return (
     <Tabs
+      id={`plugin-config-tab-${encodeURIComponent(id)}`}
       activeKey={tab}
       onChange={(next) => {
         setTab(next)

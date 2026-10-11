@@ -481,6 +481,18 @@ test('UI folder install reviews capabilities, enables a tool and disables it for
       ),
     ).toBe(false)
     await page.locator('#plugin-detail .plugin-detail-close').click()
+    await page
+      .getByRole('searchbox', { name: locale === 'en' ? 'Search plugins' : '搜索插件', exact: true })
+      .fill('plugin-helper')
+    await page.locator('.plugin-row[data-plugin-id="@agnes/plugin-helper"] .plugin-details-button').click()
+    await page.getByTestId('plugin-versions-tab').click()
+    const helperSummary = page.getByTestId('plugin-drain-summary')
+    await expect(helperSummary).toHaveCount(1)
+    await page.getByTestId('plugin-drain-details').locator('summary').click()
+    await expect(page.getByTestId('plugin-drain-details')).toContainText(
+      locale === 'en' ? 'Plugin helper' : '插件助手',
+    )
+    await page.locator('#plugin-detail .plugin-detail-close').click()
     await closeSettings(page, locale)
   }
 })
@@ -943,7 +955,11 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
       .getByRole('tab', { name: locale === 'en' ? 'Pending review' : '待审阅', exact: true })
       .click()
     await expect(
-      page.locator('#resource-list').getByTestId('candidate-open').filter({ hasText: skill.packageId }),
+      page
+        .locator('#resource-list')
+        .getByTestId('candidate-list')
+        .locator('li')
+        .filter({ hasText: skill.packageId }),
     ).toContainText(locale === 'en' ? 'Skill · New skill' : '技能 · 新技能')
     await section(page, 'plugins')
     await expect(rows.first()).toContainText(locale === 'en' ? 'Plugin · Update' : '插件 · 更新')

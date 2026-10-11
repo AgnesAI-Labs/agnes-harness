@@ -2202,7 +2202,20 @@ async function openAdminPane(pane: AdminPaneName, tab: ResourceTab = 'skills'): 
           tab,
           embedded: true,
         }
-        const mountedResource = adaptResourceAdmin(mountResourceAdmin(options), options)
+        const mountedResource = adaptResourceAdmin(mountResourceAdmin(options), options, {
+          sessionTitle: async (id) =>
+            sessionTitles.get(id) ??
+            (await client.session.list({ q: { prefix: id }, limit: 100 })).items.find(
+              (row) => row.sessionId === id,
+            )?.title,
+          sessionTurnTime: async (id, turn) =>
+            (
+              await client.call<UITimeline>('_agnes/v1/session.projectUI', {
+                sessionId: id,
+                surface: 'web',
+              })
+            ).turns.find((row) => row.turn === turn)?.startedAt,
+        })
         mountedAdminPanes.set(pane, mountedResource)
         await mountedResource.ready
         resourceReady = true

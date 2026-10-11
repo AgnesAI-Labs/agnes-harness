@@ -11,6 +11,7 @@ const html = readFileSync(join(process.cwd(), 'packages/web/public/admin.html'),
 )
 
 type Fetcher = ReturnType<typeof vi.fn<typeof fetch>>
+let dispose: (() => void) | undefined
 
 /** A backend that is ready and empty; `inspect` decides what checking a source does. */
 function backend(inspect: (body: Record<string, unknown>) => Response): Fetcher {
@@ -46,6 +47,7 @@ async function mount(fetcher: Fetcher, before?: () => void): Promise<void> {
   vi.stubGlobal('fetch', fetcher)
   const { mountPluginAdmin } = await import('../src/admin/plugins/admin.js')
   const mounted = mountPluginAdmin()
+  dispose = mounted.dispose
   await mounted.ready
   // The install button is inert until the admin context has loaded.
   await vi.waitFor(() => expect(document.querySelector('#install-source')).not.toBeNull())
@@ -85,6 +87,8 @@ function submit(type: string, ref: string): void {
 }
 
 afterEach(() => {
+  dispose?.()
+  dispose = undefined
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
   sessionStorage.clear()

@@ -43,7 +43,7 @@ it('both hosts share one scroll model: documents fixed, list scrolls, detail scr
   // The detail column must not reintroduce its own viewport-based height.
   // 选择器带 `[open]`：`display: flex` 必须限定在打开态，否则会覆盖浏览器对关闭态 dialog 的
   // `display: none`，空盒子会在页面正中渲染成一条灰线（见 style.css 的 dialog:not([open]) 兜底）。
-  expect(ruleBody(css, '.plugin-detail[open]')).not.toContain('100dvh')
+  expect(ruleBody(css, '.plugin-detail:not(.agh-drawer)[open]')).not.toContain('100dvh')
 })
 
 it('keeps settings DSH and pane mounts inside the content grid column', async () => {
@@ -92,9 +92,14 @@ it('list rows use fixed tracks so the Switch column aligns across rows', async (
   const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
   // Each row is its own grid, so an `auto` track is sized per row and the Switch column drifts.
   // 状态灯移除后每行只剩标题和 Switch；资源页也必须收成两段，否则空出来的第三段会把 Switch 挤离右边缘。
-  expect(ruleBody(css, '.plugin-row')).not.toMatch(/grid-template-columns:[^;]*\bauto\b/)
-  expect(ruleBody(css, '.plugin-row')).toContain('grid-template-columns: minmax(0, 1fr) 2.375rem')
+  expect(ruleBody(css, '.plugin-row:not(.agh-list-row)')).not.toMatch(/grid-template-columns:[^;]*\bauto\b/)
+  expect(ruleBody(css, '.plugin-row:not(.agh-list-row)')).toContain(
+    'grid-template-columns: minmax(0, 1fr) 2.375rem',
+  )
   expect(ruleBody(css, '.resource-row')).toContain('grid-template-columns: minmax(0, 1fr) 2.375rem')
+  const primitives = await readFile(resolve(packageDirectory, '../web-ui/src/components.css'), 'utf8')
+  expect(ruleBody(primitives, '.agh-list-row')).not.toMatch(/grid-template-columns:[^;]*\bauto\b/)
+  expect(ruleBody(primitives, '.agh-list-row-actions')).toContain('flex: 0 0 auto')
 })
 
 it('the toolbar search field owns its type scale and a visible border in every state', async () => {

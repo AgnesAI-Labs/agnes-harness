@@ -1,12 +1,13 @@
 import type { ResourceAdminMount, ResourceAdminOptions } from '@agnes/resource-control-web/admin'
-import { mountSkillAuthoring } from '../plugins/skill-authoring.js'
 import { tr } from '@agnes/web-foundation/locale-bridge'
+import { mountSkillAuthoring, type SkillAuthoringSources } from '../plugins/skill-authoring.js'
 
 export type { ResourceAdminMount, ResourceAdminOptions } from '@agnes/resource-control-web/admin'
 /** Host owns the settings IA; the public resource controller owns operations and state. */
 export function adaptResourceAdmin(
   mounted: ResourceAdminMount,
   options: ResourceAdminOptions = {},
+  sources: SkillAuthoringSources = {},
 ): ResourceAdminMount {
   const describe = (tab: 'skills' | 'mcp' = 'skills') => {
     const subtitle = document.querySelector<HTMLElement>('#resource-settings-pane > .config-heading p')
@@ -15,7 +16,7 @@ export function adaptResourceAdmin(
     subtitle.dataset.i18n = key
     subtitle.textContent = tr(key)
   }
-  const disposeAuthoring = mountSkillAuthoring(() => mounted.reload())
+  const disposeAuthoring = mountSkillAuthoring(() => mounted.reload(), sources)
   describe(options.tab)
   return {
     ...mounted,

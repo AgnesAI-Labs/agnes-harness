@@ -58,10 +58,16 @@ node /path/to/agnes-harness/agnes.mjs skills list
 
 技能根里可以是目录 `<name>/SKILL.md`，也可以是扁平的 `<name>.md`。两者同名时目录胜出。安装目录的 `context.json` 支持 `customSkillRoots`（绝对路径）。可在 **设置 → 上下文** 中配置；它们在 `AGH_HOME/skills` 之后按优先级 400 扫描。参见[默认上下文](context.zh-CN.md)。`SKILL.md` 可以设置 `disable-model-invocation`、`user-invocable` 和 `disable`；省略这些字段时模型与用户两侧都允许。daemon 会监视目录中的说明与相对资源文件；`skills refresh --yes` 可立即重扫。细节与不支持的情况见 [MCP 与 Skills 支持范围](mcp-skills-support.zh-CN.md)。
 
+## 在 Web 中管理技能
+
+设置 → 技能分为“我的技能”“待审阅”“反馈”。“新建技能”菜单可以让 Agent 起草技能，或查看已有文件夹的导入方法。Agent 提议的技能出现在“待审阅”中；打开审阅对话框，先查看内容差异与测试证据，再批准发布或拒绝。只有存在待审阅项时才显示数量圆点。
+
+“我的技能”支持按名称和说明搜索。行尾开关与菜单沿用原有启用、信任和删除确认流程。“技能文件夹在哪里？”显示 daemon 实际报告的来源；导入说明链接到其他 Agent 的部署文档，不会修改 daemon 启动时的导入设置。“刷新技能”和“扫描文件夹”沿用原有需要确认的扫描操作。
+
 ## 调整同名候选优先级
 
-1. 在 Web 设置 → Skills，选对应工作区并打开 Skill 详情，查看来源、当前 winner、被覆盖候选和有效优先级。
-2. 在“同名覆盖优先级”输入 **50–500 的整数**，点击“保存优先级”并确认。它只改变该 resourceId 在当前 profile 中的持久覆盖，不改文件内容，也不会启用 Skill。
+1. 在 Web 设置 → Skills，选对应工作区并打开 Skill 详情，展开“技术详情”查看来源、当前 winner、被覆盖候选和有效优先级。
+2. 展开“高级选项”，在“同名覆盖优先级”输入 **50–500 的整数**，通过保存栏保存并确认。它只改变该 resourceId 在当前 profile 中的持久覆盖，不改文件内容，也不会启用 Skill。
 3. 等待操作完成，重新查看 winner 与 actual。若新 winner 尚未启用，审核后再启用；不要只看优先级保存成功。
 4. 当前 Web 页面不提供“恢复默认优先级”。需要执行这一管理操作时，通过 Node 客户端传入 `priority: null`。已有内容 revision 相同也可能有并行优先级修改，因此保存还校验 `expectedPriority`；冲突时刷新，不盲重试。
 

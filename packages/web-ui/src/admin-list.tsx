@@ -1,21 +1,21 @@
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
 import { resolvePluginMetadata } from '@agnes/protocol'
-import { type JSX, type ReactNode, useState } from 'react'
-import { type RuntimeStateView } from './admin-text.js'
+import { type JSX, type ReactNode, useEffect, useRef, useState } from 'react'
+import type { RuntimeStateView } from './admin-text.js'
 import { ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog } from './locales/admin-list.js'
 import { PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog } from './locales/plugin-presentation.js'
 import type { PluginPresentation } from './plugin-presentation.js'
 import { PluginProvidesChips, PluginPurposeBadges } from './plugin-purpose.js'
 import { SettingsDetails } from './settings-layout.js'
-import { Tag } from './ui/tag.js'
 import { Button } from './ui/button.js'
-import { IconButton } from './ui/icon-button.js'
-import { Icon } from './ui/icon.js'
 import { EmptyState } from './ui/empty-state.js'
+import { Icon } from './ui/icon.js'
+import { IconButton } from './ui/icon-button.js'
 import { ListRow } from './ui/list-row.js'
 import { Menu, type MenuItem } from './ui/menu.js'
 import { Select } from './ui/select.js'
 import { StateSwitch } from './ui/state-lights.js'
+import { Tag } from './ui/tag.js'
 import { useUiText } from './ui-locale.js'
 
 export type AdminTab = 'installed' | 'discover'
@@ -125,6 +125,7 @@ function RowControl({
   runtime,
   primaryAction,
   switchDisabled,
+  busy,
   onToggleDesired,
   t,
 }: {
@@ -133,6 +134,7 @@ function RowControl({
   runtime: RuntimeStateView | undefined
   primaryAction: RowAction
   switchDisabled: boolean
+  busy: boolean
   t: (key: string, vars?: Readonly<Record<string, string | number>>) => string
   onToggleDesired(item: PackageInstalledDescriptor, next: boolean): void
 }): JSX.Element {
@@ -140,7 +142,7 @@ function RowControl({
     <Button
       htmlType="button"
       size="small"
-      className={extraClass}
+      {...(extraClass ? { className: extraClass } : {})}
       disabled={primaryAction.disabled}
       onClick={(event) => {
         event.stopPropagation()
@@ -159,6 +161,7 @@ function RowControl({
           <StateSwitch
             label={t(enabled ? 'switch.disable' : 'switch.enable', { id: installed.id })}
             checked={enabled}
+            busy={busy}
             disabled={switchDisabled}
             onToggle={(next) => onToggleDesired(installed, next)}
           />
@@ -170,6 +173,7 @@ function RowControl({
       <StateSwitch
         label={t(enabled ? 'switch.disable' : 'switch.enable', { id: installed.id })}
         checked={enabled}
+        busy={busy}
         disabled={switchDisabled}
         onToggle={(next) => onToggleDesired(installed, next)}
       />
@@ -196,6 +200,8 @@ export function PluginList({
   providesOf,
   menuOf,
   emptyActions,
+  pendingOf,
+  highlight,
 }: {
   tab: AdminTab
   rows: readonly (PackageInstalledDescriptor | PackageCatalogDescriptor)[]
@@ -214,12 +220,34 @@ export function PluginList({
   formatFailure?(message: string, code?: string): string
   providesOf?(item: PackageInstalledDescriptor | PackageCatalogDescriptor): PluginPresentation | undefined
   menuOf?(item: PackageInstalledDescriptor | PackageCatalogDescriptor): readonly MenuItem[]
+  highlight?: Readonly<{ key: string; id: string }> | undefined
+  pendingOf?(item: PackageInstalledDescriptor | PackageCatalogDescriptor): boolean
   emptyActions?: ReactNode
   metadataOf?(item: PackageInstalledDescriptor | PackageCatalogDescriptor): ReactNode
 }): JSX.Element {
   const { t } = useUiText(ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog)
   const { locale } = useUiText(PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
   const [versions, setVersions] = useState<Record<string, string>>({})
+  const [highlighted, setHighlighted] = useState<string>()
+  const reveal = useRef<HTMLElement>()
+  const highlightKey = highlight?.key
+  const highlightId = highlight?.id
+  useEffect(() => {
+    if (!highlightKey || !highlightId) return
+    setHighlighted(highlightId)
+    const timer = setTimeout(() => setHighlighted(undefined), 2000)
+    return () => clearTimeout(timer)
+  }, [highlightKey, highlightId])
+  useEffect(() => {
+    if (!highlighted || !rows.some((item) => item.id === highlighted)) return
+    const row = [...document.querySelectorAll<HTMLElement>('.plugin-row[data-highlighted="true"]')].find(
+      (node) => node.dataset.pluginId === highlighted,
+    )
+    if (row && reveal.current !== row) {
+      reveal.current = row
+      row.scrollIntoView?.({ block: 'nearest' })
+    }
+  }, [highlighted, rows])
   const groups = new Map<string, (PackageInstalledDescriptor | PackageCatalogDescriptor)[]>()
   for (const row of rows) {
     const key = tab === 'discover' ? row.id : `${row.id}@${row.version}`
@@ -280,9 +308,11 @@ export function PluginList({
             data-plugin-id={item.id}
             data-plugin-version={item.version}
             data-tab={tab}
+            data-highlighted={highlighted === item.id || undefined}
             icon={<Icon name="plug" size={20} />}
             titleClassName="plugin-details-button"
-            title={<span aria-label={t('row.details', { id: displayName })}>{displayName}</span>}
+            title={displayName}
+            titleLabel={t('row.details', { id: displayName })}
             description={
               description ? (
                 <span data-testid="plugin-summary">{description}</span>
@@ -306,6 +336,7 @@ export function PluginList({
                   item={item}
                   runtime={runtime}
                   primaryAction={primaryActionOf(item)}
+                  busy={pendingOf?.(item) ?? false}
                   switchDisabled={
                     tab === 'installed' ? switchDisabledOf(item as PackageInstalledDescriptor) : true
                   }

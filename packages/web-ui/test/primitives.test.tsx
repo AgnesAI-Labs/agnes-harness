@@ -143,4 +143,8 @@ it('shares Lucide geometry between native and React icons and labels icon action
   }
   const host = render(createElement(IconButton, { name: 'refresh-cw', label: 'Refresh' }))
   expect(host.querySelector('button')?.getAttribute('aria-label')).toBe('Refresh')
+  const pending = render(createElement(Button, { 'aria-busy': true, disabled: true }, 'Refresh'))
+  expect(pending.querySelector('button')?.getAttribute('aria-busy')).toBe('true')
+  const settled = render(createElement(Button, { 'aria-busy': false }, 'Refresh'))
+  expect(settled.querySelector('button')?.getAttribute('aria-busy')).toBe('false')
 })

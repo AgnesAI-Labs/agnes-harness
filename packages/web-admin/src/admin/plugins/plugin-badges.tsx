@@ -1,6 +1,6 @@
 import type { PackageInstalledDescriptor, PluginGenerationStatus } from '@agnes/protocol'
 import type { PluginRuntimeState } from '@agnes/web-foundation/client-modules/runtime-status'
-import { Field, Tooltip, Tag, Select, type TagTone } from '@agnes/web-ui'
+import { Field, Select, Tag, type TagTone, Tooltip } from '@agnes/web-ui'
 import type { Plugin, Text } from './control-panel-types.js'
 
 export const PLUGIN_KINDS = ['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui', 'bundle'] as const

@@ -129,15 +129,23 @@ it('lists only reported skill roots and explains optional user-agent imports', a
       onRetry: () => {},
     }),
   )
-  expect([...host.querySelectorAll('.admin-empty-state-hints li')].map((item) => item.textContent)).toEqual([
-    'Workspace: .agh/skills, .agents/skills, .claude/skills',
-  ])
-  expect(host.querySelector('.resource-empty h3')?.textContent).toBe('No Skills found')
-  expect(host.querySelector('.resource-roots > summary')?.textContent).toBe(
+  expect(host.querySelector('.admin-empty-state-hints')).toBeNull()
+  expect(host.querySelector('.resource-empty h3')?.textContent).toBe('No skills yet')
+  expect(host.textContent).not.toContain('AGNES_SKILLS_IMPORT_USER')
+  expect(host.textContent).not.toContain('Legacy')
+  const help = document.createElement('div')
+  const closeHelp = ui.mountRegion(
+    help,
+    createElement(ui.ResourceRoots, {
+      roots: [{ scope: 'workspace', rootKey: 'workspace-agnes', state: 'empty' }],
+    }),
+  )
+  expect(help.querySelector('.resource-roots > summary')?.textContent).toBe(
     'Checked 1 skill directory and found no skills.',
   )
-  expect(host.textContent).toContain('AGNES_SKILLS_IMPORT_USER=1')
-  expect(host.textContent).not.toContain('Legacy')
+  expect(help.textContent).toContain('Workspace skill folders')
+  expect(help.textContent).not.toContain('~/.codex')
+  closeHelp()
   dispose()
 })
 

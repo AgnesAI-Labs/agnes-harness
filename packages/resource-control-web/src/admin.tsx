@@ -15,12 +15,12 @@ import {
   type LocaleTranslator,
   McpDetailContent,
   materializeSettingsControls,
-  ResourceRoots,
   RESOURCE_DETAIL_LOCALE_NAMESPACE,
   RESOURCE_LIST_LOCALE_NAMESPACE,
   type ResourceDetailAction,
   ResourceListContent,
   type ResourceProgress,
+  ResourceRoots,
   renderRegion,
   resourceDesiredEnabled,
   resourceDetailLocaleCatalog,
@@ -41,7 +41,9 @@ import { mountMcpPresets } from './mcp-presets.js'
 import { watchMcpPanel } from './mcp-refresh.js'
 import { mountMcpWizard } from './mcp-wizard.js'
 import { SkillsPage } from './skills-page.js'
+
 export { registerSkillPagePanels, type SkillPagePanels } from './skills-page.js'
+
 import type { ResourceAdminContext, ResourceAdminError } from './types.js'
 
 let list!: HTMLElement
@@ -402,6 +404,7 @@ class ResourceAdminPage {
   render(): void {
     const heading = document.querySelector<HTMLElement>('#resource-settings-pane h2')
     if (heading) {
+      heading.closest<HTMLElement>('.config-heading')?.toggleAttribute('hidden', this.#tab === 'skills')
       heading.dataset.i18n = `tab.${this.#tab}`
       heading.textContent = this.#t(`tab.${this.#tab}`)
     }
@@ -449,12 +452,13 @@ class ResourceAdminPage {
               this.#skillQuery = query
               this.render()
             }}
-            onRefresh={() => void this.reload()}
-            busy={busy}
+            onRefresh={() => $('skill-refresh', 'button').click()}
+            busy={busy || this.#activeOperation !== undefined}
             writable={this.writable()}
             locations={<ResourceRoots roots={this.#skillRoots} />}
+            successMessage={this.#notice.kind === 'success' ? (notice.textContent ?? '') : ''}
           >
-            {this.#resourceList()}
+            {(onImport) => this.#resourceList(onImport)}
           </SkillsPage>
         ) : (
           this.#resourceList()
@@ -573,7 +577,7 @@ class ResourceAdminPage {
     )
   }
 
-  #resourceList() {
+  #resourceList(onImport?: () => void) {
     return (
       <ResourceListContent
         tab={this.#tab}
@@ -588,6 +592,7 @@ class ResourceAdminPage {
             : this.#items
         }
         skillRoots={this.#skillRoots}
+        busy={this.#activeOperation !== undefined}
         selectedId={this.#selected}
         nextCursor={this.#nextCursor}
         loadingMore={this.#loadMorePromise !== undefined}
@@ -619,7 +624,7 @@ class ResourceAdminPage {
               if (action) void this.#runAction(action)
             },
           })}
-        onImport={() => document.querySelector<HTMLButtonElement>('[data-testid="skill-locations"]')?.click()}
+        onImport={onImport ?? (() => undefined)}
         filtered={!!this.#skillQuery}
         menuOf={(item) =>
           this.#detailActions(item).map((action, index) => ({

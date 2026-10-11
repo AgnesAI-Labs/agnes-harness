@@ -1,22 +1,23 @@
 import {
   Button,
   Count,
-  EmptyState,
   Field,
   Icon,
   IconButton,
   Menu,
   Popover,
+  RESOURCE_LIST_LOCALE_NAMESPACE,
+  resourceListLocaleCatalog,
   SettingsDetails,
   SettingsInput,
   SettingsPageHeader,
   SettingsState,
   SettingsToolbar,
   Tabs,
+  Toast,
   useUiText,
 } from '@agnes/web-ui'
-import { type ReactNode, useState, useSyncExternalStore } from 'react'
-import { RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog } from '@agnes/web-ui'
+import { type ReactNode, useEffect, useState, useSyncExternalStore } from 'react'
 
 export type SkillPagePanels = {
   review(onPendingCount: (count: number) => void): ReactNode
@@ -47,23 +48,32 @@ export function SkillsPage({
   busy,
   writable,
   locations,
+  successMessage,
 }: {
-  children: ReactNode
+  children(onImport: () => void): ReactNode
   query: string
   onQuery(query: string): void
   onRefresh(): void
   busy: boolean
   writable: boolean
   locations: ReactNode
+  successMessage: string
 }) {
   const { t } = useUiText(RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog)
   const extra = useSyncExternalStore(subscribe, () => panels)
   const [tab, setTab] = useState('mine')
   const [pending, setPending] = useState(0)
   const [importing, setImporting] = useState(false)
+  const [success, setSuccess] = useState('')
+  useEffect(() => {
+    if (successMessage) setSuccess(successMessage)
+  }, [successMessage])
   const createUrl = `/?${new URLSearchParams({ new: '1', prompt: t('skills.creatorPrompt') })}`
   return (
     <>
+      <Toast open={!!success} onDismiss={() => setSuccess('')}>
+        {success}
+      </Toast>
       <SettingsPageHeader
         title={t('skills.title')}
         description={t('skills.description')}
@@ -109,14 +119,16 @@ export function SkillsPage({
                   controls={
                     <IconButton
                       name="refresh-cw"
-                      label={t('retry')}
-                      disabled={busy}
-                      disabledReason={t('loading')}
+                      label={t('skills.refresh')}
+                      data-testid="skill-refresh-action"
+                      aria-busy={busy}
+                      disabled={!writable || busy}
+                      disabledReason={!writable ? t('skills.readOnly') : t('loading')}
                       onClick={onRefresh}
                     />
                   }
                 />
-                {children}
+                {children(() => setImporting(true))}
                 <Popover trigger="click" content={locations}>
                   <Button appearance="link" data-testid="skill-locations">
                     {t('skills.where')}
@@ -168,17 +180,6 @@ export function SkillsPage({
           </Button>
         </SettingsDetails>
       )}
-    </>
-  )
-}
-export function SkillEmptyActions({ onImport }: { onImport(): void }) {
-  const { t } = useUiText(RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog)
-  return (
-    <>
-      <Button href={`/?${new URLSearchParams({ new: '1', prompt: t('skills.creatorPrompt') })}`}>
-        {t('skills.create')}
-      </Button>
-      <Button onClick={onImport}>{t('skills.import')}</Button>
     </>
   )
 }

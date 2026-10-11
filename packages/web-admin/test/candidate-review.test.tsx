@@ -215,3 +215,53 @@ it('hides empty inboxes, serializes review navigation and exposes list failures'
     scope.IS_REACT_ACT_ENVIRONMENT = false
   }
 })
+
+it('shows only inspected skill candidates and counts reviews without enabling a forbidden decision', async () => {
+  const skill = {
+    ...candidate,
+    candidateId: 'skill-review',
+    packageId: '@example/weekly-report',
+    state: 'review' as const,
+    preview: { ...preview, kinds: ['skills'] as ['skills'] },
+  }
+  const plugin = {
+    ...candidate,
+    candidateId: 'plugin-review',
+    state: 'review' as const,
+    preview: { ...preview, kinds: ['tool'] as ['tool'] },
+  }
+  const api = {
+    candidatesList: async () => ({ candidates: [skill, plugin] }),
+    candidatesShow: async (id: string) => (id === skill.candidateId ? skill : plugin),
+  } as unknown as PluginAdminApi
+  const count = vi.fn()
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  try {
+    await act(async () =>
+      root.render(
+        <CandidateInbox
+          api={api}
+          canReview={false}
+          canTest={false}
+          t={t}
+          confirm={() => undefined}
+          onPublished={async () => undefined}
+          scope="skill"
+          onPendingCount={count}
+        />,
+      ),
+    )
+    const rows = host.querySelectorAll('[data-testid="candidate-open"]')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.closest('li')?.textContent).toContain(skill.packageId)
+    expect(count).toHaveBeenLastCalledWith(1)
+    await act(async () => (rows[0] as HTMLButtonElement).click())
+    expect(host.querySelector<HTMLButtonElement>('[data-testid="candidate-approve"]')?.disabled).toBe(true)
+    expect(host.querySelector<HTMLButtonElement>('[data-testid="candidate-reject"]')?.disabled).toBe(true)
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+  }
+})

@@ -3,6 +3,7 @@ import { Button } from './button.js'
 
 export type ListRowProps = Omit<HTMLAttributes<HTMLElement>, 'title'> & {
   title: ReactNode
+  titleLabel?: string
   titleClassName?: string
   icon?: ReactNode
   description?: ReactNode
@@ -15,6 +16,7 @@ export type ListRowProps = Omit<HTMLAttributes<HTMLElement>, 'title'> & {
 export function ListRow({
   title,
   titleClassName,
+  titleLabel,
   icon,
   description,
   meta,
@@ -35,7 +37,9 @@ export function ListRow({
         props.onClick?.(event)
         if (
           !event.defaultPrevented &&
-          !(event.target as Element).closest('button, a, input, select, textarea, summary, [role="button"]')
+          !(event.target as Element).closest(
+            'button, a, input, select, textarea, details, [role="button"], [role="combobox"], [role="option"], [role="listbox"]',
+          )
         ) {
           trigger.current?.focus()
           onOpen?.()
@@ -54,6 +58,7 @@ export function ListRow({
               <Button
                 ref={trigger}
                 appearance="ghost"
+                aria-label={titleLabel}
                 className={['agh-list-row-title', titleClassName].filter(Boolean).join(' ')}
                 onClick={onOpen}
               >

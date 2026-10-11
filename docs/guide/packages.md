@@ -161,7 +161,9 @@ node agnes.mjs package enable @agnes-examples/hot-tool-plugin --yes
 node agnes.mjs package status
 ```
 
-In Web, use Settings → Plugins → Install from source → Inspect/Install → Enable. The Enable confirmation reviews and binds the current integrity and capability hashes, then activates only after that check succeeds. There is no separate trust action in the normal Web flow. An installed package's switch is on only while the package is actually running. If a dependency, policy, or candidate-loading failure prevents that, the switch stays off and the failure reason appears in the same row; choose Enable again to retry.
+In Web, use Settings → Plugins → Add plugin → Install from source → Inspect/Install → Enable. The Enable confirmation reviews and binds the current integrity and capability hashes, then activates only after that check succeeds. There is no separate trust action in the normal Web flow. An installed package's switch is on only while the package is actually running. If a dependency, policy, or candidate-loading failure prevents that, the switch stays off and the row shows an error tag; open its details to see the reason and retry Enable from the action menu.
+
+The Plugins page has Installed and Discover tabs. Discover starts with three official examples; expand More official examples for the rest. The row menu contains settings (when declared), details and lifecycle actions. Details group the existing information into Overview, Settings, Permissions and Versions. Versions shows ongoing sessions using the previous generation; their work continues without interruption. Technical IDs, sources and integrity values are under Technical details.
 
 <a id="更新与回滚"></a>
 

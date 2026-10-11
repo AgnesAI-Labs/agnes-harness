@@ -695,3 +695,7 @@ dialog[data-size="lg"] {
   width: auto;
   height: auto;
 }
+
+.agh-list-row[data-highlighted="true"] {
+  background: var(--agnes-bg-hover);
+}

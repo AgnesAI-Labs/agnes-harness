@@ -326,11 +326,15 @@ it('groups real catalog releases and carries the selected version source through
   )
   document.querySelector<HTMLButtonElement>('[data-testid="settings-nav-plugins"]')?.click()
   await vi.waitFor(() => expect(document.querySelector('.plugin-empty')).not.toBeNull())
-  expect(
-    document.querySelector('[data-testid=plugin-creator]')?.closest('[data-testid=plugin-toolbar]'),
-  ).not.toBeNull()
+  document.querySelector<HTMLButtonElement>('#install-source')?.click()
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-testid=plugin-creator]')?.getAttribute('role')).toBe('menuitem'),
+  )
+  document
+    .querySelector<HTMLElement>('[data-testid=plugin-creator]')
+    ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   expect(document.querySelector('.plugin-empty')?.classList.contains('admin-empty-state')).toBe(true)
-  expect(document.querySelector('.plugin-empty .admin-empty-state-mark')).not.toBeNull()
+  expect(document.querySelector('.plugin-empty .agh-empty-state-icon')).not.toBeNull()
   document.querySelector<HTMLButtonElement>('[data-testid="settings-nav-discover-tab"]')?.click()
   await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(3))
 
@@ -357,7 +361,10 @@ it('groups real catalog releases and carries the selected version source through
   expect(v2?.querySelector('.plugin-source')).toBeNull()
   expect(document.getElementById('plugin-detail')?.hasAttribute('open')).toBe(false)
   v2?.click()
-  expect(document.getElementById('plugin-detail')?.textContent).toContain('Version 1.1.0')
+  document.querySelector<HTMLElement>('[data-testid=plugin-versions-tab]')?.click()
+  await vi.waitFor(() =>
+    await vi.waitFor(() => expect(document.getElementById('plugin-detail')?.textContent).toContain('Version 1.1.0')),
+  )
   const check = [...document.querySelectorAll<HTMLButtonElement>('#plugin-detail button')].find(
     (candidate) => candidate.textContent === 'Inspect installation',
   )
@@ -385,7 +392,7 @@ it('groups real catalog releases and carries the selected version source through
   expect(installedText).not.toContain('1.1.0')
   document.querySelector<HTMLElement>('.plugin-row')?.click()
   document.querySelector<HTMLElement>('[data-testid=plugin-versions-tab]')?.click()
-  expect(document.getElementById('plugin-detail')?.textContent).toContain('Version 1.1.0')
+  await vi.waitFor(() => expect(document.getElementById('plugin-detail')?.textContent).toContain('Version 1.1.0'))
   expect(document.querySelector('#plugin-list .state-light')).toBeNull()
   expect(document.querySelector('#plugin-list button[role="switch"]')?.getAttribute('aria-checked')).toBe(
     'false',
@@ -496,16 +503,16 @@ it('links a live Surface mount without treating the link as qualified actual', a
   const row = document.querySelector<HTMLElement>('.plugin-row')
   expect(row?.querySelector('.state-light')).toBeNull()
   expect(row?.querySelector('[role="switch"]')?.getAttribute('aria-checked')).toBe('false')
-  const listLink = row?.querySelector<HTMLAnchorElement>('.plugin-surface-link')
-  expect(listLink?.getAttribute('href')).toBe('/demo')
-  expect(listLink?.textContent).toBe('Open page · /demo')
-  expect(listLink?.target).toBe('_blank')
+  expect(row?.querySelector('.plugin-surface-link')).toBeNull()
 
   row?.click()
   const detailLinks = document.querySelectorAll<HTMLAnchorElement>(
     '#plugin-detail .plugin-surface-link[href="/demo"]',
   )
   expect(detailLinks).toHaveLength(1)
+  expect(detailLinks[0]?.getAttribute('href')).toBe('/demo')
+  expect(detailLinks[0]?.textContent).toBe('Open page · /demo')
+  expect(detailLinks[0]?.target).toBe('_blank')
   expect(document.getElementById('plugin-detail')?.textContent).not.toContain('Actual state')
 })
 
@@ -647,8 +654,12 @@ it.each(['failed', 'unavailable'] as const)(
     const toggle = row?.querySelector<HTMLButtonElement>('.switch')
     expect(toggle?.getAttribute('aria-checked')).toBe('false')
     expect(row?.querySelector('.state-light')).toBeNull()
-    expect(row?.textContent).toContain(pluginAdminLocaleCatalog.en['failure.activation'])
-    expect(row?.textContent).not.toContain(installed.actualReason)
+    row?.click()
+    expect(document.getElementById('plugin-detail')?.textContent).toContain(
+      pluginAdminLocaleCatalog.en['failure.activation'],
+    )
+    expect(document.getElementById('plugin-detail')?.textContent).not.toContain(installed.actualReason)
+    document.querySelector<HTMLButtonElement>('#plugin-detail .plugin-detail-close')?.click()
     toggle?.click()
     expect(document.getElementById('admin-notice')?.textContent).toContain(
       'The actual runtime summary has not been confirmed',
@@ -730,9 +741,11 @@ it('keeps backend actual and browser UI runtime failure visible as separate stat
   await mountAdmin({ runtime: runtimeSource })
   await vi.waitFor(() => expect(document.querySelectorAll('.plugin-row')).toHaveLength(1))
   expect(document.querySelector('#plugin-list .state-light')).toBeNull()
-  expect(document.getElementById('plugin-list')?.textContent).toContain(
+  document.querySelector<HTMLElement>('.plugin-row')?.click()
+  expect(document.getElementById('plugin-detail')?.textContent).toContain(
     pluginAdminLocaleCatalog.en['failure.frontend'],
   )
+  document.querySelector<HTMLButtonElement>('#plugin-detail .plugin-detail-close')?.click()
   expect(document.getElementById('plugin-list')?.textContent).not.toContain('插件 UI 入口加载失败，可重试')
   expect(document.querySelector('#plugin-list button[role="switch"]')?.getAttribute('aria-checked')).toBe(
     'true',
@@ -1145,7 +1158,9 @@ it('surfaces a status message and clears a stale list when packages.pins.inspect
   const refreshing = admin.reload()
   // A supplementary pin read must not leave the primary inventory frozen behind Loading.
   await vi.waitFor(() => expect(inspectCalls).toBe(2))
-  expect(document.getElementById('plugin-list')?.textContent).toContain('2.0.0')
+  expect(
+    document.querySelector('[data-plugin-id="acme/inventory"]')?.getAttribute('data-plugin-version'),
+  ).toBe('2.0.0')
   releasePins()
   await refreshing
 

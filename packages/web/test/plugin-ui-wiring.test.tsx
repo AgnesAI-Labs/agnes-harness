@@ -120,9 +120,7 @@ it('mounts an installed UI package panel and reports a subsequent loader failure
   try {
     await act(async () => reconciler.reconcileNow())
     await vi.waitFor(() => expect(host.textContent).toContain('Plugin panel content'))
-    expect(pluginStates(item, reconciler.snapshot().get(item.id)).map((state) => state.key)).toContain(
-      'active',
-    )
+    expect(pluginStates(item, reconciler.snapshot().get(item.id))).toEqual([])
     revision = 'v2'
     await act(async () => reconciler.invalidate())
     const failure = reconciler.snapshot().get(item.id)

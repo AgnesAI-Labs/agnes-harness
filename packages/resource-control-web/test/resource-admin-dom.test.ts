@@ -50,7 +50,9 @@ const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getEl
  */
 const action = (label: string, options: { confirm?: boolean } = {}) => {
   const control = [...document.querySelectorAll<HTMLButtonElement>('#resource-detail button')].find(
-    (node) => node.textContent === label,
+    (node) =>
+      node.textContent === label ||
+      (label === 'Close details' && node.classList.contains('plugin-detail-close')),
   )
   expect(control, label).toBeDefined()
   if (!control) throw new Error(`missing action: ${label}`)
@@ -287,7 +289,7 @@ it('does not append a stale load-more response after switching tabs', async () =
   expect(byId('resource-list').querySelectorAll('.resource-row')).toHaveLength(0)
 })
 afterEach(() => {
-  resourceMount.dispose()
+  resourceMount?.dispose()
   document.documentElement.lang = 'en'
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
@@ -440,10 +442,10 @@ it('tells the user a newly created MCP server can be enabled directly', async ()
 it('says why a skill source produced no results instead of only that it failed', async () => {
   rootFailureCode = 'invalid-frontmatter'
   byId('skills-tab').click()
-  await vi.waitFor(() => expect(byId('resource-list').textContent).toContain('Refresh failed'))
+  await vi.waitFor(() => expect(byId('resource-list').textContent).toContain('Could not read'))
   const rendered = byId('resource-list').textContent ?? ''
-  expect(rendered).toContain('Some skill directories could not be checked (1). Expand to see why.')
-  expect(rendered).toContain('A SKILL.md frontmatter block is invalid')
+  expect(byId('resource-list').querySelector('.agh-list-row')?.textContent).toContain('User')
+  expect(rendered).toContain('Skill name or description is invalid')
   // 旧文案是实现视角的措辞，现在不再出现。
   expect(rendered).not.toContain('没有可保留的目录')
 })
@@ -656,7 +658,8 @@ it('shows rejected commands and disconnected status safely; Skills remains reach
   offline = false
   byId('skills-tab').click()
   await vi.waitFor(() => expect(byId('resource-list').textContent).toContain('Skill'))
-  expect(byId<HTMLButtonElement>('skill-refresh').hidden).toBe(false)
+  expect(byId('resource-list').querySelector('[data-testid=skill-refresh-action]')).not.toBeNull()
+  expect(byId<HTMLButtonElement>('skill-refresh').hidden).toBe(true)
   expect(byId<HTMLButtonElement>('mcp-create').hidden).toBe(true)
 })
 

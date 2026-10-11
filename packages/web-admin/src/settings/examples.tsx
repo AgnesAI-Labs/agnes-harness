@@ -1,13 +1,13 @@
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
 import { resolvePluginMetadata } from '@agnes/protocol'
 import {
-  MetaText,
-  IconButton,
-  SettingsDetails,
   Button,
+  IconButton,
+  MetaText,
   PLUGIN_PRESENTATION_NAMESPACE,
   pluginPresentationCatalog,
   SettingsCard,
+  SettingsDetails,
   SettingsState,
   useUiText,
 } from '@agnes/web-ui'
@@ -72,6 +72,63 @@ export function ExamplesPanel({
       current = false
     }
   }, [api, revision])
+  const exampleCards = rows.map((row) => {
+    const name = row.id.split('/').at(-1) ?? row.id
+    const purpose = resolvePluginMetadata(row.metadata, locale)
+    const current = installed.find((pkg) => pkg.id === row.id)
+    const enabled = current?.desired === 'enabled'
+    const available = enabled && current?.actual === 'running'
+    const loop =
+      row.id === '@agnes-example/dag-loop'
+        ? { id: 'example.dag', version: '1.0.0' }
+        : row.id === '@agnes-example/react-loop'
+          ? { id: 'example.react', version: '1.0.0' }
+          : row.id === '@community/dag-loop-adapter'
+            ? { id: 'community.dag', version: '1.0.0' }
+            : undefined
+    return (
+      <SettingsCard
+        key={`${row.id}@${row.version}`}
+        className="runtime-card"
+        data-testid={`example-${row.id}`}
+      >
+        <h3>{purpose?.displayName ?? row.id}</h3>
+        {purpose?.summary && <p>{purpose.summary}</p>}
+        <MetaText>
+          {purposeText('origin.example')}
+          {row.metadata ? ` · ${purposeText(`category.${row.metadata.category}`)}` : ''}
+        </MetaText>
+        <SettingsDetails title={purposeText('technical')}>
+          <p>
+            {row.id} · {row.version} · {row.license}
+          </p>
+          <section className="agnes-settings-actions" aria-label={t('exampleSummary')}>
+            {row.kinds?.map((kind) => (
+              <MetaText key={kind}>{t(`kind.${kind}`)}</MetaText>
+            ))}
+          </section>
+        </SettingsDetails>
+        {enabled && !available && <p>{t('examplePending')}</p>}
+        <Button
+          data-testid={`example-install-${name}`}
+          disabled={!api || !canInstall || busy || enabled}
+          disabledReason={enabled ? t('exampleReady') : t('unavailable')}
+          onClick={() => onReview(row)}
+        >
+          {t(enabled ? 'exampleReady' : current ? 'exampleEnable' : 'exampleInstall')}
+        </Button>
+        {enabled && (
+          <Button
+            data-testid={`example-start-${name}`}
+            disabled={!available}
+            href={sessionStartUrl(undefined, undefined, row.kinds?.includes('bundle') ? [name] : [], loop)}
+          >
+            {t('exampleStart')}
+          </Button>
+        )}
+      </SettingsCard>
+    )
+  })
   return (
     <section aria-busy={busy}>
       <h3>{t('examples')}</h3>
@@ -87,70 +144,12 @@ export function ExamplesPanel({
           onClick={() => setRevision((value) => value + 1)}
         />
       )}
-      <div className="runtime-grid">
-        {rows.map((row) => {
-          const name = row.id.split('/').at(-1) ?? row.id
-          const purpose = resolvePluginMetadata(row.metadata, locale)
-          const current = installed.find((pkg) => pkg.id === row.id)
-          const enabled = current?.desired === 'enabled'
-          const available = enabled && current?.actual === 'running'
-          const loop =
-            row.id === '@agnes-example/dag-loop'
-              ? { id: 'example.dag', version: '1.0.0' }
-              : row.id === '@agnes-example/react-loop'
-                ? { id: 'example.react', version: '1.0.0' }
-                : row.id === '@community/dag-loop-adapter'
-                  ? { id: 'community.dag', version: '1.0.0' }
-                  : undefined
-          return (
-            <SettingsCard
-              key={`${row.id}@${row.version}`}
-              className="runtime-card"
-              data-testid={`example-${row.id}`}
-            >
-              <h3>{purpose?.displayName ?? row.id}</h3>
-              {purpose?.summary && <p>{purpose.summary}</p>}
-              <MetaText>
-                {purposeText('origin.example')}
-                {row.metadata ? ` · ${purposeText(`category.${row.metadata.category}`)}` : ''}
-              </MetaText>
-              <SettingsDetails title={purposeText('technical')}>
-                <p>
-                  {row.id} · {row.version} · {row.license}
-                </p>
-                <section className="agnes-settings-actions" aria-label={t('exampleSummary')}>
-                  {row.kinds?.map((kind) => (
-                    <MetaText key={kind}>{t(`kind.${kind}`)}</MetaText>
-                  ))}
-                </section>
-              </SettingsDetails>
-              {enabled && !available && <p>{t('examplePending')}</p>}
-              <Button
-                data-testid={`example-install-${name}`}
-                disabled={!api || !canInstall || busy || enabled}
-                disabledReason={enabled ? t('exampleReady') : t('unavailable')}
-                onClick={() => onReview(row)}
-              >
-                {t(enabled ? 'exampleReady' : current ? 'exampleEnable' : 'exampleInstall')}
-              </Button>
-              {enabled && (
-                <Button
-                  data-testid={`example-start-${name}`}
-                  disabled={!available}
-                  href={sessionStartUrl(
-                    undefined,
-                    undefined,
-                    row.kinds?.includes('bundle') ? [name] : [],
-                    loop,
-                  )}
-                >
-                  {t('exampleStart')}
-                </Button>
-              )}
-            </SettingsCard>
-          )
-        })}
-      </div>
+      <div className="runtime-grid">{exampleCards.slice(0, 3)}</div>
+      {exampleCards.length > 3 && (
+        <SettingsDetails title={purposeText('examples.more')} data-testid="example-more">
+          <div className="runtime-grid">{exampleCards.slice(3)}</div>
+        </SettingsDetails>
+      )}
       <Button onClick={onBundles}>{t('chooseBundle')}</Button>
     </section>
   )

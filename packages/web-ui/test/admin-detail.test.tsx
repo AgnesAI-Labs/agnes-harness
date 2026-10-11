@@ -39,7 +39,7 @@ describe('admin detail', () => {
     expect(host.querySelector('.plugin-detail-close')?.getAttribute('aria-label')).toBe(
       'Close acme/demo details',
     )
-    expect(text).toContain('Close details')
+    expect(host.querySelector('.plugin-detail-close svg')).not.toBeNull()
     expect(text).toContain('Recently completed operations')
     expect(text).toContain('Ongoing operations')
     expect(text).toContain('Enable: Completed · Backend allows retry')

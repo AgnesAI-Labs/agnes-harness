@@ -4,12 +4,12 @@ import { RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog } from './loc
 import { McpConnectionRow, type McpRowActions } from './mcp-connection-row.js'
 import { SettingsState, SettingsToolbar } from './settings-layout.js'
 import { Button } from './ui/button.js'
-import { StateSwitch } from './ui/state-lights.js'
 import { EmptyState } from './ui/empty-state.js'
 import { Icon } from './ui/icon.js'
 import { IconButton } from './ui/icon-button.js'
 import { ListRow } from './ui/list-row.js'
 import { Menu, type MenuItem } from './ui/menu.js'
+import { StateSwitch } from './ui/state-lights.js'
 import { MetaText, Tag } from './ui/tag.js'
 import { useUiText } from './ui-locale.js'
 
@@ -40,6 +40,7 @@ export function ResourceListContent({
   onImport,
   filtered = false,
   menuOf,
+  busy = false,
 }: {
   tab: ResourceTab
   loadState: ResourceLoadState
@@ -60,6 +61,7 @@ export function ResourceListContent({
   mcpActions?(item: import('@agnes/protocol').McpServerDescriptor): McpRowActions
   onImport?(): void
   filtered?: boolean
+  busy?: boolean
   menuOf?(item: ResourceItem): readonly MenuItem[]
 }): JSX.Element {
   const { t } = useUiText(RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog)
@@ -90,6 +92,24 @@ export function ResourceListContent({
           <Button onClick={onRetry}>{t('retry')}</Button>
         </SettingsState>
       )}
+      {tab === 'skills' &&
+        skillRoots
+          .filter((root) => root.state === 'unavailable' || root.state === 'stale')
+          .map((root) => (
+            <ListRow
+              key={`${root.scope}:${root.rootKey}`}
+              title={t(`root.scope.${root.scope}`)}
+              description={
+                root.diagnostic ? t(ROOT_FAILURE_KEYS[root.diagnostic.code]) : t('skills.readFailed')
+              }
+              status={<Tag tone="bad">{t('skills.readFailed')}</Tag>}
+              actions={
+                <Button size="small" onClick={onRetry}>
+                  {t('retry')}
+                </Button>
+              }
+            />
+          ))}
       {!items.length && (
         <ResourceEmpty
           tab={tab}
@@ -134,6 +154,7 @@ export function ResourceListContent({
             itemName={itemNameOf(item)}
             onOpen={onOpen}
             onToggleDesired={onToggleDesired}
+            busy={busy}
             menuItems={menuOf?.(item)}
           />
         ),
@@ -225,8 +246,6 @@ export function ResourceEmpty({
   tab,
   title,
   description,
-  hints,
-  footer,
   actions,
 }: {
   tab: ResourceTab
@@ -239,7 +258,7 @@ export function ResourceEmpty({
   return (
     <EmptyState
       className="admin-empty-state resource-empty"
-      icon={<Icon name={tab === 'skills' ? 'book-open' : 'plug'} size={48} />}
+      icon={<Icon name={tab === 'skills' ? 'file-text' : 'plug'} size={48} />}
       title={title}
       description={description}
       actions={actions}
@@ -255,6 +274,7 @@ export function ResourceRow({
   onOpen,
   onToggleDesired,
   menuItems,
+  busy = false,
 }: {
   item: ResourceItem
   selected: boolean
@@ -262,7 +282,8 @@ export function ResourceRow({
   itemName: string
   onOpen(item: ResourceItem): void
   onToggleDesired(item: ResourceItem, next: boolean): void
-  menuItems?: readonly MenuItem[]
+  busy?: boolean
+  menuItems?: readonly MenuItem[] | undefined
 }): JSX.Element {
   const { t } = useUiText(RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog)
   const enabled = resourceDesiredEnabled(item)
@@ -274,7 +295,7 @@ export function ResourceRow({
         data-selected={String(selected)}
         titleClassName="plugin-details-button"
         title={<span>{itemName}</span>}
-        icon={<Icon name="book-open" size={20} />}
+        icon={<Icon name="file-text" size={20} />}
         description={item.description}
         meta={<MetaText>{t(`root.scope.${item.sourceIdentity.scope}`)}</MetaText>}
         status={
@@ -290,6 +311,7 @@ export function ResourceRow({
             <StateSwitch
               label={t(enabled ? 'row.disable' : 'row.enable', { name: itemName })}
               checked={enabled}
+              busy={busy}
               disabled={switchDisabled}
               onToggle={(next) => onToggleDesired(item, next)}
             />
@@ -322,6 +344,7 @@ export function ResourceRow({
         <h2 title={itemName}>
           <Button
             htmlType="button"
+            className="plugin-details-button"
             aria-pressed={selected}
             aria-label={t('row.open-aria', { name: itemName })}
             onClick={() => onOpen(item)}
@@ -329,25 +352,8 @@ export function ResourceRow({
             {itemName}
           </Button>
         </h2>
-        {item.kind === 'skill' ? (
-          <>
-            <p>{item.description ?? t('row.skill-no-description')}</p>
-            <p className="plugin-source">
-              {`${item.sourceIdentity.rootKey} · ${t('row.priority', { priority: item.priority })} · ${t(item.resolution.winner ? 'row.winner' : 'row.not-winner')}`}
-            </p>
-          </>
-        ) : (
-          <>
-            <p>{`${item.serverId} · ${item.transportKind.toUpperCase()}`}</p>
-            <p className="plugin-source">
-              {`${t('row.secret', { kind: item.secretBindingKind })} · ${
-                item.definition.toolPolicy?.allow?.length
-                  ? t('row.tools-allowed', { count: item.definition.toolPolicy.allow.length })
-                  : t('row.tools-unrestricted')
-              }`}
-            </p>
-          </>
-        )}
+        <p>{`${item.serverId} · ${item.transportKind.toUpperCase()}`}</p>
+        <p className="plugin-source">{`${t('row.secret', { kind: item.secretBindingKind })} · ${item.definition.toolPolicy?.allow?.length ? t('row.tools-allowed', { count: item.definition.toolPolicy.allow.length }) : t('row.tools-unrestricted')}`}</p>
         {item.lastSafeError && (
           <SettingsState tone="error" className="resource-safe-error">
             {t('row.safe-error', {

@@ -17,6 +17,7 @@ export const resourceListLocaleCatalog: LocaleCatalog = {
     'skills.feedback': 'Feedback',
     'skills.pending': '{count} skills need review',
     'skills.search': 'Search skills',
+    'skills.refresh': 'Refresh skills',
     'skills.where': 'Where are skill folders?',
     'skills.reviewUnavailable': 'Open Skills from the Agnes settings to review agent proposals and feedback.',
     'skills.importHelp':
@@ -110,6 +111,7 @@ export const resourceListLocaleCatalog: LocaleCatalog = {
     'skills.feedback': '反馈',
     'skills.pending': '{count} 个技能待审阅',
     'skills.search': '搜索技能',
+    'skills.refresh': '刷新技能',
     'skills.where': '技能文件夹在哪里？',
     'skills.reviewUnavailable': '请从 Agnes 设置打开技能页，审阅 Agent 提议的技能和反馈。',
     'skills.importHelp': '将已有技能文件夹放入支持的来源，再扫描文件夹。每个技能文件夹包含 SKILL.md 说明书。',

@@ -49,6 +49,7 @@ export type StateSwitchProps = Readonly<{
   invalid?: boolean | undefined
   describedBy?: string | undefined
   checked: boolean
+  busy?: boolean | undefined
   disabled: boolean
   /** 用户拨动开关时调用。调用方负责确认流程与忙碌态，本组件不改状态。 */
   onToggle(next: boolean): void
@@ -62,6 +63,7 @@ export type StateSwitchProps = Readonly<{
 export function StateSwitch({
   label,
   checked,
+  busy,
   disabled,
   onToggle,
   id,
@@ -79,6 +81,7 @@ export function StateSwitch({
       className="switch"
       role="switch"
       aria-checked={checked}
+      aria-busy={busy || undefined}
       aria-label={label}
       title={label}
       disabled={disabled}

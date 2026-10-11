@@ -64,12 +64,18 @@ A flat disk file needs no YAML frontmatter. For example, `$AGH_HOME/skills/revie
 
 A skill root may contain a directory `<name>/SKILL.md` or a flat `<name>.md`. The directory wins when both exist. Installation-owned `context.json` supports `customSkillRoots` (absolute directories). Configure these through **Settings → Context**; they follow `AGH_HOME/skills` at priority 400. See [default context](context.md). `SKILL.md` may set `disable-model-invocation`, `user-invocable`, and `disable`; omitted flags permit both model and user use. The daemon watches directories and relative resource files; `skills refresh --yes` requests an immediate rescan. Details and the unsupported cases are in [MCP and Skills support](mcp-skills-support.md).
 
+## Manage skills in Web
+
+Settings → Skills has My skills, Pending review and Feedback tabs. New skill opens a menu to ask the agent to draft a skill or learn how to import existing folders. Agent proposals appear in Pending review; open a review to inspect content changes and test evidence before approving publication or rejecting it. The pending count appears only when a review needs attention.
+
+Search My skills by name or description. The row switch and menu keep the existing enable, trust and removal confirmation flows. Where are skill folders? lists the sources reported by the daemon. Import help links to deployment instructions for other agents; it does not change the daemon's startup import setting. Refresh skills and Scan folders use the existing confirmed rescan operation.
+
 <a id="调整同名候选优先级"></a>
 
 ## Change same-name candidate priority
 
-1. Open Settings → Skills, choose the workspace, and inspect the Skill's source, current winner, shadowed candidates, and effective priority.
-2. Enter an **integer from 50 to 500** in the priority field, save, and confirm. This only changes the persistent override for that resourceId in the current profile. It does not edit files or enable the Skill.
+1. Open Settings → Skills, choose the workspace, and open the Skill's details and expand Technical details to inspect its source, current winner, shadowed candidates, and effective priority.
+2. Expand Advanced options, enter an **integer from 50 to 500** in the priority field, then use the save bar and confirm. This only changes the persistent override for that resourceId in the current profile. It does not edit files or enable the Skill.
 3. Wait for completion and check the winner and actual state again. Review and enable a new winner if necessary; saving a priority is not enough.
 4. The current Web page does not expose reset-to-default. Use the Node client with `priority: null` when that administrative action is required. Concurrent priority edits can happen without a content revision change, so saving also checks `expectedPriority`. Refresh on conflict rather than retrying blindly.
 

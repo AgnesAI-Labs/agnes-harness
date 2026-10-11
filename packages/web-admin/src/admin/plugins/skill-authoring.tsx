@@ -1,5 +1,5 @@
 import { registerSkillPagePanels } from '@agnes/resource-control-web/admin'
-import { Button, Dialog, SettingsState, hasPermission, useUiText } from '@agnes/web-ui'
+import { Button, Dialog, hasPermission, SettingsState, useUiText } from '@agnes/web-ui'
 import { type ComponentProps, useEffect, useState } from 'react'
 import { FeedbackAdminPanel } from '../../settings/feedback.js'
 import { PluginAdminApi } from './api.js'
@@ -7,13 +7,20 @@ import { CandidateInbox } from './candidates.js'
 import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from './locales/admin.js'
 import type { AdminContext } from './types.js'
 
+export type SkillAuthoringSources = {
+  sessionTitle?: ((key: string) => Promise<string | undefined>) | undefined
+  sessionTurnTime?: ((key: string, turn: number) => Promise<string | undefined>) | undefined
+}
+
 type Confirmation = Parameters<ComponentProps<typeof CandidateInbox>['confirm']>[0]
 function SkillCandidatePanel({
   onPendingCount,
   onPublished,
+  sources,
 }: {
   onPendingCount(count: number): void
   onPublished(): Promise<void>
+  sources: SkillAuthoringSources
 }) {
   const { t } = useUiText(PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog)
   const [context, setContext] = useState<AdminContext>()
@@ -61,49 +68,62 @@ function SkillCandidatePanel({
         confirm={setPending}
         onPublished={onPublished}
         scope="skill"
+        sessionTitle={sources.sessionTitle}
+        sessionTurnTime={sources.sessionTurnTime}
         onPendingCount={onPendingCount}
-      />
-      <Dialog
-        open={!!pending}
-        title={pending?.title}
-        footer={null}
-        onCancel={() => {
-          if (!busy) setPending(undefined)
-        }}
-        closable={!busy}
-        maskClosable={!busy}
-      >
-        <p>{pending?.description}</p>
-        {pending?.facts}
-        <div className="agh-dialog-footer">
-          <Button disabled={busy} onClick={() => setPending(undefined)}>
-            {t('shell.cancel')}
-          </Button>
-          <Button
-            appearance="primary"
-            loading={busy}
-            onClick={() => {
-              if (!pending || busy) return
-              setBusy(true)
-              void pending
-                .run()
-                .then(() => setPending(undefined))
-                .catch(() => setFailed(true))
-                .finally(() => setBusy(false))
+        reviewSurface={(content, onClose) => (
+          <Dialog
+            open
+            title={pending?.title ?? t('candidates.review')}
+            footer={null}
+            onCancel={() => {
+              if (!busy) {
+                if (pending) setPending(undefined)
+                else onClose()
+              }
             }}
+            closable={!busy}
+            maskClosable={!busy}
           >
-            {pending?.label}
-          </Button>
-        </div>
-      </Dialog>
+            {pending ? (
+              <>
+                <p>{pending.description}</p>
+                {pending.facts}
+                <div className="agh-dialog-footer">
+                  <Button disabled={busy} onClick={() => setPending(undefined)}>
+                    {t('shell.cancel')}
+                  </Button>
+                  <Button
+                    appearance="primary"
+                    loading={busy}
+                    onClick={() => {
+                      if (!pending || busy) return
+                      setBusy(true)
+                      void pending
+                        .run()
+                        .then(() => setPending(undefined))
+                        .catch(() => setFailed(true))
+                        .finally(() => setBusy(false))
+                    }}
+                  >
+                    {pending?.label}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              content
+            )}
+          </Dialog>
+        )}
+      />
     </>
   )
 }
 /** Skills can be the first settings page opened; authoring does not depend on mounting Plugins. */
-export function mountSkillAuthoring(onPublished: () => Promise<void>) {
+export function mountSkillAuthoring(onPublished: () => Promise<void>, sources: SkillAuthoringSources = {}) {
   return registerSkillPagePanels({
     review: (onPendingCount) => (
-      <SkillCandidatePanel onPendingCount={onPendingCount} onPublished={onPublished} />
+      <SkillCandidatePanel onPendingCount={onPendingCount} onPublished={onPublished} sources={sources} />
     ),
     feedback: <FeedbackAdminPanel />,
   })

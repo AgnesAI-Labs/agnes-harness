@@ -904,3 +904,15 @@
 #config-form:has(#settings-section-tabs[hidden]) .agnes-settings-page-header {
   padding-inline-end: 2rem;
 }
+
+/* Plugins owns its page header and add menu; suppress the outer runtime shell's duplicate heading. */
+:is([data-testid="settings-page-plugins"], [data-testid="settings-page-discover"])
+  > .agnes-settings-page
+  > .agnes-settings-page-heading {
+  display: none;
+}
+
+/* A selected agent proposal is a review view with its own primary action. */
+#plugin-list:has([data-testid="candidate-review"]) [data-testid="plugin-browser"] {
+  display: none;
+}

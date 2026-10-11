@@ -2,6 +2,7 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 
 export const candidatesCatalog: LocaleCatalog = {
   en: {
+    'candidates.loading': 'Loading proposals…',
     'candidates.viewDrafting': 'View drafting session',
     'candidates.type.plugin': 'Plugin',
     'candidates.type.skill': 'Skill',
@@ -20,6 +21,8 @@ export const candidatesCatalog: LocaleCatalog = {
     'candidates.testHash': 'Test run SHA256',
     'candidates.rawDelta': 'Raw capability changes',
     'candidates.untitledSession': 'Untitled session',
+    'candidates.summaryNewSkill': 'Agent drafted a new skill in “{session}”.',
+    'candidates.summaryUpdateSkill': 'Agent drafted a skill update in “{session}”.',
     'candidates.summaryNew': 'Agent drafted a new plugin in “{session}”.',
     'candidates.summaryUpdate': 'Agent drafted a plugin update in “{session}”.',
     'candidates.byAgent': 'Drafted by Agent · From “{session}” (turn {turn})',
@@ -86,6 +89,9 @@ export const candidatesCatalog: LocaleCatalog = {
     'candidates.state.interrupted': 'Interrupted; check actual state',
   },
   'zh-CN': {
+    'candidates.loading': '正在读取提议…',
+    'candidates.summaryNewSkill': 'Agent 在「{session}」中起草了新技能。',
+    'candidates.summaryUpdateSkill': 'Agent 在「{session}」中起草了技能更新。',
     'candidates.viewDrafting': '查看起草会话',
     'candidates.type.plugin': '插件',
     'candidates.type.skill': '技能',
