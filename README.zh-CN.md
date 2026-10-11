@@ -46,6 +46,7 @@
 - [AGH 是什么，不是什么](#agh-是什么不是什么)
 - [架构：大脑、小脑、记忆与身体](#architecture)
 - [在现场交付中，AGH 能帮上什么](#在现场交付中agh-能帮上什么)
+- [案例演示与复现](#案例演示与复现)
 - [公开评测](#公开评测)
 - [适合谁](#适合谁)
 - [从示例开始](#从示例开始)
@@ -140,6 +141,20 @@ CLI、Web 与 SDK 共享同一套后台会话。在终端用 `/resume <id>` 恢�
 ### 6. 现场还有设备
 
 从巡检到仪器协作，现场工作需要把设备状态、人的判断与业务流程连接起来。Agnes MHS（Model Hardware Standard）是 AGH 自己的开放设备协议，独立于 MCP，也不依赖厂商专属 SDK：设备通过 WebSocket 连接 AgnesHub，登记自己的状态、工具和数据源，然后接受调用。配套的 MOS（Model Observation Standard）实时推送设备观测到的内容，例如相机画面、地图与地点。状态读取、动作请求和结果都进入同一套任务流程。[不接硬件先试用设备 →](docs/guide/mhs.zh-CN.md)
+
+## 案例演示与复现
+
+### MHS 火星救援：多设备协作
+
+<p align="center">
+  <a href="https://youtu.be/QbmD2KVli5Y">
+    <img src="docs/assets/readme/mars-rescue.zh-CN.svg" alt="火星救援视频预览：模拟基地、设备观测与任务执行记录。点击播放按钮或封面，在 YouTube 观看中文演示。" width="100%" />
+  </a>
+</p>
+
+让 Agent 调度飞行器寻找宇航员，再协调机器人与气闸完成救援。AGH 组织任务，AgnesHub 经 MHS 调用设备，MOS 回传相机画面、位姿等观测数据。
+
+**体验准备：** AGH、支持图片与工具调用的模型、`@agnes/mhs` 插件，以及浏览器中的 Mars World。仓库提供十一台虚拟设备，无需实体硬件，按[火星基地指南](docs/guide/mars-world.zh-CN.md)启动后即可下达任务。
 
 ## 公开评测
 
