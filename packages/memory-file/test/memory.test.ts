@@ -85,6 +85,9 @@ describe('file memory contract', () => {
     expect((await f.session.snapshot(1))?.content).not.toContain('Prefer concise answers.')
     for (const reason of [
       'deadline',
+      'no-approver',
+      'policy_denied',
+      'subagent_scope',
       'no-handler',
       'transport',
       'detached',
