@@ -291,8 +291,9 @@ export async function handleCommand(
   const p = cmd.params
   switch (cmd.method) {
     case 'ui.action': {
-      const actor = p.actor as Actor
-      if (!session.intelligentUi) throw rpcError('CAPABILITY_DENIED')
+      if (!session.intelligentUi || !p.credential || Object.hasOwn(p, 'actor'))
+        throw rpcError('CAPABILITY_DENIED')
+      const actor = await o.host.resolveActor(p.credential, 'session')
       return session.intelligentUi.action(
         p.input as import('@agnes/protocol').UiActionParams,
         actor,

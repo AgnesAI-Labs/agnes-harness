@@ -46,7 +46,9 @@ export function registerIntelligentUi(
       if (journal.state === 'corrupt') throw rpcError('SEMANTIC_REJECTED', { code: 'UI_RECOVERY_GAP' })
       try {
         // The journal binds admission; the ledger returns the current receipt, including pending outcomes.
-        const receipt = await service.action(params, actor, signal)
+        const receipt = entry.submitUiAction
+          ? await entry.submitUiAction(params, context.conn.credential, signal)
+          : await service.action(params, actor, signal)
         if (journal.state !== 'complete') await cx.journal.complete(identity, { seq: receipt.seq })
         // A persisted action may resume a loop parked for a surface answer.
         cx.continueFollowUps?.(entry, undefined, receipt.status === 'received')

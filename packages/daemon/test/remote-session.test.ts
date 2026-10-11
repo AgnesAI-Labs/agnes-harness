@@ -239,3 +239,63 @@ describe('RemoteSession switch result bridge', () => {
     expect(commandCalls).toBe(0)
   })
 })
+
+it('forwards UI credentials through the remote bridge and binds identity in the worker', async () => {
+  const credential = { kind: 'local', principal: 'operator' }
+  const actor = { id: 'operator', org: 'synthetic', role: 'reviewer', deptPath: ['review'], attrs: {} }
+  const input = {
+    sessionId: 'owned',
+    surfaceId: 'review',
+    revision: 1,
+    actionId: 'confirm',
+    commandId: 'one',
+    input: {},
+    selection: {},
+  }
+  const receipt = { status: 'received' }
+  const admitted: unknown[] = []
+  const hosted = {
+    ac: new AbortController(),
+    intelligentUi: {
+      action: async (request: unknown, resolved: unknown) => {
+        admitted.push({ request, actor: resolved })
+        return receipt
+      },
+    },
+  } as unknown as HostSession
+  const host = {
+    resolveActor: async (provided: unknown, surface: string) => {
+      expect(provided).toEqual(credential)
+      expect(surface).toBe('session')
+      return actor
+    },
+  } as unknown as Host
+  const frames: unknown[] = []
+  const remote = new RemoteSession(
+    'owned',
+    'writer',
+    1,
+    {
+      alive: true,
+      command: async (method: string, params: Record<string, unknown>) => {
+        frames.push(params)
+        return handleCommand(
+          hosted,
+          {
+            kind: 'command',
+            requestId: 'ui',
+            method: method as 'ui.action',
+            params,
+          },
+          { host, aborts: new Map() },
+        )
+      },
+    } as never,
+    '/synthetic',
+  )
+  expect(
+    await remote.intelligentUi.actionFromCredential(input, credential, new AbortController().signal),
+  ).toEqual(receipt)
+  expect(frames).toEqual([{ input, credential }])
+  expect(admitted).toEqual([{ request: input, actor }])
+})

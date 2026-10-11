@@ -72,9 +72,13 @@ export class RemoteSession {
   }
 
   readonly intelligentUi = {
-    action: async (input: import('@agnes/protocol').UiActionParams, actor: Actor, signal: AbortSignal) => {
+    actionFromCredential: async (
+      input: import('@agnes/protocol').UiActionParams,
+      credential: unknown,
+      signal: AbortSignal,
+    ) => {
       signal.throwIfAborted()
-      const result = await this.link.command('ui.action', { input, actor })
+      const result = await this.link.command('ui.action', { input, credential })
       signal.throwIfAborted()
       return result as import('@agnes/protocol').UiActionReceipt
     },

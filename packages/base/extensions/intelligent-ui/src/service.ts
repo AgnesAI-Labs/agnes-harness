@@ -334,8 +334,7 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
       serial(async () => {
         signal.throwIfAborted()
         const admittedActor = cap.authenticatedActor
-        if (!admittedActor || admittedActor.id !== actor.id || admittedActor.org !== actor.org)
-          throw rpcError('CAPABILITY_DENIED')
+        if (!admittedActor || jcs(admittedActor) !== jcs(actor)) throw rpcError('CAPABILITY_DENIED')
         bounded(input, X_AGNES_UI_LIMITS.actionBytes)
         if (!validateAgainst(UiActionParams, input).ok) throw rpcError('INVALID_PARAMS')
         boundSession(input.sessionId)
@@ -343,7 +342,7 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
           value = await state(),
           old = value.actions[request.commandId]
         if (old) {
-          if (jcs(old.request) !== jcs(request) || old.actor.id !== actor.id || old.actor.org !== actor.org)
+          if (jcs(old.request) !== jcs(request) || jcs(old.actor) !== jcs(actor))
             throw rpcError('SEMANTIC_REJECTED', { code: 'UI_COMMAND_CONFLICT', reason: 'duplicate' })
           await queue(old, signal)
           await delivery(old, signal)

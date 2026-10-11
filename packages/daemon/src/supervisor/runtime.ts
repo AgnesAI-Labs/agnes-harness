@@ -298,6 +298,14 @@ class RemoteEntryView implements SessionEntry {
     this.ac = e.ac
   }
 
+  submitUiAction(
+    input: import('@agnes/protocol').UiActionParams,
+    credential: unknown,
+    signal: AbortSignal,
+  ): Promise<import('@agnes/protocol').UiActionReceipt> {
+    return this.e.session.intelligentUi.actionFromCredential(input, credential, signal)
+  }
+
   // The one field that must NOT be a snapshot: `session/prompt` (acp.ts) writes `entry.inflight = ...`
   // on one call and reads it back on a *different* call (a concurrent second prompt on the same
   // session, checking SESSION_BUSY) - both calls go through fresh `require()`/`get()` calls that each

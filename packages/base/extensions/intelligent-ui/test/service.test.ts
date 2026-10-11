@@ -463,6 +463,11 @@ describe('preset surface contract and ledger lifecycle', () => {
     await expect(
       f.service().action({ ...request(), sessionId: 'other' }, actor, signal),
     ).rejects.toMatchObject({ code: expect.any(Number) })
+    const changedActor = { ...actor, role: 'admin' }
+    f.admit(changedActor)
+    await expect(f.service().action(request(), changedActor, signal)).rejects.toMatchObject({
+      data: { code: 'UI_COMMAND_CONFLICT' },
+    })
     expect(f.calls.size).toBe(1)
   })
   it.each(['HOOK_DENIED', 'AUTHZ_DENIED', 'POLICY_DENIED', 'APPROVAL_REJECTED', 'SANDBOX_UNAVAILABLE'])(
@@ -835,10 +840,18 @@ describe('question collector on the ordinary surface path', () => {
     await expect(f.service().action(request('missing'), actor, signal)).rejects.toMatchObject({
       code: expect.any(Number),
     })
-    f.admit({ ...actor, id: 'other' })
-    await expect(f.service().action(request('other'), actor, signal)).rejects.toMatchObject({
-      code: expect.any(Number),
-    })
+    for (const changed of [
+      { ...actor, id: 'other' },
+      { ...actor, org: 'other' },
+      { ...actor, role: 'admin' },
+      { ...actor, deptPath: ['restricted'] },
+      { ...actor, attrs: { scope: 'admin' } },
+    ]) {
+      f.admit(changed)
+      await expect(f.service().action(request('forged'), actor, signal)).rejects.toMatchObject({
+        data: { code: 'CAPABILITY_DENIED' },
+      })
+    }
     expect(f.rows).toHaveLength(before)
   })
 })

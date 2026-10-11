@@ -10,6 +10,7 @@ it('checks session ownership before state/dedupe, binds the actor and repairs a 
   endpoint.conn.initialized = true
   endpoint.conn.authKind = 'local'
   endpoint.conn.credentialKind = 'local'
+  endpoint.conn.credential = { kind: 'local', principal: 'operator' }
   const commandQueue = new CommandQueue()
   const actor = { id: 'server-actor', org: 'synthetic', role: 'owner', deptPath: [], attrs: {} }
   const seen: unknown[] = []
@@ -44,6 +45,9 @@ it('checks session ownership before state/dedupe, binds the actor and repairs a 
   }
   const result = { sessionId: 'owned', lastSeq: 4, surfaces: [], actions: [receipt] }
   const entry = {
+    submitUiAction: undefined as
+      | undefined
+      | ((input: unknown, credential: unknown) => Promise<typeof receipt>),
     session: {
       get intelligentUi() {
         return enabled
@@ -114,6 +118,23 @@ it('checks session ownership before state/dedupe, binds the actor and repairs a 
     expect(seen.filter((value) => typeof value === 'object' && value !== null && 'restart' in value)).toEqual(
       [{ restart: true }, { restart: true }],
     )
+    const beforeForgery = [...seen]
+    expect(
+      await call('_agnes/v1/ui.action', { ...request, actor: { ...actor, id: 'forged' } }),
+    ).toMatchObject({
+      error: { code: -32602 },
+    })
+    expect(seen).toEqual(beforeForgery)
+    entry.submitUiAction = async (input, credential) => {
+      seen.push({ input, credential })
+      return receipt
+    }
+    expect((await call('_agnes/v1/ui.action', { ...request, commandId: 'remote' })).result).toEqual(receipt)
+    expect(seen).toContainEqual({
+      input: { ...request, commandId: 'remote' },
+      credential: endpoint.conn.credential,
+    })
+    entry.submitUiAction = undefined
     enabled = false
     expect((await call('_agnes/v1/ui.action', request)).error?.data?.code).toBe('CAPABILITY_DENIED')
   } finally {

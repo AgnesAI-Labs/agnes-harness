@@ -14,6 +14,12 @@ import { type EventEnvelope, rpcError } from '@agnes/protocol'
 export type SessionEntry = {
   key: string
   session: HostSession
+  /** Worker-backed UI admission forwards only the authenticated connection credential. */
+  submitUiAction?(
+    input: import('@agnes/protocol').UiActionParams,
+    credential: unknown,
+    signal: AbortSignal,
+  ): Promise<import('@agnes/protocol').UiActionReceipt>
   generation: number
   inflight: { promptId: JsonRpcId; abort: AbortController } | null
   tail: Disposer
