@@ -37801,7 +37801,7 @@
     "_agnes_v1_auth_claimResult": {
       "$ref": "#/$defs/D270ea6470e47_AuthClaimResult"
     },
-    "D9e582da168b7_UiKey": {
+    "Dabf5b61bbe06_UiKey": {
       "$ref": "#/$defs/R17019853db81"
     },
     "R17019853db81": {
@@ -37810,7 +37810,7 @@
       "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$",
       "type": "string"
     },
-    "D9e582da168b7_UiRevision": {
+    "Dabf5b61bbe06_UiRevision": {
       "$ref": "#/$defs/R74a73fa64fa9"
     },
     "R74a73fa64fa9": {
@@ -37818,7 +37818,7 @@
       "maximum": 9007199254740991,
       "type": "integer"
     },
-    "D9e582da168b7_UiJsonSchema": {
+    "Dabf5b61bbe06_UiJsonSchema": {
       "$ref": "#/$defs/R72bd05bc8505"
     },
     "R72bd05bc8505": {
@@ -37866,40 +37866,72 @@
         }
       ]
     },
-    "D9e582da168b7_UiPlacement": {
-      "$ref": "#/$defs/R07cbcebe0ad1"
+    "Dabf5b61bbe06_UiPlacement": {
+      "$ref": "#/$defs/Ra7c1e038eb33"
     },
-    "R07cbcebe0ad1": {
-      "additionalProperties": false,
-      "type": "object",
-      "properties": {
-        "inline": {
-          "const": true,
-          "type": "boolean"
-        },
-        "workbench": {
-          "const": true,
-          "type": "boolean"
-        },
-        "preferred": {
-          "anyOf": [
-            {
-              "const": "inline",
-              "type": "string"
+    "Ra7c1e038eb33": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "inline": {
+              "const": true,
+              "type": "boolean"
             },
-            {
-              "const": "workbench",
-              "type": "string"
+            "workbench": {
+              "type": "boolean"
+            },
+            "preferred": {
+              "anyOf": [
+                {
+                  "const": "inline",
+                  "type": "string"
+                },
+                {
+                  "const": "workbench",
+                  "type": "string"
+                }
+              ]
             }
+          },
+          "required": [
+            "inline",
+            "workbench"
+          ]
+        },
+        {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "inline": {
+              "type": "boolean"
+            },
+            "workbench": {
+              "const": true,
+              "type": "boolean"
+            },
+            "preferred": {
+              "anyOf": [
+                {
+                  "const": "inline",
+                  "type": "string"
+                },
+                {
+                  "const": "workbench",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": [
+            "inline",
+            "workbench"
           ]
         }
-      },
-      "required": [
-        "inline",
-        "workbench"
       ]
     },
-    "D9e582da168b7_UiColumn": {
+    "Dabf5b61bbe06_UiColumn": {
       "$ref": "#/$defs/R28550a83419f"
     },
     "R28550a83419f": {
@@ -37907,7 +37939,7 @@
       "type": "object",
       "properties": {
         "key": {
-          "$ref": "#/$defs/D9e582da168b7_UiKey"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
         },
         "label": {
           "minLength": 1,
@@ -37944,7 +37976,7 @@
         "label"
       ]
     },
-    "D9e582da168b7_UiChartSeries": {
+    "Dabf5b61bbe06_UiChartSeries": {
       "$ref": "#/$defs/Rf3477d31fed3"
     },
     "Rf3477d31fed3": {
@@ -37952,7 +37984,7 @@
       "type": "object",
       "properties": {
         "key": {
-          "$ref": "#/$defs/D9e582da168b7_UiKey"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
         },
         "label": {
           "minLength": 1,
@@ -37965,7 +37997,7 @@
         "label"
       ]
     },
-    "D9e582da168b7_UiComponent": {
+    "Dabf5b61bbe06_UiComponent": {
       "$ref": "#/$defs/R472ed6a6b633"
     },
     "R472ed6a6b633": {
@@ -37975,7 +38007,7 @@
           "type": "object",
           "properties": {
             "id": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "kind": {
               "const": "form",
@@ -37987,17 +38019,17 @@
               "type": "string"
             },
             "dataKey": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "schema": {
-              "$ref": "#/$defs/D9e582da168b7_UiJsonSchema"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiJsonSchema"
             },
             "actionIds": {
               "minItems": 0,
               "maxItems": 16,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/D9e582da168b7_UiKey"
+                "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
               }
             }
           },
@@ -38013,7 +38045,7 @@
           "type": "object",
           "properties": {
             "id": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "kind": {
               "const": "table",
@@ -38025,17 +38057,17 @@
               "type": "string"
             },
             "dataKey": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "rowKey": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "columns": {
               "minItems": 1,
               "maxItems": 32,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/D9e582da168b7_UiColumn"
+                "$ref": "#/$defs/Dabf5b61bbe06_UiColumn"
               }
             },
             "selection": {
@@ -38059,7 +38091,7 @@
               "maxItems": 16,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/D9e582da168b7_UiKey"
+                "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
               }
             }
           },
@@ -38077,7 +38109,7 @@
           "type": "object",
           "properties": {
             "id": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "kind": {
               "const": "chart",
@@ -38089,7 +38121,7 @@
               "type": "string"
             },
             "dataKey": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "chartType": {
               "anyOf": [
@@ -38108,14 +38140,14 @@
               ]
             },
             "categoryKey": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "series": {
               "minItems": 1,
               "maxItems": 8,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/D9e582da168b7_UiChartSeries"
+                "$ref": "#/$defs/Dabf5b61bbe06_UiChartSeries"
               }
             }
           },
@@ -38133,7 +38165,7 @@
           "type": "object",
           "properties": {
             "id": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "kind": {
               "const": "button-group",
@@ -38149,7 +38181,7 @@
               "maxItems": 16,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/D9e582da168b7_UiKey"
+                "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
               }
             }
           },
@@ -38164,7 +38196,7 @@
           "type": "object",
           "properties": {
             "id": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "kind": {
               "const": "text",
@@ -38176,7 +38208,7 @@
               "type": "string"
             },
             "dataKey": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             }
           },
           "required": [
@@ -38190,7 +38222,7 @@
           "type": "object",
           "properties": {
             "id": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "kind": {
               "const": "status",
@@ -38202,7 +38234,7 @@
               "type": "string"
             },
             "dataKey": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             }
           },
           "required": [
@@ -38216,7 +38248,7 @@
           "type": "object",
           "properties": {
             "id": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "kind": {
               "const": "detail-card",
@@ -38228,21 +38260,21 @@
               "type": "string"
             },
             "dataKey": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "fields": {
               "minItems": 1,
               "maxItems": 32,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/D9e582da168b7_UiColumn"
+                "$ref": "#/$defs/Dabf5b61bbe06_UiColumn"
               }
             },
             "statusKey": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "secondaryKey": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             }
           },
           "required": [
@@ -38257,7 +38289,7 @@
           "type": "object",
           "properties": {
             "id": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "kind": {
               "const": "tabs",
@@ -38277,7 +38309,7 @@
                 "type": "object",
                 "properties": {
                   "id": {
-                    "$ref": "#/$defs/D9e582da168b7_UiKey"
+                    "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
                   },
                   "label": {
                     "minLength": 1,
@@ -38290,7 +38322,7 @@
                     "uniqueItems": true,
                     "type": "array",
                     "items": {
-                      "$ref": "#/$defs/D9e582da168b7_UiKey"
+                      "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
                     }
                   }
                 },
@@ -38313,7 +38345,7 @@
           "type": "object",
           "properties": {
             "id": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "kind": {
               "const": "steps",
@@ -38325,7 +38357,7 @@
               "type": "string"
             },
             "dataKey": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             }
           },
           "required": [
@@ -38339,7 +38371,7 @@
           "type": "object",
           "properties": {
             "id": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "kind": {
               "const": "progress",
@@ -38351,7 +38383,7 @@
               "type": "string"
             },
             "dataKey": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             }
           },
           "required": [
@@ -38365,7 +38397,7 @@
           "type": "object",
           "properties": {
             "id": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "kind": {
               "const": "image",
@@ -38377,7 +38409,7 @@
               "type": "string"
             },
             "dataKey": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "alt": {
               "minLength": 1,
@@ -38393,11 +38425,11 @@
           ]
         },
         {
-          "$ref": "#/$defs/D9e582da168b7_UiCustomComponent"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiCustomComponent"
         }
       ]
     },
-    "D9e582da168b7_UiArgument": {
+    "Dabf5b61bbe06_UiArgument": {
       "$ref": "#/$defs/R84f9c4891dab"
     },
     "R84f9c4891dab": {
@@ -38439,7 +38471,7 @@
               ]
             },
             "key": {
-              "$ref": "#/$defs/D9e582da168b7_UiKey"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
             },
             "pointer": {
               "maxLength": 256,
@@ -38454,7 +38486,7 @@
         }
       ]
     },
-    "D9e582da168b7_UiAction": {
+    "Dabf5b61bbe06_UiAction": {
       "$ref": "#/$defs/Ra533b656f012"
     },
     "Ra533b656f012": {
@@ -38462,7 +38494,7 @@
       "type": "object",
       "properties": {
         "id": {
-          "$ref": "#/$defs/D9e582da168b7_UiKey"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
         },
         "label": {
           "minLength": 1,
@@ -38480,12 +38512,12 @@
           "type": "object",
           "patternProperties": {
             "^[A-Za-z][A-Za-z0-9_.-]{0,63}$": {
-              "$ref": "#/$defs/D9e582da168b7_UiArgument"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiArgument"
             }
           }
         },
         "paramsSchema": {
-          "$ref": "#/$defs/D9e582da168b7_UiJsonSchema"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiJsonSchema"
         },
         "confirm": {
           "minLength": 1,
@@ -38517,7 +38549,7 @@
         "paramsSchema"
       ]
     },
-    "D9e582da168b7_UiSurface": {
+    "Dabf5b61bbe06_UiSurface": {
       "$ref": "#/$defs/Rdb9f7f65432c"
     },
     "Rdb9f7f65432c": {
@@ -38525,10 +38557,10 @@
       "type": "object",
       "properties": {
         "id": {
-          "$ref": "#/$defs/D9e582da168b7_UiKey"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
         },
         "revision": {
-          "$ref": "#/$defs/D9e582da168b7_UiRevision"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiRevision"
         },
         "title": {
           "minLength": 1,
@@ -38540,14 +38572,14 @@
           "type": "string"
         },
         "placement": {
-          "$ref": "#/$defs/D9e582da168b7_UiPlacement"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiPlacement"
         },
         "components": {
           "minItems": 1,
           "maxItems": 32,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/D9e582da168b7_UiComponent"
+            "$ref": "#/$defs/Dabf5b61bbe06_UiComponent"
           }
         },
         "data": {
@@ -38565,7 +38597,7 @@
           "maxItems": 32,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/D9e582da168b7_UiAction"
+            "$ref": "#/$defs/Dabf5b61bbe06_UiAction"
           }
         }
       },
@@ -38579,7 +38611,7 @@
         "actions"
       ]
     },
-    "D9e582da168b7_UiRowContext": {
+    "Dabf5b61bbe06_UiRowContext": {
       "$ref": "#/$defs/R25cf8e9568f8"
     },
     "R25cf8e9568f8": {
@@ -38587,7 +38619,7 @@
       "type": "object",
       "properties": {
         "tableId": {
-          "$ref": "#/$defs/D9e582da168b7_UiKey"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
         },
         "rowId": {
           "minLength": 1,
@@ -38600,7 +38632,7 @@
         "rowId"
       ]
     },
-    "D9e582da168b7_UiActionParams": {
+    "Dabf5b61bbe06_UiActionParams": {
       "$ref": "#/$defs/R2b93ebfb2fc6"
     },
     "R2b93ebfb2fc6": {
@@ -38613,13 +38645,13 @@
           "type": "string"
         },
         "surfaceId": {
-          "$ref": "#/$defs/D9e582da168b7_UiKey"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
         },
         "revision": {
-          "$ref": "#/$defs/D9e582da168b7_UiRevision"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiRevision"
         },
         "actionId": {
-          "$ref": "#/$defs/D9e582da168b7_UiKey"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
         },
         "commandId": {
           "minLength": 1,
@@ -38655,7 +38687,7 @@
           }
         },
         "row": {
-          "$ref": "#/$defs/D9e582da168b7_UiRowContext"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiRowContext"
         },
         "confirmed": {
           "type": "boolean"
@@ -38687,7 +38719,7 @@
         "selection"
       ]
     },
-    "D9e582da168b7_UiActionStatus": {
+    "Dabf5b61bbe06_UiActionStatus": {
       "$ref": "#/$defs/Rd8fd2bd56e22"
     },
     "Rd8fd2bd56e22": {
@@ -38718,7 +38750,7 @@
         }
       ]
     },
-    "D9e582da168b7_UiRefusal": {
+    "Dabf5b61bbe06_UiRefusal": {
       "$ref": "#/$defs/Re90db4e7e0e3"
     },
     "Re90db4e7e0e3": {
@@ -38779,7 +38811,7 @@
           "type": "string"
         },
         "currentRevision": {
-          "$ref": "#/$defs/D9e582da168b7_UiRevision"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiRevision"
         }
       },
       "required": [
@@ -38788,7 +38820,7 @@
         "message"
       ]
     },
-    "D9e582da168b7_UiFailure": {
+    "Dabf5b61bbe06_UiFailure": {
       "$ref": "#/$defs/Rc5dbf94f859b"
     },
     "Rc5dbf94f859b": {
@@ -38819,7 +38851,7 @@
         "outcomeUnknown"
       ]
     },
-    "D9e582da168b7_UiActionReceipt": {
+    "Dabf5b61bbe06_UiActionReceipt": {
       "$ref": "#/$defs/R63eda31ad601"
     },
     "R63eda31ad601": {
@@ -38832,13 +38864,13 @@
           "type": "string"
         },
         "surfaceId": {
-          "$ref": "#/$defs/D9e582da168b7_UiKey"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
         },
         "revision": {
-          "$ref": "#/$defs/D9e582da168b7_UiRevision"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiRevision"
         },
         "actionId": {
-          "$ref": "#/$defs/D9e582da168b7_UiKey"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
         },
         "commandId": {
           "minLength": 1,
@@ -38846,7 +38878,7 @@
           "type": "string"
         },
         "status": {
-          "$ref": "#/$defs/D9e582da168b7_UiActionStatus"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiActionStatus"
         },
         "seq": {
           "minimum": 1,
@@ -38867,10 +38899,10 @@
           "type": "string"
         },
         "refusal": {
-          "$ref": "#/$defs/D9e582da168b7_UiRefusal"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiRefusal"
         },
         "failure": {
-          "$ref": "#/$defs/D9e582da168b7_UiFailure"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiFailure"
         },
         "resultSeq": {
           "minimum": 1,
@@ -38898,7 +38930,7 @@
         "duplicate"
       ]
     },
-    "D9e582da168b7_UiSurfaceRecord": {
+    "Dabf5b61bbe06_UiSurfaceRecord": {
       "$ref": "#/$defs/Ra50cb0253484"
     },
     "Ra50cb0253484": {
@@ -38906,7 +38938,7 @@
       "type": "object",
       "properties": {
         "surface": {
-          "$ref": "#/$defs/D9e582da168b7_UiSurface"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiSurface"
         },
         "status": {
           "anyOf": [
@@ -38949,7 +38981,7 @@
           "type": "object",
           "patternProperties": {
             "^[A-Za-z][A-Za-z0-9_.-]{0,63}$": {
-              "$ref": "#/$defs/D9e582da168b7_UiSourceStatus"
+              "$ref": "#/$defs/Dabf5b61bbe06_UiSourceStatus"
             }
           }
         }
@@ -38964,7 +38996,7 @@
         "taskId"
       ]
     },
-    "D9e582da168b7_UiDataBinding": {
+    "Dabf5b61bbe06_UiDataBinding": {
       "$ref": "#/$defs/R7be6861b3750"
     },
     "R7be6861b3750": {
@@ -38991,7 +39023,7 @@
         "params"
       ]
     },
-    "D9e582da168b7_UiSourceStatus": {
+    "Dabf5b61bbe06_UiSourceStatus": {
       "$ref": "#/$defs/Re394c0efb447"
     },
     "Re394c0efb447": {
@@ -39055,7 +39087,7 @@
         "status"
       ]
     },
-    "D9e582da168b7_UiReadParams": {
+    "Dabf5b61bbe06_UiReadParams": {
       "$ref": "#/$defs/Raab23c08361b"
     },
     "Raab23c08361b": {
@@ -39068,7 +39100,7 @@
           "type": "string"
         },
         "surfaceId": {
-          "$ref": "#/$defs/D9e582da168b7_UiKey"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
         },
         "commandId": {
           "minLength": 1,
@@ -39090,7 +39122,7 @@
         "sessionId"
       ]
     },
-    "D9e582da168b7_UiRefreshParams": {
+    "Dabf5b61bbe06_UiRefreshParams": {
       "$ref": "#/$defs/Ra3d770716f8a"
     },
     "Ra3d770716f8a": {
@@ -39103,7 +39135,7 @@
           "type": "string"
         },
         "surfaceId": {
-          "$ref": "#/$defs/D9e582da168b7_UiKey"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
         }
       },
       "required": [
@@ -39111,7 +39143,7 @@
         "surfaceId"
       ]
     },
-    "D9e582da168b7_UiReadResult": {
+    "Dabf5b61bbe06_UiReadResult": {
       "$ref": "#/$defs/R2e7cdc28109a"
     },
     "R2e7cdc28109a": {
@@ -39132,7 +39164,7 @@
           "maxItems": 16,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/D9e582da168b7_UiSurfaceRecord"
+            "$ref": "#/$defs/Dabf5b61bbe06_UiSurfaceRecord"
           }
         },
         "actions": {
@@ -39140,7 +39172,7 @@
           "maxItems": 64,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/D9e582da168b7_UiActionReceipt"
+            "$ref": "#/$defs/Dabf5b61bbe06_UiActionReceipt"
           }
         },
         "nextCursor": {
@@ -39156,7 +39188,7 @@
         "actions"
       ]
     },
-    "D9e582da168b7_UiRenderParams": {
+    "Dabf5b61bbe06_UiRenderParams": {
       "$ref": "#/$defs/R27716a3fe2da"
     },
     "R27716a3fe2da": {
@@ -39164,14 +39196,14 @@
       "type": "object",
       "properties": {
         "surface": {
-          "$ref": "#/$defs/D9e582da168b7_UiSurface"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiSurface"
         }
       },
       "required": [
         "surface"
       ]
     },
-    "D9e582da168b7_UiUpdateParams": {
+    "Dabf5b61bbe06_UiUpdateParams": {
       "$ref": "#/$defs/R781908159458"
     },
     "R781908159458": {
@@ -39179,13 +39211,13 @@
       "type": "object",
       "properties": {
         "surfaceId": {
-          "$ref": "#/$defs/D9e582da168b7_UiKey"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
         },
         "expectedRevision": {
-          "$ref": "#/$defs/D9e582da168b7_UiRevision"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiRevision"
         },
         "surface": {
-          "$ref": "#/$defs/D9e582da168b7_UiSurface"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiSurface"
         }
       },
       "required": [
@@ -39194,7 +39226,7 @@
         "surface"
       ]
     },
-    "D9e582da168b7_UiCloseParams": {
+    "Dabf5b61bbe06_UiCloseParams": {
       "$ref": "#/$defs/Rf750c2671c58"
     },
     "Rf750c2671c58": {
@@ -39202,10 +39234,10 @@
       "type": "object",
       "properties": {
         "surfaceId": {
-          "$ref": "#/$defs/D9e582da168b7_UiKey"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
         },
         "expectedRevision": {
-          "$ref": "#/$defs/D9e582da168b7_UiRevision"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiRevision"
         },
         "reason": {
           "minLength": 1,
@@ -39218,7 +39250,7 @@
         "expectedRevision"
       ]
     },
-    "D9e582da168b7_UiCustomComponent": {
+    "Dabf5b61bbe06_UiCustomComponent": {
       "$ref": "#/$defs/R7958c91162cf"
     },
     "R7958c91162cf": {
@@ -39226,7 +39258,7 @@
       "type": "object",
       "properties": {
         "id": {
-          "$ref": "#/$defs/D9e582da168b7_UiKey"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
         },
         "kind": {
           "minLength": 5,
@@ -39240,7 +39272,7 @@
           "type": "string"
         },
         "dataKey": {
-          "$ref": "#/$defs/D9e582da168b7_UiKey"
+          "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
         },
         "fallback": {
           "minLength": 1,
@@ -39252,7 +39284,7 @@
           "uniqueItems": true,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/D9e582da168b7_UiKey"
+            "$ref": "#/$defs/Dabf5b61bbe06_UiKey"
           }
         }
       },
@@ -39265,22 +39297,22 @@
       ]
     },
     "_agnes_v1_ui_actionParams": {
-      "$ref": "#/$defs/D9e582da168b7_UiActionParams"
+      "$ref": "#/$defs/Dabf5b61bbe06_UiActionParams"
     },
     "_agnes_v1_ui_actionResult": {
-      "$ref": "#/$defs/D9e582da168b7_UiActionReceipt"
+      "$ref": "#/$defs/Dabf5b61bbe06_UiActionReceipt"
     },
     "_agnes_v1_ui_readParams": {
-      "$ref": "#/$defs/D9e582da168b7_UiReadParams"
+      "$ref": "#/$defs/Dabf5b61bbe06_UiReadParams"
     },
     "_agnes_v1_ui_readResult": {
-      "$ref": "#/$defs/D9e582da168b7_UiReadResult"
+      "$ref": "#/$defs/Dabf5b61bbe06_UiReadResult"
     },
     "_agnes_v1_ui_refreshParams": {
-      "$ref": "#/$defs/D9e582da168b7_UiRefreshParams"
+      "$ref": "#/$defs/Dabf5b61bbe06_UiRefreshParams"
     },
     "_agnes_v1_ui_refreshResult": {
-      "$ref": "#/$defs/D9e582da168b7_UiSurfaceRecord"
+      "$ref": "#/$defs/Dabf5b61bbe06_UiSurfaceRecord"
     },
     "_agnes_v1_session_eventParams": {
       "$ref": "#/$defs/D270ea6470e47_SessionEventParams"

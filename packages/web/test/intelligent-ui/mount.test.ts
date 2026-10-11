@@ -93,7 +93,7 @@ it('seeds loaded surfaces on every session and reveals only first appearances', 
     expect(controls.open).not.toHaveBeenCalled()
     const workbenchOnly = structuredClone(newSurface)
     workbenchOnly.surface.id = 'workbench-only'
-    workbenchOnly.surface.placement = { workbench: true }
+    workbenchOnly.surface.placement = { inline: false, workbench: true }
     controls.clients.at(-1)!.publish(true, [live, newSurface, workbenchOnly])
     expect(reveal).toHaveBeenCalledTimes(2)
     expect(controls.open).toHaveBeenCalledTimes(1)

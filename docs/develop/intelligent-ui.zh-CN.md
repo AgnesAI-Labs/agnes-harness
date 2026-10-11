@@ -10,7 +10,7 @@
 
 官方插件 `agnes/intelligent-ui` 位于 `packages/base/extensions/intelligent-ui`，负责 `ui_render`、`ui_update`、`ui_close`、扩展事实和可重放投影。Protocol 负责声明；Host 与 daemon 适配器绑定已认证的会话、actor、任务/通道以及会话锁定的插件 generation。Core 保持不变。客户端展示后台事实并提交请求；可点击的按钮或模型文字都不构成权限。
 
-每个 surface 同时出现在对话卡片和工作台面板中。展开卡片打开同一个 `(sessionId, surfaceId, revision)` 的面板。两处共享动作回执和草稿；展开只改变展示状态，不产生第二个 surface 或第二次执行。`placement.preferred` 只是布局提示，不能隐藏其中一个位置。
+默认双位置 surface 在对话中显示摘要，在工作台中显示完整界面。单位置 surface 遵循对应的 `placement` 字段。展开卡片打开同一个 `(sessionId, surfaceId, revision)` 的面板。两处共享动作回执和草稿；展开只改变展示状态，不产生第二个 surface 或第二次执行。`placement.preferred` 只是布局提示，不能隐藏其中一个位置。
 
 第一阶段支持表单、表格、仅包含数据的图表、按钮组、纯文本、状态、详情卡、分页、步骤、进度和图像。日期与日期时间是表单字段格式，不是单独的组件。没有生成 HTML、JavaScript、表达式求值器、远程组件加载器或任意 CSS。外部 UI 依赖留在 `packages/web-ui`，客户端保持其主题、无障碍、CSP 和皮肤钩子。业务插件提供的标签属于内容；渲染器控件与拒绝提示提供英文及简体中文目录、键盘操作、状态朗读和稳定 test id。
 
@@ -348,4 +348,4 @@ Intelligent UI 是 `@agnes/intelligent-ui-contract` 的 `intelligentUiKind`：�
 
 ### 对话摘要与完整界面
 
-同时设置 `placement.inline` 与 `placement.workbench` 的 surface 在对话中显示摘要，在工作台中显示完整可操作界面。可选 `summary` 最长 1024 字符；省略时显示可用操作数量。仅 inline 的界面仍在对话中完整呈现；仅 workbench 的界面在对话中显示指针，并仅在首次出现时自动打开工作台。版本更新不会重新打开工作台或抢焦点。确认、草稿、回执和工具审批仍使用同一个会话客户端。
+同时设置 `placement.inline` 与 `placement.workbench` 的 surface 在对话中显示摘要，在工作台中显示完整可操作界面。两个位置字段都是必填布尔值，且至少一个为 true。可选 `summary` 最长 1024 字符；省略时显示可用操作数量。仅 inline 的界面仍在对话中完整呈现；仅 workbench 的界面在对话中显示指针，并仅在首次出现时自动打开工作台。版本更新不会重新打开工作台或抢焦点。确认、草稿、回执和工具审批仍使用同一个会话客户端。

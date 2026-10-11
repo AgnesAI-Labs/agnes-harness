@@ -99,7 +99,7 @@ describe('shared Intelligent UI placements', () => {
       update.surface.revision++
       expect(newSurfacePlacements(seen, [update]).keys).toEqual([])
       update.surface.id = 'workbench-only'
-      update.surface.placement = { workbench: true }
+      update.surface.placement = { inline: false, workbench: true }
       expect(newSurfacePlacements(seen, [update]).showWorkbench).toBe(true)
     } finally {
       await cleanup()

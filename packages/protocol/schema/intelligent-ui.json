@@ -74,20 +74,28 @@
       ]
     },
     "UiPlacement": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["inline", "workbench"],
-      "properties": {
-        "inline": {
-          "const": true
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inline", "workbench"],
+          "properties": {
+            "inline": { "const": true },
+            "workbench": { "type": "boolean" },
+            "preferred": { "enum": ["inline", "workbench"] }
+          }
         },
-        "workbench": {
-          "const": true
-        },
-        "preferred": {
-          "enum": ["inline", "workbench"]
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["inline", "workbench"],
+          "properties": {
+            "inline": { "type": "boolean" },
+            "workbench": { "const": true },
+            "preferred": { "enum": ["inline", "workbench"] }
+          }
         }
-      }
+      ]
     },
     "UiColumn": {
       "type": "object",

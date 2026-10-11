@@ -54,7 +54,12 @@ export const intelligentUiSamples = {
   UiKey: sample('surface', ['', '1invalid', 'a'.repeat(65)]),
   UiRevision: sample(1, [0, 1.5]),
   UiJsonSchema: sample({ type: 'object' }, [null, []]),
-  UiPlacement: sample(placement, [{ inline: true }, { ...placement, workbench: false }]),
+  UiPlacement: sample(placement, [
+    { inline: true },
+    { inline: false, workbench: false },
+    { inline: true, workbench: 'yes' },
+    { ...placement, extra: true },
+  ]),
   UiColumn: sample({ key: 'price', label: 'Price' }, [{ key: 'price' }, { key: 'price', label: '' }]),
   UiChartSeries: sample({ key: 'price', label: 'Price' }, [{ key: 'price' }]),
   UiComponent: sample(component, [

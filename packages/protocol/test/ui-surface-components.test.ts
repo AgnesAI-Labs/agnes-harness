@@ -20,6 +20,10 @@ const accept = (value: unknown) => validIntelligentSurface(value)
 describe('reviewed preset components', () => {
   it('keeps the phase-1 surface valid', () => {
     const basic = surface([{ id: 'text', kind: 'text', dataKey: 'text' }], { text: 'Ready' })
+    expect(accept({ ...basic, placement: { inline: true, workbench: false } })).toBe(true)
+    expect(accept({ ...basic, placement: { inline: false, workbench: true } })).toBe(true)
+    expect(accept({ ...basic, placement: { inline: false, workbench: false } })).toBe(false)
+    expect(accept({ ...basic, placement: { workbench: true } })).toBe(false)
     expect(accept({ ...basic, summary: '3 orders need review' })).toBe(true)
     expect(accept({ ...basic, summary: 'x'.repeat(1025) })).toBe(false)
     expect(accept({ ...basic, summary: 3 })).toBe(false)
